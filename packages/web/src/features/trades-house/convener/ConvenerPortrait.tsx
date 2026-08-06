@@ -61,6 +61,8 @@ const GLANCE_BROW_MS = 600;
 const DOZE_TICK_MS = 4_000;
 const ACTIVITY_THROTTLE_MS = 5_000;
 const POINTER_FRESH_MS = 2_000;
+/** Silence between his reply and his remark about how you answered. */
+const ASIDE_GAP_MS = 900;
 
 export type ConvenerMouth = "rest" | "open" | "smile" | "press";
 
@@ -93,7 +95,7 @@ export interface ConvenerHandle {
    * talking portrait that falls silent exactly when he reacts is worse than one
    * that never spoke. No-op when muted or when the line has no audio.
    */
-  readonly speakAside: (text: string) => void;
+  readonly speakAside: (text: string, then?: string | null) => void;
 }
 
 interface ConvenerPortraitProps {
@@ -105,6 +107,8 @@ interface ConvenerPortraitProps {
    * prompt, so wandering off-script must never leave it lost.
    */
   readonly restingLine?: string | null;
+  /** Fired when the visitor cuts him off. He counts these, and mentions it. */
+  readonly onSkip?: () => void;
 }
 
 interface ReducerAction {
@@ -119,7 +123,7 @@ function convenerReducer(state: ConvenerState, action: ReducerAction): ConvenerS
 }
 
 export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps>(
-  function ConvenerPortrait({ compact = false, className, restingLine = null }, handleRef): ReactElement {
+  function ConvenerPortrait({ compact = false, className, restingLine = null, onSkip }, handleRef): ReactElement {
     const uid = useId();
     const gradient = useCallback((name: string): string => `cnv-${uid}-${name}`, [uid]);
     const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
@@ -361,8 +365,12 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
       });
     }, [armHold, finishSay, startTalk, stopTalk]);
 
+    const onSkipRef = useRef(onSkip);
+    onSkipRef.current = onSkip;
+
     const skipTyping = useCallback((): void => {
       if (!speaking) return;
+      onSkipRef.current?.();
       if (typedRef.current) typedRef.current.textContent = fullTextRef.current;
       finishSay();
     }, [finishSay, speaking]);
@@ -392,7 +400,7 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
     }, [later, measuredRect]);
 
     /** Audio + mouth only; the bubble is left holding whatever it holds. */
-    const speakAside = useCallback((text: string): void => {
+    const speakAside = useCallback((text: string, then: string | null = null): void => {
       // Retarget first: this cancels any line in flight, releases whoever was
       // awaiting it, and bumps the generation so the old rAF loop stops
       // painting the bubble.
@@ -422,13 +430,23 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
           if (audio.ended || (audio.duration > 0 && audio.currentTime >= audio.duration)) {
             voiceRafRef.current = null;
             stopTalk();
+            // A beat, then the remark about how you answered. Chained rather
+            // than concurrent: two of him talking at once is a haunting.
+            if (then !== null && then !== "") {
+              later(() => { speakAsideRef.current?.(then); }, ASIDE_GAP_MS);
+            }
             return;
           }
           voiceRafRef.current = requestAnimationFrame(step);
         };
         voiceRafRef.current = requestAnimationFrame(step);
       });
-    }, [finishSay, startTalk, stopTalk]);
+    }, [finishSay, later, startTalk, stopTalk]);
+
+    // Self-reference so the chained follow-up can call the same function
+    // without speakAside depending on itself.
+    const speakAsideRef = useRef<((text: string, then?: string | null) => void) | null>(null);
+    speakAsideRef.current = speakAside;
 
     const toggleVoiceMuted = useCallback((): void => {
       setVoiceMutedState((wasMuted) => {

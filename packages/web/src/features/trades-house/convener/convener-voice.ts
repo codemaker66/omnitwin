@@ -226,9 +226,37 @@ export function unlockConvenerVoice(): void {
   getConvenerVoicePlayer().unlock();
 }
 
+// ---------------------------------------------------------------------------
+// How many times this visitor has finished the quiz before.
+//
+// It buys exactly one line — he greets a returning face — but that line is the
+// difference between a page and somebody who remembers you. Stored as a count
+// rather than a flag so a third visit could one day differ from a second.
+// ---------------------------------------------------------------------------
+const RUNS_KEY = "venviewer:convener-quiz:runs:v1";
+
+export function completedRuns(): number {
+  try {
+    const raw = window.localStorage.getItem(RUNS_KEY);
+    const n = raw === null ? 0 : Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0; // No memory available: he simply greets everyone as new.
+  }
+}
+
+export function recordCompletedRun(): void {
+  try {
+    window.localStorage.setItem(RUNS_KEY, String(completedRuns() + 1));
+  } catch {
+    // Nothing worth an error. He forgets, that is all.
+  }
+}
+
 /** Test seam — drops the singleton so each suite starts from silence. */
 export function __resetConvenerVoiceForTests(): void {
   sessionPlayer?.dispose();
   sessionPlayer = null;
   manifestPromise = null;
+  try { window.localStorage.removeItem(RUNS_KEY); } catch { /* nothing to clear */ }
 }

@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { OptionSeal } from "../features/trades-house/OptionSeal.js";
 import { ConvenerPortrait, type ConvenerHandle } from "../features/trades-house/convener/ConvenerPortrait.js";
-import { loadConvenerVoice, unlockConvenerVoice } from "../features/trades-house/convener/convener-voice.js";
+import {
+  completedRuns,
+  loadConvenerVoice,
+  recordCompletedRun,
+  unlockConvenerVoice,
+} from "../features/trades-house/convener/convener-voice.js";
+import {
+  observePlay,
+  type Observation,
+  type ObservationId,
+} from "../features/trades-house/convener/convener-observations.js";
 import {
   CONVENER_DELIBERATION,
   CONVENER_DELIBERATION_BEAT_MS,
@@ -134,6 +144,8 @@ interface QuestionScreenProps {
   /** His reply to the answer just given, or null while the scene is open. */
   readonly reply: string | null;
   readonly onContinue: () => void;
+  /** Occasionally, what he has noticed about HOW you are answering. */
+  readonly observation: Observation | null;
 }
 
 function QuestionScreen({
@@ -145,6 +157,7 @@ function QuestionScreen({
   compact,
   reply,
   onContinue,
+  observation,
 }: QuestionScreenProps): ReactElement {
   const question = CRAFT_QUESTIONS[questionIndex];
   if (question === undefined) throw new RangeError(`Question ${String(questionIndex)} is unavailable.`);
@@ -220,6 +233,14 @@ function QuestionScreen({
         <div className="craft-quiz-reply" role="group" aria-label="The Convener replies">
           <p className="craft-quiz-reply-who">Ye Auld Convener</p>
           <p className="craft-quiz-reply-text">{reply}</p>
+          {/* Rare by design — twice in twelve scenes, not every answer. He is
+              remarking on HOW you answered, so it is set apart from the reply
+              to what you answered. */}
+          {observation === null ? null : (
+            <p className="craft-quiz-reply-aside" data-observation={observation.id}>
+              <span aria-hidden="true">❦</span> {observation.text}
+            </p>
+          )}
           <button
             type="button"
             className="craft-quiz-continue"
@@ -380,6 +401,17 @@ export function TradesHouseCraftQuizPage(): ReactElement {
   const [reply, setReply] = useState<string | null>(null);
   const convenerRef = useRef<ConvenerHandle>(null);
 
+  // ---- what he notices about how you play ----
+  // Refs, not state: none of this may cause a render, and all of it is read
+  // exactly once, at the moment an answer is committed.
+  const sceneShownAtRef = useRef<number>(Date.now());
+  const answerMsRef = useRef<number[]>([]);
+  const seatsRef = useRef<number[]>([]);
+  const skipsRef = useRef(0);
+  const spentObservationsRef = useRef<Set<ObservationId>>(new Set());
+  const priorRunsRef = useRef(0);
+  const [observation, setObservation] = useState<Observation | null>(null);
+
   // Fetch the voice manifest while the visitor is still reading the invitation.
   // The portrait mounts on the question screen and speaks in the same tick, so
   // starting the fetch there means the opening scene races it — and loses.
@@ -404,6 +436,13 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     // iOS grants it only synchronously inside a real user gesture, and this is
     // the one deliberate press the visitor makes before he starts speaking.
     unlockConvenerVoice();
+    priorRunsRef.current = completedRuns();
+    answerMsRef.current = [];
+    seatsRef.current = [];
+    skipsRef.current = 0;
+    spentObservationsRef.current = new Set();
+    setObservation(null);
+    sceneShownAtRef.current = Date.now();
     setTotals(ZERO_AXIS_TOTALS);
     setLastAxes({});
     setQuestionIndex(0);
@@ -431,21 +470,43 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     setLastAxes(answer.lastAxes);
     // Answering opens his reply and stops there. Nothing advances on a clock:
     // the reader decides when they have finished with the line.
+    // Everything he might remark on, recorded before the reaction is chosen.
+    answerMsRef.current.push(Date.now() - sceneShownAtRef.current);
+    seatsRef.current.push(optionIndex);
+    const noticed = observePlay(
+      {
+        answerMs: answerMsRef.current,
+        seats: seatsRef.current,
+        skips: skipsRef.current,
+        priorRuns: priorRunsRef.current,
+      },
+      spentObservationsRef.current,
+    );
+    if (noticed !== null) spentObservationsRef.current.add(noticed.id);
+    setObservation(noticed);
+
     const reaction = convenerReaction(questionIndex, optionIndex);
     setReply(reaction);
     convenerRef.current?.express(optionIndex % 3 === 1 ? "press" : "smile", 1_400);
     // He SAYS the reply while the panel shows it. Aside, not say(): his bubble
     // must keep holding the scene, or answering would wipe the question the
     // reader is still weighing.
-    convenerRef.current?.speakAside(reaction);
+    convenerRef.current?.speakAside(reaction, noticed?.text ?? null);
   }
 
   // Stable identity: WeighingScreen's handover effect lists this in its deps,
   // and a fresh arrow every render would make that effect churn.
-  const revealCraft = useCallback(() => { setScreen("result"); }, []);
+  const revealCraft = useCallback(() => {
+    // Banked at the reveal, not at BEGIN: a run abandoned at question three is
+    // not a visit he should claim to remember.
+    recordCompletedRun();
+    setScreen("result");
+  }, []);
 
   function continueFromReply(): void {
     setReply(null);
+    setObservation(null);
+    sceneShownAtRef.current = Date.now();
     setPickedIndex(null);
     // The last scene hands over to the deliberation, never straight to the
     // verdict: an instant answer after twelve dilemmas reads as a lookup.
@@ -467,6 +528,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
                    panel beside the options, so answering never wipes the
                    question the reader is still thinking about. */
                 restingLine={CRAFT_QUESTIONS[questionIndex]?.scene ?? null}
+                onSkip={() => { skipsRef.current += 1; }}
               />
             </div>
             <QuestionScreen
@@ -478,6 +540,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
               reply={reply}
               onContinue={continueFromReply}
               onOptionHover={(clientX, clientY) => { convenerRef.current?.glanceAt(clientX, clientY); }}
+              observation={observation}
             />
           </div>
         ) : null}

@@ -2647,3 +2647,38 @@
     animation: none;
   }
 }
+
+/* ---- his remark about HOW you answered -----------------------------------
+   Set apart from the reply above it: that answers WHAT you chose, this answers
+   how you chose it. Quieter, indented, italic — an aside in the theatrical
+   sense, said half to himself. It appears perhaps twice in twelve scenes, and
+   that rarity is the whole effect. */
+.craft-quiz-reply-aside {
+  border-top: 1px solid rgba(214, 178, 106, 0.22);
+  color: rgba(226, 208, 172, 0.78);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(12.5px, 0.92vw, 14px);
+  font-style: italic;
+  line-height: 1.5;
+  margin-top: 10px;
+  padding-top: 9px;
+}
+
+.craft-quiz-reply-aside span {
+  color: rgba(224, 186, 116, 0.85);
+  font-style: normal;
+  margin-right: 3px;
+}
+
+/* Arrives a moment after the reply, matching the pause before he says it —
+   the eye should not find it before the ear does. */
+@media (prefers-reduced-motion: no-preference) {
+  .craft-quiz-reply-aside {
+    animation: craft-aside-in 520ms 900ms both ease-out;
+  }
+}
+
+@keyframes craft-aside-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

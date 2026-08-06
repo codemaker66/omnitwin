@@ -8,6 +8,7 @@
 //
 //   pnpm --filter @omnitwin/web voice:generate            (priced dry run)
 //   pnpm --filter @omnitwin/web voice:generate -- --write (spends credits)
+//   pnpm --filter @omnitwin/web voice:generate -- --prune (delete orphaned audio)
 //
 // It costs money to run, so it REFUSES TO SPEND unless given --write. The bare
 // invocation prices the job: how many characters each section will consume and
@@ -18,7 +19,7 @@
 // ---------------------------------------------------------------------------
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +30,7 @@ const MANIFEST = join(OUT_DIR, "manifest.json");
 const CONFIG = JSON.parse(readFileSync(join(HERE, "voice.config.json"), "utf8"));
 
 const WRITE = process.argv.includes("--write");
+const PRUNE = process.argv.includes("--prune");
 const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length);
 
 /** The key is read here and nowhere else, and is never logged. */
@@ -55,6 +57,7 @@ function readApiKey() {
 async function collectCorpus() {
   const model = await import("../../src/features/trades-house/craft-quiz-model.ts");
   const lines = await import("../../src/features/trades-house/convener/convener-lines.ts");
+  const observations = await import("../../src/features/trades-house/convener/convener-observations.ts");
 
   const corpus = [];
   const add = (section, id, text) => {
@@ -76,6 +79,7 @@ async function collectCorpus() {
   lines.CONVENER_ACKNOWLEDGEMENTS.forEach((t, i) => { add("acknowledgement", `ack-${i + 1}`, t); });
   lines.CONVENER_POKES.forEach((t, i) => { add("poke", `poke-${i + 1}`, t); });
   lines.CONVENER_IDLE_MURMURS.forEach((t, i) => { add("idle", `idle-${i + 1}`, t); });
+  observations.CONVENER_OBSERVATIONS.forEach((t, i) => { add("observation", `observation-${i + 1}`, t); });
   add("doze", "doze", lines.CONVENER_DOZE);
   add("wake", "wake", lines.CONVENER_WAKE);
 
@@ -169,6 +173,28 @@ async function main() {
     + String(totalChars).padStart(9)
     + String(billChars).padStart(9),
   );
+
+  // Audio for a line that no longer exists in the corpus. The generator adds
+  // but never removed, so deleting a line left its mp3 shipping to every
+  // visitor forever — dead weight nobody would notice was there. Skipped under
+  // --only, where "not in this section" looks exactly like an orphan.
+  if (ONLY === undefined) {
+    const wanted = new Set(corpus.map((entry) => `${hashOf(entry.speechText)}.mp3`));
+    const orphanEntries = Object.entries(manifest.entries).filter(([, e]) => !wanted.has(e.file));
+    const orphanFiles = readdirSync(OUT_DIR).filter((f) => f.endsWith(".mp3") && !wanted.has(f));
+    if (orphanEntries.length > 0 || orphanFiles.length > 0) {
+      console.log(`\norphaned by deleted lines: ${String(orphanFiles.length)} file(s)`);
+      for (const [, e] of orphanEntries) console.log(`  ${e.id}  "${e.displayText.slice(0, 46)}…"`);
+      if (PRUNE) {
+        for (const [hash] of orphanEntries) delete manifest.entries[hash];
+        for (const f of orphanFiles) rmSync(join(OUT_DIR, f));
+        writeFileSync(MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`);
+        console.log("  removed.");
+      } else {
+        console.log("  re-run with --prune to remove them (deletes files, costs nothing).");
+      }
+    }
+  }
 
   if (!WRITE) {
     console.log(`\nDry run. ${todo.length} line(s) would be generated, costing ~${billChars} characters.`);
