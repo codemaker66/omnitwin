@@ -2511,6 +2511,24 @@
   display: none;
 }
 
+/* Compact mode caps the frame at 76px because on the question screen he is a
+   thumbnail BESIDE a speech bubble. Here there is no bubble and he is the
+   subject, so the cap is lifted and the row is centred — otherwise he sits
+   thumbnail-sized against the left edge of his own deliberation. */
+.craft-quiz-weighing .convener {
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+/* `.convener.is-compact .convener-frame` is (0,3,0) and unconditional, so a
+   (0,2,0) override loses no matter where it sits. Match the specificity — the
+   third time today that a page-scoped rule quietly beat a scoped one here. */
+.craft-quiz-weighing .convener.is-compact .convener-frame {
+  max-width: min(200px, 54vw);
+  width: 100%;
+}
+
 .craft-weighing-chain {
   display: flex;
   gap: 14px;
@@ -2588,5 +2606,10 @@
 @media (min-width: 980px) {
   .craft-weighing-portrait {
     width: clamp(300px, 24vw, 400px);
+  }
+
+  .craft-quiz-weighing .convener.is-compact .convener-frame,
+  .craft-quiz-weighing .convener-frame {
+    max-width: none;
   }
 }
