@@ -300,7 +300,6 @@ function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
       <a className="craft-result-introduction" href={buildCraftIntroductionMailto(winner.craftId)}>Request an introduction</a>
       <button type="button" className="craft-result-retake" onClick={onRetake}>Retake the questions</button>
       <a className="craft-result-leaflet" href="/trades-house/leaflet">View the visitor leaflet</a>
-      <div className="craft-result-building" aria-hidden="true" />
       <p className="craft-result-signoff">Host here · belong here</p>
     </section>
   );
