@@ -171,6 +171,15 @@ def test_a_chair_in_one_view_cannot_smear_the_shared_floor():
     print(f"  contaminated-region error: {err:.1f}/255 "
           f"(rejected {report['rejected_frac'] * 100:.1f}% of samples)")
     assert err < 12.0, f"the chair leaked into the shared floor: {err:.1f}"
+    assert np.array_equal(report["counts"], report["contributor_counts"])
+    assert np.all(report["retained_counts"] <= report["eligible_counts"])
+    assert np.all(report["contributor_counts"] <= report["eligible_counts"])
+    assert np.any(report["contributor_counts"] < report["eligible_counts"])
+    assert report["eligible_sample_count"] == int(report["eligible_counts"].sum())
+    assert report["retained_sample_count"] == int(report["retained_counts"].sum())
+    assert report["rejected_sample_count"] == (
+        report["eligible_sample_count"] - report["retained_sample_count"]
+    )
 
 
 def test_moving_specular_highlights_are_suppressed():
@@ -214,6 +223,282 @@ def test_moving_specular_highlights_are_suppressed():
     print(f"  worst highlight-region error: {worst:.1f}/255 "
           f"(rejected {report['rejected_frac'] * 100:.1f}% of samples)")
     assert worst < 10.0, f"chandelier reflections survived fusion: {worst:.1f}"
+
+
+def test_per_source_sheen_is_harmonised_when_opted_in():
+    # A polished floor can carry a smooth, view-dependent gain ramp.  This is
+    # a synthetic mechanism test, not evidence that every real bright patch
+    # has this cause.  Explicit harmonisation should remove that ramp without
+    # being silently enabled for ordinary runs.
+    lit = []
+    for i, (img, C) in enumerate(PANOS):
+        altered = img.astype(np.float32).copy()
+        dirs = ext.world_equirect_band_dirs(W, H, 0, H).astype(np.float64)
+        down = dirs[..., 2] < -1e-9
+        floor_dirs = dirs[down]
+        distance = (Z_FLOOR - C[2]) / floor_dirs[:, 2]
+        points = C[None, :] + distance[:, None] * floor_dirs
+        offset = np.hypot(points[:, 0] - C[0], points[:, 1] - C[1])
+        gain = 1.0 + 0.42 * np.clip(offset / 1.6, 0, 1) * (
+            0.6 + 0.4 * ((i % 3) / 2)
+        )
+        floor_pixels = altered[down]
+        altered[down] = np.clip(floor_pixels * gain[:, None], 0, 255)
+        lit.append((altered, C))
+
+    truth = _truth_raster()
+    plain, _ = fa.accumulate_floor_atlas(
+        lit, GRID, z_floor=Z_FLOOR, harmonise=False
+    )
+    fixed, report = fa.accumulate_floor_atlas(
+        lit, GRID, z_floor=Z_FLOOR, harmonise=True
+    )
+    seen = report["counts"] >= 2
+
+    def residual_structure(atlas):
+        atlas_low = ndimage.uniform_filter(atlas.mean(axis=2), 25)
+        truth_low = ndimage.uniform_filter(truth.mean(axis=2), 25)
+        return float((atlas_low - truth_low)[seen].std())
+
+    plain_residual = residual_structure(plain)
+    fixed_residual = residual_structure(fixed)
+    print(
+        "  residual sheen structure: "
+        f"unharmonised {plain_residual:.2f} -> harmonised {fixed_residual:.2f}"
+    )
+    assert fixed_residual < plain_residual * 0.55
+    assert report["harmonisation_enabled"] is True
+    diagnostics = report["harmonisation_diagnostics"]
+    assert len(diagnostics) == len(PANOS)
+    assert all(len(item["channels"]) == 3 for item in diagnostics)
+    assert all(
+        0.65 <= channel["gain_min"] <= channel["gain_max"] <= 1.55
+        for item in diagnostics
+        for channel in item["channels"]
+    )
+
+
+def test_harmonisation_leaves_unsupported_incidence_bins_exactly_neutral():
+    grid = fa.AtlasGrid(origin_xy=(-3.0, -3.0), mm_per_px=50.0,
+                        width=120, height=120)
+    camera = np.array([0.0, 0.0, 1.5])
+    xs, ys = grid.pixel_centres_world()
+    distance = np.sqrt(xs * xs + ys * ys + camera[2] ** 2)
+    bins = np.clip(
+        (camera[2] / distance * fa.N_HARMONISATION_BINS).astype(np.int32),
+        0,
+        fa.N_HARMONISATION_BINS - 1,
+    )
+    available = [
+        index for index in range(1, fa.N_HARMONISATION_BINS - 1)
+        if np.count_nonzero(bins == index) >= 80
+        and np.count_nonzero(bins == index + 1) >= 10
+    ]
+    assert available
+    supported_bin = available[0]
+    unsupported_bin = supported_bin + 1
+
+    seen = np.zeros((grid.height, grid.width), dtype=bool)
+    supported_pixels = np.flatnonzero(bins == supported_bin)[:80]
+    unsupported_pixels = np.flatnonzero(bins == unsupported_bin)[:10]
+    seen.flat[supported_pixels] = True
+    seen.flat[unsupported_pixels] = True
+    rgb = np.full((grid.height, grid.width, 3), 100.0, dtype=np.float32)
+    consensus = np.full_like(rgb, 150.0)
+
+    corrected, diagnostic = fa._harmonise_to_consensus(
+        rgb, seen, consensus, grid, camera, z_floor=0.0
+    )
+    for channel in diagnostic["channels"]:
+        curve = np.asarray(channel["gain_curve"])
+        assert channel["supported_bins"] == 1
+        assert curve[supported_bin] > 1.0
+        assert np.all(curve[np.arange(curve.size) != supported_bin] == 1.0)
+    assert np.all(corrected.reshape(-1, 3)[unsupported_pixels] == 100.0)
+
+
+def test_per_source_height_error_is_aligned_out_when_opted_in():
+    # A per-sweep floor-height error creates a coherent radial registration
+    # error whose magnitude grows at grazing incidence.  This synthetic test
+    # asks the one-parameter alignment model to recover planted z errors.
+    rng = np.random.default_rng(5)
+    errors = rng.uniform(-0.018, 0.018, size=len(PANOS))
+    displaced = [
+        (img, np.array([C[0], C[1], C[2] + error]))
+        for (img, C), error in zip(PANOS, errors)
+    ]
+
+    truth = _truth_raster()
+    naive, _ = fa.accumulate_floor_atlas(
+        displaced, GRID, z_floor=Z_FLOOR, align=False
+    )
+    class TransparentOccluder:
+        def __init__(self):
+            self.floor_z_is_fixed = True
+            self.exempt_z_is_fixed = True
+
+        def blocked(self, _origin, points, z_exempt_below):
+            self.floor_z_is_fixed &= bool(
+                np.allclose(points[:, 2], Z_FLOOR, atol=1e-12)
+            )
+            self.exempt_z_is_fixed &= bool(
+                abs(float(z_exempt_below) - (Z_FLOOR + 0.30)) < 1e-12
+            )
+            return np.zeros(points.shape[0], dtype=bool)
+
+    occluder = TransparentOccluder()
+    fixed, report = fa.accumulate_floor_atlas(
+        displaced, GRID, z_floor=Z_FLOOR, align=True, occluder=occluder
+    )
+    seen = report["counts"] >= 3
+    naive_corr = _fine_corr(naive, truth, seen)
+    fixed_corr = _fine_corr(fixed, truth, seen)
+    estimates = np.asarray(report["align_dz"], dtype=np.float64)
+    print(
+        "  detail corr with height errors: "
+        f"unaligned {naive_corr:.3f} -> aligned {fixed_corr:.3f} "
+        f"(recovered dz mm: {[round(v * 1000) for v in estimates]})"
+    )
+    assert fixed_corr > naive_corr + 0.05, (naive_corr, fixed_corr)
+    assert estimates.shape == errors.shape
+    # z_floor is adjusted to compensate for the altered camera z, so the
+    # compensation has the same sign as the planted camera-height error.
+    residual = np.abs(estimates - errors).mean()
+    assert residual < 0.012, f"dz estimates off by {residual * 1000:.1f} mm"
+    assert occluder.floor_z_is_fixed
+    assert occluder.exempt_z_is_fixed
+    decisions = report["alignment_estimates"]
+    assert len(decisions) == len(PANOS)
+    assert all(
+        decision["status"] in {"zero_best", "shift_accepted", "ambiguous_peak"}
+        for decision in decisions
+    ), decisions
+    assert any(decision["status"] == "shift_accepted" for decision in decisions)
+    assert all(
+        decision["accepted"] or decision["dz_m"] == 0.0
+        for decision in decisions
+    )
+    assert all(decision["valid_pixels"] >= 200 for decision in decisions), decisions
+
+
+def test_alignment_does_not_move_or_degrade_clean_sources():
+    truth = _truth_raster()
+    baseline, baseline_report = fa.accumulate_floor_atlas(
+        PANOS, GRID, z_floor=Z_FLOOR, align=False
+    )
+    aligned, aligned_report = fa.accumulate_floor_atlas(
+        PANOS, GRID, z_floor=Z_FLOOR, align=True
+    )
+    seen = aligned_report["counts"] >= 3
+    baseline_corr = _fine_corr(baseline, truth, seen)
+    aligned_corr = _fine_corr(aligned, truth, seen)
+    estimates = np.asarray(aligned_report["align_dz"], dtype=np.float64)
+
+    assert np.max(np.abs(estimates)) <= 0.003
+    assert aligned_corr >= baseline_corr - 0.002
+    assert (
+        aligned_report["rejected_frac"]
+        <= baseline_report["rejected_frac"] + 0.005
+    )
+
+
+def test_combined_opt_ins_do_not_degrade_clean_sources():
+    truth = _truth_raster()
+    baseline, _ = fa.accumulate_floor_atlas(PANOS, GRID, z_floor=Z_FLOOR)
+    corrected, report = fa.accumulate_floor_atlas(
+        PANOS,
+        GRID,
+        z_floor=Z_FLOOR,
+        align=True,
+        harmonise=True,
+    )
+    seen = report["counts"] >= 3
+    assert _fine_corr(corrected, truth, seen) >= _fine_corr(
+        baseline, truth, seen
+    ) - 0.005
+    assert np.max(np.abs(report["align_dz"])) <= 0.003
+
+
+def test_alignment_and_harmonisation_are_opt_in():
+    _atlas, report = fa.accumulate_floor_atlas(PANOS, GRID, z_floor=Z_FLOOR)
+    assert report["alignment_enabled"] is False
+    assert report["harmonisation_enabled"] is False
+    assert report["align_dz"] == [0.0] * len(PANOS)
+    assert report["harmonisation_diagnostics"] == []
+
+
+def test_alignment_reference_samples_exact_coarse_centres():
+    for mm_per_px, width, height in ((5.0, 40, 30), (12.0, 32, 24)):
+        grid = fa.AtlasGrid(
+            origin_xy=(-2.0, 3.0),
+            mm_per_px=mm_per_px,
+            width=width,
+            height=height,
+        )
+        fine_x, fine_y = grid.pixel_centres_world()
+        consensus = np.stack([fine_x, fine_y, fine_x + fine_y], axis=2)
+        coarse, reference, reference_seen = fa._coarse_alignment_reference(
+            consensus, np.ones((height, width), dtype=bool), grid
+        )
+        coarse_x, coarse_y = coarse.pixel_centres_world()
+        assert np.allclose(reference[..., 0], coarse_x, atol=1e-7)
+        assert np.allclose(reference[..., 1], coarse_y, atol=1e-7)
+        assert np.all(reference_seen)
+
+
+def test_alignment_refuses_when_zero_candidate_has_no_texture_score():
+    flat = np.full((H, W, 3), 128, dtype=np.uint8)
+    consensus = np.full((GRID.height, GRID.width, 3), 128, dtype=np.float32)
+    decision = fa._estimate_dz(
+        flat,
+        CENTRES[0],
+        GRID,
+        Z_FLOOR,
+        consensus,
+        np.ones((GRID.height, GRID.width), dtype=bool),
+        self_blind_m=0.80,
+        max_incidence_deg=80.0,
+    )
+    assert decision["dz_m"] == 0.0
+    assert decision["accepted"] is False
+    assert decision["status"] == "zero_candidate_unscorable"
+
+
+def test_lazy_loader_decode_counts_are_bounded_and_explicit():
+    small_grid = fa.AtlasGrid(
+        origin_xy=(-0.4, -0.4), mm_per_px=10.0, width=80, height=80
+    )
+    for align, harmonise, expected_calls in (
+        (False, False, 2),
+        (False, True, 3),
+        (True, False, 4),
+        (True, True, 5),
+    ):
+        calls = [0, 0]
+
+        def loader(index):
+            def load():
+                calls[index] += 1
+                return PANOS[index][0]
+
+            return load
+
+        sources = [
+            (loader(index), PANOS[index][1])
+            for index in range(2)
+        ]
+        fa.accumulate_floor_atlas(
+            sources,
+            small_grid,
+            z_floor=Z_FLOOR,
+            align=align,
+            harmonise=harmonise,
+        )
+        assert calls == [expected_calls, expected_calls], (
+            align,
+            harmonise,
+            calls,
+        )
 
 
 def test_unobserved_floor_is_reported_not_invented():

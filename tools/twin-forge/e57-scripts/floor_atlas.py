@@ -1,5 +1,5 @@
-"""The Floor Atlas — one metrically-true orthophoto of a building's floor,
-super-resolved by fusing every scan that ever saw it.
+"""The Floor Atlas — one nominal metric-grid orthophoto of a floor plane,
+fused from the supplied world-oriented source images.
 
 WHY THIS EXISTS (the reframe that ends the patching):
 Filling a tripod hole as image repair is capped by the resolution of the
@@ -14,12 +14,12 @@ depth ambiguity — so many poor looks fuse into one better than all of them.
 
 The fusion target is therefore not another panorama. It is a single shared
 surface in WORLD METRES that every viewpoint can sample:
-  * every node's nadir fills from the same atlas — no per-node donor
-    lottery, no dead centres, no seams between viewpoints;
+  * every node's nadir can read from the same atlas rather than selecting a
+    different donor image independently;
   * the atlas is itself a product: a photographic, to-scale floor plan
     (the incumbents ship schematic line drawings);
-  * it is the substrate a venue planner actually wants — real layouts on
-    real measured floor.
+  * it can become a useful planning substrate after its source poses, plane,
+    output, and intended use have been reviewed.
 
 TRUTH DISCIPLINE (Foundry rule: never turn missing observations into
 captured fact). Coverage and per-pixel observation counts are returned
@@ -170,6 +170,380 @@ def project_source_to_atlas(
     )
 
 
+def _coarse_alignment_reference(
+    consensus: np.ndarray,
+    seen_any: np.ndarray,
+    grid: AtlasGrid,
+) -> tuple[AtlasGrid, np.ndarray, np.ndarray]:
+    """Sample a fine reference exactly at a coarser grid's pixel centres."""
+    from scipy import ndimage
+
+    target_factor = max(1, int(round(24.0 / grid.mm_per_px)))
+    largest_factor = max(1, min(grid.width // 8, grid.height // 8))
+    factor = min(target_factor, largest_factor)
+    coarse = AtlasGrid(
+        origin_xy=grid.origin_xy,
+        mm_per_px=grid.mm_per_px * factor,
+        width=max(1, grid.width // factor),
+        height=max(1, grid.height // factor),
+    )
+
+    # Coarse pixel (r, c) is centred at fine coordinate
+    # ((r + 0.5) * factor - 0.5, (c + 0.5) * factor - 0.5).
+    # Sampling from index zero shifts an odd-factor grid by (factor-1)/2
+    # fine pixels and produces a false z correction.
+    rows = (np.arange(coarse.height, dtype=np.float64) + 0.5) * factor - 0.5
+    cols = (np.arange(coarse.width, dtype=np.float64) + 0.5) * factor - 0.5
+    rr, cc = np.meshgrid(rows, cols, indexing="ij")
+    coordinates = np.stack([rr, cc])
+    reference = np.stack(
+        [
+            ndimage.map_coordinates(
+                consensus[..., channel], coordinates, order=1, mode="nearest"
+            )
+            for channel in range(3)
+        ],
+        axis=2,
+    ).astype(np.float32)
+    reference_seen = ndimage.map_coordinates(
+        seen_any.astype(np.float32), coordinates, order=0, mode="nearest"
+    ) > 0.5
+    return coarse, reference, reference_seen
+
+
+def _high_pass_correlation(
+    sample: np.ndarray,
+    reference: np.ndarray,
+    mask: np.ndarray,
+) -> float | None:
+    from scipy import ndimage
+
+    if int(mask.sum()) < 200:
+        return None
+    sample_lum = sample.mean(axis=2)
+    reference_lum = reference.mean(axis=2)
+    mask_float = mask.astype(np.float32)
+    local_support = ndimage.uniform_filter(mask_float, 9)
+    denominator = np.maximum(local_support, 1e-6)
+    sample_smooth = ndimage.uniform_filter(sample_lum * mask_float, 9) / denominator
+    reference_smooth = (
+        ndimage.uniform_filter(reference_lum * mask_float, 9) / denominator
+    )
+    sample_hp = sample_lum - sample_smooth
+    reference_hp = reference_lum - reference_smooth
+    left = sample_hp[mask]
+    right = reference_hp[mask]
+    left = left - left.mean()
+    right = right - right.mean()
+    denominator = float(
+        np.sqrt((left * left).sum() * (right * right).sum())
+    )
+    if denominator <= 1e-9:
+        return None
+    return float((left * right).sum() / denominator)
+
+
+def _camera_with_z_correction(C: np.ndarray, dz: float) -> np.ndarray:
+    """Apply dz to camera height while leaving the physical floor fixed."""
+    corrected = np.asarray(C, dtype=np.float64).copy()
+    corrected[2] -= dz
+    return corrected
+
+
+def _estimate_dz(
+    img,
+    C: np.ndarray,
+    grid: AtlasGrid,
+    z_floor: float,
+    consensus: np.ndarray,
+    seen_any: np.ndarray,
+    self_blind_m: float,
+    max_incidence_deg: float,
+    occluder=None,
+    z_exempt_m: float = 0.30,
+    span_m: float = 0.030,
+    step_m: float = 0.003,
+    min_score_gain: float = 0.002,
+    min_peak_margin: float = 0.0005,
+) -> dict:
+    """Estimate one source's floor-plane z correction from texture agreement."""
+    from scipy import ndimage
+
+    coarse, reference, reference_seen = _coarse_alignment_reference(
+        consensus, seen_any, grid
+    )
+    raster = np.asarray(img() if callable(img) else img)
+    steps = int(round(span_m / step_m))
+    candidate_steps = sorted(range(-steps, steps + 1), key=lambda k: (abs(k), k))
+    zero_rgb, zero_weight = _sample_source(
+        raster,
+        _camera_with_z_correction(C, 0.0),
+        coarse,
+        z_floor,
+        self_blind_m,
+        max_incidence_deg,
+        occluder,
+        z_exempt_m,
+    )
+    fixed_support = (zero_weight > 0) & reference_seen
+    fixed_support = ndimage.binary_erosion(
+        fixed_support, iterations=4, border_value=0
+    )
+    valid_pixels = int(fixed_support.sum())
+    refusal = {
+        "dz_m": 0.0,
+        "zero_score": None,
+        "best_score": None,
+        "score_gain": None,
+        "peak_margin": None,
+        "valid_pixels": valid_pixels,
+        "boundary_hit": False,
+        "accepted": False,
+        "status": "insufficient_fixed_support",
+    }
+    if valid_pixels < 200:
+        return refusal
+
+    scores: list[tuple[float, float]] = []
+
+    for candidate in candidate_steps:
+        dz = candidate * step_m
+        if candidate == 0:
+            rgb, weight = zero_rgb, zero_weight
+        else:
+            corrected_camera = _camera_with_z_correction(C, dz)
+            rgb, weight = _sample_source(
+                raster,
+                corrected_camera,
+                coarse,
+                z_floor,
+                self_blind_m,
+                max_incidence_deg,
+                occluder,
+                z_exempt_m,
+            )
+        if np.any(fixed_support & (weight <= 0)):
+            continue
+        score = _high_pass_correlation(rgb, reference, fixed_support)
+        if score is None:
+            continue
+        scores.append((dz, score))
+
+    zero_matches = [score for dz, score in scores if dz == 0.0]
+    if not zero_matches:
+        refusal["status"] = "zero_candidate_unscorable"
+        return refusal
+    zero_score = zero_matches[0]
+    ranked = sorted(scores, key=lambda item: (-item[1], abs(item[0]), item[0]))
+    best_dz, best_score = ranked[0]
+    second_score = ranked[1][1] if len(ranked) > 1 else None
+    score_gain = best_score - zero_score
+    peak_margin = best_score - second_score if second_score is not None else None
+    boundary_hit = abs(best_dz) >= span_m - step_m * 0.5
+    result = {
+        **refusal,
+        "zero_score": float(zero_score),
+        "best_score": float(best_score),
+        "score_gain": float(score_gain),
+        "peak_margin": float(peak_margin) if peak_margin is not None else None,
+        "boundary_hit": bool(boundary_hit),
+    }
+    if best_dz == 0.0:
+        result.update({"accepted": True, "status": "zero_best"})
+        return result
+    if boundary_hit:
+        result["status"] = "best_at_search_boundary"
+        return result
+    if score_gain < min_score_gain:
+        result["status"] = "insufficient_score_gain"
+        return result
+    if peak_margin is None or peak_margin < min_peak_margin:
+        result["status"] = "ambiguous_peak"
+        return result
+    result.update(
+        {"dz_m": float(best_dz), "accepted": True, "status": "shift_accepted"}
+    )
+    return result
+
+
+N_HARMONISATION_BINS = 24
+
+
+def _harmonise_to_consensus(
+    rgb: np.ndarray,
+    seen: np.ndarray,
+    consensus: np.ndarray,
+    grid: AtlasGrid,
+    C: np.ndarray,
+    z_floor: float,
+) -> tuple[np.ndarray, dict]:
+    """Fit a bounded per-channel gain curve against viewing incidence."""
+    xs, ys = grid.pixel_centres_world()
+    dz = float(z_floor - C[2])
+    distance = np.sqrt((xs - C[0]) ** 2 + (ys - C[1]) ** 2 + dz * dz)
+    overhead = np.abs(dz) / np.maximum(distance, 1e-9)
+    bin_index = np.clip(
+        (overhead * N_HARMONISATION_BINS).astype(np.int32),
+        0,
+        N_HARMONISATION_BINS - 1,
+    )
+    valid = seen & (consensus.sum(axis=2) > 1e-3) & (rgb.sum(axis=2) > 1e-3)
+    diagnostics = {
+        "valid_pixels": int(valid.sum()),
+        "channels": [],
+    }
+    if not np.any(valid):
+        diagnostics["channels"] = [
+            {
+                "channel": channel,
+                "supported_bins": 0,
+                "bin_counts": [0] * N_HARMONISATION_BINS,
+                "gain_min": 1.0,
+                "gain_max": 1.0,
+                "gain_curve": [1.0] * N_HARMONISATION_BINS,
+            }
+            for channel in ("r", "g", "b")
+        ]
+        return rgb, diagnostics
+
+    out = rgb.copy()
+    valid_bins = bin_index[valid]
+    for channel_index, channel_name in enumerate(("r", "g", "b")):
+        sample = rgb[..., channel_index][valid]
+        reference = consensus[..., channel_index][valid]
+        numerator = np.bincount(
+            valid_bins, weights=reference, minlength=N_HARMONISATION_BINS
+        )
+        denominator = np.bincount(
+            valid_bins, weights=sample, minlength=N_HARMONISATION_BINS
+        )
+        counts = np.bincount(valid_bins, minlength=N_HARMONISATION_BINS)
+        supported = counts >= 40
+        with np.errstate(divide="ignore", invalid="ignore"):
+            curve = np.where(
+                supported, numerator / np.maximum(denominator, 1e-6), 1.0
+            )
+        curve = np.clip(np.nan_to_num(curve, nan=1.0), 0.65, 1.55)
+        smoothing_kernel = np.array([0.15, 0.7, 0.15])
+        curve = np.convolve(
+            np.pad(curve, 1, mode="edge"), smoothing_kernel, mode="valid"
+        )
+        # Smoothing may borrow evidence into a neighbouring bin that had no
+        # support of its own.  That would silently apply an inferred gain to
+        # uncalibrated incidence angles.  Keep every unsupported bin neutral.
+        curve[~supported] = 1.0
+        out[..., channel_index] = (
+            rgb[..., channel_index] * curve[bin_index].astype(np.float32)
+        )
+        diagnostics["channels"].append(
+            {
+                "channel": channel_name,
+                "supported_bins": int(supported.sum()),
+                "bin_counts": [int(value) for value in counts],
+                "gain_min": float(curve.min()),
+                "gain_max": float(curve.max()),
+                "gain_curve": [float(value) for value in curve],
+            }
+        )
+    out[~seen] = 0.0
+    return out, diagnostics
+
+
+def _accumulate_statistics(
+    sources,
+    grid: AtlasGrid,
+    z_floor: float,
+    dzs: list[float],
+    self_blind_m: float,
+    max_incidence_deg: float,
+    occluder,
+    z_exempt_m: float,
+    harmonisation_reference: np.ndarray | None = None,
+    harmonisation_diagnostics: list[dict] | None = None,
+):
+    shape = (grid.height, grid.width)
+    acc = np.zeros(shape + (3,), dtype=np.float64)
+    wsum = np.zeros(shape, dtype=np.float64)
+    lum_acc = np.zeros(shape, dtype=np.float64)
+    lum_sq = np.zeros(shape, dtype=np.float64)
+    counts = np.zeros(shape, dtype=np.int32)
+    for (img, C), dz in zip(sources, dzs):
+        corrected_camera = _camera_with_z_correction(C, dz)
+        rgb, weight = _sample_source(
+            img,
+            corrected_camera,
+            grid,
+            z_floor,
+            self_blind_m,
+            max_incidence_deg,
+            occluder,
+            z_exempt_m,
+        )
+        seen = weight > 0
+        if harmonisation_reference is not None:
+            rgb, diagnostic = _harmonise_to_consensus(
+                rgb,
+                seen,
+                harmonisation_reference,
+                grid,
+                corrected_camera,
+                z_floor,
+            )
+            if harmonisation_diagnostics is not None:
+                harmonisation_diagnostics.append(diagnostic)
+        counts += seen
+        acc += rgb * weight[..., None]
+        wsum += weight
+        luminance = rgb @ LUM_W
+        lum_acc += luminance * weight
+        lum_sq += (luminance * luminance) * weight
+    return acc, wsum, lum_acc, lum_sq, counts
+
+
+def _finish_statistics(acc, wsum, lum_acc, lum_sq, need_mean_rgb: bool):
+    safe_w = np.where(wsum > 0, wsum, 1.0)
+    mean_rgb = None
+    if need_mean_rgb:
+        mean_rgb = np.empty(acc.shape, dtype=np.float32)
+        np.divide(
+            acc,
+            safe_w[..., None],
+            out=mean_rgb,
+            casting="unsafe",
+        )
+    mean_lum = lum_acc / safe_w
+    variance = np.maximum(lum_sq / safe_w - mean_lum * mean_lum, 0.0)
+    return mean_rgb, mean_lum, np.sqrt(variance), safe_w
+
+
+def _leave_one_out_consensus(
+    acc: np.ndarray,
+    wsum: np.ndarray,
+    own_rgb: np.ndarray,
+    own_weight: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Remove one source from the global weighted consensus, row-bounded."""
+    other_weight = wsum - own_weight
+    supported = other_weight > 1e-12
+    consensus = np.zeros(acc.shape, dtype=np.float32)
+    rows_per_chunk = 128
+    for row0 in range(0, acc.shape[0], rows_per_chunk):
+        row1 = min(row0 + rows_per_chunk, acc.shape[0])
+        row_slice = slice(row0, row1)
+        numerator = (
+            acc[row_slice]
+            - own_rgb[row_slice] * own_weight[row_slice, ..., None]
+        )
+        np.divide(
+            numerator,
+            other_weight[row_slice, ..., None],
+            out=consensus[row_slice],
+            where=supported[row_slice, ..., None],
+            casting="unsafe",
+        )
+    return consensus, supported
+
+
 def accumulate_floor_atlas(
     sources: list[tuple[np.ndarray, np.ndarray]],
     grid: AtlasGrid,
@@ -177,9 +551,12 @@ def accumulate_floor_atlas(
     self_blind_m: float = 0.80,
     max_incidence_deg: float = 80.0,
     occluder=None,
+    z_exempt_m: float = 0.30,
     robust_sigma: float = 2.0,
     specular_sigma: float = 0.5,
     min_robust_sources: int = 3,
+    harmonise: bool = False,
+    align: bool = False,
 ) -> tuple[np.ndarray, dict]:
     """Fuse many panoramas into one super-resolved orthophoto.
 
@@ -198,41 +575,133 @@ def accumulate_floor_atlas(
     sub-pixel phase, so their weighted sum reconstructs detail no single
     source carries.
 
-    Returns (atlas float32 HxWx3, report). The report carries `observed`
-    (bool), `counts` (int per pixel), `covered_frac` and `rejected_frac` —
-    unobserved floor is FLAGGED, never invented.
+    Returns (atlas float32 HxWx3, report). `retained_counts` records samples
+    retained by the robust gate. `counts`/`contributor_counts` describe support
+    behind the delivered pixel, restoring eligible contributors only where an
+    all-rejected pixel falls back to its ungated mean. `eligible_counts`
+    preserves pre-rejection geometric support. Unobserved floor is FLAGGED,
+    never invented.
     """
     if not sources:
         raise ValueError("no sources")
-
-    shape = (grid.height, grid.width)
-    acc = np.zeros(shape + (3,), dtype=np.float64)
-    wsum = np.zeros(shape, dtype=np.float64)
-    lum_acc = np.zeros(shape, dtype=np.float64)
-    lum_sq = np.zeros(shape, dtype=np.float64)
-    counts = np.zeros(shape, dtype=np.int32)
 
     # Deliberately NOT caching the per-source rasters: at Grand Hall scale
     # (2600x1250 px, ~50 sources) that stack is ~2.5 GB. Re-sampling in
     # pass 2 trades compute for a hard memory bound, which is what lets this
     # scale to a whole building.
-    for img, C in sources:
-        rgb, w = _sample_source(
-            img, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder
-        )
-        seen = w > 0
-        counts += seen
-        acc += rgb * w[..., None]
-        wsum += w
-        lum = rgb @ LUM_W
-        lum_acc += lum * w
-        lum_sq += (lum * lum) * w
+    zero_dzs = [0.0] * len(sources)
+    statistics = _accumulate_statistics(
+        sources,
+        grid,
+        z_floor,
+        zero_dzs,
+        self_blind_m,
+        max_incidence_deg,
+        occluder,
+        z_exempt_m,
+    )
+    acc, wsum, lum_acc, lum_sq, eligible_counts = statistics
 
-    observed = counts > 0
-    safe_w = np.where(wsum > 0, wsum, 1.0)
-    mean_lum = lum_acc / safe_w
-    var_lum = np.maximum(lum_sq / safe_w - mean_lum * mean_lum, 0.0)
-    sigma = np.sqrt(var_lum)
+    dzs = zero_dzs
+    alignment_estimates = [
+        {
+            "dz_m": 0.0,
+            "zero_score": None,
+            "best_score": None,
+            "score_gain": None,
+            "peak_margin": None,
+            "valid_pixels": 0,
+            "boundary_hit": False,
+            "accepted": False,
+            "status": "disabled",
+        }
+        for _source in sources
+    ]
+    if align:
+        alignment_estimates = []
+        for img, C in sources:
+            raster = np.asarray(img() if callable(img) else img)
+            own_rgb, own_weight = _sample_source(
+                raster,
+                C,
+                grid,
+                z_floor,
+                self_blind_m,
+                max_incidence_deg,
+                occluder,
+                z_exempt_m,
+            )
+            consensus, seen_by_another = _leave_one_out_consensus(
+                acc, wsum, own_rgb, own_weight
+            )
+            estimate = _estimate_dz(
+                raster,
+                C,
+                grid,
+                z_floor,
+                consensus,
+                seen_by_another,
+                self_blind_m,
+                max_incidence_deg,
+                occluder,
+                z_exempt_m=z_exempt_m,
+            )
+            alignment_estimates.append(estimate)
+            del raster, own_rgb, own_weight, consensus, seen_by_another
+        dzs = [float(estimate["dz_m"]) for estimate in alignment_estimates]
+        del acc, wsum, lum_acc, lum_sq, eligible_counts, statistics
+        statistics = _accumulate_statistics(
+            sources,
+            grid,
+            z_floor,
+            dzs,
+            self_blind_m,
+            max_incidence_deg,
+            occluder,
+            z_exempt_m,
+        )
+        acc, wsum, lum_acc, lum_sq, eligible_counts = statistics
+
+    mean_rgb, mean_lum, sigma, safe_w = _finish_statistics(
+        acc, wsum, lum_acc, lum_sq, need_mean_rgb=harmonise
+    )
+    harmonisation_reference = mean_rgb
+    harmonisation_diagnostics: list[dict] = []
+    if harmonise:
+        del mean_lum, sigma, safe_w
+        del acc, wsum, lum_acc, lum_sq, eligible_counts, statistics
+        statistics = _accumulate_statistics(
+            sources,
+            grid,
+            z_floor,
+            dzs,
+            self_blind_m,
+            max_incidence_deg,
+            occluder,
+            z_exempt_m,
+            harmonisation_reference,
+            harmonisation_diagnostics,
+        )
+        acc, wsum, lum_acc, lum_sq, eligible_counts = statistics
+        _unused_rgb, mean_lum, sigma, safe_w = _finish_statistics(
+            acc, wsum, lum_acc, lum_sq, need_mean_rgb=False
+        )
+
+    # Pass 2 needs the ungated RGB only for an all-rejected fallback. Convert
+    # that mean once to the output's float32 precision, then release the much
+    # larger float64 accumulator/weight pair before allocating robust buffers.
+    del wsum, lum_acc, lum_sq, statistics
+    ungated_mean = np.empty(acc.shape, dtype=np.float32)
+    np.divide(
+        acc,
+        safe_w[..., None],
+        out=ungated_mean,
+        casting="unsafe",
+    )
+    del acc, safe_w
+
+    observed = eligible_counts > 0
+    shape = (grid.height, grid.width)
 
     # --- pass 2: robust re-accumulation -----------------------------------
     acc2 = np.zeros(shape + (3,), dtype=np.float64)
@@ -246,42 +715,128 @@ def accumulate_floor_atlas(
     # a shadow or an occluder is rarer and less damaging than a blown highlight.
     dark_gate = np.maximum(robust_sigma * sigma, 6.0)
     bright_gate = np.maximum(specular_sigma * sigma, 4.0)
-    can_gate = counts >= min_robust_sources
+    can_gate = eligible_counts >= min_robust_sources
+    retained_counts = np.zeros(shape, dtype=np.int32)
     rejected = 0
     total = 0
-    for img, C in sources:
+    for (img, C), dz in zip(sources, dzs):
+        corrected_camera = _camera_with_z_correction(C, dz)
         rgb, w = _sample_source(
-            img, C, grid, z_floor, self_blind_m, max_incidence_deg, occluder
+            img,
+            corrected_camera,
+            grid,
+            z_floor,
+            self_blind_m,
+            max_incidence_deg,
+            occluder,
+            z_exempt_m,
         )
         seen = w > 0
         total += int(seen.sum())
+        if harmonisation_reference is not None:
+            rgb, _diagnostic = _harmonise_to_consensus(
+                rgb,
+                seen,
+                harmonisation_reference,
+                grid,
+                corrected_camera,
+                z_floor,
+            )
         signed = (rgb @ LUM_W) - mean_lum
         drop = seen & can_gate & (
             (signed > bright_gate) | (-signed > dark_gate)
         )
         rejected += int(drop.sum())
         keep_w = np.where(drop, 0.0, w)
+        retained_counts += keep_w > 0
         acc2 += rgb * keep_w[..., None]
         wsum2 += keep_w
+
+    # Do not carry the last source raster and full-resolution gate buffers
+    # into finalization. At room-scale grids those dead locals otherwise add
+    # hundreds of MiB alongside the atlas and robust accumulators.
+    del (
+        img,
+        C,
+        dz,
+        corrected_camera,
+        rgb,
+        w,
+        seen,
+        signed,
+        drop,
+        keep_w,
+        mean_lum,
+        sigma,
+        dark_gate,
+        bright_gate,
+        can_gate,
+        harmonisation_reference,
+        mean_rgb,
+    )
 
     # a pixel whose every sample was rejected falls back to the plain mean:
     # better an averaged observation than a hole we would have to invent
     fallback = observed & (wsum2 <= 0)
     atlas = np.zeros(shape + (3,), dtype=np.float32)
     good = wsum2 > 0
-    atlas[good] = (acc2[good] / wsum2[good][..., None]).astype(np.float32)
+    np.divide(
+        acc2,
+        wsum2[..., None],
+        out=atlas,
+        where=good[..., None],
+        casting="unsafe",
+    )
+    contributor_counts = retained_counts.copy()
     if np.any(fallback):
-        atlas[fallback] = (
-            acc[fallback] / safe_w[fallback][..., None]
-        ).astype(np.float32)
+        for row0 in range(0, shape[0], 128):
+            row1 = min(row0 + 128, shape[0])
+            row_slice = slice(row0, row1)
+            np.copyto(
+                atlas[row_slice],
+                ungated_mean[row_slice],
+                where=fallback[row_slice, ..., None],
+            )
+        contributor_counts[fallback] = eligible_counts[fallback]
+    del acc2, wsum2, good, ungated_mean
+
+    contributor_observed = contributor_counts > 0
+    eligible_sample_count = int(eligible_counts.sum(dtype=np.uint64))
+    retained_sample_count = int(retained_counts.sum(dtype=np.uint64))
+    rejected_sample_count = eligible_sample_count - retained_sample_count
+    if rejected_sample_count != rejected or eligible_sample_count != total:
+        raise RuntimeError("fusion sample accounting changed between passes")
 
     report = {
-        "observed": observed,
-        "counts": counts,
-        "covered_frac": float(observed.mean()),
-        "rejected_frac": (rejected / total) if total else 0.0,
-        "mean_looks": float(counts[observed].mean()) if observed.any() else 0.0,
-        "max_looks": int(counts.max()),
+        "observed": contributor_observed,
+        "counts": contributor_counts,
+        "contributor_counts": contributor_counts,
+        "retained_counts": retained_counts,
+        "eligible_counts": eligible_counts,
+        "alignment_enabled": bool(align),
+        "harmonisation_enabled": bool(harmonise),
+        "harmonisation_diagnostics": harmonisation_diagnostics,
+        "align_dz": [float(dz) for dz in dzs],
+        "alignment_estimates": alignment_estimates,
+        "covered_frac": float(contributor_observed.mean()),
+        "eligible_sample_count": eligible_sample_count,
+        "retained_sample_count": retained_sample_count,
+        "rejected_sample_count": rejected_sample_count,
+        "rejected_frac": (
+            rejected_sample_count / eligible_sample_count
+            if eligible_sample_count
+            else 0.0
+        ),
+        "mean_looks": (
+            float(contributor_counts[contributor_observed].mean())
+            if contributor_observed.any()
+            else 0.0
+        ),
+        "max_looks": int(contributor_counts.max()),
+        "eligible_mean_looks": (
+            float(eligible_counts[observed].mean()) if observed.any() else 0.0
+        ),
+        "eligible_max_looks": int(eligible_counts.max()),
         "fallback_px": int(fallback.sum()),
         "mm_per_px": grid.mm_per_px,
     }

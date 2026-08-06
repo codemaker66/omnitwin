@@ -1,0 +1,576 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:omnitwin:schema:floor-atlas-run:v1",
+  "title": "OmniTwin Floor Atlas run v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "authority",
+    "provenance",
+    "room",
+    "mm_per_px",
+    "width_px",
+    "height_px",
+    "extent_m",
+    "origin_xy",
+    "z_floor",
+    "sources",
+    "covered_frac",
+    "rejected_frac",
+    "mean_looks",
+    "max_looks",
+    "eligible_mean_looks",
+    "eligible_max_looks",
+    "eligible_sample_count",
+    "retained_sample_count",
+    "rejected_sample_count",
+    "fallback_px",
+    "ss",
+    "alignment",
+    "harmonisation",
+    "parameters",
+    "inputs",
+    "outputs",
+    "tool",
+    "runtime",
+    "integrity"
+  ],
+  "properties": {
+    "schema_version": { "const": "omnitwin.floor-atlas.run.v1" },
+    "authority": { "const": "none" },
+    "provenance": { "$ref": "#/$defs/provenance" },
+    "room": { "type": "string", "minLength": 1 },
+    "mm_per_px": { "type": "number", "exclusiveMinimum": 0 },
+    "width_px": { "type": "integer", "minimum": 1 },
+    "height_px": { "type": "integer", "minimum": 1 },
+    "extent_m": { "$ref": "#/$defs/pair" },
+    "origin_xy": { "$ref": "#/$defs/pair" },
+    "z_floor": { "type": "number" },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "covered_frac": { "type": "number", "minimum": 0, "maximum": 1 },
+    "rejected_frac": { "type": "number", "minimum": 0, "maximum": 1 },
+    "mean_looks": { "type": "number", "minimum": 0 },
+    "max_looks": { "type": "integer", "minimum": 0 },
+    "eligible_mean_looks": { "type": "number", "minimum": 0 },
+    "eligible_max_looks": { "type": "integer", "minimum": 0 },
+    "eligible_sample_count": { "type": "integer", "minimum": 0 },
+    "retained_sample_count": { "type": "integer", "minimum": 0 },
+    "rejected_sample_count": { "type": "integer", "minimum": 0 },
+    "fallback_px": { "type": "integer", "minimum": 0 },
+    "ss": { "type": "boolean" },
+    "alignment": { "$ref": "#/$defs/alignment" },
+    "harmonisation": { "$ref": "#/$defs/harmonisation" },
+    "parameters": { "$ref": "#/$defs/parameters" },
+    "inputs": { "$ref": "#/$defs/inputs" },
+    "outputs": { "$ref": "#/$defs/outputs" },
+    "tool": { "$ref": "#/$defs/tool" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "integrity": { "$ref": "#/$defs/integrity" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pair": {
+      "type": "array",
+      "prefixItems": [{ "type": "number" }, { "type": "number" }],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "vector3": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number" },
+        { "type": "number" },
+        { "type": "number" }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_truth_class",
+        "transform_class",
+        "transform_generated_content",
+        "output_truth_class",
+        "metric_use"
+      ],
+      "properties": {
+        "source_truth_class": { "const": "unknown_unverified" },
+        "transform_class": { "const": "deterministic_multi_view_fusion" },
+        "transform_generated_content": { "const": false },
+        "output_truth_class": { "const": "inferred_from_unverified_sources" },
+        "metric_use": { "const": "planning_grade_not_survey_truth" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["path", "filename", "size_bytes", "sha256", "media_type"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "filename": { "type": "string", "minLength": 1 },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "media_type": { "type": "string", "minLength": 1 }
+      }
+    },
+    "strictArtifact": {
+      "allOf": [{ "$ref": "#/$defs/artifact" }],
+      "unevaluatedProperties": false
+    },
+    "panorama": {
+      "allOf": [
+        { "$ref": "#/$defs/artifact" },
+        {
+          "type": "object",
+          "required": [
+            "node_id",
+            "pose_t_m",
+            "distance_m",
+            "width_px",
+            "height_px"
+          ],
+          "properties": {
+            "node_id": { "type": "string", "minLength": 1 },
+            "pose_t_m": { "$ref": "#/$defs/vector3" },
+            "distance_m": { "type": "number", "minimum": 0 },
+            "width_px": { "type": "integer", "minimum": 1 },
+            "height_px": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "alignmentEstimate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "dz_m",
+        "zero_score",
+        "best_score",
+        "score_gain",
+        "peak_margin",
+        "valid_pixels",
+        "boundary_hit",
+        "accepted",
+        "status"
+      ],
+      "properties": {
+        "node_id": { "type": "string", "minLength": 1 },
+        "dz_m": { "type": "number", "minimum": -0.03, "maximum": 0.03 },
+        "zero_score": {
+          "type": ["number", "null"],
+          "minimum": -1,
+          "maximum": 1
+        },
+        "best_score": {
+          "type": ["number", "null"],
+          "minimum": -1,
+          "maximum": 1
+        },
+        "score_gain": {
+          "type": ["number", "null"],
+          "minimum": -2,
+          "maximum": 2
+        },
+        "peak_margin": {
+          "type": ["number", "null"],
+          "minimum": -2,
+          "maximum": 2
+        },
+        "valid_pixels": { "type": "integer", "minimum": 0 },
+        "boundary_hit": { "type": "boolean" },
+        "accepted": { "type": "boolean" },
+        "status": {
+          "enum": [
+            "disabled",
+            "insufficient_fixed_support",
+            "zero_candidate_unscorable",
+            "zero_best",
+            "best_at_search_boundary",
+            "insufficient_score_gain",
+            "ambiguous_peak",
+            "shift_accepted"
+          ]
+        }
+      }
+    },
+    "alignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "convention", "estimates"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "convention": {
+          "const": "effective_camera_z_equals_manifest_z_minus_dz"
+        },
+        "estimates": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/alignmentEstimate" }
+        }
+      }
+    },
+    "gainChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channel",
+        "supported_bins",
+        "bin_counts",
+        "gain_min",
+        "gain_max",
+        "gain_curve"
+      ],
+      "properties": {
+        "channel": { "enum": ["r", "g", "b"] },
+        "supported_bins": { "type": "integer", "minimum": 0, "maximum": 24 },
+        "bin_counts": {
+          "type": "array",
+          "minItems": 24,
+          "maxItems": 24,
+          "items": { "type": "integer", "minimum": 0 }
+        },
+        "gain_min": { "type": "number", "minimum": 0.65, "maximum": 1.55 },
+        "gain_max": { "type": "number", "minimum": 0.65, "maximum": 1.55 },
+        "gain_curve": {
+          "type": "array",
+          "minItems": 24,
+          "maxItems": 24,
+          "items": { "type": "number", "minimum": 0.65, "maximum": 1.55 }
+        }
+      }
+    },
+    "harmonisationDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "valid_pixels", "channels"],
+      "properties": {
+        "node_id": { "type": "string", "minLength": 1 },
+        "valid_pixels": { "type": "integer", "minimum": 0 },
+        "channels": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/gainChannel" }
+        }
+      }
+    },
+    "harmonisation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "diagnostics"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "diagnostics": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/harmonisationDiagnostic" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "enabled": { "const": true } } },
+          "then": { "properties": { "diagnostics": { "minItems": 1 } } },
+          "else": { "properties": { "diagnostics": { "maxItems": 0 } } }
+        }
+      ]
+    },
+    "sourceSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "floor_id",
+        "requested_storey_z",
+        "effective_storey_z",
+        "storey_tolerance_m",
+        "cluster_gap_m",
+        "method"
+      ],
+      "properties": {
+        "floor_id": { "type": ["string", "null"] },
+        "requested_storey_z": { "type": ["number", "null"] },
+        "effective_storey_z": { "type": "number" },
+        "storey_tolerance_m": { "type": "number", "exclusiveMinimum": 0 },
+        "cluster_gap_m": { "type": "number", "exclusiveMinimum": 0 },
+        "method": {
+          "type": "string",
+          "pattern": "^(manifest_floor_id\\+)?(operator_storey_z|single_storey_cluster)$"
+        }
+      }
+    },
+    "zFloor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requested", "effective", "derivation", "storey_z"],
+      "properties": {
+        "requested": { "type": ["number", "null"] },
+        "effective": { "type": "number" },
+        "derivation": {
+          "enum": ["operator_supplied", "selected_storey_z_minus_1_5m"]
+        },
+        "storey_z": { "type": "number" }
+      }
+    },
+    "occlusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "mesh_voxel_m", "z_exempt_m"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mesh_voxel_m": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+        "z_exempt_m": { "type": ["number", "null"], "minimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "enabled": { "const": true } } },
+          "then": {
+            "properties": {
+              "mesh_voxel_m": { "type": "number" },
+              "z_exempt_m": { "type": "number" }
+            }
+          },
+          "else": {
+            "properties": {
+              "mesh_voxel_m": { "const": null },
+              "z_exempt_m": { "const": null }
+            }
+          }
+        }
+      ]
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bounds_centre_xy_m",
+        "bounds_size_m",
+        "effective_bounds_size_m",
+        "mm_per_px",
+        "ss",
+        "radius_m",
+        "max_sources",
+        "source_selection",
+        "z_floor_m",
+        "occlusion",
+        "self_blind_m",
+        "max_incidence_deg",
+        "robust_sigma",
+        "specular_sigma",
+        "min_robust_sources",
+        "align",
+        "harmonise"
+      ],
+      "properties": {
+        "bounds_centre_xy_m": { "$ref": "#/$defs/pair" },
+        "bounds_size_m": { "$ref": "#/$defs/pair" },
+        "effective_bounds_size_m": { "$ref": "#/$defs/pair" },
+        "mm_per_px": { "type": "number", "exclusiveMinimum": 0 },
+        "ss": { "type": "boolean" },
+        "radius_m": { "type": "number", "exclusiveMinimum": 0 },
+        "max_sources": { "type": "integer", "minimum": 1 },
+        "source_selection": { "$ref": "#/$defs/sourceSelection" },
+        "z_floor_m": { "$ref": "#/$defs/zFloor" },
+        "occlusion": { "$ref": "#/$defs/occlusion" },
+        "self_blind_m": { "type": "number", "minimum": 0 },
+        "max_incidence_deg": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 90
+        },
+        "robust_sigma": { "type": "number", "exclusiveMinimum": 0 },
+        "specular_sigma": { "type": "number", "exclusiveMinimum": 0 },
+        "min_robust_sources": { "type": "integer", "minimum": 1 },
+        "align": { "type": "boolean" },
+        "harmonise": { "type": "boolean" }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "node_source_format", "mesh", "panoramas"],
+      "properties": {
+        "manifest": { "$ref": "#/$defs/strictArtifact" },
+        "node_source_format": {
+          "enum": ["forged_bundle_manifest_v1", "legacy_pose_map_v1"]
+        },
+        "mesh": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/strictArtifact" }
+          ]
+        },
+        "panoramas": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/panorama" }
+        }
+      }
+    },
+    "rgbImageOutput": {
+      "allOf": [
+        { "$ref": "#/$defs/artifact" },
+        {
+          "type": "object",
+          "required": ["dtype", "shape"],
+          "properties": {
+            "media_type": { "const": "image/png" },
+            "dtype": { "const": "uint8" },
+            "shape": {
+              "type": "array",
+              "prefixItems": [
+                { "type": "integer", "minimum": 1 },
+                { "type": "integer", "minimum": 1 },
+                { "const": 3 }
+              ],
+              "items": false,
+              "maxItems": 3,
+              "minItems": 3
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "grayImageOutput": {
+      "allOf": [
+        { "$ref": "#/$defs/artifact" },
+        {
+          "type": "object",
+          "required": ["dtype", "shape"],
+          "properties": {
+            "media_type": { "const": "image/png" },
+            "dtype": { "const": "uint8" },
+            "shape": {
+              "type": "array",
+              "prefixItems": [
+                { "type": "integer", "minimum": 1 },
+                { "type": "integer", "minimum": 1 }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "countsOutput": {
+      "allOf": [
+        { "$ref": "#/$defs/artifact" },
+        {
+          "type": "object",
+          "required": ["dtype", "shape", "semantics"],
+          "properties": {
+            "media_type": { "const": "application/x-npy" },
+            "dtype": { "const": "uint32" },
+            "shape": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "type": "integer", "minimum": 1 }
+            },
+            "semantics": {
+              "enum": [
+                "post_rejection_contributors_with_fallback_restored",
+                "post_rejection_retained_before_fallback",
+                "geometrically_eligible_pre_rejection_observations"
+              ]
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "atlas",
+        "coverage_preview",
+        "counts",
+        "retained_counts",
+        "eligible_counts"
+      ],
+      "properties": {
+        "atlas": { "$ref": "#/$defs/rgbImageOutput" },
+        "coverage_preview": { "$ref": "#/$defs/grayImageOutput" },
+        "counts": { "$ref": "#/$defs/countsOutput" },
+        "retained_counts": { "$ref": "#/$defs/countsOutput" },
+        "eligible_counts": { "$ref": "#/$defs/countsOutput" }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "source_files", "tested_requirements", "run_schema"],
+      "properties": {
+        "name": { "const": "floor_atlas_build.py" },
+        "source_files": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/strictArtifact" }
+        },
+        "tested_requirements": { "$ref": "#/$defs/strictArtifact" },
+        "run_schema": { "$ref": "#/$defs/strictArtifact" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "platform", "packages"],
+      "properties": {
+        "python": { "type": "string", "minLength": 1 },
+        "platform": { "type": "string", "minLength": 1 },
+        "packages": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "numpy",
+            "Pillow",
+            "pye57",
+            "scipy",
+            "trimesh",
+            "jsonschema"
+          ],
+          "properties": {
+            "numpy": { "type": ["string", "null"] },
+            "Pillow": { "type": ["string", "null"] },
+            "pye57": { "type": ["string", "null"] },
+            "scipy": { "type": ["string", "null"] },
+            "trimesh": { "type": ["string", "null"] },
+            "jsonschema": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "canonicalization", "payload_sha256"],
+      "properties": {
+        "scope": { "const": "report_object_excluding_integrity" },
+        "canonicalization": {
+          "const": "python_json_sort_keys_compact_utf8_v1"
+        },
+        "payload_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}
