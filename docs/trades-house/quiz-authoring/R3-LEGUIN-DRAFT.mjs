@@ -305,8 +305,8 @@ export const SCENES = [
     scene:
       "You find out the way everyone finds out: someone tells you over work, plainly, "
       + "as though it were weather. The mill leat runs through the low cottages, and "
-      + "every third year it floods them, and the town has known for sixty years how "
-      + "to move it and has not, because moving it takes the water off the mill. "
+      + "every third year it floods them. The town has known how to move it for sixty "
+      + "years, and has not, because moving it takes the water off the mill. "
       + "Everything here is built on that. Your bench included.",
     options: [
       {

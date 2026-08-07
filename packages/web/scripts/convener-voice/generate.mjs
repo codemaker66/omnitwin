@@ -142,7 +142,11 @@ async function main() {
   const bySection = new Map();
   for (const entry of selected) {
     const hash = hashOf(entry.speechText);
-    const onDisk = existsSync(join(OUT_DIR, `${hash}.mp3`));
+    // Done means on disk AND in the manifest. A run killed between writing the
+    // mp3 and flushing the manifest leaves a file the runtime cannot find, and
+    // treating the file alone as proof would skip it forever — silently, since
+    // an unmatched line just falls back to the typewriter.
+    const onDisk = existsSync(join(OUT_DIR, `${hash}.mp3`)) && manifest.entries[hash] !== undefined;
     const r = bySection.get(entry.section) ?? { items: 0, chars: 0, have: 0, needChars: 0 };
     r.items += 1;
     r.chars += entry.speechText.length;

@@ -59,15 +59,15 @@ const SKIPS_BEFORE_HE_MENTIONS_IT = 3;
 /** He notices your manner, never grades your answer. */
 const LINES: Readonly<Record<ObservationId, string>> = {
   returning:
-    "Ye've stood here before. I remember the shape o' ye. Let's see whether ye've changed yer mind or just yer mood.",
+    "You have stood here before. I remember the shape of you. Let us see whether you have changed your mind or only your mood.",
   quick:
-    "Ye answer fast. That's nae fault — some folk ken themselves early. Just dinnae mistake speed for certainty.",
+    "You answer fast. That is no fault; some people know themselves early. Only do not mistake speed for certainty.",
   lingerer:
-    "Ye sat a long while wi' that one. Good. The quick answer is usually somebody else's answer, borrowed.",
+    "You sat a long while with that one. The quick answer is usually somebody else's answer, borrowed.",
   sameSeat:
-    "Ye keep reaching for the same place on the table. I'm no' judging ye. I'm just saying I noticed.",
+    "You keep reaching for the same place on the table. I am not judging you. I am saying I noticed.",
   skipper:
-    "Ye keep cutting me off. Fine. I'll talk faster — I've only had four hundred years tae practise.",
+    "You keep cutting me off. That is all right. I have had four hundred years of practice at being interrupted.",
 };
 
 /** True when the last `run` seats are all the same. */

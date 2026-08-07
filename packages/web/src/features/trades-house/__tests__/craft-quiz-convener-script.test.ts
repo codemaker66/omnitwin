@@ -66,23 +66,6 @@ const ALL_SPOKEN = [
 ];
 
 /** Respellings the register ruling bans outright, with their plain forms. */
-const BANNED_SPELLINGS: readonly (readonly [RegExp, string])[] = [
-  [/\bfower\b/iu, "four"],
-  [/\babune\b/iu, "above"],
-  [/\bnaething\b/iu, "nothing"],
-  [/\bnaebody\b/iu, "nobody"],
-  [/\bmair\b/iu, "more"],
-  [/\bsiller\b/iu, "money"],
-  [/\bmercat\b/iu, "market"],
-  [/\bbaith\b/iu, "both"],
-  [/\bmooth\b/iu, "mouth"],
-  [/\bwithoot\b|\bwi'out\b/iu, "without"],
-  [/\bgaed\b/iu, "went"],
-  [/\bthe morn\b/iu, "tomorrow"],
-  // "greeting" for crying inverts its meaning for non-Scots readers.
-  [/\bgreeting\b/iu, "crying"],
-];
-
 describe("the twelve scenes", () => {
   it("ships exactly twelve, each with four options", () => {
     expect(SCENES).toHaveLength(12);
@@ -117,21 +100,64 @@ describe("the twelve scenes", () => {
   });
 });
 
-describe("Hollywood Scots register", () => {
-  it("uses no banned respelling anywhere in the spoken corpus", () => {
+describe("Le Guin register", () => {
+  // The gate this replaced enforced the OPPOSITE: it banned plain spellings in
+  // favour of Scots and required every scene to carry a dialect marker. Both
+  // inverted on 2026-08-07. A register gate has to be falsifiable or it is
+  // decoration, so each of these fails on a specific, nameable fault.
+
+  it("keeps the dialect out — the Scots build is gone from teller and tale alike", () => {
+    const scots = /\b(aye|ye|yer|ken(?:t)?|auld|wee|nae|och|cannae|doesnae|isnae|didnae|wisnae|willnae|tae|wi'|dinnae|o')\b/iu;
+    const offences = ALL_SPOKEN.filter(({ text }) => scots.test(text)).map(({ where }) => where);
+    expect(offences, "these still read as Scots").toEqual([]);
+  });
+
+  it("prefers the short word — no Latinate term that a plain one replaces", () => {
+    // "Began", never "commenced". The list is deliberately small: every entry is
+    // a word with an exact shorter equivalent, so there is no judgment call.
+    const LATINATE: readonly (readonly [RegExp, string])[] = [
+      [/\bcommenced?\b/iu, "began"],
+      [/\butilis|utiliz/iu, "use"],
+      [/\bendeavour/iu, "try"],
+      [/\bsubsequently\b/iu, "then"],
+      [/\bpurchase[sd]?\b/iu, "buy"],
+      [/\bapproximately\b/iu, "about"],
+      [/\bassist(?:ance|ed)?\b/iu, "help"],
+      [/\bsufficient\b/iu, "enough"],
+      [/\bremainder\b/iu, "rest"],
+      [/\bconstruct(?:ed|ion)?\b/iu, "build"],
+    ];
     const offences: string[] = [];
     for (const { where, text } of ALL_SPOKEN) {
-      for (const [pattern, plain] of BANNED_SPELLINGS) {
+      for (const [pattern, plain] of LATINATE) {
         if (pattern.test(text)) offences.push(`${where}: ${pattern.source} -> write "${plain}"`);
       }
     }
     expect(offences).toEqual([]);
   });
 
-  it("still sounds Scottish — the accent lives in the allowed words", () => {
-    const allowed = /\b(aye|ye|yer|ken|auld|wee|nae|och|cannae|doesnae|isnae|didnae|wisnae|willnae|tae|wi')\b/iu;
-    const flat = SCENES.filter(({ text }) => !allowed.test(text)).map(({ where }) => where);
-    expect(flat, "these scenes read as standard English").toEqual([]);
+  it("stays plain — no sentence runs past thirty words", () => {
+    // Her long sentences open out; they do not accumulate clauses. Thirty words
+    // is generous, and anything past it is a sentence that lost its shape.
+    const offences: string[] = [];
+    for (const { where, text } of ALL_SPOKEN) {
+      for (const sentence of text.split(/(?<=[.?!])\s+/u)) {
+        const words = sentence.trim().split(/\s+/u).filter(Boolean).length;
+        if (words > 30) offences.push(`${where}: ${String(words)}-word sentence`);
+      }
+    }
+    expect(offences).toEqual([]);
+  });
+
+  it("never props a verb with an adverb — the verb does the work or it does not", () => {
+    // Catches the tell of AI-flat prose: "quietly nodded", "carefully placed".
+    // Sentence-opening adverbials ("Slowly, the light...") are hers and allowed.
+    const offences: string[] = [];
+    for (const { where, text } of ALL_SPOKEN) {
+      const hits = text.match(/(?<![.?!]\s)\b\w+ly\s+(?:said|nodded|placed|walked|looked|turned|smiled|moved|held|watched)\b/giu) ?? [];
+      for (const hit of hits) offences.push(`${where}: "${hit.trim()}"`);
+    }
+    expect(offences).toEqual([]);
   });
 
   it("shouts single words only — capitals are his emphasis, not his volume", () => {

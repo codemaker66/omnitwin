@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Ye Auld Convener — gaze mathematics
+// The Convener — gaze mathematics
 //
 // Pure. The component owns the rAF loop and the SVG refs; this owns every
 // number the loop writes. The magic of the original portrait was never the

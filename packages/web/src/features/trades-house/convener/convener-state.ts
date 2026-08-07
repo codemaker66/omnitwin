@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Ye Auld Convener — behaviour state machine
+// The Convener — behaviour state machine
 //
 // Pure. The clock is a parameter, never read here, so every behaviour below is
 // testable without timers, a DOM, or a rendered portrait. The view layer owns

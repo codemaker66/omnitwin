@@ -231,7 +231,7 @@ function QuestionScreen({
           what let a stray say() race the whole quiz to the end. */}
       {reply === null ? null : (
         <div className="craft-quiz-reply" role="group" aria-label="The Convener replies">
-          <p className="craft-quiz-reply-who">Ye Auld Convener</p>
+          <p className="craft-quiz-reply-who">The Convener</p>
           <p className="craft-quiz-reply-text">{reply}</p>
           {/* Rare by design — twice in twelve scenes, not every answer. He is
               remarking on HOW you answered, so it is set apart from the reply
@@ -379,7 +379,7 @@ function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
           not for what it said — so he admits how close it ran, by name. This
           is also the line people screenshot. */}
       <p className="craft-result-affinities">
-        <span className="craft-result-affinities-who">Ye Auld Convener, quieter</span>
+        <span className="craft-result-affinities-who">The Convener, quieter</span>
         “Mind, it ran closer than ye’d think. Ye were a hair off <strong>{runnerUp.profile.name}</strong>,
         and I near said <strong>{third.profile.name}</strong> out loud before I caught myself.
         Any of the three would have ye. Go and ask them.”

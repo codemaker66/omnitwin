@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  AXIS_KEYS,
+  type AxisVector,
   CRAFT_AXIS_PROFILES,
   CRAFT_ORDER,
   CRAFT_QUESTIONS,
@@ -23,10 +25,16 @@ describe("craft quiz model", () => {
     const original = { ...ZERO_AXIS_TOTALS, a1: 1 };
     const result = applyCraftQuizAnswer(original, 0, 0);
 
+    // Derived from the model, not transcribed from it. This test is about the
+    // prior totals staying untouched; pinning a literal vector made it fail
+    // every time the writing changed, which taught us nothing about mutation.
+    const applied: AxisVector = CRAFT_QUESTIONS[0]?.options[0]?.axes ?? {};
     expect(original).toEqual({ a1: 1, a2: 0, a3: 0, a4: 0, a5: 0 });
-    // Q1 option 1 is a1+2 a4-1 a5+1.
-    expect(result.totals).toEqual({ a1: 3, a2: 0, a3: 0, a4: -1, a5: 1 });
-    expect(result.lastAxes).toEqual({ a1: 2, a4: -1, a5: 1 });
+    expect(result.totals).toEqual({
+      ...ZERO_AXIS_TOTALS,
+      ...Object.fromEntries(AXIS_KEYS.map((k) => [k, (k === "a1" ? 1 : 0) + (applied[k] ?? 0)])),
+    });
+    expect(result.lastAxes).toEqual(applied);
   });
 
   it("rejects out-of-range questions and options", () => {

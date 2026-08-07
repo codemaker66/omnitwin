@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Ye Auld Convener — the talking portrait
+// The Convener — the talking portrait
 //
 // A React rebuild of the proven rig: gold frame, candle sconces, the painted
 // patron whose eyes follow your pointer like a magical painting. Everything
@@ -726,7 +726,7 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
           className="convener-frame"
           ref={frameRef}
           onClick={onPoke}
-          aria-label="Ye Auld Convener — poke the portrait"
+          aria-label="The Convener — poke the portrait"
         >
           <svg viewBox="0 0 400 470" role="img" aria-hidden="true" focusable="false">
             <defs>
@@ -1058,7 +1058,7 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
             {/* plaque */}
             <g>
               <rect x="118" y="418" width="164" height="40" rx="4" fill={`url(#${gradient("plaque")})`} stroke="#4a3410" strokeWidth="1.6" />
-              <text x="200" y="435" textAnchor="middle" fontFamily="Georgia, serif" fontSize="12.5" letterSpacing="2.4" fill="#3a2708" style={{ fontVariant: "small-caps" }}>Ye Auld Convener</text>
+              <text x="200" y="435" textAnchor="middle" fontFamily="Georgia, serif" fontSize="12.5" letterSpacing="2.4" fill="#3a2708" style={{ fontVariant: "small-caps" }}>The Convener</text>
               <text x="200" y="450" textAnchor="middle" fontFamily="Georgia, serif" fontSize="9.5" letterSpacing="3" fill="#5c421a">· PATRON O’ THE HALL ·</text>
             </g>
           </svg>
@@ -1077,7 +1077,7 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
           tabIndex={0}
           aria-label="Skip to the end of the Convener's line"
         >
-          <p className="convener-speech-who">Ye Auld Convener · first o’ the Deacons</p>
+          <p className="convener-speech-who">The Convener · who has watched them all arrive</p>
           <p className="convener-speech-text" aria-hidden="true">
             <span ref={typedRef} />
             {speaking ? <span className="convener-caret">▌</span> : null}

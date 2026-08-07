@@ -1,217 +1,202 @@
 // ---------------------------------------------------------------------------
-// Ye Auld Convener — the spoken corpus
+// The Convener — the spoken corpus
 //
-// A talking portrait of the Hall's patron: a medieval Scottish Robin Williams.
-// Warm, fast, theatrical, and never mean. He escalates rather than repeats —
-// the joke is that he REMEMBERS, so ordering matters in every bank below.
+// The voice that tells the year in the nameless town, and answers you as you
+// go. He has watched a great many people arrive and has stopped being surprised
+// by any of it, which is not the same as having stopped caring.
 //
-// Voice rules for anyone adding lines — the register is HOLLYWOOD SCOTS
-// (Blake's ruling, 2026-08-05): obviously Scottish, effortlessly understood
-// by Americans, English and Europeans. Shrek, not Burns manuscripts.
-//   - The COMPREHENSION TEST: a non-Scottish teenager understands every line
-//     cold, no glossary. If a word fails that, use the standard spelling and
-//     let rhythm and idiom carry the Scottishness.
-//   - Freely use: aye, ye/yer, ken, auld, wee, nae, och, wisnae/cannae/didnae,
-//     laddie/lassie, bonnie, tak, wi', bairn, o'. Famous phrases are exempt
-//     from the test ("Here's tae us — wha's like us!"). Rulings (2026-08-06):
-//     "bairn" is allowed (Shrek-tier famous, load-bearing warmth); "naebody"
-//     is NOT — write "nobody", per the naething precedent; "the morn" is NOT —
-//     write "tomorrow" (non-Scots read it as "the morning").
-//   - Avoid dense orthography: fower, abune, naething, mooth, oot, withoot,
-//     ance, gaed/gang. Write four, above, nothing, mouth, out, without, once.
-//   - He is centuries old and finds that funny, not tragic.
-//   - He may be exasperated, never cruel. The user is a guest of the Hall.
-//   - Capitals carry the performance: he SHOUTS one word, not whole lines.
-//   - Every line will also be SPOKEN (ElevenLabs) — read it aloud; if the
-//     spelling would trip a text-to-speech engine, prefer the standard form.
+// REGISTER: Ursula K. Le Guin (Blake's ruling, 2026-08-07, replacing the
+// Hollywood Scots of the previous build). Plain, luminous, unhurried. The
+// dialect is gone entirely — from the tales AND from him.
+//   - Anglo-Saxon over Latinate. "Began", never "commenced".
+//   - Concrete things: weather, water, wood, hands. Never an abstraction where
+//     an object will do the work.
+//   - Short declaratives, then one longer sentence that opens out.
+//   - No adverb propping up a weak verb.
+//   - He KNOWS MORE THAN HE SAYS. What he leaves out is the character.
+//   - Moral seriousness, no moralising. He never tells you what to feel.
+//   - Dry, often funny, never arch and never cruel.
+//   - NO VERDICTS. He may witness a choice; he may never grade it. "That is not
+//     a judgment, it is a count" is the whole posture.
+//   - NO CRAFT NOUNS. He has not named one in twelve scenes (L8), and the
+//     sorting must never be guessable from anything he says.
+//   - Every line is also SPOKEN. Read it aloud before you keep it.
 // ---------------------------------------------------------------------------
 
 /**
  * Poking the portrait. Strictly ordered: the index is a monotonic poke count,
  * so these read as one rising performance. The last line is terminal and
- * repeats — he has run out of patience but not of affection.
+ * repeats — he has run out of patience but not of interest.
  */
 export const CONVENER_POKES: readonly string[] = [
-  "Careful — the varnish is aulder than yer country.",
-  "Aye, hullo. I'm a PAINTING. This is one-way glass, friend.",
-  "Poke the Bakers' crest instead, it's softer.",
-  "I felt that in 1611.",
-  "Persistent! The Hammermen tak applications, ye ken.",
-  "Right. That's it. I'm telling the Deacon.",
-  "…Still at it. I admire it. I HATE it — but I admire it.",
-  "The frame is gold leaf. The man is priceless. HANDS.",
+  "That is a wall. I am on it.",
+  "You have found the one thing in this room that cannot feel anything.",
+  "Again. All right.",
+  "There is a river out there and a year ahead of you, and you are doing this.",
+  "I have been looked at by better and prodded by worse.",
+  "The paint is older than your country. Be careful with it, or do not. It is all one to the paint.",
+  "I can wait longer than you can. It is the single thing I am good at.",
+  "Enough, now. There is a child in a river and you are poking a picture.",
 ];
 
-/** Spoken as he nods off. Idle long enough and the Hall goes quiet. */
-export const CONVENER_DOZE = "…zzz… mind the… quorum…";
+/** Spoken as he goes quiet. Idle long enough and the room settles. */
+export const CONVENER_DOZE = "…the water. Mind the water…";
 
-/** Spoken the instant anything wakes him. */
-export const CONVENER_WAKE = "WHA—! I wisnae sleeping. I was thinking wi' my eyes shut.";
+/** Spoken the instant anything rouses him. */
+export const CONVENER_WAKE = "I was not asleep. I was looking at something you cannot see from where you stand.";
 
-/** He has been alone with his own portrait for four and a half centuries. */
+/** Small sounds in a quiet room. Never urgent, never asking for anything. */
 export const CONVENER_IDLE_MURMURS: readonly string[] = [
-  "Tak yer time. I've nothing but.",
-  "The bell above us was cast in seventeen ninety-four. It waits fine, ye ken.",
-  "I'll be here. I'm load-bearing.",
+  "The light crosses this floor the same way every day. I have had time to check.",
+  "There were others on this wall once. Moved, or painted over, or simply stopped being looked at.",
+  "Take the time. Nobody here is going anywhere, and I am the least likely of us.",
 ];
 
 /**
- * What he says after ye answer a scene.
- *
- * These deliberately pass NO judgement on the choice. The scenes are built so
- * that four serious people would answer four different ways; a narrator who
- * said "aye, the right call" would both break the brief's no-verdicts law and
- * hand players a map for gaming the sort. So he does what a clerk does — he
- * marks that it happened, and moves the room on. One per scene, in order, so
- * a full run never hears the same acknowledgement twice.
- *
- * The character shows through the CADENCE, not through approval.
+ * Held between scenes when nothing more particular is warranted. Short by
+ * design: the tale is the thing, and he is not competing with it.
  */
 export const CONVENER_ACKNOWLEDGEMENTS: readonly string[] = [
-  "Mm. The book has that now.",
-  "Aye. Written, and no' forgotten.",
-  "Noted. I'll no' say what I think.",
-  "Right ye are. On we go.",
-  "That's the ink dry on that one.",
-  "Mm-hm. Ye didnae flinch. I'll mark that too.",
-  "Down it goes, in a fair hand.",
-  "Aye. Some folk take longer at that one.",
-  "The Hall has heard ye.",
-  "Set down. Next.",
-  "Och, that's an answer and a half. Onward.",
-  "And the last of it — hold still while I write.",
+  "I have that.",
+  "Go on.",
+  "That is written down now.",
+  "I see.",
+  "Noted, and kept.",
+  "The year turns.",
+  "Onward.",
+  "Held.",
+  "Say the next one.",
+  "That one took you a moment.",
+  "Yes.",
+  "Keep walking.",
 ];
 
-/** The acknowledgement for a given scene, cycling if the quiz ever grows. */
 export function convenerAcknowledgement(questionIndex: number): string {
   const safeIndex = Math.abs(Math.trunc(questionIndex)) % CONVENER_ACKNOWLEDGEMENTS.length;
   return CONVENER_ACKNOWLEDGEMENTS[safeIndex] ?? CONVENER_ACKNOWLEDGEMENTS[0] ?? "";
 }
 
 /**
- * His reply to each specific answer — 12 scenes x 4 options, in order.
+ * One reply for every option in every scene — twelve banks of four, in scene
+ * order, in option order. He answers WHAT you chose; convener-observations.ts
+ * answers HOW you chose it.
  *
- * The line between a REACTION and a VERDICT is the whole craft here. He may
- * notice what ye chose, name what it costs ye, tease ye, or go quiet with it —
- * he may never say ye chose well or badly. Two reasons: the brief forbids
- * verdicts, and a narrator who warms to one option has published the answer
- * key. If a new line could be paraphrased as "good call" or "ye poor fool",
- * it is wrong, however fine it sounds.
- *
- * He also never names a Craft, or hints which one an answer serves.
+ * The discipline that makes these work is refusal: he witnesses the choice and
+ * its price, and stops. The moment one reads as approval, the sorting becomes a
+ * test, every later answer becomes a performance for him, and the hidden axes
+ * stop measuring anything real.
  */
 export const CONVENER_REACTIONS: readonly (readonly string[])[] = [
-  // The Half-Done Thing
+  // 1 — The River Gate
   [
-    "Ten years, ye say. And ye never blinked at the number. Rab knew what he was doing, handing that to you.",
-    "The lad, then. In thirty years somebody will ask whose work it is, and there'll be nae simple answer.",
-    "The widow eats. Nobody carves that on a wall, but she eats.",
-    "Untouched. Some would call that giving up, some the only honest thing left. You ken which ye meant.",
+    "Tools. You said it before you had quite decided to, which is how I knew it was true.",
+    "Living things, carried four hundred miles, and most of them still alive. That is a particular kind of attention.",
+    "Paper instead of bread. Not one in ten would choose that, and you did not pause over it.",
+    "Nothing at all. You will be believed on your face or you will not, and you have decided to find out which.",
   ],
-  // The True Thing That Doesnae Suit
+  // 2 — The Low River
   [
-    "The measure holds. And a man walks home with a true thing he will never love. Both of those are yours now.",
-    "The fit wins. He'll no' forget it — a maker remembers the day his true work was sent back.",
-    "Locked in together. Och, ye brave soul. I've seen that end in a handshake and I've seen it end worse.",
-    "Ye paid. The cheapest way out of that room was a word, and ye chose the dearest.",
+    "You went in. I thought you might. Most do not, and that is not a judgment, it is a count.",
+    "Three seconds for eight feet of ash. You will do that arithmetic again for the rest of your life.",
+    "You made it everyone's. The three who did not move are moving now, and they will remember who made them.",
+    "You walked the gravel, and never once looked up at the people watching you take the long way.",
   ],
-  // One Armful
+  // 3 — The Fence
   [
-    "The box. Cold arithmetic in a warm panic — that takes a certain nerve.",
-    "The papers. A year from now the claim is won and nobody thanks ye for it. You'll ken, though.",
-    "Her hand on the paper. Poorer, and holding the only copy that ever existed.",
-    "Through the wall. Ye never waited to find out if she needed ye. That is the whole of ye, that.",
+    "A week on a thing you cannot explain, on the chance that somebody once could.",
+    "You went and asked. That makes you the stranger who questions things, and you knew it before you knew the answer.",
+    "Your joint, your soil, your sixty years. It is a better fence now, and it is not theirs.",
+    "You changed the question. Sometimes that is wisdom and sometimes it is not listening, and from out here they look alike.",
   ],
-  // The Thing Told at the Fire
+  // 4 — The Naming
   [
-    "A deadline. The man came for peace and left with a week. Mercy with teeth in it.",
-    "Ye'll mend it quiet and let him keep the comfort of being unpunished. A strange, generous arithmetic.",
-    "In yer pocket, then. Mind — a thing kept that long starts to feel like it belongs to ye.",
-    "Ye carried it. Two tables, one man, nae relief in either seat.",
+    "Your own. Nothing in it for them to take hold of, which means you will be filling it yourself, and slowly.",
+    "The work, then. Short and true, and it tells a stranger where to bring a broken thing.",
+    "You let them choose. That is great trust or great tiredness, and I have known it be both at once.",
+    "A name you have not earned yet. Forty years to catch it, and it will be watching you the whole way.",
   ],
-  // The Paid Debt
+  // 5 — The Other One
   [
-    "Ye let yerself be helped. You would be astonished how many cannae, and call it pride.",
-    "Squared to the penny. Grace, filed under settled. It'll sleep better in the ledger.",
-    "Passed on into the dark. Somebody gets a good winter and never learns whose.",
-    "Banked against the hook. I would want ye counting my money. I'm no' sure I'd want yer winter.",
+    "You will wait. Years, possibly, being right and poor, and the waiting will be the harder half of the work.",
+    "You said it out loud. Somebody had to, and now you are the one who did.",
+    "You went to learn from them. That costs more pride than most people have to spend.",
+    "You mend what they break and say nothing. A living built on their failures, which needs them to keep failing.",
   ],
-  // The Far Buyers
+  // 6 — The Ring
   [
-    "True, and the roof waits. Yer wee ones will no' understand that for twenty years. Then they will.",
-    "Written into the bargain. Every man after ye is bound by a rule he never agreed to — that is how a standard starts, and why it's hated.",
-    "Thin where it doesnae show. You'll keep that ledger in yer head, and it is a heavy one.",
-    "Turned down flat. The best purse of the year, refused on a principle nobody asked ye to hold.",
+    "Every item, true, and nobody will ever know you did it. That is the whole of the thing.",
+    "You decided what you were owed with nobody else in the room. The room is the part that matters.",
+    "You told him while he was still there to hear it. He may not have followed a word.",
+    "You spent it on being right about what it was for. You may well be right.",
   ],
-  // The Smooth Road
+  // 7 — The Thin Winter
   [
-    "Ye took it, and ye meant it. Warm houses. And every vote from here is his — ye knew that when ye said aye.",
-    "At the market cross, out loud. Ye've made yerself expensive to ignore and cheap to punish.",
-    "Quiet, every time. Nae banner, nae credit, nae witness. That one is only ever between you and you.",
-    "His coin, yer purpose. Every man who took that road told himself the same. Some were even right.",
+    "First into an empty pot. If nobody follows, you have given away your winter to prove a thing about your neighbours.",
+    "Arithmetic before feeling. You will learn exactly who lied about their cellar, and greet them all spring.",
+    "Three mouths and four hard months. The town will remember this longer than the winter lasts.",
+    "You made it go further. Nobody thanks the one who makes thin things bearable. I noticed.",
   ],
-  // Berries Off the Same Field
+  // 8 — The Door You Were Told Of
   [
-    "Condemned whole, and ye took the cut yerself. An expensive kind of honesty.",
-    "Ye stood for him. This town has a long memory and a short list of folk it forgives for that.",
-    "Nothing either way. He meets it alone, and you go home and look at the field. Both true.",
-    "Said it out loud in a court, then put yer name on his mending. That's no' mercy, that's an investment.",
+    "You decided, alone, that you understood her better than her own instruction did.",
+    "Shut. Whatever is behind it may be past saving, and a trust that holds only while it is easy was never one.",
+    "You called her home. You will both know you could not settle it yourself, and that is not nothing.",
+    "You went around it. Clever, and slow, and the roof does not care which.",
   ],
-  // The Room Gone Quiet
+  // 9 — What the Town Is Built On
   [
-    "Ye sat down beside him and ate. Nothing said. The whole room read it anyway.",
-    "On yer feet, order restored. The man is still the colour of ash, mind — but the feast survived.",
-    "Ye named the reader. An enemy with friends, and a friend with none.",
-    "Ye kicked over yer own glass. The daftest, kindest thing in that room, and nobody will ever ken it was deliberate.",
+    "A season of digging and a bad year for everyone. Some of those households are the ones in the low cottages.",
+    "Stone under eleven floors by Monday, and the leat stays. You made the wrong thing bearable, which is how it lasted sixty years.",
+    "You made them look at one another. Towns do not forgive the one who held the mirror up.",
+    "You walked out. The water runs on without you, and you knew that before you took the first step.",
   ],
-  // The Twice-Broken Word
+  // 10 — The Apprentice
   [
-    "The whole caution. Twice broken, and ye signed. That is faith, or arithmetic ye've no' done.",
-    "Half, with the truth attached. You'll find out soon enough whether a man can hear that as anything but an insult.",
-    "Ye walked beside him and signed nothing. He'll mind the walking. He'll mind the nothing too.",
-    "Refused plainly, with a reason. If he sinks, he hears that sentence in your voice for the rest of his life.",
+    "Seven years, the whole of it. You will be making the person who takes your custom, and you know it.",
+    "All of it but the one turn. They will feel that door long before they can name it.",
+    "Hands first. They will have your habits before your reasons, including the ones you would not have chosen to pass on.",
+    "You sent them away to find out. They may not come back, and you sent them anyway.",
   ],
-  // The Wee Kindness
+  // 11 — The Fire
   [
-    "Handed back, and him set to work. He keeps it or he doesnae, and you'll ken by the spring.",
-    "Ye built the machine. A thousand bowls a year and no' a warm word in any of them — and it is a real thing ye've made.",
-    "Ye let him have his stage. The town gets a spectacle and you get a part ye never auditioned for.",
-    "Ye told the bairn the true part and let him tell the rest. Two stories now, and only one of them yours.",
+    "Thirty years of edges ground to your hand, and only your hand.",
+    "Sixty years of a trade, most of it not yours, carried out through the smoke.",
+    "Four sacks of next year. Heavy, and slow, and you were still in the room.",
+    "Through the wall. You will own nothing by morning, and you did not stop to work that out first.",
   ],
-  // The Good Chair
+  // 12 — The Wall
   [
-    "Mended for sitting. Every repair takes a wee bit of the auld hands away, and ye did it anyway.",
-    "Sealed and set apart. It'll outlive every one of them now, and never hold another soul.",
-    "Sold, and the roof fixed. The oldest thing in that family left in a cart, and the living stayed dry.",
-    "The chair and the mending both. Her first repair will be poor and it will show forever. That's the point, is it no'?",
+    "The mark, tested, the same for everyone. Some who would have been good in five years will be good somewhere else.",
+    "You opened it to whoever needs it. The name is the only thing this town has, and you have put it in other hands.",
+    "A hundred winters came through on that gate, and you have unmade it in a season.",
+    "Not who — how. Someone will be kept out one day by a sentence you wrote tonight, and you wrote it anyway.",
   ],
 ];
 
-/** His reply to a given answer; falls back to a plain mark if ever missing. */
 export function convenerReaction(questionIndex: number, optionIndex: number): string {
   return CONVENER_REACTIONS[questionIndex]?.[optionIndex]
     ?? convenerAcknowledgement(questionIndex);
 }
 
 /**
- * The deliberation. A sorting hat that answers the instant you stop talking is
- * a form, not an oracle — the pause IS the ceremony, and it is the only place
- * the quiz can say "this was close" before it says anything at all.
+ * The deliberation. A sorting that answers the instant you stop talking is a
+ * form, not an oracle — the pause IS the ceremony, and it is the only place the
+ * quiz can say "this was close" before it says anything at all.
  *
  * Three beats, in order: he looks, he admits the pull of more than one, he
- * decides. None of them may hint WHICH — he has not named a craft in twelve
- * scenes and he does not start here (L8).
+ * decides. None may hint WHICH — he has not named a craft in twelve scenes and
+ * he does not start here (L8).
  */
 export const CONVENER_DELIBERATION: readonly string[] = [
-  "Hold still, now. Let me look at ye properly.",
-  "Mm. More than one o' them has a claim on ye. I can feel the pull o' it.",
-  "Aye. Aye, I have it.",
+  "Stand still a moment. Let me look at you properly.",
+  "More than one of them has a claim on you. I can feel the pull of it.",
+  "Yes. Yes, I have it.",
 ];
 
 /** How long each deliberation beat holds before the next. */
 export const CONVENER_DELIBERATION_BEAT_MS = 1_600;
 
-/** Milliseconds of no input before he dozes off. */
+/** Milliseconds of no input before he goes quiet. */
 export const CONVENER_DOZE_AFTER_MS = 45_000;
 
 /** Terminal poke index — reached, then held. */
