@@ -57,6 +57,33 @@ export function charsSpokenBy(
   return low;
 }
 
+/**
+ * How much of the DISPLAYED line has been spoken by `elapsedMs`.
+ *
+ * The alignment is not always one timestamp per displayed character. v3 happens
+ * to return exactly one; multilingual_v2 aligns against NORMALISED text and
+ * returned 22 timestamps for a 20-character line, because normalisation expands
+ * things like "&" into "and". Indexing the display string by an alignment index
+ * therefore drifts — and drifts further the longer the line, which is precisely
+ * the failure the audio clock was adopted to avoid.
+ *
+ * So progress is taken as a FRACTION of the alignment and applied to the
+ * display length. Where the alignment is 1:1 this is identical to indexing
+ * directly; where it is not, it stays honest. The renderer must not have to
+ * know which model recorded the line.
+ */
+export function displayCharsSpokenBy(
+  charStartTimesMs: readonly number[],
+  elapsedMs: number,
+  displayLength: number,
+): number {
+  const total = charStartTimesMs.length;
+  if (total === 0) return displayLength;
+  const spoken = charsSpokenBy(charStartTimesMs, elapsedMs);
+  if (total === displayLength) return spoken;
+  return Math.min(displayLength, Math.round((spoken / total) * displayLength));
+}
+
 let manifestPromise: Promise<ReadonlyMap<string, ConvenerVoiceLine>> | null = null;
 
 /**

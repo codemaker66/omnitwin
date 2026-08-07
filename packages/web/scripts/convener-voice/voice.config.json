@@ -2,14 +2,14 @@
   "voiceId": "wteyCP7td8C5nYwWnOV1",
   "voiceName": "Chris Lee",
   "note": "A voice_id is an identifier, not a secret, so it is committed. The API key never is: it lives in packages/web/.env.local, which .gitignore covers.",
-  "modelId": "eleven_v3",
+  "modelId": "eleven_multilingual_v2",
   "outputFormat": "mp3_44100_128",
-  "modelNote": "v3 over multilingual_v2: far more expressive, and it returns exactly one timestamp per character (v2 returned 22 for a 20-character line), so the typewriter can index the alignment array directly.",
+  "modelNote": "multilingual_v2 at Blake's direction. Note its alignment is NOT one timestamp per displayed character (22 for a 20-character line) because it aligns against normalised text; displayCharsSpokenBy scales by fraction so the typewriter stays in sync under either model.",
   "voiceSettings": {
-    "stability": 0.5,
+    "stability": 0.45,
     "similarity_boost": 0.8,
     "style": 0.4,
     "use_speaker_boost": true
   },
-  "settingsNote": "v3 reads stability as three discrete modes: 0.0 Creative, 0.5 Natural, 1.0 Robust. Natural is deliberate. Creative is more theatrical line by line but drifts in timbre across a 102-line corpus, and one character speaking in two voices is worse than one speaking slightly flatter."
+  "settingsNote": "v2 reads stability as a continuous value, unlike v3's three discrete modes, so 0.45 is meaningful here — slightly looser than neutral, which suits a narrator over a reader."
 }

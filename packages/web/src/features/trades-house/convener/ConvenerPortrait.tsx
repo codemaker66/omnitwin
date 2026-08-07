@@ -24,7 +24,7 @@ import {
 } from "react";
 import { useMediaQuery } from "../../../hooks/use-media-query.js";
 import {
-  charsSpokenBy,
+  displayCharsSpokenBy,
   getConvenerVoicePlayer,
   isConvenerVoiceMuted,
   loadConvenerVoice,
@@ -349,7 +349,7 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
               // The audio element's own clock, read fresh every frame, so a
               // stall to buffer holds the text back with the voice rather than
               // letting a second timer run on ahead.
-              typedRef.current.textContent = text.slice(0, charsSpokenBy(times, elapsed));
+              typedRef.current.textContent = text.slice(0, displayCharsSpokenBy(times, elapsed, text.length));
             }
             if (audio.ended || (audio.duration > 0 && audio.currentTime >= audio.duration)) {
               voiceRafRef.current = null;

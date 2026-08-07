@@ -1,3 +1,16 @@
+> **SUPERSEDED 2026-08-07.** The quiz is no longer written in this register.
+> The governing brief is now
+> `docs/superpowers/specs/2026-08-07-craft-quiz-le-guin-rewrite-design.md` —
+> Jung's individuation arc in Ursula K. Le Guin's voice, told as one continuous
+> story.
+>
+> Kept for two reasons. Its anti-pattern list (especially X7, on telegraphy) and
+> its structural laws about what an option *is* — four goods differing in kind,
+> each naming a real cost — remain correct and still bind the new writing. And
+> the reason it was replaced is itself the lesson: every law here governs a scene
+> **in isolation**, and nothing governed the set, so twelve individually sound
+> scenes added up to no story at all.
+
 # 17 — Dostoyevsky Writes a D&D Campaign: the Literary Craft Brief
 
 > Governing brief for the sorting-quiz authoring session. The 14 craft dossiers (01–14 in this
