@@ -24,6 +24,25 @@
 // ---------------------------------------------------------------------------
 
 /**
+ * What he says before the first scene, so that nobody is dropped into a
+ * dilemma without being told what this is.
+ *
+ * Three beats, in order: what is about to happen, that nothing here is graded,
+ * and what he is actually listening for. The last one says out loud that the
+ * sorting cannot be steered — which is true, because the axes are hidden and no
+ * option maps to a Craft. Saying so up front turns the one thing a clever
+ * reader would otherwise spend twelve scenes attempting into a joke they are
+ * in on.
+ *
+ * He still names no Craft (L8) and still grades nothing (L10).
+ */
+export const CONVENER_THRESHOLD: readonly string[] = [
+  "I will tell you about a year. You came here with nothing, and twelve times the choosing cost you something.",
+  "There are no right answers. In four hundred years I have never seen a wrong one — only people leaning different ways under weight.",
+  "Which way you lean is what I am watching. At the end I will name where you belong. Do not try to steer it — you cannot.",
+];
+
+/**
  * Poking the portrait. Strictly ordered: the index is a monotonic poke count,
  * so these read as one rising performance. The last line is terminal and
  * repeats — he has run out of patience but not of interest.

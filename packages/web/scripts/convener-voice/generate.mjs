@@ -75,6 +75,7 @@ async function collectCorpus() {
     replies.forEach((text, oi) => { add("reaction", `reaction-${qi + 1}-${oi + 1}`, text); });
   });
 
+  lines.CONVENER_THRESHOLD.forEach((t, i) => { add("threshold", `threshold-${i + 1}`, t); });
   lines.CONVENER_DELIBERATION.forEach((t, i) => { add("deliberation", `deliberation-${i + 1}`, t); });
   lines.CONVENER_ACKNOWLEDGEMENTS.forEach((t, i) => { add("acknowledgement", `ack-${i + 1}`, t); });
   lines.CONVENER_POKES.forEach((t, i) => { add("poke", `poke-${i + 1}`, t); });

@@ -1059,7 +1059,7 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
             <g>
               <rect x="118" y="418" width="164" height="40" rx="4" fill={`url(#${gradient("plaque")})`} stroke="#4a3410" strokeWidth="1.6" />
               <text x="200" y="435" textAnchor="middle" fontFamily="Georgia, serif" fontSize="12.5" letterSpacing="2.4" fill="#3a2708" style={{ fontVariant: "small-caps" }}>The Convener</text>
-              <text x="200" y="450" textAnchor="middle" fontFamily="Georgia, serif" fontSize="9.5" letterSpacing="3" fill="#5c421a">· PATRON O’ THE HALL ·</text>
+              <text x="200" y="450" textAnchor="middle" fontFamily="Georgia, serif" fontSize="9.5" letterSpacing="3" fill="#5c421a">· PATRON OF THE HALL ·</text>
             </g>
           </svg>
         </button>

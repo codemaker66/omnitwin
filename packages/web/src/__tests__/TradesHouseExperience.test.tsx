@@ -9,7 +9,10 @@ import {
   ZERO_AXIS_TOTALS,
   type AxisVector,
 } from "../features/trades-house/craft-quiz-model.js";
-import { CONVENER_DELIBERATION } from "../features/trades-house/convener/convener-lines.js";
+import {
+  CONVENER_DELIBERATION,
+  CONVENER_THRESHOLD,
+} from "../features/trades-house/convener/convener-lines.js";
 import { TradesHouseCraftQuizPage } from "../pages/TradesHouseCraftQuizPage.js";
 import { TradesHouseLeafletPage } from "../pages/TradesHouseLeafletPage.js";
 
@@ -99,6 +102,10 @@ describe("Trades House leaflet experience", () => {
     expect(screen.getAllByTestId("craft-rail-crest")).toHaveLength(14);
 
     fireEvent.click(screen.getByRole("button", { name: "Begin the Craft quiz" }));
+    // He explains what this is before the first dilemma; the reader crosses
+    // that threshold when they are ready, not on a timer.
+    expect(screen.getByText(CONVENER_THRESHOLD[0] ?? "")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /I am ready|Skip ahead/u }));
     expect(screen.getByText("QUESTION 1 OF 12")).toBeTruthy();
 
     // Answering the third option of every scene is a fixed path through axis
@@ -148,9 +155,26 @@ describe("Trades House leaflet experience", () => {
     expect(screen.getByRole("button", { name: "Begin the Craft quiz" })).toBeTruthy();
   });
 
+  it("explains itself before the first dilemma instead of dropping the reader into one", () => {
+    renderQuiz();
+    fireEvent.click(screen.getByRole("button", { name: "Begin the Craft quiz" }));
+
+    // Pressing begin used to land on a moral dilemma with no idea what this
+    // was. It now lands on him telling you.
+    expect(screen.queryByText("QUESTION 1 OF 12"), "the quiz must not start yet").toBeNull();
+    expect(screen.getByText(CONVENER_THRESHOLD[0] ?? "")).toBeTruthy();
+
+    // The way out is available from the first frame — nobody should have to
+    // sit through an introduction to reach what they came for.
+    const ready = screen.getByRole("button", { name: /I am ready|Skip ahead/u });
+    fireEvent.click(ready);
+    expect(screen.getByText("QUESTION 1 OF 12")).toBeTruthy();
+  });
+
   it("announces quiz progress and keeps the option controls keyboard-native", () => {
     renderQuiz();
     fireEvent.click(screen.getByRole("button", { name: "Begin the Craft quiz" }));
+    fireEvent.click(screen.getByRole("button", { name: /I am ready|Skip ahead/u }));
 
     // Two polite live regions now share the screen: the quiz's progress
     // announcer and the Convener's speech mirror.

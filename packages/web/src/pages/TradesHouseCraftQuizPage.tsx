@@ -14,6 +14,7 @@ import {
 } from "../features/trades-house/convener/convener-observations.js";
 import {
   CONVENER_DELIBERATION,
+  CONVENER_THRESHOLD,
   CONVENER_DELIBERATION_BEAT_MS,
   convenerReaction,
 } from "../features/trades-house/convener/convener-lines.js";
@@ -33,7 +34,7 @@ import {
 } from "../features/trades-house/craft-quiz-model.js";
 import "./TradesHouseCraftQuizPage.css";
 
-type QuizScreen = "intro" | "question" | "weighing" | "result";
+type QuizScreen = "intro" | "threshold" | "question" | "weighing" | "result";
 
 function railLabel(name: string): string {
   return name.replace(/^THE\s+/u, "");
@@ -283,6 +284,77 @@ function ResultLaurel(): ReactElement {
   return <svg className="craft-result-laurel" viewBox="0 0 270 270" aria-hidden="true"><path d="M 62 68 A 100 100 0 1 0 208 68" />{leaves}</svg>;
 }
 
+/**
+ * Threshold pacing, taken from the recordings rather than guessed. The three
+ * beats measure 75, 76 and 84 ms per character in the manifest; the first
+ * attempt at this used 42 and advanced the screen while he was still talking,
+ * cutting him off mid-sentence every time.
+ *
+ * 90 sits deliberately above the slowest measured line, because a moment of
+ * silence after he finishes costs nothing and a clipped sentence costs the
+ * whole effect. Anyone who disagrees has the skip button from the first frame.
+ */
+const THRESHOLD_BASE_MS = 700;
+const THRESHOLD_MS_PER_CHAR = 90;
+
+interface ThresholdScreenProps {
+  readonly onReady: () => void;
+  readonly compact: boolean;
+}
+
+/**
+ * The threshold. Pressing BEGIN used to drop the reader straight into a moral
+ * dilemma with no idea what the thing was — which is a poor welcome, and it
+ * also wastes the one moment when they are certain to be listening.
+ *
+ * Beats accumulate rather than replace, so someone who cannot hear the audio,
+ * or who reads faster than he speaks, still gets the whole explanation. The
+ * continue button is present from the first frame: nobody should have to sit
+ * through an introduction to reach the thing they came for.
+ */
+function ThresholdScreen({ onReady, compact }: ThresholdScreenProps): ReactElement {
+  const [beat, setBeat] = useState(0);
+  const readyRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (beat >= CONVENER_THRESHOLD.length - 1) return undefined;
+    // Paced off the line's own length rather than a flat interval — the third
+    // beat is half again as long as the first, and a fixed timer would either
+    // clip it or leave dead air after the short ones.
+    const line = CONVENER_THRESHOLD[beat] ?? "";
+    const timer = window.setTimeout(() => {
+      setBeat((current) => current + 1);
+    }, THRESHOLD_BASE_MS + line.length * THRESHOLD_MS_PER_CHAR);
+    return () => { window.clearTimeout(timer); };
+  }, [beat]);
+
+  useEffect(() => { readyRef.current?.focus(); }, []);
+
+  // His bubble carries the line he is saying NOW; the list carries the ones he
+  // has finished. Rendering the current line in both put the same sentence on
+  // screen twice, which reads as a bug rather than as emphasis.
+  const said = CONVENER_THRESHOLD.slice(0, beat);
+  const spoken = CONVENER_THRESHOLD[beat] ?? null;
+
+  return (
+    <section className="craft-quiz-threshold" aria-labelledby="craft-threshold-title">
+      <h1 className="craft-quiz-sr-only" id="craft-threshold-title">Before you begin</h1>
+      <p className="craft-result-kicker"><span />Before you begin<span /></p>
+      <div className="craft-threshold-portrait">
+        <ConvenerPortrait compact={compact} restingLine={spoken} />
+      </div>
+      <ol className="craft-threshold-beats">
+        {said.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ol>
+      <button type="button" className="craft-quiz-continue" ref={readyRef} onClick={onReady}>
+        {beat >= CONVENER_THRESHOLD.length - 1 ? "I am ready" : "Skip ahead"}
+      </button>
+    </section>
+  );
+}
+
 interface WeighingScreenProps {
   readonly onDecided: () => void;
   readonly compact: boolean;
@@ -380,9 +452,9 @@ function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
           is also the line people screenshot. */}
       <p className="craft-result-affinities">
         <span className="craft-result-affinities-who">The Convener, quieter</span>
-        “Mind, it ran closer than ye’d think. Ye were a hair off <strong>{runnerUp.profile.name}</strong>,
-        and I near said <strong>{third.profile.name}</strong> out loud before I caught myself.
-        Any of the three would have ye. Go and ask them.”
+        “It ran closer than you would think. You were a hair from <strong>{runnerUp.profile.name}</strong>,
+        and I nearly said <strong>{third.profile.name}</strong> aloud before I caught myself.
+        Any of the three would have you. Go and ask them.”
       </p>
       <a className="craft-result-introduction" href={buildCraftIntroductionMailto(winner.craftId)}>Request an introduction</a>
       <button type="button" className="craft-result-retake" onClick={onRetake}>Retake the questions</button>
@@ -448,7 +520,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     setQuestionIndex(0);
     setPickedIndex(null);
     setReply(null);
-    setScreen("question");
+    setScreen("threshold");
   }
 
   function resetQuiz(): void {
@@ -518,6 +590,9 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     <main className="trades-house-craft-quiz-page" data-screen={screen}>
       <div className="trades-house-craft-quiz-shell">
         {screen === "intro" ? <IntroScreen onBegin={beginQuiz} /> : null}
+        {screen === "threshold" ? (
+          <ThresholdScreen onReady={() => { setScreen("question"); }} compact={!wideStage} />
+        ) : null}
         {screen === "question" ? (
           <div className="craft-quiz-stage">
             <div className="craft-quiz-stage-portrait">

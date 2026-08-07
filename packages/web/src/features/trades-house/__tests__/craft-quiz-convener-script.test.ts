@@ -14,7 +14,15 @@
 //   narrator who approved of one would hand players a map for gaming the sort.
 // ---------------------------------------------------------------------------
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+
+/** The files that render his words as JSX literals rather than corpus. */
+const UI_COPY_FILES = [
+  "../../../pages/TradesHouseCraftQuizPage.tsx",
+  "../convener/ConvenerPortrait.tsx",
+] as const;
 import { CRAFT_QUESTIONS } from "../craft-quiz-model.js";
 import {
   CONVENER_ACKNOWLEDGEMENTS,
@@ -156,6 +164,26 @@ describe("Le Guin register", () => {
     for (const { where, text } of ALL_SPOKEN) {
       const hits = text.match(/(?<![.?!]\s)\b\w+ly\s+(?:said|nodded|placed|walked|looked|turned|smiled|moved|held|watched)\b/giu) ?? [];
       for (const hit of hits) offences.push(`${where}: "${hit.trim()}"`);
+    }
+    expect(offences).toEqual([]);
+  });
+
+
+  it("keeps the dialect out of the UI copy too, not only the corpus", () => {
+    // The corpus gates above read exported strings. Two Scots lines survived
+    // the rewrite anyway — the portrait's "PATRON O' THE HALL" plaque and the
+    // near-miss line on the result screen — because both are literals in JSX,
+    // which no amount of checking the corpus will ever see. So this reads the
+    // source of the two files that render his words.
+    const scots = /\b(aye|ye|yer|ken|auld|wee|nae|och|cannae|doesnae|isnae|didnae|wisnae|willnae|tae|dinnae)\b|\bo['’]\s|\bwi['’]/iu;
+    const offences: string[] = [];
+    for (const file of UI_COPY_FILES) {
+      const source = readFileSync(resolve(import.meta.dirname, file), "utf8");
+      source.split("\n").forEach((line, index) => {
+        // Comments are prose about the work and may quote the old build.
+        const code = line.replace(/\/\/.*$/u, "").replace(/^\s*\*.*$/u, "");
+        if (scots.test(code)) offences.push(`${file}:${String(index + 1)} ${code.trim().slice(0, 60)}`);
+      });
     }
     expect(offences).toEqual([]);
   });

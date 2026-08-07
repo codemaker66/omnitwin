@@ -2682,3 +2682,78 @@
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* ---- the threshold -------------------------------------------------------
+   He explains what this is before the first dilemma. Beats accumulate rather
+   than replace, so the whole explanation is readable at a glance by anyone who
+   cannot hear him or reads faster than he speaks. */
+.craft-quiz-threshold {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* The page pads the phone card by 16px top and bottom; a 100dvh child inside
+     it overflows by exactly that. Same trap the result screen fell into. */
+  min-height: calc(100dvh - 32px);
+  padding: 16px 18px 24px;
+  text-align: center;
+}
+
+.craft-threshold-portrait {
+  margin: 6px auto 14px;
+  width: clamp(180px, 46vw, 260px);
+}
+
+.craft-threshold-beats {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0 0 20px;
+  max-width: 34em;
+  padding: 0;
+}
+
+.craft-threshold-beats li {
+  color: rgba(232, 216, 184, 0.72);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(14px, 1.05vw, 16.5px);
+  line-height: 1.55;
+  /* min-width:0 is load-bearing in a grid: without it a long unbroken line
+     sets the track width and pushes the page sideways. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .craft-threshold-beats li {
+    animation: craft-aside-in 460ms both ease-out;
+  }
+}
+
+/* Desktop leaves the 520px phone cage, as every other screen must do for
+   itself — the shell caps width at ALL widths inside @media screen. */
+@media (min-width: 980px) {
+  .trades-house-craft-quiz-page[data-screen="threshold"] .trades-house-craft-quiz-shell {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    max-width: none;
+    min-height: 100dvh;
+    width: 100%;
+  }
+
+  .craft-quiz-threshold {
+    margin: 0 auto;
+    max-width: 900px;
+    padding: clamp(16px, 3vh, 48px) clamp(24px, 5vw, 80px);
+  }
+
+  .craft-threshold-portrait {
+    width: clamp(240px, 26vw, 360px);
+  }
+
+  .craft-threshold-beats li {
+    font-size: clamp(15px, 1.15vw, 18px);
+  }
+}
