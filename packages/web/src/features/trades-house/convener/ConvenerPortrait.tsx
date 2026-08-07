@@ -742,6 +742,41 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
                 <stop offset="0" stopColor="#3d2c1c" /><stop offset=".55" stopColor="#221710" />
                 <stop offset="1" stopColor="#0d0906" />
               </radialGradient>
+              {/* Light falls from the candle at his right hand, our left. As ONE
+                  gradient across the whole face — the previous build painted two
+                  half-face shapes meeting at a straight vertical line down the
+                  centre, which is the single most amateur tell an illustrated
+                  face can have. */}
+              <linearGradient id={gradient("modelling")} x1="0" y1="0" x2="1" y2="0.25">
+                <stop offset="0" stopColor="#ffe3b4" stopOpacity=".30" />
+                <stop offset=".34" stopColor="#ffd9a4" stopOpacity=".10" />
+                <stop offset=".58" stopColor="#7a4a29" stopOpacity=".06" />
+                <stop offset=".82" stopColor="#6b3f22" stopOpacity=".26" />
+                <stop offset="1" stopColor="#4a2a15" stopOpacity=".42" />
+              </linearGradient>
+              {/* Blood under skin, not rouge on top: warmth that fades to nothing
+                  instead of an ellipse with an edge. */}
+              <radialGradient id={gradient("bloom")} cx=".5" cy=".5" r=".5">
+                <stop offset="0" stopColor="#c25a40" stopOpacity=".34" />
+                <stop offset=".55" stopColor="#bb5539" stopOpacity=".16" />
+                <stop offset="1" stopColor="#b04e38" stopOpacity="0" />
+              </radialGradient>
+              {/* Hair is not a shape with a smooth outline. Displacing the edge by
+                  a little fractal noise is what stops the beard reading as a
+                  cotton-wool blob, and it costs one filter rather than a
+                  thousand hand-drawn strands. */}
+              <filter id={gradient("fibre")} x="-12%" y="-12%" width="124%" height="124%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.055 0.16" numOctaves="4" seed="11" result="fn" />
+                <feDisplacementMap in="SourceGraphic" in2="fn" scale="4.2" xChannelSelector="R" yChannelSelector="G" />
+              </filter>
+              {/* Softens a shadow's edge so it reads as form turning away from the
+                  light rather than as a shape laid on top of a face. */}
+              <filter id={gradient("soften")} x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="4.5" />
+              </filter>
+              <filter id={gradient("softenHard")} x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="2" />
+              </filter>
               <linearGradient id={gradient("skin")} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0" stopColor="#f0d6ae" /><stop offset=".62" stopColor="#d8a97c" />
                 <stop offset="1" stopColor="#a97a52" />
@@ -885,10 +920,12 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
                   <ellipse cx="255" cy="230" rx="8.5" ry="13.5" fill={`url(#${gradient("skin")})`} />
                   <path d="M142 226 q3 6 1.5 11 M258 226 q-3 6 -1.5 11" stroke="#a5765a" strokeWidth="1.1" fill="none" opacity=".6" />
                   <path d="M152 194 q0 -46 48 -46 q48 0 48 46 q0 36 -11 56 q-13 26 -37 26 q-24 0 -37 -26 q-11 -20 -11 -56z" fill={`url(#${gradient("skin")})`} />
-                  {/* chiaroscuro: candle to his right hand, our left */}
-                  <path d="M152 194 q0 -46 48 -46 l0 128 q-24 0 -37 -26 q-11 -20 -11 -56z" fill="#ffdfae" opacity=".14" />
-                  <path d="M248 194 q0 -46 -48 -46 l0 128 q24 0 37 -26 q11 -20 11 -56z" fill="#6e4326" opacity=".2" />
-                  <path d="M236 172 q10 22 4 52 q-4 22 -14 36 q14 -6 20 -32 q4 -26 -10 -56z" fill="#5c3a22" opacity=".16" />
+                  {/* Chiaroscuro across the WHOLE head in one pass. */}
+                  <path d="M152 194 q0 -46 48 -46 q48 0 48 46 q0 36 -11 56 q-13 26 -37 26 q-24 0 -37 -26 q-11 -20 -11 -56z" fill={`url(#${gradient("modelling")})`} />
+                  {/* The turn of the cheek away from the light — blurred, because
+                      an unblurred shadow edge reads as a sticker. */}
+                  <path d="M234 176 q13 24 7 56 q-5 26 -18 42 q17 -8 25 -38 q5 -30 -14 -60z" fill="#4e2d16" opacity=".3" filter={`url(#${gradient("soften")})`} />
+                  <path d="M158 180 q-9 20 -5 46 q3 20 11 33 q-13 -8 -18 -33 q-4 -27 12 -46z" fill="#ffe0b0" opacity=".14" filter={`url(#${gradient("soften")})`} />
                   {/* a high forehead that has carried four centuries of minutes */}
                   <path d="M166 168 q34 -10 68 0" stroke="#b98a5e" strokeWidth="1.2" fill="none" opacity=".45" />
                   <path d="M170 158 q30 -9 60 0" stroke="#b98a5e" strokeWidth="1" fill="none" opacity=".35" />
@@ -901,8 +938,8 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
                   <path d="M216 232 q12 5 24 -2" stroke="#8a5a38" strokeWidth="1.4" fill="none" opacity=".5" />
                   <path d="M163 236 q10 4 19 1" stroke="#a06e48" strokeWidth="1" fill="none" opacity=".28" />
                   {/* the cheeks and nose of a man who takes his dram medicinally */}
-                  <ellipse cx="165" cy="247" rx="12" ry="8.5" fill="#c25a40" opacity=".26" />
-                  <ellipse cx="235" cy="247" rx="12" ry="8.5" fill="#b04e38" opacity=".3" />
+                  <ellipse cx="165" cy="247" rx="17" ry="12" fill={`url(#${gradient("bloom")})`} />
+                  <ellipse cx="235" cy="247" rx="17" ry="12" fill={`url(#${gradient("bloom")})`} />
                   <path d="M192 246 q-4 -22 8 -32 q12 10 8 32 q-2 9 -8 10 q-6 -1 -8 -10z" fill="#dda471" />
                   <path d="M200 216 q-5 18 -8 26 q3 8 8 8 q5 0 8 -8 q-3 -8 -8 -26z" fill="#cf9464" opacity=".85" />
                   <path d="M190 242 q4 7 10 7 q6 0 10 -7" stroke="#96603a" strokeWidth="1.3" fill="none" opacity=".65" />
@@ -910,15 +947,48 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
                   <ellipse cx="194" cy="228" rx="3" ry="7" fill="#ffdfae" opacity=".32" />
                   <path d="M186 246 q-2 3 -4 4 M214 246 q2 3 4 4" stroke="#96603a" strokeWidth="1.1" fill="none" opacity=".55" />
                   <path d="M180 252 q-6 10 -4 18 M220 252 q6 10 4 18" stroke="#96603a" strokeWidth="1.2" fill="none" opacity=".45" />
-                  {/* THE BEARD — one man, one beard: sideburn to jaw to chin, whole */}
-                  <path d="M149 224 q-5 34 9 56 q8 13 20 20 l7 -11 q-15 -18 -15 -43 q0 -12 -6 -24z" fill={`url(#${gradient("beard")})`} />
-                  <path d="M251 224 q5 34 -9 56 q-8 13 -20 20 l-7 -11 q15 -18 15 -43 q0 -12 6 -24z" fill={`url(#${gradient("beard")})`} />
-                  <path d="M164 274 q14 16 36 16 q22 0 36 -16 q9 16 3 31 q-10 23 -39 23 q-29 0 -39 -23 q-6 -15 3 -31z" fill={`url(#${gradient("beard")})`} />
+                  {/* THE BEARD — one man, one beard: sideburn to jaw to chin, whole.
+                      Built as a mass, then STRANDED: the fibre filter walks the
+                      outline off its own curve so the silhouette breaks up, and
+                      the strokes over the top give it direction. Three smooth
+                      blobs is what made him look like a schoolbook pirate. */}
+                  <g filter={`url(#${gradient("fibre")})`}>
+                    <path d="M149 224 q-5 34 9 56 q8 13 20 20 l7 -11 q-15 -18 -15 -43 q0 -12 -6 -24z" fill={`url(#${gradient("beard")})`} />
+                    <path d="M251 224 q5 34 -9 56 q-8 13 -20 20 l-7 -11 q15 -18 15 -43 q0 -12 6 -24z" fill={`url(#${gradient("beard")})`} />
+                    <path d="M164 274 q14 16 36 16 q22 0 36 -16 q9 16 3 31 q-10 23 -39 23 q-29 0 -39 -23 q-6 -15 3 -31z" fill={`url(#${gradient("beard")})`} />
+                  </g>
+                  {/* Hair grows in a direction. Strokes follow the jaw down and in
+                      toward the point of the chin. */}
+                  <g stroke="#8f8877" fill="none" opacity=".34" strokeLinecap="round">
+                    <path d="M158 240 q3 26 14 44" strokeWidth="1.1" />
+                    <path d="M166 246 q2 24 11 40" strokeWidth=".9" />
+                    <path d="M242 240 q-3 26 -14 44" strokeWidth="1.1" />
+                    <path d="M234 246 q-2 24 -11 40" strokeWidth=".9" />
+                    <path d="M178 288 q6 18 20 22" strokeWidth="1" />
+                    <path d="M222 288 q-6 18 -20 22" strokeWidth="1" />
+                    <path d="M192 296 q4 14 4 22" strokeWidth=".8" />
+                    <path d="M208 296 q-4 14 -4 22" strokeWidth=".8" />
+                  </g>
+                  <g stroke="#fffdf6" fill="none" opacity=".3" strokeLinecap="round">
+                    <path d="M162 243 q3 24 13 41" strokeWidth=".8" />
+                    <path d="M238 243 q-3 24 -13 41" strokeWidth=".8" />
+                    <path d="M186 292 q5 16 14 20" strokeWidth=".7" />
+                    <path d="M214 292 q-5 16 -14 20" strokeWidth=".7" />
+                  </g>
+                  {/* The beard is not lit evenly: the underside of the chin is in
+                      its own shadow, which is most of what gives it volume. */}
+                  <path d="M170 296 q30 22 60 0 q-8 30 -30 30 q-22 0 -30 -30z" fill="#6d6558" opacity=".34" filter={`url(#${gradient("soften")})`} />
                   <path d="M176 296 q24 14 48 0 q-6 14 -24 15 q-18 -1 -24 -15z" fill="#8f877a" opacity=".3" />
                   <path d="M172 290 q5 13 12 19 M228 290 q-5 13 -12 19 M200 306 v16 M187 300 q2 9 6 13 M213 300 q-2 9 -6 13" stroke="#b8b09d" strokeWidth="1.2" fill="none" opacity=".65" />
                   {/* moustache, framing the mouth without gagging the actor */}
-                  <path d="M199 252 q-15 -3 -25 8 q-6 7 -3 13 q5 -6 12 -7 q9 -1 16 3 z" fill={`url(#${gradient("beard")})`} />
-                  <path d="M201 252 q15 -3 25 8 q6 7 3 13 q-5 -6 -12 -7 q-9 -1 -16 3 z" fill={`url(#${gradient("beard")})`} />
+                  <g filter={`url(#${gradient("fibre")})`}>
+                    <path d="M199 252 q-15 -3 -25 8 q-6 7 -3 13 q5 -6 12 -7 q9 -1 16 3 z" fill={`url(#${gradient("beard")})`} />
+                    <path d="M201 252 q15 -3 25 8 q6 7 3 13 q-5 -6 -12 -7 q-9 -1 -16 3 z" fill={`url(#${gradient("beard")})`} />
+                  </g>
+                  <g stroke="#9b9484" fill="none" opacity=".38" strokeLinecap="round" strokeWidth=".8">
+                    <path d="M196 254 q-11 0 -19 9" /><path d="M197 258 q-10 1 -16 8" />
+                    <path d="M204 254 q11 0 19 9" /><path d="M203 258 q10 1 16 8" />
+                  </g>
                   <path d="M178 266 q-3 4 -2 7 M222 266 q3 4 2 7" stroke="#cfc8b8" strokeWidth="1.4" fill="none" opacity=".8" />
                   <g>
                     <path
@@ -986,9 +1056,25 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
                     <path d="M247 211 q-6 -4 -12 -4" fill="none" stroke="#cfc8b8" strokeWidth="2.2" strokeLinecap="round" />
                   </g>
                   {/* hair: swept back, thinning at the crown, wisps at the temples */}
-                  <path d="M152 200 q-13 -11 -9 -30 q5 -23 28 -30 q-13 20 -6 31 q-9 11 -13 29z" fill={`url(#${gradient("beard")})`} />
-                  <path d="M248 200 q13 -11 9 -30 q-5 -23 -28 -30 q13 20 6 31 q9 11 13 29z" fill={`url(#${gradient("beard")})`} />
-                  <path d="M160 170 q-3 -25 21 -35 q19 -8 43 -3 q21 5 27 24 q4 10 1 19 q-12 -14 -30 -15 q-32 -3 -46 3 q-12 5 -16 7z" fill={`url(#${gradient("beard")})`} />
+                  <g filter={`url(#${gradient("fibre")})`}>
+                    <path d="M152 200 q-13 -11 -9 -30 q5 -23 28 -30 q-13 20 -6 31 q-9 11 -13 29z" fill={`url(#${gradient("beard")})`} />
+                    <path d="M248 200 q13 -11 9 -30 q-5 -23 -28 -30 q13 20 6 31 q9 11 13 29z" fill={`url(#${gradient("beard")})`} />
+                    <path d="M160 170 q-3 -25 21 -35 q19 -8 43 -3 q21 5 27 24 q4 10 1 19 q-12 -14 -30 -15 q-32 -3 -46 3 q-12 5 -16 7z" fill={`url(#${gradient("beard")})`} />
+                  </g>
+                  {/* Swept back off the brow: the strokes run the way it was combed,
+                      not across it. The old build drew straight white lines over the
+                      mass, which read as scratches in the paint. */}
+                  <g stroke="#8b8474" fill="none" opacity=".4" strokeLinecap="round">
+                    <path d="M166 168 q14 -22 44 -24" strokeWidth="1.1" />
+                    <path d="M170 160 q16 -20 44 -21" strokeWidth=".9" />
+                    <path d="M176 152 q16 -16 42 -16" strokeWidth=".8" />
+                    <path d="M156 186 q-4 -18 6 -32" strokeWidth="1" />
+                    <path d="M244 186 q4 -18 -6 -32" strokeWidth="1" />
+                  </g>
+                  <g stroke="#fffdf6" fill="none" opacity=".26" strokeLinecap="round" strokeWidth=".7">
+                    <path d="M168 164 q15 -21 43 -23" />
+                    <path d="M174 156 q15 -17 41 -18" />
+                  </g>
                   <path d="M166 158 q12 -14 34 -15 M212 142 q14 5 21 15 M158 176 q-3 8 -2 16" fill="none" stroke="#f7f4ea" strokeWidth="2.4" strokeLinecap="round" opacity=".8" />
                   <path d="M176 146 q22 -8 46 -2" stroke="#b5ac99" strokeWidth="1.4" fill="none" opacity=".55" />
                   <path d="M150 192 q-7 9 -5 20 M250 192 q7 9 5 20" stroke="#d8d2c4" strokeWidth="3.6" fill="none" strokeLinecap="round" />
