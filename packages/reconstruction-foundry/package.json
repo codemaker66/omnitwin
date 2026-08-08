@@ -28,7 +28,7 @@
     "@omnitwin/types": "workspace:*",
     "gltf-validator": "2.0.0-dev.3.10",
     "meshoptimizer": "1.2.0",
-    "sharp": "0.34.5",
+    "sharp": "0.35.3",
     "zod": "3.24.2"
   },
   "devDependencies": {
