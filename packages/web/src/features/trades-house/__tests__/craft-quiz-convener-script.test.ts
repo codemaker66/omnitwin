@@ -1,0 +1,267 @@
+// ---------------------------------------------------------------------------
+// The spoken script — register and performance integrity.
+//
+// Every word here reaches the visitor twice: on screen, and in the Convener's
+// mouth once the voice batch exists. Two standing rulings govern it, and both
+// are easy to erode one edit at a time, so they are tests.
+//
+//   HOLLYWOOD SCOTS — obviously Scottish, understood cold by an American,
+//   English or European reader with no glossary. Dense respellings (fower,
+//   abune, naething, oot) are banned; rhythm and idiom carry the accent.
+//
+//   NO VERDICTS — the narrator never tells you what your answer says about
+//   you. Four serious people answer these scenes four different ways; a
+//   narrator who approved of one would hand players a map for gaming the sort.
+// ---------------------------------------------------------------------------
+
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+/** The files that render his words as JSX literals rather than corpus. */
+const UI_COPY_FILES = [
+  "../../../pages/TradesHouseCraftQuizPage.tsx",
+  "../convener/ConvenerPortrait.tsx",
+] as const;
+import { CRAFT_QUESTIONS } from "../craft-quiz-model.js";
+import {
+  CONVENER_ACKNOWLEDGEMENTS,
+  CONVENER_DELIBERATION,
+  CONVENER_REACTIONS,
+  convenerAcknowledgement,
+  convenerReaction,
+} from "../convener/convener-lines.js";
+
+const SCENES = CRAFT_QUESTIONS.map((question) => ({
+  where: question.title,
+  text: question.scene,
+}));
+
+const OPTION_COPY = CRAFT_QUESTIONS.flatMap((question) =>
+  question.options.map((option) => ({
+    where: `${question.title} - ${option.lead}`,
+    text: `${option.lead} ${option.body}`,
+    cost: option.cost,
+  })),
+);
+
+const ACK_COPY = CONVENER_ACKNOWLEDGEMENTS.map((text, index) => ({
+  where: `acknowledgement ${String(index)}`,
+  text,
+}));
+
+const REACTION_COPY = CONVENER_REACTIONS.flatMap((replies, questionIndex) =>
+  replies.map((text, optionIndex) => ({
+    where: `reaction ${String(questionIndex + 1)}.${String(optionIndex + 1)}`,
+    text,
+  })),
+);
+
+// The deliberation is the last thing he says before the verdict, which makes
+// it the easiest place to leak one: a single craft noun here would turn the
+// ceremony into the answer key.
+const DELIBERATION_COPY = CONVENER_DELIBERATION.map((text, index) => ({
+  where: `deliberation beat ${String(index + 1)}`,
+  text,
+}));
+
+const ALL_SPOKEN = [
+  ...SCENES,
+  ...OPTION_COPY.map(({ where, text }) => ({ where, text })),
+  ...ACK_COPY,
+  ...REACTION_COPY,
+  ...DELIBERATION_COPY,
+];
+
+/** Respellings the register ruling bans outright, with their plain forms. */
+describe("the twelve scenes", () => {
+  it("ships exactly twelve, each with four options", () => {
+    expect(SCENES).toHaveLength(12);
+    expect(OPTION_COPY).toHaveLength(48);
+  });
+
+  it("never repeats a scene or an option", () => {
+    expect(new Set(SCENES.map(({ text }) => text)).size).toBe(12);
+    expect(new Set(OPTION_COPY.map(({ text }) => text)).size).toBe(48);
+    expect(new Set(CRAFT_QUESTIONS.map((question) => question.title)).size).toBe(12);
+  });
+
+  it("names a distinct price on every option — the cost is what keeps them equal", () => {
+    for (const { where, cost } of OPTION_COPY) {
+      expect(cost.trim().length, where).toBeGreaterThan(0);
+    }
+    expect(new Set(OPTION_COPY.map(({ cost }) => cost)).size).toBe(48);
+  });
+
+  it("keeps every scene short enough to hold a reader", () => {
+    for (const { where, text } of SCENES) {
+      // ~620 chars is about eleven seconds in his mouth at speaking pace.
+      expect(text.length, `${where} runs long`).toBeLessThanOrEqual(620);
+      expect(text.length, `${where} is too thin to be a scene`).toBeGreaterThan(180);
+    }
+  });
+
+  it("finishes every sentence — he performs, he never trails off", () => {
+    for (const { where, text } of [...SCENES, ...ACK_COPY]) {
+      expect(/[.!?…”"]$/u.test(text.trim()), `${where}: "${text.slice(-40)}"`).toBe(true);
+    }
+  });
+});
+
+describe("Le Guin register", () => {
+  // The gate this replaced enforced the OPPOSITE: it banned plain spellings in
+  // favour of Scots and required every scene to carry a dialect marker. Both
+  // inverted on 2026-08-07. A register gate has to be falsifiable or it is
+  // decoration, so each of these fails on a specific, nameable fault.
+
+  it("keeps the dialect out — the Scots build is gone from teller and tale alike", () => {
+    const scots = /\b(aye|ye|yer|ken(?:t)?|auld|wee|nae|och|cannae|doesnae|isnae|didnae|wisnae|willnae|tae|wi'|dinnae|o')\b/iu;
+    const offences = ALL_SPOKEN.filter(({ text }) => scots.test(text)).map(({ where }) => where);
+    expect(offences, "these still read as Scots").toEqual([]);
+  });
+
+  it("prefers the short word — no Latinate term that a plain one replaces", () => {
+    // "Began", never "commenced". The list is deliberately small: every entry is
+    // a word with an exact shorter equivalent, so there is no judgment call.
+    const LATINATE: readonly (readonly [RegExp, string])[] = [
+      [/\bcommenced?\b/iu, "began"],
+      [/\butilis|utiliz/iu, "use"],
+      [/\bendeavour/iu, "try"],
+      [/\bsubsequently\b/iu, "then"],
+      [/\bpurchase[sd]?\b/iu, "buy"],
+      [/\bapproximately\b/iu, "about"],
+      [/\bassist(?:ance|ed)?\b/iu, "help"],
+      [/\bsufficient\b/iu, "enough"],
+      [/\bremainder\b/iu, "rest"],
+      [/\bconstruct(?:ed|ion)?\b/iu, "build"],
+    ];
+    const offences: string[] = [];
+    for (const { where, text } of ALL_SPOKEN) {
+      for (const [pattern, plain] of LATINATE) {
+        if (pattern.test(text)) offences.push(`${where}: ${pattern.source} -> write "${plain}"`);
+      }
+    }
+    expect(offences).toEqual([]);
+  });
+
+  it("stays plain — no sentence runs past thirty words", () => {
+    // Her long sentences open out; they do not accumulate clauses. Thirty words
+    // is generous, and anything past it is a sentence that lost its shape.
+    const offences: string[] = [];
+    for (const { where, text } of ALL_SPOKEN) {
+      for (const sentence of text.split(/(?<=[.?!])\s+/u)) {
+        const words = sentence.trim().split(/\s+/u).filter(Boolean).length;
+        if (words > 30) offences.push(`${where}: ${String(words)}-word sentence`);
+      }
+    }
+    expect(offences).toEqual([]);
+  });
+
+  it("never props a verb with an adverb — the verb does the work or it does not", () => {
+    // Catches the tell of AI-flat prose: "quietly nodded", "carefully placed".
+    // Sentence-opening adverbials ("Slowly, the light...") are hers and allowed.
+    const offences: string[] = [];
+    for (const { where, text } of ALL_SPOKEN) {
+      const hits = text.match(/(?<![.?!]\s)\b\w+ly\s+(?:said|nodded|placed|walked|looked|turned|smiled|moved|held|watched)\b/giu) ?? [];
+      for (const hit of hits) offences.push(`${where}: "${hit.trim()}"`);
+    }
+    expect(offences).toEqual([]);
+  });
+
+
+  it("keeps the dialect out of the UI copy too, not only the corpus", () => {
+    // The corpus gates above read exported strings. Two Scots lines survived
+    // the rewrite anyway — the portrait's "PATRON O' THE HALL" plaque and the
+    // near-miss line on the result screen — because both are literals in JSX,
+    // which no amount of checking the corpus will ever see. So this reads the
+    // source of the two files that render his words.
+    const scots = /\b(aye|ye|yer|ken|auld|wee|nae|och|cannae|doesnae|isnae|didnae|wisnae|willnae|tae|dinnae)\b|\bo['’]\s|\bwi['’]/iu;
+    const offences: string[] = [];
+    for (const file of UI_COPY_FILES) {
+      const source = readFileSync(resolve(import.meta.dirname, file), "utf8");
+      source.split("\n").forEach((line, index) => {
+        // Comments are prose about the work and may quote the old build.
+        const code = line.replace(/\/\/.*$/u, "").replace(/^\s*\*.*$/u, "");
+        if (scots.test(code)) offences.push(`${file}:${String(index + 1)} ${code.trim().slice(0, 60)}`);
+      });
+    }
+    expect(offences).toEqual([]);
+  });
+
+  it("shouts single words only — capitals are his emphasis, not his volume", () => {
+    for (const { where, text } of ALL_SPOKEN) {
+      const shouted = text.match(/\b[A-Z]{2,}\b/gu) ?? [];
+      for (const word of shouted) {
+        expect(word.length, `${where} shouts "${word}"`).toBeLessThanOrEqual(12);
+      }
+      expect(shouted.length, `${where} shouts ${String(shouted.length)} times`).toBeLessThanOrEqual(3);
+    }
+  });
+});
+
+describe("the Convener's reactions", () => {
+  it("answers all forty-eight options, aligned to the scenes", () => {
+    expect(CONVENER_REACTIONS).toHaveLength(CRAFT_QUESTIONS.length);
+    CRAFT_QUESTIONS.forEach((question, index) => {
+      expect(CONVENER_REACTIONS[index], `scene ${String(index + 1)}`)
+        .toHaveLength(question.options.length);
+    });
+    expect(REACTION_COPY).toHaveLength(48);
+  });
+
+  it("never says the same thing twice", () => {
+    expect(new Set(REACTION_COPY.map(({ text }) => text)).size).toBe(48);
+  });
+
+  it("keeps every reply short enough to be a reply, not a speech", () => {
+    for (const { where, text } of REACTION_COPY) {
+      expect(text.trim().length, `${where} is empty`).toBeGreaterThan(20);
+      expect(text.length, `${where} runs long`).toBeLessThanOrEqual(200);
+      expect(/[.!?…”"]$/u.test(text.trim()), where).toBe(true);
+    }
+  });
+
+  // The load-bearing one. He may notice the choice and name its price; the
+  // moment he grades it, he has published the answer key.
+  it("reacts without ever grading the answer", () => {
+    const verdict = /\b(good choice|right choice|wrong choice|well chosen|wisely|foolish|you should have|the correct|a mistake|bad call)\b/iu;
+    const judging = REACTION_COPY.filter(({ text }) => verdict.test(text));
+    expect(judging, "these reactions grade the answer").toEqual([]);
+  });
+
+  // Naming a Craft in a reaction would let a player reverse-engineer the sort.
+  it("never names a Craft", () => {
+    const crafts = /\b(hammermen|wrights|masons|coopers|tailors|weavers|dyers|bonnetmakers|skinners|cordiners|bakers|fleshers|maltmen|gardeners|barbers)\b/iu;
+    const leaking = REACTION_COPY.filter(({ text }) => crafts.test(text));
+    expect(leaking, "these reactions name the Craft they serve").toEqual([]);
+  });
+
+  it("looks up by scene and option, and survives a bad index", () => {
+    expect(convenerReaction(0, 0)).toBe(CONVENER_REACTIONS[0]?.[0]);
+    expect(convenerReaction(11, 3)).toBe(CONVENER_REACTIONS[11]?.[3]);
+    expect(convenerReaction(99, 99).length).toBeGreaterThan(0);
+    expect(convenerReaction(-1, -1).length).toBeGreaterThan(0);
+  });
+});
+
+describe("the Convener's acknowledgements", () => {
+  it("gives every scene its own line, so a run never hears a repeat", () => {
+    expect(CONVENER_ACKNOWLEDGEMENTS.length).toBeGreaterThanOrEqual(CRAFT_QUESTIONS.length);
+    expect(new Set(CONVENER_ACKNOWLEDGEMENTS).size).toBe(CONVENER_ACKNOWLEDGEMENTS.length);
+    const used = CRAFT_QUESTIONS.map((_, index) => convenerAcknowledgement(index));
+    expect(new Set(used).size).toBe(CRAFT_QUESTIONS.length);
+  });
+
+  // The load-bearing one: he must not grade the answer.
+  it("passes no judgement on the choice", () => {
+    const verdict = /\b(right choice|wrong|good choice|well chosen|wise|foolish|brave|coward|better|worse|should have|mistake)\b/iu;
+    const judging = CONVENER_ACKNOWLEDGEMENTS.filter((line) => verdict.test(line));
+    expect(judging, "these acknowledgements grade the answer").toEqual([]);
+  });
+
+  it("stays in range for any index, including a hostile one", () => {
+    expect(convenerAcknowledgement(0)).toBe(CONVENER_ACKNOWLEDGEMENTS[0]);
+    expect(convenerAcknowledgement(-5).length).toBeGreaterThan(0);
+    expect(convenerAcknowledgement(9_999).length).toBeGreaterThan(0);
+  });
+});

@@ -379,6 +379,11 @@ export const router = createBrowserRouter([
     element: withSuspense(<TradesHouseCraftQuizPage />),
   },
   {
+    // The short shareable door to the same room — venviewer.com/quiz.
+    path: "/quiz",
+    element: withSuspense(<TradesHouseCraftQuizPage />),
+  },
+  {
     path: "/dev/capture-intake",
     element: withClerk(
       <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">

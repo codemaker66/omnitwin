@@ -1,0 +1,15 @@
+{
+  "voiceId": "wteyCP7td8C5nYwWnOV1",
+  "voiceName": "Chris Lee",
+  "note": "A voice_id is an identifier, not a secret, so it is committed. The API key never is: it lives in packages/web/.env.local, which .gitignore covers.",
+  "modelId": "eleven_multilingual_v2",
+  "outputFormat": "mp3_44100_128",
+  "modelNote": "multilingual_v2 at Blake's direction. Note its alignment is NOT one timestamp per displayed character (22 for a 20-character line) because it aligns against normalised text; displayCharsSpokenBy scales by fraction so the typewriter stays in sync under either model.",
+  "voiceSettings": {
+    "stability": 0.45,
+    "similarity_boost": 0.8,
+    "style": 0.4,
+    "use_speaker_boost": true
+  },
+  "settingsNote": "v2 reads stability as a continuous value, unlike v3's three discrete modes, so 0.45 is meaningful here — slightly looser than neutral, which suits a narrator over a reader."
+}

@@ -374,3 +374,62 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// The booking → plan link (`bookings.event_id`).
+//
+// This behaviour has existed since the T-537 core extraction, but NOTHING
+// pinned it — and the only literal `eventId` in routes/bookings.ts is the
+// deliberate `null` of the enquiry conversion. Reading the route adapter
+// alone therefore makes the link look discarded; it is not. These pins state
+// the contract so the next reader does not have to infer it from the adapter.
+// ---------------------------------------------------------------------------
+describe("booking → plan link (bookings.event_id)", () => {
+  it("rejects a malformed eventId at the schema boundary", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/bookings",
+      headers: { authorization: `Bearer ${staffToken()}` },
+      payload: { ...validHoldPayload(), eventId: "not-a-uuid" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.body) as { code: string; details: { path: unknown[] }[] };
+    expect(body.code).toBe("VALIDATION_ERROR");
+    expect(body.details.flatMap((issue) => issue.path)).toContain("eventId");
+  });
+
+  it("create verifies the event belongs to the venue BEFORE inserting, then persists it", async () => {
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
+    const guard = source.indexOf("input.eventId !== undefined");
+    const write = source.indexOf("eventId: input.eventId ?? null");
+    expect(guard).toBeGreaterThan(-1);
+    expect(write).toBeGreaterThan(-1);
+    // Tenant safety: the venue check must precede the write, never follow it.
+    expect(guard).toBeLessThan(write);
+    expect(source).toContain("EVENT_VENUE_MISMATCH");
+  });
+
+  it("update can attach a plan and can detach one — an explicit null must survive the merge", async () => {
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
+    // `patch.eventId !== null` in the guard is what lets a detach through
+    // without being re-validated as a foreign event.
+    expect(source).toContain("patch.eventId !== undefined && patch.eventId !== null");
+    // undefined means "not supplied" (keep it); null means "detach". `??`
+    // would collapse those two, so the `=== undefined` test is load-bearing.
+    expect(source).toContain("eventId: patch.eventId === undefined ? row.eventId : patch.eventId");
+  });
+
+  it("the enquiry conversion's null event is deliberate, not a dropped field", async () => {
+    const source = await readFile(resolve("src/routes/bookings.ts"), "utf-8");
+    const conversion = source.slice(source.indexOf('server.post("/from-enquiry"'));
+    expect(conversion).toContain("eventId: null");
+    // Canon §1: the commitment axis and the enquiry axis stay independent —
+    // a pencilled-in enquiry has no plan yet, by design.
+    expect(source).toContain("enquiry axis stay independent");
+  });
+
+  it("the serializer carries the link, so the board sees it without a second fetch", async () => {
+    const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
+    expect(source).toContain("eventId: row.eventId");
+  });
+});

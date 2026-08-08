@@ -330,12 +330,9 @@
   transform: translateY(-2px);
 }
 
-.craft-option-icon {
-  fill: none;
+.craft-option-seal {
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
   height: 42px;
-  overflow: visible;
-  stroke-linecap: round;
-  stroke-linejoin: round;
   width: 42px;
 }
 
@@ -527,19 +524,6 @@
   position: relative;
   text-underline-offset: 4px;
   z-index: 2;
-}
-
-.craft-result-building {
-  background:
-    linear-gradient(180deg, transparent 0%, rgba(11, 23, 40, 0.2) 38%, var(--craft-navy) 100%),
-    url("/trades-house-media/assets/building-lineart.png") center bottom / contain no-repeat;
-  bottom: 0;
-  height: 190px;
-  left: 50%;
-  opacity: 0.42;
-  position: absolute;
-  transform: translateX(-50%);
-  width: min(880px, 94vw);
 }
 
 .craft-result-signoff {
@@ -941,10 +925,10 @@
     position: absolute;
   }
 
-  .craft-option-icon {
+  .craft-option-seal {
     flex: none;
-    height: 45px;
-    width: 45px;
+    height: 44px;
+    width: 44px;
   }
 
   .craft-quiz-option strong {
@@ -955,24 +939,26 @@
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   }
 
+  /* Metrics pinned to the supplied build (Discover Your Craft Quiz v2): Cinzel
+     400 / 10px / 2px, and deliberately no text-transform. Cinzel is an
+     inscriptional face whose lowercase glyphs are small capitals, so the
+     supplied lowercase copy already renders as caps; forcing uppercase
+     substitutes wider full-height capitals and changes where lines wrap. */
   .craft-quiz-option small {
     color: currentcolor;
     font-family: Cinzel, serif;
-    font-size: 9.5px;
+    font-size: 10px;
     font-style: normal;
-    letter-spacing: 1.8px;
+    font-weight: 400;
+    letter-spacing: 2px;
     line-height: normal;
     opacity: 0.75;
-    text-transform: uppercase;
   }
 
-  .craft-quiz-option:nth-child(4) {
-    padding-block: 19px;
-  }
-
-  .craft-quiz-option:nth-child(4) small {
-    max-width: 250px;
-  }
+  /* The fourth option previously carried a 250px subtitle clamp and extra block
+     padding to tame the full-height capitals that text-transform produced. With
+     the supplied Cinzel small-cap metrics restored above, its subtitle fits on
+     one line unaided, and both overrides now cause the very wrap they prevented. */
 
   .craft-quiz-question .craft-quiz-divider {
     margin: 33px 0 0;
@@ -1174,6 +1160,7 @@
     line-height: 1.5;
     margin: 12px 10px 0;
     max-width: 410px;
+    padding: 11px 14px 12px;
   }
 
   .craft-result-affinities strong {
@@ -1236,18 +1223,6 @@
     margin-top: 12px;
   }
 
-  .craft-result-building {
-    background: url("/trades-house-media/assets/building-gold.png") center / contain no-repeat;
-    bottom: auto;
-    height: 58px;
-    left: auto;
-    margin-top: 18px;
-    opacity: 0.35;
-    position: static;
-    transform: none;
-    width: 100%;
-  }
-
   .craft-result-signoff {
     bottom: auto;
     color: #cda85f;
@@ -1258,6 +1233,292 @@
     margin: 8px 0 0;
     position: static;
   }
+}
+
+/* Keep every result action and line of copy inside a portrait iPhone viewport. */
+@media screen and (max-width: 430px) {
+  .craft-quiz-result {
+    padding: 12px 16px 14px;
+  }
+
+  .craft-result-kicker {
+    font-size: 9.5px;
+    letter-spacing: 2.4px;
+    width: 88%;
+  }
+
+  .craft-result-medallion {
+    height: 190px;
+    margin: 6px auto 0;
+    width: 190px;
+  }
+
+  .craft-result-rays {
+    inset: -22px;
+  }
+
+  .craft-quiz-result h1 {
+    font-size: 16px;
+    letter-spacing: 1.8px;
+    margin-top: 3px;
+    padding: 10px 26px;
+  }
+
+  .craft-quiz-result h1::before,
+  .craft-quiz-result h1::after {
+    height: 30px;
+    top: 5px;
+    width: 32px;
+  }
+
+  .craft-quiz-result h1::before {
+    left: -21px;
+  }
+
+  .craft-quiz-result h1::after {
+    right: -21px;
+  }
+
+  .craft-result-archetype {
+    font-size: 18px;
+    margin-top: 7px;
+  }
+
+  .craft-result-essence {
+    font-size: 14.5px;
+    line-height: 1.25;
+    margin: 7px 6px 0;
+  }
+
+  .craft-result-reveal {
+    font-size: 12.5px;
+    line-height: 1.3;
+    margin: 6px 6px 0;
+  }
+
+  .craft-result-motto {
+    font-size: 8.5px;
+    letter-spacing: 1.4px;
+    line-height: 1.35;
+    margin-top: 6px;
+  }
+
+  .craft-result-affinities {
+    font-size: 12px;
+    line-height: 1.42;
+    margin: 6px 6px 0;
+    padding: 9px 12px 10px;
+  }
+
+  .craft-result-introduction {
+    font-size: 11px;
+    letter-spacing: 1.8px;
+    margin-top: 9px;
+    min-height: 44px;
+    padding: 10px 22px 10px 30px;
+  }
+
+  .craft-result-introduction::before {
+    font-size: 10px;
+    height: 30px;
+    left: -11px;
+    width: 30px;
+  }
+
+  .craft-result-retake {
+    font-size: 13px;
+    margin-top: 7px;
+  }
+
+  .craft-result-leaflet {
+    font-size: 11.5px;
+    margin-top: 5px;
+  }
+
+  .craft-result-signoff {
+    font-size: 8.5px;
+    letter-spacing: 2.2px;
+    margin-top: 4px;
+  }
+}
+
+/* The SE-height layout keeps 44px actions while tightening decorative space. */
+@media screen and (max-width: 390px) and (max-height: 700px) {
+  .craft-quiz-question {
+    padding: 10px 14px 12px;
+  }
+
+  .craft-quiz-progress {
+    font-size: 9.5px;
+    width: 94%;
+  }
+
+  .craft-quiz-progress span[data-active="true"] {
+    font-size: 17px;
+  }
+
+  .craft-quiz-progress i {
+    margin-inline: 1px;
+  }
+
+  .craft-quiz-question-count {
+    font-size: 8px;
+    letter-spacing: 2px;
+    margin-top: 2px;
+  }
+
+  .craft-quiz-omen {
+    font-size: 12.5px;
+    line-height: 1.15;
+    margin-top: 5px;
+  }
+
+  .craft-quiz-question h1 {
+    font-size: 25.5px;
+    line-height: 1.05;
+    margin-top: 8px;
+  }
+
+  .craft-quiz-options {
+    gap: 7px;
+    margin-top: 10px;
+  }
+
+  .craft-quiz-option,
+  .craft-quiz-option:nth-child(4) {
+    gap: 10px;
+    min-height: 61px;
+    padding: 8px 10px;
+  }
+
+  .craft-option-seal {
+    height: 32px;
+    width: 32px;
+  }
+
+  .craft-quiz-option strong {
+    font-size: 12px;
+    letter-spacing: 1.6px;
+  }
+
+  .craft-quiz-option small {
+    font-size: 8px;
+    letter-spacing: 1px;
+    line-height: 1.15;
+    margin-top: 2px;
+  }
+
+  .craft-quiz-question .craft-quiz-divider {
+    margin-top: 9px;
+    width: 55%;
+  }
+
+  .craft-quiz-est {
+    font-size: 7.5px;
+    letter-spacing: 1.8px;
+    margin-top: 3px;
+  }
+
+  .craft-quiz-result {
+    padding: 8px 12px 10px;
+  }
+
+  .craft-result-kicker {
+    font-size: 8.5px;
+    letter-spacing: 1.8px;
+  }
+
+  .craft-result-medallion {
+    height: 150px;
+    margin-top: 2px;
+    width: 150px;
+  }
+
+  .craft-result-rays {
+    inset: -17px;
+  }
+
+  .craft-quiz-result h1 {
+    font-size: 14.5px;
+    letter-spacing: 1.4px;
+    margin-top: 2px;
+    padding: 8px 20px;
+  }
+
+  .craft-quiz-result h1::before,
+  .craft-quiz-result h1::after {
+    height: 25px;
+    top: 4px;
+    width: 27px;
+  }
+
+  .craft-quiz-result h1::before {
+    left: -17px;
+  }
+
+  .craft-quiz-result h1::after {
+    right: -17px;
+  }
+
+  .craft-result-archetype {
+    font-size: 16px;
+    margin-top: 3px;
+  }
+
+  .craft-result-essence {
+    font-size: 13px;
+    line-height: 1.2;
+    margin-top: 4px;
+  }
+
+  .craft-result-reveal {
+    font-size: 11.5px;
+    line-height: 1.22;
+    margin-top: 4px;
+  }
+
+  .craft-result-motto {
+    font-size: 8px;
+    letter-spacing: 1.1px;
+    line-height: 1.3;
+    margin-top: 4px;
+  }
+
+  .craft-result-affinities {
+    font-size: 11px;
+    line-height: 1.4;
+    margin-top: 4px;
+    padding: 7px 10px 8px;
+  }
+
+  .craft-result-affinities-who {
+    font-size: 8.5px;
+    letter-spacing: 0.2em;
+    margin-bottom: 3px;
+  }
+
+  .craft-result-introduction {
+    font-size: 10px;
+    margin-top: 6px;
+    min-height: 44px;
+    padding: 8px 18px 8px 26px;
+  }
+
+  .craft-result-retake {
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  .craft-result-leaflet {
+    font-size: 10.5px;
+    margin-top: 4px;
+  }
+
+  .craft-result-signoff {
+    font-size: 7.5px;
+    margin-top: 3px;
+  }
+
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1272,5 +1533,1227 @@
   .craft-result-glow,
   .craft-result-ember {
     animation: none;
+  }
+}
+
+/* ---- the Convener's stage ------------------------------------------------
+   Narrow: a compact banner above the question — he introduces, then gets out
+   of the way. Wide (≥880px): a sticky portrait column beside the question,
+   like the painting hung next to the lectern. */
+
+.craft-quiz-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+/* (The former ≥880px flex stage lived here; the ≥980px Hall stage at the end
+   of this file replaces it. 880–979px falls through to the banner layout —
+   a 300px portrait column can NOT share a 520px frame.) */
+
+/* Narrow stage: the Convener SPEAKS each prompt, so the visual h1 would say
+   everything twice and cost the exact height his banner needs. It stays in
+   the accessibility tree (aria-labelledby target) but leaves the layout. */
+@media (max-width: 979px) {
+  .craft-quiz-stage {
+    gap: 8px;
+  }
+
+  .craft-quiz-stage .craft-quiz-question h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* The banner spends ~90px; the question column pays for it here so the
+     no-scroll rule at 375x667 keeps holding. Desktop is untouched. The
+     pre-Convener layout floored the section at the full viewport height —
+     with the banner above it, that floor IS the overflow. */
+  .craft-quiz-stage .craft-quiz-question {
+    min-height: 0;
+  }
+
+  .craft-quiz-stage .craft-quiz-option {
+    min-height: 72px;
+    padding: 12px 16px;
+    gap: 14px;
+  }
+
+  .craft-quiz-stage .craft-quiz-options {
+    gap: 10px;
+  }
+
+  .craft-quiz-stage .craft-quiz-question .craft-quiz-divider {
+    display: none;
+  }
+
+  .craft-quiz-stage .craft-quiz-est {
+    margin-top: 6px;
+  }
+}
+
+/* While he reacts to a choice, the chosen option holds the light and the
+   rest step back — nobody talks over the Convener. */
+
+/* The moment of commit had no punctuation: the card simply became a different
+   colour, which reads as a state change rather than a decision landing. One
+   flare, and the seal strikes with it.
+
+   Light and colour ONLY — no transform, no size, no margin. Scaling the active
+   progress pip is what pushed the last question 1px past the viewport edge, and
+   an option card sits inside a grid where the same mistake costs far more.
+   `box-shadow` and `filter` cannot affect layout, so this cannot overflow. */
+@keyframes craft-option-commit {
+  0% { box-shadow: 0 0 0 0 rgba(240, 220, 166, 0); }
+  20% { box-shadow: 0 0 48px 7px rgba(240, 220, 166, 0.55); }
+  100% { box-shadow: 0 0 22px 0 rgba(230, 207, 155, 0.28); }
+}
+
+@keyframes craft-seal-strike {
+  0% { filter: none; }
+  20% { filter: brightness(1.75) drop-shadow(0 0 14px rgba(240, 220, 166, 0.9)); }
+  100% { filter: none; }
+}
+
+.craft-quiz-option.is-picked {
+  animation: craft-option-commit 620ms cubic-bezier(0.16, 1, 0.3, 1);
+  border-color: #e6cf9b;
+  box-shadow: 0 0 22px rgba(230, 207, 155, 0.28);
+}
+
+.craft-quiz-option.is-picked .craft-option-seal {
+  animation: craft-seal-strike 620ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.craft-quiz-option.is-faded {
+  opacity: 0.25;
+  pointer-events: none;
+  transition: opacity 400ms ease;
+}
+
+/* ---- the twelve scenes ---------------------------------------------------
+   A scene is 200-600 characters of narration that the Convener performs. His
+   speech bubble is its ONE visible rendering — printing it again as a page
+   heading would say everything twice and cost the fold. The heading stays in
+   the accessibility tree (it is the section's aria-labelledby target) but
+   leaves the layout at every width.
+
+   Appended last so these win over the phone-skin and stage blocks above
+   without reaching for !important. */
+
+.trades-house-craft-quiz-page .craft-quiz-question h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Options are now a lead, a reason and a price — three tiers, not two. */
+.trades-house-craft-quiz-page .craft-quiz-option {
+  align-items: start;
+  min-height: 0;
+}
+
+/* A grid child defaults to min-width:auto, so a long unbroken phrase pushes
+   the column wider than its track and the page scrolls sideways. */
+.trades-house-craft-quiz-page .craft-quiz-option > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Twelve pips are a third wider than the nine this row was spaced for. They
+   must stay on ONE line — wrapped, they read as broken markup rather than as
+   progress — so the glyphs shrink instead. */
+.trades-house-craft-quiz-page .craft-quiz-progress {
+  flex-wrap: nowrap;
+  justify-content: center;
+  max-width: 100%;
+}
+
+@media (max-width: 560px) {
+  .trades-house-craft-quiz-page .craft-quiz-progress {
+    font-size: 12px;
+  }
+
+  .trades-house-craft-quiz-page .craft-quiz-progress i {
+    font-size: 4px;
+    margin: 0 2px;
+  }
+}
+
+/* The pip you are on should be findable at a glance — it is the only running
+   reward the quiz has. */
+.trades-house-craft-quiz-page .craft-quiz-progress span.is-lit {
+  color: #f0dca6;
+}
+
+/* Emphasis by light, never by size: the active pip on the LAST question is the
+   rightmost one, so anything that grows its box pushes the page sideways. */
+.trades-house-craft-quiz-page .craft-quiz-progress span[data-active="true"] {
+  color: #fff6d8;
+  filter: drop-shadow(0 0 8px rgba(240, 220, 166, 0.95));
+}
+
+/* ---- the result deserves the whole screen --------------------------------
+   The phone skin caps the shell at 520px at every width. The question screen
+   and the intro each got an escape hatch; the result never did, so the payoff
+   for twelve scenes rendered as a narrow column between two black voids. */
+@media (min-width: 980px) {
+  /* The 16px/12px page padding insets the phone CARD from the black backdrop.
+     At desktop there is no card — the screen is the card — so that inset just
+     stacks on top of a 100dvh child and guarantees a 32px scrollbar. */
+  .trades-house-craft-quiz-page {
+    padding: 0;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .trades-house-craft-quiz-shell {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    max-width: none;
+    min-height: 100dvh;
+    width: 100%;
+  }
+
+  /* The phone skin sets `justify-content: flex-start` inside a plain `@media
+     screen` block, so it governs at EVERY width. On a tall monitor that pinned
+     the whole reveal to the top and left a third of the screen empty beneath
+     it. The stack always fits at desktop now, so centring it is what actually
+     balances the page. */
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-quiz-result {
+    justify-content: center;
+    margin: 0 auto;
+    max-width: 1080px;
+    min-height: 100dvh;
+    padding: clamp(12px, 2vh, 40px) clamp(24px, 5vw, 80px);
+  }
+
+  /* Sized against the viewport HEIGHT, not width: the reveal is a tall stack,
+     and a 360px medallion is what pushed it past the fold on a 1000px screen. */
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-medallion {
+    height: clamp(190px, 26vh, 300px);
+    margin-top: 0;
+    width: clamp(190px, 26vh, 300px);
+  }
+
+  /* The reveal is a stack of eight blocks; trimming each gap is what buys the
+     fold back without shrinking any single element into insignificance. */
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-archetype,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-essence,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-reveal,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-motto,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-affinities {
+    margin-block: clamp(6px, 1vh, 14px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-quiz-result h1 {
+    margin-block: clamp(4px, 0.8vh, 12px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-quiz-result h1 {
+    font-size: clamp(34px, 4.4vw, 62px);
+  }
+
+  /* Centred prose is hard to read past two lines; the reveal copy is longer
+     than that, so it goes left-aligned at a proper measure. */
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-reveal,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-affinities {
+    margin-inline: auto;
+    max-width: 64ch;
+    text-align: left;
+  }
+
+  /* Always a step BELOW the reveal: it is his aside about the result, and an
+     aside that out-typesets the thing it comments on reads as the main event. */
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-affinities {
+    font-size: clamp(12.5px, 0.92vw, 14.5px);
+    line-height: 1.55;
+    max-width: 56ch;
+    padding: 14px 20px 16px;
+  }
+
+}
+
+/* Most desktops are 1080p or a 13" laptop — a 950px or 800px viewport — and the
+   reveal has to land whole on THOSE, not only on a tall monitor. Everything here
+   is height-relative so the stack compresses continuously rather than in steps;
+   the floors are the point at which a block stops being legible. */
+@media (min-width: 980px) and (max-height: 1040px) {
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-medallion {
+    height: clamp(150px, 20vh, 240px);
+    width: clamp(150px, 20vh, 240px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-quiz-result h1 {
+    font-size: clamp(30px, 5vh, 46px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-essence,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-reveal {
+    font-size: clamp(13.5px, 1.7vh, 15.5px);
+    line-height: 1.45;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-archetype,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-essence,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-reveal,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-motto,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-affinities {
+    margin-block: clamp(4px, 0.9vh, 14px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-affinities {
+    font-size: clamp(12px, 1.5vh, 14px);
+    padding: clamp(8px, 1.2vh, 14px) 16px clamp(9px, 1.4vh, 16px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-kicker {
+    margin-bottom: 2px;
+  }
+}
+
+/* On a large monitor the reveal was a laptop-sized column adrift in the middle
+   of the screen: correct measure, wrong scale. Above 1700px the whole stack
+   grows with the viewport. The prose stays at a 64ch measure — it just gets
+   read at the distance a big screen is actually viewed from. */
+@media (min-width: 1700px) and (min-height: 1250px) {
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-quiz-result {
+    max-width: 1340px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-medallion {
+    height: clamp(300px, 24vh, 400px);
+    width: clamp(300px, 24vh, 400px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-quiz-result h1 {
+    font-size: clamp(62px, 4.6vw, 86px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-archetype {
+    font-size: clamp(24px, 1.4vw, 32px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-essence,
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-reveal {
+    font-size: clamp(17px, 1.05vw, 21px);
+    line-height: 1.6;
+  }
+
+  /* `.craft-result-affinities` IS the paragraph, not a wrapper around one —
+     and it stays a step below the reveal here too. */
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-affinities {
+    font-size: clamp(15.5px, 0.95vw, 19px);
+    line-height: 1.6;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-motto {
+    font-size: clamp(15px, 0.9vw, 18px);
+  }
+
+  /* The furniture has to grow with the prose or the reveal reads as a big
+     headline sitting on top of somebody else's small page. */
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-kicker {
+    font-size: clamp(12px, 0.72vw, 14px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-affinities-who {
+    font-size: clamp(11px, 0.62vw, 12.5px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-introduction {
+    font-size: clamp(15px, 0.86vw, 17px);
+    padding: 18px 40px 18px 46px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-retake {
+    font-size: clamp(16px, 0.95vw, 19px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-leaflet {
+    font-size: clamp(15px, 0.86vw, 17px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-signoff {
+    font-size: clamp(11px, 0.66vw, 13px);
+  }
+}
+
+.trades-house-craft-quiz-page .craft-quiz-option strong {
+  font-size: clamp(13px, 1.05vw, 15px);
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+}
+
+/* THE readability fix. Cinzel is an inscriptional face whose lowercase glyphs
+   ARE small capitals — fine for a four-word subtitle, ruinous for prose, since
+   small caps have no ascenders or descenders and word-shape recognition (how
+   adults actually read) collapses. Georgia, upright, at a real reading size. */
+.trades-house-craft-quiz-page .craft-quiz-option small {
+  color: #cdd6e2;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(13.5px, 1.05vw, 15.5px);
+  font-style: normal;
+  letter-spacing: 0.005em;
+  line-height: 1.48;
+  margin-top: 6px;
+  opacity: 1;
+  text-transform: none;
+}
+
+/* The near-miss confession is him speaking, not page copy, so it gets his
+   warm ground and a byline rather than sitting in the reveal's cool palette.
+   SKIN ONLY. Size and spacing deliberately live in the breakpoint blocks:
+   this selector is (0,2,0) and every responsive rule for this element is
+   (0,1,0), so any metric declared here would silently defeat all of them at
+   every width — which is exactly what it did until the SE result overflowed. */
+.trades-house-craft-quiz-page .craft-result-affinities {
+  background: linear-gradient(180deg, rgba(58, 41, 20, 0.85), rgba(34, 24, 12, 0.85));
+  border: 1px solid rgba(205, 168, 95, 0.34);
+  border-radius: 10px;
+  color: #ecdfc4;
+  font-family: Georgia, serif;
+  font-style: italic;
+  margin-inline: auto;
+  max-width: 56ch;
+  text-align: left;
+}
+
+.craft-result-affinities-who {
+  color: #cda85f;
+  display: block;
+  font-family: Cinzel, Georgia, serif;
+  /* Cinzel's lowercase are small capitals, so this line is optically smaller
+     than its px value; 9px rendered as roughly 7px of apparent height. */
+  font-size: 10.5px;
+  font-style: normal;
+  letter-spacing: 0.28em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+/* ---- his reply -----------------------------------------------------------
+   A distinct box from the scene, warmer and lit from within, so it reads as a
+   voice answering rather than more page furniture. It persists until the
+   reader presses on. */
+
+.craft-quiz-reply {
+  animation: craft-reply-in 340ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  background: linear-gradient(180deg, rgba(62, 44, 22, 0.96), rgba(38, 26, 14, 0.96));
+  border: 1px solid rgba(230, 207, 155, 0.5);
+  border-radius: 10px;
+  box-shadow: 0 0 34px rgba(205, 168, 95, 0.18), inset 0 0 30px rgba(0, 0, 0, 0.45);
+  margin: 16px auto 0;
+  max-width: 920px;
+  padding: 14px 20px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+@keyframes craft-reply-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.craft-quiz-reply-who {
+  color: #cda85f;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 9.5px;
+  letter-spacing: 0.3em;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+
+.craft-quiz-reply-text {
+  color: #f2e7cf;
+  font-family: Georgia, serif;
+  font-size: clamp(15px, 1.25vw, 18px);
+  font-style: italic;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.craft-quiz-continue {
+  background: linear-gradient(180deg, #f0dca6, #cda85f);
+  border: 1px solid #f4e6bd;
+  border-radius: 6px;
+  color: #2a1c08;
+  cursor: pointer;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  margin-top: 14px;
+  min-height: 46px;
+  padding: 11px 26px;
+  text-transform: uppercase;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 160ms ease;
+}
+
+.craft-quiz-continue:hover {
+  box-shadow: 0 0 22px rgba(230, 207, 155, 0.45);
+  transform: translateY(-1px);
+}
+
+.craft-quiz-continue:active {
+  transform: scale(0.97);
+}
+
+.craft-quiz-continue:focus-visible {
+  outline: 2px solid #fff4cf;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .craft-quiz-reply {
+    animation-duration: 1ms;
+  }
+}
+
+/* Phone accordion: four leads at a glance, one opened at a time. Single
+   column, because a two-up grid of collapsed leads reads as a keypad. */
+.craft-quiz-options.is-accordion {
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.craft-quiz-options.is-accordion .craft-quiz-option {
+  padding: 11px 14px;
+}
+
+/* Once he is replying, the roads not taken step aside on a phone. They are
+   already inert, and their space is what the reply needs to fit above the
+   fold — the screen becomes "what ye chose, and what he said to it". */
+.craft-quiz-options.is-accordion.is-replying .craft-quiz-option.is-faded {
+  display: none;
+}
+
+.craft-quiz-option-confirm {
+  color: #e6cf9b;
+  display: block;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 9.5px;
+  font-style: normal;
+  letter-spacing: 0.16em;
+  margin-top: 8px;
+  text-transform: uppercase;
+}
+
+.craft-quiz-option-cost {
+  color: rgba(205, 168, 95, 0.72);
+  display: block;
+  font-family: Cinzel, Georgia, serif;
+  font-size: clamp(9px, 0.72vw, 10.5px);
+  font-style: normal;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  margin-top: 7px;
+  text-transform: uppercase;
+}
+
+/* On the wide stage his bubble has to hold a whole scene, so the portrait
+   column widens and the portrait itself gives up some of the space. The stage
+   also fills the viewport rather than floating in the upper third — the old
+   layout left the bottom quarter of a 1000px screen empty. */
+@media (min-width: 980px) {
+  .craft-quiz-stage {
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    padding: clamp(20px, 3vh, 44px) clamp(24px, 3vw, 64px);
+  }
+
+  .craft-quiz-stage-portrait {
+    width: clamp(360px, 32vw, 470px);
+  }
+
+  .craft-quiz-stage-portrait .convener-frame {
+    margin: 0 auto;
+    max-width: clamp(260px, 22vw, 330px);
+  }
+
+  .craft-quiz-stage-portrait .convener-speech {
+    max-width: none;
+  }
+
+  .craft-quiz-stage-portrait .convener-speech-text {
+    font-size: clamp(15px, 1.15vw, 17px);
+    line-height: 1.52;
+    min-height: 0;
+  }
+
+  /* The question column stops hugging the top and centres against him. */
+  .craft-quiz-stage > .craft-quiz-question {
+    justify-content: center;
+    padding-block: 0;
+  }
+
+  .craft-quiz-stage .craft-quiz-options {
+    max-width: none;
+  }
+
+  /* Equal-height cards: a 2x2 grid with four different bottom edges reads as
+     an accident, and these four are meant to be equally weighted. */
+  .craft-quiz-stage .craft-quiz-option {
+    height: 100%;
+  }
+
+  .craft-quiz-stage .craft-quiz-options {
+    align-items: stretch;
+  }
+}
+
+/* ---- the desktop invitation (intro only, ≥1180px) ------------------------
+   Engraved state-invitation treatment: the armorial ALONE on near-black
+   ground, a double gold hairline frame, the fourteen crests as an engraved
+   roll down each side. No photography, no curtains, no gloss — restraint is
+   the register. EVERY geometry property the phone-skin sets is re-declared
+   here: partial overrides are how the 520px cage and the 625px core-cap
+   leaked into desktop. Below 1180px nothing here applies. */
+
+.craft-quiz-intro-foot {
+  /* Desktop flourish only: the phone intro's no-scroll budget is exact. */
+  color: rgba(201, 192, 176, 0.62);
+  display: none;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  margin: 18px 0 0;
+  text-transform: uppercase;
+}
+
+@media (min-width: 1180px) {
+  .craft-quiz-intro {
+    align-items: stretch;
+    background: #060b16;
+    display: grid;
+    grid-template-columns: minmax(210px, 250px) 1fr minmax(210px, 250px);
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+    position: relative;
+  }
+
+  /* the double hairline — the whole frame, and the only ornament */
+  .craft-quiz-intro::before {
+    border: 1px solid rgba(230, 207, 155, 0.3);
+    content: "";
+    inset: 14px;
+    pointer-events: none;
+    position: absolute;
+    z-index: 4;
+  }
+
+  .craft-quiz-intro::after {
+    border: 1px solid rgba(230, 207, 155, 0.13);
+    content: "";
+    inset: 21px;
+    pointer-events: none;
+    position: absolute;
+    z-index: 4;
+  }
+
+  /* Explicit placement: the BASE grid has always placed these three by DOM
+     order (left rail, right rail, core), which centres the RIGHT RAIL — the
+     phone-skin's flex override masked that at every width until now. Never
+     rely on source order for this grid. */
+  .craft-quiz-rail.is-left {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .craft-quiz-rail.is-right {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .craft-quiz-intro-core {
+    align-items: center;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    grid-column: 2;
+    grid-row: 1;
+    height: auto;
+    justify-content: center;
+    padding: clamp(24px, 5vh, 56px) clamp(28px, 4vw, 72px);
+    text-align: center;
+    width: auto;
+  }
+
+  .craft-quiz-achievement {
+    filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.55));
+    height: clamp(170px, 26vh, 250px);
+    margin-bottom: clamp(14px, 3.2vh, 30px);
+    max-width: 46vw;
+  }
+
+  .craft-quiz-intro h1 {
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.65);
+  }
+
+  /* the BEGIN bar: engraved, not embossed — hairlines on the ground colour */
+  .craft-quiz-begin {
+    background: transparent;
+    border: 1px solid rgba(205, 168, 95, 0.75);
+    box-shadow: inset 0 0 0 4px #060b16, inset 0 0 0 5px rgba(205, 168, 95, 0.35);
+    color: var(--craft-gold);
+    font-size: 15px;
+    letter-spacing: 0.4em;
+    min-width: min(420px, 32vw);
+    padding-left: 40px; /* optically recentres the wide tracking */
+  }
+
+  .craft-quiz-begin:hover {
+    background: var(--craft-gold);
+    border-color: var(--craft-gold);
+    color: #0b1526;
+    transform: translateY(-2px);
+  }
+
+  .craft-quiz-intro-foot {
+    display: block;
+  }
+
+  /* the engraved roll: crest, name, hairline — no boxes, no silver, no glow */
+  .craft-quiz-rail,
+  .craft-quiz-rail.is-right {
+    align-content: center;
+    background: transparent;
+    border: 0;
+    border-inline: 1px solid rgba(205, 168, 95, 0.14);
+    box-shadow: none;
+    display: grid;
+    gap: 0;
+    height: auto;
+    inset: auto;
+    margin: 0;
+    overflow: hidden;
+    padding: clamp(20px, 4vh, 48px) clamp(16px, 1.6vw, 30px);
+    position: static;
+    transform: none;
+    width: auto;
+  }
+
+  .craft-quiz-rail-item {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    border-top: 1px solid rgba(205, 168, 95, 0.16);
+    box-shadow: none;
+    display: grid;
+    gap: 4px;
+    grid-template-columns: 1fr;
+    justify-items: center;
+    min-height: 0;
+    padding: clamp(6px, 1.15vh, 13px) 6px;
+    text-align: center;
+  }
+
+  .craft-quiz-rail-item:first-child {
+    border-top: 0;
+  }
+
+  .craft-quiz-rail-item img {
+    filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.6));
+    grid-row: auto;
+    height: clamp(30px, 4.6vh, 44px);
+    width: auto;
+  }
+
+  .craft-quiz-rail-item span {
+    color: rgba(214, 205, 186, 0.85);
+    font-family: Cinzel, Georgia, serif;
+    font-size: clamp(7.5px, 0.55vw, 9.5px);
+    font-weight: 500;
+    letter-spacing: 0.18em;
+  }
+
+  .craft-quiz-rail-item i {
+    display: none;
+  }
+}
+
+/* ---- the Hall stage (desktop ≥980px, question screen only) ----------------
+   Below 980px the proven phone-frame skin governs everything. At desktop the
+   question screen alone leaves the 520px frame and becomes ONE full-viewport
+   scene: the Convener anchors the left third like a painting beside the
+   lectern; the four options hold the right as a 2×2 card wall. Single page —
+   the stage owns 100dvh and nothing scrolls. Cascade note: this block is
+   appended last on purpose so it outweighs both the phone skin and the
+   earlier ≥880px stage rules. */
+
+@media screen and (min-width: 980px) {
+  .trades-house-craft-quiz-page[data-screen="question"] {
+    align-items: stretch;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .trades-house-craft-quiz-shell {
+    box-shadow: none;
+    max-width: none;
+    min-height: 100dvh;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-stage {
+    align-items: center;
+    display: grid;
+    gap: clamp(28px, 4vw, 72px);
+    grid-template-columns: clamp(320px, 30vw, 430px) minmax(0, 1fr);
+    height: 100dvh;
+    margin: 0 auto;
+    max-width: 1680px;
+    padding: clamp(20px, 4vh, 44px) clamp(32px, 5vw, 96px);
+    width: 100%;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-stage-portrait {
+    position: static;
+    width: auto;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-frame,
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-speech {
+    max-width: min(26vw, 400px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-speech {
+    min-height: 116px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-speech-text {
+    font-size: 16.5px;
+    line-height: 1.5;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-question {
+    height: 100%;
+    justify-content: center;
+    min-height: 0;
+    padding: 0;
+  }
+
+  /* The Convener ASKS the question — the h1 repeating him beside his own
+     bubble is theatre with a teleprompter. Accessibility tree keeps it. */
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-question h1 {
+    border: 0;
+    clip: rect(0 0 0 0);
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    padding: 0;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-options {
+    display: grid;
+    gap: clamp(14px, 2.2vh, 24px);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: clamp(18px, 3.5vh, 34px);
+    max-width: 900px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-option {
+    display: grid;
+    gap: 20px;
+    grid-template-columns: 44px 1fr;
+    min-height: clamp(118px, 17vh, 170px);
+    padding: 22px 26px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-option strong {
+    font-size: 15.5px;
+    letter-spacing: 0.14em;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-option small {
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-option-seal {
+    height: 40px;
+    width: 40px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-est {
+    margin-top: clamp(14px, 2.5vh, 24px);
+  }
+}
+
+/* ---- the Hall stage at full size (≥1500 × ≥900) ---------------------------
+   The stage grid allows the option wall ~1180px at 1920, but the wall was
+   pinned to 900px and each card to 170px, so the whole composition sat in the
+   middle of a 1080p screen with a quarter of the height empty beneath it —
+   the same "sized for a laptop, shown on a monitor" fault the reveal had.
+   Everything here grows the composition; nothing changes its structure. */
+@media screen and (min-width: 1500px) and (min-height: 900px) {
+  /* The binding constraint on the option wall was the STAGE's 1680px cap, not
+     the wall's own max-width: at 1920 the grid handed the options exactly
+     898px however high their cap was set. */
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-stage {
+    grid-template-columns: clamp(400px, 27vw, 520px) minmax(0, 1fr);
+    max-width: min(2000px, 94vw);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-frame,
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-speech {
+    max-width: min(30vw, 520px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .convener-speech-text {
+    font-size: clamp(16.5px, 1.05vw, 19px);
+    line-height: 1.55;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-options {
+    gap: clamp(18px, 2.6vh, 30px);
+    max-width: 1180px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-option {
+    min-height: clamp(150px, 20vh, 215px);
+    padding: clamp(24px, 2.6vh, 32px) clamp(28px, 1.9vw, 38px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-option strong {
+    font-size: clamp(16px, 0.95vw, 18.5px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-option small {
+    font-size: clamp(13.5px, 0.8vw, 15.5px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-option-seal {
+    height: 48px;
+    width: 48px;
+  }
+
+  /* His reply is the beat the whole scene pauses on; at this size it was a
+     single line of italic adrift in a very wide box. */
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-reply {
+    max-width: 1180px;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-reply-text {
+    font-size: clamp(18px, 1.15vw, 22px);
+  }
+}
+
+/* ---- the proscenium escapes the phone frame (intro, ≥1180px) --------------
+   Companion to the Hall stage block above: the intro too leaves the 520px
+   card and owns the full viewport — three-column grid restored (the phone
+   skin flexes it), rails back in the columns (the phone skin absolutes them
+   into 14px strips). Appended last so it outweighs the phone skin without
+   specificity games. */
+
+@media screen and (min-width: 1180px) {
+  .trades-house-craft-quiz-page[data-screen="intro"] {
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="intro"] .trades-house-craft-quiz-shell {
+    box-shadow: none;
+    max-width: none;
+    min-height: 100dvh;
+  }
+
+  .craft-quiz-intro {
+    display: grid;
+    grid-template-columns: minmax(190px, 235px) 1fr minmax(190px, 235px);
+    min-height: 100dvh;
+  }
+
+  .craft-quiz-rail {
+    display: grid;
+    inset: auto;
+    position: static;
+    width: auto;
+  }
+
+  .craft-quiz-rail-item {
+    display: grid;
+  }
+}
+
+/* ---- the deliberation -----------------------------------------------------
+   Between the last answer and the verdict. Same full-viewport contract as
+   every other screen: it centres, it never scrolls, and it carries its own
+   escape from the 520px phone frame at desktop. */
+.craft-quiz-weighing {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 3.5vh, 34px);
+  justify-content: center;
+  /* Minus the phone frame's 16px inset, which is on the PAGE: a bare 100dvh
+     child inside a padded parent overflows by exactly that padding, every
+     time. The desktop block below zeroes the inset and restores the full
+     100dvh. */
+  min-height: calc(100dvh - 32px);
+  padding: clamp(20px, 4vh, 48px) clamp(20px, 5vw, 64px);
+  text-align: center;
+}
+
+/* Three links of his chain, lighting one per beat. This is the only progress
+   indication the deliberation gets — a spinner would say "loading", and
+   nothing is loading; he is thinking. */
+/* Constrained: the kicker's rules are `flex: 1` hairlines, so at 1920 they
+   stretched the full screen and the label read as a stray caption. */
+.craft-quiz-weighing .craft-result-kicker {
+  max-width: min(560px, 82vw);
+  width: 100%;
+}
+
+.craft-weighing-portrait {
+  width: min(320px, 62vw);
+}
+
+/* His bubble is suppressed here, not merely emptied: `restingLine={null}` still
+   renders the frame and its byline, and an empty speech bubble under a thinking
+   face reads as a failed load. The deliberation line is page copy instead, so
+   the beat never has to wait for a typewriter to finish. */
+.craft-quiz-weighing .convener-speech {
+  display: none;
+}
+
+/* Compact mode caps the frame at 76px because on the question screen he is a
+   thumbnail BESIDE a speech bubble. Here there is no bubble and he is the
+   subject, so the cap is lifted and the row is centred — otherwise he sits
+   thumbnail-sized against the left edge of his own deliberation. */
+.craft-quiz-weighing .convener {
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+/* `.convener.is-compact .convener-frame` is (0,3,0) and unconditional, so a
+   (0,2,0) override loses no matter where it sits. Match the specificity — the
+   third time today that a page-scoped rule quietly beat a scoped one here. */
+.craft-quiz-weighing .convener.is-compact .convener-frame {
+  max-width: min(200px, 54vw);
+  width: 100%;
+}
+
+.craft-weighing-chain {
+  display: flex;
+  gap: 14px;
+}
+
+.craft-weighing-chain i {
+  background: rgba(205, 168, 95, 0.22);
+  border: 1px solid rgba(205, 168, 95, 0.4);
+  border-radius: 50%;
+  height: 11px;
+  transition: background 420ms ease, box-shadow 420ms ease;
+  width: 11px;
+}
+
+.craft-weighing-chain i[data-lit="true"] {
+  background: var(--craft-gold);
+  box-shadow: 0 0 14px rgba(240, 220, 166, 0.75);
+}
+
+.craft-weighing-line {
+  color: #ecdfc4;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(17px, 1.5vw, 26px);
+  font-style: italic;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 30ch;
+}
+
+.craft-weighing-skip {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid rgba(205, 168, 95, 0.45);
+  color: rgba(205, 168, 95, 0.85);
+  cursor: pointer;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 11.5px;
+  letter-spacing: 0.22em;
+  /* 44px of target for a control that is deliberately visually quiet. */
+  min-height: 44px;
+  padding: 0 6px;
+  text-transform: uppercase;
+}
+
+.craft-weighing-skip:hover,
+.craft-weighing-skip:focus-visible {
+  color: #f4e6c4;
+}
+
+@media (min-width: 980px) {
+  .trades-house-craft-quiz-page[data-screen="weighing"] .trades-house-craft-quiz-shell {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    max-width: none;
+    min-height: 100dvh;
+    width: 100%;
+  }
+
+  /* The page inset is zero at desktop, so the full viewport is available. */
+  .trades-house-craft-quiz-page[data-screen="weighing"] .craft-quiz-weighing {
+    min-height: 100dvh;
+  }
+}
+
+/* The chain lights and the line changes either way — reduced motion removes
+   the fade, not the ceremony. Losing the beat would lose the content. */
+@media (prefers-reduced-motion: reduce) {
+  .craft-weighing-chain i {
+    transition: none;
+  }
+}
+
+@media (min-width: 980px) {
+  .craft-weighing-portrait {
+    width: clamp(300px, 24vw, 400px);
+  }
+
+  .craft-quiz-weighing .convener.is-compact .convener-frame,
+  .craft-quiz-weighing .convener-frame {
+    max-width: none;
+  }
+}
+
+/* The commit flare is pure decoration: without it the card still lands on its
+   chosen state, so removing the motion loses nothing but the flourish. */
+@media (prefers-reduced-motion: reduce) {
+  .craft-quiz-option.is-picked,
+  .craft-quiz-option.is-picked .craft-option-seal {
+    animation: none;
+  }
+}
+
+/* ---- his remark about HOW you answered -----------------------------------
+   Set apart from the reply above it: that answers WHAT you chose, this answers
+   how you chose it. Quieter, indented, italic — an aside in the theatrical
+   sense, said half to himself. It appears perhaps twice in twelve scenes, and
+   that rarity is the whole effect. */
+.craft-quiz-reply-aside {
+  border-top: 1px solid rgba(214, 178, 106, 0.22);
+  color: rgba(226, 208, 172, 0.78);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(12.5px, 0.92vw, 14px);
+  font-style: italic;
+  line-height: 1.5;
+  margin-top: 10px;
+  padding-top: 9px;
+}
+
+.craft-quiz-reply-aside span {
+  color: rgba(224, 186, 116, 0.85);
+  font-style: normal;
+  margin-right: 3px;
+}
+
+/* Arrives a moment after the reply, matching the pause before he says it —
+   the eye should not find it before the ear does. */
+@media (prefers-reduced-motion: no-preference) {
+  .craft-quiz-reply-aside {
+    animation: craft-aside-in 520ms 900ms both ease-out;
+  }
+}
+
+@keyframes craft-aside-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- the threshold -------------------------------------------------------
+   He explains what this is before the first dilemma. Beats accumulate rather
+   than replace, so the whole explanation is readable at a glance by anyone who
+   cannot hear him or reads faster than he speaks. */
+.craft-quiz-threshold {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* The page pads the phone card by 16px top and bottom; a 100dvh child inside
+     it overflows by exactly that. Same trap the result screen fell into. */
+  min-height: calc(100dvh - 32px);
+  padding: 16px 18px 24px;
+  text-align: center;
+}
+
+.craft-threshold-portrait {
+  margin: 6px auto 14px;
+  width: clamp(180px, 46vw, 260px);
+}
+
+.craft-threshold-beats {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0 0 20px;
+  max-width: 34em;
+  padding: 0;
+}
+
+.craft-threshold-beats li {
+  color: rgba(232, 216, 184, 0.72);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(14px, 1.05vw, 16.5px);
+  line-height: 1.55;
+  /* min-width:0 is load-bearing in a grid: without it a long unbroken line
+     sets the track width and pushes the page sideways. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .craft-threshold-beats li {
+    animation: craft-aside-in 460ms both ease-out;
+  }
+}
+
+/* Desktop leaves the 520px phone cage, as every other screen must do for
+   itself — the shell caps width at ALL widths inside @media screen. */
+@media (min-width: 980px) {
+  .trades-house-craft-quiz-page[data-screen="threshold"] .trades-house-craft-quiz-shell {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    margin: 0;
+    max-width: none;
+    min-height: 100dvh;
+    width: 100%;
+  }
+
+  .craft-quiz-threshold {
+    margin: 0 auto;
+    max-width: 900px;
+    padding: clamp(16px, 3vh, 48px) clamp(24px, 5vw, 80px);
+  }
+
+  .craft-threshold-portrait {
+    width: clamp(240px, 26vw, 360px);
+  }
+
+  .craft-threshold-beats li {
+    font-size: clamp(15px, 1.15vw, 18px);
   }
 }

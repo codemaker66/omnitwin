@@ -9,3 +9,8 @@ venviewer_training/gsplat-v1.5.3.source-lock.json text eol=lf
 # Byte-pinned evidence vector document (activation-v1 test suite) — exact
 # bytes, overriding the eol=lf rule above.
 docs/specs/omnitwin-foundry-activation-v1-authenticated-evidence-byte-vectors.json -text
+# The Convener's generated speech. Byte-exact by rule, not by git's binary
+# guess: a CRLF conversion would corrupt every mp3, and it would corrupt them
+# on the Linux checkout Vercel builds from, not on the Windows machine that
+# committed them — the failure would be invisible until the audio was live.
+packages/web/public/trades-house-media/voice/*.mp3 -text
