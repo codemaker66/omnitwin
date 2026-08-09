@@ -1249,7 +1249,7 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     });
   });
 
-  it("freezes, timelines, and privately delivers a synthetic exact runtime admission", async () => {
+  it("freezes and timelines while hard-closing a synthetic legacy runtime admission", async () => {
     const db = requiredDatabase();
     const fixture = await seedSyntheticHistoricalRuntimeContract(db);
 
@@ -1360,32 +1360,38 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     }
     expect(frame.keyframe.snapshotId).toBe(frozen.snapshotId);
     expect(frame.keyframe.payload).toEqual(fixture.payload);
-    expect(frame.keyframe.historicalRuntime.state).toBe("available");
-    if (frame.keyframe.historicalRuntime.state !== "available") {
-      throw new Error("Synthetic exact runtime admission was not preserved by the timeline.");
-    }
-    const binding = frame.keyframe.historicalRuntime.binding;
-    expect(binding.runtimePackageId).toBe(SYNTHETIC_RUNTIME_PACKAGE_ID);
-    expect(binding.runtimePackageContentDigest).toBe(fixture.packageContentDigest);
-    expect(binding.runtimeManifestDigest).toBe(fixture.manifestDigest);
-    expect(binding.visualAssets).toEqual([expect.objectContaining({
-      memberIndex: 0,
-      assetVersionId: SYNTHETIC_RUNTIME_ASSET_ID,
-      fileName: "synthetic-grand-hall.sog",
-      mimeType: "application/octet-stream",
-      sha256: fixture.assetSha256,
-      sizeBytes: SYNTHETIC_RUNTIME_BYTES.byteLength,
-    })]);
+    expect(frame.keyframe.historicalRuntime).toMatchObject({
+      state: "unavailable",
+      reason: "runtime_activation_missing",
+    });
+
+    const [frozenRuntimeRow] = await db.select({
+      runtimeBindingState: phaseLayoutSnapshots.runtimeBindingState,
+      runtimeBinding: phaseLayoutSnapshots.runtimeBinding,
+    }).from(phaseLayoutSnapshots)
+      .where(eq(phaseLayoutSnapshots.id, frozen.snapshotId))
+      .limit(1);
+    expect(frozenRuntimeRow).toEqual({
+      runtimeBindingState: "unavailable",
+      runtimeBinding: expect.objectContaining({
+        admissionPolicy: "trades-hall-reviewed-presentation.v1",
+        availability: "unavailable",
+        unavailableReason: "runtime_activation_missing",
+        expectedRuntimePackageId: SYNTHETIC_RUNTIME_PACKAGE_ID,
+        expectedRuntimeManifestDigest: fixture.manifestDigest,
+      }),
+    });
+    expect(fixture.admissionBody).toMatchObject({
+      schemaVersion: "runtime-presentation-admission.v1",
+      admissionId: SYNTHETIC_RUNTIME_ADMISSION_ID,
+    });
 
     const { buildServer } = await import("../index.js");
-    let deliveredBytes = SYNTHETIC_RUNTIME_BYTES;
+    let byteLoaderCalls = 0;
     const memberApp = await buildServer(validateEnv(), {
-      historicalRuntimeMemberByteLoader: (storageKey, expectedSizeBytes, signal) => {
-        expect(storageKey).toBe(fixture.r2Key);
-        expect(expectedSizeBytes).toBe(SYNTHETIC_RUNTIME_BYTES.byteLength);
-        expect(signal).toBeInstanceOf(AbortSignal);
-        expect(signal.aborted).toBe(false);
-        return Promise.resolve(deliveredBytes);
+      historicalRuntimeMemberByteLoader: () => {
+        byteLoaderCalls += 1;
+        return Promise.resolve(SYNTHETIC_RUNTIME_BYTES);
       },
     });
     const memberUrl = `/calendar/venues/${SNAPSHOT.venueId}/spaces/${SNAPSHOT.spaceId}` +
@@ -1396,27 +1402,9 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
         url: memberUrl,
         headers: authHeaders(),
       });
-      expect(memberResponse.statusCode, memberResponse.body).toBe(200);
-      expect(memberResponse.rawPayload.equals(SYNTHETIC_RUNTIME_BYTES)).toBe(true);
-      expect(memberResponse.headers["content-type"]).toBe("application/octet-stream");
-      expect(memberResponse.headers["content-length"])
-        .toBe(String(SYNTHETIC_RUNTIME_BYTES.byteLength));
-      expect(memberResponse.headers["cache-control"]).toBe("private, no-store");
-      expect(memberResponse.headers["x-content-sha256"]).toBe(fixture.assetSha256);
-      expect(memberResponse.headers["x-runtime-binding-digest"]).toBe(binding.bindingDigest);
-      expect(memberResponse.headers["x-runtime-package-content-digest"])
-        .toBe(fixture.packageContentDigest);
-      expect(memberResponse.headers["x-asset-version-id"]).toBe(SYNTHETIC_RUNTIME_ASSET_ID);
-      expect(memberResponse.headers).not.toHaveProperty("x-r2-key");
-
-      deliveredBytes = Buffer.alloc(SYNTHETIC_RUNTIME_BYTES.byteLength, 0x78);
-      const byteMismatch = await memberApp.inject({
-        method: "GET",
-        url: memberUrl,
-        headers: authHeaders(),
-      });
-      expect(byteMismatch.statusCode, byteMismatch.body).toBe(409);
-      expect(byteMismatch.json()).toMatchObject({ code: "RUNTIME_MEMBER_INTEGRITY_FAILED" });
+      expect(memberResponse.statusCode, memberResponse.body).toBe(404);
+      expect(memberResponse.json()).toMatchObject({ code: "NOT_FOUND" });
+      expect(byteLoaderCalls).toBe(0);
 
       for (const denied of [
         {
@@ -1445,18 +1433,9 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       await memberApp.close();
     }
 
-    const [memberRow] = await db.select().from(runtimePresentationAdmissionMembers)
-      .where(eq(runtimePresentationAdmissionMembers.admissionId, SYNTHETIC_RUNTIME_ADMISSION_ID))
-      .limit(1);
-    if (memberRow === undefined) throw new Error("Synthetic admission member was not persisted.");
-    await expectDatabaseViolation(
-      () => db.insert(runtimePresentationAdmissionMembers).values({
-        ...memberRow,
-        memberIndex: 1,
-      }),
-      "55000",
-      "runtime_presentation_admission_members_sealed",
-    );
+    // An unavailable snapshot deliberately does not claim or seal the legacy
+    // admission graph. Delivery stays closed above; a future authenticated
+    // activation migration must introduce its own immutable execution seal.
     await expectDatabaseViolation(
       () => db.update(runtimePresentationAdmissions)
         .set({ admissionDigest: "7".repeat(64) })

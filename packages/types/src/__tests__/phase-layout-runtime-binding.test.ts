@@ -135,12 +135,19 @@ function unavailableBinding(): PhaseLayoutRuntimeUnavailableBinding {
 }
 
 describe("phase layout historical runtime binding", () => {
-  it("seals an exact reviewed package, transform, provenance, and ordered member composition", () => {
+  it("parses an exact legacy binding for forensics but never authorizes playback", () => {
     const binding = availableBinding();
     expect(binding.runtimePackageId).toBe(PACKAGE_ID);
     expect(binding.transformArtifactDigest).toBe(runtimeTransformArtifactDigest(transformArtifact));
     expect(binding.visualAssets).toHaveLength(1);
-    expect(historicalRuntimeFromBinding(binding)).toEqual({ state: "available", binding });
+    expect(historicalRuntimeFromBinding(binding)).toEqual({
+      state: "unavailable",
+      binding: null,
+      reason: "legacy_admission_ineligible",
+      message: "This legacy presentation admission lacks authenticated execution activation.",
+    });
+    expect(PhaseLayoutHistoricalRuntimeSchema.safeParse({ state: "available", binding }).success)
+      .toBe(false);
   });
 
   it("rejects byte, transform, order, composition, and binding digest drift", () => {

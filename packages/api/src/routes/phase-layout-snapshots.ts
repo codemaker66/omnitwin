@@ -109,8 +109,16 @@ function currentRuntimeDecisionMatches(
   },
   decision: RuntimeAdmissionDecision,
 ): boolean {
+  const persistedDecision: RuntimeAdmissionDecision = decision.availability === "unavailable"
+    ? decision
+    : {
+        availability: "unavailable",
+        unavailableReason: "runtime_activation_missing",
+        expectedRuntimePackageId: decision.runtimePackageId,
+        expectedRuntimeManifestDigest: decision.runtimeManifestDigest,
+      };
   if (
-    row.runtimeBindingState !== decision.availability ||
+    row.runtimeBindingState !== persistedDecision.availability ||
     row.runtimeBindingDigest === null
   ) return false;
   const parsed = PhaseLayoutRuntimeBindingV1Schema.safeParse(row.runtimeBinding);
@@ -121,7 +129,7 @@ function currentRuntimeDecisionMatches(
       decision: "approved",
       reviewedAt: new Date(0),
       digest: "0".repeat(64),
-    })) === runtimeAdmissionDecisionDigest(decision);
+    })) === runtimeAdmissionDecisionDigest(persistedDecision);
   }
   if (
     row.runtimePresentationAdmissionId === null ||
@@ -134,7 +142,7 @@ function currentRuntimeDecisionMatches(
     decision: row.runtimePresentationAdmissionDecision,
     reviewedAt: row.runtimePresentationAdmissionReviewedAt,
     digest: row.runtimePresentationAdmissionDigest,
-  })) === runtimeAdmissionDecisionDigest(decision);
+  })) === runtimeAdmissionDecisionDigest(persistedDecision);
 }
 
 function runtimeBindingColumns(
@@ -146,7 +154,9 @@ function runtimeBindingColumns(
     runtimeBindingDigest: binding.bindingDigest,
     runtimeBinding: binding,
   };
-  if (decision.availability === "unavailable") return common;
+  if (decision.availability === "unavailable" || binding.availability === "unavailable") {
+    return common;
+  }
   return {
     ...common,
     runtimePresentationAdmissionId: decision.presentationAdmissionId,

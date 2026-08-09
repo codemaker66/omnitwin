@@ -329,21 +329,6 @@ export const RoomLayoutTimelineFrameSchema = z.object({
         message: "Historical runtime binding must match the exact frozen snapshot and room.",
       });
     }
-    if (
-      frame.keyframe.historicalRuntime.state === "available" &&
-      (
-        frame.keyframe.payload.venueRuntime.runtimePackageId !==
-          frame.keyframe.historicalRuntime.binding.runtimePackageId ||
-        frame.keyframe.payload.venueRuntime.runtimeVenueManifestDigest !==
-          frame.keyframe.historicalRuntime.binding.runtimeManifestDigest
-      )
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["keyframe", "historicalRuntime", "binding", "runtimePackageId"],
-        message: "Available historical runtime must match the package frozen into the layout payload.",
-      });
-    }
   }
 
   const expectedGuests = frame.keyframe.state === "available"

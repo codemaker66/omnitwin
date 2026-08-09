@@ -614,6 +614,10 @@ export function buildPhaseLayoutRuntimeBinding(
 ): PhaseLayoutRuntimeBindingV1 {
   const common = {
     schemaVersion: "phase-layout-runtime-binding.v1" as const,
+    // Migration 0063's immutable snapshot constraint admits only the legacy
+    // policy token. Until a separate activation migration exists, preserve
+    // that forensic identity while forcing every newly frozen binding into an
+    // unavailable state below.
     admissionPolicy: "trades-hall-reviewed-presentation.v1" as const,
     bindingId: envelope.bindingId,
     phaseLayoutSnapshotId: envelope.bindingId,
@@ -636,29 +640,10 @@ export function buildPhaseLayoutRuntimeBinding(
       }
     : {
         ...common,
-        availability: "available" as const,
-        runtimePackageId: decision.runtimePackageId,
-        runtimePackageRevision: decision.runtimePackageRevision,
-        runtimePackageContentDigest: decision.runtimePackageContentDigest,
-        runtimeManifestDigest: decision.runtimeManifestDigest,
-        runtimePackageEvidenceStatus: decision.runtimePackageEvidenceStatus,
-        runtimePackageStatus: decision.runtimePackageStatus,
-        reviewedProfileId: decision.reviewedProfileId,
-        reviewedProfileManifestFingerprint: decision.reviewedProfileManifestFingerprint,
-        rightsEvidenceDigest: decision.rightsEvidenceDigest,
-        sceneAuthorityMapDigest: decision.sceneAuthorityMapDigest,
-        runtimeQaRecordId: decision.runtimeQaRecordId,
-        runtimeQaRecordKey: decision.runtimeQaRecordKey,
-        runtimeQaRecordDigest: decision.runtimeQaRecordDigest,
-        runtimeQaDecision: decision.runtimeQaDecision,
-        runtimeQaReviewedBy: decision.runtimeQaReviewedBy,
-        runtimeQaReviewedAt: decision.runtimeQaReviewedAt,
-        transformArtifactRowId: decision.transformArtifactRowId,
-        transformArtifactId: decision.transformArtifactId,
-        transformArtifactDigest: decision.transformArtifactDigest,
-        transformArtifact: decision.transformArtifact,
-        visualAssets: [...decision.visualAssets],
-        compositionDigest: decision.compositionDigest,
+        availability: "unavailable" as const,
+        unavailableReason: "runtime_activation_missing" as const,
+        expectedRuntimePackageId: decision.runtimePackageId,
+        expectedRuntimeManifestDigest: decision.runtimeManifestDigest,
       };
   return PhaseLayoutRuntimeBindingV1Schema.parse({
     ...unsigned,
@@ -668,7 +653,7 @@ export function buildPhaseLayoutRuntimeBinding(
 
 export function admissionDecisionFromBinding(
   binding: PhaseLayoutRuntimeBindingV1,
-  admission: {
+  _admission: {
     readonly id: string;
     readonly decision: "approved";
     readonly reviewedAt: Date;
@@ -684,32 +669,9 @@ export function admissionDecisionFromBinding(
     };
   }
   return {
-    availability: "available",
-    presentationAdmissionId: admission.id,
-    presentationAdmissionDecision: admission.decision,
-    presentationAdmissionReviewedAt: admission.reviewedAt.toISOString(),
-    presentationAdmissionDigest: admission.digest,
-    runtimePackageId: binding.runtimePackageId,
-    runtimePackageRevision: binding.runtimePackageRevision,
-    runtimePackageContentDigest: binding.runtimePackageContentDigest,
-    runtimeManifestDigest: binding.runtimeManifestDigest,
-    runtimePackageEvidenceStatus: binding.runtimePackageEvidenceStatus,
-    runtimePackageStatus: binding.runtimePackageStatus,
-    reviewedProfileId: binding.reviewedProfileId,
-    reviewedProfileManifestFingerprint: binding.reviewedProfileManifestFingerprint,
-    rightsEvidenceDigest: binding.rightsEvidenceDigest,
-    sceneAuthorityMapDigest: binding.sceneAuthorityMapDigest,
-    runtimeQaRecordId: binding.runtimeQaRecordId,
-    runtimeQaRecordKey: binding.runtimeQaRecordKey,
-    runtimeQaRecordDigest: binding.runtimeQaRecordDigest,
-    runtimeQaDecision: binding.runtimeQaDecision,
-    runtimeQaReviewedBy: binding.runtimeQaReviewedBy,
-    runtimeQaReviewedAt: binding.runtimeQaReviewedAt,
-    transformArtifactRowId: binding.transformArtifactRowId,
-    transformArtifactId: binding.transformArtifactId,
-    transformArtifactDigest: binding.transformArtifactDigest,
-    transformArtifact: binding.transformArtifact,
-    visualAssets: binding.visualAssets,
-    compositionDigest: binding.compositionDigest,
+    availability: "unavailable",
+    unavailableReason: "runtime_activation_missing",
+    expectedRuntimePackageId: binding.runtimePackageId,
+    expectedRuntimeManifestDigest: binding.runtimeManifestDigest,
   };
 }

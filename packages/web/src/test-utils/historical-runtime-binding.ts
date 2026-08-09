@@ -8,6 +8,7 @@ import {
   type PhaseLayoutRuntimeAvailableBinding,
   type TransformArtifactV0,
 } from "@omnitwin/types";
+import type { HistoricalRuntimeRenderInput } from "../stores/layout-timeline-preview-store.js";
 
 const DEFAULT_TRANSFORM: TransformArtifactV0 = {
   id: "grand-hall-arf-to-rrf-v1",
@@ -119,4 +120,11 @@ export function historicalRuntimeBindingFixture(
     ...unsigned,
     bindingDigest: phaseLayoutRuntimeBindingDigest(unsigned),
   });
+}
+
+/** Constructs the branded dormant renderer branch for unit tests only. */
+export function historicalRuntimeRenderInputFixture(
+  binding: PhaseLayoutRuntimeAvailableBinding,
+): HistoricalRuntimeRenderInput {
+  return { state: "available", binding } as HistoricalRuntimeRenderInput;
 }

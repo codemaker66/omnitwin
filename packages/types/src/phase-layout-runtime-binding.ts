@@ -39,6 +39,7 @@ export const PHASE_LAYOUT_RUNTIME_UNAVAILABLE_REASONS = [
   "qa_review_missing",
   "signed_transform_missing",
   "provenance_incomplete",
+  "runtime_activation_missing",
 ] as const;
 
 export const PhaseLayoutRuntimeUnavailableReasonSchema = z.enum(
@@ -218,7 +219,7 @@ export function phaseLayoutRuntimeCompositionDigest(composition: unknown): strin
   return canonicalDigest("venviewer.phase-layout-runtime-composition.v1\n", composition);
 }
 
-/** Computes the self-authenticating binding digest from the record without its digest field. */
+/** Computes a deterministic integrity checksum from the record without its digest field. */
 export function phaseLayoutRuntimeBindingDigest(unsignedBinding: unknown): string {
   return canonicalDigest("venviewer.phase-layout-runtime-binding.v1\n", unsignedBinding);
 }
@@ -253,16 +254,11 @@ function validateCommonBinding(
 
 export const PhaseLayoutHistoricalRuntimeUnavailableReasonSchema = z.union([
   PhaseLayoutRuntimeUnavailableReasonSchema,
-  z.enum(["legacy_snapshot_unbound", "runtime_binding_invalid"]),
+  z.enum(["legacy_snapshot_unbound", "legacy_admission_ineligible", "runtime_binding_invalid"]),
 ]);
 export type PhaseLayoutHistoricalRuntimeUnavailableReason = z.infer<
   typeof PhaseLayoutHistoricalRuntimeUnavailableReasonSchema
 >;
-
-const AvailableHistoricalRuntimeSchema = z.object({
-  state: z.literal("available"),
-  binding: PhaseLayoutRuntimeAvailableBindingSchema,
-}).strict();
 
 const UnavailableHistoricalRuntimeSchema = z.object({
   state: z.literal("unavailable"),
@@ -283,6 +279,7 @@ const UnavailableHistoricalRuntimeSchema = z.object({
   if (
     runtime.binding === null &&
     runtime.reason !== "legacy_snapshot_unbound" &&
+    runtime.reason !== "legacy_admission_ineligible" &&
     runtime.reason !== "runtime_binding_invalid"
   ) {
     context.addIssue({
@@ -293,10 +290,7 @@ const UnavailableHistoricalRuntimeSchema = z.object({
   }
 });
 
-export const PhaseLayoutHistoricalRuntimeSchema = z.union([
-  AvailableHistoricalRuntimeSchema,
-  UnavailableHistoricalRuntimeSchema,
-]);
+export const PhaseLayoutHistoricalRuntimeSchema = UnavailableHistoricalRuntimeSchema;
 export type PhaseLayoutHistoricalRuntime = z.infer<
   typeof PhaseLayoutHistoricalRuntimeSchema
 >;
@@ -313,13 +307,20 @@ export function historicalRuntimeFromBinding(
     };
   }
   if (binding.availability === "available") {
-    return { state: "available", binding };
+    return {
+      state: "unavailable",
+      binding: null,
+      reason: "legacy_admission_ineligible",
+      message: "This legacy presentation admission lacks authenticated execution activation.",
+    };
   }
   return {
     state: "unavailable",
     binding,
     reason: binding.unavailableReason,
-    message: "The exact historical room capture is not available for this frozen layout.",
+    message: binding.unavailableReason === "runtime_activation_missing"
+      ? "The evidence draft lacks a trusted runtime activation attestation."
+      : "The exact historical room capture is not available for this frozen layout.",
   };
 }
 

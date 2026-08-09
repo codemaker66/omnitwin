@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type {
   LayoutSnapshotVenueRuntimeReference,
   PhaseLayoutHistoricalRuntime,
+  PhaseLayoutRuntimeAvailableBinding,
 } from "@omnitwin/types";
 import type { PlacedItem } from "../lib/placement.js";
 import { setLayoutTimelineMutationLock } from "../lib/layout-timeline-preview-lock.js";
@@ -12,6 +13,21 @@ import {
   type TimelineItemTransitionPlan,
 } from "../lib/layout-timeline.js";
 import { frozenRoomEnvelopesMatch } from "../lib/frozen-layout-room.js";
+
+declare const dormantHistoricalRuntimeRenderInputBrand: unique symbol;
+
+/**
+ * Branded dormant renderer input used only by renderer-focused tests. It is
+ * structurally impossible for a parsed network timeline response to create
+ * this branch. T-541 must replace it with an authenticated activation type.
+ */
+export type HistoricalRuntimeRenderInput =
+  | PhaseLayoutHistoricalRuntime
+  | {
+      readonly state: "available";
+      readonly binding: PhaseLayoutRuntimeAvailableBinding;
+      readonly [dormantHistoricalRuntimeRenderInputBrand]: true;
+    };
 
 /** The immutable phase identity needed by the read-only scene preview. */
 export interface LayoutTimelinePreviewFrameMetadata {
@@ -25,7 +41,7 @@ export interface LayoutTimelinePreviewFrameMetadata {
   /** Present only for a schema-valid immutable keyframe. */
   readonly venueRuntime: LayoutSnapshotVenueRuntimeReference | null;
   /** Exact frozen runtime proof for this endpoint; unavailable is explicit. */
-  readonly historicalRuntime: PhaseLayoutHistoricalRuntime | null;
+  readonly historicalRuntime: HistoricalRuntimeRenderInput | null;
 }
 
 export type LayoutTimelinePreviewTransitionMode =
@@ -86,9 +102,9 @@ export interface LayoutTimelinePreviewState {
   readonly captureItems: readonly PlacedItem[];
   readonly transition: LayoutTimelinePreviewTransition | null;
   /** At most one non-active frozen package selected for bounded prefetch. */
-  readonly adjacentHistoricalRuntime: PhaseLayoutHistoricalRuntime | null;
+  readonly adjacentHistoricalRuntime: HistoricalRuntimeRenderInput | null;
   readonly setAdjacentHistoricalRuntime: (
-    runtime: PhaseLayoutHistoricalRuntime | null,
+    runtime: HistoricalRuntimeRenderInput | null,
   ) => void;
   readonly beginTransition: (input: BeginLayoutTimelinePreviewTransitionInput) => void;
   readonly setProgress: (progress: number) => void;

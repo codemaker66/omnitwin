@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
-  historicalRuntimeFromBinding,
-} from "@omnitwin/types";
+import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE } from "@omnitwin/types";
 import type { PlacedItem } from "../../lib/placement.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { useEditorStore } from "../editor-store.js";
 import { usePlacementStore } from "../placement-store.js";
-import { historicalRuntimeBindingFixture } from "../../test-utils/historical-runtime-binding.js";
+import {
+  historicalRuntimeBindingFixture,
+  historicalRuntimeRenderInputFixture,
+} from "../../test-utils/historical-runtime-binding.js";
 import {
   layoutTimelineRenderedItems,
   useLayoutTimelinePreviewStore,
@@ -189,7 +189,7 @@ describe("layout timeline preview store", () => {
     });
     const fromFrame = {
       ...frame("arrival"),
-      historicalRuntime: historicalRuntimeFromBinding(fromBinding),
+      historicalRuntime: historicalRuntimeRenderInputFixture(fromBinding),
       venueRuntime: {
         ...CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
         runtimeVenueManifestDigest: "a".repeat(64),
@@ -197,7 +197,7 @@ describe("layout timeline preview store", () => {
     };
     const toFrame = {
       ...frame("dinner"),
-      historicalRuntime: historicalRuntimeFromBinding(toBinding),
+      historicalRuntime: historicalRuntimeRenderInputFixture(toBinding),
       venueRuntime: {
         ...CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
         runtimeVenueManifestDigest: "b".repeat(64),

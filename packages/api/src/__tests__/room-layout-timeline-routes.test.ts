@@ -110,10 +110,10 @@ describe("room layout timeline — auth and validation boundary", () => {
     expect(response.statusCode, response.body).toBe(404);
   });
 
-  it("registers private historical member delivery and exposes its integrity headers to browsers", async () => {
+  it("keeps the historical member route quarantined before database or byte access", async () => {
     const response = await server.inject({
       method: "GET",
-      url: `/calendar/venues/${VENUE_ID}/spaces/${SPACE_ID}/runtime-bindings/not-a-binding/members/0/room.sog`,
+      url: `/calendar/venues/${VENUE_ID}/spaces/${SPACE_ID}/runtime-bindings/00000000-0000-4000-8000-000000000004/members/0/room.sog`,
       headers: {
         authorization: `Bearer ${staffToken()}`,
         origin: "http://localhost:5173",
