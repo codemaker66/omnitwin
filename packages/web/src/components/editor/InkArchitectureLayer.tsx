@@ -56,12 +56,15 @@ export interface InkArchitectureLayerProps {
   readonly ceilingHeightM: number;
   /** Where the ink should settle: 1 = full blueprint, 0 = resolved away. */
   readonly targetOpacity: number;
+  /** Frozen timeline previews render on demand, so settle the ink in one frame. */
+  readonly instant?: boolean;
 }
 
 export function InkArchitectureLayer({
   polygon,
   ceilingHeightM,
   targetOpacity,
+  instant = false,
 }: InkArchitectureLayerProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
 
@@ -110,7 +113,7 @@ export function InkArchitectureLayer({
       invalidate();
     };
 
-    if (prefersReducedMotion()) {
+    if (instant || prefersReducedMotion()) {
       apply(target);
       return undefined;
     }
@@ -131,7 +134,7 @@ export function InkArchitectureLayer({
     };
     raf = requestAnimationFrame(step);
     return () => { cancelAnimationFrame(raf); };
-  }, [invalidate, lines, targetOpacity]);
+  }, [instant, invalidate, lines, targetOpacity]);
 
   if (lines === null) return null;
   return <primitive object={lines} />;

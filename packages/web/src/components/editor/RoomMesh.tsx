@@ -1,19 +1,26 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Shape, DoubleSide, BufferGeometry, Float32BufferAttribute } from "three";
+import { Shape, DoubleSide, BufferGeometry, Float32BufferAttribute, type Group } from "three";
 import { toRenderSpace } from "../../constants/scale.js";
 import type { RoomGeometry, RoomFeature } from "../../data/room-geometries.js";
 import { FLOOR_COLOR, GRID_COLOR, DOME_COLOR, WALL_COLOR } from "../../constants/colors.js";
 import { sectionClipPlanes, noClipPlanes } from "../SectionPlane.js";
 import { useVisibilityStore, type WallKey } from "../../stores/visibility-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import {
+  useLayoutTimelinePreviewStore,
+  type LayoutTimelinePreviewSessionMode,
+  type LayoutTimelinePreviewState,
+} from "../../stores/layout-timeline-preview-store.js";
 import { BrickWall } from "../BrickWall.js";
 import { GrandHallOrnaments } from "../GrandHallOrnaments.js";
 import { GrandHallDome } from "../GrandHallDome.js";
+import { SyntheticTradesHallFacade } from "./SyntheticTradesHallFacade.js";
 import {
   createDomeInteriorTexture,
   createParquetFloorTexture,
 } from "../../lib/grand-hall-textures.js";
+import { TIMELINE_IMPERATIVE_MORPH_THRESHOLD } from "../../lib/layout-timeline.js";
 
 // ---------------------------------------------------------------------------
 // RoomMesh — renders accurate room geometry from polygon data
@@ -25,16 +32,44 @@ const GRID_Y = 0.002;
 export const GRAND_HALL_ORNAMENT_MIN_VIEWPORT_WIDTH = 1100;
 export const DETAILED_ROOM_SHELL_MIN_VIEWPORT_WIDTH = 1100;
 
+/**
+ * Explicit scene-level authority for the photo-guided visual-review model.
+ * It is presentation-only: no measurements, interaction, or operational
+ * export may treat these objects as room truth.
+ */
+export const SYNTHETIC_GRAND_HALL_SCENE_AUTHORITY = Object.freeze({
+  provenance: "generated",
+  truthStatus: "presentation_enhanced",
+  confidenceTier: "unknown",
+  authorityRecordStatus: "not_admitted",
+  geometryAuthority: "presentation-only-proxy",
+  appearanceAuthority: "presentation-only-proxy",
+  lightingAuthority: "presentation-only",
+  physicsAuthority: "none",
+  semanticAuthority: "none",
+  interactionAuthority: "none",
+  exportAuthority: "none",
+  reconstructionStrategy: "procedural_runtime",
+  transformArtifactRef: null,
+  provenanceRefs: [] as readonly string[],
+  presentationOnly: true,
+});
+
+const DISABLED_PRESENTATION_RAYCAST = (): void => undefined;
+
 interface GrandHallOrnamentBudgetInput {
   readonly isGrandHall: boolean;
   readonly viewportWidth: number;
+  readonly detail?: RoomMeshDetail;
 }
 
 export function shouldRenderGrandHallOrnaments({
   isGrandHall,
   viewportWidth,
+  detail = "auto",
 }: GrandHallOrnamentBudgetInput): boolean {
-  return isGrandHall && viewportWidth >= GRAND_HALL_ORNAMENT_MIN_VIEWPORT_WIDTH;
+  if (!isGrandHall || detail === "lean") return false;
+  return detail === "detailed" || viewportWidth >= GRAND_HALL_ORNAMENT_MIN_VIEWPORT_WIDTH;
 }
 
 export function shouldUseLeanPlannerRoomShell(viewportWidth: number): boolean {
@@ -202,7 +237,13 @@ function LeanWall({
 // Floor grid
 // ---------------------------------------------------------------------------
 
-function FloorGrid({ polygon }: { readonly polygon: readonly (readonly [number, number])[] }): React.ReactElement {
+function FloorGrid({
+  polygon,
+  opacity = 0.22,
+}: {
+  readonly polygon: readonly (readonly [number, number])[];
+  readonly opacity?: number;
+}): React.ReactElement {
   const gridGeom = useMemo(() => {
     let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
     for (const [x, z] of polygon) {
@@ -231,8 +272,26 @@ function FloorGrid({ polygon }: { readonly polygon: readonly (readonly [number, 
 
   return (
     <lineSegments geometry={gridGeom} position={[0, GRID_Y, 0]}>
-      <lineBasicMaterial color={GRID_COLOR} transparent opacity={0.22} />
+      <lineBasicMaterial color={GRID_COLOR} transparent opacity={opacity} />
     </lineSegments>
+  );
+}
+
+function SyntheticGrandHallFoundation({
+  width,
+  length,
+}: RenderBounds): React.ReactElement {
+  return (
+    <group name="synthetic-grand-hall-foundation">
+      <mesh name="synthetic-grand-hall-plinth" position={[0, -0.24, 0]}>
+        <boxGeometry args={[width + 0.56, 0.4, length + 0.56]} />
+        <meshStandardMaterial color="#15110e" roughness={0.88} metalness={0.04} />
+      </mesh>
+      <mesh name="synthetic-grand-hall-floor-shadow" rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.445, 0]}>
+        <planeGeometry args={[width + 1.1, length + 1.1]} />
+        <meshBasicMaterial color="#05080b" transparent opacity={0.72} />
+      </mesh>
+    </group>
   );
 }
 
@@ -241,11 +300,65 @@ function FloorGrid({ polygon }: { readonly polygon: readonly (readonly [number, 
 // ---------------------------------------------------------------------------
 
 export type RoomMeshDetail = "auto" | "lean" | "detailed";
+export type RoomMeshVariant = "grand-hall" | "grand-hall-synthetic" | "generic";
 
 interface RoomMeshProps {
   readonly geometry: RoomGeometry;
-  readonly variant?: "grand-hall" | "generic";
+  readonly variant?: RoomMeshVariant;
   readonly detail?: RoomMeshDetail;
+}
+
+export function shouldShowDetailedRoomDuringTimelineMotion(
+  mode: LayoutTimelinePreviewSessionMode,
+  itemCount: number,
+): boolean {
+  return mode !== "transition" || itemCount <= TIMELINE_IMPERATIVE_MORPH_THRESHOLD;
+}
+
+function timelinePreviewItemCount(state: LayoutTimelinePreviewState): number {
+  return state.transition === null
+    ? state.currentItems.length
+    : Math.max(state.transition.fromItems.length, state.transition.toItems.length);
+}
+
+function TimelineRoomMotionDetailDriver({
+  proxyGroupRef,
+  detailGroupRef,
+  useLeanRoomShell,
+}: {
+  readonly proxyGroupRef: RefObject<Group | null>;
+  readonly detailGroupRef: RefObject<Group | null>;
+  readonly useLeanRoomShell: boolean;
+}): null {
+  const invalidate = useThree((state) => state.invalidate);
+  const domElement = useThree((state) => state.gl.domElement);
+
+  useLayoutEffect(() => {
+    let previousMode: "detailed" | "lean" | "proxy" | null = null;
+    const apply = (state: LayoutTimelinePreviewState): void => {
+      const showTimelineDetail = shouldShowDetailedRoomDuringTimelineMotion(
+        state.mode,
+        timelinePreviewItemCount(state),
+      );
+      const mode = useLeanRoomShell ? "lean" : showTimelineDetail ? "detailed" : "proxy";
+      if (mode === previousMode) return;
+      previousMode = mode;
+      if (proxyGroupRef.current !== null) {
+        proxyGroupRef.current.visible = mode !== "detailed";
+      }
+      if (detailGroupRef.current !== null) {
+        detailGroupRef.current.visible = mode === "detailed";
+      }
+      domElement.closest(".planner-scene-canvas-host")
+        ?.setAttribute("data-room-motion-detail", mode);
+      invalidate();
+    };
+
+    apply(useLayoutTimelinePreviewStore.getState());
+    return useLayoutTimelinePreviewStore.subscribe(apply);
+  }, [detailGroupRef, domElement, invalidate, proxyGroupRef, useLeanRoomShell]);
+
+  return null;
 }
 
 export function shouldUseRoomMeshLeanShell(
@@ -259,19 +372,46 @@ export function shouldUseRoomMeshLeanShell(
   return shouldUseLeanPlannerRoomShell(viewportWidth);
 }
 
-export function RoomMesh({ geometry, variant = "generic", detail = "auto" }: RoomMeshProps): React.ReactElement {
+export function shouldRenderSyntheticTradesHallFacade(
+  isSyntheticGrandHall: boolean,
+  useLeanRoomShell: boolean,
+): boolean {
+  return isSyntheticGrandHall && !useLeanRoomShell;
+}
+
+export function RoomMesh({
+  geometry,
+  variant = "generic",
+  detail = "auto",
+}: RoomMeshProps): React.ReactElement {
   const { size } = useThree();
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const floorShape = useMemo(() => polygonToShape(geometry.wallPolygon), [geometry.wallPolygon]);
   const walls = useMemo(() => computeWallSegments(geometry.wallPolygon), [geometry.wallPolygon]);
   const bounds = useMemo(() => computeRenderBounds(geometry.wallPolygon), [geometry.wallPolygon]);
   const { ceilingHeight } = geometry;
-  const isGrandHall = variant === "grand-hall";
+  const isGrandHall = variant === "grand-hall" || variant === "grand-hall-synthetic";
+  const isSyntheticGrandHall = variant === "grand-hall-synthetic";
   const useLeanRoomShell = shouldUseRoomMeshLeanShell(detail, size.width, cameraInteractionActive);
+  const renderSyntheticFacade = shouldRenderSyntheticTradesHallFacade(isSyntheticGrandHall, useLeanRoomShell);
   const renderGrandHallOrnaments = shouldRenderGrandHallOrnaments({
-    isGrandHall,
+    // The upgraded, photo-guided dressing is generated proxy content. D-012
+    // confines it to the explicitly badged imagination/visual-review route.
+    isGrandHall: isSyntheticGrandHall,
     viewportWidth: size.width,
+    detail,
   });
+  const proxyGroupRef = useRef<Group | null>(null);
+  const detailGroupRef = useRef<Group | null>(null);
+  const roomGroupRef = useRef<Group | null>(null);
+
+  useLayoutEffect(() => {
+    if (!isSyntheticGrandHall) return;
+    roomGroupRef.current?.traverse((object) => {
+      Object.assign(object.userData, SYNTHETIC_GRAND_HALL_SCENE_AUTHORITY);
+      object.raycast = DISABLED_PRESENTATION_RAYCAST;
+    });
+  }, [isSyntheticGrandHall, renderGrandHallOrnaments, renderSyntheticFacade, useLeanRoomShell]);
 
   const surfaceTextures = useMemo(() => {
     if (!isGrandHall || useLeanRoomShell || typeof document === "undefined") return null;
@@ -292,92 +432,162 @@ export function RoomMesh({ geometry, variant = "generic", detail = "auto" }: Roo
     };
   }, [surfaceTextures]);
 
+  const syntheticDomeRadius = Math.min(bounds.width, bounds.length) * 0.2;
+  const domeRadius = geometry.hasDome ? geometry.domeRadius : syntheticDomeRadius;
+  const showDome = geometry.hasDome && !isSyntheticGrandHall;
+
   return (
-    <group name="room-mesh">
+    <group
+      ref={roomGroupRef}
+      name={isSyntheticGrandHall ? "synthetic-grand-hall-stand-in" : "room-mesh"}
+      userData={isSyntheticGrandHall
+        ? {
+            ...SYNTHETIC_GRAND_HALL_SCENE_AUTHORITY,
+            presentationSource: "synthetic-stand-in",
+          }
+        : undefined}
+    >
       {/* Lighting */}
       {!useLeanRoomShell && (
         <>
-          <hemisphereLight args={["#f0f0ff", "#d0c8c0", 1.2]} />
-          <ambientLight intensity={0.3} />
+          <hemisphereLight
+            args={isSyntheticGrandHall
+              ? ["#7994ad", "#bd7844", 0.82]
+              : ["#f0f0ff", "#d0c8c0", 1.2]}
+          />
+          <ambientLight intensity={isSyntheticGrandHall ? 0.28 : 0.3} />
+          {isSyntheticGrandHall && (
+            <directionalLight color="#ffd09a" position={[-8, 13, 9]} intensity={1.08} />
+          )}
         </>
       )}
 
       {/* Camera-driven wall auto-fade */}
       {!useLeanRoomShell && <CameraWallDriver />}
 
-      {/* Floor */}
-      <mesh name="floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <shapeGeometry args={[floorShape]} />
-        {useLeanRoomShell ? (
-          <meshBasicMaterial
-            color={FLOOR_COLOR}
-            side={DoubleSide}
-            polygonOffset
-            polygonOffsetFactor={1}
-            polygonOffsetUnits={1}
-            clippingPlanes={noClipPlanes}
-          />
-        ) : (
-          <meshStandardMaterial
-            color={FLOOR_COLOR}
-            map={surfaceTextures?.floor ?? null}
-            side={DoubleSide}
-            roughness={isGrandHall ? 0.62 : 0.95}
-            metalness={isGrandHall ? 0.05 : 0}
-            polygonOffset
-            polygonOffsetFactor={1}
-            polygonOffsetUnits={1}
-            clippingPlanes={noClipPlanes}
-          />
-        )}
-      </mesh>
+      {/* The synthetic Grand Hall uses an explicit rectangular deck. The
+          generic polygon floor remains untouched for measured/custom rooms. */}
+      {isSyntheticGrandHall ? (
+        <mesh name="floor" position={[0, -0.03, 0]}>
+          <boxGeometry args={[bounds.width, 0.06, bounds.length]} />
+          {useLeanRoomShell ? (
+            <meshBasicMaterial color="#c18c4f" />
+          ) : (
+            <meshStandardMaterial
+              color="#d5a164"
+              map={surfaceTextures?.floor ?? null}
+              roughness={0.58}
+              metalness={0.04}
+            />
+          )}
+        </mesh>
+      ) : (
+        <mesh name="floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+          <shapeGeometry args={[floorShape]} />
+          {useLeanRoomShell ? (
+            <meshBasicMaterial
+              color={FLOOR_COLOR}
+              side={DoubleSide}
+              polygonOffset
+              polygonOffsetFactor={1}
+              polygonOffsetUnits={1}
+              clippingPlanes={noClipPlanes}
+            />
+          ) : (
+            <meshStandardMaterial
+              color={FLOOR_COLOR}
+              map={surfaceTextures?.floor ?? null}
+              side={DoubleSide}
+              roughness={isGrandHall ? 0.62 : 0.95}
+              metalness={isGrandHall ? 0.05 : 0}
+              polygonOffset
+              polygonOffsetFactor={1}
+              polygonOffsetUnits={1}
+              clippingPlanes={noClipPlanes}
+            />
+          )}
+        </mesh>
+      )}
+
+      {isSyntheticGrandHall && <SyntheticGrandHallFoundation {...bounds} />}
 
       {/* Floor grid */}
-      <FloorGrid polygon={geometry.wallPolygon} />
+      <FloorGrid polygon={geometry.wallPolygon} opacity={isSyntheticGrandHall ? 0.075 : 0.22} />
 
-      {/* Walls — BrickWall instances with click-to-toggle animation.
-          Each segment maps to a cardinal WallKey so the visibility store
-          drives auto-fade from camera position AND click toggles. */}
-      {walls.map((w, i) => (
-        useLeanRoomShell ? (
+      {/* The proxy walls are always allocated. Dense timeline motion can hide
+          the detailed graph without paying a dispose/rebuild cost at settle. */}
+      <group
+        ref={proxyGroupRef}
+        name="room-motion-proxy-walls"
+        visible={useLeanRoomShell}
+      >
+        {walls.map((w, i) => (
           <LeanWall
             key={`wall-${String(i)}`}
             segment={w}
             wallHeight={ceilingHeight}
             color={WALL_COLOR}
           />
-        ) : (
-          <BrickWall
-            key={`wall-${String(i)}`}
-            name={w.wallKey}
-            wallWidth={w.width}
-            wallHeight={ceilingHeight}
-            position={[w.cx, ceilingHeight / 2, w.cz]}
-            rotation={[0, w.rotY, 0]}
-            color={WALL_COLOR}
-          />
-        )
-      ))}
+        ))}
+      </group>
 
-      {/* Features (balconies, platforms) */}
-      {!useLeanRoomShell && geometry.features.map((f, i) => (
-        <FeatureMesh key={`feature-${String(i)}`} feature={f} />
-      ))}
+      {!useLeanRoomShell && (
+        <group ref={detailGroupRef} name="room-architectural-detail">
+          {renderSyntheticFacade && (
+            <SyntheticTradesHallFacade
+              width={bounds.width}
+              length={bounds.length}
+              height={ceilingHeight}
+            />
+          )}
 
-      {/* Dome */}
-      {!useLeanRoomShell && geometry.hasDome && geometry.domeRadius > 0 && (
-        <GrandHallDome
-          radius={geometry.domeRadius}
-          ceilingHeight={ceilingHeight}
-          color={DOME_COLOR}
-          texture={surfaceTextures?.dome ?? null}
-          clippingPlanes={sectionClipPlanes}
-        />
+          {/* Walls — BrickWall instances with click-to-toggle animation.
+              Each segment maps to a cardinal WallKey so the visibility store
+              drives auto-fade from camera position AND click toggles. */}
+          {walls.map((w, i) => (
+            <BrickWall
+              key={`wall-${String(i)}`}
+              name={w.wallKey}
+              wallWidth={w.width}
+              wallHeight={ceilingHeight}
+              position={[w.cx, ceilingHeight / 2, w.cz]}
+              rotation={[0, w.rotY, 0]}
+              color={WALL_COLOR}
+            />
+          ))}
+
+          {/* Features (balconies, platforms) */}
+          {geometry.features.map((f, i) => (
+            <FeatureMesh key={`feature-${String(i)}`} feature={f} />
+          ))}
+
+          {/* Dome */}
+          {showDome && domeRadius > 0 && (
+            <GrandHallDome
+              radius={domeRadius}
+              ceilingHeight={ceilingHeight}
+              color={DOME_COLOR}
+              texture={surfaceTextures?.dome ?? null}
+              clippingPlanes={sectionClipPlanes}
+            />
+          )}
+
+          {renderGrandHallOrnaments && (
+            <GrandHallOrnaments
+              width={bounds.width}
+              length={bounds.length}
+              height={ceilingHeight}
+              domeRadius={domeRadius}
+              cutaway={isSyntheticGrandHall}
+            />
+          )}
+        </group>
       )}
-
-      {renderGrandHallOrnaments && (
-        <GrandHallOrnaments width={bounds.width} length={bounds.length} height={ceilingHeight} />
-      )}
+      <TimelineRoomMotionDetailDriver
+        proxyGroupRef={proxyGroupRef}
+        detailGroupRef={detailGroupRef}
+        useLeanRoomShell={useLeanRoomShell}
+      />
     </group>
   );
 }

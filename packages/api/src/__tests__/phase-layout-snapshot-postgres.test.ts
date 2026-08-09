@@ -1095,7 +1095,8 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       headers: authHeaders({ venueId: "11111111-1111-4111-8111-111111111112" }),
       payload: { configurationId: SNAPSHOT.configurationId },
     });
-    expect(crossTenant.statusCode, crossTenant.body).toBe(403);
+    expect(crossTenant.statusCode, crossTenant.body).toBe(404);
+    expect(crossTenant.json()).toEqual({ error: "Event not found", code: "NOT_FOUND" });
   });
 
   it("makes missing and cross-tenant phase or configuration ids indistinguishable", async () => {

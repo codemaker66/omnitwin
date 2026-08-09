@@ -244,7 +244,9 @@ export async function phaseLayoutSnapshotRoutes(
           )).limit(1);
           if (event === undefined) return { state: "not_found", resource: "event" };
           if (!canWriteEvents(request.user, event.venueId)) {
-            return { state: "forbidden" };
+            // Cross-tenant resources are deliberately indistinguishable from
+            // missing IDs. The global read-only-role check above remains 403.
+            return { state: "not_found", resource: "event" };
           }
 
           const [phase] = await tx.select({

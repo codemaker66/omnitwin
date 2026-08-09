@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE } from "@omnitwin/types";
+import {
+  CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  historicalRuntimeFromBinding,
+} from "@omnitwin/types";
 import { MemoryRouter } from "react-router-dom";
 import { useEditorStore } from "../../../../stores/editor-store.js";
 import { useAuthStore } from "../../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { useHistoricalRuntimeStatusStore } from "../../../../stores/historical-runtime-status-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 import type { PlacedItem } from "../../../../lib/placement.js";
+import { historicalRuntimeBindingFixture } from "../../../../test-utils/historical-runtime-binding.js";
 import { CockpitTopBar } from "../CockpitTopBar.js";
 
 function renderTopBar(): void {
@@ -42,6 +47,11 @@ beforeEach(() => {
     isAuthenticated: true,
   });
   useCockpitStore.getState().reset();
+  useHistoricalRuntimeStatusStore.getState().publish({
+    state: "inactive",
+    bindingId: null,
+    message: null,
+  });
   useLayoutTimelinePreviewStore.getState().clear();
 });
 
@@ -86,7 +96,49 @@ describe("CockpitTopBar", () => {
     expect(screen.getByText("Frozen outline · historical capture unavailable")).toBeTruthy();
     expect(screen.getByText("2 phase preview items · saved plan unchanged")).toBeTruthy();
     expect(screen.getByTestId("cockpit-topbar").getAttribute("data-layout-timeline-preview")).toBe("true");
+    expect(screen.getByTestId("cockpit-topbar").getAttribute("data-room-presentation-source")).toBeNull();
     expect(screen.queryByRole("button", { name: /layers/i })).toBeNull();
+  });
+
+  it("labels only the binding-matched ready runtime as an exact historical capture", () => {
+    const binding = historicalRuntimeBindingFixture();
+    useLayoutTimelinePreviewStore.getState().settle({
+      id: "event-a:phase-dinner",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-dinner",
+      phaseName: "Dinner service",
+      startsAt: null,
+      endsAt: null,
+      historicalRuntime: historicalRuntimeFromBinding(binding),
+      venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
+    }, []);
+    useHistoricalRuntimeStatusStore.getState().publish({
+      state: "ready",
+      bindingId: binding.bindingId,
+      message: null,
+    });
+
+    const { rerender } = render(
+      <MemoryRouter initialEntries={["/plan/cfg-1"]}>
+        <CockpitTopBar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("cockpit-runtime-chip").textContent)
+      .toContain("Exact historical capture");
+
+    useHistoricalRuntimeStatusStore.getState().publish({
+      state: "ready",
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      message: null,
+    });
+    rerender(
+      <MemoryRouter initialEntries={["/plan/cfg-1"]}>
+        <CockpitTopBar />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("cockpit-runtime-chip").textContent)
+      .toContain("Loading exact historical capture");
   });
 
   it("uses a range-loading label instead of stale phase identity while preview remains locked", () => {

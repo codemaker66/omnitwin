@@ -23,6 +23,7 @@ import {
   computeVisibleLongWainscotPanelCenters,
   computeVisibleShortWainscotPanelCenters,
   computeWindowWallCenters,
+  GRAND_HALL_ORNAMENT_SCENE_AUTHORITY,
   isInWindowWallOpeningBay,
   shouldShowCeilingOrnamentsForSection,
   shouldShowWallOrnamentsForSection,
@@ -409,6 +410,21 @@ describe("dome constants", () => {
 });
 
 describe("Grand Hall ornaments source", () => {
+  it("marks photo-guided ornament proxies non-interactive and non-exportable", async () => {
+    expect(GRAND_HALL_ORNAMENT_SCENE_AUTHORITY).toMatchObject({
+      provenance: "generated",
+      truthStatus: "proxy",
+      interactionAuthority: "none",
+      exportAuthority: "none",
+      presentationOnly: true,
+    });
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/components/GrandHallOrnaments.tsx"), "utf-8");
+    expect(source).toContain("ornamentGroupRef.current?.traverse");
+    expect(source).toContain("object.raycast = DISABLED_ORNAMENT_RAYCAST");
+  });
+
   it("keeps dark raised panels out of the window, door, and fireplace end walls", () => {
     const { width, length } = GRAND_HALL_RENDER_DIMENSIONS;
     const backWallPanels = computeVisibleLongWainscotPanelCenters(width, "back");

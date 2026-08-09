@@ -4,6 +4,8 @@ import {
   decodeHistoricalRuntimePackage,
   disposeHistoricalRuntimeResource,
   historicalRuntimePresentationCanAcknowledge,
+  historicalRuntimeTimelineBlendHasDistinctResources,
+  historicalRuntimeTimelineBlendOpacities,
   type HistoricalRuntimeMesh,
 } from "../HistoricalRuntimeLayer.js";
 import { historicalRuntimeBindingFixture } from "../../../test-utils/historical-runtime-binding.js";
@@ -120,5 +122,26 @@ describe("historical runtime framebuffer acknowledgement", () => {
       attachedKey: "binding-B",
       groupAttached: true,
     })).toBe(true);
+  });
+});
+
+describe("timeline-owned historical runtime blend", () => {
+  it("keeps a shared endpoint runtime as one fully opaque resource", () => {
+    expect(historicalRuntimeTimelineBlendHasDistinctResources("runtime:a", "runtime:a")).toBe(false);
+    expect(historicalRuntimeTimelineBlendHasDistinctResources("runtime:a", "runtime:b")).toBe(true);
+    expect(historicalRuntimeTimelineBlendHasDistinctResources(null, "runtime:b")).toBe(false);
+  });
+
+  it("tracks the timeline progress exactly instead of starting an independent clock", () => {
+    expect(historicalRuntimeTimelineBlendOpacities(0)).toEqual({ from: 1, to: 0 });
+    expect(historicalRuntimeTimelineBlendOpacities(0.25)).toEqual({ from: 0.75, to: 0.25 });
+    expect(historicalRuntimeTimelineBlendOpacities(0.5)).toEqual({ from: 0.5, to: 0.5 });
+    expect(historicalRuntimeTimelineBlendOpacities(1)).toEqual({ from: 0, to: 1 });
+  });
+
+  it("clamps non-finite and out-of-range scrub input", () => {
+    expect(historicalRuntimeTimelineBlendOpacities(Number.NaN)).toEqual({ from: 1, to: 0 });
+    expect(historicalRuntimeTimelineBlendOpacities(-1)).toEqual({ from: 1, to: 0 });
+    expect(historicalRuntimeTimelineBlendOpacities(2)).toEqual({ from: 0, to: 1 });
   });
 });

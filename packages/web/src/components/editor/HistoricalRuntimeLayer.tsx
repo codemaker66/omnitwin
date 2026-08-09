@@ -38,7 +38,6 @@ import { useHistoricalRuntimeStatusStore } from "../../stores/historical-runtime
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { sparkRendererAdmissionGate } from "../scene/spark-renderer-lifecycle.js";
 
-const HISTORICAL_RUNTIME_CROSSFADE_MS = 240;
 const MAX_REMEMBERED_SPLAT_COUNTS = 32;
 const splatBudgetByBinding = new WeakMap<PhaseLayoutRuntimeAvailableBinding, number>();
 const splatCountByBindingKey = new Map<string, number>();
@@ -78,6 +77,28 @@ const EMPTY_DISPLAY: DisplayedResources = {
 interface RuntimePresentationCandidate {
   readonly key: string;
   readonly resource: HistoricalRuntimeResource;
+}
+
+interface TimelineRuntimeBlendResources {
+  readonly fromKey: string;
+  readonly from: HistoricalRuntimeResource;
+  readonly toKey: string;
+  readonly to: HistoricalRuntimeResource;
+}
+
+export function historicalRuntimeTimelineBlendOpacities(progress: number): {
+  readonly from: number;
+  readonly to: number;
+} {
+  const clamped = Math.min(1, Math.max(0, Number.isFinite(progress) ? progress : 0));
+  return { from: 1 - clamped, to: clamped };
+}
+
+export function historicalRuntimeTimelineBlendHasDistinctResources(
+  fromKey: string | null,
+  toKey: string | null,
+): boolean {
+  return fromKey !== null && toKey !== null && fromKey !== toKey;
 }
 
 export function historicalRuntimePresentationCanAcknowledge(params: {
@@ -216,6 +237,12 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   const previewTransitionToFrame = useLayoutTimelinePreviewStore(
     (state) => state.transition?.toFrame ?? null,
   );
+  const previewTransitionMode = useLayoutTimelinePreviewStore(
+    (state) => state.transition?.mode ?? null,
+  );
+  const previewTransitionRoomEnvelopeChanged = useLayoutTimelinePreviewStore(
+    (state) => state.transition?.roomEnvelopeChanged ?? false,
+  );
   const adjacentRuntime = useLayoutTimelinePreviewStore((state) => state.adjacentHistoricalRuntime);
   const retryRevision = useHistoricalRuntimeStatusStore((state) => state.retryRevision);
   const snapshot = useSyncExternalStore(
@@ -231,14 +258,14 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   const [display, setDisplay] = useState<DisplayedResources>(EMPTY_DISPLAY);
   const displayRef = useRef<DisplayedResources>(EMPTY_DISPLAY);
   const selectedKeyRef = useRef<string | null>(null);
-  const animationGenerationRef = useRef(0);
-  const animationFrameRef = useRef<number | null>(null);
   const presentationFrameRef = useRef<number | null>(null);
   const attachedGroupRef = useRef<Group | null>(null);
   const attachedKeyRef = useRef<string | null>(null);
   const presentationCandidateRef = useRef<RuntimePresentationCandidate | null>(null);
   const presentedKeyRef = useRef<string | null>(null);
   const [presentedKey, setPresentedKey] = useState<string | null>(null);
+  const transitionBlendRef = useRef<TimelineRuntimeBlendResources | null>(null);
+  const lastTransitionBlendProgressRef = useRef<number | null>(null);
   const viewportWidth = useHistoricalRuntimeViewportWidth();
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
@@ -279,6 +306,68 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   const activeEnvelopeKey = activeFrame?.venueRuntime === null || activeFrame?.venueRuntime === undefined
     ? null
     : frozenRoomEnvelopeKey(activeFrame.venueRuntime);
+  const transitionFromBinding = previewTransitionFromFrame?.historicalRuntime?.state === "available"
+    ? previewTransitionFromFrame.historicalRuntime.binding
+    : null;
+  const transitionToBinding = previewTransitionToFrame?.historicalRuntime?.state === "available"
+    ? previewTransitionToFrame.historicalRuntime.binding
+    : null;
+  const transitionFromKey = transitionFromBinding === null
+    ? null
+    : historicalRuntimeBindingKey(transitionFromBinding);
+  const transitionToKey = transitionToBinding === null
+    ? null
+    : historicalRuntimeBindingKey(transitionToBinding);
+  const transitionFromRecord = transitionFromKey === null
+    ? undefined
+    : snapshot.records.get(transitionFromKey);
+  const transitionToRecord = transitionToKey === null
+    ? undefined
+    : snapshot.records.get(transitionToKey);
+  const timelineRuntimeBlend = useMemo<TimelineRuntimeBlendResources | null>(() => {
+    if (
+      previewTransitionMode !== "same-event-morph"
+      || previewTransitionRoomEnvelopeChanged
+      || reducedMotion
+      || transitionFromBinding === null
+      || transitionToBinding === null
+      || transitionFromKey === null
+      || transitionToKey === null
+      || !historicalRuntimeTimelineBlendHasDistinctResources(
+        transitionFromKey,
+        transitionToKey,
+      )
+      || transitionFromRecord?.status !== "ready"
+      || transitionToRecord?.status !== "ready"
+      || transitionFromRecord.resource === null
+      || transitionToRecord.resource === null
+    ) return null;
+    const from = transitionFromRecord.resource;
+    const to = transitionToRecord.resource;
+    return historicalRuntimeCrossfadeAllowed({
+      from: transitionFromBinding,
+      to: transitionToBinding,
+      sameEnvelope: true,
+      reducedMotion: false,
+      combinedByteBudget: HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET,
+      fromSplatCount: from.splatCount,
+      toSplatCount: to.splatCount,
+      combinedSplatBudget: HISTORICAL_RUNTIME_CROSSFADE_SPLAT_BUDGET,
+    })
+      ? { fromKey: transitionFromKey, from, toKey: transitionToKey, to }
+      : null;
+  }, [
+    previewTransitionMode,
+    previewTransitionRoomEnvelopeChanged,
+    reducedMotion,
+    transitionFromBinding,
+    transitionFromKey,
+    transitionFromRecord,
+    transitionToBinding,
+    transitionToKey,
+    transitionToRecord,
+  ]);
+  transitionBlendRef.current = timelineRuntimeBlend;
   const transitionAdjacentRuntime = previewTransitionFromFrame === null ||
     previewTransitionToFrame === null ||
     activeFrame === null
@@ -366,7 +455,6 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   }, []);
 
   useEffect(() => () => {
-    if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
     cancelPresentationFrame();
     historicalRuntimeCache.clear();
     splatCountByBindingKey.clear();
@@ -464,12 +552,6 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   ]);
 
   useLayoutEffect(() => {
-    const generation = ++animationGenerationRef.current;
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
     const selectionChanged = selectedKeyRef.current !== activeKey;
     selectedKeyRef.current = activeKey;
     const target = activeRecord?.status === "ready" ? activeRecord.resource : null;
@@ -485,8 +567,28 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
       }
       return;
     }
+    if (timelineRuntimeBlend !== null) {
+      const activeIsFrom = activeKey === timelineRuntimeBlend.fromKey;
+      const current = activeIsFrom ? timelineRuntimeBlend.from : timelineRuntimeBlend.to;
+      const previous = activeIsFrom ? timelineRuntimeBlend.to : timelineRuntimeBlend.from;
+      const nextDisplay: DisplayedResources = {
+        currentKey: activeKey,
+        current,
+        currentEnvelopeKey: activeEnvelopeKey,
+        previous,
+      };
+      const transitionProgress = useLayoutTimelinePreviewStore.getState().transition?.progress ?? 0;
+      const opacity = historicalRuntimeTimelineBlendOpacities(transitionProgress);
+      setResourceOpacity(timelineRuntimeBlend.from, opacity.from);
+      setResourceOpacity(timelineRuntimeBlend.to, opacity.to);
+      lastTransitionBlendProgressRef.current = transitionProgress;
+      displayRef.current = nextDisplay;
+      setDisplay(nextDisplay);
+      invalidate();
+      return;
+    }
     if (!selectionChanged && previousDisplay.current === target) {
-      if (reducedMotion && previousDisplay.previous !== null) {
+      if (previousDisplay.previous !== null) {
         setResourceOpacity(previousDisplay.previous, 0);
         setResourceOpacity(target, 1);
         const settled: DisplayedResources = { ...previousDisplay, previous: null };
@@ -498,65 +600,18 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
     }
 
     const previous = previousDisplay.current;
-    const canCrossfade = selectionChanged &&
-      previous !== null &&
-      previousDisplay.currentEnvelopeKey !== null &&
-      previousDisplay.currentEnvelopeKey === activeEnvelopeKey &&
-      historicalRuntimeCrossfadeAllowed({
-        from: previous.binding,
-        to: target.binding,
-        sameEnvelope: true,
-        reducedMotion,
-        combinedByteBudget: HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET,
-        fromSplatCount: previous.splatCount,
-        toSplatCount: target.splatCount,
-        combinedSplatBudget: HISTORICAL_RUNTIME_CROSSFADE_SPLAT_BUDGET,
-      });
-
     setResourceOpacity(previousDisplay.previous, 0);
-    if (!canCrossfade) {
-      setResourceOpacity(previous, 0);
-      setResourceOpacity(target, 1);
-      const nextDisplay: DisplayedResources = {
-        currentKey: activeKey,
-        current: target,
-        currentEnvelopeKey: activeEnvelopeKey,
-        previous: null,
-      };
-      displayRef.current = nextDisplay;
-      setDisplay(nextDisplay);
-      invalidate();
-      return;
-    }
-
-    setResourceOpacity(previous, 1);
-    setResourceOpacity(target, 0);
+    setResourceOpacity(previous, 0);
+    setResourceOpacity(target, 1);
     const nextDisplay: DisplayedResources = {
       currentKey: activeKey,
       current: target,
       currentEnvelopeKey: activeEnvelopeKey,
-      previous,
+      previous: null,
     };
     displayRef.current = nextDisplay;
     setDisplay(nextDisplay);
-    const startedAt = performance.now();
-    const animate = (now: number): void => {
-      if (animationGenerationRef.current !== generation) return;
-      const progress = Math.min(1, Math.max(0, (now - startedAt) / HISTORICAL_RUNTIME_CROSSFADE_MS));
-      setResourceOpacity(previous, 1 - progress);
-      setResourceOpacity(target, progress);
-      invalidate();
-      if (progress < 1) {
-        animationFrameRef.current = requestAnimationFrame(animate);
-        return;
-      }
-      animationFrameRef.current = null;
-      setResourceOpacity(previous, 0);
-      const settled: DisplayedResources = { ...nextDisplay, previous: null };
-      displayRef.current = settled;
-      setDisplay(settled);
-    };
-    animationFrameRef.current = requestAnimationFrame(animate);
+    invalidate();
   }, [
     activeEnvelopeKey,
     activeKey,
@@ -564,6 +619,7 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
     activeRecord?.status,
     invalidate,
     reducedMotion,
+    timelineRuntimeBlend,
   ]);
 
   const displayMatchesSelection = historicalRuntimeResourceCanRender({
@@ -576,19 +632,58 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   const presentationCandidate = displayMatchesSelection &&
     activeKey !== null &&
     display.current !== null &&
-    display.previous === null
+    (display.previous === null || timelineRuntimeBlend !== null)
     ? { key: activeKey, resource: display.current }
     : null;
   presentationCandidateRef.current = presentationCandidate;
 
-  const renderedDisplayKey = display.currentKey;
   const attachDisplayGroup = useCallback((group: Group | null): void => {
     attachedGroupRef.current = group;
-    attachedKeyRef.current = group === null ? null : renderedDisplayKey;
+    attachedKeyRef.current = group === null ? null : selectedKeyRef.current;
     if (group !== null) invalidate();
-  }, [invalidate, renderedDisplayKey]);
+  }, [invalidate]);
+
+  useLayoutEffect(() => {
+    if (attachedGroupRef.current !== null) attachedKeyRef.current = display.currentKey;
+  }, [display.currentKey]);
+
+  useEffect(() => {
+    if (timelineRuntimeBlend === null) return undefined;
+    let previousProgress = useLayoutTimelinePreviewStore.getState().transition?.progress ?? null;
+    return useLayoutTimelinePreviewStore.subscribe((state) => {
+      const transition = state.transition;
+      const progress = transition?.fromFrame.historicalRuntime?.state === "available"
+        && transition.toFrame.historicalRuntime?.state === "available"
+        && historicalRuntimeBindingKey(transition.fromFrame.historicalRuntime.binding) === timelineRuntimeBlend.fromKey
+        && historicalRuntimeBindingKey(transition.toFrame.historicalRuntime.binding) === timelineRuntimeBlend.toKey
+        ? transition.progress
+        : null;
+      if (progress === null || progress === previousProgress) return;
+      previousProgress = progress;
+      invalidate();
+    });
+  }, [invalidate, timelineRuntimeBlend]);
 
   useFrame(() => {
+    const blend = transitionBlendRef.current;
+    if (blend !== null) {
+      const transition = useLayoutTimelinePreviewStore.getState().transition;
+      const progress = transition?.fromFrame.historicalRuntime?.state === "available"
+        && transition.toFrame.historicalRuntime?.state === "available"
+        && historicalRuntimeBindingKey(transition.fromFrame.historicalRuntime.binding) === blend.fromKey
+        && historicalRuntimeBindingKey(transition.toFrame.historicalRuntime.binding) === blend.toKey
+        ? transition.progress
+        : null;
+      if (progress !== null && progress !== lastTransitionBlendProgressRef.current) {
+        const opacity = historicalRuntimeTimelineBlendOpacities(progress);
+        setResourceOpacity(blend.from, opacity.from);
+        setResourceOpacity(blend.to, opacity.to);
+        lastTransitionBlendProgressRef.current = progress;
+      }
+    } else {
+      lastTransitionBlendProgressRef.current = null;
+    }
+
     const candidate = presentationCandidateRef.current;
     if (
       candidate === null ||
@@ -622,16 +717,31 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   if (!displayMatchesSelection || display.current === null) return null;
   return (
     <group
-      key={display.currentKey ?? undefined}
+      key={timelineRuntimeBlend === null
+        ? display.currentKey ?? undefined
+        : `blend:${timelineRuntimeBlend.fromKey}:${timelineRuntimeBlend.toKey}`}
       ref={attachDisplayGroup}
       name="historical-runtime-capture"
     >
-      {display.previous?.meshes.map((mesh, index) => (
-        <primitive key={`previous:${display.previous?.binding.bindingId ?? "none"}:${String(index)}`} object={mesh} />
-      ))}
-      {display.current.meshes.map((mesh, index) => (
-        <primitive key={`current:${display.currentKey ?? "none"}:${String(index)}`} object={mesh} />
-      ))}
+      {timelineRuntimeBlend === null ? (
+        <>
+          {display.previous?.meshes.map((mesh, index) => (
+            <primitive key={`previous:${display.previous?.binding.bindingId ?? "none"}:${String(index)}`} object={mesh} />
+          ))}
+          {display.current.meshes.map((mesh, index) => (
+            <primitive key={`current:${display.currentKey ?? "none"}:${String(index)}`} object={mesh} />
+          ))}
+        </>
+      ) : (
+        <>
+          {timelineRuntimeBlend.from.meshes.map((mesh, index) => (
+            <primitive key={`blend-from:${timelineRuntimeBlend.fromKey}:${String(index)}`} object={mesh} />
+          ))}
+          {timelineRuntimeBlend.to.meshes.map((mesh, index) => (
+            <primitive key={`blend-to:${timelineRuntimeBlend.toKey}:${String(index)}`} object={mesh} />
+          ))}
+        </>
+      )}
     </group>
   );
 }

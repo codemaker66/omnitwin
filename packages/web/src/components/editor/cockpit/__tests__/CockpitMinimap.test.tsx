@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
   GuestFlowReplayArtifactSchema,
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
@@ -55,6 +55,7 @@ afterEach(() => {
   resetStores();
   window.localStorage.clear();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("CockpitMinimap", () => {
@@ -94,6 +95,55 @@ describe("CockpitMinimap", () => {
     expect(container.querySelectorAll(".cockpit-minimap__dot")).toHaveLength(0);
     expect(container.querySelector(".cockpit-minimap__preview-canvas")?.getAttribute("data-preview-object-count")).toBe("2");
     expect(screen.getByText(/Phase preview · saved plan unchanged/)).toBeTruthy();
+  });
+
+  it("draws the latest dense physical morph progress on a trailing preview frame", () => {
+    vi.useFakeTimers();
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) throw new Error("fixture round table missing");
+    const fromItems = Array.from({ length: 241 }, (_, index) => ({
+      ...createPlacedItem(table.id, index, 0, 0),
+      id: `table-${String(index)}`,
+    }));
+    const toItems = fromItems.map((item) => ({ ...item, x: item.x + 8 }));
+    const venueRuntime = CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime;
+    useLayoutTimelinePreviewStore.getState().beginTransition({
+      fromFrame: {
+        id: "event-a:phase-arrival",
+        eventId: "event-a",
+        eventName: "Wedding Dinner",
+        phaseId: "phase-arrival",
+        phaseName: "Arrival",
+        startsAt: null,
+        endsAt: null,
+        historicalRuntime: null,
+        venueRuntime,
+      },
+      toFrame: {
+        id: "event-a:phase-dinner",
+        eventId: "event-a",
+        eventName: "Wedding Dinner",
+        phaseId: "phase-dinner",
+        phaseName: "Dinner",
+        startsAt: null,
+        endsAt: null,
+        historicalRuntime: null,
+        venueRuntime,
+      },
+      fromItems,
+      toItems,
+      reducedMotion: false,
+      spatialMorphAllowed: true,
+    });
+
+    const { container } = render(<CockpitMinimap />);
+    const canvas = container.querySelector(".cockpit-minimap__preview-canvas");
+    expect(canvas?.getAttribute("data-preview-progress")).toBe("0");
+
+    act(() => { useLayoutTimelinePreviewStore.getState().setProgress(0.2); });
+    act(() => { vi.advanceTimersByTime(80); });
+    expect(canvas?.getAttribute("data-preview-progress")).toBe("0.2");
+    expect(canvas?.getAttribute("data-preview-object-count")).toBe("241");
   });
 
   it("projects shifted frozen coordinates through the same centred room offset", () => {

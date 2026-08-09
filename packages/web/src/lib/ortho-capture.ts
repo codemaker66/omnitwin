@@ -13,6 +13,7 @@ import {
   Color,
 } from "three";
 import { prepareFurnitureForOrthographicCapture } from "./layout-timeline-capture.js";
+import { prepareSceneForOperationalCapture } from "./scene-authority-capture.js";
 
 /** Capture options. */
 export interface CaptureOptions {
@@ -57,11 +58,21 @@ export function captureOrthographic(
   // Substitute the nearest immutable phase keyframe for this render, or the
   // editor's saved layout when no timeline keyframe is mounted.
   const furnitureCapture = prepareFurnitureForOrthographicCapture(scene);
+  const authorityCapture = prepareSceneForOperationalCapture(scene);
   if (labelsGroup !== undefined) labelsGroup.visible = furnitureCapture.diagramLabelsVisible;
+  if (authorityCapture.excludedObjectCount > 0) {
+    // D-012 is fail closed: operational handoffs are refused rather than
+    // silently exporting a scene that contains generated proxy regions.
+    if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
+    furnitureCapture.restore();
+    authorityCapture.restore();
+    return null;
+  }
 
+  let renderer: WebGLRenderer | null = null;
   try {
     // Offscreen renderer — separate from the main canvas
-    const renderer = new WebGLRenderer({
+    renderer = new WebGLRenderer({
       antialias: true,
       alpha: false,
       preserveDrawingBuffer: true,
@@ -105,16 +116,14 @@ export function captureOrthographic(
     // Extract PNG
     const dataUrl = renderer.domElement.toDataURL("image/png");
 
-    // Cleanup
-    renderer.dispose();
-    if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
-    furnitureCapture.restore();
-
     return dataUrl;
   } catch {
+    return null;
+  } finally {
+    renderer?.dispose();
     if (labelsGroup !== undefined) labelsGroup.visible = labelsWereVisible;
     furnitureCapture.restore();
-    return null;
+    authorityCapture.restore();
   }
 }
 

@@ -31,14 +31,21 @@ import { useSearchParams } from "react-router-dom";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
-import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
-import type { LayoutTimelinePreviewFrameMetadata } from "../../../stores/layout-timeline-preview-store.js";
+import {
+  layoutTimelineRenderedItems,
+  useLayoutTimelinePreviewStore,
+} from "../../../stores/layout-timeline-preview-store.js";
+import type {
+  LayoutTimelinePreviewFrameMetadata,
+  LayoutTimelinePreviewState,
+} from "../../../stores/layout-timeline-preview-store.js";
 import { useRoomLayoutTimeline } from "../../../hooks/use-room-layout-timeline.js";
 import { useLinkedEvent } from "../../../hooks/use-linked-event.js";
 import { useMediaQuery } from "../../../hooks/use-media-query.js";
 import {
   placedItemsFromCanonicalSnapshot,
 } from "../../../lib/layout-timeline.js";
+import type { PlacedItem } from "../../../lib/placement.js";
 import { frozenRoomEnvelopesMatch } from "../../../lib/frozen-layout-room.js";
 import {
   activeTimelineFrameIndexAtTime,
@@ -129,6 +136,26 @@ function previewFrameMetadata(
       ? frame.keyframe.historicalRuntime
       : null,
   };
+}
+
+export function timelineRetargetSourceFrame(
+  preview: Pick<LayoutTimelinePreviewState, "activeFrame" | "transition">,
+): LayoutTimelinePreviewFrameMetadata | null {
+  const transition = preview.transition;
+  if (transition === null) return preview.activeFrame;
+  return transition.progress < 0.5 ? transition.fromFrame : transition.toFrame;
+}
+
+/**
+ * Samples the physical GPU morph exactly once when a user interrupts it.
+ * Dense transitions intentionally keep `currentItems` at the nearest semantic
+ * endpoint, so retargeting from that array would visibly snap first.
+ */
+export function timelineRetargetSourceItems(
+  preview: Pick<LayoutTimelinePreviewState, "currentItems" | "transition">,
+): readonly PlacedItem[] {
+  const transition = preview.transition;
+  return transition === null ? preview.currentItems : layoutTimelineRenderedItems(preview);
 }
 
 function framesAllowFrozenSpatialMorph(
@@ -619,6 +646,7 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     const frame = frames[index];
     const items = frameItems(frame);
     if (frame === undefined || items === null) return false;
+    scrubTransitionRef.current = null;
     capturePrePreviewPhase();
     useLayoutTimelinePreviewStore.getState().settle(previewFrameMetadata(frame), items);
     useCockpitStore.getState().selectPhase(frame.phaseId);
@@ -632,6 +660,7 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
   const showUnavailableFrame = useCallback((index: number, fallbackMessage?: string): boolean => {
     const frame = frames[index];
     if (frame === undefined) return false;
+    scrubTransitionRef.current = null;
     capturePrePreviewPhase();
     const message = frame.keyframe.state === "available"
       ? fallbackMessage ?? "The frozen keyframe could not be rendered."
@@ -649,19 +678,25 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     const targetFrame = frames[targetIndex];
     const targetItems = frameItems(targetFrame);
     if (targetFrame === undefined || targetItems === null) return;
+    scrubTransitionRef.current = null;
     capturePrePreviewPhase();
     setPlaying(false);
     const generation = cancelAnimations();
     const preview = useLayoutTimelinePreviewStore.getState();
-    const previewSourceIndex = preview.activeFrame === null
+    const previewSourceFrame = timelineRetargetSourceFrame(preview);
+    const previewSourceIndex = previewSourceFrame === null
       ? -1
-      : frames.findIndex((frame) => frame.id === preview.activeFrame?.id);
+      : frames.findIndex((frame) => frame.id === previewSourceFrame.id);
     const fromIndex = previewSourceIndex >= 0 ? previewSourceIndex : activeIndex;
     const fromFrame = frames[fromIndex];
-    const fromItems = preview.activeFrame === null ? frameItems(fromFrame) : preview.currentItems;
+    const fromCaptureItems = frameItems(fromFrame);
+    const fromItems = previewSourceFrame === null
+      ? fromCaptureItems
+      : timelineRetargetSourceItems(preview);
     if (
       fromFrame === undefined
       || fromItems === null
+      || fromCaptureItems === null
       || (preview.transition === null && fromFrame.id === targetFrame.id)
     ) {
       settleFrame(targetIndex);
@@ -673,6 +708,8 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
       toFrame: previewFrameMetadata(targetFrame),
       fromItems,
       toItems: targetItems,
+      fromCaptureItems,
+      toCaptureItems: targetItems,
       reducedMotion,
       spatialMorphAllowed: framesAllowFrozenSpatialMorph(frames, fromIndex, targetIndex),
     });
@@ -846,6 +883,9 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
         return;
       }
       selfNavigationSignatureRef.current = null;
+      cancelAnimations();
+      setPlaying(false);
+      scrubTransitionRef.current = null;
       const requestedScope: TimelineScope = current.get("timelineScope") === "week" ? "week" : "day";
       const requestedDate = current.get("timelineDate");
       const requestedDateIsValid = isValidTimelineDeepLinkDate(requestedDate);
@@ -870,10 +910,19 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
       const rangeChanged = requestedScope !== scope || validDate !== anchorDate;
       if (requestedScope !== scope) setScope(requestedScope);
       if (validDate !== anchorDate) setAnchorDate(validDate);
-      if (!rangeChanged && requestedPhaseId !== null) {
-        const requestedIndex = frames.findIndex((frame) =>
-          frame.phaseId === requestedPhaseId,
+      if (rangeChanged) {
+        capturePrePreviewPhase();
+        useLayoutTimelinePreviewStore.getState().showPending(
+          "Loading the authoritative room timeline…",
         );
+      }
+      if (!rangeChanged) {
+        const matchingRequestedIndex = requestedPhaseId === null
+          ? -1
+          : frames.findIndex((frame) => frame.phaseId === requestedPhaseId);
+        const requestedIndex = matchingRequestedIndex >= 0
+          ? matchingRequestedIndex
+          : availableIndices[0] ?? 0;
         if (requestedIndex >= 0 && !settleFrame(requestedIndex)) {
           showUnavailableFrame(requestedIndex);
         }
@@ -890,6 +939,12 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     const desiredPhaseId = currentPreview.mode !== "inactive"
       ? currentPreview.activeFrame?.phaseId ?? null
       : null;
+    // Refreshes reuse the same response key and rerun initial hydration. Keep
+    // that cursor aligned with the phase the user most recently committed,
+    // including unavailable phases and identity-free schedule gaps.
+    if (currentPreview.mode !== "inactive") {
+      requestedInitialPhaseIdRef.current = desiredPhaseId;
+    }
     const paramsMatch = current.get("timelineScope") === scope
       && current.get("timelineDate") === anchorDate
       && current.get("timelinePhaseId") === desiredPhaseId;
@@ -903,6 +958,9 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
   }, [
     activeFrame,
     anchorDate,
+    availableIndices,
+    cancelAnimations,
+    capturePrePreviewPhase,
     frames,
     linkedEventAnchorMs,
     linkedEventAutoAnchorPending,
@@ -1221,8 +1279,13 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
       return;
     }
     const key = `${fromFrame.id}:${toFrame.id}`;
-    if (scrubTransitionRef.current !== key) {
-      useLayoutTimelinePreviewStore.getState().beginTransition({
+    const preview = useLayoutTimelinePreviewStore.getState();
+    const activeTransition = preview.transition;
+    const canReuseTransition = scrubTransitionRef.current === key
+      && activeTransition?.fromFrame.id === fromFrame.id
+      && activeTransition.toFrame.id === toFrame.id;
+    if (!canReuseTransition) {
+      preview.beginTransition({
         fromFrame: previewFrameMetadata(fromFrame),
         toFrame: previewFrameMetadata(toFrame),
         fromItems,

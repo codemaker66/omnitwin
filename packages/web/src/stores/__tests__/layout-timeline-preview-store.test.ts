@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE } from "@omnitwin/types";
+import {
+  CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  historicalRuntimeFromBinding,
+} from "@omnitwin/types";
 import type { PlacedItem } from "../../lib/placement.js";
 import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { useEditorStore } from "../editor-store.js";
 import { usePlacementStore } from "../placement-store.js";
+import { historicalRuntimeBindingFixture } from "../../test-utils/historical-runtime-binding.js";
 import {
+  layoutTimelineRenderedItems,
   useLayoutTimelinePreviewStore,
   type LayoutTimelinePreviewFrameMetadata,
 } from "../layout-timeline-preview-store.js";
@@ -92,9 +97,140 @@ describe("layout timeline preview store", () => {
     expect(useLayoutTimelinePreviewStore.getState().currentItems).toBe(fromItems);
     expect(useLayoutTimelinePreviewStore.getState().transition?.itemTransitionPlan?.pairs)
       .toHaveLength(241);
+    const renderedAtQuarter = layoutTimelineRenderedItems(
+      useLayoutTimelinePreviewStore.getState(),
+    );
+    expect(renderedAtQuarter).toHaveLength(241);
+    expect(renderedAtQuarter[0]?.x).toBe(2);
+    expect(renderedAtQuarter).not.toBe(fromItems);
 
     useLayoutTimelinePreviewStore.getState().setProgress(0.75);
-    expect(useLayoutTimelinePreviewStore.getState().currentItems).toBe(toItems);
+    expect(useLayoutTimelinePreviewStore.getState()).toMatchObject({
+      activeFrame: { id: "dinner" },
+      currentItems: toItems,
+      captureItems: toItems,
+    });
+
+    useLayoutTimelinePreviewStore.getState().settle(frame("dinner"), toItems);
+    expect(useLayoutTimelinePreviewStore.getState()).toMatchObject({
+      activeFrame: { id: "dinner" },
+      currentItems: toItems,
+    });
+  });
+
+  it("retargets a dense physical morph without turning an interpolated pose into capture evidence", () => {
+    const arrivalItems = Array.from(
+      { length: 500 },
+      (_, index) => item(`chair-${String(index)}`, index),
+    );
+    const dinnerItems = Array.from(
+      { length: 500 },
+      (_, index) => item(`chair-${String(index)}`, index + 10),
+    );
+    const partyItems = Array.from(
+      { length: 500 },
+      (_, index) => item(`chair-${String(index)}`, index + 20),
+    );
+    const preview = useLayoutTimelinePreviewStore.getState();
+    preview.beginTransition({
+      fromFrame: frame("arrival"),
+      toFrame: frame("dinner"),
+      fromItems: arrivalItems,
+      toItems: dinnerItems,
+      reducedMotion: false,
+      spatialMorphAllowed: true,
+    });
+    preview.setProgress(0.3);
+    const sampledPhysicalItems = layoutTimelineRenderedItems(
+      useLayoutTimelinePreviewStore.getState(),
+    );
+    expect(sampledPhysicalItems[0]?.x).toBe(3);
+
+    preview.beginTransition({
+      fromFrame: frame("arrival"),
+      toFrame: frame("party"),
+      fromItems: sampledPhysicalItems,
+      toItems: partyItems,
+      fromCaptureItems: arrivalItems,
+      toCaptureItems: partyItems,
+      reducedMotion: false,
+      spatialMorphAllowed: true,
+    });
+    const retargeted = useLayoutTimelinePreviewStore.getState();
+    expect(retargeted.transition?.fromItems).toBe(sampledPhysicalItems);
+    expect(retargeted.transition?.fromCaptureItems).toBe(arrivalItems);
+    expect(retargeted.captureItems).toBe(arrivalItems);
+    expect(retargeted.captureItems[0]?.x).toBe(0);
+
+    preview.setProgress(0.25);
+    expect(useLayoutTimelinePreviewStore.getState().currentItems).toBe(sampledPhysicalItems);
+    expect(useLayoutTimelinePreviewStore.getState().captureItems).toBe(arrivalItems);
+
+    preview.setProgress(0.75);
+    expect(useLayoutTimelinePreviewStore.getState().captureItems).toBe(partyItems);
+  });
+
+  it("switches dense-morph frame, runtime proof, and venue authority together at midpoint", () => {
+    const fromItems = Array.from(
+      { length: 241 },
+      (_, index) => item(`chair-${String(index)}`, index),
+    );
+    const toItems = Array.from(
+      { length: 241 },
+      (_, index) => item(`chair-${String(index)}`, index + 8),
+    );
+    const fromBinding = historicalRuntimeBindingFixture({
+      bindingId: "11111111-1111-4111-8111-111111111111",
+      runtimePackageId: "61111111-1111-4111-8111-111111111111",
+    });
+    const toBinding = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      runtimePackageId: "62111111-1111-4111-8111-111111111111",
+    });
+    const fromFrame = {
+      ...frame("arrival"),
+      historicalRuntime: historicalRuntimeFromBinding(fromBinding),
+      venueRuntime: {
+        ...CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
+        runtimeVenueManifestDigest: "a".repeat(64),
+      },
+    };
+    const toFrame = {
+      ...frame("dinner"),
+      historicalRuntime: historicalRuntimeFromBinding(toBinding),
+      venueRuntime: {
+        ...CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
+        runtimeVenueManifestDigest: "b".repeat(64),
+      },
+    };
+    useLayoutTimelinePreviewStore.getState().beginTransition({
+      fromFrame,
+      toFrame,
+      fromItems,
+      toItems,
+      reducedMotion: false,
+      spatialMorphAllowed: true,
+    });
+
+    useLayoutTimelinePreviewStore.getState().setProgress(0.49);
+    expect(useLayoutTimelinePreviewStore.getState()).toMatchObject({
+      activeFrame: {
+        id: "arrival",
+        historicalRuntime: { state: "available", binding: { bindingId: fromBinding.bindingId } },
+      },
+      activeVenueRuntime: { runtimeVenueManifestDigest: "a".repeat(64) },
+      captureItems: fromItems,
+    });
+
+    useLayoutTimelinePreviewStore.getState().setProgress(0.5);
+    expect(useLayoutTimelinePreviewStore.getState()).toMatchObject({
+      activeFrame: {
+        id: "dinner",
+        historicalRuntime: { state: "available", binding: { bindingId: toBinding.bindingId } },
+      },
+      activeVenueRuntime: { runtimeVenueManifestDigest: "b".repeat(64) },
+      captureItems: toItems,
+    });
   });
 
   it("never glides furniture across event boundaries", () => {

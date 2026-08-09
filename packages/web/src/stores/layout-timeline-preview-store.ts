@@ -46,6 +46,10 @@ export interface BeginLayoutTimelinePreviewTransitionInput {
   /** Null means the phase has no trustworthy saved keyframe. An empty array is a valid empty layout. */
   readonly fromItems: readonly PlacedItem[] | null;
   readonly toItems: readonly PlacedItem[] | null;
+  /** Immutable endpoint used by orthographic evidence capture during a retarget. */
+  readonly fromCaptureItems?: readonly PlacedItem[] | null;
+  /** Immutable endpoint used by orthographic evidence capture during a retarget. */
+  readonly toCaptureItems?: readonly PlacedItem[] | null;
   readonly reducedMotion: boolean;
   /** False forces a static endpoint replace instead of inventing spatial motion. */
   readonly spatialMorphAllowed: boolean;
@@ -56,6 +60,8 @@ export interface LayoutTimelinePreviewTransition {
   readonly toFrame: LayoutTimelinePreviewFrameMetadata;
   readonly fromItems: readonly PlacedItem[];
   readonly toItems: readonly PlacedItem[];
+  readonly fromCaptureItems: readonly PlacedItem[];
+  readonly toCaptureItems: readonly PlacedItem[];
   readonly reducedMotion: boolean;
   readonly mode: LayoutTimelinePreviewTransitionMode;
   readonly itemTransitionPlan: TimelineItemTransitionPlan | null;
@@ -99,6 +105,24 @@ export interface LayoutTimelinePreviewState {
   /** Represents a real empty schedule interval without borrowing a phase identity. */
   readonly showScheduleGap: (message: string) => void;
   readonly clear: () => void;
+}
+
+/**
+ * Returns the physical arrangement currently drawn by the scene. Dense GPU
+ * morphs keep `currentItems` on a semantic endpoint to avoid O(n) React-store
+ * churn, so secondary previews and one-off retargets sample the stable plan.
+ */
+export function layoutTimelineRenderedItems(
+  state: Pick<LayoutTimelinePreviewState, "currentItems" | "transition">,
+): readonly PlacedItem[] {
+  const plan = state.transition?.itemTransitionPlan ?? null;
+  if (plan === null || !timelineTransitionUsesImperativeMorph(plan)) {
+    return state.currentItems;
+  }
+  return interpolateTimelineItemTransitionPlan(
+    plan,
+    state.transition?.progress ?? 0,
+  );
 }
 
 const CLEARED_PREVIEW = {
@@ -170,11 +194,15 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
     }
 
     const mode = transitionMode(input);
+    const fromCaptureItems = input.fromCaptureItems ?? input.fromItems;
+    const toCaptureItems = input.toCaptureItems ?? input.toItems;
     const transition: LayoutTimelinePreviewTransition = {
       fromFrame: input.fromFrame,
       toFrame: input.toFrame,
       fromItems: input.fromItems,
       toItems: input.toItems,
+      fromCaptureItems,
+      toCaptureItems,
       reducedMotion: input.reducedMotion,
       mode,
       itemTransitionPlan: mode === "same-event-morph"
@@ -194,7 +222,7 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
       activeVenueRuntime: input.fromFrame.venueRuntime,
       unavailableMessage: null,
       currentItems: transition.fromItems,
-      captureItems: transition.fromItems,
+      captureItems: transition.fromCaptureItems,
       transition,
     }));
   },
@@ -207,11 +235,16 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
     const staticEndpointChanged = current.itemTransitionPlan === null
       && beforeMidpoint !== (current.progress < 0.5);
     const activeFrame = beforeMidpoint ? current.fromFrame : current.toFrame;
-    const captureItems = beforeMidpoint ? current.fromItems : current.toItems;
+    const captureItems = beforeMidpoint
+      ? current.fromCaptureItems
+      : current.toCaptureItems;
+    const physicalEndpointItems = beforeMidpoint
+      ? current.fromItems
+      : current.toItems;
     const currentItems = current.itemTransitionPlan !== null
       && !timelineTransitionUsesImperativeMorph(current.itemTransitionPlan)
       ? interpolateTimelineItemTransitionPlan(current.itemTransitionPlan, clamped)
-      : captureItems;
+      : physicalEndpointItems;
     set((state) => ({
       renderRevision: staticEndpointChanged
         ? state.renderRevision + 1

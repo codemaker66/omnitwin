@@ -2,9 +2,14 @@ import { useEffect, useMemo, useRef, type MouseEvent, type ReactElement } from "
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
-import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import {
+  layoutTimelineRenderedItems,
+  useLayoutTimelinePreviewStore,
+  type LayoutTimelinePreviewState,
+} from "../../../stores/layout-timeline-preview-store.js";
 import { useCockpitReplay } from "../../../hooks/use-cockpit-replay.js";
 import { getCatalogueItem } from "../../../lib/catalogue.js";
+import { timelineTransitionUsesImperativeMorph } from "../../../lib/layout-timeline.js";
 import type { PlacedItem } from "../../../lib/placement.js";
 import {
   minimapLayout,
@@ -49,6 +54,7 @@ const MINIMAP_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
   offsetY: 112,
 };
 const PREVIEW_DOT_COLOURS = ["#f08a21", "#32b77a", "#be8fc1", "#b8ad92"] as const;
+const DENSE_PREVIEW_MINIMAP_INTERVAL_MS = 80;
 const MINIMAP_AVOID_SELECTORS = [
   ".planner-status-header",
   ".cockpit-layer-controls",
@@ -94,10 +100,16 @@ function TimelinePreviewMinimapDots({
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const draw = (items: readonly PlacedItem[]): void => {
+    let latestState = useLayoutTimelinePreviewStore.getState();
+    let trailingTimer: number | null = null;
+    let lastDrawAt = Number.NEGATIVE_INFINITY;
+
+    const draw = (state: LayoutTimelinePreviewState): void => {
       const canvas = canvasRef.current;
       if (canvas === null) return;
+      const items = layoutTimelineRenderedItems(state);
       canvas.dataset.previewObjectCount = String(items.length);
+      canvas.dataset.previewProgress = String(state.transition?.progress ?? 1);
       const context = canvas.getContext("2d");
       if (context === null) return;
       context.clearRect(0, 0, canvas.width, canvas.height);
@@ -118,13 +130,43 @@ function TimelinePreviewMinimapDots({
           context.fill();
         }
       }
+      lastDrawAt = performance.now();
     };
 
-    draw(useLayoutTimelinePreviewStore.getState().currentItems);
-    return useLayoutTimelinePreviewStore.subscribe((state, previous) => {
-      if (state.currentItems === previous.currentItems) return;
-      draw(state.currentItems);
+    const flush = (): void => {
+      trailingTimer = null;
+      draw(latestState);
+    };
+    const scheduleTrailingDraw = (): void => {
+      if (trailingTimer !== null) return;
+      const remaining = Math.max(
+        0,
+        DENSE_PREVIEW_MINIMAP_INTERVAL_MS - (performance.now() - lastDrawAt),
+      );
+      trailingTimer = window.setTimeout(flush, remaining);
+    };
+
+    draw(latestState);
+    const unsubscribe = useLayoutTimelinePreviewStore.subscribe((state, previous) => {
+      latestState = state;
+      const plan = state.transition?.itemTransitionPlan ?? null;
+      const sameDensePlan = plan !== null
+        && timelineTransitionUsesImperativeMorph(plan)
+        && plan === previous.transition?.itemTransitionPlan;
+      if (sameDensePlan) {
+        scheduleTrailingDraw();
+        return;
+      }
+      if (trailingTimer !== null) {
+        window.clearTimeout(trailingTimer);
+        trailingTimer = null;
+      }
+      draw(state);
     });
+    return () => {
+      unsubscribe();
+      if (trailingTimer !== null) window.clearTimeout(trailingTimer);
+    };
   }, [furnitureOffset, layout]);
 
   return (

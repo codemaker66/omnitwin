@@ -40,7 +40,6 @@ import { useVisibilityStore } from "../stores/visibility-store.js";
 import { useXrayStore } from "../stores/xray-store.js";
 import { applyXrayOpacity } from "../lib/xray.js";
 import { BrickWall } from "./BrickWall.js";
-import { GrandHallOrnaments } from "./GrandHallOrnaments.js";
 import { GrandHallDome, domeRiseForRadius } from "./GrandHallDome.js";
 
 // ---------------------------------------------------------------------------
@@ -462,10 +461,9 @@ export function GrandHallRoom(): React.ReactElement {
         texture={surfaceTextures === null ? null : surfaceTextures.dome}
         clippingPlanes={sectionClipPlanes}
       />
-      {/* Decorative dressing — crown moulding, skirting, pilasters, arched
-          window facades, ceiling rosette ring, hanging chandelier. Kept as a
-          single sibling group so layout/visibility logic above stays simple. */}
-      <GrandHallOrnaments width={width} length={length} height={height} />
+      {/* Photo-guided ornamental dressing is intentionally absent here. This
+          operational fallback is truth-mode shell geometry; the generated
+          proxy dressing lives only in the badged synthetic visual route. */}
     </group>
   );
 }

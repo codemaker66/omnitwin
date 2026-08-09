@@ -31,6 +31,7 @@ const {
   isValidTimelineDeepLinkDate,
   MAX_MOUNTED_TIMELINE_THUMBNAILS,
   shouldMountTimelineThumbnail,
+  timelineRetargetSourceFrame,
   timelinePhaseDensityClass,
 } = await import("../RoomLayoutTimelineDock.js");
 const { isRoundTimelineCollision } = await import("../LayoutPlanThumbnail.js");
@@ -479,7 +480,9 @@ describe("CockpitBottom room layout timeline", () => {
       venueId: VENUE_ID,
       name: "Venue Staff",
     });
-    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, invalid]));
+    timelineApi.getRoomLayoutTimeline
+      .mockResolvedValueOnce(response([arrival, invalid]))
+      .mockResolvedValue(response([arrival, party]));
     timelineApi.freezePhaseLayoutSnapshot.mockResolvedValue(freezeResult(PARTY_ID));
     eventsApi.getEventPhaseGraph.mockResolvedValue(linkedEventGraph(START));
     renderBottom(`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day&timelineDate=2026-07-18`);
@@ -500,6 +503,11 @@ describe("CockpitBottom room layout timeline", () => {
         { configurationId: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.configurationId },
       );
     });
+    await waitFor(() => {
+      expect(timelineApi.getRoomLayoutTimeline).toHaveBeenCalledTimes(2);
+      expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(PARTY_ID);
+    });
+    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("keyframe");
   });
 
   it("uses the scoped API contract, settles the initial viewer, and syncs truthful figures", async () => {
@@ -527,6 +535,33 @@ describe("CockpitBottom room layout timeline", () => {
     expect(useLayoutTimelinePreviewStore.getState().transition?.progress).toBe(0.5);
     expect(useCockpitStore.getState().selectedPhaseId).toBe(DINNER_ID);
     expect(screen.getByLabelText("Guests: 120")).toBeTruthy();
+  });
+
+  it("rebuilds the correct scrub segment after a card selection replaced it", async () => {
+    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, roomFlip, dinner, party]));
+    renderBottom();
+    const slider = await screen.findByRole("slider", { name: /scrub room layout/i });
+    const betweenArrivalAndDinner = String(Date.parse("2026-07-18T18:45:00.000Z"));
+
+    fireEvent.change(slider, { target: { value: betweenArrivalAndDinner } });
+    expect(useLayoutTimelinePreviewStore.getState().transition).toMatchObject({
+      fromFrame: { phaseId: ARRIVAL_ID },
+      toFrame: { phaseId: DINNER_ID },
+    });
+
+    fireEvent.click(screen.getAllByRole(
+      "button",
+      { name: /evening party.*frozen layout/i },
+    )[0] ?? document.body);
+    expect(useLayoutTimelinePreviewStore.getState().transition?.toFrame.phaseId).toBe(PARTY_ID);
+
+    fireEvent.change(slider, {
+      target: { value: String(Date.parse("2026-07-18T18:30:00.000Z")) },
+    });
+    expect(useLayoutTimelinePreviewStore.getState().transition).toMatchObject({
+      fromFrame: { phaseId: ARRIVAL_ID },
+      toFrame: { phaseId: DINNER_ID },
+    });
   });
 
   it("keeps non-frozen snapshots visible but unavailable", async () => {
@@ -785,6 +820,8 @@ describe("CockpitBottom room layout timeline", () => {
     timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, roomFlip, dinner]));
     renderBottom();
     await screen.findByRole("slider", { name: /scrub room layout/i });
+    expect(timelineRetargetSourceFrame(useLayoutTimelinePreviewStore.getState())?.phaseId)
+      .toBe(ARRIVAL_ID);
 
     fireEvent.click(screen.getAllByRole(
       "button",
@@ -793,6 +830,12 @@ describe("CockpitBottom room layout timeline", () => {
 
     expect(useLayoutTimelinePreviewStore.getState().transition?.mode).toBe("same-event-morph");
     expect(useLayoutTimelinePreviewStore.getState().transition?.itemTransitionPlan).not.toBeNull();
+    useLayoutTimelinePreviewStore.getState().setProgress(0.49);
+    expect(timelineRetargetSourceFrame(useLayoutTimelinePreviewStore.getState())?.phaseId)
+      .toBe(ARRIVAL_ID);
+    useLayoutTimelinePreviewStore.getState().setProgress(0.5);
+    expect(timelineRetargetSourceFrame(useLayoutTimelinePreviewStore.getState())?.phaseId)
+      .toBe(DINNER_ID);
   });
 
   it("keeps real forward and reverse selections on the same cached physical endpoints", async () => {
@@ -1518,6 +1561,89 @@ describe("CockpitBottom room layout timeline", () => {
     await waitFor(() => {
       expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(ARRIVAL_ID);
     });
+  });
+
+  it("makes a same-day no-phase Back entry reload-equivalent", async () => {
+    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
+    renderBottom(undefined, [
+      "/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18",
+      `/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${DINNER_ID}`,
+    ]);
+
+    await waitFor(() => {
+      expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(DINNER_ID);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => {
+      expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(ARRIVAL_ID);
+    });
+    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("keyframe");
+  });
+
+  it("keeps same-range refresh hydration aligned with the committed phase", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve("src/components/editor/cockpit/RoomLayoutTimelineDock.tsx"),
+      "utf8",
+    );
+    const cursorSync = source.indexOf("requestedInitialPhaseIdRef.current = desiredPhaseId");
+    const urlMatch = source.indexOf("const paramsMatch", cursorSync);
+    expect(cursorSync).toBeGreaterThan(-1);
+    expect(urlMatch).toBeGreaterThan(cursorSync);
+  });
+
+  it("falls back like reload when history requests an unknown same-day phase", async () => {
+    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
+    renderBottom(undefined, [
+      "/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=unknown-phase",
+      `/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${DINNER_ID}`,
+    ]);
+
+    await waitFor(() => {
+      expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(DINNER_ID);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => {
+      expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(ARRIVAL_ID);
+    });
+  });
+
+  it("cancels an in-flight selection before Back hydrates its requested phase", async () => {
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let nextRequest = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback): number => {
+      nextRequest += 1;
+      callbacks.set(nextRequest, callback);
+      return nextRequest;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (_request: number): void => undefined);
+    vi.spyOn(performance, "now").mockReturnValue(0);
+    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner, party]));
+    renderBottom(undefined, [
+      `/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${ARRIVAL_ID}`,
+      `/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${DINNER_ID}`,
+    ]);
+
+    await waitFor(() => {
+      expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(DINNER_ID);
+    });
+    fireEvent.click(screen.getAllByRole(
+      "button",
+      { name: /evening party.*frozen layout/i },
+    )[0] ?? document.body);
+    const staleRequest = nextRequest;
+    expect(useLayoutTimelinePreviewStore.getState().transition?.toFrame.phaseId).toBe(PARTY_ID);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => {
+      expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(ARRIVAL_ID);
+    });
+    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("keyframe");
+
+    act(() => { callbacks.get(staleRequest)?.(900); });
+    expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(ARRIVAL_ID);
+    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("keyframe");
   });
 
   it("does not let linked-event auto-anchor overwrite an explicit persisted date", async () => {

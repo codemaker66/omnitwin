@@ -10,11 +10,14 @@ import type {
 import {
   nearestTimelineKeyframeItems,
   subscribeTimelineMorphInvalidation,
+  TIMELINE_DENSE_MORPH_RENDER_INTERVAL_MS,
   timelinePreviewOpacity,
   timelinePreviewRenderLayers,
   timelinePreviewUsesSimplifiedLod,
   timelineSimplifiedProxyDimensions,
   timelineFurnitureRenderKind,
+  timelineMorphGeometryReuse,
+  timelineMorphUsesGpuAttributes,
   timelineCaptureEndpointReuse,
   timelineStaticTransitionHardCuts,
   timelineUniformMorphTranslation,
@@ -56,11 +59,15 @@ function transition(
 ): LayoutTimelinePreviewTransition {
   const fromEventId = "event-a";
   const toEventId = mode === "cross-event-replace" ? "event-b" : "event-a";
+  const fromItems = [item("from-chair", 0)];
+  const toItems = [item("to-chair", 8)];
   return {
     fromFrame: frame("from", fromEventId),
     toFrame: frame("to", toEventId),
-    fromItems: [item("from-chair", 0)],
-    toItems: [item("to-chair", 8)],
+    fromItems,
+    toItems,
+    fromCaptureItems: fromItems,
+    toCaptureItems: toItems,
     reducedMotion: mode === "reduced-motion-crossfade",
     mode,
     itemTransitionPlan: null,
@@ -261,6 +268,34 @@ describe("timeline preview scene policy", () => {
     expect(timelineUniformMorphTranslation(nonRigidPlan)).toBeNull();
   });
 
+  it("uses GPU attributes for matched same-geometry morphs only", () => {
+    const canonical = CANONICAL_ASSETS[0];
+    const alternative = CANONICAL_ASSETS.find((candidate) => candidate.id !== canonical?.id);
+    expect(canonical).toBeDefined();
+    expect(alternative).toBeDefined();
+    if (canonical === undefined || alternative === undefined) return;
+    const frozenItem = (id: string, x: number, catalogueItemId = canonical.id): PlacedItem => ({
+      ...item(id, x),
+      catalogueItemId,
+    });
+    const fromItems = [frozenItem("chair-a", 0), frozenItem("chair-b", 2)];
+    const matchedPlan = buildTimelineItemTransitionPlan(fromItems, [
+      frozenItem("chair-a", 8),
+      frozenItem("chair-b", 11),
+    ]);
+    const changedGeometryPlan = buildTimelineItemTransitionPlan(fromItems, [
+      frozenItem("chair-a", 8, alternative.id),
+      frozenItem("chair-b", 11),
+    ]);
+    const unmatchedPlan = buildTimelineItemTransitionPlan(fromItems, [
+      frozenItem("chair-a", 8),
+    ]);
+
+    expect(timelineMorphUsesGpuAttributes(matchedPlan)).toBe(true);
+    expect(timelineMorphUsesGpuAttributes(changedGeometryPlan)).toBe(false);
+    expect(timelineMorphUsesGpuAttributes(unmatchedPlan)).toBe(false);
+  });
+
   it("reuses hidden capture endpoint batches when a high-cardinality morph reverses", () => {
     const fromItems = Array.from(
       { length: 500 },
@@ -272,14 +307,44 @@ describe("timeline preview scene policy", () => {
     );
     const forward = buildTimelineItemTransitionPlan(fromItems, toItems);
     const reverse = buildTimelineItemTransitionPlan(toItems, fromItems);
+    const forwardAgain = buildTimelineItemTransitionPlan(fromItems, toItems);
     const initial = timelineCaptureEndpointReuse(null, forward);
     const reused = timelineCaptureEndpointReuse(initial, reverse);
+    const reusedAgain = timelineCaptureEndpointReuse(reused, forwardAgain);
 
     expect(initial.physicalPlan).toBe(forward);
     expect(reused.physicalPlan).toBe(forward);
     expect(reused.activePlan).toBe(reverse);
     expect(reused.activeFromUsesPhysicalTo).toBe(true);
     expect(reused.targetEndpoint).toBe("from");
+    expect(reusedAgain.physicalPlan).toBe(forward);
+    expect(reusedAgain.activePlan).toBe(forwardAgain);
+    expect(reusedAgain.activeFromUsesPhysicalTo).toBe(false);
+    expect(reusedAgain.targetEndpoint).toBe("to");
+  });
+
+  it("retains the visible GPU morph geometry across forward and reverse runs", () => {
+    const fromItems = Array.from(
+      { length: 500 },
+      (_, index) => item(`chair-${String(index)}`, index),
+    );
+    const toItems = Array.from(
+      { length: 500 },
+      (_, index) => item(`chair-${String(index)}`, index + 8),
+    );
+    const forward = buildTimelineItemTransitionPlan(fromItems, toItems);
+    const reverse = buildTimelineItemTransitionPlan(toItems, fromItems);
+    const forwardAgain = buildTimelineItemTransitionPlan(fromItems, toItems);
+    const initial = timelineMorphGeometryReuse(null, forward);
+    const reusedReverse = timelineMorphGeometryReuse(initial, reverse);
+    const reusedForward = timelineMorphGeometryReuse(reusedReverse, forwardAgain);
+
+    expect(reusedReverse.physicalPlan).toBe(forward);
+    expect(reusedReverse.activeFromUsesPhysicalTo).toBe(true);
+    expect(reusedReverse.targetEndpoint).toBe("from");
+    expect(reusedForward.physicalPlan).toBe(forward);
+    expect(reusedForward.activeFromUsesPhysicalTo).toBe(false);
+    expect(reusedForward.targetEndpoint).toBe("to");
   });
 
   it("invalidates the demand-rendered canvas for each distinct imperative morph progress", () => {
@@ -307,5 +372,79 @@ describe("timeline preview scene policy", () => {
     unsubscribe();
     useLayoutTimelinePreviewStore.getState().setProgress(0.9);
     expect(invalidate).toHaveBeenCalledTimes(2);
+  });
+
+  it("paces dense canvas redraws without dropping the final morph frame", () => {
+    const fromFrame = frame("from-paced", "event-a");
+    const toFrame = frame("to-paced", "event-a");
+    useLayoutTimelinePreviewStore.getState().beginTransition({
+      fromFrame,
+      toFrame,
+      fromItems: [item("chair", 0)],
+      toItems: [item("chair", 8)],
+      reducedMotion: false,
+      spatialMorphAllowed: true,
+    });
+    const plan = useLayoutTimelinePreviewStore.getState().transition?.itemTransitionPlan;
+    expect(plan).not.toBeNull();
+    if (plan === null || plan === undefined) return;
+    let now = 0;
+    const invalidate = vi.fn();
+    const unsubscribe = subscribeTimelineMorphInvalidation(plan, invalidate, {
+      minimumIntervalMs: TIMELINE_DENSE_MORPH_RENDER_INTERVAL_MS,
+      now: () => now,
+    });
+
+    useLayoutTimelinePreviewStore.getState().setProgress(0.1);
+    now = 10;
+    useLayoutTimelinePreviewStore.getState().setProgress(0.2);
+    now = 34;
+    useLayoutTimelinePreviewStore.getState().setProgress(0.3);
+    now = 40;
+    useLayoutTimelinePreviewStore.getState().setProgress(1);
+
+    expect(invalidate).toHaveBeenCalledTimes(3);
+    unsubscribe();
+  });
+
+  it("delivers a trailing redraw when scrubbing stops on a non-terminal dense progress", () => {
+    useLayoutTimelinePreviewStore.getState().beginTransition({
+      fromFrame: frame("from-trailing", "event-a"),
+      toFrame: frame("to-trailing", "event-a"),
+      fromItems: [item("chair", 0)],
+      toItems: [item("chair", 8)],
+      reducedMotion: false,
+      spatialMorphAllowed: true,
+    });
+    const plan = useLayoutTimelinePreviewStore.getState().transition?.itemTransitionPlan;
+    expect(plan).not.toBeNull();
+    if (plan === null || plan === undefined) return;
+    let now = 0;
+    let trailing: (() => void) | null = null;
+    const invalidate = vi.fn();
+    const unsubscribe = subscribeTimelineMorphInvalidation(plan, invalidate, {
+      minimumIntervalMs: TIMELINE_DENSE_MORPH_RENDER_INTERVAL_MS,
+      now: () => now,
+      schedule: (callback) => {
+        trailing = callback;
+        const handle = setTimeout(() => undefined, 0);
+        clearTimeout(handle);
+        return handle;
+      },
+      cancelScheduled: () => { trailing = null; },
+    });
+
+    useLayoutTimelinePreviewStore.getState().setProgress(0.1);
+    now = 10;
+    useLayoutTimelinePreviewStore.getState().setProgress(0.2);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(trailing).not.toBeNull();
+
+    now = TIMELINE_DENSE_MORPH_RENDER_INTERVAL_MS;
+    const flush = trailing as (() => void) | null;
+    flush?.();
+    expect(invalidate).toHaveBeenCalledTimes(2);
+
+    unsubscribe();
   });
 });

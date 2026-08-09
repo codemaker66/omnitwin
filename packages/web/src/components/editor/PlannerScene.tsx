@@ -1,6 +1,7 @@
 import {
   Suspense,
   lazy,
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -17,7 +18,7 @@ import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
 import type { AdaptiveResolutionOptions } from "../AdaptiveResolution.js";
 import { CameraRig } from "../CameraRig.js";
 import { GrandHallRoom } from "../GrandHallRoom.js";
-import { RoomMesh } from "./RoomMesh.js";
+import { RoomMesh, type RoomMeshDetail } from "./RoomMesh.js";
 import { SectionPlane } from "../SectionPlane.js";
 import { InvalidateOnToggle, AutoWallSelector } from "../WallTogglePanel.js";
 import { XrayToggle } from "../XrayToggle.js";
@@ -67,6 +68,8 @@ const LazyHistoricalRuntimeLayer = lazy(async () => {
   const module = await import("./HistoricalRuntimeLayer.js");
   return { default: module.HistoricalRuntimeLayer };
 });
+
+const PlannerRoomMesh = memo(RoomMesh);
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -118,6 +121,10 @@ export function shouldUseSmoothPlannerControls(viewportWidth: number): boolean {
 
 export function shouldRenderPlannerSceneOverlays(viewportWidth: number): boolean {
   return viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH;
+}
+
+export function plannerRoomDetailForViewportWidth(viewportWidth: number): RoomMeshDetail {
+  return viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH ? "detailed" : "lean";
 }
 
 /** Timeline playback releases the live capture so it cannot consume a third GPU budget or flash stale. */
@@ -341,6 +348,7 @@ export function PlannerScene(): ReactElement {
   const canvasGl = useMemo(() => plannerCanvasGlForViewportWidth(viewportWidth), [viewportWidth]);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
   const renderSceneOverlays = shouldRenderPlannerSceneOverlays(viewportWidth);
+  const roomDetail = plannerRoomDetailForViewportWidth(viewportWidth);
   // Memoized like useRoomDimensions above: the generic floorPlanOutline path
   // allocates a fresh wallPolygon per call, and this component re-renders on
   // every chunk arrival — an unmemoized call would thrash the ink layer's
@@ -380,9 +388,6 @@ export function PlannerScene(): ReactElement {
     ? frozenRoom?.geometry ?? null
     : timelinePreviewActive ? null : liveRoomGeometry;
   const dimensions = frozenRoom?.renderDimensions ?? liveDimensions;
-  const roomVariant = authoritativeFrozenPreview
-    ? "generic"
-    : space?.name === "Grand Hall" ? "grand-hall" : "generic";
   const furnitureOffset = frozenRoom?.furnitureOffset ?? [0, 0, 0] as const;
 
   useEffect(() => {
@@ -398,6 +403,13 @@ export function PlannerScene(): ReactElement {
   // in over the mesh (Hybrid / first load) — the captured room melting in.
   const layerMode = useCockpitStore((s) => s.layerMode);
   const { splatUrls, transform, hasAsset, status: splatStatus } = useRoomRuntimeSplat();
+  // The photo-guided synthetic hall is deliberately confined to the visibly
+  // badged visual-review route. The operational planner can create measured
+  // distances and export top-down handoffs, so generated dressing must never
+  // enter this scene graph until those consumers have a typed exclusion gate.
+  const roomVariant = authoritativeFrozenPreview
+    ? "generic"
+    : space?.name === "Grand Hall" ? "grand-hall" : "generic";
   const runtimeRendererRequestedRef = useRef(false);
   runtimeRendererRequestedRef.current = plannerRuntimeRendererRequested(
     runtimeRendererRequestedRef.current,
@@ -448,6 +460,26 @@ export function PlannerScene(): ReactElement {
   const loadedChunks = Math.min(arrivals.loadedCount, totalChunks);
   const failedChunks = Math.min(arrivals.failedCount, totalChunks - loadedChunks);
   const resolvePhase = roomResolvePhase({ splatStatus, hasAsset, totalChunks, loadedChunks, failedChunks });
+  const historicalRuntimePresented = expectedHistoricalRuntime !== null
+    && historicalRuntimeState === "ready"
+    && historicalRuntimeBindingId === expectedHistoricalRuntime.bindingId;
+  const currentRuntimePresented = !timelinePreviewActive
+    && splatActive
+    && loadedChunks > 0;
+  const roomPresentationSource = historicalRuntimePresented
+    ? "historical-capture"
+    : currentRuntimePresented
+      ? "current-runtime"
+      : meshVisible
+        ? "procedural-shell"
+        : "none";
+  const roomRequestedSource = expectedHistoricalRuntime !== null
+    ? "historical-capture"
+    : !timelinePreviewActive && hasAsset && layerMode !== "mesh"
+      ? "current-runtime"
+      : meshVisible
+        ? "procedural-shell"
+        : "none";
   useEffect(() => {
     useCockpitStore.getState().setRoomResolve({ phase: resolvePhase, loadedChunks, totalChunks });
   }, [loadedChunks, resolvePhase, totalChunks]);
@@ -496,6 +528,8 @@ export function PlannerScene(): ReactElement {
       <div
         className="planner-scene-canvas-host"
         data-room-authority={authoritativeFrozenPreview ? "frozen" : timelinePreviewActive ? "unavailable" : "live"}
+        data-room-requested-source={roomRequestedSource}
+        data-room-presentation-source={roomPresentationSource}
         data-room-envelope-key={frozenRoom?.envelopeKey}
         data-room-render-dimensions={`${String(dimensions.width)},${String(dimensions.length)},${String(dimensions.height)}`}
         data-room-furniture-offset={furnitureOffset.join(",")}
@@ -535,7 +569,7 @@ export function PlannerScene(): ReactElement {
           <SectionPlane />
           <InvalidateOnToggle />
           {meshVisible && (roomGeometry !== null ? (
-            <RoomMesh geometry={roomGeometry} variant={roomVariant} />
+            <PlannerRoomMesh geometry={roomGeometry} variant={roomVariant} detail={roomDetail} />
           ) : !timelinePreviewActive ? (
             <>
               <AutoWallSelector />
@@ -547,6 +581,7 @@ export function PlannerScene(): ReactElement {
               polygon={roomGeometry.wallPolygon}
               ceilingHeightM={roomGeometry.ceilingHeight}
               targetOpacity={authoritativeFrozenPreview ? 1 : inkOpacity}
+              instant={timelinePreviewActive}
             />
           )}
           {shouldMountLiveRuntimeSplat(hasAsset, timelinePreviewActive) && (

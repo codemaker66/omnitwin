@@ -3,6 +3,7 @@ import { ShieldQuestion, Layers3, Eye, EyeOff } from "lucide-react";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useHistoricalRuntimeStatusStore } from "../../../stores/historical-runtime-status-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { buildTopBarModel } from "../../../lib/cockpit-topbar-model.js";
 import { COCKPIT_OVERLAY_KEYS, type CockpitOverlayKey } from "../../../lib/cockpit-modes.js";
@@ -21,6 +22,30 @@ const OVERLAY_LABELS: Readonly<Record<CockpitOverlayKey, string>> = {
 interface EventCell {
   readonly kicker: string;
   readonly value: string;
+}
+
+export function timelineRuntimeLabel({
+  previewActive,
+  hasFrozenRoom,
+  expectedBindingId,
+  presentedBindingId,
+  presentationState,
+}: {
+  readonly previewActive: boolean;
+  readonly hasFrozenRoom: boolean;
+  readonly expectedBindingId: string | null;
+  readonly presentedBindingId: string | null;
+  readonly presentationState: "inactive" | "unavailable" | "loading" | "ready" | "error";
+}): string | null {
+  if (!previewActive) return null;
+  if (!hasFrozenRoom) return "Room preview unavailable";
+  if (expectedBindingId === null) return "Frozen outline · historical capture unavailable";
+  if (presentedBindingId !== expectedBindingId || presentationState === "loading" || presentationState === "inactive") {
+    return "Loading exact historical capture…";
+  }
+  return presentationState === "ready"
+    ? "Exact historical capture"
+    : "Frozen outline · historical capture unavailable";
 }
 
 function eventCell(linked: LinkedEvent, phaseName: string | null): EventCell {
@@ -58,6 +83,8 @@ export function CockpitTopBar(): ReactElement {
   const previewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
   const previewMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
   const previewObjectCount = useLayoutTimelinePreviewStore((state) => state.currentItems.length);
+  const historicalRuntimeState = useHistoricalRuntimeStatusStore((state) => state.state);
+  const historicalRuntimeBindingId = useHistoricalRuntimeStatusStore((state) => state.bindingId);
   const linked = useLinkedEvent(venueId);
   const previewActive = previewMode !== "inactive";
   const objectCount = previewActive ? previewObjectCount : savedObjectCount;
@@ -92,17 +119,24 @@ export function CockpitTopBar(): ReactElement {
     : previewMode === "unavailable" || previewMode === "schedule-gap"
       ? `${previewMessage ?? "Layout unavailable"} · no room shell or saved layout shown`
       : `${previewCountLabel} · saved plan unchanged`;
-  const runtimeLabel = previewActive
-    ? previewRuntime === null
-      ? "Room preview unavailable"
-      : "Frozen outline · historical capture unavailable"
-    : model.runtimeLabel;
+  const expectedHistoricalRuntimeBindingId = previewFrame?.historicalRuntime?.state === "available"
+    ? previewFrame.historicalRuntime.binding.bindingId
+    : null;
+  const runtimeLabel = timelineRuntimeLabel({
+    previewActive,
+    hasFrozenRoom: previewRuntime !== null,
+    expectedBindingId: expectedHistoricalRuntimeBindingId,
+    presentedBindingId: historicalRuntimeBindingId,
+    presentationState: historicalRuntimeState,
+  }) ?? model.runtimeLabel;
 
   return (
     <header
       className="cockpit-topbar"
       data-testid="cockpit-topbar"
       data-layout-timeline-preview={String(previewActive)}
+      data-historical-runtime-state={historicalRuntimeState}
+      data-historical-runtime-binding-id={historicalRuntimeBindingId ?? undefined}
       aria-label="Planner status"
     >
       <div className="cockpit-topbar__brand">

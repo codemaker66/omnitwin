@@ -60,6 +60,7 @@ const {
   plannerAdaptiveResolutionForViewportWidth,
   plannerCanvasDprForViewportWidth,
   plannerCanvasGlForViewportWidth,
+  plannerRoomDetailForViewportWidth,
   plannerRuntimeRendererRequested,
   plannerSceneWarmupMode,
   shouldRenderPlannerSceneOverlays,
@@ -196,6 +197,12 @@ describe("PlannerScene", () => {
     expect(source).toContain("renderPhase={authoritativeFrozenPreview ? timelinePreviewMode : null}");
   });
 
+  it("snaps architectural ink during frozen timeline previews instead of scheduling a render loop", async () => {
+    const source = await readFile("src/components/editor/PlannerScene.tsx", "utf8");
+
+    expect(source).toContain("instant={timelinePreviewActive}");
+  });
+
   it("keeps saved furniture mounted but disables mutation layers during timeline preview", async () => {
     const source = await readFile("src/components/editor/PlannerScene.tsx", "utf8");
 
@@ -232,7 +239,60 @@ describe("PlannerScene", () => {
     expect(host?.getAttribute("data-room-furniture-offset")).toBe("-21,0,-10.5");
     expect(host?.getAttribute("data-room-envelope-key")).toBe(frozen.envelopeKey);
     expect(host?.getAttribute("data-current-splat-suppressed")).toBe("true");
+    expect(host?.getAttribute("data-room-requested-source")).toBe("procedural-shell");
+    expect(host?.getAttribute("data-room-presentation-source")).toBe("procedural-shell");
     expect(useRoomDimensionsStore.getState().dimensions).toEqual(liveStoreDimensions);
+  });
+
+  it("keeps the desktop room shell detailed while mobile stays lean", () => {
+    expect(plannerRoomDetailForViewportWidth(390)).toBe("lean");
+    expect(plannerRoomDetailForViewportWidth(1024)).toBe("lean");
+    expect(plannerRoomDetailForViewportWidth(1440)).toBe("detailed");
+  });
+
+  it("keeps the photo-guided stand-in out of the operational planner scene", async () => {
+    useEditorStore.setState({
+      space: {
+        ...DRIFTED_LIVE_SPACE,
+        name: "Grand Hall",
+        slug: "grand-hall",
+      },
+    });
+
+    const { container } = render(<PlannerScene />);
+    const host = container.querySelector(".planner-scene-canvas-host");
+    expect(host?.getAttribute("data-room-authority")).toBe("live");
+    expect(host?.getAttribute("data-room-presentation-source")).toBe("procedural-shell");
+    expect(host?.hasAttribute("data-synthetic-grand-hall-stand-in")).toBe(false);
+
+    const source = await readFile("src/components/editor/PlannerScene.tsx", "utf8");
+    expect(source).not.toContain("grand-hall-synthetic");
+    expect(source).not.toContain("shouldUseLiveSyntheticGrandHallStandIn");
+    const fallbackSource = await readFile("src/components/GrandHallRoom.tsx", "utf8");
+    expect(fallbackSource).not.toContain("<GrandHallOrnaments");
+  });
+
+  it("does not borrow Grand Hall dressing for a different frozen room", () => {
+    useLayoutTimelinePreviewStore.getState().settle({
+      id: "event-a:phase-saloon",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-saloon",
+      phaseName: "Saloon reception",
+      startsAt: null,
+      endsAt: null,
+      historicalRuntime: null,
+      venueRuntime: {
+        ...CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
+        spaceSlug: "saloon",
+        spaceName: "Saloon",
+      },
+    }, []);
+
+    const { container } = render(<PlannerScene />);
+    const host = container.querySelector(".planner-scene-canvas-host");
+    expect(host?.getAttribute("data-room-authority")).toBe("frozen");
+    expect(host?.getAttribute("data-room-presentation-source")).toBe("procedural-shell");
   });
 
   it("suppresses latest room assets and drives both camera paths from frozen bounds", async () => {
@@ -276,6 +336,7 @@ describe("PlannerScene", () => {
     });
     act(() => { useLayoutTimelinePreviewStore.getState().showPending("Loading timeline…"); });
     expect(authority()).toBe("unavailable");
+    expect(container.querySelector(".planner-scene-canvas-host")?.getAttribute("data-room-presentation-source")).toBe("none");
     expect(useCockpitStore.getState().focusRequest).toBeNull();
     expect(useCockpitStore.getState().beam).toBeNull();
 
@@ -293,6 +354,7 @@ describe("PlannerScene", () => {
       }, "No frozen layout.");
     });
     expect(authority()).toBe("unavailable");
+    expect(container.querySelector(".planner-scene-canvas-host")?.getAttribute("data-room-presentation-source")).toBe("none");
 
     act(() => { useLayoutTimelinePreviewStore.getState().showScheduleGap("No phase scheduled."); });
     expect(authority()).toBe("unavailable");

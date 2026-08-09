@@ -82,17 +82,48 @@ describe("PlannerCockpit", () => {
       historicalRuntime: null,
       venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
     }, []);
+    useHistoricalRuntimeStatusStore.getState().publish({
+      state: "unavailable",
+      bindingId: null,
+      message: "Exact historical room capture unavailable.",
+    });
 
     const { container } = render(<PlannerCockpit />);
     expect(screen.getByTestId("cockpit-shell").getAttribute("data-layout-timeline-preview")).toBe("true");
     expect(container.querySelector(".cockpit-stage")?.getAttribute("data-layout-timeline-preview")).toBe("true");
     expect(screen.getByTestId("layout-timeline-preview-caption").textContent).toBe(
-      "Visualizing phase change · frozen room outline + furniture are the plan · motion is not saved",
+      "Visualizing phase change · Exact historical room capture unavailable. · frozen outline + furniture remain available",
     );
+    expect(screen.getByTestId("layout-timeline-preview-caption").getAttribute("data-room-presentation-source")).toBeNull();
     expect(screen.queryByTestId("room-resolve-caption")).toBeNull();
     expect(container.querySelector(".cockpit-layer-controls")).toBeNull();
     expect(screen.queryByTestId("cockpit-dock-mock")).toBeNull();
     expect(screen.getByTestId("cockpit-preview-lock").textContent).toContain("Editing is paused");
+  });
+
+  it("keeps the historical-runtime unavailable warning visible in the mobile timeline shell", () => {
+    useLayoutTimelinePreviewStore.getState().settle({
+      id: "event-a:phase-dinner",
+      eventId: "event-a",
+      eventName: "Wedding Dinner",
+      phaseId: "phase-dinner",
+      phaseName: "Dinner service",
+      startsAt: null,
+      endsAt: null,
+      historicalRuntime: null,
+      venueRuntime: CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime,
+    }, []);
+    useHistoricalRuntimeStatusStore.getState().publish({
+      state: "unavailable",
+      bindingId: null,
+      message: "Exact historical room capture unavailable.",
+    });
+
+    render(<PlannerCockpit mobile />);
+
+    const caption = screen.getByTestId("layout-timeline-preview-caption");
+    expect(caption.textContent).toContain("Exact historical room capture unavailable");
+    expect(caption.textContent).toContain("frozen outline + furniture remain available");
   });
 
   it("states that the saved plan is hidden when the selected timeline interval has no keyframe", () => {

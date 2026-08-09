@@ -41,8 +41,6 @@ import { GrandHallRoom } from "../components/GrandHallRoom.js";
 import type { AdaptiveResolutionOptions } from "../components/AdaptiveResolution.js";
 import { RoomMesh } from "../components/editor/RoomMesh.js";
 import {
-  computeCameraTarget,
-  computeDefaultCameraPosition,
   computeDistanceLimits,
 } from "../components/CameraRig.js";
 import type { SparkSplatErrorEvent, SparkSplatLoadEvent } from "../components/scene/SparkSplatLayer.js";
@@ -82,6 +80,7 @@ import {
   type FloatingWidgetPlacement,
 } from "../components/shared/FloatingWidgetFrame.js";
 import type { AgentTrajectory, EventPhaseGraph, EvidenceTargetType, GuestFlowPoint, GuestFlowReplayArtifact, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
+import { SYNTHETIC_GRAND_HALL_STAND_IN_LABEL } from "../lib/synthetic-grand-hall-stand-in.js";
 import "./TradesHallVisualPage.css";
 
 const LazySparkSplatLayer = lazy(async () => {
@@ -168,14 +167,16 @@ const RUNTIME_ASSET_DEFAULT_OVERLAYS: OverlayState = {
   agentReplay: false,
 };
 
-const VISUAL_STAGE_ASPECT = 16 / 9;
-const VISUAL_CAMERA_BASE_POSITION = computeDefaultCameraPosition(GRAND_HALL_RENDER_DIMENSIONS, VISUAL_STAGE_ASPECT);
 const VISUAL_CAMERA_POSITION = [
-  VISUAL_CAMERA_BASE_POSITION[0],
-  VISUAL_CAMERA_BASE_POSITION[1] * 1.42,
-  VISUAL_CAMERA_BASE_POSITION[2],
+  GRAND_HALL_RENDER_DIMENSIONS.width * 0.62,
+  GRAND_HALL_RENDER_DIMENSIONS.height * 2.6,
+  GRAND_HALL_RENDER_DIMENSIONS.length * 0.78,
 ] as const;
-const VISUAL_CAMERA_TARGET = computeCameraTarget(GRAND_HALL_RENDER_DIMENSIONS, VISUAL_STAGE_ASPECT);
+const VISUAL_CAMERA_TARGET = [
+  0,
+  GRAND_HALL_RENDER_DIMENSIONS.height * 0.22,
+  0,
+] as const;
 const VISUAL_CAMERA_DISTANCE_LIMITS = computeDistanceLimits(GRAND_HALL_RENDER_DIMENSIONS);
 const REPLAY_OVERLAY_BOUNDS = { width: 22, height: 12 } as const;
 const RUNTIME_SPLAT_FIT_MAX_DIMENSION = 42;
@@ -1573,7 +1574,7 @@ export function TradesHallVisualPage(): ReactElement {
     }
     : VISUAL_CAMERA_DISTANCE_LIMITS;
   const visualRuntimeCameraView = hasRegisteredRuntimeAsset ? runtimeAssetCameraView : null;
-  const visualCameraFov = visualRuntimeCameraView?.fov ?? 42;
+  const visualCameraFov = visualRuntimeCameraView?.fov ?? 46;
   const visualCameraKey = hasRegisteredRuntimeAsset ? "runtime-asset-camera" : "procedural-camera";
   const visualCanvasDpr = visualCanvasDprForViewportWidth(viewportWidth);
   const visualCanvasGl = visualCanvasGlForViewportWidth(viewportWidth);
@@ -1590,7 +1591,13 @@ export function TradesHallVisualPage(): ReactElement {
     ? visualMouseButtonsForViewportWidth(viewportWidth)
     : LEAN_VISUAL_MOUSE_BUTTONS;
   const visualFallbackRoomGeometry = roomGeometries[runtimeTarget.roomLabel] ?? GRAND_HALL_ROOM_GEOMETRY;
-  const visualFallbackRoomVariant = runtimeTarget.room === "grand-hall" ? "grand-hall" : "generic";
+  const visualFallbackIsSyntheticGrandHall = runtimeTarget.room === "grand-hall";
+  const visualFallbackRoomVariant = visualFallbackIsSyntheticGrandHall
+    ? "grand-hall-synthetic"
+    : "generic";
+  const visualFallbackRoomDetail = shouldUseLeanVisualMesh(viewportWidth) || visualCameraInteractionActive
+    ? "lean"
+    : "detailed";
 
   useEffect(() => {
     let cancelled = false;
@@ -1816,14 +1823,18 @@ export function TradesHallVisualPage(): ReactElement {
               onCameraInteractionChange={setVisualCameraInteractionActive}
             />
             <color attach="background" args={["#111415"]} />
-            <ambientLight intensity={0.75} />
-            <directionalLight position={[6, 9, 6]} intensity={0.65} />
+            <ambientLight intensity={hasRegisteredRuntimeAsset ? 0.75 : 0.16} />
+            <directionalLight
+              color={hasRegisteredRuntimeAsset ? "#ffffff" : "#f2bd78"}
+              position={[6, 9, 6]}
+              intensity={hasRegisteredRuntimeAsset ? 0.65 : 0.42}
+            />
             {meshVisible && (
               visualFallbackRoomGeometry !== undefined ? (
                 <RoomMesh
                   geometry={visualFallbackRoomGeometry}
                   variant={visualFallbackRoomVariant}
-                  detail="lean"
+                  detail={visualFallbackRoomDetail}
                 />
               ) : (
                 <GrandHallRoom />
@@ -1849,6 +1860,15 @@ export function TradesHallVisualPage(): ReactElement {
             ) : null}
           </Canvas>
         </div>
+        {meshVisible && visualFallbackIsSyntheticGrandHall && (
+          <p
+            className="visual-synthetic-stand-in-label"
+            data-testid="visual-synthetic-stand-in-label"
+          >
+            <span aria-hidden="true">◇</span>
+            {SYNTHETIC_GRAND_HALL_STAND_IN_LABEL}
+          </p>
+        )}
         <FloatingWidgetFrame
           id="visual-layer-controls"
           title="Visual layer"
