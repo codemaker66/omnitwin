@@ -1,7 +1,8 @@
 import { useMemo, useState, type ReactElement } from "react";
 import type { Action } from "@omnitwin/types";
 import type { AuditLogEntry } from "../../api/action-log.js";
-import { documentAtOrdinal, planRestore, timelineMarkers } from "../../lib/time-machine.js";
+import type { ReplayObject } from "../../lib/action-log-replay.js";
+import { deriveBaseFromLive, documentAtOrdinal, planRestore, timelineMarkers } from "../../lib/time-machine.js";
 import { plannerActionContext } from "../../stores/planner-action-log.js";
 import "./time-machine-panel.css";
 
@@ -20,6 +21,11 @@ import "./time-machine-panel.css";
 
 export interface TimeMachinePanelProps {
   readonly entries: readonly AuditLogEntry[];
+  /** The room as it stands NOW. Supplying it lets the panel reverse-replay
+   *  the trail to recover what the layout was loaded with — without it, a
+   *  reopened layout reconstructs missing all its pre-existing furniture,
+   *  because loadConfiguration records no Action for the objects it loads. */
+  readonly live?: readonly ReplayObject[];
   /** Called with the restore Action to append. Absent = preview only. */
   readonly onRestore?: (action: Action) => void;
 }
@@ -62,7 +68,7 @@ function touchedByEntry(entry: AuditLogEntry | undefined): ReadonlySet<string> {
   return ids;
 }
 
-export function TimeMachinePanel({ entries, onRestore }: TimeMachinePanelProps): ReactElement {
+export function TimeMachinePanel({ entries, live, onRestore }: TimeMachinePanelProps): ReactElement {
   const markers = useMemo(() => timelineMarkers(entries), [entries]);
   // Markers are newest-first; the scrubber reads left-to-right as oldest to
   // newest, so slider index 0 is the OLDEST recorded point.
@@ -74,13 +80,22 @@ export function TimeMachinePanel({ entries, onRestore }: TimeMachinePanelProps):
   const selected = oldestFirst[clamped];
   const latest = oldestFirst[lastIndex];
 
-  const at = useMemo(
-    () => documentAtOrdinal(entries, selected?.ordinal ?? 0),
-    [entries, selected?.ordinal],
+  // Anchor the trail: reverse-replay the live room to recover what the
+  // layout was loaded with, so a reopened configuration reconstructs its
+  // pre-existing furniture instead of an empty floor.
+  const anchor = useMemo(
+    () => (live === undefined ? null : deriveBaseFromLive(live, entries)),
+    [live, entries],
   );
-  const live = useMemo(
-    () => documentAtOrdinal(entries, latest?.ordinal ?? 0),
-    [entries, latest?.ordinal],
+  const base = anchor?.base ?? [];
+
+  const at = useMemo(
+    () => documentAtOrdinal(entries, selected?.ordinal ?? 0, base),
+    [entries, selected?.ordinal, base],
+  );
+  const newest = useMemo(
+    () => documentAtOrdinal(entries, latest?.ordinal ?? 0, base),
+    [entries, latest?.ordinal, base],
   );
 
   const touchedIds = useMemo(
@@ -90,10 +105,10 @@ export function TimeMachinePanel({ entries, onRestore }: TimeMachinePanelProps):
 
   const restore = useMemo(() => {
     if (selected === undefined) return null;
-    return planRestore(live.objects, at.objects, plannerActionContext(), {
+    return planRestore(newest.objects, at.objects, plannerActionContext(), {
       targetOrdinal: selected.ordinal,
     });
-  }, [live.objects, at.objects, selected]);
+  }, [newest.objects, at.objects, selected]);
 
   const restoreSummary = useMemo(() => {
     if (restore === null) return null;

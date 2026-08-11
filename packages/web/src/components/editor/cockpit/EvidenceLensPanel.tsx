@@ -109,6 +109,15 @@ export function EvidenceLensPanel(): ReactElement {
 function ChangeHistorySection(): ReactElement {
   const configId = useEditorStore((state) => state.configId);
   const isPublicPreview = useEditorStore((state) => state.isPublicPreview);
+  // The live room anchors the trail — see TimeMachinePanel's `live` prop.
+  // Rebuilt through Object.fromEntries because EditorObject is an interface
+  // and so carries no implicit index signature; this satisfies ReplayObject
+  // structurally rather than by asserting it with a cast.
+  const editorObjects = useEditorStore((state) => state.objects);
+  const liveObjects = useMemo(
+    () => editorObjects.map((object) => ({ ...Object.fromEntries(Object.entries(object)), id: object.id })),
+    [editorObjects],
+  );
   const history = useChangeHistory(configId, !isPublicPreview);
   const rows = useMemo(() => changeHistoryRows(history.entries), [history.entries]);
 
@@ -140,7 +149,7 @@ function ChangeHistorySection(): ReactElement {
             — and the trail gets a surface an operator can actually open. */}
         {history.entries.length > 0 && (
           <div className="lens-panel__row" style={{ padding: 0, border: "none", background: "none" }}>
-            <TimeMachinePanel entries={history.entries} />
+            <TimeMachinePanel entries={history.entries} live={liveObjects} />
           </div>
         )}
         {rows.map((row) => (

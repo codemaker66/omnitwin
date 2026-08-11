@@ -2,7 +2,7 @@ import type { Action } from "@omnitwin/types";
 import type { AuditLogEntry } from "../api/action-log.js";
 import type { ActionContext } from "./action-log.js";
 import { asJson } from "./action-log.js";
-import { replayActions, type ReplayObject } from "./action-log-replay.js";
+import { ReplayDeltaSchema, applyDelta, replayActions, type ReplayObject } from "./action-log-replay.js";
 import { changeHistoryRows } from "./change-history-model.js";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +65,66 @@ export function documentAtOrdinal(
     if (entry.ordinal > appliedThrough) appliedThrough = entry.ordinal;
   }
   return { objects: result.objects, appliedThrough, issues: result.issues };
+}
+
+export interface DerivedBase {
+  /** The document the trail began from. */
+  readonly base: readonly ReplayObject[];
+  /** False when something in the trail could not be reversed, so the base
+   *  is a best effort rather than a faithful reconstruction. */
+  readonly exact: boolean;
+  readonly reason?: string;
+}
+
+/** Recover the room the trail STARTED from, by walking it backwards.
+ *
+ *  Why this exists: `loadConfiguration` writes a saved layout's objects
+ *  straight into the store and emits no Action for them, so a reopened
+ *  configuration's trail contains only what happened since. Replaying that
+ *  from an empty room loses every piece of pre-existing furniture.
+ *
+ *  The fix needs no server change, because the trail already carries an
+ *  inverse for every mutation: apply those inverses newest-to-oldest to the
+ *  LIVE document and you arrive at the document the trail began from. That
+ *  base then anchors every forward reconstruction.
+ *
+ *  Honest limit: a fold summary (`log.*`) has no inverse, so nothing before
+ *  it can be recovered — reported via `exact: false` rather than quietly
+ *  producing a plausible-looking wrong room. */
+export function deriveBaseFromLive(
+  live: readonly ReplayObject[],
+  entries: readonly AuditLogEntry[],
+): DerivedBase {
+  let objects: readonly ReplayObject[] = live.map((object) => ({ ...object }));
+  let exact = true;
+  let reason: string | undefined;
+  const discarded: string[] = [];
+
+  // Newest first: undoing the most recent change first is the only order in
+  // which each recorded inverse describes the state it is applied to.
+  const newestFirst = [...entries].sort((a, b) => b.ordinal - a.ordinal);
+
+  for (const item of newestFirst) {
+    if (item.intent.startsWith("log.")) {
+      exact = false;
+      reason = `the trail was summarized at change ${String(item.ordinal)}; nothing before that point can be recovered from it`;
+      break;
+    }
+    // history.undo/redo records describe a navigation, not a document
+    // delta — the gesture they moved through is itself in the trail, so
+    // reversing them too would double-count.
+    if (item.intent.startsWith("history.")) continue;
+    if (item.inverse === null) {
+      exact = false;
+      reason = `change ${String(item.ordinal)} carries no inverse, so the room before it cannot be reconstructed`;
+      break;
+    }
+    const inverse = ReplayDeltaSchema.safeParse(item.inverse);
+    if (!inverse.success) continue; // another surface's record — no document effect
+    objects = applyDelta(objects, inverse.data, item.ordinal, discarded);
+  }
+
+  return reason === undefined ? { base: objects, exact } : { base: objects, exact, reason };
 }
 
 export interface TimelineMarker {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ActionSchema } from "@omnitwin/types";
 import type { AuditLogEntry } from "../../api/action-log.js";
 import type { ReplayObject } from "../action-log-replay.js";
-import { documentAtOrdinal, planRestore, timelineMarkers } from "../time-machine.js";
+import { deriveBaseFromLive, documentAtOrdinal, planRestore, timelineMarkers } from "../time-machine.js";
 
 // ---------------------------------------------------------------------------
 // The Time Machine — G4's payoff. Deep undo, version restore and replay are
@@ -153,6 +153,65 @@ describe("the base state — the trail is not self-sufficient on its own", () =>
   it("the base never leaks between calls", () => {
     documentAtOrdinal(MOVE_ONLY, 10, LOADED);
     expect(LOADED).toEqual([TABLE]); // caller's array untouched
+  });
+});
+
+describe("deriveBaseFromLive — recovering the room the trail started from", () => {
+  // The flaw this closes: loadConfiguration writes a saved layout's objects
+  // straight into the store and emits NO Action for them, so a reopened
+  // configuration's trail holds only what happened SINCE. Replaying it from
+  // an empty room loses all the pre-existing furniture.
+  //
+  // The fix needs no server change, because the trail already carries every
+  // inverse: walk it newest-to-oldest applying those inverses to the LIVE
+  // room, and you arrive at the document the trail began from.
+  const LIVE: readonly ReplayObject[] = [{ ...TABLE, positionX: 7 }, CHAIR];
+
+  it("walks the inverses backwards to recover the starting room", () => {
+    // Trail: the table moved 1 -> 7, then the chair was placed.
+    const trail: readonly AuditLogEntry[] = [
+      move(10, "obj-table", 1, 7),
+      place(20, CHAIR, 1),
+    ];
+    const derived = deriveBaseFromLive(LIVE, trail);
+    // Before the trail: the table sat at 1 and the chair did not exist.
+    expect(derived.base).toEqual([TABLE]);
+    expect(derived.exact).toBe(true);
+  });
+
+  it("feeds documentAtOrdinal so a reopened layout replays correctly end to end", () => {
+    const trail: readonly AuditLogEntry[] = [move(10, "obj-table", 1, 7), place(20, CHAIR, 1)];
+    const { base } = deriveBaseFromLive(LIVE, trail);
+
+    // Travelling to the oldest point now shows the real starting room,
+    // not an empty one — and the newest point matches what is on screen.
+    expect(documentAtOrdinal(trail, 0, base).objects).toEqual([TABLE]);
+    expect(documentAtOrdinal(trail, 10, base).objects).toEqual([{ ...TABLE, positionX: 7 }]);
+    const newest = documentAtOrdinal(trail, 20, base).objects;
+    expect(newest).toEqual(LIVE);
+  });
+
+  it("an empty trail leaves the live room untouched", () => {
+    const derived = deriveBaseFromLive(LIVE, []);
+    expect(derived.base).toEqual(LIVE);
+    expect(derived.exact).toBe(true);
+  });
+
+  it("says so honestly when a fold makes the start unrecoverable", () => {
+    // A summary has no inverse, so everything before it is unreachable.
+    const trail: readonly AuditLogEntry[] = [
+      entry(5, { intent: "log.summarized", payload: { folded: 900 }, inverse: null }),
+      move(10, "obj-table", 1, 7),
+    ];
+    const derived = deriveBaseFromLive(LIVE, trail);
+    expect(derived.exact).toBe(false);
+    expect(derived.reason).toContain("summarized");
+  });
+
+  it("never mutates the live room it was handed", () => {
+    const trail: readonly AuditLogEntry[] = [move(10, "obj-table", 1, 7)];
+    deriveBaseFromLive(LIVE, trail);
+    expect(LIVE[0]?.positionX).toBe(7);
   });
 });
 

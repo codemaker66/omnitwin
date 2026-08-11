@@ -119,7 +119,10 @@ const ReplayPatchSchema = z.object({
   after: z.record(z.unknown()),
 });
 
-const ReplayDeltaSchema = z.object({
+/** Exported so reverse-replay parses deltas with the SAME shape as forward
+ *  replay — two definitions would drift, and the drift would look like a
+ *  history bug rather than a schema bug. */
+export const ReplayDeltaSchema = z.object({
   added: z.array(ReplayPlacedSchema).default([]),
   removed: z.array(ReplayPlacedSchema).default([]),
   updated: z.array(ReplayPatchSchema).default([]),
@@ -135,7 +138,9 @@ export interface ReplayResult {
   readonly issues: readonly string[];
 }
 
-function applyDelta(
+/** Exported for the time machine's reverse-replay — one applier, so forward
+ *  and backward reconstruction can never disagree. */
+export function applyDelta(
   objects: readonly ReplayObject[],
   delta: ReplayDelta,
   ordinal: number,
