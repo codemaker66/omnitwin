@@ -7,20 +7,92 @@ import {
 
 const INERT_PLANE_CONSTANT = 1_000_000;
 const MIN_HORIZONTAL_DISTANCE_SQ = 1e-12;
+
+// -----------------------------------------------------------------------------
+// Why the section RETRACTS instead of switching off
+//
+// The cutaway earns its keep at side-on elevations, where the exterior scan
+// shell stands between the camera and the rooms. Climb toward plan view and it
+// stops earning anything: the open-top scan already shows the interior, so a
+// vertical plane can only subtract a strip of the floor plan.
+//
+// The previous design expressed that as a hard predicate — engaged below 32
+// degrees of elevation, inert above — and it is the reported bug. There is no
+// state between "full inset" and "clips nothing", so crossing 32 degrees made a
+// whole slab of building appear or vanish between two frames. Measured on the
+// live dollhouse: at 31.85 degrees the plane constant was 15.33; at 33.98 it
+// was 1,000,000. One orbit step, an unbounded step in the clip depth, and a
+// visible pop. A user orbiting slowly re-crosses that angle constantly.
+//
+// So elevation drives the section's DEPTH, continuously, rather than its
+// existence. Below FULL_CUT_ELEVATION_DEG the section sits at its full inset;
+// across the band up to RETRACTED_ELEVATION_DEG it eases outward (smoothstep,
+// zero slope at both ends, so the retraction has no visible start or stop) until
+// it is parked clear of the scan hull entirely. Past the band it simply stays
+// parked. Nothing pops because the plane never teleports: what it removes only
+// ever shrinks or grows by the distance it travelled that frame.
+//
+// A half-engaged plane still cuts — that is the point. Half-engaged is a
+// shallower cutaway, which is exactly what a half-elevated camera wants. The
+// failure this design prevents is the discontinuity, not the cutting.
+//
+// The plane is therefore never made inert as a function of camera angle. Going
+// inert is a teleport to infinity, and a teleport is only invisible if the plane
+// was already clear of every triangle — which we cannot prove from scan poses
+// alone. Parking it at a finite, hull-derived distance costs nothing and cannot
+// pop. The remaining inert paths are degenerate inputs (no witnesses, non-finite
+// values, camera directly over the target), where there is no defensible axis to
+// cut along and the retracted plane would clip nothing anyway.
+// -----------------------------------------------------------------------------
+
+/** At or below this camera elevation the section cuts to its full inset. */
+const FULL_CUT_ELEVATION_DEG = 30;
+/** At or above this camera elevation the section is parked clear of the hull. */
+const RETRACTED_ELEVATION_DEG = 70;
 /**
- * The cutaway exists for SIDE-ON views only, where the exterior scan shell
- * blocks the interior. Once the camera climbs past this elevation angle the
- * open-top scan already reveals the rooms — and the plane's "outward"
- * direction (derived from a nearly-vertical view axis) becomes unstable and
- * sweeps INTO the interior, visibly chopping floors. Above it: inert plane.
+ * The section may never approach the target closer than this share of the
+ * camera-most witness projection. Guards the second failure mode: when the scan
+ * is sparse on the camera's side, `maximumProjection` lands deep inside the
+ * building and `- insetM` drives the plane past the rooms it was meant to open.
+ * Half the camera-side reach means at least the far half of the model survives
+ * at every angle. `Math.max` of two continuous terms stays continuous.
  */
-const MAX_ENGAGE_ELEVATION_TAN = Math.tan((32 * Math.PI) / 180);
+const MAX_CUT_FRACTION = 0.5;
+/**
+ * Parked clearance beyond the camera-most witness, as a share of the hull's own
+ * depth along the view axis. A scan pose stands inside a room, so the shell
+ * behind the outermost pose is at most a room away — always less than half the
+ * hull. Falls back to a multiple of the inset for degenerate (near-coincident)
+ * witness sets where the hull has no depth to scale from.
+ */
+const RETRACT_CLEARANCE_HULL_FRACTION = 0.5;
+const RETRACT_CLEARANCE_INSET_FACTOR = 2;
+
+/**
+ * 0 at full engagement, 1 fully parked. Hermite ease, so the retraction has
+ * zero slope at both ends of the band and therefore no visible start or stop.
+ */
+function elevationRetraction(elevationDeg: number): number {
+  const t = Math.min(
+    Math.max(
+      (elevationDeg - FULL_CUT_ELEVATION_DEG) /
+        (RETRACTED_ELEVATION_DEG - FULL_CUT_ELEVATION_DEG),
+      0,
+    ),
+    1,
+  );
+  return t * t * (3 - 2 * t);
+}
 
 export interface VerticalCutawayInput {
   readonly cameraPosition: Vector3;
   readonly target: Vector3;
   readonly witnesses: readonly Vector3[];
-  /** Metres pulled inward from the camera-most scan-node projection. */
+  /**
+   * Metres pulled inward from the camera-most scan-node projection at full
+   * engagement. The realised inset shrinks toward zero and then past it as the
+   * camera climbs — see the retraction band above.
+   */
   readonly insetM: number;
 }
 
@@ -38,6 +110,10 @@ function finiteVector(vector: Vector3): boolean {
  * footprint. The vertical normal preserves floors, ceilings and the dome even
  * when the orbit camera is elevated. Three retains the plane's positive side,
  * so the inward normal removes the camera-side scan shell.
+ *
+ * The section's depth is a continuous function of camera elevation: full inset
+ * side-on, eased out to a parked position clear of the scan hull by plan view.
+ * Returns false only for degenerate input, where the plane is left inert.
  */
 export function updateVerticalCutawayPlane(
   plane: Plane,
@@ -61,17 +137,11 @@ export function updateVerticalCutawayPlane(
   if (!Number.isFinite(horizontalDistanceSq) || horizontalDistanceSq <= MIN_HORIZONTAL_DISTANCE_SQ) {
     return false;
   }
-  // Elevated orbit: the interior is already open to view and a camera-derived
-  // section plane would sweep into the rooms (the "chops deep into the
-  // building" failure). Stay inert; only side-on views engage the cutaway.
-  const elevation = cameraPosition.y - target.y;
-  if (elevation > Math.sqrt(horizontalDistanceSq) * MAX_ENGAGE_ELEVATION_TAN) {
-    return false;
-  }
-
-  const inverseDistance = 1 / Math.sqrt(horizontalDistanceSq);
+  const horizontalDistance = Math.sqrt(horizontalDistanceSq);
+  const inverseDistance = 1 / horizontalDistance;
   const outwardX = horizontalX * inverseDistance;
   const outwardZ = horizontalZ * inverseDistance;
+  let minimumProjection = Number.POSITIVE_INFINITY;
   let maximumProjection = Number.NEGATIVE_INFINITY;
   for (const witness of witnesses) {
     if (!finiteVector(witness)) {
@@ -80,10 +150,32 @@ export function updateVerticalCutawayPlane(
     }
     const projection =
       outwardX * (witness.x - target.x) + outwardZ * (witness.z - target.z);
+    minimumProjection = Math.min(minimumProjection, projection);
     maximumProjection = Math.max(maximumProjection, projection);
   }
 
-  const sectionProjection = maximumProjection - insetM;
+  // Deepest the section is ever allowed to sit, inset from the camera-most
+  // scan pose but held back from swallowing the far half of the model.
+  const cutProjection = Math.max(
+    maximumProjection - insetM,
+    maximumProjection * MAX_CUT_FRACTION,
+  );
+  // Parked position: clear of the shell behind the camera-most scan pose.
+  const hullDepth = maximumProjection - minimumProjection;
+  const parkedProjection =
+    maximumProjection +
+    Math.max(
+      hullDepth * RETRACT_CLEARANCE_HULL_FRACTION,
+      insetM * RETRACT_CLEARANCE_INSET_FACTOR,
+    );
+  // Elevation drives depth, not existence. atan2 keeps this well defined for a
+  // camera below the target (retraction 0 — a floor-level view wants the full
+  // cutaway) and saturates smoothly as the camera climbs toward plan view.
+  const elevationDeg =
+    (Math.atan2(cameraPosition.y - target.y, horizontalDistance) * 180) / Math.PI;
+  const retraction = elevationRetraction(elevationDeg);
+  const sectionProjection =
+    cutProjection + (parkedProjection - cutProjection) * retraction;
   const constant =
     outwardX * target.x + outwardZ * target.z + sectionProjection;
   if (!Number.isFinite(sectionProjection) || !Number.isFinite(constant)) {
