@@ -1,6 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { OptionSeal } from "../features/trades-house/OptionSeal.js";
 import { ConvenerPortrait, type ConvenerHandle } from "../features/trades-house/convener/ConvenerPortrait.js";
+import { ConvenerPainting } from "../features/trades-house/convener/ConvenerPainting.js";
+
+/**
+ * Which skin of him is mounted. The painting is a real oil portrait with the
+ * life added in CSS; the SVG is the hand-authored original. Both satisfy
+ * ConvenerHandle, so everything that drives him is indifferent to the choice.
+ *
+ * Switchable by query string ONLY so the two can be judged against each other
+ * on the same screen and the same lines: /quiz?convener=svg
+ */
+const Convener: typeof ConvenerPortrait = (() => {
+  if (typeof window === "undefined") return ConvenerPainting;
+  const asked = new URLSearchParams(window.location.search).get("convener");
+  return asked === "svg" ? ConvenerPortrait : ConvenerPainting;
+})();
 import {
   completedRuns,
   loadConvenerVoice,
@@ -341,7 +356,7 @@ function ThresholdScreen({ onReady, compact }: ThresholdScreenProps): ReactEleme
       <h1 className="craft-quiz-sr-only" id="craft-threshold-title">Before you begin</h1>
       <p className="craft-result-kicker"><span />Before you begin<span /></p>
       <div className="craft-threshold-portrait">
-        <ConvenerPortrait compact={compact} restingLine={spoken} />
+        <Convener compact={compact} restingLine={spoken} />
       </div>
       <ol className="craft-threshold-beats">
         {said.map((line) => (
@@ -401,7 +416,7 @@ function WeighingScreen({ onDecided, compact }: WeighingScreenProps): ReactEleme
           stays empty here: the beats change faster than the typewriter can
           finish a line, and a half-typed thought reads as a stall. */}
       <div className="craft-weighing-portrait">
-        <ConvenerPortrait compact={compact} restingLine={null} />
+        <Convener compact={compact} restingLine={null} />
       </div>
       <div className="craft-weighing-chain" aria-hidden="true">
         {CONVENER_DELIBERATION.map((_, index) => (
@@ -596,7 +611,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
         {screen === "question" ? (
           <div className="craft-quiz-stage">
             <div className="craft-quiz-stage-portrait">
-              <ConvenerPortrait
+              <Convener
                 ref={convenerRef}
                 compact={!wideStage}
                 /* His bubble always holds the SCENE. The reply lives in its own

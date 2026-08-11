@@ -2749,8 +2749,11 @@
     padding: clamp(16px, 3vh, 48px) clamp(24px, 5vw, 80px);
   }
 
+  /* Sized for the old vector head, which was worth about 360px of anybody's
+     screen. The oil portrait is the hero of this screen and carries its own
+     gilt frame, so it earns the room. */
   .craft-threshold-portrait {
-    width: clamp(240px, 26vw, 360px);
+    width: clamp(360px, 36vw, 560px);
   }
 
   .craft-threshold-beats li {
