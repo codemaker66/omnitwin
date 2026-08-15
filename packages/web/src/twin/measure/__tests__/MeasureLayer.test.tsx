@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { TwinTierSchema, findUnsupportedProposalClaim } from "@omnitwin/types";
 import { useCallback, useState, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -376,13 +378,20 @@ describe("MeasureLayer", () => {
 // -----------------------------------------------------------------------------
 // The integration, as far as this directory can reach it.
 //
-// HONESTY NOTE, and it is the important part of this file. `MeasureLayer` has NO
-// consumer in the product: nothing under packages/web imports it outside these
-// tests, and wiring it into TwinViewer.tsx is another lane's change. So the
-// mutant "delete the whole feature" still survives this suite — deleting
-// measure/ breaks only measure/'s own tests, and the /tour build is unaffected
-// because /tour never used it. No test written inside this directory can close
-// that; only the wiring can, and the props it needs are in the handoff.
+// HONESTY NOTE — REVISED, because the fact it recorded has changed. It used to
+// read: "`MeasureLayer` has NO consumer in the product … the mutant 'delete the
+// whole feature' still survives this suite." That was true and it is now false.
+// TwinViewer.tsx mounts this layer in the mesh modes and raycasts its picks, so
+// deleting measure/ breaks the /tour build. The wiring is ASSERTED in the last
+// describe of this file rather than left as a claim, because a comment saying
+// "it is wired now" is exactly the sort of thing that outlives the wiring.
+//
+// What is NOT closed, and is the residual this file is obliged to carry: the
+// picks come from real WebGL raycasts against a glTF collider, and happy-dom has
+// no WebGL. The arithmetic of a pick — which hit survives the cutaway's clipping
+// planes — is unit-tested against synthetic intersections in TwinViewer.test.ts.
+// That a real click on a real wall yields a sensible metre figure is proved by
+// looking at it, and by nothing in this suite.
 //
 // What the block below DOES close is the next-worst gap: every unit test above
 // hands the component a frozen `points` array, so nothing exercised the loop the
@@ -670,5 +679,135 @@ describe("measure copy", () => {
     expect(measureRiseWord(0.003)).toBe(MEASURE_RISE_LEVEL);
     expect(measureRiseWord(-0.003)).toBe(MEASURE_RISE_LEVEL);
     expect(measureRiseWord(0.02)).not.toBe(MEASURE_RISE_LEVEL);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// THE WIRING, AND THE SLOT IT LANDED IN.
+//
+// This section exists because the previous version of this file recorded, in
+// prose, that the feature had no consumer — and prose is not a tripwire. What
+// follows asserts the two facts the whole feature now rests on: TwinViewer
+// really does mount the layer and hand it picks, and the rectangles it paints
+// into are disjoint from the HUD at the sizes it ships at.
+//
+// The panel's rects below are MEASURED in Chromium against the running dev
+// server, not modelled, because they are the evidence that the arithmetic is
+// right rather than merely self-consistent. They caught a real defect: the
+// entrance keyframe ended on `translate(-50%, 0)`, left over from the old
+// top-centre slot, and `fill-mode: both` kept it — so the bottom-right panel
+// painted half its own width to the left of its anchor, on top of the
+// claim-safety disclosure at landscape. No arithmetic in this file would have
+// found that; only looking would, and did.
+// -----------------------------------------------------------------------------
+
+function readMeasureSource(relative: string): string {
+  return readFileSync(resolve(process.cwd(), relative), "utf8");
+}
+
+const MEASURE_CSS = readMeasureSource("src/twin/measure/measure.css");
+const VIEWER_SOURCE = readMeasureSource("src/twin/TwinViewer.tsx");
+
+type Rect = readonly [number, number, number, number];
+
+/** Do two [left, top, right, bottom] rects share area? A 0px gap is a gap. */
+function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+}
+
+/**
+ * What the shipped build actually paints, at the three sizes the brief names.
+ * Captured with `page.getBoundingClientRect()` after arming the tool and taking
+ * two picks — the tallest the panel ever gets, which is the case that matters.
+ */
+const MEASURED: readonly {
+  readonly name: string;
+  readonly panel: Rect;
+  readonly others: readonly (readonly [string, Rect])[];
+}[] = [
+  {
+    name: "1440×900",
+    panel: [1042, 660, 1422, 882],
+    others: [
+      ["utility rail", [1310, 106, 1422, 237]],
+      ["viewer disclosure", [18, 853, 434, 886]],
+      ["node label", [18, 18, 302, 49]],
+      ["mode control", [1182, 18, 1422, 55]],
+    ],
+  },
+  {
+    name: "390×844",
+    panel: [12, 440, 378, 748],
+    others: [
+      ["utility rail", [282, 88, 378, 161]],
+      ["viewer disclosure", [12, 801, 378, 834]],
+      ["node label", [12, 12, 160, 38]],
+      ["mode control", [188, 12, 378, 45]],
+    ],
+  },
+  {
+    name: "844×390",
+    panel: [439, 242, 832, 372],
+    others: [
+      ["utility rail", [714, 106, 826, 237]],
+      ["viewer disclosure", [18, 343, 434, 376]],
+      ["node label", [18, 18, 302, 49]],
+      ["mode control", [586, 18, 826, 55]],
+    ],
+  },
+];
+
+describe("MeasureLayer — the slot it ships in", () => {
+  for (const { name, panel, others } of MEASURED) {
+    it(`covers nothing at ${name}`, () => {
+      for (const [other, rect] of others) {
+        expect([other, rectsOverlap(panel, rect)]).toEqual([other, false]);
+      }
+    });
+  }
+
+  it("positions both halves, because a flow-laid panel is clipped away", () => {
+    // `.vv-twin-stage { overflow: hidden }` has eaten an unpositioned HUD panel
+    // twice in this neighbourhood: it is not merely unstyled, it is invisible
+    // AND still in the tab order, which is the worst of the three states.
+    expect(MEASURE_CSS).toMatch(/\.vv-twin-measure \{[^}]*position: absolute;/u);
+    expect(MEASURE_CSS).toMatch(/\.vv-twin-measure-panel \{[^}]*position: absolute;/u);
+    expect(MEASURE_CSS).toMatch(/\.vv-twin-measure-trigger \{[^}]*position: absolute;/u);
+  });
+
+  it("keeps no centring transform in the entrance keyframe", () => {
+    // The defect, pinned by its shape rather than its symptom: `fill-mode: both`
+    // makes a keyframe's final transform permanent, so ANY translate left in the
+    // `to` frame is placement pretending to be motion.
+    const entrance = /@keyframes vv-twin-measure-in \{([\s\S]*?)\n\}/u.exec(MEASURE_CSS);
+    expect(entrance).not.toBeNull();
+    expect(entrance?.[1] ?? "").not.toContain("-50%");
+  });
+
+  it("resolves instantly to the final state under reduced motion", () => {
+    const reduced = /@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/u.exec(
+      MEASURE_CSS,
+    );
+    const block = reduced?.[1] ?? "";
+    expect(block).toContain("animation: none;");
+    expect(block).toContain("transition: none;");
+    expect(block).toContain("transform: none;");
+  });
+
+  it("is mounted by TwinViewer, armed only where geometry exists", () => {
+    // The claim the honesty note above now makes. Asserted, so that a revert of
+    // the wiring turns this file red instead of leaving a comment lying.
+    expect(VIEWER_SOURCE).toContain("<MeasureLayer");
+    expect(VIEWER_SOURCE).toContain("<MeasurePicker");
+    // Walk mode paints panoramas on spheres AROUND the camera: a click there
+    // yields a direction and no depth, so two of them would be an angle dressed
+    // up as a distance. The gate is part of the feature, not an optimisation.
+    expect(VIEWER_SOURCE).toContain('measuring && hasMesh && mode !== "walk"');
+  });
+
+  it("hides its own trigger while the tool is open, which is what frees the corner", () => {
+    // The panel and the trigger share one rect. The disjointness argument for
+    // the whole bottom-right column is that only one of them is ever mounted.
+    expect(VIEWER_SOURCE).toContain('mode !== "walk" && !measuring');
   });
 });

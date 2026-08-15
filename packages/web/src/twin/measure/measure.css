@@ -15,22 +15,86 @@
  * merely unstyled, it is invisible while remaining in the tab order. That exact
  * bug has shipped here before.
  *
- * THE SLOT. The measured HUD is: node label (top 18 left, z2), dossier (top 62
- * left, z3), quick rail (bottom 56 left, z3), disclosure (bottom 14 left, z2),
- * mode (top 18 right, z3), surface (top 62 right, z3), controls rail (top 106
- * right, z3, 112px wide), minimap (bottom 18 right, z3), coach pill (bottom 64
- * centred, z4). Top centre is the one free lane, and it is also the right one:
- * a measurement is the thing being looked at while the tool is open, so it
- * belongs at the top of the frame rather than tucked into a corner.
+ * THE SLOT — and it is NOT top centre any more. That slot was modelled against
+ * a 1440px stage, where `width: min(380px, 100vw - 560px)` really does clear the
+ * node label on the left and the mode control on the right. At 844×390 the
+ * arithmetic gives a 284px panel centred at 422, spanning x 280–564 — and the
+ * node label MEASURES [18,18,302,49] there. A 22px overlap, on the one element
+ * in this HUD that says which viewpoint the visitor is standing at.
  *
- * The width RESERVES both flanks rather than guessing a fixed cap — the label
- * on the left and the mode control on the right both grow with their content,
- * so the panel shrinks toward them instead of sliding under them.
+ * The panel now takes the bottom-right column, under the utility rail. That
+ * corner is free by construction rather than by arithmetic: the minimap left it
+ * when RoomSelector replaced it, and the measure TRIGGER — the only other thing
+ * that parks there — is unmounted for exactly as long as this panel is on
+ * screen. One occupant at a time is a stronger guarantee than any set of
+ * numbers, because no font change can break it.
+ *
+ * THE TRIGGER lives here too, and shares the Rooms pill's slot verbatim
+ * (ROOMS_SLOT in ../shell/RoomSelector.tsx). Those two never coexist either:
+ * Rooms is walk mode, Measure is the mesh modes, and the mode machine admits
+ * exactly one. TwinViewer imports this stylesheet directly, so the trigger is
+ * painted even when MeasureLayer — which owns the rest of this file — is not
+ * mounted at all.
  *
  * The overlay sits at z-index 5: above every HUD chip (max z4, the coach pill)
  * so the segment is never drawn behind a control it crosses, and below the
  * enquiry modal (z20), which must still cover everything.
  * -------------------------------------------------------------------------- */
+
+/* — the trigger: arms the tool, and is gone while the tool is armed —
+ *
+ * Deliberately the Rooms pill's geometry, to the pixel. Two pills in one corner
+ * differing by three pixels read as a bug; two that are identical read as one
+ * slot with a mode-appropriate occupant, which is exactly what this is. */
+
+.vv-twin-measure-trigger {
+  position: absolute;
+  right: calc(18px + env(safe-area-inset-right));
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 3;
+  /* Only the pill takes pointer events — the `.vv-twin-controls` contract. */
+  pointer-events: auto;
+  max-width: 136px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--ink-2, #e7d8bb);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  font-family: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    border-color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform 160ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-measure-trigger:hover {
+  color: var(--gold-2, #f0c66b);
+  border-color: var(--gold, #d7a64b);
+}
+
+.vv-twin-measure-trigger:active {
+  transform: scale(0.97);
+}
+
+.vv-twin-measure-trigger-icon {
+  flex: 0 0 auto;
+}
+
+.vv-twin-measure-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .vv-twin-measure {
   position: absolute;
@@ -106,16 +170,13 @@
 
 .vv-twin-measure-panel {
   position: absolute;
-  top: calc(18px + env(safe-area-inset-top));
-  left: 50%;
-  transform: translateX(-50%);
+  right: calc(18px + env(safe-area-inset-right));
+  bottom: calc(18px + env(safe-area-inset-bottom));
   pointer-events: auto;
-  /* Both flanks reserved, not a blind cap: 280px each side clears the node
-   * label (left, grows with the venue name) and the mode control plus its
-   * inset (right). Below ~840px of stage the panel shrinks toward them rather
-   * than sliding underneath, which is what the phone breakpoint then takes
-   * over from. */
-  width: min(380px, calc(100vw - 560px));
+  /* The left flank is reserved, not blindly capped: 460px clears the viewer
+   * disclosure (left 18, max-width 26rem = 416px) at any stage width, so the
+   * panel shrinks toward it rather than sliding over the claim-safety line. */
+  width: min(380px, calc(100vw - 460px));
   padding: 11px 14px 12px;
   border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
   border-radius: 10px;
@@ -218,42 +279,16 @@
  * (quick-actions.css) makes the same choice; the halo is the house treatment
  * and restating it locally only creates drift. */
 
+/* The entrance rises from the corner it is anchored to.
+ *
+ * It used to end on `translate(-50%, 0)`, which was the centring half of the
+ * old top-centre slot smuggled into a keyframe. `animation-fill-mode: both`
+ * keeps a keyframe's final transform after it finishes, so that -50% survived
+ * the move and shifted the panel half its own width off its anchor: MEASURED
+ * right edge 1232 on a 1440 stage instead of 1422, and 652 on an 844 stage
+ * instead of 832 — which put it straight on top of the claim-safety line.
+ * A transform in a keyframe is placement, and placement belongs in the rule. */
 @keyframes vv-twin-measure-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -6px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-/* Phone: the top row is already full (label left, mode right), so the panel
- * drops to a band across the bottom, above the quick-action rail (bottom 56,
- * chips ~32px tall → clear at 96) and clear of the disclosure below it. The
- * coach pill shares that airspace, but it is dismissed on first interaction and
- * arming this tool is an interaction, so the two never coexist in practice. */
-@media (max-width: 700px) {
-  .vv-twin-measure-panel {
-    top: auto;
-    bottom: calc(96px + env(safe-area-inset-bottom));
-    left: calc(12px + env(safe-area-inset-left));
-    right: calc(12px + env(safe-area-inset-right));
-    width: auto;
-    transform: none;
-    animation-name: vv-twin-measure-in-flat;
-  }
-
-  .vv-twin-measure-stats {
-    /* Three mono figures side by side wrap mid-number below ~360px; stacked,
-     * each keeps its ± on one line, which is the part that must not break. */
-    grid-template-columns: minmax(0, 1fr);
-    gap: 7px 0;
-  }
-}
-
-@keyframes vv-twin-measure-in-flat {
   from {
     opacity: 0;
     transform: translateY(6px);
@@ -261,6 +296,38 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Phone: 380px of panel in a 390px stage is a sliver of view down each side, so
+ * it becomes a band across the bottom instead. Bottom 96 clears the disclosure
+ * (bottom 10, two lines) with room to spare. The quick rail and the coach pill
+ * both share this airspace on paper and neither does in fact: this tool arms
+ * only in the mesh modes, and TwinViewer renders both of those in walk mode
+ * alone. The trigger follows the Rooms pill up to bottom 108 here, and is
+ * unmounted while the panel is open regardless. */
+@media (max-width: 700px) {
+  .vv-twin-measure-trigger {
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: calc(108px + env(safe-area-inset-bottom));
+    font-size: 0.62rem;
+    padding: 7px 12px;
+  }
+
+  .vv-twin-measure-panel {
+    top: auto;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    left: calc(12px + env(safe-area-inset-left));
+    right: calc(12px + env(safe-area-inset-right));
+    width: auto;
+    transform: none;
+  }
+
+  .vv-twin-measure-stats {
+    /* Three mono figures side by side wrap mid-number below ~360px; stacked,
+     * each keeps its ± on one line, which is the part that must not break. */
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px 0;
   }
 }
 
@@ -276,10 +343,24 @@
  * figures stay at the top where the eye lands, and the note goes nowhere.
  * `overscroll-behavior: contain` keeps a flick inside the panel from chaining
  * to the page behind it, which over a drag-to-look canvas would otherwise read
- * as the view lurching. */
-@media (max-height: 420px) {
+ * as the view lurching.
+ *
+ * The switch is 460px, not 420, so this panel, the Rooms pill and the room
+ * dossier all change shape at ONE height. Three panels with three short-viewport
+ * breakpoints is how the 844×390 collision got in: the model only reads the
+ * breakpoints it knows about.
+ *
+ * The cap subtracts 260 rather than 28 because the utility rail — Enquire,
+ * Share, Fullscreen — ends at y=237 on a 390px stage, and a panel grown up
+ * through it would cover the three controls a visitor reaches for most. That is
+ * the failure this whole slot section exists to prevent. */
+@media (max-height: 460px) {
+  .vv-twin-measure-trigger {
+    bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+
   .vv-twin-measure-panel {
-    max-height: calc(100vh - 28px);
+    max-height: calc(100dvh - 260px);
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -288,11 +369,77 @@
     margin-top: 8px;
     padding-top: 7px;
   }
+
+  /* The way OUT must never be the thing that scrolled off. Capping the panel
+   * and letting it scroll keeps the confidence note, which is right — but it
+   * put Clear and Close measure below the fold, MEASURED at 844×390, leaving
+   * Escape as the only exit on a device with no Escape key. So the actions ride
+   * the bottom of the scroll box: the note scrolls under them, and the button
+   * that puts the tool away is on screen from the first frame to the last.
+   *
+   * The negative offsets cancel the panel's own bottom padding, so the bar sits
+   * flush with the panel edge instead of floating a stripe of view above it. */
+  .vv-twin-measure-actions {
+    position: sticky;
+    bottom: -12px;
+    margin-bottom: -12px;
+    padding-bottom: 12px;
+    /* OPAQUE, not the panel's own 0.78 — and not 0.94 either, which was tried
+     * and MEASURED: the note read straight through it, so the bar looked like a
+     * rendering fault rather than a toolbar. A strip a sentence shows through is
+     * worse than no strip. */
+    background: rgb(7, 16, 15);
+  }
+
+  /* One row, not two. At 0.72rem the three buttons total ~449px and wrap, which
+   * on a 127px-tall panel leaves the note nowhere to be. The type drops to the
+   * same 0.62rem the phone chips already use. */
+  .vv-twin-measure-button {
+    font-size: 0.62rem;
+    padding: 6px 10px;
+  }
 }
 
-@media (prefers-reduced-motion: reduce) {
+/* Landscape phone proper. The phone band above runs the full width at bottom 96,
+ * and on a 375px-tall stage that band's top edge lands at 164 — straight through
+ * the utility rail, which ends at 237. There is no full-width band that fits:
+ * the rail eats the top 237 and the disclosure the bottom 58, leaving 80px.
+ *
+ * So the panel returns to the right column and uses the whole height beneath the
+ * rail. `100vw - 451px` is the disclosure's own footprint (left 18 + max-width
+ * 26rem = 416, plus a 17px gap) — the claim-safety line is the one thing on this
+ * screen that may never be covered, so it sets the width rather than being
+ * cleared by a guess.
+ *
+ * min-width 620 is the honest floor: below it `100vw - 451px` is under 169px and
+ * a panel that narrow wraps its own figures. Between 480 and 620 of width on a
+ * short screen this tool keeps the phone band and WILL cross the utility rail.
+ * That is stated, not hidden — see the handoff. */
+@media (max-height: 460px) and (min-width: 620px) {
   .vv-twin-measure-panel {
+    left: auto;
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: calc(18px + env(safe-area-inset-bottom));
+    width: min(400px, calc(100vw - 451px));
+  }
+}
+
+/* Reduced motion: present or absent, never on the way — and the final state
+ * immediately, not a shorter version of the same entrance. The trigger is
+ * included because it is a pill with a hover transition and a press scale, and a
+ * control whose motion the preference does not reach is the preference ignored
+ * on the one element a visitor touches most. */
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-measure-panel,
+  .vv-twin-measure-trigger {
     animation: none;
+    transition: none;
+    transform: none;
+  }
+
+  .vv-twin-measure-trigger:active {
+    transform: none;
   }
 
   .vv-twin-measure-button {

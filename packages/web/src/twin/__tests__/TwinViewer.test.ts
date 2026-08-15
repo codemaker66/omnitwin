@@ -1,4 +1,14 @@
 import { describe, expect, it } from "vitest";
+import {
+  BoxGeometry,
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  PerspectiveCamera,
+  Plane,
+  Scene,
+  Vector3,
+} from "three";
 import type { TwinScanNode } from "@omnitwin/types";
 import { DOLLHOUSE_DOT_RADIUS_M } from "../DollhouseStage.js";
 import {
@@ -7,6 +17,7 @@ import {
   TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M,
   dollhouseCutawayInsetForVenue,
   lowerFloorSectionMinimumY,
+  measurePickFrom,
   shimmerPhaseAfterTier,
   type TwinShimmerPhase,
 } from "../TwinViewer.js";
@@ -109,5 +120,101 @@ describe("travel fov breath", () => {
 describe("shimmer fade window", () => {
   it("outlives the 400 ms CSS fade so the element never pops off mid-fade", () => {
     expect(SHIMMER_FADE_MS).toBeGreaterThanOrEqual(400);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// THE MEASURE PICK.
+//
+// The one branch of this feature a headless suite can genuinely own. happy-dom
+// has no WebGL, so nothing here can prove that a click on a real wall returns a
+// sensible metre figure — that is proved by looking, and it was. What CAN be
+// proved without a renderer is the arithmetic of the pick, because three's
+// Raycaster needs no GL context at all: it is geometry.
+//
+// The branch that matters is the clipping filter. Dollhouse mode slices the
+// building open with clipping planes so the visitor can see inside, and clipping
+// is a RASTER operation — the raycaster knows nothing about it. Without the
+// filter the nearest hit is routinely the roof the visitor cannot see, so the
+// tool would silently measure to a surface that is not on screen. That is the
+// exact class of failure a measuring tool cannot have, and it is invisible in a
+// screenshot, so it is pinned here.
+// -----------------------------------------------------------------------------
+
+/** A unit box on the −Z axis, `distance` metres in front of a camera at the
+ *  origin, with optional clipping planes on its material.
+ *
+ *  Deliberately one metre across, not four: at 75° of fov a box 2 m away spans
+ *  ndc ±0.99 once it is much wider than that, and the "clicks past the
+ *  building" case below would then still hit it. A test that cannot miss cannot
+ *  prove a miss is handled. */
+function measureBox(distance: number, clippingPlanes: Plane[] | null): Mesh {
+  const material = new MeshBasicMaterial();
+  material.clippingPlanes = clippingPlanes;
+  const mesh = new Mesh(new BoxGeometry(1, 1, 1), material);
+  mesh.position.set(0, 0, -distance);
+  return mesh;
+}
+
+/** A scene shaped like the one DollhouseStage builds: the real geometry under a
+ *  group named `twin-mesh-root`, which is the only thing the pick will look at. */
+function measureScene(...meshes: readonly Mesh[]): Scene {
+  const scene = new Scene();
+  const root = new Group();
+  root.name = "twin-mesh-root";
+  for (const mesh of meshes) {
+    root.add(mesh);
+  }
+  scene.add(root);
+  scene.updateMatrixWorld(true);
+  return scene;
+}
+
+function measureCamera(): PerspectiveCamera {
+  const camera = new PerspectiveCamera(75, 1, 0.1, 200);
+  camera.position.set(0, 0, 0);
+  camera.lookAt(0, 0, -1);
+  camera.updateMatrixWorld(true);
+  return camera;
+}
+
+describe("measurePickFrom", () => {
+  it("returns the nearest surface the ray meets", () => {
+    const scene = measureScene(measureBox(2, null), measureBox(6, null));
+    const point = measurePickFrom(scene, measureCamera(), 0, 0);
+    expect(point).not.toBeNull();
+    // The near box's front face: centre −2, half-depth 0.5.
+    expect(point?.[2]).toBeCloseTo(-1.5, 5);
+  });
+
+  it("skips a surface the cutaway has clipped away, and takes the one behind it", () => {
+    // The plane keeps everything further than 4 m and discards the near box —
+    // exactly what the dollhouse's roof slice does to the ceiling above you.
+    const slice = new Plane(new Vector3(0, 0, -1), -4);
+    const scene = measureScene(measureBox(2, [slice]), measureBox(6, null));
+    const point = measurePickFrom(scene, measureCamera(), 0, 0);
+    expect(point).not.toBeNull();
+    // The FAR box's front face — the near one is not on screen, so it is not a
+    // legitimate answer even though the ray reaches it first.
+    expect(point?.[2]).toBeCloseTo(-5.5, 5);
+  });
+
+  it("answers null when every candidate is clipped, rather than measuring to a ghost", () => {
+    const slice = new Plane(new Vector3(0, 0, -1), -4);
+    const scene = measureScene(measureBox(2, [slice]));
+    expect(measurePickFrom(scene, measureCamera(), 0, 0)).toBeNull();
+  });
+
+  it("answers null before the mesh has mounted, which is most of a page load", () => {
+    // The glb arrives through Suspense inside a component TwinViewer does not
+    // own. "No geometry yet" must read as "take no pick", never as a throw over
+    // a visitor's view or a point at the world origin.
+    expect(measurePickFrom(new Scene(), measureCamera(), 0, 0)).toBeNull();
+  });
+
+  it("answers null when the visitor clicks past the building", () => {
+    const scene = measureScene(measureBox(2, null));
+    // Hard right of frame: the ray leaves the 4×4 box entirely.
+    expect(measurePickFrom(scene, measureCamera(), 0.99, 0)).toBeNull();
   });
 });
