@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { Configuration, PlacedObject } from "../../api/configurations.js";
 import { beginActionLogForConfig, useEditorStore } from "../editor-store.js";
 import { useActionLogStore } from "../action-log-store.js";
 import { useSelectionStore } from "../selection-store.js";
@@ -72,22 +73,22 @@ function twoGestures(): void {
   store().addObject(TABLE_ID, 3, 0, 4);
 }
 
-interface PlacedRow {
-  readonly id: string;
-  readonly configurationId: string;
-  readonly assetDefinitionId: string;
-  readonly positionX: string;
-  readonly positionY: string;
-  readonly positionZ: string;
-  readonly rotationX: string;
-  readonly rotationY: string;
-  readonly rotationZ: string;
-  readonly scale: string;
-  readonly sortOrder: number;
-  readonly metadata: Record<string, unknown> | null;
-}
+const SPACE_ID = "33333333-3333-4333-8333-333333333333";
 
-function placed(id: string, sortOrder: number): PlacedRow {
+/** Typed against the api module's own response types, so the mocks cannot
+ *  drift from the contract the store actually parses — and so neither
+ *  fixture needs a cast (`as unknown as` is banned repo-wide). */
+const PUBLIC_DRAFT: Configuration = {
+  id: "22222222-2222-4222-8222-222222222222",
+  spaceId: SPACE_ID,
+  venueId: "44444444-4444-4444-8444-444444444444",
+  userId: null,
+  name: "Guest draft",
+  isPublicPreview: true,
+  revision: 1,
+};
+
+function placed(id: string, sortOrder: number): PlacedObject {
   return {
     id,
     configurationId: "11111111-1111-4111-8111-111111111111",
@@ -139,15 +140,9 @@ describe("the recorder survives every reset-to-empty", () => {
   it("keeps recording after createPublicConfig() opens a fresh draft", async () => {
     twoGestures();
 
-    vi.mocked(configApi.createPublicConfig).mockResolvedValue({
-      id: "22222222-2222-4222-8222-222222222222",
-      spaceId: "33333333-3333-4333-8333-333333333333",
-      venueId: "44444444-4444-4444-8444-444444444444",
-      revision: 1,
-      isPublicPreview: true,
-    } as unknown as Awaited<ReturnType<typeof configApi.createPublicConfig>>);
+    vi.mocked(configApi.createPublicConfig).mockResolvedValue(PUBLIC_DRAFT);
 
-    await store().createPublicConfig("33333333-3333-4333-8333-333333333333");
+    await store().createPublicConfig(SPACE_ID);
     const atBoundary = loggedCount();
 
     twoGestures();
@@ -169,7 +164,7 @@ describe("the recorder survives every reset-to-empty", () => {
         placed("77777777-7777-4777-8777-777777777777", 2),
       ],
       revision: 2,
-    } as unknown as Awaited<ReturnType<typeof configApi.authBatchSave>>);
+    });
 
     await store().saveToServer(true);
     expect(store().history.past).toHaveLength(0); // the timeline was cleared

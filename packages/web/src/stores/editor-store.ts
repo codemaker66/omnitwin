@@ -533,6 +533,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         history: emptyHistory<EditorObject>(),
       });
 
+      // A fresh public draft is a config boundary exactly like
+      // loadConfiguration's: the timeline above is empty, so gesture seqs
+      // restart at 1 and the emitter's seal cursor must restart with them or
+      // every following gesture is silently dropped. It also re-scopes the
+      // log to the new configuration — without that, edits to this draft
+      // would append under the previous config's id.
+      beginActionLogForConfig(config.id);
+
       // Load space data for room geometry rendering.
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
@@ -704,6 +712,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         lastSavedAt: new Date(),
         saveConflict: null,
       });
+      // Same configuration, so the log's scope is unchanged and its unsent
+      // tail must survive to be flushed below — but an unaligned save just
+      // installed an EMPTY timeline, restarting gesture seqs at 1. Reset the
+      // seal cursor alone, or the recorder goes deaf for the rest of the
+      // session. Only on the unaligned branch: remapHistoryIds preserves
+      // seqs, so resetting there would re-emit sealed gestures as duplicates.
+      if (!aligned) actionEmitter.reset();
       // G4 slice 3: the save boundary ships the log's unsent tail, anchored
       // to the revision this save produced. Auth path only — the ingest
       // endpoint is authenticated, and public-preview planning stays local.
@@ -745,6 +760,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     // Preserve the scene ref — reset clears editor data but the Three.js
     // scene is still alive in the Canvas. SceneProvider manages the ref.
     set({ ...INITIAL_STATE, scene: get().scene });
+    // INITIAL_STATE carries emptyHistory(), so gesture seqs restart at 1.
+    // Without this the emitter's seal cursor stays at the old high-water
+    // mark and silently drops every gesture that follows (action-log.ts:
+    // `if (entry.seq <= lastSealedSeq) return`).
+    actionEmitter.reset();
   },
 
   replaceObjectsFromScene: (objects) => {
