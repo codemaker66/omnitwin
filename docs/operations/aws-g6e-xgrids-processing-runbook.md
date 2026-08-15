@@ -3,10 +3,21 @@
 Status: operator runbook. This document does not prove that any room asset has
 been processed, reviewed, signed, or loaded in Venviewer.
 
-Last updated: 2026-06-15
+Last updated: 2026-08-15
 
 Latest dry-run record:
 `docs/operations/aws-g6e-xgrids-dry-run-2026-06-15.md`.
+
+> **Export amendment (2026-08-15).** The export sections below were rewritten
+> against the Reception Room forensics
+> (`docs/reports/reception-room-hd-root-investigation.md`,
+> `docs/reports/reception-room-hd-evidence.json`). The previous instruction —
+> export one "raw" and one "processed" PLY plus a preview and a metadata JSON —
+> dropped the trajectory sidecars entirely, said nothing about spherical-harmonic
+> degree, and said nothing about the LCC2 level-of-detail tree. Those three
+> omissions are the ones that actually cost quality and recoverability. Seven
+> rooms remain unprocessed; read "Export Profile" and "Output Naming" before
+> building any of them.
 
 ## Purpose
 
@@ -142,43 +153,169 @@ r2:venviewer-training-inputs/trades-hall/rooms/<room_slug>/raw/
 Output prefixes:
 
 ```text
+r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/master/
 r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/runtime/
 r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/xgrids/
 r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/runpod/
 ```
 
-Use `runtime/` for the primary processed splat intended for internal runtime
-loading. Use `xgrids/` for XGRIDS/Lixel processing exports, previews, metadata,
-and raw exported scene artifacts.
+Use `master/` for the unquantized PLY master, trajectory sidecars, point cloud
+and build report — the lineage root that every runtime variant derives from.
+Use `runtime/` for the SOG and SPZ runtime exports actually mounted by a runtime
+package. Use `xgrids/` for the LCC2 container, mesh, previews, metadata, and
+other processing artifacts.
+
+## Export Profile
+
+Two choices upstream of the file-format list set the ceiling on everything
+downstream. Both are unrecoverable without another multi-hour rebuild.
+
+### 1. Build at spherical-harmonic degree 3
+
+Select the reconstruction profile that emits **SH degree 3**. In our records
+that profile is labelled *Quality*; the profiles labelled *Mobile* and
+*Portable* emitted DC-only **SH degree 0**.
+
+Do not trust the profile label. Read the actual `shDegree` out of the build
+report and record it before uploading anything.
+
+SH0 discards all view-dependent colour — precisely the property the splat layer
+exists to carry under D-005a (chandeliers, glazing, polished floorboards, dark
+timber). The conversion is one-way: SH3 decimates to SH0 with `splat-transform`
+at any later date, but SH0 can never be promoted back to SH3 without rebuilding
+from the capture.
+
+Reception Room is the cautionary record. Its runtime pointer moved from a
+~2.00M-Gaussian Quality/SH3 reconstruction to a ~1.98M-Gaussian Mobile/SH0 one
+as an unvalidated source substitution, and no evidence establishes which is
+visually better — only that Quality carries the greater recorded appearance
+capacity. See `docs/reports/reception-room-hd-root-investigation.md`.
+
+### 2. Export the whole LOD pyramid; mount only the leaf frontier
+
+LCC2 emits a **replacement** level-of-detail tree. Parents and children are
+alternatives, not additive layers.
+
+Export every level — you need the pyramid. But record which chunks constitute
+the **leaf frontier**, because mounting all levels simultaneously is the single
+largest measured quality fault in our estate, and it is silent:
+
+| Step | PSNR vs reference | SSIM |
+|---|---|---|
+| PLY master → valid leaf frontier (SOG or SPZ) | 41.4–43.8 dB | 0.958–0.972 |
+| Valid leaf frontier → all levels mounted at once | 27.7–30.2 dB | 0.912–0.931 |
+| Valid leaf frontier → coarse root only | 34.0–36.3 dB | 0.914–0.935 |
+
+Reception Room mounted all seven chunks and rendered 3,455,732 Gaussians where
+its valid four-member leaf frontier holds 1,978,258 — visibly doubled and
+smeared edges. Read the table as agreement, not loss: the codec step operators
+worry about lands at ~42 dB, which is near-identical, while the hierarchy
+misread drops 12–14 dB below it.
+
+Record the leaf-frontier membership in the metadata JSON at export time. It is
+cheap to write down at the workstation and expensive to reconstruct later.
+
+### 3. Codec choice is not worth deliberation
+
+SOG and SPZ from the same source agree at 42.0–44.0 dB PSNR / 0.958–0.970 SSIM —
+visually indistinguishable at the tested framings. Export both when the dialog
+allows it; they are small. Pin the **SPZ format version** per artifact — current
+tooling emits format v4 — because the version is not recoverable by inspection
+alone.
 
 ## Output Naming
 
-Use these file names exactly, replacing `<room_slug>`:
+Preserve LCC2 export directories exactly as emitted. Chunk names (`0_0.sog`,
+`0_1_0.sog`, `env.sog`, …) are referenced by the LCC2 manifest; renaming them
+breaks the hierarchy the manifest describes. Name the **directory**, not the
+files inside it.
 
 ```text
-<room_slug>_xgrids_portalcam_scene_raw.ply
-<room_slug>_xgrids_portalcam_scene_processed.ply
+<room_slug>_xgrids_portalcam_master_sh3/      PLY LOD pyramid, unquantized
+  <room_slug>_xgrids_portalcam_master_sh3_coarse.ply
+  <room_slug>_xgrids_portalcam_master_sh3_medium.ply
+  <room_slug>_xgrids_portalcam_master_sh3_fine.ply
+  <room_slug>_xgrids_portalcam_master_sh3_environment.ply
+<room_slug>_xgrids_portalcam_runtime_sog/     LCC2 SOG export, as emitted
+<room_slug>_xgrids_portalcam_runtime_spz/     LCC2 SPZ export, as emitted
+```
+
+Match the pyramid level names to whatever the export actually emits — Reception
+Room's were coarse / medium / fine plus a separate environment chunk. If the
+build emits a different set, record the real names rather than forcing them into
+these three.
+
+Standalone sidecars use exact names, replacing `<room_slug>`:
+
+```text
+<room_slug>_xgrids_portalcam_poses.json          LCC2 export trajectory (~5 Hz)
+<room_slug>_xgrids_portalcam_poses.csv           project_data trajectory (~10 Hz)
+<room_slug>_xgrids_portalcam_point_cloud.ply
+<room_slug>_xgrids_portalcam_mesh.obj
+<room_slug>_xgrids_portalcam_build_report.json
 <room_slug>_xgrids_portalcam_preview.mp4
 <room_slug>_xgrids_portalcam_metadata.json
 ```
 
-Exact output paths:
+### Export checklist
+
+Tick every row. The set is cheap; the rebuild is not.
+
+| Artifact | Required | Why it cannot be skipped |
+| --- | --- | --- |
+| PLY master, SH3, full LOD pyramid | **Yes** | The unquantized master. Canonical package gate 8 requires every runtime variant to trace to one, and D-013 permits exactly one generation of lossy encoding from it. Without this the room can never be re-encoded, only re-captured. |
+| SOG runtime export | Yes | Streamed/LOD web delivery format per the canonical venue package. |
+| SPZ runtime export | Yes | Compact interchange. Record the format version. |
+| `poses.json` (~5 Hz) | **Yes** | Trajectory from the LCC2 export. Not regenerable — see below. |
+| `poses.csv` (~10 Hz) | **Yes** | Higher-rate trajectory from `project_data`. Not regenerable — see below. |
+| `point_cloud.ply` | Yes | Metric anchoring and ICP against the E57 lane. |
+| Mesh (OBJ) | Yes | Structural and collision comparator only — see the caveat below. |
+| Build report | **Yes** | Sole record of `shDegree`, quality level, `antialias`, and HD image count. Spark's blur compensation must be matched to the `antialias` setting; Reception Room's was `false`. |
+| Preview MP4 | Optional | QA convenience. |
+| 3D Tiles / USD | Skip | D-013 pins glTF for delivery and USD as a mirror. Nothing in the runtime consumes them today. Take them only if free. |
+
+The trajectory sidecars are the ones operators skip, and they are the ones that
+cannot be regenerated. Raw PortalCam frames live inside the proprietary `.xbin`
+(XBAG) container and the calibration inside an encrypted `lixel.zip`; no
+authorized open path to either is established. Poses are the only capture-side
+geometry that survives that wall, they are kilobytes, and every future
+independent registration depends on them.
+
+**Mesh caveat.** The Reception Room "SPZ with attached mesh" export produced a
+splat payload byte-identical to the ordinary SPZ package, and a mesh of 10,209
+vertices / 19,747 faces, XYZ-only. It is a structural comparator, not a
+high-detail visual layer, and it is not geometry authority — that stays with the
+E57 lane under D-024.
+
+**If PLY export is not offered**, the licence tier is below Basic. Do not
+proceed on the assumption that the LCC2 runtime export is a substitute: it is a
+lossy delivery artifact, not a master. Resolve the tier, or derive the PLY from
+`.lcc` via `splat-transform` (MIT, reads LCC and LCC2 natively) and record that
+derivation in the metadata as the master's provenance.
+
+### Rights constraint
+
+LCC and LCC2 are publicly specified but carry a custom non-OSI licence with
+attribution, redistribution and derivative conditions, including a restriction
+on using the data organization format to train or fine-tune AI competing with
+XGRIDS. Exported PLY, mesh, SPZ, SOG and poses are usable under verified
+customer and source rights; the LCC2 container itself is **provenance, not a
+master**. Do not train or refine from LCC/LCC2, and do not bundle vendor SDKs,
+without written XGRIDS permission and counsel. See
+`docs/reports/omnitwin-foundry-splat-quality-independence-corrections.md` §2.
+
+### Output paths
 
 ```text
-r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/xgrids/<room_slug>_xgrids_portalcam_scene_raw.ply
-r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/runtime/<room_slug>_xgrids_portalcam_scene_processed.ply
-r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/xgrids/<room_slug>_xgrids_portalcam_preview.mp4
-r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/xgrids/<room_slug>_xgrids_portalcam_metadata.json
+r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/master/    unquantized PLY master + trajectory + point cloud + build report
+r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/runtime/   SOG and SPZ runtime exports
+r2:venviewer-training-outputs/trades-hall/rooms/<room_slug>/xgrids/    LCC2 container, mesh, preview, logs
 ```
 
-Room-specific paths for the four captured rooms:
-
-```text
-r2:venviewer-training-outputs/trades-hall/rooms/robert-adam-room/runtime/robert-adam-room_xgrids_portalcam_scene_processed.ply
-r2:venviewer-training-outputs/trades-hall/rooms/saloon/runtime/saloon_xgrids_portalcam_scene_processed.ply
-r2:venviewer-training-outputs/trades-hall/rooms/reception-room/runtime/reception-room_xgrids_portalcam_scene_processed.ply
-r2:venviewer-training-outputs/trades-hall/rooms/grand-hall/runtime/grand-hall_xgrids_portalcam_scene_processed.ply
-```
+The `master/` prefix is new as of this amendment. Assets already uploaded under
+the older layout — where a processed PLY sat in `runtime/` — stay where they
+are; this applies to new exports. Do not retro-move registered objects, because
+`r2Key` values are recorded on existing AssetVersion rows.
 
 Room-specific runtime prefixes for external splats that already exist outside
 the repo:
@@ -220,16 +357,25 @@ For each room:
 7. Copy/download the room capture into the input directory.
 8. Confirm source capture byte size and, if available, checksum.
 9. Create clean work/output/log directories for that room.
-10. Process only that room.
-11. Export the highest-quality splat the software can produce for internal runtime inspection.
-12. Export any mesh, point cloud, preview video, and metadata the software can produce.
-13. Save logs and screenshots that show software version, export settings, and success/failure state.
-14. Compute SHA-256 for each exported file.
-15. Upload outputs to the exact R2 paths in this runbook.
-16. Verify each uploaded object exists and has the expected byte size.
-17. Register AssetVersion records only after R2 key, SHA-256, file size, and file extension are known.
-18. Register or update the RuntimePackage only after the processed splat AssetVersion exists.
-19. Stop or terminate the instance immediately after processing and upload verification.
+10. Select the SH degree 3 reconstruction profile. Process only that room.
+11. Read `shDegree` out of the build report and confirm it is 3 before exporting.
+    A profile label is not evidence. If it reads 0, rebuild — do not export an
+    SH0 reconstruction as a room's master.
+12. Export the full set in the export checklist: PLY master with its complete
+    LOD pyramid, SOG runtime, SPZ runtime, `poses.json`, `poses.csv`, point
+    cloud, mesh, and build report.
+13. Record in the metadata JSON, at the workstation while the project is open:
+    the LCC2 leaf-frontier chunk membership, `shDegree`, the `antialias`
+    setting, the SPZ format version, and the software version. This is the
+    step most likely to be skipped and least likely to be reconstructable.
+14. Save logs and screenshots showing software version, export settings, and
+    success/failure state.
+15. Compute SHA-256 for each exported file.
+16. Upload outputs to the exact R2 paths in this runbook.
+17. Verify each uploaded object exists and has the expected byte size.
+18. Register AssetVersion records only after R2 key, SHA-256, file size, and file extension are known.
+19. Register or update the RuntimePackage only after the master and runtime AssetVersions exist.
+20. Stop or terminate the instance immediately after processing and upload verification.
 
 ## Safety Rules
 
@@ -242,6 +388,11 @@ For each room:
 - Keep R2 outputs private or signed/internal unless a separate release review approves exposure.
 - Do not claim a room is processed until the exported file exists, has a logged SHA-256, is uploaded to R2, and has been visually checked.
 - Do not mark T-091 or T-091A done from this workflow alone.
+- Never accept an SH degree 0 reconstruction as a room's master. It is a one-way loss.
+- Never treat an LCC2 runtime export as a master. It is a lossy delivery artifact.
+- Never derive a runtime variant from another runtime variant. Both descend from the PLY master, one generation only.
+- Never register a full LOD pyramid as the runtime set. Register the leaf frontier.
+- Never skip the trajectory sidecars. Raw frames and calibration are behind a proprietary wall; poses are the only capture-side geometry that survives it.
 
 ## Post-processing Registration Steps
 
@@ -255,7 +406,7 @@ These examples use placeholders:
 - `<ROOM_SLUG>`: one of `grand-hall`, `reception-room`, `robert-adam-room`,
   `saloon`, `lady-convenors-room`, `north-gallery`, or `south-gallery`
 - `<CAPTURE_SESSION_ID>`: response id from the capture-session registration
-- `<ASSET_VERSION_ID>`: response id from the processed splat registration
+- `<ASSET_VERSION_ID>`: response id from a leaf-frontier runtime splat registration
 - `<SHA256>`: actual 64-character lowercase SHA-256
 - `<SIZE_BYTES>`: actual file size in bytes
 
@@ -278,7 +429,11 @@ curl -X POST "<API_BASE>/admin/assets/capture-session" \
   }'
 ```
 
-### 2. Register The Processed Runtime Splat
+### 2. Register The Master, Then The Runtime Frontier
+
+Register the unquantized PLY master first. It is the lineage root for every
+runtime variant, and it is `staged`, not `usable` — it is archival, never
+served.
 
 ```bash
 curl -X POST "<API_BASE>/admin/assets/register-version" \
@@ -290,17 +445,48 @@ curl -X POST "<API_BASE>/admin/assets/register-version" \
     "captureSessionId": "<CAPTURE_SESSION_ID>",
     "assetKind": "splat",
     "sourceType": "xgrids",
-    "fileName": "<ROOM_SLUG>_xgrids_portalcam_scene_processed.ply",
+    "fileName": "<ROOM_SLUG>_xgrids_portalcam_master_sh3_fine.ply",
     "fileExt": ".ply",
-    "r2Key": "r2:venviewer-training-outputs/trades-hall/rooms/<ROOM_SLUG>/runtime/<ROOM_SLUG>_xgrids_portalcam_scene_processed.ply",
+    "r2Key": "r2:venviewer-training-outputs/trades-hall/rooms/<ROOM_SLUG>/master/<ROOM_SLUG>_xgrids_portalcam_master_sh3_fine.ply",
+    "sha256": "<SHA256>",
+    "sizeBytes": <SIZE_BYTES>,
+    "mimeType": "application/octet-stream",
+    "evidenceStatus": "unverified",
+    "runtimeStatus": "staged",
+    "notes": "Unquantized SH3 PLY master. Archival lineage root; never served. shDegree 3, antialias <ANTIALIAS>, LCC Studio <VERSION>."
+  }'
+```
+
+Then register **each chunk of the leaf frontier** as its own runtime asset.
+Register the frontier only — not every level of the pyramid — because the
+registered set is what a runtime package will mount, and mounting parents
+alongside children is the 12–14 dB fault described under "Export Profile".
+
+```bash
+curl -X POST "<API_BASE>/admin/assets/register-version" \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "venueSlug": "trades-hall",
+    "roomSlug": "<ROOM_SLUG>",
+    "captureSessionId": "<CAPTURE_SESSION_ID>",
+    "assetKind": "splat",
+    "sourceType": "xgrids",
+    "fileName": "<LCC2_CHUNK_NAME>.spz",
+    "fileExt": ".spz",
+    "r2Key": "r2:venviewer-training-outputs/trades-hall/rooms/<ROOM_SLUG>/runtime/<ROOM_SLUG>_xgrids_portalcam_runtime_spz/<LCC2_CHUNK_NAME>.spz",
     "sha256": "<SHA256>",
     "sizeBytes": <SIZE_BYTES>,
     "mimeType": "application/octet-stream",
     "evidenceStatus": "unverified",
     "runtimeStatus": "usable",
-    "notes": "XGRIDS PortalCam/Lixel export. Runtime asset loaded only after internal visual check; not yet signed."
+    "notes": "Leaf-frontier member <N> of <TOTAL>. Derived in one generation from the SH3 PLY master. SPZ format v<VERSION>. Loaded only after internal visual check; not yet signed."
   }'
 ```
+
+Repeat with `".sog"` for the SOG frontier. Never derive one runtime variant from
+another — both descend from the PLY master, one generation only (D-013, and the
+canonical package's "never transcode lossy SPZ/SOG into another lossy master").
 
 For Lady Convenor's Room, North Gallery, or South Gallery, use the same endpoint
 after the external splat is copied into R2. Set `captureSessionId` only when the
@@ -357,6 +543,27 @@ curl -X POST "<API_BASE>/admin/assets/register-version" \
   }'
 ```
 
+Register the rest of the support set the same way, all `staged`, using the
+`assetKind` and `fileExt` pairs the schema actually accepts
+(`packages/types/src/asset-version.ts`):
+
+| Artifact | `assetKind` | `fileExt` |
+| --- | --- | --- |
+| `poses.json` | `manifest` | `.json` |
+| Build report | `manifest` | `.json` |
+| Metadata (incl. leaf-frontier membership) | `manifest` | `.json` |
+| LCC2 container | `manifest` | `.lcc2` |
+| `point_cloud.ply` | `point_cloud` | `.ply` |
+| Mesh | `mesh` | `.obj` |
+| Preview | `preview` | `.mp4` |
+
+**`poses.csv` cannot be registered directly.** `.csv` is absent from
+`RUNTIME_FILE_EXTENSIONS`, and `assetKindAllowsExtension` rejects the request at
+the boundary. Until the whitelist is extended, upload the CSV to R2 alongside
+the rest and register it zipped as `assetKind: "other"`, `fileExt: ".zip"`,
+naming the enclosed file in `notes`. Do not silently drop it — the 10 Hz
+trajectory is the higher-rate pose source and is not regenerable.
+
 ### 4. Register Or Update The Runtime Package
 
 Start with `draft`. Move to `internal_ready` only after the internal dev route
@@ -387,7 +594,7 @@ curl -X POST "<API_BASE>/admin/assets/register-runtime-package" \
         "pointCloudAssetVersionId": null
       },
       "generatedAt": "2026-06-06T00:00:00.000Z",
-      "notes": "Internal runtime package for XGRIDS PortalCam processed splat. Human review required."
+      "notes": "Internal runtime package for the XGRIDS PortalCam leaf-frontier runtime splat. Human review required."
     },
     "evidenceStatus": "unverified",
     "runtimeStatus": "draft"
