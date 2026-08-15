@@ -41,7 +41,17 @@ web-structure.txt
 tmp/
 .playwright-cli/
 .playwright-mcp/
-artifacts/
+artifacts/*
+# ...except the 17 part manifests the generated-furniture contract test reads
+# (artifacts/img2threejs/<model>/parts.json, ~100KB total). They were excluded
+# along with 71MB of heavy intermediates, so that suite passed locally and could
+# only ever fail on a fresh clone. Git does not descend into an excluded
+# directory, so every level is re-included before the negation becomes reachable.
+!artifacts/img2threejs/
+artifacts/img2threejs/*
+!artifacts/img2threejs/*/
+artifacts/img2threejs/*/*
+!artifacts/img2threejs/*/parts.json
 *.log
 /*.jpeg
 

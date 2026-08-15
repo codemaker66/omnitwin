@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "laptop",
+  "parts": [
+    {
+      "name": "base-assembly",
+      "kind": "part",
+      "module": "base-assembly",
+      "triangles": 9948
+    },
+    {
+      "name": "base-shell",
+      "kind": "part",
+      "module": "base-shell",
+      "triangles": 300
+    },
+    {
+      "name": "bezel",
+      "kind": "part",
+      "module": "display",
+      "triangles": 300
+    },
+    {
+      "name": "display",
+      "kind": "assembly",
+      "module": "display",
+      "triangles": 996,
+      "members": [
+        "bezel",
+        "camera-aperture",
+        "display-shell",
+        "screen-surface"
+      ]
+    },
+    {
+      "name": "display-assembly",
+      "kind": "part",
+      "module": "display-assembly",
+      "triangles": 996
+    },
+    {
+      "name": "display-shell",
+      "kind": "part",
+      "module": "display",
+      "triangles": 300
+    },
+    {
+      "name": "foot-system",
+      "kind": "part",
+      "module": "base-shell",
+      "triangles": 432
+    },
+    {
+      "name": "hinge-system",
+      "kind": "part",
+      "module": "hinges",
+      "triangles": 256
+    },
+    {
+      "name": "hinges",
+      "kind": "assembly",
+      "module": "hinges",
+      "triangles": 256,
+      "members": [
+        "hinge-system"
+      ]
+    },
+    {
+      "name": "input-deck",
+      "kind": "assembly",
+      "module": "input-deck",
+      "triangles": 8184,
+      "members": [
+        "keyboard-key-system",
+        "trackpad"
+      ]
+    },
+    {
+      "name": "keyboard-bed",
+      "kind": "part",
+      "module": "keyboard-bed",
+      "triangles": 8184
+    },
+    {
+      "name": "keyboard-key-system",
+      "kind": "part",
+      "module": "input-deck",
+      "triangles": 7884
+    },
+    {
+      "name": "left-port-system",
+      "kind": "part",
+      "module": "base-shell",
+      "triangles": 324
+    },
+    {
+      "name": "screen-surface",
+      "kind": "part",
+      "module": "display",
+      "triangles": 300
+    },
+    {
+      "name": "trackpad",
+      "kind": "part",
+      "module": "input-deck",
+      "triangles": 300
+    },
+    {
+      "name": "upper-deck",
+      "kind": "part",
+      "module": "base-shell",
+      "triangles": 300
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 84
+}

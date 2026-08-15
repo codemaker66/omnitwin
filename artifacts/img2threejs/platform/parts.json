@@ -1,0 +1,189 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "platform",
+  "parts": [
+    {
+      "name": "brace-system",
+      "kind": "assembly",
+      "module": "brace-system",
+      "triangles": 240,
+      "members": [
+        "front-left-diagonal-brace",
+        "front-right-diagonal-brace",
+        "rear-left-diagonal-brace",
+        "rear-right-diagonal-brace"
+      ]
+    },
+    {
+      "name": "corner-lock-system",
+      "kind": "assembly",
+      "module": "corner-lock-system",
+      "triangles": 432,
+      "members": [
+        "front-left-upright-corner-lock-detail",
+        "front-left-upright-left-lock-bolt-detail",
+        "front-left-upright-right-lock-bolt-detail",
+        "front-right-upright-corner-lock-detail",
+        "front-right-upright-left-lock-bolt-detail",
+        "front-right-upright-right-lock-bolt-detail",
+        "rear-left-upright-corner-lock-detail",
+        "rear-left-upright-left-lock-bolt-detail",
+        "rear-left-upright-right-lock-bolt-detail",
+        "rear-right-upright-corner-lock-detail",
+        "rear-right-upright-left-lock-bolt-detail",
+        "rear-right-upright-right-lock-bolt-detail"
+      ]
+    },
+    {
+      "name": "deck-assembly",
+      "kind": "assembly",
+      "module": "deck-assembly",
+      "triangles": 72,
+      "members": [
+        "deck-carpet-detail",
+        "deck-panel",
+        "front-edge-trim-detail",
+        "left-edge-trim-detail",
+        "rear-edge-trim-detail",
+        "right-edge-trim-detail"
+      ]
+    },
+    {
+      "name": "deck-panel",
+      "kind": "part",
+      "module": "deck-assembly",
+      "triangles": 72
+    },
+    {
+      "name": "foot-system",
+      "kind": "assembly",
+      "module": "foot-system",
+      "triangles": 48,
+      "members": [
+        "front-left-upright-rubber-foot-detail",
+        "front-right-upright-rubber-foot-detail",
+        "rear-left-upright-rubber-foot-detail",
+        "rear-right-upright-rubber-foot-detail"
+      ]
+    },
+    {
+      "name": "front-left-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 60
+    },
+    {
+      "name": "front-left-upright",
+      "kind": "part",
+      "module": "leg-system",
+      "triangles": 132
+    },
+    {
+      "name": "front-rail",
+      "kind": "part",
+      "module": "perimeter-frame",
+      "triangles": 12
+    },
+    {
+      "name": "front-right-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 60
+    },
+    {
+      "name": "front-right-upright",
+      "kind": "part",
+      "module": "leg-system",
+      "triangles": 132
+    },
+    {
+      "name": "left-rail",
+      "kind": "part",
+      "module": "perimeter-frame",
+      "triangles": 12
+    },
+    {
+      "name": "leg-system",
+      "kind": "assembly",
+      "module": "leg-system",
+      "triangles": 528,
+      "members": [
+        "front-left-upright",
+        "front-right-upright",
+        "rear-left-upright",
+        "rear-right-upright"
+      ]
+    },
+    {
+      "name": "perimeter-frame",
+      "kind": "assembly",
+      "module": "perimeter-frame",
+      "triangles": 84,
+      "members": [
+        "front-rail",
+        "left-rail",
+        "rear-rail",
+        "right-rail",
+        "underframe-crossmember-1",
+        "underframe-crossmember-2",
+        "underframe-crossmember-3"
+      ]
+    },
+    {
+      "name": "rear-left-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 60
+    },
+    {
+      "name": "rear-left-upright",
+      "kind": "part",
+      "module": "leg-system",
+      "triangles": 132
+    },
+    {
+      "name": "rear-rail",
+      "kind": "part",
+      "module": "perimeter-frame",
+      "triangles": 12
+    },
+    {
+      "name": "rear-right-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 60
+    },
+    {
+      "name": "rear-right-upright",
+      "kind": "part",
+      "module": "leg-system",
+      "triangles": 132
+    },
+    {
+      "name": "right-rail",
+      "kind": "part",
+      "module": "perimeter-frame",
+      "triangles": 12
+    },
+    {
+      "name": "underframe-crossmember-1",
+      "kind": "part",
+      "module": "perimeter-frame",
+      "triangles": 12
+    },
+    {
+      "name": "underframe-crossmember-2",
+      "kind": "part",
+      "module": "perimeter-frame",
+      "triangles": 12
+    },
+    {
+      "name": "underframe-crossmember-3",
+      "kind": "part",
+      "module": "perimeter-frame",
+      "triangles": 12
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 25
+}

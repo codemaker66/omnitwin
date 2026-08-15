@@ -1,0 +1,180 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "poseur-table",
+  "parts": [
+    {
+      "name": "arm-east",
+      "kind": "part",
+      "module": "star-base",
+      "triangles": 644
+    },
+    {
+      "name": "arm-north",
+      "kind": "part",
+      "module": "star-base",
+      "triangles": 644
+    },
+    {
+      "name": "arm-south",
+      "kind": "part",
+      "module": "star-base",
+      "triangles": 644
+    },
+    {
+      "name": "arm-west",
+      "kind": "part",
+      "module": "star-base",
+      "triangles": 644
+    },
+    {
+      "name": "central-hub",
+      "kind": "part",
+      "module": "star-base",
+      "triangles": 256
+    },
+    {
+      "name": "foot-pad-east",
+      "kind": "part",
+      "module": "levelling-feet",
+      "triangles": 672
+    },
+    {
+      "name": "foot-pad-north",
+      "kind": "part",
+      "module": "levelling-feet",
+      "triangles": 672
+    },
+    {
+      "name": "foot-pad-south",
+      "kind": "part",
+      "module": "levelling-feet",
+      "triangles": 672
+    },
+    {
+      "name": "foot-pad-west",
+      "kind": "part",
+      "module": "levelling-feet",
+      "triangles": 672
+    },
+    {
+      "name": "foot-stem-east",
+      "kind": "part",
+      "module": "levelling-feet",
+      "triangles": 128
+    },
+    {
+      "name": "foot-stem-north",
+      "kind": "part",
+      "module": "levelling-feet",
+      "triangles": 128
+    },
+    {
+      "name": "foot-stem-south",
+      "kind": "part",
+      "module": "levelling-feet",
+      "triangles": 128
+    },
+    {
+      "name": "foot-stem-west",
+      "kind": "part",
+      "module": "levelling-feet",
+      "triangles": 128
+    },
+    {
+      "name": "levelling-feet",
+      "kind": "assembly",
+      "module": "levelling-feet",
+      "triangles": 3200,
+      "members": [
+        "foot-pad-east",
+        "foot-pad-north",
+        "foot-pad-south",
+        "foot-pad-west",
+        "foot-stem-east",
+        "foot-stem-north",
+        "foot-stem-south",
+        "foot-stem-west"
+      ]
+    },
+    {
+      "name": "lower-collar",
+      "kind": "part",
+      "module": "pedestal",
+      "triangles": 256
+    },
+    {
+      "name": "pedestal",
+      "kind": "assembly",
+      "module": "pedestal",
+      "triangles": 768,
+      "members": [
+        "lower-collar",
+        "pedestal-column",
+        "upper-collar"
+      ]
+    },
+    {
+      "name": "pedestal-column",
+      "kind": "part",
+      "module": "pedestal",
+      "triangles": 256
+    },
+    {
+      "name": "rolled-rim",
+      "kind": "part",
+      "module": "tabletop",
+      "triangles": 3456
+    },
+    {
+      "name": "star-base",
+      "kind": "assembly",
+      "module": "star-base",
+      "triangles": 2832,
+      "members": [
+        "arm-east",
+        "arm-north",
+        "arm-south",
+        "arm-west",
+        "central-hub"
+      ]
+    },
+    {
+      "name": "tabletop",
+      "kind": "assembly",
+      "module": "tabletop",
+      "triangles": 4544,
+      "members": [
+        "rolled-rim",
+        "top-surface",
+        "underplate",
+        "underside-band"
+      ]
+    },
+    {
+      "name": "top-surface",
+      "kind": "part",
+      "module": "tabletop",
+      "triangles": 384
+    },
+    {
+      "name": "underplate",
+      "kind": "part",
+      "module": "tabletop",
+      "triangles": 320
+    },
+    {
+      "name": "underside-band",
+      "kind": "part",
+      "module": "tabletop",
+      "triangles": 384
+    },
+    {
+      "name": "upper-collar",
+      "kind": "part",
+      "module": "pedestal",
+      "triangles": 256
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 0
+}

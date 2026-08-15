@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "microphone",
+  "parts": [
+    {
+      "name": "base-assembly",
+      "kind": "part",
+      "module": "base-assembly",
+      "triangles": 2900
+    },
+    {
+      "name": "capsule",
+      "kind": "assembly",
+      "module": "capsule",
+      "triangles": 2544,
+      "members": [
+        "capsule-barrel",
+        "capsule-rear-collar",
+        "capsule-transition-collar",
+        "grille-face",
+        "grille-perforation-system",
+        "grille-ring"
+      ]
+    },
+    {
+      "name": "capsule-assembly",
+      "kind": "part",
+      "module": "capsule-assembly",
+      "triangles": 2544
+    },
+    {
+      "name": "capsule-barrel",
+      "kind": "part",
+      "module": "capsule",
+      "triangles": 160
+    },
+    {
+      "name": "capsule-rear-collar",
+      "kind": "part",
+      "module": "capsule",
+      "triangles": 112
+    },
+    {
+      "name": "capsule-transition-collar",
+      "kind": "part",
+      "module": "capsule",
+      "triangles": 128
+    },
+    {
+      "name": "controls",
+      "kind": "assembly",
+      "module": "controls",
+      "triangles": 224,
+      "members": [
+        "mute-switch",
+        "status-indicator"
+      ]
+    },
+    {
+      "name": "gooseneck",
+      "kind": "assembly",
+      "module": "gooseneck",
+      "triangles": 10752,
+      "members": [
+        "gooseneck-core",
+        "gooseneck-rib-system"
+      ]
+    },
+    {
+      "name": "gooseneck-assembly",
+      "kind": "part",
+      "module": "gooseneck-assembly",
+      "triangles": 10752
+    },
+    {
+      "name": "gooseneck-core",
+      "kind": "part",
+      "module": "gooseneck",
+      "triangles": 10752
+    },
+    {
+      "name": "gooseneck-rib-system",
+      "kind": "part",
+      "module": "gooseneck",
+      "triangles": 7680
+    },
+    {
+      "name": "grille-face",
+      "kind": "part",
+      "module": "capsule",
+      "triangles": 1344
+    },
+    {
+      "name": "grille-ring",
+      "kind": "part",
+      "module": "capsule",
+      "triangles": 800
+    },
+    {
+      "name": "lower-base-plinth",
+      "kind": "part",
+      "module": "weighted-base",
+      "triangles": 588
+    },
+    {
+      "name": "mute-switch",
+      "kind": "part",
+      "module": "controls",
+      "triangles": 224
+    },
+    {
+      "name": "neck-gland",
+      "kind": "part",
+      "module": "weighted-base",
+      "triangles": 256
+    },
+    {
+      "name": "rubber-foot-system",
+      "kind": "part",
+      "module": "weighted-base",
+      "triangles": 1200
+    },
+    {
+      "name": "upper-base-shell",
+      "kind": "part",
+      "module": "weighted-base",
+      "triangles": 588
+    },
+    {
+      "name": "weighted-base",
+      "kind": "assembly",
+      "module": "weighted-base",
+      "triangles": 2932,
+      "members": [
+        "lower-base-plinth",
+        "neck-gland",
+        "perimeter-seam",
+        "rubber-foot-system",
+        "upper-base-shell"
+      ]
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 3
+}

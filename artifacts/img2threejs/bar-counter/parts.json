@@ -1,0 +1,278 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "bar-counter",
+  "parts": [
+    {
+      "name": "accent-hardware",
+      "kind": "assembly",
+      "module": "accent-hardware",
+      "triangles": 1200,
+      "members": [
+        "guest-left-brass-corner-cap-detail",
+        "guest-right-brass-corner-cap-detail",
+        "staff-left-brass-corner-cap-detail",
+        "staff-right-brass-corner-cap-detail"
+      ]
+    },
+    {
+      "name": "base-plinth",
+      "kind": "assembly",
+      "module": "base-plinth",
+      "triangles": 900,
+      "members": [
+        "lower-plinth",
+        "middle-plinth",
+        "upper-plinth"
+      ]
+    },
+    {
+      "name": "cabinet-shell",
+      "kind": "assembly",
+      "module": "cabinet-shell",
+      "triangles": 948,
+      "members": [
+        "carcass-ceiling",
+        "carcass-floor",
+        "guest-front-backing",
+        "left-return-lower-rail",
+        "left-return-upper-rail",
+        "rear-left-post",
+        "right-return"
+      ]
+    },
+    {
+      "name": "carcass-ceiling",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 12
+    },
+    {
+      "name": "carcass-floor",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 12
+    },
+    {
+      "name": "corner-post-system",
+      "kind": "assembly",
+      "module": "corner-post-system",
+      "triangles": 2100,
+      "members": [
+        "front-left-post",
+        "front-right-post",
+        "guest-left-brass-corner-cap-detail",
+        "guest-right-brass-corner-cap-detail",
+        "rear-left-post",
+        "staff-left-brass-corner-cap-detail",
+        "staff-right-brass-corner-cap-detail"
+      ]
+    },
+    {
+      "name": "countertop",
+      "kind": "part",
+      "module": "countertop",
+      "triangles": 1800
+    },
+    {
+      "name": "foot-rail-system",
+      "kind": "assembly",
+      "module": "foot-rail-system",
+      "triangles": 1648,
+      "members": [
+        "guest-foot-rail",
+        "guest-foot-rail-bracket-1-arm-detail",
+        "guest-foot-rail-bracket-1-collar-detail",
+        "guest-foot-rail-bracket-1-mount-detail",
+        "guest-foot-rail-bracket-2-arm-detail",
+        "guest-foot-rail-bracket-2-collar-detail",
+        "guest-foot-rail-bracket-2-mount-detail",
+        "guest-foot-rail-bracket-3-arm-detail",
+        "guest-foot-rail-bracket-3-collar-detail",
+        "guest-foot-rail-bracket-3-mount-detail",
+        "guest-foot-rail-left-end-cap-detail",
+        "guest-foot-rail-right-end-cap-detail"
+      ]
+    },
+    {
+      "name": "front-left-post",
+      "kind": "part",
+      "module": "corner-post-system",
+      "triangles": 300
+    },
+    {
+      "name": "front-panel-centre",
+      "kind": "part",
+      "module": "front-panel-system",
+      "triangles": 1500
+    },
+    {
+      "name": "front-panel-left",
+      "kind": "part",
+      "module": "front-panel-system",
+      "triangles": 1500
+    },
+    {
+      "name": "front-panel-right",
+      "kind": "part",
+      "module": "front-panel-system",
+      "triangles": 1500
+    },
+    {
+      "name": "front-panel-system",
+      "kind": "assembly",
+      "module": "front-panel-system",
+      "triangles": 5100,
+      "members": [
+        "front-panel-centre",
+        "front-panel-centre-bottom-moulding-detail",
+        "front-panel-centre-left-moulding-detail",
+        "front-panel-centre-right-moulding-detail",
+        "front-panel-centre-top-moulding-detail",
+        "front-panel-left",
+        "front-panel-left-bottom-moulding-detail",
+        "front-panel-left-left-moulding-detail",
+        "front-panel-left-right-moulding-detail",
+        "front-panel-left-top-moulding-detail",
+        "front-panel-right",
+        "front-panel-right-bottom-moulding-detail",
+        "front-panel-right-left-moulding-detail",
+        "front-panel-right-right-moulding-detail",
+        "front-panel-right-top-moulding-detail",
+        "guest-lower-facade-rail",
+        "guest-upper-facade-rail"
+      ]
+    },
+    {
+      "name": "front-right-post",
+      "kind": "part",
+      "module": "corner-post-system",
+      "triangles": 300
+    },
+    {
+      "name": "guest-foot-rail",
+      "kind": "part",
+      "module": "foot-rail-system",
+      "triangles": 1648
+    },
+    {
+      "name": "guest-front-backing",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 12
+    },
+    {
+      "name": "guest-lower-facade-rail",
+      "kind": "part",
+      "module": "front-panel-system",
+      "triangles": 300
+    },
+    {
+      "name": "guest-upper-facade-rail",
+      "kind": "part",
+      "module": "front-panel-system",
+      "triangles": 300
+    },
+    {
+      "name": "left-return",
+      "kind": "assembly",
+      "module": "left-return",
+      "triangles": 900,
+      "members": [
+        "left-return-lower-rail",
+        "left-return-upper-rail",
+        "rear-left-post"
+      ]
+    },
+    {
+      "name": "left-return-lower-rail",
+      "kind": "part",
+      "module": "left-return",
+      "triangles": 300
+    },
+    {
+      "name": "left-return-upper-rail",
+      "kind": "part",
+      "module": "left-return",
+      "triangles": 300
+    },
+    {
+      "name": "lower-plinth",
+      "kind": "part",
+      "module": "base-plinth",
+      "triangles": 300
+    },
+    {
+      "name": "middle-plinth",
+      "kind": "part",
+      "module": "base-plinth",
+      "triangles": 300
+    },
+    {
+      "name": "rail-bracket-system",
+      "kind": "assembly",
+      "module": "rail-bracket-system",
+      "triangles": 1392,
+      "members": [
+        "guest-foot-rail-bracket-1-arm-detail",
+        "guest-foot-rail-bracket-1-collar-detail",
+        "guest-foot-rail-bracket-1-mount-detail",
+        "guest-foot-rail-bracket-2-arm-detail",
+        "guest-foot-rail-bracket-2-collar-detail",
+        "guest-foot-rail-bracket-2-mount-detail",
+        "guest-foot-rail-bracket-3-arm-detail",
+        "guest-foot-rail-bracket-3-collar-detail",
+        "guest-foot-rail-bracket-3-mount-detail"
+      ]
+    },
+    {
+      "name": "rear-left-post",
+      "kind": "part",
+      "module": "left-return",
+      "triangles": 300
+    },
+    {
+      "name": "right-return",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 12
+    },
+    {
+      "name": "service-shelf",
+      "kind": "part",
+      "module": "staff-side-bay",
+      "triangles": 600
+    },
+    {
+      "name": "staff-opening-lower-rail",
+      "kind": "part",
+      "module": "staff-side-bay",
+      "triangles": 300
+    },
+    {
+      "name": "staff-opening-upper-rail",
+      "kind": "part",
+      "module": "staff-side-bay",
+      "triangles": 300
+    },
+    {
+      "name": "staff-side-bay",
+      "kind": "assembly",
+      "module": "staff-side-bay",
+      "triangles": 1200,
+      "members": [
+        "service-shelf",
+        "staff-opening-lower-rail",
+        "staff-opening-upper-rail",
+        "staff-shelf-rear-lip-detail"
+      ]
+    },
+    {
+      "name": "upper-plinth",
+      "kind": "part",
+      "module": "base-plinth",
+      "triangles": 300
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 29
+}

@@ -1,0 +1,173 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "projector-screen",
+  "parts": [
+    {
+      "name": "bottom-frame-rail",
+      "kind": "part",
+      "module": "frame",
+      "triangles": 452
+    },
+    {
+      "name": "frame",
+      "kind": "assembly",
+      "module": "frame",
+      "triangles": 1120,
+      "members": [
+        "bottom-frame-rail",
+        "left-frame-rail",
+        "right-frame-rail",
+        "top-frame-rail"
+      ]
+    },
+    {
+      "name": "hardware",
+      "kind": "assembly",
+      "module": "hardware",
+      "triangles": 1592,
+      "members": [
+        "left-base-collar",
+        "left-front-base-end-cap",
+        "left-front-foot",
+        "left-mid-joint-plate",
+        "left-mid-joint-plate-fastener",
+        "left-rear-base-end-cap",
+        "left-rear-foot",
+        "right-base-collar",
+        "right-front-base-end-cap",
+        "right-front-foot",
+        "right-mid-joint-plate",
+        "right-mid-joint-plate-fastener",
+        "right-rear-base-end-cap",
+        "right-rear-foot",
+        "upper-left-corner-cap",
+        "upper-left-corner-fastener",
+        "upper-right-corner-cap",
+        "upper-right-corner-fastener"
+      ]
+    },
+    {
+      "name": "left-base-rail",
+      "kind": "part",
+      "module": "left-support",
+      "triangles": 452
+    },
+    {
+      "name": "left-frame-rail",
+      "kind": "part",
+      "module": "frame",
+      "triangles": 108
+    },
+    {
+      "name": "left-front-brace",
+      "kind": "part",
+      "module": "left-support",
+      "triangles": 108
+    },
+    {
+      "name": "left-lower-post",
+      "kind": "part",
+      "module": "left-support",
+      "triangles": 216
+    },
+    {
+      "name": "left-rear-brace",
+      "kind": "part",
+      "module": "left-support",
+      "triangles": 108
+    },
+    {
+      "name": "left-support",
+      "kind": "assembly",
+      "module": "left-support",
+      "triangles": 884,
+      "members": [
+        "left-base-rail",
+        "left-front-brace",
+        "left-lower-post",
+        "left-rear-brace"
+      ]
+    },
+    {
+      "name": "right-base-rail",
+      "kind": "part",
+      "module": "right-support",
+      "triangles": 452
+    },
+    {
+      "name": "right-frame-rail",
+      "kind": "part",
+      "module": "frame",
+      "triangles": 108
+    },
+    {
+      "name": "right-front-brace",
+      "kind": "part",
+      "module": "right-support",
+      "triangles": 108
+    },
+    {
+      "name": "right-lower-post",
+      "kind": "part",
+      "module": "right-support",
+      "triangles": 216
+    },
+    {
+      "name": "right-rear-brace",
+      "kind": "part",
+      "module": "right-support",
+      "triangles": 108
+    },
+    {
+      "name": "right-support",
+      "kind": "assembly",
+      "module": "right-support",
+      "triangles": 884,
+      "members": [
+        "right-base-rail",
+        "right-front-brace",
+        "right-lower-post",
+        "right-rear-brace"
+      ]
+    },
+    {
+      "name": "screen",
+      "kind": "assembly",
+      "module": "screen",
+      "triangles": 108,
+      "members": [
+        "screen-surface"
+      ]
+    },
+    {
+      "name": "screen-surface",
+      "kind": "part",
+      "module": "screen",
+      "triangles": 108
+    },
+    {
+      "name": "supports",
+      "kind": "assembly",
+      "module": "supports",
+      "triangles": 1768,
+      "members": [
+        "left-base-rail",
+        "left-front-brace",
+        "left-lower-post",
+        "left-rear-brace",
+        "right-base-rail",
+        "right-front-brace",
+        "right-lower-post",
+        "right-rear-brace"
+      ]
+    },
+    {
+      "name": "top-frame-rail",
+      "kind": "part",
+      "module": "frame",
+      "triangles": 452
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 18
+}

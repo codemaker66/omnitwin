@@ -1,0 +1,176 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "projector",
+  "parts": [
+    {
+      "name": "chassis-shell",
+      "kind": "part",
+      "module": "shell",
+      "triangles": 588
+    },
+    {
+      "name": "feet",
+      "kind": "assembly",
+      "module": "feet",
+      "triangles": 768,
+      "members": [
+        "foot-system",
+        "foot-system-collar",
+        "front-right-foot",
+        "front-right-foot-collar",
+        "rear-left-foot",
+        "rear-left-foot-collar",
+        "rear-right-foot",
+        "rear-right-foot-collar"
+      ]
+    },
+    {
+      "name": "foot-system",
+      "kind": "part",
+      "module": "feet",
+      "triangles": 192
+    },
+    {
+      "name": "front-fascia",
+      "kind": "part",
+      "module": "shell",
+      "triangles": 588
+    },
+    {
+      "name": "front-right-foot",
+      "kind": "part",
+      "module": "feet",
+      "triangles": 192
+    },
+    {
+      "name": "front-right-vent",
+      "kind": "part",
+      "module": "ventilation",
+      "triangles": 4716
+    },
+    {
+      "name": "front-vent-system",
+      "kind": "part",
+      "module": "ventilation",
+      "triangles": 4716
+    },
+    {
+      "name": "optical-assembly",
+      "kind": "part",
+      "module": "optics",
+      "triangles": 3452
+    },
+    {
+      "name": "optics",
+      "kind": "assembly",
+      "module": "optics",
+      "triangles": 3452,
+      "members": [
+        "lens-bezel-stack",
+        "lens-glass",
+        "lens-inner-bezel",
+        "optical-assembly"
+      ]
+    },
+    {
+      "name": "rear-connector-recess",
+      "kind": "part",
+      "module": "rear-detail",
+      "triangles": 668
+    },
+    {
+      "name": "rear-detail",
+      "kind": "assembly",
+      "module": "rear-detail",
+      "triangles": 668,
+      "members": [
+        "rear-connector-recess",
+        "rear-generic-inlet"
+      ]
+    },
+    {
+      "name": "rear-left-foot",
+      "kind": "part",
+      "module": "feet",
+      "triangles": 192
+    },
+    {
+      "name": "rear-right-foot",
+      "kind": "part",
+      "module": "feet",
+      "triangles": 192
+    },
+    {
+      "name": "shell",
+      "kind": "assembly",
+      "module": "shell",
+      "triangles": 1932,
+      "members": [
+        "chassis-shell",
+        "front-fascia",
+        "shell-shadow-band",
+        "top-inset-panel",
+        "top-seam-front",
+        "top-seam-left",
+        "top-seam-rear",
+        "top-seam-right",
+        "top-shell"
+      ]
+    },
+    {
+      "name": "side-vent-system",
+      "kind": "part",
+      "module": "ventilation",
+      "triangles": 7092
+    },
+    {
+      "name": "top-shell",
+      "kind": "part",
+      "module": "shell",
+      "triangles": 756
+    },
+    {
+      "name": "ventilation",
+      "kind": "assembly",
+      "module": "ventilation",
+      "triangles": 16524,
+      "members": [
+        "front-left-louvre-1",
+        "front-left-louvre-2",
+        "front-left-louvre-3",
+        "front-left-louvre-4",
+        "front-left-louvre-5",
+        "front-left-louvre-6",
+        "front-left-louvre-7",
+        "front-left-vent-rib",
+        "front-right-louvre-1",
+        "front-right-louvre-2",
+        "front-right-louvre-3",
+        "front-right-louvre-4",
+        "front-right-louvre-5",
+        "front-right-louvre-6",
+        "front-right-louvre-7",
+        "front-right-vent",
+        "front-right-vent-rib",
+        "front-vent-system",
+        "right-side-louvre-1",
+        "right-side-louvre-10",
+        "right-side-louvre-11",
+        "right-side-louvre-2",
+        "right-side-louvre-3",
+        "right-side-louvre-4",
+        "right-side-louvre-5",
+        "right-side-louvre-6",
+        "right-side-louvre-7",
+        "right-side-louvre-8",
+        "right-side-louvre-9",
+        "right-side-vent-rib-1",
+        "right-side-vent-rib-2",
+        "right-side-vent-rib-3",
+        "side-vent-system"
+      ]
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 44
+}
