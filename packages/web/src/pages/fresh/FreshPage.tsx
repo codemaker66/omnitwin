@@ -6,8 +6,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type FormEvent,
   type ReactElement,
 } from "react";
+import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { submitGuestEnquiry } from "../../api/configurations.js";
+import { isValidEmail } from "../../lib/email-validation.js";
 import {
   CAPACITY_FORMATS,
   TRADES_HALL_ROOM_CAPACITIES,
@@ -26,6 +30,20 @@ import {
   FRESH_CONTACT_EMAIL_LABEL,
   FRESH_CONTACT_VISIT_LABEL,
   FRESH_CTA_DATES,
+  FRESH_ENQUIRY_NAME_LABEL,
+  FRESH_ENQUIRY_EMAIL_LABEL,
+  FRESH_ENQUIRY_PHONE_LABEL,
+  FRESH_ENQUIRY_OPTIONAL,
+  FRESH_ENQUIRY_SUBMIT,
+  FRESH_ENQUIRY_SENDING,
+  FRESH_ENQUIRY_EMAIL_REQUIRED,
+  FRESH_ENQUIRY_EMAIL_INVALID,
+  FRESH_ENQUIRY_SENT_TITLE,
+  FRESH_ENQUIRY_SENT_LINE,
+  FRESH_ENQUIRY_ERROR,
+  FRESH_ENQUIRY_PRIVACY_NOTE,
+  FRESH_ENQUIRY_PRIVACY_LINK,
+  FRESH_ENQUIRY_PRIVACY_HREF,
   FRESH_CTA_ROOMS,
   FRESH_CTA_TOUR,
   FRESH_TOUR_CTA,
@@ -34,9 +52,11 @@ import {
   FRESH_TOUR_GROUND_SIZES,
   FRESH_TOUR_GROUND_SRCSET,
   FRESH_TOUR_HREF,
+  FRESH_TOUR_ENABLED,
   FRESH_TOUR_LINE,
   FRESH_TOUR_TITLE,
   FRESH_FOOTER_NOTE,
+  FRESH_LEGAL_LINKS,
   FRESH_ARMS,
   FRESH_ARMS_ALT,
   FRESH_ARMS_MARK,
@@ -313,11 +333,18 @@ function useDomeAperture(): DomeApertureRefs {
  *  the answer), an optional date. Everything said below it is computed by
  *  enquiry-fit from published figures, and the finished email is visible,
  *  copyable, and openable — no dead-end links. */
+type EnquirySendState = "idle" | "sending" | "sent" | "error";
+
 function FreshEnquiry(): ReactElement {
   const [eventKey, setEventKey] = useState<EnquiryEventKey>("wedding");
   const [guestsText, setGuestsText] = useState("100");
   const [dateISO, setDateISO] = useState("");
   const [copied, setCopied] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [sendState, setSendState] = useState<EnquirySendState>("idle");
 
   const guestsParsed = Number.parseInt(guestsText, 10);
   const guests =
@@ -343,6 +370,46 @@ function FreshEnquiry(): ReactElement {
     eventKey === "wedding" && guests !== null ? weddingScopeNote(guests) : null;
   const today = new Date().toISOString().slice(0, 10);
 
+  const emailTrimmed = email.trim();
+  const emailProblem =
+    emailTrimmed === ""
+      ? FRESH_ENQUIRY_EMAIL_REQUIRED
+      : isValidEmail(emailTrimmed)
+        ? null
+        : FRESH_ENQUIRY_EMAIL_INVALID;
+
+  /** Post the enquiry the page has already written. The mailto and the phone
+   *  number stay on screen throughout: if this fails, the visitor still has a
+   *  working way to reach the hall, which is the whole point of keeping them. */
+  const sendEnquiry = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (composed === null || guests === null) return;
+      if (emailProblem !== null) {
+        setEmailTouched(true);
+        return;
+      }
+      setSendState("sending");
+      void submitGuestEnquiry({
+        venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
+        email: emailTrimmed,
+        name: name.trim() !== "" ? name.trim() : undefined,
+        phone: phone.trim() !== "" ? phone.trim() : undefined,
+        eventDate: dateISO !== "" ? dateISO : undefined,
+        eventType: eventKey,
+        guestCount: guests,
+        message: composed.body,
+      })
+        .then(() => {
+          setSendState("sent");
+        })
+        .catch(() => {
+          setSendState("error");
+        });
+    },
+    [composed, guests, emailProblem, emailTrimmed, name, phone, dateISO, eventKey],
+  );
+
   const copyEnquiry = useCallback(() => {
     if (composed === null) return;
     const clipboard = navigator.clipboard as Clipboard | undefined;
@@ -366,7 +433,7 @@ function FreshEnquiry(): ReactElement {
   }, [copied]);
 
   return (
-    <div className="fr-enq">
+    <form className="fr-enq" onSubmit={sendEnquiry} noValidate>
       <div className="fr-enq-controls">
         <fieldset className="fr-enq-types">
           <legend>{FRESH_ENQUIRY_EVENT_LABEL}</legend>
@@ -411,6 +478,59 @@ function FreshEnquiry(): ReactElement {
             />
           </label>
         </div>
+        <div className="fr-enq-fields fr-enq-contact">
+          <label className="fr-enq-field">
+            <span>
+              {FRESH_ENQUIRY_NAME_LABEL} <em>{FRESH_ENQUIRY_OPTIONAL}</em>
+            </span>
+            <input
+              type="text"
+              autoComplete="name"
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+              }}
+            />
+          </label>
+          <label className="fr-enq-field">
+            <span>{FRESH_ENQUIRY_EMAIL_LABEL}</span>
+            <input
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              required
+              value={email}
+              aria-invalid={emailTouched && emailProblem !== null}
+              aria-describedby={
+                emailTouched && emailProblem !== null ? "fr-enq-email-problem" : undefined
+              }
+              onChange={(event) => {
+                setEmail(event.target.value);
+              }}
+              onBlur={() => {
+                setEmailTouched(true);
+              }}
+            />
+            {emailTouched && emailProblem !== null && (
+              <small className="fr-enq-problem" id="fr-enq-email-problem">
+                {emailProblem}
+              </small>
+            )}
+          </label>
+          <label className="fr-enq-field">
+            <span>
+              {FRESH_ENQUIRY_PHONE_LABEL} <em>{FRESH_ENQUIRY_OPTIONAL}</em>
+            </span>
+            <input
+              type="tel"
+              autoComplete="tel"
+              value={phone}
+              onChange={(event) => {
+                setPhone(event.target.value);
+              }}
+            />
+          </label>
+        </div>
       </div>
 
       <div className="fr-enq-answer" aria-live="polite">
@@ -430,21 +550,50 @@ function FreshEnquiry(): ReactElement {
         <div className="fr-enq-compose">
           <p className="fr-enq-subject">{composed.subject}</p>
           <pre className="fr-enq-body">{composed.body}</pre>
-          <div className="fr-enq-actions">
-            <a className="fr-cta" href={composed.mailtoHref}>
-              {FRESH_ENQUIRY_SEND}
-            </a>
-            <button type="button" className="fr-enq-copy" onClick={copyEnquiry}>
-              {copied ? FRESH_ENQUIRY_COPIED : FRESH_ENQUIRY_COPY_ACTION}
-            </button>
-            <span className="fr-enq-call">
-              {FRESH_ENQUIRY_OR_CALL}{" "}
-              <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
-            </span>
-          </div>
+          {sendState === "sent" ? (
+            <div className="fr-enq-sent" role="status">
+              <p className="fr-enq-sent-title">{FRESH_ENQUIRY_SENT_TITLE}</p>
+              <p className="fr-enq-sent-line">{FRESH_ENQUIRY_SENT_LINE}</p>
+              <span className="fr-enq-call">
+                {FRESH_ENQUIRY_OR_CALL}{" "}
+                <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
+              </span>
+            </div>
+          ) : (
+            <>
+              {sendState === "error" && (
+                <p className="fr-enq-problem fr-enq-problem-send" role="alert">
+                  {FRESH_ENQUIRY_ERROR}
+                </p>
+              )}
+              <div className="fr-enq-actions">
+                <button
+                  type="submit"
+                  className="fr-cta"
+                  disabled={sendState === "sending"}
+                >
+                  {sendState === "sending" ? FRESH_ENQUIRY_SENDING : FRESH_ENQUIRY_SUBMIT}
+                </button>
+                <a className="fr-enq-quiet" href={composed.mailtoHref}>
+                  {FRESH_ENQUIRY_SEND}
+                </a>
+                <button type="button" className="fr-enq-copy" onClick={copyEnquiry}>
+                  {copied ? FRESH_ENQUIRY_COPIED : FRESH_ENQUIRY_COPY_ACTION}
+                </button>
+                <span className="fr-enq-call">
+                  {FRESH_ENQUIRY_OR_CALL}{" "}
+                  <a href={FRESH_CONTACT_PHONE_HREF}>{FRESH_CONTACT_PHONE_DISPLAY}</a>
+                </span>
+              </div>
+              <p className="fr-enq-privacy">
+                {FRESH_ENQUIRY_PRIVACY_NOTE}{" "}
+                <a href={FRESH_ENQUIRY_PRIVACY_HREF}>{FRESH_ENQUIRY_PRIVACY_LINK}</a>
+              </p>
+            </>
+          )}
         </div>
       )}
-    </div>
+    </form>
   );
 }
 
@@ -604,9 +753,11 @@ export function FreshPage(): ReactElement {
               <a className="fr-cta-quiet" href="#rooms">
                 {FRESH_CTA_ROOMS}
               </a>
-              <a className="fr-cta-quiet" href={FRESH_TOUR_HREF}>
-                {FRESH_CTA_TOUR}
-              </a>
+              {FRESH_TOUR_ENABLED && (
+                <a className="fr-cta-quiet" href={FRESH_TOUR_HREF}>
+                  {FRESH_CTA_TOUR}
+                </a>
+              )}
             </div>
           </div>
         </section>
@@ -726,7 +877,9 @@ export function FreshPage(): ReactElement {
             {walkState === "live" ? FRESH_WALK_HINT : FRESH_WALK_NOTE}
           </p>
           {/* The doorway to the whole building — grounded on the
-              walkthrough's own dollhouse view of the hall. */}
+              walkthrough's own dollhouse view of the hall. Hidden while the
+              twin bundle is unpublished; see FRESH_TOUR_ENABLED. */}
+          {FRESH_TOUR_ENABLED && (
           <aside className="fr-tour-door" ref={reveal}>
             <img
               className="fr-tour-ground"
@@ -749,6 +902,7 @@ export function FreshPage(): ReactElement {
               </a>
             </div>
           </aside>
+          )}
         </section>
 
         {/* ——— rates: the venue's own numbers, plainly ——— */}
@@ -838,6 +992,13 @@ export function FreshPage(): ReactElement {
             </p>
           </div>
         </div>
+        <nav className="fr-legal" aria-label="Legal">
+          {FRESH_LEGAL_LINKS.map((link) => (
+            <a key={link.href} href={link.href}>
+              {link.label}
+            </a>
+          ))}
+        </nav>
         <p className="fr-footer-note">{FRESH_FOOTER_NOTE}</p>
       </footer>
     </div>

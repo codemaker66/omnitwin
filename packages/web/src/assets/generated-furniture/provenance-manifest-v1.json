@@ -1,0 +1,353 @@
+{
+  "schemaVersion": "venviewer.generated-furniture-provenance.v1",
+  "purpose": "presentation-only",
+  "measuredGeometry": false,
+  "entries": {
+    "trestle-6ft": {
+      "referenceImage": "./trestle-6ft-imagegen-v1.png",
+      "referenceSha256": "75ea91268f646290dc81fbdf9ccaa00d8268ce07d0a09b8240c4c7cfb98ae4d4",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 1.83,
+        "height": 0.74,
+        "depth": 0.76
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is generated, not a photograph or measurement source.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "trestle-4ft": {
+      "referenceImage": "./trestle-4ft-imagegen-v1.png",
+      "referenceSha256": "2593a5ae4c4e6357b0e4359f07344525714b68b0605dca4022f81ff498302611",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 1.22,
+        "height": 0.74,
+        "depth": 0.76
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is generated, not a photograph or measurement source.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "platform": {
+      "referenceImage": "./platform-imagegen-v1.png",
+      "referenceSha256": "2eebe5bce4b3fe406b3ed80f154df28fce93dd5236218a796dea6738488eec1d",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 2.44,
+        "height": 0.4,
+        "depth": 1.22
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is generated, not a photograph or measurement source.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "platform-narrow": {
+      "referenceImage": "./platform-narrow-imagegen-v1.png",
+      "referenceSha256": "04f338fabf9fa8b089001440851a3e7bdd6b0367206655caa451bdd997363b86",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 2.44,
+        "height": 0.4,
+        "depth": 1.02
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is generated, not a photograph or measurement source.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "bar-counter": {
+      "referenceImage": "./bar-counter-imagegen-v1.png",
+      "referenceSha256": "b843a9b2a377c9438279c4173c9415e4de7e9ac993455760326f729c1cb61d08",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 1.6,
+        "height": 1.208,
+        "depth": 0.61
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is generated, not a photograph or measurement source.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "projector-screen": {
+      "referenceImage": "./projector-screen-imagegen-v1.png",
+      "referenceSha256": "b6c22a83c4a7df2ce3f71babf10a76b131dcd1e045e6733ef14095829f1e49d7",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 2.5,
+        "height": 1.8,
+        "depth": 0.6
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is generated, not a photograph or measurement source.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "lectern": {
+      "referenceImage": "./lectern-imagegen-v1.png",
+      "referenceSha256": "29d695187e575ca767947c4240d09f78d3fa1608a6585df900cea5540570da04",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.6,
+        "height": 1.15,
+        "depth": 0.5
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is generated, not a photograph or measurement source.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "projector": {
+      "referenceImage": "./projector-imagegen-v1.png",
+      "referenceSha256": "53976dbc14c6338031094d0e98216185192daa649c8c08753af122016754eef1",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.55,
+        "height": 0.1,
+        "depth": 0.35
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is generated, not a photograph or measurement source.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "laptop": {
+      "referenceImage": "./laptop-imagegen-v1.png",
+      "referenceSha256": "2afaf875aea0ed2b36fbc220fb21ddc6bc11874b1d455aa3e76ffc4c8fd7d0fd",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.36,
+        "height": 0.25,
+        "depth": 0.25
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is a single generated view, not a photograph or measurement source.",
+        "The open display angle and hinge articulation are inferred from that single view.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "poseur-table": {
+      "referenceImage": "./poseur-table-imagegen-v1.png",
+      "referenceSha256": "d4f5869f78468a61e98a0d055ede5a6c9660cee67c9e87a8fcccda49a3363d18",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.6,
+        "height": 1.05,
+        "depth": 0.6
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is generated, not a photograph or measurement source.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "poseur-table-black": {
+      "referenceImage": "./poseur-table-black-imagegen-v1.png",
+      "referenceSha256": "405d52d8507522342ce5497db377d8d82bbd33bc9bea7cd24589d7000fbb0b3c",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.6,
+        "height": 1.05,
+        "depth": 0.6
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The black fitted-cloth reference is generated, not a photograph or measurement source.",
+        "The single admitted view establishes only an approximate visible cover silhouette; hidden structure and rear seams are inferred.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "poseur-table-white": {
+      "referenceImage": "./poseur-table-white-imagegen-v1.png",
+      "referenceSha256": "4a97f1c4dc382a2348b04ffac4b190643b1766c6468dc7f15d1023edbe37e812",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.6,
+        "height": 1.05,
+        "depth": 0.6
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The white fitted-cloth reference is generated, not a photograph or measurement source.",
+        "The white reference failed foreground admission because its low-contrast silhouette is insufficient geometry evidence; it supplies material evidence only.",
+        "Shared fitted-cover geometry is derived from the admitted black reference and remains a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "mic-stand": {
+      "referenceImage": "./mic-stand-imagegen-v1.png",
+      "referenceSha256": "06c47fcd3425c3696486d3b1270083ab6931bcf35fc77095db5513a8364ae734",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.5,
+        "height": 1.6,
+        "depth": 0.5
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is a single AI-generated appearance view, not a photograph or measurement source.",
+        "The passive stand-only proxy has an empty microphone clip and contains no microphone, cable, power system, logo, branding, or equipment tags.",
+        "Load ratings, working adjustment, thread standards, and hidden joint construction are not evidenced.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "microphone": {
+      "referenceImage": "./microphone-imagegen-v1.png",
+      "referenceSha256": "12cd10bf6acfa4da28fdbd679e8de5ba5726a1639359e096e7a8dd7b85a0c943",
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.1,
+        "height": 0.25,
+        "depth": 0.1
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The reference image is a single AI-generated appearance view, not a photograph or measurement source.",
+        "The proxy represents a tabletop gooseneck microphone; rear connector geometry, cable routing, internals, and acoustic behaviour are not evidenced.",
+        "No cable, rear connector, or logo is invented; underside feet are symmetry-inferred approximations.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "banquet-chair": {
+      "referenceImage": "./banquet-chair-imagegen-v1.png",
+      "referenceSha256": "daf8955b3c895872e46e5193ba7c483f5fb4d1f056ff7c3009acde4ca71e23ac",
+      "retainedSourceRecord": {
+        "kind": "git-blob",
+        "commit": "9c98b293e984ddf2876c65360d873e7ed03ab539",
+        "blob": "29ef17657c685c1128ad1f8d427dad4f4ad2b9e1",
+        "path": "packages/web/src/assets/generated-furniture/banquet-chair-imagegen-v1.png"
+      },
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.45,
+        "height": 0.9,
+        "depth": 0.45
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The restored reference is a single AI-generated appearance view, not a photograph or measurement source.",
+        "Rear, underside, joint, stacking, load-rating, and manufacturer details are not evidenced.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "round-table-6ft": {
+      "referenceImage": "./round-table-6ft-imagegen-v1.png",
+      "referenceSha256": "d0c0ed65266fd1821acca8fc89f958bab4949bf8c902c4e20b75d66450cc819b",
+      "retainedSourceRecord": {
+        "kind": "git-blob",
+        "commit": "9c98b293e984ddf2876c65360d873e7ed03ab539",
+        "blob": "6d638169a60fe829a5db20a125cc0f11d74cf016",
+        "path": "packages/web/src/assets/generated-furniture/round-table-6ft-imagegen-v1.png"
+      },
+      "sourceKind": "ai-generated-image",
+      "generator": "OpenAI ImageGen",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 1.83,
+        "height": 0.76,
+        "depth": 1.83
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "The restored reference is a single AI-generated appearance view, not a photograph or measurement source.",
+        "Hidden underside construction, folding kinematics, joints, load rating, and manufacturer details are not evidenced.",
+        "The procedural mesh is a visual planning stand-in, not measured venue evidence."
+      ]
+    },
+    "dancefloor-panel": {
+      "referenceImage": null,
+      "referenceSha256": null,
+      "retainedSourceRecord": null,
+      "sourceKind": "procedural-code-no-retained-source",
+      "generator": "Venviewer procedural TypeScript factory",
+      "geometryKind": "procedural-generated-stand-in",
+      "authority": "presentation-only",
+      "measuredGeometry": false,
+      "canonicalDimensionsMetres": {
+        "width": 0.91,
+        "height": 0.05,
+        "depth": 0.91
+      },
+      "dimensionsSource": "canonical-catalogue-spec",
+      "limitations": [
+        "No retained source image or measurement evidence exists for this legacy proxy.",
+        "Appearance, parquet pattern, subframe, locks, and hidden construction are procedural planning approximations.",
+        "The procedural mesh is constrained by the canonical catalogue envelope and is not measured venue evidence."
+      ]
+    }
+  }
+}

@@ -4,7 +4,7 @@ import { createPlacedItem } from "../placement.js";
 import { RENDER_SCALE } from "../../constants/scale.js";
 import { computeCirculation, type CirculationReport, type FurnitureFootprint } from "../circulation.js";
 import {
-  placedTableFootprints,
+  placedCirculationFootprints,
   placedItemsCirculation,
   circulationBandColor,
   circulationOverlaySegment,
@@ -17,14 +17,19 @@ function box(id: string, cx: number, cz: number, width = 1, depth = 1): Furnitur
 }
 
 const roundTable = getCatalogueItemBySlug("round-table-6ft");
+const poseurTable = getCatalogueItemBySlug("poseur-table");
 const chair = getCatalogueItemBySlug("banquet-chair");
+const micStand = getCatalogueItemBySlug("mic-stand");
+const projector = getCatalogueItemBySlug("projector");
+const laptop = getCatalogueItemBySlug("laptop");
+const microphone = getCatalogueItemBySlug("microphone");
 
-describe("placedTableFootprints", () => {
-  it("keeps only tables and converts render units back to metres", () => {
+describe("placedCirculationFootprints", () => {
+  it("keeps planning floor obstacles and converts render units back to metres", () => {
     if (roundTable === undefined || chair === undefined) {
       throw new Error("fixture catalogue items missing");
     }
-    const footprints = placedTableFootprints([
+    const footprints = placedCirculationFootprints([
       createPlacedItem(roundTable.id, 8, 0, 0), // render x=8 → 4 m
       createPlacedItem(chair.id, 1, 1, 0), // dropped: not a table
     ]);
@@ -36,9 +41,57 @@ describe("placedTableFootprints", () => {
     expect(f?.depth).toBe(roundTable.depth);
   });
 
-  it("returns an empty list when no tables are placed", () => {
+  it("returns an empty list when no planning floor obstacles are placed", () => {
     if (chair === undefined) throw new Error("fixture chair missing");
-    expect(placedTableFootprints([createPlacedItem(chair.id, 0, 0, 0)])).toHaveLength(0);
+    expect(placedCirculationFootprints([createPlacedItem(chair.id, 0, 0, 0)])).toHaveLength(0);
+  });
+
+  it("uses the same normalized scale as the rendered table", () => {
+    if (roundTable === undefined) throw new Error("fixture round table missing");
+    const scaled = { ...createPlacedItem(roundTable.id, 0, 0), scale: 1.5 };
+    const invalid = { ...createPlacedItem(roundTable.id, 4, 0), scale: 0 };
+    const [scaledFootprint, fallbackFootprint] = placedCirculationFootprints([scaled, invalid]);
+    expect(scaledFootprint?.width).toBeCloseTo(roundTable.width * 1.5);
+    expect(scaledFootprint?.depth).toBeCloseTo(roundTable.depth * 1.5);
+    expect(fallbackFootprint?.width).toBeCloseTo(roundTable.width);
+    expect(fallbackFootprint?.depth).toBeCloseTo(roundTable.depth);
+  });
+
+  it("retains a poseur table as a physical circulation obstacle", () => {
+    if (poseurTable === undefined) throw new Error("fixture poseur table missing");
+    const footprint = placedCirculationFootprints([
+      createPlacedItem(poseurTable.id, 2, -3, 0),
+    ])[0];
+
+    expect(footprint).toMatchObject({
+      label: poseurTable.name,
+      width: poseurTable.width,
+      depth: poseurTable.depth,
+    });
+  });
+
+  it("retains the mic stand's exact floor footprint as a circulation obstacle", () => {
+    if (micStand === undefined) throw new Error("fixture mic stand missing");
+    const footprint = placedCirculationFootprints([
+      createPlacedItem(micStand.id, 2, -3, 0),
+    ])[0];
+
+    expect(footprint).toMatchObject({
+      label: "Mic Stand",
+      width: 0.5,
+      depth: 0.5,
+    });
+  });
+
+  it("does not turn tiny tabletop AV into circulation obstacles", () => {
+    if (projector === undefined || laptop === undefined || microphone === undefined) {
+      throw new Error("fixture tabletop AV missing");
+    }
+    expect(placedCirculationFootprints([
+      createPlacedItem(projector.id, 0, 0),
+      createPlacedItem(laptop.id, 1, 0),
+      createPlacedItem(microphone.id, 2, 0),
+    ])).toEqual([]);
   });
 });
 
@@ -57,6 +110,17 @@ describe("placedItemsCirculation", () => {
   it("is open with a single table", () => {
     if (roundTable === undefined) throw new Error("fixture round table missing");
     expect(placedItemsCirculation([createPlacedItem(roundTable.id, 0, 0, 0)]).band).toBe("open");
+  });
+
+  it("includes a mic stand when computing table-to-equipment clear gaps", () => {
+    if (roundTable === undefined || micStand === undefined) throw new Error("fixture missing");
+    const report = placedItemsCirculation([
+      createPlacedItem(roundTable.id, 0, 0),
+      createPlacedItem(micStand.id, 3, 0),
+    ]);
+
+    expect(report.pairCount).toBe(1);
+    expect(report.tightestPair?.bLabel).toBe("Mic Stand");
   });
 });
 

@@ -22,17 +22,42 @@
   perspective-origin: 50% 42%;
 }
 
+/* The canvas IS the button you poke, so everything a button brings with it —
+   chrome, metrics, the grey flash on tap — is stripped back to a bare surface.
+   Only the focus ring is put back, because that one is not decoration. */
 .convener-painting-canvas {
-  border-radius: 3px;
-  position: relative;
-  transform-style: preserve-3d;
   /* Hung, not pasted: a real shadow away from the wall, and a tight dark line at
-     the edge so the frame reads as having thickness. */
-  box-shadow:
+     the edge so the frame reads as having thickness. Named because focus has to
+     put it back — see below. */
+  --convener-painting-hang:
     0 2px 4px rgba(0, 0, 0, 0.5),
     0 18px 44px rgba(0, 0, 0, 0.62),
     0 42px 90px rgba(0, 0, 0, 0.45);
+
+  appearance: none;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  box-shadow: var(--convener-painting-hang);
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  padding: 0;
+  position: relative;
+  text-align: inherit;
+  transform-style: preserve-3d;
+  width: 100%;
   will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The house focus ring (global.css) carries its glow on box-shadow, which is
+   the same property holding him off the wall — unqualified, focusing him would
+   unhook the painting. The outline is what signals focus; this only restates
+   the hang underneath it. */
+.convener-painting-canvas:focus-visible {
+  box-shadow: var(--convener-painting-hang);
 }
 
 .convener-painting-canvas img {
@@ -163,7 +188,10 @@
   opacity: 1;
 }
 
-.convener-painting-live {
+/* His speech mirror, and the description of the painting the poke button is
+   named for — both for listeners only, neither taking any room. */
+.convener-painting-live,
+.convener-painting-alt {
   height: 1px;
   margin: 0;
   overflow: hidden;

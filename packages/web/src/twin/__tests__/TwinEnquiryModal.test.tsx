@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 import { TwinEnquiryModal } from "../TwinEnquiryModal.js";
 
 // -----------------------------------------------------------------------------
@@ -9,6 +10,11 @@ import { TwinEnquiryModal } from "../TwinEnquiryModal.js";
 // matters: a valid submit posts a VENUE-anchored enquiry (venueSlug, not a
 // config) and reaches the success state; an invalid email is blocked before any
 // network call.
+//
+// The slug assertion is load-bearing. This test previously asserted the ASSET
+// slug ("trades-hall"), which is not a row in `venues` — so it ratified the very
+// bug that made every walkthrough enquiry 404. Asserting the exported constant
+// (rather than a literal) is what stops the two namespaces drifting again.
 // -----------------------------------------------------------------------------
 
 const { submitMock } = vi.hoisted(() => ({ submitMock: vi.fn() }));
@@ -17,7 +23,6 @@ vi.mock("../../api/configurations.js", () => ({ submitGuestEnquiry: submitMock }
 function renderModal(): void {
   render(
     <TwinEnquiryModal
-      venueSlug="trades-hall"
       venueName="Trades Hall Glasgow"
       onClose={vi.fn()}
     />,
@@ -42,7 +47,10 @@ describe("TwinEnquiryModal", () => {
     fireEvent.submit(screen.getByTestId("twin-enquiry-form"));
     await waitFor(() => {
       expect(submitMock).toHaveBeenCalledWith(
-        expect.objectContaining({ venueSlug: "trades-hall", email: "guest@example.com" }),
+        expect.objectContaining({
+          venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
+          email: "guest@example.com",
+        }),
       );
     });
     expect(await screen.findByText(/your enquiry is on its way/i)).toBeTruthy();

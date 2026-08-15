@@ -41,6 +41,7 @@ import {
   catalogueIcon,
 } from "../../lib/catalogue.js";
 import type { CatalogueItem } from "../../lib/catalogue.js";
+import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 
 const LazyAuthModal = lazy(() =>
@@ -1459,7 +1460,10 @@ export function VerticalToolbox(): React.ReactElement {
     try { return window.localStorage.getItem(ONBOARDING_KEY) === "1"; }
     catch { return false; }
   });
-  const placedCount = usePlacementStore((s) => s.placedItems.length);
+  const placedCount = usePlacementStore((s) => s.placedItems.reduce(
+    (count, placed) => count + (isSceneFurniturePlacement(placed) ? 1 : 0),
+    0,
+  ));
 
   const history = useEditorStore((s) => s.history);
   const canUndo = historyCanUndo(history);
@@ -1486,10 +1490,9 @@ export function VerticalToolbox(): React.ReactElement {
     };
   const placedItems = usePlacementStore((s) => s.placedItems);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
-  const selectedIdList = Array.from(selectedIds);
-  const selectedItem = selectedIdList.length > 0
-    ? placedItems.find((item) => item.id === selectedIdList[0])
-    : undefined;
+  const selectedItem = placedItems.find(
+    (item) => selectedIds.has(item.id) && isSceneFurniturePlacement(item),
+  );
   const selectedCatalogueItem = selectedItem !== undefined
     ? getCatalogueItem(selectedItem.catalogueItemId)
     : undefined;
@@ -1655,7 +1658,7 @@ export function VerticalToolbox(): React.ReactElement {
     const state = usePlacementStore.getState();
     for (const id of ids) {
       const item = state.placedItems.find((candidate) => candidate.id === id);
-      if (item !== undefined) {
+      if (item !== undefined && isSceneFurniturePlacement(item)) {
         state.rotateItem(id, item.rotationY + Math.PI / 12);
       }
     }

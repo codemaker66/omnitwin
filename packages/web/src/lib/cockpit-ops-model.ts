@@ -2,6 +2,11 @@ import { getCatalogueItem } from "./catalogue.js";
 import type { PlacedItem } from "./placement.js";
 import { seatingCountsFromPlacedItems } from "./seating-counts.js";
 import { BAR_CATALOGUE_SLUG } from "./guest-flow-layout-input.js";
+import {
+  effectiveTableLinenStyle,
+  isPoseurTableItem,
+} from "./furniture-semantics.js";
+import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // cockpit-ops-model — the Ops lens's live setup plan (Epic 0, fifth real lens).
@@ -53,6 +58,7 @@ export interface OpsSetupPlan {
 interface LayoutCounts {
   readonly roundTables: number;
   readonly banquetTables: number;
+  readonly poseurTables: number;
   readonly chairs: number;
   readonly stages: number;
   readonly bars: number;
@@ -68,18 +74,22 @@ function collectCounts(placedItems: readonly PlacedItem[]): LayoutCounts {
   let avItems = 0;
   let lecterns = 0;
   let clothedTables = 0;
+  let poseurTables = 0;
   for (const placed of placedItems) {
+    if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item === undefined) continue;
     if (item.category === "stage") stages += 1;
     else if (item.category === "av") avItems += 1;
     else if (item.category === "lectern") lecterns += 1;
     else if (item.slug === BAR_CATALOGUE_SLUG) bars += 1;
-    if (item.category === "table" && placed.clothed) clothedTables += 1;
+    if (isPoseurTableItem(item)) poseurTables += 1;
+    if (effectiveTableLinenStyle(item, placed) !== null) clothedTables += 1;
   }
   return {
     roundTables: seating.roundTables,
     banquetTables: seating.banquetTables,
+    poseurTables,
     chairs: seating.chairs,
     stages, bars, avItems, lecterns, clothedTables,
   };
@@ -109,6 +119,7 @@ export function buildOpsSetupPlan(
     { key: "lighting", label: "Rig & focus lighting", count: lightingFixtures, perUnit: OPS_EFFORT_MINUTES.lightingFixture },
     { key: "round-tables", label: "Lay round tables", count: c.roundTables, perUnit: OPS_EFFORT_MINUTES.table },
     { key: "long-tables", label: "Lay long tables", count: c.banquetTables, perUnit: OPS_EFFORT_MINUTES.table },
+    { key: "poseur-tables", label: "Position poseur tables", count: c.poseurTables, perUnit: OPS_EFFORT_MINUTES.table },
     { key: "dress-tables", label: "Dress tables (linen)", count: c.clothedTables, perUnit: OPS_EFFORT_MINUTES.dressTable },
     { key: "chairs", label: "Place chairs", count: c.chairs, perUnit: OPS_EFFORT_MINUTES.chair },
     { key: "bar", label: "Set up bar", count: c.bars, perUnit: OPS_EFFORT_MINUTES.bar },
@@ -125,7 +136,8 @@ export function buildOpsSetupPlan(
       effortMinutes: Math.round(task.count * task.perUnit),
     }));
 
-  const totalItems = c.roundTables + c.banquetTables + c.chairs + c.stages + c.bars + c.avItems + c.lecterns;
+  const totalItems = c.roundTables + c.banquetTables + c.poseurTables
+    + c.chairs + c.stages + c.bars + c.avItems + c.lecterns;
   const totalCrewMinutes = tasks.reduce((sum, task) => sum + task.effortMinutes, 0);
   const suggestedCrew = totalCrewMinutes > 0
     ? Math.max(1, Math.ceil(totalCrewMinutes / OPS_TARGET_SETUP_MINUTES))

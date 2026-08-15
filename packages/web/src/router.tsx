@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactElement } from "react";
-import { createBrowserRouter, Navigate, useLocation } from "react-router-dom";
+import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "react-router-dom";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
 // Static like ProtectedRoute: the canonical evidence chip renders inside the
@@ -80,12 +80,6 @@ const AccessibilityPage = lazy(() =>
 const PricingPage = lazy(() =>
   cockpitImport(() => import("./pages/PricingPage.js").then((m) => ({ default: m.PricingPage }))),
 );
-const SplatFixturePage = lazy(() =>
-  cockpitImport(() => import("./pages/SplatFixturePage.js").then((m) => ({ default: m.SplatFixturePage }))),
-);
-const EvidenceChipFixturePage = lazy(() =>
-  import("./pages/EvidenceChipFixturePage.js").then((m) => ({ default: m.EvidenceChipFixturePage })),
-);
 const TradesHallVisualPage = lazy(() =>
   cockpitImport(() => import("./pages/TradesHallVisualPage.js").then((m) => ({ default: m.TradesHallVisualPage }))),
 );
@@ -158,6 +152,65 @@ function withSuspense(node: ReactElement): ReactElement {
 
 function withClerk(node: ReactElement): ReactElement {
   return withSuspense(<ClerkRouteProvider>{node}</ClerkRouteProvider>);
+}
+
+// ---------------------------------------------------------------------------
+// Dev-only fixture routes.
+//
+// These two render internal engineering fixtures with no client-facing value:
+// /dev/splat-fixture is the Spark 2.0 + Three 0.180 smoke probe (it writes a
+// `window.__splatFixture` bridge for headless checks), and /dev/evidence-chips
+// is the CARD A4 storybook of every chip state. Both were reachable in
+// production — `venviewer.com/dev/splat-fixture` returned 200 — because they
+// were registered with a plain withSuspense() and no guard.
+//
+// They are declared inside this function, not at module scope, so the gate is
+// a *build-time* one rather than a runtime redirect: Vite replaces
+// `import.meta.env.DEV` with the literal `false` in every production build,
+// Rollup folds `false ? devFixtureRoutes() : []` to `[]`, and the now-unused
+// function — with the two dynamic import()s inside it — is tree-shaken before
+// chunking. The production bundle therefore emits no SplatFixturePage or
+// EvidenceChipFixturePage chunk at all, and the paths fall through to the `*`
+// route at the bottom of the table. Keeping the lazy() calls at module scope
+// would defeat this: Rollup cannot prove a top-level lazy(...) call is
+// side-effect free, so it would retain the declarations and still emit both
+// chunks.
+//
+// Called once, at module evaluation — never during render — so each lazy
+// component keeps a stable identity for the life of the app.
+// ---------------------------------------------------------------------------
+function devFixtureRoutes(): readonly RouteObject[] {
+  const SplatFixturePage = lazy(() =>
+    cockpitImport(() => import("./pages/SplatFixturePage.js").then((m) => ({ default: m.SplatFixturePage }))),
+  );
+  const EvidenceChipFixturePage = lazy(() =>
+    import("./pages/EvidenceChipFixturePage.js").then((m) => ({ default: m.EvidenceChipFixturePage })),
+  );
+  const TimeMachineFixturePage = lazy(() =>
+    import("./pages/TimeMachineFixturePage.js").then((m) => ({ default: m.TimeMachineFixturePage })),
+  );
+
+  return [
+    {
+      // Dev smoke route for T-087: proves the production renderer stack imports
+      // Spark 2.0 with Three.js 0.180 without reaching for drei's <Splat />.
+      path: "/dev/splat-fixture",
+      element: withSuspense(<SplatFixturePage />),
+    },
+    {
+      // CARD A4 fixture: every evidence-chip state and provenance badge on one
+      // page, for visual regression and manual review of the chip grammar.
+      path: "/dev/evidence-chips",
+      element: withSuspense(<EvidenceChipFixturePage />),
+    },
+    {
+      // G4 fixture: the Time Machine in real lens chrome on a seeded trail,
+      // anchored vs unanchored. The populated state is unreachable from a
+      // guest draft, so this is where it gets reviewed.
+      path: "/dev/time-machine",
+      element: withSuspense(<TimeMachineFixturePage />),
+    },
+  ];
 }
 
 function OnboardRedirect(): ReactElement {
@@ -342,23 +395,38 @@ export const router = createBrowserRouter([
     path: "/trades-hall-leaflet",
     element: <Navigate to="/trades-house/leaflet" replace />,
   },
-  {
-    // Dev smoke route for T-087: proves the production renderer stack imports
-    // Spark 2.0 with Three.js 0.180 without reaching for drei's <Splat />.
-    path: "/dev/splat-fixture",
-    element: withSuspense(<SplatFixturePage />),
-  },
+  // /dev/splat-fixture and /dev/evidence-chips — dev builds only. In a
+  // production build this spread is a literal empty array and both paths fall
+  // through to the `*` route below. See devFixtureRoutes() for why the lazy()
+  // calls live inside that function.
+  ...(import.meta.env.DEV ? devFixtureRoutes() : []),
   {
     // Internal P0 visual-layer route. It loads registered room runtime packages
     // when present and keeps procedural fallback copy explicit when absent.
+    //
+    // Unlike the two fixtures above this console is a real production tool: the
+    // capture runbooks QA freshly trained rooms through the deployed URL
+    // (docs/operations/aws-g6e-xgrids-processing-runbook.md lists
+    // venviewer.com/dev/trades-hall-visual?venue=…&room=… per room), and the
+    // admin-only /dev/assets/rooms registry links into it per room. Deleting it
+    // from production would break both. So in production it now carries exactly
+    // the guard its two sibling internal routes carry — Clerk + venue admin +
+    // platform admin — instead of the plain withSuspense() that left a
+    // ~1,900-line engineering console open to anyone who guessed the URL.
+    //
+    // Dev builds keep it open because the console's own Playwright specs
+    // (e2e/trades-hall-visual.spec.ts, e2e/sspp-hardening.spec.ts) drive it
+    // anonymously against `vite dev`, which is the mode CI runs. Its page chunk
+    // stays in the production bundle by design — it is admin-reachable, so it
+    // must ship, exactly like TradesHallAssetStatusPage below.
     path: "/dev/trades-hall-visual",
-    element: withSuspense(<TradesHallVisualPage />),
-  },
-  {
-    // CARD A4 fixture: every evidence-chip state and provenance badge on one
-    // page, for visual regression and manual review of the chip grammar.
-    path: "/dev/evidence-chips",
-    element: withSuspense(<EvidenceChipFixturePage />),
+    element: import.meta.env.DEV
+      ? withSuspense(<TradesHallVisualPage />)
+      : withClerk(
+        <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
+          <TradesHallVisualPage />
+        </ProtectedRoute>,
+      ),
   },
   {
     // Legacy room-level registry remains available during Foundry migration;

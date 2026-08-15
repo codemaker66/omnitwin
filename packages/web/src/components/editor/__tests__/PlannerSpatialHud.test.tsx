@@ -96,6 +96,25 @@ describe("PlannerSpatialHud", () => {
     expect(screen.getByText("No quote linked")).toBeDefined();
   });
 
+  it("does not report a clothed poseur as a dining round or dressed dining table", () => {
+    const poseur = getCatalogueItemBySlug("poseur-table-black");
+    expect(poseur).toBeDefined();
+    if (poseur === undefined) return;
+    usePlacementStore.setState({
+      placedItems: [{
+        ...createPlacedItem(poseur.id, 0, 0),
+        clothed: true,
+        clothStyle: "black",
+      }],
+    });
+
+    render(<PlannerSpatialHud />);
+
+    expect(screen.getByText("0 round tables")).toBeDefined();
+    expect(screen.getByText("No dressed tables yet")).toBeDefined();
+    expect(screen.getByTestId("planner-spatial-hud").getAttribute("data-has-layout")).toBe("false");
+  });
+
   it("counts staged objects separately from chairs and tables", () => {
     const platform = getCatalogueItemBySlug("platform");
     expect(platform).toBeDefined();
@@ -114,8 +133,10 @@ describe("PlannerSpatialHud", () => {
     expect(chair).toBeDefined();
     if (roundTable === undefined || chair === undefined) return;
 
-    // 30 × 20 render units → 15m × 10m real → 150 m² of floor.
-    useRoomDimensionsStore.setState({ dimensions: { width: 30, length: 20, height: 7 } });
+    // 15m × 10m real → 150 m² of floor. The scene is in true metres now, so
+    // the store holds the real figures directly; this fixture previously
+    // carried the doubled 30 × 20 render units.
+    useRoomDimensionsStore.setState({ dimensions: { width: 15, length: 10, height: 7 } });
     usePlacementStore.setState({
       placedItems: [
         createPlacedItem(roundTable.id, 0, 0, 0),
@@ -127,7 +148,10 @@ describe("PlannerSpatialHud", () => {
     render(<PlannerSpatialHud />);
 
     const style = inferSeatingStyle({ roundTables: 1, banquetTables: 0, chairs: 2 });
-    const cap = computeCapacityIntelligence((30 / RENDER_SCALE) * (20 / RENDER_SCALE), 2, style);
+    // Real floor area, matching the dimensions set above. Deriving it from
+    // the store's own numbers keeps the expectation and the fixture from
+    // drifting apart — they previously did, via stale render-space literals.
+    const cap = computeCapacityIntelligence(15 * 10, 2, style);
 
     // Capacity comes from real floor area (floor(150 / 1.5) = 100), not a hardcoded constant.
     expect(cap.comfortableCapacity).toBe(100);
@@ -139,7 +163,7 @@ describe("PlannerSpatialHud", () => {
     ).toBeDefined();
   });
 
-  it("reports the tightest table aisle from real placed geometry", () => {
+  it("reports the tightest furniture clearance from real placed geometry", () => {
     const roundTable = getCatalogueItemBySlug("round-table-6ft");
     expect(roundTable).toBeDefined();
     if (roundTable === undefined) return;
@@ -172,11 +196,31 @@ describe("PlannerSpatialHud", () => {
 
     expect(
       screen.getByText((content) =>
-        content.includes("Tightest table aisle") &&
+        content.includes("Tightest furniture clearance") &&
         content.includes(`${gap.toFixed(1)} m`) &&
         content.includes(circulationBandLabel(circ.band)),
       ),
     ).toBeDefined();
+  });
+
+  it("reports a table-to-mic-stand gap without calling it a table aisle", () => {
+    const roundTable = getCatalogueItemBySlug("round-table-6ft");
+    const micStand = getCatalogueItemBySlug("mic-stand");
+    expect(roundTable).toBeDefined();
+    expect(micStand).toBeDefined();
+    if (roundTable === undefined || micStand === undefined) return;
+
+    usePlacementStore.setState({
+      placedItems: [
+        createPlacedItem(roundTable.id, 0, 0, 0),
+        createPlacedItem(micStand.id, 4, 0, 0),
+      ],
+    });
+
+    render(<PlannerSpatialHud />);
+
+    expect(screen.getByText(/Tightest furniture clearance/)).toBeDefined();
+    expect(screen.queryByText(/table aisle/i)).toBeNull();
   });
 
   it("flags the count of pinch points when several aisles fall below comfortable", () => {
@@ -195,7 +239,7 @@ describe("PlannerSpatialHud", () => {
 
     render(<PlannerSpatialHud />);
 
-    expect(screen.getByText(/\d+ aisles below comfortable/)).toBeDefined();
+    expect(screen.getByText(/\d+ clearances below comfortable/)).toBeDefined();
   });
 
   it("shows a starter layout grade with nothing placed", () => {

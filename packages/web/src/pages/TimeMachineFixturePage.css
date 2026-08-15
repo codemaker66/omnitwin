@@ -1,0 +1,53 @@
+/* Dev fixture layout only (/dev/time-machine). The panels themselves carry
+   their own House-token styling; this file just sets the review page up as a
+   two-column comparison so anchored and unanchored sit side by side. */
+
+.tm-fixture {
+  min-height: 100vh;
+  padding: 2.5rem clamp(1rem, 4vw, 3rem);
+  background: #14110d;
+  color: #f4ece0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.tm-fixture__head {
+  max-width: 62ch;
+  margin-bottom: 2.25rem;
+}
+
+.tm-fixture__head h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.tm-fixture__head p {
+  margin: 0;
+  color: #b9ab97;
+  line-height: 1.55;
+}
+
+.tm-fixture__grid {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  align-items: start;
+}
+
+.tm-fixture__col-head {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c8a862;
+}
+
+/* The panel mounts inside a lens row in production; strip the row chrome so
+   the fixture shows the panel exactly as the lens renders it. */
+.tm-fixture__mount {
+  padding: 0;
+  border: none;
+  background: none;
+}

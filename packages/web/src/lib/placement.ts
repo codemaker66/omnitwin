@@ -2,6 +2,15 @@ import { toRenderSpace, toRealWorld, GRAND_HALL_RENDER_DIMENSIONS } from "../con
 import type { SpaceDimensions } from "@omnitwin/types";
 import { getCatalogueItem } from "./catalogue.js";
 import type { CatalogueItem } from "./catalogue.js";
+import { normalizeFurnitureScale } from "./furniture-scale.js";
+import {
+  canRestOnFurnitureSurface,
+  isDiningTableItem,
+} from "./furniture-semantics.js";
+import {
+  isSceneFurniturePlacement,
+  isTableDressingApplicatorSlug,
+} from "./table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // Placement — pure functions for furniture drag-and-drop
@@ -53,14 +62,34 @@ export function snapPositionToGrid(x: number, z: number): Position3 {
 export function computeRotatedFootprint(
   item: CatalogueItem,
   rotationY: number,
+  scale?: number,
 ): { readonly halfW: number; readonly halfD: number } {
-  const renderW = toRenderSpace(item.width);
-  const renderD = toRenderSpace(item.depth);
+  const resolvedScale = normalizeFurnitureScale(scale);
+  const renderW = toRenderSpace(item.width) * resolvedScale;
+  const renderD = toRenderSpace(item.depth) * resolvedScale;
   const cos = Math.abs(Math.cos(rotationY));
   const sin = Math.abs(Math.sin(rotationY));
   return {
     halfW: (renderW * cos + renderD * sin) / 2,
     halfD: (renderW * sin + renderD * cos) / 2,
+  };
+}
+
+function scaledFurnitureHeight(
+  item: Pick<CatalogueItem, "height">,
+  scale?: number,
+): number {
+  return item.height * normalizeFurnitureScale(scale);
+}
+
+function furnitureVerticalInterval(
+  item: Pick<CatalogueItem, "height">,
+  y: number,
+  scale?: number,
+): { readonly bottom: number; readonly top: number } {
+  return {
+    bottom: y,
+    top: y + scaledFurnitureHeight(item, scale),
   };
 }
 
@@ -78,10 +107,11 @@ export function isWithinRoomBounds(
   item: CatalogueItem,
   rotationY: number = 0,
   roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+  scale?: number,
 ): boolean {
   const halfRoomW = roomDims.width / 2;
   const halfRoomL = roomDims.length / 2;
-  const { halfW, halfD } = computeRotatedFootprint(item, rotationY);
+  const { halfW, halfD } = computeRotatedFootprint(item, rotationY, scale);
 
   return (
     x - halfW >= -halfRoomW &&
@@ -128,10 +158,11 @@ export function snapToPlatformEdge(
   rotationY: number,
   placedItems: readonly PlacedItem[],
   excludeIds: ReadonlySet<string>,
+  scale?: number,
 ): { readonly x: number; readonly z: number } {
   if (item.category !== "stage") return { x, z };
 
-  const { halfW: aHalfW, halfD: aHalfD } = computeRotatedFootprint(item, rotationY);
+  const { halfW: aHalfW, halfD: aHalfD } = computeRotatedFootprint(item, rotationY, scale);
 
   let snappedX = x;
   let snappedZ = z;
@@ -143,7 +174,11 @@ export function snapToPlatformEdge(
     const otherItem = getCatalogueItem(other.catalogueItemId);
     if (otherItem === undefined || otherItem.category !== "stage") continue;
 
-    const { halfW: bHalfW, halfD: bHalfD } = computeRotatedFootprint(otherItem, other.rotationY);
+    const { halfW: bHalfW, halfD: bHalfD } = computeRotatedFootprint(
+      otherItem,
+      other.rotationY,
+      other.scale,
+    );
 
     // Check X-axis edge alignment (right edge to left edge, left edge to right edge)
     const rightToLeft = (other.x - bHalfW) - (x + aHalfW); // gap between my right and their left
@@ -198,6 +233,7 @@ export function snapToWallEdge(
   item: CatalogueItem,
   rotationY: number,
   roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+  scale?: number,
 ): { readonly x: number; readonly z: number } {
   const halfRoomW = roomDims.width / 2;
   const halfRoomL = roomDims.length / 2;
@@ -205,10 +241,10 @@ export function snapToWallEdge(
   // For round tables with chairs, use the full chair-ring radius as the
   // extent so the outermost chair back sits flush against the wall.
   // Chair depth ~0.45m (render 0.9), gap 0.05m (render 0.1).
-  const chairExtent = item.tableShape === "round"
+  const chairExtent = isDiningTableItem(item) && item.tableShape === "round"
     ? toRenderSpace(0.45 + 0.05) // chair depth + gap beyond table edge
     : 0;
-  const { halfW: rawHalfW, halfD: rawHalfD } = computeRotatedFootprint(item, rotationY);
+  const { halfW: rawHalfW, halfD: rawHalfD } = computeRotatedFootprint(item, rotationY, scale);
   const halfW = rawHalfW + chairExtent;
   const halfD = rawHalfD + chairExtent;
 
@@ -245,12 +281,13 @@ export function snapToWallEdge(
 
 /**
  * Returns the Y coordinate an item should be placed at, given its XZ position.
- * Checks all placed platforms: if the item's centre is within a platform's
- * footprint, it sits on top of that platform (platform.y + platform.height).
- * Multiple stacked platforms are handled — returns the highest surface.
+ * Checks candidate-compatible support surfaces under the candidate's centre.
+ * Stages support floor equipment and stage stacking; tables support only
+ * explicitly table-mountable AV. Returns the highest compatible surface.
  *
  * @param x         - Candidate X position (render-space).
  * @param z         - Candidate Z position (render-space).
+ * @param candidate - Catalogue item being placed or moved.
  * @param placedItems - All currently placed items.
  * @param excludeIds - IDs to skip (e.g. the item being placed/moved).
  * @returns The Y coordinate the item should sit at (0 = floor).
@@ -258,26 +295,28 @@ export function snapToWallEdge(
 export function computeSurfaceHeight(
   x: number,
   z: number,
+  candidate: CatalogueItem,
   placedItems: readonly PlacedItem[],
   excludeIds: ReadonlySet<string>,
 ): number {
+  if (isTableDressingApplicatorSlug(candidate.slug)) return 0;
   let maxSurface = 0;
 
   for (const other of placedItems) {
     if (excludeIds.has(other.id)) continue;
+    if (!isSceneFurniturePlacement(other)) continue;
     const otherItem = getCatalogueItem(other.catalogueItemId);
     if (otherItem === undefined) continue;
-    // Items can be placed on stages and tables
-    if (otherItem.category !== "stage" && otherItem.category !== "table") continue;
+    if (!canRestOnFurnitureSurface(candidate, otherItem)) continue;
 
-    const { halfW, halfD } = computeRotatedFootprint(otherItem, other.rotationY);
+    const { halfW, halfD } = computeRotatedFootprint(otherItem, other.rotationY, other.scale);
 
     // Check if the point (x, z) is within this surface's XZ footprint
     if (
       Math.abs(x - other.x) <= halfW &&
       Math.abs(z - other.z) <= halfD
     ) {
-      const surfaceY = other.y + otherItem.height;
+      const surfaceY = other.y + scaledFurnitureHeight(otherItem, other.scale);
       if (surfaceY > maxSurface) {
         maxSurface = surfaceY;
       }
@@ -320,20 +359,25 @@ export function checkCollision(
   excludeIds: ReadonlySet<string>,
   padding: number = 0.01,
   y: number = 0,
+  scale?: number,
 ): boolean {
-  const { halfW: aHalfW, halfD: aHalfD } = computeRotatedFootprint(item, rotationY);
-  const aBottom = y;
-  const aTop = y + item.height;
+  if (isTableDressingApplicatorSlug(item.slug)) return false;
+  const { halfW: aHalfW, halfD: aHalfD } = computeRotatedFootprint(item, rotationY, scale);
+  const { bottom: aBottom, top: aTop } = furnitureVerticalInterval(item, y, scale);
 
   for (const other of placedItems) {
     if (excludeIds.has(other.id)) continue;
+    if (!isSceneFurniturePlacement(other)) continue;
 
     const otherItem = getCatalogueItem(other.catalogueItemId);
     if (otherItem === undefined) continue;
 
     // Y-axis overlap check — items at different heights don't collide
-    const bBottom = other.y;
-    const bTop = other.y + otherItem.height;
+    const { bottom: bBottom, top: bTop } = furnitureVerticalInterval(
+      otherItem,
+      other.y,
+      other.scale,
+    );
     // Use small tolerance (1mm) to allow items sitting flush on surfaces
     if (aBottom >= bTop - 0.001 || bBottom >= aTop - 0.001) continue;
 
@@ -341,7 +385,11 @@ export function checkCollision(
     // provides tolerance for floating point imprecision in edge snapping.
     const effectivePadding = (item.category === "stage" && otherItem.category === "stage") ? -0.05 : padding;
 
-    const { halfW: bHalfW, halfD: bHalfD } = computeRotatedFootprint(otherItem, other.rotationY);
+    const { halfW: bHalfW, halfD: bHalfD } = computeRotatedFootprint(
+      otherItem,
+      other.rotationY,
+      other.scale,
+    );
 
     // AABB overlap test — strict < means touching edges are allowed when padding=0
     const overlapX = Math.abs(x - other.x) < (aHalfW + bHalfW + effectivePadding);
@@ -362,31 +410,40 @@ export function getPlacementViolations(
   excludeIds: ReadonlySet<string>,
   y: number = 0,
   roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
+  scale?: number,
 ): readonly PlacementViolation[] {
+  if (isTableDressingApplicatorSlug(item.slug)) return [];
   const violations: PlacementViolation[] = [];
 
-  if (!isWithinRoomBounds(x, z, item, rotationY, roomDims)) {
+  if (!isWithinRoomBounds(x, z, item, rotationY, roomDims, scale)) {
     violations.push({
       kind: "outside_room",
       message: "Furniture footprint crosses the room boundary",
     });
   }
 
-  const { halfW: aHalfW, halfD: aHalfD } = computeRotatedFootprint(item, rotationY);
-  const aBottom = y;
-  const aTop = y + item.height;
+  const { halfW: aHalfW, halfD: aHalfD } = computeRotatedFootprint(item, rotationY, scale);
+  const { bottom: aBottom, top: aTop } = furnitureVerticalInterval(item, y, scale);
 
   for (const other of placedItems) {
     if (excludeIds.has(other.id)) continue;
+    if (!isSceneFurniturePlacement(other)) continue;
     const otherItem = getCatalogueItem(other.catalogueItemId);
     if (otherItem === undefined) continue;
 
-    const bBottom = other.y;
-    const bTop = other.y + otherItem.height;
+    const { bottom: bBottom, top: bTop } = furnitureVerticalInterval(
+      otherItem,
+      other.y,
+      other.scale,
+    );
     if (aBottom >= bTop - 0.001 || bBottom >= aTop - 0.001) continue;
 
     const effectivePadding = (item.category === "stage" && otherItem.category === "stage") ? -0.05 : 0;
-    const { halfW: bHalfW, halfD: bHalfD } = computeRotatedFootprint(otherItem, other.rotationY);
+    const { halfW: bHalfW, halfD: bHalfD } = computeRotatedFootprint(
+      otherItem,
+      other.rotationY,
+      other.scale,
+    );
     const overlapX = Math.abs(x - other.x) < (aHalfW + bHalfW + effectivePadding);
     const overlapZ = Math.abs(z - other.z) < (aHalfD + bHalfD + effectivePadding);
 
@@ -428,10 +485,16 @@ export interface PlacedItem {
   /** Hallkeeper-visible seat/table label authored from the planner. */
   readonly label?: string;
   readonly x: number;
-  /** Vertical position (floor = 0). Items on platforms sit at platform.y + platform.height. */
+  /** Vertical position (floor = 0). Items on platforms sit at the platform's scaled visible top. */
   readonly y: number;
   readonly z: number;
   readonly rotationY: number;
+  /**
+   * Uniform scale, round-tripped from `EditorObject.scale`.
+   * Defaults to 1 when omitted (items created directly by the placement store).
+   * Rendering and X/Z planning footprints share `normalizeFurnitureScale`.
+   */
+  readonly scale?: number;
   /** Whether a cloth is draped over this item (tables only). */
   readonly clothed: boolean;
   /** Cloth colour/style draped over this table. Null when not clothed. */
@@ -477,10 +540,12 @@ export function getGroupMemberIds(
   placedItems: readonly PlacedItem[],
 ): ReadonlySet<string> {
   const item = placedItems.find((p) => p.id === itemId);
-  if (item === undefined || item.groupId === null) return new Set([itemId]);
+  if (item === undefined) return new Set([itemId]);
+  if (!isSceneFurniturePlacement(item)) return new Set();
+  if (item.groupId === null) return new Set([itemId]);
   const ids = new Set<string>();
   for (const p of placedItems) {
-    if (p.groupId === item.groupId) ids.add(p.id);
+    if (p.groupId === item.groupId && isSceneFurniturePlacement(p)) ids.add(p.id);
   }
   return ids;
 }

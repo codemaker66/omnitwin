@@ -3,6 +3,13 @@ import type { EditorObject } from "../../stores/editor-store.js";
 import type { Space } from "../../api/spaces.js";
 import { toRealWorld, toRenderSpace } from "../../constants/scale.js";
 import { computeBoundingBox, roomGeometries } from "../../data/room-geometries.js";
+import { normalizeFurnitureScale } from "../furniture-scale.js";
+import {
+  effectiveTableLinenStyle,
+  isPassiveFreestandingAvFloorItem,
+  isPoseurTableItem,
+} from "../furniture-semantics.js";
+import { isTableDressingApplicatorSlug } from "../table-dressing.js";
 import type {
   BlueprintItem,
   BlueprintScene,
@@ -28,9 +35,9 @@ import type {
 //      for an asset's physical dimensions and shape. Placed-object
 //      rotation around Y is honoured as the blueprint item's rotation.
 //
-//   3. Items whose shape can't be drawn on the blueprint (single chairs,
-//      AV gear, decor, tablecloths) are FILTERED OUT — the blueprint is
-//      the floor-plan, not the full render tree.
+//   3. Items without a meaningful floor footprint (single chairs, tabletop
+//      AV, decor, tablecloths) are filtered out. Freestanding floor equipment
+//      remains first-class because planners need its occupied floor area.
 // ---------------------------------------------------------------------------
 
 const ASSET_BY_ID = new Map<string, CanonicalAsset>(
@@ -75,15 +82,18 @@ export function assetForObject(o: EditorObject): CanonicalAsset | undefined {
 
 /**
  * Map a catalogue asset to a blueprint item kind. Returns `null` when
- * the asset has no meaningful 2D footprint (chairs, AV gear, cloths) so
+ * the asset has no meaningful 2D footprint (chairs, tabletop AV, cloths) so
  * callers can skip it.
  */
 export function itemKindForAsset(asset: CanonicalAsset): ItemKind | null {
   const slug = asset.slug;
+  if (isTableDressingApplicatorSlug(slug)) return null;
+  if (isPassiveFreestandingAvFloorItem(asset)) return "mic-stand";
   if (slug.includes("bar")) return "bar";
   if (slug.includes("dancefloor") || slug.includes("parquet")) return "dancefloor";
   if (asset.category === "stage") return "stage";
   if (asset.category === "table") {
+    if (isPoseurTableItem(asset)) return "poseur-table";
     if (asset.tableShape === "round") return "round-table";
     if (slug.startsWith("top-") || slug.includes("head-table")) return "top-table";
     return "long-table";
@@ -91,9 +101,13 @@ export function itemKindForAsset(asset: CanonicalAsset): ItemKind | null {
   return null;
 }
 
-function linenLabelForObject(o: EditorObject): "Black" | "Ivory" | undefined {
-  if (!o.clothed) return undefined;
-  return o.clothStyle === "black" ? "Black" : "Ivory";
+function linenLabelForObject(
+  asset: CanonicalAsset,
+  object: EditorObject,
+): "Black" | "Ivory" | undefined {
+  const style = effectiveTableLinenStyle(asset, object);
+  if (style === null) return undefined;
+  return style === "black" ? "Black" : "Ivory";
 }
 
 /**
@@ -122,9 +136,10 @@ export function editorObjectToBlueprintItem(
   const cx = center.x;
   const cy = center.y;
   const rotationDeg = radToDeg(o.rotationY);
+  const scale = normalizeFurnitureScale(o.scale);
 
   if (kind === "round-table") {
-    const diameterM = asset.widthM * o.scale;
+    const diameterM = asset.widthM * scale;
     const chairs =
       chairsByGroupId !== undefined && o.groupId !== null
         ? chairsByGroupId.get(o.groupId)
@@ -136,16 +151,29 @@ export function editorObjectToBlueprintItem(
       center: { x: cx, y: cy },
       diameterM,
       seats: asset.seatCount ?? 0,
-      linen: linenLabelForObject(o),
+      linen: linenLabelForObject(asset, o),
       centrepiece: undefined,
       rotationDeg,
       chairs,
     };
   }
 
+  if (kind === "poseur-table") {
+    const linen = linenLabelForObject(asset, o);
+    return {
+      id: o.id,
+      kind: "poseur-table",
+      shape: "round",
+      center: { x: cx, y: cy },
+      diameterM: asset.widthM * scale,
+      rotationDeg,
+      ...(linen === undefined ? {} : { linen }),
+    };
+  }
+
   // Rect-like items: blueprint stores top-left, so back off by half-extents.
-  const widthM = asset.widthM * o.scale;
-  const lengthM = asset.depthM * o.scale;
+  const widthM = asset.widthM * scale;
+  const lengthM = asset.depthM * scale;
   const topLeft = { x: cx - widthM / 2, y: cy - lengthM / 2 };
 
   if (kind === "dancefloor") {
@@ -153,6 +181,17 @@ export function editorObjectToBlueprintItem(
       id: o.id,
       kind: "dancefloor",
       shape: "dancefloor",
+      topLeft,
+      widthM,
+      lengthM,
+      rotationDeg,
+    };
+  }
+  if (kind === "mic-stand") {
+    return {
+      id: o.id,
+      kind: "mic-stand",
+      shape: "rect",
       topLeft,
       widthM,
       lengthM,
@@ -168,7 +207,7 @@ export function editorObjectToBlueprintItem(
       widthM,
       lengthM,
       seats: asset.seatCount ?? undefined,
-      linen: linenLabelForObject(o),
+      linen: linenLabelForObject(asset, o),
       rotationDeg,
     };
   }

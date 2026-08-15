@@ -29,7 +29,7 @@ export interface LayoutRecommendation {
 }
 
 export interface LayoutSubscores {
-  /** 0–100, or null when not assessable yet (e.g. fewer than two tables). */
+  /** 0–100, or null when not assessable yet (e.g. fewer than two floor footprints). */
   readonly circulation: number | null;
   readonly capacity: number | null;
   readonly dressing: number | null;
@@ -63,7 +63,7 @@ const WEIGHTS = { circulation: 0.4, capacity: 0.4, dressing: 0.2 } as const;
 function circulationScore(report: CirculationReport): number | null {
   switch (report.band) {
     case "open":
-      return null; // fewer than two tables — nothing to assess
+      return null; // fewer than two planning footprints — nothing to assess
     case "generous":
       return 100;
     case "comfortable":
@@ -129,7 +129,7 @@ function buildRecommendations(signals: LayoutSignals): LayoutRecommendation[] {
       id: "circulation-blocked",
       severity: "critical",
       message:
-        "Tables are too close to pass between — widen the aisles. Planning-grade only; venue review required.",
+        "Furniture is too close to pass between — widen the circulation gaps. Planning-grade only; venue review required.",
     });
   }
   if (capacity.band === "over-capacity") {
@@ -149,8 +149,8 @@ function buildRecommendations(signals: LayoutSignals): LayoutRecommendation[] {
       severity: "warning",
       message:
         count > 1
-          ? `${String(count)} table aisles are below the comfortable walkway — add space between tables.`
-          : "A table aisle is tight — add a little space between those tables.",
+          ? `${String(count)} circulation gaps are below the comfortable walkway width — add space between floor items.`
+          : "A circulation gap is tight — add a little space between those floor items.",
     });
   }
   if (capacity.band === "tight") {

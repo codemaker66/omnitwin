@@ -59,7 +59,6 @@ async function shareOrCopyLink(url: string): Promise<ShareOutcome> {
 }
 
 export interface TwinViewerControlsProps {
-  readonly venueSlug: string;
   readonly venueName: string;
   /** The element to take fullscreen — the viewer root (canvas + HUD). */
   readonly viewerRef: RefObject<HTMLDivElement | null>;
@@ -70,7 +69,6 @@ export interface TwinViewerControlsProps {
 }
 
 export function TwinViewerControls({
-  venueSlug,
   venueName,
   viewerRef,
   shareUrl,
@@ -104,7 +102,6 @@ export function TwinViewerControls({
     <>
       {enquireOpen && (
         <TwinEnquiryModal
-          venueSlug={venueSlug}
           venueName={venueName}
           onClose={() => {
             setEnquireOpen(false);

@@ -1364,7 +1364,6 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         </button>
       )}
       <TwinViewerControls
-        venueSlug={manifest.venueSlug}
         venueName={manifest.name}
         viewerRef={viewerRef}
         shareUrl={shareUrl}

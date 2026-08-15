@@ -9,6 +9,7 @@ import {
   categoryLabel,
 } from "../lib/catalogue.js";
 import type { CatalogueItem } from "../lib/catalogue.js";
+import { isSceneFurniturePlacement } from "../lib/table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // TFT-style bottom shop bar — full-width panel along the bottom
@@ -16,6 +17,14 @@ import type { CatalogueItem } from "../lib/catalogue.js";
 
 /** When dragging a placed item near the bar, fade the bar so 3D shows through. */
 const DRAG_NEAR_OPACITY = 0.45;
+
+function selectedSceneFurnitureIds(selectedIds: ReadonlySet<string>): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const placed of usePlacementStore.getState().placedItems) {
+    if (selectedIds.has(placed.id) && isSceneFurniturePlacement(placed)) ids.add(placed.id);
+  }
+  return ids;
+}
 
 const shopBarBaseStyle: React.CSSProperties = {
   position: "absolute",
@@ -642,7 +651,7 @@ export function CatalogueDrawer(): React.ReactElement | null {
   // Track selection state for immediate trash glow
   useEffect(() => {
     return useSelectionStore.subscribe((state) => {
-      setHasSelection(state.selectedIds.size > 0);
+      setHasSelection(selectedSceneFurnitureIds(state.selectedIds).size > 0);
     });
   }, []);
 
@@ -665,7 +674,9 @@ export function CatalogueDrawer(): React.ReactElement | null {
   // Global pointermove: detect dragging state, trash hover, bar proximity
   useEffect(() => {
     function onPointerMove(event: PointerEvent): void {
-      const selected = useSelectionStore.getState().selectedIds.size > 0;
+      const selected = selectedSceneFurnitureIds(
+        useSelectionStore.getState().selectedIds,
+      ).size > 0;
       const isLeftDown = (event.buttons & 1) !== 0;
       const dragging = selected && isLeftDown;
 
@@ -726,7 +737,9 @@ export function CatalogueDrawer(): React.ReactElement | null {
           event.clientY <= rect.bottom + 10;
 
         if (overTrash) {
-          const selectedIds = useSelectionStore.getState().selectedIds;
+          const selectedIds = selectedSceneFurnitureIds(
+            useSelectionStore.getState().selectedIds,
+          );
           if (selectedIds.size > 0) {
             const trashCenterX = rect.left + rect.width / 2;
             const trashCenterY = rect.top + rect.height / 2;

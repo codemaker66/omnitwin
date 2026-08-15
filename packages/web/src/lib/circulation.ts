@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // circulation — planning-grade aisle-clearance intelligence.
 //
-// Answers "can people actually walk between the tables?" from the real placed
-// geometry. Each piece of furniture is modelled as an oriented bounding box
+// Answers "can people actually walk between the floor items?" from the real
+// placed geometry. Each piece of furniture is modelled as an oriented bounding box
 // (OBB) footprint on the floor plane; the engine computes the EXACT minimum
 // distance between every pair of footprints (true convex-polygon distance, not
 // an axis-aligned approximation) and reports the tightest aisle plus how many
@@ -321,14 +321,14 @@ export function computeCirculation(footprints: readonly FurnitureFootprint[]): C
 export function circulationBandLabel(band: CirculationBand): string {
   switch (band) {
     case "open":
-      return "Add a second table to assess circulation";
+      return "Add another furniture item to assess circulation";
     case "generous":
-      return "Generous walkways between tables";
+      return "Generous circulation gaps between furniture";
     case "comfortable":
-      return "Comfortable walkways between tables";
+      return "Comfortable circulation gaps between furniture";
     case "tight":
       return "Tight walkways — review circulation";
     case "blocked":
-      return "Tables too close to pass between — venue review required";
+      return "Furniture too close to pass between — venue review required";
   }
 }

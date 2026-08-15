@@ -670,6 +670,38 @@ describe("buildItemForChip", () => {
     }
   });
 
+  it("builds a poseur footprint without a seats field", () => {
+    const item = buildItemForChip(
+      { label: "Poseur", kind: "poseur-table", marker: "circle" },
+      centre,
+      1,
+    );
+    expect(item).toMatchObject({
+      kind: "poseur-table",
+      shape: "round",
+      center: centre,
+      diameterM: 0.6,
+    });
+    expect(item).not.toHaveProperty("seats");
+  });
+
+  it("builds a mic-stand floor footprint without a seats field", () => {
+    const item = buildItemForChip(
+      { label: "Mic stand", kind: "mic-stand", marker: "square-outline" },
+      centre,
+      1,
+    );
+    expect(item).toEqual({
+      id: "mic-stand-1",
+      kind: "mic-stand",
+      shape: "rect",
+      topLeft: { x: 4.75, y: 4.75 },
+      widthM: 0.5,
+      lengthM: 0.5,
+    });
+    expect(item).not.toHaveProperty("seats");
+  });
+
   it("dancefloor is centred around the drop point", () => {
     const item = buildItemForChip({ label: "Dancefloor", kind: "dancefloor", marker: "sparkle" }, centre, 1);
     if (item.shape === "dancefloor") {

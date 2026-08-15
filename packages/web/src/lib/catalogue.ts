@@ -87,6 +87,10 @@ export function catalogueIcon(item: CatalogueItem): string {
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="16" r="8" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="20" y1="24" x2="20" y2="36" stroke="${s}" stroke-width="1.5"/><line x1="14" y1="36" x2="26" y2="36" stroke="${s}" stroke-width="1.5"/></svg>`;
     case "banquet-chair":
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="6" width="16" height="8" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/><rect x="12" y="16" width="16" height="12" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="14" y1="28" x2="14" y2="34" stroke="${s}" stroke-width="1.5"/><line x1="26" y1="28" x2="26" y2="34" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "dancefloor-panel":
+      // Basket weave: alternating finger direction is what makes a parquet
+      // panel readable at thumbnail size.
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="28" height="28" rx="1" fill="${f}" stroke="${s}" stroke-width="1.5"/><g stroke="${s}" stroke-width="0.9" opacity="0.75" fill="none"><path d="M8 9h8M8 12h8M8 15h8"/><path d="M19 8v8M22 8v8M25 8v8"/><path d="M28 9h4M28 12h4M28 15h4"/><path d="M9 19v8M12 19v8M15 19v8"/><path d="M18 20h8M18 23h8M18 26h8"/><path d="M29 19v8M32 19v8"/><path d="M8 30h8M8 33h8"/><path d="M19 29v4M22 29v4M25 29v4"/><path d="M28 30h4M28 33h4"/></g></svg>`;
     case "platform":
     case "platform-narrow":
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="16" width="32" height="12" rx="1" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="4" y1="22" x2="36" y2="22" stroke="${s}" stroke-width="0.5" opacity="0.3"/></svg>`;

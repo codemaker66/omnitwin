@@ -25,12 +25,20 @@
 //   SPEECH   while a line plays the light lifts and the head carries a slow nod,
 //            so the stillness of a painting does not fight the movement of a
 //            voice.
+//
+// And the one thing he does back: POKE. The painting is a real <button>, not a
+// div that happens to listen for clicks, because a thing you are invited to
+// prod has to be reachable by tab and announceable by a screen reader or it is
+// only a joke for people using a mouse. The escalation itself is the pure
+// reducer's (convener-state.ts), shared with the SVG skin, so both prod him the
+// same way and the ordering is proven there rather than in the view.
 // -----------------------------------------------------------------------------
 
 import {
   forwardRef,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useRef,
   useState,
@@ -45,6 +53,12 @@ import {
   type GazeRect,
   type SpringState,
 } from "./convener-gaze.js";
+import {
+  clearUtterance,
+  initialConvenerState,
+  reduceConvener,
+  type ConvenerState,
+} from "./convener-state.js";
 import {
   displayCharsSpokenBy,
   getConvenerVoicePlayer,
@@ -79,9 +93,10 @@ export const ConvenerPainting = forwardRef<ConvenerHandle, ConvenerPaintingProps
   ): ReactElement {
     const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
     const [speaking, setSpeaking] = useState(false);
+    const paintingDescriptionId = useId();
 
     const rootRef = useRef<HTMLDivElement>(null);
-    const canvasRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLButtonElement>(null);
     const typedRef = useRef<HTMLSpanElement>(null);
     const liveRef = useRef<HTMLParagraphElement>(null);
 
@@ -101,6 +116,16 @@ export const ConvenerPainting = forwardRef<ConvenerHandle, ConvenerPaintingProps
     const resolveRef = useRef<(() => void) | null>(null);
     const fullTextRef = useRef("");
     const linesRef = useRef<ReadonlyMap<string, ConvenerVoiceLine> | null>(null);
+    /**
+     * Bumped by every say(). A continuation that resolves after an interruption
+     * compares it and stands down, so a finished line never talks over the line
+     * that replaced it — including when the two lines are the same text.
+     */
+    const sayGenRef = useRef(0);
+    /** Read inside a promise continuation, so it must be a ref rather than the
+     *  prop captured when the poke started. */
+    const restingLineRef = useRef(restingLine);
+    restingLineRef.current = restingLine;
 
     useEffect(() => {
       let live = true;
@@ -157,6 +182,7 @@ export const ConvenerPainting = forwardRef<ConvenerHandle, ConvenerPaintingProps
     const say = useCallback((text: string, options?: ConvenerSayOptions): Promise<void> => {
       finishSay();
       fullTextRef.current = text;
+      sayGenRef.current += 1;
       speakingRef.current = true;
       setSpeaking(true);
       if (options?.announce !== false && liveRef.current !== null) liveRef.current.textContent = text;
@@ -217,6 +243,34 @@ export const ConvenerPainting = forwardRef<ConvenerHandle, ConvenerPaintingProps
       });
     }, []);
     speakAsideRef.current = speakAside;
+
+    /**
+     * Prodding him. The count is monotonic and the lines escalate, held at the
+     * terminal one — all of which is the reducer's, not ours. This skin never
+     * dozes (a painting holds one expression), so no tick is ever dispatched
+     * and the wake branches stay unreachable by construction.
+     */
+    const pokeStateRef = useRef<ConvenerState | null>(null);
+    const onPoke = useCallback((): void => {
+      const nowMs = Date.now();
+      const before = pokeStateRef.current ?? initialConvenerState(nowMs);
+      const after = reduceConvener(before, { type: "poke" }, nowMs);
+      pokeStateRef.current = clearUtterance(after);
+      const utterance = after.utterance;
+      if (utterance === null) return;
+
+      // Poking is the visitor's own action, so it is announced; the return to
+      // the scene afterwards is not, or every prod would repeat the question
+      // into the live region.
+      const spoken = say(utterance.text);
+      const generation = sayGenRef.current;
+      void spoken.then(() => {
+        const resting = restingLineRef.current;
+        if (resting === null || resting === "") return;
+        if (sayGenRef.current !== generation) return;
+        void say(resting, { announce: false });
+      });
+    }, [say]);
 
     const measuredRect = useCallback((): GazeRect | null => {
       if (rectRef.current === null && rootRef.current !== null) {
@@ -324,7 +378,17 @@ export const ConvenerPainting = forwardRef<ConvenerHandle, ConvenerPaintingProps
         ref={rootRef}
       >
         <div className="convener-painting-stage">
-          <div className="convener-painting-canvas" ref={canvasRef}>
+          {/* The whole painting is the control. Its name is the ACTION, and the
+              description of what hangs there is carried alongside it — an alt on
+              the image inside would be a second name for the same thing. */}
+          <button
+            type="button"
+            className="convener-painting-canvas"
+            ref={canvasRef}
+            onClick={onPoke}
+            aria-label="The Convener — poke the portrait"
+            aria-describedby={paintingDescriptionId}
+          >
             <picture>
               <source
                 type="image/webp"
@@ -333,16 +397,21 @@ export const ConvenerPainting = forwardRef<ConvenerHandle, ConvenerPaintingProps
               />
               <img
                 src="/trades-house-media/assets/convener-portrait-1100.jpg"
-                alt="An oil portrait of the Convener, in tartan and half-armour, watching from the wall."
+                alt=""
                 draggable={false}
               />
             </picture>
-            {/* Candlelight on the side the painter already lit him from. */}
-            <div className="convener-painting-candle" aria-hidden="true" />
+            {/* Candlelight on the side the painter already lit him from. Spans,
+                not divs: a button takes phrasing content only, and both of these
+                are absolutely positioned so they blockify regardless. */}
+            <span className="convener-painting-candle" aria-hidden="true" />
             {/* The painted nameplate is blank. Ours goes in it. */}
-            <div className="convener-painting-plate" aria-hidden="true">The Convener</div>
-          </div>
+            <span className="convener-painting-plate" aria-hidden="true">The Convener</span>
+          </button>
         </div>
+        <p className="convener-painting-alt" id={paintingDescriptionId}>
+          An oil portrait of the Convener, in tartan and half-armour, watching from the wall.
+        </p>
 
         <div className="convener-painting-speech" data-speaking={speaking ? "true" : "false"}>
           <p className="convener-painting-typed"><span ref={typedRef} /></p>

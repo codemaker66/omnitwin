@@ -21,6 +21,7 @@ beforeEach(() => {
 
 const ROUND_TABLE_ID = "round-table-6ft";
 const TRESTLE_TABLE_ID = "trestle-6ft";
+const POSEUR_TABLE_ID = "poseur-table";
 const CHAIR_ID = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -151,6 +152,10 @@ describe("createTableGroup", () => {
   it("returns empty for non-table item", () => {
     const group = createTableGroup(CHAIR_ID, 0, 0, 0, 4);
     expect(group).toHaveLength(0);
+  });
+
+  it("does not create seated groups for a standing poseur table", () => {
+    expect(createTableGroup(POSEUR_TABLE_ID, 0, 0, 0, 4)).toEqual([]);
   });
 
   it("all items have unique IDs", () => {
@@ -320,6 +325,17 @@ describe("seatCapacity", () => {
   it("returns 0 for a non-table item", () => {
     expect(seatCapacity(getItem(CHAIR_ID))).toBe(0);
   });
+
+  it("returns 0 for a standing poseur table", () => {
+    expect(seatCapacity(getItem(POSEUR_TABLE_ID))).toBe(0);
+    expect(computeChairPositions(0, 0, getItem(POSEUR_TABLE_ID), 0, 4)).toEqual([]);
+  });
+
+  it("uses normalized table scale for geometric seating capacity", () => {
+    const table = getItem(TRESTLE_TABLE_ID);
+    expect(seatCapacity(table, 2)).toBeGreaterThan(seatCapacity(table, 1));
+    expect(seatCapacity(table, 0)).toBe(seatCapacity(table, 1));
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -370,6 +386,16 @@ describe("computeChairPositions — clamping & heads", () => {
 
   it("clamps a rectangular request to the geometric capacity", () => {
     expect(computeChairPositions(0, 0, getItem(TRESTLE_TABLE_ID), 0, 100)).toHaveLength(8);
+  });
+
+  it("places chairs outside the visible edge of a scaled table", () => {
+    const table = getItem(ROUND_TABLE_ID);
+    const [unscaled] = computeChairPositions(0, 0, table, 0, 1, 1);
+    const [scaled] = computeChairPositions(0, 0, table, 0, 1, 2);
+    expect(unscaled).toBeDefined();
+    expect(scaled).toBeDefined();
+    if (unscaled === undefined || scaled === undefined) return;
+    expect(Math.hypot(scaled.x, scaled.z)).toBeGreaterThan(Math.hypot(unscaled.x, unscaled.z));
   });
 
   it("seats the heads of a rectangular table only once the long sides are full", () => {

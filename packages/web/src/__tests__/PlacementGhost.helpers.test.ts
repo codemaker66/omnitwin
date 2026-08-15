@@ -99,3 +99,34 @@ describe("PlacementGhost.isPoseurTable", () => {
     }
   });
 });
+
+describe("PlacementGhost table-dressing preview wiring", () => {
+  it("uses the same normalized persisted scale as the settled dressing", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve("src/components/PlacementGhost.tsx"),
+      "utf-8",
+    );
+
+    expect(source).toContain("scale={normalizeFurnitureScale(target.scale)}");
+    expect(source).toContain("scale={normalizeFurnitureScale(nearestTable.scale)}");
+  });
+
+  it("keeps contextual dressing application ahead of standalone placement", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(
+      path.resolve("src/components/PlacementGhost.tsx"),
+      "utf-8",
+    );
+    const placeAtGhost = source.slice(source.indexOf("function placeAtGhost(): void"));
+    const dressingBranch = placeAtGhost.indexOf("if (clothStyle !== null || tableSetting !== null)");
+    const standalonePlacement = placeAtGhost.indexOf("placeState.placeItem(");
+
+    expect(dressingBranch).toBeGreaterThanOrEqual(0);
+    expect(placeAtGhost).toContain("placeState.applyTableCloth(targetIds, clothStyle)");
+    expect(placeAtGhost).toContain("placeState.applyTableSetting(targetIds, tableSetting)");
+    expect(standalonePlacement).toBeGreaterThan(dressingBranch);
+  });
+});

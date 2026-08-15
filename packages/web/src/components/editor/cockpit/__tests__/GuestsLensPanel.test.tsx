@@ -14,6 +14,7 @@ function find(predicate: (item: CatalogueItem) => boolean, label: string): Catal
 }
 const roundTable = (): CatalogueItem => find((c) => c.category === "table" && c.tableShape === "round", "round table");
 const chair = (): CatalogueItem => find((c) => c.category === "chair", "chair");
+const blackCloth = (): CatalogueItem => find((c) => c.slug === "black-table-cloth", "black table cloth");
 
 function place(item: CatalogueItem, n: number): PlacedItem[] {
   return Array.from({ length: n }, (_unused, index) => ({
@@ -29,7 +30,10 @@ beforeEach(() => {
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
   // Render-space 42 × 20 → real 21 × 10 = 210 m² (comfortable 140 for rounds).
-  useRoomDimensionsStore.getState().setDimensions({ width: 42, length: 20, height: 7 });
+  // 21m × 10m real = 210 m². True metres now; this previously carried the
+  // doubled 42 × 20 render units, which is why capacity read 4× the moment
+  // the render scale went to 1.
+  useRoomDimensionsStore.getState().setDimensions({ width: 21, length: 10, height: 7 });
 });
 
 afterEach(() => { cleanup(); });
@@ -84,5 +88,16 @@ describe("GuestsLensPanel", () => {
     expect(screen.getByTestId("guests-style-theatre")).toBeTruthy();
     expect(screen.queryByTestId("guests-style-fit-theatre")).toBeNull();
     expect(screen.getByTestId("guests-style-summary").textContent).toMatch(/Set a guest count/);
+  });
+
+  it("retains a leaked applicator without treating it as furniture on the floor", () => {
+    const leaked = place(blackCloth(), 1);
+    usePlacementStore.setState({ placedItems: leaked });
+
+    render(<GuestsLensPanel />);
+
+    expect(usePlacementStore.getState().placedItems).toEqual(leaked);
+    expect(screen.getByTestId("guests-build-dinner-rounds")).toBeTruthy();
+    expect(screen.queryByTestId("guests-build-blocked")).toBeNull();
   });
 });

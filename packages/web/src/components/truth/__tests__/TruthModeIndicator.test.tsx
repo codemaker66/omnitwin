@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TruthModeIndicator } from "../TruthModeIndicator.js";
 import {
   buildProceduralTruthSummary,
@@ -89,6 +89,79 @@ describe("TruthModeIndicator", () => {
     expect(root.className).toContain("vv-floating-widget");
     expect(screen.getByRole("button", { name: /Move Truth Mode/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Minimize Truth Mode/i })).toBeTruthy();
+  });
+
+  it("keeps the narrow mobile Truth widget clear of the generated-proxy disclosure", async () => {
+    const storageKey = "venviewer:floating-widget:truth-mode-indicator:planner-truth-mode-v1:v2";
+    window.localStorage.removeItem(storageKey);
+    const originalRectDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "getBoundingClientRect",
+    );
+    const originalWidthDescriptor = Object.getOwnPropertyDescriptor(window, "innerWidth");
+    const originalHeightDescriptor = Object.getOwnPropertyDescriptor(window, "innerHeight");
+
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+    Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function getBoundingClientRect(this: HTMLElement): DOMRect {
+        if (this.dataset["testid"] === "generated-furniture-proxy-badge") {
+          return new DOMRect(12, 82, 220, 87);
+        }
+        if (this.dataset["floatingWidgetId"] === "truth-mode-indicator") {
+          return new DOMRect(0, 0, 342, this.classList.contains("is-minimized") ? 40 : 109);
+        }
+        return new DOMRect(0, 0, 0, 0);
+      },
+    });
+
+    try {
+      render(
+        <>
+          <p data-testid="generated-furniture-proxy-badge">
+            AI-generated furniture proxies · visual stand-ins · not measured
+          </p>
+          <TruthModeIndicator
+            summary={buildProceduralTruthSummary({
+              surface: "planner_3d",
+              placedObjectCount: 3,
+              measuredRuntimeAssetsLoaded: false,
+            })}
+          />
+        </>,
+      );
+
+      const root = screen.getByTestId("truth-mode-indicator");
+      const topFromTransform = (): number => {
+        const match = root.style.transform.match(/translate3d\([^,]+,\s*([\d.-]+)px,/);
+        return match === null ? Number.NaN : Number(match[1]);
+      };
+
+      await waitFor(() => {
+        expect(topFromTransform()).toBeGreaterThanOrEqual(181);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /Minimize Truth Mode/i }));
+      await waitFor(() => {
+        expect(topFromTransform()).toBeGreaterThanOrEqual(181);
+      });
+    } finally {
+      window.localStorage.removeItem(storageKey);
+      if (originalRectDescriptor !== undefined) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "getBoundingClientRect",
+          originalRectDescriptor,
+        );
+      }
+      if (originalWidthDescriptor !== undefined) {
+        Object.defineProperty(window, "innerWidth", originalWidthDescriptor);
+      }
+      if (originalHeightDescriptor !== undefined) {
+        Object.defineProperty(window, "innerHeight", originalHeightDescriptor);
+      }
+    }
   });
 
   it("does not render disabled fake drawer actions", () => {

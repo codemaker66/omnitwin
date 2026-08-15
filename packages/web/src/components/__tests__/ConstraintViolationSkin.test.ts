@@ -32,6 +32,21 @@ describe("buildViolationCrossMarks", () => {
 
     expect(marks).toHaveLength(5);
   });
+
+  it("covers the same normalized scaled footprint as placement", () => {
+    const table = getCatalogueItemBySlug("trestle-6ft");
+    expect(table).toBeDefined();
+    if (table === undefined) throw new Error("trestle-6ft catalogue item missing");
+
+    const base = buildViolationCrossMarks(table);
+    const scaled = buildViolationCrossMarks(table, 18, 2);
+    const invalid = buildViolationCrossMarks(table, 18, 0);
+    const maxAbsX = (marks: ReturnType<typeof buildViolationCrossMarks>): number =>
+      Math.max(...marks.map((mark) => Math.abs(mark.x)));
+
+    expect(maxAbsX(scaled)).toBeGreaterThan(maxAbsX(base));
+    expect(invalid).toEqual(base);
+  });
 });
 
 describe("ConstraintViolationSkin", () => {

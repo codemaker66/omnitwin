@@ -1,4 +1,5 @@
 import { getCatalogueItem } from "./catalogue.js";
+import { isPoseurTableItem } from "./furniture-semantics.js";
 import {
   tableClothStyleForCatalogueItem,
   tableSettingForCatalogueItem,
@@ -27,5 +28,6 @@ export function isTableSetting(id: string | null): boolean {
  */
 export function isPoseurTable(id: string | null): boolean {
   if (id === null) return false;
-  return getCatalogueItem(id)?.slug.startsWith("poseur-table") ?? false;
+  const item = getCatalogueItem(id);
+  return item !== undefined && isPoseurTableItem(item);
 }

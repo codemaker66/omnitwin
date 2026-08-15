@@ -137,3 +137,30 @@ export const GuestEnquirySchema = z
   );
 
 export type GuestEnquiry = z.infer<typeof GuestEnquirySchema>;
+
+// ---------------------------------------------------------------------------
+// Venue slug namespaces — the enquiry anchor
+//
+// Trades Hall exists under TWO slugs and they are not interchangeable:
+//
+//   "trades-hall"          the ASSET namespace — twin bundles, splat paths,
+//                          runtime packages, the twin manifest's venueSlug.
+//   "trades-hall-glasgow"  the DATABASE namespace — the `venues.slug` row that
+//                          `POST /public/enquiries` resolves against.
+//
+// Sending the asset slug to the enquiry endpoint passes the twin allowlist gate
+// and then misses the `venues.slug` lookup, so the request 404s as "Venue not
+// found" — a total, silent loss of walkthrough leads. Mocked-network tests
+// cannot catch this by construction: they assert on the value the client sends,
+// and nothing asserts that value matches a row in `venues`.
+//
+// This constant is the single source of truth for the DATABASE namespace. Both
+// the web client and the API's twin allowlist default import it, so the two
+// sides cannot drift apart again without a type error.
+// ---------------------------------------------------------------------------
+
+/** The `venues.slug` value the public enquiry endpoint resolves against. */
+export const TRADES_HALL_ENQUIRY_VENUE_SLUG = "trades-hall-glasgow";
+
+/** The asset/twin-bundle namespace. NOT valid as an enquiry anchor. */
+export const TRADES_HALL_ASSET_SLUG = "trades-hall";

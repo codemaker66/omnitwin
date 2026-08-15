@@ -29,6 +29,11 @@ import { useMarkupStore } from "../../stores/markup-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
+import {
+  canApplyTableLinenToItem,
+  isDiningTableItem,
+} from "../../lib/furniture-semantics.js";
+import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 
 interface CommandAction {
   readonly id: string;
@@ -51,13 +56,17 @@ function selectedCopy(
   selectedCount: number,
   tableCount: number,
   chairCount: number,
+  linenTargetCount: number,
 ): CommandDeckCopy {
   if (selectedCount === 1 && tableCount === 1) {
+    const canDress = linenTargetCount === 1;
     return {
       kicker: "Selection",
       title: "Table selected",
-      detail: "Dress it, move it, or group the surrounding seats without opening another panel.",
-      metric: "Table controls ready",
+      detail: canDress
+        ? "Dress it, move it, or group it with nearby furniture without opening another panel."
+        : "Move it or group it with nearby furniture without adding a second cloth.",
+      metric: canDress ? "Table controls ready" : "Intrinsic linen",
     };
   }
   if (selectedCount === 1 && chairCount === 1) {
@@ -129,7 +138,11 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
   const markupStrokeCount = useMarkupStore((s) => s.strokes.length);
   const activeReferenceId = useBookmarkStore((s) => s.activeReferenceId);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
-  const placedItems = usePlacementStore((s) => s.placedItems);
+  const allPlacedItems = usePlacementStore((s) => s.placedItems);
+  const placedItems = useMemo(
+    () => sceneFurniturePlacements(allPlacedItems),
+    [allPlacedItems],
+  );
   const snapEnabled = usePlacementStore((s) => s.snapEnabled);
   const history = useEditorStore((s) => s.history);
   const plannedGuestCount = useCockpitStore((s) => s.plannedGuestCount);
@@ -150,6 +163,26 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
     [selectedItems],
   );
   const tableCount = selectedTableIds.length;
+  const selectedLinenTableIds = useMemo(
+    () => selectedItems
+      .filter((item) => {
+        const catalogueItem = getCatalogueItem(item.catalogueItemId);
+        return catalogueItem !== undefined && canApplyTableLinenToItem(catalogueItem);
+      })
+      .map((item) => item.id),
+    [selectedItems],
+  );
+  const linenTableCount = selectedLinenTableIds.length;
+  const selectedDiningTableIds = useMemo(
+    () => selectedItems
+      .filter((item) => {
+        const catalogueItem = getCatalogueItem(item.catalogueItemId);
+        return catalogueItem !== undefined && isDiningTableItem(catalogueItem);
+      })
+      .map((item) => item.id),
+    [selectedItems],
+  );
+  const diningTableCount = selectedDiningTableIds.length;
   const chairCount = useMemo(
     () => selectedItems.filter((item) => getCatalogueItem(item.catalogueItemId)?.category === "chair").length,
     [selectedItems],
@@ -250,8 +283,8 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
     }
 
     if (selectedCount > 0) {
-      const tableIds = new Set(selectedTableIds);
-      const copy = selectedCopy(selectedCount, tableCount, chairCount);
+      const linenTableIds = new Set(selectedLinenTableIds);
+      const copy = selectedCopy(selectedCount, tableCount, chairCount, linenTableCount);
       const actions: CommandAction[] = [
         {
           id: "group",
@@ -282,23 +315,27 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
         },
       ];
 
-      if (tableCount > 0) {
-        actions.unshift(
-          {
-            id: "ivory-cloth",
-            label: "Ivory cloth",
-            ariaLabel: "Apply ivory cloth to selected tables",
-            icon: <Paintbrush size={16} aria-hidden="true" />,
-            onClick: () => { usePlacementStore.getState().applyTableCloth(tableIds, "white"); },
-          },
-          {
+      if (linenTableCount > 0) {
+        const tableActions: CommandAction[] = [{
+          id: "ivory-cloth",
+          label: "Ivory cloth",
+          ariaLabel: "Apply ivory cloth to selected tables",
+          icon: <Paintbrush size={16} aria-hidden="true" />,
+          onClick: () => { usePlacementStore.getState().applyTableCloth(linenTableIds, "white"); },
+        }];
+        if (diningTableCount > 0) {
+          const diningTableIds = new Set(selectedDiningTableIds);
+          tableActions.push({
             id: "dinner-set",
             label: "Dinner set",
             ariaLabel: "Apply dinner place settings to selected tables",
             icon: <Utensils size={16} aria-hidden="true" />,
-            onClick: () => { usePlacementStore.getState().applyTableSetting(tableIds, "dinner"); },
-          },
-        );
+            onClick: () => {
+              usePlacementStore.getState().applyTableSetting(diningTableIds, "dinner");
+            },
+          });
+        }
+        actions.unshift(...tableActions);
       }
 
       actions.push(...historyActions(history));
@@ -387,15 +424,19 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
     activeReferenceId,
     chairCount,
     drawerOpen,
+    diningTableCount,
     history,
     markupActive,
     markupStrokeCount,
+    linenTableCount,
     placedItems.length,
     plannedGuestCount,
     selectedCatalogue,
     selectedCount,
     selectedIdSet,
+    selectedDiningTableIds,
     selectedItems,
+    selectedLinenTableIds,
     selectedTableIds,
     snapEnabled,
     tableCount,

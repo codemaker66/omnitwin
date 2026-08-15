@@ -1,0 +1,400 @@
+/* -----------------------------------------------------------------------------
+   LegalPage.css — the three legal documents, dressed in the house language.
+
+   The palette, typefaces and easing are deliberately the same values the home
+   page uses (packages/web/src/pages/fresh/fresh.css): blond Scottish sandstone
+   as the ground, brown-black ink, bottle green for links, dark mode in warm
+   dark grey rather than black. They are copied rather than imported so that a
+   long legal document does not drag the whole home-page stylesheet into its
+   route chunk; if the home page's palette moves, move these with it.
+
+   Colour pairs used for text were checked against the WCAG contrast formula:
+   ink on paper and ink-2 on paper both clear 4.5:1 in each theme, and green
+   clears it too, which is why links are green rather than ochre. Ochre is used
+   only for rules and marks, never for text.
+----------------------------------------------------------------------------- */
+
+.lg-root {
+  --lg-paper: #ede7db;
+  --lg-paper-2: #e4dccb;
+  --lg-ink: #262016;
+  --lg-ink-2: #5a5244;
+  --lg-green: #1f4a38;
+  --lg-green-soft: rgba(31, 74, 56, 0.14);
+  --lg-ochre: #b7862f;
+  --lg-rule: #d5cbb6;
+  --lg-display: "Fraunces", "Georgia", serif;
+  --lg-body: "Newsreader", "Georgia", serif;
+  --lg-ui: "Geist", system-ui, sans-serif;
+  --lg-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: light;
+
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: var(--lg-paper);
+  /* Light falls from above, as on the home page: a warmer sheet at the top
+     settling into the paper. */
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--lg-paper) 86%, #fff6e4 14%) 0,
+    var(--lg-paper) 420px
+  );
+  color: var(--lg-ink);
+  font-family: var(--lg-body);
+  line-height: 1.65;
+}
+
+@media (prefers-color-scheme: dark) {
+  .lg-root:not([data-theme="light"]) {
+    --lg-paper: #1b1713;
+    --lg-paper-2: #241f18;
+    --lg-ink: #efe7d9;
+    --lg-ink-2: #b5aa97;
+    --lg-green: #8fc3a8;
+    --lg-green-soft: rgba(143, 195, 168, 0.16);
+    --lg-ochre: #d8a64c;
+    --lg-rule: #3a332a;
+    color-scheme: dark;
+  }
+}
+
+.lg-root[data-theme="dark"] {
+  --lg-paper: #1b1713;
+  --lg-paper-2: #241f18;
+  --lg-ink: #efe7d9;
+  --lg-ink-2: #b5aa97;
+  --lg-green: #8fc3a8;
+  --lg-green-soft: rgba(143, 195, 168, 0.16);
+  --lg-ochre: #d8a64c;
+  --lg-rule: #3a332a;
+  color-scheme: dark;
+}
+
+.lg-root :focus-visible {
+  outline: 2px solid var(--lg-green);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.lg-root a {
+  color: var(--lg-green);
+  text-decoration-color: color-mix(in srgb, var(--lg-green) 45%, transparent);
+  text-underline-offset: 3px;
+}
+.lg-root a:hover {
+  text-decoration-color: currentcolor;
+}
+
+/* ————————————————— header ————————————————— */
+
+.lg-header {
+  border-bottom: 1px solid var(--lg-rule);
+  padding: 14px clamp(18px, 5vw, 40px);
+}
+.lg-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--lg-ui);
+  font-size: 12.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--lg-ink-2);
+  text-decoration: none;
+}
+.lg-home:hover {
+  color: var(--lg-ink);
+}
+.lg-home-arrow {
+  transition: transform 220ms var(--lg-ease);
+}
+.lg-home:hover .lg-home-arrow {
+  transform: translateX(-3px);
+}
+
+.lg-skip {
+  position: absolute;
+  left: 16px;
+  top: 10px;
+  z-index: 10;
+  padding: 10px 16px;
+  background: var(--lg-paper);
+  border: 1px solid var(--lg-rule);
+  border-radius: 4px;
+  color: var(--lg-ink);
+  font-family: var(--lg-ui);
+  font-size: 13px;
+  text-decoration: none;
+  transform: translateY(-64px);
+  transition: transform 200ms var(--lg-ease);
+}
+.lg-skip:focus-visible {
+  transform: none;
+}
+
+/* ————————————————— the document ————————————————— */
+
+.lg-main {
+  flex: 1;
+  padding: clamp(36px, 7vw, 76px) clamp(18px, 5vw, 40px) 64px;
+}
+
+/* A readable measure: roughly 68 characters of Newsreader at this size. */
+.lg-doc {
+  max-width: 34rem;
+  margin: 0 auto;
+  counter-reset: lg-section;
+  font-size: clamp(16.5px, 1.05vw + 15px, 18px);
+}
+
+.lg-title {
+  margin: 0;
+  font-family: var(--lg-display);
+  font-weight: 500;
+  font-variation-settings: "opsz" 96, "SOFT" 20;
+  font-size: clamp(32px, 6vw, 46px);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.lg-standfirst {
+  margin: 18px 0 0;
+  color: var(--lg-ink-2);
+  font-size: 1.02em;
+  line-height: 1.6;
+}
+
+.lg-updated {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin: 26px 0 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--lg-rule);
+  border-bottom: 1px solid var(--lg-rule);
+  font-family: var(--lg-ui);
+  font-size: 13px;
+  color: var(--lg-ink);
+}
+.lg-updated-label {
+  color: var(--lg-ink-2);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+/* ————————————————— contents ————————————————— */
+
+.lg-toc {
+  margin: 34px 0 8px;
+  padding: 22px 24px 24px;
+  background: color-mix(in srgb, var(--lg-paper-2) 70%, transparent);
+  border: 1px solid var(--lg-rule);
+  border-radius: 6px;
+}
+.lg-toc-heading {
+  margin: 0 0 12px;
+  font-family: var(--lg-ui);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lg-ink-2);
+}
+.lg-toc-list {
+  margin: 0;
+  padding-left: 1.35em;
+  font-size: 0.94em;
+}
+.lg-toc-list li {
+  margin: 5px 0;
+  padding-left: 2px;
+}
+.lg-toc-list li::marker {
+  color: var(--lg-ink-2);
+  font-family: var(--lg-ui);
+  font-size: 0.82em;
+}
+.lg-toc-list a {
+  text-decoration: none;
+}
+.lg-toc-list a:hover {
+  text-decoration: underline;
+}
+
+@media (min-width: 760px) {
+  .lg-toc-list {
+    columns: 2;
+    column-gap: 34px;
+  }
+  .lg-toc-list li {
+    break-inside: avoid;
+  }
+}
+
+/* ————————————————— sections ————————————————— */
+
+.lg-section {
+  margin-top: 46px;
+  scroll-margin-top: 24px;
+}
+
+.lg-heading {
+  counter-increment: lg-section;
+  margin: 0 0 14px;
+  padding-top: 22px;
+  border-top: 1px solid var(--lg-rule);
+  font-family: var(--lg-display);
+  font-weight: 500;
+  font-variation-settings: "opsz" 40;
+  font-size: clamp(22px, 2.4vw, 27px);
+  line-height: 1.22;
+  letter-spacing: -0.005em;
+}
+.lg-heading::before {
+  content: counter(lg-section) ".";
+  margin-right: 0.45em;
+  color: var(--lg-ink-2);
+  font-family: var(--lg-ui);
+  font-size: 0.55em;
+  font-weight: 500;
+  vertical-align: 0.28em;
+}
+
+.lg-p {
+  margin: 0 0 1.05em;
+  line-height: 1.78;
+}
+.lg-p:last-child {
+  margin-bottom: 0;
+}
+
+.lg-list {
+  margin: 0 0 1.05em;
+  padding-left: 1.15em;
+  line-height: 1.72;
+}
+.lg-list li {
+  margin: 0 0 0.62em;
+  padding-left: 0.25em;
+}
+.lg-list li::marker {
+  color: var(--lg-ochre);
+}
+
+/* Definition rows carry the dense material — data categories, processors,
+   retention periods — where a paragraph would blur them together. */
+.lg-defs {
+  margin: 0 0 1.05em;
+}
+.lg-def {
+  margin: 0 0 18px;
+  padding-left: 16px;
+  border-left: 2px solid var(--lg-green-soft);
+}
+.lg-def:last-child {
+  margin-bottom: 0;
+}
+.lg-def dt {
+  font-family: var(--lg-ui);
+  font-size: 0.84em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.45;
+  color: var(--lg-ink);
+}
+.lg-def dd {
+  margin: 5px 0 0;
+  color: var(--lg-ink-2);
+  line-height: 1.7;
+}
+
+.lg-links {
+  list-style: none;
+  margin: 0 0 1.05em;
+  padding: 0;
+}
+.lg-links li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--lg-rule);
+}
+.lg-links li:first-child {
+  border-top: 1px solid var(--lg-rule);
+}
+.lg-link-label {
+  flex: 0 0 auto;
+  min-width: 9.5rem;
+  font-family: var(--lg-ui);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lg-ink-2);
+}
+
+/* ————————————————— footer ————————————————— */
+
+.lg-footer {
+  border-top: 1px solid var(--lg-rule);
+  padding: 26px clamp(18px, 5vw, 40px) 40px;
+  background: color-mix(in srgb, var(--lg-paper-2) 55%, transparent);
+}
+.lg-footer-note {
+  max-width: 34rem;
+  margin: 0 auto;
+  font-family: var(--lg-ui);
+  font-size: 12.5px;
+  color: var(--lg-ink-2);
+}
+.lg-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  list-style: none;
+  max-width: 34rem;
+  margin: 12px auto 0;
+  padding: 0;
+  font-family: var(--lg-ui);
+  font-size: 13px;
+}
+.lg-footer-links a {
+  text-decoration: none;
+}
+.lg-footer-links a:hover {
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-root * {
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Legal documents get printed and filed. Let them print well. */
+@media print {
+  .lg-root {
+    background: #fff;
+    color: #000;
+  }
+  .lg-skip,
+  .lg-header,
+  .lg-footer-links {
+    display: none;
+  }
+  .lg-doc {
+    max-width: none;
+    font-size: 11pt;
+  }
+  .lg-section {
+    break-inside: avoid-page;
+  }
+  .lg-heading {
+    break-after: avoid-page;
+  }
+}

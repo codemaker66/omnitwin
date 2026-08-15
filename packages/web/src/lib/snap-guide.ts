@@ -1,6 +1,10 @@
 import { computeRotatedFootprint } from "./placement.js";
 import { getCatalogueItem } from "./catalogue.js";
 import type { PlacedItem } from "./placement.js";
+import {
+  isSceneFurniturePlacement,
+  isTableDressingApplicatorSlug,
+} from "./table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // Snap alignment guides — pure functions
@@ -68,11 +72,16 @@ export function computeSnapGuides(
   dragRotationY: number,
   placedItems: readonly PlacedItem[],
   excludeIds: ReadonlySet<string>,
+  dragScale?: number,
 ): readonly SnapGuide[] {
   const dragItem = getCatalogueItem(dragItemId);
-  if (dragItem === undefined) return [];
+  if (dragItem === undefined || isTableDressingApplicatorSlug(dragItem.slug)) return [];
 
-  const { halfW: dHalfW, halfD: dHalfD } = computeRotatedFootprint(dragItem, dragRotationY);
+  const { halfW: dHalfW, halfD: dHalfD } = computeRotatedFootprint(
+    dragItem,
+    dragRotationY,
+    dragScale,
+  );
 
   // Dragged item's key coordinates
   const dLeftX = dragX - dHalfW;
@@ -84,10 +93,15 @@ export function computeSnapGuides(
 
   for (const other of placedItems) {
     if (excludeIds.has(other.id)) continue;
+    if (!isSceneFurniturePlacement(other)) continue;
     const otherItem = getCatalogueItem(other.catalogueItemId);
     if (otherItem === undefined) continue;
 
-    const { halfW: oHalfW, halfD: oHalfD } = computeRotatedFootprint(otherItem, other.rotationY);
+    const { halfW: oHalfW, halfD: oHalfD } = computeRotatedFootprint(
+      otherItem,
+      other.rotationY,
+      other.scale,
+    );
 
     const oLeftX = other.x - oHalfW;
     const oRightX = other.x + oHalfW;
@@ -160,11 +174,18 @@ export function snapToFurnitureAlignment(
   placedItems: readonly PlacedItem[],
   excludeIds: ReadonlySet<string>,
   threshold: number = SNAP_GUIDE_THRESHOLD,
+  dragScale?: number,
 ): AlignmentSnapResult {
   const dragItem = getCatalogueItem(dragItemId);
-  if (dragItem === undefined) return { x: dragX, z: dragZ };
+  if (dragItem === undefined || isTableDressingApplicatorSlug(dragItem.slug)) {
+    return { x: dragX, z: dragZ };
+  }
 
-  const { halfW: dHalfW, halfD: dHalfD } = computeRotatedFootprint(dragItem, dragRotationY);
+  const { halfW: dHalfW, halfD: dHalfD } = computeRotatedFootprint(
+    dragItem,
+    dragRotationY,
+    dragScale,
+  );
   let bestDx = 0;
   let bestDz = 0;
   let bestAbsDx = threshold;
@@ -172,10 +193,15 @@ export function snapToFurnitureAlignment(
 
   for (const other of placedItems) {
     if (excludeIds.has(other.id)) continue;
+    if (!isSceneFurniturePlacement(other)) continue;
     const otherItem = getCatalogueItem(other.catalogueItemId);
     if (otherItem === undefined) continue;
 
-    const { halfW: oHalfW, halfD: oHalfD } = computeRotatedFootprint(otherItem, other.rotationY);
+    const { halfW: oHalfW, halfD: oHalfD } = computeRotatedFootprint(
+      otherItem,
+      other.rotationY,
+      other.scale,
+    );
     const oLeftX = other.x - oHalfW;
     const oRightX = other.x + oHalfW;
     const oBackZ = other.z - oHalfD;

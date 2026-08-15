@@ -6,6 +6,7 @@ import { seatingCountsFromPlacedItems } from "./seating-counts.js";
 import { costQuantitiesFromLayout, coversSourceLabel, type CoversSource } from "./cockpit-cost-model.js";
 import { buildProposalCapacityGuidance, buildProposalCapacityNote } from "./proposal-capacity-note.js";
 import { BAR_CATALOGUE_SLUG } from "./guest-flow-layout-input.js";
+import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // cockpit-share-model — turn the LIVE layout into a client-safe proposal draft
@@ -76,6 +77,7 @@ function featureLabelsFromLayout(placedItems: readonly PlacedItem[]): string[] {
   let bar = 0;
   let lectern = 0;
   for (const placed of placedItems) {
+    if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item === undefined) continue;
     if (item.category === "stage") stage += 1;

@@ -9,6 +9,7 @@ import { seatingCountsFromPlacedItems } from "../../lib/seating-counts.js";
 import { buildCapacityGuidance } from "../../lib/proposal-capacity-note.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { isValidEmail } from "../../lib/email-validation.js";
+import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // GuestEnquiryModal — premium conversion moment
@@ -80,7 +81,7 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
 
 /** Build a human-readable summary of the current layout. */
 function getLayoutSummary(): string {
-  const items = usePlacementStore.getState().placedItems;
+  const items = sceneFurniturePlacements(usePlacementStore.getState().placedItems);
   if (items.length === 0) return "Empty layout";
   const counts = new Map<string, number>();
   for (const item of items) {

@@ -49,14 +49,14 @@ describe("CirculationOverlay", () => {
     error.mockClear();
   });
 
-  it("renders nothing with fewer than two tables", () => {
+  it("renders nothing with fewer than two planning footprints", () => {
     const roundTable = getCatalogueItemBySlug("round-table-6ft");
     if (roundTable === undefined) throw new Error("fixture round table missing");
     usePlacementStore.setState({ placedItems: [createPlacedItem(roundTable.id, 0, 0, 0)] });
 
     render(<CirculationOverlay />);
 
-    expect(screen.queryByLabelText(/Tightest table aisle/)).toBeNull();
+    expect(screen.queryByLabelText(/Tightest furniture clearance/)).toBeNull();
   });
 
   it("ignores chairs — two chairs alone draw no aisle", () => {
@@ -68,7 +68,7 @@ describe("CirculationOverlay", () => {
 
     render(<CirculationOverlay />);
 
-    expect(screen.queryByLabelText(/Tightest table aisle/)).toBeNull();
+    expect(screen.queryByLabelText(/Tightest furniture clearance/)).toBeNull();
   });
 
   it("draws a labelled aisle once two tables share the floor", () => {
@@ -83,8 +83,26 @@ describe("CirculationOverlay", () => {
 
     render(<CirculationOverlay />);
 
-    const badge = screen.getByLabelText(/Tightest table aisle/);
+    const badge = screen.getByLabelText(/Tightest furniture clearance/);
     expect(badge.textContent).toMatch(/\d\.\d m/);
+  });
+
+  it("labels a table-to-mic-stand gap as furniture clearance", () => {
+    const roundTable = getCatalogueItemBySlug("round-table-6ft");
+    const micStand = getCatalogueItemBySlug("mic-stand");
+    if (roundTable === undefined) throw new Error("fixture round table missing");
+    if (micStand === undefined) throw new Error("fixture mic stand missing");
+    usePlacementStore.setState({
+      placedItems: [
+        createPlacedItem(roundTable.id, 0, 0, 0),
+        createPlacedItem(micStand.id, 4, 0, 0),
+      ],
+    });
+
+    render(<CirculationOverlay />);
+
+    expect(screen.getByLabelText(/Tightest furniture clearance/)).toBeDefined();
+    expect(screen.queryByLabelText(/table aisle/i)).toBeNull();
   });
 
   it("surfaces every pinch point: one prominent primary plus subtle secondaries", () => {
@@ -103,9 +121,9 @@ describe("CirculationOverlay", () => {
 
     const { container } = render(<CirculationOverlay />);
 
-    const primaries = screen.getAllByLabelText(/Tightest table aisle/);
+    const primaries = screen.getAllByLabelText(/Tightest furniture clearance/);
     expect(primaries).toHaveLength(1); // exactly one headline aisle
-    expect(screen.queryByLabelText(/Secondary table aisle/)).toBeNull();
+    expect(screen.queryByLabelText(/Secondary furniture clearance/)).toBeNull();
     expect(container.querySelectorAll("linesegments").length).toBeGreaterThanOrEqual(2);
   });
 
@@ -123,8 +141,8 @@ describe("CirculationOverlay", () => {
     expect(container.querySelectorAll("linesegments").length).toBeLessThanOrEqual(
       MAX_RENDERED_CIRCULATION_SEGMENTS,
     );
-    expect(screen.getAllByLabelText(/Tightest table aisle/)).toHaveLength(1);
-    expect(screen.queryByLabelText(/Secondary table aisle/)).toBeNull();
+    expect(screen.getAllByLabelText(/Tightest furniture clearance/)).toHaveLength(1);
+    expect(screen.queryByLabelText(/Secondary furniture clearance/)).toBeNull();
   });
 
   it("does not mount 3D circulation annotations on mobile and tablet planner canvases", () => {

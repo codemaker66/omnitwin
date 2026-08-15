@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { GuestEnquirySchema } from "@omnitwin/types";
+import { GuestEnquirySchema, TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 import { eq, and, isNull, asc } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, guestLeads, spaces, users, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
@@ -24,11 +24,15 @@ const TWIN_SOURCE_NOTE = "Sent from the venue's virtual walkthrough (the twin)."
  * enumerable and spammable by slug. The allowlist mirrors how the twin bundle
  * is actually deployed (manually, per venue, to R2); env-overridable so new
  * twins are enabled without a code change, defaulting to the flagship so the
- * live twin works with no extra deploy step. Multi-venue should promote this to
+ * live twin works with no extra deploy step. The default is the DATABASE slug
+ * (TRADES_HALL_ENQUIRY_VENUE_SLUG), not the asset slug: this gate is checked
+ * immediately before a `venues.slug` lookup, so an allowlist entry that is not
+ * a real row passes the gate and then 404s on the lookup — which is exactly how
+ * twin enquiries were being lost. Multi-venue should promote this to
  * a `venues.twinPublished` column.
  */
 function twinPublicVenueSlugs(): readonly string[] {
-  return (process.env["TWIN_PUBLIC_VENUE_SLUGS"] ?? "trades-hall")
+  return (process.env["TWIN_PUBLIC_VENUE_SLUGS"] ?? TRADES_HALL_ENQUIRY_VENUE_SLUG)
     .split(",")
     .map((slug) => slug.trim())
     .filter((slug) => slug.length > 0);
@@ -202,7 +206,27 @@ export async function publicEnquiryRoutes(
       .from(users)
       .where(and(eq(users.venueId, anchor.venueId), eq(users.role, "hallkeeper")));
 
-    for (const hk of hallkeepers) {
+    // A venue with no hallkeeper user is the silent-revenue-leak case: the
+    // enquiry is stored, this loop runs zero times, and the guest still gets a
+    // 201 saying the events team has it. Fall back to a configured address so a
+    // lead can never reach nobody, and log loudly when there is no one at all.
+    const fallbackRaw = process.env["ENQUIRY_FALLBACK_EMAIL"] ?? "";
+    const fallback = fallbackRaw.trim();
+    const recipients: readonly { id: string; email: string }[] =
+      hallkeepers.length > 0
+        ? hallkeepers
+        : fallback !== ""
+          ? [{ id: "fallback", email: fallback }]
+          : [];
+
+    if (recipients.length === 0) {
+      request.log.error(
+        { enquiryId: enquiry.id, venueId: anchor.venueId },
+        "enquiry stored but NOT announced: venue has no hallkeeper user and ENQUIRY_FALLBACK_EMAIL is unset",
+      );
+    }
+
+    for (const hk of recipients) {
       const emailData = await newEnquiryNotification({
         spaceName,
         eventType: parsed.data.eventType ?? null,

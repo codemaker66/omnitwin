@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { CATALOGUE_ITEMS } from "../../../../lib/catalogue.js";
+import { createPlacedItem } from "../../../../lib/placement.js";
+import { usePlacementStore } from "../../../../stores/placement-store.js";
+import { useSelectionStore } from "../../../../stores/selection-store.js";
+import { useFurnitureInspectionStore } from "../../../../stores/furniture-inspection-store.js";
 
 // Stand in for the real panels so this stays a routing test, not a render test.
 vi.mock("../FlowLensPanel.js", () => ({ FlowLensPanel: () => <div data-testid="flow-panel-mock" /> }));
@@ -17,7 +22,19 @@ vi.mock("../CockpitTruthRail.js", () => ({ CockpitTruthRail: () => <div data-tes
 const { CockpitRightDock, panelForMode } = await import("../CockpitRightDock.js");
 const { useCockpitStore } = await import("../../../../stores/cockpit-store.js");
 
-afterEach(() => { cleanup(); useCockpitStore.getState().reset(); });
+function catalogueId(slug: string): string {
+  const item = CATALOGUE_ITEMS.find((candidate) => candidate.slug === slug);
+  if (item === undefined) throw new Error(`missing catalogue fixture ${slug}`);
+  return item.id;
+}
+
+afterEach(() => {
+  cleanup();
+  useCockpitStore.getState().reset();
+  usePlacementStore.setState({ placedItems: [] });
+  useSelectionStore.getState().clearSelection();
+  useFurnitureInspectionStore.getState().closeInspection();
+});
 
 describe("panelForMode (registry)", () => {
   it("returns a panel for a registered lens and null otherwise", () => {
@@ -48,6 +65,52 @@ describe("CockpitRightDock", () => {
     render(<CockpitRightDock />);
     expect(screen.getByTestId("flow-panel-mock")).toBeTruthy();
     expect(screen.queryByTestId("truth-rail-mock")).toBeNull();
+  });
+
+  it("routes one selected generated proxy to the inspection dock in Design", () => {
+    const placed = createPlacedItem(catalogueId("bar-counter"), 0, 0);
+    usePlacementStore.setState({ placedItems: [placed] });
+    useSelectionStore.getState().select(placed.id);
+    useCockpitStore.getState().setMode("design");
+
+    render(<CockpitRightDock />);
+
+    expect(screen.getByTestId("furniture-inspection-dock")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Bar" })).toBeTruthy();
+    expect(screen.queryByTestId("truth-rail-mock")).toBeNull();
+  });
+
+  it("keeps registered lens panels authoritative over generated selection", () => {
+    const placed = createPlacedItem(catalogueId("bar-counter"), 0, 0);
+    usePlacementStore.setState({ placedItems: [placed] });
+    useSelectionStore.getState().select(placed.id);
+    useCockpitStore.getState().setMode("flow");
+
+    render(<CockpitRightDock />);
+
+    expect(screen.getByTestId("flow-panel-mock")).toBeTruthy();
+    expect(screen.queryByTestId("furniture-inspection-dock")).toBeNull();
+  });
+
+  it("closes presentation-only inspection when leaving Design", () => {
+    const placed = createPlacedItem(catalogueId("platform"), 0, 0);
+    usePlacementStore.setState({ placedItems: [placed] });
+    useSelectionStore.getState().select(placed.id);
+    useCockpitStore.getState().setMode("design");
+    render(<CockpitRightDock />);
+    fireEvent.click(screen.getByRole("button", { name: "Inspect generated parts" }));
+    useFurnitureInspectionStore.getState().setExplodeProgress(0.7);
+
+    act(() => {
+      useCockpitStore.getState().setMode("flow");
+    });
+
+    expect(screen.getByTestId("flow-panel-mock")).toBeTruthy();
+    expect(useFurnitureInspectionStore.getState()).toMatchObject({
+      inspectedPlacedItemId: null,
+      selectedGeneratedPartId: null,
+      explodeProgress: 0,
+    });
   });
 
   it("renders the Costs panel for the costs lens", () => {

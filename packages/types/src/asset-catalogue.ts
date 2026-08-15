@@ -174,6 +174,22 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     maxCount: 1, subtitle: "2.4m \u00D7 1.0m \u00B7 40cm high", color: "#4a4a4a",
     equipmentTags: ["dimmable-lighting"],
   },
+  // Dance floor: a 3ft parquet panel, the UK hire unit. Panels tile to the
+  // standard 12/15/18ft floors, so this is placed in quantity rather than as
+  // one pre-sized object. Category `stage` routes it to the hallkeeper's
+  // `structure` setup phase ("risers, dance floor"), which is where the crew
+  // expects it. Unlike every other `stage` asset it is WALKED ON, not around \u2014
+  // see DANCEFLOOR_CATALOGUE_SLUG in the web guest-flow input.
+  {
+    id: "b05eaa9b-c25e-52ef-9d59-c2913c23f9b8",
+    slug: "dancefloor-panel",
+    name: "Parquet Dance Floor Panel",
+    category: "stage",
+    widthM: 0.91, depthM: 0.91, heightM: 0.05,
+    seatCount: null, collisionType: "box", tableShape: null,
+    maxCount: null, subtitle: "3ft parquet panel \u00B7 tiles to any floor size", color: "#8a6034",
+    equipmentTags: ["dimmable-lighting"],
+  },
 
   // --- AV ---
   // Projector screen: mounted overhead, daylight-sensitive, benefits

@@ -15,7 +15,12 @@ import type { PlacedItem } from "../lib/placement.js";
 import { isPoseurTable } from "../lib/placement-ghost.js";
 import { ROTATION_SNAP_RAD } from "../lib/selection.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
-import { findNearestTable, CLOTH_SNAP_DISTANCE_RENDER } from "../lib/cloth-snap.js";
+import {
+  findNearestDiningTable,
+  findNearestTable,
+  CLOTH_SNAP_DISTANCE_RENDER,
+} from "../lib/cloth-snap.js";
+import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { FurnitureProxy } from "./FurnitureProxy.js";
 import { TableClothMesh } from "./meshes/TableClothMesh.js";
 import { TableSettingMesh } from "./meshes/TableSettingMesh.js";
@@ -176,7 +181,8 @@ export function PlacementGhost(): React.ReactElement | null {
       const clothStyle = tableClothStyleForCatalogueItem(catState.selectedItemId);
       const tableSetting = tableSettingForCatalogueItem(catState.selectedItemId);
       if (clothStyle !== null || tableSetting !== null) {
-        const nearest = findNearestTable(
+        const target = tableSetting === null ? "linen" : "dinner";
+        const nearest = (target === "dinner" ? findNearestDiningTable : findNearestTable)(
           placeState.ghostPosition[0],
           placeState.ghostPosition[2],
           placeState.placedItems,
@@ -186,6 +192,7 @@ export function PlacementGhost(): React.ReactElement | null {
           placeState.placedItems,
           useSelectionStore.getState().selectedIds,
           nearest?.id ?? null,
+          target,
         ));
         if (targetIds.size > 0) {
           if (clothStyle !== null) {
@@ -359,13 +366,19 @@ export function PlacementGhost(): React.ReactElement | null {
   const tableSetting = tableSettingForCatalogueItem(selectedItemId);
   if (clothStyle !== null || tableSetting !== null) {
     const placedItems = usePlacementStore.getState().placedItems;
-    const nearestTable = findNearestTable(
+    const target = tableSetting === null ? "linen" : "dinner";
+    const nearestTable = (target === "dinner" ? findNearestDiningTable : findNearestTable)(
       ghostPosition[0],
       ghostPosition[2],
       placedItems,
       CLOTH_SNAP_DISTANCE_RENDER,
     );
-    const targetIds = tableDressingTargetIds(placedItems, selectedIds, nearestTable?.id ?? null);
+    const targetIds = tableDressingTargetIds(
+      placedItems,
+      selectedIds,
+      nearestTable?.id ?? null,
+      target,
+    );
 
     if (targetIds.length > 0) {
       const previewGroups = targetIds
@@ -382,6 +395,7 @@ export function PlacementGhost(): React.ReactElement | null {
                   key={target.id}
                   position={[target.x, target.y, target.z]}
                   rotation={[0, target.rotationY, 0]}
+                  scale={normalizeFurnitureScale(target.scale)}
                 >
                   {clothStyle !== null ? (
                     <TableClothMesh
@@ -411,6 +425,7 @@ export function PlacementGhost(): React.ReactElement | null {
           <group
             position={[nearestTable.x, nearestTable.y, nearestTable.z]}
             rotation={[0, nearestTable.rotationY, 0]}
+            scale={normalizeFurnitureScale(nearestTable.scale)}
           >
             <TableClothMesh
               tableItem={tableItem}

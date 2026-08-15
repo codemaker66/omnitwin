@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, screen } from "@testing-library/react";
 
 // Mock @react-three/fiber — happy-dom has no WebGL context.
 const CanvasMock = vi.hoisted(() =>
@@ -39,6 +39,9 @@ vi.mock("react-router-dom", () => ({
 vi.mock("../components/editor/CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
 
 import { App } from "../App.js";
+import { CATALOGUE_ITEMS } from "../lib/catalogue.js";
+import { createPlacedItem } from "../lib/placement.js";
+import { usePlacementStore } from "../stores/placement-store.js";
 
 /** Extract the props object from the first CanvasMock call. */
 function getCanvasProps(): Record<string, unknown> {
@@ -49,6 +52,12 @@ function getCanvasProps(): Record<string, unknown> {
   return firstCall[0] as Record<string, unknown>;
 }
 
+function catalogueId(slug: string): string {
+  const item = CATALOGUE_ITEMS.find((candidate) => candidate.slug === slug);
+  if (item === undefined) throw new Error(`missing catalogue fixture ${slug}`);
+  return item.id;
+}
+
 describe("App", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -57,8 +66,14 @@ describe("App", () => {
       writable: true,
       value: 1440,
     });
+    usePlacementStore.setState({ placedItems: [] });
   });
-  afterEach(() => { cleanup(); vi.runOnlyPendingTimers(); vi.useRealTimers(); });
+  afterEach(() => {
+    cleanup();
+    usePlacementStore.setState({ placedItems: [] });
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
 
   it("renders without crashing", () => {
     const { getByTestId } = render(<App />);
@@ -83,6 +98,17 @@ describe("App", () => {
     render(<App />);
     const props = getCanvasProps();
     expect(props["dpr"]).toEqual([0.75, 0.75]);
+  });
+
+  it("renders the generated-stand-in disclosure outside the Canvas for instanced furniture", () => {
+    usePlacementStore.setState({
+      placedItems: [createPlacedItem(catalogueId("trestle-6ft"), 0, 0)],
+    });
+
+    render(<App />);
+
+    expect(screen.getByTestId("generated-furniture-proxy-badge").textContent)
+      .toBe("AI-generated furniture proxy · visual stand-in · not measured");
   });
 
   it("keeps R3F performance regression metadata available without changing the fixed canvas DPR", () => {

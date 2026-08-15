@@ -1,18 +1,24 @@
 import { useMemo, type ReactElement } from "react";
 import type { CatalogueItem } from "../lib/catalogue.js";
 import { buildViolationCrossMarks } from "../lib/constraint-violation-skin.js";
+import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import { sectionClipPlanes } from "./SectionPlane.js";
 
 interface ConstraintViolationSkinProps {
   readonly item: CatalogueItem;
   readonly y: number;
+  readonly scale?: number;
 }
 
 export { buildViolationCrossMarks, type ViolationCrossMark } from "../lib/constraint-violation-skin.js";
 
-export function ConstraintViolationSkin({ item, y }: ConstraintViolationSkinProps): ReactElement {
-  const marks = useMemo(() => buildViolationCrossMarks(item), [item]);
-  const surfaceY = y + Math.max(0.08, item.height + 0.055);
+export function ConstraintViolationSkin({ item, y, scale }: ConstraintViolationSkinProps): ReactElement {
+  const resolvedScale = normalizeFurnitureScale(scale);
+  const marks = useMemo(
+    () => buildViolationCrossMarks(item, 18, resolvedScale),
+    [item, resolvedScale],
+  );
+  const surfaceY = y + Math.max(0.08, item.height * resolvedScale + 0.055);
 
   return (
     <group name="constraint-violation-skin" position={[0, surfaceY, 0]} renderOrder={12}>

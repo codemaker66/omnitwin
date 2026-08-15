@@ -15,13 +15,21 @@ import {
   type InstancedMesh,
   type Object3D,
 } from "three";
+import type { SpaceDimensions } from "@omnitwin/types";
 import { usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { useFurnitureInspectionStore } from "../stores/furniture-inspection-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import type { CatalogueItem } from "../lib/catalogue.js";
+import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
+import {
+  appliedTableLinenStyle,
+  isDiningTableItem,
+  isPoseurTableItem,
+} from "../lib/furniture-semantics.js";
 import { toRenderSpace } from "../constants/scale.js";
 import { SELECTION_COLOR } from "../lib/selection.js";
 import { FurnitureProxy } from "./FurnitureProxy.js";
@@ -33,14 +41,26 @@ import { sectionClipPlanes } from "./SectionPlane.js";
 import { ConstraintViolationSkin } from "./ConstraintViolationSkin.js";
 import { getGroupMemberIds, getPlacementViolations } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
-import { TABLE_CLOTH_COLORS, tableGroupedChairCount } from "../lib/table-dressing.js";
+import {
+  TABLE_CLOTH_COLORS,
+  isSceneFurniturePlacement,
+  tableGroupedChairCount,
+} from "../lib/table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // PlacedFurniture — renders all placed furniture items with selection highlight
 // ---------------------------------------------------------------------------
 
 export const LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH = 1100;
-export const MAX_LEAN_CONSTRAINT_VIOLATION_SKINS: number = 0;
+/**
+ * How many constraint-warning skins the lean (mobile/tablet/camera-motion) path
+ * may draw. One warning, spent on the item the planner is touching — silently
+ * hiding an invalid layout on a phone is worse than a little clutter.
+ *
+ * Non-zero also re-enables the full violation sweep at the guard below; see the
+ * note there before changing this.
+ */
+export const MAX_LEAN_CONSTRAINT_VIOLATION_SKINS: number = 1;
 
 export function shouldUseLeanPlannerFurniture(
   viewportWidth: number,
@@ -70,6 +90,102 @@ export function visibleConstraintViolationIds(
   return visible;
 }
 
+export interface PlannerFurnitureRenderPartition {
+  readonly instancedItems: readonly PlacedItem[];
+  readonly instancedIds: ReadonlySet<string>;
+  readonly leanItems: readonly PlacedItem[];
+}
+
+/** Keep the inspected hierarchy out of both batched render paths. */
+export function plannerFurnitureRenderPartition(
+  placedItems: readonly PlacedItem[],
+  inspectedPlacedItemId: string | null,
+): PlannerFurnitureRenderPartition {
+  const instancedItems: PlacedItem[] = [];
+  const instancedIds = new Set<string>();
+  const leanItems: PlacedItem[] = [];
+  for (const placed of placedItems) {
+    if (placed.id === inspectedPlacedItemId) continue;
+    const item = getCatalogueItem(placed.catalogueItemId);
+    // Keep a legacy applicator row in editor/save state, but exclude it from
+    // every visual batch. It represents an action on a table, not furniture.
+    if (!isSceneFurniturePlacement(placed)) continue;
+    leanItems.push(placed);
+    if (item !== undefined && item.meshUrl === null) {
+      instancedItems.push(placed);
+      instancedIds.add(placed.id);
+    }
+  }
+  return { instancedItems, instancedIds, leanItems };
+}
+
+export function shouldRenderIndividualFurnitureModel(options: {
+  readonly leanRendering: boolean;
+  readonly inspected: boolean;
+  readonly instanced: boolean;
+  readonly instancingFailed: boolean;
+}): boolean {
+  return options.inspected
+    || (!options.leanRendering && (!options.instanced || options.instancingFailed));
+}
+
+export const EMPTY_VIOLATION_IDS: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Which items the placement sweep still examines. On the lean path (small
+ * viewport, or any camera motion) that is only what the planner is touching:
+ * the full sweep is O(n²) and measured at 49ms for an 800-item banquet — three
+ * dropped frames, fired at the instant a drag begins — while the cap discards
+ * all but one result anyway.
+ */
+export function leanSweepCandidates(
+  placedItems: readonly PlacedItem[],
+  selectedIds: ReadonlySet<string>,
+  leanRendering: boolean,
+): readonly PlacedItem[] {
+  if (!leanRendering) {
+    return placedItems.every(isSceneFurniturePlacement)
+      ? placedItems
+      : placedItems.filter(isSceneFurniturePlacement);
+  }
+  return placedItems.filter(
+    (placed) => selectedIds.has(placed.id) && isSceneFurniturePlacement(placed),
+  );
+}
+
+/**
+ * Ids among `candidates` that violate placement rules. Candidates are always
+ * tested against the FULL item list: narrowing the outer loop is what makes the
+ * lean path cheap, narrowing `allItems` would make it wrong — an item would
+ * stop colliding with the furniture that is not selected.
+ */
+export function placementViolationIds(
+  candidates: readonly PlacedItem[],
+  allItems: readonly PlacedItem[],
+  roomDims: SpaceDimensions,
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const placed of candidates) {
+    if (!isSceneFurniturePlacement(placed)) continue;
+    const item = getCatalogueItem(placed.catalogueItemId);
+    if (item === undefined) continue;
+    const excludeIds = getGroupMemberIds(placed.id, allItems);
+    const violations = getPlacementViolations(
+      placed.x,
+      placed.z,
+      item,
+      placed.rotationY,
+      allItems,
+      excludeIds,
+      placed.y,
+      roomDims,
+      placed.scale,
+    );
+    if (violations.length > 0) ids.add(placed.id);
+  }
+  return ids;
+}
+
 const noFurnitureRaycast: Object3D["raycast"] = () => undefined;
 
 type LeanFurnitureShape = "box" | "round";
@@ -89,6 +205,7 @@ interface LeanFurnitureInstance {
   readonly y: number;
   readonly z: number;
   readonly rotationY: number;
+  readonly scale: number;
 }
 
 interface LeanFurnitureGroup {
@@ -102,12 +219,28 @@ const leanRotation = new Quaternion();
 const leanScale = new Vector3(1, 1, 1);
 const leanYAxis = new Vector3(0, 1, 0);
 
-function selectionBoxArgs(item: { width: number; height: number; depth: number }): [number, number, number] {
+function selectionBoxArgs(
+  item: { width: number; height: number; depth: number },
+  scale: number,
+): [number, number, number] {
   return [
-    toRenderSpace(item.width) + 0.05,
-    item.height + 0.05,
-    toRenderSpace(item.depth) + 0.05,
+    toRenderSpace(item.width) * scale + 0.05,
+    item.height * scale + 0.05,
+    toRenderSpace(item.depth) * scale + 0.05,
   ];
+}
+
+/** Pure transform used by the lean instancer and pinned without a WebGL tree. */
+export function leanFurniturePresentationTransform(
+  itemY: number,
+  variantHeight: number,
+  scale: number | undefined,
+): { readonly centerY: number; readonly scale: number } {
+  const resolvedScale = normalizeFurnitureScale(scale);
+  return {
+    centerY: itemY + (variantHeight * resolvedScale) / 2,
+    scale: resolvedScale,
+  };
 }
 
 function leanShapeForItem(item: CatalogueItem): LeanFurnitureShape {
@@ -289,7 +422,9 @@ function createNameplateTexture(
 function nameplateDetailLines(item: CatalogueItem, options: NameplateTextureOptions): readonly string[] {
   const lines: string[] = [];
   if (item.category === "table") {
-    if (options.groupedSeatCount !== undefined && options.groupedSeatCount > 0) {
+    if (isPoseurTableItem(item)) {
+      lines.push("Standing table");
+    } else if (options.groupedSeatCount !== undefined && options.groupedSeatCount > 0) {
       lines.push(`${String(options.groupedSeatCount)} grouped seats`);
     } else if (item.tableShape === "round") {
       lines.push("Round table");
@@ -343,6 +478,7 @@ function FurnitureNamePlate({
   rotationY,
   cameraEnabled,
   groupedSeatCount,
+  scale,
 }: {
   readonly label: string;
   readonly item: CatalogueItem;
@@ -350,6 +486,7 @@ function FurnitureNamePlate({
   readonly rotationY: number;
   readonly cameraEnabled: boolean;
   readonly groupedSeatCount?: number;
+  readonly scale?: number;
 }): React.ReactElement | null {
   const groupRef = useRef<Group>(null);
   const { camera } = useThree();
@@ -378,7 +515,7 @@ function FurnitureNamePlate({
   const height = item.category === "table"
     ? Math.max(3.9, toRenderSpace(item.depth) * 1.48)
     : 2.7;
-  const yOffset = item.category === "chair" ? item.height + 1.25 : item.height + 1.35;
+  const yOffset = furnitureNamePlateYOffset(item, scale);
   const tableOffset = Math.max(2.35, toRenderSpace(item.width) * 0.72);
   const chairOffset = Math.max(0.96, toRenderSpace(item.depth) * 1.6);
   const [offsetX, offsetZ] = item.category === "table"
@@ -427,12 +564,15 @@ function CameraReferenceGlow({
   item,
   position,
   active,
+  scale,
 }: {
   readonly item: CatalogueItem;
   readonly position: readonly [number, number, number];
   readonly active: boolean;
+  readonly scale?: number;
 }): React.ReactElement {
-  const radius = Math.max(toRenderSpace(item.width), toRenderSpace(item.depth)) * 0.66;
+  const resolvedScale = normalizeFurnitureScale(scale);
+  const radius = cameraReferenceGlowRadius(item, resolvedScale);
   return (
     <group name="camera-reference-glow" position={position}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.035, 0]} renderOrder={7}>
@@ -449,12 +589,29 @@ function CameraReferenceGlow({
       <pointLight
         color="#f2c75e"
         intensity={active ? 0.72 : 0.34}
-        distance={2.8}
+        distance={2.8 * resolvedScale}
         decay={2}
-        position={[0, Math.max(0.5, item.height + 0.35), 0]}
+        position={[0, Math.max(0.5, item.height * resolvedScale + 0.35), 0]}
       />
     </group>
   );
+}
+
+export function furnitureNamePlateYOffset(
+  item: Pick<CatalogueItem, "category" | "height">,
+  scale?: number,
+): number {
+  const annotationClearance = item.category === "chair" ? 1.25 : 1.35;
+  return item.height * normalizeFurnitureScale(scale) + annotationClearance;
+}
+
+export function cameraReferenceGlowRadius(
+  item: Pick<CatalogueItem, "width" | "depth">,
+  scale?: number,
+): number {
+  return Math.max(toRenderSpace(item.width), toRenderSpace(item.depth))
+    * normalizeFurnitureScale(scale)
+    * 0.66;
 }
 
 function LeanFurnitureInstances({
@@ -481,8 +638,10 @@ function LeanFurnitureInstances({
     for (let i = 0; i < instances.length; i += 1) {
       const item = instances[i];
       if (item === undefined) continue;
-      leanPosition.set(item.x, item.y + variant.height / 2, item.z);
+      const transform = leanFurniturePresentationTransform(item.y, variant.height, item.scale);
+      leanPosition.set(item.x, transform.centerY, item.z);
       leanRotation.setFromAxisAngle(leanYAxis, item.rotationY);
+      leanScale.setScalar(transform.scale);
       leanMatrix.compose(leanPosition, leanRotation, leanScale);
       mesh.setMatrixAt(i, leanMatrix);
     }
@@ -528,6 +687,7 @@ function LeanFurnitureLayer({
         y: placed.y,
         z: placed.z,
         rotationY: placed.rotationY,
+        scale: normalizeFurnitureScale(placed.scale),
       });
     }
     return Array.from(groupsByKey.values());
@@ -575,6 +735,10 @@ interface PlacedFurnitureItemProps {
   readonly renderDetailLayers: boolean;
   /** Large camera-facing nameplates are useful on desktop but costly when every mobile item has a label. */
   readonly renderNamePlate: boolean;
+  readonly generatedInspectionActive: boolean;
+  readonly generatedExplodeProgress: number;
+  readonly generatedSelectedPartId: string | null;
+  readonly onGeneratedPartSelect: (partId: string) => void;
   readonly onAnimationComplete: (id: string) => void;
 }
 
@@ -589,26 +753,35 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
   renderModel,
   renderDetailLayers,
   renderNamePlate,
+  generatedInspectionActive,
+  generatedExplodeProgress,
+  generatedSelectedPartId,
+  onGeneratedPartSelect,
   onAnimationComplete,
 }: PlacedFurnitureItemProps): React.ReactElement | null {
   const catalogueItem = getCatalogueItem(placed.catalogueItemId);
+  const presentationScale = normalizeFurnitureScale(placed.scale);
 
   // useMemo MUST be called before any early return so the hook order is
   // stable across renders (rules-of-hooks). When catalogueItem is undefined
   // the tuple is unused; the early return below short-circuits the render.
   const memoizedSelectionArgs = useMemo(
     (): [number, number, number] => (
-      catalogueItem !== undefined ? selectionBoxArgs(catalogueItem) : [0, 0, 0]
+      catalogueItem !== undefined
+        ? selectionBoxArgs(catalogueItem, presentationScale)
+        : [0, 0, 0]
     ),
-    [catalogueItem],
+    [catalogueItem, presentationScale],
   );
 
-  if (catalogueItem === undefined) return null;
+  if (
+    catalogueItem === undefined
+    || !isSceneFurniturePlacement(placed)
+  ) return null;
 
-  const isClothedTable = placed.clothed && catalogueItem.category === "table";
-  const clothStyle = placed.clothStyle ?? "black";
-  const clothColor = TABLE_CLOTH_COLORS[clothStyle];
-  const hasDinnerSetting = placed.tableSetting === "dinner" && catalogueItem.category === "table";
+  const appliedClothStyle = appliedTableLinenStyle(catalogueItem, placed);
+  const clothColor = TABLE_CLOTH_COLORS[appliedClothStyle ?? "black"];
+  const hasDinnerSetting = placed.tableSetting === "dinner" && isDiningTableItem(catalogueItem);
   const displayLabel = (placed.label ?? "").trim();
   const itemPosition = [placed.x, placed.y, placed.z] as const;
 
@@ -620,7 +793,11 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
           item={catalogueItem}
           position={[placed.x, placed.y, placed.z]}
           rotationY={placed.rotationY}
+          scale={presentationScale}
           name={`furniture-${placed.id}-mesh`}
+          generatedExplodeProgress={generatedInspectionActive ? generatedExplodeProgress : 0}
+          generatedSelectedPartId={generatedInspectionActive ? generatedSelectedPartId : null}
+          onGeneratedPartSelect={generatedInspectionActive ? onGeneratedPartSelect : undefined}
         />
       ) : (
         // Model is drawn by InstancedFurnitureLayer; this invisible box keeps
@@ -629,7 +806,11 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
         // `furniture-{id}` group exactly as the real model did.
         <mesh
           name="item-pick-proxy"
-          position={[placed.x, placed.y + catalogueItem.height / 2, placed.z]}
+          position={[
+            placed.x,
+            placed.y + (catalogueItem.height * presentationScale) / 2,
+            placed.z,
+          ]}
           rotation={[0, placed.rotationY, 0]}
           visible={false}
         >
@@ -643,14 +824,16 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
           item={catalogueItem}
           position={itemPosition}
           active={isActiveCameraReference}
+          scale={presentationScale}
         />
       )}
 
       {/* Animated unfurl for newly clothed tables */}
-      {renderDetailLayers && isClothedTable && isAnimating && (
+      {renderDetailLayers && appliedClothStyle !== null && isAnimating && (
         <group
           position={[placed.x, placed.y, placed.z]}
           rotation={[0, placed.rotationY, 0]}
+          scale={presentationScale}
         >
           <AnimatedTableCloth
             tableItem={catalogueItem}
@@ -661,10 +844,11 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
       )}
 
       {/* Static cloth for settled tables */}
-      {renderDetailLayers && isClothedTable && !isAnimating && (
+      {renderDetailLayers && appliedClothStyle !== null && !isAnimating && (
         <group
           position={[placed.x, placed.y, placed.z]}
           rotation={[0, placed.rotationY, 0]}
+          scale={presentationScale}
         >
           <TableClothMesh tableItem={catalogueItem} colorOverride={clothColor} />
         </group>
@@ -674,6 +858,7 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
         <group
           position={[placed.x, placed.y, placed.z]}
           rotation={[0, placed.rotationY, 0]}
+          scale={presentationScale}
         >
           <TableSettingMesh tableItem={catalogueItem} settingsCount={tableSettingCount} />
         </group>
@@ -682,7 +867,11 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
       {/* Selection wireframe */}
       {isSelected && (
         <mesh
-          position={[placed.x, placed.y + catalogueItem.height / 2, placed.z]}
+          position={[
+            placed.x,
+            placed.y + (catalogueItem.height * presentationScale) / 2,
+            placed.z,
+          ]}
           rotation={[0, placed.rotationY, 0]}
         >
           <boxGeometry args={memoizedSelectionArgs} />
@@ -704,12 +893,17 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
           rotationY={placed.rotationY}
           cameraEnabled={hasCameraReference}
           groupedSeatCount={tableSettingCount}
+          scale={presentationScale}
         />
       )}
 
       {hasConstraintViolation && (
         <group position={[placed.x, 0, placed.z]} rotation={[0, placed.rotationY, 0]}>
-          <ConstraintViolationSkin item={catalogueItem} y={placed.y} />
+          <ConstraintViolationSkin
+            item={catalogueItem}
+            y={placed.y}
+            scale={presentationScale}
+          />
         </group>
       )}
     </group>
@@ -724,7 +918,33 @@ export function PlacedFurniture(): React.ReactElement {
   const activeReferenceId = useBookmarkStore((s) => s.activeReferenceId);
   const roomDims = useRoomDimensionsStore((s) => s.dimensions);
   const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
+  const inspectedPlacedItemId = useFurnitureInspectionStore(
+    (state) => state.inspectedPlacedItemId,
+  );
+  const generatedSelectedPartId = useFurnitureInspectionStore(
+    (state) => state.selectedGeneratedPartId,
+  );
+  const generatedExplodeProgress = useFurnitureInspectionStore(
+    (state) => state.explodeProgress,
+  );
+  const closeInspection = useFurnitureInspectionStore((state) => state.closeInspection);
+  const selectGeneratedPart = useFurnitureInspectionStore(
+    (state) => state.selectGeneratedPart,
+  );
   const useLeanFurniture = shouldUseLeanPlannerFurniture(size.width, cameraInteractionActive);
+  const [failedInstancedVariantIds, setFailedInstancedVariantIds] =
+    useState<ReadonlySet<string>>(new Set());
+  const handleFailedVariantIdsChange = useCallback((ids: ReadonlySet<string>): void => {
+    setFailedInstancedVariantIds(ids);
+  }, []);
+
+  useEffect(() => {
+    if (inspectedPlacedItemId === null) return;
+    const stillPlaced = placedItems.some(
+      (placed) => placed.id === inspectedPlacedItemId && isSceneFurniturePlacement(placed),
+    );
+    if (!stillPlaced || !selectedIds.has(inspectedPlacedItemId)) closeInspection();
+  }, [closeInspection, inspectedPlacedItemId, placedItems, selectedIds]);
 
   // Track which items are currently animating their cloth unfurl
   const [animatingIds, setAnimatingIds] = useState<ReadonlySet<string>>(new Set());
@@ -739,8 +959,12 @@ export function PlacedFurniture(): React.ReactElement {
     const nextClothed = new Map<string, string>();
 
     for (const item of placedItems) {
-      if (item.clothed) {
-        const key = item.clothStyle ?? "black";
+      if (!isSceneFurniturePlacement(item)) continue;
+      const catalogueItem = getCatalogueItem(item.catalogueItemId);
+      if (catalogueItem === undefined) continue;
+      const appliedStyle = appliedTableLinenStyle(catalogueItem, item);
+      if (appliedStyle !== null) {
+        const key = appliedStyle;
         nextClothed.set(item.id, key);
         if (prev !== null && prev.get(item.id) !== key) {
           (newlyClothed ??= []).push(item.id);
@@ -790,29 +1014,29 @@ export function PlacedFurniture(): React.ReactElement {
     return typeof placedItemId === "string" && placedItemId.length > 0 ? placedItemId : null;
   }, [activeReferenceId, bookmarks]);
 
-  const constraintViolationIds = useMemo(() => {
-    if (useLeanFurniture && MAX_LEAN_CONSTRAINT_VIOLATION_SKINS <= 0) {
-      return new Set<string>();
-    }
-    const ids = new Set<string>();
-    for (const placed of placedItems) {
-      const item = getCatalogueItem(placed.catalogueItemId);
-      if (item === undefined) continue;
-      const excludeIds = getGroupMemberIds(placed.id, placedItems);
-      const violations = getPlacementViolations(
-        placed.x,
-        placed.z,
-        item,
-        placed.rotationY,
+  // Two memos, deliberately. The lean sweep has to react to selection changes;
+  // the full sweep must NOT, or every desktop click would pay it (49ms at 800
+  // items). React has no conditional dependency array, so they are split and
+  // each early-returns on the path it does not serve.
+  const fullConstraintViolationIds = useMemo(
+    () => (useLeanFurniture
+      ? EMPTY_VIOLATION_IDS
+      : placementViolationIds(placedItems, placedItems, roomDims)),
+    [placedItems, roomDims, useLeanFurniture],
+  );
+  const leanConstraintViolationIds = useMemo(
+    () => (useLeanFurniture && MAX_LEAN_CONSTRAINT_VIOLATION_SKINS > 0
+      ? placementViolationIds(
+        leanSweepCandidates(placedItems, selectedIds, true),
         placedItems,
-        excludeIds,
-        placed.y,
         roomDims,
-      );
-      if (violations.length > 0) ids.add(placed.id);
-    }
-    return ids;
-  }, [placedItems, roomDims, useLeanFurniture]);
+      )
+      : EMPTY_VIOLATION_IDS),
+    [placedItems, roomDims, selectedIds, useLeanFurniture],
+  );
+  const constraintViolationIds = useLeanFurniture
+    ? leanConstraintViolationIds
+    : fullConstraintViolationIds;
   const renderedConstraintViolationIds = useMemo(
     () => (
       useLeanFurniture
@@ -838,25 +1062,20 @@ export function PlacedFurniture(): React.ReactElement {
   // Items whose model is procedural (no imported .glb) are drawn by the
   // instanced layer; GLTF items load asynchronously and can't be harvested
   // synchronously, so they keep their own per-item model rendering.
-  const { instancedItems, instancedIds } = useMemo(() => {
-    const list: PlacedItem[] = [];
-    const ids = new Set<string>();
-    for (const placed of placedItems) {
-      const item = getCatalogueItem(placed.catalogueItemId);
-      if (item !== undefined && item.meshUrl === null) {
-        list.push(placed);
-        ids.add(placed.id);
-      }
-    }
-    return { instancedItems: list, instancedIds: ids };
-  }, [placedItems]);
+  const { instancedItems, instancedIds, leanItems } = useMemo(
+    () => plannerFurnitureRenderPartition(placedItems, inspectedPlacedItemId),
+    [inspectedPlacedItemId, placedItems],
+  );
 
   return (
     <group name="placed-furniture">
       {useLeanFurniture ? (
-        <LeanFurnitureLayer items={placedItems} />
+        <LeanFurnitureLayer items={leanItems} />
       ) : (
-        <InstancedFurnitureLayer items={instancedItems} />
+        <InstancedFurnitureLayer
+          items={instancedItems}
+          onFailedVariantIdsChange={handleFailedVariantIdsChange}
+        />
       )}
       {placedItems.map((placed) => (
         <PlacedFurnitureItem
@@ -868,10 +1087,21 @@ export function PlacedFurniture(): React.ReactElement {
           isActiveCameraReference={activeReferenceItemId === placed.id}
           hasConstraintViolation={renderedConstraintViolationIds.has(placed.id)}
           tableSettingCount={tableSettingCounts.get(placed.id)}
-          renderModel={!useLeanFurniture && !instancedIds.has(placed.id)}
           renderDetailLayers={canRenderLeanItemDetail(placed.id)}
           renderNamePlate={canRenderLeanItemDetail(placed.id)}
+          generatedInspectionActive={placed.id === inspectedPlacedItemId}
+          generatedExplodeProgress={generatedExplodeProgress}
+          generatedSelectedPartId={generatedSelectedPartId}
+          onGeneratedPartSelect={selectGeneratedPart}
           onAnimationComplete={handleAnimationComplete}
+          renderModel={
+            shouldRenderIndividualFurnitureModel({
+              leanRendering: useLeanFurniture,
+              inspected: placed.id === inspectedPlacedItemId,
+              instanced: instancedIds.has(placed.id),
+              instancingFailed: failedInstancedVariantIds.has(placed.catalogueItemId),
+            })
+          }
         />
       ))}
     </group>

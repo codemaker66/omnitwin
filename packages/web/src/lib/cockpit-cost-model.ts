@@ -2,6 +2,7 @@ import { getCatalogueItem } from "./catalogue.js";
 import type { PlacedItem } from "./placement.js";
 import { seatingCountsFromPlacedItems } from "./seating-counts.js";
 import { formatMinorAsCurrency } from "./money-input.js";
+import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // cockpit-cost-model — layout-driven cost/revenue scenario (Epic 3, Costs lens).
@@ -42,6 +43,7 @@ export function costQuantitiesFromLayout(
   const chairs = seating.chairs;
   let avItems = 0;
   for (const placed of placedItems) {
+    if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item?.category === "av") avItems += 1;
   }

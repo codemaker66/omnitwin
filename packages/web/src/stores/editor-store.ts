@@ -9,6 +9,8 @@ import {
   readAnonymousPlannerDraft,
 } from "../lib/anonymous-planner-draft.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
+import { isTableDressingApplicator } from "../lib/table-dressing.js";
 import { toRenderSpace, toRealWorld } from "../constants/scale.js";
 import { generatePlacedId } from "../lib/placement.js";
 import type { TableClothStyle, TableSettingStyle } from "../lib/placement.js";
@@ -97,7 +99,7 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
     rotationX: parseFloat(p.rotationX),
     rotationY: parseFloat(p.rotationY),
     rotationZ: parseFloat(p.rotationZ),
-    scale: parseFloat(p.scale),
+    scale: normalizeFurnitureScale(parseFloat(p.scale)),
     sortOrder: p.sortOrder,
     clothed: meta.clothed === true,
     clothStyle,
@@ -130,7 +132,7 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
     rotationX: o.rotationX,
     rotationY: o.rotationY,
     rotationZ: o.rotationZ,
-    scale: o.scale,
+    scale: normalizeFurnitureScale(o.scale),
     sortOrder: o.sortOrder,
     metadata: {
       clothed: o.clothed,
@@ -563,6 +565,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   addObject: (assetId, positionX, positionY, positionZ) => {
+    // Loaded legacy rows still enter through loadConfiguration above. This
+    // guard applies only to new imperative additions: dressing catalogue
+    // entries are contextual actions, never standalone editor objects.
+    if (isTableDressingApplicator(assetId)) return;
     const s = get();
     const obj: EditorObject = {
       id: `local-${String(++localIdCounter)}`,

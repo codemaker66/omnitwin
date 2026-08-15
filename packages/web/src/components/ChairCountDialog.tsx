@@ -13,6 +13,8 @@ export interface ChairCountRequest {
   readonly z: number;
   readonly rotationY: number;
   readonly tableShape: "round" | "rectangular";
+  /** Uniform scale of an existing table; omitted for a new scale-1 placement. */
+  readonly scale?: number;
 }
 
 interface ChairCountDialogProps {
@@ -121,6 +123,15 @@ const GOLD = "#c9a84c";
 const GOLD_LIGHT = "#dfc06a";
 const GOLD_DARK = "#a8872e";
 
+export function initialChairCountForCapacity(
+  tableShape: ChairCountRequest["tableShape"],
+  maxChairs: number,
+): number {
+  const normalizedMax = Math.max(0, Math.floor(maxChairs));
+  const preferred = tableShape === "round" ? 10 : 2;
+  return Math.min(preferred, normalizedMax);
+}
+
 export function ChairCountDialog({
   request,
   onConfirm,
@@ -135,20 +146,21 @@ export function ChairCountDialog({
   // count the planner picks is exactly what gets placed (no silent clamping).
   const tableItem = request === null ? undefined : getCatalogueItem(request.catalogueItemId);
   const maxChairs = tableItem !== undefined
-    ? Math.max(1, seatCapacity(tableItem))
+    ? seatCapacity(tableItem, request?.scale)
     : request?.tableShape === "rectangular" ? 8 : 12;
+  const minChairs = maxChairs > 0 ? 1 : 0;
 
   useEffect(() => {
     if (request !== null) {
-      setCount(request.tableShape === "round" ? 10 : 2);
+      setCount(initialChairCountForCapacity(request.tableShape, maxChairs));
       setAnimKey((k) => k + 1);
       setTimeout(() => { inputRef.current?.select(); }, 80);
     }
-  }, [request]);
+  }, [maxChairs, request]);
 
   const decrement = useCallback(() => {
-    setCount((c) => { const n = Math.max(c - 1, 1); if (n !== c) setAnimKey((k) => k + 1); return n; });
-  }, []);
+    setCount((c) => { const n = Math.max(c - 1, minChairs); if (n !== c) setAnimKey((k) => k + 1); return n; });
+  }, [minChairs]);
   const increment = useCallback(() => {
     setCount((c) => { const n = Math.min(c + 1, maxChairs); if (n !== c) setAnimKey((k) => k + 1); return n; });
   }, [maxChairs]);
@@ -167,11 +179,11 @@ export function ChairCountDialog({
       if (e.code === "Enter" || e.code === "NumpadEnter") { e.preventDefault(); onConfirm(count); }
       else if (e.code === "Escape") { e.preventDefault(); onCancel(); }
       else if (e.code === "ArrowUp" || e.code === "ArrowRight") { e.preventDefault(); setCount((c) => Math.min(c + 1, maxChairs)); setAnimKey((k) => k + 1); }
-      else if (e.code === "ArrowDown" || e.code === "ArrowLeft") { e.preventDefault(); setCount((c) => Math.max(c - 1, 1)); setAnimKey((k) => k + 1); }
+      else if (e.code === "ArrowDown" || e.code === "ArrowLeft") { e.preventDefault(); setCount((c) => Math.max(c - 1, minChairs)); setAnimKey((k) => k + 1); }
     }
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); };
-  }, [request, count, maxChairs, onConfirm, onCancel]);
+  }, [request, count, minChairs, maxChairs, onConfirm, onCancel]);
 
   if (request === null) return null;
 
@@ -254,8 +266,8 @@ export function ChairCountDialog({
               width: 72, height: 76, border: "none",
               borderRight: "1px solid rgba(201, 168, 76, 0.12)",
               background: "transparent",
-              color: count <= 1 ? "#333" : GOLD_LIGHT,
-              fontSize: 28, fontWeight: 400, cursor: count <= 1 ? "default" : "pointer",
+              color: count <= minChairs ? "#333" : GOLD_LIGHT,
+              fontSize: 28, fontWeight: 400, cursor: count <= minChairs ? "default" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               userSelect: "none",
               transition: "background 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
@@ -264,7 +276,7 @@ export function ChairCountDialog({
             onPointerDown={minusRepeat.onPointerDown}
             onPointerUp={minusRepeat.onPointerUp}
             onPointerLeave={minusRepeat.onPointerLeave}
-            disabled={count <= 1}
+            disabled={count <= minChairs}
             aria-label="Decrease chair count"
           >
             −
@@ -277,17 +289,17 @@ export function ChairCountDialog({
               ref={inputRef}
               className="omni-chair-input"
               type="number"
-              min={1}
+              min={minChairs}
               max={maxChairs}
               value={count}
               aria-label="Chair count"
               onChange={(e) => {
                 const raw = e.target.value;
-                if (raw === "") { setCount(1); return; }
+                if (raw === "") { setCount(minChairs); return; }
                 const parsed = parseInt(raw, 10);
-                if (!Number.isNaN(parsed)) setCount(Math.max(1, Math.min(parsed, maxChairs)));
+                if (!Number.isNaN(parsed)) setCount(Math.max(minChairs, Math.min(parsed, maxChairs)));
               }}
-              onBlur={() => { setCount((c) => Math.max(1, Math.min(c, maxChairs))); }}
+              onBlur={() => { setCount((c) => Math.max(minChairs, Math.min(c, maxChairs))); }}
               style={{
                 width: 110, height: 76, border: "none",
                 background: "rgba(255,255,255,0.02)",
@@ -330,7 +342,7 @@ export function ChairCountDialog({
           fontSize: 13, color: "#555", marginTop: -20,
           letterSpacing: 0.8, fontWeight: 400,
         }}>
-          1 – {maxChairs} chairs
+          {maxChairs > 0 ? `1 – ${String(maxChairs)} chairs` : "No chairs fit at this scale"}
         </div>
 
         {/* Primary CTA */}
@@ -349,7 +361,7 @@ export function ChairCountDialog({
           }}
           onClick={() => { onConfirm(count); }}
         >
-          Place {count} {count === 1 ? "Chair" : "Chairs"}
+          {count === 0 ? "Place Table Only" : `Place ${String(count)} ${count === 1 ? "Chair" : "Chairs"}`}
         </button>
 
         {/* Secondary row */}

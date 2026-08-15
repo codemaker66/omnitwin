@@ -16,7 +16,6 @@ function renderControls(): void {
   const ref = createRef<HTMLDivElement>();
   render(
     <TwinViewerControls
-      venueSlug="trades-hall"
       venueName="Trades Hall Glasgow"
       viewerRef={ref}
     />,

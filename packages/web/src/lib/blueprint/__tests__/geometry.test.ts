@@ -118,6 +118,13 @@ describe("totalSeats / roundCount / countByKind", () => {
         seats: 14,
       },
       {
+        id: "poseur",
+        kind: "poseur-table",
+        shape: "round",
+        center: { x: 4, y: 4 },
+        diameterM: 0.6,
+      },
+      {
         id: "floor",
         kind: "dancefloor",
         shape: "dancefloor",
@@ -134,6 +141,7 @@ describe("totalSeats / roundCount / countByKind", () => {
 
   it("roundCount counts only round-table kind", () => {
     expect(roundCount(scene.items)).toBe(2);
+    expect(countByKind(scene.items, "poseur-table")).toBe(1);
   });
 
   it("countByKind returns 0 for missing kinds", () => {
@@ -281,6 +289,25 @@ describe("inspectorTitle / formatDimensions / isRoundTable", () => {
     expect(inspectorTitle(stage)).toBe("STAGE · 8×3m");
   });
 
+  it("labels a poseur by standing-table type and diameter without seats", () => {
+    const poseur: BlueprintItem = {
+      id: "p", kind: "poseur-table", shape: "round",
+      center: { x: 1, y: 1 }, diameterM: 0.6,
+    };
+    expect(inspectorTitle(poseur)).toBe("POSEUR TABLE · 0.6m ⌀");
+    expect(isRoundTable(poseur)).toBe(false);
+  });
+
+  it("labels a mic stand as floor equipment without adding seating", () => {
+    const micStand: BlueprintItem = {
+      id: "mic-stand", kind: "mic-stand", shape: "rect",
+      topLeft: { x: 1, y: 1 }, widthM: 0.5, lengthM: 0.5,
+    };
+
+    expect(inspectorTitle(micStand)).toBe("MIC STAND · 0.5×0.5m");
+    expect(totalSeats([micStand])).toBe(0);
+  });
+
   it("formatDimensions emits decimal only when needed", () => {
     const thin: BlueprintItem = {
       id: "thin", kind: "top-table", shape: "rect",
@@ -338,13 +365,31 @@ describe("getLayerRows", () => {
   });
 
   it("produces human labels per kind", () => {
-    const rows = getLayerRows(DEMO_SCENE);
+    const poseur: BlueprintItem = {
+      id: "poseur", kind: "poseur-table", shape: "round",
+      center: { x: 1, y: 1 }, diameterM: 0.6,
+    };
+    const rows = getLayerRows({ ...DEMO_SCENE, items: [...DEMO_SCENE.items, poseur] });
     expect(rows.find((r) => r.id === "stage")?.label).toMatch(/^Stage ·/);
     expect(rows.find((r) => r.id === "bar")?.label).toMatch(/^Bar ·/);
     expect(rows.find((r) => r.id === "dancefloor")?.label).toMatch(/^Dancefloor ·/);
     expect(rows.find((r) => r.id === "top-table")?.label).toMatch(/^Top table ·/);
     const anyRound = rows.find((r) => r.kind === "round-table");
     expect(anyRound?.label).toMatch(/^Round table ·/);
+    expect(rows.find((r) => r.kind === "poseur-table")?.label).toBe("Poseur table · 0.6m ⌀");
+  });
+
+  it("gives mic-stand layers a truthful equipment label", () => {
+    const micStand: BlueprintItem = {
+      id: "mic-stand", kind: "mic-stand", shape: "rect",
+      topLeft: { x: 1, y: 1 }, widthM: 0.5, lengthM: 0.5,
+    };
+
+    expect(getLayerRows({ ...DEMO_SCENE, items: [...DEMO_SCENE.items, micStand] })[0]).toMatchObject({
+      id: "mic-stand",
+      kind: "mic-stand",
+      label: "Mic stand · 0.5×0.5m",
+    });
   });
 
   it("handles an empty selection array safely", () => {

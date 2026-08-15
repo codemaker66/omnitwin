@@ -4,6 +4,8 @@ import type {
   CatalogueChip,
   DancefloorItem,
   EventType,
+  MicStandItem,
+  PoseurTableItem,
   RectItem,
   RoundTableItem,
 } from "./types.js";
@@ -368,24 +370,27 @@ function mapItem(
 
 function moveItemTo(item: BlueprintItem, center: { x: number; y: number }): BlueprintItem {
   if (item.shape === "round") {
-    return { ...item, center } satisfies RoundTableItem;
+    return { ...item, center } satisfies RoundTableItem | PoseurTableItem;
   }
   const topLeft = { x: center.x - item.widthM / 2, y: center.y - item.lengthM / 2 };
   if (item.shape === "dancefloor") {
     return { ...item, topLeft } satisfies DancefloorItem;
   }
-  return { ...item, topLeft } satisfies RectItem;
+  return { ...item, topLeft } satisfies RectItem | MicStandItem;
 }
 
 function moveItemDelta(item: BlueprintItem, dx: number, dy: number): BlueprintItem {
   if (item.shape === "round") {
-    return { ...item, center: { x: item.center.x + dx, y: item.center.y + dy } } satisfies RoundTableItem;
+    return {
+      ...item,
+      center: { x: item.center.x + dx, y: item.center.y + dy },
+    } satisfies RoundTableItem | PoseurTableItem;
   }
   const topLeft = { x: item.topLeft.x + dx, y: item.topLeft.y + dy };
   if (item.shape === "dancefloor") {
     return { ...item, topLeft } satisfies DancefloorItem;
   }
-  return { ...item, topLeft } satisfies RectItem;
+  return { ...item, topLeft } satisfies RectItem | MicStandItem;
 }
 
 function normaliseDeg(deg: number): number {
@@ -469,6 +474,11 @@ export function buildItemForChip(
         center, diameterM: 1.8, seats: 10,
         linen: "Ivory", centrepiece: "Low floral",
       } satisfies RoundTableItem;
+    case "poseur-table":
+      return {
+        id, kind: "poseur-table", shape: "round",
+        center, diameterM: 0.6,
+      } satisfies PoseurTableItem;
     case "long-table":
       return {
         id, kind: "long-table", shape: "rect",
@@ -487,6 +497,12 @@ export function buildItemForChip(
         topLeft: { x: center.x - 2.5, y: center.y - 0.65 },
         widthM: 5, lengthM: 1.3, seats: 8, linen: "Ivory",
       } satisfies RectItem;
+    case "mic-stand":
+      return {
+        id, kind: "mic-stand", shape: "rect",
+        topLeft: { x: center.x - 0.25, y: center.y - 0.25 },
+        widthM: 0.5, lengthM: 0.5,
+      } satisfies MicStandItem;
     case "bar":
       return {
         id, kind: "bar", shape: "bar",
@@ -532,9 +548,11 @@ export function clampCenterToRoom(
 function halfFootprintFor(kind?: BlueprintItem["kind"]): number {
   switch (kind) {
     case "round-table": return 0.9;
+    case "poseur-table": return 0.3;
     case "long-table": return 1.5;
     case "stage": return 2;
     case "top-table": return 2.5;
+    case "mic-stand": return 0.25;
     case "bar": return 1.5;
     case "dancefloor": return 2;
     default: return 1;

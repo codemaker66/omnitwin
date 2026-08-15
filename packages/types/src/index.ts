@@ -1016,6 +1016,8 @@ export {
   EnquirySchema,
   CreateEnquirySchema,
   GuestEnquirySchema,
+  TRADES_HALL_ENQUIRY_VENUE_SLUG,
+  TRADES_HALL_ASSET_SLUG,
   type EnquiryId,
   type EnquiryStatus,
   type Enquiry,

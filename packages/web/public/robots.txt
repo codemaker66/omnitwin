@@ -1,2 +1,54 @@
+# venviewer.com — crawl policy
+#
+# The canonical, indexable surface is enumerated in /sitemap.xml. Everything
+# disallowed below is one of three things: an internal tool, a URL whose token
+# IS the credential, or a duplicate of a page that is canonical elsewhere.
+# Paths are prefix matches, and each one below is a real route in
+# packages/web/src/router.tsx.
+
 User-agent: *
+
+# Internal engineering routes. /dev/splat-fixture and /dev/evidence-chips no
+# longer exist in production builds; /dev/trades-hall-visual, /dev/assets/rooms
+# and /dev/capture-intake are admin-gated. None of them should ever be crawled.
+Disallow: /dev/
+
+# Deployed-but-unlisted client collateral.
 Disallow: /private/
+
+# Duplicate homepage-class surfaces. The canonical homepage is
+# https://venviewer.com/ — /fresh and /editor render that exact same page, and
+# /landing, /welcome and /living-hall are earlier designs kept reachable for
+# stale bookmarks.
+Disallow: /landing
+Disallow: /welcome
+Disallow: /living-hall
+Disallow: /fresh
+Disallow: /editor
+
+# Duplicate legal aliases. The canonical copies are /privacy, /terms and
+# /accessibility — the URLs the live homepage footer links to and the ones
+# listed in the sitemap. Only the (disallowed) /landing design links here.
+Disallow: /legal/
+
+# Capability URLs: possession of the link is the authorisation. Never index.
+Disallow: /proposal/
+Disallow: /proposal-share/
+Disallow: /supplier-share/
+Disallow: /plan
+Disallow: /blueprint
+Disallow: /v/
+
+# Signed-in, operational and account surfaces.
+Disallow: /hallkeeper/
+Disallow: /diary
+Disallow: /dashboard
+Disallow: /ops/
+Disallow: /event-architect
+Disallow: /app
+Disallow: /login
+Disallow: /register
+Disallow: /oauth-consent
+Disallow: /onboard
+
+Sitemap: https://venviewer.com/sitemap.xml
