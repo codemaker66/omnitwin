@@ -40,10 +40,9 @@ import {
   CRAFT_QUESTIONS,
   applyCraftQuizAnswer,
   buildCraftIntroductionMailto,
-  ZERO_AXIS_TOTALS,
+  ZERO_CRAFT_QUIZ_PROGRESS,
   rankCrafts,
-  type AxisTotals,
-  type AxisVector,
+  type CraftQuizProgress,
   type CraftId,
   type CraftRankingEntry,
 } from "../features/trades-house/craft-quiz-model.js";
@@ -135,16 +134,16 @@ function QuizProgress({ activeIndex }: QuizProgressProps): ReactElement {
 }
 
 /** Halfway through, the Chain names the two Crafts it is torn between. */
-function midQuizOmen(totals: AxisTotals, questionIndex: number): string | null {
+function midQuizOmen(progress: CraftQuizProgress, questionIndex: number): string | null {
   if (questionIndex !== Math.floor(CRAFT_QUESTIONS.length / 2)) return null;
-  const [first, second] = rankCrafts(totals);
+  const [first, second] = rankCrafts(progress);
   if (first === undefined || second === undefined) return null;
   return `The Chain senses ${first.profile.omen} and ${second.profile.omen}. It is not yet decided.`;
 }
 
 interface QuestionScreenProps {
   readonly questionIndex: number;
-  readonly totals: AxisTotals;
+  readonly progress: CraftQuizProgress;
   readonly onAnswer: (optionIndex: number) => void;
   /** The option just chosen; locks the set while the Convener reacts. */
   readonly pickedIndex: number | null;
@@ -166,7 +165,7 @@ interface QuestionScreenProps {
 
 function QuestionScreen({
   questionIndex,
-  totals,
+  progress,
   onAnswer,
   pickedIndex,
   onOptionHover,
@@ -177,7 +176,7 @@ function QuestionScreen({
 }: QuestionScreenProps): ReactElement {
   const question = CRAFT_QUESTIONS[questionIndex];
   if (question === undefined) throw new RangeError(`Question ${String(questionIndex)} is unavailable.`);
-  const omen = midQuizOmen(totals, questionIndex);
+  const omen = midQuizOmen(progress, questionIndex);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const continueRef = useRef<HTMLButtonElement>(null);
 
@@ -482,8 +481,7 @@ function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
 export function TradesHouseCraftQuizPage(): ReactElement {
   const [screen, setScreen] = useState<QuizScreen>("intro");
   const [questionIndex, setQuestionIndex] = useState(0);
-  const [totals, setTotals] = useState<AxisTotals>(ZERO_AXIS_TOTALS);
-  const [lastAxes, setLastAxes] = useState<AxisVector>({});
+  const [progress, setProgress] = useState<CraftQuizProgress>(ZERO_CRAFT_QUIZ_PROGRESS);
   const [pickedIndex, setPickedIndex] = useState<number | null>(null);
   const [reply, setReply] = useState<string | null>(null);
   const convenerRef = useRef<ConvenerHandle>(null);
@@ -504,7 +502,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
   // starting the fetch there means the opening scene races it — and loses.
   useEffect(() => { void loadConvenerVoice(); }, []);
   const wideStage = useMediaQuery("(min-width: 980px)");
-  const ranking = useMemo(() => rankCrafts(totals, lastAxes), [lastAxes, totals]);
+  const ranking = useMemo(() => rankCrafts(progress), [progress]);
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -530,8 +528,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     spentObservationsRef.current = new Set();
     setObservation(null);
     sceneShownAtRef.current = Date.now();
-    setTotals(ZERO_AXIS_TOTALS);
-    setLastAxes({});
+    setProgress(ZERO_CRAFT_QUIZ_PROGRESS);
     setQuestionIndex(0);
     setPickedIndex(null);
     setReply(null);
@@ -539,8 +536,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
   }
 
   function resetQuiz(): void {
-    setTotals(ZERO_AXIS_TOTALS);
-    setLastAxes({});
+    setProgress(ZERO_CRAFT_QUIZ_PROGRESS);
     setQuestionIndex(0);
     setPickedIndex(null);
     setReply(null);
@@ -552,9 +548,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     const option = CRAFT_QUESTIONS[questionIndex]?.options[optionIndex];
     if (option === undefined) return;
     setPickedIndex(optionIndex);
-    const answer = applyCraftQuizAnswer(totals, questionIndex, optionIndex);
-    setTotals(answer.totals);
-    setLastAxes(answer.lastAxes);
+    setProgress(applyCraftQuizAnswer(progress, questionIndex, optionIndex));
     // Answering opens his reply and stops there. Nothing advances on a clock:
     // the reader decides when they have finished with the line.
     // Everything he might remark on, recorded before the reaction is chosen.
@@ -623,7 +617,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
             </div>
             <QuestionScreen
               questionIndex={questionIndex}
-              totals={totals}
+              progress={progress}
               compact={!wideStage}
               onAnswer={answerQuestion}
               pickedIndex={pickedIndex}

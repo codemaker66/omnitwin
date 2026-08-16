@@ -6,8 +6,7 @@ import {
   CRAFT_PROFILES,
   CRAFT_QUESTIONS,
   rankCrafts,
-  ZERO_AXIS_TOTALS,
-  type AxisVector,
+  ZERO_CRAFT_QUIZ_PROGRESS,
 } from "../features/trades-house/craft-quiz-model.js";
 import {
   CONVENER_DELIBERATION,
@@ -24,14 +23,11 @@ import { TradesHouseLeafletPage } from "../pages/TradesHouseLeafletPage.js";
  * changed, not that the sorting is deterministic, which is the property meant.
  */
 const EXPECTED = (() => {
-  let totals = ZERO_AXIS_TOTALS;
-  let lastAxes: AxisVector = {};
-  CRAFT_QUESTIONS.forEach((_, index) => {
-    const answer = applyCraftQuizAnswer(totals, index, 2);
-    totals = answer.totals;
-    lastAxes = answer.lastAxes;
-  });
-  const [top] = rankCrafts(totals, lastAxes);
+  let progress = ZERO_CRAFT_QUIZ_PROGRESS;
+  for (let index = 0; index < CRAFT_QUESTIONS.length; index += 1) {
+    progress = applyCraftQuizAnswer(progress, index, 2);
+  }
+  const [top] = rankCrafts(progress);
   if (top === undefined) throw new Error("the ranking is never empty");
   return CRAFT_PROFILES[top.craftId];
 })();

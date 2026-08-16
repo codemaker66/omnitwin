@@ -78,13 +78,26 @@ export const CRAFT_AXIS_PROFILES = {
 } as const satisfies Readonly<Record<CraftId, AxisTotals>>;
 
 export interface CraftQuizOption {
-  /** The decisive phrase, shown bold — "The tin box." */
+  /** The decisive phrase, shown bold — "The iron." */
   readonly lead: string;
   /** The case a serious person would make for it. */
   readonly body: string;
   /** What it costs, named plainly. Every option pays something (law L5). */
   readonly cost: string;
+  /**
+   * HOW the answer is tempered — the five hidden axes. Direction, not degree.
+   */
   readonly axes: AxisVector;
+  /**
+   * WHAT the answer is about: the one Craft whose material and moral world it
+   * lives in — iron and rust, willow slips and seed-corn, the loaf weighed in
+   * front of the buyer, the razor at the throat. It is what the words say, so a
+   * reader who knows nothing of the Incorporations but can make the obvious
+   * guess (nature is the gardeners; metal is the smiths) is honoured, and it
+   * tells apart Crafts the axes cannot — Masons and Weavers point within 0.79
+   * of each other. The Craft's world may be shown; its NAME never appears.
+   */
+  readonly world: CraftId;
 }
 
 export interface CraftQuizQuestion {
@@ -95,10 +108,41 @@ export interface CraftQuizQuestion {
   readonly options: readonly CraftQuizOption[];
 }
 
-export interface CraftQuizAnswerResult {
+/** How many chosen answers lived in each Craft's world. */
+export type WorldTally = Readonly<Record<CraftId, number>>;
+
+/**
+ * Everything the sorting needs to know about a respondent so far. One value,
+ * not three parallel ones: it moves through the page as a unit and cannot be
+ * half-updated.
+ */
+export interface CraftQuizProgress {
   readonly totals: AxisTotals;
+  /** The last answer's axes — the sorting-hat instinct that the last thing you said carries the most of you. */
   readonly lastAxes: AxisVector;
+  readonly world: WorldTally;
 }
+
+export const ZERO_WORLD_TALLY: WorldTally = Object.freeze(
+  Object.fromEntries(CRAFT_ORDER.map((craftId) => [craftId, 0])) as Record<CraftId, number>,
+);
+
+export const ZERO_CRAFT_QUIZ_PROGRESS: CraftQuizProgress = Object.freeze({
+  totals: ZERO_AXIS_TOTALS,
+  lastAxes: {},
+  world: ZERO_WORLD_TALLY,
+});
+
+/**
+ * Weight of the world channel against the temperament channel. Chosen from
+ * data, not taste: check-geometry-r4.mjs sweeps it. Below ~0.5 the crowded
+ * pairs still cannot be told apart; above ~0.9 the floor stops rising and the
+ * temperament channel starts losing its say. Nine tenths of a full-world sweep
+ * is worth about as much as the strongest temperament signal a respondent can
+ * produce, so a reader who consistently chose the iron IS a smith, and a reader
+ * whose worlds were scattered is sorted by how they were tempered.
+ */
+export const WORLD_WEIGHT = 0.9;
 
 export interface CraftRankingEntry {
   readonly craftId: CraftId;
@@ -300,28 +344,32 @@ export const CRAFT_QUESTIONS = [
       "The town has a wall on three sides and a river on the fourth. You came in by the water gate, which is the one they do not watch, because nobody has ever arrived by river meaning harm. Not yet. The gatekeeper asks what is in your bag. It is a fair question. You have carried it four hundred miles.",
     options: [
       {
-        lead: "The tools.",
-        body: "Wrapped in oiled cloth and heavier than the food was. You ate less to keep them dry.",
-        cost: "They name you before you speak. From here you are what you can make, and nothing else.",
-        axes: { a2: 1, a3: 1, a5: 3 },
+        lead: "The iron.",
+        body: "Files, punches, a pair of tongs, wrapped in oiled cloth and heavier than the food was. You ate less to keep the edges dry.",
+        cost: "They name you before you speak. From here you are what you can make with heat, and nothing else.",
+        world: "hammermen",
+        axes: { a1: 1, a2: 2, a3: 1, a4: 2, a5: 3 },
       },
       {
         lead: "The cuttings.",
         body: "Slips of willow and a twist of seed, kept damp the whole way. Most of them are still alive.",
         cost: "They need ground you do not own and years nobody has promised you.",
-        axes: { a1: -3, a4: -2, a5: -1 },
+        world: "gardeners",
+        axes: { a1: -3, a2: -1, a4: -2, a5: -1 },
       },
       {
-        lead: "The book.",
-        body: "Every debt owed to you and by you, in your own hand. It is the only thing that says who you were.",
-        cost: "You carried paper instead of bread. Half those names are dead by now.",
-        axes: { a1: 2, a2: 2, a3: 1, a4: 1, a5: -3 },
+        lead: "The pattern-book.",
+        body: "Every cut you ever made, drawn to the quarter-inch, and the measures of a hundred people who will never stand in front of you again. It is the only thing that says what you can do.",
+        cost: "You carried paper instead of bread, and half the bodies in it are dead by now.",
+        world: "tailors",
+        axes: { a2: 3, a4: 1 },
       },
       {
-        lead: "Nothing worth naming.",
-        body: "A blanket, a knife, a river stone from four hundred miles back. You travel light because light travels.",
-        cost: "Nothing to show them. You will have to be believed on your face alone.",
-        axes: { a1: -1, a2: -2, a3: -2, a4: 3 },
+        lead: "The boots.",
+        body: "Nothing in the bag worth naming: a blanket, a knife, a river stone. What you carried was on your feet, and it did four hundred miles and has another four hundred in it.",
+        cost: "Nothing to show them. You will have to be believed on your face, and on how you walked in.",
+        world: "cordiners",
+        axes: { a1: 1, a2: -3, a5: -1 },
       },
     ],
   },
@@ -332,58 +380,66 @@ export const CRAFT_QUESTIONS = [
     options: [
       {
         lead: "Straight in.",
-        body: "The water is waist-high and the cold is a decision you make once. Everything after that is arms and breathing.",
+        body: "The water is waist-high and the cold is a decision you make once. You have a strong stomach. You have always been the one who goes in.",
         cost: "You go in not knowing the bottom. Two of you may need pulling out instead of one.",
-        axes: { a1: -1, a2: -1, a3: -1, a4: 3 },
+        world: "fleshers",
+        axes: { a1: -1, a2: -3, a4: 3 },
       },
       {
         lead: "The boat pole.",
-        body: "Eight feet of ash lying on the bank. You reach her from dry stone and lose nothing but time.",
+        body: "Eight feet of ash on the bank, straight in the grain and sound; you know wood, and you know what it will bear. You reach her from dry stone and lose nothing but time.",
         cost: "Fetching it costs seconds, and you will count those seconds for the rest of your life.",
-        axes: { a1: 1, a2: 3, a5: 1 },
+        world: "wrights",
+        axes: { a1: 1, a2: 2, a3: 1, a5: 2 },
       },
       {
         lead: "Wake the whole bank.",
-        body: "You shout until the three who did not move are moving, and until people who know this river are running.",
+        body: "You shout, and keep shouting, until the three who did not move are moving and people who know this river are running. Your voice was always the tool you reached for first.",
         cost: "You have made it everyone's, which means it is no longer only yours to get right.",
-        axes: { a3: -3, a4: -1, a5: -1 },
+        world: "barbers",
+        axes: { a1: -1, a3: -3, a5: -1 },
       },
       {
         lead: "The line you can see.",
-        body: "There is a pale seam of gravel under the surface. You walk it. It holds, because gravel does.",
+        body: "There is a pale seam of gravel under the surface, straight as a warp thread. You walk it. It holds, because gravel does, and because you have never trusted a thing you could not see the whole length of.",
         cost: "It is the long way round, and the long way is only right if she is still there at the end of it.",
-        axes: { a1: 1, a2: 3, a4: -3 },
+        world: "weavers",
+        axes: { a1: 1, a2: 1, a3: 1, a4: -3 },
       },
     ],
   },
   {
     title: "The Fence",
     scene:
-      "They set you to mend a fence that runs across good pasture and stops at nothing, twice. It fences in no animal and keeps out no weather. When you ask why it is there, the woman who set you the work says that it has always been there, and goes back inside.",
+      "They set you to mend a fence that starts in the middle of good pasture and stops in the middle of it. It keeps no beast in and no weather out. When you ask what it is for, the woman who set you the work says it has always been there, and goes back inside.",
     options: [
       {
         lead: "Mend it exactly.",
-        body: "Same posts, same spacing, same joint. Whoever built it had a reason, and the reason is in the shape.",
+        body: "Same posts, same spacing, same joint. Whoever built it built it to hold, and a thing built to hold keeps its reason in its shape. You do not need to know what it held.",
         cost: "A week on a thing you cannot defend. You will be asked why, and have no answer.",
-        axes: { a1: 2, a2: 2, a3: 2, a4: -1 },
+        world: "coopers",
+        axes: { a1: 2, a2: 2, a3: 1, a4: -1, a5: -2 },
       },
       {
         lead: "Find out first.",
-        body: "Someone here knows. The oldest woman in the town was a child when it went up, and children remember fences.",
+        body: "Someone here knows; the oldest woman in the town was a child when it went up, and children remember fences the way hands remember a pattern. Knowledge kept back is a kind of theft; asking is only the other half of telling.",
         cost: "Asking makes you the stranger who questions things. That name is hard to put down again.",
-        axes: { a2: 1, a3: -2, a4: 1, a5: -2 },
+        world: "weavers",
+        axes: { a1: 1, a3: -1, a4: -3, a5: -1 },
       },
       {
         lead: "Mend it better.",
-        body: "The joints are wrong for this soil. You know a way that will stand sixty years, and you have it in your hands.",
+        body: "The joints are wrong for this ground. You know a way — housed and pegged, the posts charred at the foot — that will stand sixty years, and you have it in your hands.",
         cost: "It stops being their fence. Whatever it meant, it will mean yours now.",
+        world: "wrights",
         axes: { a1: 1, a2: 2, a3: 2, a4: 2, a5: 3 },
       },
       {
         lead: "Make it useful.",
-        body: "Pasture is pasture. Rehung as a gate and a windbreak, the same wood feeds animals instead of dividing grass.",
+        body: "Pasture is pasture, and grass does not care about a line drawn through it. Rehung as a gate and a windbreak, the same wood shelters lambs in March instead of dividing grass.",
         cost: "You solved a different problem from the one you were given, which is a kind of not listening.",
-        axes: { a1: -2, a2: -3, a3: -1, a4: 1 },
+        world: "gardeners",
+        axes: { a1: -3, a2: -2, a4: -1 },
       },
     ],
   },
@@ -394,26 +450,30 @@ export const CRAFT_QUESTIONS = [
     options: [
       {
         lead: "Your own name.",
-        body: "The one your mother used. It means nothing here, which is exactly why it is still yours.",
+        body: "The one your mother used. It means nothing here, which is why it is still yours. Some things are worth more for being kept shut, and hold better.",
         cost: "A name that says nothing has to be filled by you, alone, and slowly.",
-        axes: { a1: 1, a2: 1, a3: 3, a4: -2 },
+        world: "coopers",
+        axes: { a2: 1, a3: 3, a4: -1, a5: -2 },
       },
       {
         lead: "The trade.",
-        body: "Let them call you by the work. Honest, short, and it tells a stranger where to bring a broken thing.",
+        body: "Let them call you by the work — Baxter, Wright, Souter, Webster; half the town is named for what it does with its hands. It is honest, and it tells a hungry stranger which door has bread behind it.",
         cost: "On the day you cannot do the work, you will not know what is left of you.",
-        axes: { a1: 2, a2: 2, a3: -1, a4: -1, a5: 1 },
+        world: "bakers",
+        axes: { a2: -2, a3: -1, a5: 1 },
       },
       {
         lead: "Whatever they land on.",
-        body: "They will choose one anyway, out of some small thing you did on a Tuesday. Better to let them.",
+        body: "They will choose one anyway, out of some small thing you did on a Tuesday. There are people who let a town rename them twice over and lose nothing by it but the noise; they had the cellar and the barley either way. Better to let them.",
         cost: "You hand them the naming. Some of what they see in you, you will not like.",
+        world: "maltmen",
         axes: { a1: -1, a2: -2, a3: -3, a4: -1, a5: -1 },
       },
       {
         lead: "Something you are not yet.",
-        body: "Take the name of the thing you mean to become, and spend the forty years catching up to it.",
+        body: "Take the name of the thing you mean to become, and spend the forty years catching up to it. Wool takes the colour it is put in. So can a person.",
         cost: "Every day until then, the name is a small lie you are wearing in public.",
+        world: "dyers",
         axes: { a1: -2, a4: 3, a5: 2 },
       },
     ],
@@ -425,27 +485,31 @@ export const CRAFT_QUESTIONS = [
     options: [
       {
         lead: "Let the work speak.",
-        body: "Make yours so plainly better that the comparison does the arguing. It may take years. It always works eventually.",
+        body: "Make yours so plainly better that the comparison does the arguing. When they said his arch would fall, the man who built it slept the night under it. Argument is cheap. A night is not.",
         cost: "Eventually is a long time to be poor and quietly certain you are right.",
-        axes: { a2: 3, a3: 2, a4: -3 },
+        world: "masons",
+        axes: { a1: 3, a2: 2, a3: 2, a4: -2, a5: 1 },
       },
       {
         lead: "Say it out loud.",
-        body: "Someone should tell the town what it is buying. If nobody names bad work, bad work becomes the standard.",
+        body: "Someone should tell the town what it is buying. Where you come from, work that would not pass was broken in the square on a Saturday, bad iron over the step, in front of everyone. Nobody thought it cruel. They thought that was what a mark was for.",
         cost: "You will be the one who spoke against a well-liked neighbour. That is what people will remember, not the joint.",
-        axes: { a2: 3, a3: -1, a4: 3 },
+        world: "hammermen",
+        axes: { a1: 2, a2: 2, a4: 3 },
       },
       {
         lead: "Learn the warmth.",
-        body: "They have something you do not, and it is not luck. You could watch how they are with people, and take it.",
+        body: "They have something you do not, and it is not luck. Watch how they are with people — how a room eases when they come into it, the way it eases when the jug goes round — and take it.",
         cost: "You will half-know you copied it, and wonder what you set down to make room.",
-        axes: { a1: -2, a2: -1, a3: -3, a4: 1, a5: 1 },
+        world: "maltmen",
+        axes: { a1: -2, a2: -1, a3: -3 },
       },
       {
         lead: "Mend what comes back.",
-        body: "Their work returns broken inside the year. Be the one who fixes it, and say nothing about who made it.",
+        body: "Their work returns broken inside the year. Be the one who takes what others have spoiled and makes it worth keeping, and say nothing about who spoiled it.",
         cost: "You build your living on their failures, which quietly requires them to keep failing.",
-        axes: { a1: 1, a2: -2, a3: 1, a4: -1, a5: -3 },
+        world: "skinners",
+        axes: { a1: 1, a4: -2, a5: -3 },
       },
     ],
   },
@@ -456,27 +520,31 @@ export const CRAFT_QUESTIONS = [
     options: [
       {
         lead: "Count it true.",
-        body: "Every item into the book, in a hand that can be read to him. The number is the number.",
+        body: "Every item into the book, in a hand that can be read to him. The number is the number. You have spent your life making things that hold, and a count that leaks is not a count.",
         cost: "You hand back a fortune you were the only one who knew about, and nobody will ever know you did.",
-        axes: { a1: 2, a2: 3, a3: 1, a4: -1, a5: -2 },
+        world: "coopers",
+        axes: { a1: 2, a2: 3, a3: 1, a4: -1, a5: -1 },
       },
       {
         lead: "Take the difference.",
-        body: "Wages he never paid, for years, to people he has outlived. Call it the account settling itself.",
+        body: "Wages he never paid, for years, to people he has outlived. Call it the account settling itself. It takes a strong stomach, and you have one, and you would rather have it than not.",
         cost: "You decided what you were owed with nobody else in the room. That is the whole of the thing.",
-        axes: { a1: -1, a2: -2, a3: 2, a4: 3, a5: -2 },
+        world: "fleshers",
+        axes: { a1: -1, a2: -2, a3: 2, a4: 3, a5: -1 },
       },
       {
         lead: "Tell him.",
-        body: "Sit with him and read the true figure aloud. He may not follow it. Say it anyway, while he is here to hear it.",
+        body: "Sit with him and read the true figure aloud, slowly, the way you would talk a man through something with a blade an inch from his throat. He may not follow it. Say it anyway, while he is here to hear it.",
         cost: "He may weep, or accuse you, or not understand. You will have given him a burden to die holding.",
-        axes: { a1: -1, a2: 1, a3: -3, a5: -1 },
+        world: "barbers",
+        axes: { a1: -1, a3: -2, a5: -1 },
       },
       {
         lead: "Put it to use.",
-        body: "It is rotting in a dark room. Turn it into stock and work and wages while he lives, and show him a thriving trade.",
+        body: "It is rotting in a dark room. Turn it into stock and work and wages while he lives: vats, wool, a colour this town has not seen. Show him a trade thriving before he goes.",
         cost: "You spent what was not yours on being right about what it was for.",
-        axes: { a1: -2, a2: -1, a3: -1, a4: 2, a5: 3 },
+        world: "dyers",
+        axes: { a1: -2, a2: -2, a3: -1, a4: 2, a5: 3 },
       },
     ],
   },
@@ -487,27 +555,31 @@ export const CRAFT_QUESTIONS = [
     options: [
       {
         lead: "Put yours in first.",
-        body: "Somebody has to go before it is safe to. A pot with one thing in it is a different object from an empty one.",
+        body: "Somebody has to go before it is safe to. A pot with one thing in it is a different object from an empty one. You put in the flour you had been keeping back, and walk home lighter.",
         cost: "If nobody follows, you have given away your winter to make a point about your town.",
-        axes: { a1: -2, a2: -3, a3: -2, a4: 2, a5: -1 },
+        world: "bakers",
+        axes: { a1: -1, a2: -3, a3: -2, a4: 2 },
       },
       {
         lead: "Make the list.",
-        body: "Who has what, who has none, what each household needs to reach spring. Fair is arithmetic before it is feeling.",
+        body: "Who has what, who has none, what each household needs to reach spring. Fair is arithmetic before it is feeling, the way a warp is counted before a single thread is thrown.",
         cost: "You will know exactly who lied about their cellar, and you will have to keep greeting them.",
-        axes: { a1: 1, a2: 3, a4: -1, a5: -1 },
+        world: "weavers",
+        axes: { a1: 1, a2: 2, a4: -2 },
       },
       {
-        lead: "Keep your own.",
-        body: "You have three mouths and a hard four months. Charity that starves your own household is a slower harm, not a kindness.",
+        lead: "Keep the seed.",
+        body: "Not the food — the seed. You have three mouths and a hard four months, and a store of seed-corn that is next year. A garden eaten in one winter is two winters. Charity that eats the seed is a slower harm, not a kindness.",
         cost: "You will eat in a town that watched you not share, and it will remember longer than the winter.",
-        axes: { a1: 2, a3: 2, a4: -3, a5: -2 },
+        world: "gardeners",
+        axes: { a1: -1, a2: -1, a3: 2, a4: -3, a5: -2 },
       },
       {
         lead: "Stretch what there is.",
-        body: "Bones make broth, and a small thing cooked well feeds four. You cannot make more food. You can make it go further.",
+        body: "Bones make broth, and barley that will not make bread will make small beer, and a small thing warm feeds four. You cannot make more food. You can make it go further, and warmer.",
         cost: "It is the work of every day, unpaid, and nobody thanks the person who makes thin things bearable.",
-        axes: { a1: -3, a2: -2, a3: -1, a4: -1, a5: 1 },
+        world: "maltmen",
+        axes: { a1: -2, a2: -1, a3: -3, a4: -1, a5: -1 },
       },
     ],
   },
@@ -518,58 +590,66 @@ export const CRAFT_QUESTIONS = [
     options: [
       {
         lead: "Open it.",
-        body: "Damp ruins wood and paper and forty years of somebody's work. A rule that costs her everything is not one she would want kept.",
+        body: "Damp ruins wood and paper and iron alike, and rust does not wait for anyone's permission. A rule that costs her forty years of work is not one she would want kept. You go at the thing nobody else will touch, because somebody must.",
         cost: "You will have decided, alone, that you understood her better than her own instruction did.",
-        axes: { a1: -1, a4: 3, a5: 1 },
+        world: "hammermen",
+        axes: { a1: 1, a2: 2, a3: 1, a4: 2, a5: 1 },
       },
       {
         lead: "Keep it shut.",
-        body: "She said the door stays shut. She did not say until it was inconvenient. A trust that holds only while it is easy was never one.",
+        body: "She said the door stays shut. She did not say until it was inconvenient. Where you come from, the oldest promise in the town is one nobody living understands. It has been kept three hundred years, in charity, by people who never asked what it was for.",
         cost: "Whatever is behind it may be past saving by the time she is home, and you will have let that happen.",
-        axes: { a1: 3, a2: 1, a3: 1, a4: -2, a5: -3 },
+        world: "skinners",
+        axes: { a1: 2, a4: -2, a5: -3 },
       },
       {
         lead: "Send for her.",
-        body: "Eleven days is a long time and not a lifetime. A rider could reach her. It is her door and her decision.",
+        body: "Eleven days is a long time and not a lifetime. A rider could reach her; a letter could. Half of what you know how to do is ask, and listen, and carry an answer back. It is her door and her decision.",
         cost: "You will have called her home for something you could not settle, and you will both know it.",
-        axes: { a2: 1, a3: -3, a4: -1, a5: -1 },
+        world: "barbers",
+        axes: { a1: -1, a2: 1, a3: -3, a4: -1, a5: -1 },
       },
       {
         lead: "Work on the wall.",
-        body: "Do not open the door. Find the leak, cut the water off outside, dry the room through the stone if it can be done.",
+        body: "Do not open the door. Find the leak, cut the water off outside, and dry the room through the stone. You know walls, and you know that water tells you where it came in if you are patient with it.",
         cost: "You may be too late, and you will have spent the days being clever instead of being decisive.",
-        axes: { a2: 2, a3: 3, a5: 2 },
+        world: "masons",
+        axes: { a1: 2, a2: 2, a3: 3, a4: -1, a5: 2 },
       },
     ],
   },
   {
     title: "What the Town Is Built On",
     scene:
-      "You find out the way everyone finds out: someone tells you over work, plainly, as though it were weather. The mill leat runs through the low cottages, and every third year it floods them. The town has known how to move it for sixty years, and has not, because moving it takes the water off the mill. Everything here is built on that. Your bench included.",
+      "You find out the way everyone finds out: someone tells you over work, plainly, as though it were weather. The mill leat runs through the low cottages, and every third year it floods them. The town has known for sixty years how to move it, and has not, because moving it takes the water off the mill. Everything here is built on that. Your bench included.",
     options: [
       {
         lead: "Move the water.",
-        body: "A season of digging and a bad year for everyone. Then it is done, and done for good, and nobody argues with a finished channel.",
+        body: "A season of digging and timber framing and a bad year for everyone. Then it is done, and done for good, and nobody argues with a finished channel. You have never left a thing half-made in your life.",
         cost: "A bad year is not survivable for every household. Some of those households are in the low cottages.",
-        axes: { a1: 3, a3: 1, a4: 1, a5: 3 },
+        world: "wrights",
+        axes: { a1: 2, a2: 1, a3: 1, a4: 1, a5: 3 },
       },
       {
         lead: "Raise the houses.",
-        body: "You cannot move the water this year. You can get stone under eleven floors before the next flood, starting Monday.",
+        body: "You cannot move the water this year. You can get good stone under eleven floors before the next flood, starting Monday, and stone laid right does not care how many floods come after it.",
         cost: "The leat stays. You have made the wrong thing bearable, which is how it survived sixty years.",
-        axes: { a2: -3, a4: -1, a5: 1 },
+        world: "masons",
+        axes: { a1: 1, a3: 1, a4: -2, a5: 1 },
       },
       {
         lead: "Say it at the meeting.",
-        body: "Sixty years of not saying it out loud is what holds it up. Make them decide in front of each other.",
+        body: "Sixty years of not saying it out loud is what holds it up. Say it where everyone is, and make them decide in front of each other. Where you come from they turned out their own head man over elevenpence, in the open, because a rule that bends for the powerful is a decoration.",
         cost: "You will force a town to look at itself, and towns do not forgive the one who held the mirror.",
-        axes: { a1: -2, a2: 3, a3: -3, a4: 2, a5: -2 },
+        world: "tailors",
+        axes: { a2: 3, a3: -1, a4: 2 },
       },
       {
         lead: "Leave.",
-        body: "You will not eat from it. Take your tools and your name and walk out by the gate you came in by.",
+        body: "You will not eat from it. Take your tools and your name and walk out by the gate you came in by. Your boots did four hundred miles to get here and will do four hundred more, and a road is a kind of home.",
         cost: "The leat runs on without you. You have saved nobody but yourself, and you know it.",
-        axes: { a1: -2, a2: 1, a3: 2, a4: 1, a5: -3 },
+        world: "cordiners",
+        axes: { a1: 1, a2: -1, a3: 1, a5: -1 },
       },
     ],
   },
@@ -580,27 +660,31 @@ export const CRAFT_QUESTIONS = [
     options: [
       {
         lead: "Everything, in order.",
-        body: "Start where you started. Seven years, the whole of it, nothing held back and nothing skipped.",
+        body: "Start where you started. Seven years, the whole of it, nothing held back and nothing skipped. Where you come from a master who kept back a thread of it from an apprentice was called a thief, and rightly.",
         cost: "Seven years of your working life spent making the person who will one day take your custom.",
-        axes: { a1: 2, a2: 1, a3: 2, a4: -1, a5: 2 },
+        world: "weavers",
+        axes: { a1: 3, a3: 1, a4: -2, a5: 1 },
       },
       {
         lead: "The last thing last.",
-        body: "Teach all of it but the one turn that makes your work yours. That, when they have earned it. Or at the end.",
+        body: "Teach all of it but the one turn that makes your work yours — the thing you learned alone in a locked room, and proved alone. That, when they have earned it. Or at the end.",
         cost: "You have taught someone to almost do a thing, and left them knowing there is a door you are standing in front of.",
-        axes: { a1: 3, a2: 1, a3: 3, a4: -1, a5: -2 },
+        world: "tailors",
+        axes: { a2: 3, a4: 1, a5: -1 },
       },
       {
         lead: "Put them to work.",
-        body: "No lessons. Hands on real jobs from the first morning, ruining real material, until the hands know it.",
+        body: "No lessons. A knife in the hand and real meat on the block from the first morning, ruining real material, until the hands know it and the stomach stops turning.",
         cost: "They will learn your habits before your reasons, including the habits you would not choose to pass on.",
+        world: "fleshers",
         axes: { a1: -1, a2: -3, a3: -1, a4: 2, a5: 1 },
       },
       {
         lead: "Send them round the town.",
-        body: "A season with everyone here who makes anything, then come back. Let them find out what their hands are actually for.",
+        body: "A season with everyone here who makes anything, and then come back. Let them find out what their hands are for. You do not know what a seed is until it comes up, and you cannot hurry it.",
         cost: "They may not come back. You will have given away the one apprentice who came to your door.",
-        axes: { a1: -2, a3: -3, a4: 1 },
+        world: "gardeners",
+        axes: { a1: -3, a3: -1, a4: -2, a5: -1 },
       },
     ],
   },
@@ -611,27 +695,31 @@ export const CRAFT_QUESTIONS = [
     options: [
       {
         lead: "The tools.",
-        body: "Thirty years of edges ground to your own hand. With them you can make all of it again. Without them you are a pair of hands.",
+        body: "The tongs and the files and the small hammer that fits your hand, thirty years of edges ground to your own grip. Iron does not burn, but a workshop's worth of it is a puddle by morning. With them you can make all of it again.",
         cost: "Only you can use them properly, so you are saving your own future and nobody else's.",
-        axes: { a1: 1, a3: 2, a4: -1, a5: 3 },
+        world: "hammermen",
+        axes: { a1: 1, a2: 2, a3: 2, a4: 1, a5: 3 },
       },
       {
-        lead: "The books.",
-        body: "The patterns, the accounts, the name of everyone who ever owed or was owed. Sixty years of a trade, most of it not yours.",
+        lead: "The papers.",
+        body: "The charter and the books: the oldest paper in the town, older than the hall it hangs in, and the name of everyone who ever owed or was owed. Sixty years of a trade, most of it not yours.",
         cost: "Paper is the easiest thing in this room to replace with a lie, and the hardest to eat.",
-        axes: { a1: 2, a2: 3, a3: -1, a4: -3, a5: -2 },
+        world: "skinners",
+        axes: { a1: 2, a2: 1, a3: -1, a4: -2, a5: -3 },
       },
       {
-        lead: "The seed store.",
-        body: "Four sacks of next year, and there is no next year without them, for anybody. Yours is not the only house on fire.",
+        lead: "The grain.",
+        body: "Four sacks: this winter's flour and next year's seed, and there is no next year without them, for anybody. Yours is not the only house on fire, and a town that cannot bake in the morning has lost more than a roof.",
         cost: "They are heavy and slow and you will still be in the room when the roof decides.",
-        axes: { a1: -3, a2: -2, a3: 1, a4: -1, a5: -2 },
+        world: "bakers",
+        axes: { a1: -2, a2: -3 },
       },
       {
         lead: "The people next door.",
-        body: "There is an old man through that wall who has not come out, and things do not shout when they are burning.",
+        body: "There is an old man through that wall who has not come out, and things do not shout when they are burning. You have had your hands on more strangers' faces than anyone in this town. You know how a person goes quiet.",
         cost: "You will own nothing by morning. Nothing at all, and you will begin again in front of everyone.",
-        axes: { a1: -1, a2: -2, a3: -3, a4: 3 },
+        world: "barbers",
+        axes: { a1: -2, a2: -1, a3: -3, a4: 1 },
       },
     ],
   },
@@ -642,27 +730,31 @@ export const CRAFT_QUESTIONS = [
     options: [
       {
         lead: "Keep the standard.",
-        body: "Let in whoever can do the work to the mark. Not the mark you like — the mark, tested, the same for everyone.",
+        body: "Let in whoever can do the work to the mark. Not the mark you like — the mark, tested, alone in a shut room, the same for everyone. A rule that bends for a friend is a decoration, not a rule.",
         cost: "Some who would have been good in five years are turned away in their first, and go elsewhere, and are good there.",
-        axes: { a1: 1, a2: 3, a3: 1, a5: 2 },
+        world: "tailors",
+        axes: { a2: 3, a4: 1, a5: 1 },
       },
       {
         lead: "Take the ones who need it.",
-        body: "The gate is not a prize. Let it be the thing a person with nothing can walk through, as you did.",
+        body: "The gate is not a prize. Let it be the thing a person with nothing can walk through, as you did, on whatever they have on their feet. Feet are feet. You have shod an army that was not yours because feet are feet.",
         cost: "Work will go out under the town's name that is not good enough, and the name is all anyone here has.",
-        axes: { a1: -1, a2: -3, a3: -1, a4: 1 },
+        world: "cordiners",
+        axes: { a1: 1, a2: -3, a5: -1 },
       },
       {
         lead: "Take down the gate.",
-        body: "Any wall that decides who counts as a person is doing that job whatever it was built for. Let them in, and let it be difficult.",
+        body: "Any wall that decides who counts as a person is doing that job whatever it was built for. Let them in, and let it be difficult. You have changed your colour twice rather than die in the old one. A town can do the same.",
         cost: "You will have unmade in one season the thing that carried this town through a hundred winters.",
-        axes: { a1: -3, a2: -1, a3: -1, a4: 3, a5: 1 },
+        world: "dyers",
+        axes: { a1: -3, a2: -1, a4: 3, a5: 1 },
       },
       {
         lead: "Write it down.",
-        body: "Not who to admit — how to decide. Rules that hold when you are dead and the people deciding are worse than you.",
+        body: "Not who to admit — how to decide. Rules that hold when you are dead and the people deciding are worse than you. You have spent your life setting stone for people you will never meet, and this is only more of that.",
         cost: "Written rules outlive their reasons. Someone will be kept out one day by a sentence you wrote tonight.",
-        axes: { a1: 3, a4: -3, a5: -3 },
+        world: "masons",
+        axes: { a1: 3, a3: 2, a4: -2 },
       },
     ],
   },
@@ -699,11 +791,41 @@ export function craftAffinity(totals: AxisTotals, craftId: CraftId): number {
   return scale === 0 ? 0 : dot(totals, CRAFT_AXIS_PROFILES[craftId]) / scale;
 }
 
+/**
+ * How many homes each Craft has among the forty-eight answers. Computed from
+ * the questions themselves so it can never drift from them; the tests assert
+ * every Craft has three or four.
+ */
+export const CRAFT_WORLD_HOMES: Readonly<Record<CraftId, number>> = Object.freeze(
+  CRAFT_QUESTIONS.reduce<Record<CraftId, number>>(
+    (acc, question) => {
+      for (const option of question.options) acc[option.world] += 1;
+      return acc;
+    },
+    { ...ZERO_WORLD_TALLY } as Record<CraftId, number>,
+  ),
+);
+
+/**
+ * The share of a Craft's world the respondent walked through: chosen homes over
+ * homes available, so a Craft with four homes is not advantaged over one with
+ * three. 0 = never entered that world; 1 = took every answer that lives in it.
+ */
+export function worldAffinity(world: WorldTally, craftId: CraftId): number {
+  const homes = CRAFT_WORLD_HOMES[craftId];
+  return homes === 0 ? 0 : world[craftId] / homes;
+}
+
+/** The blended score: how you are tempered, plus what your answers were about. */
+export function craftScore(progress: CraftQuizProgress, craftId: CraftId): number {
+  return craftAffinity(progress.totals, craftId) + WORLD_WEIGHT * worldAffinity(progress.world, craftId);
+}
+
 export function applyCraftQuizAnswer(
-  totals: AxisTotals,
+  progress: CraftQuizProgress,
   questionIndex: number,
   optionIndex: number,
-): CraftQuizAnswerResult {
+): CraftQuizProgress {
   const question = requireQuestion(questionIndex);
   if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= question.options.length) {
     throw new RangeError(`Option index ${String(optionIndex)} is outside question ${String(questionIndex)}.`);
@@ -714,24 +836,24 @@ export function applyCraftQuizAnswer(
     throw new RangeError(`Option index ${String(optionIndex)} is outside question ${String(questionIndex)}.`);
   }
 
-  const next: Record<AxisKey, number> = { ...totals };
+  const totals: Record<AxisKey, number> = { ...progress.totals };
   for (const key of AXIS_KEYS) {
-    next[key] += option.axes[key] ?? 0;
+    totals[key] += option.axes[key] ?? 0;
   }
+  const world: Record<CraftId, number> = { ...progress.world };
+  world[option.world] += 1;
 
-  return { totals: next, lastAxes: { ...option.axes } };
+  return { totals, lastAxes: { ...option.axes }, world };
 }
 
 /**
- * Ranks all fourteen Crafts by affinity. Ties break toward the Craft the FINAL
- * answer pointed at hardest — the sorting-hat instinct that the last thing you
+ * Ranks all fourteen Crafts by the blended score — temperament plus world. Ties
+ * break toward the Craft the FINAL answer pointed at hardest — the sorting-hat instinct that the last thing you
  * said carries the most of you — and then by the Incorporations' own order of
  * precedence, so the outcome is always deterministic.
  */
-export function rankCrafts(
-  totals: AxisTotals,
-  lastAxes: AxisVector = {},
-): readonly CraftRankingEntry[] {
+export function rankCrafts(progress: CraftQuizProgress): readonly CraftRankingEntry[] {
+  const { lastAxes } = progress;
   const lastTotals: AxisTotals = {
     a1: lastAxes.a1 ?? 0,
     a2: lastAxes.a2 ?? 0,
@@ -743,7 +865,7 @@ export function rankCrafts(
   return CRAFT_ORDER
     .map((craftId, stableOrder) => ({
       craftId,
-      score: craftAffinity(totals, craftId),
+      score: craftScore(progress, craftId),
       lastAnswerWeight: craftAffinity(lastTotals, craftId),
       profile: CRAFT_PROFILES[craftId],
       stableOrder,
