@@ -12,6 +12,7 @@ import { PlannerCommandDeck } from "./components/editor/PlannerCommandDeck.js";
 import { PlannerSpatialHud } from "./components/editor/PlannerSpatialHud.js";
 import { VerticalToolbox } from "./components/editor/VerticalToolbox.js";
 import { PlannerScene } from "./components/editor/PlannerScene.js";
+import { GeneratedFurnitureProxyBadge } from "./components/editor/cockpit/FurnitureInspectionDock.js";
 import { useSectionStore } from "./stores/section-store.js";
 import { useBookmarkStore } from "./stores/bookmark-store.js";
 import { usePlacementStore } from "./stores/placement-store.js";
@@ -94,6 +95,8 @@ export function App(): React.ReactElement {
       >
         <PlannerScene />
       </div>
+
+      <GeneratedFurnitureProxyBadge />
 
       {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
       <MarkupPersistence />

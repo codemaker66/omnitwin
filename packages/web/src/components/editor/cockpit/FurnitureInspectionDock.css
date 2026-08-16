@@ -1,0 +1,186 @@
+.furniture-inspection {
+  grid-area: panel;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 18px 18px;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(201, 168, 76, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(10, 10, 10, 0.97), rgba(16, 14, 12, 0.99));
+  color: var(--house-text-1, #f4efe6);
+}
+
+.furniture-inspection__header {
+  display: grid;
+  gap: 5px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.furniture-inspection__header h2,
+.furniture-inspection__header p,
+.furniture-inspection__card p {
+  margin: 0;
+}
+
+.furniture-inspection__header h2 {
+  color: var(--house-text-0, #fff6e9);
+  font: 600 24px/1.08 Georgia, "Times New Roman", serif;
+}
+
+.furniture-inspection__eyebrow,
+.furniture-inspection__card-label {
+  color: var(--house-accent-brass, #d7bd68);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.furniture-inspection__status {
+  color: var(--house-text-2, rgba(244, 239, 230, 0.66));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.furniture-inspection__card {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.furniture-inspection__card dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.furniture-inspection__card dl div {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 9px;
+}
+
+.furniture-inspection__card dt {
+  color: var(--house-text-3, rgba(244, 239, 230, 0.48));
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.furniture-inspection__card dd,
+.furniture-inspection__card strong {
+  margin: 0;
+  color: var(--house-text-1, rgba(255, 246, 233, 0.9));
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.furniture-inspection__primary,
+.furniture-inspection__secondary,
+.furniture-inspection__quiet {
+  min-height: 44px;
+  border-radius: 9px;
+  cursor: pointer;
+  font: 800 12px/1 "Inter", system-ui, sans-serif;
+  letter-spacing: 0.045em;
+}
+
+.furniture-inspection__primary {
+  border: 1px solid rgba(255, 239, 177, 0.55);
+  background: linear-gradient(145deg, #e0c66c, var(--house-accent-brass, #aa842d));
+  color: var(--house-bg-0, #14110b);
+}
+
+.furniture-inspection__secondary {
+  border: 1px solid rgba(201, 168, 76, 0.35);
+  background: rgba(201, 168, 76, 0.1);
+  color: var(--house-accent-brass, #f1d888);
+}
+
+.furniture-inspection__quiet {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: transparent;
+  color: var(--house-text-2, rgba(244, 239, 230, 0.68));
+}
+
+.furniture-inspection__primary:focus-visible,
+.furniture-inspection__secondary:focus-visible,
+.furniture-inspection__quiet:focus-visible,
+.furniture-inspection__controls input:focus-visible {
+  outline: 2px solid var(--house-accent-brass, #e2c15d);
+  outline-offset: 2px;
+}
+
+.furniture-inspection__controls {
+  gap: 12px;
+}
+
+.furniture-inspection__control-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--house-text-1, #f7edda);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.furniture-inspection__control-label output {
+  color: var(--house-accent-brass, #e0c66c);
+  font-variant-numeric: tabular-nums;
+}
+
+.furniture-inspection__controls input[type="range"] {
+  width: 100%;
+  min-height: 24px;
+  accent-color: var(--house-accent-brass, #c9a84c);
+}
+
+.furniture-inspection__camera-help {
+  margin: auto 0 0;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--house-text-2, rgba(244, 239, 230, 0.58));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.generated-furniture-proxy-badge {
+  position: absolute;
+  z-index: 33;
+  top: 12px;
+  right: 16px;
+  width: 240px;
+  max-width: calc(100% - 32px);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(201, 168, 76, 0.42);
+  border-radius: 999px;
+  background: rgba(10, 9, 8, 0.92);
+  color: var(--house-accent-brass, rgba(244, 226, 176, 0.92));
+  font: 800 12px/1.25 "Inter", system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .generated-furniture-proxy-badge {
+    top: calc(env(safe-area-inset-top) + 82px);
+    right: auto;
+    bottom: auto;
+    left: max(12px, env(safe-area-inset-left));
+    width: 220px;
+    font-size: 14px;
+  }
+}

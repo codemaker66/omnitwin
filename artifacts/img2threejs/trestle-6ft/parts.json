@@ -1,0 +1,187 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "trestle-6ft",
+  "parts": [
+    {
+      "name": "brace-system",
+      "kind": "assembly",
+      "module": "brace-system",
+      "triangles": 48,
+      "members": [
+        "left-front-diagonal-brace",
+        "left-rear-diagonal-brace",
+        "right-front-diagonal-brace",
+        "right-rear-diagonal-brace"
+      ]
+    },
+    {
+      "name": "fastener-system",
+      "kind": "assembly",
+      "module": "fastener-system",
+      "triangles": 1032,
+      "members": [
+        "left-front-hinge-bolt-lower-detail",
+        "left-front-hinge-bolt-upper-detail",
+        "left-front-hinge-plate-detail",
+        "left-rear-hinge-bolt-lower-detail",
+        "left-rear-hinge-bolt-upper-detail",
+        "left-rear-hinge-plate-detail",
+        "left-stretcher-bracket-detail",
+        "right-front-hinge-bolt-lower-detail",
+        "right-front-hinge-bolt-upper-detail",
+        "right-front-hinge-plate-detail",
+        "right-rear-hinge-bolt-lower-detail",
+        "right-rear-hinge-bolt-upper-detail",
+        "right-rear-hinge-plate-detail",
+        "right-stretcher-bracket-detail"
+      ]
+    },
+    {
+      "name": "foot-system",
+      "kind": "assembly",
+      "module": "foot-system",
+      "triangles": 432,
+      "members": [
+        "left-front-foot-cap-detail",
+        "left-rear-foot-cap-detail",
+        "right-front-foot-cap-detail",
+        "right-rear-foot-cap-detail"
+      ]
+    },
+    {
+      "name": "frame",
+      "kind": "assembly",
+      "module": "frame",
+      "triangles": 1620,
+      "members": [
+        "left-floor-bar",
+        "left-front-diagonal-brace",
+        "left-front-upright",
+        "left-rear-diagonal-brace",
+        "left-rear-upright",
+        "left-trestle-top-rail",
+        "right-floor-bar",
+        "right-front-diagonal-brace",
+        "right-front-upright",
+        "right-rear-diagonal-brace",
+        "right-rear-upright",
+        "right-trestle-top-rail",
+        "stretcher"
+      ]
+    },
+    {
+      "name": "left-floor-bar",
+      "kind": "part",
+      "module": "left-trestle",
+      "triangles": 228
+    },
+    {
+      "name": "left-front-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 12
+    },
+    {
+      "name": "left-front-upright",
+      "kind": "part",
+      "module": "left-trestle",
+      "triangles": 12
+    },
+    {
+      "name": "left-rear-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 12
+    },
+    {
+      "name": "left-rear-upright",
+      "kind": "part",
+      "module": "left-trestle",
+      "triangles": 12
+    },
+    {
+      "name": "left-trestle",
+      "kind": "assembly",
+      "module": "left-trestle",
+      "triangles": 696,
+      "members": [
+        "left-floor-bar",
+        "left-front-diagonal-brace",
+        "left-front-upright",
+        "left-rear-diagonal-brace",
+        "left-rear-upright",
+        "left-trestle-top-rail"
+      ]
+    },
+    {
+      "name": "left-trestle-top-rail",
+      "kind": "part",
+      "module": "left-trestle",
+      "triangles": 420
+    },
+    {
+      "name": "right-floor-bar",
+      "kind": "part",
+      "module": "right-trestle",
+      "triangles": 228
+    },
+    {
+      "name": "right-front-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 12
+    },
+    {
+      "name": "right-front-upright",
+      "kind": "part",
+      "module": "right-trestle",
+      "triangles": 12
+    },
+    {
+      "name": "right-rear-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 12
+    },
+    {
+      "name": "right-rear-upright",
+      "kind": "part",
+      "module": "right-trestle",
+      "triangles": 12
+    },
+    {
+      "name": "right-trestle",
+      "kind": "assembly",
+      "module": "right-trestle",
+      "triangles": 696,
+      "members": [
+        "right-floor-bar",
+        "right-front-diagonal-brace",
+        "right-front-upright",
+        "right-rear-diagonal-brace",
+        "right-rear-upright",
+        "right-trestle-top-rail"
+      ]
+    },
+    {
+      "name": "right-trestle-top-rail",
+      "kind": "part",
+      "module": "right-trestle",
+      "triangles": 420
+    },
+    {
+      "name": "stretcher",
+      "kind": "part",
+      "module": "stretcher",
+      "triangles": 228
+    },
+    {
+      "name": "tabletop",
+      "kind": "part",
+      "module": "tabletop",
+      "triangles": 456
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 23
+}

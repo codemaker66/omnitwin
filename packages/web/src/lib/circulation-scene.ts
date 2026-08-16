@@ -24,41 +24,55 @@ import {
   type CirculationReport,
   type FurnitureFootprint,
 } from "./circulation.js";
+import { normalizeFurnitureScale } from "./furniture-scale.js";
+import { isPassiveFreestandingAvFloorItem } from "./furniture-semantics.js";
+import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 /** Height above the floor (render units) at which the overlay line is drawn. */
 export const CIRCULATION_OVERLAY_Y = 0.09;
 
 /**
- * Extract table footprints (in metres) from placed items. Only `table`-category
- * items count as circulation obstacles — chairs cluster at their table, so
- * including them would report the intentionally tiny chair-to-table gaps
- * instead of the walkways between table groups. Render-space x/z divide back to
- * metres; catalogue width/depth are already metres.
+ * Extract planning-relevant circulation footprints in metres. Tables and
+ * passive freestanding AV floor equipment count; chairs and tabletop AV do
+ * not, avoiding intentionally tiny intra-group and on-table gaps. Render-space
+ * x/z divide back to metres; catalogue width/depth are already metres.
  */
-export function placedTableFootprints(placedItems: readonly PlacedItem[]): FurnitureFootprint[] {
+export function placedCirculationFootprints(
+  placedItems: readonly PlacedItem[],
+): FurnitureFootprint[] {
   const footprints: FurnitureFootprint[] = [];
   for (const placed of placedItems) {
+    if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
-    if (item === undefined || item.category !== "table") continue;
+    if (
+      item === undefined
+      || (item.category !== "table" && !isPassiveFreestandingAvFloorItem(item))
+    ) continue;
+    const scale = normalizeFurnitureScale(placed.scale);
     footprints.push({
       id: placed.id,
       label: item.name,
       cx: placed.x / RENDER_SCALE,
       cz: placed.z / RENDER_SCALE,
-      width: item.width,
-      depth: item.depth,
+      width: item.width * scale,
+      depth: item.depth * scale,
       rotation: placed.rotationY,
     });
   }
   return footprints;
 }
 
-/** Compute the circulation report straight from placed items (tables only). */
-export function placedItemsCirculation(placedItems: readonly PlacedItem[]): CirculationReport {
-  return computeCirculation(placedTableFootprints(placedItems));
+/** @deprecated Use `placedCirculationFootprints` for its broader semantics. */
+export function placedTableFootprints(placedItems: readonly PlacedItem[]): FurnitureFootprint[] {
+  return placedCirculationFootprints(placedItems);
 }
 
-/** A render-space annotation for the tightest aisle, ready to draw in the scene. */
+/** Compute the circulation report straight from planning-relevant floor items. */
+export function placedItemsCirculation(placedItems: readonly PlacedItem[]): CirculationReport {
+  return computeCirculation(placedCirculationFootprints(placedItems));
+}
+
+/** A render-space annotation for the tightest clearance, ready to draw in the scene. */
 export interface CirculationOverlaySegment {
   /** Endpoint on footprint A, render units `[x, y, z]`. */
   readonly from: readonly [number, number, number];
@@ -73,7 +87,7 @@ export interface CirculationOverlaySegment {
   readonly color: string;
   /** Whether the gap warrants attention (tight or blocked). */
   readonly emphasis: boolean;
-  /** The headline (tightest) aisle, drawn prominently; secondaries are subtle. */
+  /** The headline (tightest) clearance, drawn prominently; secondaries are subtle. */
   readonly primary: boolean;
 }
 
@@ -119,9 +133,9 @@ function gapToOverlaySegment(
 
 /**
  * Map a circulation report to a render-space overlay segment for the tightest
- * aisle, or null when there is nothing meaningful to draw (fewer than two
- * tables). Witness points are in metres; multiply by `renderScale` to land them
- * in the scene — the exact inverse of `placedTableFootprints`.
+ * clearance, or null when there is nothing meaningful to draw (fewer than two
+ * planning footprints). Witness points are in metres; multiply by `renderScale`
+ * to land them in the scene — the inverse of `placedCirculationFootprints`.
  */
 export function circulationOverlaySegment(
   report: CirculationReport,
@@ -134,13 +148,13 @@ export function circulationOverlaySegment(
 }
 
 /**
- * Every aisle worth drawing: the headline tightest pair (`primary`) followed by
+ * Every clearance worth drawing: the headline tightest pair (`primary`) followed by
  * each *other* sub-comfortable pinch point (`primary: false`), so a layout with
  * several tight or blocked aisles surfaces all of them — not just the worst.
- * Returns an empty array when there is nothing to draw (fewer than two tables).
+ * Returns an empty array when there is nothing to draw (fewer than two planning footprints).
  *
  * `problemGaps[0]` coincides with the tightest pair, so the secondaries are
- * exactly `problemGaps.slice(1)`. When the tightest aisle is itself comfortable
+ * exactly `problemGaps.slice(1)`. When the tightest clearance is itself comfortable
  * or generous there are no problem pairs, and only the primary is returned.
  */
 export function circulationOverlaySegments(

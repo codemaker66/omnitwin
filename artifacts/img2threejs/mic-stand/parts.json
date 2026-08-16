@@ -1,0 +1,255 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "mic-stand",
+  "parts": [
+    {
+      "name": "boom-assembly",
+      "kind": "assembly",
+      "module": "boom-assembly",
+      "triangles": 4896,
+      "members": [
+        "boom-cable-clip",
+        "boom-hinge-body",
+        "boom-slide-collar",
+        "boom-tube",
+        "empty-microphone-clip",
+        "hinge-axle-system",
+        "rear-counterweight",
+        "terminal-adapter"
+      ]
+    },
+    {
+      "name": "boom-hinge-body",
+      "kind": "part",
+      "module": "boom-assembly",
+      "triangles": 584
+    },
+    {
+      "name": "boom-slide-collar",
+      "kind": "part",
+      "module": "boom-assembly",
+      "triangles": 336
+    },
+    {
+      "name": "boom-tube",
+      "kind": "part",
+      "module": "boom-assembly",
+      "triangles": 112
+    },
+    {
+      "name": "collar-grip-rib-system",
+      "kind": "assembly",
+      "module": "collar-grip-rib-system",
+      "triangles": 1200,
+      "members": [
+        "telescoping-collar-rib-1",
+        "telescoping-collar-rib-2",
+        "telescoping-collar-rib-3",
+        "telescoping-collar-rib-4"
+      ]
+    },
+    {
+      "name": "empty-clip-cradle",
+      "kind": "part",
+      "module": "empty-microphone-clip",
+      "triangles": 588
+    },
+    {
+      "name": "empty-clip-jaw-system",
+      "kind": "assembly",
+      "module": "empty-clip-jaw-system",
+      "triangles": 816,
+      "members": [
+        "empty-clip-left-jaw",
+        "empty-clip-right-jaw"
+      ]
+    },
+    {
+      "name": "empty-clip-left-jaw",
+      "kind": "part",
+      "module": "empty-clip-jaw-system",
+      "triangles": 408
+    },
+    {
+      "name": "empty-clip-right-jaw",
+      "kind": "part",
+      "module": "empty-clip-jaw-system",
+      "triangles": 408
+    },
+    {
+      "name": "empty-microphone-clip",
+      "kind": "assembly",
+      "module": "empty-microphone-clip",
+      "triangles": 1404,
+      "members": [
+        "empty-clip-cradle",
+        "empty-clip-jaw-system"
+      ]
+    },
+    {
+      "name": "hinge-axle",
+      "kind": "part",
+      "module": "hinge-axle-system",
+      "triangles": 560
+    },
+    {
+      "name": "hinge-axle-system",
+      "kind": "assembly",
+      "module": "hinge-axle-system",
+      "triangles": 560,
+      "members": [
+        "hinge-axle",
+        "hinge-axle-cap-left",
+        "hinge-axle-cap-right",
+        "hinge-axle-inset-left",
+        "hinge-axle-inset-right"
+      ]
+    },
+    {
+      "name": "leg-root-hardware-system",
+      "kind": "assembly",
+      "module": "leg-root-hardware-system",
+      "triangles": 1320,
+      "members": [
+        "tripod-leg-root-front-left-cap",
+        "tripod-leg-root-front-right-cap",
+        "tripod-leg-root-rear-cap"
+      ]
+    },
+    {
+      "name": "lower-upright-pole",
+      "kind": "part",
+      "module": "upright-assembly",
+      "triangles": 1052
+    },
+    {
+      "name": "rear-counterweight-sleeve",
+      "kind": "part",
+      "module": "rear-counterweight-sleeve",
+      "triangles": 736
+    },
+    {
+      "name": "telescoping-lock-collar",
+      "kind": "part",
+      "module": "upright-assembly",
+      "triangles": 1568
+    },
+    {
+      "name": "terminal-adapter",
+      "kind": "part",
+      "module": "boom-assembly",
+      "triangles": 224
+    },
+    {
+      "name": "tripod-base-assembly",
+      "kind": "assembly",
+      "module": "tripod-base-assembly",
+      "triangles": 11800,
+      "members": [
+        "leg-root-hardware-system",
+        "tripod-foot-system",
+        "tripod-hub",
+        "tripod-leg-system"
+      ]
+    },
+    {
+      "name": "tripod-foot-front-left",
+      "kind": "part",
+      "module": "tripod-foot-system",
+      "triangles": 3136
+    },
+    {
+      "name": "tripod-foot-front-right",
+      "kind": "part",
+      "module": "tripod-foot-system",
+      "triangles": 3136
+    },
+    {
+      "name": "tripod-foot-rear",
+      "kind": "part",
+      "module": "tripod-foot-system",
+      "triangles": 3136
+    },
+    {
+      "name": "tripod-foot-system",
+      "kind": "assembly",
+      "module": "tripod-foot-system",
+      "triangles": 9408,
+      "members": [
+        "tripod-foot-front-left",
+        "tripod-foot-front-right",
+        "tripod-foot-rear"
+      ]
+    },
+    {
+      "name": "tripod-hub",
+      "kind": "assembly",
+      "module": "tripod-hub",
+      "triangles": 736,
+      "members": [
+        "tripod-hub-lower-collar",
+        "tripod-hub-shell"
+      ]
+    },
+    {
+      "name": "tripod-hub-lower-collar",
+      "kind": "part",
+      "module": "tripod-hub",
+      "triangles": 160
+    },
+    {
+      "name": "tripod-hub-shell",
+      "kind": "part",
+      "module": "tripod-hub",
+      "triangles": 576
+    },
+    {
+      "name": "tripod-leg-front-left",
+      "kind": "part",
+      "module": "tripod-leg-system",
+      "triangles": 112
+    },
+    {
+      "name": "tripod-leg-front-right",
+      "kind": "part",
+      "module": "tripod-leg-system",
+      "triangles": 112
+    },
+    {
+      "name": "tripod-leg-rear",
+      "kind": "part",
+      "module": "tripod-leg-system",
+      "triangles": 112
+    },
+    {
+      "name": "tripod-leg-system",
+      "kind": "assembly",
+      "module": "tripod-leg-system",
+      "triangles": 336,
+      "members": [
+        "tripod-leg-front-left",
+        "tripod-leg-front-right",
+        "tripod-leg-rear"
+      ]
+    },
+    {
+      "name": "upper-upright-pole",
+      "kind": "part",
+      "module": "upright-assembly",
+      "triangles": 112
+    },
+    {
+      "name": "upright-assembly",
+      "kind": "assembly",
+      "module": "upright-assembly",
+      "triangles": 2732,
+      "members": [
+        "lower-upright-pole",
+        "telescoping-lock-collar",
+        "upper-upright-pole"
+      ]
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 32
+}

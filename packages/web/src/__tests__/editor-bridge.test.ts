@@ -228,6 +228,26 @@ describe("EditorBridge component", () => {
   });
 });
 
+describe("legacy table-dressing roundtrip", () => {
+  it("retains a loaded applicator row instead of silently deleting it", async () => {
+    const { editorToPlacedItem, placedItemToEditor } = await import("../components/editor/EditorBridge.js");
+    const { getCatalogueItemBySlug } = await import("../lib/catalogue.js");
+    const { createPlacedItem } = await import("../lib/placement.js");
+    const applicatorId = getCatalogueItemBySlug("black-table-cloth")?.id;
+    expect(applicatorId).toBeDefined();
+    if (applicatorId === undefined) return;
+    const placed = {
+      ...createPlacedItem(applicatorId, 1.25, -2.5, 0.4),
+      id: "legacy-applicator-row",
+    };
+
+    const editor = placedItemToEditor(placed, undefined);
+    const restored = editorToPlacedItem(editor);
+
+    expect(restored).toEqual({ ...placed, scale: 1 });
+  });
+});
+
 describe("keyboard-driven actions", () => {
   it("delete selected: removeObject + deselect", () => {
     useEditorStore.getState().addObject("a1", 0, 0, 0);

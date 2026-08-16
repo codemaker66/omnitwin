@@ -1,6 +1,8 @@
 import { getCatalogueItem } from "./catalogue.js";
+import { isDiningTableItem } from "./furniture-semantics.js";
 import type { PlacedItem } from "./placement.js";
 import type { SeatingCounts } from "./layout-capacity.js";
+import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // Seating counts from a placed layout — the single source of truth for the
@@ -22,11 +24,12 @@ export function seatingCountsFromPlacedItems(
   let chairs = 0;
 
   for (const placed of placedItems) {
+    if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item === undefined) continue;
 
     if (item.category === "chair") chairs += 1;
-    if (item.category === "table") {
+    if (isDiningTableItem(item)) {
       if (item.tableShape === "round") roundTables += 1;
       if (item.tableShape === "rectangular") banquetTables += 1;
     }

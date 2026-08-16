@@ -7,8 +7,12 @@ export interface ViolationCrossMark {
   readonly size: number;
 }
 
-export function buildViolationCrossMarks(item: CatalogueItem, maxMarks: number = 18): readonly ViolationCrossMark[] {
-  const { halfW, halfD } = computeRotatedFootprint(item, 0);
+export function buildViolationCrossMarks(
+  item: CatalogueItem,
+  maxMarks: number = 18,
+  scale?: number,
+): readonly ViolationCrossMark[] {
+  const { halfW, halfD } = computeRotatedFootprint(item, 0, scale);
   const spanX = Math.max(0.45, halfW * 2);
   const spanZ = Math.max(0.45, halfD * 2);
   const columns = Math.max(2, Math.min(5, Math.ceil(spanX / 0.72)));

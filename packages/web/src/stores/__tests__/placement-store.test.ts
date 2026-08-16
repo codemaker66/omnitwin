@@ -12,6 +12,16 @@ import { useRoomDimensionsStore } from "../room-dimensions-store.js";
 const tableId = "round-table-6ft";
 const chairId = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
 const platformId = "platform";
+const projectorId = "projector";
+const micStandId = "mic-stand";
+const poseurId = "poseur-table";
+const blackPoseurId = "poseur-table-black";
+const whitePoseurId = "poseur-table-white";
+const tableDressingApplicatorIds = [
+  getCatalogueItemBySlug("black-table-cloth")?.id ?? "missing-black-table-cloth",
+  getCatalogueItemBySlug("white-table-cloth")?.id ?? "missing-white-table-cloth",
+  getCatalogueItemBySlug("dinner-place-setting")?.id ?? "missing-dinner-place-setting",
+] as const;
 
 function resetStore(): void {
   resetPlacedIdCounter();
@@ -63,6 +73,31 @@ describe("placeItem", () => {
     const items = usePlacementStore.getState().placedItems;
     expect(items).toHaveLength(2);
     expect(items[0]?.id).not.toBe(items[1]?.id);
+  });
+
+  it("rejects standalone table-dressing applicators by canonical UUID and slug", () => {
+    const applicatorSlugs = [
+      "black-table-cloth",
+      "white-table-cloth",
+      "dinner-place-setting",
+    ] as const;
+
+    for (const id of [...tableDressingApplicatorIds, ...applicatorSlugs]) {
+      usePlacementStore.getState().placeItem(id, 0, 0);
+    }
+
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+  });
+
+  it("rejects table-dressing applicators from every bulk placement entry point", () => {
+    for (const id of tableDressingApplicatorIds) {
+      expect(usePlacementStore.getState().placeChairBrush(id, 0, 0, 4, 0)).toEqual([]);
+      usePlacementStore.getState().placeTableGroup(id, 0, 0, 0, 8);
+      usePlacementStore.getState().autoArrangeBanquet(id, 80, 8);
+      usePlacementStore.getState().autoArrangeTheatre(id, 80);
+    }
+
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
   });
 });
 
@@ -160,6 +195,19 @@ describe("moveItem", () => {
     expect(moved?.x).toBe(0);
     expect(moved?.z).toBe(0);
   });
+
+  it("keeps a moved mic stand on the floor over a table but raises it onto a platform", () => {
+    const table = createPlacedItem(tableId, 0, 0);
+    const platform = createPlacedItem(platformId, GRID_SPACING_RENDER * 3, 0);
+    const micStand = createPlacedItem(micStandId, GRID_SPACING_RENDER * 6, 0);
+    usePlacementStore.setState({ placedItems: [table, platform, micStand] });
+
+    usePlacementStore.getState().moveItem(micStand.id, 0, 0);
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === micStand.id)?.y).toBe(0);
+
+    usePlacementStore.getState().moveItem(micStand.id, GRID_SPACING_RENDER * 3, 0);
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === micStand.id)?.y).toBeCloseTo(0.4);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -252,6 +300,42 @@ describe("table dressing", () => {
     expect(chair?.tableSetting).toBeNull();
   });
 
+  it("allows poseur linen but refuses dinner place settings", () => {
+    usePlacementStore.getState().placeItem(poseurId, 0, 0);
+    const poseur = usePlacementStore.getState().placedItems[0];
+    expect(poseur).toBeDefined();
+    if (poseur === undefined) return;
+    const ids = new Set([poseur.id]);
+
+    usePlacementStore.getState().applyTableCloth(ids, "white");
+    usePlacementStore.getState().applyTableSetting(ids, "dinner");
+
+    const after = usePlacementStore.getState().placedItems[0];
+    expect(after?.clothed).toBe(true);
+    expect(after?.clothStyle).toBe("white");
+    expect(after?.tableSetting).toBeNull();
+  });
+
+  it.each([blackPoseurId, whitePoseurId])(
+    "refuses to double-dress intrinsic linen variant %s",
+    (catalogueItemId) => {
+      usePlacementStore.getState().placeItem(catalogueItemId, 0, 0);
+      const before = usePlacementStore.getState().placedItems;
+      const placed = before[0];
+      expect(placed).toBeDefined();
+      if (placed === undefined) return;
+
+      usePlacementStore.getState().applyTableCloth(new Set([placed.id]), "white");
+      usePlacementStore.getState().toggleCloth(placed.id);
+
+      expect(usePlacementStore.getState().placedItems).toBe(before);
+      expect(usePlacementStore.getState().placedItems[0]).toMatchObject({
+        clothed: false,
+        clothStyle: null,
+      });
+    },
+  );
+
   it("toggleCloth preserves legacy keyboard behavior with a black cloth", () => {
     usePlacementStore.getState().placeItem(tableId, 0, 0);
     const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
@@ -290,6 +374,18 @@ describe("ghost", () => {
   it("updateGhost with unknown catalogue item marks invalid", () => {
     usePlacementStore.getState().updateGhost(0, 0, "nonexistent-id");
     expect(usePlacementStore.getState().ghostValid).toBe(false);
+  });
+
+  it("previews a mic stand as a floor collision on a table while a projector rests on top", () => {
+    usePlacementStore.setState({ placedItems: [createPlacedItem(tableId, 0, 0)] });
+
+    usePlacementStore.getState().updateGhost(0, 0, micStandId);
+    expect(usePlacementStore.getState().ghostPosition?.[1]).toBe(0);
+    expect(usePlacementStore.getState().ghostValid).toBe(false);
+
+    usePlacementStore.getState().updateGhost(0, 0, projectorId);
+    expect(usePlacementStore.getState().ghostPosition?.[1]).toBeCloseTo(0.76);
+    expect(usePlacementStore.getState().ghostValid).toBe(true);
   });
 
   it("clearGhost resets ghost state", () => {
@@ -411,6 +507,34 @@ describe("placeTableGroup on platforms", () => {
     const platforms = items.filter((i) => i.catalogueItemId === platformId);
     expect(platforms).toHaveLength(2);
   });
+
+  it("does not turn a table-dressing applicator into an auto-placed table group", () => {
+    for (const id of tableDressingApplicatorIds) {
+      usePlacementStore.getState().placeTableGroup(id, 0, 0, 0, 8);
+    }
+
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+  });
+});
+
+describe("candidate-aware surface placement", () => {
+  it("places a mic stand on a platform but never floats it on a table", () => {
+    usePlacementStore.setState({ placedItems: [createPlacedItem(tableId, 0, 0)] });
+    usePlacementStore.getState().placeItem(micStandId, 0, 0);
+    expect(usePlacementStore.getState().placedItems.at(-1)?.y).toBe(0);
+
+    resetStore();
+    usePlacementStore.setState({ placedItems: [createPlacedItem(platformId, 0, 0)] });
+    usePlacementStore.getState().placeItem(micStandId, 0, 0);
+    expect(usePlacementStore.getState().placedItems.at(-1)?.y).toBeCloseTo(0.4);
+  });
+
+  it("keeps explicitly table-mountable AV on the tabletop", () => {
+    usePlacementStore.setState({ placedItems: [createPlacedItem(tableId, 0, 0)] });
+    usePlacementStore.getState().placeItem(projectorId, 0, 0);
+
+    expect(usePlacementStore.getState().placedItems.at(-1)?.y).toBeCloseTo(0.76);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -423,18 +547,41 @@ describe("moveItemsByDelta", () => {
     usePlacementStore.getState().placeItem(tableId, 0, 0);
     usePlacementStore.getState().placeItem(chairId, 1, 1);
     const ids = new Set(usePlacementStore.getState().placedItems.map((i) => i.id));
+    // Capture the resting positions rather than assuming them: placeItem
+    // nudges an item clear of anything it would overlap, so the absolute
+    // coordinates depend on furniture footprints. The property under test is
+    // that EVERY selected item moves by the same delta, which holds whatever
+    // those footprints are.
+    const before = usePlacementStore.getState().placedItems.map((i) => ({ x: i.x, z: i.z }));
     usePlacementStore.getState().moveItemsByDelta(ids, 0.5, 0.5);
     const items = usePlacementStore.getState().placedItems;
-    expect(items[0]?.x).toBeCloseTo(0.5);
-    expect(items[0]?.z).toBeCloseTo(0.5);
-    expect(items[1]?.x).toBeCloseTo(1.5);
-    expect(items[1]?.z).toBeCloseTo(1.5);
+
+    expect(items).toHaveLength(before.length);
+    items.forEach((item, index) => {
+      expect(item.x).toBeCloseTo((before[index]?.x ?? 0) + 0.5);
+      expect(item.z).toBeCloseTo((before[index]?.z ?? 0) + 0.5);
+    });
   });
 
   it("does nothing for empty set", () => {
     usePlacementStore.getState().placeItem(tableId, 0, 0);
     usePlacementStore.getState().moveItemsByDelta(new Set(), 5, 5);
     expect(usePlacementStore.getState().placedItems[0]?.x).toBe(0);
+  });
+
+  it("recomputes mic-stand support policy for the fluid drag commit path", () => {
+    const table = createPlacedItem(tableId, 0, 0);
+    const platformX = GRID_SPACING_RENDER * 3;
+    const platform = createPlacedItem(platformId, platformX, 0);
+    const startX = GRID_SPACING_RENDER * 6;
+    const micStand = createPlacedItem(micStandId, startX, 0);
+    usePlacementStore.setState({ placedItems: [table, platform, micStand] });
+
+    usePlacementStore.getState().moveItemsByDelta(new Set([micStand.id]), -startX, 0);
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === micStand.id)?.y).toBe(0);
+
+    usePlacementStore.getState().moveItemsByDelta(new Set([micStand.id]), platformX, 0);
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === micStand.id)?.y).toBeCloseTo(0.4);
   });
 });
 
@@ -586,8 +733,53 @@ describe("autoArrangeBanquet", () => {
     expect(after.filter((i) => i.catalogueItemId === tableId)).toHaveLength(2);
   });
 
+  it("replaces physical furniture while retaining an invisible legacy applicator row", () => {
+    const leaked = {
+      ...createPlacedItem(tableDressingApplicatorIds[0], 3, -4),
+      id: "legacy-applicator",
+      y: 0.25,
+    };
+    usePlacementStore.setState({ placedItems: [leaked] });
+
+    usePlacementStore.getState().autoArrangeBanquet(tableId, 16, 8);
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === leaked.id))
+      .toEqual(leaked);
+
+    usePlacementStore.getState().autoArrangeTheatre(chairId, 16);
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === leaked.id))
+      .toEqual(leaked);
+  });
+
+  it("retains an applicator accidentally sharing a table group during rearrangement", () => {
+    usePlacementStore.getState().placeTableGroup(tableId, 0, 0, 0, 4);
+    const table = usePlacementStore.getState().placedItems.find(
+      (item) => item.catalogueItemId === tableId,
+    );
+    expect(table?.groupId).not.toBeNull();
+    if (table?.groupId === null || table?.groupId === undefined) return;
+    const leaked = {
+      ...createPlacedItem(tableDressingApplicatorIds[0], 7, -6),
+      id: "legacy-group-applicator",
+      y: 0.35,
+      groupId: table.groupId,
+    };
+    usePlacementStore.setState({
+      placedItems: [...usePlacementStore.getState().placedItems, leaked],
+    });
+
+    usePlacementStore.getState().rearrangeGroup(table.id, 6);
+
+    expect(usePlacementStore.getState().placedItems.find((item) => item.id === leaked.id))
+      .toEqual(leaked);
+  });
+
   it("ignores a non-table catalogue id", () => {
     usePlacementStore.getState().autoArrangeBanquet(chairId, 40, 8);
+    expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+  });
+
+  it("does not use a standing poseur for a seated banquet auto-layout", () => {
+    usePlacementStore.getState().autoArrangeBanquet(poseurId, 40, 8);
     expect(usePlacementStore.getState().placedItems).toHaveLength(0);
   });
 

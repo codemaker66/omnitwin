@@ -38,4 +38,14 @@ describe("seatingCountsFromPlacedItems", () => {
     ]);
     expect(counts).toEqual({ roundTables: 0, banquetTables: 0, chairs: 1 });
   });
+
+  it("does not count standing poseur tables as dining rounds", () => {
+    const counts = seatingCountsFromPlacedItems([
+      placedBySlug("poseur-table"),
+      placedBySlug("poseur-table-black"),
+      placedBySlug("poseur-table-white"),
+    ]);
+
+    expect(counts).toEqual({ roundTables: 0, banquetTables: 0, chairs: 0 });
+  });
 });

@@ -12,6 +12,10 @@ import { LightingLensPanel } from "./LightingLensPanel.js";
 import { PowerLensPanel } from "./PowerLensPanel.js";
 import { RiggingLensPanel } from "./RiggingLensPanel.js";
 import { AVLensPanel } from "./AVLensPanel.js";
+import {
+  FurnitureInspectionDock,
+  useSelectedGeneratedFurniture,
+} from "./FurnitureInspectionDock.js";
 
 // ---------------------------------------------------------------------------
 // CockpitRightDock — the contextual right column (Epic 0).
@@ -43,6 +47,10 @@ export function panelForMode(mode: CockpitMode): FC | null {
 
 export function CockpitRightDock(): ReactElement {
   const activeMode = useCockpitStore((state) => state.activeMode);
+  const generatedFurnitureSelection = useSelectedGeneratedFurniture();
+  if (activeMode === "design" && generatedFurnitureSelection !== null) {
+    return <FurnitureInspectionDock selection={generatedFurnitureSelection} />;
+  }
   const Panel = panelForMode(activeMode);
   return Panel !== null ? <Panel /> : <CockpitTruthRail />;
 }

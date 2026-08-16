@@ -2,18 +2,35 @@ import { TRADES_HALL_GRAND_HALL_DIMENSIONS } from "@omnitwin/types";
 import type { SpaceDimensions } from "@omnitwin/types";
 
 /**
- * Visual scale factor applied to room geometry for rendering.
+ * Visual scale factor applied to room geometry for rendering. Now 1.0 — the
+ * scene is authored and rendered in true metres.
  *
- * Real-world dimensions feel cramped in 3D because screens lack peripheral
- * vision, binocular depth cues, and proprioceptive feedback. Game studios
- * (Bethesda, Valve, id Software) routinely scale interiors 10–20% beyond
- * real measurements to compensate.
+ * This was 2.0, borrowed from the first-person convention of inflating
+ * interiors 10–20% (Bethesda, Valve, id) to compensate for a screen's missing
+ * peripheral vision and binocular depth. That reasoning does not transfer
+ * here, for two reasons:
  *
- * This factor inflates the rendered room while keeping the real dimensions
- * in @omnitwin/types unchanged. Measurement tools divide by this factor
- * to display true meters.
+ *  1. This is a dollhouse orbit view, not a first-person camera. There is no
+ *     avatar at eye height to feel cramped, so inflating the floor buys no
+ *     spaciousness — it only halves every object's height-to-footprint ratio.
+ *     A 0.45m wide, 0.90m tall chair rendered at 0.90 × 0.90 is a cube.
+ *  2. It was applied to X/Z only, so the Grand Hall — 21 × 10.5 × 7m, a room
+ *     whose defining feature is its height and dome — rendered as 42 × 21 × 7.
+ *     Six times wider than tall. The scaling flattened the very thing that
+ *     makes the room impressive.
+ *
+ * A venue planner also cannot afford the trade a game makes. Games fake scale
+ * freely because nothing depends on the measurement being true; here a planner
+ * reading clearance off the screen has to be able to trust it on the day.
+ *
+ * Perceived spaciousness is earned where it belongs — camera framing, field of
+ * view and lighting — not by distorting geometry.
+ *
+ * The conversion seams are deliberately kept rather than deleted across 45
+ * modules: they document where render space and real metres meet, and they are
+ * the single place to change if this is ever revisited.
  */
-export const RENDER_SCALE = 2.0;
+export const RENDER_SCALE = 1.0;
 
 /**
  * Converts a real-world measurement (metres) to render-space units.

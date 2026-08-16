@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "lectern",
+  "parts": [
+    {
+      "name": "cabinet-assembly",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 4236
+    },
+    {
+      "name": "cabinet-back",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 12
+    },
+    {
+      "name": "cabinet-header",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 300
+    },
+    {
+      "name": "cabinet-left-side",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 300
+    },
+    {
+      "name": "cabinet-right-side",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 300
+    },
+    {
+      "name": "cabinet-shell",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 924
+    },
+    {
+      "name": "cable-grommet",
+      "kind": "part",
+      "module": "cable-grommet",
+      "triangles": 972
+    },
+    {
+      "name": "deck-assembly",
+      "kind": "part",
+      "module": "reading-deck",
+      "triangles": 2284
+    },
+    {
+      "name": "deck-left-rail",
+      "kind": "part",
+      "module": "deck-rails",
+      "triangles": 300
+    },
+    {
+      "name": "deck-rails",
+      "kind": "assembly",
+      "module": "deck-rails",
+      "triangles": 1012,
+      "members": [
+        "deck-front-apron-detail",
+        "deck-left-rail",
+        "deck-retaining-rail",
+        "deck-right-rail"
+      ]
+    },
+    {
+      "name": "deck-retaining-rail",
+      "kind": "part",
+      "module": "deck-rails",
+      "triangles": 112
+    },
+    {
+      "name": "deck-right-rail",
+      "kind": "part",
+      "module": "deck-rails",
+      "triangles": 300
+    },
+    {
+      "name": "front-panel-field",
+      "kind": "part",
+      "module": "public-panel-assembly",
+      "triangles": 300
+    },
+    {
+      "name": "front-panel-frame",
+      "kind": "part",
+      "module": "public-panel-assembly",
+      "triangles": 1200
+    },
+    {
+      "name": "front-panel-moulding",
+      "kind": "part",
+      "module": "public-panel-assembly",
+      "triangles": 1200
+    },
+    {
+      "name": "lower-front-backing",
+      "kind": "part",
+      "module": "cabinet-shell",
+      "triangles": 12
+    },
+    {
+      "name": "lower-plinth",
+      "kind": "part",
+      "module": "plinth-assembly",
+      "triangles": 600
+    },
+    {
+      "name": "lower-plinth-moulding",
+      "kind": "part",
+      "module": "plinth-assembly",
+      "triangles": 300
+    },
+    {
+      "name": "plinth-assembly",
+      "kind": "part",
+      "module": "plinth-assembly",
+      "triangles": 1500
+    },
+    {
+      "name": "public-panel-assembly",
+      "kind": "assembly",
+      "module": "public-panel-assembly",
+      "triangles": 2700,
+      "members": [
+        "front-panel-field",
+        "front-panel-frame",
+        "front-panel-frame-left-detail",
+        "front-panel-frame-lower-detail",
+        "front-panel-frame-right-detail",
+        "front-panel-moulding",
+        "front-panel-moulding-left-detail",
+        "front-panel-moulding-lower-detail",
+        "front-panel-moulding-right-detail"
+      ]
+    },
+    {
+      "name": "reading-deck",
+      "kind": "part",
+      "module": "reading-deck",
+      "triangles": 600
+    },
+    {
+      "name": "shelf-recess",
+      "kind": "part",
+      "module": "shelf-recess",
+      "triangles": 612
+    },
+    {
+      "name": "upper-plinth",
+      "kind": "part",
+      "module": "plinth-assembly",
+      "triangles": 300
+    },
+    {
+      "name": "upper-plinth-moulding",
+      "kind": "part",
+      "module": "plinth-assembly",
+      "triangles": 300
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 12
+}

@@ -19,12 +19,32 @@ import { toRealWorld, toRenderSpace } from "../constants/scale.js";
 import { useRoomDimensionsStore } from "./room-dimensions-store.js";
 import { snapToFurnitureAlignment } from "../lib/snap-guide.js";
 import { computeChairBrushSummary } from "../lib/chair-brush.js";
+import {
+  canApplyTableLinenToItem,
+  isDiningTableItem,
+} from "../lib/furniture-semantics.js";
+import {
+  isSceneFurniturePlacement,
+  isTableDressingApplicator,
+} from "../lib/table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture and ghost state. Undo/redo for
 // placement changes lives on the editor-store history timeline; EditorBridge
 // mirrors placedItems into editor objects (and back on undo).
 // ---------------------------------------------------------------------------
+
+function candidateSurfaceHeight(
+  catalogueItemId: string,
+  x: number,
+  z: number,
+  placedItems: readonly PlacedItem[],
+  excludeIds: ReadonlySet<string>,
+): number {
+  const candidate = getCatalogueItem(catalogueItemId);
+  if (candidate === undefined) return 0;
+  return computeSurfaceHeight(x, z, candidate, placedItems, excludeIds);
+}
 
 export interface PlacementState {
   /** All placed furniture items. */
@@ -113,6 +133,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   snapEnabled: true,
 
   placeItem: (catalogueItemId: string, x: number, z: number, rotationY: number = 0) => {
+    // Cloths and place settings are contextual tools applied by
+    // PlacementGhost. They are not physical catalogue objects and must never
+    // be persisted as standalone PlacedItems through this lower-level API.
+    if (isTableDressingApplicator(catalogueItemId)) return;
     const state = get();
     // Enforce inventory limits
     if (isAtMaxCount(catalogueItemId, state.placedItems.map((p) => p.catalogueItemId))) return;
@@ -133,7 +157,13 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       finalX = alignmentSnap.x;
       finalZ = alignmentSnap.z;
     }
-    const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
+    const surfaceY = candidateSurfaceHeight(
+      catalogueItemId,
+      finalX,
+      finalZ,
+      state.placedItems,
+      new Set(),
+    );
     const item = createPlacedItem(catalogueItemId, finalX, finalZ, rotationY, null, surfaceY);
     set({ placedItems: [...state.placedItems, item] });
   },
@@ -163,7 +193,13 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (summary.points.length <= 1) return [];
 
     const newItems = summary.points.map((point) => {
-      const surfaceY = computeSurfaceHeight(point.x, point.z, state.placedItems, new Set());
+      const surfaceY = candidateSurfaceHeight(
+        catalogueItemId,
+        point.x,
+        point.z,
+        state.placedItems,
+        new Set(),
+      );
       return createPlacedItem(catalogueItemId, point.x, point.z, point.rotationY, null, surfaceY);
     });
     if (newItems.length === 0) return [];
@@ -194,15 +230,38 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       const catItem = getCatalogueItem(movingItem.catalogueItemId);
       if (catItem !== undefined) {
         const roomDims = useRoomDimensionsStore.getState().dimensions;
-        const edgeSnap = snapToPlatformEdge(finalX, finalZ, catItem, movingItem.rotationY, state.placedItems, new Set([id]));
+        const edgeSnap = snapToPlatformEdge(
+          finalX,
+          finalZ,
+          catItem,
+          movingItem.rotationY,
+          state.placedItems,
+          new Set([id]),
+          movingItem.scale,
+        );
         finalX = edgeSnap.x;
         finalZ = edgeSnap.z;
-        const wallSnap = snapToWallEdge(finalX, finalZ, catItem, movingItem.rotationY, roomDims);
+        const wallSnap = snapToWallEdge(
+          finalX,
+          finalZ,
+          catItem,
+          movingItem.rotationY,
+          roomDims,
+          movingItem.scale,
+        );
         finalX = wallSnap.x;
         finalZ = wallSnap.z;
       }
     }
-    const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set([id]));
+    const surfaceY = movingItem === undefined
+      ? 0
+      : candidateSurfaceHeight(
+          movingItem.catalogueItemId,
+          finalX,
+          finalZ,
+          state.placedItems,
+          new Set([id]),
+        );
     set({
       placedItems: state.placedItems.map((item) =>
         item.id === id ? { ...item, x: finalX, z: finalZ, y: surfaceY } : item,
@@ -239,7 +298,9 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       finalX = alignmentSnap.x;
       finalZ = alignmentSnap.z;
     }
-    const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
+    const surfaceY = catalogueItem === undefined
+      ? 0
+      : computeSurfaceHeight(finalX, finalZ, catalogueItem, state.placedItems, new Set());
     const pos = [finalX, surfaceY, finalZ] as const;
     let valid = true;
     let reason: string | null = null;
@@ -272,7 +333,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const target = state.placedItems.find((item) => item.id === id);
     if (target === undefined) return;
     const catalogueItem = getCatalogueItem(target.catalogueItemId);
-    if (catalogueItem?.category !== "table") return;
+    if (catalogueItem === undefined || !canApplyTableLinenToItem(catalogueItem)) return;
     set({
       placedItems: state.placedItems.map((item) =>
         item.id === id
@@ -293,7 +354,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     for (const item of state.placedItems) {
       if (!ids.has(item.id)) continue;
       const catalogueItem = getCatalogueItem(item.catalogueItemId);
-      if (catalogueItem?.category !== "table") continue;
+      if (catalogueItem === undefined || !canApplyTableLinenToItem(catalogueItem)) continue;
       if (item.clothed && item.clothStyle === style) continue;
       targetIds.add(item.id);
     }
@@ -312,7 +373,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     for (const item of state.placedItems) {
       if (!ids.has(item.id)) continue;
       const catalogueItem = getCatalogueItem(item.catalogueItemId);
-      if (catalogueItem?.category !== "table") continue;
+      if (catalogueItem === undefined || !isDiningTableItem(catalogueItem)) continue;
       if (item.tableSetting === setting) continue;
       targetIds.add(item.id);
     }
@@ -348,6 +409,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   placeTableGroup: (catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => {
+    if (isTableDressingApplicator(catalogueItemId)) return;
     const state = get();
     const pos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     // Apply edge + wall snap (same as placeItem) so position matches the ghost
@@ -366,13 +428,25 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       finalX = alignmentSnap.x;
       finalZ = alignmentSnap.z;
     }
-    const surfaceY = computeSurfaceHeight(finalX, finalZ, state.placedItems, new Set());
+    const surfaceY = candidateSurfaceHeight(
+      catalogueItemId,
+      finalX,
+      finalZ,
+      state.placedItems,
+      new Set(),
+    );
     const group = createTableGroup(catalogueItemId, finalX, finalZ, rotationY, chairCount, surfaceY);
     if (group.length === 0) return;
     // Recompute individual surface heights for each chair — chairs off the
     // platform edge should sit at floor level, not float at platform height.
     const adjusted = group.map((item) => {
-      const chairY = computeSurfaceHeight(item.x, item.z, state.placedItems, new Set());
+      const chairY = candidateSurfaceHeight(
+        item.catalogueItemId,
+        item.x,
+        item.z,
+        state.placedItems,
+        new Set(),
+      );
       return chairY !== item.y ? { ...item, y: chairY } : item;
     });
     set({ placedItems: [...state.placedItems, ...adjusted] });
@@ -383,7 +457,14 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const newItems = rearrangeTableGroup(tableId, newChairCount, state.placedItems);
     // Recompute individual surface heights for rearranged chairs
     const adjusted = newItems.map((item) => {
-      const surfaceY = computeSurfaceHeight(item.x, item.z, newItems, new Set([item.id]));
+      if (!isSceneFurniturePlacement(item)) return item;
+      const surfaceY = candidateSurfaceHeight(
+        item.catalogueItemId,
+        item.x,
+        item.z,
+        newItems,
+        new Set([item.id]),
+      );
       return surfaceY !== item.y ? { ...item, y: surfaceY } : item;
     });
     set({ placedItems: adjusted });
@@ -391,7 +472,8 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
 
   autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => {
     const tableItem = getCatalogueItem(catalogueItemId);
-    if (tableItem === undefined || tableItem.category !== "table") return;
+    if (tableItem === undefined || !isDiningTableItem(tableItem)) return;
+    const state = get();
 
     const seats = Math.max(0, Math.floor(chairsPerTable));
     const dims = useRoomDimensionsStore.getState().dimensions;
@@ -421,7 +503,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     }
     if (placedItems.length === 0) return;
 
-    set({ placedItems });
+    const retainedApplicators = state.placedItems.filter(
+      (item) => !isSceneFurniturePlacement(item),
+    );
+    set({ placedItems: [...retainedApplicators, ...placedItems] });
   },
 
   autoArrangeTheatre: (chairItemId: string, targetGuests: number) => {
@@ -442,7 +527,10 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     const placedItems = plan.seats.map((s) =>
       createPlacedItem(chairItemId, toRenderSpace(s.xM), toRenderSpace(s.zM), s.rotationY, null, 0),
     );
-    set({ placedItems });
+    const retainedApplicators = get().placedItems.filter(
+      (item) => !isSceneFurniturePlacement(item),
+    );
+    set({ placedItems: [...retainedApplicators, ...placedItems] });
   },
 
   breakFromGroup: (id: string) => {
@@ -462,7 +550,13 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         if (!memberIds.has(item.id)) return item;
         const newX = item.x + dx;
         const newZ = item.z + dz;
-        const surfaceY = computeSurfaceHeight(newX, newZ, state.placedItems, memberIds);
+        const surfaceY = candidateSurfaceHeight(
+          item.catalogueItemId,
+          newX,
+          newZ,
+          state.placedItems,
+          memberIds,
+        );
         return { ...item, x: newX, z: newZ, y: surfaceY };
       }),
     });
@@ -476,7 +570,13 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
         if (!ids.has(item.id)) return item;
         const newX = item.x + dx;
         const newZ = item.z + dz;
-        const surfaceY = computeSurfaceHeight(newX, newZ, state.placedItems, ids);
+        const surfaceY = candidateSurfaceHeight(
+          item.catalogueItemId,
+          newX,
+          newZ,
+          state.placedItems,
+          ids,
+        );
         return { ...item, x: newX, z: newZ, y: surfaceY };
       }),
     });

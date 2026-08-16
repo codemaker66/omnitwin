@@ -36,6 +36,22 @@ export const FRESH_CTA_TOUR = "Walk the building";
 /** The whole-building walkthrough — the Twin, at its memorable alias.
  *  149 viewpoints is a capture fact (the scan's own sweep count). */
 export const FRESH_TOUR_HREF = "/tour";
+
+/** Whether the whole-building walkthrough is actually reachable.
+ *
+ *  FALSE since 2026-08-15. `/tour` loads its scene from `public/twin/`, which is
+ *  552 MB and gitignored, so it is never in the Vercel build. The SPA rewrite
+ *  answers the missing manifest with index.html and a 200, so the fetch looks
+ *  like it SUCCEEDED and only fails when the HTML is parsed as JSON — which is
+ *  why this shipped: every layer reported success. Two live CTAs pointed at it.
+ *
+ *  To turn it back on: publish the twin bundle to R2, set VITE_TWIN_ASSET_BASE
+ *  on Vercel, confirm the manifest returns application/json, then flip this to
+ *  true. Do not flip it first. */
+// Annotated `boolean`, not inferred `false`: the literal type would make every
+// use statically dead and trip no-unnecessary-condition, which would push the
+// next person to delete the branches rather than flip the flag.
+export const FRESH_TOUR_ENABLED: boolean = false;
 export const FRESH_TOUR_TITLE = "Then walk the whole building";
 export const FRESH_TOUR_LINE =
   "The full hall in the same capture — 149 viewpoints across every floor, room to room, with dollhouse and plan views.";
@@ -191,7 +207,7 @@ export const FRESH_RATES_NOTE =
  *  the email. Sentences it composes live in enquiry-fit.ts, swept there. */
 export const FRESH_ENQUIRY_TITLE = "Ask about a date";
 export const FRESH_ENQUIRY_LEDE =
-  "Tell the page your occasion and it will tell you the room, from the venue's own figures — then send the enquiry as written, or call.";
+  "Tell the page your occasion and it will tell you the room, from the venue's own figures — then send the enquiry, or call.";
 export const FRESH_ENQUIRY_EVENT_LABEL = "The occasion";
 export const FRESH_ENQUIRY_GUESTS_LABEL = "Guests";
 export const FRESH_ENQUIRY_DATE_LABEL = "The date, if you have one";
@@ -201,6 +217,32 @@ export const FRESH_ENQUIRY_SEND = "Open in your email app";
 export const FRESH_ENQUIRY_COPY_ACTION = "Copy the enquiry";
 export const FRESH_ENQUIRY_COPIED = "Copied";
 export const FRESH_ENQUIRY_OR_CALL = "or call";
+
+/** Contact fields. The composer used to collect none: it wrote an email and
+ *  handed it to the visitor's own mail client, so the visitor supplied their
+ *  own identity by sending it. Posting the enquiry ourselves means we must ask
+ *  — email is the only required field, because it is the only one the venue
+ *  needs to reply. */
+export const FRESH_ENQUIRY_NAME_LABEL = "Your name";
+export const FRESH_ENQUIRY_EMAIL_LABEL = "Your email";
+export const FRESH_ENQUIRY_PHONE_LABEL = "Your phone, if you would like a call";
+export const FRESH_ENQUIRY_OPTIONAL = "optional";
+
+export const FRESH_ENQUIRY_SUBMIT = "Send enquiry";
+export const FRESH_ENQUIRY_SENDING = "Sending…";
+export const FRESH_ENQUIRY_EMAIL_REQUIRED = "Add an email address and the team can write back.";
+export const FRESH_ENQUIRY_EMAIL_INVALID = "That email address does not look right.";
+export const FRESH_ENQUIRY_SENT_TITLE = "Your enquiry is with the team";
+export const FRESH_ENQUIRY_SENT_LINE =
+  "Someone at Trades Hall will read it and reply by email. If it is urgent, the phone is quicker.";
+export const FRESH_ENQUIRY_ERROR =
+  "That did not send — the fault is ours, not yours. Send it from your own email app instead, or call the hall.";
+
+/** Shown at the point of collection, as UK GDPR transparency requires. */
+export const FRESH_ENQUIRY_PRIVACY_NOTE =
+  "Your details go to Trades Hall so they can answer this enquiry, and are not used for anything else.";
+export const FRESH_ENQUIRY_PRIVACY_LINK = "How we handle your data";
+export const FRESH_ENQUIRY_PRIVACY_HREF = "/privacy";
 
 /** Walk the room — the poster-first capture embed. The poster is a render
  *  of the captured scene (never one of the venue photographs, so the
@@ -258,6 +300,19 @@ export const FRESH_THEME_OPTIONS = [
 
 export const FRESH_FOOTER_NOTE = "© 2026 The Trades House of Glasgow · Powered by Venviewer";
 
+/** Legal links. UK GDPR transparency requires the privacy notice to be easy to
+ *  find from anywhere personal data is collected; the footer had no legal links
+ *  at all until 2026-08-15. */
+export interface FreshLegalLink {
+  readonly href: string;
+  readonly label: string;
+}
+export const FRESH_LEGAL_LINKS: readonly FreshLegalLink[] = [
+  { href: "/privacy", label: "Privacy" },
+  { href: "/terms", label: "Terms" },
+  { href: "/accessibility", label: "Accessibility" },
+] as const;
+
 /** Everything user-visible, for the claim-guard sweep. */
 export function allFreshCopy(): readonly string[] {
   return [
@@ -304,6 +359,19 @@ export function allFreshCopy(): readonly string[] {
     FRESH_ENQUIRY_COPY_ACTION,
     FRESH_ENQUIRY_COPIED,
     FRESH_ENQUIRY_OR_CALL,
+    FRESH_ENQUIRY_NAME_LABEL,
+    FRESH_ENQUIRY_EMAIL_LABEL,
+    FRESH_ENQUIRY_PHONE_LABEL,
+    FRESH_ENQUIRY_OPTIONAL,
+    FRESH_ENQUIRY_SUBMIT,
+    FRESH_ENQUIRY_SENDING,
+    FRESH_ENQUIRY_EMAIL_REQUIRED,
+    FRESH_ENQUIRY_EMAIL_INVALID,
+    FRESH_ENQUIRY_SENT_TITLE,
+    FRESH_ENQUIRY_SENT_LINE,
+    FRESH_ENQUIRY_ERROR,
+    FRESH_ENQUIRY_PRIVACY_NOTE,
+    FRESH_ENQUIRY_PRIVACY_LINK,
     FRESH_DOSSIER_OPEN,
     FRESH_DOSSIER_CLOSE,
     FRESH_DOSSIER_CTA,
@@ -328,5 +396,6 @@ export function allFreshCopy(): readonly string[] {
     FRESH_THEME_LABEL,
     ...FRESH_THEME_OPTIONS.map((o) => o.label),
     FRESH_FOOTER_NOTE,
+    ...FRESH_LEGAL_LINKS.map((l) => l.label),
   ] as const;
 }

@@ -1,0 +1,244 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "round-table-6ft",
+  "parts": [
+    {
+      "name": "brace-set-a",
+      "kind": "assembly",
+      "module": "brace-set-a",
+      "triangles": 24,
+      "members": [
+        "left-front-brace",
+        "left-rear-brace"
+      ]
+    },
+    {
+      "name": "brace-set-b",
+      "kind": "assembly",
+      "module": "brace-set-b",
+      "triangles": 24,
+      "members": [
+        "right-front-brace",
+        "right-rear-brace"
+      ]
+    },
+    {
+      "name": "cleat-a",
+      "kind": "assembly",
+      "module": "cleat-a",
+      "triangles": 12,
+      "members": [
+        "cleat-a-detail"
+      ]
+    },
+    {
+      "name": "cleat-b",
+      "kind": "assembly",
+      "module": "cleat-b",
+      "triangles": 12,
+      "members": [
+        "cleat-b-detail"
+      ]
+    },
+    {
+      "name": "frame-a",
+      "kind": "assembly",
+      "module": "frame-a",
+      "triangles": 292,
+      "members": [
+        "front-left-leg",
+        "left-front-brace",
+        "left-rear-brace",
+        "rear-left-leg",
+        "trestle-a"
+      ]
+    },
+    {
+      "name": "frame-b",
+      "kind": "assembly",
+      "module": "frame-b",
+      "triangles": 292,
+      "members": [
+        "front-right-leg",
+        "rear-right-leg",
+        "right-front-brace",
+        "right-rear-brace",
+        "trestle-b"
+      ]
+    },
+    {
+      "name": "frame-crossbar",
+      "kind": "part",
+      "module": "frame-crossbar",
+      "triangles": 12
+    },
+    {
+      "name": "front-left-leg",
+      "kind": "part",
+      "module": "frame-a",
+      "triangles": 24
+    },
+    {
+      "name": "front-right-leg",
+      "kind": "part",
+      "module": "frame-b",
+      "triangles": 24
+    },
+    {
+      "name": "hardware",
+      "kind": "assembly",
+      "module": "hardware",
+      "triangles": 428,
+      "members": [
+        "cleat-a-detail",
+        "cleat-b-detail",
+        "frame-crossbar",
+        "hinge-fastener-a-front-lower-detail",
+        "hinge-fastener-a-front-upper-detail",
+        "hinge-fastener-a-rear-lower-detail",
+        "hinge-fastener-a-rear-upper-detail",
+        "hinge-fastener-b-front-lower-detail",
+        "hinge-fastener-b-front-upper-detail",
+        "hinge-fastener-b-rear-lower-detail",
+        "hinge-fastener-b-rear-upper-detail",
+        "hinge-plate-a-front-detail",
+        "hinge-plate-a-rear-detail",
+        "hinge-plate-b-front-detail",
+        "hinge-plate-b-rear-detail",
+        "pivot-tab-a-detail",
+        "pivot-tab-b-detail"
+      ]
+    },
+    {
+      "name": "hinge-fastener-system",
+      "kind": "assembly",
+      "module": "hinge-fastener-system",
+      "triangles": 320,
+      "members": [
+        "hinge-fastener-a-front-lower-detail",
+        "hinge-fastener-a-front-upper-detail",
+        "hinge-fastener-a-rear-lower-detail",
+        "hinge-fastener-a-rear-upper-detail",
+        "hinge-fastener-b-front-lower-detail",
+        "hinge-fastener-b-front-upper-detail",
+        "hinge-fastener-b-rear-lower-detail",
+        "hinge-fastener-b-rear-upper-detail"
+      ]
+    },
+    {
+      "name": "hinge-plate-a",
+      "kind": "assembly",
+      "module": "hinge-plate-a",
+      "triangles": 24,
+      "members": [
+        "hinge-plate-a-front-detail",
+        "hinge-plate-a-rear-detail"
+      ]
+    },
+    {
+      "name": "hinge-plate-b",
+      "kind": "assembly",
+      "module": "hinge-plate-b",
+      "triangles": 24,
+      "members": [
+        "hinge-plate-b-front-detail",
+        "hinge-plate-b-rear-detail"
+      ]
+    },
+    {
+      "name": "left-front-brace",
+      "kind": "part",
+      "module": "brace-set-a",
+      "triangles": 12
+    },
+    {
+      "name": "left-rear-brace",
+      "kind": "part",
+      "module": "brace-set-a",
+      "triangles": 12
+    },
+    {
+      "name": "pivot-tab-a",
+      "kind": "assembly",
+      "module": "pivot-tab-a",
+      "triangles": 12,
+      "members": [
+        "pivot-tab-a-detail"
+      ]
+    },
+    {
+      "name": "pivot-tab-b",
+      "kind": "assembly",
+      "module": "pivot-tab-b",
+      "triangles": 12,
+      "members": [
+        "pivot-tab-b-detail"
+      ]
+    },
+    {
+      "name": "rear-left-leg",
+      "kind": "part",
+      "module": "frame-a",
+      "triangles": 24
+    },
+    {
+      "name": "rear-right-leg",
+      "kind": "part",
+      "module": "frame-b",
+      "triangles": 24
+    },
+    {
+      "name": "right-front-brace",
+      "kind": "part",
+      "module": "brace-set-b",
+      "triangles": 12
+    },
+    {
+      "name": "right-rear-brace",
+      "kind": "part",
+      "module": "brace-set-b",
+      "triangles": 12
+    },
+    {
+      "name": "root",
+      "kind": "assembly",
+      "module": "root",
+      "triangles": 1936,
+      "members": [
+        "frame-crossbar",
+        "tabletop",
+        "trestle-a",
+        "trestle-b"
+      ]
+    },
+    {
+      "name": "tabletop",
+      "kind": "part",
+      "module": "tabletop",
+      "triangles": 1340
+    },
+    {
+      "name": "trestle-a",
+      "kind": "part",
+      "module": "root",
+      "triangles": 292
+    },
+    {
+      "name": "trestle-b",
+      "kind": "part",
+      "module": "root",
+      "triangles": 292
+    },
+    {
+      "name": "underside-apron",
+      "kind": "assembly",
+      "module": "underside-apron",
+      "triangles": 192,
+      "members": [
+        "underside-apron-detail"
+      ]
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 22
+}

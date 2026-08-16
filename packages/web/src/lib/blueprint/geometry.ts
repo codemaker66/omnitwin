@@ -82,9 +82,9 @@ export function itemAreaM2(item: BlueprintItem): number {
 export function totalSeats(items: readonly BlueprintItem[]): number {
   let sum = 0;
   for (const item of items) {
-    if (item.shape === "round") {
+    if (item.kind === "round-table") {
       sum += item.seats;
-    } else if (item.shape === "rect" && typeof item.seats === "number") {
+    } else if ("seats" in item && typeof item.seats === "number") {
       sum += item.seats;
     }
   }
@@ -198,6 +198,9 @@ export function inspectorTitle(item: BlueprintItem): string {
   if (item.kind === "round-table") {
     return `ROUND TABLE · ${String(item.seats)}`;
   }
+  if (item.kind === "poseur-table") {
+    return `POSEUR TABLE · ${formatDimensions(item)}`;
+  }
   if (item.kind === "long-table") {
     return `LONG TABLE · ${String(item.seats ?? 0)}`;
   }
@@ -206,6 +209,9 @@ export function inspectorTitle(item: BlueprintItem): string {
   }
   if (item.kind === "stage") {
     return `STAGE · ${formatDimensions(item)}`;
+  }
+  if (item.kind === "mic-stand") {
+    return `MIC STAND · ${formatDimensions(item)}`;
   }
   if (item.kind === "dancefloor") {
     return `DANCEFLOOR · ${formatDimensions(item)}`;
@@ -270,12 +276,16 @@ function layerLabel(item: BlueprintItem): string {
   switch (item.kind) {
     case "round-table":
       return `Round table · seats ${String(item.seats)}`;
+    case "poseur-table":
+      return `Poseur table · ${formatDimensions(item)}`;
     case "long-table":
       return `Long table · seats ${String(item.seats ?? 0)}`;
     case "top-table":
       return `Top table · seats ${String(item.seats ?? 0)}`;
     case "stage":
       return `Stage · ${formatDimensions(item)}`;
+    case "mic-stand":
+      return `Mic stand · ${formatDimensions(item)}`;
     case "dancefloor":
       return `Dancefloor · ${formatDimensions(item)}`;
     case "bar":

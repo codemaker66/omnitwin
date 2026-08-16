@@ -12,8 +12,19 @@
 //    dispose and reallocate the BoxGeometry GPU buffer per frame. A useMemo
 //    inside the child keeps the args tuple stable.
 //
-// These properties can't be tested behaviourally because happy-dom has no
-// WebGL context — source-grep is the established pattern (see #11/#12/#13/#14).
+// The two memoization properties above genuinely cannot be asserted here:
+// happy-dom has no WebGL context, so the R3F tree never renders and there is no
+// observable behaviour to check. Source-grep is the established pattern for
+// those (see #11/#12/#13/#14).
+//
+// It is NOT the pattern for render DECISIONS. Those are exported pure
+// predicates — shouldUseLeanPlannerFurniture, visibleConstraintViolationIds,
+// plannerFurnitureRenderPartition, shouldRenderIndividualFurnitureModel — and
+// are executed for real in placed-furniture-lean-rules.test.ts and
+// PlacedFurniture.generated-proxy.test.ts. Assertions in this file should pin
+// WIRING (the JSX calls the predicate, and passes it the right list). Never
+// re-spell a predicate's logic here: such an assertion passes even when that
+// logic is inverted, because it checks spelling rather than behaviour.
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect } from "vitest";
@@ -91,6 +102,13 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     expect(codeOnly).toContain("placed.tableSetting === \"dinner\"");
   });
 
+  it("renders only applied linen overlays, never a duplicate over intrinsic-cloth furniture", async () => {
+    const { codeOnly } = await readSource(SRC);
+    expect(codeOnly).toContain("appliedTableLinenStyle(catalogueItem, placed)");
+    expect(codeOnly).toMatch(/appliedClothStyle\s*!==\s*null[\s\S]{0,500}?<TableClothMesh/);
+    expect(codeOnly).not.toContain("placed.clothed && catalogueItem.category === \"table\"");
+  });
+
   it("does not animate persisted clothed tables on initial scene load", async () => {
     const { codeOnly } = await readSource(SRC);
     expect(codeOnly).toContain("useRef<ReadonlyMap<string, string> | null>(null)");
@@ -103,8 +121,12 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     expect(codeOnly).toContain("shouldUseLeanPlannerFurniture");
     expect(codeOnly).toContain("LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH");
     expect(codeOnly).toContain("function LeanFurnitureLayer");
-    expect(codeOnly).toContain("<LeanFurnitureLayer items={placedItems} />");
-    expect(codeOnly).toContain("renderModel={!useLeanFurniture && !instancedIds.has(placed.id)}");
+    // Wiring only — the decisions themselves are unit-tested against the
+    // exported predicates in placed-furniture-lean-rules.test.ts. The lean
+    // layer must receive the PARTITIONED list: `placedItems` would redraw the
+    // inspected hierarchy that plannerFurnitureRenderPartition just excluded.
+    expect(codeOnly).toMatch(/<LeanFurnitureLayer\s+items=\{leanItems\}/);
+    expect(codeOnly).toMatch(/renderModel=\{\s*shouldRenderIndividualFurnitureModel\(/);
   });
 
   it("keeps the lean mobile/tablet furniture path on unlit materials", async () => {
@@ -126,7 +148,11 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     expect(codeOnly).toContain("MAX_LEAN_CONSTRAINT_VIOLATION_SKINS");
     expect(codeOnly).toContain("visibleConstraintViolationIds");
     expect(codeOnly).toContain("renderedConstraintViolationIds");
-    expect(codeOnly).toContain("useLeanFurniture && MAX_LEAN_CONSTRAINT_VIOLATION_SKINS <= 0");
+    // Wiring, not logic: the lean sweep must be scoped to the selection. That
+    // is a perf invariant no unit test of the pure helper can see, because it
+    // lives in which arguments the call site passes (49ms vs 0.07ms at 800
+    // items). The cap arithmetic itself is covered in the lean-rules spec.
+    expect(codeOnly).toMatch(/leanSweepCandidates\(\s*placedItems,\s*selectedIds/);
     expect(codeOnly).toContain("selectedIds");
     expect(codeOnly).toContain("hasConstraintViolation={renderedConstraintViolationIds.has(placed.id)}");
   });

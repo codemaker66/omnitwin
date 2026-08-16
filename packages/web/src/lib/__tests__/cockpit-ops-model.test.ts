@@ -13,6 +13,10 @@ const roundTable = (): CatalogueItem => find((c) => c.category === "table" && c.
 const chair = (): CatalogueItem => find((c) => c.category === "chair", "chair");
 const stage = (): CatalogueItem => find((c) => c.category === "stage", "stage");
 const bar = (): CatalogueItem => find((c) => c.slug === BAR_CATALOGUE_SLUG, "bar");
+const poseur = (): CatalogueItem => find((c) => c.slug === "poseur-table", "poseur table");
+const blackPoseur = (): CatalogueItem => find((c) => c.slug === "poseur-table-black", "black poseur table");
+const whitePoseur = (): CatalogueItem => find((c) => c.slug === "poseur-table-white", "white poseur table");
+const micStand = (): CatalogueItem => find((c) => c.slug === "mic-stand", "mic stand");
 
 function place(item: CatalogueItem, n: number, clothed = false): PlacedItem[] {
   return Array.from({ length: n }, (_unused, index) => ({
@@ -50,6 +54,42 @@ describe("buildOpsSetupPlan", () => {
 
     const bare = buildOpsSetupPlan(place(roundTable(), 4, false));
     expect(bare.tasks.find((t) => t.key === "dress-tables")).toBeUndefined();
+  });
+
+  it("positions poseurs without labelling them as round dining tables", () => {
+    const plan = buildOpsSetupPlan(place(poseur(), 3));
+
+    expect(plan.tasks).toEqual([
+      { key: "poseur-tables", label: "Position poseur tables", count: 3, effortMinutes: 9 },
+    ]);
+    expect(plan.tasks.some((task) => task.key === "round-tables")).toBe(false);
+    expect(plan.totalItems).toBe(3);
+  });
+
+  it("counts intrinsic poseur linen in the setup plan without persisted cloth flags", () => {
+    const plan = buildOpsSetupPlan([
+      ...place(blackPoseur(), 1, false),
+      ...place(whitePoseur(), 1, false),
+    ]);
+
+    expect(plan.tasks.find((task) => task.key === "poseur-tables")?.count).toBe(2);
+    expect(plan.tasks.find((task) => task.key === "dress-tables")).toEqual({
+      key: "dress-tables",
+      label: "Dress tables (linen)",
+      count: 2,
+      effortMinutes: 8,
+    });
+    expect(plan.tasks.some((task) => task.key === "round-tables")).toBe(false);
+    expect(plan.totalItems).toBe(2);
+  });
+
+  it("keeps a passive mic stand in the existing Ops AV equipment count", () => {
+    const plan = buildOpsSetupPlan(place(micStand(), 1));
+
+    expect(plan.tasks).toEqual([
+      { key: "av", label: "Set up AV / equipment", count: 1, effortMinutes: 10 },
+    ]);
+    expect(plan.totalItems).toBe(1);
   });
 
   it("returns an empty plan for an empty layout", () => {

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  venviewer.com sitemap.
+
+  Only canonical public pages appear here. Deliberate exclusions:
+  - /quiz renders the same page as /trades-house/discover-your-craft. The
+    descriptive path is canonical (it is the one the leaflet page links to);
+    /quiz stays live as the short shareable address but is not listed.
+  - /fresh, /editor, /landing, /welcome, /living-hall are homepage duplicates,
+    and /legal/* duplicates /privacy, /terms and /accessibility. All are
+    disallowed in robots.txt.
+  - /tour and /venues/:venueSlug/twin both render TwinPage against the same
+    flagship slug, and the twin bundle is not published on the default asset
+    base, so neither is a working public URL yet.
+  - Token, planner and operational routes are private by design.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://venviewer.com/</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://venviewer.com/pricing</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://venviewer.com/trades-house/discover-your-craft</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://venviewer.com/trades-house/leaflet</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://venviewer.com/privacy</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://venviewer.com/terms</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://venviewer.com/accessibility</loc>
+    <lastmod>2026-08-15</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>

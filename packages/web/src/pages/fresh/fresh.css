@@ -1006,6 +1006,17 @@
     rgba(24, 20, 14, 0.05)
   );
 }
+/* Contrast over a photograph cannot be guaranteed by a translucent veil.
+   These sit vertically centred, where the veil gradient is only ~0.18 alpha,
+   so #f2ecdf measured 1.92:1 (and .fr-walk-size 2.12:1) against a 4.5 floor —
+   the least readable text on the page was "This is not a photograph.", the
+   product's central honesty claim.
+
+   Deepening the gradient enough to fix it (~0.72 alpha at mid-height) would
+   black out the poster. So the chip earns its name and carries its own ground.
+   Worst case — poster pixels pure white — the backing composites to
+   rgb(66,62,57), luminance 0.049, giving 8.98:1 against #f2ecdf. Legibility is
+   now independent of whatever the capture happens to render behind it. */
 .fr-walk-chip {
   margin: 0;
   font-family: var(--fr-ui);
@@ -1013,13 +1024,18 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #f2ecdf;
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+  background: rgba(24, 20, 14, 0.82);
+  padding: 8px 18px;
+  border-radius: 999px;
 }
 .fr-walk-size {
   margin: 0;
   font-family: var(--fr-ui);
   font-size: 12.5px;
-  color: rgba(242, 236, 223, 0.85);
+  color: #f2ecdf;
+  background: rgba(24, 20, 14, 0.82);
+  padding: 6px 14px;
+  border-radius: 999px;
 }
 .fr-walk-bar {
   width: 220px;
@@ -1279,4 +1295,111 @@
   .fr-room img {
     height: 240px;
   }
+}
+
+
+/* ——— enquiry: contact fields, send state, privacy note (2026-08-15) ———
+   The composer used to hand its finished email to the visitor's mail client
+   and stop there, so nothing was ever recorded. It now posts the enquiry —
+   and keeps the mailto and the phone number visible throughout, because a
+   failed POST must still leave a working way to reach the hall. */
+.fr-enq-contact {
+  padding-top: 4px;
+}
+.fr-enq-field span em {
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--fr-ink-2);
+  opacity: 0.7;
+}
+.fr-enq-field input[type="email"],
+.fr-enq-field input[type="text"],
+.fr-enq-field input[type="tel"] {
+  width: 220px;
+  max-width: 100%;
+}
+.fr-enq-problem {
+  display: block;
+  margin-top: 6px;
+  font-family: var(--fr-ui);
+  font-size: 13px;
+  color: var(--fr-alert, #9a3412);
+}
+.fr-enq-problem-send {
+  margin: 0 0 14px;
+  max-width: 52ch;
+}
+.fr-enq-field input[aria-invalid="true"] {
+  border-bottom-color: var(--fr-alert, #9a3412);
+}
+/* The mailto is no longer the primary action — it is the fallback, and it
+   should read as one without becoming hard to find. */
+.fr-enq-quiet {
+  font-family: var(--fr-ui);
+  font-size: 14px;
+  color: var(--fr-ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--fr-rule);
+  text-underline-offset: 4px;
+}
+.fr-enq-quiet:hover {
+  color: var(--fr-ink);
+}
+.fr-enq-sent {
+  display: grid;
+  gap: 8px;
+  padding: 20px 22px;
+  border-left: 2px solid var(--fr-green);
+  background: var(--fr-sunk, rgba(0, 0, 0, 0.03));
+}
+.fr-enq-sent-title {
+  margin: 0;
+  font-family: var(--fr-display, var(--fr-body));
+  font-size: 19px;
+  color: var(--fr-ink);
+}
+.fr-enq-sent-line {
+  margin: 0;
+  font-size: 15px;
+  color: var(--fr-ink-2);
+  max-width: 52ch;
+}
+.fr-enq-privacy {
+  margin: 14px 0 0;
+  font-family: var(--fr-ui);
+  font-size: 13px;
+  color: var(--fr-ink-2);
+  max-width: 60ch;
+}
+.fr-enq-privacy a {
+  color: var(--fr-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--fr-rule);
+  text-underline-offset: 3px;
+}
+
+/* ——— footer legal links ——— */
+.fr-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 28px;
+}
+.fr-legal a {
+  font-family: var(--fr-ui);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--fr-ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--fr-rule);
+  text-underline-offset: 4px;
+  /* WCAG 2.5.8 target size — these are the only route to the privacy notice
+     from the page that collects the data, so they get a real touch target. */
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+}
+.fr-legal a:hover {
+  color: var(--fr-ink);
 }

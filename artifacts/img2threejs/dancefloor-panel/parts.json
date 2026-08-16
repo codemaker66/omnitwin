@@ -1,0 +1,115 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "dancefloor-panel",
+  "parts": [
+    {
+      "name": "corner-lock-front-left",
+      "kind": "part",
+      "module": "corner-locks",
+      "triangles": 128
+    },
+    {
+      "name": "corner-lock-front-right",
+      "kind": "part",
+      "module": "corner-locks",
+      "triangles": 128
+    },
+    {
+      "name": "corner-lock-rear-left",
+      "kind": "part",
+      "module": "corner-locks",
+      "triangles": 128
+    },
+    {
+      "name": "corner-lock-rear-right",
+      "kind": "part",
+      "module": "corner-locks",
+      "triangles": 128
+    },
+    {
+      "name": "corner-locks",
+      "kind": "assembly",
+      "module": "corner-locks",
+      "triangles": 512,
+      "members": [
+        "corner-lock-front-left",
+        "corner-lock-front-right",
+        "corner-lock-rear-left",
+        "corner-lock-rear-right"
+      ]
+    },
+    {
+      "name": "deck",
+      "kind": "part",
+      "module": "deck",
+      "triangles": 432
+    },
+    {
+      "name": "lock-hardware",
+      "kind": "assembly",
+      "module": "lock-hardware",
+      "triangles": 256,
+      "members": [
+        "corner-lock-front-left-cam-detail",
+        "corner-lock-front-right-cam-detail",
+        "corner-lock-rear-left-cam-detail",
+        "corner-lock-rear-right-cam-detail"
+      ]
+    },
+    {
+      "name": "parquet-field",
+      "kind": "assembly",
+      "module": "parquet-field",
+      "triangles": 324,
+      "members": [
+        "deck-parquet-finger-r1c1-1-detail",
+        "deck-parquet-finger-r1c1-2-detail",
+        "deck-parquet-finger-r1c1-3-detail",
+        "deck-parquet-finger-r1c2-1-detail",
+        "deck-parquet-finger-r1c2-2-detail",
+        "deck-parquet-finger-r1c2-3-detail",
+        "deck-parquet-finger-r1c3-1-detail",
+        "deck-parquet-finger-r1c3-2-detail",
+        "deck-parquet-finger-r1c3-3-detail",
+        "deck-parquet-finger-r2c1-1-detail",
+        "deck-parquet-finger-r2c1-2-detail",
+        "deck-parquet-finger-r2c1-3-detail",
+        "deck-parquet-finger-r2c2-1-detail",
+        "deck-parquet-finger-r2c2-2-detail",
+        "deck-parquet-finger-r2c2-3-detail",
+        "deck-parquet-finger-r2c3-1-detail",
+        "deck-parquet-finger-r2c3-2-detail",
+        "deck-parquet-finger-r2c3-3-detail",
+        "deck-parquet-finger-r3c1-1-detail",
+        "deck-parquet-finger-r3c1-2-detail",
+        "deck-parquet-finger-r3c1-3-detail",
+        "deck-parquet-finger-r3c2-1-detail",
+        "deck-parquet-finger-r3c2-2-detail",
+        "deck-parquet-finger-r3c2-3-detail",
+        "deck-parquet-finger-r3c3-1-detail",
+        "deck-parquet-finger-r3c3-2-detail",
+        "deck-parquet-finger-r3c3-3-detail"
+      ]
+    },
+    {
+      "name": "subframe",
+      "kind": "part",
+      "module": "subframe",
+      "triangles": 60
+    },
+    {
+      "name": "subframe-ribs",
+      "kind": "assembly",
+      "module": "subframe-ribs",
+      "triangles": 48,
+      "members": [
+        "subframe-rib-1-detail",
+        "subframe-rib-2-detail",
+        "subframe-rib-3-detail",
+        "subframe-rib-4-detail"
+      ]
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 35
+}

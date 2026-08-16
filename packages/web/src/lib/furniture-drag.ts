@@ -44,6 +44,7 @@ export function computeFluidFurnitureDragFrame(
       primary.rotationY,
       placedItems,
       movingIds,
+      primary.scale,
     ),
   };
 }

@@ -19,9 +19,18 @@ function currentOperator(): ActionActor {
   return id === undefined ? { kind: "operator" } : { kind: "operator", ref: id };
 }
 
-export function plannerActionContext(): ActionContext {
+/** Build the stamping context.
+ *
+ *  `actor` exists for one reason, and it is load-bearing: when an operator
+ *  ACCEPTS an AI proposal, the resulting Actions must record the AI as the
+ *  author. Defaulting to the signed-in operator would put a human's name on
+ *  work an AI authored — the trail would lose the very distinction the
+ *  AIActionProposal type exists to guarantee (01 §12), and no consumer
+ *  downstream could recover it. The operator's part in that flow is
+ *  recorded separately, as the acceptance. */
+export function plannerActionContext(actor?: ActionActor): ActionContext {
   return {
-    actor: currentOperator(),
+    actor: actor ?? currentOperator(),
     surface: "planner",
     makeId: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
@@ -33,9 +42,9 @@ export function plannerActionContext(): ActionContext {
  *  an audit failure must not break the mutation's caller (a store action's
  *  follow-up work, or a save handler that would misreport "Failed to save"
  *  for a PATCH that succeeded). */
-export function logPlannerAction(spec: SurfaceActionSpec): void {
+export function logPlannerAction(spec: SurfaceActionSpec, actor?: ActionActor): void {
   try {
-    useActionLogStore.getState().append(surfaceAction(spec, plannerActionContext()));
+    useActionLogStore.getState().append(surfaceAction(spec, plannerActionContext(actor)));
   } catch (error) {
     // eslint-disable-next-line no-console -- deliberate: the only trace of a swallowed audit-channel failure
     console.error("action log append failed", spec.intent, error);

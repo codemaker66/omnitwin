@@ -65,6 +65,36 @@ describe("Evidence lens · Change history", () => {
     expect(section.textContent).toContain("as recorded by the planner's device");
   });
 
+  it("gives the recorded trail a front door — the time machine renders beside the list", async () => {
+    // The delivery failure being fixed: an engine nobody can open is not
+    // finished work. The Evidence lens already loads exactly these entries
+    // for the change list, so the scrubber belongs here — no new route, no
+    // second fetch, and the two views can never disagree.
+    getActionLogMock.mockResolvedValueOnce({
+      entries: [
+        entry(1, { payload: { label: "Place Round table" } }),
+        entry(2, { intent: "object.update", payload: { label: "Move 3 items" } }),
+      ],
+      nextAfter: 2,
+    });
+
+    render(<EvidenceLensPanel />);
+
+    const machine = await screen.findByTestId("time-machine-panel");
+    expect(machine.textContent).toContain("Time machine");
+    // It opens on the newest recorded moment, matching the list's top row.
+    expect(machine.textContent).toContain("Move 3 items");
+    expect(await screen.findByTestId("tm-scrubber")).toBeTruthy();
+  });
+
+  it("hides the time machine when there is nothing to travel through", async () => {
+    render(<EvidenceLensPanel />); // default mock returns no entries
+    await waitFor(() => {
+      expect(screen.getByTestId("evidence-change-history").textContent).toContain("No changes recorded yet");
+    });
+    expect(screen.queryByTestId("tm-scrubber")).toBeNull();
+  });
+
   it("shows an honest empty state when nothing has been recorded", async () => {
     render(<EvidenceLensPanel />);
     await waitFor(() => {

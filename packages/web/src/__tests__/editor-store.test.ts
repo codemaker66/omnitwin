@@ -39,6 +39,8 @@ const { anonymousPlannerDraftKey } = await import("../lib/anonymous-planner-draf
 
 const CHAIR_ID = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
 const ROUND_TABLE_ID = getCatalogueItemBySlug("round-table-6ft")?.id ?? "missing-round-table-id";
+const BLACK_TABLE_CLOTH_ID = getCatalogueItemBySlug("black-table-cloth")?.id
+  ?? "missing-black-table-cloth-id";
 
 const mockConfig = {
   id: "cfg-1",
@@ -215,6 +217,15 @@ describe("addObject", () => {
   it("assigns local ID prefix", () => {
     useEditorStore.getState().addObject("asset-1", 0, 0, 0);
     expect(useEditorStore.getState().objects[0]?.id).toMatch(/^local-/);
+  });
+
+  it("rejects a new standalone dressing applicator without dirtying the editor", () => {
+    useEditorStore.getState().addObject(BLACK_TABLE_CLOTH_ID, 0, 0, 0);
+    useEditorStore.getState().addObject("black-table-cloth", 0, 0, 0);
+
+    const state = useEditorStore.getState();
+    expect(state.objects).toHaveLength(0);
+    expect(state.isDirty).toBe(false);
   });
 });
 

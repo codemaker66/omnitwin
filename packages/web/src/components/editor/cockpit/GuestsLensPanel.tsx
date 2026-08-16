@@ -14,6 +14,7 @@ import {
 import { styleFitLabel, type StyleFit } from "../../../lib/room-capacity.js";
 import type { ComfortBand } from "../../../lib/layout-capacity.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
+import { sceneFurniturePlacements } from "../../../lib/table-dressing.js";
 import type { LayoutStyle } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
@@ -72,6 +73,7 @@ export function GuestsLensPanel(): ReactElement {
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
   const plannedGuestCount = useCockpitStore((state) => state.plannedGuestCount);
   const setPlannedGuestCount = useCockpitStore((state) => state.setPlannedGuestCount);
+  const sceneItems = useMemo(() => sceneFurniturePlacements(placedItems), [placedItems]);
 
   const model = useMemo(
     () => buildGuestsCapacityModel({
@@ -97,7 +99,7 @@ export function GuestsLensPanel(): ReactElement {
 
   // One-click layouts for the styles we can generate. Only offered on a blank
   // floor so it never wipes work in progress (auto-arrange replaces the layout).
-  const canBuild = placedItems.length === 0;
+  const canBuild = sceneItems.length === 0;
   const buildRoom = (style: LayoutStyle): void => {
     const guests = model.guestCount ?? 0;
     if (style === "dinner-rounds") {

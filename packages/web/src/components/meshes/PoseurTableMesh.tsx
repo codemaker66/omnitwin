@@ -23,9 +23,11 @@ export function PoseurTableMesh({
   const height = item.height;
   const isTransparent = opacity < 1;
 
-  // Determine variant from item ID
-  const isBlackCloth = item.id === "poseur-table-black";
-  const isWhiteCloth = item.id === "poseur-table-white";
+  // Determine variant from the slug. `item.id` is a deterministic UUID v5
+  // (packages/types/src/asset-catalogue.ts), so comparing it to a kebab-case
+  // name never matched and both clothed variants rendered as bare aluminium.
+  const isBlackCloth = item.slug === "poseur-table-black";
+  const isWhiteCloth = item.slug === "poseur-table-white";
   const hasCloth = isBlackCloth || isWhiteCloth;
 
   const metalColor = colorOverride ?? "#c0c0c8";
@@ -34,14 +36,19 @@ export function PoseurTableMesh({
 
   const topThickness = 0.025;
   const topY = height - topThickness / 2;
-  const poleRadius = 0.025;
+  // Horizontal thicknesses are X/Z dimensions, so they take RENDER_SCALE like
+  // the top radius does. Authoring them in raw metres while the top and the
+  // arm span are render-scaled left the pole and feet at half their apparent
+  // thickness — the table read as a disc balanced on a wire.
+  const poleRadius = toRenderSpace(0.025);
   const poleTopY = height - topThickness;
 
-  // Base dimensions
+  // Base dimensions. Heights (baseHeight, footHeight) stay in true metres —
+  // Y is never render-scaled.
   const baseHeight = 0.025;
   const armLength = renderRadius * 0.8;
-  const armWidth = 0.04;
-  const footRadius = 0.015;
+  const armWidth = toRenderSpace(0.04);
+  const footRadius = toRenderSpace(0.015);
   const footHeight = 0.012;
 
   if (hasCloth) {
@@ -107,8 +114,10 @@ export function PoseurTableMesh({
         />
       </mesh>
 
-      {/* Top edge rim */}
-      <mesh position={[0, topY, 0]}>
+      {/* Top edge rim. TorusGeometry is built in the XY plane, so without the
+          -90° X rotation it stands up as a vertical hoop through the tabletop
+          instead of lying around its edge. */}
+      <mesh position={[0, topY, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[renderRadius, 0.005, 8, 32]} />
         <meshStandardMaterial
           color={metalDark}

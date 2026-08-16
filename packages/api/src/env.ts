@@ -27,6 +27,10 @@ const EnvSchema = z.object({
   VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID: z.string().uuid().optional(),
   // Email — Resend (optional — logs to console if not set)
   RESEND_API_KEY: z.string().min(1).optional(),
+  // Where a public enquiry goes when the venue has no hallkeeper user yet.
+  // Without this, an enquiry with no hallkeeper is stored and silently never
+  // announced — the guest sees success and the lead reaches nobody.
+  ENQUIRY_FALLBACK_EMAIL: z.string().email().optional(),
   EMAIL_FROM: z.string().min(1).default("VenViewer <notifications@venviewer.com>"),
   // CORS — comma-separated allowed origins (defaults to localhost for dev)
   CORS_ORIGINS: z.string().default("http://localhost:5173,http://localhost:5174"),

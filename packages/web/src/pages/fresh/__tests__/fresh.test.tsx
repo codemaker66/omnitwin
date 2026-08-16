@@ -8,7 +8,7 @@ vi.mock("../FreshWalk.js", () => ({
 }));
 import { findUnsupportedProposalClaim } from "@omnitwin/types";
 import { FreshPage } from "../FreshPage.js";
-import { FRESH_ROOMS, allFreshCopy } from "../fresh-copy.js";
+import { FRESH_ROOMS, FRESH_TOUR_ENABLED, allFreshCopy } from "../fresh-copy.js";
 import { HALL_LIT_YEARS } from "../../landing/rite-copy.js";
 import {
   TRADES_HALL_ROOM_CAPACITIES,
@@ -139,12 +139,39 @@ describe("the enquiry composer", () => {
     expect(screen.getByText(/The North Gallery holds exactly/)).toBeTruthy();
   });
 
-  it("composes the visible email from the draft, openable via mailto", () => {
+  it("composes the visible email from the draft, still openable via mailto", () => {
     render(<FreshPage />);
     expect(screen.getByText("Enquiry — Wedding for 100")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Conference" }));
     expect(screen.getByText("Enquiry — Conference for 100")).toBeTruthy();
-    expect(document.querySelector('a.fr-cta[href^="mailto:"]')).toBeTruthy();
+    // The mailto survives, demoted from primary CTA to fallback: if the POST
+    // fails the visitor must still have a working way to reach the hall.
+    expect(document.querySelector('a[href^="mailto:"]')).toBeTruthy();
+  });
+
+  it("makes sending the enquiry the primary action, with the phone beside it", () => {
+    render(<FreshPage />);
+    const send = screen.getByRole("button", { name: "Send enquiry" });
+    expect(send).toBeInstanceOf(HTMLButtonElement);
+    expect((send as HTMLButtonElement).type).toBe("submit");
+    expect(document.querySelector('a[href^="tel:"]')).toBeTruthy();
+  });
+
+  it("asks for an email, and says why it wants one, at the point of collection", () => {
+    render(<FreshPage />);
+    // An enquiry the venue cannot reply to is worse than no enquiry.
+    const email = screen.getByLabelText(/your email/i);
+    expect((email as HTMLInputElement).required).toBe(true);
+    // UK GDPR transparency: the privacy notice is reachable from the form.
+    const privacy = document.querySelector('.fr-enq-privacy a[href="/privacy"]');
+    expect(privacy).toBeTruthy();
+  });
+
+  it("links the legal pages from the footer", () => {
+    render(<FreshPage />);
+    for (const href of ["/privacy", "/terms", "/accessibility"]) {
+      expect(document.querySelector(`.fr-legal a[href="${href}"]`)).toBeTruthy();
+    }
   });
 
   it("sends the top CTAs to the composer, not to a phone link", () => {
@@ -236,12 +263,22 @@ describe("walk the room — poster-first", () => {
 });
 
 describe("the walkthrough — wired from the front door", () => {
-  it("offers the whole-building walkthrough from the hero and the walk section", () => {
+  // This test used to assert that TWO CTAs point at /tour — pinning in place a
+  // route that cannot load in production, because `public/twin/` is gitignored
+  // and never ships. It now asserts the FLAG's contract in both directions, so
+  // it stays honest whether the twin is published or not.
+  it("offers the walkthrough only when the twin bundle is actually published", () => {
     render(<FreshPage />);
     const tourLinks = [...document.querySelectorAll('a[href="/tour"]')];
-    expect(tourLinks.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByRole("link", { name: "Walk the building" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Open the walkthrough" })).toBeTruthy();
+    if (FRESH_TOUR_ENABLED) {
+      expect(tourLinks.length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByRole("link", { name: "Walk the building" })).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Open the walkthrough" })).toBeTruthy();
+    } else {
+      // No dead doors: nothing on the page may advertise an unreachable tour.
+      expect(tourLinks).toHaveLength(0);
+      expect(screen.queryByRole("link", { name: "Open the walkthrough" })).toBeNull();
+    }
   });
 
   it("deep-links each validated room dossier to its framed viewpoint", () => {

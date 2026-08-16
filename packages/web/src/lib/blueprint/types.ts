@@ -62,9 +62,11 @@ interface BaseItem {
 
 export type ItemKind =
   | "round-table"
+  | "poseur-table"
   | "long-table"
   | "stage"
   | "top-table"
+  | "mic-stand"
   | "bar"
   | "dancefloor";
 
@@ -88,6 +90,17 @@ export interface RoundTableItem extends BaseItem {
   readonly chairs?: readonly Point[];
 }
 
+/** A standing-height cocktail table: round footprint, deliberately no seats. */
+export interface PoseurTableItem extends BaseItem {
+  readonly kind: "poseur-table";
+  readonly shape: "round";
+  /** Centre of the table in metres. */
+  readonly center: Point;
+  readonly diameterM: number;
+  /** Effective linen, including cloth authored into a catalogue variant. */
+  readonly linen?: string;
+}
+
 export interface RectItem extends BaseItem {
   readonly kind: "long-table" | "stage" | "top-table" | "bar";
   readonly shape: "rect" | "bar";
@@ -101,6 +114,15 @@ export interface RectItem extends BaseItem {
   readonly centrepiece?: string;
 }
 
+/** A passive freestanding mic stand: exact floor footprint, never seating. */
+export interface MicStandItem extends BaseItem {
+  readonly kind: "mic-stand";
+  readonly shape: "rect";
+  readonly topLeft: Point;
+  readonly widthM: number;
+  readonly lengthM: number;
+}
+
 export interface DancefloorItem extends BaseItem {
   readonly kind: "dancefloor";
   readonly shape: "dancefloor";
@@ -109,7 +131,12 @@ export interface DancefloorItem extends BaseItem {
   readonly lengthM: number;
 }
 
-export type BlueprintItem = RoundTableItem | RectItem | DancefloorItem;
+export type BlueprintItem =
+  | RoundTableItem
+  | PoseurTableItem
+  | RectItem
+  | MicStandItem
+  | DancefloorItem;
 
 // ---------------------------------------------------------------------------
 // Scene — the top-level container the canvas consumes

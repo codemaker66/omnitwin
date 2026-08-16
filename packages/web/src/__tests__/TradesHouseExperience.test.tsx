@@ -11,6 +11,7 @@ import {
 } from "../features/trades-house/craft-quiz-model.js";
 import {
   CONVENER_DELIBERATION,
+  CONVENER_POKES,
   CONVENER_THRESHOLD,
 } from "../features/trades-house/convener/convener-lines.js";
 import { TradesHouseCraftQuizPage } from "../pages/TradesHouseCraftQuizPage.js";
@@ -183,7 +184,28 @@ describe("Trades House leaflet experience", () => {
     // Four answer options — the Convener's pokeable portrait is a fifth
     // button, so count options by their own class, not by role.
     expect(document.querySelectorAll(".craft-quiz-option")).toHaveLength(4);
-    expect(screen.getByRole("button", { name: "The Convener — poke the portrait" })).toBeTruthy();
+
+    // The portrait is an invitation to prod it, so it has to be a real control:
+    // a native button (Enter and Space activate it for free), reachable by tab,
+    // named for the ACTION, and described by what actually hangs there. Anything
+    // reachable only by mouse would make the invitation a lie for half the room.
+    const portrait = screen.getByRole("button", { name: "The Convener — poke the portrait" });
+    expect(portrait).toBeInstanceOf(HTMLButtonElement);
+    expect((portrait as HTMLButtonElement).disabled).toBe(false);
+    expect(portrait.getAttribute("tabindex")).toBeNull();
+    portrait.focus();
+    expect(document.activeElement).toBe(portrait);
+    expect(
+      document.getElementById(portrait.getAttribute("aria-describedby") ?? "")?.textContent,
+      "the painting's own description survives the button's name",
+    ).toContain("oil portrait of the Convener");
+
+    // And it answers. The first prod speaks the first line of the escalation
+    // into his live region — poking is the visitor's own action, so it is
+    // announced rather than left as silent theatre.
+    fireEvent.click(portrait);
+    expect(document.querySelector(".convener-painting-live")?.textContent).toBe(CONVENER_POKES[0]);
+
     // Scene one, option one: the lead phrase is the option's accessible name.
     const [first] = CRAFT_QUESTIONS[0].options;
     expect(screen.getByRole("button", { name: new RegExp(escapeRe(first.lead), "u") }))

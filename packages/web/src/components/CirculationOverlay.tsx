@@ -18,17 +18,17 @@ export function shouldRenderCirculationOverlay(viewportWidth: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// CirculationOverlay — draws the table aisles in the 3D scene.
+// CirculationOverlay — draws furniture clearances in the 3D scene.
 //
-// The planner HUD reports a number ("Tightest table aisle 0.7 m"); this turns
+// The planner HUD reports a number ("Tightest furniture clearance 0.7 m"); this turns
 // it into something you can see — a dashed measurement line laid in the actual
-// gap between two tables, anchored at the exact closest points (from the
+// gap between two planning footprints, anchored at the exact closest points (from the
 // convex-polygon geometry engine), with a band-coloured distance pill at the
 // midpoint.
 //
-// It surfaces EVERY pinch point, not just the worst: the tightest aisle is the
+// It surfaces EVERY pinch point, not just the worst: the tightest clearance is the
 // prominent "primary" annotation, and every other sub-comfortable (tight or
-// blocked) aisle is drawn subtly so a layout with several problems shows all of
+// blocked) clearance is drawn subtly so a layout with several problems shows all of
 // them. Comfortable/generous layouts show just the single headline measurement.
 //
 // SAFE LANGUAGE: a PLANNING-GRADE circulation estimate, never a legal egress
@@ -87,7 +87,7 @@ function EndDot({
   );
 }
 
-/** One aisle annotation. Primary (tightest) is prominent; secondaries are subtle. */
+/** One clearance annotation. Primary (tightest) is prominent; secondaries are subtle. */
 function CirculationSegment({
   segment,
   showLabel,
@@ -122,8 +122,8 @@ function CirculationSegment({
   const gapText = `${segment.gapM.toFixed(1)} m`;
   const bandLabel = circulationBandLabel(segment.band);
   const ariaLabel = primary
-    ? `Tightest table aisle ${gapText}. ${bandLabel}`
-    : `Secondary table aisle ${gapText}. ${bandLabel}`;
+    ? `Tightest furniture clearance ${gapText}. ${bandLabel}`
+    : `Secondary furniture clearance ${gapText}. ${bandLabel}`;
   const dotRadius = primary ? 0.14 : 0.1;
   const dotSize = primary ? 8 : 6;
 

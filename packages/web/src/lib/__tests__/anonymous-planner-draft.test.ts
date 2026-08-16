@@ -144,4 +144,23 @@ describe("anonymous planner draft persistence", () => {
     })).toBeNull();
     expect(localStorage.getItem(anonymousPlannerDraftKey("cfg-1"))).toBeNull();
   });
+
+  it("rejects and removes a draft with a non-positive furniture scale", () => {
+    persistAnonymousPlannerDraft({
+      configId: "cfg-1",
+      spaceId: "space-1",
+      venueId: "venue-1",
+      configRevision: 1,
+      isPublicPreview: true,
+      objects: [{ ...objectFixture, scale: 0 }],
+      isDirty: true,
+    });
+
+    expect(readAnonymousPlannerDraft("cfg-1", {
+      spaceId: "space-1",
+      venueId: "venue-1",
+      baseRevision: 1,
+    })).toBeNull();
+    expect(localStorage.getItem(anonymousPlannerDraftKey("cfg-1"))).toBeNull();
+  });
 });

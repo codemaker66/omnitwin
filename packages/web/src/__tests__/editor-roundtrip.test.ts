@@ -9,12 +9,15 @@ import {
   placedItemToEditor,
 } from "../components/editor/EditorBridge.js";
 import { getCatalogueItemBySlug } from "../lib/catalogue.js";
+import { effectiveTableLinenStyle } from "../lib/furniture-semantics.js";
 import { RENDER_SCALE } from "../constants/scale.js";
 import type { PlacedObject, BatchObjectInput } from "../api/configurations.js";
 import type { PlacedItem } from "../lib/placement.js";
 
 const ROUND_TABLE_ID = getCatalogueItemBySlug("round-table-6ft")?.id ?? "missing-round-table-id";
 const CHAIR_ID = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
+const BLACK_POSEUR_ID = getCatalogueItemBySlug("poseur-table-black")?.id ?? "missing-black-poseur-id";
+const WHITE_POSEUR_ID = getCatalogueItemBySlug("poseur-table-white")?.id ?? "missing-white-poseur-id";
 
 // ---------------------------------------------------------------------------
 // Data integrity round-trip tests — punch list #31
@@ -113,13 +116,15 @@ describe("render-space store <-> real-metre wire conversion", () => {
 
   it("a render-space edge placement lands inside the real-metre Grand Hall polygon", () => {
     // Grand Hall real polygon is x∈[-10.5,10.5], z∈[-5,5] (metres). A chair
-    // near the render-space far wall (render X ≈ 19.6, well inside the 42-wide
-    // render room) must serialise to a real X inside ±10.5 so the server's
-    // pointInPolygon check accepts it.
+    // close to the far wall (X ≈ 9.8, inside the 21-wide room) must serialise
+    // to a real X inside ±10.5 so the server's pointInPolygon check accepts
+    // it. The scene is in true metres now, so store and wire coincide — the
+    // point of the test is that an edge placement survives the boundary
+    // either way, which is what would break first if conversion went lossy.
     const editor: EditorObject = {
       id: "550e8400-e29b-41d4-a716-4466554400bb",
       assetDefinitionId: CHAIR_ID,
-      positionX: 19.6, positionY: 0, positionZ: 8.7,
+      positionX: 9.8, positionY: 0, positionZ: 4.35,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: 0,
       clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
@@ -135,6 +140,35 @@ describe("render-space store <-> real-metre wire conversion", () => {
 // ---------------------------------------------------------------------------
 
 describe("EditorObject <-> wire format round-trip", () => {
+  it.each(["0", "-1", "NaN", "Infinity"])(
+    "normalizes invalid persisted scale %s to the render/footprint default",
+    (scale) => {
+      const wire: PlacedObject = {
+        id: "invalid-scale",
+        configurationId: "config-1",
+        assetDefinitionId: CHAIR_ID,
+        positionX: "0", positionY: "0", positionZ: "0",
+        rotationX: "0", rotationY: "0", rotationZ: "0",
+        scale, sortOrder: 0, metadata: null,
+      };
+
+      expect(placedObjectToEditor(wire).scale).toBe(1);
+    },
+  );
+
+  it("never sends an invalid scale across the API's positive-scale boundary", () => {
+    const editor: EditorObject = {
+      id: "invalid-scale",
+      assetDefinitionId: CHAIR_ID,
+      positionX: 0, positionY: 0, positionZ: 0,
+      rotationX: 0, rotationY: 0, rotationZ: 0,
+      scale: Number.NaN, sortOrder: 0,
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
+    };
+
+    expect(editorToBatch(editor).scale).toBe(1);
+  });
+
   it("preserves every field for a grouped, clothed round table", () => {
     const original: EditorObject = {
       id: "550e8400-e29b-41d4-a716-446655440000",
@@ -241,6 +275,47 @@ describe("EditorObject <-> wire format round-trip", () => {
     const wire = simulateDbRoundTrip(batch, original.id, "config-1");
     expect(placedObjectToEditor(wire)).toEqual(original);
   });
+
+  it.each([
+    ["poseur-table-black", BLACK_POSEUR_ID, "black"],
+    ["poseur-table-white", WHITE_POSEUR_ID, "white"],
+  ] as const)(
+    "keeps %s intrinsic linen derived while false/null metadata round-trips unchanged",
+    (slug, assetDefinitionId, expectedStyle) => {
+      const original: EditorObject = {
+        id: `intrinsic-${slug}`,
+        assetDefinitionId,
+        positionX: 1,
+        positionY: 0,
+        positionZ: 2,
+        rotationX: 0,
+        rotationY: 0.25,
+        rotationZ: 0,
+        scale: 1,
+        sortOrder: 2,
+        clothed: false,
+        clothStyle: null,
+        tableSetting: null,
+        groupId: null,
+        notes: "",
+      };
+
+      const batch = editorToBatch(original);
+      expect(batch.metadata).toMatchObject({ clothed: false, clothStyle: null });
+      const wire = simulateDbRoundTrip(batch, original.id, "config-1");
+      const editor = placedObjectToEditor(wire);
+      const placed = editorToPlacedItem(editor);
+      const back = placedItemToEditor(placed, editor);
+
+      expect(editor).toEqual(original);
+      expect(back).toEqual(original);
+      expect(placed).toMatchObject({ clothed: false, clothStyle: null });
+      const catalogueItem = getCatalogueItemBySlug(slug);
+      expect(catalogueItem).toBeDefined();
+      if (catalogueItem === undefined) return;
+      expect(effectiveTableLinenStyle(catalogueItem, placed)).toBe(expectedStyle);
+    },
+  );
 
   it("hallkeeper-visible display labels round-trip through metadata", () => {
     const original: EditorObject = {
@@ -450,6 +525,21 @@ describe("EditorObject <-> PlacedItem bridge round-trip", () => {
     expect(result.rotationZ).toBe(0);
     expect(result.scale).toBe(1);
     expect(result.sortOrder).toBe(0);
+  });
+
+  it("normalizes invalid scene and existing scales at both bridge directions", () => {
+    const editor: EditorObject = {
+      id: "invalid-scale", assetDefinitionId: CHAIR_ID,
+      positionX: 0, positionY: 0, positionZ: 0,
+      rotationX: 0, rotationY: 0, rotationZ: 0,
+      scale: 0, sortOrder: 0,
+      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
+    };
+    const placed = editorToPlacedItem(editor);
+    expect(placed.scale).toBe(1);
+
+    const invalidScene: PlacedItem = { ...placed, scale: Number.NEGATIVE_INFINITY };
+    expect(placedItemToEditor(invalidScene, editor).scale).toBe(1);
   });
 
   it("full scene round-trip: editor -> scene -> editor preserves everything", () => {

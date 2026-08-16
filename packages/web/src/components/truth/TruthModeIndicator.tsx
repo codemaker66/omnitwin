@@ -34,6 +34,7 @@ const AVOID_SELECTORS = [
   "[data-floating-widget-id='planner-spatial-hud']",
   "[data-floating-widget-id='cockpit-minimap']",
   "[data-floating-widget-id='placement-coach']",
+  "[data-testid='generated-furniture-proxy-badge']",
   ".planner-command-deck",
   ".planner-section-slider-dock",
   "[data-testid='cockpit-bottom']",

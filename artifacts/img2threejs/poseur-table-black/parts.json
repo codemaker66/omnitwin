@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "poseur-table-black",
+  "parts": [
+    {
+      "name": "anchor-pad-front-left",
+      "kind": "part",
+      "module": "floor-pad-system",
+      "triangles": 448
+    },
+    {
+      "name": "anchor-pad-front-right",
+      "kind": "part",
+      "module": "floor-pad-system",
+      "triangles": 448
+    },
+    {
+      "name": "anchor-pad-rear-left",
+      "kind": "part",
+      "module": "floor-pad-system",
+      "triangles": 448
+    },
+    {
+      "name": "anchor-pad-rear-right",
+      "kind": "part",
+      "module": "floor-pad-system",
+      "triangles": 448
+    },
+    {
+      "name": "cloth-cover",
+      "kind": "assembly",
+      "module": "cloth-cover",
+      "triangles": 13296,
+      "members": [
+        "cover-assembly"
+      ]
+    },
+    {
+      "name": "cloth-relief",
+      "kind": "assembly",
+      "module": "cloth-relief",
+      "triangles": 5328,
+      "members": [
+        "lower-hem",
+        "upper-hem",
+        "vertical-seam"
+      ]
+    },
+    {
+      "name": "cover-assembly",
+      "kind": "part",
+      "module": "cloth-cover",
+      "triangles": 13296
+    },
+    {
+      "name": "floor-pad-system",
+      "kind": "assembly",
+      "module": "floor-pad-system",
+      "triangles": 1792,
+      "members": [
+        "anchor-pad-front-left",
+        "anchor-pad-front-right",
+        "anchor-pad-rear-left",
+        "anchor-pad-rear-right"
+      ]
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 3
+}

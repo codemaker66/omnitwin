@@ -1,0 +1,203 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "banquet-chair",
+  "parts": [
+    {
+      "name": "back-frame-loop",
+      "kind": "part",
+      "module": "brass-frame",
+      "triangles": 48
+    },
+    {
+      "name": "backrest-assembly",
+      "kind": "assembly",
+      "module": "backrest-assembly",
+      "triangles": 216,
+      "members": [
+        "backrest-pad"
+      ]
+    },
+    {
+      "name": "backrest-pad",
+      "kind": "part",
+      "module": "backrest-assembly",
+      "triangles": 216
+    },
+    {
+      "name": "brass-frame",
+      "kind": "assembly",
+      "module": "brass-frame",
+      "triangles": 168,
+      "members": [
+        "back-frame-loop",
+        "front-left-leg",
+        "front-right-leg",
+        "left-lateral-brace",
+        "rear-left-leg",
+        "rear-right-leg",
+        "right-lateral-brace",
+        "underseat-front-rail",
+        "underseat-left-rail",
+        "underseat-rear-rail",
+        "underseat-right-rail"
+      ]
+    },
+    {
+      "name": "foot-cap-system",
+      "kind": "assembly",
+      "module": "foot-cap-system",
+      "triangles": 480,
+      "members": [
+        "front-left-foot-cap",
+        "front-right-foot-cap",
+        "rear-left-foot-cap",
+        "rear-right-foot-cap"
+      ]
+    },
+    {
+      "name": "front-left-foot-cap",
+      "kind": "part",
+      "module": "foot-cap-system",
+      "triangles": 120
+    },
+    {
+      "name": "front-left-leg",
+      "kind": "part",
+      "module": "front-leg-pair",
+      "triangles": 12
+    },
+    {
+      "name": "front-leg-pair",
+      "kind": "assembly",
+      "module": "front-leg-pair",
+      "triangles": 24,
+      "members": [
+        "front-left-leg",
+        "front-right-leg"
+      ]
+    },
+    {
+      "name": "front-right-foot-cap",
+      "kind": "part",
+      "module": "foot-cap-system",
+      "triangles": 120
+    },
+    {
+      "name": "front-right-leg",
+      "kind": "part",
+      "module": "front-leg-pair",
+      "triangles": 12
+    },
+    {
+      "name": "lateral-brace-pair",
+      "kind": "assembly",
+      "module": "lateral-brace-pair",
+      "triangles": 24,
+      "members": [
+        "left-lateral-brace",
+        "right-lateral-brace"
+      ]
+    },
+    {
+      "name": "left-lateral-brace",
+      "kind": "part",
+      "module": "lateral-brace-pair",
+      "triangles": 12
+    },
+    {
+      "name": "rear-left-foot-cap",
+      "kind": "part",
+      "module": "foot-cap-system",
+      "triangles": 120
+    },
+    {
+      "name": "rear-left-leg",
+      "kind": "part",
+      "module": "rear-leg-pair",
+      "triangles": 12
+    },
+    {
+      "name": "rear-leg-pair",
+      "kind": "assembly",
+      "module": "rear-leg-pair",
+      "triangles": 24,
+      "members": [
+        "rear-left-leg",
+        "rear-right-leg"
+      ]
+    },
+    {
+      "name": "rear-right-foot-cap",
+      "kind": "part",
+      "module": "foot-cap-system",
+      "triangles": 120
+    },
+    {
+      "name": "rear-right-leg",
+      "kind": "part",
+      "module": "rear-leg-pair",
+      "triangles": 12
+    },
+    {
+      "name": "right-lateral-brace",
+      "kind": "part",
+      "module": "lateral-brace-pair",
+      "triangles": 12
+    },
+    {
+      "name": "seat-assembly",
+      "kind": "assembly",
+      "module": "seat-assembly",
+      "triangles": 216,
+      "members": [
+        "seat-pad"
+      ]
+    },
+    {
+      "name": "seat-pad",
+      "kind": "part",
+      "module": "seat-assembly",
+      "triangles": 216
+    },
+    {
+      "name": "underseat-frame",
+      "kind": "assembly",
+      "module": "underseat-frame",
+      "triangles": 72,
+      "members": [
+        "left-lateral-brace",
+        "right-lateral-brace",
+        "underseat-front-rail",
+        "underseat-left-rail",
+        "underseat-rear-rail",
+        "underseat-right-rail"
+      ]
+    },
+    {
+      "name": "underseat-front-rail",
+      "kind": "part",
+      "module": "underseat-frame",
+      "triangles": 12
+    },
+    {
+      "name": "underseat-left-rail",
+      "kind": "part",
+      "module": "underseat-frame",
+      "triangles": 12
+    },
+    {
+      "name": "underseat-rear-rail",
+      "kind": "part",
+      "module": "underseat-frame",
+      "triangles": 12
+    },
+    {
+      "name": "underseat-right-rail",
+      "kind": "part",
+      "module": "underseat-frame",
+      "triangles": 12
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 6
+}

@@ -120,6 +120,39 @@ describe("PlannerCommandDeck", () => {
     expect(useSelectionStore.getState().selectedIds.size).toBe(0);
   });
 
+  it("offers poseur linen without exposing seated dinner settings", () => {
+    const poseur = getCatalogueItemBySlug("poseur-table");
+    expect(poseur).toBeDefined();
+    if (poseur === undefined) return;
+    const placed = createPlacedItem(poseur.id, 0, 0);
+    usePlacementStore.setState({ placedItems: [placed] });
+    useSelectionStore.setState({ selectedIds: new Set([placed.id]) });
+
+    render(<PlannerCommandDeck />);
+
+    expect(screen.getByTestId("planner-command-action-ivory-cloth")).toBeDefined();
+    expect(screen.queryByTestId("planner-command-action-dinner-set")).toBeNull();
+  });
+
+  it.each(["poseur-table-black", "poseur-table-white"])(
+    "does not offer a second cloth for intrinsic variant %s",
+    (slug) => {
+      const poseur = getCatalogueItemBySlug(slug);
+      expect(poseur).toBeDefined();
+      if (poseur === undefined) return;
+      const placed = createPlacedItem(poseur.id, 0, 0);
+      usePlacementStore.setState({ placedItems: [placed] });
+      useSelectionStore.setState({ selectedIds: new Set([placed.id]) });
+
+      render(<PlannerCommandDeck />);
+
+      expect(screen.getByText("Table selected")).toBeDefined();
+      expect(screen.queryByTestId("planner-command-action-ivory-cloth")).toBeNull();
+      expect(screen.queryByTestId("planner-command-action-dinner-set")).toBeNull();
+      expect(screen.queryByText(/Dress it/)).toBeNull();
+    },
+  );
+
   it("auto-fills the room with a banquet grid from the blank state", () => {
     const table = getCatalogueItemBySlug("round-table-6ft");
     expect(table).toBeDefined();

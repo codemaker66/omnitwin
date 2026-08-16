@@ -1,0 +1,206 @@
+/* ---------------------------------------------------------------------------
+   The painting on the wall.
+
+   The image carries its OWN gilt frame, so nothing here draws one — a second
+   frame around a framed painting is the fastest way to make a good asset look
+   like a sticker. What this file adds is the room it hangs in: the depth it
+   sits at, the light falling across it, and the glass in front of it.
+   --------------------------------------------------------------------------- */
+
+.convener-painting {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  isolation: isolate;
+}
+
+/* Perspective lives on the PARENT so the canvas can rotate inside it. Without a
+   perspective ancestor a rotateY is just an affine squash, which reads as the
+   image being scaled rather than as a head turning. */
+.convener-painting-stage {
+  perspective: 1400px;
+  perspective-origin: 50% 42%;
+}
+
+/* The canvas IS the button you poke, so everything a button brings with it —
+   chrome, metrics, the grey flash on tap — is stripped back to a bare surface.
+   Only the focus ring is put back, because that one is not decoration. */
+.convener-painting-canvas {
+  /* Hung, not pasted: a real shadow away from the wall, and a tight dark line at
+     the edge so the frame reads as having thickness. Named because focus has to
+     put it back — see below. */
+  --convener-painting-hang:
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 18px 44px rgba(0, 0, 0, 0.62),
+    0 42px 90px rgba(0, 0, 0, 0.45);
+
+  appearance: none;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  box-shadow: var(--convener-painting-hang);
+  color: inherit;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  padding: 0;
+  position: relative;
+  text-align: inherit;
+  transform-style: preserve-3d;
+  width: 100%;
+  will-change: transform;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The house focus ring (global.css) carries its glow on box-shadow, which is
+   the same property holding him off the wall — unqualified, focusing him would
+   unhook the painting. The outline is what signals focus; this only restates
+   the hang underneath it. */
+.convener-painting-canvas:focus-visible {
+  box-shadow: var(--convener-painting-hang);
+}
+
+.convener-painting-canvas img {
+  border-radius: 3px;
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+/* Candlelight from his right, our left — the direction the painter already lit
+   him from. Fighting the painted light would flatten the face instantly. */
+.convener-painting-candle {
+  background:
+    radial-gradient(58% 44% at 26% 34%, rgba(255, 206, 130, 0.2), transparent 68%),
+    radial-gradient(70% 60% at 82% 76%, rgba(6, 10, 22, 0.34), transparent 72%);
+  border-radius: 3px;
+  inset: 0;
+  mix-blend-mode: soft-light;
+  pointer-events: none;
+  position: absolute;
+  transition: background 900ms ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .convener-painting-candle {
+    animation: convener-painting-flicker 7.5s ease-in-out infinite;
+  }
+}
+
+/* Varnish and glass: a raking highlight across the top-left, which is what tells
+   the eye there is a surface between it and the paint. */
+.convener-painting-canvas::after {
+  background: linear-gradient(
+    128deg,
+    rgba(255, 255, 255, 0.085) 0%,
+    rgba(255, 255, 255, 0.03) 18%,
+    transparent 42%
+  );
+  border-radius: 3px;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+/* The painted plate at the foot of the frame is blank. This sits in it. */
+.convener-painting-plate {
+  bottom: 2.4%;
+  color: rgba(58, 40, 16, 0.86);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(6px, 0.85vw, 10px);
+  left: 50%;
+  letter-spacing: 0.18em;
+  pointer-events: none;
+  position: absolute;
+  text-align: center;
+  text-shadow: 0 1px 0 rgba(255, 226, 160, 0.3);
+  text-transform: uppercase;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* While he speaks the light lifts, so a still image does not sit dead against a
+   moving voice. */
+.convener-painting.is-speaking .convener-painting-candle {
+  background:
+    radial-gradient(62% 48% at 26% 34%, rgba(255, 214, 146, 0.3), transparent 70%),
+    radial-gradient(70% 60% at 82% 76%, rgba(6, 10, 22, 0.28), transparent 72%);
+}
+
+@keyframes convener-painting-flicker {
+  0%, 100% { opacity: 1; }
+  38% { opacity: 0.9; }
+  52% { opacity: 1.04; }
+  71% { opacity: 0.94; }
+}
+
+/* ---- what he is saying ---------------------------------------------------- */
+
+.convener-painting-speech {
+  min-height: 4.6em;
+  position: relative;
+}
+
+.convener-painting-typed {
+  color: #e9dcc0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(14px, 1.05vw, 16.5px);
+  line-height: 1.58;
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.convener-painting-speech[data-speaking="true"] .convener-painting-typed::after {
+  animation: convener-painting-caret 1s steps(1) infinite;
+  color: rgba(226, 186, 116, 0.9);
+  content: "▍";
+  margin-left: 1px;
+}
+
+@keyframes convener-painting-caret {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* There for anyone who wants him to get on with it, invisible until hovered or
+   focused so it never competes with the prose. */
+.convener-painting-skip {
+  background: none;
+  border: 1px solid rgba(214, 178, 106, 0.3);
+  border-radius: 999px;
+  color: rgba(226, 208, 172, 0.62);
+  cursor: pointer;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  opacity: 0;
+  padding: 3px 12px;
+  position: absolute;
+  right: 0;
+  text-transform: uppercase;
+  top: -30px;
+  transition: opacity 200ms ease, color 200ms ease;
+}
+
+.convener-painting-speech[data-speaking="true"]:hover .convener-painting-skip,
+.convener-painting-skip:focus-visible {
+  opacity: 1;
+}
+
+/* His speech mirror, and the description of the painting the poke button is
+   named for — both for listeners only, neither taking any room. */
+.convener-painting-live,
+.convener-painting-alt {
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  position: absolute;
+  width: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .convener-painting-canvas {
+    transform: none !important;
+  }
+}

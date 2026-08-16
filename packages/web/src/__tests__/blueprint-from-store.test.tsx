@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { CANONICAL_ASSETS } from "@omnitwin/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BlueprintPage } from "../pages/BlueprintPage.js";
 import { useEditorStore } from "../stores/editor-store.js";
@@ -20,6 +21,19 @@ afterEach(() => {
 });
 
 describe("BlueprintFromStore undo toolbar", () => {
+  it("renders the canonical mic stand with a truthful floor-equipment label", () => {
+    const micStand = CANONICAL_ASSETS.find((asset) => asset.slug === "mic-stand");
+    expect(micStand).toBeDefined();
+    if (micStand === undefined) return;
+    useEditorStore.getState().addObject(micStand.id, 0, 0, 0);
+
+    render(<BlueprintPage source="editor-store" />);
+
+    expect(screen.getAllByText("Mic stand").length).toBeGreaterThan(0);
+    expect(screen.getByText("MIC STAND · 0.5×0.5M")).toBeTruthy();
+    expect(screen.queryByText(/MIC STAND.*SEAT/i)).toBeNull();
+  });
+
   it("disables undo and redo when the editor history is empty", () => {
     render(<BlueprintPage source="editor-store" />);
 

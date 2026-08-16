@@ -14,7 +14,9 @@ const EditorObjectDraftSchema = z.object({
   rotationX: z.number().finite(),
   rotationY: z.number().finite(),
   rotationZ: z.number().finite(),
-  scale: z.number().finite(),
+  // Matches the API's positive uniform-scale contract. Corrupt/legacy drafts
+  // are discarded rather than restoring a scene the renderer must reinterpret.
+  scale: z.number().finite().positive(),
   sortOrder: z.number().int(),
   clothed: z.boolean(),
   clothStyle: z.enum(["black", "white"]).nullable().default(null),

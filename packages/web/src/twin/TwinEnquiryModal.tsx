@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
+import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { isValidEmail } from "../lib/email-validation.js";
@@ -37,13 +38,11 @@ import {
 // -----------------------------------------------------------------------------
 
 export interface TwinEnquiryModalProps {
-  readonly venueSlug: string;
   readonly venueName: string;
   readonly onClose: () => void;
 }
 
 export function TwinEnquiryModal({
-  venueSlug,
   venueName,
   onClose,
 }: TwinEnquiryModalProps): ReactElement {
@@ -91,7 +90,9 @@ export function TwinEnquiryModal({
           : undefined;
       setIsSubmitting(true);
       void submitGuestEnquiry({
-        venueSlug,
+        // The DATABASE slug, never the twin manifest's asset slug — the two
+        // namespaces differ and the asset slug 404s. See TRADES_HALL_ASSET_SLUG.
+        venueSlug: TRADES_HALL_ENQUIRY_VENUE_SLUG,
         email: email.trim(),
         phone: phone.trim() !== "" ? phone.trim() : undefined,
         name: name.trim() !== "" ? name.trim() : undefined,
@@ -110,7 +111,7 @@ export function TwinEnquiryModal({
           setIsSubmitting(false);
         });
     },
-    [venueSlug, email, phone, name, eventDate, eventType, guestCount, message, emailValid],
+    [email, phone, name, eventDate, eventType, guestCount, message, emailValid],
   );
 
   const onKeyDown = useCallback(

@@ -113,11 +113,11 @@ describe("gradeLayout — recommendations", () => {
       ({ critical: 0, warning: 1, tip: 2, praise: 3 })[a] - ({ critical: 0, warning: 1, tip: 2, praise: 3 })[b]));
   });
 
-  it("counts multiple tight aisles in the warning copy", () => {
+  it("counts multiple tight circulation gaps in the warning copy", () => {
     const grade = gradeLayout(signals({ circulation: circ("tight"), dressedTables: 10 }));
     const tight = grade.recommendations.find((r) => r.id === "circulation-tight");
     expect(tight?.severity).toBe("warning");
-    expect(tight?.message).toMatch(/2 table aisles/);
+    expect(tight?.message).toMatch(/2 circulation gaps/);
   });
 
   it("flags undressed tables with an exact count", () => {

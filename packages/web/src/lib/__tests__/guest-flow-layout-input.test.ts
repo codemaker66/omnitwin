@@ -36,7 +36,13 @@ function itemBySlug(slug: string): CatalogueItem {
 }
 
 /** Place a catalogue item at a render-space position. */
-function place(item: CatalogueItem, xRender: number, zRender: number, rotationY = 0): PlacedItem {
+function place(
+  item: CatalogueItem,
+  xRender: number,
+  zRender: number,
+  rotationY = 0,
+  scale?: number,
+): PlacedItem {
   return {
     id: `placed-${item.slug}-${String(xRender)}-${String(zRender)}`,
     catalogueItemId: item.id,
@@ -44,6 +50,7 @@ function place(item: CatalogueItem, xRender: number, zRender: number, rotationY 
     y: 0,
     z: zRender,
     rotationY,
+    ...(scale === undefined ? {} : { scale }),
     clothed: false,
     clothStyle: null,
     tableSetting: null,
@@ -157,6 +164,43 @@ describe("obstacle selection", () => {
       expect(obstacle.polygon.length).toBeGreaterThanOrEqual(3);
     }
   });
+
+  it("scales obstacle polygons to match rendered furniture footprints", () => {
+    const table = itemByCategory("table");
+    const result = buildGuestFlowReplayInputFromLayout({
+      roomWidthM: ROOM_W,
+      roomLengthM: ROOM_L,
+      placedItems: [place(table, 0, 0, 0, 2)],
+    });
+    const obstacle = result.obstacles[0];
+    if (obstacle === undefined) throw new Error("expected scaled obstacle");
+    const bounds = boundsOf(obstacle.polygon);
+    expect(bounds.maxX - bounds.minX).toBeCloseTo(table.width * 2, 3);
+    expect(bounds.maxY - bounds.minY).toBeCloseTo(table.depth * 2, 3);
+  });
+
+  it("includes the mic stand's 0.50m floor footprint but excludes tabletop AV", () => {
+    const micStand = itemBySlug("mic-stand");
+    const tabletop = [
+      itemBySlug("projector"),
+      itemBySlug("laptop"),
+      itemBySlug("microphone"),
+    ];
+    const result = buildGuestFlowReplayInputFromLayout({
+      roomWidthM: ROOM_W,
+      roomLengthM: ROOM_L,
+      placedItems: [
+        place(micStand, 0, 0),
+        ...tabletop.map((item, index) => place(item, 4 + index * 2, 0)),
+      ],
+    });
+
+    expect(result.obstacles).toHaveLength(1);
+    expect(result.obstacles[0]?.label).toBe("Mic Stand");
+    const footprint = boundsOf(result.obstacles[0]?.polygon ?? []);
+    expect(footprint.maxX - footprint.minX).toBeCloseTo(0.5, 3);
+    expect(footprint.maxY - footprint.minY).toBeCloseTo(0.5, 3);
+  });
 });
 
 describe("layout-derived destinations", () => {
@@ -180,6 +224,34 @@ describe("layout-derived destinations", () => {
       placedItems: [place(itemByCategory("table"), 0, 0), place(itemBySlug(BAR_CATALOGUE_SLUG), 10, -4)],
     });
     expect(result.destinations.some((d) => /bar/i.test(d.label))).toBe(true);
+  });
+
+  it("keeps poseur tables as obstacles without treating them as table seating", () => {
+    const poseur = itemBySlug("poseur-table");
+    const result = buildGuestFlowReplayInputFromLayout({
+      roomWidthM: ROOM_W,
+      roomLengthM: ROOM_L,
+      placedItems: [place(poseur, 6, 2)],
+    });
+
+    expect(result.obstacles.map((obstacle) => obstacle.id)).toContain(`placed-${poseur.slug}-6-2`);
+    expect(result.destinations.some((destination) => /seat/i.test(destination.label))).toBe(false);
+    expect(result.destinations).toEqual([
+      { id: "dest-room-centre", label: "Room centre", point: { x: 0, y: 0 }, weight: 1 },
+    ]);
+  });
+
+  it("excludes poseurs from a dining-table destination centroid", () => {
+    const diningTable = itemBySlug("round-table-6ft");
+    const poseur = itemBySlug("poseur-table-white");
+    const result = buildGuestFlowReplayInputFromLayout({
+      roomWidthM: ROOM_W,
+      roomLengthM: ROOM_L,
+      placedItems: [place(diningTable, 8, 0), place(poseur, -8, 0)],
+    });
+    const seating = result.destinations.find((destination) => destination.id === "dest-seating");
+
+    expect(seating?.point.x).toBeCloseTo(8 / RENDER_SCALE, 3);
   });
 
   it("falls back to a single gathering point for an empty layout", () => {

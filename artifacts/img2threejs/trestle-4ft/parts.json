@@ -1,0 +1,273 @@
+{
+  "schemaVersion": "venviewer.img2threejs-parts.v1",
+  "model": "trestle-4ft",
+  "parts": [
+    {
+      "name": "brace-system",
+      "kind": "assembly",
+      "module": "brace-system",
+      "triangles": 48,
+      "members": [
+        "left-front-diagonal-brace",
+        "left-rear-diagonal-brace",
+        "right-front-diagonal-brace",
+        "right-rear-diagonal-brace"
+      ]
+    },
+    {
+      "name": "fastener-system",
+      "kind": "assembly",
+      "module": "fastener-system",
+      "triangles": 1968,
+      "members": [
+        "left-front-hinge-bolt-lower-detail",
+        "left-front-hinge-bolt-upper-detail",
+        "left-front-hinge-plate-detail",
+        "left-front-stretcher-bolt-detail",
+        "left-rear-hinge-bolt-lower-detail",
+        "left-rear-hinge-bolt-upper-detail",
+        "left-rear-hinge-plate-detail",
+        "left-rear-stretcher-bolt-detail",
+        "right-front-hinge-bolt-lower-detail",
+        "right-front-hinge-bolt-upper-detail",
+        "right-front-hinge-plate-detail",
+        "right-front-stretcher-bolt-detail",
+        "right-rear-hinge-bolt-lower-detail",
+        "right-rear-hinge-bolt-upper-detail",
+        "right-rear-hinge-plate-detail",
+        "right-rear-stretcher-bolt-detail"
+      ]
+    },
+    {
+      "name": "foot-system",
+      "kind": "assembly",
+      "module": "foot-system",
+      "triangles": 1200,
+      "members": [
+        "left-front-foot-cap",
+        "left-rear-foot-cap",
+        "right-front-foot-cap",
+        "right-rear-foot-cap"
+      ]
+    },
+    {
+      "name": "frame",
+      "kind": "assembly",
+      "module": "frame",
+      "triangles": 1300,
+      "members": [
+        "left-floor-bar",
+        "left-front-diagonal-brace",
+        "left-front-upright",
+        "left-rear-diagonal-brace",
+        "left-rear-upright",
+        "left-stretcher-bracket",
+        "left-underside-rail",
+        "right-floor-bar",
+        "right-front-diagonal-brace",
+        "right-front-upright",
+        "right-rear-diagonal-brace",
+        "right-rear-upright",
+        "right-stretcher-bracket",
+        "right-underside-rail",
+        "stretcher"
+      ]
+    },
+    {
+      "name": "left-floor-bar",
+      "kind": "part",
+      "module": "left-support",
+      "triangles": 12
+    },
+    {
+      "name": "left-front-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 12
+    },
+    {
+      "name": "left-front-foot-cap",
+      "kind": "part",
+      "module": "foot-system",
+      "triangles": 300
+    },
+    {
+      "name": "left-front-hinge-plate-detail",
+      "kind": "part",
+      "module": "fastener-system",
+      "triangles": 428
+    },
+    {
+      "name": "left-front-upright",
+      "kind": "part",
+      "module": "left-support",
+      "triangles": 12
+    },
+    {
+      "name": "left-rear-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 12
+    },
+    {
+      "name": "left-rear-foot-cap",
+      "kind": "part",
+      "module": "foot-system",
+      "triangles": 300
+    },
+    {
+      "name": "left-rear-hinge-plate-detail",
+      "kind": "part",
+      "module": "fastener-system",
+      "triangles": 428
+    },
+    {
+      "name": "left-rear-upright",
+      "kind": "part",
+      "module": "left-support",
+      "triangles": 12
+    },
+    {
+      "name": "left-stretcher-bracket",
+      "kind": "part",
+      "module": "stretcher",
+      "triangles": 428
+    },
+    {
+      "name": "left-support",
+      "kind": "assembly",
+      "module": "left-support",
+      "triangles": 500,
+      "members": [
+        "left-floor-bar",
+        "left-front-diagonal-brace",
+        "left-front-upright",
+        "left-rear-diagonal-brace",
+        "left-rear-upright",
+        "left-stretcher-bracket",
+        "left-underside-rail"
+      ]
+    },
+    {
+      "name": "left-underside-rail",
+      "kind": "part",
+      "module": "left-support",
+      "triangles": 12
+    },
+    {
+      "name": "right-floor-bar",
+      "kind": "part",
+      "module": "right-support",
+      "triangles": 12
+    },
+    {
+      "name": "right-front-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 12
+    },
+    {
+      "name": "right-front-foot-cap",
+      "kind": "part",
+      "module": "foot-system",
+      "triangles": 300
+    },
+    {
+      "name": "right-front-hinge-plate-detail",
+      "kind": "part",
+      "module": "fastener-system",
+      "triangles": 428
+    },
+    {
+      "name": "right-front-upright",
+      "kind": "part",
+      "module": "right-support",
+      "triangles": 12
+    },
+    {
+      "name": "right-rear-diagonal-brace",
+      "kind": "part",
+      "module": "brace-system",
+      "triangles": 12
+    },
+    {
+      "name": "right-rear-foot-cap",
+      "kind": "part",
+      "module": "foot-system",
+      "triangles": 300
+    },
+    {
+      "name": "right-rear-hinge-plate-detail",
+      "kind": "part",
+      "module": "fastener-system",
+      "triangles": 428
+    },
+    {
+      "name": "right-rear-upright",
+      "kind": "part",
+      "module": "right-support",
+      "triangles": 12
+    },
+    {
+      "name": "right-stretcher-bracket",
+      "kind": "part",
+      "module": "stretcher",
+      "triangles": 428
+    },
+    {
+      "name": "right-support",
+      "kind": "assembly",
+      "module": "right-support",
+      "triangles": 500,
+      "members": [
+        "right-floor-bar",
+        "right-front-diagonal-brace",
+        "right-front-upright",
+        "right-rear-diagonal-brace",
+        "right-rear-upright",
+        "right-stretcher-bracket",
+        "right-underside-rail"
+      ]
+    },
+    {
+      "name": "right-underside-rail",
+      "kind": "part",
+      "module": "right-support",
+      "triangles": 12
+    },
+    {
+      "name": "stretcher",
+      "kind": "part",
+      "module": "stretcher",
+      "triangles": 300
+    },
+    {
+      "name": "support-stations",
+      "kind": "assembly",
+      "module": "support-stations",
+      "triangles": 144,
+      "members": [
+        "left-floor-bar",
+        "left-front-diagonal-brace",
+        "left-front-upright",
+        "left-rear-diagonal-brace",
+        "left-rear-upright",
+        "left-underside-rail",
+        "right-floor-bar",
+        "right-front-diagonal-brace",
+        "right-front-upright",
+        "right-rear-diagonal-brace",
+        "right-rear-upright",
+        "right-underside-rail"
+      ]
+    },
+    {
+      "name": "tabletop",
+      "kind": "part",
+      "module": "tabletop",
+      "triangles": 648
+    }
+  ],
+  "unnamedMeshes": 0,
+  "integralMeshes": 17
+}

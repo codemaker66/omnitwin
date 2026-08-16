@@ -14,8 +14,10 @@ import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import { isDiningTableItem } from "../lib/furniture-semantics.js";
 import { expandIdsToGroupMembers, getGroupMemberIds } from "../lib/placement.js";
 import { computeFluidFurnitureDragFrame } from "../lib/furniture-drag.js";
+import { isSceneFurniturePlacement } from "../lib/table-dressing.js";
 import {
   snapRotation,
   ROTATION_SNAP_RAD,
@@ -192,7 +194,7 @@ export function SelectionSystem(): null {
         const store = usePlacementStore.getState();
         usePlacementStore.setState({
           placedItems: store.placedItems.map((item) => {
-            if (!selectedIds.has(item.id)) return item;
+            if (!selectedIds.has(item.id) || !isSceneFurniturePlacement(item)) return item;
             return { ...item, rotationY: snapRotation(item.rotationY + delta) };
           }),
         });
@@ -501,6 +503,7 @@ export function SelectionSystem(): null {
           const placedItems = usePlacementStore.getState().placedItems;
           const idsInRect: string[] = [];
           for (const placed of placedItems) {
+            if (!isSceneFurniturePlacement(placed)) continue;
             _worldPos.set(placed.x, placed.y, placed.z);
             _worldPos.project(camera);
             const screenX = (_worldPos.x * 0.5 + 0.5) * cachedRect.width + cachedRect.left;
@@ -512,7 +515,10 @@ export function SelectionSystem(): null {
 
           if (additiveKey) {
             const existing = useSelectionStore.getState().selectedIds;
-            const merged = [...existing, ...idsInRect];
+            const sceneIds = new Set(
+              placedItems.filter(isSceneFurniturePlacement).map((placed) => placed.id),
+            );
+            const merged = [...existing].filter((id) => sceneIds.has(id)).concat(idsInRect);
             useSelectionStore.getState().selectMultiple(merged);
           } else {
             useSelectionStore.getState().selectMultiple(idsInRect);
@@ -691,7 +697,7 @@ export function SelectionSystem(): null {
       const catItem = getCatalogueItem(item.catalogueItemId);
       if (catItem === undefined) return;
 
-      if (catItem.tableShape !== null) {
+      if (isDiningTableItem(catItem) && catItem.tableShape !== null) {
         // Double-click on table in a group → edit chair count
         useChairDialogStore.getState().showDialog({
           catalogueItemId: item.catalogueItemId,
@@ -699,6 +705,7 @@ export function SelectionSystem(): null {
           z: item.z,
           rotationY: item.rotationY,
           tableShape: catItem.tableShape,
+          ...(item.scale === undefined ? {} : { scale: item.scale }),
         }, item.id);
       } else if (catItem.category === "chair") {
         // Double-click on chair in a group → break it out

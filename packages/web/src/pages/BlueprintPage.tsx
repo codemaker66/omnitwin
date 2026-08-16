@@ -33,6 +33,8 @@ import type {
   CatalogueChip,
   EventType,
   ItemKind,
+  RectItem,
+  RoundTableItem,
 } from "../lib/blueprint/types.js";
 import { DEFAULT_CATALOGUE } from "../lib/blueprint/types.js";
 import { DEMO_SCENE, DEMO_SELECTED_ID } from "../lib/blueprint/demo-scene.js";
@@ -516,8 +518,12 @@ async function exportSvgAsPng(svg: SVGSVGElement, filename: string): Promise<voi
   }
 }
 
-function isRoundTableItem(item: BlueprintItem): item is BlueprintItem & { shape: "round" } {
-  return item.shape === "round";
+function isRoundTableItem(item: BlueprintItem): item is RoundTableItem {
+  return item.kind === "round-table";
+}
+
+function isMetadataRectItem(item: BlueprintItem): item is RectItem {
+  return item.shape === "rect" && item.kind !== "mic-stand";
 }
 
 /**
@@ -625,7 +631,7 @@ function Minimap(props: {
  * Visual only — not selectable — purely so a planner can see how each
  * table's capacity sits in the room.
  */
-function ChairRing({ item, pxPerM }: { item: BlueprintItem & { shape: "round" }; pxPerM: number }): ReactElement {
+function ChairRing({ item, pxPerM }: { item: RoundTableItem; pxPerM: number }): ReactElement {
   const tableR = metresToPixels(item.diameterM / 2, pxPerM);
   const chairR = Math.max(4, tableR * 0.18);
   const chairs: ReactElement[] = [];
@@ -1800,7 +1806,7 @@ function ItemShape(props: ItemShapeProps): ReactElement {
         {selected ? <circle cx={cx} cy={cy} r={r + 3} fill="none" stroke={ACCENT_RED} strokeWidth={2.5} /> : null}
         <circle cx={cx} cy={cy} r={r} fill={SHAPE_FILL} stroke={SHAPE_OUTLINE} strokeWidth={1} />
         <text x={cx} y={cy + 4} textAnchor="middle" fontFamily={FONT_MONO} fontSize={11} fill={INK}>
-          {String(item.seats)}
+          {item.kind === "round-table" ? String(item.seats) : "P"}
         </text>
       </g>
     );
@@ -1845,6 +1851,7 @@ function ItemShape(props: ItemShapeProps): ReactElement {
 
 function getRectLabel(item: BlueprintItem): string {
   if (item.kind === "stage") return `STAGE · ${formatDimensions(item)}`;
+  if (item.kind === "mic-stand") return `MIC STAND · ${formatDimensions(item)}`;
   if (item.kind === "top-table") {
     const seats = item.shape === "rect" && typeof item.seats === "number" ? item.seats : 0;
     return `TOP TABLE · ${String(seats)}`;
@@ -1860,6 +1867,7 @@ function getRectLabel(item: BlueprintItem): string {
 
 function getRectBodyLabel(item: BlueprintItem): string {
   if (item.kind === "stage") return "Stage";
+  if (item.kind === "mic-stand") return "Mic stand";
   if (item.kind === "top-table") return "Top table";
   if (item.kind === "dancefloor") return "Parquet";
   if (item.kind === "bar") return "Bar";
@@ -1949,7 +1957,10 @@ function RightInspector(props: {
           ) : (
             <>
               <InspectorRow label="Dimensions" value={formatDimensions(selected)} />
-              {selected.shape === "rect" && typeof selected.seats === "number" ? (
+              {selected.kind === "poseur-table" && selected.linen !== undefined ? (
+                <InspectorRow label="Linen" value={selected.linen} />
+              ) : null}
+              {isMetadataRectItem(selected) && typeof selected.seats === "number" ? (
                 editable ? (
                   <EditableNumberRow
                     label="Seats"
@@ -1963,7 +1974,7 @@ function RightInspector(props: {
                   <InspectorRow label="Seats" value={String(selected.seats)} />
                 )
               ) : null}
-              {selected.shape === "rect" && selected.linen !== undefined ? (
+              {isMetadataRectItem(selected) && selected.linen !== undefined ? (
                 editable ? (
                   <EditableTextRow
                     label="Linen"
@@ -1974,7 +1985,7 @@ function RightInspector(props: {
                   <InspectorRow label="Linen" value={selected.linen} />
                 )
               ) : null}
-              {selected.shape === "rect" && selected.centrepiece !== undefined ? (
+              {isMetadataRectItem(selected) && selected.centrepiece !== undefined ? (
                 editable ? (
                   <EditableTextRow
                     label="Centrepiece"

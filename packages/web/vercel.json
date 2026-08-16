@@ -12,6 +12,11 @@
       "permanent": true
     },
     {
+      "source": "/tour",
+      "destination": "/#walk",
+      "permanent": false
+    },
+    {
       "source": "/private/brief/trades-hall-2026-04-27",
       "destination": "/",
       "permanent": false

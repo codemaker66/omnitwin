@@ -39,9 +39,15 @@ import {
   type GuestFlowReplayInput,
 } from "@omnitwin/types";
 import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
+import {
+  isDiningTableItem,
+  isPassiveFreestandingAvFloorItem,
+} from "./furniture-semantics.js";
 import type { PlacedItem } from "./placement.js";
 import { RENDER_SCALE } from "../constants/scale.js";
 import { footprintCorners, type FurnitureFootprint } from "./circulation.js";
+import { normalizeFurnitureScale } from "./furniture-scale.js";
+import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 // ---------------------------------------------------------------------------
 // Tunable planning constants (exported so the UI and tests share one source).
@@ -53,6 +59,16 @@ import { footprintCorners, type FurnitureFootprint } from "./circulation.js";
  * as a flow obstacle and as a "bar queue" destination.
  */
 export const BAR_CATALOGUE_SLUG = "bar-counter";
+
+/**
+ * Canonical slug of the parquet dance floor panel. It is categorised `stage`
+ * so it reaches the hallkeeper's `structure` setup phase, but it is the one
+ * `stage` asset guests walk ONTO rather than around: a 50mm panel is a floor
+ * finish, not an obstruction. Without this exception a tiled dance floor would
+ * present as a solid block in the middle of the room and the sim would route
+ * every guest around the very thing they came to stand on.
+ */
+export const DANCEFLOOR_CATALOGUE_SLUG = "dancefloor-panel";
 
 /**
  * Furniture categories whose footprint meaningfully blocks circulation, so
@@ -164,6 +180,7 @@ function toSim(point: SceneMetrePoint): { readonly x: number; readonly y: number
 function resolvePlacedItems(placedItems: readonly PlacedItem[]): ResolvedItem[] {
   const resolved: ResolvedItem[] = [];
   for (const placed of placedItems) {
+    if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item === undefined) continue;
     resolved.push({ placed, item });
@@ -172,18 +189,23 @@ function resolvePlacedItems(placedItems: readonly PlacedItem[]): ResolvedItem[] 
 }
 
 function isObstacle(item: CatalogueItem, categories: ReadonlySet<FurnitureCategory>): boolean {
-  return categories.has(item.category) || item.slug === BAR_CATALOGUE_SLUG;
+  // The dance floor is walkable despite being a `stage` — see the slug's docs.
+  if (item.slug === DANCEFLOOR_CATALOGUE_SLUG) return false;
+  return categories.has(item.category)
+    || item.slug === BAR_CATALOGUE_SLUG
+    || isPassiveFreestandingAvFloorItem(item);
 }
 
 /** Render-space placed item → metre-space oriented footprint (reuses circulation). */
 function footprintFromPlaced(placed: PlacedItem, item: CatalogueItem): FurnitureFootprint {
+  const scale = normalizeFurnitureScale(placed.scale);
   return {
     id: placed.id,
     label: item.name,
     cx: placed.x / RENDER_SCALE,
     cz: placed.z / RENDER_SCALE,
-    width: item.width,
-    depth: item.depth,
+    width: item.width * scale,
+    depth: item.depth * scale,
     rotation: placed.rotationY,
   };
 }
@@ -264,7 +286,7 @@ export function buildGuestFlowReplayInputFromLayout(
     }));
 
   // Destinations derived from the layout: where guests actually go.
-  const tables = resolved.filter(({ item }) => item.category === "table");
+  const tables = resolved.filter(({ item }) => isDiningTableItem(item));
   const bars = resolved.filter(({ item }) => item.slug === BAR_CATALOGUE_SLUG);
   const stages = resolved.filter(({ item }) => item.category === "stage");
 
@@ -332,7 +354,7 @@ export function buildGuestFlowReplayInputFromLayout(
     layout: {
       configurationId: options.configurationId ?? null,
       snapshotHash: options.snapshotHash ?? null,
-      placedObjectCount: placedItems.length,
+      placedObjectCount: resolved.length,
     },
     roomPolygon,
     obstacles,

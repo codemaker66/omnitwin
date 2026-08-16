@@ -4,6 +4,7 @@ import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useCockpitReplay } from "../../../hooks/use-cockpit-replay.js";
 import { getCatalogueItem } from "../../../lib/catalogue.js";
+import { sceneFurniturePlacements } from "../../../lib/table-dressing.js";
 import {
   minimapLayout,
   minimapProject,
@@ -79,6 +80,7 @@ interface MinimapConflictMarker {
 
 export function CockpitMinimap(): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
+  const sceneItems = useMemo(() => sceneFurniturePlacements(placedItems), [placedItems]);
   const dimensions = useRoomDimensionsStore((state) => state.dimensions);
   const requestFocus = useCockpitStore((state) => state.requestFocus);
   const activeMode = useCockpitStore((state) => state.activeMode);
@@ -155,7 +157,7 @@ export function CockpitMinimap(): ReactElement {
               aria-hidden="true"
             />
           )}
-          {placedItems.map((item) => {
+          {sceneItems.map((item) => {
             const { left, top } = minimapProject(item.x, item.z, layout);
             const category = getCatalogueItem(item.catalogueItemId)?.category;
             return (

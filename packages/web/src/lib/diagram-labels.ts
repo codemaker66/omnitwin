@@ -8,6 +8,8 @@
 // ---------------------------------------------------------------------------
 
 import { getCatalogueItem } from "./catalogue.js";
+import { normalizeFurnitureScale } from "./furniture-scale.js";
+import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 /** A labelled item for the diagram overlay. */
 export interface DiagramLabel {
@@ -40,12 +42,20 @@ const SKIP_LABEL_CATEGORIES = new Set(["chair"]);
  * Chairs are excluded — they're too numerous to label individually.
  */
 export function generateDiagramLabels(
-  placedItems: readonly { readonly id: string; readonly catalogueItemId: string; readonly x: number; readonly y: number; readonly z: number }[],
+  placedItems: readonly {
+    readonly id: string;
+    readonly catalogueItemId: string;
+    readonly x: number;
+    readonly y: number;
+    readonly z: number;
+    readonly scale?: number;
+  }[],
 ): readonly DiagramLabel[] {
   const counters: Record<string, number> = {};
   const labels: DiagramLabel[] = [];
 
   for (const item of placedItems) {
+    if (!isSceneFurniturePlacement(item)) continue;
     const catItem = getCatalogueItem(item.catalogueItemId);
     if (catItem === undefined) continue;
 
@@ -59,7 +69,11 @@ export function generateDiagramLabels(
     labels.push({
       id: item.id,
       code: `${prefix}${String(count)}`,
-      position: [item.x, item.y + catItem.height + 0.2, item.z],
+      position: [
+        item.x,
+        item.y + catItem.height * normalizeFurnitureScale(item.scale) + 0.2,
+        item.z,
+      ],
     });
   }
 

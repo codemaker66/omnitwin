@@ -22,7 +22,7 @@ import {
 import type { PlacedItem } from "../placement.js";
 import { toRenderSpace, toRealWorld, RENDER_SCALE } from "../../constants/scale.js";
 import { GRAND_HALL_RENDER_DIMENSIONS } from "../../constants/scale.js";
-import type { CatalogueItem } from "../catalogue.js";
+import { getCatalogueItemBySlug, type CatalogueItem } from "../catalogue.js";
 import type { SpaceDimensions } from "@omnitwin/types";
 
 // A small test item: 1m × 0.5m × 1m real-world
@@ -145,6 +145,19 @@ describe("computeRotatedFootprint", () => {
     expect(b.halfW).toBeCloseTo(a.halfW);
     expect(b.halfD).toBeCloseTo(a.halfD);
   });
+
+  it("applies uniform scale to the X/Z footprint", () => {
+    const base = computeRotatedFootprint(smallItem, 0);
+    const scaled = computeRotatedFootprint(smallItem, 0, 2.5);
+    expect(scaled.halfW).toBeCloseTo(base.halfW * 2.5);
+    expect(scaled.halfD).toBeCloseTo(base.halfD * 2.5);
+  });
+
+  it("normalizes invalid scale to the render contract fallback of 1", () => {
+    const base = computeRotatedFootprint(smallItem, 0);
+    expect(computeRotatedFootprint(smallItem, 0, 0)).toEqual(base);
+    expect(computeRotatedFootprint(smallItem, 0, Number.NaN)).toEqual(base);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -196,7 +209,16 @@ describe("isWithinRoomBounds", () => {
 
   it("rejects an item whose footprint crosses the room edge even when its center is inside", () => {
     const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
-    expect(isWithinRoomBounds(4.5, 0, smallItem, 0, smallRoom)).toBe(false);
+    // 1m item -> 0.5m half-width. A centre at 4.75 is inside the wall at 5,
+    // but the footprint reaches 5.25 and crosses it. (This read 4.5 back when
+    // the render scale doubled every footprint.)
+    expect(isWithinRoomBounds(4.75, 0, smallItem, 0, smallRoom)).toBe(false);
+  });
+
+  it("rejects a scaled footprint that crosses the wall while scale 1 still fits", () => {
+    const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
+    expect(isWithinRoomBounds(4.25, 0, smallItem, 0, smallRoom, 1)).toBe(true);
+    expect(isWithinRoomBounds(4.25, 0, smallItem, 0, smallRoom, 2)).toBe(false);
   });
 });
 
@@ -209,7 +231,10 @@ describe("getPlacementViolations", () => {
 
   it("returns an outside_room violation when the exact footprint crosses the wall", () => {
     const smallRoom: SpaceDimensions = { width: 10, length: 10, height: 5 };
-    const violations = getPlacementViolations(4.5, 0, smallItem, 0, [], new Set(), 0, smallRoom);
+    // 4.75, not 4.5 — see the isWithinRoomBounds case above: a 1m item now has
+    // a 0.5m half-width, so the centre has to sit closer to the wall for the
+    // footprint to actually cross it.
+    const violations = getPlacementViolations(4.75, 0, smallItem, 0, [], new Set(), 0, smallRoom);
     expect(violations).toContainEqual({
       kind: "outside_room",
       message: "Furniture footprint crosses the room boundary",
@@ -225,6 +250,40 @@ describe("getPlacementViolations", () => {
     const halfW = toRenderSpace(platformItem.width);
     const stageViolations = getPlacementViolations(halfW, 0, platformItem, 0, stage, new Set(), 0);
     expect(stageViolations.some((violation) => violation.kind === "overlap")).toBe(false);
+  });
+
+  it("uses scaled existing and candidate Y intervals for overlap violations", () => {
+    const scaledPlatform = { ...createPlacedItem("platform", 0, 0), scale: 2 };
+    const insideScaledHeight = getPlacementViolations(
+      0, 0, smallItem, 0, [scaledPlatform], new Set(), 0.5,
+    );
+    const flushOnScaledTop = getPlacementViolations(
+      0, 0, smallItem, 0, [scaledPlatform], new Set(), 0.8,
+    );
+    expect(insideScaledHeight.some((violation) => violation.kind === "overlap")).toBe(true);
+    expect(flushOnScaledTop.some((violation) => violation.kind === "overlap")).toBe(false);
+
+    const elevated = createPlacedItem("platform", 0, 0, 0, null, 0.6);
+    const unscaledCandidate = getPlacementViolations(
+      0, 0, smallItem, 0, [elevated], new Set(), 0, GRAND_HALL_RENDER_DIMENSIONS, 1,
+    );
+    const scaledCandidate = getPlacementViolations(
+      0, 0, smallItem, 0, [elevated], new Set(), 0, GRAND_HALL_RENDER_DIMENSIONS, 2,
+    );
+    expect(unscaledCandidate.some((violation) => violation.kind === "overlap")).toBe(false);
+    expect(scaledCandidate.some((violation) => violation.kind === "overlap")).toBe(true);
+  });
+
+  it("ignores retained table-dressing applicator rows as physical collisions", () => {
+    const cloth = getCatalogueItemBySlug("black-table-cloth");
+    expect(cloth).toBeDefined();
+    if (cloth === undefined) return;
+    const leaked = createPlacedItem(cloth.id, 0, 0);
+
+    expect(checkCollision(0, 0, smallItem, 0, [leaked], new Set())).toBe(false);
+    expect(getPlacementViolations(0, 0, smallItem, 0, [leaked], new Set())).toEqual([]);
+    expect(getPlacementViolations(0, 0, cloth, 0, [], new Set())).toEqual([]);
+    expect(computeSurfaceHeight(0, 0, cloth, [], new Set())).toBe(0);
   });
 });
 
@@ -246,6 +305,22 @@ describe("snapToWallEdge with custom room dims", () => {
     // The snap threshold is 1.5; dist from right wall (5) = 5 - (19 + 1) = -15, no snap
     const result = snapToWallEdge(19, 0, smallItem, 0, smallRoom);
     expect(result.x).toBe(19); // no snap — way outside the room
+  });
+
+  it("does not reserve a dining-chair ring around a standing poseur table", () => {
+    const poseur = getCatalogueItemBySlug("poseur-table");
+    const diningRound = getCatalogueItemBySlug("round-table-6ft");
+    expect(poseur).toBeDefined();
+    expect(diningRound).toBeDefined();
+    if (poseur === undefined || diningRound === undefined) return;
+
+    const poseurSnap = snapToWallEdge(4, 0, poseur, 0, smallRoom);
+    const diningSnap = snapToWallEdge(4, 0, diningRound, 0, smallRoom);
+
+    expect(poseurSnap.x).toBeCloseTo(5 - toRenderSpace(poseur.width) / 2);
+    expect(diningSnap.x).toBeCloseTo(
+      5 - toRenderSpace(diningRound.width) / 2 - toRenderSpace(0.5),
+    );
   });
 });
 
@@ -343,6 +418,15 @@ describe("checkCollision", () => {
     // Table halfW ~ 1.83, smallItem halfW = 1. Overlap if centers < 2.83
     expect(checkCollision(toRenderSpace(1), 0, smallItem, 0, placed, new Set())).toBe(true);
   });
+
+  it("uses the persisted scale of existing and candidate footprints", () => {
+    const existing = { ...createPlacedItem("round-table-6ft", 0, 0), scale: 2 };
+    expect(checkCollision(2, 0, smallItem, 0, [existing], new Set())).toBe(true);
+
+    const unscaled = createPlacedItem("round-table-6ft", 0, 0);
+    expect(checkCollision(1.7, 0, smallItem, 0, [unscaled], new Set())).toBe(false);
+    expect(checkCollision(1.7, 0, smallItem, 0, [unscaled], new Set(), 0.01, 0, 2)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -436,6 +520,17 @@ const platformItem: CatalogueItem = {
   meshUrl: null,
 };
 
+function catalogueFixture(slug: string): CatalogueItem {
+  const item = getCatalogueItemBySlug(slug);
+  if (item === undefined) throw new Error(`Missing catalogue fixture: ${slug}`);
+  return item;
+}
+
+const micStandItem = catalogueFixture("mic-stand");
+const projectorItem = catalogueFixture("projector");
+const laptopItem = catalogueFixture("laptop");
+const microphoneItem = catalogueFixture("microphone");
+
 // ---------------------------------------------------------------------------
 // computeSurfaceHeight
 // ---------------------------------------------------------------------------
@@ -444,49 +539,94 @@ describe("computeSurfaceHeight", () => {
   beforeEach(() => { resetPlacedIdCounter(); });
 
   it("returns 0 when no platforms exist", () => {
-    expect(computeSurfaceHeight(0, 0, [], new Set())).toBe(0);
+    expect(computeSurfaceHeight(0, 0, micStandItem, [], new Set())).toBe(0);
   });
 
   it("returns 0 when point is outside all platforms", () => {
     const placed: PlacedItem[] = [createPlacedItem("platform", 0, 0)];
     // Far from the platform
-    expect(computeSurfaceHeight(20, 20, placed, new Set())).toBe(0);
+    expect(computeSurfaceHeight(20, 20, micStandItem, placed, new Set())).toBe(0);
   });
 
-  it("returns platform height when point is on a platform", () => {
+  it("allows a freestanding mic stand on a platform", () => {
     const placed: PlacedItem[] = [createPlacedItem("platform", 0, 0)];
-    expect(computeSurfaceHeight(0, 0, placed, new Set())).toBe(0.4);
+    expect(computeSurfaceHeight(0, 0, micStandItem, placed, new Set())).toBe(0.4);
   });
 
   it("returns stacked height for platforms on top of each other", () => {
     const bottom = createPlacedItem("platform", 0, 0, 0, null, 0);
     const top = createPlacedItem("platform", 0, 0, 0, null, 0.4);
-    expect(computeSurfaceHeight(0, 0, [bottom, top], new Set())).toBe(0.8);
+    expect(computeSurfaceHeight(0, 0, platformItem, [bottom, top], new Set())).toBe(0.8);
   });
 
   it("returns highest surface when multiple platforms overlap", () => {
     const low = createPlacedItem("platform", 0, 0, 0, null, 0);
     const high = createPlacedItem("platform", 0, 0, 0, null, 0.8);
-    expect(computeSurfaceHeight(0, 0, [low, high], new Set())).toBeCloseTo(1.2);
+    expect(computeSurfaceHeight(0, 0, micStandItem, [low, high], new Set())).toBeCloseTo(1.2);
   });
 
   it("excludes items in excludeIds", () => {
     const p = createPlacedItem("platform", 0, 0);
-    expect(computeSurfaceHeight(0, 0, [p], new Set([p.id]))).toBe(0);
+    expect(computeSurfaceHeight(0, 0, micStandItem, [p], new Set([p.id]))).toBe(0);
   });
 
-  it("considers stage and table items as surfaces", () => {
+  it.each([projectorItem, laptopItem, microphoneItem])(
+    "allows explicitly table-mountable $slug on a table",
+    (candidate) => {
+      const table = createPlacedItem("round-table-6ft", 0, 0);
+      expect(computeSurfaceHeight(0, 0, candidate, [table], new Set())).toBe(0.76);
+    },
+  );
+
+  it("keeps a freestanding mic stand on the floor instead of floating on a table", () => {
     const table = createPlacedItem("round-table-6ft", 0, 0);
-    expect(computeSurfaceHeight(0, 0, [table], new Set())).toBe(0.76);
+    expect(computeSurfaceHeight(0, 0, micStandItem, [table], new Set())).toBe(0);
   });
 
   it("respects platform footprint boundaries", () => {
     const p = createPlacedItem("platform", 0, 0);
     // Platform is 2.44m wide → render width = 4.88. Half = 2.44
     // A point just inside the edge should hit
-    expect(computeSurfaceHeight(toRenderSpace(2.44 / 2) - 0.01, 0, [p], new Set())).toBe(0.4);
+    expect(computeSurfaceHeight(
+      toRenderSpace(2.44 / 2) - 0.01,
+      0,
+      micStandItem,
+      [p],
+      new Set(),
+    )).toBe(0.4);
     // A point just outside should miss
-    expect(computeSurfaceHeight(toRenderSpace(2.44 / 2) + 0.01, 0, [p], new Set())).toBe(0);
+    expect(computeSurfaceHeight(
+      toRenderSpace(2.44 / 2) + 0.01,
+      0,
+      micStandItem,
+      [p],
+      new Set(),
+    )).toBe(0);
+  });
+
+  it("uses a supporting item's scaled X/Z footprint", () => {
+    const platform = { ...createPlacedItem("platform", 0, 0), scale: 2 };
+    const outsideCanonicalInsideScaled = toRenderSpace(platformItem.width / 2) + 1;
+    expect(computeSurfaceHeight(
+      outsideCanonicalInsideScaled,
+      0,
+      micStandItem,
+      [platform],
+      new Set(),
+    )).toBe(0.8);
+  });
+
+  it("uses a scaled stage's visible top as its support height", () => {
+    const platform = { ...createPlacedItem("platform", 0, 0, 0, null, 0.15), scale: 2 };
+    expect(computeSurfaceHeight(0, 0, micStandItem, [platform], new Set())).toBeCloseTo(0.95);
+  });
+
+  it("uses a scaled table's visible top as its support height", () => {
+    const table = { ...createPlacedItem("round-table-6ft", 0, 0, 0, null, 0.2), scale: 0.5 };
+    expect(computeSurfaceHeight(0, 0, projectorItem, [table], new Set())).toBeCloseTo(0.58);
+
+    const invalid = { ...table, scale: 0 };
+    expect(computeSurfaceHeight(0, 0, projectorItem, [invalid], new Set())).toBeCloseTo(0.96);
   });
 });
 
@@ -522,6 +662,18 @@ describe("checkCollision 3D", () => {
     const placed: PlacedItem[] = [createPlacedItem("platform", 0, 0, 0, null, 0)];
     // Table at same XZ but sitting on top
     expect(checkCollision(0, 0, smallItem, 0, placed, new Set(), 0.01, 0.4)).toBe(false);
+  });
+
+  it("uses an existing scaled item's visible Y interval", () => {
+    const scaledPlatform = { ...createPlacedItem("platform", 0, 0), scale: 2 };
+    expect(checkCollision(0, 0, smallItem, 0, [scaledPlatform], new Set(), 0, 0.5)).toBe(true);
+    expect(checkCollision(0, 0, smallItem, 0, [scaledPlatform], new Set(), 0, 0.8)).toBe(false);
+  });
+
+  it("uses the candidate scale for its visible Y interval", () => {
+    const elevated = createPlacedItem("platform", 0, 0, 0, null, 0.6);
+    expect(checkCollision(0, 0, smallItem, 0, [elevated], new Set(), 0, 0, 1)).toBe(false);
+    expect(checkCollision(0, 0, smallItem, 0, [elevated], new Set(), 0, 0, 2)).toBe(true);
   });
 
   it("stage items at same height can touch edges (negative padding tolerance)", () => {

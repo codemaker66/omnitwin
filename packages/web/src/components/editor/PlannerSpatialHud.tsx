@@ -11,6 +11,8 @@ import {
   comfortBandLabel,
 } from "../../lib/layout-capacity.js";
 import { seatingCountsFromPlacedItems } from "../../lib/seating-counts.js";
+import { isDiningTableItem } from "../../lib/furniture-semantics.js";
+import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
 import { circulationBandLabel } from "../../lib/circulation.js";
 import { placedItemsCirculation } from "../../lib/circulation-scene.js";
 import { gradeLayout, type LayoutBand, type RecommendationSeverity } from "../../lib/layout-intelligence.js";
@@ -35,11 +37,12 @@ function computeHudStats(
   let dressedTables = 0;
 
   for (const placed of placedItems) {
+    if (!isSceneFurniturePlacement(placed)) continue;
     const item = getCatalogueItem(placed.catalogueItemId);
     if (item === undefined) continue;
 
     if (item.category === "stage") stagedObjects += 1;
-    if (item.category === "table" && (placed.clothed || placed.tableSetting !== null)) {
+    if (isDiningTableItem(item) && (placed.clothed || placed.tableSetting !== null)) {
       dressedTables += 1;
     }
   }
@@ -203,9 +206,9 @@ export function PlannerSpatialHud(): React.ReactElement {
     [floorAreaM2, stats.chairs, seatingStyle],
   );
 
-  // Circulation: exact aisle clearance between table footprints (tables only —
-  // see placedTableFootprints for why chairs are excluded). The HUD and the
-  // in-scene overlay share this same computation so they can never disagree.
+  // Circulation: exact clearance between planning-relevant floor footprints.
+  // Chairs and tabletop AV are excluded; the HUD and in-scene overlay share this
+  // same computation so they cannot disagree.
   const circulation = useMemo(() => placedItemsCirculation(placedItems), [placedItems]);
 
   const hasLayout = stats.roundTables > 0 || stats.banquetTables > 0 || stats.chairs > 0;
@@ -328,12 +331,12 @@ export function PlannerSpatialHud(): React.ReactElement {
                   : undefined
               }
             >
-              Tightest table aisle {circulation.tightestGapM.toFixed(1)} m · {circulationBandLabel(circulation.band)}
+              Tightest furniture clearance {circulation.tightestGapM.toFixed(1)} m · {circulationBandLabel(circulation.band)}
             </div>
           )}
           {circulation.problemGaps.length > 1 && (
             <div className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--circulation" style={{ color: "#d98324" }}>
-              {circulation.problemGaps.length} aisles below comfortable — flagged in the scene
+              {circulation.problemGaps.length} clearances below comfortable — flagged in the scene
             </div>
           )}
           <div className="planner-spatial-hud__subcaption planner-spatial-hud__subcaption--secondary">

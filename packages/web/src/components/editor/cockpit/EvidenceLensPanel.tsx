@@ -9,6 +9,7 @@ import { RENDER_SCALE } from "../../../constants/scale.js";
 import { buildEvidencePack, type EvidenceStatus } from "../../../lib/cockpit-evidence-model.js";
 import { changeHistoryRows } from "../../../lib/change-history-model.js";
 import { useChangeHistory } from "../../../hooks/use-change-history.js";
+import { TimeMachinePanel } from "../TimeMachinePanel.js";
 
 // ---------------------------------------------------------------------------
 // EvidenceLensPanel — the Layout Evidence Pack (Epic 0 Evidence lens panel).
@@ -108,6 +109,15 @@ export function EvidenceLensPanel(): ReactElement {
 function ChangeHistorySection(): ReactElement {
   const configId = useEditorStore((state) => state.configId);
   const isPublicPreview = useEditorStore((state) => state.isPublicPreview);
+  // The live room anchors the trail — see TimeMachinePanel's `live` prop.
+  // Rebuilt through Object.fromEntries because EditorObject is an interface
+  // and so carries no implicit index signature; this satisfies ReplayObject
+  // structurally rather than by asserting it with a cast.
+  const editorObjects = useEditorStore((state) => state.objects);
+  const liveObjects = useMemo(
+    () => editorObjects.map((object) => ({ ...Object.fromEntries(Object.entries(object)), id: object.id })),
+    [editorObjects],
+  );
   const history = useChangeHistory(configId, !isPublicPreview);
   const rows = useMemo(() => changeHistoryRows(history.entries), [history.entries]);
 
@@ -133,6 +143,14 @@ function ChangeHistorySection(): ReactElement {
         )}
         {!isPublicPreview && history.loading && rows.length === 0 && (
           <div className="lens-panel__row-meta">Loading the recorded trail…</div>
+        )}
+        {/* The time machine reads the SAME entries the list below renders,
+            so the scrubbed plan and the written history can never disagree
+            — and the trail gets a surface an operator can actually open. */}
+        {history.entries.length > 0 && (
+          <div className="lens-panel__row" style={{ padding: 0, border: "none", background: "none" }}>
+            <TimeMachinePanel entries={history.entries} live={liveObjects} />
+          </div>
         )}
         {rows.map((row) => (
           <div key={row.ordinal} className="lens-panel__row" data-testid="change-history-row">
