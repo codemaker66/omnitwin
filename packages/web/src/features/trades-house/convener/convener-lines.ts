@@ -108,10 +108,10 @@ export function convenerAcknowledgement(questionIndex: number): string {
 export const CONVENER_REACTIONS: readonly (readonly string[])[] = [
   // 1 — The River Gate
   [
-    "Tools. You said it before you had quite decided to, which is how I knew it was true.",
+    "Iron. You said it before you had quite decided to, which is how I knew it was true.",
     "Living things, carried four hundred miles, and most of them still alive. That is a particular kind of attention.",
     "Paper instead of bread. Not one in ten would choose that, and you did not pause over it.",
-    "Nothing at all. You will be believed on your face or you will not, and you have decided to find out which.",
+    "Nothing in the bag, and four hundred miles on your feet. You will be believed on how you walked in, or you will not, and you have decided to find out which.",
   ],
   // 2 — The Low River
   [
@@ -152,7 +152,7 @@ export const CONVENER_REACTIONS: readonly (readonly string[])[] = [
   [
     "First into an empty pot. If nobody follows, you have given away your winter to prove a thing about your neighbours.",
     "Arithmetic before feeling. You will learn exactly who lied about their cellar, and greet them all spring.",
-    "Three mouths and four hard months. The town will remember this longer than the winter lasts.",
+    "Three mouths, four hard months, and the seed kept back. The town will remember this longer than the winter lasts.",
     "You made it go further. Nobody thanks the one who makes thin things bearable. I noticed.",
   ],
   // 8 — The Door You Were Told Of
@@ -165,7 +165,7 @@ export const CONVENER_REACTIONS: readonly (readonly string[])[] = [
   // 9 — What the Town Is Built On
   [
     "A season of digging and a bad year for everyone. Some of those households are the ones in the low cottages.",
-    "Stone under eleven floors by Monday, and the leat stays. You made the wrong thing bearable, which is how it lasted sixty years.",
+    "Stone under eleven floors, starting Monday, and the leat stays. You made the wrong thing bearable, which is how it lasted sixty years.",
     "You made them look at one another. Towns do not forgive the one who held the mirror up.",
     "You walked out. The water runs on without you, and you knew that before you took the first step.",
   ],

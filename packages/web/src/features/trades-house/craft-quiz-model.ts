@@ -422,7 +422,7 @@ export const CRAFT_QUESTIONS = [
       },
       {
         lead: "Find out first.",
-        body: "Someone here knows; the oldest woman in the town was a child when it went up, and children remember fences the way hands remember a pattern. Knowledge kept back is a kind of theft; asking is only the other half of telling.",
+        body: "Someone here knows; the oldest woman in the town was a child when it went up, and children remember fences the way hands remember a pattern. Knowledge kept back is theft; asking is the other half of telling.",
         cost: "Asking makes you the stranger who questions things. That name is hard to put down again.",
         world: "weavers",
         axes: { a1: 1, a3: -1, a4: -3, a5: -1 },
@@ -569,14 +569,14 @@ export const CRAFT_QUESTIONS = [
       },
       {
         lead: "Keep the seed.",
-        body: "Not the food — the seed. You have three mouths and a hard four months, and a store of seed-corn that is next year. A garden eaten in one winter is two winters. Charity that eats the seed is a slower harm, not a kindness.",
+        body: "Not the food — the seed. Three mouths, a hard four months, and a store of seed-corn that is next year. A garden eaten in one winter is two winters. Charity that eats the seed is a slower harm.",
         cost: "You will eat in a town that watched you not share, and it will remember longer than the winter.",
         world: "gardeners",
         axes: { a1: -1, a2: -1, a3: 2, a4: -3, a5: -2 },
       },
       {
         lead: "Stretch what there is.",
-        body: "Bones make broth, and barley that will not make bread will make small beer, and a small thing warm feeds four. You cannot make more food. You can make it go further, and warmer.",
+        body: "Bones make broth, and barley that will not make bread will make small beer, and a small thing warm feeds four. You cannot make more food. You can make it go further.",
         cost: "It is the work of every day, unpaid, and nobody thanks the person who makes thin things bearable.",
         world: "maltmen",
         axes: { a1: -2, a2: -1, a3: -3, a4: -1, a5: -1 },
