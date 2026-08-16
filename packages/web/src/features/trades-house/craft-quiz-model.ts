@@ -802,7 +802,7 @@ export const CRAFT_WORLD_HOMES: Readonly<Record<CraftId, number>> = Object.freez
       for (const option of question.options) acc[option.world] += 1;
       return acc;
     },
-    { ...ZERO_WORLD_TALLY } as Record<CraftId, number>,
+    { ...ZERO_WORLD_TALLY },
   ),
 );
 
