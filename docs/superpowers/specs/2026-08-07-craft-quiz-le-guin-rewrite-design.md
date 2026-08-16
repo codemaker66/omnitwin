@@ -1,7 +1,7 @@
 # The Craft Quiz, rewritten: Jung's arc in Le Guin's voice
 
 **Date:** 2026-08-07
-**Status:** design approved; drafting
+**Status:** shipped — see "The world channel" below (2026-08-16)
 **Supersedes:** the Dostoyevsky×D&D brief at `docs/trades-house/craft-research/17-dostoyevsky-dnd-brief.md`
 
 ## Why
@@ -168,3 +168,40 @@ unchanged.
 - **Losing the Scots loses a differentiator.** The Convener's dialect was the
   most distinctive thing about the quiz. The new register must earn that back
   through quality of prose, or the change is a downgrade.
+
+## The world channel (added 2026-08-16)
+
+Shipped in `847fd6a9`. Blake's follow-on brief was that all fourteen Crafts must
+have an equal chance, reached through answers a scholar would recognise as the
+Craft's own tenets and a lay reader could guess at ("gardeners would all be about
+nature, hammermen may be about metal and strength").
+
+Measured first (`docs/trades-house/quiz-authoring/calibrate.mjs`, 40,000
+respondents against the shipped model): the R3 sorting was a lottery. Consistent
+respondents landed on Coopers 15.9% of the time and Gardeners 1.3% — a **12×**
+spread — and each Craft's strongest answers said nothing a lay reader could
+recognise. Two causes, both measured: the fourteen directions crowd
+(Masons–Weavers 0.79, Hammermen–Tailors 0.77) and coverage is uneven (Gardeners
+2 options, Coopers 10). Vector nudging alone stalls at 10/14.
+
+**The change:** every option carries `world: CraftId` — the one Craft whose
+material and moral world the answer lives in. Score = temperament cosine +
+`WORLD_WEIGHT` (0.9, swept not guessed) × share of that Craft's homes chosen.
+Normalised per Craft, so four homes are no advantage over three.
+
+Invariants, each held by a test in `craft-quiz-reachability.test.ts`:
+four DISTINCT worlds per scene; 3–4 homes per Craft; a home answer's temperament
+vector within cos 0.55 of its Craft (the two channels may never contradict);
+every home answer contains at least one word of its Craft's world-lexicon (lay
+legibility — a test of the writing); no Craft NAMED anywhere; a seeded
+20,000-respondent dice population keeps every Craft between 4% and 11%.
+
+Allocation was solved, not eyeballed (`allocate-worlds.mjs`, hand-scored fit
+matrix from the fourteen dossiers). Vectors were then tuned with bounded moves
+only (`tune-r4.mjs`: ±1 steps, ≤2 from authored, dominant axis locked).
+
+**Result** on the shipped model: dice 5.1–8.6% (was 2.0–17.0%); consistent
+respondents 4.6–9.2% (was 1.3–15.9%); pure and world-pure respondents 14/14.
+
+**Constraint update:** the old rule "no craft nouns" (L8) is now precisely "no
+Craft *name*". Its world — iron, seed, bread, razor — may and must be shown.
