@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { QUIZ_CRAFT_IDS, QuizRunSchema } from "@omnitwin/types";
 import {
   AXIS_KEYS,
   type AxisTotals,
@@ -101,6 +102,18 @@ describe("craft quiz model", () => {
     expect(href).toMatch(/^mailto:info@tradeshallglasgow\.co\.uk\?/u);
     expect(decodeURIComponent(href)).toContain("Craft introduction — THE HAMMERMEN");
     expect(decodeURIComponent(href)).toContain("My trade or profession:");
+  });
+});
+
+describe("the run record the page sends", () => {
+  // The types package validates runs without importing the quiz, so its idea
+  // of the Crafts and of the scene count is a copy. A copy drifts silently:
+  // TypeScript catches a Craft the enum lacks, but a thirteenth scene would
+  // make every send fail its own safeParse and the telemetry stop, unseen.
+  it("admits exactly this quiz's Crafts and this quiz's scene count", () => {
+    expect([...QUIZ_CRAFT_IDS].sort()).toEqual([...CRAFT_ORDER].sort());
+    expect(QuizRunSchema.shape.answers.safeParse(CRAFT_QUESTIONS.map(() => 0)).success).toBe(true);
+    expect(QuizRunSchema.shape.answers.safeParse([...CRAFT_QUESTIONS.map(() => 0), 0]).success).toBe(false);
   });
 });
 

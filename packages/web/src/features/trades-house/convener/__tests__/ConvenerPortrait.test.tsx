@@ -91,6 +91,19 @@ describe("ConvenerPortrait", () => {
     expect(typedText()).toBe(resting);
   });
 
+  it("leaves a scene WHOLE in the bubble when an aside cuts it off", async () => {
+    // The reader answered before he finished the scene. His reply is spoken
+    // as an aside; the scene must not be left half-typed behind it.
+    const ref = createRef<ConvenerHandle>();
+    render(<ConvenerPortrait ref={ref} />);
+    const scene = "The town gate must hang by dark, and the bolt sits proud of the frame.";
+    act(() => { void ref.current?.say(scene); });
+    await playOut(120);
+    expect(typedText().length).toBeLessThan(scene.length);
+    act(() => { ref.current?.speakAside("You heard the iron ring."); });
+    expect(typedText()).toBe(scene);
+  });
+
   it("clears every timer on unmount", async () => {
     const ref = createRef<ConvenerHandle>();
     const { unmount } = render(<ConvenerPortrait ref={ref} />);

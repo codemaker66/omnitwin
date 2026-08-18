@@ -421,6 +421,13 @@
       "when": 1784469600000,
       "tag": "0061_diary_commands",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1784556000000,
+      "tag": "0062_quiz_runs",
+      "breakpoints": true
     }
   ]
 }

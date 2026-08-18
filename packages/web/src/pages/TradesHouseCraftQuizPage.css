@@ -1744,9 +1744,9 @@
   /* Sized against the viewport HEIGHT, not width: the reveal is a tall stack,
      and a 360px medallion is what pushed it past the fold on a 1000px screen. */
   .trades-house-craft-quiz-page[data-screen="result"] .craft-result-medallion {
-    height: clamp(190px, 26vh, 300px);
+    height: clamp(180px, 22vh, 260px);
     margin-top: 0;
-    width: clamp(190px, 26vh, 300px);
+    width: clamp(180px, 22vh, 260px);
   }
 
   /* The reveal is a stack of eight blocks; trimming each gap is what buys the
@@ -2781,6 +2781,18 @@
     line-height: 1.32;
   }
 
+  /* Once he has replied the scene has been read. On the shortest phones a long
+     scene, fully spoken, plus his reply is a screen and a bit; so the bubble
+     yields to the reply and scrolls, rather than hiding a word or the page. */
+  .trades-house-craft-quiz-page[data-replying="true"] .convener-painting.is-compact .convener-painting-typed {
+    -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent);
+    mask-image: linear-gradient(to bottom, #000 72%, transparent);
+    max-height: calc(4 * 1.32em);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 0.4em;
+  }
+
   .craft-quiz-options.is-accordion {
     gap: 6px;
   }
@@ -2804,5 +2816,252 @@
 
   .craft-quiz-reply-text {
     line-height: 1.4;
+  }
+}
+
+/* ---- the one more thing --------------------------------------------------
+   A deliberation is two answers, not four: on a wide stage the 2x2 wall would
+   leave half the grid empty, so the two stand side by side across the whole
+   width, each with room to be read as a real choice. The phone accordion needs
+   no change — two rows instead of four. */
+@media (min-width: 980px) {
+  .trades-house-craft-quiz-page[data-screen="question"] .craft-quiz-options.is-deliberation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+    max-width: 1080px;
+  }
+}
+
+/* The counter reads "It was close · one more thing" — a different weight of
+   moment, so it takes a little of the gold the progress pips would have had. */
+.trades-house-craft-quiz-page[data-deliberating="true"] .craft-quiz-question-count {
+  color: #e6cf9b;
+  letter-spacing: 0.22em;
+}
+
+/* ---- the town remembers ---------------------------------------------------
+   Same aside as an observation, but the glyph is the warm gold of a thing
+   recalled rather than the cooler gold of a thing noticed. Small, deliberate:
+   the reader should feel a difference before they could name it. */
+.craft-quiz-reply-aside[data-memory] span {
+  color: rgba(240, 206, 140, 0.95);
+}
+
+/* ---- it hangs -----------------------------------------------------------------
+   The twelfth reply, when the answer left it between two: he says so here,
+   before the one more thing. The glyph goes to the deliberation's gold, the
+   same colour the next screen's kicker will wear, so the two read as one turn. */
+.craft-quiz-reply-aside[data-notice] span {
+  color: rgba(214, 178, 106, 1);
+}
+
+/* ---- your year --------------------------------------------------------------
+   The ledger of the twelve choices, in the order they were lived. It is the
+   shareable artefact, so it must read as a single object — a plate, not a
+   list — and it must NOT reopen the result-screen overflow that took a whole
+   session to close: two columns on a wide screen, small type everywhere,
+   and a share control that is a link in tone rather than a second big button. */
+.craft-result-year {
+  border-top: 1px solid rgba(214, 178, 106, 0.22);
+  margin: 6px auto 0;
+  max-width: 720px;
+  padding-top: 6px;
+  text-align: left;
+  width: 100%;
+}
+
+/* The summary is the title. Its marker is drawn by hand so it can be a small
+   gold pointer rather than the browser's black triangle. */
+.craft-result-year-title {
+  color: rgba(224, 186, 116, 0.9);
+  cursor: pointer;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.24em;
+  list-style: none;
+  margin: 0 0 4px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.craft-result-year-title::-webkit-details-marker { display: none; }
+
+/* A chevron drawn from two borders: the ornamental face has no glyph for it,
+   and a fallback glyph in a different face reads as a mistake. */
+.craft-result-year-name::after {
+  border-bottom: 1.5px solid currentColor;
+  border-right: 1.5px solid currentColor;
+  content: "";
+  display: inline-block;
+  height: 6px;
+  margin-left: 10px;
+  transform: translateY(-2px) rotate(-45deg);
+  transition: transform 200ms ease;
+  width: 6px;
+}
+
+.craft-result-year[open] .craft-result-year-name::after {
+  transform: translateY(-4px) rotate(45deg);
+}
+
+/* What is behind the door, on the door: the first line of your year and how
+   many more. In the reading face, not the ornamental one, so it reads as a
+   sentence and not a second heading. Gone once the ledger is open. */
+.craft-result-year-teaser {
+  color: #d9d0bd;
+  display: block;
+  font: italic 12px/1.4 Georgia, "Times New Roman", serif;
+  letter-spacing: 0;
+  margin-top: 3px;
+  text-transform: none;
+}
+
+.craft-result-year[open] .craft-result-year-teaser { display: none; }
+
+/* On a phone the open ledger is a sheet, and a sheet closes on a tap outside
+   it. The scrim is that tap: it sits under the sheet and over everything else. */
+.craft-result-year-scrim {
+  background: rgba(0, 0, 0, 0.35);
+  border: 0;
+  cursor: pointer;
+  inset: 0;
+  padding: 0;
+  position: fixed;
+  z-index: 5;
+}
+
+/* Wide screens: the ledger hangs beside the reveal, in the margin the result
+   never used. Zero cost in height, and it reads as a plate on the wall. */
+@media (min-width: 1180px) {
+  .craft-result-year {
+    border: 1px solid rgba(214, 178, 106, 0.22);
+    border-radius: 6px;
+    margin: 0;
+    max-width: none;
+    padding: 12px 16px 14px;
+    position: fixed;
+    right: clamp(20px, 3.5vw, 64px);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 250px;
+    background: rgba(9, 16, 30, 0.72);
+    backdrop-filter: blur(6px);
+  }
+
+  .craft-result-year .craft-result-year-title { cursor: default; }
+  .craft-result-year .craft-result-year-name::after { display: none; }
+  .craft-result-year .craft-result-year-teaser { display: none; }
+  .craft-result-year .craft-result-year-lines { columns: 1; font-size: 12.5px; }
+}
+
+.craft-result-year-lines {
+  color: #d9d0bd;
+  column-gap: 28px;
+  columns: 2;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12.5px;
+  font-style: italic;
+  line-height: 1.5;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.craft-result-year-lines li {
+  break-inside: avoid;
+  padding-left: 14px;
+  position: relative;
+}
+
+.craft-result-year-lines li::before {
+  color: rgba(224, 186, 116, 0.6);
+  content: "\00b7";
+  left: 2px;
+  position: absolute;
+}
+
+.craft-result-year-share {
+  background: none;
+  border: 1px solid rgba(214, 178, 106, 0.32);
+  border-radius: 999px;
+  color: rgba(230, 207, 155, 0.9);
+  cursor: pointer;
+  display: block;
+  font-family: Cinzel, Georgia, serif;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  margin: 8px auto 0;
+  padding: 5px 16px;
+  text-transform: uppercase;
+  transition: border-color 200ms ease, color 200ms ease;
+}
+
+.craft-result-year-share:hover,
+.craft-result-year-share:focus-visible {
+  border-color: rgba(230, 207, 155, 0.7);
+  color: #fff3d6;
+}
+
+/* Below the wide breakpoint the ledger OPENS AS A SHEET over the reveal rather
+   than pushing it down: a fixed panel costs the document no height, so the
+   result stays a single screen whether the sheet is open or shut. The title
+   row is the handle — tap to open, tap to close. */
+@media (max-width: 1179px) {
+  .craft-result-year { margin-top: 8px; padding-top: 8px; }
+  .craft-result-year-lines { column-gap: 18px; font-size: 11.5px; line-height: 1.42; }
+
+  .craft-result-year[open] {
+    background: rgba(9, 16, 30, 0.96);
+    border: 1px solid rgba(214, 178, 106, 0.32);
+    border-radius: 10px 10px 0 0;
+    bottom: 0;
+    box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.55);
+    left: 0;
+    margin: 0;
+    max-height: 72vh;
+    max-width: none;
+    overflow: auto;
+    padding: 12px 18px calc(16px + env(safe-area-inset-bottom));
+    position: fixed;
+    right: 0;
+    width: auto;
+    z-index: 6;
+  }
+
+  .craft-result-year[open] .craft-result-year-title { margin-bottom: 8px; }
+  .craft-result-year[open] .craft-result-year-lines { columns: 1; font-size: 13px; line-height: 1.55; }
+}
+
+@media (max-width: 979px) and (max-height: 700px) {
+  .craft-result-year-lines { font-size: 11px; line-height: 1.34; }
+  .craft-result-year-title { margin-bottom: 3px; }
+  /* The shortest phones were 3px over once the door had words on it. */
+  .craft-result-year-teaser { font-size: 11px; line-height: 1.2; margin-top: 1px; }
+}
+
+/* A 1280x800 laptop is ~30px short of the reveal. The medallion is the only
+   thing on the screen with height to spare. */
+@media (min-width: 980px) and (max-height: 830px) {
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-medallion {
+    height: clamp(136px, 16vh, 200px);
+    width: clamp(136px, 16vh, 200px);
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-reveal {
+    line-height: 1.36;
+  }
+
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-affinities {
+    padding-bottom: 8px;
+    padding-top: 8px;
+  }
+}
+
+/* At 2560 the fluid type has grown enough that the reveal runs three pixels
+   over on the longest Craft. The bottom padding is the honest thing to give. */
+@media (min-width: 2200px) {
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-quiz-result {
+    padding-bottom: 14px;
   }
 }

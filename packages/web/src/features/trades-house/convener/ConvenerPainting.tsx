@@ -226,6 +226,15 @@ export const ConvenerPainting = forwardRef<ConvenerHandle, ConvenerPaintingProps
       const line = linesRef.current?.get(text);
       const player = getConvenerVoicePlayer();
       if (line === undefined || isConvenerVoiceMuted() || !player.supported) return;
+      // If the scene is still being said — the reader answered before he had
+      // finished — settle it first: whole text in the bubble, its clock loop
+      // stopped. The player owns ONE element, so playing the aside would
+      // otherwise reset the clock the scene's loop is reading and the bubble
+      // would visibly retype the scene in step with the reply's audio.
+      if (speakingRef.current) {
+        if (typedRef.current !== null) typedRef.current.textContent = fullTextRef.current;
+        finishSay();
+      }
       speakingRef.current = true;
       setSpeaking(true);
       void player.play(line).then((audio) => {
@@ -241,7 +250,7 @@ export const ConvenerPainting = forwardRef<ConvenerHandle, ConvenerPaintingProps
         };
         audio.addEventListener("ended", done);
       });
-    }, []);
+    }, [finishSay]);
     speakAsideRef.current = speakAside;
 
     /**

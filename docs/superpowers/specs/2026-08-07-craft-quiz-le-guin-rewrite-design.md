@@ -205,3 +205,64 @@ respondents 4.6–9.2% (was 1.3–15.9%); pure and world-pure respondents 14/14.
 
 **Constraint update:** the old rule "no craft nouns" (L8) is now precisely "no
 Craft *name*". Its world — iron, seed, bread, razor — may and must be shown.
+
+## The Deliberation, the town remembering, Your Year, and the record (added 2026-08-18)
+
+Format research (`docs/trades-house/quiz-authoring/FORMAT-RESEARCH-2026-08-16.md`)
+kept the answering format and added four things. All shipped and reviewed by
+an adversarial workflow (voice editor, lore, TypeScript, security, UX, three
+blind legibility readers); every blocker and every "should" was applied.
+
+**The Deliberation** (`craft-quiz-deliberation.ts`). When the twelfth answer
+leaves the top two within `DELIBERATION_THRESHOLD` (0.15 on the blended
+score) he asks one more thing, written for the pair: twelve authored scenes for
+the pairs that finish close most often, else one composed from fourteen
+`CRAFT_WORLD_LINES` (body = the physical moment of the work; cost = the
+insider's price). The answer is weighted `DELIBERATION_WEIGHT` (1.5×) on both
+channels — it decides. It is announced by HIM, not a kicker: on the twelfth
+reply the aside is `DELIBERATION_PREAMBLE` ("It hangs between two, and I will
+not guess at you…") and Continue stays "Go on"; the deliberation screen wears
+"IT IS CLOSE · ONE MORE THING" and no pip; his reply is one line ("Then I have
+what I needed.") so the weighing, not the reply, says he has it. `verdict()`
+also reports `hung` (still within `HUNG_THRESHOLD` 0.04) and the reveal admits
+it: "…the last word was yours. So I have said X, and I will stand by it. Y had
+you by the sleeve all year, and would not have been wrong."
+
+**The town remembers** (`convener/convener-memories.ts`). Twenty-five asides
+keyed on an EARLIER world at scene N, spoken at scene M>N; ≤1 per scene, ≤3 per
+run, oldest wins; every line must be true whatever the current answer is, and
+none may grade the answer about to be given. Memory outranks observation;
+the preamble outranks both.
+
+**Your Year.** Every option (and every deliberation option) carries a `ledger`
+line ("Came in with iron."). The result shows them as a `<details>` — a plate
+beside the reveal ≥1180px, a bottom sheet with a scrim on phones — whose
+closed row says what is behind it ("Came in with iron — and 12 more"), with a
+button that names what it does where it is: "Share your year" (share sheet)
+or "Copy your year" (clipboard).
+
+**The record.** `@omnitwin/types` `QuizRunSchema` → `POST /public/quiz-runs`
+(`packages/api/src/routes/public-quiz-runs.ts`, `quiz_runs` table, migration
+0062). Twelve seat indices, the deliberation, the verdict, margin, hung,
+duration, viewport class — no PII by construction; DNT/GPC honoured; sent as
+text/plain with `keepalive` (a CORS-simple request that survives a closing
+tab). Route: `bodyLimit` 4096, `logLevel: "warn"` (no access line carrying the
+address), 300/hour per source (a room on one NAT). Consumers must recompute
+result/runnerUp/margin/hung from `answers` — the stored columns are the
+client's claim. `trustProxy: true` was measured (2026-08-18) not to be
+forgeable through Railway's edge.
+
+**Voice rules, sharpened by the editor's pass:** no tautology-epigrams ("Feet
+are feet"), no proverbs written to be quoted, no puns on the trade, no
+Latinate where a hand-word exists (receive/take, exacting/hard, relax), no
+"never once"/"simply"/"gladly" props, no instruction to the reader ("you must
+never", "remember that"). The narrator shows the debt; she does not state the
+law.
+
+**One bug the work exposed** (`ConvenerPainting.tsx`): the voice player owns a
+single audio element, so an aside started while the scene was still being
+spoken reset the clock the scene's typewriter was reading and the bubble
+visibly retyped. An aside now settles the scene first (whole text, loop
+stopped). That made the e2e measure the fully-spoken bubble at every reply,
+which found the 375×667 Q9 overflow; on short phones the replied bubble is now
+capped at four lines and scrolls under a fade.

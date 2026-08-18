@@ -58,6 +58,8 @@ async function collectCorpus() {
   const model = await import("../../src/features/trades-house/craft-quiz-model.ts");
   const lines = await import("../../src/features/trades-house/convener/convener-lines.ts");
   const observations = await import("../../src/features/trades-house/convener/convener-observations.ts");
+  const memories = await import("../../src/features/trades-house/convener/convener-memories.ts");
+  const deliberation = await import("../../src/features/trades-house/craft-quiz-deliberation.ts");
 
   const corpus = [];
   const add = (section, id, text) => {
@@ -81,6 +83,13 @@ async function collectCorpus() {
   lines.CONVENER_POKES.forEach((t, i) => { add("poke", `poke-${i + 1}`, t); });
   lines.CONVENER_IDLE_MURMURS.forEach((t, i) => { add("idle", `idle-${i + 1}`, t); });
   observations.CONVENER_OBSERVATIONS.forEach((t, i) => { add("observation", `observation-${i + 1}`, t); });
+  memories.CONVENER_MEMORY_LINES.forEach((t, i) => { add("memory", `memory-${i + 1}`, t); });
+  // The one more thing: its frame and reply, and the twelve bespoke scenes. The
+  // answers themselves are read, not spoken, like every other answer.
+  add("deliberation", "deliberation-preamble", deliberation.DELIBERATION_PREAMBLE);
+  add("deliberation", "deliberation-frame", deliberation.DELIBERATION_FRAME);
+  add("deliberation", "deliberation-reply", deliberation.DELIBERATION_REPLY);
+  deliberation.CRAFT_DELIBERATIONS.forEach((d) => { add("deliberation", `deliberation-${d.pair.join("-")}`, d.scene); });
   add("doze", "doze", lines.CONVENER_DOZE);
   add("wake", "wake", lines.CONVENER_WAKE);
 

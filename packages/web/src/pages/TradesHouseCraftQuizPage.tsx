@@ -27,6 +27,16 @@ import {
   type Observation,
   type ObservationId,
 } from "../features/trades-house/convener/convener-observations.js";
+import { recallAt, type Memory } from "../features/trades-house/convener/convener-memories.js";
+import {
+  DELIBERATION_PREAMBLE,
+  DELIBERATION_REPLY,
+  applyDeliberation,
+  deliberate,
+  verdict,
+  type Deliberation,
+} from "../features/trades-house/craft-quiz-deliberation.js";
+import { classifyViewport, recordQuizRun } from "../features/trades-house/quiz-telemetry.js";
 import {
   CONVENER_DELIBERATION,
   CONVENER_THRESHOLD,
@@ -42,13 +52,14 @@ import {
   buildCraftIntroductionMailto,
   ZERO_CRAFT_QUIZ_PROGRESS,
   rankCrafts,
+  type CraftQuizOption,
   type CraftQuizProgress,
   type CraftId,
   type CraftRankingEntry,
 } from "../features/trades-house/craft-quiz-model.js";
 import "./TradesHouseCraftQuizPage.css";
 
-type QuizScreen = "intro" | "threshold" | "question" | "weighing" | "result";
+type QuizScreen = "intro" | "threshold" | "question" | "deliberation" | "weighing" | "result";
 
 function railLabel(name: string): string {
   return name.replace(/^THE\s+/u, "");
@@ -161,6 +172,25 @@ interface QuestionScreenProps {
   readonly onContinue: () => void;
   /** Occasionally, what he has noticed about HOW you are answering. */
   readonly observation: Observation | null;
+  /** Rarer still: something the town remembers from earlier in the year. */
+  readonly memory: Memory | null;
+  /**
+   * Set only on the twelfth reply, when the answer just given left it hanging:
+   * he says so here, before the one more thing, and it outranks any memory or
+   * observation that scene might otherwise have earned.
+   */
+  readonly notice: string | null;
+  /**
+   * When set, this is not one of the twelve but the one more thing he asks when
+   * it was close: two answers, one from each world, and no progress pip.
+   */
+  readonly deliberation: Deliberation | null;
+  /**
+   * Whether Continue on the twelfth reply leads to the verdict. False when a
+   * deliberation is coming: promising "See your Craft" and then asking another
+   * question is the one framing that makes a close finish feel like a stall.
+   */
+  readonly verdictNext: boolean;
 }
 
 function QuestionScreen({
@@ -173,15 +203,21 @@ function QuestionScreen({
   reply,
   onContinue,
   observation,
+  memory,
+  notice,
+  deliberation,
+  verdictNext,
 }: QuestionScreenProps): ReactElement {
-  const question = CRAFT_QUESTIONS[questionIndex];
-  if (question === undefined) throw new RangeError(`Question ${String(questionIndex)} is unavailable.`);
-  const omen = midQuizOmen(progress, questionIndex);
+  const twelve = CRAFT_QUESTIONS[questionIndex];
+  if (twelve === undefined) throw new RangeError(`Question ${String(questionIndex)} is unavailable.`);
+  const question: { readonly scene: string; readonly options: readonly CraftQuizOption[] } = deliberation ?? twelve;
+  const omen = deliberation === null ? midQuizOmen(progress, questionIndex) : null;
+  const last = deliberation !== null || (questionIndex === CRAFT_QUESTIONS.length - 1 && verdictNext);
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const continueRef = useRef<HTMLButtonElement>(null);
 
   // A new scene arrives closed, so nobody answers the last question's shape.
-  useEffect(() => { setOpenIndex(null); }, [questionIndex]);
+  useEffect(() => { setOpenIndex(null); }, [questionIndex, deliberation]);
 
   // Move focus to Continue when he replies: a keyboard user should not have to
   // hunt for the only live control on the screen.
@@ -191,14 +227,18 @@ function QuestionScreen({
 
   return (
     <section className="craft-quiz-question" aria-labelledby="craft-question-title">
-      <p className="craft-quiz-sr-only" role="status" aria-live="polite">Question {questionIndex + 1} of {CRAFT_QUESTIONS.length}</p>
-      <QuizProgress activeIndex={questionIndex} />
-      <p className="craft-quiz-question-count">QUESTION {questionIndex + 1} OF {CRAFT_QUESTIONS.length}</p>
+      <p className="craft-quiz-sr-only" role="status" aria-live="polite">
+        {deliberation === null ? `Question ${String(questionIndex + 1)} of ${String(CRAFT_QUESTIONS.length)}` : "One more question. It is close."}
+      </p>
+      {deliberation === null ? <QuizProgress activeIndex={questionIndex} /> : null}
+      <p className="craft-quiz-question-count">
+        {deliberation === null ? `QUESTION ${String(questionIndex + 1)} OF ${String(CRAFT_QUESTIONS.length)}` : "IT IS CLOSE · ONE MORE THING"}
+      </p>
       {omen === null ? null : <p className="craft-quiz-omen">{omen}</p>}
       {/* The Convener speaks this aloud; on narrow viewports his bubble is its
           only visible rendering, so it stays in the tree either way. */}
       <h1 id="craft-question-title">{question.scene}</h1>
-      <div className={`craft-quiz-options${compact ? " is-accordion" : ""}${reply === null ? "" : " is-replying"}`}>
+      <div className={`craft-quiz-options${compact ? " is-accordion" : ""}${reply === null ? "" : " is-replying"}${deliberation === null ? "" : " is-deliberation"}`}>
         {question.options.map((option, optionIndex) => {
           const picked = pickedIndex === optionIndex;
           const faded = pickedIndex !== null && !picked;
@@ -251,7 +291,15 @@ function QuestionScreen({
           {/* Rare by design — twice in twelve scenes, not every answer. He is
               remarking on HOW you answered, so it is set apart from the reply
               to what you answered. */}
-          {observation === null ? null : (
+          {notice !== null ? (
+            <p className="craft-quiz-reply-aside" data-notice="true">
+              <span aria-hidden="true">❦</span> {notice}
+            </p>
+          ) : memory !== null ? (
+            <p className="craft-quiz-reply-aside" data-memory="true">
+              <span aria-hidden="true">❦</span> {memory.text}
+            </p>
+          ) : observation === null ? null : (
             <p className="craft-quiz-reply-aside" data-observation={observation.id}>
               <span aria-hidden="true">❦</span> {observation.text}
             </p>
@@ -262,13 +310,81 @@ function QuestionScreen({
             ref={continueRef}
             onClick={onContinue}
           >
-            {questionIndex === CRAFT_QUESTIONS.length - 1 ? "See your Craft" : "Go on"}
+            {last ? "See your Craft" : "Go on"}
           </button>
         </div>
       )}
 
       <p className="craft-quiz-est">Trades House of Glasgow · Est. 1605</p>
     </section>
+  );
+}
+
+interface YourYearProps {
+  readonly lines: readonly string[];
+  readonly craftName: string;
+}
+
+/**
+ * Your year, as a ledger. Every path through the town is one of 16.7 million,
+ * and this is the one that was yours — the thing worth keeping, and worth
+ * showing someone. The share sheet where there is one; the clipboard where
+ * there is not (desktop, mostly). Either way the text is the same.
+ */
+function YourYear({ lines, craftName }: YourYearProps): ReactElement | null {
+  // Wide screens show the ledger open beside the reveal; everything narrower
+  // gets a closed row that opens into a sheet. Read once: a viewport that
+  // crosses 1180px mid-result is not a case worth a resize listener.
+  const [wide] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1180px)").matches);
+  const [open, setOpen] = useState(wide);
+  const [copied, setCopied] = useState(false);
+  if (lines.length === 0) return null;
+  const [first] = lines;
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  const text = ["My year in the town", "", ...lines, "", `The Chain chose ${craftName}.`, "venviewer.com/quiz"].join("\n");
+  const share = async (): Promise<void> => {
+    try {
+      if (canShare) {
+        await navigator.share({ title: "My year in the town", text });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => { setCopied(false); }, 2_400);
+    } catch {
+      // A dismissed share sheet or a locked-down clipboard: nothing to recover from.
+    }
+  };
+  // On a wide screen the ledger hangs beside the reveal, in the margin the
+  // result never used, so it costs no height. On a phone it is a row that opens
+  // on a tap — the rule for everything on a phone here is no scroll, tap to
+  // expand where needed — and the share control lives inside it.
+  // The closed row says what is behind it — the first line of your year, and
+  // how many more — so it reads as a door and not as one more heading. The
+  // button names what it does where it is: a share sheet on a phone, the
+  // clipboard on a desk. The sheet closes on a tap outside it, like any sheet.
+  return (
+    <>
+      {open && !wide ? (
+        <button type="button" className="craft-result-year-scrim" aria-label="Close your year" onClick={() => { setOpen(false); }} />
+      ) : null}
+      <details className="craft-result-year" open={open} onToggle={(event) => { setOpen(event.currentTarget.open); }}>
+        <summary className="craft-result-year-title">
+          <span className="craft-result-year-name">Your year</span>
+          {first === undefined ? null : (
+            <em className="craft-result-year-teaser">
+              {lines.length > 1 ? `${first.replace(/\.$/u, "")} — and ${String(lines.length - 1)} more` : first}
+            </em>
+          )}
+        </summary>
+        <ol className="craft-result-year-lines" aria-label="Your year, one line per answer">
+          {lines.map((line, index) => <li key={`${String(index)}-${line}`}>{line}</li>)}
+        </ol>
+        <button type="button" className="craft-result-year-share" onClick={() => { void share(); }}>
+          {copied ? "Copied" : canShare ? "Share your year" : "Copy your year"}
+        </button>
+      </details>
+    </>
   );
 }
 
@@ -432,10 +548,14 @@ function WeighingScreen({ onDecided, compact }: WeighingScreenProps): ReactEleme
 
 interface ResultScreenProps {
   readonly ranking: readonly CraftRankingEntry[];
+  /** The top two finished within a hair of each other even after the deliberation. */
+  readonly hung: boolean;
+  /** Your year: one line per answer, in order. The shareable artefact. */
+  readonly ledger: readonly string[];
   readonly onRetake: () => void;
 }
 
-function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
+function ResultScreen({ ranking, hung, ledger, onRetake }: ResultScreenProps): ReactElement {
   const [winner, runnerUp, third] = ranking;
   if (winner === undefined || runnerUp === undefined || third === undefined) {
     throw new Error("The Craft result requires three ranked Crafts.");
@@ -466,10 +586,21 @@ function ResultScreen({ ranking, onRetake }: ResultScreenProps): ReactElement {
           is also the line people screenshot. */}
       <p className="craft-result-affinities">
         <span className="craft-result-affinities-who">The Convener, quieter</span>
-        “It ran closer than you would think. You were a hair from <strong>{runnerUp.profile.name}</strong>,
-        and I nearly said <strong>{third.profile.name}</strong> aloud before I caught myself.
-        Any of the three would have you. Go and ask them.”
+        {hung ? (
+          <>
+            “It ran between two to the last word, and the last word was yours. So I have said
+            <strong> {craft.name}</strong>, and I will stand by it. <strong>{runnerUp.profile.name}</strong> had
+            you by the sleeve all year, and would not have been wrong. Go and knock at both doors, and say I sent you.”
+          </>
+        ) : (
+          <>
+            “It ran closer than you would think. You were a hair from <strong>{runnerUp.profile.name}</strong>,
+            and I nearly said <strong>{third.profile.name}</strong> aloud before I caught myself.
+            Any of the three would have you. Go and ask them.”
+          </>
+        )}
       </p>
+      <YourYear lines={ledger} craftName={craft.name} />
       <a className="craft-result-introduction" href={buildCraftIntroductionMailto(winner.craftId)}>Request an introduction</a>
       <button type="button" className="craft-result-retake" onClick={onRetake}>Retake the questions</button>
       <a className="craft-result-leaflet" href="/trades-house/leaflet">View the visitor leaflet</a>
@@ -496,13 +627,25 @@ export function TradesHouseCraftQuizPage(): ReactElement {
   const spentObservationsRef = useRef<Set<ObservationId>>(new Set());
   const priorRunsRef = useRef(0);
   const [observation, setObservation] = useState<Observation | null>(null);
+  // ---- the town remembers, and the one more thing ----
+  const worldsRef = useRef<CraftId[]>([]);
+  const spokenMemoriesRef = useRef<Set<string>>(new Set());
+  const [memory, setMemory] = useState<Memory | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // The reveal has two callers — the weighing's last beat and "Tell me now" —
+  // and a click in the gap between that beat's commit and its passive effect
+  // reaches both. One run is banked and recorded once.
+  const revealedRef = useRef(false);
+  const [deliberation, setDeliberation] = useState<Deliberation | null>(null);
+  const [deliberationPick, setDeliberationPick] = useState<0 | 1 | null>(null);
+  const runStartedAtRef = useRef<number>(Date.now());
 
   // Fetch the voice manifest while the visitor is still reading the invitation.
   // The portrait mounts on the question screen and speaks in the same tick, so
   // starting the fetch there means the opening scene races it — and loses.
   useEffect(() => { void loadConvenerVoice(); }, []);
   const wideStage = useMediaQuery("(min-width: 980px)");
-  const ranking = useMemo(() => rankCrafts(progress), [progress]);
+  const outcome = useMemo(() => verdict(progress), [progress]);
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -529,6 +672,14 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     setObservation(null);
     sceneShownAtRef.current = Date.now();
     setProgress(ZERO_CRAFT_QUIZ_PROGRESS);
+    worldsRef.current = [];
+    spokenMemoriesRef.current = new Set();
+    setMemory(null);
+    setNotice(null);
+    setDeliberation(null);
+    setDeliberationPick(null);
+    runStartedAtRef.current = Date.now();
+    revealedRef.current = false;
     setQuestionIndex(0);
     setPickedIndex(null);
     setReply(null);
@@ -537,6 +688,13 @@ export function TradesHouseCraftQuizPage(): ReactElement {
 
   function resetQuiz(): void {
     setProgress(ZERO_CRAFT_QUIZ_PROGRESS);
+    worldsRef.current = [];
+    spokenMemoriesRef.current = new Set();
+    setMemory(null);
+    setNotice(null);
+    setDeliberation(null);
+    setDeliberationPick(null);
+    revealedRef.current = false;
     setQuestionIndex(0);
     setPickedIndex(null);
     setReply(null);
@@ -548,7 +706,8 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     const option = CRAFT_QUESTIONS[questionIndex]?.options[optionIndex];
     if (option === undefined) return;
     setPickedIndex(optionIndex);
-    setProgress(applyCraftQuizAnswer(progress, questionIndex, optionIndex));
+    const next = applyCraftQuizAnswer(progress, questionIndex, optionIndex);
+    setProgress(next);
     // Answering opens his reply and stops there. Nothing advances on a clock:
     // the reader decides when they have finished with the line.
     // Everything he might remark on, recorded before the reaction is chosen.
@@ -563,8 +722,20 @@ export function TradesHouseCraftQuizPage(): ReactElement {
       },
       spentObservationsRef.current,
     );
-    if (noticed !== null) spentObservationsRef.current.add(noticed.id);
-    setObservation(noticed);
+    // The town remembering outranks a remark on your manner: it is rarer, and
+    // it is what makes the twelve feel written for you. An unspent observation
+    // simply waits for a later scene.
+    worldsRef.current[questionIndex] = option.world;
+    // And on the twelfth, if it left it hanging, he says so now — before the
+    // one more thing, and above anything else he might have said.
+    const hanging = questionIndex === CRAFT_QUESTIONS.length - 1 && deliberate(next) !== null ? DELIBERATION_PREAMBLE : null;
+    setNotice(hanging);
+    const recalled = hanging === null ? recallAt(questionIndex, worldsRef.current, spokenMemoriesRef.current) : null;
+    if (recalled !== null) spokenMemoriesRef.current.add(recalled.text);
+    setMemory(recalled);
+    const shownObservation = hanging === null && recalled === null ? noticed : null;
+    if (shownObservation !== null) spentObservationsRef.current.add(shownObservation.id);
+    setObservation(shownObservation);
 
     const reaction = convenerReaction(questionIndex, optionIndex);
     setReply(reaction);
@@ -572,37 +743,90 @@ export function TradesHouseCraftQuizPage(): ReactElement {
     // He SAYS the reply while the panel shows it. Aside, not say(): his bubble
     // must keep holding the scene, or answering would wipe the question the
     // reader is still weighing.
-    convenerRef.current?.speakAside(reaction, noticed?.text ?? null);
+    convenerRef.current?.speakAside(reaction, hanging ?? recalled?.text ?? shownObservation?.text ?? null);
+  }
+
+  /** Your year, one line per answer, in the order you lived it. */
+  function ledgerLines(): readonly string[] {
+    const lines: string[] = seatsRef.current.map((seat, sceneIndex) => CRAFT_QUESTIONS[sceneIndex]?.options[seat]?.ledger ?? "");
+    if (deliberation !== null && deliberationPick !== null) lines.push(deliberation.options[deliberationPick].ledger);
+    return lines.filter((line) => line !== "");
+  }
+
+  /** The one more thing. Weighted as the deciding answer; then the weighing. */
+  function answerDeliberation(optionIndex: number): void {
+    if (deliberation === null || deliberationPick !== null) return;
+    if (optionIndex !== 0 && optionIndex !== 1) return;
+    setDeliberationPick(optionIndex);
+    setProgress(applyDeliberation(progress, deliberation, optionIndex));
+    setReply(DELIBERATION_REPLY);
+    convenerRef.current?.express("smile", 1_400);
+    convenerRef.current?.speakAside(DELIBERATION_REPLY);
   }
 
   // Stable identity: WeighingScreen's handover effect lists this in its deps,
   // and a fresh arrow every render would make that effect churn.
   const revealCraft = useCallback(() => {
+    if (revealedRef.current) return;
+    revealedRef.current = true;
     // Banked at the reveal, not at BEGIN: a run abandoned at question three is
     // not a visit he should claim to remember.
     recordCompletedRun();
+    // And recorded, without anything that could name the visitor, so the
+    // fairness of the sorting can one day be measured on people rather than
+    // on the Gaussians it was tuned against.
+    const [first, second] = outcome.ranking;
+    if (first !== undefined && second !== undefined && seatsRef.current.length === CRAFT_QUESTIONS.length) {
+      recordQuizRun({
+        quiz: "trades-house-craft",
+        answers: [...seatsRef.current],
+        deliberation: deliberation !== null && deliberationPick !== null
+          ? { pair: [deliberation.pair[0], deliberation.pair[1]], choice: deliberationPick, authored: deliberation.authored }
+          : null,
+        result: first.craftId,
+        runnerUp: second.craftId,
+        margin: Math.max(-4, Math.min(4, first.score - second.score)),
+        hung: outcome.hung,
+        durationMs: Math.max(0, Math.min(6 * 60 * 60 * 1000, Date.now() - runStartedAtRef.current)),
+        viewport: classifyViewport(window.innerWidth),
+      });
+    }
     setScreen("result");
-  }, []);
+  }, [deliberation, deliberationPick, outcome]);
 
   function continueFromReply(): void {
     setReply(null);
     setObservation(null);
+    setMemory(null);
+    setNotice(null);
     sceneShownAtRef.current = Date.now();
     setPickedIndex(null);
     // The last scene hands over to the deliberation, never straight to the
     // verdict: an instant answer after twelve dilemmas reads as a lookup.
-    if (questionIndex === CRAFT_QUESTIONS.length - 1) setScreen("weighing");
-    else setQuestionIndex((current) => current + 1);
+    if (screen === "deliberation") { setScreen("weighing"); return; }
+    if (questionIndex === CRAFT_QUESTIONS.length - 1) {
+      // Only when it was close: one more thing, written for the pair.
+      const asked = deliberate(progress);
+      if (asked !== null) { setDeliberation(asked); setScreen("deliberation"); return; }
+      setScreen("weighing");
+      return;
+    }
+    setQuestionIndex((current) => current + 1);
   }
 
   return (
-    <main className="trades-house-craft-quiz-page" data-screen={screen}>
+    <main
+      className="trades-house-craft-quiz-page"
+      data-screen={screen === "deliberation" ? "question" : screen}
+      data-deliberating={screen === "deliberation" ? "true" : undefined}
+      data-replying={reply !== null ? "true" : undefined}
+    >
       <div className="trades-house-craft-quiz-shell">
         {screen === "intro" ? <IntroScreen onBegin={beginQuiz} /> : null}
         {screen === "threshold" ? (
           <ThresholdScreen onReady={() => { setScreen("question"); }} compact={!wideStage} />
         ) : null}
-        {screen === "question" ? (
+        {screen === "question" || screen === "deliberation" ? (
           <div className="craft-quiz-stage">
             <div className="craft-quiz-stage-portrait">
               <Convener
@@ -611,7 +835,7 @@ export function TradesHouseCraftQuizPage(): ReactElement {
                 /* His bubble always holds the SCENE. The reply lives in its own
                    panel beside the options, so answering never wipes the
                    question the reader is still thinking about. */
-                restingLine={CRAFT_QUESTIONS[questionIndex]?.scene ?? null}
+                restingLine={screen === "deliberation" ? (deliberation?.scene ?? null) : (CRAFT_QUESTIONS[questionIndex]?.scene ?? null)}
                 onSkip={() => { skipsRef.current += 1; }}
               />
             </div>
@@ -619,17 +843,28 @@ export function TradesHouseCraftQuizPage(): ReactElement {
               questionIndex={questionIndex}
               progress={progress}
               compact={!wideStage}
-              onAnswer={answerQuestion}
-              pickedIndex={pickedIndex}
+              onAnswer={screen === "deliberation" ? answerDeliberation : answerQuestion}
+              pickedIndex={screen === "deliberation" ? deliberationPick : pickedIndex}
               reply={reply}
               onContinue={continueFromReply}
               onOptionHover={(clientX, clientY) => { convenerRef.current?.glanceAt(clientX, clientY); }}
-              observation={observation}
+              observation={screen === "deliberation" ? null : observation}
+              memory={screen === "deliberation" ? null : memory}
+              notice={screen === "deliberation" ? null : notice}
+              deliberation={screen === "deliberation" ? deliberation : null}
+              verdictNext={notice === null}
             />
           </div>
         ) : null}
         {screen === "weighing" ? <WeighingScreen onDecided={revealCraft} compact={!wideStage} /> : null}
-        {screen === "result" ? <ResultScreen ranking={ranking} onRetake={resetQuiz} /> : null}
+        {screen === "result" ? (
+          <ResultScreen
+            ranking={outcome.ranking}
+            hung={outcome.hung}
+            ledger={ledgerLines()}
+            onRetake={resetQuiz}
+          />
+        ) : null}
       </div>
     </main>
   );

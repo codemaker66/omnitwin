@@ -48,19 +48,59 @@ async function expectRevealOutranksAside(page: Page): Promise<void> {
   ).toBeLessThanOrEqual(size.reveal);
 }
 
+// BEGIN opens the threshold, where he says what this is; the reader passes it
+// with "Skip ahead" (or "I am ready" once he has finished). Only then the first
+// scene. Every walk goes through here.
+async function beginAndPassThreshold(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
+  const pass = page.getByRole("button", { name: /Skip ahead|I am ready/u });
+  await expect(pass).toBeVisible({ timeout: 20_000 });
+  await pass.click();
+}
+
+// If the twelve finish close, he asks one more thing: two answers, the same
+// reply-then-continue rhythm. Whether it fires depends on the path, so every
+// walk must be ready for it and must not assume it. Takes the first answer.
+async function passDeliberationIfAsked(page: Page, expandsBeforeCommitting: boolean): Promise<void> {
+  const deliberating = page.locator('[data-deliberating="true"]');
+  const weighing = page.locator(".craft-quiz-weighing");
+  await expect(deliberating.or(weighing)).toBeVisible({ timeout: 20_000 });
+  if (await deliberating.count() === 0) return;
+  const two = page.locator(".craft-quiz-option");
+  await expect(two).toHaveCount(2);
+  await two.nth(0).click();
+  if (expandsBeforeCommitting) await two.nth(0).click();
+  const advance = page.getByRole("button", { name: "See your Craft" });
+  await expect(advance).toBeVisible({ timeout: 20_000 });
+  await expectNoPageScroll(page);
+  await advance.click();
+}
+
 // Desktop walks the whole quiz in one click per scene; a phone needs one tap to
 // open the option and a second to commit.
 async function answerEveryScene(page: Page, expandsBeforeCommitting: boolean): Promise<void> {
-  await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
+  await beginAndPassThreshold(page);
   for (let questionIndex = 0; questionIndex < 12; questionIndex += 1) {
     const option = page.locator(".craft-quiz-option").nth(2);
     await expect(option).toBeVisible({ timeout: 20_000 });
     await option.click();
     if (expandsBeforeCommitting) await option.click();
-    const advance = page.getByRole("button", { name: questionIndex === 11 ? "See your Craft" : "Go on" });
+    // On the twelfth reply the button promises the verdict only if the
+    // verdict is next; when it hung he says so and it stays "Go on".
+    const advance = page.getByRole("button", { name: questionIndex === 11 ? /^(See your Craft|Go on)$/u : "Go on" });
     await expect(advance).toBeVisible({ timeout: 20_000 });
     await advance.click();
   }
+  await passDeliberationIfAsked(page, expandsBeforeCommitting);
+}
+
+/** The Craft the reveal names. Read, not assumed: the writing moves and the
+ *  fixed path lands where the sorting puts it, and asserting a NAME here proved
+ *  only that the words had not changed. */
+async function revealedCraft(page: Page): Promise<string> {
+  const name = page.locator(".craft-quiz-result h1");
+  await expect(name).toBeVisible({ timeout: 20_000 });
+  return (await name.textContent())?.trim() ?? "";
 }
 
 // The last answer hands over to his deliberation, and the verdict follows only
@@ -69,7 +109,7 @@ async function answerEveryScene(page: Page, expandsBeforeCommitting: boolean): P
 async function expectDeliberationThenVerdict(page: Page): Promise<void> {
   const weighing = page.locator(".craft-quiz-weighing");
   await expect(weighing).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeHidden();
+  await expect(page.locator(".craft-quiz-result h1")).toBeHidden();
   await expectNoPageScroll(page);
   // Skipping is offered because anyone who has answered twelve dilemmas is
   // entitled to be impatient; taking it must land on the same verdict.
@@ -93,7 +133,7 @@ for (const desktop of [
     await answerEveryScene(page, false);
     await expectDeliberationThenVerdict(page);
 
-    await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
+    expect(await revealedCraft(page)).toMatch(/^THE /u);
     await expect(page.getByRole("link", { name: "Request an introduction" })).toBeVisible();
     // The whole point of leaving the phone frame: the reveal uses the screen.
     const shell = await page.locator(".trades-house-craft-quiz-shell").boundingBox();
@@ -161,10 +201,10 @@ for (const desktop of [{ width: 2048, height: 1200 }, { width: 2000, height: 930
     await expect(page.locator(".craft-quiz-intro-foot")).toBeVisible();
     await expectNoPageScroll(page);
 
-    await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
+    await beginAndPassThreshold(page);
 
   // The Convener holds the stage beside the question…
-  await expect(page.getByRole("button", { name: "Ye Auld Convener — poke the portrait" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Convener — poke the portrait/u })).toBeVisible();
 
   // …and the four options sit in a two-column grid: the second beside the
   // first, the third starting a new row beneath it.
@@ -199,7 +239,7 @@ for (const viewport of IPHONE_VIEWPORTS) {
     await expect(page.getByRole("heading", { name: "Which Craft is yours?" })).toBeVisible();
     await expectNoPageScroll(page);
 
-    await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
+    await beginAndPassThreshold(page);
     for (let questionIndex = 0; questionIndex < 12; questionIndex += 1) {
       // Two polite status regions coexist now: the quiz's progress announcer
       // and the Convener's speech mirror. Address the quiz's own.
@@ -221,7 +261,7 @@ for (const viewport of IPHONE_VIEWPORTS) {
 
       // His reply is its own panel and it WAITS. Nothing advances on a timer,
       // so the scene is still on screen behind it — and the reply must fit too.
-      const advance = page.getByRole("button", { name: questionIndex === 11 ? "See your Craft" : "Go on" });
+      const advance = page.getByRole("button", { name: questionIndex === 11 ? /^(See your Craft|Go on)$/u : "Go on" });
       await expect(advance).toBeVisible({ timeout: 20_000 });
       await expect(page.locator(".craft-quiz-question-count"))
         .toHaveText(`QUESTION ${String(questionIndex + 1)} OF 12`);
@@ -229,8 +269,9 @@ for (const viewport of IPHONE_VIEWPORTS) {
       await advance.click();
     }
 
+    await passDeliberationIfAsked(page, true);
     await expectDeliberationThenVerdict(page);
-    await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
+    expect(await revealedCraft(page)).toMatch(/^THE /u);
     await expect(page.getByRole("link", { name: "Request an introduction" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Retake the questions" })).toBeVisible();
     await expectRevealOutranksAside(page);
@@ -248,7 +289,15 @@ test("the deliberation can be skipped, and skipping does not change the Craft", 
   await answerEveryScene(page, false);
   await expect(page.locator(".craft-quiz-weighing")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Tell me now" }).click();
+  const skipped = await revealedCraft(page);
 
-  await expect(page.getByRole("heading", { name: "THE MALTMEN" })).toBeVisible({ timeout: 20_000 });
+  // The same path, waited out.
+  await page.goto("/quiz");
+  await page.evaluate(async () => { await document.fonts.ready; });
+  await answerEveryScene(page, false);
+  await expect(page.locator(".craft-quiz-weighing")).toBeVisible({ timeout: 20_000 });
+  const waited = await revealedCraft(page);
+  expect(waited, "skipping the ceremony must not change the Craft").toBe(skipped);
+  expect(skipped).toMatch(/^THE /u);
   await expectNoPageScroll(page);
 });
