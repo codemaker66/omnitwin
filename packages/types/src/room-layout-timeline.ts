@@ -116,6 +116,7 @@ export type RoomLayoutTimelineInvalidReason = z.infer<
 const AvailableKeyframeSchema = z.object({
   state: z.literal("available"),
   snapshotId: PhaseLayoutSnapshotIdSchema,
+  snapshotHash: z.string().regex(/^[a-f0-9]{64}$/u),
   snapshotStatus: z.literal("frozen"),
   canonicalSnapshotId: z.string().uuid(),
   proofDigest: z.string().regex(/^[a-f0-9]{64}$/u),
@@ -296,6 +297,14 @@ export const RoomLayoutTimelineFrameSchema = z.object({
   }
 
   if (frame.keyframe.state === "available") {
+    const payloadDigest = canonicalLayoutSnapshotDigest(frame.keyframe.payload);
+    if (frame.keyframe.snapshotHash !== payloadDigest) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["keyframe", "snapshotHash"],
+        message: "Available keyframe snapshotHash must match its exact canonical payload.",
+      });
+    }
     if (frame.keyframe.objectCount !== frame.keyframe.payload.objects.length) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -316,7 +325,7 @@ export const RoomLayoutTimelineFrameSchema = z.object({
       (
         runtimeBinding.phaseLayoutSnapshotId !== frame.keyframe.snapshotId ||
         runtimeBinding.canonicalSnapshotId !== frame.keyframe.canonicalSnapshotId ||
-        runtimeBinding.snapshotHash !== canonicalLayoutSnapshotDigest(frame.keyframe.payload) ||
+        runtimeBinding.snapshotHash !== frame.keyframe.snapshotHash ||
         runtimeBinding.venueId !== frame.keyframe.payload.venueId ||
         runtimeBinding.spaceId !== frame.keyframe.payload.spaceId ||
         runtimeBinding.venueSlug !== frame.keyframe.payload.venueRuntime.venueSlug ||

@@ -197,6 +197,7 @@ describe("resolveRoomLayoutTimelineKeyframe", () => {
     expect(keyframe).toMatchObject({
       state: "available",
       snapshotStatus: "frozen",
+      snapshotHash: canonicalLayoutSnapshotDigest(PAYLOAD),
       objectCount: PAYLOAD.objects.length,
       payload: PAYLOAD,
     });

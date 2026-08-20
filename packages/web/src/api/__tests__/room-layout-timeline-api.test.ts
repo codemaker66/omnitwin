@@ -65,6 +65,7 @@ describe("room layout timeline API client", () => {
     expect(call?.[0]).toContain("venueId=11111111-1111-4111-8111-111111111111");
     expect(call?.[0]).toContain("scope=day");
     expect(call?.[0]).toContain("anchorDate=2026-10-25");
+    expect(call?.[1]).toBe(RoomLayoutTimelineResponseSchema);
     expect(call?.[2]).toBe(controller.signal);
   });
 
