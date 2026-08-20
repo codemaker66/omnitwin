@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   HISTORICAL_RUNTIME_EXECUTION_ACTIVATION_PREDICATE_TYPE,
   HISTORICAL_RUNTIME_EXECUTION_ACTIVATION_SCHEMA_VERSION,
-  HISTORICAL_RUNTIME_EXECUTION_DSSE_PAYLOAD_TYPE,
   HISTORICAL_RUNTIME_EXECUTION_KEY_POLICY_SCHEMA_VERSION,
   HistoricalRuntimeExecutionActivationPredicateSchema,
   HistoricalRuntimeExecutionKeyPolicySchema,
@@ -56,6 +55,7 @@ function predicate(): HistoricalRuntimeExecutionActivationPredicate {
     admissionId: "30000000-0000-4000-8000-000000000001",
     rightsEvidenceRowId: "30000000-0000-4000-8000-000000000002",
     rightsEvidenceDigest: SHA_B,
+    rightsDecision: "approved" as const,
     rightsReviewedBy: "30000000-0000-4000-8000-000000000003",
     rightsReviewedAt: "2026-08-20T08:00:00.000Z",
     storageKeySha256: SHA_C,

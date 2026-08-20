@@ -29,11 +29,23 @@ export const HISTORICAL_RUNTIME_EXECUTION_DSSE_PAYLOAD_TYPE =
 export const HISTORICAL_RUNTIME_EXECUTION_IN_TOTO_STATEMENT_TYPE =
   "https://in-toto.io/Statement/v1";
 export const HISTORICAL_RUNTIME_EXECUTION_MAX_TTL_MS = 90 * 24 * 60 * 60 * 1_000;
+export const HISTORICAL_RUNTIME_EXECUTION_KEY_POLICY_PURPOSES = [
+  "historical_runtime_execution_activation",
+  "historical_runtime_capture_content_identity",
+  "historical_runtime_role_attestation",
+] as const;
+export const HistoricalRuntimeExecutionKeyPolicyPurposeSchema = z.enum(
+  HISTORICAL_RUNTIME_EXECUTION_KEY_POLICY_PURPOSES,
+);
+export type HistoricalRuntimeExecutionKeyPolicyPurpose = z.infer<
+  typeof HistoricalRuntimeExecutionKeyPolicyPurposeSchema
+>;
 
 const SHA256 = RuntimePackageContentDigestSchema;
 const PRINTABLE_ETAG = /^[\u0021-\u007e]{1,200}$/u;
 const STORAGE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/u;
 const SAFE_FILE_NAME = /^[^/\\]+$/u;
+const PRINTABLE_DSSE_KEY_ID = /^[\x20-\x7e]{1,128}$/u;
 
 function canonicalDigest(domain: string, value: unknown): string {
   return sha256Hex(`${domain}${stableCanonicalJson(CanonicalJsonValueSchema.parse(value))}`);
@@ -42,9 +54,9 @@ function canonicalDigest(domain: string, value: unknown): string {
 const HistoricalRuntimeExecutionKeyPolicyUnsignedSchema = z.object({
   schemaVersion: z.literal(HISTORICAL_RUNTIME_EXECUTION_KEY_POLICY_SCHEMA_VERSION),
   policyId: z.string().uuid(),
-  purpose: z.literal("historical_runtime_execution_activation"),
+  purpose: HistoricalRuntimeExecutionKeyPolicyPurposeSchema,
   algorithm: z.literal("ed25519"),
-  keyId: z.string().trim().min(1).max(160),
+  keyId: z.string().regex(PRINTABLE_DSSE_KEY_ID),
   publicKeyFingerprint: SHA256,
   registeredBy: UserIdSchema,
   registeredAt: z.string().datetime({ offset: true }),
@@ -98,6 +110,7 @@ const HistoricalRuntimeExecutionObjectReceiptMaterialSchema = z.object({
   evidenceStatus: z.literal("human_reviewed"),
   rightsEvidenceRowId: z.string().uuid(),
   rightsEvidenceDigest: SHA256,
+  rightsDecision: z.literal("approved"),
   rightsReviewedBy: UserIdSchema,
   rightsReviewedAt: z.string().datetime({ offset: true }),
   storageKeySha256: SHA256,
@@ -199,7 +212,7 @@ const HistoricalRuntimeExecutionActivationPredicateObjectSchema = z.object({
     .max(PHASE_LAYOUT_RUNTIME_MAX_VISUAL_ASSETS),
   keyPolicyId: z.string().uuid(),
   keyPolicyDigest: SHA256,
-  keyId: z.string().trim().min(1).max(160),
+  keyId: z.string().regex(PRINTABLE_DSSE_KEY_ID),
   publicKeyFingerprint: SHA256,
   requestedBy: UserIdSchema,
   issuedAt: z.string().datetime({ offset: true }),

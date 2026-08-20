@@ -10,38 +10,57 @@ export const FOUNDRY_ACTIVATION_V1_SIGNED_EVIDENCE_PROFILES = Object.freeze({
   bootstrap_ceremony: Object.freeze({
     domain: "omnitwin.foundry.derivative-bootstrap-ceremony.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-bootstrap-ceremony.v1+json",
+    authority: "none",
   }),
   admin_action: Object.freeze({
     domain: "omnitwin.foundry.derivative-admin-action.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-admin-action.v1+json",
+    authority: "none",
   }),
   predecessor_source: Object.freeze({
     domain: "omnitwin.foundry.derivative-predecessor-source.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-predecessor-source.v1+json",
+    authority: "none",
   }),
   gateway_token_commitment: Object.freeze({
     domain: "omnitwin.foundry.derivative-gateway-token-commitment.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-gateway-token-commitment.v1+json",
+    authority: "none",
   }),
   runner_terminal: Object.freeze({
     domain: "omnitwin.foundry.derivative-runner-terminal-receipt.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-runner-terminal-receipt.v1+json",
+    authority: "none",
   }),
   provider_result: Object.freeze({
     domain: "omnitwin.foundry.derivative-provider-result-evidence.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-provider-result-evidence.v1+json",
+    authority: "none",
   }),
   storage_create: Object.freeze({
     domain: "omnitwin.foundry.derivative-storage-create.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-storage-create.v1+json",
+    authority: "none",
   }),
   storage_read: Object.freeze({
     domain: "omnitwin.foundry.derivative-storage-read.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-storage-read.v1+json",
+    authority: "none",
   }),
   glb_verifier: Object.freeze({
     domain: "omnitwin.foundry.derivative-glb-verifier-receipt.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-glb-verifier-receipt.v1+json",
+    authority: "none",
+  }),
+  historical_runtime_capture_content_identity: Object.freeze({
+    domain: "venviewer.historical-runtime-capture-content-identity.v1",
+    payloadType: "application/vnd.venviewer.historical-runtime-capture-content-identity.v1+json",
+    authority: "venue_evidence",
+  }),
+  historical_runtime_role_attestation: Object.freeze({
+    domain: "venviewer.historical-runtime-role-attestation.v1",
+    payloadType: "application/vnd.venviewer.historical-runtime-role-attestation.v1+json",
+    authority: "venue_evidence",
   }),
 } as const);
 
@@ -852,6 +871,7 @@ function isJsonArray(
 function profileFor(evidenceKind: FoundryActivationV1SignedEvidenceKind): {
   readonly domain: string;
   readonly payloadType: string;
+  readonly authority: "none" | "venue_evidence" | "execution_authority";
 } {
   if (!Object.hasOwn(FOUNDRY_ACTIVATION_V1_SIGNED_EVIDENCE_PROFILES, evidenceKind)) {
     fail(ERROR.evidenceKindInvalid, "The requested Foundry activation V1 signed-evidence kind is not closed by the V1 profile.");
@@ -864,14 +884,15 @@ function assertPayloadProfileBinding(
   evidenceKind: FoundryActivationV1SignedEvidenceKind,
 ): void {
   if (evidenceKind === "bootstrap_ceremony") return;
+  const profile = profileFor(evidenceKind);
   if (
     !isJsonObject(value) ||
     value.evidenceKind !== evidenceKind ||
-    value.authority !== "none"
+    value.authority !== profile.authority
   ) {
     fail(
       ERROR.profileBindingMismatch,
-      "The signed payload must bind the selected Foundry activation V1 evidenceKind and authority none.",
+      "The signed payload must bind the selected signed-evidence profile and its exact authority class.",
     );
   }
 }

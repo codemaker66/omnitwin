@@ -34,6 +34,8 @@ const evidenceKindSchema = z.enum([
   "storage_create",
   "storage_read",
   "glb_verifier",
+  "historical_runtime_capture_content_identity",
+  "historical_runtime_role_attestation",
 ]);
 const positiveVectorSchema = z.object({
   id: z.string().min(1),
@@ -143,47 +145,69 @@ const EVIDENCE_KINDS = [
   "storage_create",
   "storage_read",
   "glb_verifier",
+  "historical_runtime_capture_content_identity",
+  "historical_runtime_role_attestation",
 ] as const satisfies readonly FoundryActivationV1SignedEvidenceKind[];
 const EXPECTED_SIGNED_EVIDENCE_PROFILES = {
   bootstrap_ceremony: {
     domain: "omnitwin.foundry.derivative-bootstrap-ceremony.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-bootstrap-ceremony.v1+json",
+    authority: "none",
   },
   admin_action: {
     domain: "omnitwin.foundry.derivative-admin-action.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-admin-action.v1+json",
+    authority: "none",
   },
   predecessor_source: {
     domain: "omnitwin.foundry.derivative-predecessor-source.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-predecessor-source.v1+json",
+    authority: "none",
   },
   gateway_token_commitment: {
     domain: "omnitwin.foundry.derivative-gateway-token-commitment.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-gateway-token-commitment.v1+json",
+    authority: "none",
   },
   runner_terminal: {
     domain: "omnitwin.foundry.derivative-runner-terminal-receipt.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-runner-terminal-receipt.v1+json",
+    authority: "none",
   },
   provider_result: {
     domain: "omnitwin.foundry.derivative-provider-result-evidence.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-provider-result-evidence.v1+json",
+    authority: "none",
   },
   storage_create: {
     domain: "omnitwin.foundry.derivative-storage-create.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-storage-create.v1+json",
+    authority: "none",
   },
   storage_read: {
     domain: "omnitwin.foundry.derivative-storage-read.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-storage-read.v1+json",
+    authority: "none",
   },
   glb_verifier: {
     domain: "omnitwin.foundry.derivative-glb-verifier-receipt.v1",
     payloadType: "application/vnd.omnitwin.foundry.derivative-glb-verifier-receipt.v1+json",
+    authority: "none",
+  },
+  historical_runtime_capture_content_identity: {
+    domain: "venviewer.historical-runtime-capture-content-identity.v1",
+    payloadType: "application/vnd.venviewer.historical-runtime-capture-content-identity.v1+json",
+    authority: "venue_evidence",
+  },
+  historical_runtime_role_attestation: {
+    domain: "venviewer.historical-runtime-role-attestation.v1",
+    payloadType: "application/vnd.venviewer.historical-runtime-role-attestation.v1+json",
+    authority: "venue_evidence",
   },
 } as const satisfies Readonly<Record<FoundryActivationV1SignedEvidenceKind, {
   readonly domain: string;
   readonly payloadType: string;
+  readonly authority: "none" | "venue_evidence" | "execution_authority";
 }>>;
 const fixedEnvelopeSchema = z.object({
   payload: z.string(),
@@ -242,7 +266,11 @@ function canonicalEnvelopeBytes(envelope: unknown): Buffer {
 function createProfilePayloadBytes(evidenceKind: FoundryActivationV1SignedEvidenceKind): Buffer {
   const value = evidenceKind === "bootstrap_ceremony"
     ? { ceremony: "wire-only-fixture" }
-    : { authority: "none", evidenceKind, fixture: "wire-only" };
+    : {
+      authority: FOUNDRY_ACTIVATION_V1_SIGNED_EVIDENCE_PROFILES[evidenceKind].authority,
+      evidenceKind,
+      fixture: "wire-only",
+    };
   return Buffer.from(canonicalizeFoundryActivationV1Json(value), "utf8");
 }
 
