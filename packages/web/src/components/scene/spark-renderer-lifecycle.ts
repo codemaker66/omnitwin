@@ -54,6 +54,12 @@ export class SparkRendererAdmissionGate {
     return () => { this.#listeners.delete(listener); };
   };
 
+  quarantine(): void {
+    if (this.#quarantined) return;
+    this.#quarantined = true;
+    for (const listener of this.#listeners) listener();
+  }
+
   acquire(canvasKey: object): SparkRendererAdmissionLease | null {
     if (this.#quarantined || this.#occupiedCanvases.has(canvasKey)) return null;
     this.#occupiedCanvases.add(canvasKey);
@@ -63,8 +69,11 @@ export class SparkRendererAdmissionGate {
       if (settled) return;
       settled = true;
       this.#occupiedCanvases.delete(canvasKey);
-      if (quarantine) this.#quarantined = true;
-      for (const listener of this.#listeners) listener();
+      if (quarantine) {
+        this.quarantine();
+      } else {
+        for (const listener of this.#listeners) listener();
+      }
     };
 
     return {

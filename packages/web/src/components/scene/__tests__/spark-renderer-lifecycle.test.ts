@@ -289,4 +289,18 @@ describe("Spark renderer admission", () => {
     expect(gate.getSnapshot()).toBe("quarantined");
     unsubscribe();
   });
+
+  it("allows an owned resource cleanup failure to quarantine future admission directly", () => {
+    const gate = new SparkRendererAdmissionGate();
+    const listener = vi.fn();
+    const unsubscribe = gate.subscribe(listener);
+
+    gate.quarantine();
+    gate.quarantine();
+
+    expect(gate.getSnapshot()).toBe("quarantined");
+    expect(gate.acquire({})).toBeNull();
+    expect(listener).toHaveBeenCalledOnce();
+    unsubscribe();
+  });
 });

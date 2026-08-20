@@ -3,6 +3,8 @@ import type { PhaseLayoutRuntimeAvailableBinding } from "@omnitwin/types";
 import type { VerifiedHistoricalRuntimeAsset } from "../../api/historical-runtime-assets.js";
 import {
   HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET,
+  HISTORICAL_RUNTIME_DECODE_TIMEOUT_ERROR_MESSAGE,
+  HISTORICAL_RUNTIME_LIFECYCLE_ERROR_MESSAGE,
   HISTORICAL_RUNTIME_LOW_MEMORY_BYTE_BUDGET,
   HISTORICAL_RUNTIME_LOW_MEMORY_SPLAT_BUDGET,
   HISTORICAL_RUNTIME_MAX_MEMBERS,
@@ -15,6 +17,7 @@ import {
   historicalRuntimeDecodedSplatsWithinViewerBudget,
   historicalRuntimeResourceCanRender,
   historicalRuntimeRemainingAdjacentSplatBudget,
+  historicalRuntimeResourceKey,
   historicalRuntimeViewerCapacity,
 } from "../historical-runtime-cache.js";
 import { historicalRuntimeBindingFixture } from "../../test-utils/historical-runtime-binding.js";
@@ -43,6 +46,9 @@ function cacheWith(params: {
     binding: PhaseLayoutRuntimeAvailableBinding,
     signal: AbortSignal,
   ) => Promise<TestResource>;
+  readonly decodeTimeoutMs?: number;
+  readonly dispose?: (resource: TestResource) => void;
+  readonly onLifecycleError?: (error: Error) => void;
 }) {
   const fetchMember = vi.fn(async (binding: PhaseLayoutRuntimeAvailableBinding) =>
     params.fetchMember?.(binding) ?? verifiedAsset(binding));
@@ -52,11 +58,21 @@ function cacheWith(params: {
     signal: AbortSignal,
   ) => params.decode?.(binding, signal) ?? resource(binding.bindingId));
   const dispose = vi.fn((value: TestResource) => {
+    if (params.dispose !== undefined) {
+      params.dispose(value);
+      return;
+    }
     value.visible = false;
     value.disposeCount += 1;
   });
   return {
-    cache: new HistoricalRuntimeCache<TestResource>({ fetchMember, decode, dispose }),
+    cache: new HistoricalRuntimeCache<TestResource>({
+      fetchMember,
+      decode,
+      dispose,
+      decodeTimeoutMs: params.decodeTimeoutMs,
+      onLifecycleError: params.onLifecycleError,
+    }),
     fetchMember,
     decode,
     dispose,
@@ -83,6 +99,115 @@ describe("HistoricalRuntimeCache", () => {
     harness.cache.clear();
   });
 
+  it("authorizes distinct snapshot aliases but reuses their identical scoped room resource in both directions", async () => {
+    const first = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const alias = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      sizeBytes: 1,
+    });
+    expect(historicalRuntimeBindingKey(first)).not.toBe(historicalRuntimeBindingKey(alias));
+    expect(historicalRuntimeResourceKey(first)).toBe(historicalRuntimeResourceKey(alias));
+    const harness = cacheWith({});
+
+    harness.cache.setWindow({ active: first, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(first))?.status)
+        .toBe("ready");
+    });
+    const decoded = harness.cache.getSnapshot().records
+      .get(historicalRuntimeBindingKey(first))?.resource;
+    expect(decoded).not.toBeNull();
+
+    harness.cache.setWindow({ active: alias, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(alias))?.status)
+        .toBe("ready");
+    });
+    expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(alias))?.resource)
+      .toBe(decoded);
+
+    harness.cache.setWindow({ active: first, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(first))?.status)
+        .toBe("ready");
+    });
+    expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(first))?.resource)
+      .toBe(decoded);
+    expect(harness.fetchMember).toHaveBeenCalledTimes(3);
+    expect(harness.fetchMember.mock.calls.map(([binding]) => binding.bindingId)).toEqual([
+      first.bindingId,
+      alias.bindingId,
+      first.bindingId,
+    ]);
+    expect(harness.decode).toHaveBeenCalledOnce();
+    expect(harness.dispose).not.toHaveBeenCalled();
+
+    harness.cache.clear();
+    expect(harness.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("does not expose a shared decoded room when the selected alias fails its own authorization", async () => {
+    const first = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const unauthorizedAlias = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      sizeBytes: 1,
+    });
+    const harness = cacheWith({
+      fetchMember: (binding) => binding.bindingId === unauthorizedAlias.bindingId
+        ? Promise.reject(new Error("binding authorization denied"))
+        : Promise.resolve(verifiedAsset(binding)),
+    });
+
+    harness.cache.setWindow({ active: first, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(first))?.status)
+        .toBe("ready");
+    });
+    const decoded = harness.cache.getSnapshot().records
+      .get(historicalRuntimeBindingKey(first))?.resource;
+    expect(decoded).not.toBeNull();
+
+    harness.cache.setWindow({
+      active: unauthorizedAlias,
+      adjacent: null,
+      decodeAdjacent: false,
+    });
+    await vi.waitFor(() => {
+      const aliasRecord = harness.cache.getSnapshot().records.get(
+        historicalRuntimeBindingKey(unauthorizedAlias),
+      );
+      expect(aliasRecord?.status).toBe("error");
+      expect(aliasRecord?.resource).toBeNull();
+    });
+    expect(harness.decode).toHaveBeenCalledOnce();
+    expect(harness.dispose).not.toHaveBeenCalled();
+
+    harness.cache.setWindow({ active: first, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(first))?.resource)
+        .toBe(decoded);
+    });
+    expect(harness.decode).toHaveBeenCalledOnce();
+    harness.cache.clear();
+  });
+
+  it("keeps identical visual bytes isolated across room scopes", () => {
+    const first = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const otherSpace: PhaseLayoutRuntimeAvailableBinding = {
+      ...first,
+      spaceId: "45444444-4444-4444-8444-444444444444",
+      spaceSlug: "other-room",
+    };
+
+    expect(historicalRuntimeResourceKey(otherSpace)).not.toBe(
+      historicalRuntimeResourceKey(first),
+    );
+  });
+
   it("fetches the selected package before its adjacent prefetch", async () => {
     const active = historicalRuntimeBindingFixture({ sizeBytes: 1 });
     const adjacent = historicalRuntimeBindingFixture({
@@ -90,6 +215,7 @@ describe("HistoricalRuntimeCache", () => {
       canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
       runtimePackageId: "67666666-6666-4666-8666-666666666666",
       assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "9".repeat(64),
       sizeBytes: 1,
     });
     const started: string[] = [];
@@ -126,6 +252,7 @@ describe("HistoricalRuntimeCache", () => {
       canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
       runtimePackageId: "67666666-6666-4666-8666-666666666666",
       assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "8".repeat(64),
       sizeBytes: 1,
     });
     const resolvers: Array<(value: TestResource) => void> = [];
@@ -159,6 +286,7 @@ describe("HistoricalRuntimeCache", () => {
       canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
       runtimePackageId: "67666666-6666-4666-8666-666666666666",
       assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "8".repeat(64),
       sizeBytes: 1,
     });
     const third = historicalRuntimeBindingFixture({
@@ -166,6 +294,7 @@ describe("HistoricalRuntimeCache", () => {
       canonicalSnapshotId: "24222222-2222-4222-8222-222222222222",
       runtimePackageId: "68666666-6666-4666-8666-666666666666",
       assetVersionId: "97999999-9999-4999-8999-999999999999",
+      sha256: "7".repeat(64),
       sizeBytes: 1,
     });
     const started: string[] = [];
@@ -209,6 +338,7 @@ describe("HistoricalRuntimeCache", () => {
       canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
       runtimePackageId: "67666666-6666-4666-8666-666666666666",
       assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "8".repeat(64),
       sizeBytes: 1,
     });
     const settleIgnoredAbort: { current: ((value: TestResource) => void) | null } = {
@@ -234,6 +364,72 @@ describe("HistoricalRuntimeCache", () => {
     expect(staleResource.disposeCount).toBe(1);
   });
 
+  it("lets the next room decode after an aborted decoder never settles", async () => {
+    const first = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const second = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "9".repeat(64),
+      sizeBytes: 1,
+    });
+    const harness = cacheWith({
+      decode: (binding) => binding.bindingId === first.bindingId
+        ? new Promise<TestResource>(() => undefined)
+        : Promise.resolve(resource("second")),
+      decodeTimeoutMs: 60_000,
+    });
+
+    harness.cache.setWindow({ active: first, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => { expect(harness.decode).toHaveBeenCalledOnce(); });
+    harness.cache.setWindow({ active: second, adjacent: null, decodeAdjacent: false });
+
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(second))?.status)
+        .toBe("ready");
+    });
+    expect(harness.decode).toHaveBeenCalledTimes(2);
+    expect(harness.cache.getSnapshot().records.has(historicalRuntimeBindingKey(first))).toBe(false);
+    harness.cache.clear();
+  });
+
+  it("releases the serialized queue at the decode deadline when a decoder ignores abort", async () => {
+    vi.useFakeTimers();
+    const first = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const second = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "9".repeat(64),
+      sizeBytes: 1,
+    });
+    const harness = cacheWith({
+      decode: (binding) => binding.bindingId === first.bindingId
+        ? new Promise<TestResource>(() => undefined)
+        : Promise.resolve(resource("second")),
+      decodeTimeoutMs: 25,
+    });
+
+    harness.cache.setWindow({ active: first, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => { expect(harness.decode).toHaveBeenCalledOnce(); });
+    await vi.advanceTimersByTimeAsync(25);
+    await vi.waitFor(() => {
+      const record = harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(first));
+      expect(record?.status).toBe("error");
+      expect(record?.error?.message).toBe(HISTORICAL_RUNTIME_DECODE_TIMEOUT_ERROR_MESSAGE);
+    });
+
+    harness.cache.setWindow({ active: second, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(second))?.status)
+        .toBe("ready");
+    });
+    expect(harness.decode).toHaveBeenCalledTimes(2);
+    harness.cache.clear();
+  });
+
   it("recreates a failed binding generation and succeeds on explicit reselection", async () => {
     const binding = historicalRuntimeBindingFixture({ sizeBytes: 1 });
     let attempt = 0;
@@ -257,6 +453,92 @@ describe("HistoricalRuntimeCache", () => {
     expect(harness.decode).toHaveBeenCalledTimes(2);
     expect(harness.fetchMember).toHaveBeenCalledTimes(2);
     harness.cache.clear();
+  });
+
+  it("continues reselection after disposal throws and surfaces only the sanitized lifecycle error", async () => {
+    const first = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const second = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "9".repeat(64),
+      sizeBytes: 1,
+    });
+    const firstResource = resource("first");
+    const secondResource = resource("second");
+    const quarantined = vi.fn();
+    const harness = cacheWith({
+      decode: (binding) => Promise.resolve(
+        binding.bindingId === first.bindingId ? firstResource : secondResource,
+      ),
+      dispose: (value) => {
+        value.disposeCount += 1;
+        if (value === firstResource) {
+          throw new Error("C:\\restricted\\runtime.sog?token=raw-secret");
+        }
+      },
+      onLifecycleError: quarantined,
+    });
+
+    harness.cache.setWindow({ active: first, adjacent: null, decodeAdjacent: false });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(first))?.status)
+        .toBe("ready");
+    });
+    expect(() => {
+      harness.cache.setWindow({ active: second, adjacent: null, decodeAdjacent: false });
+    }).not.toThrow();
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(second))?.status)
+        .toBe("ready");
+    });
+
+    expect(firstResource.disposeCount).toBe(1);
+    expect(quarantined).toHaveBeenCalledOnce();
+    expect(harness.cache.getSnapshot().lifecycleError?.message)
+      .toBe(HISTORICAL_RUNTIME_LIFECYCLE_ERROR_MESSAGE);
+    expect(harness.cache.getSnapshot().lifecycleError?.message).not.toContain("raw-secret");
+    harness.cache.clear();
+    expect(secondResource.disposeCount).toBe(1);
+  });
+
+  it("attempts every resident resource during clear when an earlier disposal throws", async () => {
+    const active = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const adjacent = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "9".repeat(64),
+      sizeBytes: 1,
+    });
+    const activeResource = resource("active");
+    const adjacentResource = resource("adjacent");
+    const harness = cacheWith({
+      decode: (binding) => Promise.resolve(
+        binding.bindingId === active.bindingId ? activeResource : adjacentResource,
+      ),
+      dispose: (value) => {
+        value.disposeCount += 1;
+        if (value === activeResource) throw new Error("private disposal detail");
+      },
+    });
+
+    harness.cache.setWindow({ active, adjacent, decodeAdjacent: true });
+    await vi.waitFor(() => {
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(active))?.status)
+        .toBe("ready");
+      expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(adjacent))?.status)
+        .toBe("ready");
+    });
+    expect(() => { harness.cache.clear(); }).not.toThrow();
+
+    expect(activeResource.disposeCount).toBe(1);
+    expect(adjacentResource.disposeCount).toBe(1);
+    expect(harness.cache.getSnapshot().records.size).toBe(0);
+    expect(harness.cache.getSnapshot().lifecycleError?.message)
+      .toBe(HISTORICAL_RUNTIME_LIFECYCLE_ERROR_MESSAGE);
   });
 
   it("does not fetch or decode an active package over the supported byte budget", async () => {
@@ -351,6 +633,7 @@ describe("HistoricalRuntimeCache", () => {
       canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
       runtimePackageId: "67666666-6666-4666-8666-666666666666",
       assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "8".repeat(64),
       sizeBytes: 1,
     });
     let finishAdjacentDecode = (_value: TestResource): void => {
@@ -390,6 +673,7 @@ describe("HistoricalRuntimeCache", () => {
       canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
       runtimePackageId: "67666666-6666-4666-8666-666666666666",
       assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "8".repeat(64),
       sizeBytes: 1,
     });
     let adjacentFetchStarted = false;
@@ -426,7 +710,7 @@ describe("HistoricalRuntimeCache", () => {
     finishAdjacentFetch();
     await vi.waitFor(() => {
       expect(harness.cache.getSnapshot().records.get(historicalRuntimeBindingKey(adjacent))?.status)
-        .toBe("verified");
+        .toBe("decoding");
     });
 
     await vi.advanceTimersByTimeAsync(HISTORICAL_RUNTIME_VERIFIED_PREFETCH_TTL_MS + 1);
@@ -451,6 +735,7 @@ describe("historicalRuntimeCrossfadeAllowed", () => {
       canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
       runtimePackageId: "67666666-6666-4666-8666-666666666666",
       assetVersionId: "98999999-9999-4999-8999-999999999999",
+      sha256: "7".repeat(64),
       sizeBytes: 1,
     });
     const base = {
@@ -475,6 +760,28 @@ describe("historicalRuntimeCrossfadeAllowed", () => {
       ...base,
       to: { ...to, transformArtifactDigest: "0".repeat(64) },
     })).toBe(false);
+  });
+
+  it("rejects both crossfade directions for package aliases of one decoded resource", () => {
+    const first = historicalRuntimeBindingFixture({ sizeBytes: 1 });
+    const alias = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      sizeBytes: 1,
+    });
+    const params = {
+      sameEnvelope: true,
+      reducedMotion: false,
+      combinedByteBudget: HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET,
+      fromSplatCount: 1,
+      toSplatCount: 1,
+      combinedSplatBudget: HISTORICAL_RUNTIME_MAX_SPLATS_PER_RESOURCE,
+    };
+
+    expect(historicalRuntimeResourceKey(first)).toBe(historicalRuntimeResourceKey(alias));
+    expect(historicalRuntimeCrossfadeAllowed({ ...params, from: first, to: alias })).toBe(false);
+    expect(historicalRuntimeCrossfadeAllowed({ ...params, from: alias, to: first })).toBe(false);
   });
 });
 
