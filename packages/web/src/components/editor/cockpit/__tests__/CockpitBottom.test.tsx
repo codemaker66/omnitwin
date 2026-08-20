@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import type { ReactElement } from "react";
 import {
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  canonicalLayoutSnapshotDigest,
   historicalRuntimeFromBinding,
   type CanonicalLayoutSnapshotV0,
   type EventPhaseGraph,
@@ -76,6 +77,7 @@ function available(
   return {
     state: "available",
     snapshotId,
+    snapshotHash: canonicalLayoutSnapshotDigest(snapshot),
     snapshotStatus: "frozen",
     canonicalSnapshotId: snapshotId,
     proofDigest: snapshotId.replaceAll("-", "").repeat(2),

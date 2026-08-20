@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  canonicalLayoutSnapshotDigest,
   FreezePhaseLayoutSnapshotBodySchema,
   FreezePhaseLayoutSnapshotParamsSchema,
   FreezePhaseLayoutSnapshotResponseSchema,
@@ -131,6 +132,7 @@ describe("RoomLayoutTimelineResponseSchema", () => {
   const availableKeyframe = {
     state: "available" as const,
     snapshotId: SNAPSHOT_ID,
+    snapshotHash: canonicalLayoutSnapshotDigest(CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE),
     snapshotStatus: "frozen" as const,
     canonicalSnapshotId: "88888888-8888-4888-8888-888888888888",
     proofDigest: "b".repeat(64),
@@ -179,6 +181,43 @@ describe("RoomLayoutTimelineResponseSchema", () => {
     const parsed = RoomLayoutTimelineResponseSchema.parse(availableResponse());
 
     expect(parsed.frames[0]?.keyframe.state).toBe("available");
+  });
+
+  it("requires an explicit snapshot hash and independently binds it to the payload", () => {
+    const response = availableResponse();
+    const { snapshotHash: _omitted, ...withoutSnapshotHash } = availableKeyframe;
+    expect(RoomLayoutTimelineResponseSchema.safeParse({
+      ...response,
+      frames: [{ ...response.frames[0], keyframe: withoutSnapshotHash }],
+    }).success).toBe(false);
+    expect(RoomLayoutTimelineResponseSchema.safeParse({
+      ...response,
+      frames: [{
+        ...response.frames[0],
+        keyframe: { ...availableKeyframe, snapshotHash: "0".repeat(64) },
+      }],
+    }).success).toBe(false);
+
+    const changedPayload = {
+      ...availableKeyframe.payload,
+      guestCount: availableKeyframe.payload.guestCount + 1,
+    };
+    expect(RoomLayoutTimelineResponseSchema.safeParse({
+      ...response,
+      frames: [{
+        ...response.frames[0],
+        guestCount: changedPayload.guestCount,
+        keyframe: {
+          ...availableKeyframe,
+          guestCount: changedPayload.guestCount,
+          payload: changedPayload,
+        },
+        figures: {
+          ...response.frames[0]?.figures,
+          guests: { value: changedPayload.guestCount, source: "frozen_snapshot" },
+        },
+      }],
+    }).success).toBe(false);
   });
 
   it("rejects mismatched frame and phase identities", () => {
@@ -320,7 +359,11 @@ describe("RoomLayoutTimelineResponseSchema", () => {
     };
     expect(acceptsFrame({
       ...response.frames[0],
-      keyframe: { ...availableKeyframe, payload: tableFallbackPayload },
+      keyframe: {
+        ...availableKeyframe,
+        snapshotHash: canonicalLayoutSnapshotDigest(tableFallbackPayload),
+        payload: tableFallbackPayload,
+      },
       figures: {
         ...response.frames[0]?.figures,
         seatedCapacity: {
@@ -341,7 +384,11 @@ describe("RoomLayoutTimelineResponseSchema", () => {
     };
     expect(acceptsFrame({
       ...response.frames[0],
-      keyframe: { ...availableKeyframe, payload: incompletePayload },
+      keyframe: {
+        ...availableKeyframe,
+        snapshotHash: canonicalLayoutSnapshotDigest(incompletePayload),
+        payload: incompletePayload,
+      },
       figures: {
         ...response.frames[0]?.figures,
         seatedCapacity: {

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   CANONICAL_ASSETS,
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  canonicalLayoutSnapshotDigest,
   historicalRuntimeFromBinding,
   type CanonicalLayoutSnapshotV0,
 } from "@omnitwin/types";
@@ -236,6 +237,7 @@ function availableFrame(
     keyframe: {
       state: "available",
       snapshotId,
+      snapshotHash: canonicalLayoutSnapshotDigest(payload),
       snapshotStatus: "frozen",
       canonicalSnapshotId: snapshotId,
       proofDigest: snapshotId.replaceAll("-", "").repeat(2),

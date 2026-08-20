@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import {
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
+  canonicalLayoutSnapshotDigest,
   RoomLayoutTimelineResponseSchema,
   historicalRuntimeFromBinding,
 } from "@omnitwin/types";
@@ -234,6 +235,7 @@ describe("room layout timeline — aggregate response limits", () => {
       keyframe: {
         state: "available",
         snapshotId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        snapshotHash: canonicalLayoutSnapshotDigest(payload),
         snapshotStatus: "frozen",
         canonicalSnapshotId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
         proofDigest: "b".repeat(64),

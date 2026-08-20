@@ -515,6 +515,7 @@ export function resolveRoomLayoutTimelineKeyframe(
   return {
     state: "available",
     snapshotId: candidate.id,
+    snapshotHash: candidate.snapshotHash,
     snapshotStatus: "frozen",
     canonicalSnapshotId: candidate.canonicalSnapshotId,
     proofDigest: candidate.proofDigest,
