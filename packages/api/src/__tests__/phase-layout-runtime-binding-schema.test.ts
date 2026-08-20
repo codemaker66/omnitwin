@@ -89,14 +89,18 @@ describe("phase layout historical runtime binding migration", () => {
     expect(migration).not.toMatch(/\b(?:DROP|TRUNCATE|RENAME)\s+TABLE\b/iu);
   });
 
-  it("is the unique migration journal tail after frozen-row immutability", async () => {
+  it("remains uniquely journaled between frozen-row immutability and execution activation", async () => {
     const journal = JSON.parse(
       await readFile(resolve("drizzle/meta/_journal.json"), "utf8"),
     ) as { readonly entries: readonly { readonly idx: number; readonly tag: string }[] };
 
-    expect(journal.entries.slice(-2)).toEqual([
+    expect(journal.entries.slice(-3)).toEqual([
       expect.objectContaining({ idx: 60, tag: "0062_phase_layout_snapshot_immutability" }),
       expect.objectContaining({ idx: 61, tag: MIGRATION_TAG }),
+      expect.objectContaining({
+        idx: 62,
+        tag: "0064_historical_runtime_execution_activation",
+      }),
     ]);
     expect(journal.entries.filter((entry) => entry.tag === MIGRATION_TAG)).toHaveLength(1);
   });

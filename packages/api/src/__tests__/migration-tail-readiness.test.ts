@@ -105,6 +105,7 @@ const EXPECTED_TAIL = [
   "0061_diary_commands",
   "0062_phase_layout_snapshot_immutability",
   "0063_phase_layout_runtime_bindings",
+  "0064_historical_runtime_execution_activation",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {

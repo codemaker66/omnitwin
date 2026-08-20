@@ -2,16 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   PHASE_LAYOUT_RUNTIME_ADMISSION_POLICY,
   PHASE_LAYOUT_RUNTIME_BINDING_SCHEMA_VERSION,
+  PHASE_LAYOUT_RUNTIME_EXECUTION_ADMISSION_POLICY,
+  PHASE_LAYOUT_RUNTIME_EXECUTION_BINDING_SCHEMA_VERSION,
   PHASE_LAYOUT_RUNTIME_MEMBER_MAX_BYTES,
   PHASE_LAYOUT_RUNTIME_TOTAL_MAX_BYTES,
   PhaseLayoutHistoricalRuntimeSchema,
   PhaseLayoutRuntimeAvailableBindingSchema,
+  PhaseLayoutRuntimeExecutionAvailableBindingSchema,
   PhaseLayoutRuntimeUnavailableBindingSchema,
   historicalRuntimeFromBinding,
   phaseLayoutRuntimeBindingDigest,
   phaseLayoutRuntimeCompositionDigest,
+  phaseLayoutRuntimeExecutionBindingDigest,
   runtimeTransformArtifactDigest,
   type PhaseLayoutRuntimeAvailableBinding,
+  type PhaseLayoutRuntimeExecutionAvailableBinding,
   type PhaseLayoutRuntimeUnavailableBinding,
 } from "../phase-layout-runtime-binding.js";
 
@@ -134,6 +139,52 @@ function unavailableBinding(): PhaseLayoutRuntimeUnavailableBinding {
   });
 }
 
+function executionBinding(): PhaseLayoutRuntimeExecutionAvailableBinding {
+  const legacy = availableBinding();
+  const visualAssets = legacy.visualAssets.map((asset) => ({
+    ...asset,
+    storageKeySha256: "3".repeat(64),
+    privateBucketSha256: "4".repeat(64),
+    storageVersion: "runtime-object-version-1",
+    storageEtag: '"runtime-etag-1"',
+    objectReceiptDigest: "5".repeat(64),
+  }));
+  const unsigned = {
+    ...legacy,
+    schemaVersion: PHASE_LAYOUT_RUNTIME_EXECUTION_BINDING_SCHEMA_VERSION,
+    admissionPolicy: PHASE_LAYOUT_RUNTIME_EXECUTION_ADMISSION_POLICY,
+    proofDigest: "6".repeat(64),
+    eventId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    phaseId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    configurationId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    tenantBoundary: "venue_id_v1" as const,
+    tenantId: VENUE_ID,
+    presentationAdmissionId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    presentationAdmissionDigest: "7".repeat(64),
+    visualAssets,
+    activationId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    activationPredicateDigest: "8".repeat(64),
+    activationPayloadSha256: "9".repeat(64),
+    activationEnvelopeSha256: "0".repeat(64),
+    activationRequestedBy: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab",
+    activationIssuedAt: "2026-08-03T10:02:00.000Z",
+    activationExpiresAt: "2026-08-04T10:02:00.000Z",
+    activationVerifiedAt: "2026-08-03T10:03:00.000Z",
+    activationKeyPolicyId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaac",
+    activationKeyPolicyDigest: "a".repeat(64),
+    activationKeyPolicyEffectiveAt: "2026-08-03T09:00:00.000Z",
+    activationKeyPolicyExpiresAt: "2026-09-03T09:00:00.000Z",
+    activationKeyId: "runtime-activation-2026-q3",
+    activationPublicKeyFingerprint: "b".repeat(64),
+    bindingDigest: undefined,
+  };
+  const { bindingDigest: _discarded, ...material } = unsigned;
+  return PhaseLayoutRuntimeExecutionAvailableBindingSchema.parse({
+    ...material,
+    bindingDigest: phaseLayoutRuntimeExecutionBindingDigest(material),
+  });
+}
+
 describe("phase layout historical runtime binding", () => {
   it("parses an exact legacy binding for forensics but never authorizes playback", () => {
     const binding = availableBinding();
@@ -148,6 +199,21 @@ describe("phase layout historical runtime binding", () => {
     });
     expect(PhaseLayoutHistoricalRuntimeSchema.safeParse({ state: "available", binding }).success)
       .toBe(false);
+  });
+
+  it("authorizes only a current v2 activation bound to exact object receipts", () => {
+    const binding = executionBinding();
+    expect(historicalRuntimeFromBinding(binding)).toEqual({ state: "available", binding });
+    expect(PhaseLayoutHistoricalRuntimeSchema.safeParse({ state: "available", binding }).success)
+      .toBe(true);
+    expect(PhaseLayoutRuntimeExecutionAvailableBindingSchema.safeParse({
+      ...binding,
+      visualAssets: [{ ...binding.visualAssets[0], storageVersion: "replacement" }],
+    }).success).toBe(false);
+    expect(PhaseLayoutRuntimeExecutionAvailableBindingSchema.safeParse({
+      ...binding,
+      activationExpiresAt: binding.boundAt,
+    }).success).toBe(false);
   });
 
   it("rejects byte, transform, order, composition, and binding digest drift", () => {
