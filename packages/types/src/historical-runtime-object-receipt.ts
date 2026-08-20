@@ -90,7 +90,7 @@ const ProviderVersionPairSchema = z.discriminatedUnion("providerKind", [
 ]);
 
 const HistoricalRuntimeProviderCapabilityMaterialSchema = z.object({
-  schemaVersion: z.literal("historical-runtime-provider-capability.v1"),
+  schemaVersion: z.literal("historical-runtime-provider-capability.v2"),
   capabilityReceiptId: z.string().uuid(),
   providerProfile: HistoricalRuntimeEvidenceProviderProfileSchema,
   providerAccountSha256: SHA256,
@@ -101,6 +101,24 @@ const HistoricalRuntimeProviderCapabilityMaterialSchema = z.object({
   exactVersionReadSupported: z.literal(true),
   overwritePreservesPriorVersion: z.literal(true),
   anonymousProbeSupported: z.literal(true),
+  anonymousAccessProbeEquivalence: z.object({
+    headRequestMethod: z.literal("HEAD"),
+    headRequestDigest: SHA256,
+    headResponseDigest: SHA256,
+    headStatusCode: z.union([z.literal(401), z.literal(403), z.literal(404)]),
+    headRedirectCount: z.literal(0),
+    getRequestMethod: z.literal("GET"),
+    getRangeHeader: z.literal("bytes=0-0"),
+    getRequestDigest: SHA256,
+    getResponseDigest: SHA256,
+    getStatusCode: z.union([z.literal(401), z.literal(403), z.literal(404)]),
+    getRedirectCount: z.literal(0),
+    denialClass: z.enum([
+      "authentication_required",
+      "access_forbidden",
+      "concealed_existing_object",
+    ]),
+  }).strict(),
   verificationMode: z.enum([
     "provider_native_version",
     "content_addressed_no_overwrite_with_retention",
@@ -119,7 +137,7 @@ const HistoricalRuntimeProviderCapabilityMaterialSchema = z.object({
 export function historicalRuntimeProviderCapabilityDigest(value: unknown): string {
   const parsed = HistoricalRuntimeProviderCapabilityMaterialSchema.parse(value);
   const result = canonicalDigest(
-    "venviewer.historical-runtime-provider-capability.v1\n",
+    "venviewer.historical-runtime-provider-capability.v2\n",
     parsed,
   );
   if (result === null) throw new TypeError("Provider capability is not canonical JSON.");
@@ -141,6 +159,12 @@ export const HistoricalRuntimeProviderCapabilitySchema =
       : capability.versionKind === "content_addressed_immutable_key"
         ? "content_addressed_no_overwrite_with_retention"
         : "provider_native_version";
+    const anonymousProbe = capability.anonymousAccessProbeEquivalence;
+    const expectedDenialClass = anonymousProbe.headStatusCode === 401
+      ? "authentication_required"
+      : anonymousProbe.headStatusCode === 403
+        ? "access_forbidden"
+        : "concealed_existing_object";
     if (
       !pairValid ||
       fixture !== (capability.providerKind === "local_fixture") ||
@@ -151,7 +175,10 @@ export const HistoricalRuntimeProviderCapabilitySchema =
       capability.initialReadDigest !== capability.initialWriteDigest ||
       capability.priorVersionRereadDigest !== capability.initialWriteDigest ||
       capability.overwriteDigest === capability.initialWriteDigest ||
-      canonicalDigest("venviewer.historical-runtime-provider-capability.v1\n", material) !==
+      anonymousProbe.headStatusCode !== anonymousProbe.getStatusCode ||
+      anonymousProbe.headRequestDigest === anonymousProbe.getRequestDigest ||
+      anonymousProbe.denialClass !== expectedDenialClass ||
+       canonicalDigest("venviewer.historical-runtime-provider-capability.v2\n", material) !==
         capabilityDigest
     ) {
       context.addIssue({
@@ -213,8 +240,95 @@ export type HistoricalRuntimeEvidenceObjectIdentity = z.infer<
   typeof HistoricalRuntimeEvidenceObjectIdentitySchema
 >;
 
+const HistoricalRuntimeObjectActorWorkspaceMembershipSchema =
+  z.discriminatedUnion("state", [
+    z.object({
+      state: z.literal("not_applicable"),
+      reason: z.literal("platform_authority"),
+    }).strict(),
+    z.object({
+      state: z.literal("active"),
+      membershipId: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      userId: UserIdSchema,
+      workspaceRole: z.enum(["owner", "admin", "staff", "hallkeeper"]),
+      venueRole: z.enum(["staff", "hallkeeper", "planner", "client"]),
+      membershipStatus: z.literal("active"),
+      membershipUpdatedAt: z.string().datetime({ offset: true }),
+      membershipVersionDigest: SHA256,
+    }).strict(),
+  ]);
+
+const HistoricalRuntimeObjectActorAuthorityMaterialSchema = z.object({
+  schemaVersion: z.literal("historical-runtime-object-actor-authority.v1"),
+  actorId: UserIdSchema,
+  authorityRole: z.enum([
+    "object_custodian",
+    "object_observer",
+    "anonymous_denial_prober",
+  ]),
+  environmentId: z.string().uuid(),
+  environmentMode: z.enum(["production", "test"]),
+  venueId: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  platformRole: z.enum(["none", "operator", "admin"]),
+  userRole: z.enum(["client", "planner", "staff", "hallkeeper", "admin"]),
+  userVenueId: z.string().uuid().nullable(),
+  workspaceMembership: HistoricalRuntimeObjectActorWorkspaceMembershipSchema,
+  snapshottedAt: z.string().datetime({ offset: true }),
+}).strict();
+
+export function historicalRuntimeObjectActorAuthorityDigest(value: unknown): string {
+  const parsed = HistoricalRuntimeObjectActorAuthorityMaterialSchema.parse(value);
+  const result = canonicalDigest(
+    "venviewer.historical-runtime-object-actor-authority.v1\n",
+    parsed,
+  );
+  if (result === null) throw new TypeError("Object actor authority is not canonical JSON.");
+  return result;
+}
+
+type HistoricalRuntimeObjectActorAuthorityMaterial = z.infer<
+  typeof HistoricalRuntimeObjectActorAuthorityMaterialSchema
+>;
+export type HistoricalRuntimeObjectActorAuthority =
+  HistoricalRuntimeObjectActorAuthorityMaterial & { authorityDigest: string };
+
+export const HistoricalRuntimeObjectActorAuthoritySchema:
+  z.ZodType<HistoricalRuntimeObjectActorAuthority> =
+  HistoricalRuntimeObjectActorAuthorityMaterialSchema.extend({
+    authorityDigest: SHA256,
+  }).strict().superRefine((authority, context) => {
+    const { authorityDigest, ...material } = authority;
+    const platformAuthority = authority.platformRole === "operator" ||
+      authority.platformRole === "admin";
+    const membership = authority.workspaceMembership;
+    const workspaceAuthority = membership.state === "active" &&
+      authority.platformRole === "none" &&
+      authority.userVenueId === authority.venueId &&
+      authority.userRole !== "client" &&
+      membership.userId === authority.actorId &&
+      (membership.workspaceRole !== "staff" ||
+        membership.venueRole === "hallkeeper" ||
+        ["planner", "staff", "hallkeeper", "admin"].includes(authority.userRole));
+    if (
+      platformAuthority !== (membership.state === "not_applicable") ||
+      (!platformAuthority && !workspaceAuthority) ||
+      canonicalDigest(
+        "venviewer.historical-runtime-object-actor-authority.v1\n",
+        material,
+      ) !== authorityDigest
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authorityDigest"],
+        message: "Object receipt actor authority must bind an action-time platform or exact active same-venue membership snapshot.",
+      });
+    }
+  });
+
 export const HistoricalRuntimeAnonymousAccessDenialSchema = z.object({
-  schemaVersion: z.literal("historical-runtime-anonymous-access-denial.v1"),
+  schemaVersion: z.literal("historical-runtime-anonymous-access-denial.v2"),
   requestMethod: z.literal("HEAD"),
   providerProfile: HistoricalRuntimeEvidenceProviderProfileSchema,
   providerKind: HistoricalRuntimeEvidenceProviderKindSchema,
@@ -236,7 +350,21 @@ export const HistoricalRuntimeAnonymousAccessDenialSchema = z.object({
     "concealed_existing_object",
   ]),
   redirectCount: z.literal(0),
+  safeRangeGet: z.object({
+    requestMethod: z.literal("GET"),
+    rangeHeader: z.literal("bytes=0-0"),
+    requestDigest: SHA256,
+    responseDigest: SHA256,
+    statusCode: z.union([z.literal(401), z.literal(403), z.literal(404)]),
+    denialClass: z.enum([
+      "authentication_required",
+      "access_forbidden",
+      "concealed_existing_object",
+    ]),
+    redirectCount: z.literal(0),
+  }).strict(),
   probedBy: UserIdSchema,
+  proberAuthority: HistoricalRuntimeObjectActorAuthoritySchema,
   probedAt: z.string().datetime({ offset: true }),
   expiresAt: z.string().datetime({ offset: true }),
 }).strict().superRefine((denial, context) => {
@@ -251,7 +379,13 @@ export const HistoricalRuntimeAnonymousAccessDenialSchema = z.object({
     !Number.isFinite(probedAt) || !Number.isFinite(expiresAt) ||
     expiresAt <= probedAt ||
     expiresAt - probedAt > HISTORICAL_RUNTIME_ANONYMOUS_DENIAL_MAX_TTL_MS ||
-    denial.denialClass !== expectedClass
+    denial.denialClass !== expectedClass ||
+    denial.safeRangeGet.statusCode !== denial.statusCode ||
+    denial.safeRangeGet.denialClass !== denial.denialClass ||
+    denial.safeRangeGet.requestDigest === denial.requestDigest ||
+    denial.proberAuthority.actorId !== denial.probedBy ||
+    denial.proberAuthority.authorityRole !== "anonymous_denial_prober" ||
+    new Date(denial.proberAuthority.snapshottedAt).getTime() !== probedAt
   ) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -265,11 +399,13 @@ export type HistoricalRuntimeAnonymousAccessDenial = z.infer<
 >;
 
 const HistoricalRuntimeExactObjectReceiptMaterialSchema = z.object({
-  schemaVersion: z.literal("historical-runtime-exact-object-receipt.v1"),
+  schemaVersion: z.literal("historical-runtime-exact-object-receipt.v2"),
   receiptId: z.string().uuid(),
   object: HistoricalRuntimeEvidenceObjectIdentitySchema,
   custodianActorId: UserIdSchema,
+  custodianAuthority: HistoricalRuntimeObjectActorAuthoritySchema,
   observedByActorId: UserIdSchema,
+  observedByAuthority: HistoricalRuntimeObjectActorAuthoritySchema,
   authenticatedReadRequestDigest: SHA256,
   authenticatedReadResponseDigest: SHA256,
   readAt: z.string().datetime({ offset: true }),
@@ -279,21 +415,30 @@ const HistoricalRuntimeExactObjectReceiptMaterialSchema = z.object({
 export function historicalRuntimeExactObjectReceiptDigest(value: unknown): string {
   const material = HistoricalRuntimeExactObjectReceiptMaterialSchema.parse(value);
   const result = canonicalDigest(
-    "venviewer.historical-runtime-exact-object-receipt.v1\n",
+    "venviewer.historical-runtime-exact-object-receipt.v2\n",
     material,
   );
   if (result === null) throw new TypeError("Exact object receipt is not canonical JSON.");
   return result;
 }
 
-export const HistoricalRuntimeExactObjectReceiptSchema =
+type HistoricalRuntimeExactObjectReceiptMaterial = z.infer<
+  typeof HistoricalRuntimeExactObjectReceiptMaterialSchema
+>;
+export type HistoricalRuntimeExactObjectReceipt =
+  HistoricalRuntimeExactObjectReceiptMaterial & { receiptDigest: string };
+
+export const HistoricalRuntimeExactObjectReceiptSchema:
+  z.ZodType<HistoricalRuntimeExactObjectReceipt> =
   HistoricalRuntimeExactObjectReceiptMaterialSchema.extend({
     receiptDigest: SHA256,
   }).strict().superRefine((receipt, context) => {
     const { receiptDigest, ...material } = receipt;
     const denial = receipt.anonymousAccessDenial;
+    const readAt = new Date(receipt.readAt).getTime();
+    const probedAt = new Date(denial.probedAt).getTime();
     if (
-      canonicalDigest("venviewer.historical-runtime-exact-object-receipt.v1\n", material) !==
+      canonicalDigest("venviewer.historical-runtime-exact-object-receipt.v2\n", material) !==
         receiptDigest
     ) {
       context.addIssue({
@@ -303,7 +448,27 @@ export const HistoricalRuntimeExactObjectReceiptSchema =
       });
     }
     if (
-      new Date(denial.probedAt).getTime() < new Date(receipt.readAt).getTime() ||
+      probedAt < readAt ||
+      probedAt - readAt > 5 * 60 * 1_000 ||
+      receipt.custodianActorId !== receipt.custodianAuthority.actorId ||
+      receipt.custodianAuthority.authorityRole !== "object_custodian" ||
+      receipt.observedByActorId !== receipt.observedByAuthority.actorId ||
+      receipt.observedByAuthority.authorityRole !== "object_observer" ||
+      receipt.custodianAuthority.snapshottedAt !== denial.probedAt ||
+      receipt.observedByAuthority.snapshottedAt !== denial.probedAt ||
+      new Set([
+        receipt.custodianActorId,
+        receipt.observedByActorId,
+        denial.probedBy,
+      ]).size !== 3 ||
+      receipt.custodianAuthority.environmentId !==
+        receipt.observedByAuthority.environmentId ||
+      receipt.custodianAuthority.environmentId !==
+        denial.proberAuthority.environmentId ||
+      receipt.custodianAuthority.venueId !== receipt.observedByAuthority.venueId ||
+      receipt.custodianAuthority.venueId !== denial.proberAuthority.venueId ||
+      receipt.custodianAuthority.spaceId !== receipt.observedByAuthority.spaceId ||
+      receipt.custodianAuthority.spaceId !== denial.proberAuthority.spaceId ||
       denial.providerProfile !== receipt.object.providerProfile ||
       denial.providerKind !== receipt.object.providerKind ||
       denial.providerAccountSha256 !== receipt.object.providerAccountSha256 ||
@@ -323,9 +488,6 @@ export const HistoricalRuntimeExactObjectReceiptSchema =
       });
     }
   });
-export type HistoricalRuntimeExactObjectReceipt = z.infer<
-  typeof HistoricalRuntimeExactObjectReceiptSchema
->;
 
 export const HistoricalRuntimeProductionExactObjectReceiptSchema =
   HistoricalRuntimeExactObjectReceiptSchema.superRefine((receipt, context) => {

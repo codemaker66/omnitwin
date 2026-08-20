@@ -36,6 +36,7 @@ const evidenceKindSchema = z.enum([
   "glb_verifier",
   "historical_runtime_capture_content_identity",
   "historical_runtime_role_attestation",
+  "historical_runtime_execution_activation_v2",
 ]);
 const positiveVectorSchema = z.object({
   id: z.string().min(1),
@@ -147,6 +148,7 @@ const EVIDENCE_KINDS = [
   "glb_verifier",
   "historical_runtime_capture_content_identity",
   "historical_runtime_role_attestation",
+  "historical_runtime_execution_activation_v2",
 ] as const satisfies readonly FoundryActivationV1SignedEvidenceKind[];
 const EXPECTED_SIGNED_EVIDENCE_PROFILES = {
   bootstrap_ceremony: {
@@ -203,6 +205,11 @@ const EXPECTED_SIGNED_EVIDENCE_PROFILES = {
     domain: "venviewer.historical-runtime-role-attestation.v1",
     payloadType: "application/vnd.venviewer.historical-runtime-role-attestation.v1+json",
     authority: "venue_evidence",
+  },
+  historical_runtime_execution_activation_v2: {
+    domain: "venviewer.historical-runtime-execution-activation.v2",
+    payloadType: "application/vnd.venviewer.historical-runtime-execution-activation.v2+json",
+    authority: "execution_authority",
   },
 } as const satisfies Readonly<Record<FoundryActivationV1SignedEvidenceKind, {
   readonly domain: string;

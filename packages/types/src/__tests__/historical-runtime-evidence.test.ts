@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   HISTORICAL_RUNTIME_MAX_EVIDENCE_OBJECT_BYTES,
+  HISTORICAL_RUNTIME_EXECUTION_V2_PAYLOAD_TYPE,
   HISTORICAL_RUNTIME_ROLE_ATTESTATION_PAYLOAD_TYPE,
   HistoricalRuntimeAuthoritySnapshotSchema,
   HistoricalRuntimeCaptureContentIdentityPredicateSchema,
   HistoricalRuntimeDerivationEvidenceSchema,
+  HistoricalRuntimeExecutionV2ReceiptSchema,
+  HistoricalRuntimeExecutionV2SubjectSchema,
   HistoricalRuntimeExactObjectReceiptSchema,
   HistoricalRuntimeNormalizedContentIdentitySchema,
   HistoricalRuntimeProductionExactObjectReceiptSchema,
@@ -20,12 +23,20 @@ import {
   HistoricalRuntimeSceneAuthorityReceiptSchema,
   HistoricalRuntimeSceneAuthoritySubjectSchema,
   HistoricalRuntimeSourceReceiptSetSchema,
+  HistoricalRuntimeTwinReleaseAuthoritySchema,
+  HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema,
   createHistoricalRuntimeRoleAttestationSigningPayload,
+  createHistoricalRuntimeExecutionV2SigningPayload,
   historicalRuntimeAuthoritySnapshotDigest,
   historicalRuntimeCaptureContentSubjectDigest,
+  historicalRuntimeConversionRecipeDigest,
   historicalRuntimeDerivationEvidenceDigest,
   historicalRuntimeDerivationMembersDigest,
+  historicalRuntimeExecutionV2PredicateDigest,
+  historicalRuntimeExecutionV2ReceiptDigest,
+  historicalRuntimeExecutionV2SubjectDigest,
   historicalRuntimeExactObjectReceiptDigest,
+  historicalRuntimeObjectActorAuthorityDigest,
   historicalRuntimeProviderCapabilityDigest,
   historicalRuntimeReviewedProfileActorMapDigest,
   historicalRuntimeReviewedProfileEvidenceDigest,
@@ -33,10 +44,14 @@ import {
   historicalRuntimeReviewedProfileSubjectDigest,
   historicalRuntimeRoleAttestationDigest,
   historicalRuntimeRoleAttestationSubjectDigest,
+  historicalRuntimeRoomScopeBasisDigest,
   historicalRuntimeSceneAuthorityCoverageDigest,
   historicalRuntimeSceneAuthorityReceiptDigest,
   historicalRuntimeSceneAuthoritySubjectDigest,
   historicalRuntimeSourceReceiptSetDigest,
+  historicalRuntimeTwinReleaseAuthorityDigest,
+  historicalRuntimeTwinReleaseVerificationReceiptDigest,
+  historicalRuntimeVerifiedTwinReleaseAuthorityDigest,
 } from "../historical-runtime-evidence.js";
 import { sha256Hex } from "../canonical-layout-snapshot.js";
 
@@ -53,7 +68,47 @@ const ACTORS = Array.from(
   (_, index) => `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
 );
 
+function objectActorAuthority(
+  actorId: string,
+  authorityRole: "object_custodian" | "object_observer" | "anonymous_denial_prober",
+  snapshottedAt = "2026-08-20T09:31:00.000Z",
+) {
+  const material = {
+    schemaVersion: "historical-runtime-object-actor-authority.v1",
+    actorId,
+    authorityRole,
+    environmentId: "10000000-0000-4000-8000-000000000090",
+    environmentMode: "test",
+    venueId: VENUE_ID,
+    spaceId: SPACE_ID,
+    platformRole: "none",
+    userRole: "staff",
+    userVenueId: VENUE_ID,
+    workspaceMembership: {
+      state: "active",
+      membershipId: `30000000-0000-4000-8000-${actorId.slice(-12)}`,
+      workspaceId: "30000000-0000-4000-8000-000000000099",
+      userId: actorId,
+      workspaceRole: "staff",
+      venueRole: "staff",
+      membershipStatus: "active",
+      membershipUpdatedAt: "2026-08-20T09:00:00.000Z",
+      membershipVersionDigest: A,
+    },
+    snapshottedAt,
+  } as const;
+  return {
+    ...material,
+    authorityDigest: historicalRuntimeObjectActorAuthorityDigest(material),
+  };
+}
+
 function exactReceipt(overrides: Record<string, unknown> = {}) {
+  const denialOverrides =
+    overrides["anonymousAccessDenial"] as Record<string, unknown> | undefined;
+  const probedAt = typeof denialOverrides?.["probedAt"] === "string"
+    ? denialOverrides["probedAt"]
+    : "2026-08-20T09:31:00.000Z";
   const object = {
     providerProfile: "local_fixture",
     providerKind: "local_fixture",
@@ -73,7 +128,7 @@ function exactReceipt(overrides: Record<string, unknown> = {}) {
     ...(overrides["object"] as Record<string, unknown> | undefined),
   };
   const anonymousAccessDenial = {
-    schemaVersion: "historical-runtime-anonymous-access-denial.v1",
+    schemaVersion: "historical-runtime-anonymous-access-denial.v2",
     requestMethod: "HEAD",
     providerProfile: object.providerProfile,
     providerKind: object.providerKind,
@@ -91,17 +146,33 @@ function exactReceipt(overrides: Record<string, unknown> = {}) {
     statusCode: 403,
     denialClass: "access_forbidden",
     redirectCount: 0,
+    safeRangeGet: {
+      requestMethod: "GET",
+      rangeHeader: "bytes=0-0",
+      requestDigest: C,
+      responseDigest: F,
+      statusCode: 403,
+      denialClass: "access_forbidden",
+      redirectCount: 0,
+    },
     probedBy: ACTORS[2],
-    probedAt: "2026-08-20T09:31:00.000Z",
+    proberAuthority: objectActorAuthority(
+      ACTORS[2]!,
+      "anonymous_denial_prober",
+      probedAt,
+    ),
+    probedAt,
     expiresAt: "2026-08-21T09:31:00.000Z",
-    ...(overrides["anonymousAccessDenial"] as Record<string, unknown> | undefined),
+    ...denialOverrides,
   };
   const material = {
-    schemaVersion: "historical-runtime-exact-object-receipt.v1",
+    schemaVersion: "historical-runtime-exact-object-receipt.v2",
     receiptId: "10000000-0000-4000-8000-000000000001",
     object,
     custodianActorId: ACTORS[0],
+    custodianAuthority: objectActorAuthority(ACTORS[0]!, "object_custodian", probedAt),
     observedByActorId: ACTORS[1],
+    observedByAuthority: objectActorAuthority(ACTORS[1]!, "object_observer", probedAt),
     authenticatedReadRequestDigest: D,
     authenticatedReadResponseDigest: E,
     readAt: "2026-08-20T09:30:00.000Z",
@@ -127,7 +198,7 @@ function sogReceipt() {
 
 function providerCapability(overrides: Record<string, unknown> = {}) {
   const material = {
-    schemaVersion: "historical-runtime-provider-capability.v1",
+    schemaVersion: "historical-runtime-provider-capability.v2",
     capabilityReceiptId: "10000000-0000-4000-8000-000000000080",
     providerProfile: "local_fixture",
     providerAccountSha256: A,
@@ -138,6 +209,20 @@ function providerCapability(overrides: Record<string, unknown> = {}) {
     exactVersionReadSupported: true,
     overwritePreservesPriorVersion: true,
     anonymousProbeSupported: true,
+    anonymousAccessProbeEquivalence: {
+      headRequestMethod: "HEAD",
+      headRequestDigest: C,
+      headResponseDigest: D,
+      headStatusCode: 403,
+      headRedirectCount: 0,
+      getRequestMethod: "GET",
+      getRangeHeader: "bytes=0-0",
+      getRequestDigest: E,
+      getResponseDigest: F,
+      getStatusCode: 403,
+      getRedirectCount: 0,
+      denialClass: "access_forbidden",
+    },
     verificationMode: "local_fixture_exact_version",
     testObjectStorageKeySha256: D,
     initialWriteDigest: A,
@@ -299,8 +384,6 @@ function reviewedProfileSubjectMaterial(overrides: Record<string, unknown> = {})
     sizeBytes: 7,
     derivationOutputReceiptId: "10000000-0000-4000-8000-000000000052",
     derivationMemberReceiptDigest: B,
-    runtimePackageMemberDigest: C,
-    presentationAdmissionMemberDigest: D,
     rightsClearanceId: "10000000-0000-4000-8000-000000000053",
     rightsClearanceDigest: E,
     rightsReviewerActorId: ACTORS[7],
@@ -344,6 +427,7 @@ function reviewedProfileSubjectMaterial(overrides: Record<string, unknown> = {})
     runtimePackageContentDigest: D,
     runtimeManifestDigest: E,
     captureRootId: "10000000-0000-4000-8000-000000000058",
+    captureContentSubjectDigest: E,
     captureRootEvidenceDigest: F,
     captureClearanceId: "10000000-0000-4000-8000-000000000059",
     captureClearanceDigest: A,
@@ -389,6 +473,24 @@ function sceneCoverage(
   wholeVenueRegionIds: readonly string[] = ["region-1"],
   coveredRegionIds: readonly string[] = ["region-1"],
 ) {
+  const roomScopeBasis = {
+    schemaVersion: "historical-runtime-room-scope-basis.v1",
+    venueId: VENUE_ID,
+    spaceId: SPACE_ID,
+    runtimePackageId: "10000000-0000-4000-8000-000000000041",
+    runtimePackageContentDigest: A,
+    runtimeManifestDigest: B,
+    presentationAdmissionId: "10000000-0000-4000-8000-000000000042",
+    presentationAdmissionDigest: C,
+    derivationId: "10000000-0000-4000-8000-000000000066",
+    derivationEvidenceDigest: F,
+    transformReviewId: "10000000-0000-4000-8000-000000000043",
+    transformReviewDigest: D,
+    twinReleaseId: "10000000-0000-4000-8000-000000000044",
+    twinReleaseManifestDigest: E,
+    sceneArtifactRowId: "10000000-0000-4000-8000-000000000047",
+    sceneArtifactDigest: F,
+  } as const;
   return {
     venueId: VENUE_ID,
     spaceId: SPACE_ID,
@@ -397,16 +499,20 @@ function sceneCoverage(
     runtimeManifestDigest: B,
     presentationAdmissionId: "10000000-0000-4000-8000-000000000042",
     presentationAdmissionDigest: C,
+    derivationId: "10000000-0000-4000-8000-000000000066",
+    derivationEvidenceDigest: F,
     transformReviewId: "10000000-0000-4000-8000-000000000043",
     transformReviewDigest: D,
     twinReleaseId: "10000000-0000-4000-8000-000000000044",
     twinReleaseManifestDigest: E,
-    roomScopeBasisDigest: F,
+    roomScopeBasis,
+    roomScopeBasisDigest: historicalRuntimeRoomScopeBasisDigest(roomScopeBasis),
     coverageDecision: "whole_room_and_all_runtime_members_covered",
     wholeVenueRegionIds,
     orderedMembers: [{
       memberIndex: 0,
       assetVersionId: "10000000-0000-4000-8000-000000000045",
+      derivationOutputReceiptId: "10000000-0000-4000-8000-000000000067",
       derivationMemberReceiptDigest: A,
       authorityReference: "scene/node-1",
       coveredRegionIds,
@@ -441,9 +547,11 @@ function validSceneSubject() {
     presentationAdmissionReviewerAttestationDigest: D,
     presentationAdmissionReviewerActorId: ACTORS[6],
     presentationAdmissionReviewerAttestationExpiresAt: "2026-08-22T10:00:00.000Z",
+    derivationExpiresAt: "2026-08-22T10:00:00.000Z",
     transformReviewExpiresAt: "2026-08-22T10:00:00.000Z",
     twinReleaseAuthorityReceiptId: "10000000-0000-4000-8000-000000000049",
     twinReleaseAuthorityDigest: E,
+    twinReleaseDigest: D,
     twinReleaseAuthorityExpiresAt: "2026-08-22T10:00:00.000Z",
     providerCapabilityReceiptId:
       sceneObjectReceipt.object.immutabilityCapabilityReceiptId,
@@ -491,6 +599,61 @@ describe("historical runtime authenticated-import evidence", () => {
   it("keeps local-fixture receipts out of the production authority schema", () => {
     expect(HistoricalRuntimeExactObjectReceiptSchema.safeParse(exactReceipt()).success).toBe(true);
     expect(HistoricalRuntimeProductionExactObjectReceiptSchema.safeParse(exactReceipt()).success)
+      .toBe(false);
+  });
+
+  it("rejects stale reads and non-independent receipt actors", () => {
+    const stale = exactReceipt({ readAt: "2026-08-20T09:25:59.999Z" });
+    const duplicateActor = exactReceipt({ observedByActorId: ACTORS[0] });
+    const base = exactReceipt();
+    const mismatchedSafeGet = {
+      ...base,
+      anonymousAccessDenial: {
+        ...base.anonymousAccessDenial,
+        safeRangeGet: {
+          requestMethod: "GET",
+          rangeHeader: "bytes=0-0",
+          requestDigest: A,
+          responseDigest: F,
+          statusCode: 404,
+          denialClass: "concealed_existing_object",
+          redirectCount: 0,
+        },
+      },
+    };
+    expect(HistoricalRuntimeExactObjectReceiptSchema.safeParse(stale).success).toBe(false);
+    expect(HistoricalRuntimeExactObjectReceiptSchema.safeParse(duplicateActor).success)
+      .toBe(false);
+    expect(HistoricalRuntimeExactObjectReceiptSchema.safeParse(mismatchedSafeGet).success)
+      .toBe(false);
+  });
+
+  it("requires equivalent anonymous HEAD and GET provider probes", () => {
+    const mismatched = providerCapability({
+      anonymousAccessProbeEquivalence: {
+        headRequestMethod: "HEAD",
+        headRequestDigest: C,
+        headResponseDigest: D,
+        headStatusCode: 403,
+        headRedirectCount: 0,
+        getRequestMethod: "GET",
+        getRangeHeader: "bytes=0-0",
+        getRequestDigest: E,
+        getResponseDigest: F,
+        getStatusCode: 404,
+        getRedirectCount: 0,
+        denialClass: "access_forbidden",
+      },
+    });
+    const duplicateRequest = providerCapability({
+      anonymousAccessProbeEquivalence: {
+        ...providerCapability().anonymousAccessProbeEquivalence,
+        getRequestDigest: C,
+      },
+    });
+    expect(HistoricalRuntimeProviderCapabilitySchema.safeParse(mismatched).success)
+      .toBe(false);
+    expect(HistoricalRuntimeProviderCapabilitySchema.safeParse(duplicateRequest).success)
       .toBe(false);
   });
 
@@ -543,6 +706,46 @@ describe("historical runtime authenticated-import evidence", () => {
       receiptSetDigest: historicalRuntimeSourceReceiptSetDigest(material),
     });
     expect(result.success).toBe(false);
+  });
+
+  it("requires a direct-camera bundle to have an exact private raw root", () => {
+    const receipt = HistoricalRuntimeExactObjectReceiptSchema.parse(exactReceipt({
+      object: {
+        fileName: "direct-camera.raw",
+        mimeType: "application/octet-stream",
+        sizeBytes: 2_048,
+      },
+    }));
+    const material = {
+      schemaVersion: "historical-runtime-source-receipt-set.v1",
+      receiptSetId: "10000000-0000-4000-8000-000000000004",
+      lineageStartKind: "direct_camera_capture_bundle",
+      ancestorState: "exact_private_receipt",
+      unavailableAncestorAttestationId: null,
+      unavailableAncestorAttestationDigest: null,
+      rootComponentIndex: 0,
+      members: [{
+        componentIndex: 0,
+        role: "raw_capture",
+        relativePath: "direct-camera.raw",
+        receipt,
+      }],
+    } as const;
+    expect(HistoricalRuntimeSourceReceiptSetSchema.safeParse({
+      ...material,
+      receiptSetDigest: historicalRuntimeSourceReceiptSetDigest(material),
+    }).success).toBe(true);
+
+    const unavailable = {
+      ...material,
+      ancestorState: "owner_attested_unavailable_ancestor" as const,
+      unavailableAncestorAttestationId: "10000000-0000-4000-8000-000000000005",
+      unavailableAncestorAttestationDigest: A,
+    };
+    expect(HistoricalRuntimeSourceReceiptSetSchema.safeParse({
+      ...unavailable,
+      receiptSetDigest: historicalRuntimeSourceReceiptSetDigest(unavailable),
+    }).success).toBe(false);
   });
 
   it("requires exact RGB8 stride and byte-length equations", () => {
@@ -613,6 +816,14 @@ describe("historical runtime authenticated-import evidence", () => {
       conversionCommandSha256: E,
       conversionParametersDigest: F,
       conversionEnvironmentDigest: A,
+      conversionRecipeDigest: historicalRuntimeConversionRecipeDigest({
+        conversionTool: "synthetic-tool",
+        conversionVersion: "1.0.0",
+        conversionBinarySha256: D,
+        conversionCommandSha256: E,
+        conversionParametersDigest: F,
+        conversionEnvironmentDigest: A,
+      }),
       producerAttestationId: "10000000-0000-4000-8000-000000000034",
       producerAttestationDigest: B,
       custodianAttestationId: "10000000-0000-4000-8000-000000000035",
@@ -632,29 +843,7 @@ describe("historical runtime authenticated-import evidence", () => {
   });
 
   it("rejects Scene registry and parsed-map identities that disagree with private bytes", () => {
-    const coverage = {
-      venueId: VENUE_ID,
-      spaceId: SPACE_ID,
-      runtimePackageId: "10000000-0000-4000-8000-000000000041",
-      runtimePackageContentDigest: A,
-      runtimeManifestDigest: B,
-      presentationAdmissionId: "10000000-0000-4000-8000-000000000042",
-      presentationAdmissionDigest: C,
-      transformReviewId: "10000000-0000-4000-8000-000000000043",
-      transformReviewDigest: D,
-      twinReleaseId: "10000000-0000-4000-8000-000000000044",
-      twinReleaseManifestDigest: E,
-      roomScopeBasisDigest: F,
-      coverageDecision: "whole_room_and_all_runtime_members_covered",
-      wholeVenueRegionIds: ["region-1"],
-      orderedMembers: [{
-        memberIndex: 0,
-        assetVersionId: "10000000-0000-4000-8000-000000000045",
-        derivationMemberReceiptDigest: A,
-        authorityReference: "scene/node-1",
-        coveredRegionIds: ["region-1"],
-      }],
-    } as const;
+    const coverage = sceneCoverage();
     const sceneObjectReceipt = exactReceipt({
       object: { fileName: "scene-authority.json", mimeType: "application/json", sizeBytes: 7 },
     });
@@ -676,9 +865,11 @@ describe("historical runtime authenticated-import evidence", () => {
       presentationAdmissionReviewerAttestationDigest: D,
       presentationAdmissionReviewerActorId: ACTORS[6],
       presentationAdmissionReviewerAttestationExpiresAt: "2026-08-22T10:00:00.000Z",
+      derivationExpiresAt: "2026-08-22T10:00:00.000Z",
       transformReviewExpiresAt: "2026-08-22T10:00:00.000Z",
       twinReleaseAuthorityReceiptId: "10000000-0000-4000-8000-000000000049",
       twinReleaseAuthorityDigest: E,
+      twinReleaseDigest: D,
       twinReleaseAuthorityExpiresAt: "2026-08-22T10:00:00.000Z",
       providerCapabilityReceiptId:
         sceneObjectReceipt.object.immutabilityCapabilityReceiptId,
@@ -999,6 +1190,428 @@ describe("historical runtime authenticated-import evidence", () => {
       },
       captureOperatorAttestationId: "10000000-0000-4000-8000-000000000098",
       sourceCustodianAttestationId: "10000000-0000-4000-8000-000000000099",
+    }).success).toBe(false);
+  });
+
+  it("does not relabel an owner-authorized import as a direct-camera lineage", () => {
+    const base = {
+      captureRootId: "10000000-0000-4000-8000-000000000096",
+      sourceReceiptSetId: "10000000-0000-4000-8000-000000000097",
+      captureClass: "owner_authorized_existing_capture",
+      lineageStartKind: "direct_camera_capture_bundle",
+      ancestorState: "exact_private_receipt",
+      rootComponentIndex: 0,
+      sourceObjects: [{
+        componentIndex: 0,
+        role: "raw_capture",
+        providerProfile: "local_fixture",
+        storageKey: "fixtures/direct-camera.raw",
+        relativePath: "direct-camera.raw",
+        fileName: "direct-camera.raw",
+        mimeType: "application/octet-stream",
+        expectedSha256: A,
+        expectedSizeBytes: 7,
+      }],
+      normalizedContent: {
+        normalizationProfileVersion: "historical-runtime-normalization-profile.v1",
+        conformanceTestVectorSetDigest: B,
+        normalizationSpec: "raw-bytes-exact.v1",
+        normalizedSha256: A,
+        normalizedSizeBytes: 7,
+        decoderName: "exact-byte-identity",
+        decoderVersion: "1.0.0",
+        decoderBinarySha256: C,
+        formatTag: "sog",
+        exactBinaryReason: "no-approved-deterministic-decoder-use-exact-versioned-bytes",
+      },
+      normalizationPolicy: {
+        detectedSourceFormat: "sog",
+        requiredNormalizationSpec: "raw-bytes-exact.v1",
+      },
+      captureOperatorAttestationId: "10000000-0000-4000-8000-000000000098",
+      sourceCustodianAttestationId: "10000000-0000-4000-8000-000000000099",
+    } as const;
+    expect(PrepareHistoricalRuntimeCaptureContentSubjectSchema.safeParse(base).success)
+      .toBe(false);
+    expect(PrepareHistoricalRuntimeCaptureContentSubjectSchema.safeParse({
+      ...base,
+      captureClass: "venue_operator_direct_camera",
+    }).success).toBe(true);
+  });
+
+  it("binds every legacy twin review leaf in the explicitly test-only wrapper", () => {
+    const authoritySnapshotMaterial = {
+      authenticationSource: "local_test_fixture",
+      platformRole: "admin",
+      userRole: "admin",
+      userVenueId: null,
+      venueId: VENUE_ID,
+      workspaceMembership: {
+        state: "not_applicable",
+        reason: "platform_authority",
+      },
+      snapshottedAt: "2026-08-20T09:03:00.000Z",
+    } as const;
+    const authoritySnapshot = HistoricalRuntimeAuthoritySnapshotSchema.parse({
+      ...authoritySnapshotMaterial,
+      authorityDigest: historicalRuntimeAuthoritySnapshotDigest(
+        authoritySnapshotMaterial,
+      ),
+    });
+    const material = {
+      schemaVersion: "historical-runtime-twin-release-authority.v1",
+      authorityId: "10000000-0000-4000-8000-000000000114",
+      sceneValidationId: "10000000-0000-4000-8000-000000000115",
+      venueId: VENUE_ID,
+      spaceId: SPACE_ID,
+      releaseId: "10000000-0000-4000-8000-000000000116",
+      releaseKind: "venue_twin_v1",
+      releaseDigest: A,
+      releaseManifestSha256: B,
+      releaseCreatedBy: ACTORS[0],
+      releaseCreatedAt: "2026-08-20T09:00:00.000Z",
+      releaseReviewId: "10000000-0000-4000-8000-000000000117",
+      releaseQaReportDigest: C,
+      releaseReviewDigest: D,
+      releaseReviewerActorId: ACTORS[1],
+      releaseReviewerAuthority: "platform_admin",
+      releaseReviewDecision: "approved",
+      releaseTargetExposure: "expert_review",
+      releaseReviewSequence: 1,
+      releaseSupersedesReviewId: null,
+      releaseReviewedAt: "2026-08-20T09:01:00.000Z",
+      releaseAttestationId: "10000000-0000-4000-8000-000000000118",
+      releaseAttestationEnvelopeSha256: E,
+      releaseAttestationVerifiedBy: ACTORS[2],
+      releaseAttestationVerifiedAt: "2026-08-20T09:02:00.000Z",
+      authoritySnapshotId: "10000000-0000-4000-8000-000000000119",
+      authoritySnapshot,
+      approvedByActorId: ACTORS[3],
+      approvedAt: "2026-08-20T09:04:00.000Z",
+      expiresAt: "2026-09-19T09:04:00.000Z",
+    } as const;
+    const valid = {
+      ...material,
+      twinReleaseAuthorityDigest:
+        historicalRuntimeTwinReleaseAuthorityDigest(material),
+    };
+    expect(HistoricalRuntimeTwinReleaseAuthoritySchema.safeParse(valid).success)
+      .toBe(true);
+    expect(HistoricalRuntimeTwinReleaseAuthoritySchema.safeParse({
+      ...valid,
+      releaseReviewDigest: F,
+    }).success).toBe(false);
+  });
+
+  it("binds production twin authority to exact private DSSE bytes, current key, latest review, and an independent approval", () => {
+    const releaseId = "10000000-0000-4000-8000-000000000120";
+    const reviewId = "10000000-0000-4000-8000-000000000121";
+    const keyId = "venviewer-twin-release-2026-q3";
+    const statement = {
+      _type: "https://in-toto.io/Statement/v1",
+      subject: [{
+        name: `reconstruction-release/trades-hall/${A}`,
+        digest: { sha256: A },
+      }],
+      predicateType: "https://venviewer.com/attestations/reconstruction-release/v1",
+      predicate: {
+        schemaVersion: "venviewer.reconstruction-attestation-predicate.v1",
+        venueSlug: "trades-hall",
+        releaseKind: "venue_twin_v1",
+        releaseId,
+        releaseDigest: A,
+        sourceManifestSha256: B,
+        releaseManifestSha256: C,
+        qaReportDigest: D,
+        reviewId,
+        reviewDigest: E,
+        reviewedAt: "2026-08-20T09:01:00.000Z",
+        reviewerUserId: ACTORS[1],
+        decision: "approved",
+        targetExposure: "public",
+        visualEvidence: [{
+          label: "Grand Hall overview",
+          objectKey: "releases/trades-hall/grand-hall.png",
+          sha256: F,
+        }],
+        transformArtifactRef: {
+          artifactId: "grand-hall-transform",
+          artifactDigest: B,
+        },
+        sceneAuthorityMapRef: {
+          artifactId: "grand-hall-scene-map",
+          artifactDigest: C,
+        },
+      },
+    } as const;
+    const payloadUtf8 = JSON.stringify(statement);
+    const envelope = {
+      payloadType: "application/vnd.in-toto+json",
+      payload: Buffer.from(payloadUtf8, "utf8").toString("base64"),
+      signatures: [{
+        keyid: keyId,
+        sig: Buffer.alloc(64, 1).toString("base64"),
+      }],
+    } as const;
+    const envelopeUtf8 = JSON.stringify(envelope);
+    const envelopeSha256 = sha256Hex(envelopeUtf8);
+    const payloadSha256 = sha256Hex(payloadUtf8);
+    const envelopeObjectReceipt = exactReceipt({
+      object: {
+        providerProfile: "runtime_private",
+        providerKind: "s3",
+        versionKind: "s3_version_id",
+        storageVersion: "release-envelope-version-1",
+        fileName: "release.dsse.json",
+        mimeType: "application/vnd.dsse.envelope+json",
+        sha256: envelopeSha256,
+        sizeBytes: Buffer.byteLength(envelopeUtf8, "utf8"),
+      },
+    });
+    const verificationReceiptMaterial = {
+      schemaVersion: "historical-runtime-twin-release-verification-receipt.v1",
+      verificationBoundary: "ed25519_dsse_verified_by_service_v1",
+      verifiedByDatabasePrincipal: "omnitwin_historical_evidence_verifier",
+      envelopeSha256,
+      payloadSha256,
+      signingKeyAuthorityId: "10000000-0000-4000-8000-000000000125",
+      keyId,
+      publicKeyFingerprint: F,
+      verifiedAt: "2026-08-20T09:32:00.000Z",
+    } as const;
+    const verificationReceipt = {
+      ...verificationReceiptMaterial,
+      verificationReceiptDigest:
+        historicalRuntimeTwinReleaseVerificationReceiptDigest(
+          verificationReceiptMaterial,
+        ),
+    };
+    const material = {
+      schemaVersion: "historical-runtime-verified-twin-release-authority.v1",
+      authorityId: "10000000-0000-4000-8000-000000000122",
+      sceneValidationId: "10000000-0000-4000-8000-000000000123",
+      venueId: VENUE_ID,
+      venueSlug: "trades-hall",
+      spaceId: SPACE_ID,
+      spaceSlug: "grand-hall",
+      releaseId,
+      releaseKind: "venue_twin_v1",
+      releaseDigest: A,
+      sourceManifestSha256: B,
+      releaseManifestSha256: C,
+      releaseCreatedBy: ACTORS[0],
+      releaseCreatedAt: "2026-08-20T09:00:00.000Z",
+      releaseReviewId: reviewId,
+      releaseQaReportDigest: D,
+      releaseReviewDigest: E,
+      releaseReviewerActorId: ACTORS[1],
+      releaseReviewerAuthority: "platform_admin",
+      releaseReviewDecision: "approved",
+      releaseTargetExposure: "public",
+      releaseReviewSequence: 1,
+      releaseSupersedesReviewId: null,
+      releaseReviewedAt: "2026-08-20T09:01:00.000Z",
+      releaseAttestationId: "10000000-0000-4000-8000-000000000124",
+      legacyAttestationEnvelopeSha256: envelopeSha256,
+      legacyAttestationObjectKeySha256:
+        envelopeObjectReceipt.object.storageKeySha256,
+      legacyAttestationVerifiedBy: ACTORS[2],
+      legacyAttestationVerifiedAt: "2026-08-20T09:02:00.000Z",
+      envelopeObjectReceipt,
+      envelope,
+      envelopeUtf8,
+      envelopeSha256,
+      envelopeByteLength: String(Buffer.byteLength(envelopeUtf8, "utf8")),
+      payloadType: "application/vnd.in-toto+json",
+      payloadUtf8,
+      payloadSha256,
+      payloadByteLength: String(Buffer.byteLength(payloadUtf8, "utf8")),
+      statement,
+      signingKeyAuthorityId: verificationReceiptMaterial.signingKeyAuthorityId,
+      keyPolicyId: "10000000-0000-4000-8000-000000000126",
+      keyPurpose: "historical_runtime_twin_release_attestation",
+      keyPolicyDigest: B,
+      keyId,
+      publicKeyFingerprint: F,
+      keyExpiresAt: "2026-09-19T09:32:00.000Z",
+      verificationReceipt,
+      approvalAuthority: {
+        actionAuthoritySnapshotId: "10000000-0000-4000-8000-000000000127",
+        actionKind: "twin_release_authority_approval",
+        actionId: "10000000-0000-4000-8000-000000000128",
+        actionParametersDigest: C,
+        actorId: ACTORS[3],
+        authorityRole: "twin_release_approver",
+        authorityDigest: D,
+        snapshottedAt: "2026-08-20T09:31:30.000Z",
+        expiresAt: "2026-08-20T09:36:30.000Z",
+      },
+      approvedAt: "2026-08-20T09:32:00.000Z",
+      expiresAt: "2026-08-21T09:00:00.000Z",
+    } as const;
+    const valid = {
+      ...material,
+      twinReleaseAuthorityDigest:
+        historicalRuntimeVerifiedTwinReleaseAuthorityDigest(material),
+    };
+    expect(
+      HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema.safeParse(valid).success,
+    ).toBe(true);
+    expect(HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema.safeParse({
+      ...valid,
+      envelopeUtf8: `${envelopeUtf8} `,
+    }).success).toBe(false);
+    expect(HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema.safeParse({
+      ...valid,
+      keyId: "unrelated-release-key",
+    }).success).toBe(false);
+    const wrongStorageMaterial = {
+      ...material,
+      legacyAttestationObjectKeySha256: A,
+    };
+    expect(HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema.safeParse({
+      ...wrongStorageMaterial,
+      twinReleaseAuthorityDigest:
+        historicalRuntimeVerifiedTwinReleaseAuthorityDigest(wrongStorageMaterial),
+    }).success).toBe(false);
+    const sameActorMaterial = {
+      ...material,
+      approvalAuthority: {
+        ...material.approvalAuthority,
+        actorId: material.releaseReviewerActorId,
+      },
+    };
+    expect(HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema.safeParse({
+      ...sameActorMaterial,
+      twinReleaseAuthorityDigest:
+        historicalRuntimeVerifiedTwinReleaseAuthorityDigest(sameActorMaterial),
+    }).success).toBe(false);
+  });
+
+  it("binds an execution V2 subject, reviewer, canonical statement, and raw DSSE receipt", () => {
+    const subjectMaterial = {
+      schemaVersion: "historical-runtime-execution-activation-subject.v2",
+      activationId: "10000000-0000-4000-8000-000000000101",
+      environmentId: "10000000-0000-4000-8000-000000000102",
+      environmentMode: "test",
+      environmentDigest: A,
+      scopeEpochId: "10000000-0000-4000-8000-000000000103",
+      eventId: "10000000-0000-4000-8000-000000000104",
+      phaseId: "10000000-0000-4000-8000-000000000105",
+      configurationId: "10000000-0000-4000-8000-000000000106",
+      canonicalSnapshotId: "10000000-0000-4000-8000-000000000107",
+      snapshotHash: B,
+      proofDigest: C,
+      tenantBoundary: "venue_id_v1",
+      tenantId: VENUE_ID,
+      venueId: VENUE_ID,
+      venueSlug: "trades-hall",
+      spaceId: SPACE_ID,
+      spaceSlug: "grand-hall",
+      reviewedProfileEvidenceId: "10000000-0000-4000-8000-000000000108",
+      reviewedProfileSubjectDigest: D,
+      reviewedProfileEvidenceDigest: E,
+      reviewedProfileFinalReviewerActorId: ACTORS[17],
+      reviewedProfileExpiresAt: "2026-08-20T12:00:00.000Z",
+      requestedBy: ACTORS[18],
+      requesterAuthority: {
+        state: "active_workspace_membership",
+        platformRole: "none",
+        userRole: "staff",
+        userVenueId: VENUE_ID,
+        membershipId: "10000000-0000-4000-8000-000000000109",
+        workspaceId: "10000000-0000-4000-8000-000000000110",
+        workspaceRole: "staff",
+        venueRole: "staff",
+        membershipUpdatedAt: "2026-08-20T09:59:00.000Z",
+      },
+      requestedAt: "2026-08-20T10:00:00.000Z",
+      expiresAt: "2026-08-20T11:00:00.000Z",
+    } as const;
+    const subject = HistoricalRuntimeExecutionV2SubjectSchema.parse({
+      ...subjectMaterial,
+      executionActivationSubjectDigest:
+        historicalRuntimeExecutionV2SubjectDigest(subjectMaterial),
+    });
+    const predicate = {
+      schemaVersion: "historical-runtime-execution-activation.v2",
+      activationId: subject.activationId,
+      executionActivationSubject: subject,
+      executionActivationSubjectDigest: subject.executionActivationSubjectDigest,
+      reviewedProfileEvidenceId: subject.reviewedProfileEvidenceId,
+      reviewedProfileEvidenceDigest: subject.reviewedProfileEvidenceDigest,
+      executionReviewerAttestationId:
+        "10000000-0000-4000-8000-000000000111",
+      executionReviewerAttestationDigest: F,
+      executionReviewerActorId: ACTORS[19],
+      keyPolicyId: "10000000-0000-4000-8000-000000000112",
+      keyPolicyDigest: A,
+      keyId: "execution-test-key",
+      signerPublicKeySha256: `sha256:${B}`,
+      issuedAt: "2026-08-20T10:05:00.000Z",
+      expiresAt: subject.expiresAt,
+      nonce: "10000000-0000-4000-8000-000000000113",
+    } as const;
+    const statement = {
+      authority: "execution_authority",
+      evidenceKind: "historical_runtime_execution_activation_v2",
+      schemaVersion: "historical-runtime-execution-activation-statement.v2",
+      subjectName: `historical-runtime-execution-activation/${subject.activationId}`,
+      subjectDigest: historicalRuntimeExecutionV2PredicateDigest(predicate),
+      predicate,
+    } as const;
+    const signingPayload = createHistoricalRuntimeExecutionV2SigningPayload(statement);
+    const envelopeUtf8 = "{\"payload\":\"fixture\",\"payloadType\":\"" +
+      HISTORICAL_RUNTIME_EXECUTION_V2_PAYLOAD_TYPE +
+      "\",\"signatures\":[{\"keyid\":\"execution-test-key\",\"sig\":\"fixture\"}]}";
+    const rawEvidence = {
+      payloadType: HISTORICAL_RUNTIME_EXECUTION_V2_PAYLOAD_TYPE,
+      payloadUtf8: signingPayload.payloadUtf8,
+      envelopeUtf8,
+      payloadSha256: signingPayload.payloadSha256,
+      receiptSha256: `sha256:${sha256Hex(
+        `venviewer.historical-runtime-execution-activation.v2\n${signingPayload.payloadUtf8}`,
+      )}`,
+      envelopeSha256: `sha256:${sha256Hex(
+        `venviewer.historical-runtime-execution-activation.v2.dsse-envelope\n${envelopeUtf8}`,
+      )}`,
+      signerPublicKeySha256: predicate.signerPublicKeySha256,
+      payloadByteLength: String(new TextEncoder().encode(signingPayload.payloadUtf8).byteLength),
+      envelopeByteLength: String(new TextEncoder().encode(envelopeUtf8).byteLength),
+      verifiedAt: "2026-08-20T10:06:00.000Z",
+    } as const;
+    const receiptMaterial = {
+      schemaVersion: "historical-runtime-execution-activation-receipt.v2",
+      activationId: subject.activationId,
+      subject,
+      executionActivationSubjectDigest: subject.executionActivationSubjectDigest,
+      statement,
+      predicateDigest: statement.subjectDigest,
+      reviewedProfileEvidenceId: subject.reviewedProfileEvidenceId,
+      reviewedProfileEvidenceDigest: subject.reviewedProfileEvidenceDigest,
+      executionReviewerAttestationId: predicate.executionReviewerAttestationId,
+      executionReviewerAttestationDigest: predicate.executionReviewerAttestationDigest,
+      executionReviewerActorId: predicate.executionReviewerActorId,
+      rawEvidence,
+      issuedAt: predicate.issuedAt,
+      verifiedAt: rawEvidence.verifiedAt,
+      expiresAt: predicate.expiresAt,
+    } as const;
+    expect(HistoricalRuntimeExecutionV2ReceiptSchema.safeParse({
+      ...receiptMaterial,
+      activationDigest: historicalRuntimeExecutionV2ReceiptDigest(receiptMaterial),
+    }).success).toBe(true);
+
+    const clientAuthority = {
+      ...subjectMaterial.requesterAuthority,
+      workspaceRole: "client",
+      venueRole: "client",
+    } as const;
+    const clientSubject = { ...subjectMaterial, requesterAuthority: clientAuthority };
+    expect(HistoricalRuntimeExecutionV2SubjectSchema.safeParse({
+      ...clientSubject,
+      executionActivationSubjectDigest:
+        historicalRuntimeExecutionV2SubjectDigest(clientSubject),
     }).success).toBe(false);
   });
 });

@@ -51,7 +51,12 @@ describe("historical runtime execution activation schema", () => {
       readFile(resolve("drizzle", "meta", "_journal.json"), "utf8"),
     ]);
     const journal = JSON.parse(journalText) as { entries: Array<{ idx: number; tag: string }> };
-    expect(journal.entries.at(-1)).toMatchObject({ idx: 62, tag: MIGRATION_TAG });
+    const migrationIndex = journal.entries.findIndex((entry) => entry.tag === MIGRATION_TAG);
+    expect(migrationIndex).toBe(62);
+    expect(journal.entries[migrationIndex + 1]).toMatchObject({
+      idx: 63,
+      tag: "0065_historical_runtime_evidence_graph",
+    });
     expect(migration).toContain("phase-layout-runtime-binding.v2");
     expect(migration).toContain("runtime_execution_activation_snapshot_guard");
     expect(migration).toContain("runtime_execution_evidence_append_only_guard");

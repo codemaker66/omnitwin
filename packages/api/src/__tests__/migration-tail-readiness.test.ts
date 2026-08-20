@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -106,6 +107,7 @@ const EXPECTED_TAIL = [
   "0062_phase_layout_snapshot_immutability",
   "0063_phase_layout_runtime_bindings",
   "0064_historical_runtime_execution_activation",
+  "0065_historical_runtime_evidence_graph",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {
@@ -161,6 +163,51 @@ describe("migration tail rollout readiness", () => {
       expect(journal.entries[index]?.when).toBeGreaterThan(journal.entries[index - 1]?.when ?? 0);
     }
     expect(tags.slice(-EXPECTED_TAIL.length)).toEqual(EXPECTED_TAIL);
+  });
+
+  it("freezes the independently replayed 0065 evidence graph security boundary", async () => {
+    const sql = await readMigration("0065_historical_runtime_evidence_graph");
+    expect(Buffer.byteLength(sql, "utf8")).toBe(460_777);
+    expect(createHash("sha256").update(sql, "utf8").digest("hex")).toBe(
+      "ea3842a8feb3f631d63712977f46ec73fdf13d7d74b56d9e8ce07cc3efca1e52",
+    );
+
+    expect(sql).not.toMatch(/(?:^|\n)(?:CREATE|ALTER) ROLE /u);
+    expect(sql).toContain("required pre-provisioned capability role");
+    expect(sql).toContain("migration principal lacks SET membership in schema owner");
+    expect(sql).toContain("migration principal lacks SET membership in evidence owner");
+
+    const temporaryCreate = sql.indexOf("GRANT CREATE ON SCHEMA public");
+    const firstOwnershipTransfer = sql.indexOf("ALTER TABLE public.%I OWNER TO %I");
+    const revokeCreate = sql.indexOf(
+      "REVOKE CREATE ON SCHEMA public\nFROM \"omnitwin_historical_schema_owner\"",
+    );
+    expect(temporaryCreate).toBeGreaterThan(0);
+    expect(firstOwnershipTransfer).toBeGreaterThan(temporaryCreate);
+    expect(revokeCreate).toBeGreaterThan(firstOwnershipTransfer);
+    expect(sql).toContain("historical evidence ownership transfer is incomplete");
+    expect(sql).toContain("public schema CREATE remained reachable after transfer");
+
+    expect(sql).toContain('"denial_get_request_method" varchar(10) NOT NULL');
+    expect(sql).toContain('"denial_get_range_header" varchar(32) NOT NULL');
+    expect(sql).toContain("'safeRangeGet', jsonb_build_object(");
+    expect(sql).toContain("'rangeHeader', 'bytes=0-0'");
+    expect(sql).toContain("hr_provider_capability_head_get_parity");
+    expect(sql).toContain("hr_object_receipt_head_get_parity");
+    expect(sql).toContain("historical-runtime-exact-object-receipt.v2");
+    expect(sql).toContain("venviewer.historical-runtime-exact-object-receipt.v2\\n");
+    expect(sql).not.toContain("pg_advisory");
+
+    const functionBlocks = [...sql.matchAll(
+      /CREATE(?: OR REPLACE)? FUNCTION[\s\S]*?\$\$;\r?\n/gu,
+    )].map((match) => match[0]);
+    const definerBlocks = functionBlocks.filter((block) =>
+      block.includes("SECURITY DEFINER")
+    );
+    expect(definerBlocks.length).toBeGreaterThan(0);
+    for (const block of definerBlocks) {
+      expect(block).toContain("SET search_path = pg_catalog, public, pg_temp");
+    }
   });
 
   it("keeps migration 0046 table columns identical to the Drizzle mission schema", async () => {

@@ -62,6 +62,11 @@ export const FOUNDRY_ACTIVATION_V1_SIGNED_EVIDENCE_PROFILES = Object.freeze({
     payloadType: "application/vnd.venviewer.historical-runtime-role-attestation.v1+json",
     authority: "venue_evidence",
   }),
+  historical_runtime_execution_activation_v2: Object.freeze({
+    domain: "venviewer.historical-runtime-execution-activation.v2",
+    payloadType: "application/vnd.venviewer.historical-runtime-execution-activation.v2+json",
+    authority: "execution_authority",
+  }),
 } as const);
 
 export type FoundryActivationV1SignedEvidenceKind =
