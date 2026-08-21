@@ -1594,6 +1594,59 @@ describe("historical runtime authenticated-import evidence", () => {
     }).success).toBe(false);
   });
 
+  it("accepts the inclusive 90-day reviewed-profile boundary and rejects one millisecond beyond it", () => {
+    const reviewedAt = "2026-08-20T11:00:00.000Z";
+    const profileAt = (durationMs: number) => {
+      const expiresAt = new Date(
+        Date.parse(reviewedAt) + durationMs,
+      ).toISOString();
+      const constituentExpiries = {
+        captureClearanceExpiresAt: expiresAt,
+        derivationReviewExpiresAt: expiresAt,
+        runtimeQaAuthorityExpiresAt: expiresAt,
+        transformReviewExpiresAt: expiresAt,
+        sceneValidationExpiresAt: expiresAt,
+        packageCustodianAttestationExpiresAt: expiresAt,
+        admissionReviewerAttestationExpiresAt: expiresAt,
+        rightsClearanceExpiresAt: [expiresAt],
+      } as const;
+      const subjectMaterial = reviewedProfileSubjectMaterial({
+        constituentExpiries,
+        expiresAt,
+      });
+      const subject = HistoricalRuntimeReviewedProfileSubjectSchema.parse({
+        ...subjectMaterial,
+        reviewedProfileSubjectDigest:
+          historicalRuntimeReviewedProfileSubjectDigest(subjectMaterial),
+      });
+      const material = {
+        schemaVersion: "historical-runtime-reviewed-profile-evidence.v1",
+        subject,
+        reviewedProfileSubjectDigest: subject.reviewedProfileSubjectDigest,
+        finalReviewerAttestationId:
+          "10000000-0000-4000-8000-000000000066",
+        finalReviewerAttestationDigest: B,
+        finalReviewerActorId: ACTORS[8],
+        finalReviewerAttestationExpiresAt: expiresAt,
+        reviewedAt,
+        expiresAt,
+      } as const;
+      return {
+        ...material,
+        reviewedProfileEvidenceDigest:
+          historicalRuntimeReviewedProfileEvidenceDigest(material),
+      };
+    };
+
+    const ninetyDaysMs = 90 * 24 * 60 * 60 * 1_000;
+    expect(HistoricalRuntimeReviewedProfileEvidenceSchema.safeParse(
+      profileAt(ninetyDaysMs),
+    ).success).toBe(true);
+    expect(HistoricalRuntimeReviewedProfileEvidenceSchema.safeParse(
+      profileAt(ninetyDaysMs + 1),
+    ).success).toBe(false);
+  });
+
   it("bounds Scene authority and composes production role documents through production receipts", () => {
     const subject = validSceneSubject();
     const unboundedSceneMaterial = {

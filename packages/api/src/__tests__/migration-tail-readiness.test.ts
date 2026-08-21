@@ -109,6 +109,7 @@ const EXPECTED_TAIL = [
   "0064_historical_runtime_execution_activation",
   "0065_historical_runtime_evidence_graph",
   "0066_historical_runtime_verified_scene",
+  "0067_historical_runtime_reviewed_profiles",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {
