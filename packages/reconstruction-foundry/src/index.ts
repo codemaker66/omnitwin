@@ -1,5 +1,6 @@
 export * from "./candidate.js";
 export * from "./activation-v1-authenticated-evidence-bytes.js";
+export * from "./historical-runtime-twin-release-authenticated-evidence-bytes.js";
 export * from "./activation-v1-runner-transcript-frame-order.js";
 export * from "./canonical-json.js";
 export * from "./dsse.js";
@@ -317,6 +318,9 @@ export type {
   VerifyFoundryOperatorEvidenceChecklistV5Input,
 } from "./operator-evidence-checklist-v5.js";
 export * from "./intake-staging.js";
+export * from "./historical-runtime-scene-map-authenticated-evidence-bytes.js";
+export * from "./historical-runtime-scene-map-parser-policy.js";
+export * from "./historical-runtime-scene-map-parser-implementation-manifest.generated.js";
 export * from "./training-candidate.js";
 export * from "./object-store.js";
 export * from "./path-safety.js";

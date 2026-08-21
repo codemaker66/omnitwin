@@ -21,9 +21,23 @@ import { RuntimeManifestKeySchema } from "./runtime-venue-manifest.js";
 import {
   RECONSTRUCTION_DSSE_PAYLOAD_TYPE,
   ReconstructionDsseEnvelopeSchema,
+  ReconstructionReleaseManifestSchema,
+  ReconstructionReleaseObjectPathSchema,
   ReconstructionReleaseSigningStatementSchema,
 } from "./reconstruction-release.js";
+import {
+  RECONSTRUCTION_SCENE_MAX_EXPANDED_REGION_NODE_REFERENCES,
+  RECONSTRUCTION_SCENE_MAX_NORMALIZED_PROJECTION_BYTES,
+  ReconstructionSceneAuthorityMapV0Schema,
+  computeReconstructionReviewEvidenceArtifactDigest,
+  resolveReconstructionSceneAuthorityCoverage,
+} from "./reconstruction-review-evidence.js";
+import {
+  HISTORICAL_RUNTIME_SCENE_MAP_PARSER_POLICY_DIGEST,
+  HISTORICAL_RUNTIME_SCENE_MAP_PARSER_VERSION,
+} from "./historical-runtime-scene-map-parser-policy.js";
 import { SpaceIdSchema, SpaceSlugSchema } from "./space.js";
+import { TwinManifestSchema } from "./twin.js";
 import {
   PlatformRoleSchema,
   UserIdSchema,
@@ -72,6 +86,8 @@ export const HISTORICAL_RUNTIME_DERIVATION_EVIDENCE_SCHEMA_VERSION =
   "historical-runtime-derivation-evidence.v1";
 export const HISTORICAL_RUNTIME_SCENE_AUTHORITY_RECEIPT_SCHEMA_VERSION =
   "historical-runtime-scene-authority-receipt.v1";
+export const HISTORICAL_RUNTIME_SCENE_MAP_VERIFICATION_RECEIPT_SCHEMA_VERSION =
+  "historical-runtime-scene-map-parser-receipt.v1";
 export const HISTORICAL_RUNTIME_REVIEWED_PROFILE_EVIDENCE_SCHEMA_VERSION =
   "historical-runtime-reviewed-profile-evidence.v1";
 export const HISTORICAL_RUNTIME_EXECUTION_V2_SUBJECT_SCHEMA_VERSION =
@@ -86,6 +102,7 @@ export const HISTORICAL_RUNTIME_EXECUTION_V2_PAYLOAD_TYPE =
   "application/vnd.venviewer.historical-runtime-execution-activation.v2+json";
 
 const SHA256 = RuntimePackageContentDigestSchema;
+const ZERO_SHA256 = "0".repeat(64);
 const DECIMAL_UINT = /^(0|[1-9][0-9]*)$/u;
 const SAFE_FILE_NAME = /^[^/\\]+$/u;
 const PRINTABLE_DSSE_KEY_ID = /^[\x20-\x7e]{1,128}$/u;
@@ -96,6 +113,8 @@ export const HISTORICAL_RUNTIME_ROLE_ATTESTATION_MAX_TTL_MS =
 export const HISTORICAL_RUNTIME_CAPTURE_CONTENT_IDENTITY_MAX_TTL_MS =
   365 * 24 * 60 * 60 * 1_000;
 export const HISTORICAL_RUNTIME_SCENE_AUTHORITY_MAX_TTL_MS =
+  30 * 24 * 60 * 60 * 1_000;
+export const HISTORICAL_RUNTIME_SCENE_MAP_VERIFICATION_MAX_TTL_MS =
   30 * 24 * 60 * 60 * 1_000;
 export const HISTORICAL_RUNTIME_VERIFIED_TWIN_RELEASE_AUTHORITY_MAX_TTL_MS =
   30 * 24 * 60 * 60 * 1_000;
@@ -1951,6 +1970,22 @@ const HistoricalRuntimeTwinReleaseApprovalAuthoritySchema = z.object({
   expiresAt: z.string().datetime({ offset: true }),
 }).strict();
 
+/**
+ * Production Twin verification intentionally accepts one signature, not the
+ * generic reconstruction envelope's migration-compatible 1..16 signature
+ * range. The raw-byte verifier additionally proves canonical base64, key
+ * bytes, DSSE PAE, and exact source serialization before this value can be
+ * persisted.
+ */
+export const HistoricalRuntimeTwinReleaseDsseEnvelopeSchema =
+  ReconstructionDsseEnvelopeSchema.refine(
+    (envelope) => envelope.signatures.length === 1,
+    {
+      path: ["signatures"],
+      message: "Production Twin evidence must contain exactly one DSSE signature.",
+    },
+  );
+
 const HistoricalRuntimeTwinReleaseVerificationReceiptMaterialSchema = z.object({
   schemaVersion: z.literal(
     "historical-runtime-twin-release-verification-receipt.v1",
@@ -2028,13 +2063,19 @@ const HistoricalRuntimeVerifiedTwinReleaseAuthorityMaterialSchema = z.object({
   legacyAttestationObjectKeySha256: SHA256,
   legacyAttestationVerifiedBy: UserIdSchema,
   legacyAttestationVerifiedAt: z.string().datetime({ offset: true }),
-  envelopeObjectReceipt: HistoricalRuntimeExactObjectReceiptSchema,
-  envelope: ReconstructionDsseEnvelopeSchema,
-  envelopeUtf8: z.string().min(1).max(2 * 1024 * 1024),
+  envelopeObjectReceipt: HistoricalRuntimeProductionExactObjectReceiptSchema,
+  envelope: HistoricalRuntimeTwinReleaseDsseEnvelopeSchema,
+  envelopeUtf8: z.string().min(1).refine(
+    (value) => utf8ByteLength(value) <= 2 * 1024 * 1024,
+    "Twin-release envelopes must fit the 2 MiB raw-byte boundary.",
+  ),
   envelopeSha256: SHA256,
   envelopeByteLength: z.string().regex(DECIMAL_UINT),
   payloadType: z.literal(RECONSTRUCTION_DSSE_PAYLOAD_TYPE),
-  payloadUtf8: z.string().min(1).max(1024 * 1024),
+  payloadUtf8: z.string().min(1).refine(
+    (value) => utf8ByteLength(value) <= 1024 * 1024,
+    "Twin-release statements must fit the 1 MiB raw-byte boundary.",
+  ),
   payloadSha256: SHA256,
   payloadByteLength: z.string().regex(DECIMAL_UINT),
   statement: ReconstructionReleaseSigningStatementSchema,
@@ -2070,7 +2111,7 @@ export const HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema =
     const predicate = statement.predicate;
     const parsedEnvelope = (() => {
       try {
-        return ReconstructionDsseEnvelopeSchema.safeParse(
+        return HistoricalRuntimeTwinReleaseDsseEnvelopeSchema.safeParse(
           JSON.parse(authority.envelopeUtf8) as unknown,
         );
       } catch {
@@ -2139,7 +2180,6 @@ export const HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema =
       statement.subject[0]?.digest.sha256 !== authority.releaseDigest ||
       predicate.venueSlug !== authority.venueSlug ||
       predicate.releaseId !== authority.releaseId ||
-      predicate.releaseKind !== authority.releaseKind ||
       predicate.releaseDigest !== authority.releaseDigest ||
       predicate.sourceManifestSha256 !== authority.sourceManifestSha256 ||
       predicate.releaseManifestSha256 !== authority.releaseManifestSha256 ||
@@ -2148,8 +2188,6 @@ export const HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema =
       predicate.reviewDigest !== authority.releaseReviewDigest ||
       predicate.reviewedAt !== authority.releaseReviewedAt ||
       predicate.reviewerUserId !== authority.releaseReviewerActorId ||
-      predicate.decision !== authority.releaseReviewDecision ||
-      predicate.targetExposure !== authority.releaseTargetExposure ||
       authority.legacyAttestationEnvelopeSha256 !== authority.envelopeSha256 ||
       authority.legacyAttestationObjectKeySha256 !==
         authority.envelopeObjectReceipt.object.storageKeySha256 ||
@@ -2190,36 +2228,850 @@ export type HistoricalRuntimeVerifiedTwinReleaseAuthority = z.infer<
   typeof HistoricalRuntimeVerifiedTwinReleaseAuthoritySchema
 >;
 
+export function historicalRuntimeSceneMemberAuthorityReference(input: {
+  readonly memberIndex: number;
+  readonly assetVersionId: string;
+  readonly fileName: string;
+  readonly fileExt: ".sog" | ".spz";
+  readonly mimeType: string;
+  readonly sha256: string;
+  readonly sizeBytes: number;
+  readonly storageKeySha256: string;
+}): string {
+  const memberIndex = z.number().int().nonnegative().max(7).parse(
+    input.memberIndex,
+  );
+  const assetVersionId = z.string().uuid().parse(input.assetVersionId);
+  const fileName = z.string().trim().min(1).max(255).regex(SAFE_FILE_NAME)
+    .parse(input.fileName);
+  const fileExt = z.enum([".sog", ".spz"]).parse(input.fileExt);
+  const mimeType = z.string().trim().min(1).max(160).parse(input.mimeType);
+  const objectSha256 = SHA256.parse(input.sha256);
+  const sizeBytes = z.number().int().positive().max(16 * 1024 * 1024).parse(
+    input.sizeBytes,
+  );
+  const storageKeySha256 = SHA256.parse(input.storageKeySha256);
+  const referenceDigest = canonicalDigest(
+    "venviewer.historical-runtime-scene-runtime-layer.v1\n",
+    {
+      memberIndex: String(memberIndex),
+      assetVersionId,
+      fileName,
+      fileExt,
+      mimeType,
+      sha256: objectSha256,
+      sizeBytes: String(sizeBytes),
+      storageKeySha256,
+    },
+  );
+  if (referenceDigest === null) {
+    throw new TypeError("Scene runtime-layer authority is not canonical JSON.");
+  }
+  return `runtime-layer/v1/${referenceDigest}`;
+}
+
+export const HistoricalRuntimeVerifiedSceneMapMemberSchema = z.object({
+  memberIndex: z.number().int().nonnegative().max(7),
+  assetVersionId: z.string().uuid(),
+  derivationOutputReceiptId: z.string().uuid(),
+  derivationMemberReceiptDigest: SHA256,
+  derivationMemberStorageKeySha256: SHA256,
+  derivationMemberReceiptExpiresAt: z.string().datetime({ offset: true }),
+  fileName: z.string().trim().min(1).max(255).regex(SAFE_FILE_NAME),
+  fileExt: z.enum([".sog", ".spz"]),
+  mimeType: z.string().trim().min(1).max(160),
+  sha256: SHA256,
+  sizeBytes: z.number().int().positive().max(16 * 1024 * 1024),
+  admissionRightsEvidenceRowId: z.string().uuid(),
+  admissionRightsEvidenceDigest: SHA256,
+  admissionRightsDecision: z.literal("approved"),
+  admissionRightsReviewedBy: UserIdSchema,
+  admissionRightsReviewedAt: z.string().datetime({ offset: true }),
+  authorityReference: z.string().trim().min(1).max(160),
+  coveredRegionIds: z.array(RuntimeManifestKeySchema).min(1).max(2_000),
+}).strict().superRefine((member, context) => {
+  if (
+    !member.fileName.endsWith(member.fileExt) ||
+    member.authorityReference !== historicalRuntimeSceneMemberAuthorityReference({
+      memberIndex: member.memberIndex,
+      assetVersionId: member.assetVersionId,
+      fileName: member.fileName,
+      fileExt: member.fileExt,
+      mimeType: member.mimeType,
+      sha256: member.sha256,
+      sizeBytes: member.sizeBytes,
+      storageKeySha256: member.derivationMemberStorageKeySha256,
+    }) ||
+    new Set(member.coveredRegionIds).size !== member.coveredRegionIds.length
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["coveredRegionIds"],
+      message: "A verified Scene member must bind one exact derived file and unique ordered covered regions.",
+    });
+  }
+});
+
+const HistoricalRuntimeSceneMapParserReceiptMaterialSchema = z.object({
+  schemaVersion: z.literal(
+    HISTORICAL_RUNTIME_SCENE_MAP_VERIFICATION_RECEIPT_SCHEMA_VERSION,
+  ),
+  verificationReceiptId: z.string().uuid(),
+  sceneValidationId: z.string().uuid(),
+  environmentId: z.string().uuid(),
+  environmentMode: z.enum(["production", "test"]),
+  environmentDigest: SHA256,
+  scopeEpochId: z.string().uuid(),
+  scopeEpochExpiresAt: z.string().datetime({ offset: true }),
+  venueId: VenueIdSchema,
+  venueSlug: VenueSlugSchema,
+  spaceId: SpaceIdSchema,
+  spaceSlug: SpaceSlugSchema,
+  presentationAdmissionId: z.string().uuid(),
+  presentationAdmissionDigest: SHA256,
+  presentationAdmissionReviewerAttestationId: z.string().uuid(),
+  presentationAdmissionReviewerAttestationDigest: SHA256,
+  presentationAdmissionReviewerAttestationExpiresAt:
+    z.string().datetime({ offset: true }),
+  runtimePackageId: z.string().uuid(),
+  runtimePackageContentDigest: SHA256,
+  runtimeManifestDigest: SHA256,
+  admissionMemberCount: z.number().int().positive().max(8),
+  derivationId: z.string().uuid(),
+  derivationEvidenceDigest: SHA256,
+  derivationMembersDigest: SHA256,
+  derivationMemberCount: z.number().int().positive().max(8),
+  derivationExpiresAt: z.string().datetime({ offset: true }),
+  transformReviewId: z.string().uuid(),
+  transformReviewDigest: SHA256,
+  transformArtifactRowId: z.string().uuid(),
+  transformArtifactId: RuntimeManifestKeySchema,
+  transformArtifactDigest: SHA256,
+  signedTransformArtifactRef: z.object({
+    artifactId: RuntimeManifestKeySchema,
+    artifactDigest: SHA256,
+  }).strict(),
+  signedSceneAuthorityMapRef: z.object({
+    artifactId: RuntimeManifestKeySchema,
+    artifactDigest: SHA256,
+  }).strict(),
+  transformReviewExpiresAt: z.string().datetime({ offset: true }),
+  twinReleaseAuthorityReceiptId: z.string().uuid(),
+  twinReleaseAuthorityDigest: SHA256,
+  twinReleaseAuthorityExpiresAt: z.string().datetime({ offset: true }),
+  twinReleaseId: z.string().uuid(),
+  twinReleaseDigest: SHA256,
+  twinReleaseManifestDigest: SHA256,
+  authenticatedTwinRelease: z.object({
+    payloadType: z.literal(RECONSTRUCTION_DSSE_PAYLOAD_TYPE),
+    keyId: z.string().regex(PRINTABLE_DSSE_KEY_ID),
+    publicKeyFingerprint: SHA256,
+    envelopeSha256: SHA256,
+    envelopeByteLength: z.string().regex(DECIMAL_UINT),
+    payloadSha256: SHA256,
+    payloadByteLength: z.string().regex(DECIMAL_UINT),
+    statementSha256: SHA256,
+    predicateDigest: SHA256,
+  }).strict(),
+  sceneArtifactRowId: z.string().uuid(),
+  sceneArtifactId: RuntimeManifestKeySchema,
+  sceneArtifactDigest: SHA256,
+  sceneObjectReceipt: HistoricalRuntimeExactObjectReceiptSchema,
+  sceneProviderCapabilityExpiresAt: z.string().datetime({ offset: true }),
+  sceneMap: ReconstructionSceneAuthorityMapV0Schema,
+  sceneMapUtf8: z.string().min(1).refine(
+    (value) => utf8ByteLength(value) <= 4 * 1024 * 1024,
+    "Scene-map evidence must fit the 4 MiB raw-byte boundary.",
+  ),
+  sceneMapSha256: SHA256,
+  sceneMapByteLength: z.string().regex(DECIMAL_UINT),
+  parsedMapDigest: SHA256,
+  releaseManifestObjectReceipt: HistoricalRuntimeExactObjectReceiptSchema,
+  releaseManifestProviderCapabilityExpiresAt:
+    z.string().datetime({ offset: true }),
+  releaseManifest: ReconstructionReleaseManifestSchema,
+  releaseManifestUtf8: z.string().min(1).refine(
+    (value) => utf8ByteLength(value) <= 2 * 1024 * 1024,
+    "Release-manifest evidence must fit the 2 MiB raw-byte boundary.",
+  ),
+  releaseManifestSha256: SHA256,
+  releaseManifestByteLength: z.string().regex(DECIMAL_UINT),
+  sourceTwinManifestReleaseObjectPath: z.literal("manifest.json"),
+  sourceTwinManifestObjectReceipt: HistoricalRuntimeExactObjectReceiptSchema,
+  sourceTwinManifestProviderCapabilityExpiresAt:
+    z.string().datetime({ offset: true }),
+  sourceTwinManifest: TwinManifestSchema,
+  sourceTwinManifestUtf8: z.string().min(1).refine(
+    (value) => utf8ByteLength(value) <= 4 * 1024 * 1024,
+    "Source Twin manifest must fit the 4 MiB raw-byte boundary.",
+  ),
+  sourceTwinManifestSha256: SHA256,
+  sourceTwinManifestByteLength: z.string().regex(DECIMAL_UINT),
+  roomProjection: z.object({
+    projectionVersion: z.literal("venviewer.scene-room-node-projection.v1"),
+    ordering: z.literal("source_twin_manifest_order"),
+    spaceSlug: SpaceSlugSchema,
+    roomTwinNodeIds: z.array(RuntimeManifestKeySchema).min(1).max(20_000),
+  }).strict(),
+  wholeRegionIds: z.array(RuntimeManifestKeySchema).min(1).max(2_000),
+  expectedTwinNodeIds: z.array(RuntimeManifestKeySchema).min(1).max(20_000),
+  coveredTwinNodeIds: z.array(RuntimeManifestKeySchema).min(1).max(20_000),
+  orderedRegions: z.array(z.object({
+    regionIndex: z.number().int().nonnegative().max(1_999),
+    regionId: RuntimeManifestKeySchema,
+    coveredTwinNodeIds: z.array(RuntimeManifestKeySchema).min(1).max(20_000),
+  }).strict()).min(1).max(2_000),
+  referencedReleasePaths: z.array(ReconstructionReleaseObjectPathSchema)
+    .min(1).max(20_000),
+  expandedRegionNodeReferenceCount: z.string().regex(DECIMAL_UINT),
+  normalizedProjectionByteLength: z.string().regex(DECIMAL_UINT),
+  orderedMembers: z.array(HistoricalRuntimeVerifiedSceneMapMemberSchema)
+    .min(1).max(8),
+  verifiedCoverageDigest: SHA256,
+  parserVersion: z.literal(HISTORICAL_RUNTIME_SCENE_MAP_PARSER_VERSION),
+  parserPolicyDigest: z.literal(
+    HISTORICAL_RUNTIME_SCENE_MAP_PARSER_POLICY_DIGEST,
+  ),
+  parserImplementationManifestDigest: SHA256,
+  verificationProfile: z.enum(["production_runtime", "local_test_fixture"]),
+  parserRuntimeIdentityId: z.string().uuid().nullable(),
+  parserRuntimeIdentityDigest: SHA256.nullable(),
+  parserRuntimeIdentityEffectiveAt: z.string().datetime({ offset: true }).nullable(),
+  parserRuntimeIdentityExpiresAt: z.string().datetime({ offset: true }).nullable(),
+  parserRuntimeExecutableArtifactDigest: SHA256.nullable(),
+  parserRuntimeDeploymentImageDigest: SHA256.nullable(),
+  parserRuntimeVerifierCapabilityPrincipal: z.literal(
+    "omnitwin_historical_evidence_verifier",
+  ).nullable(),
+  parserRuntimeSessionPrincipalSha256: SHA256.nullable(),
+  verificationBoundary: z.literal(
+    "exact_private_scene_map_release_inventory_v1",
+  ),
+  verifiedByDatabasePrincipal: z.literal(
+    "omnitwin_historical_evidence_verifier",
+  ),
+  verifiedAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().datetime({ offset: true }),
+}).strict();
+
+type HistoricalRuntimeSceneMapParserReceiptMaterial = z.infer<
+  typeof HistoricalRuntimeSceneMapParserReceiptMaterialSchema
+>;
+
+function historicalRuntimeSceneMapParserReceiptDigestMaterial(
+  receipt: HistoricalRuntimeSceneMapParserReceiptMaterial,
+): unknown {
+  const objectIdentity = (
+    exactReceipt: HistoricalRuntimeSceneMapParserReceiptMaterial["sceneObjectReceipt"],
+  ) => ({
+    receiptId: exactReceipt.receiptId,
+    receiptDigest: exactReceipt.receiptDigest,
+    capabilityReceiptId:
+      exactReceipt.object.immutabilityCapabilityReceiptId,
+    capabilityDigest: exactReceipt.object.immutabilityCapabilityDigest,
+    objectSha256: exactReceipt.object.sha256,
+    objectSizeBytes: String(exactReceipt.object.sizeBytes),
+    denialExpiresAt: exactReceipt.anonymousAccessDenial.expiresAt,
+  });
+  return {
+    schemaVersion: receipt.schemaVersion,
+    verificationReceiptId: receipt.verificationReceiptId,
+    sceneValidationId: receipt.sceneValidationId,
+    environmentId: receipt.environmentId,
+    environmentMode: receipt.environmentMode,
+    environmentDigest: receipt.environmentDigest,
+    scopeEpochId: receipt.scopeEpochId,
+    scopeEpochExpiresAt: receipt.scopeEpochExpiresAt,
+    venueId: receipt.venueId,
+    venueSlug: receipt.venueSlug,
+    spaceId: receipt.spaceId,
+    spaceSlug: receipt.spaceSlug,
+    presentationAdmissionId: receipt.presentationAdmissionId,
+    presentationAdmissionDigest: receipt.presentationAdmissionDigest,
+    presentationAdmissionReviewerAttestationId:
+      receipt.presentationAdmissionReviewerAttestationId,
+    presentationAdmissionReviewerAttestationDigest:
+      receipt.presentationAdmissionReviewerAttestationDigest,
+    presentationAdmissionReviewerAttestationExpiresAt:
+      receipt.presentationAdmissionReviewerAttestationExpiresAt,
+    runtimePackageId: receipt.runtimePackageId,
+    runtimePackageContentDigest: receipt.runtimePackageContentDigest,
+    runtimeManifestDigest: receipt.runtimeManifestDigest,
+    admissionMemberCount: String(receipt.admissionMemberCount),
+    derivationId: receipt.derivationId,
+    derivationEvidenceDigest: receipt.derivationEvidenceDigest,
+    derivationMembersDigest: receipt.derivationMembersDigest,
+    derivationMemberCount: String(receipt.derivationMemberCount),
+    derivationExpiresAt: receipt.derivationExpiresAt,
+    transformReviewId: receipt.transformReviewId,
+    transformReviewDigest: receipt.transformReviewDigest,
+    transformArtifactRowId: receipt.transformArtifactRowId,
+    transformArtifactId: receipt.transformArtifactId,
+    transformArtifactDigest: receipt.transformArtifactDigest,
+    signedTransformArtifactRef: receipt.signedTransformArtifactRef,
+    signedSceneAuthorityMapRef: receipt.signedSceneAuthorityMapRef,
+    transformReviewExpiresAt: receipt.transformReviewExpiresAt,
+    twinReleaseAuthorityReceiptId: receipt.twinReleaseAuthorityReceiptId,
+    twinReleaseAuthorityDigest: receipt.twinReleaseAuthorityDigest,
+    twinReleaseAuthorityExpiresAt: receipt.twinReleaseAuthorityExpiresAt,
+    twinReleaseId: receipt.twinReleaseId,
+    twinReleaseDigest: receipt.twinReleaseDigest,
+    twinReleaseManifestDigest: receipt.twinReleaseManifestDigest,
+    authenticatedTwinRelease: receipt.authenticatedTwinRelease,
+    sceneArtifactRowId: receipt.sceneArtifactRowId,
+    sceneArtifactId: receipt.sceneArtifactId,
+    sceneArtifactDigest: receipt.sceneArtifactDigest,
+    sceneObjectIdentity: objectIdentity(receipt.sceneObjectReceipt),
+    sceneProviderCapabilityExpiresAt:
+      receipt.sceneProviderCapabilityExpiresAt,
+    sceneMapSha256: receipt.sceneMapSha256,
+    sceneMapByteLength: receipt.sceneMapByteLength,
+    parsedMapDigest: receipt.parsedMapDigest,
+    releaseManifestObjectIdentity: objectIdentity(
+      receipt.releaseManifestObjectReceipt,
+    ),
+    releaseManifestProviderCapabilityExpiresAt:
+      receipt.releaseManifestProviderCapabilityExpiresAt,
+    releaseManifestSha256: receipt.releaseManifestSha256,
+    releaseManifestByteLength: receipt.releaseManifestByteLength,
+    sourceTwinManifestReleaseObjectPath:
+      receipt.sourceTwinManifestReleaseObjectPath,
+    sourceTwinManifestObjectIdentity: objectIdentity(
+      receipt.sourceTwinManifestObjectReceipt,
+    ),
+    sourceTwinManifestProviderCapabilityExpiresAt:
+      receipt.sourceTwinManifestProviderCapabilityExpiresAt,
+    sourceTwinManifestSha256: receipt.sourceTwinManifestSha256,
+    sourceTwinManifestByteLength: receipt.sourceTwinManifestByteLength,
+    roomProjection: receipt.roomProjection,
+    wholeRegionIds: receipt.wholeRegionIds,
+    expectedTwinNodeIds: receipt.expectedTwinNodeIds,
+    coveredTwinNodeIds: receipt.coveredTwinNodeIds,
+    orderedRegions: receipt.orderedRegions.map((region) => ({
+      regionIndex: String(region.regionIndex),
+      regionId: region.regionId,
+      coveredTwinNodeIds: region.coveredTwinNodeIds,
+    })),
+    referencedReleasePaths: receipt.referencedReleasePaths,
+    expandedRegionNodeReferenceCount:
+      receipt.expandedRegionNodeReferenceCount,
+    normalizedProjectionByteLength: receipt.normalizedProjectionByteLength,
+    orderedMembers: receipt.orderedMembers.map((member) => ({
+      memberIndex: String(member.memberIndex),
+      assetVersionId: member.assetVersionId,
+      derivationOutputReceiptId: member.derivationOutputReceiptId,
+      derivationMemberReceiptDigest: member.derivationMemberReceiptDigest,
+      derivationMemberStorageKeySha256:
+        member.derivationMemberStorageKeySha256,
+      derivationMemberReceiptExpiresAt:
+        member.derivationMemberReceiptExpiresAt,
+      fileName: member.fileName,
+      fileExt: member.fileExt,
+      mimeType: member.mimeType,
+      sha256: member.sha256,
+      sizeBytes: String(member.sizeBytes),
+      admissionRightsEvidenceRowId: member.admissionRightsEvidenceRowId,
+      admissionRightsEvidenceDigest: member.admissionRightsEvidenceDigest,
+      admissionRightsDecision: member.admissionRightsDecision,
+      admissionRightsReviewedBy: member.admissionRightsReviewedBy,
+      admissionRightsReviewedAt: member.admissionRightsReviewedAt,
+      authorityReference: member.authorityReference,
+      coveredRegionIds: member.coveredRegionIds,
+    })),
+    verifiedCoverageDigest: receipt.verifiedCoverageDigest,
+    parserVersion: receipt.parserVersion,
+    parserPolicyDigest: receipt.parserPolicyDigest,
+    parserImplementationManifestDigest:
+      receipt.parserImplementationManifestDigest,
+    verificationProfile: receipt.verificationProfile,
+    parserRuntimeIdentityId: receipt.parserRuntimeIdentityId,
+    parserRuntimeIdentityDigest: receipt.parserRuntimeIdentityDigest,
+    parserRuntimeIdentityEffectiveAt: receipt.parserRuntimeIdentityEffectiveAt,
+    parserRuntimeIdentityExpiresAt: receipt.parserRuntimeIdentityExpiresAt,
+    parserRuntimeExecutableArtifactDigest:
+      receipt.parserRuntimeExecutableArtifactDigest,
+    parserRuntimeDeploymentImageDigest:
+      receipt.parserRuntimeDeploymentImageDigest,
+    parserRuntimeVerifierCapabilityPrincipal:
+      receipt.parserRuntimeVerifierCapabilityPrincipal,
+    parserRuntimeSessionPrincipalSha256:
+      receipt.parserRuntimeSessionPrincipalSha256,
+    verificationBoundary: receipt.verificationBoundary,
+    verifiedByDatabasePrincipal: receipt.verifiedByDatabasePrincipal,
+    verifiedAt: receipt.verifiedAt,
+    expiresAt: receipt.expiresAt,
+  };
+}
+
+export function historicalRuntimeSceneMapParserReceiptDigest(
+  value: unknown,
+): string {
+  const parsed = HistoricalRuntimeSceneMapParserReceiptMaterialSchema.parse(
+    value,
+  );
+  const result = canonicalDigest(
+    "venviewer.historical-runtime-scene-map-parser-receipt.v1\n",
+    historicalRuntimeSceneMapParserReceiptDigestMaterial(parsed),
+  );
+  if (result === null) {
+    throw new TypeError("Scene-map verification receipt is not canonical JSON.");
+  }
+  return result;
+}
+
+export const HistoricalRuntimeSceneMapParserReceiptSchema =
+  HistoricalRuntimeSceneMapParserReceiptMaterialSchema.extend({
+    sceneMapVerificationReceiptDigest: SHA256,
+  }).strict().superRefine((receipt, context) => {
+    const { sceneMapVerificationReceiptDigest, ...material } = receipt;
+    const mapRegionIds = receipt.sceneMap.regions.map((region) => region.id);
+    const memberAuthorityReferences = receipt.orderedMembers.map(
+      (member) => member.authorityReference,
+    );
+    const assetIds = receipt.orderedMembers.map(
+      (member) => member.assetVersionId,
+    );
+    const outputReceiptIds = receipt.orderedMembers.map(
+      (member) => member.derivationOutputReceiptId,
+    );
+    const memberReceiptDigests = receipt.orderedMembers.map(
+      (member) => member.derivationMemberReceiptDigest,
+    );
+    const coveredRegionIds = new Set(
+      receipt.orderedMembers.flatMap((member) => member.coveredRegionIds),
+    );
+    const exactObjectReceipts = [
+      receipt.sceneObjectReceipt,
+      receipt.releaseManifestObjectReceipt,
+      receipt.sourceTwinManifestObjectReceipt,
+    ];
+    const productionProfile = receipt.verificationProfile ===
+      "production_runtime";
+    const runtimeIdentityFields = [
+      receipt.parserRuntimeIdentityId,
+      receipt.parserRuntimeIdentityDigest,
+      receipt.parserRuntimeIdentityEffectiveAt,
+      receipt.parserRuntimeIdentityExpiresAt,
+      receipt.parserRuntimeExecutableArtifactDigest,
+      receipt.parserRuntimeDeploymentImageDigest,
+      receipt.parserRuntimeVerifierCapabilityPrincipal,
+      receipt.parserRuntimeSessionPrincipalSha256,
+    ];
+    const runtimeIdentityComplete = runtimeIdentityFields.every(
+      (value) => value !== null,
+    );
+    const runtimeIdentityAbsent = runtimeIdentityFields.every(
+      (value) => value === null,
+    );
+    const productionObjectReceipts = exactObjectReceipts.every((objectReceipt) =>
+      HistoricalRuntimeProductionExactObjectReceiptSchema.safeParse(objectReceipt)
+        .success
+    );
+    const localFixtureObjectReceipts = exactObjectReceipts.every(
+      (objectReceipt) => objectReceipt.object.providerProfile === "local_fixture",
+    );
+    const verifiedAt = new Date(receipt.verifiedAt).getTime();
+    const expectedExpiry = Math.min(
+      verifiedAt + HISTORICAL_RUNTIME_SCENE_MAP_VERIFICATION_MAX_TTL_MS,
+      new Date(receipt.scopeEpochExpiresAt).getTime(),
+      new Date(
+        receipt.presentationAdmissionReviewerAttestationExpiresAt,
+      ).getTime(),
+      new Date(receipt.derivationExpiresAt).getTime(),
+      new Date(receipt.transformReviewExpiresAt).getTime(),
+      new Date(receipt.twinReleaseAuthorityExpiresAt).getTime(),
+      new Date(receipt.sceneProviderCapabilityExpiresAt).getTime(),
+      new Date(receipt.releaseManifestProviderCapabilityExpiresAt).getTime(),
+      new Date(receipt.sourceTwinManifestProviderCapabilityExpiresAt).getTime(),
+      new Date(
+        receipt.sceneObjectReceipt.anonymousAccessDenial.expiresAt,
+      ).getTime(),
+      new Date(
+        receipt.releaseManifestObjectReceipt.anonymousAccessDenial.expiresAt,
+      ).getTime(),
+      new Date(
+        receipt.sourceTwinManifestObjectReceipt.anonymousAccessDenial.expiresAt,
+      ).getTime(),
+      ...receipt.orderedMembers.map((member) =>
+        new Date(member.derivationMemberReceiptExpiresAt).getTime()),
+      receipt.parserRuntimeIdentityExpiresAt === null
+        ? Number.POSITIVE_INFINITY
+        : new Date(receipt.parserRuntimeIdentityExpiresAt).getTime(),
+    );
+    const sourceManifestFile = receipt.releaseManifest.files.find(
+      (file) => file.path === receipt.sourceTwinManifestReleaseObjectPath,
+    );
+    const objectActorScopesExact = [
+      receipt.sceneObjectReceipt,
+      receipt.releaseManifestObjectReceipt,
+      receipt.sourceTwinManifestObjectReceipt,
+    ].every((objectReceipt) => [
+      objectReceipt.custodianAuthority,
+      objectReceipt.observedByAuthority,
+      objectReceipt.anonymousAccessDenial.proberAuthority,
+    ].every((authority) =>
+      authority.environmentId === receipt.environmentId &&
+      authority.environmentMode === receipt.environmentMode &&
+      authority.venueId === receipt.venueId &&
+      authority.spaceId === receipt.spaceId
+    ));
+    const exactTransform = receipt.sceneMap.regions.every(
+      (region) =>
+        region.transformArtifactRef.artifactId === receipt.transformArtifactId &&
+        region.transformArtifactRef.artifactDigest ===
+          receipt.transformArtifactDigest,
+    );
+    const coverageProjection = (() => {
+      try {
+        return resolveReconstructionSceneAuthorityCoverage({
+          map: receipt.sceneMap,
+          twin: receipt.sourceTwinManifest,
+          release: receipt.releaseManifest,
+          selectedTransform: {
+            artifactId: receipt.transformArtifactId,
+            artifactDigest: receipt.transformArtifactDigest,
+          },
+          spaceSlug: receipt.spaceSlug,
+          rejectBoundsCvf: true,
+          runtimeLayers: receipt.orderedMembers.map((member) => ({
+            authorityReference: member.authorityReference,
+          })),
+        });
+      } catch {
+        return null;
+      }
+    })();
+    const coverageMaterial = {
+      wholeRegionIds: receipt.wholeRegionIds,
+      expectedTwinNodeIds: receipt.expectedTwinNodeIds,
+      coveredTwinNodeIds: receipt.coveredTwinNodeIds,
+      orderedRegions: receipt.orderedRegions.map((region) => ({
+        regionIndex: String(region.regionIndex),
+        regionId: region.regionId,
+        coveredTwinNodeIds: region.coveredTwinNodeIds,
+      })),
+      referencedReleasePaths: receipt.referencedReleasePaths,
+      orderedMembers: receipt.orderedMembers.map((member) => ({
+        memberIndex: String(member.memberIndex),
+        assetVersionId: member.assetVersionId,
+        derivationOutputReceiptId: member.derivationOutputReceiptId,
+        derivationMemberReceiptDigest: member.derivationMemberReceiptDigest,
+        derivationMemberStorageKeySha256:
+          member.derivationMemberStorageKeySha256,
+        authorityReference: member.authorityReference,
+        coveredRegionIds: member.coveredRegionIds,
+      })),
+    };
+    if (
+      receipt.parserImplementationManifestDigest === ZERO_SHA256 ||
+      (productionProfile && (
+        receipt.environmentMode !== "production" ||
+        !runtimeIdentityComplete ||
+        receipt.parserRuntimeIdentityDigest === ZERO_SHA256 ||
+        receipt.parserRuntimeExecutableArtifactDigest === ZERO_SHA256 ||
+        receipt.parserRuntimeDeploymentImageDigest === ZERO_SHA256 ||
+        receipt.parserRuntimeSessionPrincipalSha256 === ZERO_SHA256 ||
+        !productionObjectReceipts ||
+        receipt.parserRuntimeIdentityEffectiveAt === null ||
+        receipt.parserRuntimeIdentityExpiresAt === null ||
+        new Date(receipt.parserRuntimeIdentityEffectiveAt).getTime() > verifiedAt ||
+        new Date(receipt.parserRuntimeIdentityExpiresAt).getTime() <= verifiedAt
+      )) ||
+      (!productionProfile && (
+        receipt.environmentMode !== "test" ||
+        !runtimeIdentityAbsent ||
+        !localFixtureObjectReceipts
+      )) ||
+      !objectActorScopesExact ||
+      receipt.admissionMemberCount !== receipt.derivationMemberCount ||
+      receipt.derivationMemberCount !== receipt.orderedMembers.length ||
+      receipt.signedTransformArtifactRef.artifactId !==
+        receipt.transformArtifactId ||
+      receipt.signedTransformArtifactRef.artifactDigest !==
+        receipt.transformArtifactDigest ||
+      receipt.signedSceneAuthorityMapRef.artifactId !== receipt.sceneArtifactId ||
+      receipt.signedSceneAuthorityMapRef.artifactDigest !==
+        receipt.sceneArtifactDigest ||
+      receipt.sceneObjectReceipt.object.sha256 !== receipt.sceneMapSha256 ||
+      receipt.sceneObjectReceipt.object.sizeBytes !==
+        utf8ByteLength(receipt.sceneMapUtf8) ||
+      receipt.sceneMapSha256 !== sha256Hex(receipt.sceneMapUtf8) ||
+      receipt.sceneMapByteLength !== String(utf8ByteLength(receipt.sceneMapUtf8)) ||
+      receipt.sceneMapUtf8 !== stableCanonicalJson(receipt.sceneMap) ||
+      receipt.parsedMapDigest !==
+        computeReconstructionReviewEvidenceArtifactDigest(receipt.sceneMap) ||
+      receipt.sceneArtifactDigest !== receipt.parsedMapDigest ||
+      receipt.sceneMap.id !== receipt.sceneArtifactId ||
+      receipt.sceneMap.venueSlug !== receipt.venueSlug ||
+      receipt.releaseManifestObjectReceipt.object.sha256 !==
+        receipt.releaseManifestSha256 ||
+      receipt.releaseManifestObjectReceipt.object.sizeBytes !==
+        utf8ByteLength(receipt.releaseManifestUtf8) ||
+      receipt.releaseManifestSha256 !== sha256Hex(receipt.releaseManifestUtf8) ||
+      receipt.releaseManifestByteLength !==
+        String(utf8ByteLength(receipt.releaseManifestUtf8)) ||
+      receipt.releaseManifestUtf8 !==
+        `${JSON.stringify(receipt.releaseManifest, null, 2)}\n` ||
+      receipt.releaseManifestSha256 !== receipt.twinReleaseManifestDigest ||
+      receipt.releaseManifest.releaseDigest !== receipt.twinReleaseDigest ||
+      receipt.releaseManifest.venueSlug !== receipt.venueSlug ||
+      receipt.sourceTwinManifestObjectReceipt.object.sha256 !==
+        receipt.sourceTwinManifestSha256 ||
+      receipt.sourceTwinManifestObjectReceipt.object.sizeBytes !==
+        utf8ByteLength(receipt.sourceTwinManifestUtf8) ||
+      receipt.sourceTwinManifestSha256 !==
+        sha256Hex(receipt.sourceTwinManifestUtf8) ||
+      receipt.sourceTwinManifestByteLength !==
+        String(utf8ByteLength(receipt.sourceTwinManifestUtf8)) ||
+      receipt.sourceTwinManifestUtf8 !==
+        `${JSON.stringify(receipt.sourceTwinManifest, null, 2)}\n` ||
+      receipt.sourceTwinManifestSha256 !==
+        receipt.releaseManifest.sourceManifestSha256 ||
+      receipt.sourceTwinManifest.venueSlug !== receipt.venueSlug ||
+      stableCanonicalJson(receipt.wholeRegionIds) !==
+        stableCanonicalJson(mapRegionIds) ||
+      coverageProjection === null ||
+      stableCanonicalJson(receipt.wholeRegionIds) !==
+        stableCanonicalJson(coverageProjection.regionIds) ||
+      stableCanonicalJson(receipt.roomProjection) !== stableCanonicalJson({
+        ...coverageProjection.roomProjection,
+        spaceSlug: receipt.spaceSlug,
+      }) ||
+      stableCanonicalJson(receipt.expectedTwinNodeIds) !==
+        stableCanonicalJson(coverageProjection.expectedTwinNodeIds) ||
+      stableCanonicalJson(receipt.coveredTwinNodeIds) !==
+        stableCanonicalJson(coverageProjection.coveredTwinNodeIds) ||
+      stableCanonicalJson(receipt.orderedRegions) !==
+        stableCanonicalJson(coverageProjection.orderedRegions) ||
+      stableCanonicalJson(receipt.referencedReleasePaths) !==
+        stableCanonicalJson(coverageProjection.referencedReleasePaths) ||
+      receipt.expandedRegionNodeReferenceCount !== String(
+        coverageProjection.expandedRegionNodeReferenceCount,
+      ) ||
+      Number(receipt.expandedRegionNodeReferenceCount) >
+        RECONSTRUCTION_SCENE_MAX_EXPANDED_REGION_NODE_REFERENCES ||
+      receipt.normalizedProjectionByteLength !== String(
+        coverageProjection.normalizedProjectionByteLength,
+      ) ||
+      Number(receipt.normalizedProjectionByteLength) >
+        RECONSTRUCTION_SCENE_MAX_NORMALIZED_PROJECTION_BYTES ||
+      receipt.authenticatedTwinRelease.statementSha256 !==
+        receipt.authenticatedTwinRelease.payloadSha256 ||
+      stableCanonicalJson(
+        receipt.orderedMembers.map((member) => ({
+          runtimeLayerIndex: member.memberIndex,
+          authorityReference: member.authorityReference,
+          coveredRegionIds: member.coveredRegionIds,
+        })),
+      ) !== stableCanonicalJson(coverageProjection.orderedRuntimeLayers) ||
+      receipt.orderedMembers.some((member, index) => member.memberIndex !== index) ||
+      receipt.orderedMembers.some(
+        (member) =>
+          new Date(member.derivationMemberReceiptExpiresAt).getTime() <=
+            verifiedAt,
+      ) ||
+      new Set(memberAuthorityReferences).size !==
+        memberAuthorityReferences.length ||
+      new Set(assetIds).size !== assetIds.length ||
+      new Set(outputReceiptIds).size !== outputReceiptIds.length ||
+      new Set(memberReceiptDigests).size !== memberReceiptDigests.length ||
+      coveredRegionIds.size !== receipt.wholeRegionIds.length ||
+      receipt.wholeRegionIds.some((regionId) => !coveredRegionIds.has(regionId)) ||
+      !exactTransform ||
+      sourceManifestFile === undefined ||
+      sourceManifestFile.sha256 !== receipt.sourceTwinManifestSha256 ||
+      sourceManifestFile.sizeBytes !==
+        Number(receipt.sourceTwinManifestByteLength) ||
+      sourceManifestFile.role !== "manifest" ||
+      receipt.verifiedCoverageDigest !== canonicalDigest(
+        "venviewer.historical-runtime-verified-scene-map-coverage.v1\n",
+        coverageMaterial,
+      ) ||
+      verifiedAt < new Date(
+        receipt.sceneObjectReceipt.anonymousAccessDenial.probedAt,
+      ).getTime() ||
+      verifiedAt < new Date(
+        receipt.releaseManifestObjectReceipt.anonymousAccessDenial.probedAt,
+      ).getTime() ||
+      verifiedAt < new Date(
+        receipt.sourceTwinManifestObjectReceipt.anonymousAccessDenial.probedAt,
+      ).getTime() ||
+      new Date(receipt.expiresAt).getTime() !== expectedExpiry ||
+      expectedExpiry <= verifiedAt ||
+      expectedExpiry - verifiedAt >
+        HISTORICAL_RUNTIME_SCENE_MAP_VERIFICATION_MAX_TTL_MS ||
+      historicalRuntimeSceneMapParserReceiptDigest(material) !==
+        sceneMapVerificationReceiptDigest
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sceneMapVerificationReceiptDigest"],
+        message: "Scene-map verification receipt must bind strict private bytes, the signed release inventory, independent room regions, exact derived members, and current authority.",
+      });
+    }
+  });
+export type HistoricalRuntimeSceneMapParserReceipt = z.infer<
+  typeof HistoricalRuntimeSceneMapParserReceiptSchema
+>;
+
+const HistoricalRuntimeSceneMapVerificationHandleMaterialSchema = z.object({
+  schemaVersion: z.literal(
+    "historical-runtime-scene-map-verification-handle.v1",
+  ),
+  sceneMapVerificationReceiptId: z.string().uuid(),
+  parserReceiptId: z.string().uuid(),
+  sceneValidationId: z.string().uuid(),
+  parserReceiptDigest: SHA256,
+  verificationProfile: z.enum(["production_runtime", "local_test_fixture"]),
+  parserPolicyDigest: z.literal(
+    HISTORICAL_RUNTIME_SCENE_MAP_PARSER_POLICY_DIGEST,
+  ),
+  parserImplementationManifestDigest: SHA256,
+  parserRuntimeIdentityId: z.string().uuid().nullable(),
+  parserRuntimeIdentityDigest: SHA256.nullable(),
+  parserRuntimeIdentityEffectiveAt: z.string().datetime({ offset: true }).nullable(),
+  parserRuntimeIdentityExpiresAt: z.string().datetime({ offset: true }).nullable(),
+  parserRuntimeExecutableArtifactDigest: SHA256.nullable(),
+  parserRuntimeDeploymentImageDigest: SHA256.nullable(),
+  parserRuntimeVerifierCapabilityPrincipal: z.literal(
+    "omnitwin_historical_evidence_verifier",
+  ).nullable(),
+  parserRuntimeSessionPrincipalSha256: SHA256.nullable(),
+  presentationAdmissionId: z.string().uuid(),
+  presentationAdmissionReviewerAttestationId: z.string().uuid(),
+  presentationAdmissionReviewerAttestationDigest: SHA256,
+  presentationAdmissionReviewerAttestationExpiresAt:
+    z.string().datetime({ offset: true }),
+  derivationId: z.string().uuid(),
+  derivationExpiresAt: z.string().datetime({ offset: true }),
+  transformReviewId: z.string().uuid(),
+  transformReviewExpiresAt: z.string().datetime({ offset: true }),
+  twinReleaseAuthorityReceiptId: z.string().uuid(),
+  twinReleaseAuthorityDigest: SHA256,
+  twinReleaseAuthorityExpiresAt: z.string().datetime({ offset: true }),
+  twinReleaseDigest: SHA256,
+  sceneArtifactRowId: z.string().uuid(),
+  sceneObjectReceiptId: z.string().uuid(),
+  sceneObjectReceiptDigest: SHA256,
+  sceneProviderCapabilityExpiresAt: z.string().datetime({ offset: true }),
+  acceptedAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().datetime({ offset: true }),
+}).strict();
+
+export function historicalRuntimeSceneMapVerificationHandleDigest(
+  value: unknown,
+): string {
+  return digest(
+    "venviewer.historical-runtime-scene-map-verification-handle.v1\n",
+    HistoricalRuntimeSceneMapVerificationHandleMaterialSchema,
+    value,
+  );
+}
+
+export const HistoricalRuntimeSceneMapVerificationHandleSchema =
+  HistoricalRuntimeSceneMapVerificationHandleMaterialSchema.extend({
+    sceneMapVerificationReceiptDigest: SHA256,
+  }).strict().superRefine((handle, context) => {
+    const { sceneMapVerificationReceiptDigest, ...material } = handle;
+    const acceptedAt = new Date(handle.acceptedAt).getTime();
+    const expiresAt = new Date(handle.expiresAt).getTime();
+    const runtimeIdentityFields = [
+      handle.parserRuntimeIdentityId,
+      handle.parserRuntimeIdentityDigest,
+      handle.parserRuntimeIdentityEffectiveAt,
+      handle.parserRuntimeIdentityExpiresAt,
+      handle.parserRuntimeExecutableArtifactDigest,
+      handle.parserRuntimeDeploymentImageDigest,
+      handle.parserRuntimeVerifierCapabilityPrincipal,
+      handle.parserRuntimeSessionPrincipalSha256,
+    ];
+    const productionProfile = handle.verificationProfile ===
+      "production_runtime";
+    const runtimeIdentityComplete = runtimeIdentityFields.every(
+      (field) => field !== null,
+    );
+    const runtimeIdentityAbsent = runtimeIdentityFields.every(
+      (field) => field === null,
+    );
+    const runtimeEffectiveAt = handle.parserRuntimeIdentityEffectiveAt === null
+      ? Number.NEGATIVE_INFINITY
+      : new Date(handle.parserRuntimeIdentityEffectiveAt).getTime();
+    const runtimeExpiresAt = handle.parserRuntimeIdentityExpiresAt === null
+      ? Number.POSITIVE_INFINITY
+      : new Date(handle.parserRuntimeIdentityExpiresAt).getTime();
+    const constituentExpiries = [
+      handle.presentationAdmissionReviewerAttestationExpiresAt,
+      handle.derivationExpiresAt,
+      handle.transformReviewExpiresAt,
+      handle.twinReleaseAuthorityExpiresAt,
+      handle.sceneProviderCapabilityExpiresAt,
+    ].map((value) => new Date(value).getTime());
+    const earliestConstituentExpiry = Math.min(...constituentExpiries);
+    if (
+      handle.parserImplementationManifestDigest === ZERO_SHA256 ||
+      (productionProfile && (
+        !runtimeIdentityComplete ||
+        handle.parserRuntimeIdentityDigest === ZERO_SHA256 ||
+        handle.parserRuntimeExecutableArtifactDigest === ZERO_SHA256 ||
+        handle.parserRuntimeDeploymentImageDigest === ZERO_SHA256 ||
+        handle.parserRuntimeSessionPrincipalSha256 === ZERO_SHA256 ||
+        runtimeEffectiveAt > acceptedAt ||
+        runtimeExpiresAt <= acceptedAt ||
+        expiresAt > runtimeExpiresAt
+      )) ||
+      (!productionProfile && !runtimeIdentityAbsent) ||
+      constituentExpiries.some((expiry) => expiry <= acceptedAt) ||
+      expiresAt > earliestConstituentExpiry ||
+      expiresAt <= acceptedAt ||
+      expiresAt - acceptedAt >
+        HISTORICAL_RUNTIME_SCENE_MAP_VERIFICATION_MAX_TTL_MS ||
+      historicalRuntimeSceneMapVerificationHandleDigest(material) !==
+        sceneMapVerificationReceiptDigest
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sceneMapVerificationReceiptDigest"],
+        message: "Scene-map verification handle must exactly bind one parser receipt and its runtime identity profile.",
+      });
+    }
+  });
+export type HistoricalRuntimeSceneMapVerificationHandle = z.infer<
+  typeof HistoricalRuntimeSceneMapVerificationHandleSchema
+>;
+
+export const RegisterHistoricalRuntimeSceneMapParserReceiptSchema =
+  z.object({
+    verificationReceiptId: z.string().uuid(),
+    sceneValidationId: z.string().uuid(),
+    presentationAdmissionId: z.string().uuid(),
+    derivationId: z.string().uuid(),
+    transformReviewId: z.string().uuid(),
+    twinReleaseAuthorityReceiptId: z.string().uuid(),
+    sceneObjectReceiptId: z.string().uuid(),
+    releaseManifestObjectReceiptId: z.string().uuid(),
+    sourceTwinManifestObjectReceiptId: z.string().uuid(),
+    sceneMapUtf8: z.string().min(1).refine(
+      (value) => utf8ByteLength(value) <= 4 * 1024 * 1024,
+      "Scene-map evidence must fit the 4 MiB raw-byte boundary.",
+    ),
+    releaseManifestUtf8: z.string().min(1).refine(
+      (value) => utf8ByteLength(value) <= 2 * 1024 * 1024,
+      "Release-manifest evidence must fit the 2 MiB raw-byte boundary.",
+    ),
+    sourceTwinManifestUtf8: z.string().min(1).refine(
+      (value) => utf8ByteLength(value) <= 4 * 1024 * 1024,
+      "Source Twin manifest must fit the 4 MiB raw-byte boundary.",
+    ),
+  }).strict();
+
 export const RevokeHistoricalRuntimeEvidenceRecordSchema = z.object({
   reason: z.string().trim().min(1).max(500),
 }).strict();
 
 export const RegisterHistoricalRuntimeSceneValidationSchema = z.object({
   sceneValidationId: z.string().uuid(),
-  presentationAdmissionId: z.string().uuid(),
-  derivationId: z.string().uuid(),
-  transformReviewId: z.string().uuid(),
-  providerProfile: z.enum(["runtime_private", "foundry_candidate", "local_fixture"]),
-  memberAuthorityReferences: z.array(z.object({
-    memberIndex: z.number().int().nonnegative().max(7),
-    authorityReference: z.string().trim().min(1).max(1024).refine(
-      (value) => utf8ByteLength(value) <= MAX_INDEXED_IDENTITY_TEXT_BYTES,
-      "Scene authority references must fit the exact database identity index.",
-    ),
-  }).strict()).min(1).max(8),
-}).strict().superRefine((input, context) => {
-  const references = new Set(input.memberAuthorityReferences.map((member) => member.authorityReference));
-  if (
-    !input.memberAuthorityReferences.every((member, index) => member.memberIndex === index) ||
-    references.size !== input.memberAuthorityReferences.length
-  ) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["memberAuthorityReferences"],
-      message: "Scene authority member references must be unique, contiguous, and ordered.",
-    });
-  }
-});
+  sceneMapVerificationReceiptId: z.string().uuid(),
+}).strict();
 
 export const FinalizeHistoricalRuntimeSceneValidationSchema = z.object({
   sceneValidationSubjectDigest: SHA256,
@@ -2358,6 +3210,33 @@ const HistoricalRuntimeSceneAuthoritySubjectMaterialSchema = z.object({
   sceneRegistryObjectSizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   sceneObjectReceipt: HistoricalRuntimeExactObjectReceiptSchema,
   parsedMapDigest: SHA256,
+  sceneMapVerificationReceiptId: z.string().uuid(),
+  sceneMapVerificationReceiptDigest: SHA256,
+  sceneMapVerificationReceiptExpiresAt: z.string().datetime({ offset: true }),
+  sceneMapVerificationReceipt: HistoricalRuntimeSceneMapVerificationHandleSchema,
+  sceneMapParserReceiptId: z.string().uuid(),
+  sceneMapParserReceiptDigest: SHA256,
+  sceneMapParserReceiptExpiresAt: z.string().datetime({ offset: true }),
+  sceneMapVerificationProfile: z.enum([
+    "production_runtime",
+    "local_test_fixture",
+  ]),
+  sceneMapParserPolicyDigest: z.literal(
+    HISTORICAL_RUNTIME_SCENE_MAP_PARSER_POLICY_DIGEST,
+  ),
+  sceneMapParserImplementationManifestDigest: SHA256,
+  sceneMapParserRuntimeIdentityId: z.string().uuid().nullable(),
+  sceneMapParserRuntimeIdentityDigest: SHA256.nullable(),
+  sceneMapParserRuntimeIdentityEffectiveAt:
+    z.string().datetime({ offset: true }).nullable(),
+  sceneMapParserRuntimeIdentityExpiresAt:
+    z.string().datetime({ offset: true }).nullable(),
+  sceneMapParserRuntimeExecutableArtifactDigest: SHA256.nullable(),
+  sceneMapParserRuntimeDeploymentImageDigest: SHA256.nullable(),
+  sceneMapParserRuntimeVerifierCapabilityPrincipal: z.literal(
+    "omnitwin_historical_evidence_verifier",
+  ).nullable(),
+  sceneMapParserRuntimeSessionPrincipalSha256: SHA256.nullable(),
   coverage: HistoricalRuntimeSceneAuthorityCoverageSchema,
   coverageDigest: SHA256,
   validatedAt: z.string().datetime({ offset: true }),
@@ -2391,16 +3270,111 @@ export const HistoricalRuntimeSceneAuthoritySubjectSchema =
   }).strict().superRefine((subject, context) => {
     const { sceneValidationSubjectDigest, ...material } = subject;
     const validatedAt = new Date(subject.validatedAt).getTime();
+    const verificationHandle = subject.sceneMapVerificationReceipt;
+    const runtimeIdentityFields = [
+      subject.sceneMapParserRuntimeIdentityId,
+      subject.sceneMapParserRuntimeIdentityDigest,
+      subject.sceneMapParserRuntimeIdentityEffectiveAt,
+      subject.sceneMapParserRuntimeIdentityExpiresAt,
+      subject.sceneMapParserRuntimeExecutableArtifactDigest,
+      subject.sceneMapParserRuntimeDeploymentImageDigest,
+      subject.sceneMapParserRuntimeVerifierCapabilityPrincipal,
+      subject.sceneMapParserRuntimeSessionPrincipalSha256,
+    ];
+    const productionSceneReceipt = subject.sceneMapVerificationProfile ===
+      "production_runtime";
+    const runtimeIdentityComplete = runtimeIdentityFields.every(
+      (field) => field !== null,
+    );
+    const runtimeIdentityAbsent = runtimeIdentityFields.every(
+      (field) => field === null,
+    );
     const constituentExpiryTimes = [
       subject.presentationAdmissionReviewerAttestationExpiresAt,
       subject.transformReviewExpiresAt,
       subject.derivationExpiresAt,
       subject.twinReleaseAuthorityExpiresAt,
       subject.providerCapabilityExpiresAt,
+      subject.sceneMapVerificationReceiptExpiresAt,
+      subject.sceneMapParserReceiptExpiresAt,
       subject.sceneObjectReceipt.anonymousAccessDenial.expiresAt,
-    ].map((value) => new Date(value).getTime());
+      subject.sceneMapParserRuntimeIdentityExpiresAt,
+    ].filter((value): value is string => value !== null).map(
+      (value) => new Date(value).getTime(),
+    );
     const minimumConstituentExpiry = Math.min(...constituentExpiryTimes);
     if (
+      (productionSceneReceipt && (
+        !runtimeIdentityComplete ||
+        !HistoricalRuntimeProductionExactObjectReceiptSchema.safeParse(
+          subject.sceneObjectReceipt,
+        ).success
+      )) ||
+      (!productionSceneReceipt && (
+        !runtimeIdentityAbsent ||
+        subject.sceneObjectReceipt.object.providerProfile !== "local_fixture"
+      )) ||
+      verificationHandle.sceneMapVerificationReceiptId !==
+        subject.sceneMapVerificationReceiptId ||
+      verificationHandle.sceneMapVerificationReceiptDigest !==
+        subject.sceneMapVerificationReceiptDigest ||
+      verificationHandle.parserReceiptId !== subject.sceneMapParserReceiptId ||
+      verificationHandle.parserReceiptDigest !==
+        subject.sceneMapParserReceiptDigest ||
+      verificationHandle.sceneValidationId !== subject.sceneValidationId ||
+      verificationHandle.expiresAt !==
+        subject.sceneMapVerificationReceiptExpiresAt ||
+      verificationHandle.expiresAt !== subject.sceneMapParserReceiptExpiresAt ||
+      verificationHandle.verificationProfile !==
+        subject.sceneMapVerificationProfile ||
+      verificationHandle.parserPolicyDigest !==
+        subject.sceneMapParserPolicyDigest ||
+      verificationHandle.parserImplementationManifestDigest !==
+        subject.sceneMapParserImplementationManifestDigest ||
+      verificationHandle.parserRuntimeIdentityId !==
+        subject.sceneMapParserRuntimeIdentityId ||
+      verificationHandle.parserRuntimeIdentityDigest !==
+        subject.sceneMapParserRuntimeIdentityDigest ||
+      verificationHandle.parserRuntimeIdentityEffectiveAt !==
+        subject.sceneMapParserRuntimeIdentityEffectiveAt ||
+      verificationHandle.parserRuntimeIdentityExpiresAt !==
+        subject.sceneMapParserRuntimeIdentityExpiresAt ||
+      verificationHandle.parserRuntimeExecutableArtifactDigest !==
+        subject.sceneMapParserRuntimeExecutableArtifactDigest ||
+      verificationHandle.parserRuntimeDeploymentImageDigest !==
+        subject.sceneMapParserRuntimeDeploymentImageDigest ||
+      verificationHandle.parserRuntimeVerifierCapabilityPrincipal !==
+        subject.sceneMapParserRuntimeVerifierCapabilityPrincipal ||
+      verificationHandle.parserRuntimeSessionPrincipalSha256 !==
+        subject.sceneMapParserRuntimeSessionPrincipalSha256 ||
+      verificationHandle.sceneObjectReceiptDigest !==
+        subject.sceneObjectReceipt.receiptDigest ||
+      verificationHandle.sceneObjectReceiptId !==
+        subject.sceneObjectReceipt.receiptId ||
+      verificationHandle.sceneArtifactRowId !== subject.sceneArtifactRowId ||
+      verificationHandle.presentationAdmissionId !==
+        subject.coverage.presentationAdmissionId ||
+      verificationHandle.presentationAdmissionReviewerAttestationId !==
+        subject.presentationAdmissionReviewerAttestationId ||
+      verificationHandle.presentationAdmissionReviewerAttestationDigest !==
+        subject.presentationAdmissionReviewerAttestationDigest ||
+      verificationHandle.presentationAdmissionReviewerAttestationExpiresAt !==
+        subject.presentationAdmissionReviewerAttestationExpiresAt ||
+      verificationHandle.derivationId !== subject.coverage.derivationId ||
+      verificationHandle.derivationExpiresAt !== subject.derivationExpiresAt ||
+      verificationHandle.transformReviewId !==
+        subject.coverage.transformReviewId ||
+      verificationHandle.transformReviewExpiresAt !==
+        subject.transformReviewExpiresAt ||
+      verificationHandle.twinReleaseAuthorityReceiptId !==
+        subject.twinReleaseAuthorityReceiptId ||
+      verificationHandle.twinReleaseAuthorityDigest !==
+        subject.twinReleaseAuthorityDigest ||
+      verificationHandle.twinReleaseAuthorityExpiresAt !==
+        subject.twinReleaseAuthorityExpiresAt ||
+      verificationHandle.twinReleaseDigest !== subject.twinReleaseDigest ||
+      verificationHandle.sceneProviderCapabilityExpiresAt !==
+        subject.providerCapabilityExpiresAt ||
       subject.sceneRegistryObjectSha256 !== subject.sceneObjectReceipt.object.sha256 ||
       subject.sceneRegistryObjectSizeBytes !== subject.sceneObjectReceipt.object.sizeBytes ||
       subject.sceneArtifactDigest !== subject.parsedMapDigest ||
@@ -2408,8 +3382,13 @@ export const HistoricalRuntimeSceneAuthoritySubjectSchema =
         subject.sceneObjectReceipt.object.immutabilityCapabilityReceiptId ||
       subject.providerCapabilityDigest !==
         subject.sceneObjectReceipt.object.immutabilityCapabilityDigest ||
+      subject.coverage.roomScopeBasis.sceneArtifactRowId !==
+        subject.sceneArtifactRowId ||
+      subject.coverage.roomScopeBasis.sceneArtifactDigest !==
+        subject.sceneArtifactDigest ||
       validatedAt <
         new Date(subject.sceneObjectReceipt.anonymousAccessDenial.probedAt).getTime() ||
+      validatedAt < new Date(verificationHandle.acceptedAt).getTime() ||
       constituentExpiryTimes.some((expiresAt) => expiresAt <= validatedAt) ||
       new Date(subject.authorityExpiresAt).getTime() !== minimumConstituentExpiry ||
       subject.coverageDigest !== canonicalDigest(
@@ -2424,7 +3403,7 @@ export const HistoricalRuntimeSceneAuthoritySubjectSchema =
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["sceneValidationSubjectDigest"],
-        message: "Scene subject must bind registry bytes, strict parsed semantics, room/package scope, transform, and every member.",
+        message: "Scene subject must bind the compact parser handle, registry bytes, room/package scope, transform, and every member.",
       });
     }
   });
@@ -2433,6 +3412,14 @@ const HistoricalRuntimeSceneAuthorityReceiptMaterialSchema = z.object({
   schemaVersion: z.literal(HISTORICAL_RUNTIME_SCENE_AUTHORITY_RECEIPT_SCHEMA_VERSION),
   subject: HistoricalRuntimeSceneAuthoritySubjectSchema,
   sceneValidationSubjectDigest: SHA256,
+  sceneMapParserReceiptId: z.string().uuid(),
+  sceneMapParserReceiptDigest: SHA256,
+  sceneMapParserReceiptExpiresAt: z.string().datetime({ offset: true }),
+  sceneMapParserRuntimeIdentityId: z.string().uuid().nullable(),
+  sceneMapParserRuntimeIdentityDigest: SHA256.nullable(),
+  sceneMapVerificationReceiptId: z.string().uuid(),
+  sceneMapVerificationReceiptDigest: SHA256,
+  sceneMapVerificationReceiptExpiresAt: z.string().datetime({ offset: true }),
   reviewerAttestationId: z.string().uuid(),
   reviewerAttestationDigest: SHA256,
   reviewerActorId: UserIdSchema,
@@ -2462,6 +3449,22 @@ export const HistoricalRuntimeSceneAuthorityReceiptSchema =
     );
     if (
       receipt.sceneValidationSubjectDigest !== receipt.subject.sceneValidationSubjectDigest ||
+      receipt.sceneMapParserReceiptId !==
+        receipt.subject.sceneMapParserReceiptId ||
+      receipt.sceneMapParserReceiptDigest !==
+        receipt.subject.sceneMapParserReceiptDigest ||
+      receipt.sceneMapParserReceiptExpiresAt !==
+        receipt.subject.sceneMapParserReceiptExpiresAt ||
+      receipt.sceneMapParserRuntimeIdentityId !==
+        receipt.subject.sceneMapParserRuntimeIdentityId ||
+      receipt.sceneMapParserRuntimeIdentityDigest !==
+        receipt.subject.sceneMapParserRuntimeIdentityDigest ||
+      receipt.sceneMapVerificationReceiptId !==
+        receipt.subject.sceneMapVerificationReceiptId ||
+      receipt.sceneMapVerificationReceiptDigest !==
+        receipt.subject.sceneMapVerificationReceiptDigest ||
+      receipt.sceneMapVerificationReceiptExpiresAt !==
+        receipt.subject.sceneMapVerificationReceiptExpiresAt ||
       reviewedAt < new Date(receipt.subject.validatedAt).getTime() ||
       reviewedAt >= new Date(receipt.subject.authorityExpiresAt).getTime() ||
       expiresAt !== minimumAuthorityExpiry ||

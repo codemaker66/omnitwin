@@ -5,8 +5,11 @@ import {
   ReconstructionReleaseManifestSchema,
   ReconstructionReleasePublicationSchema,
   ReconstructionReleaseReviewSchema,
+  ReconstructionSceneAuthorityMapV0Schema,
+  TwinManifestSchema,
   computeReconstructionReleaseDigest,
   computeReconstructionReleaseReviewDigest,
+  resolveReconstructionSceneAuthorityCoverage,
   type ReconstructionReleaseReviewMaterial,
 } from "@omnitwin/types";
 import { describe, expect, it } from "vitest";
@@ -204,6 +207,91 @@ describe("Reconstruction Foundry evidence gates", () => {
       ...evidence[0]!,
       objectKey: "evidence/not-in-release.png",
     }])).toBe(false);
+  });
+
+  it("keeps the public release-review gate closed to an unbound appearance runtime layer", () => {
+    const files = [{
+      path: "manifest.json",
+      sha256: SHA_A,
+      sizeBytes: 512,
+      mimeType: "application/json",
+      role: "manifest" as const,
+    }, {
+      path: "mesh/dollhouse.glb",
+      sha256: SHA_B,
+      sizeBytes: 1_024,
+      mimeType: "model/gltf-binary",
+      role: "geometry" as const,
+    }];
+    const release = ReconstructionReleaseManifestSchema.parse({
+      schemaVersion: RECONSTRUCTION_RELEASE_SCHEMA_VERSION,
+      releaseKind: "venue_twin_v1",
+      venueSlug: "trades-hall",
+      releaseDigest: computeReconstructionReleaseDigest(files),
+      sourceManifestSha256: SHA_A,
+      files,
+      fileCount: files.length,
+      totalBytes: 1_536,
+      generatedAt: "2026-07-11T08:00:00.000Z",
+    });
+    const twin = TwinManifestSchema.parse({
+      schema: "twin/0",
+      venueSlug: "trades-hall",
+      name: "Grand Hall review Twin",
+      capture: { kind: "matterport-e57", scanCount: 1 },
+      tier: "planning-grade-5cm",
+      upAxis: "z",
+      units: "m",
+      imagery: "equirect",
+      faces: ["front", "back", "left", "right", "up", "down"],
+      lods: [512, 4096, 8192],
+      generatedAt: "2026-07-11T07:00:00.000Z",
+      nodes: [{
+        id: "scan_000",
+        index: 0,
+        pose: { q: [1, 0, 0, 0], t: [0, 0, 1.5] },
+        floor: 0,
+        roomSlug: "grand-hall",
+      }],
+      edges: [],
+      entryNodeId: "scan_000",
+    });
+    const selectedTransform = {
+      artifactId: "e57-to-three-v1",
+      artifactDigest: SHA_C,
+    };
+    const sceneMap = ReconstructionSceneAuthorityMapV0Schema.parse({
+      schemaVersion: "venviewer.scene-authority-map.v0",
+      id: "grand-hall-scene-authority-v1",
+      venueSlug: "trades-hall",
+      generatedAt: "2026-07-11T07:30:00.000Z",
+      regions: [{
+        id: "grand-hall",
+        label: "Grand Hall",
+        scope: { kind: "twin_nodes", nodeIds: ["scan_000"] },
+        authorities: {
+          geometryAuthority: { kind: "release_file", ref: "mesh/dollhouse.glb" },
+          appearanceAuthority: { kind: "runtime_layer", ref: `runtime-layer/v1/${SHA_D}` },
+          lightingAuthority: { kind: "none", ref: null },
+          physicsAuthority: { kind: "release_file", ref: "mesh/dollhouse.glb" },
+          semanticAuthority: { kind: "release_file", ref: "manifest.json" },
+          interactionAuthority: { kind: "release_file", ref: "mesh/dollhouse.glb" },
+          exportAuthority: { kind: "release_file", ref: "mesh/dollhouse.glb" },
+        },
+        truthStatus: "measured",
+        confidenceTier: "layout_grade",
+        provenanceRefs: [{ refType: "artifact", ref: "evidence/grand-hall", role: "source" }],
+        reconstructionStrategy: "matterpak_original",
+        transformArtifactRef: selectedTransform,
+      }],
+    });
+
+    expect(() => resolveReconstructionSceneAuthorityCoverage({
+      map: sceneMap,
+      twin,
+      release,
+      selectedTransform,
+    })).toThrow(/unbound runtime layer/u);
   });
 
   it("derives state only from the latest exact evidence epoch", () => {

@@ -117,9 +117,27 @@ export type FoundryActivationV1JsonValue =
   | readonly FoundryActivationV1JsonValue[]
   | { readonly [key: string]: FoundryActivationV1JsonValue };
 
+export type FoundryStrictJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly FoundryStrictJsonValue[]
+  | { readonly [key: string]: FoundryStrictJsonValue };
+
 export interface FoundryActivationV1CanonicalJsonParseResult {
   readonly canonicalJson: string;
   readonly value: FoundryActivationV1JsonValue;
+}
+
+export interface FoundryActivationV1StrictJsonParseResult {
+  readonly sourceJson: string;
+  readonly value: FoundryActivationV1JsonValue;
+}
+
+export interface FoundryStrictJsonParseResult {
+  readonly sourceJson: string;
+  readonly value: FoundryStrictJsonValue;
 }
 
 export interface FoundryActivationV1SignedEvidenceIdentity {
@@ -485,13 +503,15 @@ export function canonicalizeFoundryActivationV1Json(input: unknown): string {
 
 class DuplicateAwareJsonParser {
   readonly #text: string;
+  readonly #allowNumbers: boolean;
   #offset = 0;
 
-  constructor(text: string) {
+  constructor(text: string, allowNumbers: boolean) {
     this.#text = text;
+    this.#allowNumbers = allowNumbers;
   }
 
-  parse(): FoundryActivationV1JsonValue {
+  parse(): FoundryStrictJsonValue {
     this.#skipWhitespace();
     const value = this.#parseValue(0);
     this.#skipWhitespace();
@@ -499,7 +519,7 @@ class DuplicateAwareJsonParser {
     return value;
   }
 
-  #parseValue(depth: number): FoundryActivationV1JsonValue {
+  #parseValue(depth: number): FoundryStrictJsonValue {
     const token = this.#text[this.#offset];
     if (token === "{" || token === "[") {
       if (depth >= FOUNDRY_ACTIVATION_V1_JSON_MAX_DEPTH) {
@@ -516,7 +536,10 @@ class DuplicateAwareJsonParser {
     if (token === "f") return this.#parseLiteral("false", false);
     if (token === "n") return this.#parseLiteral("null", null);
     if (token === "-" || (token !== undefined && token >= "0" && token <= "9")) {
-      fail(ERROR.jsonNumberForbidden, "Foundry activation V1 canonical JSON forbids every JSON numeric leaf.");
+      if (!this.#allowNumbers) {
+        fail(ERROR.jsonNumberForbidden, "Foundry activation V1 canonical JSON forbids every JSON numeric leaf.");
+      }
+      return this.#parseNumber();
     }
     this.#syntax("Expected a JSON value.");
   }
@@ -527,10 +550,10 @@ class DuplicateAwareJsonParser {
     return value;
   }
 
-  #parseObject(depth: number): FoundryActivationV1JsonValue {
+  #parseObject(depth: number): FoundryStrictJsonValue {
     this.#offset += 1;
     this.#skipWhitespace();
-    const output = Object.create(null) as Record<string, FoundryActivationV1JsonValue>;
+    const output = Object.create(null) as Record<string, FoundryStrictJsonValue>;
     const keys = new NATIVE_SET<string>();
     if (this.#consume("}")) return Object.freeze(output);
 
@@ -553,10 +576,10 @@ class DuplicateAwareJsonParser {
     }
   }
 
-  #parseArray(depth: number): FoundryActivationV1JsonValue {
+  #parseArray(depth: number): FoundryStrictJsonValue {
     this.#offset += 1;
     this.#skipWhitespace();
-    const output: FoundryActivationV1JsonValue[] = [];
+    const output: FoundryStrictJsonValue[] = [];
     if (this.#consume("]")) return Object.freeze(output);
 
     for (;;) {
@@ -590,6 +613,21 @@ class DuplicateAwareJsonParser {
       this.#offset += 1;
     }
     this.#syntax("Unterminated JSON string.");
+  }
+
+  #parseNumber(): number {
+    const match = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/u.exec(
+      this.#text.slice(this.#offset),
+    );
+    if (match === null) this.#syntax("Invalid JSON number.");
+    const token = match[0];
+    if (token.length === 0) this.#syntax("Invalid JSON number.");
+    this.#offset += token.length;
+    const value = Number(token);
+    if (!Number.isFinite(value)) {
+      fail(ERROR.jsonValueUnsupported, "Foundry strict JSON requires every numeric leaf to be finite.");
+    }
+    return value;
   }
 
   #parseEscape(): string {
@@ -678,17 +716,55 @@ export function parseFoundryActivationV1CanonicalJsonBytes(
   input: Uint8Array,
   maximumByteLength: number,
 ): FoundryActivationV1CanonicalJsonParseResult {
-  const bytes = copyBoundedBytes(input, maximumByteLength);
-  const text = decodeFatalUtf8(bytes);
-  const value = new DuplicateAwareJsonParser(text).parse();
-  const canonicalJson = canonicalizeFoundryActivationV1Json(value);
+  const parsed = parseFoundryActivationV1StrictJsonBytes(input, maximumByteLength);
+  const bytes = INTRINSIC_BUFFER_FROM(parsed.sourceJson, "utf8");
+  const canonicalJson = canonicalizeFoundryActivationV1Json(parsed.value);
   if (!byteArraysEqual(INTRINSIC_BUFFER_FROM(canonicalJson, "utf8"), bytes)) {
     fail(
       ERROR.jsonNotCanonical,
       "Foundry activation V1 JSON bytes must exactly equal their unsigned-ASCII-key-ordered canonical encoding.",
     );
   }
-  return Object.freeze({ canonicalJson, value });
+  return Object.freeze({ canonicalJson, value: parsed.value });
+}
+
+/**
+ * Parses an exact bounded UTF-8 JSON byte sequence with the same duplicate-key,
+ * Unicode-scalar, ASCII-key, number-free, and nesting guarantees as the
+ * canonical Activation V1 parser, but deliberately preserves source member
+ * order. This is for legacy wire contracts whose signer commits to an exact
+ * JSON.stringify(schema.parse(value)) byte sequence instead of lexically sorted
+ * canonical JSON. Callers must compare sourceJson with that contract-specific
+ * serialization before treating the result as authenticated evidence.
+ */
+export function parseFoundryActivationV1StrictJsonBytes(
+  input: Uint8Array,
+  maximumByteLength: number,
+): FoundryActivationV1StrictJsonParseResult {
+  const bytes = copyBoundedBytes(input, maximumByteLength);
+  const text = decodeFatalUtf8(bytes);
+  const value = new DuplicateAwareJsonParser(text, false).parse();
+  return Object.freeze({
+    sourceJson: text,
+    value: value as FoundryActivationV1JsonValue,
+  });
+}
+
+/**
+ * Parses bounded, fatal-decodable UTF-8 JSON while rejecting BOMs, duplicate
+ * keys, lone surrogates, non-ASCII member names, trailing bytes, excessive
+ * nesting, and non-finite numbers. Unlike the Activation V1 parser, this
+ * boundary deliberately accepts JSON numbers so it can validate exact Scene,
+ * release-manifest, and source-Twin bytes before schema parsing.
+ */
+export function parseFoundryStrictJsonBytesWithNumbers(
+  input: Uint8Array,
+  maximumByteLength: number,
+): FoundryStrictJsonParseResult {
+  const bytes = copyBoundedBytes(input, maximumByteLength);
+  const text = decodeFatalUtf8(bytes);
+  const value = new DuplicateAwareJsonParser(text, true).parse();
+  return Object.freeze({ sourceJson: text, value });
 }
 
 function isJsonObject(value: FoundryActivationV1JsonValue): value is { readonly [key: string]: FoundryActivationV1JsonValue } {

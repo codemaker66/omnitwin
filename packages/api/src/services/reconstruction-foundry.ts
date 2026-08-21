@@ -33,6 +33,7 @@ import {
   parseReconstructionReviewEvidenceArtifact,
   reconstructionReviewEvidenceArtifactId,
   reconstructionReviewEvidenceArtifactSchemaVersion,
+  resolveReconstructionSceneAuthorityCoverage,
   sha256Hex,
   stableCanonicalJson,
   type ReconstructionCandidateVerificationInput,
@@ -389,77 +390,11 @@ function assertSceneAuthorityCoversRelease(input: {
   readonly release: ReconstructionReleaseManifest;
   readonly selectedTransform: ReconstructionReleaseArtifactRef;
 }): void {
-  const nodes = new Map(input.twin.nodes.map((node) => [node.id, node]));
-  const coveredNodeIds = new Set<string>();
-  const releaseFiles = new Map(input.release.files.map((file) => [file.path, file]));
-  for (const region of input.map.regions) {
-    if (!sameArtifactRef(region.transformArtifactRef, input.selectedTransform)) {
-      throw new ReconstructionFoundryEvidenceError(
-        `Scene Authority region ${region.id} is not bound to the selected TransformArtifact.`,
-      );
-    }
-    if (region.scope.kind === "whole_venue") {
-      for (const nodeId of nodes.keys()) coveredNodeIds.add(nodeId);
-    } else if (region.scope.kind === "twin_nodes") {
-      for (const nodeId of region.scope.nodeIds) {
-        if (!nodes.has(nodeId)) {
-          throw new ReconstructionFoundryEvidenceError(
-            `Scene Authority region ${region.id} references an unknown Twin node: ${nodeId}.`,
-          );
-        }
-        coveredNodeIds.add(nodeId);
-      }
-    } else {
-      let boundedNodeCount = 0;
-      for (const node of nodes.values()) {
-        const [x, y, z] = node.pose.t;
-        if (
-          x >= region.scope.min[0] && x <= region.scope.max[0] &&
-          y >= region.scope.min[1] && y <= region.scope.max[1] &&
-          z >= region.scope.min[2] && z <= region.scope.max[2]
-        ) {
-          boundedNodeCount += 1;
-          coveredNodeIds.add(node.id);
-        }
-      }
-      if (boundedNodeCount === 0) {
-        throw new ReconstructionFoundryEvidenceError(
-          `Scene Authority region ${region.id} bounds cover no Twin nodes.`,
-        );
-      }
-    }
-
-    for (const authority of Object.values(region.authorities)) {
-      if (authority.kind !== "release_file" && authority.kind !== "none") {
-        throw new ReconstructionFoundryEvidenceError(
-          `Scene Authority region ${region.id} uses unresolved ${authority.kind} evidence.`,
-        );
-      }
-    }
-    const requiredAuthorities = [
-      ["geometry", region.authorities.geometryAuthority, new Set(["geometry"])],
-      ["appearance", region.authorities.appearanceAuthority, new Set(["imagery"])],
-      ["semantic", region.authorities.semanticAuthority, new Set(["manifest", "geometry"])],
-      ["interaction", region.authorities.interactionAuthority, new Set(["manifest", "geometry"])],
-    ] as const;
-    for (const [label, authority, allowedRoles] of requiredAuthorities) {
-      if (authority.kind !== "release_file") {
-        throw new ReconstructionFoundryEvidenceError(
-          `Scene Authority region ${region.id} needs a release-backed ${label} authority.`,
-        );
-      }
-      const file = releaseFiles.get(authority.ref);
-      if (file === undefined || !allowedRoles.has(file.role)) {
-        throw new ReconstructionFoundryEvidenceError(
-          `Scene Authority region ${region.id} has an invalid ${label} release-file authority.`,
-        );
-      }
-    }
-  }
-  if (coveredNodeIds.size !== nodes.size) {
-    const missing = [...nodes.keys()].filter((id) => !coveredNodeIds.has(id));
+  try {
+    resolveReconstructionSceneAuthorityCoverage(input);
+  } catch (cause) {
     throw new ReconstructionFoundryEvidenceError(
-      `Scene Authority Map does not cover every Twin node; missing ${missing.slice(0, 10).join(", ")}.`,
+      cause instanceof Error ? cause.message : "Scene Authority coverage is invalid.",
     );
   }
 }

@@ -2437,6 +2437,7 @@ export * from "./room-layout-timeline.js";
 export * from "./phase-layout-runtime-binding.js";
 export * from "./historical-runtime-execution-activation.js";
 export * from "./historical-runtime-evidence.js";
+export * from "./historical-runtime-scene-map-parser-policy.js";
 
 // G4 (03 §1): the one Action envelope — LIVE from Slice 1 (web action log).
 export * from "./action.js";
