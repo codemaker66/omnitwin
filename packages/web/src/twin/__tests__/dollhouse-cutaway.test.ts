@@ -337,6 +337,55 @@ describe("cutaway continuity across the orbit", () => {
     // "smooth" here cannot be satisfied by a plane that clips nothing.
     expect(leanest).toBeGreaterThan(0.1);
   });
+
+  it("crosses the overhead singularity without removing anything", () => {
+    // The one teleport the module still contains. Directly over the target
+    // there is no horizontal axis to cut along, so the plane is made inert and
+    // its constant jumps to 1,000,000 — the same unbounded step that WAS the
+    // defect at 32 degrees. It is safe here for one reason only: by this
+    // elevation the section is already parked clear of the hull, so neither
+    // side of the jump removes anything. That is a claim the module's comment
+    // makes and no other test pins.
+    //
+    // The sweep above deliberately stops at 89 degrees and requires every
+    // sample to engage, so it can never reach this boundary. If the parked
+    // clearance is ever shrunk (RETRACT_CLEARANCE_HULL_FRACTION), the plane
+    // would still be cutting when it teleports and the pop would be back — at
+    // a different angle, where the 32-degree regression guard cannot see it.
+    const witnesses = hallWitnesses();
+    const cloud = sampleCloud();
+    const plane = new Plane();
+    const STEPS = 40; // 80 -> 90 degrees, landing exactly on the singularity
+    let reachedSingularity = false;
+    let constantAtLastEngaged = Number.NaN;
+
+    for (let step = 0; step <= STEPS; step += 1) {
+      const elevationDeg = 80 + (step * 10) / STEPS;
+      const engaged = updateVerticalCutawayPlane(plane, {
+        cameraPosition: orbitCamera(TARGET, RADIUS_M, elevationDeg, 37),
+        target: TARGET,
+        witnesses,
+        insetM: INSET_M,
+      });
+      if (engaged) {
+        constantAtLastEngaged = plane.constant;
+      } else {
+        reachedSingularity = true;
+      }
+      // Not a tolerance — an identity. Parked clear means the section removes
+      // nothing at any of these elevations, so the honest epsilon is zero and
+      // every adjacent step differs by zero.
+      expect(clippedFraction(plane, cloud)).toBe(0);
+    }
+
+    // Non-vacuous on both halves: the sweep really does hit the degenerate
+    // overhead case, and the plane really was parked at a finite, live
+    // position on the approach — not already inert — so "removes nothing" is
+    // a claim about a plane that was still being driven.
+    expect(reachedSingularity).toBe(true);
+    expect(Number.isFinite(constantAtLastEngaged)).toBe(true);
+    expect(constantAtLastEngaged).toBeLessThan(1_000_000);
+  });
 });
 
 describe("cutaway scene material isolation", () => {

@@ -20,6 +20,7 @@ import {
   Vector2,
   Vector3,
   type Camera,
+  type Texture,
   type Intersection,
   type Object3D,
   type Plane,
@@ -42,6 +43,14 @@ import {
   markFirstLightSeen,
 } from "./first-light.js";
 import { NavMarkers } from "./NavMarkers.js";
+import {
+  NEIGHBOUR_WARM_SLICE_MS,
+  NEIGHBOUR_WARM_TIMEOUT_MS,
+  planNeighbourWarm,
+  runNeighbourWarmQueue,
+  type IdleDeadlineLike,
+  type WarmCandidate,
+} from "./neighbour-warm.js";
 import { ParallaxStage } from "./ParallaxStage.js";
 import { TravelControls } from "./TravelControls.js";
 import { PanoStage } from "./PanoStage.js";
@@ -735,50 +744,97 @@ function InitialLookRig({ look }: { readonly look: TwinLook | null }): null {
   return null;
 }
 
+/** Does this engine schedule real idle work? Decided once, so a slice and its
+ *  cancellation can never disagree about which handle space they are in. */
+const HAS_IDLE_CALLBACK =
+  typeof requestIdleCallback === "function" && typeof cancelIdleCallback === "function";
+/** Slice cadence where requestIdleCallback is missing (Safari < 17, happy-dom). */
+const WARM_FALLBACK_SLICE_MS = 350;
+
+/** Ask for one warm slice. The fallback grants a nominal budget so the queue's
+ *  deadline gate stays meaningful on engines with no real IdleDeadline. */
+function requestWarmSlice(run: (deadline: IdleDeadlineLike) => void): number {
+  if (HAS_IDLE_CALLBACK) {
+    return requestIdleCallback(run, { timeout: NEIGHBOUR_WARM_TIMEOUT_MS });
+  }
+  return window.setTimeout(() => {
+    run({ didTimeout: false, timeRemaining: () => NEIGHBOUR_WARM_SLICE_MS });
+  }, WARM_FALLBACK_SLICE_MS);
+}
+
+function cancelWarmSlice(handle: number): void {
+  if (HAS_IDLE_CALLBACK) {
+    cancelIdleCallback(handle);
+    return;
+  }
+  window.clearTimeout(handle);
+}
+
 /**
- * At rest, decode AND GPU-upload the neighbours' base panos (shared texture
- * registry), so the NEXT hop starts sharp on both sides — the walk never
- * shows a loading photograph. Runs on idle after each arrival; the previous
- * neighbour set's registry refs are released as the walk moves on.
+ * At rest, decode AND GPU-upload the nearest neighbours' base panos (shared
+ * texture registry), so the NEXT hop starts sharp on both sides — the walk
+ * never shows a loading photograph.
+ *
+ * The queue policy — which neighbours, in what order, how many — lives in
+ * neighbour-warm.ts, where the cap and the deadline gate are unit-tested
+ * without a GPU. This component is only the wiring: it turns nav-graph
+ * adjacency into ranked candidates, and turns "acquire" and "upload" into the
+ * two real operations. Crucially the initTexture upload is NOT run in the
+ * acquire's promise continuation (which lands long after the idle window has
+ * closed) but stashed and performed in its own later slice, behind a live
+ * deadline check. The previous neighbour set's registry refs are released as
+ * the walk moves on.
  */
 function NeighborWarmer({
   neighbors,
+  currentNode,
+  nodesById,
   assetBase,
 }: {
   readonly neighbors: readonly string[];
+  readonly currentNode: TwinScanNode;
+  readonly nodesById: ReadonlyMap<string, TwinScanNode>;
   readonly assetBase: string;
 }): null {
   const gl = useThree((state) => state.gl);
-  useEffect(() => {
-    let disposed = false;
-    const releases: (() => void)[] = [];
-    const warm = (): void => {
-      for (const id of neighbors) {
-        void warmEquirectBase(id, assetBase, (texture) => {
-          gl.initTexture(texture);
-        }).then((release) => {
-          if (disposed) {
+  const queue = useMemo(() => {
+    const candidates: WarmCandidate[] = [];
+    for (const id of neighbors) {
+      const node = nodesById.get(id);
+      if (node !== undefined) {
+        candidates.push({ id, position: e57PointToThree(node.pose.t) });
+      }
+    }
+    return planNeighbourWarm(e57PointToThree(currentNode.pose.t), candidates);
+  }, [neighbors, nodesById, currentNode]);
+
+  useEffect(
+    () =>
+      runNeighbourWarmQueue<Texture>({
+        ids: queue,
+        acquire: async (id) => {
+          // warmEquirectBase hands the texture to its callback synchronously
+          // once decoded; stash it rather than uploading, so the ~33.5 MB
+          // initTexture can be spent inside a slice that has time for it.
+          const slot: { texture: Texture | null } = { texture: null };
+          const release = await warmEquirectBase(id, assetBase, (texture) => {
+            slot.texture = texture;
+          });
+          const texture = slot.texture;
+          if (texture === null) {
             release();
-          } else {
-            releases.push(release);
+            return null;
           }
-        });
-      }
-    };
-    const idle = typeof requestIdleCallback === "function";
-    const handle = idle ? requestIdleCallback(warm) : window.setTimeout(warm, 350);
-    return () => {
-      disposed = true;
-      if (idle && typeof cancelIdleCallback === "function") {
-        cancelIdleCallback(handle);
-      } else {
-        window.clearTimeout(handle);
-      }
-      for (const release of releases) {
-        release();
-      }
-    };
-  }, [neighbors, assetBase, gl]);
+          return { texture, release };
+        },
+        upload: (texture) => {
+          gl.initTexture(texture);
+        },
+        requestSlice: requestWarmSlice,
+        cancelSlice: cancelWarmSlice,
+      }),
+    [queue, assetBase, gl],
+  );
   return null;
 }
 
@@ -1592,7 +1648,12 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 optically-perfect photograph); pixel-identical at both hop
                 endpoints by construction, so there is no seam to hide. */}
             {parallaxReady && (
-              <NeighborWarmer neighbors={walk.neighbors} assetBase={assetBase} />
+              <NeighborWarmer
+                neighbors={walk.neighbors}
+                currentNode={currentNode}
+                nodesById={nodesById}
+                assetBase={assetBase}
+              />
             )}
             {parallaxReady && meshUrl !== null && (
               <Suspense fallback={null}>
