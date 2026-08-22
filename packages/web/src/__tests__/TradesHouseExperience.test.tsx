@@ -6,15 +6,24 @@ import {
   CRAFT_PROFILES,
   CRAFT_QUESTIONS,
   rankCrafts,
-  ZERO_AXIS_TOTALS,
-  type AxisVector,
+  ZERO_CRAFT_QUIZ_PROGRESS,
 } from "../features/trades-house/craft-quiz-model.js";
 import {
   CONVENER_DELIBERATION,
   CONVENER_POKES,
   CONVENER_THRESHOLD,
 } from "../features/trades-house/convener/convener-lines.js";
+import { DELIBERATION_PREAMBLE, DELIBERATION_REPLY, applyDeliberation, deliberate } from "../features/trades-house/craft-quiz-deliberation.js";
 import { TradesHouseCraftQuizPage } from "../pages/TradesHouseCraftQuizPage.js";
+
+// The reveal records the run (no PII) to the API. A unit test must not make
+// API traffic, and the wiring is worth asserting: one run, twelve answers, the
+// same Craft the page names.
+const recordQuizRun = vi.fn<(run: unknown) => boolean>(() => true);
+vi.mock("../features/trades-house/quiz-telemetry.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../features/trades-house/quiz-telemetry.js")>();
+  return { ...actual, recordQuizRun: (run: unknown) => recordQuizRun(run) };
+});
 import { TradesHouseLeafletPage } from "../pages/TradesHouseLeafletPage.js";
 
 /**
@@ -23,18 +32,21 @@ import { TradesHouseLeafletPage } from "../pages/TradesHouseLeafletPage.js";
  * reaches — and a test that hard-codes the answer proves the writing has not
  * changed, not that the sorting is deterministic, which is the property meant.
  */
-const EXPECTED = (() => {
-  let totals = ZERO_AXIS_TOTALS;
-  let lastAxes: AxisVector = {};
-  CRAFT_QUESTIONS.forEach((_, index) => {
-    const answer = applyCraftQuizAnswer(totals, index, 2);
-    totals = answer.totals;
-    lastAxes = answer.lastAxes;
-  });
-  const [top] = rankCrafts(totals, lastAxes);
+const WALK = (() => {
+  let progress = ZERO_CRAFT_QUIZ_PROGRESS;
+  for (let index = 0; index < CRAFT_QUESTIONS.length; index += 1) {
+    progress = applyCraftQuizAnswer(progress, index, 2);
+  }
+  // If the twelve finish close, he asks one more thing; the walk always takes
+  // the first answer to it. Derived here the way the app derives it, so the
+  // test proves determinism whether or not this path happens to be close.
+  const asked = deliberate(progress);
+  if (asked !== null) progress = applyDeliberation(progress, asked, 0);
+  const [top] = rankCrafts(progress);
   if (top === undefined) throw new Error("the ranking is never empty");
-  return CRAFT_PROFILES[top.craftId];
+  return { profile: CRAFT_PROFILES[top.craftId], deliberated: asked !== null };
 })();
+const EXPECTED = WALK.profile;
 
 /** Corpus text is data, not a literal to retype into an assertion. */
 function escapeRe(value: string): string {
@@ -130,9 +142,31 @@ describe("Trades House leaflet experience", () => {
         "the scene must still be on screen while he replies",
       ).toBeTruthy();
 
-      // The reader presses on when they are ready.
-      fireEvent.click(screen.getByRole("button", { name: scene === 11 ? "See your Craft" : "Go on" }));
+      // The reader presses on when they are ready. The twelfth reply promises
+      // the verdict only when the verdict is next: when it hung, he says so
+      // in the aside and the button stays "Go on".
+      if (scene === 11 && WALK.deliberated) {
+        expect(reply.textContent).toContain(DELIBERATION_PREAMBLE);
+      }
+      fireEvent.click(screen.getByRole("button", { name: scene === 11 && !WALK.deliberated ? "See your Craft" : "Go on" }));
       await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    }
+
+    // When it was close he asks one more thing: two answers, no progress pip,
+    // and the same reply-then-continue rhythm as the twelve.
+    if (WALK.deliberated) {
+      expect(screen.getByText("IT IS CLOSE · ONE MORE THING")).toBeTruthy();
+      const two = document.querySelectorAll<HTMLButtonElement>(".craft-quiz-option");
+      expect(two, "a deliberation offers exactly two answers").toHaveLength(2);
+      const first = two[0];
+      if (first === undefined) throw new Error("missing deliberation option");
+      fireEvent.click(first);
+      await act(async () => { await vi.advanceTimersByTimeAsync(8_000); });
+      expect(screen.getByRole("group", { name: "The Convener replies" }).textContent).toContain(DELIBERATION_REPLY);
+      fireEvent.click(screen.getByRole("button", { name: "See your Craft" }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    } else {
+      expect(screen.queryByText("IT IS CLOSE · ONE MORE THING")).toBeNull();
     }
 
     // The last answer hands over to his deliberation, not to the verdict —
@@ -143,6 +177,14 @@ describe("Trades House leaflet experience", () => {
 
     vi.useRealTimers();
     expect(screen.getByText(EXPECTED.name)).toBeTruthy();
+
+    // The run went out once, whole, and names the same Craft the page does.
+    expect(recordQuizRun).toHaveBeenCalledTimes(1);
+    const sent = recordQuizRun.mock.calls[0]?.[0] as { answers: number[]; result: string; deliberation: unknown; viewport: string } | undefined;
+    expect(sent?.answers).toHaveLength(12);
+    expect(sent?.answers.every((seat: number) => seat === 2)).toBe(true);
+    expect(CRAFT_PROFILES[sent?.result as keyof typeof CRAFT_PROFILES].name).toBe(EXPECTED.name);
+    expect(sent?.deliberation === null).toBe(!WALK.deliberated);
     expect(screen.getByText(EXPECTED.archetype)).toBeTruthy();
     const introduction = screen.getByRole("link", { name: "Request an introduction" });
     expect(decodeURIComponent(introduction.getAttribute("href") ?? "")).toContain(

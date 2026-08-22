@@ -204,3 +204,40 @@
     transform: none !important;
   }
 }
+
+/* ---- phone: the painting steps aside and lets him talk -----------------
+   Below the desktop breakpoint the question screen has ~850px of height and no
+   scroll, and the options need most of it. The old vector head went to a row —
+   a 76px face beside the speech. The painting does the same, a little larger
+   because a gilt frame needs room to read as one at all; and the plate is
+   dropped, because at this size it is a smear. Mirrors `.convener.is-compact`. */
+.convener-painting.is-compact {
+  align-items: stretch;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.convener-painting.is-compact .convener-painting-stage {
+  align-self: center;
+  flex: 0 0 96px;
+  perspective: 700px;
+}
+
+.convener-painting.is-compact .convener-painting-canvas {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 18px rgba(0, 0, 0, 0.55);
+}
+
+.convener-painting.is-compact .convener-painting-plate {
+  display: none;
+}
+
+.convener-painting.is-compact .convener-painting-speech {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.convener-painting.is-compact .convener-painting-typed {
+  font-size: 12.5px;
+  line-height: 1.38;
+}

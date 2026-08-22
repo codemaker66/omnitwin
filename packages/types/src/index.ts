@@ -2440,3 +2440,4 @@ export * from "./diary-command.js";
 export * from "./action.js";
 export * from "./action-log-batch.js";
 export * from "./ai-action-adapter.js";
+export * from "./quiz-run.js";

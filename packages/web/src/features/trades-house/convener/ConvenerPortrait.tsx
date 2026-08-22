@@ -403,7 +403,9 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
     const speakAside = useCallback((text: string, then: string | null = null): void => {
       // Retarget first: this cancels any line in flight, releases whoever was
       // awaiting it, and bumps the generation so the old rAF loop stops
-      // painting the bubble.
+      // painting the bubble. A scene cut off mid-sentence is left WHOLE in the
+      // bubble, not half-typed: the reader answered early, he did not stop.
+      if (typedRef.current !== null && fullTextRef.current !== "") typedRef.current.textContent = fullTextRef.current;
       finishSay();
       sayGenRef.current += 1;
       const myGen = sayGenRef.current;

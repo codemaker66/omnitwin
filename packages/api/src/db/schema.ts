@@ -7,6 +7,7 @@ import {
   text,
   timestamp,
   numeric,
+  real,
   jsonb,
   integer,
   bigint,
@@ -5432,4 +5433,29 @@ export const actionLog = pgTable("action_log", {
 }, (table) => [
   unique("action_log_ordinal_unique").on(table.ordinal),
   index("action_log_config_ordinal_idx").on(table.configurationId, table.ordinal),
+]);
+
+// ---------------------------------------------------------------------------
+// Quiz runs — one row per completed pass through the Trades House craft quiz.
+//
+// Exists so the sorting can be calibrated against real people rather than
+// simulated ones. Deliberately carries NO personal data: no user, no IP, no
+// user agent, no free text. Twelve seat indices, the verdict, how long, and
+// which class of screen. See @omnitwin/types QuizRunSchema.
+// ---------------------------------------------------------------------------
+
+export const quizRuns = pgTable("quiz_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  quiz: varchar("quiz", { length: 40 }).notNull(),
+  answers: jsonb("answers").$type<readonly number[]>().notNull(),
+  deliberation: jsonb("deliberation").$type<{ pair: readonly [string, string]; choice: 0 | 1; authored: boolean } | null>(),
+  result: varchar("result", { length: 20 }).notNull(),
+  runnerUp: varchar("runner_up", { length: 20 }).notNull(),
+  margin: real("margin").notNull(),
+  hung: boolean("hung").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  viewport: varchar("viewport", { length: 12 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("quiz_runs_quiz_created_idx").on(table.quiz, table.createdAt),
 ]);

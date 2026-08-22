@@ -19,6 +19,7 @@ import { referencePhotoRoutes } from "./routes/reference-photos.js";
 import { publicConfigRoutes } from "./routes/public-configs.js";
 import { layoutRoutes } from "./routes/layouts.js";
 import { publicEnquiryRoutes } from "./routes/public-enquiries.js";
+import { drizzleQuizRunStore, publicQuizRunRoutes } from "./routes/public-quiz-runs.js";
 import { claimConfigRoutes } from "./routes/claim-config.js";
 import { clientRoutes } from "./routes/clients.js";
 import { authRoutes } from "./routes/auth.js";
@@ -106,7 +107,12 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   //
   // trustProxy ON — we sit behind Railway's proxy; `request.ip`
   // must read the X-Forwarded-For header for rate-limiting to key
-  // on real client IPs.
+  // on real client IPs. `true` trusts every hop, which would let a
+  // client mint fresh limiter buckets by forging the header IF the
+  // edge appended rather than replaced it. Measured 2026-08-18 from
+  // outside: three requests with one forged value, one with another,
+  // one with none, all counted down a single bucket (99→94) — the
+  // edge overwrites the header, so the forgery buys nothing.
   // ---------------------------------------------------------------------------
   const server = Fastify({
     logger: isDev
@@ -337,6 +343,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(publicConfigRoutes, { db, prefix: "/public" });
   await server.register(layoutRoutes, { db, prefix: "/layouts" });
   await server.register(publicEnquiryRoutes, { db, prefix: "/public" });
+  await server.register(publicQuizRunRoutes, { store: drizzleQuizRunStore(db), prefix: "/public" });
   await server.register(claimConfigRoutes, { db, prefix: "/configurations" });
   await server.register(authRoutes, { prefix: "/auth" });
   await server.register(clientRoutes, { db, prefix: "/clients" });

@@ -24,14 +24,16 @@ import {
   CRAFT_AXIS_PROFILES,
   CRAFT_ORDER,
   CRAFT_QUESTIONS,
-  ZERO_AXIS_TOTALS,
+  ZERO_CRAFT_QUIZ_PROGRESS,
   applyCraftQuizAnswer,
   craftAffinity,
   rankCrafts,
   type AxisTotals,
   type AxisVector,
   type CraftId,
+  type CraftQuizProgress,
 } from "../craft-quiz-model.js";
+import { WORLD_LEXICON, CRAFT_NAMES } from "./world-lexicon.js";
 
 function toTotals(vector: AxisVector): AxisTotals {
   return {
@@ -62,7 +64,7 @@ function optionPulls(vector: AxisVector): readonly CraftId[] {
 /** The Craft a respondent lands on if they always answer as themselves. */
 function simulatePureRespondent(craftId: CraftId): readonly [CraftId, number] {
   const own = CRAFT_AXIS_PROFILES[craftId];
-  let totals: AxisTotals = ZERO_AXIS_TOTALS;
+  let progress: CraftQuizProgress = ZERO_CRAFT_QUIZ_PROGRESS;
 
   CRAFT_QUESTIONS.forEach((question, questionIndex) => {
     let bestIndex = 0;
@@ -74,10 +76,10 @@ function simulatePureRespondent(craftId: CraftId): readonly [CraftId, number] {
         bestIndex = optionIndex;
       }
     });
-    totals = applyCraftQuizAnswer(totals, questionIndex, bestIndex).totals;
+    progress = applyCraftQuizAnswer(progress, questionIndex, bestIndex);
   });
 
-  const [winner, runnerUp] = rankCrafts(totals);
+  const [winner, runnerUp] = rankCrafts(progress);
   if (winner === undefined || runnerUp === undefined) throw new Error("ranking is empty");
   return [winner.craftId, winner.score - runnerUp.score];
 }
@@ -136,5 +138,84 @@ describe("sorting geometry", () => {
         expect(magnitude, `"${option.lead}" scores nothing`).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fairness, and the two invariants of the world channel.
+// ---------------------------------------------------------------------------
+
+/** Deterministic PRNG so the fairness gate is the same bar on every machine. */
+function lcg(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (Math.imul(state, 1103515245) + 12345) & 0x7fffffff;
+    return state / 0x7fffffff;
+  };
+}
+
+
+describe("the world channel — every answer legibly lives in a Craft's world", () => {
+  it("never points a home answer away from its own Craft — the two channels may not contradict", () => {
+    const disagreements: string[] = [];
+    CRAFT_QUESTIONS.forEach((question, qi) => {
+      question.options.forEach((option, oi) => {
+        const agreement = cosineBetween(toTotals(option.axes), CRAFT_AXIS_PROFILES[option.world]);
+        if (agreement < 0.55) {
+          disagreements.push(`Q${String(qi + 1)}.${String(oi + 1)} "${option.lead}" vs ${option.world} = ${agreement.toFixed(2)}`);
+        }
+      });
+    });
+    expect(disagreements).toEqual([]);
+  });
+
+  it("puts at least one word of the Craft's own world in every home answer — a lay reader can make the guess", () => {
+    const mute: string[] = [];
+    CRAFT_QUESTIONS.forEach((question, qi) => {
+      question.options.forEach((option, oi) => {
+        const text = `${option.lead} ${option.body}`;
+        if (!WORLD_LEXICON[option.world].some((pattern) => pattern.test(text))) {
+          mute.push(`Q${String(qi + 1)}.${String(oi + 1)} "${option.lead}" says nothing of the ${option.world}`);
+        }
+      });
+    });
+    expect(mute).toEqual([]);
+  });
+
+  it("names no Craft in any answer — the world may be shown, the name never", () => {
+    const names = CRAFT_NAMES;
+    const leaks: string[] = [];
+    CRAFT_QUESTIONS.forEach((question, qi) => {
+      if (names.test(question.scene)) leaks.push(`Q${String(qi + 1)} scene`);
+      question.options.forEach((option, oi) => {
+        if (names.test(`${option.lead} ${option.body} ${option.cost}`)) leaks.push(`Q${String(qi + 1)}.${String(oi + 1)}`);
+      });
+    });
+    expect(leaks).toEqual([]);
+  });
+});
+
+describe("fairness — the instrument itself favours no Craft", () => {
+  // Uniform random answers are the population that isolates the INSTRUMENT
+  // from the people: whatever share a Craft takes here it takes because of how
+  // the questions and directions are built, not because of who turned up.
+  // Uniform would be 7.1% each. The band is deliberately wide enough to be
+  // achievable and narrow enough that a hub or a starved corner fails it.
+  it("keeps every Craft between 4% and 11% of uniformly random respondents", () => {
+    const random = lcg(20260816);
+    const trials = 20000;
+    const tally = new Map<CraftId, number>(CRAFT_ORDER.map((craftId) => [craftId, 0]));
+    for (let trial = 0; trial < trials; trial += 1) {
+      let progress: CraftQuizProgress = ZERO_CRAFT_QUIZ_PROGRESS;
+      for (let questionIndex = 0; questionIndex < CRAFT_QUESTIONS.length; questionIndex += 1) {
+        progress = applyCraftQuizAnswer(progress, questionIndex, Math.floor(random() * 4));
+      }
+      const [winner] = rankCrafts(progress);
+      if (winner !== undefined) tally.set(winner.craftId, (tally.get(winner.craftId) ?? 0) + 1);
+    }
+    const shares = [...tally.entries()].map(([craftId, count]) => [craftId, count / trials] as const);
+    const outside = shares.filter(([, share]) => share < 0.04 || share > 0.11)
+      .map(([craftId, share]) => `${craftId} ${(share * 100).toFixed(1)}%`);
+    expect(outside, `outside the 4–11% band: ${outside.join(", ")}`).toEqual([]);
   });
 });

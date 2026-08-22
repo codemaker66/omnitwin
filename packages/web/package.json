@@ -17,7 +17,7 @@
     "frame-budget": "node scripts/frame-budget-pass.mjs",
     "visual-check": "node scripts/visual-check.mjs",
     "clean": "rm -rf dist",
-    "voice:generate": "node --experimental-strip-types scripts/convener-voice/generate.mjs"
+    "voice:generate": "node --experimental-strip-types --import ./scripts/convener-voice/register.mjs scripts/convener-voice/generate.mjs"
   },
   "dependencies": {
     "@clerk/react": "6.11.0",
