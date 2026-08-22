@@ -8,7 +8,9 @@ import { useSelectionStore } from "../selection-store.js";
 import { canUndo, canRedo, undoLabel } from "../../lib/editor-history.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import * as configApi from "../../api/configurations.js";
-import type { BatchObjectInput, PlacedObject } from "../../api/configurations.js";
+import * as spacesApi from "../../api/spaces.js";
+import type { Space } from "../../api/spaces.js";
+import type { BatchObjectInput, Configuration, PlacedObject } from "../../api/configurations.js";
 
 // ---------------------------------------------------------------------------
 // editor-store × editor-history integration
@@ -83,6 +85,54 @@ function seedEditor(objects: readonly EditorObject[] = []): void {
 
 function store() {
   return useEditorStore.getState();
+}
+
+function space(id: string, venueId: string, slug: string): Space {
+  return {
+    id,
+    venueId,
+    name: slug,
+    slug,
+    widthM: "10",
+    lengthM: "10",
+    heightM: "5",
+    floorPlanOutline: [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ],
+  };
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason: unknown) => void;
+} {
+  let resolvePromise: ((value: T) => void) | undefined;
+  let rejectPromise: ((reason: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  if (resolvePromise === undefined || rejectPromise === undefined) {
+    throw new Error("Deferred promise callbacks were not initialized.");
+  }
+  return { promise, resolve: resolvePromise, reject: rejectPromise };
+}
+
+function configuration(id: string, spaceId: string): Configuration {
+  return {
+    id,
+    spaceId,
+    venueId: "venue-1",
+    userId: null,
+    name: id,
+    isPublicPreview: true,
+    revision: 1,
+    objects: [],
+  };
 }
 
 function objectIds(): readonly string[] {
@@ -518,6 +568,129 @@ describe("lifecycle clears", () => {
 
     await store().createPublicConfig("space-1");
     expect(canUndo(store().history)).toBe(false);
+  });
+
+  it("clears the previous room identity while a new configuration space is loading", async () => {
+    const next = deferred<Configuration>();
+    useEditorStore.setState({
+      spaceId: "space-old",
+      venueId: "venue-1",
+      space: space("space-old", "venue-1", "reception-room"),
+    });
+    vi.mocked(configApi.getPublicConfig).mockReturnValue(next.promise);
+    vi.mocked(spacesApi.getSpace).mockImplementation(() => new Promise(() => undefined));
+
+    const request = store().loadConfiguration("cfg-grand-hall");
+    expect(store().space).toBeNull();
+    expect(store().isLoading).toBe(true);
+
+    next.resolve(configuration("cfg-grand-hall", "space-grand-hall"));
+    await request;
+
+    expect(store().spaceId).toBe("space-grand-hall");
+    expect(store().space).toBeNull();
+  });
+
+  it("keeps the latest configuration when an older request resolves last", async () => {
+    const older = deferred<Configuration>();
+    const latest = deferred<Configuration>();
+    vi.mocked(configApi.getPublicConfig).mockImplementation((configId) =>
+      configId === "cfg-older" ? older.promise : latest.promise);
+    vi.mocked(spacesApi.getSpace).mockImplementation(() => new Promise(() => undefined));
+
+    const olderRequest = store().loadConfiguration("cfg-older");
+    const latestRequest = store().loadConfiguration("cfg-latest");
+
+    latest.resolve(configuration("cfg-latest", "space-latest"));
+    await latestRequest;
+    expect(store().configId).toBe("cfg-latest");
+    expect(store().spaceId).toBe("space-latest");
+
+    older.resolve(configuration("cfg-older", "space-older"));
+    await olderRequest;
+    expect(store().configId).toBe("cfg-latest");
+    expect(store().spaceId).toBe("space-latest");
+    expect(store().isLoading).toBe(false);
+    expect(spacesApi.getSpace).toHaveBeenCalledTimes(1);
+    expect(spacesApi.getSpace).toHaveBeenCalledWith("venue-1", "space-latest");
+  });
+
+  it("ignores an older request error after the latest configuration succeeds", async () => {
+    const older = deferred<Configuration>();
+    const latest = deferred<Configuration>();
+    vi.mocked(configApi.getPublicConfig).mockImplementation((configId) =>
+      configId === "cfg-older" ? older.promise : latest.promise);
+    vi.mocked(spacesApi.getSpace).mockImplementation(() => new Promise(() => undefined));
+
+    const olderRequest = store().loadConfiguration("cfg-older");
+    const latestRequest = store().loadConfiguration("cfg-latest");
+
+    latest.resolve(configuration("cfg-latest", "space-latest"));
+    await latestRequest;
+    older.reject(new Error("obsolete request failed"));
+    await olderRequest;
+
+    expect(store().configId).toBe("cfg-latest");
+    expect(store().spaceId).toBe("space-latest");
+    expect(store().isLoading).toBe(false);
+    expect(store().error).toBeNull();
+    expect(spacesApi.getSpace).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let a late public-config creation replace a newer route load", async () => {
+    const create = deferred<Configuration>();
+    vi.mocked(configApi.createPublicConfig).mockReturnValue(create.promise);
+    vi.mocked(configApi.getPublicConfig).mockResolvedValue(configuration("cfg-route", "space-route"));
+    vi.mocked(spacesApi.getSpace).mockImplementation(() => new Promise(() => undefined));
+
+    const createRequest = store().createPublicConfig("space-created");
+    const routeRequest = store().loadConfiguration("cfg-route");
+    await routeRequest;
+    expect(store().configId).toBe("cfg-route");
+
+    create.resolve(configuration("cfg-created", "space-created"));
+    await expect(createRequest).resolves.toBeNull();
+    expect(store().configId).toBe("cfg-route");
+    expect(store().spaceId).toBe("space-route");
+  });
+
+  it("does not let a late route load replace a newer public-config creation", async () => {
+    const route = deferred<Configuration>();
+    vi.mocked(configApi.getPublicConfig).mockReturnValue(route.promise);
+    vi.mocked(configApi.createPublicConfig).mockResolvedValue(
+      configuration("cfg-created", "space-created"),
+    );
+    vi.mocked(spacesApi.getSpace).mockImplementation(() => new Promise(() => undefined));
+
+    const routeRequest = store().loadConfiguration("cfg-route");
+    const createdId = await store().createPublicConfig("space-created");
+    expect(createdId).toBe("cfg-created");
+
+    route.resolve(configuration("cfg-route", "space-route"));
+    await routeRequest;
+    expect(store().configId).toBe("cfg-created");
+    expect(store().spaceId).toBe("space-created");
+  });
+
+  it("does not let a late room response replace the current configuration room", async () => {
+    const old = deferred<Space>();
+    const current = deferred<Space>();
+    vi.mocked(spacesApi.getSpace).mockImplementation((_venueId, spaceId) =>
+      spaceId === "space-old" ? old.promise : current.promise);
+
+    useEditorStore.setState({ spaceId: "space-old", venueId: "venue-1", space: null });
+    const oldRequest = store().loadSpace("venue-1", "space-old");
+    useEditorStore.setState({ spaceId: "space-current", venueId: "venue-1", space: null });
+    const currentRequest = store().loadSpace("venue-1", "space-current");
+
+    current.resolve(space("space-current", "venue-1", "grand-hall"));
+    await currentRequest;
+    expect(store().space?.slug).toBe("grand-hall");
+
+    old.resolve(space("space-old", "venue-1", "reception-room"));
+    await oldRequest;
+    expect(store().space?.slug).toBe("grand-hall");
+    expect(store().spaceId).toBe("space-current");
   });
 
   it("reset clears the history", () => {

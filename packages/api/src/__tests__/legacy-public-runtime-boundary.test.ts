@@ -173,6 +173,45 @@ describe("legacy public runtime boundary", () => {
     }
   });
 
+  it("never streams exact Grand Hall bytes through the legacy public-bucket route", async () => {
+    const grandHallAsset: AssetVersionRow = {
+      ...internalAsset,
+      roomSlug: "grand-hall",
+      fileName: "0_0_0_1_0_1.sog",
+      r2Key: "venues/trades-hall/rooms/grand-hall/xgrids/grand-hall-big-model-sog-fine-v1/data/3dgs/0_0_0_1_0_1.sog",
+    };
+    const grandHallPackage: RuntimePackageRow = {
+      ...internalPackage,
+      roomSlug: "grand-hall",
+      runtimeStatus: "published",
+      manifestJson: {
+        ...internalPackage.manifestJson,
+        roomSlug: "grand-hall",
+        assets: {
+          ...internalPackage.manifestJson.assets,
+          visualAssetVersionIds: [INTERNAL_ASSET_ID],
+        },
+      },
+    };
+    const server = Fastify();
+    await server.register(assetRoutes, {
+      db: databaseReturning([grandHallAsset], [grandHallPackage], [grandHallAsset]),
+      env: testEnv,
+      prefix: "/assets",
+    });
+    try {
+      const response = await server.inject({
+        method: "GET",
+        url: `/assets/runtime-assets/${INTERNAL_ASSET_ID}/${grandHallAsset.fileName}`,
+        headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+      });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({ code: "RUNTIME_ASSET_NOT_AVAILABLE" });
+    } finally {
+      await server.close();
+    }
+  });
+
   it("returns neither public profile metadata nor member bytes while room opt-in is disabled", async () => {
     const server = Fastify();
     await server.register(assetRoutes, {
@@ -210,9 +249,13 @@ describe("legacy public runtime boundary", () => {
       source.indexOf("export async function assetRoutes"),
       source.indexOf("export async function adminAssetRoutes"),
     );
+    const publishedPackageLookup = source.slice(
+      source.indexOf("async function findLatestPublishedRuntimePackage"),
+      source.indexOf("export interface LatestRuntimePackageDiscovery"),
+    );
 
     expect(publicRoutes).not.toContain('inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"])');
-    expect(publicRoutes.match(/eq\(runtimePackages\.runtimeStatus, "published"\)/gu)).toHaveLength(1);
+    expect(publishedPackageLookup.match(/eq\(runtimePackages\.runtimeStatus, "published"\)/gu)).toHaveLength(1);
     expect(publicRoutes).toContain("findLatestPublishedRuntimePackage(db, asset.venueSlug, asset.roomSlug)");
     expect(publicRoutes).toContain("findRuntimeVisualAssetComposition(db, pkg)");
     expect(publicRoutes).toContain("visualAssetVersions.some((version) => version.id === asset.id)");

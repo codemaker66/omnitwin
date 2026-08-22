@@ -73,7 +73,7 @@ function applyLayerProps(
   }
 }
 
-function SparkRendererHost(): ReactElement {
+export function SparkRendererHost(): ReactElement {
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
   const sparkRenderer = useMemo(

@@ -186,6 +186,73 @@ describe("production environment validation", () => {
     expect(Object.keys(env)).not.toContain("RUNTIME_PROFILE_R2_PUBLIC_URL");
   });
 
+  it("keeps runtime-profile intake disabled when the optional flag is absent", () => {
+    const env = withoutVitest(() => validateEnv(validProdBase));
+    expect(env.RUNTIME_PROFILE_INTAKE_ENABLED).toBeUndefined();
+  });
+
+  it("REJECTS partial or enabled-without-target runtime-profile intake configuration", () => {
+    expect(() => withoutVitest(() => validateEnv({
+      ...validProdBase,
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+    }))).toThrow("Runtime-profile intake configuration is incomplete");
+
+    expect(() => withoutVitest(() => validateEnv({
+      ...validProdBase,
+      RUNTIME_PROFILE_INTAKE_ENABLED: "true",
+    }))).toThrow("Enabled runtime-profile intake requires");
+
+    expect(() => withoutVitest(() => validateEnv({
+      ...validProdBase,
+      RUNTIME_PROFILE_INTAKE_ENABLED: "true",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
+      RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
+    }))).toThrow("deployed Git SHA");
+  });
+
+  it("accepts an explicitly targeted intake with separate write credentials", () => {
+    const env = withoutVitest(() => validateEnv({
+      ...validProdBase,
+      RUNTIME_PROFILE_INTAKE_ENABLED: "true",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
+      GIT_SHA: "a".repeat(40),
+      RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
+      RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
+    }));
+    expect(env.RUNTIME_PROFILE_INTAKE_TARGET_ID).toBe("production-grand-hall");
+    expect(env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA).toBe("a".repeat(40));
+  });
+
+  it("REJECTS reuse of the private serving access key for intake writes", () => {
+    expect(() => withoutVitest(() => validateEnv({
+      ...validProdBase,
+      RUNTIME_PROFILE_INTAKE_ENABLED: "true",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
+      GIT_SHA: "a".repeat(40),
+      RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: validProdBase.RUNTIME_PROFILE_R2_ACCESS_KEY_ID,
+      RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-write-secret",
+    }))).toThrow("distinct put-only access key");
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["development placeholder", "dev"],
+    ["different commit", "b".repeat(40)],
+  ] as const)("REJECTS an intake-enabled %s build Git SHA", (_name, gitSha) => {
+    expect(() => withoutVitest(() => validateEnv({
+      ...validProdBase,
+      RUNTIME_PROFILE_INTAKE_ENABLED: "true",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
+      RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
+      RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
+      GIT_SHA: gitSha,
+    }))).toThrow("Docker-stamped GIT_SHA");
+  });
+
   it("REJECTS a runtime-profile bucket shared with upload or Foundry storage", () => {
     for (const collision of [
       {

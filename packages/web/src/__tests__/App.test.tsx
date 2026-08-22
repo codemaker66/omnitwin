@@ -37,11 +37,53 @@ vi.mock("react-router-dom", () => ({
 // (a WASM module that rejects at import under Node). The Canvas mock never
 // renders scene children, so stub the splat layer to keep Spark out of this test.
 vi.mock("../components/editor/CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
+vi.mock("../components/editor/ExactGrandHallSplatLayer.js", () => ({ ExactGrandHallSplatLayer: () => null }));
+vi.mock("../hooks/use-room-runtime-splat.js", () => ({
+  useRoomRuntimeSplat: () => ({
+    splatUrls: [],
+    transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, note: "test" },
+    hasAsset: false,
+    status: "none",
+    delivery: "none",
+    runtimePackageId: null,
+    roomIdentity: null,
+  }),
+}));
 
 import { App } from "../App.js";
 import { CATALOGUE_ITEMS } from "../lib/catalogue.js";
 import { createPlacedItem } from "../lib/placement.js";
 import { usePlacementStore } from "../stores/placement-store.js";
+import { useMeasurementStore } from "../stores/measurement-store.js";
+import { useCockpitStore } from "../stores/cockpit-store.js";
+import { useEditorStore } from "../stores/editor-store.js";
+import type { Space } from "../api/spaces.js";
+import type { PlannerRoomIdentity } from "../lib/planner-layer-composition.js";
+
+function roomSpace(slug: string, venueId = "venue-1", id = `space-${slug}`): Space {
+  return {
+    id,
+    venueId,
+    name: slug,
+    slug,
+    widthM: "10",
+    lengthM: "8",
+    heightM: "5",
+    floorPlanOutline: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 8 }, { x: 0, y: 8 }],
+  };
+}
+
+function resolveRoom(room: Space, venueSlug = "trades-hall-glasgow"): void {
+  const identity: PlannerRoomIdentity = {
+    spaceId: room.id,
+    venueId: room.venueId,
+    roomSlug: room.slug,
+    status: "resolved",
+    venueSlug,
+  };
+  useEditorStore.setState({ space: room });
+  useCockpitStore.getState().setPlannerRoomIdentity(identity);
+}
 
 /** Extract the props object from the first CanvasMock call. */
 function getCanvasProps(): Record<string, unknown> {
@@ -66,11 +108,18 @@ describe("App", () => {
       writable: true,
       value: 1440,
     });
+    useCockpitStore.getState().reset();
+    useEditorStore.getState().reset();
+    resolveRoom(roomSpace("reception-room"));
     usePlacementStore.setState({ placedItems: [] });
+    useMeasurementStore.setState({ active: false, pendingPoint: null, measurements: [], nextId: 1 });
   });
   afterEach(() => {
     cleanup();
+    useCockpitStore.getState().reset();
+    useEditorStore.getState().reset();
     usePlacementStore.setState({ placedItems: [] });
+    useMeasurementStore.setState({ active: false, pendingPoint: null, measurements: [], nextId: 1 });
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
   });
@@ -109,6 +158,34 @@ describe("App", () => {
 
     expect(screen.getByTestId("generated-furniture-proxy-badge").textContent)
       .toBe("AI-generated furniture proxy · visual stand-in · not measured");
+  });
+
+  it("suppresses every operational-geometry surface for venue-verified Trades Hall Grand Hall", () => {
+    resolveRoom(roomSpace("grand-hall"));
+    usePlacementStore.setState({
+      placedItems: [createPlacedItem(catalogueId("trestle-6ft"), 0, 0)],
+    });
+    useMeasurementStore.getState().activate();
+
+    const { container } = render(<App />);
+
+    expect(screen.queryByTestId("generated-furniture-proxy-badge")).toBeNull();
+    expect(screen.queryByTestId("planner-toolbar")).toBeNull();
+    expect(screen.queryByTestId("planner-spatial-hud")).toBeNull();
+    expect(screen.queryByTestId("planner-command-deck")).toBeNull();
+    expect(screen.queryByRole("status", { name: "Measurement tool status" })).toBeNull();
+    expect(container.querySelector(".planner-section-slider-dock")).toBeNull();
+    expect(container.querySelector(".planner-canvas-stage")?.getAttribute("style")).toContain("padding-left: 0px");
+  });
+
+  it("retains planning chrome for another venue's verified grand-hall room", () => {
+    const otherGrandHall = roomSpace("grand-hall", "other-venue-id", "other-grand-hall-space");
+    resolveRoom(otherGrandHall, "another-venue");
+    render(<App />);
+
+    expect(screen.getByTestId("planner-toolbar")).toBeTruthy();
+    expect(screen.getByTestId("planner-spatial-hud")).toBeTruthy();
+    expect(screen.getByTestId("planner-command-deck")).toBeTruthy();
   });
 
   it("keeps R3F performance regression metadata available without changing the fixed canvas DPR", () => {

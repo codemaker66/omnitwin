@@ -23,6 +23,8 @@ function makePackage(overrides: {
   assetKind?: "splat" | "mesh";
   assetFileExt?: ".ply" | ".spz" | ".sog";
   assetFileName?: string;
+  venueSlug?: string;
+  roomSlug?: string;
 } = {}): RuntimePackage {
   const evidenceStatus = overrides.evidenceStatus ?? "machine_checked";
   const runtimeStatus = overrides.runtimeStatus ?? "published";
@@ -30,18 +32,20 @@ function makePackage(overrides: {
   const assetKind = overrides.assetKind ?? "splat";
   const assetFileExt = overrides.assetFileExt ?? ".ply";
   const assetFileName = overrides.assetFileName ?? "scene.ply";
+  const venueSlug = overrides.venueSlug ?? "trades-hall";
+  const roomSlug = overrides.roomSlug ?? "robert-adam-room";
   return {
     id: "rp1",
-    venueSlug: "trades-hall",
-    roomSlug: "robert-adam-room",
+    venueSlug,
+    roomSlug,
     primaryVisualAssetVersionId: ASSET_VERSION_ID,
     semanticMeshAssetVersionId: null,
     collisionAssetVersionId: null,
     pointCloudAssetVersionId: null,
     manifestJson: {
       schemaVersion: "venviewer.runtime-package.v1",
-      venueSlug: "trades-hall",
-      roomSlug: "robert-adam-room",
+      venueSlug,
+      roomSlug,
       packageType: "room-runtime",
       assets: {
         primaryVisualAssetVersionId: ASSET_VERSION_ID,
@@ -60,12 +64,12 @@ function makePackage(overrides: {
     visualAssetUrls: [],
     primaryVisualAssetVersion: {
       id: ASSET_VERSION_ID,
-      venueSlug: "trades-hall",
-      roomSlug: "robert-adam-room",
+      venueSlug,
+      roomSlug,
       captureSessionId: null,
       assetKind,
       sourceType: "xgrids",
-      r2Key: `venues/trades-hall/rooms/robert-adam-room/xgrids/${assetFileName}`,
+      r2Key: `venues/${venueSlug}/rooms/${roomSlug}/xgrids/${assetFileName}`,
       fileName: assetFileName,
       fileExt: assetFileExt,
       externalUrl: null,
@@ -174,6 +178,30 @@ describe("decideRuntimeAsset", () => {
     expect(decision.source).toBe("package");
     expect(decision.splatUrl).toBe("https://assets.example/reception-room/data/3dgs/0_1_0.sog");
     expect(decision.evidenceLabel).toMatch(/runtime asset loaded/i);
+  });
+
+  it("reserves URL-based loading for the exact Trades Hall Grand Hall path", () => {
+    const tradesHallGrandHall = decideRuntimeAsset(null, makePackage({
+      venueSlug: "trades-hall",
+      roomSlug: "grand-hall",
+      assetUrl: "https://assets.example/trades-hall/grand-hall/scene.sog",
+      assetFileExt: ".sog",
+      assetFileName: "scene.sog",
+    }));
+    expect(tradesHallGrandHall.source).toBe("none");
+    expect(tradesHallGrandHall.splatUrl).toBeNull();
+
+    const anotherVenueGrandHall = decideRuntimeAsset(null, makePackage({
+      venueSlug: "another-venue",
+      roomSlug: "grand-hall",
+      assetUrl: "https://assets.example/another-venue/grand-hall/scene.sog",
+      assetFileExt: ".sog",
+      assetFileName: "scene.sog",
+    }));
+    expect(anotherVenueGrandHall.source).toBe("package");
+    expect(anotherVenueGrandHall.splatUrl).toBe(
+      "https://assets.example/another-venue/grand-hall/scene.sog",
+    );
   });
 
   it("prefers a validated SOG chunk set over the primary visual URL", () => {
@@ -327,13 +355,34 @@ describe("runtimeAssetViewTransformForRoom", () => {
     expect(transform.note).toMatch(/visual QA/i);
   });
 
-  it("does not invent transforms for rooms without registered visual alignment", () => {
+  it("uses the data-derived Z-up source-only transform for Grand Hall", () => {
     const transform = runtimeAssetViewTransformForRoom("grand-hall");
-    expect(transform).toMatchObject({
-      position: [0, 0, 0],
-      rotation: [0, 0, 0],
-      scale: 1,
-    });
+    expect(transform.position[0]).toBeCloseTo(4.74065113067626, 10);
+    expect(transform.position[1]).toBeCloseTo(2.84312653541565, 10);
+    expect(transform.position[2]).toBeCloseTo(-8.58403515815738, 10);
+    expect(transform.scale).toBe(1);
+    expect(transform.rotation[0]).toBeCloseTo(-Math.PI / 2);
+    expect(transform.note).toMatch(/fine-frontier source inspection/i);
+
+    const sourceBounds = {
+      min: [-12.6987895965576, -19.8602905273438, -2.84312653541565],
+      max: [3.21748733520508, 2.69222021102905, 7.48998641967773],
+    } as const;
+    const transformedBounds = {
+      min: [
+        sourceBounds.min[0] + transform.position[0],
+        sourceBounds.min[2] + transform.position[1],
+        -sourceBounds.max[1] + transform.position[2],
+      ],
+      max: [
+        sourceBounds.max[0] + transform.position[0],
+        sourceBounds.max[2] + transform.position[1],
+        -sourceBounds.min[1] + transform.position[2],
+      ],
+    } as const;
+    expect(transformedBounds.min[0]).toBeCloseTo(-transformedBounds.max[0], 10);
+    expect(transformedBounds.min[1]).toBeCloseTo(0, 10);
+    expect(transformedBounds.min[2]).toBeCloseTo(-transformedBounds.max[2], 10);
   });
 });
 
@@ -391,25 +440,53 @@ describe("runtimeAssetCameraViewForRoom", () => {
     expect(cameraView.note).toMatch(/interior/i);
   });
 
-  it("keeps an overview camera for rooms without registered runtime camera tuning", () => {
+  it("uses the data-bounded source-only inspection camera for Grand Hall", () => {
     const cameraView = runtimeAssetCameraViewForRoom("grand-hall");
     expect(cameraView).toMatchObject({
-      position: [0, 20, 22],
-      target: [0, 1.8, 0],
       arrivalPosition: null,
       arrivalTarget: null,
       arrivalDurationMs: 0,
-      fov: 42,
-      minDistance: 1.5,
-      maxDistance: 34,
-      panSpeed: 0.8,
-      rotateSpeed: 1,
-      zoomSpeed: 1,
+      fov: 48,
+      minDistance: 2,
+      panSpeed: 0.35,
+      rotateSpeed: 0.5,
+      zoomSpeed: 0.5,
       dampingFactor: 0.14,
-      minPolarAngle: 0,
+      minPolarAngle: Math.PI * 0.08,
       maxPolarAngle: Math.PI * 0.49,
-      targetBounds: null,
-      cameraBounds: null,
     });
+    expect(cameraView.target[0]).toBeCloseTo(0, 10);
+    expect(cameraView.target[1]).toBeCloseTo(5.16655647754669, 10);
+    expect(cameraView.target[2]).toBeCloseTo(0, 10);
+    expect(cameraView.targetBounds).not.toBeNull();
+    expect(cameraView.cameraBounds).not.toBeNull();
+    if (cameraView.targetBounds === null || cameraView.cameraBounds === null) {
+      throw new Error("Grand Hall camera tuning must include runtime bounds.");
+    }
+    expect(cameraView.targetBounds.min[0]).toBeCloseTo(-7.95813846588134, 10);
+    expect(cameraView.targetBounds.min[1]).toBeCloseTo(0, 10);
+    expect(cameraView.targetBounds.min[2]).toBeCloseTo(-11.27625536918643, 10);
+    expect(cameraView.targetBounds.max[0]).toBeCloseTo(7.95813846588134, 10);
+    expect(cameraView.targetBounds.max[1]).toBeCloseTo(10.33311295509338, 10);
+    expect(cameraView.targetBounds.max[2]).toBeCloseTo(11.27625536918643, 10);
+    const cameraDistance = Math.hypot(
+      cameraView.position[0] - cameraView.target[0],
+      cameraView.position[1] - cameraView.target[1],
+      cameraView.position[2] - cameraView.target[2],
+    );
+    const boundingRadius = Math.hypot(
+      7.95813846588134,
+      5.16655647754669,
+      11.27625536918643,
+    );
+    const minimumFramingDistance = boundingRadius / Math.sin((cameraView.fov / 2) * (Math.PI / 180));
+    expect(cameraDistance).toBeGreaterThan(minimumFramingDistance);
+    expect(cameraView.position[0]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[0]);
+    expect(cameraView.position[0]).toBeLessThanOrEqual(cameraView.cameraBounds.max[0]);
+    expect(cameraView.position[1]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[1]);
+    expect(cameraView.position[1]).toBeLessThanOrEqual(cameraView.cameraBounds.max[1]);
+    expect(cameraView.position[2]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[2]);
+    expect(cameraView.position[2]).toBeLessThanOrEqual(cameraView.cameraBounds.max[2]);
+    expect(cameraView.note).toMatch(/source-only/i);
   });
 });

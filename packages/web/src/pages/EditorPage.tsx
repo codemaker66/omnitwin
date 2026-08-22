@@ -22,6 +22,8 @@ import {
 import { getPublicConfig } from "../api/configurations.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../hooks/use-media-query.js";
 import { useUndoRedoShortcuts } from "../hooks/use-undo-redo-shortcuts.js";
+import { usePlannerLayerPolicy } from "../hooks/use-planner-layer-policy.js";
+import { plannerAllowsOperationalGeometry } from "../lib/planner-layer-composition.js";
 import { registerReplayBridge } from "../lib/action-log-replay-bridge.js";
 import {
   resolvePlannerVenue,
@@ -163,6 +165,17 @@ export function EditorPage(): React.ReactElement {
     return { role: authRole, venueId: authVenueId };
   }, [authRole, authVenueId, isAuthenticated]);
   const wantedSpaceSlug = searchParams.get("space") ?? DEFAULT_SPACE_SLUG;
+  const requestedBlueprintView = searchParams.get("view") === "2d";
+  const plannerConfigViewSuffix = requestedBlueprintView ? "?view=2d" : "";
+  const plannerBootstrapKey = [
+    routeVenueSlug ?? "",
+    wantedSpaceSlug,
+    isAuthenticated ? authRole ?? "" : "anonymous",
+    authVenueId ?? "",
+  ].join("|");
+  const currentPlannerBootstrapKey = useRef(plannerBootstrapKey);
+  const editorPageMounted = useRef(true);
+  currentPlannerBootstrapKey.current = plannerBootstrapKey;
   const requestedConfigIsPending = urlConfigId !== undefined
     && urlConfigId !== storeConfigId
     && error === null;
@@ -187,25 +200,29 @@ export function EditorPage(): React.ReactElement {
     return registerReplayBridge();
   }, []);
 
+  useEffect(() => {
+    editorPageMounted.current = true;
+    return () => {
+      editorPageMounted.current = false;
+    };
+  }, []);
+
   // Auto-open the requested venue + space on the first render that has no
   // configId anywhere. `/plan` keeps the single-tenant shortcut by choosing the
   // first active venue; `/v/:venueSlug/plan` is explicit and fail-closed.
   useEffect(() => {
     if (urlConfigId !== undefined || storeConfigId !== null) return;
     if (routeVenueSlug !== undefined && authLoading) return;
-    const bootstrapKey = [
-      routeVenueSlug ?? "",
-      wantedSpaceSlug,
-      isAuthenticated ? authRole ?? "" : "anonymous",
-      authVenueId ?? "",
-    ].join("|");
-    if (autoCreateAttemptedFor.current === bootstrapKey) return;
-    autoCreateAttemptedFor.current = bootstrapKey;
+    const controller = new AbortController();
+    const bootstrapWasCancelled = (): boolean => controller.signal.aborted;
+    if (autoCreateAttemptedFor.current === plannerBootstrapKey) return;
+    autoCreateAttemptedFor.current = plannerBootstrapKey;
     setAutoCreateBlocker(null);
     setOpeningRoomName(null);
     void (async () => {
       try {
         const venues = await spacesApi.listVenues();
+        if (bootstrapWasCancelled()) return;
         const venueResolution = resolvePlannerVenue(venues, routeVenueSlug, venueAccessUser);
         if (venueResolution.status !== "resolved") {
           const blocker: PlannerBootstrapBlocker =
@@ -218,35 +235,56 @@ export function EditorPage(): React.ReactElement {
               : venueResolution.status === "not_found"
                 ? { kind: "not_found", requestedSlug: venueResolution.requestedSlug }
                 : { kind: "empty" };
+          if (bootstrapWasCancelled()) return;
           setAutoCreateBlocker(blocker);
           return;
         }
 
         const spaces = await spacesApi.listSpaces(venueResolution.venue.id);
+        if (bootstrapWasCancelled()) return;
         const space =
           spaces.find((s) => s.slug === wantedSpaceSlug)
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
           ?? spaces.find((s) => s.slug === LEGACY_DEFAULT_SPACE_SLUG)
           ?? spaces[0];
-        if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
-        setOpeningRoomName(space.name);
-        const reusableConfigId = await findReusablePublicConfigId(space.id);
-        if (reusableConfigId !== null) {
-          void navigate(`/plan/${reusableConfigId}`, { replace: true });
+        if (space === undefined) {
+          if (!bootstrapWasCancelled()) setAutoCreateBlocker({ kind: "empty" });
           return;
         }
+        if (bootstrapWasCancelled()) return;
+        setOpeningRoomName(space.name);
+        const reusableConfigId = await findReusablePublicConfigId(space.id);
+        if (bootstrapWasCancelled()) return;
+        if (reusableConfigId !== null) {
+          void navigate(`/plan/${reusableConfigId}${plannerConfigViewSuffix}`, { replace: true });
+          return;
+        }
+        if (bootstrapWasCancelled()) return;
         const newConfigId = await useEditorStore.getState().createPublicConfig(space.id);
-        void navigate(`/plan/${newConfigId}`, { replace: true });
+        if (newConfigId === null) return;
+        // createPublicConfig commits the new id to the store before this await
+        // resumes, which legitimately retriggers this effect's cleanup. Route
+        // identity—not that store update—decides whether navigation is stale.
+        if (
+          !editorPageMounted.current
+          || currentPlannerBootstrapKey.current !== plannerBootstrapKey
+        ) return;
+        void navigate(`/plan/${newConfigId}${plannerConfigViewSuffix}`, { replace: true });
       } catch {
-        setAutoCreateBlocker({ kind: "network" });
+        if (!bootstrapWasCancelled()) setAutoCreateBlocker({ kind: "network" });
       }
     })();
+    return () => {
+      controller.abort();
+    };
   }, [
     authLoading,
     authRole,
     authVenueId,
     isAuthenticated,
     navigate,
+    plannerBootstrapKey,
+    plannerConfigViewSuffix,
     routeVenueSlug,
     storeConfigId,
     urlConfigId,
@@ -359,10 +397,10 @@ export function EditorPage(): React.ReactElement {
  * re-render on every UI state flip.
  */
 function PlannerCommsLayer(): React.ReactElement {
-  useUndoRedoShortcuts();
-  const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   const [searchParams] = useSearchParams();
+  const requestedViewMode = searchParams.get("view") === "2d" ? "2d" : "3d";
+  const [eventDetailsOpen, setEventDetailsOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"3d" | "2d">(requestedViewMode);
   const isNarrow = useIsNarrowViewport();
   const isTouch = useIsCoarsePointer();
   const configId = useEditorStore((s) => s.configId);
@@ -371,26 +409,45 @@ function PlannerCommsLayer(): React.ReactElement {
   const saveConflict = useEditorStore((s) => s.saveConflict);
   const placedObjectCount = useEditorStore((s) => s.objects.length);
   const authState = useAuthStore((s) => s.isAuthenticated);
+  const layerPolicy = usePlannerLayerPolicy();
+  const operationalGeometryAllowed = plannerAllowsOperationalGeometry(layerPolicy);
+  const effectiveViewMode = operationalGeometryAllowed ? viewMode : "3d";
+  useUndoRedoShortcuts(operationalGeometryAllowed);
   const truthModeEnabled = isTruthModeUiEnabled(searchParams, import.meta.env.DEV);
   const truthSummary = useMemo(
-    () => buildProceduralTruthSummary({
-      surface: viewMode === "3d" ? "planner_3d" : "planner_2d",
-      placedObjectCount,
-      measuredRuntimeAssetsLoaded: false,
-    }),
-    [placedObjectCount, viewMode],
+    () => operationalGeometryAllowed
+      ? buildProceduralTruthSummary({
+        surface: effectiveViewMode === "3d" ? "planner_3d" : "planner_2d",
+        placedObjectCount,
+        measuredRuntimeAssetsLoaded: false,
+      })
+      : null,
+    [effectiveViewMode, operationalGeometryAllowed, placedObjectCount],
   );
   // The Event Details panel writes to the auth-only PATCH endpoint. Showing
   // it on unclaimed public-preview configs would 401 on every save and
   // discard the planner's work with a generic "Failed to save". Hide until
   // the config is claimed; the panel itself renders a sign-in hint if it
   // ever opens in that state (defense-in-depth).
-  const canEditEventDetails = configId !== null && !isPublicPreview;
+  const canEditEventDetails = operationalGeometryAllowed
+    && configId !== null
+    && !isPublicPreview;
   const mobile = isNarrow || isTouch;
-  const showStandaloneTruthIndicator = truthModeEnabled && (mobile || viewMode !== "3d");
+  const showStandaloneTruthIndicator = truthModeEnabled
+    && truthSummary !== null
+    && (mobile || effectiveViewMode !== "3d");
+
+  useEffect(() => {
+    setViewMode(requestedViewMode);
+  }, [requestedViewMode]);
+
+  useEffect(() => {
+    if (!operationalGeometryAllowed) setEventDetailsOpen(false);
+  }, [operationalGeometryAllowed]);
+
   return (
     <>
-      <EditorBridge />
+      {operationalGeometryAllowed && <EditorBridge />}
       <div
         data-testid="planner-3d-shell"
         data-planner-config-id={configId ?? undefined}
@@ -406,18 +463,22 @@ function PlannerCommsLayer(): React.ReactElement {
           position: "relative",
         }}
       >
-        {viewMode === "3d" ? (
+        {effectiveViewMode === "3d" ? (
           mobile ? <Editor3D /> : <PlannerCockpit />
         ) : (
           <BlueprintPage source="editor-store" />
         )}
       </div>
       {mobile ? (
-        <MobilePlannerTopBar mode={viewMode} onModeChange={setViewMode} />
-      ) : (
-        <ViewModeToggle mode={viewMode} onChange={setViewMode} isMobile={mobile} />
-      )}
-      {canEditEventDetails && viewMode === "3d" && (
+        <MobilePlannerTopBar
+          mode={effectiveViewMode}
+          onModeChange={setViewMode}
+          layerPolicy={layerPolicy}
+        />
+      ) : operationalGeometryAllowed ? (
+        <ViewModeToggle mode={effectiveViewMode} onChange={setViewMode} isMobile={mobile} />
+      ) : null}
+      {canEditEventDetails && effectiveViewMode === "3d" && (
         <button
           type="button"
           onClick={() => { setEventDetailsOpen(true); }}
@@ -438,12 +499,18 @@ function PlannerCommsLayer(): React.ReactElement {
           ★ EVENT DETAILS
         </button>
       )}
-      <EventDetailsPanel open={eventDetailsOpen} onClose={() => { setEventDetailsOpen(false); }} />
-      <ObjectNotePanel />
-      <SaveSendPanel avoidRightDock={viewMode === "3d" && !mobile} />
-      <SubmitForReviewPanel />
-      {showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} />}
-      {saveError !== null ? (
+      {operationalGeometryAllowed && (
+        <>
+          <EventDetailsPanel open={eventDetailsOpen} onClose={() => { setEventDetailsOpen(false); }} />
+          <ObjectNotePanel />
+          <SaveSendPanel avoidRightDock={effectiveViewMode === "3d" && !mobile} />
+          <SubmitForReviewPanel />
+        </>
+      )}
+      {showStandaloneTruthIndicator
+        ? <TruthModeIndicator summary={truthSummary} />
+        : null}
+      {operationalGeometryAllowed && saveError !== null ? (
         <SaveErrorToast message={saveError} isAuthenticated={authState} conflict={saveConflict} />
       ) : null}
     </>

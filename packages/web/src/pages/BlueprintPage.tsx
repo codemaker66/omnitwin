@@ -13,6 +13,7 @@ import {
   type ReactElement,
   type SetStateAction,
 } from "react";
+import { Navigate, useParams } from "react-router-dom";
 import {
   DEFAULT_PIXELS_PER_METRE,
   DEFAULT_SCALE_LABEL,
@@ -112,13 +113,29 @@ function releasePointerCaptureSafely(target: Element, pointerId: number): void {
 }
 
 export interface BlueprintPageProps {
-  readonly source?: "demo" | "editor-store";
+  readonly source?: "demo" | "editor-store" | "route";
 }
 
 export function BlueprintPage(props: BlueprintPageProps = {}): ReactElement {
   const source = props.source ?? "demo";
   if (source === "editor-store") return <BlueprintFromStore />;
+  if (source === "route") return <BlueprintRouteEntry />;
   return <BlueprintDemo />;
+}
+
+/**
+ * Direct blueprint URLs cannot decide room authority independently. Route
+ * through EditorPage, which resolves the venue-keyed shared layer policy
+ * before it may honour `view=2d`. Capture-only, pending, and unavailable
+ * rooms therefore stay in source-only 3D; verified configurable rooms retain
+ * their requested paper view.
+ */
+function BlueprintRouteEntry(): ReactElement {
+  const { configId } = useParams<{ configId?: string }>();
+  const target = configId === undefined
+    ? "/plan?view=2d"
+    : `/plan/${encodeURIComponent(configId)}?view=2d`;
+  return <Navigate to={target} replace />;
 }
 
 // ---------------------------------------------------------------------------

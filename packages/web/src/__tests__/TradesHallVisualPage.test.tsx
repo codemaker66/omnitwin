@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import type { EventPhaseGraph, EvidenceTargetType, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
+import { GRAND_HALL_CAPTURED_SOG_MEMBERS } from "../lib/grand-hall-captured-source.js";
+import { TRADES_HALL_VISUAL_DEMO_STATE } from "../lib/trades-hall-visual-demo-state.js";
 
 type OrbitControlsMockProps = Readonly<Record<string, unknown>>;
 type CanvasMockProps = Readonly<{
@@ -12,6 +14,12 @@ type CanvasMockProps = Readonly<{
   gl?: unknown;
   performance?: unknown;
 }>;
+
+interface ExactGrandHallSplatLayerMockProps {
+  readonly runtimePackageId: string;
+  readonly onChunkLoaded?: (memberName: string) => void;
+  readonly onChunkFailed?: (memberName: string) => void;
+}
 
 const { getLatestRuntimePackageMock } = vi.hoisted(() => ({
   getLatestRuntimePackageMock: vi.fn(),
@@ -29,8 +37,16 @@ const { getLatestGuestFlowReplayMock } = vi.hoisted(() => ({
   getLatestGuestFlowReplayMock: vi.fn(),
 }));
 
+const { runGuestFlowReplayInBrowserMock } = vi.hoisted(() => ({
+  runGuestFlowReplayInBrowserMock: vi.fn(),
+}));
+
 const { orbitControlsMock } = vi.hoisted(() => ({
   orbitControlsMock: vi.fn<(props: OrbitControlsMockProps) => void>(),
+}));
+
+const { exactGrandHallSplatLayerMock } = vi.hoisted(() => ({
+  exactGrandHallSplatLayerMock: vi.fn<(props: ExactGrandHallSplatLayerMockProps) => void>(),
 }));
 
 vi.mock("@react-three/fiber", () => ({
@@ -138,6 +154,13 @@ vi.mock("../components/scene/SparkSplatLayer.js", () => ({
   ),
 }));
 
+vi.mock("../components/editor/ExactGrandHallSplatLayer.js", () => ({
+  ExactGrandHallSplatLayer: (props: ExactGrandHallSplatLayerMockProps) => {
+    exactGrandHallSplatLayerMock(props);
+    return <div data-testid="exact-grand-hall-splat-layer">{props.runtimePackageId}</div>;
+  },
+}));
+
 vi.mock("../api/runtime-packages.js", () => ({
   getLatestRuntimePackage: getLatestRuntimePackageMock,
 }));
@@ -152,6 +175,10 @@ vi.mock("../api/truth-mode.js", () => ({
 
 vi.mock("../api/guest-flow-replay.js", () => ({
   getLatestGuestFlowReplay: getLatestGuestFlowReplayMock,
+}));
+
+vi.mock("../lib/guest-flow-replay-worker.js", () => ({
+  runGuestFlowReplayInBrowser: runGuestFlowReplayInBrowserMock,
 }));
 
 vi.mock("../components/ai/AIDraftPanel.js", () => ({
@@ -170,6 +197,21 @@ import {
   visualMouseButtonsForViewportWidth,
 } from "../pages/TradesHallVisualPage.js";
 
+function VisualRouteSwitcher(): React.ReactElement {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => { void navigate("/dev/trades-hall-visual?venue=trades-hall&room=grand-hall"); }}
+      >
+        Open Grand Hall
+      </button>
+      <TradesHallVisualPage />
+    </>
+  );
+}
+
 beforeEach(() => {
   Object.defineProperty(window, "innerWidth", {
     configurable: true,
@@ -179,6 +221,10 @@ beforeEach(() => {
   getLatestRuntimePackageMock.mockResolvedValue(null);
   getEventPhaseGraphMock.mockResolvedValue(makePhaseGraph());
   getLatestGuestFlowReplayMock.mockRejectedValue(new Error("No stored replay in component test."));
+  runGuestFlowReplayInBrowserMock.mockResolvedValue({
+    artifact: TRADES_HALL_VISUAL_DEMO_STATE.guestFlowReplay,
+    mode: "main-thread-fallback",
+  });
   getTruthModeSummaryMock.mockImplementation(
     (input: { readonly targetType: EvidenceTargetType; readonly targetId: string }) =>
       Promise.resolve(makeTruthSummary(input.targetType, input.targetId)),
@@ -191,9 +237,19 @@ afterEach(() => {
   getLatestRuntimePackageMock.mockReset();
   getEventPhaseGraphMock.mockReset();
   getLatestGuestFlowReplayMock.mockReset();
+  runGuestFlowReplayInBrowserMock.mockReset();
   getTruthModeSummaryMock.mockReset();
   orbitControlsMock.mockReset();
+  exactGrandHallSplatLayerMock.mockReset();
 });
+
+function latestExactGrandHallLayerProps(): ExactGrandHallSplatLayerMockProps {
+  const props = exactGrandHallSplatLayerMock.mock.lastCall?.[0];
+  if (props === undefined) {
+    throw new Error("Expected the exact Grand Hall layer to have rendered.");
+  }
+  return props;
+}
 
 function mount(initialEntry = "/dev/trades-hall-visual"): void {
   render(
@@ -277,6 +333,86 @@ function makeRuntimePackage(roomSlug = "robert-adam-room"): RuntimePackage {
       notes: null,
       createdAt: "2026-06-06T10:00:00.000Z",
       updatedAt: "2026-06-06T10:00:00.000Z",
+    },
+  };
+}
+
+function makeExactGrandHallRuntimePackage(): RuntimePackage {
+  const assetVersionIds = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((_, index) =>
+    `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  );
+  const firstMember = GRAND_HALL_CAPTURED_SOG_MEMBERS[0];
+  const firstAssetVersionId = assetVersionIds[0];
+  if (firstAssetVersionId === undefined) {
+    throw new Error("Grand Hall source contract must contain a primary member.");
+  }
+  const visualAssetReceipts = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((member, index) => ({
+    assetVersionId: assetVersionIds[index] ?? "",
+    fileName: member.fileName,
+    fileExt: ".sog" as const,
+    sha256: member.sha256,
+    sizeBytes: member.sizeBytes,
+    storageKeySha256: String(index + 1).padStart(2, "0").repeat(32),
+  }));
+
+  return {
+    id: "20000000-0000-4000-8000-000000000001",
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    primaryVisualAssetVersionId: firstAssetVersionId,
+    semanticMeshAssetVersionId: null,
+    collisionAssetVersionId: null,
+    pointCloudAssetVersionId: null,
+    manifestJson: {
+      schemaVersion: "venviewer.runtime-package.v1",
+      venueSlug: "trades-hall",
+      roomSlug: "grand-hall",
+      packageType: "room-runtime",
+      assets: {
+        primaryVisualAssetVersionId: firstAssetVersionId,
+        visualAssetVersionIds: assetVersionIds,
+        visualAssetReceipts,
+        semanticMeshAssetVersionId: null,
+        collisionAssetVersionId: null,
+        pointCloudAssetVersionId: null,
+      },
+      compositionBasis: {
+        decisionId: "grand-hall-big-model-sog-fine-v1",
+        decisionRef: "sha256:8e7514e75aa19345dda1955f2cee3f9369339c553c2711c084cd04be4c9c1352",
+        hierarchySha256: "927a92699de222e99d2684ca2567a35ab1e523a036461e6e01236b7b77b7f659",
+        format: "sog",
+        level: "fine",
+        lodSelectionPolicy: "authoritative-leaf-nodes-exclude-environment-v1",
+        expectedGaussianCount: 6_019_684,
+      },
+    },
+    evidenceStatus: "human_reviewed",
+    runtimeStatus: "published",
+    createdAt: "2026-08-21T12:00:00.000Z",
+    updatedAt: "2026-08-21T12:00:00.000Z",
+    primaryVisualAssetUrl: "https://untrusted.invalid/primary.sog",
+    visualAssetUrls: GRAND_HALL_CAPTURED_SOG_MEMBERS.map(
+      (member) => `https://untrusted.invalid/${member.fileName}`,
+    ),
+    primaryVisualAssetVersion: {
+      id: firstAssetVersionId,
+      venueSlug: "trades-hall",
+      roomSlug: "grand-hall",
+      captureSessionId: null,
+      assetKind: "splat",
+      sourceType: "xgrids",
+      r2Key: `venues/trades-hall/rooms/grand-hall/${firstMember.relativePath}`,
+      fileName: firstMember.fileName,
+      fileExt: ".sog",
+      externalUrl: null,
+      mimeType: "application/octet-stream",
+      sha256: firstMember.sha256,
+      sizeBytes: firstMember.sizeBytes,
+      evidenceStatus: "human_reviewed",
+      runtimeStatus: "usable",
+      notes: null,
+      createdAt: "2026-08-21T12:00:00.000Z",
+      updatedAt: "2026-08-21T12:00:00.000Z",
     },
   };
 }
@@ -410,38 +546,50 @@ describe("TradesHallVisualPage", () => {
     }));
   });
 
-  it("renders the internal command shell empty state without mounting a Spark asset", () => {
+  it("renders a source-only Grand Hall empty state without planner or demo leakage", async () => {
     mount();
     expect(screen.getByText("Venviewer")).toBeTruthy();
-    expect(screen.getByText("Truth Mode")).toBeTruthy();
-    expect(screen.getByText("Event Phase Graph")).toBeTruthy();
-    expect(screen.getByText("Guest Flow Replay")).toBeTruthy();
-    expect(screen.getAllByText("Overlays").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Expand Overlay controls" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Expand Overlay controls" }));
-    expect(screen.getByRole("button", { name: "Expand View status" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Expand View status" }));
-    expect(screen.getByLabelText("Visual view status")).toBeTruthy();
-    expect(screen.getByLabelText("Current visual view: 3D")).toBeTruthy();
+    expect(screen.getByText("Captured source inspection")).toBeTruthy();
+    expect(screen.queryByText("Truth Mode")).toBeNull();
+    expect(screen.queryByText("Event Phase Graph")).toBeNull();
+    expect(screen.queryByText("Linked event timeline")).toBeNull();
+    expect(screen.queryByText("Guest Flow Replay")).toBeNull();
+    expect(screen.queryByLabelText("Visual command modes")).toBeNull();
+    expect(screen.queryByLabelText("Visual insight cards")).toBeNull();
+    expect(screen.queryByLabelText("Guest flow replay status")).toBeNull();
+    expect(screen.queryByLabelText("Truth Mode selection")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Selected table" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Selected route" })).toBeNull();
+    expect(screen.queryByText("Overlays")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand Overlay controls" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Splat" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Mesh" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Hybrid" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand View status" })).toBeNull();
     expect(screen.queryByRole("button", { name: "3D view" })).toBeNull();
     expect(screen.queryByRole("button", { name: "2D view" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Current mode/i })).toBeNull();
-    expect(screen.getByText(/Simulated guest flow .* planning evidence/i)).toBeTruthy();
-    expect(screen.getByText("Simulated guest flow - planning support")).toBeTruthy();
-    expect(screen.getByText(/Bottleneck score/i)).toBeTruthy();
-    expect(screen.getByLabelText("Replay controls")).toBeTruthy();
-    expect(screen.getByLabelText("Replay progress")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Play" })).toBeTruthy();
-    expect(screen.getByText(/Human review required before operational reliance/i)).toBeTruthy();
-    expect(screen.getByText("Internal command shell demo")).toBeTruthy();
-    expect(screen.getByText("Internal demo phase fixture")).toBeTruthy();
-    expect(screen.getAllByText(/Density not checked/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Staff conflicts not checked/i).length).toBeGreaterThan(0);
+    expect(document.querySelector(".visual-flow-line")).toBeNull();
+    expect(screen.queryByLabelText("Replay controls")).toBeNull();
+    expect(screen.queryByText("Internal command shell demo")).toBeNull();
+    expect(screen.queryByText("Internal demo phase fixture")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Guests \d|Density|Staff conflicts|Ops tasks/i);
     expect(screen.getAllByText("No real asset loaded yet").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
-    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-variant")).toBe("grand-hall");
+    expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
     expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+    expect(screen.queryByTestId("exact-grand-hall-splat-layer")).toBeNull();
+    expect(document.querySelector(".visual-canvas-frame--captured-source")).not.toBeNull();
+
+    await waitFor(() => {
+      expect(getLatestRuntimePackageMock).toHaveBeenCalledWith({
+        venue: "trades-hall",
+        room: "grand-hall",
+      });
+    });
+    expect(getLatestGuestFlowReplayMock).not.toHaveBeenCalled();
+    expect(runGuestFlowReplayInBrowserMock).not.toHaveBeenCalled();
+    expect(getTruthModeSummaryMock).not.toHaveBeenCalled();
   });
 
   it("requests the Grand Hall runtime package by default", async () => {
@@ -455,7 +603,7 @@ describe("TradesHallVisualPage", () => {
   });
 
   it("loads Truth Mode summary for the selected table by default", async () => {
-    mount();
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
     await waitFor(() => {
       expect(getTruthModeSummaryMock).toHaveBeenCalledWith({
         targetType: "table",
@@ -471,7 +619,7 @@ describe("TradesHallVisualPage", () => {
   });
 
   it("switches Truth Mode selection to route evidence", async () => {
-    mount();
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
     fireEvent.click(screen.getByRole("button", { name: "Selected route" }));
     await waitFor(() => {
       expect(getTruthModeSummaryMock).toHaveBeenCalledWith({
@@ -596,12 +744,123 @@ describe("TradesHallVisualPage", () => {
     expect(runtimeControlsProps?.["onStart"]).toEqual(expect.any(Function));
   });
 
-  it("ignores manual splatUrl query params and keeps the procedural fallback", () => {
+  it("removes the previous room package immediately while Grand Hall is still pending", async () => {
+    let resolveGrandHall: ((value: RuntimePackage | null) => void) | null = null;
+    getLatestRuntimePackageMock.mockImplementation(({ room }: { readonly room: string }) => {
+      if (room === "reception-room") return Promise.resolve(makeRuntimePackage("reception-room"));
+      return new Promise<RuntimePackage | null>((resolve) => { resolveGrandHall = resolve; });
+    });
+    render(
+      <MemoryRouter initialEntries={["/dev/trades-hall-visual?venue=trades-hall&room=reception-room"]}>
+        <VisualRouteSwitcher />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("spark-splat-layer").textContent).toContain("reception-room");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open Grand Hall" }));
+
+    await waitFor(() => {
+      expect(getLatestRuntimePackageMock).toHaveBeenCalledWith({ venue: "trades-hall", room: "grand-hall" });
+    });
+    expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+    expect(screen.queryByTestId("exact-grand-hall-splat-layer")).toBeNull();
+    expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
+    expect(screen.queryByTestId("grand-hall-room")).toBeNull();
+
+    act(() => { resolveGrandHall?.(null); });
+  });
+
+  it("mounts the exact Grand Hall transport without procedural or generic URL architecture", async () => {
+    getLatestRuntimePackageMock.mockResolvedValue(makeExactGrandHallRuntimePackage());
+    mount();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exact-grand-hall-splat-layer").textContent).toBe(
+        "20000000-0000-4000-8000-000000000001",
+      );
+    });
+    expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
+    expect(screen.queryByTestId("grand-hall-room")).toBeNull();
+    expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand Overlay controls" })).toBeNull();
+    expect(screen.queryByText(/No runtime visual asset is mounted for this room/i)).toBeNull();
+  });
+
+  it("keeps exact Grand Hall Truth Mode pending until all eleven members attach", async () => {
+    getLatestRuntimePackageMock.mockResolvedValue(makeExactGrandHallRuntimePackage());
+    getTruthModeSummaryMock.mockRejectedValue(new Error("No stored runtime-asset summary."));
+    mount();
+
+    await waitFor(() => {
+      expect(screen.getByText("The exact captured Grand Hall source is still verifying and is not mounted.")).toBeTruthy();
+    });
+    expect(screen.queryByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeNull();
+    expect(screen.queryByText(/Captured source pixels are shown/i)).toBeNull();
+
+    const onChunkLoaded = latestExactGrandHallLayerProps().onChunkLoaded;
+    if (onChunkLoaded === undefined) {
+      throw new Error("Expected an exact Grand Hall loaded callback.");
+    }
+    act(() => {
+      for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS.slice(0, -1)) {
+        onChunkLoaded(member.fileName);
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Verifying exact Grand Hall source (10/11)").length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText("The exact captured Grand Hall source is still verifying and is not mounted.")).toBeTruthy();
+    expect(screen.queryByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeNull();
+    expect(screen.queryByText(/Captured source pixels are shown/i)).toBeNull();
+  });
+
+  it("revokes exact Grand Hall mounted and pixel claims after a verification failure", async () => {
+    getLatestRuntimePackageMock.mockResolvedValue(makeExactGrandHallRuntimePackage());
+    getTruthModeSummaryMock.mockRejectedValue(new Error("No stored runtime-asset summary."));
+    mount();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exact-grand-hall-splat-layer")).toBeTruthy();
+    });
+    const layerProps = latestExactGrandHallLayerProps();
+    const { onChunkLoaded, onChunkFailed } = layerProps;
+    if (onChunkLoaded === undefined || onChunkFailed === undefined) {
+      throw new Error("Expected exact Grand Hall load and failure callbacks.");
+    }
+    act(() => {
+      for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS) {
+        onChunkLoaded(member.fileName);
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeTruthy();
+      expect(screen.getByText(/Captured source pixels are shown/i)).toBeTruthy();
+    });
+
+    act(() => {
+      onChunkFailed(GRAND_HALL_CAPTURED_SOG_MEMBERS[0].fileName);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("The exact captured Grand Hall source failed verification and is not mounted.")).toBeTruthy();
+      expect(screen.getByText(/Captured pixels and all architectural fallbacks remain hidden/i)).toBeTruthy();
+    });
+    expect(screen.queryByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeNull();
+    expect(screen.queryByText(/Captured source pixels are shown/i)).toBeNull();
+  });
+
+  it("ignores manual splatUrl query params and keeps Grand Hall architecture hidden", () => {
     mount("/dev/trades-hall-visual?splatUrl=https%3A%2F%2Fassets.venviewer.test%2Fscene.ply");
     expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
-    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
+    expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
+    expect(screen.queryByTestId("grand-hall-room")).toBeNull();
     expect(screen.getAllByText("No real asset loaded yet").length).toBeGreaterThan(0);
-    expect(screen.getByText(/Manual runtime URLs are disabled/i)).toBeTruthy();
+    expect(screen.getByText("Captured source inspection")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("assets.venviewer.test");
   });
 
   it("does not present production or verification claims", () => {
@@ -620,7 +879,7 @@ describe("TradesHallVisualPage", () => {
   });
 
   it("renders worker/fallback replay status and lets operators scrub playback", async () => {
-    mount();
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
     fireEvent.click(screen.getByRole("button", { name: "Expand Overlay controls" }));
     await waitFor(() => {
       expect(screen.getAllByText(/Deterministic fallback replay|Worker replay generated/i).length).toBeGreaterThan(0);
@@ -640,7 +899,7 @@ describe("TradesHallVisualPage", () => {
   });
 
   it("switches mesh, splat, and hybrid layer state", () => {
-    mount();
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
     expect(screen.getByRole("button", { name: /Hybrid/i }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: /Splat/i }));
@@ -651,12 +910,23 @@ describe("TradesHallVisualPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /Mesh/i }));
     expect(screen.getByRole("button", { name: /Mesh/i }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("visual-room-mesh").getAttribute("data-detail")).toBe("lean");
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-variant")).toBe("generic");
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
+  });
+
+  it("does not apply the Trades Hall capture lock to another venue's grand-hall slug", () => {
+    mount("/dev/trades-hall-visual?venue=city-hall&room=grand-hall");
+
+    expect(screen.getByRole("button", { name: "Hybrid" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Mesh" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Hybrid" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByTestId("visual-room-mesh").getAttribute("data-variant")).toBe("grand-hall");
+    expect(screen.getByRole("button", { name: "Expand Overlay controls" })).toBeTruthy();
   });
 
   it("lets operators minimize floating controls and callouts", () => {
     const { container } = render(
-      <MemoryRouter initialEntries={["/dev/trades-hall-visual"]}>
+      <MemoryRouter initialEntries={["/dev/trades-hall-visual?venue=trades-hall&room=reception-room"]}>
         <TradesHallVisualPage />
       </MemoryRouter>,
     );
@@ -680,7 +950,7 @@ describe("TradesHallVisualPage", () => {
 
   it("auto-compacts visual widgets and clears overlay clutter while the camera moves", () => {
     const { container } = render(
-      <MemoryRouter initialEntries={["/dev/trades-hall-visual"]}>
+      <MemoryRouter initialEntries={["/dev/trades-hall-visual?venue=trades-hall&room=reception-room"]}>
         <TradesHallVisualPage />
       </MemoryRouter>,
     );
@@ -709,13 +979,13 @@ describe("TradesHallVisualPage", () => {
   });
 
   it("allows the event phase graph to select a phase", () => {
-    mount();
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
     fireEvent.click(screen.getByRole("button", { name: /Bar queue/i }));
-    expect(screen.getByText(/Grand Hall \/ Bar queue/i)).toBeTruthy();
+    expect(screen.getByText(/Reception Room \/ Bar queue/i)).toBeTruthy();
   });
 
   it("renders real event phase data when an event id is provided", async () => {
-    mount("/dev/trades-hall-visual?eventId=00000000-0000-4000-8000-000000000001");
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room&eventId=00000000-0000-4000-8000-000000000001");
 
     await waitFor(() => {
       expect(getEventPhaseGraphMock).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000001");
@@ -730,9 +1000,48 @@ describe("TradesHallVisualPage", () => {
   });
 
   it("lets insight cards change the active command mode", () => {
-    mount();
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
     fireEvent.click(screen.getByRole("button", { name: /Ops Compiler/i }));
     expect(screen.getByRole("button", { name: "Ops" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("shows only a minimal timeline for a genuinely linked Grand Hall event", async () => {
+    mount("/dev/trades-hall-visual?eventId=00000000-0000-4000-8000-000000000001");
+
+    await waitFor(() => {
+      expect(getEventPhaseGraphMock).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000001");
+      expect(screen.getByText("Linked event timeline")).toBeTruthy();
+      expect(screen.getByText("Dinner service")).toBeTruthy();
+    });
+    expect(screen.getByText("Live event phase data")).toBeTruthy();
+    expect(screen.getByText("Starts 19:00")).toBeTruthy();
+    expect(screen.getByText("Duration 1h 30m")).toBeTruthy();
+    expect(screen.queryByText("Guests 120 guests")).toBeNull();
+    expect(screen.queryByText("Ops tasks 7")).toBeNull();
+    expect(screen.queryByText("Review gates 2")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Density not checked|Staff conflicts not checked/i);
+    expect(screen.queryByLabelText("Guest flow replay status")).toBeNull();
+    expect(screen.queryByLabelText("Visual insight cards")).toBeNull();
+    expect(getLatestGuestFlowReplayMock).not.toHaveBeenCalled();
+    expect(runGuestFlowReplayInBrowserMock).not.toHaveBeenCalled();
+  });
+
+  it("does not treat an invalid Grand Hall event id as a linked timeline", async () => {
+    mount("/dev/trades-hall-visual?eventId=not-a-uuid");
+
+    await waitFor(() => {
+      expect(getLatestRuntimePackageMock).toHaveBeenCalled();
+    });
+    expect(getEventPhaseGraphMock).not.toHaveBeenCalled();
+    expect(screen.queryByText("Linked event timeline")).toBeNull();
+    expect(screen.queryByText("Internal demo phase fixture")).toBeNull();
+  });
+
+  it("keeps the generic canvas grade off the exact captured source", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const css = await fs.readFile(path.resolve("src/pages/TradesHallVisualPage.css"), "utf-8");
+    expect(css).toMatch(/\.visual-canvas-frame--captured-source\s+canvas\s*\{\s*filter:\s*none;/u);
   });
 
   it("keeps fixture-only Spark sources out of the command shell source", async () => {

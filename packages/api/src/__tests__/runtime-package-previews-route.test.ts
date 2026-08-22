@@ -10,6 +10,7 @@ import {
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import type { Env } from "../env.js";
+import { isCanonicalGrandHallRuntimePackage } from "../lib/grand-hall-frontier-contract.js";
 import { matchReceptionReviewedRuntimeProfile } from "../lib/reception-reviewed-runtime-profile.js";
 import { runtimeAssetStorageKeySha256 } from "../lib/runtime-asset-receipt.js";
 import type { AssetVersionRow, RuntimePackageRow } from "../routes/assets.js";
@@ -38,6 +39,8 @@ vi.mock("../lib/reception-reviewed-runtime-profile.js", async (importOriginal) =
 });
 
 const PACKAGE_ID = "20000000-0000-4000-8000-000000000001";
+const TRADES_HALL_VENUE_ID = "40000000-0000-4000-8000-000000000001";
+const OTHER_VENUE_ID = "40000000-0000-4000-8000-000000000002";
 const ASSET_IDS = [
   "10000000-0000-4000-8000-000000000001",
   "10000000-0000-4000-8000-000000000002",
@@ -95,6 +98,27 @@ const plannerToken = JSON.stringify({
   role: "planner",
   platformRole: "none",
   venueId: null,
+});
+
+vi.mock("../lib/grand-hall-frontier-contract.js", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../lib/grand-hall-frontier-contract.js")
+  >();
+  return { ...actual, isCanonicalGrandHallRuntimePackage: vi.fn() };
+});
+const venueStaffToken = JSON.stringify({
+  id: "30000000-0000-4000-8000-000000000003",
+  email: "staff@trades-hall.test",
+  role: "staff",
+  platformRole: "none",
+  venueId: TRADES_HALL_VENUE_ID,
+});
+const otherVenueStaffToken = JSON.stringify({
+  id: "30000000-0000-4000-8000-000000000004",
+  email: "staff@other-venue.test",
+  role: "staff",
+  platformRole: "none",
+  venueId: OTHER_VENUE_ID,
 });
 
 function runtimeAsset(index: number): AssetVersionRow {
@@ -194,6 +218,55 @@ function source(overrides: Partial<RuntimePackagePreviewSource> = {}): RuntimePa
   };
 }
 
+function grandHallSource(
+  r2KeyForAsset: (index: number, fileName: string) => string = (_index, fileName) =>
+    `r2:venues/trades-hall/rooms/grand-hall/exact/${fileName}`,
+): RuntimePackagePreviewSource {
+  const assets = ASSET_IDS.map((_assetVersionId, index) => {
+    const asset = runtimeAsset(index);
+    return {
+      ...asset,
+      roomSlug: "grand-hall",
+      r2Key: r2KeyForAsset(index, asset.fileName),
+    };
+  });
+  const baseManifest = RuntimePackageManifestJsonSchema.parse(immutablePackage().manifestJson);
+  const candidateVisualAssets = [2, 0, 3, 1].map((index) => {
+    const asset = assets[index];
+    if (asset === undefined) throw new Error("test Grand Hall asset index is out of range");
+    return asset;
+  });
+  return {
+    runtimePackage: immutablePackage({
+      venueSlug: "trades-hall",
+      roomSlug: "grand-hall",
+      manifestJson: {
+        ...baseManifest,
+        venueSlug: "trades-hall",
+        roomSlug: "grand-hall",
+        assets: {
+          ...baseManifest.assets,
+          visualAssetReceipts: assets.map((asset) => {
+            if (asset.r2Key === null || asset.sha256 === null || asset.sizeBytes === null) {
+              throw new Error("test Grand Hall asset must have protected storage identity");
+            }
+            return {
+              assetVersionId: asset.id,
+              fileName: asset.fileName,
+              fileExt: ".sog" as const,
+              sha256: asset.sha256,
+              sizeBytes: asset.sizeBytes,
+              storageKeySha256: runtimeAssetStorageKeySha256(asset.r2Key),
+            };
+          }),
+        },
+      },
+    }),
+    // Deliberately unordered: exact namespace binding must not alter receipt order.
+    candidateVisualAssets,
+  };
+}
+
 describe("exact private runtime-package preview routes", () => {
   let server: FastifyInstance;
   let activeSource: RuntimePackagePreviewSource | null;
@@ -202,9 +275,11 @@ describe("exact private runtime-package preview routes", () => {
     r2Key: string,
     signal: AbortSignal,
   ) => Promise<RuntimePackagePreviewObject | null>>;
+  let resolveRuntimeVenueId: Mock<(venueSlug: string) => Promise<string | null>>;
 
   beforeEach(async () => {
     vi.mocked(matchReceptionReviewedRuntimeProfile).mockReturnValue("quality-sog-fine-v1");
+    vi.mocked(isCanonicalGrandHallRuntimePackage).mockReturnValue(true);
     activeSource = source();
     loadPreviewSource = vi.fn(() => Promise.resolve(activeSource));
     loadRuntimeAssetObject = vi.fn((r2Key: string): Promise<RuntimePackagePreviewObject> => {
@@ -218,6 +293,8 @@ describe("exact private runtime-package preview routes", () => {
         etag: `"etag-${String(index)}"`,
       });
     });
+    resolveRuntimeVenueId = vi.fn((venueSlug: string) =>
+      Promise.resolve(venueSlug === "trades-hall" ? TRADES_HALL_VENUE_ID : null));
     server = Fastify();
     await server.register(runtimePackagePreviewRoutes, {
       db: {} as Database,
@@ -225,6 +302,7 @@ describe("exact private runtime-package preview routes", () => {
       prefix: "/admin/assets",
       loadPreviewSource,
       loadRuntimeAssetObject,
+      resolveRuntimeVenueId,
       now: () => NOW,
     });
   });
@@ -233,7 +311,7 @@ describe("exact private runtime-package preview routes", () => {
     await server.close();
   });
 
-  it("requires platform-admin access before metadata lookup", async () => {
+  it("requires authenticated Grand Hall venue access before metadata lookup", async () => {
     const unauthenticated = await server.inject({
       method: "GET",
       url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}`,
@@ -246,7 +324,69 @@ describe("exact private runtime-package preview routes", () => {
       headers: { authorization: `Bearer ${plannerToken}` },
     });
     expect(nonAdmin.statusCode).toBe(403);
+    expect(nonAdmin.headers["cache-control"]).toBe("private, no-store, max-age=0");
+    expect(nonAdmin.headers["pragma"]).toBe("no-cache");
+    expect(nonAdmin.headers["vary"]).toBe("Origin, Authorization");
     expect(loadPreviewSource).not.toHaveBeenCalled();
+  });
+
+  it("allows assigned Trades Hall staff to read only Grand Hall preview metadata", async () => {
+    activeSource = grandHallSource();
+    const response = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(RuntimePackagePreviewSchema.parse(response.json().data)).toMatchObject({
+      runtimePackageId: PACKAGE_ID,
+      venueSlug: "trades-hall",
+      roomSlug: "grand-hall",
+      runtimeStatus: "internal_ready",
+    });
+    expect(resolveRuntimeVenueId).toHaveBeenCalledWith("trades-hall");
+    expect(loadPreviewSource).toHaveBeenCalledWith(PACKAGE_ID);
+  });
+
+  it("rejects noncanonical Grand Hall metadata before private object access", async () => {
+    activeSource = grandHallSource();
+    vi.mocked(isCanonicalGrandHallRuntimePackage).mockReturnValue(false);
+    const response = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: "GRAND_HALL_FRONTIER_MISMATCH" });
+    expect(response.headers["cache-control"]).toBe("private, no-store, max-age=0");
+    expect(response.headers["pragma"]).toBe("no-cache");
+    expect(response.headers["vary"]).toBe("Origin, Authorization");
+    expect(loadRuntimeAssetObject).not.toHaveBeenCalled();
+  });
+
+  it("rejects another venue's staff before package lookup", async () => {
+    const response = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}`,
+      headers: { authorization: `Bearer ${otherVenueStaffToken}` },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(loadPreviewSource).not.toHaveBeenCalled();
+  });
+
+  it("conceals non-Grand-Hall packages from authorized Trades Hall staff", async () => {
+    const response = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: "RUNTIME_PACKAGE_PREVIEW_NOT_FOUND" });
+    expect(response.headers["cache-control"]).toBe("private, no-store, max-age=0");
+    expect(loadPreviewSource).toHaveBeenCalledWith(PACKAGE_ID);
   });
 
   it("validates the exact package id before metadata lookup", async () => {
@@ -256,6 +396,7 @@ describe("exact private runtime-package preview routes", () => {
       headers: { authorization: `Bearer ${adminToken}` },
     });
     expect(response.statusCode).toBe(400);
+    expect(response.headers["cache-control"]).toBe("private, no-store, max-age=0");
     expect(loadPreviewSource).not.toHaveBeenCalled();
   });
 
@@ -429,7 +570,7 @@ describe("exact private runtime-package preview routes", () => {
     expect(duplicate.json().code).toBe("RUNTIME_PACKAGE_PREVIEW_STORAGE_INVALID");
   });
 
-  it("requires platform-admin access before streaming bytes", async () => {
+  it("requires authenticated Grand Hall venue access before streaming bytes", async () => {
     const path = `/admin/assets/runtime-package-previews/${PACKAGE_ID}` +
       `/assets/${ASSET_IDS[0]}/${FILES[0]}`;
     const unauthenticated = await server.inject({ method: "GET", url: path });
@@ -440,6 +581,59 @@ describe("exact private runtime-package preview routes", () => {
       headers: { authorization: `Bearer ${plannerToken}` },
     });
     expect(nonAdmin.statusCode).toBe(403);
+    expect(nonAdmin.headers["cache-control"]).toBe("private, no-store, max-age=0");
+    expect(nonAdmin.headers["pragma"]).toBe("no-cache");
+    expect(nonAdmin.headers["vary"]).toBe("Origin, Authorization");
+    expect(loadRuntimeAssetObject).not.toHaveBeenCalled();
+  });
+
+  it("allows assigned Trades Hall staff to stream a receipt-bound Grand Hall member", async () => {
+    activeSource = grandHallSource();
+    const response = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}` +
+        `/assets/${ASSET_IDS[0]}/${FILES[0]}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.rawPayload).toEqual(Buffer.alloc(16, 1));
+    expect(response.headers["x-content-sha256"]).toBe(runtimeAsset(0).sha256);
+    expect(loadRuntimeAssetObject).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["another room", "r2:venues/trades-hall/rooms/reception-room/exact/0_15_0_0.sog"],
+    ["another venue", "r2:venues/other-venue/rooms/grand-hall/exact/0_15_0_0.sog"],
+  ])("never dereferences %s storage through a Grand Hall package", async (_label, rogueKey) => {
+    activeSource = grandHallSource((index, fileName) => index === 0
+      ? rogueKey
+      : `r2:venues/trades-hall/rooms/grand-hall/exact/${fileName}`);
+
+    const response = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}` +
+        `/assets/${ASSET_IDS[0]}/${FILES[0]}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      code: "RUNTIME_PACKAGE_PREVIEW_STORAGE_INVALID",
+    });
+    expect(loadRuntimeAssetObject).not.toHaveBeenCalled();
+  });
+
+  it("does not stream a non-Grand-Hall package to venue-scoped staff", async () => {
+    const response = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}` +
+        `/assets/${ASSET_IDS[0]}/${FILES[0]}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: "RUNTIME_PACKAGE_PREVIEW_ASSET_NOT_FOUND" });
     expect(loadRuntimeAssetObject).not.toHaveBeenCalled();
   });
 

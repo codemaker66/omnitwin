@@ -34,12 +34,40 @@
   letter-spacing: 0.03em;
   transition: background 150ms ease, color 150ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.cockpit-layer-btn:hover { color: #f3ddb0; background: rgba(201, 168, 76, 0.1); }
-.cockpit-layer-btn:active { transform: scale(0.97); }
+.cockpit-layer-btn:not(:disabled):hover { color: #f3ddb0; background: rgba(201, 168, 76, 0.1); }
+.cockpit-layer-btn:not(:disabled):active { transform: scale(0.97); }
 .cockpit-layer-btn:focus-visible { outline: 2px solid rgba(226, 193, 93, 0.72); outline-offset: 2px; }
+.cockpit-layer-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.cockpit-layer-controls--locked {
+  align-items: center;
+  max-width: 320px;
+  padding: 8px 10px;
+  color: rgba(246, 238, 220, 0.82);
+}
+
+.cockpit-layer-controls__locked-label {
+  flex: 0 0 auto;
+  color: #f3ddb0;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
 .cockpit-layer-btn.is-active {
   color: #14110b;
   background: linear-gradient(145deg, #e0c66c 0%, #c9a84c 44%, #9d7a23 100%);
   border-color: rgba(255, 239, 177, 0.6);
   box-shadow: 0 6px 16px rgba(201, 168, 76, 0.24);
+}
+.cockpit-layer-btn.is-active:disabled { opacity: 1; }
+
+.cockpit-layer-controls__lock-note {
+  max-width: 320px;
+  margin: 0;
+  color: rgba(246, 238, 220, 0.66);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 10px;
+  line-height: 1.4;
 }

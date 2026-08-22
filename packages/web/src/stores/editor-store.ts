@@ -201,7 +201,7 @@ interface EditorActions {
    */
   readonly loadConfiguration: (configId: string, isAuthenticated?: boolean) => Promise<void>;
   readonly loadSpace: (venueId: string, spaceId: string) => Promise<void>;
-  readonly createPublicConfig: (spaceId: string) => Promise<string>;
+  readonly createPublicConfig: (spaceId: string) => Promise<string | null>;
   readonly addObject: (assetId: string, positionX: number, positionY: number, positionZ: number) => void;
   readonly updateObject: (objectId: string, transform: Partial<Pick<EditorObject, "positionX" | "positionY" | "positionZ" | "rotationX" | "rotationY" | "rotationZ" | "scale">>) => void;
   /**
@@ -245,6 +245,7 @@ interface EditorActions {
 type EditorStore = EditorState & EditorActions;
 
 let localIdCounter = 0;
+let loadConfigurationEpoch = 0;
 
 // Auto-save is owned by EditorBridge — no internal debounce needed here.
 
@@ -456,11 +457,19 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   ...INITIAL_STATE,
 
   loadConfiguration: async (configId, isAuthenticated) => {
-    set({ isLoading: true, error: null });
+    const requestEpoch = ++loadConfigurationEpoch;
+    // The route now targets a different document. Clear the previous room
+    // immediately so room-specific rendering and controls fail closed while
+    // the new configuration and its space identity are unresolved.
+    set({ isLoading: true, error: null, space: null });
     try {
       const config = isAuthenticated === true
         ? await configApi.getConfig(configId)
         : await configApi.getPublicConfig(configId);
+      // Route changes can issue a second load before the first response
+      // returns. Only the most recently started request may cross the
+      // configuration boundary or launch its room-identity request.
+      if (requestEpoch !== loadConfigurationEpoch) return;
       const serverObjects = (config.objects ?? []).map(placedObjectToEditor);
       const localDraft = config.isPublicPreview
         ? readAnonymousPlannerDraft(config.id, {
@@ -482,6 +491,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         spaceId: config.spaceId,
         venueId: config.venueId,
         configRevision: config.revision,
+        space: null,
         isPublicPreview: config.isPublicPreview,
         objects,
         isDirty: restoredAnonymousDraft,
@@ -502,6 +512,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
     } catch (err) {
+      if (requestEpoch !== loadConfigurationEpoch) return;
       const message = err instanceof Error ? err.message : "Failed to load configuration";
       set({ isLoading: false, error: message });
     }
@@ -510,21 +521,36 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   loadSpace: async (venueId, spaceId) => {
     try {
       const space = await spacesApi.getSpace(venueId, spaceId);
-      set({ space, spaceId, venueId });
+      const current = get();
+      if (
+        current.spaceId !== spaceId
+        || current.venueId !== venueId
+        || space.id !== spaceId
+        || space.venueId !== venueId
+      ) {
+        return;
+      }
+      set({ space });
     } catch {
       // Non-critical — space data is for display
     }
   },
 
   createPublicConfig: async (spaceId) => {
-    set({ isLoading: true, error: null });
+    const requestEpoch = ++loadConfigurationEpoch;
+    // Creating a draft is also a configuration boundary. Clear the previous
+    // room immediately and share the same epoch as explicit route loads so a
+    // late create can never overwrite a newer route (or vice versa).
+    set({ isLoading: true, error: null, space: null });
     try {
       const config = await configApi.createPublicConfig(spaceId);
+      if (requestEpoch !== loadConfigurationEpoch) return null;
       set({
         configId: config.id,
         spaceId: config.spaceId,
         venueId: config.venueId,
         configRevision: config.revision,
+        space: null,
         isPublicPreview: true,
         objects: [],
         isDirty: false,
@@ -566,6 +592,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
       return config.id;
     } catch (err) {
+      if (requestEpoch !== loadConfigurationEpoch) return null;
       const message = err instanceof Error ? err.message : "Failed to create configuration";
       set({ isLoading: false, error: message });
       throw err;
@@ -757,6 +784,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   clearSaveError: () => { set({ saveError: null, saveConflict: null }); },
 
   reset: () => {
+    // A reset is also a document boundary. Invalidate any in-flight load so
+    // its late response cannot resurrect the configuration we just cleared.
+    loadConfigurationEpoch++;
     // Preserve the scene ref — reset clears editor data but the Three.js
     // scene is still alive in the Canvas. SceneProvider manages the ref.
     set({ ...INITIAL_STATE, scene: get().scene });

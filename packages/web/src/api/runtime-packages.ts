@@ -8,9 +8,10 @@ import { api } from "./client.js";
 // ---------------------------------------------------------------------------
 // Runtime package client
 //
-// Public read. Returns null when no usable package exists for the room, or
-// when the API has no resolved asset URL because object storage is not
-// configured. The caller decides whether to mount Spark or show fallback.
+// Authenticated read. Platform administrators retain the generic published
+// registry view; assigned Trades Hall venue managers may resolve only the
+// protected Grand Hall package. The caller decides whether to mount Spark or
+// show the safe fallback.
 // ---------------------------------------------------------------------------
 
 export async function getLatestRuntimePackage(query: LatestRuntimePackageQuery): Promise<RuntimePackage | null> {

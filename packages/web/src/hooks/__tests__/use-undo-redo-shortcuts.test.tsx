@@ -4,8 +4,8 @@ import { useEditorStore } from "../../stores/editor-store.js";
 import { useMarkupStore } from "../../stores/markup-store.js";
 import { useUndoRedoShortcuts } from "../use-undo-redo-shortcuts.js";
 
-function Harness(): null {
-  useUndoRedoShortcuts();
+function Harness({ enabled = true }: { readonly enabled?: boolean }): null {
+  useUndoRedoShortcuts(enabled);
   return null;
 }
 
@@ -138,5 +138,15 @@ describe("useUndoRedoShortcuts", () => {
     pressKey({ key: "z", ctrlKey: true });
 
     expect(useEditorStore.getState().objects).toHaveLength(1);
+  });
+
+  it("does not consume or execute shortcuts when editor mutations are disabled", () => {
+    useEditorStore.getState().addObject("a1", 0, 0, 0);
+    render(<Harness enabled={false} />);
+
+    const event = pressKey({ key: "z", ctrlKey: true });
+
+    expect(useEditorStore.getState().objects).toHaveLength(1);
+    expect(event.defaultPrevented).toBe(false);
   });
 });

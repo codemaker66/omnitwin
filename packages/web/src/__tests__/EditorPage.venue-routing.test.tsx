@@ -1,5 +1,5 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Configuration } from "../api/configurations.js";
 import type { Space, Venue } from "../api/spaces.js";
@@ -148,6 +148,29 @@ function renderEditor(initialEntry: string): void {
   );
 }
 
+function VenueRouteTransitionHarness(): React.ReactElement {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => { void navigate("/v/city-rooms/plan?space=ballroom"); }}
+      >
+        Open City Rooms
+      </button>
+      <EditorPage />
+    </>
+  );
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -163,6 +186,45 @@ afterEach(() => {
 });
 
 describe("EditorPage venue-scoped bootstrap", () => {
+  it("cancels an obsolete room bootstrap when the mounted route changes", async () => {
+    const oldSpaces = deferred<Space[]>();
+    spacesMock.listVenues.mockResolvedValue([tradesHall, cityRooms]);
+    spacesMock.listSpaces.mockImplementation((venueId: string) =>
+      venueId === tradesHall.id ? oldSpaces.promise : Promise.resolve([ballroom]),
+    );
+    configMock.createPublicConfig.mockImplementation((spaceId: string) =>
+      Promise.resolve(
+        spaceId === ballroom.id
+          ? publicConfigFor(ballroom, "cfg-city")
+          : publicConfigFor(grandHall, "cfg-grand"),
+      ),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/v/trades-hall/plan?space=grand-hall"]}>
+        <Routes>
+          <Route path="/plan/:code" element={<div data-testid="created-route" />} />
+          <Route path="/v/:venueSlug/plan" element={<VenueRouteTransitionHarness />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(spacesMock.listSpaces).toHaveBeenCalledWith(tradesHall.id);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open City Rooms" }));
+    await waitFor(() => {
+      expect(configMock.createPublicConfig).toHaveBeenCalledWith(ballroom.id);
+    });
+    await screen.findByTestId("created-route");
+
+    await act(async () => {
+      oldSpaces.resolve([grandHall]);
+      await oldSpaces.promise;
+    });
+    expect(configMock.createPublicConfig).not.toHaveBeenCalledWith(grandHall.id);
+  });
+
   it("creates the first layout in the explicitly requested venue", async () => {
     spacesMock.listVenues.mockResolvedValue([tradesHall, cityRooms]);
     spacesMock.listSpaces.mockImplementation((venueId: string) =>

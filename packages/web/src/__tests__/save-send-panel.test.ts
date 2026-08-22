@@ -107,7 +107,8 @@ describe("SaveSendPanel cockpit placement", () => {
   it("enables right-dock avoidance only for the desktop 3D planner cockpit", async () => {
     const { codeOnly } = await readSource("src/pages/EditorPage.tsx");
 
-    expect(codeOnly).toContain("<SaveSendPanel avoidRightDock={viewMode === \"3d\" && !mobile} />");
+    expect(codeOnly).toContain("operationalGeometryAllowed && (");
+    expect(codeOnly).toContain("<SaveSendPanel avoidRightDock={effectiveViewMode === \"3d\" && !mobile} />");
   });
 });
 

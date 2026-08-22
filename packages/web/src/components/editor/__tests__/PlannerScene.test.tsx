@@ -1,22 +1,45 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
+import { Children, isValidElement, type ReactNode } from "react";
+import type { PlannerRoomIdentity } from "../../../lib/planner-layer-composition.js";
+import type { ExactGrandHallRuntimeKey } from "../../../stores/cockpit-store.js";
 
 type CanvasMockProps = Readonly<{
   dpr?: unknown;
   frameloop?: unknown;
+  children?: ReactNode;
 }>;
+
+function sceneElementLabels(node: ReactNode): readonly string[] {
+  const labels: string[] = [];
+  Children.forEach(node, (child) => {
+    if (!isValidElement<{ readonly children?: ReactNode; readonly name?: string }>(child)) return;
+    const type = child.type;
+    const label = typeof type === "string"
+      ? child.props.name === undefined ? type : `${type}:${child.props.name}`
+      : typeof type === "function"
+        ? (type as { readonly displayName?: string; readonly name?: string }).displayName
+          ?? (type as { readonly name?: string }).name
+          ?? "anonymous"
+        : "fragment";
+    labels.push(label);
+    labels.push(...sceneElementLabels(child.props.children));
+  });
+  return labels;
+}
 
 // Mock the R3F Canvas to render an empty host div: the scene children are
 // constructed as React elements but never mounted, so their useThree/useFrame
 // hooks don't run outside a real Canvas. This keeps the test a structural
 // smoke test that PlannerScene mounts its canvas host.
 vi.mock("@react-three/fiber", () => ({
-  Canvas: ({ dpr, frameloop }: CanvasMockProps) => (
+  Canvas: ({ dpr, frameloop, children }: CanvasMockProps) => (
     <div
       data-testid="r3f-canvas"
       data-dpr={JSON.stringify(dpr)}
       data-frameloop={typeof frameloop === "string" ? frameloop : ""}
+      data-scene-elements={sceneElementLabels(children).join("|")}
     />
   ),
 }));
@@ -27,7 +50,12 @@ vi.mock("@react-three/fiber", () => ({
 // never mounts here — chunk-arrival semantics are covered by
 // use-chunk-arrivals.test.ts, and the real callback plumbing by the
 // plan-room-resolve e2e, which streams actual chunks.)
-vi.mock("../CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
+vi.mock("../CockpitSplatLayer.js", () => ({
+  CockpitSplatLayer: function CockpitSplatLayer() { return null; },
+}));
+vi.mock("../ExactGrandHallSplatLayer.js", () => ({
+  ExactGrandHallSplatLayer: function ExactGrandHallSplatLayer() { return null; },
+}));
 
 const splatHookMock = vi.hoisted(() => ({ useRoomRuntimeSplat: vi.fn() }));
 vi.mock("../../../hooks/use-room-runtime-splat.js", () => splatHookMock);
@@ -43,12 +71,20 @@ function mockSplat(overrides: {
   splatUrls?: readonly string[];
   hasAsset?: boolean;
   status?: "none" | "loading" | "loaded";
+  delivery?: "none" | "verified-grand-hall" | "url";
+  runtimePackageId?: string | null;
+  exactGrandHallRuntimeKey?: ExactGrandHallRuntimeKey | null;
+  roomIdentity?: PlannerRoomIdentity | null;
 } = {}): void {
   splatHookMock.useRoomRuntimeSplat.mockReturnValue({
     splatUrls: overrides.splatUrls ?? [],
     transform: IDENTITY_TRANSFORM,
     hasAsset: overrides.hasAsset ?? false,
     status: overrides.status ?? "none",
+    delivery: overrides.delivery ?? "none",
+    runtimePackageId: overrides.runtimePackageId ?? null,
+    exactGrandHallRuntimeKey: overrides.exactGrandHallRuntimeKey ?? null,
+    roomIdentity: overrides.roomIdentity ?? null,
   });
 }
 
@@ -59,11 +95,39 @@ const {
   plannerCanvasGlForViewportWidth,
   shouldRenderPlannerSceneOverlays,
   shouldUseSmoothPlannerControls,
+  useExactGrandHallRuntimeCallbacks,
 } = await import("../PlannerScene.js");
 const { useCockpitStore } = await import("../../../stores/cockpit-store.js");
+const { useEditorStore } = await import("../../../stores/editor-store.js");
+
+const GRAND_HALL_SPACE = {
+  id: "grand-hall-space",
+  venueId: "trades-hall-venue",
+  name: "Grand Hall",
+  slug: "grand-hall",
+  widthM: "21",
+  lengthM: "10.5",
+  heightM: "7",
+  floorPlanOutline: [{ x: 0, y: 0 }, { x: 21, y: 0 }, { x: 21, y: 10.5 }, { x: 0, y: 10.5 }],
+};
+
+const VERIFIED_GRAND_HALL_IDENTITY: PlannerRoomIdentity = {
+  spaceId: GRAND_HALL_SPACE.id,
+  venueId: GRAND_HALL_SPACE.venueId,
+  roomSlug: GRAND_HALL_SPACE.slug,
+  status: "resolved",
+  venueSlug: "trades-hall-glasgow",
+};
+const EXACT_GRAND_HALL_RUNTIME_KEY: ExactGrandHallRuntimeKey = {
+  spaceId: GRAND_HALL_SPACE.id,
+  venueId: GRAND_HALL_SPACE.venueId,
+  roomSlug: "grand-hall",
+  runtimePackageId: "20000000-0000-4000-8000-000000000001",
+};
 
 beforeEach(() => {
   useCockpitStore.getState().reset();
+  useEditorStore.setState({ space: null });
   mockSplat();
 });
 
@@ -77,6 +141,123 @@ describe("PlannerScene", () => {
     const { container, getByTestId } = render(<PlannerScene />);
     expect(container.querySelector(".planner-scene-canvas-host")).not.toBeNull();
     expect(getByTestId("r3f-canvas")).toBeTruthy();
+  });
+
+  it("wires Grand Hall to the exact captured layer with zero procedural architecture or planning overlays", () => {
+    useEditorStore.setState({ space: GRAND_HALL_SPACE });
+    splatHookMock.useRoomRuntimeSplat.mockReturnValue({
+      splatUrls: [],
+      transform: IDENTITY_TRANSFORM,
+      hasAsset: true,
+      status: "loaded",
+      delivery: "verified-grand-hall",
+      runtimePackageId: "20000000-0000-4000-8000-000000000001",
+      exactGrandHallRuntimeKey: EXACT_GRAND_HALL_RUNTIME_KEY,
+      roomIdentity: VERIFIED_GRAND_HALL_IDENTITY,
+    });
+
+    const { getByTestId } = render(<PlannerScene />);
+    const elements = getByTestId("r3f-canvas").getAttribute("data-scene-elements") ?? "";
+    expect(elements).toContain("group:captured-room-source");
+    expect(elements).toContain("ExactGrandHallSplatLayer");
+    expect(elements).not.toContain("RoomMesh");
+    expect(elements).not.toContain("GrandHallRoom");
+    expect(elements).not.toContain("InkArchitectureLayer");
+    expect(elements).not.toContain("group:planning-overlays");
+    expect(elements).toContain("CapturedSourceCamera");
+    expect(elements).not.toContain("CameraRig");
+    expect(elements).not.toContain("CockpitCameraFocus");
+    expect(elements).not.toContain("CockpitPlanningCamera");
+    expect(elements).not.toContain("SectionPlane");
+    expect(elements).not.toContain("InvalidateOnToggle");
+    expect(elements).not.toContain("XrayToggle");
+    expect(elements).not.toContain("fog");
+  });
+
+  it("fails closed for Grand Hall while venue identity is pending even if stale asset state exists", () => {
+    useEditorStore.setState({ space: GRAND_HALL_SPACE });
+    mockSplat({
+      splatUrls: ["/stale.sog"],
+      hasAsset: true,
+      status: "loading",
+      delivery: "url",
+      roomIdentity: {
+        ...VERIFIED_GRAND_HALL_IDENTITY,
+        status: "pending",
+        venueSlug: null,
+      },
+    });
+
+    const { getByTestId } = render(<PlannerScene />);
+    const elements = getByTestId("r3f-canvas").getAttribute("data-scene-elements") ?? "";
+    expect(elements).not.toContain("RoomMesh");
+    expect(elements).not.toContain("GrandHallRoom");
+    expect(elements).not.toContain("InkArchitectureLayer");
+    expect(elements).not.toContain("group:planning-overlays");
+    expect(elements).not.toContain("ExactGrandHallSplatLayer");
+    expect(elements).not.toContain("CameraRig");
+    expect(elements).not.toContain("CockpitCameraFocus");
+    expect(elements).not.toContain("CockpitPlanningCamera");
+    expect(elements).not.toContain("SectionPlane");
+    expect(elements).not.toContain("InvalidateOnToggle");
+    expect(elements).not.toContain("XrayToggle");
+    expect(elements).not.toContain("fog");
+  });
+
+  it("keeps verified Trades Hall Grand Hall source-only when its capture is unavailable", () => {
+    useEditorStore.setState({ space: GRAND_HALL_SPACE });
+    mockSplat({
+      hasAsset: false,
+      status: "none",
+      roomIdentity: VERIFIED_GRAND_HALL_IDENTITY,
+    });
+
+    const { getByTestId } = render(<PlannerScene />);
+    const elements = getByTestId("r3f-canvas").getAttribute("data-scene-elements") ?? "";
+    expect(elements).not.toContain("RoomMesh");
+    expect(elements).not.toContain("GrandHallRoom");
+    expect(elements).not.toContain("InkArchitectureLayer");
+    expect(elements).not.toContain("group:planning-overlays");
+    expect(elements).not.toContain("group:captured-room-source");
+    expect(elements).toContain("CapturedSourceCamera");
+    expect(elements).not.toContain("CameraRig");
+    expect(elements).not.toContain("CockpitCameraFocus");
+    expect(elements).not.toContain("CockpitPlanningCamera");
+  });
+
+  it("preserves normal procedural layers for another venue's grand-hall slug", () => {
+    const otherGrandHall = {
+      ...GRAND_HALL_SPACE,
+      id: "other-grand-hall-space",
+      venueId: "other-venue",
+    };
+    useEditorStore.setState({ space: otherGrandHall });
+    mockSplat({
+      hasAsset: false,
+      status: "none",
+      roomIdentity: {
+        spaceId: otherGrandHall.id,
+        venueId: otherGrandHall.venueId,
+        roomSlug: otherGrandHall.slug,
+        status: "resolved",
+        venueSlug: "another-venue",
+      },
+    });
+
+    const { getByTestId } = render(<PlannerScene />);
+    const elements = getByTestId("r3f-canvas").getAttribute("data-scene-elements") ?? "";
+    expect(elements).toContain("RoomMesh");
+    expect(elements).toContain("InkArchitectureLayer");
+    expect(elements).toContain("group:planning-overlays");
+    expect(elements).toContain("CameraRig");
+    expect(elements).toContain("CockpitCameraFocus");
+    expect(elements).toContain("CockpitPlanningCamera");
+    expect(elements).toContain("SectionPlane");
+    expect(elements).toContain("InvalidateOnToggle");
+    expect(elements).toContain("XrayToggle");
+    expect(elements).toContain("fog");
+    expect(elements).not.toContain("CapturedSourceCamera");
+    expect(elements).not.toContain("ExactGrandHallSplatLayer");
   });
 
   it("caps planner canvas DPR across mobile, tablet, and desktop viewports", () => {
@@ -146,6 +327,74 @@ describe("PlannerScene", () => {
     expect(source).toContain("<PlannerScenePrecompiler signature={sceneWarmupSignature} />");
   });
 
+  it("keys the exact renderer by the complete canonical room, venue, and package identity", async () => {
+    const source = await readFile("src/components/editor/PlannerScene.tsx", "utf8");
+    expect(source).toContain("serializeExactGrandHallRuntimeKey(exactGrandHallRuntimeKey)");
+    expect(source).toContain("key={exactGrandHallRuntimeKey === null");
+  });
+
+});
+
+describe("PlannerScene exact Grand Hall lifecycle callbacks", () => {
+  it("publishes renderer success and failure for the active room/package key", () => {
+    useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
+    const { result } = renderHook(() => (
+      useExactGrandHallRuntimeCallbacks(EXACT_GRAND_HALL_RUNTIME_KEY)
+    ));
+
+    act(() => { result.current.onReady(); });
+    expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("verified");
+
+    useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
+    act(() => { result.current.onFailed(); });
+    expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("failed");
+  });
+
+  it("invalidates verified state on Canvas failure and requires post-attach readiness after retry", () => {
+    useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
+    const { result } = renderHook(() => (
+      useExactGrandHallRuntimeCallbacks(EXACT_GRAND_HALL_RUNTIME_KEY)
+    ));
+
+    act(() => { result.current.onReady(); });
+    expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("verified");
+
+    act(() => { result.current.onSourceOnlyError(); });
+    expect(useCockpitStore.getState().exactGrandHallRuntime).toBeNull();
+
+    act(() => { result.current.onSourceOnlyRetry(); });
+    expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
+      key: EXACT_GRAND_HALL_RUNTIME_KEY,
+      status: "pending",
+    });
+
+    act(() => { result.current.onReady(); });
+    expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("verified");
+  });
+
+  it("cannot publish a stale renderer callback after the runtime key changes", () => {
+    const { result, rerender } = renderHook(
+      ({ runtimeKey }: { readonly runtimeKey: ExactGrandHallRuntimeKey }) => (
+        useExactGrandHallRuntimeCallbacks(runtimeKey)
+      ),
+      { initialProps: { runtimeKey: EXACT_GRAND_HALL_RUNTIME_KEY } },
+    );
+    const staleReady = result.current.onReady;
+    const staleRetry = result.current.onSourceOnlyRetry;
+    const nextKey: ExactGrandHallRuntimeKey = {
+      ...EXACT_GRAND_HALL_RUNTIME_KEY,
+      runtimePackageId: "20000000-0000-4000-8000-000000000002",
+    };
+    useCockpitStore.getState().beginExactGrandHallRuntime(nextKey);
+    rerender({ runtimeKey: nextKey });
+
+    act(() => { staleReady(); });
+    act(() => { staleRetry(); });
+    expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
+      key: nextKey,
+      status: "pending",
+    });
+  });
 });
 
 // CARD A2: the resolve choreography — PlannerScene derives the phase from the

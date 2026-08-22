@@ -68,6 +68,14 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import type { Env } from "../env.js";
+import {
+  canAccessExactGrandHallRuntime,
+  isExactGrandHallRuntimeStorageKey,
+  isExactGrandHallRuntimeStorageSet,
+  isExactGrandHallRuntimeTarget,
+  resolveActiveRuntimeVenueId,
+} from "../lib/grand-hall-runtime-access.js";
+import { isCanonicalGrandHallRuntimePackage } from "../lib/grand-hall-frontier-contract.js";
 import { runtimeAssetStorageKeySha256 } from "../lib/runtime-asset-receipt.js";
 import {
   RuntimeProfileVerifiedByteCache,
@@ -77,7 +85,7 @@ import {
   isReceptionReviewedProfilePresentationCandidate,
   matchReceptionReviewedRuntimeProfile,
 } from "../lib/reception-reviewed-runtime-profile.js";
-import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
+import { authenticate, authorizePlatformAdmin, isPlatformAdmin } from "../middleware/auth.js";
 import {
   RuntimePackageRevisionConflictError,
   RuntimePackageRevisionIntegrityError,
@@ -94,8 +102,10 @@ import {
 //   GET /assets/runtime-packages/public-room-visual?... (retired safe fallback only)
 //   GET /assets/runtime-profiles/:profileId/members/:memberIndex/content.sog
 //
-// Platform-admin/internal:
+// Authenticated internal:
 //   GET /assets/runtime-packages/latest?venue=trades-hall&room=grand-hall
+//     - platform admins: existing published-package registry access
+//     - assigned Trades Hall venue managers: exact Grand Hall internal/published discovery
 //   GET /assets/runtime-assets/:assetVersionId
 //
 // Admin:
@@ -730,7 +740,11 @@ function serializeRuntimePackage(
   visualAssetVersions: readonly AssetVersionRow[] = [],
 ): RuntimePackage | null {
   const serializedAsset = primaryVisualAssetVersion === null ? null : serializeAssetVersion(primaryVisualAssetVersion);
-  const exposesRuntimeUrls = pkg.runtimeStatus === "published";
+  // Exact Grand Hall bytes are never delegated to the legacy runtime-assets
+  // bucket/path. They remain private and SHA-verified through the authenticated
+  // runtime-package preview transport even if a future review publishes metadata.
+  const exposesRuntimeUrls = pkg.runtimeStatus === "published" &&
+    !isExactGrandHallRuntimeTarget(pkg.venueSlug, pkg.roomSlug);
   const primaryVisualAssetUrl = !exposesRuntimeUrls || primaryVisualAssetVersion === null
     ? null
     : resolveAssetUrl(primaryVisualAssetVersion, requestOrigin);
@@ -759,6 +773,32 @@ function serializeRuntimePackage(
     primaryVisualAssetVersion: serializedAsset,
     primaryVisualAssetUrl,
     visualAssetUrls,
+  });
+}
+
+function canonicalGrandHallPackageCanLoad(
+  pkg: RuntimePackageRow,
+  orderedAssets: readonly AssetVersionRow[],
+): boolean {
+  if (!isExactGrandHallRuntimeTarget(pkg.venueSlug, pkg.roomSlug)) return true;
+  return isCanonicalGrandHallRuntimePackage(pkg, orderedAssets);
+}
+
+function redactVenueScopedRuntimePackage(runtimePackage: RuntimePackage): RuntimePackage {
+  const primary = runtimePackage.primaryVisualAssetVersion;
+  return RuntimePackageSchema.parse({
+    ...runtimePackage,
+    primaryVisualAssetVersion: primary === null
+      ? null
+      : {
+          ...primary,
+          captureSessionId: null,
+          r2Key: null,
+          externalUrl: null,
+          notes: null,
+        },
+    primaryVisualAssetUrl: null,
+    visualAssetUrls: [],
   });
 }
 
@@ -1051,6 +1091,62 @@ async function findLatestPublishedRuntimePackage(
     .orderBy(desc(runtimePackages.revision))
     .limit(1);
   return row ?? null;
+}
+
+export interface LatestRuntimePackageDiscovery {
+  readonly pkg: RuntimePackageRow;
+  readonly primaryVisualAssetVersion: AssetVersionRow;
+  readonly visualAssetVersions: readonly AssetVersionRow[];
+}
+
+type LatestRuntimePackageDiscoveryLoader = (
+  venueSlug: string,
+  roomSlug: string,
+  includeInternalReady: boolean,
+) => Promise<LatestRuntimePackageDiscovery | null>;
+
+async function loadLatestRuntimePackageDiscovery(
+  db: Database,
+  venueSlug: string,
+  roomSlug: string,
+  includeInternalReady: boolean,
+): Promise<LatestRuntimePackageDiscovery | null> {
+  const [row] = await db
+    .select({ pkg: runtimePackages, primaryVisualAssetVersion: assetVersions })
+    .from(runtimePackages)
+    .innerJoin(assetVersions, eq(runtimePackages.primaryVisualAssetVersionId, assetVersions.id))
+    .where(and(
+      eq(runtimePackages.venueSlug, venueSlug),
+      eq(runtimePackages.roomSlug, roomSlug),
+      includeInternalReady
+        ? inArray(runtimePackages.runtimeStatus, ["internal_ready", "published"])
+        : eq(runtimePackages.runtimeStatus, "published"),
+      eq(assetVersions.runtimeStatus, "usable"),
+    ))
+    .orderBy(desc(runtimePackages.revision))
+    .limit(1);
+
+  if (
+    row === undefined
+    || (includeInternalReady
+      ? row.pkg.runtimeStatus !== "internal_ready" && row.pkg.runtimeStatus !== "published"
+      : row.pkg.runtimeStatus !== "published")
+    || row.pkg.venueSlug !== venueSlug
+    || row.pkg.roomSlug !== roomSlug
+    || !runtimePackageCanLoad(row.pkg)
+    || !isServableRuntimeVisualAsset(row.primaryVisualAssetVersion)
+  ) {
+    return null;
+  }
+
+  const visualAssetVersions = await findRuntimeVisualAssetComposition(db, row.pkg);
+  return visualAssetVersions === null
+    ? null
+    : {
+        pkg: row.pkg,
+        primaryVisualAssetVersion: row.primaryVisualAssetVersion,
+        visualAssetVersions,
+      };
 }
 
 async function latestRuntimeQaRecord(db: Database, runtimePackageId: string): Promise<RuntimeQaRecordRow | null> {
@@ -1686,11 +1782,37 @@ export function buildRoomAssetStatuses(
   });
 }
 
+export interface AssetRoutesOptions {
+  readonly db: Database;
+  readonly env: Env;
+  /** Deterministic test seam. Production resolves the active venue row. */
+  readonly resolveRuntimeVenueId?: (venueSlug: string) => Promise<string | null>;
+  /** Deterministic test seam. Production resolves the latest database package. */
+  readonly loadLatestRuntimePackage?: LatestRuntimePackageDiscoveryLoader;
+}
+
+export function validateExactGrandHallRuntimeStorage(
+  input: Pick<RegisterRuntimePackageInput, "venueSlug" | "roomSlug" | "runtimeStatus">,
+  rows: readonly AssetVersionRow[],
+): string | null {
+  if (input.runtimeStatus !== "internal_ready" && input.runtimeStatus !== "published") return null;
+  return isExactGrandHallRuntimeStorageSet(input.venueSlug, input.roomSlug, rows)
+    ? null
+    : "Grand Hall runtime visual assets must use only protected Trades Hall Grand Hall storage keys.";
+}
+
 export async function assetRoutes(
   server: FastifyInstance,
-  opts: { db: Database; env: Env },
+  opts: AssetRoutesOptions,
 ): Promise<void> {
   const { db, env } = opts;
+  const resolveRuntimeVenueId = opts.resolveRuntimeVenueId ?? ((venueSlug: string) =>
+    resolveActiveRuntimeVenueId(db, venueSlug));
+  const loadLatestRuntimePackage = opts.loadLatestRuntimePackage ?? ((
+    venueSlug: string,
+    roomSlug: string,
+    includeInternalReady: boolean,
+  ) => loadLatestRuntimePackageDiscovery(db, venueSlug, roomSlug, includeInternalReady));
 
   async function resolvePublicReviewedProfile(
     venueSlug: string,
@@ -1789,7 +1911,7 @@ export async function assetRoutes(
 
   server.get(
     "/runtime-packages/latest",
-    { preHandler: [authenticate, authorizePlatformAdmin()] },
+    { preHandler: [authenticate] },
     async (request, reply) => {
       const parsedQuery = LatestRuntimePackageQuerySchema.safeParse(request.query);
       if (!parsedQuery.success) {
@@ -1797,39 +1919,75 @@ export async function assetRoutes(
       }
 
       try {
-        const [row] = await db
-          .select({ pkg: runtimePackages, primaryVisualAssetVersion: assetVersions })
-          .from(runtimePackages)
-          .innerJoin(assetVersions, eq(runtimePackages.primaryVisualAssetVersionId, assetVersions.id))
-          .where(and(
-            eq(runtimePackages.venueSlug, parsedQuery.data.venue),
-            eq(runtimePackages.roomSlug, parsedQuery.data.room),
-            eq(runtimePackages.runtimeStatus, "published"),
-            eq(assetVersions.runtimeStatus, "usable"),
-          ))
-          .orderBy(desc(runtimePackages.revision))
-          .limit(1);
+        const platformAdmin = isPlatformAdmin(request.user);
+        const venueScopedGrandHall = !platformAdmin;
+        if (venueScopedGrandHall) {
+          if (
+            request.user.venueId === null
+            || !isExactGrandHallRuntimeTarget(parsedQuery.data.venue, parsedQuery.data.room)
+          ) {
+            return reply.status(403).send({
+              error: "Trades Hall captured-runtime access required",
+              code: "FORBIDDEN",
+            });
+          }
+          const tradesHallVenueId = await resolveRuntimeVenueId(parsedQuery.data.venue);
+          if (
+            tradesHallVenueId === null
+            || !canAccessExactGrandHallRuntime(request.user, tradesHallVenueId)
+          ) {
+            return reply.status(403).send({
+              error: "Trades Hall captured-runtime access required",
+              code: "FORBIDDEN",
+            });
+          }
+        }
 
+        const resolved = await loadLatestRuntimePackage(
+          parsedQuery.data.venue,
+          parsedQuery.data.room,
+          venueScopedGrandHall,
+        );
         if (
-          row === undefined ||
-          row.pkg.runtimeStatus !== "published" ||
-          !runtimePackageCanLoad(row.pkg) ||
-          !isServableRuntimeVisualAsset(row.primaryVisualAssetVersion)
+          resolved === null
+          || resolved.pkg.venueSlug !== parsedQuery.data.venue
+          || resolved.pkg.roomSlug !== parsedQuery.data.room
+          || (venueScopedGrandHall
+            && !isExactGrandHallRuntimeTarget(resolved.pkg.venueSlug, resolved.pkg.roomSlug))
+          || (venueScopedGrandHall
+            ? resolved.pkg.runtimeStatus !== "internal_ready" && resolved.pkg.runtimeStatus !== "published"
+            : resolved.pkg.runtimeStatus !== "published")
+          || !runtimePackageCanLoad(resolved.pkg)
+          || resolved.primaryVisualAssetVersion.id !== resolved.pkg.primaryVisualAssetVersionId
+          || !isServableRuntimeVisualAsset(resolved.primaryVisualAssetVersion)
         ) {
           return { data: null };
         }
-
-        const visualAssetVersions = await findRuntimeVisualAssetComposition(db, row.pkg);
-        if (visualAssetVersions === null) {
+        const visualAssetVersions = resolveRuntimeVisualAssetComposition(
+          resolved.pkg,
+          resolved.visualAssetVersions,
+        );
+        if (
+          visualAssetVersions === null
+          || (visualAssetVersions !== null &&
+            !canonicalGrandHallPackageCanLoad(resolved.pkg, visualAssetVersions))
+          || (venueScopedGrandHall && visualAssetVersions.some((asset) =>
+            asset.r2Key === null
+            || asset.externalUrl !== null
+            || !isExactGrandHallRuntimeStorageKey(asset.r2Key)))
+        ) {
           return { data: null };
         }
+        const serialized = serializeRuntimePackage(
+          resolved.pkg,
+          resolved.primaryVisualAssetVersion,
+          trustedRuntimeAssetOrigin(env, request),
+          visualAssetVersions,
+        );
         return {
-          data: serializeRuntimePackage(
-            row.pkg,
-            row.primaryVisualAssetVersion,
-            trustedRuntimeAssetOrigin(env, request),
-            visualAssetVersions,
-          ),
+          data: serialized === null || platformAdmin
+            ? serialized
+            : redactVenueScopedRuntimePackage(serialized),
         };
       } catch (error: unknown) {
         request.log.warn({
@@ -2069,6 +2227,8 @@ export async function assetRoutes(
         !visualAssetVersions.some((version) => version.id === asset.id) ||
         !isServableRuntimeVisualAsset(asset) ||
         asset.r2Key === null ||
+        isExactGrandHallRuntimeTarget(asset.venueSlug, asset.roomSlug ?? "") ||
+        isExactGrandHallRuntimeStorageKey(asset.r2Key) ||
         (parsedParams.data.fileName !== undefined && parsedParams.data.fileName !== asset.fileName)
       ) {
         return reply.status(404).send({
@@ -2393,6 +2553,16 @@ export async function adminAssetRoutes(
       }
 
       const input = parsed.data;
+      if (
+        isExactGrandHallRuntimeTarget(input.venueSlug, input.roomSlug ?? "") ||
+        (input.r2Key !== null && input.r2Key !== undefined &&
+          isExactGrandHallRuntimeStorageKey(input.r2Key))
+      ) {
+        return reply.status(409).send({
+          error: "Exact Grand Hall assets can only be registered by the server-bound frontier intake.",
+          code: "GRAND_HALL_SERVER_BOUND_INTAKE_REQUIRED",
+        });
+      }
       const [version] = await db.insert(assetVersions).values({
         venueSlug: input.venueSlug,
         roomSlug: input.roomSlug ?? null,
@@ -2449,6 +2619,12 @@ export async function adminAssetRoutes(
       }
 
       const input = parsed.data.package;
+      if (isExactGrandHallRuntimeTarget(input.venueSlug, input.roomSlug)) {
+        return reply.status(409).send({
+          error: "Exact Grand Hall packages can only be registered by the server-bound frontier intake.",
+          code: "GRAND_HALL_SERVER_BOUND_INTAKE_REQUIRED",
+        });
+      }
       const requestOrigin = trustedRuntimeAssetOrigin(opts.env, request);
       let admittedAssets: {
         readonly primaryVisualAsset: AssetVersionRow | null;
@@ -2486,6 +2662,7 @@ export async function adminAssetRoutes(
             }
             const assetError = firstValidationMessage([
               validatePrimaryVisualAsset(input, primaryVisualAsset),
+              validateExactGrandHallRuntimeStorage(input, runtimeVisualAssetComposition),
               validateRuntimeVisualAssetReceipts(input, runtimeVisualAssetComposition),
               validateAssetReference(input, semanticMeshAsset, "semanticMeshAssetVersionId"),
               validateAssetReference(input, collisionAsset, "collisionAssetVersionId"),

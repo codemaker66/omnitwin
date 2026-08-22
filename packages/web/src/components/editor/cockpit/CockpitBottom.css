@@ -115,6 +115,18 @@
   gap: 8px;
   min-width: 0;
 }
+.cockpit-bottom__source-only {
+  grid-column: 1 / -1;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid rgba(201, 168, 76, 0.2);
+  border-radius: 14px;
+  background: rgba(201, 168, 76, 0.055);
+}
+.cockpit-bottom__source-only strong { color: #f1ce78; font-size: 13px; font-weight: 800; }
+.cockpit-bottom__source-only span { color: rgba(244, 239, 230, 0.58); font-size: 11px; line-height: 1.45; }
 .cockpit-insight {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);

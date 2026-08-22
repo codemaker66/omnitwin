@@ -22,6 +22,8 @@ import { useEditorStore } from "./stores/editor-store.js";
 import { useRoomDimensionsStore } from "./stores/room-dimensions-store.js";
 import { computeBoundingBox, resolveRoomGeometry } from "./data/room-geometries.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "./hooks/use-media-query.js";
+import { usePlannerLayerPolicy } from "./hooks/use-planner-layer-policy.js";
+import { plannerAllowsOperationalGeometry } from "./lib/planner-layer-composition.js";
 import "./App.css";
 
 // Initialize stores with Grand Hall dimensions (default).
@@ -65,6 +67,7 @@ export function App(): React.ReactElement {
   const isTouch = useIsCoarsePointer();
   const mobileChrome = isNarrow || isTouch;
   const dimensions = useRoomDimensions();
+  const operationalGeometryAllowed = plannerAllowsOperationalGeometry(usePlannerLayerPolicy());
 
   const { width: dimW, length: dimL, height: dimH } = dimensions;
   useEffect(() => {
@@ -87,8 +90,8 @@ export function App(): React.ReactElement {
         style={{
           position: "absolute",
           inset: 0,
-          paddingLeft: "var(--toolbox-offset, 68px)",
-          paddingBottom: "var(--toolbox-bottom, 0px)",
+          paddingLeft: operationalGeometryAllowed ? "var(--toolbox-offset, 68px)" : 0,
+          paddingBottom: operationalGeometryAllowed ? "var(--toolbox-bottom, 0px)" : 0,
           boxSizing: "border-box",
           touchAction: "none",
         }}
@@ -96,64 +99,68 @@ export function App(): React.ReactElement {
         <PlannerScene />
       </div>
 
-      <GeneratedFurnitureProxyBadge />
-
-      {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
       <MarkupPersistence />
-      <VerticalToolbox />
-      {!mobileChrome && (
+      {operationalGeometryAllowed && (
         <>
-          <PlannerSpatialHud />
-          <PlannerCommandDeck />
+          <GeneratedFurnitureProxyBadge />
+
+          {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
+          <VerticalToolbox />
+          {!mobileChrome && (
+            <>
+              <PlannerSpatialHud />
+              <PlannerCommandDeck />
+            </>
+          )}
+
+          {!mobileChrome && (
+            <div className="planner-section-slider-dock">
+              <SectionSlider />
+            </div>
+          )}
+
+          <MeasurementOverlay />
+          <PlacementHint />
+          <CameraReferenceComposer />
+          <CameraReferenceHeightSwitch />
+
+          <ChairCountDialog
+            request={chairRequest}
+            onConfirm={(count) => {
+              const editId = useChairDialogStore.getState().editTableId;
+              if (editId !== null) {
+                usePlacementStore.getState().rearrangeGroup(editId, count);
+              } else if (chairRequest !== null) {
+                if (count > 0) {
+                  usePlacementStore.getState().placeTableGroup(
+                    chairRequest.catalogueItemId,
+                    chairRequest.x,
+                    chairRequest.z,
+                    chairRequest.rotationY,
+                    count,
+                  );
+                } else {
+                  usePlacementStore.getState().placeItem(
+                    chairRequest.catalogueItemId,
+                    chairRequest.x,
+                    chairRequest.z,
+                    chairRequest.rotationY,
+                  );
+                }
+              }
+              const itemId = chairRequest?.catalogueItemId ?? null;
+              useChairDialogStore.getState().clearDialog();
+              // Re-select the same catalogue item so user can place another immediately
+              if (itemId !== null) {
+                useCatalogueStore.getState().selectItem(itemId);
+              }
+            }}
+            onCancel={() => {
+              useChairDialogStore.getState().clearDialog();
+            }}
+          />
         </>
       )}
-
-      {!mobileChrome && (
-        <div className="planner-section-slider-dock">
-          <SectionSlider />
-        </div>
-      )}
-
-      <MeasurementOverlay />
-      <PlacementHint />
-      <CameraReferenceComposer />
-      <CameraReferenceHeightSwitch />
-
-      <ChairCountDialog
-        request={chairRequest}
-        onConfirm={(count) => {
-          const editId = useChairDialogStore.getState().editTableId;
-          if (editId !== null) {
-            usePlacementStore.getState().rearrangeGroup(editId, count);
-          } else if (chairRequest !== null) {
-            if (count > 0) {
-              usePlacementStore.getState().placeTableGroup(
-                chairRequest.catalogueItemId,
-                chairRequest.x,
-                chairRequest.z,
-                chairRequest.rotationY,
-                count,
-              );
-            } else {
-              usePlacementStore.getState().placeItem(
-                chairRequest.catalogueItemId,
-                chairRequest.x,
-                chairRequest.z,
-                chairRequest.rotationY,
-              );
-            }
-          }
-          const itemId = chairRequest?.catalogueItemId ?? null;
-          useChairDialogStore.getState().clearDialog();
-          // Re-select the same catalogue item so user can place another immediately
-          if (itemId !== null) {
-            useCatalogueStore.getState().selectItem(itemId);
-          }
-        }}
-        onCancel={() => {
-          useChairDialogStore.getState().clearDialog();
-        }}
-      />
       {import.meta.env.DEV && <PerfOverlay />}
     </div>
   );

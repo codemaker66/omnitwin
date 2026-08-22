@@ -7,6 +7,8 @@ import { CockpitBottom } from "./CockpitBottom.js";
 import { CanvasLayerControls } from "./CanvasLayerControls.js";
 import { CockpitMinimap } from "./CockpitMinimap.js";
 import { RoomResolveCaption } from "./RoomResolveCaption.js";
+import { usePlannerLayerPolicy } from "../../../hooks/use-planner-layer-policy.js";
+import { plannerAllowsOperationalGeometry } from "../../../lib/planner-layer-composition.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import "./PlannerCockpit.css";
 
@@ -26,10 +28,12 @@ import "./PlannerCockpit.css";
 export function PlannerCockpit(): ReactElement {
   const activeMode = useCockpitStore((s) => s.activeMode);
   const resolvePhase = useCockpitStore((s) => s.roomResolve.phase);
+  const layerPolicy = usePlannerLayerPolicy();
+  const operationalGeometryAllowed = plannerAllowsOperationalGeometry(layerPolicy);
   return (
     <div className="cockpit-shell" data-testid="cockpit-shell">
-      <CockpitTopBar />
-      <CockpitNavRail />
+      <CockpitTopBar layerPolicy={layerPolicy} />
+      <CockpitNavRail layerPolicy={layerPolicy} />
       <section
         className="cockpit-stage"
         data-cockpit-mode={activeMode}
@@ -39,10 +43,10 @@ export function PlannerCockpit(): ReactElement {
         <Editor3D />
         <RoomResolveCaption />
         <CanvasLayerControls />
-        <CockpitMinimap />
+        {operationalGeometryAllowed && <CockpitMinimap />}
       </section>
-      <CockpitRightDock />
-      <CockpitBottom />
+      <CockpitRightDock layerPolicy={layerPolicy} />
+      <CockpitBottom layerPolicy={layerPolicy} />
     </div>
   );
 }

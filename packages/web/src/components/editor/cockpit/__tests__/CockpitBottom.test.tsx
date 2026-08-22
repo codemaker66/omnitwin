@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { EventPhaseGraph, EventPhase } from "@omnitwin/types";
+import type { PlannerLayerPolicy } from "../../../../lib/planner-layer-composition.js";
 
 vi.mock("../../../../api/events.js", () => ({ getEventPhaseGraph: vi.fn() }));
 
@@ -31,8 +32,23 @@ const graph: EventPhaseGraph = {
   scenarios: [], layoutVariants: [], configurationLinks: [], phaseLayoutSnapshots: [],
 };
 
-function renderBottom(url: string): void {
-  render(<MemoryRouter initialEntries={[url]}><CockpitBottom /></MemoryRouter>);
+const CONFIGURABLE_POLICY: PlannerLayerPolicy = {
+  kind: "configurable",
+  effectiveMode: "hybrid",
+  controlsLocked: false,
+};
+const CAPTURED_ONLY_POLICY: PlannerLayerPolicy = {
+  kind: "captured-only",
+  effectiveMode: "splat",
+  controlsLocked: true,
+};
+
+function renderBottom(url: string, layerPolicy: PlannerLayerPolicy = CONFIGURABLE_POLICY): void {
+  render(
+    <MemoryRouter initialEntries={[url]}>
+      <CockpitBottom layerPolicy={layerPolicy} />
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(() => { useCockpitStore.getState().reset(); });
@@ -57,5 +73,22 @@ describe("CockpitBottom", () => {
     renderBottom("/plan/cfg-1");
     fireEvent.click(screen.getByRole("button", { name: /ops compiler/i }));
     expect(useCockpitStore.getState().activeMode).toBe("ops");
+  });
+
+  it("retains the event timeline but suppresses simulated insight controls in source-only mode", () => {
+    renderBottom("/plan/cfg-1", CAPTURED_ONLY_POLICY);
+    expect(screen.getByText("Captured source only")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /guest flow replay|layout evidence pack|ops compiler|revenue scenario/i })).toBeNull();
+    expect(screen.getByText(/no event linked/i)).toBeTruthy();
+  });
+
+  it("uses generic copy rather than captured-source copy while identity resolves", () => {
+    renderBottom("/plan/cfg-1", {
+      kind: "identity-pending",
+      effectiveMode: "hybrid",
+      controlsLocked: true,
+    });
+    expect(screen.getByText("Room identity resolving")).toBeTruthy();
+    expect(screen.queryByText("Captured source only")).toBeNull();
   });
 });

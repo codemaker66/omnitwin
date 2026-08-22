@@ -5,12 +5,50 @@ import {
   copyForEditorSaveStatus,
   deriveEditorSaveStatus,
 } from "../../lib/editor-save-status.js";
+import {
+  plannerAllowsOperationalGeometry,
+  type PlannerLayerPolicy,
+} from "../../lib/planner-layer-composition.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
 
 interface MobilePlannerTopBarProps {
   readonly mode: "3d" | "2d";
   readonly onModeChange: (mode: "3d" | "2d") => void;
+  readonly layerPolicy: PlannerLayerPolicy;
+}
+
+interface MobilePlannerHeading {
+  readonly title: string;
+  readonly subtitle: string;
+}
+
+function mobilePlannerHeading(
+  layerPolicy: PlannerLayerPolicy,
+  roomName: string | null,
+): MobilePlannerHeading {
+  switch (layerPolicy.kind) {
+    case "captured-only":
+      return {
+        title: roomName ?? "Captured room source",
+        subtitle: "Captured source · 3D only",
+      };
+    case "identity-pending":
+      return {
+        title: "Room source resolving",
+        subtitle: "Source-only 3D",
+      };
+    case "identity-unavailable":
+      return {
+        title: "Room source unavailable",
+        subtitle: "Source-only 3D",
+      };
+    case "configurable":
+      return {
+        title: roomName ?? "Room planner",
+        subtitle: "Banquet Draft",
+      };
+  }
 }
 
 function useOnlineStatus(): boolean {
@@ -147,6 +185,7 @@ function segmentButtonStyle(active: boolean): React.CSSProperties {
 export function MobilePlannerTopBar({
   mode,
   onModeChange,
+  layerPolicy,
 }: MobilePlannerTopBarProps): React.ReactElement {
   const space = useEditorStore((s) => s.space);
   const configId = useEditorStore((s) => s.configId);
@@ -161,6 +200,10 @@ export function MobilePlannerTopBar({
   const [showEnquiry, setShowEnquiry] = useState(false);
   const [sending, setSending] = useState(false);
   const mountedRef = useRef(true);
+  const operationalGeometryAllowed = plannerAllowsOperationalGeometry(layerPolicy);
+  const operationalGeometryAllowedRef = useRef(operationalGeometryAllowed);
+  operationalGeometryAllowedRef.current = operationalGeometryAllowed;
+  const heading = mobilePlannerHeading(layerPolicy, space?.name ?? null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -168,6 +211,13 @@ export function MobilePlannerTopBar({
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!operationalGeometryAllowed) {
+      setShowEnquiry(false);
+      setSending(false);
+    }
+  }, [operationalGeometryAllowed]);
 
   const status = deriveEditorSaveStatus({
     isDirty,
@@ -188,13 +238,13 @@ export function MobilePlannerTopBar({
   };
 
   const sendLayout = (): void => {
-    if (configId === null) return;
+    if (configId === null || !operationalGeometryAllowed) return;
     setSending(true);
     void prepareLayoutForGuestEnquiry(configId)
       .then((readyToSend) => {
         if (!mountedRef.current) return;
         setSending(false);
-        if (readyToSend) {
+        if (readyToSend && operationalGeometryAllowedRef.current) {
           setShowEnquiry(true);
         }
       })
@@ -207,11 +257,20 @@ export function MobilePlannerTopBar({
 
   return (
     <>
-      <div data-testid="mobile-planner-topbar" style={topBarStyle}>
+      <div
+        data-testid="mobile-planner-topbar"
+        data-layer-policy={layerPolicy.kind}
+        style={{
+          ...topBarStyle,
+          gridTemplateColumns: operationalGeometryAllowed
+            ? topBarStyle.gridTemplateColumns
+            : "minmax(0, 1fr) auto",
+        }}
+      >
         <div style={titleStyle}>
-          <div style={roomStyle}>{space?.name ?? "Grand Hall"}</div>
-          <div style={layoutStyle}>Banquet Draft</div>
-          {status === "failed" ? (
+          <div style={roomStyle}>{heading.title}</div>
+          <div style={layoutStyle}>{heading.subtitle}</div>
+          {operationalGeometryAllowed && status === "failed" ? (
             <button
               type="button"
               style={saveRetryStyle}
@@ -220,33 +279,41 @@ export function MobilePlannerTopBar({
             >
               {saveConflict === null ? saveCopy.label : "Reload layout"}
             </button>
-          ) : (
+          ) : operationalGeometryAllowed ? (
             <div role="status" aria-live="polite" style={saveStyle}>
               {saveCopy.label}
             </div>
-          )}
+          ) : null}
         </div>
 
-        <div style={segmentStyle} role="group" aria-label="View mode">
-          <button
-            type="button"
-            style={segmentButtonStyle(mode === "2d")}
-            onClick={() => { onModeChange("2d"); }}
-            aria-pressed={mode === "2d"}
-          >
-            2D
-          </button>
-          <button
-            type="button"
-            style={segmentButtonStyle(mode === "3d")}
-            onClick={() => { onModeChange("3d"); }}
-            aria-pressed={mode === "3d"}
-          >
-            3D
-          </button>
-        </div>
+        {operationalGeometryAllowed ? (
+          <div style={segmentStyle} role="group" aria-label="View mode">
+            <button
+              type="button"
+              style={segmentButtonStyle(mode === "2d")}
+              onClick={() => { onModeChange("2d"); }}
+              aria-pressed={mode === "2d"}
+            >
+              2D
+            </button>
+            <button
+              type="button"
+              style={segmentButtonStyle(mode === "3d")}
+              onClick={() => { onModeChange("3d"); }}
+              aria-pressed={mode === "3d"}
+            >
+              3D
+            </button>
+          </div>
+        ) : (
+          <div style={segmentStyle} role="status" aria-label="3D source view">
+            <span style={{ ...segmentButtonStyle(true), display: "inline-grid", placeItems: "center" }}>
+              3D
+            </span>
+          </div>
+        )}
 
-        {objectCount > 0 && configId !== null ? (
+        {operationalGeometryAllowed && objectCount > 0 && configId !== null ? (
           <button
             type="button"
             style={{
@@ -262,7 +329,7 @@ export function MobilePlannerTopBar({
         ) : null}
       </div>
 
-      {showEnquiry && configId !== null ? (
+      {operationalGeometryAllowed && showEnquiry && configId !== null ? (
         <GuestEnquiryModal
           configId={configId}
           onClose={() => { setShowEnquiry(false); }}

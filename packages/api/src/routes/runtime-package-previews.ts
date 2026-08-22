@@ -15,11 +15,18 @@ import type { Database } from "../db/client.js";
 import { assetVersions, runtimePackages } from "../db/schema.js";
 import type { Env } from "../env.js";
 import {
+  canAccessExactGrandHallRuntime,
+  isExactGrandHallRuntimeStorageKey,
+  isExactGrandHallRuntimeTarget,
+  resolveActiveRuntimeVenueId,
+} from "../lib/grand-hall-runtime-access.js";
+import { isCanonicalGrandHallRuntimePackage } from "../lib/grand-hall-frontier-contract.js";
+import {
   canonicalRuntimeAssetStorageKey,
   runtimeAssetStorageKeySha256,
 } from "../lib/runtime-asset-receipt.js";
 import { matchReceptionReviewedRuntimeProfile } from "../lib/reception-reviewed-runtime-profile.js";
-import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { computeRuntimePackageRevisionDigest } from "../services/runtime-package-revisions.js";
 import {
   bindPublicRuntimeProfileTransferToResponse,
@@ -56,6 +63,7 @@ type PreviewObjectLoader = (
   r2Key: string,
   signal: AbortSignal,
 ) => Promise<RuntimePackagePreviewObject | null>;
+type RuntimeVenueIdResolver = (venueSlug: string) => Promise<string | null>;
 
 export interface RuntimePackagePreviewRoutesOptions {
   readonly db: Database;
@@ -64,6 +72,8 @@ export interface RuntimePackagePreviewRoutesOptions {
   readonly loadPreviewSource?: PreviewSourceLoader;
   /** Deterministic test seam. Production streams the exact protected R2 object. */
   readonly loadRuntimeAssetObject?: PreviewObjectLoader;
+  /** Deterministic test seam. Production resolves the active venue row. */
+  readonly resolveRuntimeVenueId?: RuntimeVenueIdResolver;
   readonly now?: () => Date;
 }
 
@@ -155,6 +165,24 @@ function declaredVisualAssetIds(pkg: RuntimePackageRow): readonly string[] {
   return pkg.primaryVisualAssetVersionId === null ? [] : [pkg.primaryVisualAssetVersionId];
 }
 
+async function canOpenVenueScopedGrandHallPreview(
+  user: JwtUser,
+  resolveVenueId: RuntimeVenueIdResolver,
+): Promise<boolean> {
+  if (isPlatformAdmin(user)) return true;
+  if (user.venueId === null) return false;
+  const tradesHallVenueId = await resolveVenueId("trades-hall");
+  return tradesHallVenueId !== null
+    && canAccessExactGrandHallRuntime(user, tradesHallVenueId);
+}
+
+function sourceIsVisibleToVenueUser(user: JwtUser, source: RuntimePackagePreviewSource): boolean {
+  return isPlatformAdmin(user) || isExactGrandHallRuntimeTarget(
+    source.runtimePackage.venueSlug,
+    source.runtimePackage.roomSlug,
+  );
+}
+
 async function loadExactPreviewSource(
   db: Database,
   runtimePackageId: string,
@@ -214,7 +242,10 @@ function immutablePreviewEligibilityError(pkg: RuntimePackageRow): string | null
   return null;
 }
 
-function protectedStorageError(assets: readonly AssetVersionRow[]): string | null {
+function protectedStorageError(
+  pkg: RuntimePackageRow,
+  assets: readonly AssetVersionRow[],
+): string | null {
   const keys: string[] = [];
   for (const asset of assets) {
     if (
@@ -225,7 +256,9 @@ function protectedStorageError(assets: readonly AssetVersionRow[]): string | nul
       asset.sizeBytes <= 0 ||
       asset.sizeBytes > MAX_VERIFIED_PREVIEW_ASSET_BYTES ||
       !RuntimePackageContentDigestSchema.safeParse(asset.sha256).success ||
-      (asset.fileExt !== ".sog" && asset.fileExt !== ".spz")
+      (asset.fileExt !== ".sog" && asset.fileExt !== ".spz") ||
+      (isExactGrandHallRuntimeTarget(pkg.venueSlug, pkg.roomSlug)
+        && !isExactGrandHallRuntimeStorageKey(asset.r2Key))
     ) {
       return "RUNTIME_PACKAGE_PREVIEW_STORAGE_INVALID";
     }
@@ -368,7 +401,7 @@ function resolveEligibleComposition(
       message: "Runtime package visual composition is incomplete or inconsistent",
     };
   }
-  const storageError = protectedStorageError(assets);
+  const storageError = protectedStorageError(pkg, assets);
   if (storageError !== null) {
     return {
       ok: false,
@@ -384,6 +417,17 @@ function resolveEligibleComposition(
       status: 409,
       code: receiptError,
       message: "Runtime package visual members do not match immutable package receipts",
+    };
+  }
+  if (
+    isExactGrandHallRuntimeTarget(pkg.venueSlug, pkg.roomSlug) &&
+    !isCanonicalGrandHallRuntimePackage(pkg, assets)
+  ) {
+    return {
+      ok: false,
+      status: 409,
+      code: "GRAND_HALL_FRONTIER_MISMATCH",
+      message: "Runtime package does not match the canonical Grand Hall frontier",
     };
   }
   const reviewedProfileId = matchReceptionReviewedRuntimeProfile(pkg, assets);
@@ -421,18 +465,36 @@ export async function runtimePackagePreviewRoutes(
   const loadSource = opts.loadPreviewSource ?? ((id: string) => loadExactPreviewSource(opts.db, id));
   const loadObject = opts.loadRuntimeAssetObject ?? ((key: string, signal: AbortSignal) =>
     loadProtectedRuntimeAssetObject(opts.env, key, signal));
+  const resolveVenueId = opts.resolveRuntimeVenueId ?? ((venueSlug: string) =>
+    resolveActiveRuntimeVenueId(opts.db, venueSlug));
   const now = opts.now ?? (() => new Date());
 
   server.get(
     "/runtime-package-previews/:runtimePackageId",
-    { preHandler: [authenticate, authorizePlatformAdmin()] },
+    { preHandler: [authenticate] },
     async (request, reply) => {
+      reply
+        .header("cache-control", "private, no-store, max-age=0")
+        .header("pragma", "no-cache")
+        .header("vary", "Origin, Authorization");
       const parsed = PreviewPackageParamsSchema.safeParse(request.params);
       if (!parsed.success) return reply.status(400).send(validationFailure(parsed.error.issues));
 
       try {
+        if (!await canOpenVenueScopedGrandHallPreview(request.user, resolveVenueId)) {
+          return reply.status(403).send({
+            error: "Trades Hall captured-runtime access required",
+            code: "FORBIDDEN",
+          });
+        }
         const source = await loadSource(parsed.data.runtimePackageId);
         if (source === null) {
+          return reply.status(404).send({
+            error: "Runtime package preview was not found",
+            code: "RUNTIME_PACKAGE_PREVIEW_NOT_FOUND",
+          });
+        }
+        if (!sourceIsVisibleToVenueUser(request.user, source)) {
           return reply.status(404).send({
             error: "Runtime package preview was not found",
             code: "RUNTIME_PACKAGE_PREVIEW_NOT_FOUND",
@@ -482,8 +544,12 @@ export async function runtimePackagePreviewRoutes(
 
   server.get(
     "/runtime-package-previews/:runtimePackageId/assets/:assetVersionId/:fileName",
-    { preHandler: [authenticate, authorizePlatformAdmin()] },
+    { preHandler: [authenticate] },
     async (request, reply) => {
+      reply
+        .header("cache-control", "private, no-store, max-age=0")
+        .header("pragma", "no-cache")
+        .header("vary", "Origin, Authorization");
       const parsed = PreviewAssetParamsSchema.safeParse(request.params);
       if (!parsed.success) return reply.status(400).send(validationFailure(parsed.error.issues));
 
@@ -501,9 +567,21 @@ export async function runtimePackagePreviewRoutes(
       reply.raw.once("close", abortForClientDisconnect);
       let markWorkSettled: (() => void) | null = null;
       try {
+        if (!await canOpenVenueScopedGrandHallPreview(request.user, resolveVenueId)) {
+          return reply.status(403).send({
+            error: "Trades Hall captured-runtime access required",
+            code: "FORBIDDEN",
+          });
+        }
         const source = await loadSource(parsed.data.runtimePackageId);
         if (clientDisconnected || reply.raw.destroyed) return reply;
         if (source === null) {
+          return reply.status(404).send({
+            error: "Runtime preview asset was not found",
+            code: "RUNTIME_PACKAGE_PREVIEW_ASSET_NOT_FOUND",
+          });
+        }
+        if (!sourceIsVisibleToVenueUser(request.user, source)) {
           return reply.status(404).send({
             error: "Runtime preview asset was not found",
             code: "RUNTIME_PACKAGE_PREVIEW_ASSET_NOT_FOUND",
@@ -524,7 +602,9 @@ export async function runtimePackagePreviewRoutes(
           asset === undefined ||
           asset.r2Key === null ||
           asset.sizeBytes === null ||
-          asset.sha256 === null
+          asset.sha256 === null ||
+          (isExactGrandHallRuntimeTarget(composition.pkg.venueSlug, composition.pkg.roomSlug)
+            && !isExactGrandHallRuntimeStorageKey(asset.r2Key))
         ) {
           return reply.status(404).send({
             error: "Runtime preview asset was not found in the exact package",

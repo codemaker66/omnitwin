@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { CANONICAL_ASSETS } from "@omnitwin/types";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BlueprintPage } from "../pages/BlueprintPage.js";
 import { useEditorStore } from "../stores/editor-store.js";
@@ -60,5 +61,40 @@ describe("BlueprintFromStore undo toolbar", () => {
 
     fireEvent.click(redo);
     expect(useEditorStore.getState().objects).toHaveLength(1);
+  });
+});
+
+function LocationProbe(): React.ReactElement {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}{location.search}</div>;
+}
+
+describe("direct blueprint routes", () => {
+  it("enters the shared planner policy gate before requesting a saved 2D view", () => {
+    render(
+      <MemoryRouter initialEntries={["/blueprint/config-1"]}>
+        <Routes>
+          <Route path="/blueprint/:configId" element={<BlueprintPage source="route" />} />
+          <Route path="/plan/:configId" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("location").textContent).toBe("/plan/config-1?view=2d");
+    expect(screen.queryByText("Grand Hall")).toBeNull();
+  });
+
+  it("routes the unscoped demo entry through planner room resolution", () => {
+    render(
+      <MemoryRouter initialEntries={["/blueprint"]}>
+        <Routes>
+          <Route path="/blueprint" element={<BlueprintPage source="route" />} />
+          <Route path="/plan" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("location").textContent).toBe("/plan?view=2d");
+    expect(screen.queryByText("Grand Hall")).toBeNull();
   });
 });

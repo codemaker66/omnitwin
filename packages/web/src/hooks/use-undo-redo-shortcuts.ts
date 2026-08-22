@@ -25,8 +25,10 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * - focus is in a text field or contenteditable (native text undo must win), and
  * - the laser markup tool is active (MarkupLayer owns Ctrl+Z as stroke undo).
  */
-export function useUndoRedoShortcuts(): void {
+export function useUndoRedoShortcuts(enabled = true): void {
   useEffect(() => {
+    if (!enabled) return undefined;
+
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!event.ctrlKey && !event.metaKey) return;
       // Shift+Z arrives as "Z" — normalise before matching.
@@ -48,5 +50,5 @@ export function useUndoRedoShortcuts(): void {
 
     window.addEventListener("keydown", onKeyDown);
     return () => { window.removeEventListener("keydown", onKeyDown); };
-  }, []);
+  }, [enabled]);
 }

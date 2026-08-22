@@ -86,6 +86,50 @@ const IDENTITY_RUNTIME_ASSET_VIEW_TRANSFORM: RuntimeAssetViewTransform = {
   note: "No room-specific runtime transform is registered.",
 };
 
+// Canonical bounds from the complete 11-member fine SOG frontier declared by
+// Grand_Hall.lcc2. The source is Z-up. These values intentionally come from
+// the rendered SOG frontier rather than from a separate OBJ export.
+const GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS = {
+  min: [-12.6987895965576, -19.8602905273438, -2.84312653541565],
+  max: [3.21748733520508, 2.69222021102905, 7.48998641967773],
+} as const;
+const GRAND_HALL_SOURCE_CENTER_X = (
+  GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.min[0]
+  + GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.max[0]
+) / 2;
+const GRAND_HALL_SOURCE_CENTER_Y = (
+  GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.min[1]
+  + GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.max[1]
+) / 2;
+const GRAND_HALL_WORLD_HALF_WIDTH = (
+  GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.max[0]
+  - GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.min[0]
+) / 2;
+const GRAND_HALL_WORLD_HEIGHT = (
+  GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.max[2]
+  - GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.min[2]
+);
+const GRAND_HALL_WORLD_HALF_DEPTH = (
+  GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.max[1]
+  - GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.min[1]
+) / 2;
+const GRAND_HALL_WORLD_CENTER_Y = GRAND_HALL_WORLD_HEIGHT / 2;
+
+// Rotation maps source Z to Three Y. Translation centres the actual SOG
+// frontier on world X/Z and places its lowest captured point exactly at Y=0.
+// Scale remains exactly 1. Metric planning overlays stay disabled until a
+// separately reviewed room-local collision/alignment artifact is registered.
+const GRAND_HALL_XGRIDS_SOURCE_VIEW_TRANSFORM: RuntimeAssetViewTransform = {
+  position: [
+    -GRAND_HALL_SOURCE_CENTER_X,
+    -GRAND_HALL_FINE_FRONTIER_SOURCE_BOUNDS.min[2],
+    GRAND_HALL_SOURCE_CENTER_Y,
+  ],
+  rotation: [-Math.PI / 2, 0, 0],
+  scale: 1,
+  note: "Data-derived Grand Hall fine-frontier source inspection transform; metric planning alignment is not yet registered.",
+};
+
 // Temporary view transform for the Reception Room XGRIDS/SOG room chunks.
 // Reception Room.lcc2 root bounds:
 // min [-16.8106313, -19.0330453, -6.1218724]
@@ -144,6 +188,54 @@ const RECEPTION_ROOM_XGRIDS_CAMERA_VIEW: RuntimeAssetCameraView = {
     max: [6.8, 7.4, 14.2],
   },
   note: "Reception Room uses a restrained interior cinematic inspection camera; approximate until signed alignment lands.",
+};
+const GRAND_HALL_CAMERA_FOV = 48;
+const GRAND_HALL_WORLD_BOUNDING_RADIUS = Math.hypot(
+  GRAND_HALL_WORLD_HALF_WIDTH,
+  GRAND_HALL_WORLD_CENTER_Y,
+  GRAND_HALL_WORLD_HALF_DEPTH,
+);
+const GRAND_HALL_CAMERA_DISTANCE = (
+  GRAND_HALL_WORLD_BOUNDING_RADIUS
+  / Math.sin((GRAND_HALL_CAMERA_FOV / 2) * (Math.PI / 180))
+) * 1.12;
+const GRAND_HALL_CAMERA_ELEVATION = Math.PI * 0.12;
+const GRAND_HALL_XGRIDS_CAMERA_VIEW: RuntimeAssetCameraView = {
+  position: [
+    0,
+    GRAND_HALL_WORLD_CENTER_Y + Math.sin(GRAND_HALL_CAMERA_ELEVATION) * GRAND_HALL_CAMERA_DISTANCE,
+    Math.cos(GRAND_HALL_CAMERA_ELEVATION) * GRAND_HALL_CAMERA_DISTANCE,
+  ],
+  target: [0, GRAND_HALL_WORLD_CENTER_Y, 0],
+  arrivalPosition: null,
+  arrivalTarget: null,
+  arrivalDurationMs: 0,
+  fov: GRAND_HALL_CAMERA_FOV,
+  minDistance: 2,
+  maxDistance: GRAND_HALL_WORLD_BOUNDING_RADIUS * 4,
+  panSpeed: 0.35,
+  rotateSpeed: 0.5,
+  zoomSpeed: 0.5,
+  dampingFactor: 0.14,
+  minPolarAngle: Math.PI * 0.08,
+  maxPolarAngle: Math.PI * 0.49,
+  targetBounds: {
+    min: [-GRAND_HALL_WORLD_HALF_WIDTH, 0, -GRAND_HALL_WORLD_HALF_DEPTH],
+    max: [GRAND_HALL_WORLD_HALF_WIDTH, GRAND_HALL_WORLD_HEIGHT, GRAND_HALL_WORLD_HALF_DEPTH],
+  },
+  cameraBounds: {
+    min: [
+      -GRAND_HALL_WORLD_BOUNDING_RADIUS * 2,
+      0,
+      -GRAND_HALL_WORLD_BOUNDING_RADIUS * 2,
+    ],
+    max: [
+      GRAND_HALL_WORLD_BOUNDING_RADIUS * 2,
+      GRAND_HALL_WORLD_CENTER_Y + GRAND_HALL_WORLD_BOUNDING_RADIUS * 2,
+      GRAND_HALL_WORLD_BOUNDING_RADIUS * 3,
+    ],
+  },
+  note: "Fine-frontier-bounded Grand Hall source-only inspection camera; not a metric planning alignment.",
 };
 
 function slugIsSafe(value: string): boolean {
@@ -207,6 +299,8 @@ export function evidenceStatusLabel(status: AssetEvidenceStatus): string {
 // store default and the chip label derivation below.
 export const CAPTURED_LAYER_FALLBACK_STATUS =
   "Captured visual layer not yet available — planning on reviewed geometry";
+export const GRAND_HALL_CAPTURE_UNAVAILABLE_STATUS =
+  "Captured Grand Hall unavailable — architectural layer hidden";
 
 /**
  * Planner top-bar chip copy, derived from the runtime asset decision: the
@@ -220,16 +314,32 @@ export function plannerRuntimeChipLabel(decision: RuntimeAssetDecision): string 
 
 export function runtimeAssetViewTransformForRoom(room: TradesHallRuntimeRoomSlug): RuntimeAssetViewTransform {
   if (room === "reception-room") return RECEPTION_ROOM_XGRIDS_VIEW_TRANSFORM;
+  if (room === "grand-hall") return GRAND_HALL_XGRIDS_SOURCE_VIEW_TRANSFORM;
   return IDENTITY_RUNTIME_ASSET_VIEW_TRANSFORM;
 }
 
 export function runtimeAssetCameraViewForRoom(room: TradesHallRuntimeRoomSlug): RuntimeAssetCameraView {
   if (room === "reception-room") return RECEPTION_ROOM_XGRIDS_CAMERA_VIEW;
+  if (room === "grand-hall") return GRAND_HALL_XGRIDS_CAMERA_VIEW;
   return DEFAULT_RUNTIME_ASSET_CAMERA_VIEW;
 }
 
 function usablePackageUrl(published: RuntimePackage): string | null {
   if (published.runtimeStatus !== "internal_ready" && published.runtimeStatus !== "published") return null;
+  const declaresTradesHallGrandHall = (
+    published.venueSlug === "trades-hall"
+    && published.roomSlug === "grand-hall"
+  ) || (
+    published.manifestJson.venueSlug === "trades-hall"
+    && published.manifestJson.roomSlug === "grand-hall"
+  );
+  if (declaresTradesHallGrandHall) {
+    // Grand Hall may never use URL-based Spark loading. Metadata validation
+    // selects the exact frontier, but only the authenticated preview transport
+    // verifies delivered bytes against its immutable receipts. The planner's
+    // dedicated exact layer owns that path.
+    return null;
+  }
   const asset = published.primaryVisualAssetVersion;
   if (asset === null) return null;
   if (asset.assetKind !== "splat" || asset.runtimeStatus !== "usable") return null;

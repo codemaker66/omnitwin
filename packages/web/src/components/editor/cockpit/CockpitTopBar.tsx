@@ -2,9 +2,17 @@ import { type ReactElement } from "react";
 import { ShieldQuestion, Layers3, Eye, EyeOff } from "lucide-react";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
-import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import {
+  EXACT_GRAND_HALL_RUNTIME_LABELS,
+  useCockpitStore,
+  type ExactGrandHallRuntimeLifecycle,
+} from "../../../stores/cockpit-store.js";
 import { buildTopBarModel } from "../../../lib/cockpit-topbar-model.js";
 import { COCKPIT_OVERLAY_KEYS, type CockpitOverlayKey } from "../../../lib/cockpit-modes.js";
+import {
+  plannerAllowsOperationalGeometry,
+  type PlannerLayerPolicy,
+} from "../../../lib/planner-layer-composition.js";
 import { useLinkedEvent, type LinkedEvent } from "../../../hooks/use-linked-event.js";
 import "./CockpitTopBar.css";
 
@@ -20,6 +28,54 @@ const OVERLAY_LABELS: Readonly<Record<CockpitOverlayKey, string>> = {
 interface EventCell {
   readonly kicker: string;
   readonly value: string;
+}
+
+export interface CockpitTopBarProps {
+  readonly layerPolicy: PlannerLayerPolicy;
+}
+
+function policySummaryLabel(policy: PlannerLayerPolicy, layoutSummary: string): string {
+  switch (policy.kind) {
+    case "configurable": return layoutSummary;
+    case "captured-only": return "Source-only inspection";
+    case "identity-pending": return "Room identity resolving";
+    case "identity-unavailable": return "Room identity unavailable";
+  }
+}
+
+function policyRoomLabel(policy: PlannerLayerPolicy, roomName: string | null): string | null {
+  switch (policy.kind) {
+    case "identity-pending": return "Room source resolving";
+    case "identity-unavailable": return "Room source unavailable";
+    case "captured-only":
+    case "configurable": return roomName;
+  }
+}
+
+function policyRuntimeLabel(
+  policy: PlannerLayerPolicy,
+  fallbackLabel: string,
+  lifecycle: ExactGrandHallRuntimeLifecycle | null,
+  space: { readonly id: string; readonly venueId: string; readonly slug: string } | null,
+): string {
+  switch (policy.kind) {
+    case "identity-pending":
+      return "Room identity resolving — architectural layer hidden";
+    case "identity-unavailable":
+      return "Room identity unavailable — architectural layer hidden";
+    case "captured-only": {
+      const lifecycleMatches = lifecycle !== null
+        && space !== null
+        && lifecycle.key.spaceId === space.id
+        && lifecycle.key.venueId === space.venueId
+        && lifecycle.key.roomSlug === space.slug;
+      return lifecycleMatches
+        ? EXACT_GRAND_HALL_RUNTIME_LABELS[lifecycle.status]
+        : "Captured Grand Hall source not verified — architectural layer hidden";
+    }
+    case "configurable":
+      return fallbackLabel;
+  }
 }
 
 function eventCell(linked: LinkedEvent, phaseName: string | null): EventCell {
@@ -38,7 +94,7 @@ function eventCell(linked: LinkedEvent, phaseName: string | null): EventCell {
  * event; the avatar from auth; the runtime label + Layers menu from the cockpit
  * store. SAFE wording is preserved verbatim. Replaces the Phase-1 placeholder.
  */
-export function CockpitTopBar(): ReactElement {
+export function CockpitTopBar({ layerPolicy }: CockpitTopBarProps): ReactElement {
   const space = useEditorStore((s) => s.space);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const objectCount = useEditorStore((s) => s.objects.length);
@@ -48,18 +104,25 @@ export function CockpitTopBar(): ReactElement {
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const user = useAuthStore((s) => s.user);
   const runtimeAssetStatus = useCockpitStore((s) => s.runtimeAssetStatus);
+  const exactGrandHallRuntime = useCockpitStore((s) => s.exactGrandHallRuntime);
   const layersOpen = useCockpitStore((s) => s.layersOpen);
   const overlayVisibility = useCockpitStore((s) => s.overlayVisibility);
   const selectedPhaseId = useCockpitStore((s) => s.selectedPhaseId);
   const linked = useLinkedEvent();
+  const operationalGeometryAllowed = plannerAllowsOperationalGeometry(layerPolicy);
 
   const model = buildTopBarModel({
-    spaceName: space?.name ?? null,
+    spaceName: policyRoomLabel(layerPolicy, space?.name ?? null),
     isPublicPreview,
     objectCount,
     userName: user?.name ?? null,
     save: { isDirty, isSaving, saveError, lastSavedAt },
-    runtimeAssetStatus,
+    runtimeAssetStatus: policyRuntimeLabel(
+      layerPolicy,
+      runtimeAssetStatus,
+      exactGrandHallRuntime,
+      space,
+    ),
   });
 
   const activePhase = linked.graph !== null
@@ -110,41 +173,45 @@ export function CockpitTopBar(): ReactElement {
       </div>
 
       <div className="cockpit-topbar__actions">
-        <span className="cockpit-topbar__summary">{model.summaryLabel}</span>
-        <div className="cockpit-topbar__layers">
-          <button
-            type="button"
-            className={layersOpen ? "cockpit-topbar__layers-btn is-open" : "cockpit-topbar__layers-btn"}
-            aria-label="Layers"
-            aria-haspopup="menu"
-            aria-expanded={layersOpen}
-            onClick={() => { useCockpitStore.getState().toggleLayers(); }}
-          >
-            <Layers3 size={18} aria-hidden="true" />
-          </button>
-          {layersOpen && (
-            <div className="cockpit-topbar__menu" role="menu" aria-label="Layers">
-              <p className="cockpit-topbar__menu-head">Scene overlays</p>
-              {COCKPIT_OVERLAY_KEYS.map((key) => {
-                const visible = overlayVisibility[key];
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={visible}
-                    className={visible ? "cockpit-topbar__menu-item is-on" : "cockpit-topbar__menu-item"}
-                    onClick={() => { useCockpitStore.getState().toggleOverlay(key); }}
-                  >
-                    {visible ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}
-                    <span>{OVERLAY_LABELS[key]}</span>
-                  </button>
-                );
-              })}
-              <p className="cockpit-topbar__menu-note">Overlays are planning aids · human review required.</p>
-            </div>
-          )}
-        </div>
+        <span className="cockpit-topbar__summary">
+          {policySummaryLabel(layerPolicy, model.summaryLabel)}
+        </span>
+        {operationalGeometryAllowed && (
+          <div className="cockpit-topbar__layers">
+            <button
+              type="button"
+              className={layersOpen ? "cockpit-topbar__layers-btn is-open" : "cockpit-topbar__layers-btn"}
+              aria-label="Layers"
+              aria-haspopup="menu"
+              aria-expanded={layersOpen}
+              onClick={() => { useCockpitStore.getState().toggleLayers(); }}
+            >
+              <Layers3 size={18} aria-hidden="true" />
+            </button>
+            {layersOpen && (
+              <div className="cockpit-topbar__menu" role="menu" aria-label="Layers">
+                <p className="cockpit-topbar__menu-head">Scene overlays</p>
+                {COCKPIT_OVERLAY_KEYS.map((key) => {
+                  const visible = overlayVisibility[key];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={visible}
+                      className={visible ? "cockpit-topbar__menu-item is-on" : "cockpit-topbar__menu-item"}
+                      onClick={() => { useCockpitStore.getState().toggleOverlay(key); }}
+                    >
+                      {visible ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}
+                      <span>{OVERLAY_LABELS[key]}</span>
+                    </button>
+                  );
+                })}
+                <p className="cockpit-topbar__menu-note">Overlays are planning aids · human review required.</p>
+              </div>
+            )}
+          </div>
+        )}
         {model.userInitials !== null && (
           <span className="cockpit-topbar__avatar" aria-label={`Signed in as ${user?.name ?? "user"}`}>
             {model.userInitials}

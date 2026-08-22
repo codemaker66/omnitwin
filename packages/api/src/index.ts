@@ -29,6 +29,7 @@ import { hallkeeperSheetRoutes } from "./routes/hallkeeper-sheet.js";
 import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
 import { runtimePackagePreviewRoutes } from "./routes/runtime-package-previews.js";
+import { grandHallRuntimeIntakeRoutes } from "./routes/grand-hall-runtime-intake.js";
 import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
@@ -156,7 +157,14 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     credentials: true,
     // idempotency-replay: T-538 — lets browser clients see whether a keyed
     // diary mutation was deduped (replayed) rather than freshly executed.
-    exposedHeaders: ["x-content-sha256", "idempotency-replay"],
+    exposedHeaders: [
+      "content-disposition",
+      "cross-origin-resource-policy",
+      "idempotency-replay",
+      "vary",
+      "x-content-sha256",
+      "x-content-type-options",
+    ],
   });
 
   // Rate limiting — per-user where authenticated, per-IP otherwise.
@@ -350,6 +358,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(adminRoutes, { db, prefix: "/admin" });
   await server.register(adminAssetRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(runtimePackagePreviewRoutes, { db, env, prefix: "/admin/assets" });
+  await server.register(grandHallRuntimeIntakeRoutes, { db, env, prefix: "/admin/assets" });
   await server.register(adminReconstructionFoundryRoutes, {
     service: reconstructionFoundryService,
     prefix: "/admin/reconstruction-foundry",

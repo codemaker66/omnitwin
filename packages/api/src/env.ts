@@ -47,6 +47,17 @@ const EnvSchema = z.object({
   RUNTIME_PROFILE_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
   RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   RUNTIME_PROFILE_R2_PRIVATE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u).optional(),
+  // Exact Grand Hall intake is a temporary, explicitly selected deployment
+  // capability. Its write-only credential is intentionally distinct from the
+  // private runtime serving credential and can be removed after registration.
+  RUNTIME_PROFILE_INTAKE_ENABLED: z.enum(["true", "false"]).optional(),
+  RUNTIME_PROFILE_INTAKE_TARGET_ID: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,79}$/u).optional(),
+  RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: z.string().regex(/^[a-f0-9]{40,64}$/u).optional(),
+  RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
+  RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  // Docker-stamped running-artifact identity. Development may omit/use `dev`,
+  // but intake-enabled deployments must provide the exact reviewed commit.
+  GIT_SHA: z.string().min(1).optional(),
   // Reconstruction Foundry — candidates MUST remain in a private bucket;
   // verified releases are copied to a distinct, immutable public bucket.
   FOUNDRY_R2_ACCOUNT_ID: z.string().min(1).optional(),
@@ -186,6 +197,61 @@ const EnvSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["RUNTIME_PROFILE_R2_PRIVATE_BUCKET"],
       message: "Runtime-profile R2 configuration is incomplete — set RUNTIME_PROFILE_R2_ACCOUNT_ID, RUNTIME_PROFILE_R2_ACCESS_KEY_ID, RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY, and RUNTIME_PROFILE_R2_PRIVATE_BUCKET together or none",
+    });
+  }
+
+  const runtimeProfileIntakeFields = [
+    env.RUNTIME_PROFILE_INTAKE_TARGET_ID,
+    env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA,
+    env.RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID,
+    env.RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY,
+  ];
+  const runtimeProfileIntakeSet = runtimeProfileIntakeFields
+    .filter((field) => field !== undefined).length;
+  if (runtimeProfileIntakeSet > 0 && runtimeProfileIntakeSet < runtimeProfileIntakeFields.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["RUNTIME_PROFILE_INTAKE_TARGET_ID"],
+      message: "Runtime-profile intake configuration is incomplete — set target ID, deployed Git SHA, and both intake-only R2 credential fields together or none",
+    });
+  }
+  if (
+    env.RUNTIME_PROFILE_INTAKE_ENABLED === "true" &&
+    (
+      runtimeProfileIntakeSet !== runtimeProfileIntakeFields.length ||
+      runtimeProfileR2Set !== runtimeProfileR2Fields.length ||
+      env.PUBLIC_API_ORIGIN === undefined
+    )
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["RUNTIME_PROFILE_INTAKE_ENABLED"],
+      message: "Enabled runtime-profile intake requires PUBLIC_API_ORIGIN, the complete private runtime-profile R2 connection, an intake target ID, the deployed Git SHA, and intake-only R2 credentials",
+    });
+  }
+  if (
+    env.RUNTIME_PROFILE_INTAKE_ENABLED === "true" &&
+    (
+      env.GIT_SHA === undefined ||
+      !/^[a-f0-9]{40,64}$/u.test(env.GIT_SHA) ||
+      env.GIT_SHA !== env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA
+    )
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["GIT_SHA"],
+      message: "Enabled runtime-profile intake requires the Docker-stamped GIT_SHA to exactly match RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA",
+    });
+  }
+  if (
+    env.RUNTIME_PROFILE_INTAKE_ENABLED === "true" &&
+    env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID !== undefined &&
+    env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID === env.RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID"],
+      message: "Runtime-profile intake must use a distinct put-only access key; the serving access key remains read-only",
     });
   }
 

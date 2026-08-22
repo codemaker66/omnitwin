@@ -295,14 +295,23 @@ describe("GET /assets", () => {
     expect(res.statusCode).not.toBe(401);
   });
 
-  it("exposes the verified preview fingerprint to an allowed browser origin", async () => {
+  it("exposes every verified-preview integrity header to an allowed browser origin", async () => {
     const res = await server.inject({
       method: "GET",
       url: "/health",
       headers: { origin: "http://localhost:5173" },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.headers["access-control-expose-headers"]).toContain("x-content-sha256");
+    const exposedHeaders = res.headers["access-control-expose-headers"];
+    for (const header of [
+      "content-disposition",
+      "cross-origin-resource-policy",
+      "vary",
+      "x-content-sha256",
+      "x-content-type-options",
+    ]) {
+      expect(exposedHeaders).toContain(header);
+    }
   });
 });
 
@@ -516,6 +525,25 @@ describe("POST /admin/assets/register-version", () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it("reserves exact Grand Hall asset registration for the server-bound intake", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/register-version",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        ...validVersionBody,
+        roomSlug: "grand-hall",
+        fileName: "0_0_0_1_0_1.sog",
+        fileExt: ".sog",
+        r2Key: "venues/trades-hall/rooms/grand-hall/xgrids/grand-hall-big-model-sog-fine-v1/data/3dgs/0_0_0_1_0_1.sog",
+      },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({
+      code: "GRAND_HALL_SERVER_BOUND_INTAKE_REQUIRED",
+    });
+  });
 });
 
 describe("POST /admin/assets/register-runtime-package", () => {
@@ -655,6 +683,28 @@ describe("POST /admin/assets/runtime-package-revisions", () => {
       },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it("reserves exact Grand Hall package revisions for the server-bound intake", async () => {
+    const res = await server.inject({
+      method: "POST",
+      url: "/admin/assets/runtime-package-revisions",
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: {
+        package: {
+          ...validRuntimePackageBody,
+          roomSlug: "grand-hall",
+          manifestJson: {
+            ...validRuntimePackageBody.manifestJson,
+            roomSlug: "grand-hall",
+          },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({
+      code: "GRAND_HALL_SERVER_BOUND_INTAKE_REQUIRED",
+    });
   });
 });
 

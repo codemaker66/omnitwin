@@ -68,4 +68,56 @@ describe("PlannerCanvasBoundary", () => {
     warn.mockRestore();
     error.mockRestore();
   });
+
+  it("never offers generated blueprint geometry when a source-only room loses WebGL", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    shouldThrow = true;
+    render(
+      <PlannerCanvasBoundary sourceOnly>
+        <MaybeBoom />
+      </PlannerCanvasBoundary>,
+    );
+
+    expect(screen.getByRole("heading", { name: "3D source unavailable" })).toBeTruthy();
+    expect(screen.getByText(/No substitute room geometry is shown/i)).toBeTruthy();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /try 3d again/i })).toBeTruthy();
+
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it("invalidates source lifecycle on failure and begins retry before remounting", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const events: string[] = [];
+    const onSourceOnlyError = vi.fn(() => { events.push("unavailable"); });
+    const onSourceOnlyRetry = vi.fn(() => { events.push("pending"); });
+
+    shouldThrow = true;
+    render(
+      <PlannerCanvasBoundary
+        sourceOnly
+        onSourceOnlyError={onSourceOnlyError}
+        onSourceOnlyRetry={onSourceOnlyRetry}
+      >
+        <MaybeBoom />
+      </PlannerCanvasBoundary>,
+    );
+
+    expect(onSourceOnlyError).toHaveBeenCalledTimes(1);
+    expect(events).toEqual(["unavailable"]);
+
+    shouldThrow = false;
+    fireEvent.click(screen.getByRole("button", { name: /try 3d again/i }));
+    expect(onSourceOnlyRetry).toHaveBeenCalledTimes(1);
+    expect(events).toEqual(["unavailable", "pending"]);
+    expect(screen.getByText("3d scene mounted")).toBeTruthy();
+
+    warn.mockRestore();
+    error.mockRestore();
+  });
 });

@@ -4,6 +4,10 @@ import { useLinkedEvent } from "../../../hooks/use-linked-event.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { buildCockpitPhases } from "../../../lib/cockpit-phase-model.js";
 import type { CockpitMode } from "../../../lib/cockpit-modes.js";
+import {
+  plannerAllowsOperationalGeometry,
+  type PlannerLayerPolicy,
+} from "../../../lib/planner-layer-composition.js";
 import "./CockpitBottom.css";
 
 interface InsightCard {
@@ -38,10 +42,41 @@ function timelineNote(status: string, eventName: string | null, phaseCount: numb
  * event) plus the four planning insight cards. Phases are selectable (driving
  * the cockpit's selected phase); each insight card switches to its lens.
  */
-export function CockpitBottom(): ReactElement {
+export interface CockpitBottomProps {
+  readonly layerPolicy: PlannerLayerPolicy;
+}
+
+function unavailableInsightCopy(policy: PlannerLayerPolicy): {
+  readonly title: string;
+  readonly body: string;
+} {
+  switch (policy.kind) {
+    case "captured-only":
+      return {
+        title: "Captured source only",
+        body: "Guest-flow, clearance, capacity, and operational insight controls require reviewed room-local geometry.",
+      };
+    case "identity-pending":
+      return {
+        title: "Room identity resolving",
+        body: "Operational insight controls stay hidden until the current venue and room have been verified.",
+      };
+    case "identity-unavailable":
+      return {
+        title: "Room identity unavailable",
+        body: "Operational insight controls are unavailable because the current venue and room could not be verified.",
+      };
+    case "configurable":
+      return { title: "Planning insights", body: "Operational planning controls are available." };
+  }
+}
+
+export function CockpitBottom({ layerPolicy }: CockpitBottomProps): ReactElement {
   const linked = useLinkedEvent();
   const selectedPhaseId = useCockpitStore((s) => s.selectedPhaseId);
   const phases = buildCockpitPhases(linked.graph);
+  const operationalGeometryAllowed = plannerAllowsOperationalGeometry(layerPolicy);
+  const unavailableCopy = unavailableInsightCopy(layerPolicy);
 
   return (
     <footer className="cockpit-bottom" data-testid="cockpit-bottom" aria-label="Event timeline and insights">
@@ -82,7 +117,7 @@ export function CockpitBottom(): ReactElement {
       </section>
 
       <section className="cockpit-bottom__cards" aria-label="Planning insights">
-        {INSIGHT_CARDS.map((card) => {
+        {operationalGeometryAllowed ? INSIGHT_CARDS.map((card) => {
           const Icon = card.Icon;
           return (
             <button
@@ -97,7 +132,12 @@ export function CockpitBottom(): ReactElement {
               <span className="cockpit-insight__detail">{card.detail}</span>
             </button>
           );
-        })}
+        }) : (
+          <div className="cockpit-bottom__source-only" role="note">
+            <strong>{unavailableCopy.title}</strong>
+            <span>{unavailableCopy.body}</span>
+          </div>
+        )}
       </section>
     </footer>
   );

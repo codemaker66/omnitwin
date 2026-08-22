@@ -1,7 +1,9 @@
 import { type ReactElement } from "react";
 import { Cuboid, Sparkles, Layers3, type LucideIcon } from "lucide-react";
 import { COCKPIT_LAYER_MODES, type CockpitLayerMode } from "../../../lib/cockpit-modes.js";
+import { resolvePlannerLayerPolicy } from "../../../lib/planner-layer-composition.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useEditorStore } from "../../../stores/editor-store.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../../shared/FloatingWidgetFrame.js";
 import "./CanvasLayerControls.css";
 
@@ -41,11 +43,40 @@ const LAYER_CONTROLS_AVOID_SELECTORS = [
 export function CanvasLayerControls(): ReactElement {
   const layerMode = useCockpitStore((s) => s.layerMode);
   const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
+  const roomIdentity = useCockpitStore((s) => s.plannerRoomIdentity);
+  const space = useEditorStore((s) => s.space);
+  const layerPolicy = resolvePlannerLayerPolicy({
+    currentRoom: space === null
+      ? null
+      : {
+        spaceId: space.id,
+        venueId: space.venueId,
+        roomSlug: space.slug,
+      },
+    roomIdentity,
+    requestedMode: layerMode,
+  });
+  const effectiveMode: CockpitLayerMode = layerPolicy.effectiveMode;
+  const lockedReason = layerPolicy.kind === "identity-pending"
+    ? "Room identity is resolving. Architecture remains hidden."
+    : layerPolicy.kind === "identity-unavailable"
+      ? "Room identity is unavailable. Architecture remains hidden."
+      : layerPolicy.kind === "captured-only"
+        ? "Captured room source only. Alternative architecture layers are unavailable."
+        : null;
+  const lockedLabel = layerPolicy.kind === "identity-pending"
+    ? "Identity resolving"
+    : layerPolicy.kind === "identity-unavailable"
+      ? "Source unavailable"
+      : layerPolicy.kind === "captured-only"
+        ? "Captured source"
+        : null;
+  const compactLabel = lockedLabel ?? LAYER_META[effectiveMode].label;
   return (
     <FloatingWidgetFrame
       id="planner-layer-controls"
       title="Visual layer"
-      compactLabel={LAYER_META[layerMode].label}
+      compactLabel={compactLabel}
       strategy="fixed"
       testId="planner-layer-controls"
       className="cockpit-layer-controls-widget"
@@ -57,11 +88,18 @@ export function CanvasLayerControls(): ReactElement {
       zIndex={32}
       autoCompact={cameraInteractionActive}
     >
-      <div className="cockpit-layer-controls" role="group" aria-label="Visual layer">
-        {COCKPIT_LAYER_MODES.map((mode) => {
+      <div
+        className={lockedReason === null
+          ? "cockpit-layer-controls"
+          : "cockpit-layer-controls cockpit-layer-controls--locked"}
+        role={lockedReason === null ? "group" : "status"}
+        aria-label={lockedReason === null ? "Visual layer" : lockedLabel ?? "Source status"}
+        aria-live={lockedReason === null ? undefined : "polite"}
+      >
+        {lockedReason === null ? COCKPIT_LAYER_MODES.map((mode) => {
           const meta = LAYER_META[mode];
           const Icon = meta.Icon;
-          const active = mode === layerMode;
+          const active = mode === effectiveMode;
           return (
             <button
               key={mode}
@@ -74,7 +112,13 @@ export function CanvasLayerControls(): ReactElement {
               {meta.label}
             </button>
           );
-        })}
+        }) : (
+          <>
+            <Sparkles size={14} aria-hidden="true" />
+            <strong className="cockpit-layer-controls__locked-label">{lockedLabel}</strong>
+            <span className="cockpit-layer-controls__lock-note">{lockedReason}</span>
+          </>
+        )}
       </div>
     </FloatingWidgetFrame>
   );

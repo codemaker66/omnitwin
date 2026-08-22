@@ -299,13 +299,14 @@ export const router = createBrowserRouter([
     // 2D top-down blueprint editor. Mounted alongside the 3D planner — both
     // views share the same underlying scene data; the blueprint is the
     // planner's flat-paper draft, the 3D view is the spatial walkthrough.
-    // Takes optional configId for deep-link.
+    // The route first enters EditorPage's room-authority gate; only a
+    // venue-verified configurable room may honour the requested 2D view.
     path: "/blueprint",
-    element: withSuspense(<BlueprintPage />),
+    element: withSuspense(<BlueprintPage source="route" />),
   },
   {
     path: "/blueprint/:configId",
-    element: withSuspense(<BlueprintPage />),
+    element: withSuspense(<BlueprintPage source="route" />),
   },
   {
     // Venue-scoped planner entry (B2). Opt-in multi-venue routing — when a

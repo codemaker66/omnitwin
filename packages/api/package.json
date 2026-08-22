@@ -33,6 +33,8 @@
     "assets:register-reception-room-spz-runtime": "tsx src/scripts/register-reception-room-spz-runtime.ts",
     "assets:register-reception-room-mobile-frontier": "node --env-file=.env --import tsx src/scripts/register-reception-room-mobile-frontier.ts",
     "assets:register-reception-room-quality-frontier": "node --env-file=.env --import tsx src/scripts/register-reception-room-quality-frontier.ts",
+    "assets:register-grand-hall-big-model-frontier": "node --env-file=.env --import tsx src/scripts/register-grand-hall-big-model-frontier.ts",
+    "assets:intake-grand-hall-big-model-frontier": "node --import tsx src/scripts/intake-grand-hall-big-model-frontier.ts",
     "assets:register-runtime-transform-artifact": "tsx src/scripts/register-runtime-transform-artifact.ts",
     "assets:register-runtime-qa-record": "tsx src/scripts/register-runtime-qa-record.ts",
     "email:dev": "email dev --dir ./emails --port 3002",

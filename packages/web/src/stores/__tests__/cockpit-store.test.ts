@@ -1,6 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { useCockpitStore } from "../cockpit-store.js";
 
+const EXACT_KEY_A = {
+  spaceId: "space-grand-hall",
+  venueId: "venue-trades-hall",
+  roomSlug: "grand-hall" as const,
+  runtimePackageId: "package-a",
+};
+const EXACT_KEY_B = {
+  ...EXACT_KEY_A,
+  runtimePackageId: "package-b",
+};
+
 afterEach(() => { useCockpitStore.getState().reset(); });
 
 describe("cockpit-store", () => {
@@ -8,6 +19,7 @@ describe("cockpit-store", () => {
     const s = useCockpitStore.getState();
     expect(s.activeMode).toBe("design");
     expect(s.layerMode).toBe("hybrid");
+    expect(s.plannerRoomIdentity).toBeNull();
     expect(s.overlayVisibility.guestFlow).toBe(true);
     expect(s.selectedPhaseId).toBeNull();
   });
@@ -20,6 +32,26 @@ describe("cockpit-store", () => {
   it("setLayerMode switches the renderer layer", () => {
     useCockpitStore.getState().setLayerMode("splat");
     expect(useCockpitStore.getState().layerMode).toBe("splat");
+  });
+
+  it("stores keyed planner identity without changing the raw layer preference", () => {
+    useCockpitStore.getState().setLayerMode("mesh");
+    useCockpitStore.getState().setPlannerRoomIdentity({
+      spaceId: "space-1",
+      venueId: "venue-1",
+      roomSlug: "grand-hall",
+      status: "resolved",
+      venueSlug: "trades-hall-glasgow",
+    });
+
+    expect(useCockpitStore.getState().plannerRoomIdentity).toEqual({
+      spaceId: "space-1",
+      venueId: "venue-1",
+      roomSlug: "grand-hall",
+      status: "resolved",
+      venueSlug: "trades-hall-glasgow",
+    });
+    expect(useCockpitStore.getState().layerMode).toBe("mesh");
   });
 
   it("toggleOverlay flips a single overlay without touching others", () => {
@@ -45,6 +77,40 @@ describe("cockpit-store", () => {
   it("setRuntimeAssetStatus updates the runtime label", () => {
     useCockpitStore.getState().setRuntimeAssetStatus("Captured visual layer loaded / not yet signed");
     expect(useCockpitStore.getState().runtimeAssetStatus).toBe("Captured visual layer loaded / not yet signed");
+  });
+
+  it("publishes pending, verified, and failed exact-runtime labels for the current key", () => {
+    const store = useCockpitStore.getState();
+    store.beginExactGrandHallRuntime(EXACT_KEY_A);
+    expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
+      key: EXACT_KEY_A,
+      status: "pending",
+    });
+    expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/verifying exact protected bytes/i);
+
+    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, "verified");
+    expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("verified");
+    expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/all 11 members attached/i);
+
+    useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_KEY_A);
+    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, "failed");
+    expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("failed");
+    expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/architectural layer hidden/i);
+  });
+
+  it("rejects stale completion and cleanup callbacks after the selected package changes", () => {
+    const store = useCockpitStore.getState();
+    store.beginExactGrandHallRuntime(EXACT_KEY_A);
+    useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_KEY_B);
+
+    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, "verified");
+    useCockpitStore.getState().clearExactGrandHallRuntime(EXACT_KEY_A);
+
+    expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
+      key: EXACT_KEY_B,
+      status: "pending",
+    });
+    expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/verifying exact protected bytes/i);
   });
 
   it("defaults roomResolve to the ink phase with no chunks", () => {
@@ -110,6 +176,13 @@ describe("cockpit-store", () => {
     api.toggleOverlay("guestFlow");
     api.selectPhase("ceremony");
     api.setRuntimeAssetStatus("Captured visual layer loaded / not yet signed");
+    api.setPlannerRoomIdentity({
+      spaceId: "space-1",
+      venueId: "venue-1",
+      roomSlug: "grand-hall",
+      status: "resolved",
+      venueSlug: "trades-hall-glasgow",
+    });
     api.setRoomResolve({ phase: "resolved", loadedChunks: 7, totalChunks: 7 });
     api.toggleLayers();
     api.setBeam({ anchor: [0, 0, 0], label: "x", tone: "info" });
@@ -126,6 +199,8 @@ describe("cockpit-store", () => {
     expect(s.runtimeAssetStatus).toBe(
       "Captured visual layer not yet available — planning on reviewed geometry",
     );
+    expect(s.exactGrandHallRuntime).toBeNull();
+    expect(s.plannerRoomIdentity).toBeNull();
     expect(s.roomResolve).toEqual({ phase: "ink", loadedChunks: 0, totalChunks: 0 });
     expect(s.layersOpen).toBe(false);
     expect(s.beam).toBeNull();
