@@ -700,14 +700,28 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if ([...selection.selectedIds].some((id) => idMap.has(id))) {
         selection.selectMultiple([...selection.selectedIds].map((id) => idMap.get(id) ?? id));
       }
+      // `serverObjects` echoes the batch as it was BEFORE the await, so
+      // adopting it wholesale reverts anything the operator did during the
+      // round trip — and `isDirty: false` then guarantees no autosave ever
+      // pushes that work again. Detect it by reference: Zustand replaces the
+      // array on every mutation, so an unchanged reference means nothing
+      // happened. The asymmetry is deliberate — a false positive costs one
+      // redundant save, a false negative silently loses the operator's work.
+      const editedInFlight = latest.objects !== objects;
+      const nextObjects = editedInFlight
+        ? latest.objects.map((object) => {
+            const serverId = idMap.get(object.id);
+            return serverId === undefined ? object : { ...object, id: serverId };
+          })
+        : serverObjects;
       set({
-        objects: serverObjects,
+        objects: nextObjects,
         history: aligned ? remapHistoryIds(latest.history, idMap) : emptyHistory<EditorObject>(),
         selectedObjectId: latest.selectedObjectId === null
           ? null
           : idMap.get(latest.selectedObjectId) ?? latest.selectedObjectId,
         configRevision: saved.revision,
-        isDirty: false,
+        isDirty: editedInFlight,
         isSaving: false,
         lastSavedAt: new Date(),
         saveConflict: null,
