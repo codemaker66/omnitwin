@@ -1,0 +1,474 @@
+/* -----------------------------------------------------------------------------
+ * room-selector.css — chrome for the /tour Rooms pill and the panel it opens.
+ *
+ * Lives beside its component (the repo's component-adjacent CSS idiom) rather
+ * than inside twin.css, so this can land without touching the shared stylesheet
+ * another lane is editing. It inherits the twin palette by cascade — the tokens
+ * are declared on `.vv-twin` and custom properties inherit — so every var() here
+ * is a read, never a redeclaration. The fallbacks are insurance for a fixture
+ * render outside `.vv-twin`, not a second palette.
+ *
+ * PLACEMENT IS NOT OPTIONAL, and this is the trap that has shipped here twice:
+ * every sibling inside `.vv-twin-viewer` is position:absolute, so a static block
+ * lands a full viewport below the view and `.vv-twin-stage { overflow: hidden }`
+ * clips it away — while it stays in the tab order, invisible and focusable, the
+ * worst of the three states. The trigger is therefore absolute inside the
+ * viewer; the modal is fixed to the window (the `.vv-twin-enq-overlay` idiom),
+ * because it is deliberately over everything.
+ *
+ * THE SLOT — MOVED, and the move is a bug fix rather than a preference. The
+ * pill was in the LEFT column at bottom 96. At 844×390 (landscape phone) the
+ * room dossier really renders down to y=299 — MEASURED in a browser, not
+ * guessed — and the pill's top edge landed at 259, so it sat on the dossier's
+ * provenance sentence by 35px. The slot model missed it twice over: it never
+ * read room-dossier.css's `@media (max-height: 460px)` override, and it took the
+ * dossier's height straight from the viewport instead of from its content, so
+ * the "deliberate over-estimate" its header claimed was not one. Both halves are
+ * fixed in __tests__/RoomSelector.test.tsx, and 844×390 and 667×375 are now in
+ * the matrix — landscape phone is where every collision in this HUD has been
+ * found.
+ *
+ * The pill now takes the BOTTOM-RIGHT corner, which is the corner the minimap
+ * vacated when this panel replaced it. That is the strongest disjointness proof
+ * available — the rect is empty by construction, because the thing that filled
+ * it is the thing this replaces — and it keeps the visitor's muscle memory: the
+ * control answering "what else is in this building" is still in the corner it
+ * has always been in. It is capped at 136px, which is the minimap's own phone
+ * footprint (120px map + 7px padding each side), so quick-actions.css's
+ * `calc(100vw - 170px)` cap — written against that same footprint — still leaves
+ * a real gap beside it. Every placement number below is pinned in the test, and
+ * ROOMS_SLOT in RoomSelector.tsx holds the same numbers.
+ *
+ * SHORT VIEWPORTS get their own rule. At 460px of height the phone slot's
+ * bottom 108 would drive the pill up into the utility rail (Enquire / Share /
+ * Fullscreen), so it returns to bottom 18 there — proved at 844×390 and 667×375.
+ *
+ * STACKING. Trigger at 3, the HUD layer, alongside the quick rail and the
+ * dossier. Backdrop 12 and panel 13: above the coach hint (4), below the enquiry
+ * modal (20), so an enquiry opened from anywhere still wins.
+ * -------------------------------------------------------------------------- */
+
+/* — the pill, always on screen — */
+
+.vv-twin-rooms-trigger {
+  position: absolute;
+  right: calc(18px + env(safe-area-inset-right));
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 3;
+  /* Only the pill takes pointer events; there is no wrapper to swallow the
+   * dead space around it, so a click beside the pill still travels the walk —
+   * the `.vv-twin-controls` contract, restated. */
+  pointer-events: auto;
+  /* Not taste: 136px is the minimap's phone footprint (120px map + 7px padding
+   * each side), and quick-actions.css caps the rail at `calc(100vw - 170px)`
+   * against that same number — so a pill held to 136 keeps a 10px gap beside
+   * the rail at 390px. The rendered pill is ~118px, so this never truncates; it
+   * is a ceiling that keeps the proof true. See ROOMS_SLOT.maxWidthPx. */
+  max-width: 136px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--ink-2, #e7d8bb);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  font-family: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    border-color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform 160ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-rooms-trigger:hover {
+  color: var(--gold-2, #f0c66b);
+  border-color: var(--gold, #d7a64b);
+}
+
+.vv-twin-rooms-trigger:active {
+  transform: scale(0.97);
+}
+
+.vv-twin-rooms-icon,
+.vv-twin-rooms-chevron {
+  flex: 0 0 auto;
+}
+
+/* The chevron turns over as the panel rises, so the pill reads as the thing
+ * that opened it rather than as a second control that happens to be nearby. */
+.vv-twin-rooms-chevron {
+  transition: transform 200ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-rooms-trigger[aria-expanded="true"] .vv-twin-rooms-chevron {
+  transform: rotate(180deg);
+}
+
+.vv-twin-rooms-trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* — the modal — */
+
+.vv-twin-rooms-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  /* Dark enough to sit the panel forward, light enough that the photograph the
+   * visitor is choosing between rooms ON is still visible behind it. */
+  background: rgba(3, 7, 7, 0.5);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: vv-twin-rooms-veil 240ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.vv-twin-rooms-panel {
+  position: fixed;
+  right: calc(18px + env(safe-area-inset-right));
+  /* Clear of the pill, not over it: 18 (the pill's own bottom) + its measured
+   * 36px height + an 8px gap. Parking the panel ON its trigger hid the trigger
+   * entirely — measured, not guessed — which throws away the one affordance
+   * saying where this thing came from and makes the chevron's flip invisible. */
+  bottom: calc(62px + env(safe-area-inset-bottom));
+  z-index: 13;
+  width: min(320px, calc(100vw - 36px));
+  max-height: min(560px, calc(100dvh - 230px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 12px;
+  background: rgba(7, 16, 15, 0.94);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  color: var(--ink-2, #e7d8bb);
+  animation: vv-twin-rooms-rise 320ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.vv-twin-rooms-headrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vv-twin-rooms-title {
+  margin: 0;
+  font-family: var(--display, "Newsreader", serif);
+  font-size: 1.05rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: var(--ink, #fbf2df);
+}
+
+/* The heading takes the caret on open and must not look like it was clicked;
+ * the twin's own focus halo still applies on :focus-visible. */
+.vv-twin-rooms-title:focus {
+  outline: none;
+}
+
+.vv-twin-rooms-close {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-3, #b9aa8b);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    border-color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-rooms-close:hover {
+  color: var(--gold-2, #f0c66b);
+  border-color: var(--gold, #d7a64b);
+}
+
+/* — levels — */
+
+.vv-twin-rooms-level-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Quiet, and quieter than a room name by a whole typographic register: a level
+ * is context, and the rooms are the content. */
+.vv-twin-rooms-level {
+  margin: 0;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-rooms-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vv-twin-rooms-item {
+  display: block;
+}
+
+/* — rows — */
+
+.vv-twin-rooms-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+}
+
+.vv-twin-rooms-row--go {
+  cursor: pointer;
+  transition:
+    border-color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    background-color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform 140ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-rooms-row--go:hover {
+  border-color: var(--gold, #d7a64b);
+  background: rgba(215, 166, 75, 0.08);
+}
+
+.vv-twin-rooms-row--go:hover .vv-twin-rooms-name {
+  color: var(--gold-2, #f0c66b);
+}
+
+.vv-twin-rooms-row--go:active {
+  transform: scale(0.99);
+}
+
+/* The room underfoot: a gold rule rather than a fill, because it is a statement
+ * and not a selected control. It is a <div>, never a disabled button — a
+ * disabled control invites a press that does nothing. */
+.vv-twin-rooms-row--here {
+  border-left: 2px solid var(--gold, #d7a64b);
+  border-radius: 0 8px 8px 0;
+  padding-left: 9px;
+  background: rgba(215, 166, 75, 0.05);
+}
+
+.vv-twin-rooms-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.vv-twin-rooms-name {
+  font-family: var(--display, "Newsreader", serif);
+  font-size: 15px;
+  line-height: 1.25;
+  color: var(--ink, #fbf2df);
+  transition: color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-rooms-mark {
+  flex: 0 0 auto;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold-2, #f0c66b);
+}
+
+/* Identical on every row INCLUDING the one you are standing in: ragged rows do
+ * not compare, and comparing is the whole reason to open the panel. */
+.vv-twin-rooms-compare {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-rooms-footnote {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ink-3, #b9aa8b);
+  opacity: 0.9;
+}
+
+/* — motion — */
+
+@keyframes vv-twin-rooms-veil {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vv-twin-rooms-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes vv-twin-rooms-sheet {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* — phone: the panel becomes a sheet, and the pill lifts clear of the rail —
+ *
+ * 700px is quick-actions.css's and room-dossier.css's own breakpoint, and the
+ * pill's slot is defined against both, so it must switch with them and not at
+ * some third width of its own.
+ *
+ * A sheet rather than a shrunken card: at 390px a floating panel leaves slivers
+ * of view down both sides that read as a mistake, and a bottom sheet puts the
+ * rows under the thumb that pressed the pill. */
+
+@media (max-width: 700px) {
+  .vv-twin-rooms-trigger {
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: calc(108px + env(safe-area-inset-bottom));
+    font-size: 0.62rem;
+    padding: 7px 12px;
+  }
+
+  .vv-twin-rooms-panel {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: min(60dvh, calc(100dvh - 120px));
+    border-width: 1px 0 0;
+    border-radius: 16px 16px 0 0;
+    padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
+    animation: vv-twin-rooms-sheet 320ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  }
+}
+
+/* — short viewports: landscape phone, where every collision in this HUD has
+ *   been found —
+ *
+ * Ordered AFTER the width block on purpose: same specificity, so what is
+ * declared here wins for a viewport that is both narrow and short (667×375).
+ *
+ * The pill returns to bottom 18. The phone slot's 108 assumes a tall screen
+ * with room beneath the utility rail; at 375px of height it would drive the
+ * pill straight into Enquire / Share / Fullscreen, which is the exact failure
+ * the whole slot model exists to prevent.
+ *
+ * The sheet is undone too. A bottom sheet capped at 60dvh is 225px on a 375px
+ * screen — a letterbox — and at 844px wide it is a sheet the width of a
+ * laptop. A right-anchored card spanning the free height reads properly at
+ * both, and stops short of the pill so the trigger stays visible under it. */
+
+@media (max-height: 460px) {
+  .vv-twin-rooms-trigger {
+    bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .vv-twin-rooms-panel {
+    left: auto;
+    right: calc(12px + env(safe-area-inset-right));
+    top: calc(56px + env(safe-area-inset-top));
+    bottom: calc(62px + env(safe-area-inset-bottom));
+    width: min(320px, calc(100vw - 24px));
+    max-height: none;
+    border-width: 1px;
+    border-radius: 12px;
+    padding: 14px 14px 12px;
+    animation-name: vv-twin-rooms-rise;
+  }
+}
+
+/* — forced colours: translucency, gold and box-shadows are all stripped, so
+ *   restate every surface as a real bordered box and the current row as a ring — */
+
+@media (forced-colors: active) {
+  .vv-twin-rooms-trigger,
+  .vv-twin-rooms-panel,
+  .vv-twin-rooms-close {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .vv-twin-rooms-backdrop {
+    background: Canvas;
+  }
+
+  .vv-twin-rooms-row--go:hover {
+    border-color: Highlight;
+  }
+
+  .vv-twin-rooms-row--here {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
+/* — reduced motion: present or absent, never on the way. Not a shorter version
+ *   of the same entrance — the final state, immediately. — */
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-rooms-trigger,
+  .vv-twin-rooms-chevron,
+  .vv-twin-rooms-backdrop,
+  .vv-twin-rooms-panel,
+  .vv-twin-rooms-close,
+  .vv-twin-rooms-row,
+  .vv-twin-rooms-row--go,
+  .vv-twin-rooms-name {
+    animation: none;
+    transition: none;
+  }
+
+  .vv-twin-rooms-trigger:active,
+  .vv-twin-rooms-row--go:active,
+  .vv-twin-rooms-panel,
+  .vv-twin-rooms-trigger[aria-expanded="true"] .vv-twin-rooms-chevron {
+    transform: none;
+  }
+}

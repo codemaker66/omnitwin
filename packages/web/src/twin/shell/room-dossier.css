@@ -1,0 +1,398 @@
+/* -----------------------------------------------------------------------------
+ * room-dossier.css — chrome and placement for the /tour room dossier.
+ *
+ * Component-adjacent, matching quick-actions.css, so this lands without editing
+ * twin.css while another lane has that file open. Palette tokens are declared on
+ * `.vv-twin` and inherit, so every var() here is a read, never a redeclaration;
+ * the fallbacks exist for a fixture rendered outside `.vv-twin`.
+ *
+ * PLACEMENT IS LOAD-BEARING, not decoration. Every other HUD element is
+ * position:absolute inside `.vv-twin-viewer`, and the only in-flow sibling is
+ * R3F's canvas wrapper at 100% height — so an unpositioned panel is laid out a
+ * full viewport BELOW the view and then clipped away by
+ * `.vv-twin-stage { overflow: hidden }`. Without these rules the dossier is not
+ * merely unstyled, it is invisible while remaining in the tab order.
+ *
+ * The slot is the left column between the node label (top 18, ends ~49) and the
+ * disclosure (bottom 14). It deliberately avoids the right-hand stack — mode 18,
+ * surface 62, controls 106 — and the minimap at bottom right, so the width is
+ * capped rather than fluid: a full-bleed card would slide under those controls
+ * on a phone.
+ *
+ * MOTION — WHERE THE NUMBERS CAME FROM
+ *
+ * Both curves are the unit-step response of a real mass-spring-damper, sampled
+ * into a CSS linear(), not a cubic-bezier picked by eye. A bezier is monotonic
+ * between its endpoints: it can decelerate, but it cannot overshoot and settle,
+ * and that asymmetric tail is the whole difference between a panel that arrives
+ * and a panel that merely fades in. No JS animation library is involved and none
+ * is needed — the curve is data, and the only thing script supplies is a single
+ * measured height (RoomDossier.tsx's pinFoldHeight).
+ *
+ *   m·y" + c·y' + k·y = k,   y(0) = 0, y'(0) = 0
+ *   ζ < 1:  y(t) = 1 − e^(−ζω₀t)·( cos(ω_d·t) + (ζω₀/ω_d)·sin(ω_d·t) )
+ *           ω₀ = √(k/m),  ζ = c/(2√(km)),  ω_d = ω₀·√(1−ζ²)
+ *   ζ = 1:  y(t) = 1 − (1 + ω₀t)·e^(−ω₀t)
+ *
+ * ARRIVE / UNFOLD — k = 440, c = 30, m = 1 → ω₀ = 20.976 rad/s, ζ = 0.7151
+ *   Peaks at 1.0400 (4.00% overshoot) at t = 210 ms; |y(420 ms) − 1| = 0.159%.
+ *   So 420 ms is where this spring has actually settled, not where it looked
+ *   about right — and it is the same 420 ms the rest of the twin HUD already
+ *   uses. Sampled at 24 even steps; the last stop is clamped to exactly 1.
+ *
+ *   The 4% overshoot is deliberately sub-pixel on the card's 10px rise (0.4px):
+ *   what reads there is the velocity profile — a fast launch and a long soft
+ *   settle. It is the FOLD the overshoot is meant to be seen on, where 4% of a
+ *   ~150px body is a 6px bounce of the card's bottom edge.
+ *
+ * LEAVE / FOLD — k = 900, c = 60, m = 1 → ω₀ = 30 rad/s, ζ = 1.0000 exactly
+ *   Critically damped on purpose. Nothing should overshoot on its way out: an
+ *   overshoot on a departure reads as the panel changing its mind about leaving.
+ *   |y(260 ms) − 1| = 0.361%, clamped, sampled at 16 even steps. 260 ms is
+ *   TWIN_DOSSIER_LEAVE_MS in RoomDossier.tsx, which publishes it here as
+ *   --vv-dossier-leave rather than either side restating the other's number.
+ *
+ * Every timing rule below is written TWICE — plain curve first, linear() second.
+ * A browser that does not understand linear() drops the second declaration as
+ * invalid and keeps the house --settle curve. That fallback is also why the
+ * spring is not held in a custom property: an unsupported value reached through
+ * var() is invalid at computed-value time, which discards the whole declaration
+ * and lands on `ease`, i.e. worse than the thing it was improving.
+ * -------------------------------------------------------------------------- */
+
+.vv-twin-dossier {
+  position: absolute;
+  top: calc(62px + env(safe-area-inset-top));
+  left: calc(18px + env(safe-area-inset-left));
+  z-index: 3;
+  /* Never wide enough to reach the right-hand control stack. The reserve is
+   * MEASURED, not guessed: .vv-twin-controls renders 112px wide at its 18px
+   * inset, and the Surface pill 103px — 112 + 18 + a 20px gap. An earlier
+   * guess of 44px (the icon buttons alone) put the card straight through
+   * Surface and Enquire on a phone. */
+  width: min(340px, calc(100vw - 150px));
+  /* Stops short of the chip rail and the disclosure below it. */
+  max-height: calc(100dvh - 200px);
+  /* The frame is a click-through hole: click-anywhere travel is the primary
+   * movement mechanic, so only the card itself may take the pointer. */
+  pointer-events: none;
+}
+
+.vv-twin-dossier-card {
+  pointer-events: auto;
+  overflow-y: auto;
+  max-height: inherit;
+  /* 9px, not the 13px this carried alone: the other 4px moved into the body as
+   * focus-ring reserve (see .vv-twin-dossier-body). 4 + 9 is the same 13, so the
+   * silhouette is unchanged either open or collapsed. */
+  padding: 12px 14px 9px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 10px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  /* Matches the node label's halo: the HUD sits over correctly sRGB-encoded
+   * panos that are brighter than the grade this chrome was first tuned to. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  animation-name: vv-twin-dossier-arrive;
+  animation-duration: 420ms;
+  animation-fill-mode: both;
+}
+
+/* The card on its way out of a room the walk has left. The component holds it
+ * here for exactly --vv-dossier-leave and then stops rendering it. */
+.vv-twin-dossier-card--leaving {
+  animation-name: vv-twin-dossier-leave;
+  animation-duration: var(--vv-dossier-leave, 260ms);
+  animation-fill-mode: both;
+  /* A departing card must not eat a click that should travel the walk — the
+   * frame's click-through contract, restated for the one state in which the
+   * card is still painted but no longer anybody's to press. */
+  pointer-events: none;
+}
+
+/* — the two springs, each written twice; see the motion header — */
+
+.vv-twin-dossier-card,
+.vv-twin-dossier-body--unfolding {
+  animation-timing-function: var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+  animation-timing-function: linear(
+    0, 0.0564, 0.1875, 0.3494, 0.5125, 0.6596, 0.7819, 0.8768, 0.9458, 0.9922,
+    1.0204, 1.035, 1.04, 1.0388, 1.0341, 1.0278, 1.0212, 1.015, 1.0099, 1.0058,
+    1.0028, 1.0007, 0.9994, 0.9987, 1
+  );
+}
+
+/* After the rule above, deliberately: a leaving card carries both classes, so
+ * source order is what lets the departure curve win. */
+.vv-twin-dossier-card--leaving,
+.vv-twin-dossier-body--folding {
+  animation-timing-function: var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+  animation-timing-function: linear(
+    0, 0.0864, 0.255, 0.4295, 0.5803, 0.6996, 0.7894, 0.8546, 0.9008, 0.933,
+    0.9551, 0.9702, 0.9803, 0.987, 0.9915, 0.9945, 1
+  );
+}
+
+.vv-twin-dossier-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.vv-twin-dossier-names {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The room name is the news, so it takes the display face — the only place in
+ * the walkthrough HUD that does. Everything else here stays quiet UI type. */
+.vv-twin-dossier-room {
+  margin: 0;
+  font-family: var(--display, "Newsreader", "Times New Roman", serif);
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: 0.005em;
+  color: var(--ink, #fbf2df);
+}
+
+.vv-twin-dossier-venue {
+  margin: 3px 0 0;
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-dossier-toggle {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2, #e7d8bb);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease;
+}
+
+.vv-twin-dossier-toggle:hover {
+  border-color: var(--gold, #d7a64b);
+  color: var(--gold-2, #f0c66b);
+}
+
+.vv-twin-dossier-toggle:focus-visible {
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 2px;
+}
+
+.vv-twin-dossier-body {
+  /* No `display` rule here, and there must not be one: the component keeps this
+   * wrapper mounted so aria-controls always resolves, and `display` is the one
+   * property that would both defeat the `hidden` attribute and make the fold
+   * below unanimatable. */
+  margin: 0;
+  /* Clips the fold. It also makes the wrapper a block formatting context, which
+   * is what makes the measurement honest — without it the stats grid's 12px top
+   * margin collapses straight THROUGH this wrapper and out, so the height the
+   * component reads back is 12px short of the distance the fold has to travel,
+   * and the collapse starts with a jump. */
+  overflow: hidden;
+  /* Reserve for the action button's focus ring — a 2px outline at a 2px offset,
+   * i.e. 4px past a button that is the last thing in here, which the clip above
+   * would otherwise crop along the bottom edge. Taken out of the card's bottom
+   * padding rather than added to it, so nothing about the card's size moves.
+   *
+   * It is also why the fold's `to { height: 0 }` bottoms out at 4px rather than
+   * 0: with box-sizing:border-box (`.vv-twin * { box-sizing: border-box }` in
+   * twin.css) a used height below the padding is floored at it. That floor is
+   * the collapsed resting height too, so the animation ends exactly where the
+   * layout does and there is no snap. */
+  padding-bottom: 4px;
+}
+
+/* The fold. The class says which way; --vv-dossier-fold-h, written inline by the
+ * component, says how far. `backwards` and never `forwards`: a fill that
+ * outlived its animation would pin this wrapper to a stale pixel height and stop
+ * it reflowing when the viewport or the content changed, so the worst a class
+ * left behind by a missed animationend can do here is nothing at all. */
+.vv-twin-dossier-body--folding {
+  animation-name: vv-twin-dossier-fold;
+  animation-duration: var(--vv-dossier-leave, 260ms);
+  animation-fill-mode: backwards;
+}
+
+.vv-twin-dossier-body--unfolding {
+  animation-name: vv-twin-dossier-unfold;
+  animation-duration: 420ms;
+  animation-fill-mode: backwards;
+}
+
+.vv-twin-dossier-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 12px;
+  margin: 12px 0 0;
+  padding: 11px 0 0;
+  border-top: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+}
+
+.vv-twin-dossier-stat-label {
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-dossier-stat-value {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--ink, #fbf2df);
+}
+
+/* The venue's own qualifier, e.g. the further height inside the dome. Its
+ * leading separator is DOM text, not a margin here — see RoomDossier.tsx. */
+.vv-twin-dossier-stat-note {
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-dossier-footnote {
+  margin: 11px 0 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-dossier-action {
+  display: inline-flex;
+  align-items: center;
+  margin: 11px 0 0;
+  padding: 8px 14px;
+  border: 1px solid var(--gold, #d7a64b);
+  border-radius: 999px;
+  background: rgba(215, 166, 75, 0.14);
+  color: var(--gold-2, #f0c66b);
+  font-family: inherit;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 180ms ease;
+}
+
+.vv-twin-dossier-action:hover {
+  background: rgba(215, 166, 75, 0.24);
+}
+
+.vv-twin-dossier-action:focus-visible {
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 2px;
+}
+
+/* The walk has entered a named room. 10px of rise rather than the original 6:
+ * the spring's overshoot is a fixed 4% of whatever it travels, so a shorter
+ * distance spends it entirely below a pixel. */
+@keyframes vv-twin-dossier-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The walk has left it. Shorter travel than the arrival and no overshoot — a
+ * departure should read as settled, not as hesitation. */
+@keyframes vv-twin-dossier-leave {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* The fold, both ways. The fallback in each var() is 0px, not `auto`: an
+ * unanimatable keyframe value would make height discrete and jump at the
+ * midpoint, whereas 0px degrades to no visible fold at all — which is what
+ * should happen if a measurement was somehow never taken. */
+@keyframes vv-twin-dossier-unfold {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--vv-dossier-fold-h, 0px);
+    opacity: 1;
+  }
+}
+
+@keyframes vv-twin-dossier-fold {
+  from {
+    height: var(--vv-dossier-fold-h, 0px);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+/* Phone: the right-hand stack and the minimap both move in, so the card takes
+ * the freed width but still stops clear of the control column. */
+@media (max-width: 700px) {
+  .vv-twin-dossier {
+    top: calc(56px + env(safe-area-inset-top));
+    left: calc(12px + env(safe-area-inset-left));
+    /* Phone: the control stack tightens to ~90px at a 12px inset, so the card
+     * may run to 100vw − (12 left + 90 stack + 12 inset + 16 gap). Measured on
+     * a 390px viewport, where the earlier 96px reserve overlapped Enquire. */
+    width: min(320px, calc(100vw - 130px));
+    max-height: calc(100dvh - 230px);
+  }
+
+  .vv-twin-dossier-room {
+    font-size: 19px;
+  }
+}
+
+/* Short viewports (landscape phones) have no room for a stats grid over a live
+ * view; the card keeps its name and scrolls the rest. */
+@media (max-height: 460px) {
+  .vv-twin-dossier {
+    max-height: calc(100dvh - 120px);
+  }
+}
+
+/* — reduced motion: the final state, at once, in every direction —
+ *
+ * Nothing here shortens an animation; the shorthand reset removes them. The
+ * component agrees rather than relying on this: it never enters the departing
+ * state and never sets a fold class when the preference is set, so there is no
+ * held frame and no measured height, only the panel where it ends up. Both
+ * halves are needed — CSS alone would leave the card sitting for 260 ms with
+ * nothing happening, and script alone would still run the arrival. */
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-dossier-card,
+  .vv-twin-dossier-card--leaving,
+  .vv-twin-dossier-body--folding,
+  .vv-twin-dossier-body--unfolding {
+    animation: none;
+  }
+
+  .vv-twin-dossier-toggle,
+  .vv-twin-dossier-action {
+    transition: none;
+  }
+}

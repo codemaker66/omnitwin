@@ -12,7 +12,19 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { Euler, PerspectiveCamera } from "three";
+import {
+  Euler,
+  Mesh,
+  PerspectiveCamera,
+  Raycaster,
+  Vector2,
+  Vector3,
+  type Camera,
+  type Texture,
+  type Intersection,
+  type Object3D,
+  type Plane,
+} from "three";
 import type { TwinManifest, TwinScanNode } from "@omnitwin/types";
 import {
   DOLLHOUSE_DOT_RADIUS_M,
@@ -31,6 +43,14 @@ import {
   markFirstLightSeen,
 } from "./first-light.js";
 import { NavMarkers } from "./NavMarkers.js";
+import {
+  NEIGHBOUR_WARM_SLICE_MS,
+  NEIGHBOUR_WARM_TIMEOUT_MS,
+  planNeighbourWarm,
+  runNeighbourWarmQueue,
+  type IdleDeadlineLike,
+  type WarmCandidate,
+} from "./neighbour-warm.js";
 import { ParallaxStage } from "./ParallaxStage.js";
 import { TravelControls } from "./TravelControls.js";
 import { PanoStage } from "./PanoStage.js";
@@ -38,6 +58,20 @@ import { stepSpring, type SpringState } from "../lib/springs.js";
 import { e57PointToThree, e57QuatToThree } from "./twin-basis.js";
 import { decodeTwinLook, encodeTwinLook, type TwinLook } from "./twin-look.js";
 import { MAX_USHER_HOPS, shortestRoute } from "./travel-route.js";
+import { FloorConstellation } from "./shell/FloorConstellation.js";
+import { QuickActions } from "./shell/QuickActions.js";
+import { RoomDossier } from "./shell/RoomDossier.js";
+import { RoomSelector } from "./shell/RoomSelector.js";
+import {
+  MeasureLayer,
+  type MeasurePoint,
+  type MeasureScreenPoint,
+} from "./measure/MeasureLayer.js";
+import { MEASURE_GROUP_LABEL } from "./measure/measure-copy.js";
+import type { MeasureVec3 } from "./measure/measure-math.js";
+// The measure TRIGGER is painted while MeasureLayer is unmounted, so its
+// stylesheet cannot arrive with the layer. See measure.css's header.
+import "./measure/measure.css";
 import {
   TWIN_DISCLOSURE,
   TWIN_MODE_DOLLHOUSE_LABEL,
@@ -52,7 +86,6 @@ import {
 } from "./twin-copy.js";
 import { prefersReducedMotion } from "./reduced-motion.js";
 import { TwinCoachHint } from "./TwinCoachHint.js";
-import { TwinMinimap } from "./TwinMinimap.js";
 import { TwinViewerControls } from "./TwinViewerControls.js";
 import { useDive, type DiveDirection } from "./useDive.js";
 import { useTwinMode, type TwinMode } from "./useTwinMode.js";
@@ -72,9 +105,45 @@ import { lookStateFromCamera, WalkControls } from "./WalkControls.js";
 // node positions each frame from a ref, never React state.
 //
 // Outside the Canvas live the HUD pieces: the node label, the claim-safe
-// disclosure line, and the TwinMinimap (Task 10) — its view cone follows the
-// camera through YawProbe, a useFrame observer that lifts yaw into React
-// state at most ~10 Hz and only when it moves more than 0.05 rad.
+// disclosure line, the room dossier, the quick-action rail, and — bottom right
+// — one mode-appropriate tool pill.
+//
+// THE MINIMAP IS GONE, and its removal is the point of this pass rather than a
+// side effect. It drew all 149 scan positions as identical cream dots above two
+// buttons reading "Floor 0" and "Floor -1". Three things were wrong with that.
+// The dots are the same mark whatever they stand for, so 149 of them say
+// nothing. It held 149 tab stops. And the storey labels were the SCANNER's
+// vocabulary printed at a wedding customer: manifest floor 0 is the building's
+// first floor (the Grand Hall, the Saloon) and floor −1 is the GROUND floor, the
+// entrance — so a guest standing in the front door was told they were on floor
+// minus one. shell/RoomSelector.tsx replaces it: four validated rooms, grouped
+// by storey and named RELATIONALLY ("On this level", "One level down"), which is
+// true at all 149 viewpoints without claiming a storey nobody scanned.
+//
+// TwinMinimap.tsx itself still sits in the tree, unmounted — its own test file
+// belongs to another lane, so deleting it is not this lane's change to make. It
+// renders nowhere, so no guest is told anything about a floor minus one.
+//
+// YawProbe survives the minimap it was written for: it still mirrors the full
+// camera pose into `liveLookRef` every frame, which is what mints the "stand
+// where I'm standing" share link. What it no longer does is lift yaw into React
+// state — nothing consumed that once the view cone left.
+//
+// shell/ViewpointPlan.tsx IS DELIBERATELY NOT MOUNTED, and this is the record of
+// that decision rather than an oversight to be found later. It is a good
+// component — a plan view drawn off the real E57 poses, storey-filtered, with a
+// view cone. But this HUD already has a PLAN: a top-level segment in the mode
+// switcher that renders the actual building mesh from overhead at full stage
+// size, with orbit, zoom and now the measure tool on it. ViewpointPlan would put
+// a second overhead map on the same screen, at 260px, showing scan positions —
+// which is the dot cloud the customer rejected in the first place, redrawn more
+// carefully. Two controls doing one job is its own defect, and the smaller,
+// less truthful of the two is not the one to keep. The room-level question it
+// might have answered ("what else is there, and can I go") is now the Rooms
+// panel's, answered in words and published figures rather than in dots.
+//
+// If it earns a mount later it belongs INSIDE plan mode as an overlay on the
+// real overhead view, not as a third HUD panel competing with it.
 //
 // Phase 2 (Task 5) adds the mode machine: a segmented control (top-right,
 // only when the bundle carries a mesh) switches walk ⇄ dollhouse ⇄ plan.
@@ -277,11 +346,6 @@ function CameraProbe({
   return null;
 }
 
-/** Minimum yaw movement before the probe reports (radians). */
-const YAW_PROBE_MIN_DELTA_RAD = 0.05;
-/** Report cadence ceiling — ~10 Hz keeps minimap re-renders negligible. */
-const YAW_PROBE_MIN_INTERVAL_MS = 100;
-
 /** Live camera pose for event-time reads (the share link) — a ref, never state. */
 interface LiveLook {
   yawRad: number;
@@ -290,20 +354,17 @@ interface LiveLook {
 }
 
 /**
- * Lifts the camera yaw into React state for the minimap's view cone —
- * throttled to ~10 Hz and gated on a 0.05 rad change so look-drags never
- * flood React with renders. Also mirrors the FULL pose (yaw/pitch/fov) into
- * `lookRef` every frame — a plain ref write, read only at share-click time.
+ * Mirrors the full camera pose (yaw / pitch / fov) into `lookRef` every frame —
+ * a plain ref write, read only at share-click time to mint the exact-view link.
+ *
+ * It USED to also lift yaw into React state, throttled to ~10 Hz and gated on a
+ * 0.05 rad delta, to turn the minimap's view cone. The minimap is gone and
+ * nothing else ever read that value, so the state, the throttle and its two
+ * tuning constants went with it. Keeping a ~10 Hz setState alive for no consumer
+ * would have been a re-render per look-drag paid for nothing.
  */
-function YawProbe({
-  onYaw,
-  lookRef,
-}: {
-  readonly onYaw: (yaw: number) => void;
-  readonly lookRef: MutableRefObject<LiveLook>;
-}): null {
+function YawProbe({ lookRef }: { readonly lookRef: MutableRefObject<LiveLook> }): null {
   const camera = useThree((state) => state.camera);
-  const lastRef = useRef<{ yaw: number; at: number }>({ yaw: 0, at: 0 });
 
   useFrame(() => {
     if (!(camera instanceof PerspectiveCamera)) {
@@ -313,14 +374,259 @@ function YawProbe({
     lookRef.current.yawRad = yaw;
     lookRef.current.pitchRad = pitch;
     lookRef.current.fovDeg = camera.fov;
-    const now = performance.now();
-    const last = lastRef.current;
-    if (
-      Math.abs(yaw - last.yaw) > YAW_PROBE_MIN_DELTA_RAD &&
-      now - last.at >= YAW_PROBE_MIN_INTERVAL_MS
-    ) {
-      lastRef.current = { yaw, at: now };
-      onYaw(yaw);
+  });
+
+  return null;
+}
+
+// -----------------------------------------------------------------------------
+// THE MEASURE PICK — where a click becomes a point in the building.
+//
+// MeasureLayer deliberately does no raycasting: the host owns the camera and the
+// geometry, so the host is the only thing that can turn a click into a world
+// point. This is the host half, and it is the piece that was missing — the layer
+// has been built and tested since August and has never once been on screen.
+//
+// WHERE IT IS ARMED, AND WHY NOT IN WALK MODE. A pano is a sphere painted with a
+// photograph, drawn AROUND the camera. A click on it yields a direction and no
+// depth whatsoever, so two clicks in walk mode would produce an angle dressed up
+// as a distance — the single worst thing a measuring tool can do. The mesh modes
+// put the co-registered building geometry itself on screen, so a click there
+// lands on a real wall at a real distance. The tool is therefore offered in
+// Dollhouse and Plan and is honestly absent in Walk.
+//
+// ParallaxStage does carry the same mesh during walk hops, but it is `visible`
+// only mid-hop and its BatchedMesh culls every instance outside the hop
+// corridor, so it is not a collider anyone could pick against at rest. Mounting
+// a second, hidden copy purely to enable a pick would mean a second 7 MB decode
+// under a different drei cache key. That is the honest limit of this pass.
+// -----------------------------------------------------------------------------
+
+/** The name DollhouseStage gives the basis-conversion group that wraps the real
+ *  geometry. Looked up rather than passed down: the mesh arrives through
+ *  Suspense inside a component this file does not own, so there is no ref to
+ *  thread — and a name lookup that finds nothing is exactly the "no geometry
+ *  yet, take no pick" answer we want. */
+const MEASURE_MESH_ROOT = "twin-mesh-root";
+
+/** How far a pointer may travel between down and up and still count as a pick
+ *  rather than an orbit drag. Orbiting is the primary gesture in these modes, so
+ *  a tool that fired on every mouse-up would make the camera unusable. */
+const MEASURE_DRAG_SLOP_PX = 5;
+
+/** How far a projected point must move, as a fraction of the stage, before the
+ *  overlay is re-rendered. Two points at 60 Hz is a cheap setState, but a
+ *  sub-pixel one is a free one not taken. */
+const MEASURE_PROJECT_EPSILON = 0.0015;
+
+/** A tape drawn on the diagonal, with end caps and two graduations. 13px sits
+ *  level with the 0.72rem uppercase label — the Rooms pill's own pairing, since
+ *  the two share a slot and must read as one control changing job. */
+const ICON_MEASURE: ReactElement = (
+  <svg
+    className="vv-twin-measure-trigger-icon"
+    viewBox="0 0 24 24"
+    width={13}
+    height={13}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    aria-hidden
+  >
+    <path d="M4.5 19.5 19.5 4.5" />
+    <path d="M2.5 17.5 6.5 21.5M17.5 2.5l4 4" />
+    <path d="m8.5 15.5 1.6 1.6M12.5 11.5l1.6 1.6" />
+  </svg>
+);
+
+/** Scratch, module-scope, in the `dollyEuler` idiom — no per-pick allocation. */
+const measureRaycaster = new Raycaster();
+const measurePointer = new Vector2();
+const measureProjection = new Vector3();
+
+/**
+ * Is this hit on a face the cutaway has clipped away?
+ *
+ * Dollhouse mode slices the shell open with clipping planes so the visitor can
+ * see inside. Clipping is a RASTER operation — the raycaster knows nothing about
+ * it — so without this filter the first hit is routinely the roof the visitor
+ * cannot see, and the tool would measure to a surface that is not on screen.
+ *
+ * The planes are read off the hit material rather than recomputed from the
+ * cutaway parameters. A second derivation would be a second thing to keep in
+ * step with dollhouse-cutaway.ts; the material is the ground truth the GPU
+ * itself uses, so this cannot drift from what the visitor sees.
+ */
+function measureHitIsClipped(hit: Intersection): boolean {
+  if (!(hit.object instanceof Mesh)) {
+    return false;
+  }
+  // Read through an explicit shape rather than through `Mesh.material`.
+  // @types/three 0.180 ships one bundled single-line declaration file and the
+  // material property resolves to `any` at this call site, which
+  // no-unsafe-assignment rightly refuses: an `any` here would silently swallow a
+  // renamed `clippingPlanes`, the one property this whole filter reads. Naming
+  // the shape gets the same narrowing with the type written down where a reader
+  // can check it. A material can be one or many — three permits both, and the
+  // dollhouse scene really does carry multi-material primitives.
+  const source: unknown = (hit.object as { readonly material?: unknown }).material;
+  const carriers: readonly unknown[] = Array.isArray(source)
+    ? (source as readonly unknown[])
+    : [source];
+  return carriers.some((carrier) => {
+    const planes = (carrier as { readonly clippingPlanes?: readonly Plane[] | null })
+      .clippingPlanes;
+    if (planes === undefined || planes === null) {
+      return false;
+    }
+    return planes.some((plane) => plane.distanceToPoint(hit.point) < 0);
+  });
+}
+
+/**
+ * The nearest VISIBLE point of the building under normalised device coordinates
+ * (x, y ∈ [−1, 1]), or null when the ray meets nothing pickable — no mesh
+ * mounted yet, or the visitor clicked the sky.
+ *
+ * Exported and free of React so the clip rule can be tested against synthetic
+ * hits without a renderer, which is the only way this branch gets covered:
+ * happy-dom has no WebGL and therefore no real intersections at all.
+ */
+export function measurePickFrom(
+  scene: Object3D,
+  camera: Camera,
+  ndcX: number,
+  ndcY: number,
+): MeasureVec3 | null {
+  const root = scene.getObjectByName(MEASURE_MESH_ROOT);
+  if (root === undefined) {
+    return null;
+  }
+  measurePointer.set(ndcX, ndcY);
+  measureRaycaster.setFromCamera(measurePointer, camera);
+  for (const hit of measureRaycaster.intersectObject(root, true)) {
+    if (!measureHitIsClipped(hit)) {
+      return [hit.point.x, hit.point.y, hit.point.z];
+    }
+  }
+  return null;
+}
+
+/**
+ * Where a world point currently appears on the stage, as a fraction of its
+ * width and height — or null when it is behind the camera, which is the layer's
+ * cue to keep the figures and draw no line.
+ */
+function measureProject(world: MeasureVec3, camera: Camera): MeasureScreenPoint | null {
+  measureProjection.set(world[0], world[1], world[2]).project(camera);
+  if (measureProjection.z > 1) {
+    return null;
+  }
+  return {
+    x: (measureProjection.x + 1) / 2,
+    y: (1 - measureProjection.y) / 2,
+  };
+}
+
+/**
+ * The in-Canvas half of the measure tool: turns clicks into world points, and
+ * keeps the overlay's drawing registered to the camera as it orbits.
+ *
+ * Listens on the canvas element rather than through R3F's own pointer events
+ * because the mesh is mounted by a component this file does not own — there is
+ * no `onClick` to attach to without editing DollhouseStage. Down/up with a slop
+ * threshold, so an orbit drag that happens to end over a wall is not a pick.
+ */
+function MeasurePicker({
+  points,
+  onPick,
+  onProject,
+  pickAtCentreRef,
+}: {
+  readonly points: readonly MeasureVec3[];
+  readonly onPick: (world: MeasureVec3) => void;
+  readonly onProject: (screens: readonly (MeasureScreenPoint | null)[]) => void;
+  /** Filled with the centre-pick action while mounted, so the DOM panel's
+   *  keyboard-reachable button can reach into the scene without a second
+   *  raycaster living outside the Canvas. */
+  readonly pickAtCentreRef: MutableRefObject<(() => void) | null>;
+}): null {
+  const camera = useThree((state) => state.camera);
+  const scene = useThree((state) => state.scene);
+  const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
+  const lastProjected = useRef<readonly (MeasureScreenPoint | null)[]>([]);
+
+  useEffect(() => {
+    const element = gl.domElement;
+    const down = { x: 0, y: 0 };
+
+    const onPointerDown = (event: PointerEvent): void => {
+      down.x = event.clientX;
+      down.y = event.clientY;
+    };
+    const onPointerUp = (event: PointerEvent): void => {
+      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > MEASURE_DRAG_SLOP_PX) {
+        return; // an orbit drag, not a pick
+      }
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        return;
+      }
+      const world = measurePickFrom(
+        scene,
+        camera,
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      if (world !== null) {
+        onPick(world);
+        // The demand loop is asleep at rest, and the projection below runs in a
+        // frame. Without this the first point has no dot until the next orbit.
+        invalidate();
+      }
+    };
+
+    element.addEventListener("pointerdown", onPointerDown);
+    element.addEventListener("pointerup", onPointerUp);
+    return () => {
+      element.removeEventListener("pointerdown", onPointerDown);
+      element.removeEventListener("pointerup", onPointerUp);
+    };
+  }, [gl, scene, camera, onPick, invalidate]);
+
+  useEffect(() => {
+    pickAtCentreRef.current = (): void => {
+      const world = measurePickFrom(scene, camera, 0, 0);
+      if (world !== null) {
+        onPick(world);
+        invalidate();
+      }
+    };
+    return () => {
+      pickAtCentreRef.current = null;
+    };
+  }, [pickAtCentreRef, scene, camera, onPick, invalidate]);
+
+  useFrame(() => {
+    const next = points.map((world) => measureProject(world, camera));
+    const previous = lastProjected.current;
+    const moved =
+      next.length !== previous.length ||
+      next.some((screen, index) => {
+        const was = previous[index] ?? null;
+        if (screen === null || was === null) {
+          return screen !== was;
+        }
+        return (
+          Math.abs(screen.x - was.x) > MEASURE_PROJECT_EPSILON ||
+          Math.abs(screen.y - was.y) > MEASURE_PROJECT_EPSILON
+        );
+      });
+    if (moved) {
+      lastProjected.current = next;
+      onProject(next);
     }
   });
 
@@ -438,50 +744,97 @@ function InitialLookRig({ look }: { readonly look: TwinLook | null }): null {
   return null;
 }
 
+/** Does this engine schedule real idle work? Decided once, so a slice and its
+ *  cancellation can never disagree about which handle space they are in. */
+const HAS_IDLE_CALLBACK =
+  typeof requestIdleCallback === "function" && typeof cancelIdleCallback === "function";
+/** Slice cadence where requestIdleCallback is missing (Safari < 17, happy-dom). */
+const WARM_FALLBACK_SLICE_MS = 350;
+
+/** Ask for one warm slice. The fallback grants a nominal budget so the queue's
+ *  deadline gate stays meaningful on engines with no real IdleDeadline. */
+function requestWarmSlice(run: (deadline: IdleDeadlineLike) => void): number {
+  if (HAS_IDLE_CALLBACK) {
+    return requestIdleCallback(run, { timeout: NEIGHBOUR_WARM_TIMEOUT_MS });
+  }
+  return window.setTimeout(() => {
+    run({ didTimeout: false, timeRemaining: () => NEIGHBOUR_WARM_SLICE_MS });
+  }, WARM_FALLBACK_SLICE_MS);
+}
+
+function cancelWarmSlice(handle: number): void {
+  if (HAS_IDLE_CALLBACK) {
+    cancelIdleCallback(handle);
+    return;
+  }
+  window.clearTimeout(handle);
+}
+
 /**
- * At rest, decode AND GPU-upload the neighbours' base panos (shared texture
- * registry), so the NEXT hop starts sharp on both sides — the walk never
- * shows a loading photograph. Runs on idle after each arrival; the previous
- * neighbour set's registry refs are released as the walk moves on.
+ * At rest, decode AND GPU-upload the nearest neighbours' base panos (shared
+ * texture registry), so the NEXT hop starts sharp on both sides — the walk
+ * never shows a loading photograph.
+ *
+ * The queue policy — which neighbours, in what order, how many — lives in
+ * neighbour-warm.ts, where the cap and the deadline gate are unit-tested
+ * without a GPU. This component is only the wiring: it turns nav-graph
+ * adjacency into ranked candidates, and turns "acquire" and "upload" into the
+ * two real operations. Crucially the initTexture upload is NOT run in the
+ * acquire's promise continuation (which lands long after the idle window has
+ * closed) but stashed and performed in its own later slice, behind a live
+ * deadline check. The previous neighbour set's registry refs are released as
+ * the walk moves on.
  */
 function NeighborWarmer({
   neighbors,
+  currentNode,
+  nodesById,
   assetBase,
 }: {
   readonly neighbors: readonly string[];
+  readonly currentNode: TwinScanNode;
+  readonly nodesById: ReadonlyMap<string, TwinScanNode>;
   readonly assetBase: string;
 }): null {
   const gl = useThree((state) => state.gl);
-  useEffect(() => {
-    let disposed = false;
-    const releases: (() => void)[] = [];
-    const warm = (): void => {
-      for (const id of neighbors) {
-        void warmEquirectBase(id, assetBase, (texture) => {
-          gl.initTexture(texture);
-        }).then((release) => {
-          if (disposed) {
+  const queue = useMemo(() => {
+    const candidates: WarmCandidate[] = [];
+    for (const id of neighbors) {
+      const node = nodesById.get(id);
+      if (node !== undefined) {
+        candidates.push({ id, position: e57PointToThree(node.pose.t) });
+      }
+    }
+    return planNeighbourWarm(e57PointToThree(currentNode.pose.t), candidates);
+  }, [neighbors, nodesById, currentNode]);
+
+  useEffect(
+    () =>
+      runNeighbourWarmQueue<Texture>({
+        ids: queue,
+        acquire: async (id) => {
+          // warmEquirectBase hands the texture to its callback synchronously
+          // once decoded; stash it rather than uploading, so the ~33.5 MB
+          // initTexture can be spent inside a slice that has time for it.
+          const slot: { texture: Texture | null } = { texture: null };
+          const release = await warmEquirectBase(id, assetBase, (texture) => {
+            slot.texture = texture;
+          });
+          const texture = slot.texture;
+          if (texture === null) {
             release();
-          } else {
-            releases.push(release);
+            return null;
           }
-        });
-      }
-    };
-    const idle = typeof requestIdleCallback === "function";
-    const handle = idle ? requestIdleCallback(warm) : window.setTimeout(warm, 350);
-    return () => {
-      disposed = true;
-      if (idle && typeof cancelIdleCallback === "function") {
-        cancelIdleCallback(handle);
-      } else {
-        window.clearTimeout(handle);
-      }
-      for (const release of releases) {
-        release();
-      }
-    };
-  }, [neighbors, assetBase, gl]);
+          return { texture, release };
+        },
+        upload: (texture) => {
+          gl.initTexture(texture);
+        },
+        requestSlice: requestWarmSlice,
+        cancelSlice: cancelWarmSlice,
+      }),
+    [queue, assetBase, gl],
+  );
   return null;
 }
 
@@ -742,7 +1095,6 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const walk = useTwinWalk(manifest);
   const hasMesh = manifest.mesh !== undefined;
   const { mode, setMode } = useTwinMode(hasMesh);
-  const [yaw, setYaw] = useState(0);
   // The element the fullscreen button takes fullscreen — the viewer root, so
   // the canvas AND the HUD stay inside the fullscreen surface.
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -1116,6 +1468,98 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     return url.toString();
   }, [mode, walk.currentId]);
 
+  // The Usher, as one function rather than two copies. The minimap and the
+  // quick-action rail must behave identically — a room reached by naming it
+  // should glide exactly as a room reached by pointing at it — and the fallback
+  // ladder below is subtle enough that two hand-maintained versions would drift.
+  const usherTo = useCallback(
+    (id: string): void => {
+      // Reduced motion keeps the instant teleport: a chain of instant swaps
+      // would strobe, which is the very thing the preference asks us not to do.
+      if (prefersReducedMotion()) {
+        walk.hopTo(id, { teleport: true });
+        return;
+      }
+      // A second pick mid-ride short-circuits to that target rather than
+      // queueing behind the journey the visitor has just changed their mind
+      // about.
+      if (usherQueue.length > 0) {
+        setUsherQueue([]);
+        walk.hopTo(id, { teleport: true });
+        return;
+      }
+      const route = shortestRoute(walk.currentId, id, manifest.edges);
+      // Unreachable or marathon routes teleport instead of trapping the visitor
+      // in a two-minute walk they cannot cancel.
+      if (route === null || route.length === 0 || route.length > MAX_USHER_HOPS) {
+        walk.hopTo(id, { teleport: true });
+        return;
+      }
+      setUsherQueue(route);
+    },
+    [manifest.edges, usherQueue.length, walk],
+  );
+
+  // — the measure tool.
+  //
+  // The rooms the rail used to offer as "Walk to <room>" chips now live in the
+  // Rooms panel, which states each room's published figures beside its name and
+  // groups them by storey. Passing them BOTH would give a screen-reader user two
+  // identically named controls going to the same place, and it is also what
+  // makes the left column overflow: the slot model in RoomSelector.test.tsx
+  // proves the four-chip rail rises through its own neighbours. So the rail
+  // keeps only the capability the panel does not have — the plan view.
+  const [measuring, setMeasuring] = useState(false);
+  const [measurePicks, setMeasurePicks] = useState<readonly MeasureVec3[]>([]);
+  const [measureScreens, setMeasureScreens] = useState<
+    readonly (MeasureScreenPoint | null)[]
+  >([]);
+  const measurePickAtCentreRef = useRef<(() => void) | null>(null);
+  // Armed only where a click can land on real geometry. See the picker's header.
+  const measureArmed = measuring && hasMesh && mode !== "walk";
+
+  const onMeasurePick = useCallback((world: MeasureVec3): void => {
+    // A third pick starts a fresh measurement rather than being ignored. A tool
+    // that goes inert after two points makes the visitor hunt for Clear before
+    // they can measure the next thing, which is the whole interaction.
+    setMeasurePicks((was) => (was.length >= 2 ? [world] : [...was, world]));
+  }, []);
+
+  const clearMeasure = useCallback((): void => {
+    setMeasurePicks([]);
+    setMeasureScreens([]);
+  }, []);
+
+  const dismissMeasure = useCallback((): void => {
+    setMeasuring(false);
+    setMeasurePicks([]);
+    setMeasureScreens([]);
+  }, []);
+
+  // Leaving the mesh modes puts the tool away. Left armed, its Escape listener
+  // would outlive the geometry it measures and swallow Escape for the enquiry
+  // modal and the fullscreen control while doing nothing visible.
+  useEffect(() => {
+    if (mode === "walk") {
+      setMeasuring(false);
+      setMeasurePicks([]);
+      setMeasureScreens([]);
+    }
+  }, [mode]);
+
+  const measurePoints = useMemo<readonly MeasurePoint[]>(
+    () =>
+      measurePicks.map((world, index) => ({
+        world,
+        screen: measureScreens[index] ?? null,
+      })),
+    [measurePicks, measureScreens],
+  );
+
+  const onPickAtCentre = useCallback((): void => {
+    measurePickAtCentreRef.current?.();
+  }, []);
+
   if (currentNode === undefined) {
     // Unreachable in practice: the walk only yields ids from this manifest.
     return null;
@@ -1204,7 +1648,12 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 optically-perfect photograph); pixel-identical at both hop
                 endpoints by construction, so there is no seam to hide. */}
             {parallaxReady && (
-              <NeighborWarmer neighbors={walk.neighbors} assetBase={assetBase} />
+              <NeighborWarmer
+                neighbors={walk.neighbors}
+                currentNode={currentNode}
+                nodesById={nodesById}
+                assetBase={assetBase}
+              />
             )}
             {parallaxReady && meshUrl !== null && (
               <Suspense fallback={null}>
@@ -1217,6 +1666,19 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 />
               </Suspense>
             )}
+            {/* The building's own navigation graph, drawn on the floor it
+                describes. Mounted BEFORE the nav rings so the rings paint over
+                it: the constellation is the map, the rings are the affordance,
+                and the map must never be the brighter of the two. Hidden during
+                a hop, like the rings — a graph sliding under a moving camera
+                reads as an artefact rather than as ground. */}
+            {!hopping && (
+              <FloorConstellation
+                nodes={manifest.nodes}
+                edges={manifest.edges}
+                currentId={walk.currentId}
+              />
+            )}
             {!hopping && (
               <NavMarkers
                 neighbors={walk.neighbors}
@@ -1227,7 +1689,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 }}
               />
             )}
-            <YawProbe onYaw={setYaw} lookRef={liveLookRef} />
+            <YawProbe lookRef={liveLookRef} />
           </>
         ) : (
           meshUrl !== null && (
@@ -1250,6 +1712,12 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                         }
                   }
                   onDive={(id) => {
+                    // A dot press while measuring would fly the visitor into
+                    // the walk mid-measurement, taking the geometry the picks
+                    // were made against off stage with it.
+                    if (measureArmed) {
+                      return;
+                    }
                     dive.dive(id, {
                       position: [...orbitPosRef.current],
                       direction: "down",
@@ -1259,6 +1727,14 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
               </Suspense>
               <MeshOrbitRig mode={mode} extent={extent} enabled={!dive.diving} />
               <CameraProbe position={orbitPosRef} />
+              {measureArmed && (
+                <MeasurePicker
+                  points={measurePicks}
+                  onPick={onMeasurePick}
+                  onProject={setMeasureScreens}
+                  pickAtCentreRef={measurePickAtCentreRef}
+                />
+              )}
               {dive.diving && <DiveCamera flight={flightRef} />}
               {/* The dive's crossfade: descending, the target pano closes in
                   late (the camera flies through the real mesh interior);
@@ -1368,36 +1844,74 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         viewerRef={viewerRef}
         shareUrl={shareUrl}
       />
+      {/* The first place the twin is allowed to name a room. It renders only at
+          the handful of viewpoints whose room a human validated against
+          ground-truth photography (shell/twin-rooms.ts) and is silent
+          everywhere else — the manifest's roomSlug is null on every node, and a
+          guest told they are in the Grand Hall while looking at the Saloon has
+          been lied to about the most basic claim the product makes. */}
+      {mode === "walk" && (
+        <RoomDossier currentId={walk.currentId} venueName={manifest.name} />
+      )}
+
+      {/* Offered next moves — now ONE, and the subtraction is deliberate. The
+          rail used to carry a "Walk to <room>" chip per validated room; those
+          moved into the Rooms panel, where each one arrives with the room's
+          published figures beside it and grouped onto its storey. Leaving them
+          here as well would put two identically named controls on screen going
+          to the same place, and would keep the left column overflowing at
+          landscape-phone heights. The plan view is the one capability the panel
+          does not have, so it is the one chip that stays. */}
+      {mode === "walk" && (
+        <QuickActions
+          onSeeThePlan={
+            hasMesh
+              ? () => {
+                  setWarmMesh(true);
+                  setMode("plan");
+                }
+              : undefined
+          }
+          onWalkTo={usherTo}
+        />
+      )}
+
       <p className="vv-twin-disclosure vv-twin-viewer-disclosure">{TWIN_DISCLOSURE}</p>
       {/* The coach waits in the wings until the overture has played. */}
       {mode === "walk" && firstLight === "done" && <TwinCoachHint />}
+
+      {/* — the bottom-right slot: exactly one occupant, chosen by mode —
+          Rooms while walking, the tape once there is geometry to lay it on.
+          The two never coexist because the mode machine admits one mode, which
+          is a stronger disjointness guarantee than any arithmetic. */}
       {mode === "walk" && (
-        <TwinMinimap
+        <RoomSelector
           nodes={manifest.nodes}
           currentId={walk.currentId}
-          yaw={yaw}
-          onSelect={(id) => {
-            // The Usher: glide the real corridor route to the picked node.
-            // Reduced motion keeps the instant teleport (a chain of instant
-            // swaps would strobe); a second pick mid-ride short-circuits
-            // straight to that target; unreachable or marathon routes fall
-            // back to the teleport rather than trap the visitor.
-            if (prefersReducedMotion()) {
-              walk.hopTo(id, { teleport: true });
-              return;
-            }
-            if (usherQueue.length > 0) {
-              setUsherQueue([]);
-              walk.hopTo(id, { teleport: true });
-              return;
-            }
-            const route = shortestRoute(walk.currentId, id, manifest.edges);
-            if (route === null || route.length === 0 || route.length > MAX_USHER_HOPS) {
-              walk.hopTo(id, { teleport: true });
-              return;
-            }
-            setUsherQueue(route);
+          // The Usher, not a teleport: a room reached by naming it glides the
+          // real corridor route, exactly like a room reached by pointing at it.
+          onWalkTo={usherTo}
+        />
+      )}
+      {hasMesh && mode !== "walk" && !measuring && (
+        <button
+          type="button"
+          className="vv-twin-measure-trigger"
+          onClick={() => {
+            setMeasuring(true);
           }}
+          data-testid="twin-measure-trigger"
+        >
+          {ICON_MEASURE}
+          <span className="vv-twin-measure-trigger-label">{MEASURE_GROUP_LABEL}</span>
+        </button>
+      )}
+      {measureArmed && (
+        <MeasureLayer
+          points={measurePoints}
+          onDismiss={dismissMeasure}
+          onClear={clearMeasure}
+          onPickAtCentre={onPickAtCentre}
         />
       )}
     </div>
