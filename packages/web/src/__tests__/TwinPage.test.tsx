@@ -225,12 +225,16 @@ describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
     expect(screen.queryByRole("radiogroup", { name: TWIN_MODE_GROUP_LABEL })).toBeNull();
   });
 
-  it("switching to Dollhouse checks the segment and hides the walk minimap", async () => {
+  it("switching to Dollhouse checks the segment and hides the walk-only HUD", async () => {
     fetchMock.mockResolvedValue(jsonResponse(TWIN_FIXTURE_MANIFEST));
     mount();
 
     await screen.findByTestId("twin-stage");
-    expect(screen.getByRole("listbox", { name: "Scan positions" })).toBeTruthy();
+    // The scan-position listbox was the dot-cloud minimap, removed when the
+    // room selector replaced it. The quick-action rail is the walk-only HUD
+    // this test now watches: same behaviour under test (walk-only chrome
+    // appears in walk and is gone in a mesh mode), a control that still ships.
+    expect(screen.getByTestId("twin-quick-actions")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("radio", { name: TWIN_MODE_DOLLHOUSE_LABEL }));
     await waitFor(() => {
@@ -240,7 +244,7 @@ describe("TwinPage — view mode control (Phase 2, Task 5)", () => {
           .getAttribute("aria-checked"),
       ).toBe("true");
     });
-    expect(screen.queryByRole("listbox", { name: "Scan positions" })).toBeNull();
+    expect(screen.queryByTestId("twin-quick-actions")).toBeNull();
   });
 });
 

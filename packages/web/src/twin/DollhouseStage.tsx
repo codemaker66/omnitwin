@@ -31,6 +31,7 @@ import {
   setInertCutawayPlane,
   updateVerticalCutawayPlane,
 } from "./dollhouse-cutaway.js";
+import { pruneDollhouseShell } from "./dollhouse-shell.js";
 
 // -----------------------------------------------------------------------------
 // DollhouseStage — the orbitable mesh of the hall with posed node dots
@@ -123,12 +124,20 @@ interface DollhouseMeshProps {
  */
 function DollhouseMesh({ meshUrl, cutawayPlanes }: DollhouseMeshProps): ReactElement {
   const gltf = useGLTF(meshUrl, true, true, configureDollhouseLoader);
+  // The capture tore where it looked through glass; those shreds are what made
+  // the window bays read as broken from outside. Prune them off the cached
+  // scene once, before anything clones it — geometry is shared by reference, so
+  // the cutaway clone and every later mount inherit the repair. Idempotent.
+  const shellScene = useMemo(() => {
+    pruneDollhouseShell(gltf.scene);
+    return gltf.scene;
+  }, [gltf.scene]);
   const preparedScene = useMemo(
     () =>
       cutawayPlanes === null
-        ? { scene: gltf.scene, materials: [] }
-        : cloneSceneWithCutawayPlanes(gltf.scene, cutawayPlanes),
-    [gltf.scene, cutawayPlanes],
+        ? { scene: shellScene, materials: [] }
+        : cloneSceneWithCutawayPlanes(shellScene, cutawayPlanes),
+    [shellScene, cutawayPlanes],
   );
   useEffect(
     () => () => {

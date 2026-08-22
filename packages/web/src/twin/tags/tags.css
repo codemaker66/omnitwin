@@ -1,0 +1,422 @@
+/* -----------------------------------------------------------------------------
+ * tags.css — chrome and placement for the /tour room notes.
+ *
+ * Component-adjacent, matching quick-actions.css, room-dossier.css and
+ * measure.css, so this lands without editing twin.css while another lane has
+ * that file open. Palette tokens are declared on `.vv-twin` and inherit, so
+ * every var() here is a read, never a redeclaration; the fallbacks exist for a
+ * fixture rendered outside `.vv-twin`.
+ *
+ * PLACEMENT IS LOAD-BEARING, not decoration. Every HUD element is
+ * position:absolute inside `.vv-twin-viewer`, and the only in-flow sibling is
+ * R3F's canvas wrapper at 100% height — so an unpositioned layer is laid out a
+ * full viewport BELOW the view and then clipped away by
+ * `.vv-twin-stage { overflow: hidden }`. Without these rules the notes are not
+ * merely unstyled, they are invisible while remaining in the tab order. That
+ * exact bug has shipped here twice.
+ *
+ * THE SLOT — AND WHY THIS LAYER'S ANSWER IS DIFFERENT FROM EVERY OTHER PANEL'S.
+ * A note is not chrome. It has no slot, because its position is a fact about the
+ * building: a pin belongs over the thing it names, wherever that lands. So this
+ * layer does not claim a corner. Instead:
+ *
+ *   PINS are dropped when they would collide. tag-model.ts holds the measured
+ *   HUD rects and returns "under-hud" for any pin that lands on one; the
+ *   component never renders those. Nudging was rejected — a pin moved aside is
+ *   a note pointing at the wrong part of the room.
+ *
+ *   THE CARD is clamped into `tagCardClearBox()`, a rectangle proven disjoint
+ *   from every measured HUD rect at 1440×900, 390×844 and 844×390 by
+ *   tag-model.test.ts. Its left/top are written inline by the component from
+ *   that same function, which is why there is no per-breakpoint card position
+ *   in this file: two sources for one number is how the last panel ended up
+ *   over Share and Fullscreen.
+ *
+ * The layer sits at z-index 5 — above every HUD chip (max z4, the coach pill)
+ * and below the enquiry modal (z20), which must still cover everything.
+ *
+ * MOTION. The card's entrance is the house spring, not a bezier. The curve and
+ * its derivation live in room-dossier.css's motion header (m·y" + c·y' + k·y = k
+ * with k = 440, c = 30, m = 1 → ζ = 0.7151, 4.00% overshoot, settled by 420 ms);
+ * it is restated here as the same linear() sample rather than re-derived, and
+ * rather than imported through a custom property — an unsupported value reached
+ * through var() is invalid at computed-value time, which discards the whole
+ * declaration and lands on `ease`, i.e. worse than the thing it was improving.
+ * Each timing rule is written TWICE, plain curve first: a browser that does not
+ * understand linear() drops the second declaration and keeps the house --settle.
+ * -------------------------------------------------------------------------- */
+
+.vv-twin-tags {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  /* The frame is a click-through hole: click-anywhere travel is the primary
+   * movement mechanic, so only the pins and the card may take the pointer. An
+   * unstyled block here would silently disable walking across the whole view. */
+  pointer-events: none;
+}
+
+/* — the pin — */
+
+/*
+ * The hit target is a CONSTANT 44px and never scales. Only the disc inside it
+ * does. Those two requirements were in direct conflict while one number served
+ * both: a pin honest enough to shrink with distance became impossible to press,
+ * and a pin big enough to press could not shrink. Separating them is what lets
+ * tag-model's scale floor sit as low as 0.42 without costing anyone a tap.
+ */
+.vv-twin-tag-pin {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  /* The anchor is the pin's CENTRE — the model supplies a point, not a corner,
+   * and a top-left anchor would drift the pin off its subject as it scaled. */
+  transform: translate(-50%, -50%);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  pointer-events: auto;
+  /* Set inline by the component from the model's grazing fade. */
+  opacity: var(--vv-tag-opacity, 1);
+  transition: opacity 200ms ease;
+}
+
+/* The visible body of the pin. Scale rides here so the hit target above stays
+ * put. `will-change` is deliberately absent: there may be a dozen of these over
+ * a live WebGL canvas, and a dozen promoted layers costs more than the transform
+ * it would have saved. */
+.vv-twin-tag-disc {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  /* A BRIGHT gold hairline, not the quiet --rule the panels use. Rendered on
+   * the real capture at 1440×900 the panel treatment (0.28 alpha over a near
+   * black fill) disappeared into the Grand Hall's mahogany wainscoting — two
+   * pins were on screen and read as smudges in the woodgrain. Panel chrome sits
+   * on its own dark card and can afford to whisper; a pin sits directly on the
+   * photograph and has to survive whatever is behind it. */
+  border: 1px solid rgba(240, 198, 107, 0.55);
+  border-radius: 999px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--gold-2, #f0c66b);
+  /* Three shadows doing three jobs: a drop for lift, a dark casing so the gold
+   * edge survives a BRIGHT background (the entrance parquet, where the
+   * corrected sRGB panos are far brighter than this HUD was first tuned to),
+   * and an outward candle glow so it also survives a DARK one. The casing and
+   * the glow are the same map-label trick the disclosure and the measure line
+   * use, in both directions. */
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.6),
+    0 0 0 3px rgba(3, 7, 7, 0.35),
+    0 0 14px 2px rgba(215, 166, 75, 0.3);
+  transform: scale(var(--vv-tag-scale, 1));
+  transition:
+    transform 180ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease;
+}
+
+/* A slow, low-amplitude halo — the one thing on this layer that moves on its
+ * own. It is what makes a pin read as placed in the room rather than printed on
+ * the lens, and it is the reason a guest notices the notes exist at all. Kept
+ * to a 4s cycle and a narrow opacity range because a dozen bright pulses over a
+ * photograph of a room is a fairground, not a venue. */
+.vv-twin-tag-halo {
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  border: 1px solid var(--gold, #d7a64b);
+  opacity: 0.34;
+  pointer-events: none;
+  animation: vv-twin-tag-breathe 4s ease-in-out infinite;
+}
+
+.vv-twin-tag-glyph {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.vv-twin-tag-pin:hover .vv-twin-tag-disc {
+  /* Grows from whatever distance-scale it is already at, rather than jumping to
+   * a fixed size — a pin across the room must not become a near pin on hover. */
+  transform: scale(calc(var(--vv-tag-scale, 1) * 1.12));
+  border-color: var(--gold, #d7a64b);
+  background: rgba(215, 166, 75, 0.2);
+}
+
+/* The open note's pin. There is no connector line to the card — the card is
+ * clamped into its clear box and may end up well away from its pin, so a
+ * connector would be free to cross the very chrome this layer is careful not to
+ * touch. The filled pin carries the association instead. */
+.vv-twin-tag-pin--open .vv-twin-tag-disc {
+  border-color: var(--gold, #d7a64b);
+  background: var(--gold, #d7a64b);
+  color: var(--black-2, #07100f);
+}
+
+.vv-twin-tag-pin--open .vv-twin-tag-halo {
+  opacity: 0.5;
+  animation: none;
+}
+
+/* No :focus-visible rule here on purpose. twin.css gives every control inside
+ * `.vv-twin` the candle-glow halo, and a rule of ours would tie it on
+ * specificity and be settled by stylesheet load order — a coin-flip between two
+ * accessible outcomes is still a coin flip. The chip rail and the measure panel
+ * both make the same choice; the halo is the house treatment. */
+
+/* — the card — */
+
+.vv-twin-tag-card {
+  position: absolute;
+  /* left/top/width are written INLINE by the component from
+   * tagCardPosition(), the same function the disjointness test asserts against.
+   * Nothing in this file may set them: a second source for a position is how a
+   * panel ends up over Share and Fullscreen. */
+  pointer-events: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  /* Keeps a flick inside the card from chaining to the page behind it, which
+   * over a drag-to-look canvas reads as the view lurching. */
+  overscroll-behavior: contain;
+  padding: 13px 15px 12px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 10px;
+  background: rgba(7, 16, 15, 0.82);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation-name: vv-twin-tag-card-in;
+  animation-duration: 420ms;
+  animation-fill-mode: both;
+  animation-timing-function: var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+  animation-timing-function: linear(
+    0, 0.0564, 0.1875, 0.3494, 0.5125, 0.6596, 0.7819, 0.8768, 0.9458, 0.9922,
+    1.0204, 1.035, 1.04, 1.0388, 1.0341, 1.0278, 1.0212, 1.015, 1.0099, 1.0058,
+    1.0028, 1.0007, 0.9994, 0.9987, 1
+  );
+}
+
+.vv-twin-tag-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.vv-twin-tag-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3, #b9aa8b);
+}
+
+/* The example marker. It is a hairline pill rather than a quiet word because it
+ * is the one thing standing between placeholder prose and a guest reading it as
+ * venue fact — see tag-copy.ts. It must survive a glance. */
+.vv-twin-tag-badge {
+  padding: 2px 7px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  color: var(--gold-2, #f0c66b);
+  letter-spacing: 0.09em;
+}
+
+.vv-twin-tag-close {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2, #e7d8bb);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease;
+}
+
+.vv-twin-tag-close:hover {
+  border-color: var(--gold, #d7a64b);
+  color: var(--gold-2, #f0c66b);
+}
+
+/* The title takes the display face, matching the room dossier's room name —
+ * the two are the same kind of thing (the name of what you are looking at) and
+ * should not wear two faces on one screen. */
+.vv-twin-tag-title {
+  margin: 7px 0 0;
+  font-family: var(--display, "Newsreader", "Times New Roman", serif);
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.005em;
+  color: var(--ink, #fbf2df);
+}
+
+.vv-twin-tag-body {
+  margin: 7px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2, #e7d8bb);
+}
+
+.vv-twin-tag-media {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 11px 0 0;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 7px;
+}
+
+.vv-twin-tag-link {
+  display: inline-block;
+  margin: 10px 0 0;
+  color: var(--gold-2, #f0c66b);
+  font-size: 12px;
+  text-underline-offset: 3px;
+}
+
+/* The example disclosure. Separated by a rule and set in the quiet ink, because
+ * it is a caveat about the text above it, not a second paragraph of it. */
+.vv-twin-tag-disclosure {
+  margin: 11px 0 0;
+  padding: 9px 0 0;
+  border-top: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink-3, #b9aa8b);
+}
+
+.vv-twin-tag-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 11px 0 0;
+}
+
+.vv-twin-tag-button {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 7px 13px;
+  border: 1px solid var(--gold, #d7a64b);
+  border-radius: 999px;
+  background: rgba(215, 166, 75, 0.14);
+  color: var(--gold-2, #f0c66b);
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  transition: background 180ms ease;
+}
+
+.vv-twin-tag-button:hover {
+  background: rgba(215, 166, 75, 0.24);
+}
+
+/* — motion — */
+
+/* The card arrives from just under its pin, which is where the press came from.
+ * 10px of rise, not 6: the spring's overshoot is a fixed 4% of whatever it
+ * travels, so a shorter distance spends it entirely below a pixel. */
+@keyframes vv-twin-tag-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes vv-twin-tag-breathe {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.08);
+  }
+}
+
+/* Phone: the clear box is a full-width band (see tag-model.ts), so the card is
+ * allowed to be shorter and the pins a touch larger — a 28px disc at arm's
+ * length on a phone is smaller in angular terms than the same disc on a
+ * desktop monitor. */
+@media (max-width: 700px) {
+  .vv-twin-tag-card {
+    max-height: 260px;
+  }
+
+  .vv-twin-tag-title {
+    font-size: 18px;
+  }
+}
+
+/* Short viewports (landscape phones), where the clear box is only ~219px tall.
+ * The card is capped and SCROLLS rather than dropping anything, exactly as
+ * measure.css refuses to hide its confidence note.
+ *
+ * WHAT IS AND IS NOT GUARANTEED HERE — verified on the real capture at 844×390,
+ * where an earlier draft of this comment overclaimed. At this height a note with
+ * a full body does NOT fit, so the example DISCLOSURE SENTENCE sits below the
+ * fold and takes a scroll to read. What stays visible without scrolling is the
+ * EXAMPLE BADGE, which is in the card's header, above the title, and therefore
+ * on screen from the moment the card opens. That split is the actual contract:
+ * the badge is the marker and is always seen; the sentence is its explanation
+ * and is always reachable. Anyone tightening this further must keep the badge
+ * above the fold — it is the only thing distinguishing placeholder prose from
+ * something the venue said. */
+@media (max-height: 460px) {
+  .vv-twin-tag-card {
+    max-height: 210px;
+  }
+}
+
+/* — reduced motion: the final state, at once, in every direction —
+ *
+ * Nothing here shortens an animation; the shorthand reset removes them. The
+ * breathing halo stops at its resting opacity rather than mid-cycle, because
+ * `animation: none` reverts to the value on the base rule, not to the frame it
+ * happened to be showing. The component agrees rather than relying on this
+ * alone — it renders the card in its final state with no entrance class when
+ * the preference is set — so there is no held frame either way. */
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-tag-card,
+  .vv-twin-tag-halo {
+    animation: none;
+  }
+
+  .vv-twin-tag-pin,
+  .vv-twin-tag-disc,
+  .vv-twin-tag-close,
+  .vv-twin-tag-button {
+    transition: none;
+  }
+}

@@ -1,0 +1,294 @@
+/* -----------------------------------------------------------------------------
+ * viewpoint-plan.css — chrome and placement for the /tour viewpoint plan.
+ *
+ * Component-adjacent, matching quick-actions.css and room-dossier.css, so this
+ * lands without editing twin.css while other lanes have that file open. Palette
+ * tokens are declared on `.vv-twin` and inherit, so every var() here is a read,
+ * never a redeclaration; the fallbacks exist for a fixture rendered outside
+ * `.vv-twin`.
+ *
+ * PLACEMENT IS LOAD-BEARING, not decoration. Every HUD sibling is
+ * position:absolute inside `.vv-twin-viewer`, and the only in-flow sibling is
+ * R3F's canvas wrapper at 100% height — so an unpositioned panel is laid out a
+ * full viewport BELOW the view and then clipped away by
+ * `.vv-twin-stage { overflow: hidden }`. Without the rules below the plan is not
+ * merely unstyled, it is invisible while remaining in the tab order. That exact
+ * bug shipped once already.
+ *
+ * THE SLOT IS PROVEN, NOT CHOSEN BY EYE. An earlier revision of this file took
+ * `top: 150px; right: 18px` and laid the panel straight over `.vv-twin-controls`
+ * — Enquire, Share and Fullscreen, three shipped controls, silently disabled. A
+ * panel that breaks working controls is worse than no panel, and no unit test
+ * could see it because happy-dom lays nothing out. So every number below is
+ * declared once in `PLAN_SLOT` (ViewpointPlan.tsx) and asserted against this
+ * file by __tests__/ViewpointPlan.test.tsx, which also enumerates every other
+ * HUD rectangle and proves this one is disjoint from all of them.
+ *
+ * THE RIGHT COLUMN, from the top: mode (top 18, h 34), Surface (top 62, h 30),
+ * the utility rail (top 106, h 131, so it ends at 237), then a gap, then the
+ * minimap anchored to the bottom (inset 18, worst-case height 295, so its top
+ * is 100dvh − 313). This panel takes the gap: top 250, with a floor reserve of
+ * 325 that keeps it 12px clear of the minimap on the shortest viewport it
+ * renders at. Width 222px is the minimap's own outer width, so the right-hand
+ * column reads as one column rather than two ragged ones.
+ *
+ * IT DOES NOT RENDER ON A PHONE, and that is arithmetic rather than an omission.
+ * `.vv-twin-dossier` occupies `min(320px, 100vw - 130px)` from a 12px inset, so
+ * its right edge parks at 332px on anything at least 450px wide and sits at
+ * `100vw - 118px` below that. This panel's left edge is `100vw - 240px`. The two
+ * meet at 572px and first show a 12px gutter at 584px; the floor is set at 621px
+ * rather than 584px on purpose, because the dossier belongs to another lane and
+ * a slot proven with a one-pixel margin is proven for today only. Below the
+ * floor the panel is absent and the minimap — which already carries node
+ * positions and the view cone — is the phone's plan. Giving a phone a real plan
+ * means making the dossier and the plan mutually exclusive, or moving one of
+ * them: that is a layout decision the PARENT owns, and this lane must not take
+ * it unilaterally by quietly overlapping another panel's card.
+ *
+ * THE ASPECT RATIO BELOW IS `PLAN_ASPECT` FROM ViewpointPlan.tsx, spelled as the
+ * bare number `String(PLAN_ASPECT)` produces so the suite can assert the two are
+ * the same value rather than merely similar-looking. The component fits its
+ * viewBox to that ratio, so the drawing fills the frame with no dead bands.
+ * -------------------------------------------------------------------------- */
+
+.vv-twin-plan {
+  position: absolute;
+  /* PLAN_SLOT.topPx — clears the utility rail, which ends at 237. */
+  top: calc(250px + env(safe-area-inset-top));
+  /* PLAN_SLOT.rightPx — the right column's shared inset. */
+  right: calc(18px + env(safe-area-inset-right));
+  z-index: 3;
+  /* PLAN_SLOT.widthPx — the minimap's outer width. */
+  width: 222px;
+  /* PLAN_SLOT.topPx + PLAN_SLOT.bottomReservePx: never grows down into the
+   * minimap's corner, at any viewport height this renders at. */
+  max-height: calc(100dvh - 575px);
+  /* The frame is a click-through hole: click-anywhere travel is the primary
+   * movement mechanic, so only the map itself may take the pointer — the
+   * .vv-twin-controls contract, restated. */
+  pointer-events: none;
+  animation: vv-twin-plan-rise 420ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
+}
+
+.vv-twin-plan-map {
+  pointer-events: auto;
+  display: block;
+  width: 100%;
+  max-height: 100%;
+  /* PLAN_ASPECT, spelled as `String(PLAN_ASPECT)` — pinned by the suite. */
+  aspect-ratio: 1.5;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 10px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  /* The svg is a container, not a control: it must not take a focus ring of its
+   * own, because the roving tabindex puts focus on a mark inside it. */
+  outline: none;
+}
+
+/* The ground. Near-transparent, but never `fill: none` — a rect with no fill is
+ * not hit-testable, and this rect is the coarse "travel to the nearest
+ * viewpoint" target that keeps an ambiguous click resolving by distance. */
+.vv-twin-plan-floor {
+  fill: rgba(215, 166, 75, 0.035);
+  cursor: pointer;
+}
+
+.vv-twin-plan-cone {
+  /* The cone is a live readout of where the camera points. It carries no
+   * transition: yaw updates arrive every frame during a look-drag, and an
+   * easing on top of them would render a heading that lags the view. */
+  pointer-events: none;
+}
+
+/* Declared here rather than as a stopColor presentation attribute in the JSX:
+ * var() substitution inside SVG presentation attributes is not dependable
+ * outside Chromium, and a failure there is an INVALID value — a black cone —
+ * not a fallback to the gold. In a real CSS declaration it works everywhere. */
+.vv-twin-plan-cone-stop {
+  stop-color: var(--gold, #d7a64b);
+}
+
+.vv-twin-plan-mark {
+  cursor: pointer;
+}
+
+.vv-twin-plan-dot {
+  fill: var(--ink-3, #b9aa8b);
+  transition: fill 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-plan-mark--current .vv-twin-plan-dot {
+  fill: var(--gold, #d7a64b);
+}
+
+.vv-twin-plan-mark:hover .vv-twin-plan-dot {
+  fill: var(--gold-2, #f0c66b);
+}
+
+/* The focus ring is always in the DOM and revealed here, so it cannot be lost
+ * to a re-render partway through a keyboard walk. `outline` is not used: SVG
+ * outline support is uneven, and a ring in user units with a non-scaling stroke
+ * stays the same weight at every plan extent. */
+.vv-twin-plan-focus {
+  stroke: transparent;
+  stroke-width: 2px;
+}
+
+.vv-twin-plan-mark:focus {
+  outline: none;
+}
+
+.vv-twin-plan-mark:focus-visible .vv-twin-plan-focus {
+  stroke: var(--gold-2, #f0c66b);
+}
+
+/* Engines that do not implement :focus-visible still owe a keyboard user a
+ * visible ring — the whole rule above would be dropped as unparsed there. */
+@supports not selector(:focus-visible) {
+  .vv-twin-plan-mark:focus .vv-twin-plan-focus {
+    stroke: var(--gold-2, #f0c66b);
+  }
+}
+
+/* The scale's backing plate. Opaque enough that a viewpoint mark landing under
+ * the bar cannot make the one measurable figure on the plan unreadable — which
+ * happens at real scan density, not hypothetically. */
+.vv-twin-plan-scale-plate {
+  fill: rgba(7, 16, 15, 0.82);
+}
+
+.vv-twin-plan-scale-bar,
+.vv-twin-plan-scale-tick {
+  stroke: var(--ink-3, #b9aa8b);
+  stroke-width: 1px;
+  stroke-opacity: 0.7;
+}
+
+.vv-twin-plan-scale-label {
+  fill: var(--ink-3, #b9aa8b);
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  letter-spacing: 0.06em;
+}
+
+/* Static north anchor — screen-up is E57 +Y. HTML, so it holds one size at any
+ * plan extent, and absolutely placed against `.vv-twin-plan`, which is itself
+ * absolute and therefore already a containing block. */
+.vv-twin-plan-north {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--ink-3, #b9aa8b);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+@keyframes vv-twin-plan-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* — the two viewport floors, both `display: none` and neither of them a shrug.
+ *
+ *   NARROW (< PLAN_SLOT.minViewportWidthPx): the dossier's right edge and this
+ *   panel's left edge cross at 572px, and below 450px the dossier is
+ *   `100vw - 130px` wide at a 12px inset, leaving a plan beside it under 100px.
+ *   The floor keeps a ~49px gutter rather than the bare 12px. `display: none`
+ *   rather than a narrower
+ *   panel, because a 100px-wide plan is a decoration of an instrument, and
+ *   rather than an overlap, because covering the dossier repeats exactly the
+ *   mistake that got the first slot rejected. The minimap is the phone's plan.
+ *
+ *   SHORT (< PLAN_SLOT.minViewportHeightPx): the band between the utility rail
+ *   (ends 237) and the minimap (top 100dvh − 313) is 100dvh − 550px. Under
+ *   701px tall that leaves the map itself below ~126px — a sliver, and the
+ *   panel would still hold a tab stop while being useless. This subsumes the
+ *   old landscape-phone rule at 460px rather than sitting beside it.
+ *
+ *   Both are declared as `display: none` and not `visibility` or opacity: the
+ *   marks carry a roving tabindex, and an invisible-but-focusable plan is the
+ *   worst of the three states. — */
+
+@media (max-width: 620px) {
+  .vv-twin-plan {
+    display: none;
+  }
+}
+
+@media (max-height: 700px) {
+  .vv-twin-plan {
+    display: none;
+  }
+}
+
+/* — forced colours: translucency and the gold palette are stripped, so restate
+ *   the map as a real bordered surface and the marks as system-coloured — */
+
+@media (forced-colors: active) {
+  .vv-twin-plan-map {
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .vv-twin-plan-dot {
+    fill: CanvasText;
+  }
+
+  .vv-twin-plan-mark--current .vv-twin-plan-dot {
+    fill: CanvasText;
+    stroke: Highlight;
+    stroke-width: 2px;
+  }
+
+  .vv-twin-plan-mark:focus-visible .vv-twin-plan-focus {
+    stroke: Highlight;
+  }
+
+  .vv-twin-plan-scale-plate {
+    fill: Canvas;
+  }
+
+  /* The gold is gone, so the cone would be an invisible smudge. Give it the
+   * system highlight, which is the one colour guaranteed to read here. */
+  .vv-twin-plan-cone-stop {
+    stop-color: Highlight;
+  }
+
+  .vv-twin-plan-scale-bar,
+  .vv-twin-plan-scale-tick {
+    stroke: CanvasText;
+    stroke-opacity: 1;
+  }
+
+  .vv-twin-plan-scale-label {
+    fill: CanvasText;
+  }
+
+  .vv-twin-plan-north {
+    color: CanvasText;
+  }
+}
+
+/* — reduced motion: the plan is simply there, already arrived. The CONE is not
+ *   touched: it is a readout of where the camera points, not an animation, and
+ *   freezing it would leave the plan disagreeing with the view. — */
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-plan {
+    animation: none;
+  }
+
+  .vv-twin-plan-dot {
+    transition: none;
+  }
+}

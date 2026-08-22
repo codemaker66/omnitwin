@@ -1,0 +1,530 @@
+/* -----------------------------------------------------------------------------
+ * tour.css — chrome and PLACEMENT for the guided-tour player.
+ *
+ * Component-adjacent (the quick-actions / room-dossier / room-selector idiom) so
+ * this lands without editing twin.css while another lane has it open. Palette
+ * tokens are declared on `.vv-twin` and inherit, so every var() here is a read,
+ * never a redeclaration; the fallbacks exist for a fixture rendered outside
+ * `.vv-twin`, not as a second palette.
+ *
+ * PLACEMENT IS THE HARD PART, AND IT IS NOT DECORATION
+ *
+ * Every sibling inside `.vv-twin-viewer` is position:absolute, and the only
+ * in-flow child is R3F's canvas wrapper at 100% height. An unpositioned panel is
+ * therefore laid out a full viewport BELOW the view and then clipped away by
+ * `.vv-twin-stage { overflow: hidden }` — invisible but still focusable, which
+ * is the worst of the three states, and it has shipped here twice. So the rules
+ * below are the component, not a coat of paint on it.
+ *
+ * THE OCCUPANCY MAP THIS SLOT WAS CUT FROM
+ *
+ * MEASURED, not assumed — getBoundingClientRect() on the running dev server at
+ * /tour?node=scan_028, one pass per viewport. x and y are page pixels.
+ *
+ *   desktop 1440x900        node 18..302 / 18..49        mode 1182..1422 / 18..55
+ *                           surface 1319..1422 / 62..95  controls 1310..1422 / 106..237
+ *                           dossier 18..358 / 62..299    quick 18..159 / 809..844
+ *                           coach 540..900 / 800..836    rooms 1303..1422 / 847..882
+ *                           disclosure 18..434 / 853..886
+ *   phone 390x844           node 12..160 / 12..38        mode 188..378 / 12..45
+ *                           surface 291..378 / 52..81    controls 282..378 / 88..161
+ *                           dossier 12..272 / 56..306    quick 12..232 / 713..756
+ *                           coach 15..375 / 744..780     rooms 270..378 / 705..736
+ *                           disclosure 12..378 / 801..834
+ *   landscape 844x390       node 18..302 / 18..49        mode 586..826 / 18..55
+ *                           surface 723..826 / 62..95    controls 714..826 / 106..237
+ *                           dossier 18..358 / 62..299    quick 18..159 / 299..334
+ *                           coach 242..602 / 290..326    rooms 707..826 / 337..372
+ *                           disclosure 18..434 / 343..376
+ *
+ * THE HUD MOVED WHILE THIS WAS BEING BUILT, so the slot clears two maps, not one.
+ * An hour before the pass above, the same three viewports carried a minimap at
+ * bottom right — 1200..1422 / 628..882 on desktop, 228..378 / 620..786 on the
+ * phone, 604..826 / 118..372 in landscape — and a four-chip quick rail running
+ * 18..261 / 679..844. Another lane has since replaced that with the Rooms pill.
+ * Every rule below is disjoint from BOTH states, which is why the phone slot
+ * sits higher than the current map alone would require: the minimap's 254px of
+ * bottom-right screen is reserved in case it comes back. Re-measure at wiring
+ * time; if it has not returned, the phone rule can drop ~180px and should.
+ *
+ * The Rooms pill's own stylesheet (shell/room-selector.css) still documents a
+ * bottom-LEFT slot; the shipped element is bottom right. Both are cleared here.
+ *
+ * WHY THREE PLACEMENTS AND NOT ONE
+ *
+ * There is no single anchor that is disjoint at all three. The left column is
+ * content (dossier, rooms, quick rail, disclosure) and the right column is chrome
+ * (mode, surface, share, fullscreen, minimap); between them is a corridor, and
+ * that corridor's width collapses on a phone. So:
+ *
+ *   base           the corridor, bottom-anchored. Growth goes UP into empty air,
+ *                  which is what makes a caption that wraps safe.
+ *   ≤1100 & tall   the corridor is gone; the player takes the full width of the
+ *                  free mid-band above the minimap.
+ *   ≤460px tall    the mid-band is gone (the minimap alone is 254px of a 390px
+ *                  screen); back to the corridor, narrower and capped.
+ *
+ * Source order matters: the ≤460px block is LAST so a landscape phone, which
+ * matches both media queries, lands on the corridor rather than the mid-band.
+ *
+ * PROOF, per viewport, against the map above:
+ *
+ * Rendered and measured, not reasoned about — the numbers below are the mounted
+ * component's own getBoundingClientRect, and every neighbour was checked for
+ * intersection rather than eyeballed.
+ *
+ *   desktop     x 491..1051, y 629..788 (idle) / 651..788 (playing).
+ *               clearances: coach 12, quick 332, dossier 133, disclosure 65,
+ *               controls 259, mode 131, rooms clear on both axes.
+ *   phone       x 12..378, y 420..554.
+ *               clearances: dossier 114, quick 159, coach 190, controls 259,
+ *               rooms 151, and 66 to where the minimap stood.
+ *   landscape   x 378..568, y 116..278.
+ *               clearances: dossier 20, mode 18, coach 12, node 67, surface 21,
+ *               controls 146, and 36 to where the minimap stood.
+ *
+ * MOTION
+ *
+ * One spring, sampled into a linear() the same way room-dossier.css samples its
+ * two — see that file's header for the derivation and the residuals. This is its
+ * ARRIVE curve verbatim (k = 440, c = 30, m = 1 → ω₀ = 20.976 rad/s, ζ = 0.7151;
+ * 4.00% overshoot at 210 ms, settled to 0.159% at 420 ms, 24 even samples, last
+ * stop clamped to 1). Copied rather than imported because CSS has no import for
+ * a timing function, and restated rather than hidden behind a custom property
+ * because an unsupported linear() reached through var() is invalid at
+ * computed-value time — which discards the whole declaration and lands on `ease`,
+ * i.e. worse than the thing it was improving. Written twice throughout: a browser
+ * without linear() drops the second declaration and keeps the house --settle.
+ * -------------------------------------------------------------------------- */
+
+.vv-twin-tour {
+  position: absolute;
+  left: calc(378px + env(safe-area-inset-left));
+  right: calc(276px + env(safe-area-inset-right));
+  bottom: calc(112px + env(safe-area-inset-bottom));
+  margin-inline: auto;
+  max-width: 560px;
+  max-height: 220px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* The frame is a click-through hole: click-anywhere travel is the primary
+   * movement mechanic, so only the card and the bar may take the pointer.
+   * The .vv-twin-controls contract, restated. */
+  pointer-events: none;
+}
+
+/* — the title card — */
+
+.vv-twin-tour-card {
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+  padding: 13px 18px 15px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 10px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  /* Matches the node label's halo: this chrome sits over correctly sRGB-encoded
+   * panos that are brighter than the grade it was first tuned against. */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  text-align: center;
+  animation-name: vv-twin-tour-arrive;
+  animation-duration: 420ms;
+  animation-fill-mode: both;
+}
+
+.vv-twin-tour-card,
+.vv-twin-tour-caption {
+  animation-timing-function: var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+  animation-timing-function: linear(
+    0, 0.0564, 0.1875, 0.3494, 0.5125, 0.6596, 0.7819, 0.8768, 0.9458, 0.9922,
+    1.0204, 1.035, 1.04, 1.0388, 1.0341, 1.0278, 1.0212, 1.015, 1.0099, 1.0058,
+    1.0028, 1.0007, 0.9994, 0.9987, 1
+  );
+}
+
+.vv-twin-tour-eyebrow {
+  margin: 0;
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3, #b9aa8b);
+}
+
+/* The caption is the news, so it takes the display face — the same licence the
+ * dossier's room name takes, and the only two places in the walkthrough HUD that
+ * do. A title card, not a tooltip: set centred, at reading size, with the air
+ * above and below that a caption in a film has. */
+.vv-twin-tour-caption {
+  margin: 7px 0 0;
+  font-family: var(--display, "Newsreader", "Times New Roman", serif);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.28;
+  letter-spacing: 0.005em;
+  color: var(--ink, #fbf2df);
+  text-wrap: balance;
+  animation-name: vv-twin-tour-caption-in;
+  animation-duration: 420ms;
+  animation-fill-mode: both;
+}
+
+/* Paused / ended. Quiet, and it never displaces the caption — it is the one
+ * line that has to be legible without being read as part of the building. */
+.vv-twin-tour-note {
+  margin: 8px 0 0;
+  font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--gold-2, #f0c66b);
+  opacity: 0.86;
+}
+
+/* — the dwell hairline: how much of this stop is left —
+ *
+ * Sits on the card's bottom edge, inside the radius (the card clips). It is the
+ * only thing on this surface that moves continuously, which is exactly why it is
+ * removed under reduced motion rather than shortened; the stop markers below
+ * carry the same information statically. */
+
+.vv-twin-tour-dwell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(215, 166, 75, 0.16);
+}
+
+.vv-twin-tour-dwell-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(
+    to right,
+    rgba(215, 166, 75, 0.55),
+    var(--gold-2, #f0c66b)
+  );
+  animation-name: vv-twin-tour-dwell;
+  /* Duration is the stop's own dwell, written inline by the component — one
+   * number, in one place, shared by the timer and the bar. */
+  animation-duration: var(--vv-tour-dwell, 6000ms);
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+/* Paused holds the bar exactly where the visitor stopped it, rather than
+ * resetting — the bar is a readout of the timer, and the timer is held too. */
+.vv-twin-tour-dwell-fill--paused {
+  animation-play-state: paused;
+}
+
+/* — the transport bar — */
+
+.vv-twin-tour-bar {
+  pointer-events: auto;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: vv-twin-tour-arrive 420ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  animation-delay: 70ms;
+}
+
+.vv-twin-tour-btn {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2, #e7d8bb);
+  cursor: pointer;
+  transition:
+    color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    border-color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    background 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform 160ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-tour-btn:hover:not(:disabled) {
+  color: var(--gold-2, #f0c66b);
+  border-color: var(--rule, rgba(216, 174, 91, 0.28));
+}
+
+.vv-twin-tour-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.vv-twin-tour-btn:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+.vv-twin-tour-btn:focus-visible {
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 2px;
+}
+
+/* Play/pause is the one filled control on this surface — the single-primary rule
+ * the utility rail's Enquire pill and the quick rail's gold chip already keep. */
+.vv-twin-tour-btn--primary {
+  width: 36px;
+  height: 36px;
+  background: var(--gold, #d7a64b);
+  border-color: var(--gold, #d7a64b);
+  color: var(--black-2, #07100f);
+}
+
+.vv-twin-tour-btn--primary:hover:not(:disabled) {
+  background: var(--gold-2, #f0c66b);
+  border-color: var(--gold-2, #f0c66b);
+  color: var(--black-2, #07100f);
+}
+
+/* — the stop markers: where you are in the sequence, statically — */
+
+.vv-twin-tour-ticks {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 0 4px;
+  padding: 0;
+  list-style: none;
+  flex-wrap: wrap;
+}
+
+.vv-twin-tour-tick {
+  /* The visible mark is drawn by the pseudo-element so the hit target can be a
+   * comfortable 18px while the dot stays a 5px punctuation mark. */
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.vv-twin-tour-tick::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: var(--ink-3, #b9aa8b);
+  opacity: 0.5;
+  transition:
+    background 180ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    opacity 180ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    width 180ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-tour-tick:hover::after {
+  opacity: 1;
+}
+
+/* Visited: solid but quiet. Current: a gold lozenge, wider than the dots, so the
+ * position reads at a glance without a number. */
+.vv-twin-tour-tick--seen::after {
+  background: var(--ink-2, #e7d8bb);
+  opacity: 0.8;
+}
+
+.vv-twin-tour-tick--current::after {
+  width: 14px;
+  background: var(--gold-2, #f0c66b);
+  opacity: 1;
+}
+
+.vv-twin-tour-tick:focus-visible {
+  outline: 2px solid var(--gold, #d7a64b);
+  outline-offset: 1px;
+}
+
+.vv-twin-tour-icon {
+  display: block;
+}
+
+/* — keyframes — */
+
+@keyframes vv-twin-tour-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The caption changes more often than the card does, so its entrance is its own:
+ * a shorter rise, because the card around it is already in place and a full
+ * 10px would read as the whole panel twitching. */
+@keyframes vv-twin-tour-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes vv-twin-tour-dwell {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+/* — ≤1100px and tall enough for it: the corridor is gone, take the mid-band —
+ *
+ * Full width between the 12px insets, parked above the minimap. Bottom-anchored
+ * again so a wrapping caption grows up into the gap under the dossier. */
+
+@media (max-width: 1100px) and (min-height: 461px) {
+  .vv-twin-tour {
+    left: calc(12px + env(safe-area-inset-left));
+    right: calc(12px + env(safe-area-inset-right));
+    bottom: calc(290px + env(safe-area-inset-bottom));
+    max-width: none;
+    max-height: 200px;
+  }
+
+  .vv-twin-tour-caption {
+    font-size: 18px;
+  }
+}
+
+/* — ≤460px tall (landscape phone): back to the corridor —
+ *
+ * LAST, deliberately: a landscape phone matches the block above as well, and at
+ * 390px of height the mid-band does not exist — the minimap alone is 254px of it.
+ * Same specificity, so source order is what makes this win.
+ *
+ * 190px of usable width at 844x390 is the whole corridor there; the caption wraps
+ * to three or four lines and the card scrolls past that. Narrow, but measured and
+ * clear of everything, which is the part that is not negotiable. */
+
+@media (max-height: 460px) {
+  .vv-twin-tour {
+    left: calc(378px + env(safe-area-inset-left));
+    right: calc(276px + env(safe-area-inset-right));
+    bottom: calc(112px + env(safe-area-inset-bottom));
+    max-width: 420px;
+    max-height: 170px;
+    gap: 8px;
+  }
+
+  .vv-twin-tour-card {
+    padding: 10px 12px 12px;
+    overflow-y: auto;
+  }
+
+  .vv-twin-tour-caption {
+    font-size: 16px;
+    margin-top: 5px;
+  }
+
+  /* Two rows, on purpose. At 190px the markers cannot share a line with the
+   * transport and were wrapping three-and-two, offset, which reads as a layout
+   * accident rather than as a control. Giving them the whole of a second line
+   * and forbidding them to wrap again makes the bar a tidy two-row block —
+   * transport, then position — instead of a pill that came apart. */
+  .vv-twin-tour-bar {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 10px 7px;
+    border-radius: 20px;
+  }
+
+  .vv-twin-tour-ticks {
+    flex-basis: 100%;
+    flex-wrap: nowrap;
+    justify-content: center;
+    margin: 0;
+  }
+}
+
+/* — forced colours: translucency, gold and gradients are all stripped, so
+ *   restate every surface as a real bordered box and mark state with system
+ *   colours rather than with fills that are no longer there — */
+
+@media (forced-colors: active) {
+  .vv-twin-tour-card,
+  .vv-twin-tour-bar,
+  .vv-twin-tour-btn,
+  .vv-twin-tour-btn--primary {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .vv-twin-tour-btn--primary {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .vv-twin-tour-dwell-fill,
+  .vv-twin-tour-tick--current::after {
+    background: Highlight;
+  }
+
+  .vv-twin-tour-tick::after {
+    background: CanvasText;
+  }
+}
+
+/* — reduced motion: the final state, at once, in every direction —
+ *
+ * Nothing here is shortened; the animations are removed. The component agrees
+ * rather than leaning on this alone: it asks for instant travel instead of the
+ * Usher's glide, and it does not render the dwell bar at all, because a bar whose
+ * only content is its own sweep has no final state worth holding. The dwell
+ * itself is kept — the preference is about motion, not about being hurried past a
+ * room. Both halves are needed: CSS alone would still leave a camera gliding, and
+ * script alone would still play the entrances. */
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-tour-card,
+  .vv-twin-tour-caption,
+  .vv-twin-tour-bar,
+  .vv-twin-tour-dwell-fill {
+    animation: none;
+  }
+
+  .vv-twin-tour-btn,
+  .vv-twin-tour-tick::after {
+    transition: none;
+  }
+
+  .vv-twin-tour-btn:active:not(:disabled) {
+    transform: none;
+  }
+}

@@ -1,0 +1,208 @@
+/* -----------------------------------------------------------------------------
+ * quick-actions.css — chrome for the /tour quick-action chip rail.
+ *
+ * Lives beside its component (the repo's component-adjacent CSS idiom) rather
+ * than inside twin.css, so the rail can land without touching the shared
+ * stylesheet another lane is editing. It inherits the twin palette by
+ * cascade — the tokens are declared on `.vv-twin` and custom properties
+ * inherit — so every var() here is a read, never a redeclaration. The
+ * fallbacks are insurance for a fixture render outside `.vv-twin`, not a
+ * second palette.
+ *
+ * PLACED, as of the wiring pass. The rail was authored unpositioned so the slot
+ * could be reconciled against the whole HUD at once; that reconciliation is now
+ * done and lives here, because an unpositioned panel is not merely unstyled —
+ * every sibling is position:absolute inside `.vv-twin-viewer`, so a static block
+ * lands a full viewport below the view and `.vv-twin-stage { overflow: hidden }`
+ * clips it away while it stays in the tab order.
+ *
+ * The slot is the left column, above the disclosure (bottom 14) and below the
+ * dossier, clear of the coach pill (bottom 64, centred) and the minimap (bottom
+ * right). Width is capped for the same reason the dossier's is: the right-hand
+ * control stack owns that column.
+ * -------------------------------------------------------------------------- */
+
+.vv-twin-quick {
+  position: absolute;
+  left: calc(18px + env(safe-area-inset-left));
+  bottom: calc(56px + env(safe-area-inset-bottom));
+  z-index: 3;
+  max-width: min(300px, calc(100vw - 110px));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  /* The rail's dead gaps stay click-through, so a click that lands between two
+   * chips still travels the walk — the .vv-twin-controls contract, restated. */
+  pointer-events: none;
+}
+
+.vv-twin-quick-chip {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 14px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  border-radius: 999px;
+  background: rgba(7, 16, 15, 0.78);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--ink-2, #e7d8bb);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  font-family: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  animation: vv-twin-quick-in 420ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  transition:
+    color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    border-color 150ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1)),
+    transform 160ms var(--settle, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+.vv-twin-quick-chip:hover {
+  color: var(--gold-2, #f0c66b);
+  border-color: var(--gold, #d7a64b);
+}
+
+.vv-twin-quick-chip:active {
+  transform: scale(0.97);
+}
+
+/* Enquire is the one filled chip, matching the utility rail's single gold
+ * element. Two golds on one screen would be two primaries — there is one. */
+.vv-twin-quick-chip--gold {
+  background: var(--gold, #d7a64b);
+  border-color: var(--gold, #d7a64b);
+  color: var(--black-2, #07100f);
+  text-shadow: none;
+}
+
+.vv-twin-quick-chip--gold:hover {
+  background: var(--gold-2, #f0c66b);
+  border-color: var(--gold-2, #f0c66b);
+  color: var(--black-2, #07100f);
+}
+
+.vv-twin-quick-icon {
+  flex: 0 0 auto;
+}
+
+/* A long room name truncates rather than forcing the rail wider than its slot. */
+.vv-twin-quick-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The chips arrive in sequence — the eye reads a list, not a wall. Capped at
+ * six steps so an unexpectedly long destination set cannot stretch the
+ * entrance past a third of a second. */
+@keyframes vv-twin-quick-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.vv-twin-quick-chip:nth-child(2) { animation-delay: 60ms; }
+.vv-twin-quick-chip:nth-child(3) { animation-delay: 120ms; }
+.vv-twin-quick-chip:nth-child(4) { animation-delay: 180ms; }
+.vv-twin-quick-chip:nth-child(5) { animation-delay: 240ms; }
+.vv-twin-quick-chip:nth-child(n + 6) { animation-delay: 300ms; }
+
+/* — phone: one scrolling row (twin.css's own 480px breakpoint) — */
+
+@media (max-width: 480px) {
+  .vv-twin-quick {
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    /* The trailing fade is the affordance: a hard edge reads as "that is all
+     * there is" and the chips past the fold never get pushed for. The right
+     * padding equals the mask's width so the last chip can still scroll fully
+     * clear of the fade; the block padding gives the focus halo room inside
+     * the scroll box, which would otherwise crop it. */
+    padding: 6px 32px 6px 0;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent 100%);
+  }
+
+  .vv-twin-quick::-webkit-scrollbar {
+    display: none;
+  }
+
+  .vv-twin-quick-chip {
+    scroll-snap-align: start;
+    font-size: 0.62rem;
+    padding: 7px 12px;
+  }
+}
+
+/* — forced colours: translucency and the gold fill are stripped, so restate
+ *   the chip as a real bordered surface and mark the primary with a ring — */
+
+@media (forced-colors: active) {
+  .vv-twin-quick-chip,
+  .vv-twin-quick-chip--gold {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .vv-twin-quick-chip--gold {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* A mask is not a colour, so forced-colors leaves it in place — and it would
+   * fade the last chip's system-coloured text to nothing. Drop it. */
+  .vv-twin-quick {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
+/* — reduced motion: the rail is simply there, already arrived — */
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-twin-quick-chip {
+    animation: none;
+    transition: none;
+  }
+
+  .vv-twin-quick-chip:active {
+    transform: none;
+  }
+}
+
+/* Small screens: twin.css's own max-width:700px block spreads the disclosure
+ * into a full-width two-line strip and lifts the minimap to bottom 58, so the
+ * rail needs more floor beneath it. Placement only — the 480px block above
+ * still owns the switch to a scrolling row, and this must not undo it.
+ *
+ * Ordered AFTER that block deliberately: same specificity, so whatever is
+ * declared here wins. Hence the width cap is expressed against the minimap's
+ * real footprint (120px map + 7px padding each side + 12px inset ≈ 146px)
+ * rather than a flat percentage — a full-bleed row would scroll its last chips
+ * underneath the map, where they can be neither read nor pressed. */
+@media (max-width: 700px) {
+  .vv-twin-quick {
+    left: calc(12px + env(safe-area-inset-left));
+    bottom: calc(88px + env(safe-area-inset-bottom));
+    max-width: min(280px, calc(100vw - 170px));
+  }
+}
