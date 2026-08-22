@@ -7,6 +7,21 @@ const IPHONE_VIEWPORTS = [
   { width: 430, height: 932 },
 ] as const;
 
+// Every state of the quiz must fit every screen, and the guard only ever ran
+// on phones — which is exactly how the threshold came to need a scrollbar on
+// every laptop at 100% zoom while the suite stayed green. A width-driven size
+// cannot know the viewport is 720px tall, so the sizes that matter here are
+// the SHORT ones: a 1366x768 laptop, a 1280x720 window, a landscape iPad.
+const NO_SCROLL_VIEWPORTS = [
+  ...IPHONE_VIEWPORTS,
+  { width: 768, height: 1024 },
+  { width: 1024, height: 768 },
+  { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
+  { width: 1512, height: 945 },
+  { width: 1920, height: 1080 },
+] as const;
+
 async function expectNoPageScroll(page: Page): Promise<void> {
   const extent = await page.evaluate(() => ({
     scrollHeight: Math.max(document.documentElement.scrollHeight, document.body.scrollHeight),
@@ -15,7 +30,19 @@ async function expectNoPageScroll(page: Page): Promise<void> {
     viewportWidth: document.documentElement.clientWidth,
   }));
 
-  expect(extent.scrollHeight, "the quiz should fit without vertical page scrolling").toBeLessThanOrEqual(
+  const diag = extent.scrollHeight > extent.viewportHeight + 1
+    ? await page.evaluate(() => {
+        const rows: string[] = [];
+        document.querySelectorAll("*").forEach((el) => {
+          const r = el.getBoundingClientRect();
+          if (r.bottom > document.documentElement.clientHeight + 0.5 && r.height > 0) {
+            rows.push(`${el.tagName}.${String(el.className).slice(0, 34)} top=${String(Math.round(r.top))} bottom=${String(Math.round(r.bottom))} h=${String(Math.round(r.height))} pos=${getComputedStyle(el).position}`);
+          }
+        });
+        return rows.slice(0, 12).join(" || ");
+      })
+    : "";
+  expect(extent.scrollHeight, `the quiz should fit without vertical page scrolling >> ${diag}`).toBeLessThanOrEqual(
     extent.viewportHeight + 1,
   );
   expect(extent.scrollWidth, "the quiz should fit without horizontal page scrolling").toBeLessThanOrEqual(
@@ -55,7 +82,45 @@ async function beginAndPassThreshold(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
   const pass = page.getByRole("button", { name: /Skip ahead|I am ready/u });
   await expect(pass).toBeVisible({ timeout: 20_000 });
+  await expectNoPageScroll(page);
   await pass.click();
+}
+
+// The threshold is the one screen that GROWS while you look at it: the painting
+// is the hero of it, and under the painting his lines accumulate as he says
+// them. So the state that matters is the last one, and waiting for it costs
+// ~13s of beat timers — too much to spend inside a twelve-scene walk, and the
+// reason it had no desktop guard at all. It gets its own test.
+for (const viewport of NO_SCROLL_VIEWPORTS) {
+  test(`fits the threshold with every line told at ${String(viewport.width)}x${String(viewport.height)}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/quiz");
+    await page.evaluate(async () => { await document.fonts.ready; });
+
+    await page.getByRole("button", { name: "Begin the Craft quiz" }).click();
+    await expect(page.getByRole("button", { name: "Skip ahead" })).toBeVisible({ timeout: 20_000 });
+    await expectNoPageScroll(page);
+
+    // Every line said, every line listed, and the button offering to go on.
+    await expect(page.getByRole("button", { name: "I am ready" })).toBeVisible({ timeout: 25_000 });
+    await expect(page.locator(".craft-threshold-beats li")).toHaveCount(2);
+    await expectNoPageScroll(page);
+
+    // The painting is the thing that must yield, so prove it is still whole and
+    // still on screen rather than clipped to make the numbers work.
+    const painting = page.locator(".craft-threshold-portrait img").first();
+    await expect(painting).toBeVisible();
+    const fits = await painting.evaluate((node) => {
+      const r = node.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, height: r.height, viewport: window.innerHeight };
+    });
+    // Below the desktop breakpoint he is deliberately a thumbnail beside his
+    // own speech; above it he is the hero of the screen and must stay one.
+    expect(fits.height, "the painting must not be crushed to nothing")
+      .toBeGreaterThan(viewport.width < 980 ? 60 : 150);
+    expect(fits.top, "the painting must start on screen").toBeGreaterThanOrEqual(-1);
+    expect(fits.bottom, "the painting must end on screen").toBeLessThanOrEqual(fits.viewport + 1);
+  });
 }
 
 // If the twelve finish close, he asks one more thing: two answers, the same
@@ -230,8 +295,11 @@ for (const desktop of [{ width: 2048, height: 1200 }, { width: 2000, height: 930
   });
 }
 
-for (const viewport of IPHONE_VIEWPORTS) {
+for (const viewport of NO_SCROLL_VIEWPORTS) {
   test(`fits every Craft quiz state without page scrolling at ${String(viewport.width)}x${String(viewport.height)}`, async ({ page }) => {
+    // Below the desktop breakpoint the options are an accordion: the first tap
+    // opens one, the second commits it. Above it they are all open already.
+    const accordion = viewport.width < 980;
     await page.setViewportSize(viewport);
     await page.goto("/trades-house/discover-your-craft");
     await page.evaluate(async () => { await document.fonts.ready; });
@@ -254,10 +322,12 @@ for (const viewport of IPHONE_VIEWPORTS) {
       // first tap opens it and the second commits.
       const option = page.locator(".craft-quiz-option").nth(2);
       await option.click();
-      // Expanded, it must STILL fit — that is the harder half of the promise.
-      await expect(page.locator(".craft-quiz-option-confirm")).toBeVisible();
-      await expectNoPageScroll(page);
-      await option.click();
+      if (accordion) {
+        // Expanded, it must STILL fit — that is the harder half of the promise.
+        await expect(page.locator(".craft-quiz-option-confirm")).toBeVisible();
+        await expectNoPageScroll(page);
+        await option.click();
+      }
 
       // His reply is its own panel and it WAITS. Nothing advances on a timer,
       // so the scene is still on screen behind it — and the reply must fit too.
@@ -269,7 +339,7 @@ for (const viewport of IPHONE_VIEWPORTS) {
       await advance.click();
     }
 
-    await passDeliberationIfAsked(page, true);
+    await passDeliberationIfAsked(page, accordion);
     await expectDeliberationThenVerdict(page);
     expect(await revealedCraft(page)).toMatch(/^THE /u);
     await expect(page.getByRole("link", { name: "Request an introduction" })).toBeVisible();

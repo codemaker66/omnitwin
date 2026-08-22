@@ -1428,14 +1428,25 @@
     letter-spacing: 1.8px;
   }
 
+  /* An iPhone SE leaves this stack 19px of headroom on the wordiest Craft —
+     one extra wrapped line and the page scrolls, which is what made the guard
+     at this size flicker rather than fail honestly. The medallion gives up
+     18px of that; the affinities, four lines of his quietest remark, give up
+     the rest by closing their leading a little. */
   .craft-result-medallion {
-    height: 150px;
+    height: 132px;
     margin-top: 2px;
-    width: 150px;
+    width: 132px;
+  }
+
+  .craft-result-affinities {
+    line-height: 1.34;
+    padding-bottom: 5px;
+    padding-top: 5px;
   }
 
   .craft-result-rays {
-    inset: -17px;
+    inset: -15px;
   }
 
   .craft-quiz-result h1 {
@@ -2531,8 +2542,15 @@
 /* His bubble is suppressed here, not merely emptied: `restingLine={null}` still
    renders the frame and its byline, and an empty speech bubble under a thinking
    face reads as a failed load. The deliberation line is page copy instead, so
-   the beat never has to wait for a typewriter to finish. */
-.craft-quiz-weighing .convener-speech {
+   the beat never has to wait for a typewriter to finish.
+
+   Both skins, which this rule did not do: the second selector is the oil
+   painting — the skin that actually ships — and without it an empty bubble was
+   holding 88px (4.6em of min-height plus the 14px gap) under the painting on
+   every weighing screen. That was invisible as a bubble and visible as a
+   scrollbar: it is the whole of the 14-23px overflow at 1280x720 and 1366x768. */
+.craft-quiz-weighing .convener-speech,
+.craft-quiz-weighing .convener-painting-speech {
   display: none;
 }
 
@@ -2633,6 +2651,14 @@
     width: clamp(300px, 24vw, 400px);
   }
 
+  /* Same trap, same guard: measured, the kicker, the three chain links, the
+     line he is thinking aloud, the button and the vh-scaled padding come to
+     286px at 720px of height and 300px at 768px. The cap only bites below
+     ~930px, where a 400px-wide painting would be 493px tall. */
+  .craft-weighing-portrait .convener-painting-canvas img {
+    max-height: calc(100dvh - 320px);
+  }
+
   .craft-quiz-weighing .convener.is-compact .convener-frame,
   .craft-quiz-weighing .convener-frame {
     max-width: none;
@@ -2681,6 +2707,27 @@
 @keyframes craft-aside-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- the hero painting may never be taller than the room it is in ---------
+   The threshold and the weighing screens both stack a large painting over
+   text, and both sized it by WIDTH — which cannot know the viewport is 720px
+   tall. That is how the threshold came to need a scrollbar on every laptop at
+   100% zoom. The fix is a height cap on the image (per screen, below); these
+   two rules are what make such a cap safe. The image keeps its aspect ratio by
+   letting width follow height, and the canvas — which carries the gilt frame's
+   hang shadow and the glaze — shrinks with it, so the frame still fits the
+   painting rather than floating around a smaller one. */
+.craft-threshold-portrait .convener-painting-canvas,
+.craft-weighing-portrait .convener-painting-canvas {
+  align-self: center;
+  width: fit-content;
+}
+
+.craft-threshold-portrait .convener-painting-canvas img,
+.craft-weighing-portrait .convener-painting-canvas img {
+  max-width: 100%;
+  width: auto;
 }
 
 /* ---- the threshold -------------------------------------------------------
@@ -2751,13 +2798,57 @@
 
   /* Sized for the old vector head, which was worth about 360px of anybody's
      screen. The oil portrait is the hero of this screen and carries its own
-     gilt frame, so it earns the room. */
+     gilt frame, so it earns the room — but only the room there is. The width
+     is the ceiling; the height cap below is what actually decides on a laptop. */
   .craft-threshold-portrait {
     width: clamp(360px, 36vw, 560px);
   }
 
+  /* Measured: the kicker, the speech bubble, the accumulated beats, the button
+     and the padding come to 264-304px, so the painting may have the rest.
+     Above ~1150px of viewport height the 560px width wins and nothing changes;
+     below it the painting yields rather than the page growing a scrollbar. */
+  .craft-threshold-portrait .convener-painting-canvas img {
+    max-height: calc(100dvh - 420px);
+  }
+
   .craft-threshold-beats li {
     font-size: clamp(15px, 1.15vw, 18px);
+  }
+}
+
+/* ---- short desktops: laptops, and windows that are not full-screen ---------
+   A 1280x720 or 1366x768 laptop has the width of a desktop and less height
+   than a phone. The rule above already guarantees the fit by shrinking the
+   painting; this one gives the painting some of that height back by taking it
+   from the rhythm instead, so the hero of the screen is not punished for the
+   chrome around it. ~46px reclaimed, which is ~37px of painting width. */
+@media (min-width: 980px) and (max-height: 900px) {
+  .craft-quiz-threshold {
+    padding: 12px clamp(24px, 5vw, 80px) 16px;
+  }
+
+  .craft-threshold-beats {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .craft-threshold-beats li {
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .craft-quiz-threshold .convener-painting {
+    gap: 8px;
+  }
+
+  .craft-quiz-threshold .convener-painting-speech {
+    min-height: 3.4em;
+  }
+
+  /* The rhythm above gave ~46px back; the painting is allowed to take it. */
+  .craft-threshold-portrait .convener-painting-canvas img {
+    max-height: calc(100dvh - 340px);
   }
 }
 
@@ -3043,19 +3134,72 @@
 /* A 1280x800 laptop is ~30px short of the reveal. The medallion is the only
    thing on the screen with height to spare. */
 @media (min-width: 980px) and (max-height: 830px) {
+  /* The 136px floor was itself the overflow at 1280x720 and 1024x768: 16vh of
+     a 720px screen is 115px, and the clamp was holding it at 136. This is the
+     narrow-and-short case — a landscape tablet, a half-screen window — where
+     the prose wraps most and the crest has to give up the most. */
   .trades-house-craft-quiz-page[data-screen="result"] .craft-result-medallion {
-    height: clamp(136px, 16vh, 200px);
-    width: clamp(136px, 16vh, 200px);
+    height: clamp(96px, 13vh, 200px);
+    width: clamp(96px, 13vh, 200px);
   }
 
+  /* The two prose blocks are the tallest things here after the medallion — six
+     lines each on the wordiest Craft — so below 830px the continuous
+     compression that starts at 1040px carries on into them. Which Craft you
+     get changes this stack by ~37px, so the room has to hold the longest one,
+     not the one a test happens to walk to. */
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-essence,
   .trades-house-craft-quiz-page[data-screen="result"] .craft-result-reveal {
-    line-height: 1.36;
+    font-size: clamp(12.5px, 1.6vh, 15px);
+    line-height: 1.32;
   }
 
   .trades-house-craft-quiz-page[data-screen="result"] .craft-result-affinities {
-    padding-bottom: 8px;
-    padding-top: 8px;
+    font-size: clamp(12px, 1.5vh, 14px);
+    line-height: 1.34;
+    padding-bottom: 6px;
+    padding-top: 6px;
   }
+
+  /* The tail of links carries 58px of fixed margin that never learned about
+     short screens. It is whitespace, and it is the cheapest 25px on the page. */
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-introduction { margin-top: 12px; }
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-retake { margin-top: 9px; }
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-leaflet { margin-top: 7px; }
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-signoff { margin-top: 5px; }
+}
+
+/* A short screen that is also WIDE is a different problem from a short screen
+   that is narrow: at 1366px the reveal wraps into five lines instead of seven,
+   which is 40px the crest can have back. Measured headroom at 1366x768 was
+   73px with the narrow rule applied — the crest was giving up room nothing
+   needed, and a 100px crest under a 60px name reads as an afterthought. */
+@media (min-width: 1200px) and (max-height: 830px) {
+  .trades-house-craft-quiz-page[data-screen="result"] .craft-result-medallion {
+    height: clamp(120px, 17vh, 200px);
+    width: clamp(120px, 17vh, 200px);
+  }
+}
+
+/* ---- tablets, and any window in the 431-979px band ------------------------
+   This band renders the result at the full tablet scale — a 270px medallion
+   and 15px type — inside the 520px column the phone skin caps everything to.
+   On a 1024-tall iPad that content stands 1024px tall in the 992px a padded
+   page leaves it, so it scrolled by exactly the 32px inset. It has no
+   short-height rule of its own: the existing one stops at 700px of height,
+   which an iPad never is. Below ~1100px the medallion yields — it is the
+   largest single block and the one that can lose 35px unnoticed — and the tail
+   of links closes up. */
+@media (min-width: 431px) and (max-width: 979px) and (max-height: 1100px) {
+  .craft-result-medallion {
+    height: min(270px, 17vh);
+    width: min(270px, 17vh);
+  }
+
+  .craft-result-introduction { margin-top: 14px; }
+  .craft-result-retake { margin-top: 10px; }
+  .craft-result-leaflet { margin-top: 8px; }
+  .craft-result-signoff { margin-top: 6px; }
 }
 
 /* At 2560 the fluid type has grown enough that the reveal runs three pixels
