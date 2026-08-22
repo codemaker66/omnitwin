@@ -149,7 +149,14 @@ function ChangeHistorySection(): ReactElement {
             — and the trail gets a surface an operator can actually open. */}
         {history.entries.length > 0 && (
           <div className="lens-panel__row" style={{ padding: 0, border: "none", background: "none" }}>
-            <TimeMachinePanel entries={history.entries} live={liveObjects} />
+            {/* hasMore means we hold only the oldest page while the live room
+                reflects everything after it — every reconstruction is then off
+                by the missing tail, so the panel says so and withdraws restore. */}
+            <TimeMachinePanel
+              entries={history.entries}
+              live={liveObjects}
+              trailComplete={!history.hasMore}
+            />
           </div>
         )}
         {rows.map((row) => (

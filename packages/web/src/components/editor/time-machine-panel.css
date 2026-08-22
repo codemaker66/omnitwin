@@ -94,6 +94,17 @@
   box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.28);
 }
 
+/* Removed at the selected change. Drawn where it stood, in oxblood, hollow
+   and dashed — present enough to locate, plainly not part of the room. The
+   gold "touched" ring is deliberately withheld: this object is not there. */
+.tm__object--removed {
+  border-style: dashed;
+  border-color: rgba(140, 58, 52, 0.9);
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.75;
+}
+
 .tm__empty {
   position: absolute;
   inset: 0;

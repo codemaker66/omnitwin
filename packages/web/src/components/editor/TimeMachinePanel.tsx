@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactElement } from "react";
 import type { Action } from "@omnitwin/types";
 import type { AuditLogEntry } from "../../api/action-log.js";
-import type { ReplayObject } from "../../lib/action-log-replay.js";
+import { replayActions, verifyReplayable, type ReplayObject } from "../../lib/action-log-replay.js";
 import { deriveBaseFromLive, documentAtOrdinal, planRestore, timelineMarkers } from "../../lib/time-machine.js";
 import { plannerActionContext } from "../../stores/planner-action-log.js";
 import "./time-machine-panel.css";
@@ -26,6 +26,12 @@ export interface TimeMachinePanelProps {
    *  reopened layout reconstructs missing all its pre-existing furniture,
    *  because loadConfiguration records no Action for the objects it loads. */
   readonly live?: readonly ReplayObject[];
+  /** False when `entries` is only a PAGE of the trail. The anchor is then
+   *  derived from the oldest changes we hold while `live` reflects all of
+   *  them, so every reconstruction is off by the missing tail — the panel
+   *  says so and withdraws restore rather than offering a wrong one.
+   *  Defaults to true: a caller holding the whole trail needs no ceremony. */
+  readonly trailComplete?: boolean;
   /** Called with the restore Action to append. Absent = preview only. */
   readonly onRestore?: (action: Action) => void;
 }
@@ -49,26 +55,77 @@ function kindClass(kind: unknown): string {
   return "generic";
 }
 
-/** The object ids this single entry actually touched — what changed HERE. */
-function touchedByEntry(entry: AuditLogEntry | undefined): ReadonlySet<string> {
-  if (entry === undefined) return new Set();
-  const payload = entry.payload as {
-    added?: readonly { object?: { id?: unknown } }[];
-    removed?: readonly { object?: { id?: unknown } }[];
-    updated?: readonly { id?: unknown }[];
-  } | null;
-  if (payload === null || typeof payload !== "object") return new Set();
-  const ids = new Set<string>();
-  for (const placed of payload.added ?? []) {
-    if (typeof placed.object?.id === "string") ids.add(placed.object.id);
-  }
-  for (const patch of payload.updated ?? []) {
-    if (typeof patch.id === "string") ids.add(patch.id);
-  }
-  return ids;
+interface TouchedAtEntry {
+  /** Objects present in the reconstruction that this gesture added or edited. */
+  readonly changed: ReadonlySet<string>;
+  /** Objects this gesture REMOVED. They are absent from the reconstruction at
+   *  this point by definition, so they cannot be highlighted — they are drawn
+   *  as ghosts where they stood. Without this the deletion, which is usually
+   *  the very change an operator is hunting for, is the one change the plan
+   *  cannot show at all. */
+  readonly removed: readonly ReplayObject[];
 }
 
-export function TimeMachinePanel({ entries, live, onRestore }: TimeMachinePanelProps): ReactElement {
+/** What this single entry actually did — what changed HERE. */
+function touchedByEntry(entry: AuditLogEntry | undefined): TouchedAtEntry {
+  const changed = new Set<string>();
+  const removed: ReplayObject[] = [];
+  if (entry === undefined) return { changed, removed };
+  const payload = entry.payload as {
+    added?: readonly { object?: Record<string, unknown> }[];
+    removed?: readonly { object?: Record<string, unknown> }[];
+    updated?: readonly { id?: unknown }[];
+  } | null;
+  if (payload === null || typeof payload !== "object") return { changed, removed };
+  for (const placed of payload.added ?? []) {
+    const id = placed.object?.id;
+    if (typeof id === "string") changed.add(id);
+  }
+  for (const patch of payload.updated ?? []) {
+    if (typeof patch.id === "string") changed.add(patch.id);
+  }
+  for (const placed of payload.removed ?? []) {
+    const object = placed.object;
+    if (object === undefined) continue;
+    const id = object.id;
+    // Rebuilt rather than asserted: spreading a Record<string, unknown> with a
+    // narrowed id satisfies ReplayObject structurally, so no cast is needed.
+    if (typeof id === "string") removed.push({ ...object, id });
+  }
+  return { changed, removed };
+}
+
+/** Plain-language names for the surfaces a furniture plan does not draw. */
+const SURFACE_NAMES: Record<string, string> = {
+  markup: "markup",
+  lighting: "lighting",
+  event: "event details",
+  object: "object note",
+  layout: "layout",
+};
+
+/** "2 markup and 1 lighting change" — from the replayer's own skipped tally,
+ *  so the sentence can never drift from what was actually left out. */
+function describeSkipped(skipped: readonly { readonly intent: string; readonly count: number }[]): string {
+  const bySurface = new Map<string, number>();
+  for (const item of skipped) {
+    const surface = SURFACE_NAMES[item.intent.split(".")[0] ?? ""] ?? "other";
+    bySurface.set(surface, (bySurface.get(surface) ?? 0) + item.count);
+  }
+  const parts = [...bySurface.entries()].map(
+    ([surface, count]) => `${String(count)} ${surface} change${count === 1 ? "" : "s"}`,
+  );
+  if (parts.length === 0) return "";
+  if (parts.length === 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} and ${parts.at(-1) ?? ""}`;
+}
+
+export function TimeMachinePanel({
+  entries,
+  live,
+  trailComplete = true,
+  onRestore,
+}: TimeMachinePanelProps): ReactElement {
   const markers = useMemo(() => timelineMarkers(entries), [entries]);
   // Markers are newest-first; the scrubber reads left-to-right as oldest to
   // newest, so slider index 0 is the OLDEST recorded point.
@@ -98,17 +155,30 @@ export function TimeMachinePanel({ entries, live, onRestore }: TimeMachinePanelP
     [entries, latest?.ordinal, base],
   );
 
-  const touchedIds = useMemo(
+  const touched = useMemo(
     () => touchedByEntry(entries.find((candidate) => candidate.ordinal === selected?.ordinal)),
     [entries, selected?.ordinal],
   );
 
+  // What this reconstruction covers, in the replayer's own numbers. Both were
+  // already computed on every render and thrown away; a plan that silently
+  // omits the markup and lighting in the same trail is a claim, not a drawing.
+  const coverage = useMemo(() => {
+    const drawn = replayActions(entries, base).applied;
+    const omitted = describeSkipped(replayActions(entries, base).skipped);
+    const unreadable = verifyReplayable(entries).issues.length;
+    return { drawn, omitted, unreadable };
+  }, [entries, base]);
+
   const restore = useMemo(() => {
-    if (selected === undefined) return null;
+    // A partial trail anchors against a live room that reflects changes we do
+    // not hold, so any restore computed here would move the room somewhere
+    // nobody asked for. Offer nothing rather than something wrong.
+    if (selected === undefined || !trailComplete || anchor?.exact === false) return null;
     return planRestore(newest.objects, at.objects, plannerActionContext(), {
       targetOrdinal: selected.ordinal,
     });
-  }, [newest.objects, at.objects, selected]);
+  }, [newest.objects, at.objects, selected, trailComplete, anchor?.exact]);
 
   const restoreSummary = useMemo(() => {
     if (restore === null) return null;
@@ -152,27 +222,61 @@ export function TimeMachinePanel({ entries, live, onRestore }: TimeMachinePanelP
         </p>
       </header>
 
-      <div className="tm__plan" data-testid="tm-plan" aria-label="Top-down plan at the selected moment">
-        {at.objects.map((object) => (
-          <span
-            key={object.id}
-            className={[
-              "tm__object",
-              `tm__object--${kindClass(object.kind)}`,
-              touchedIds.has(object.id) ? "tm__object--touched" : "",
-            ].filter((part) => part !== "").join(" ")}
-            data-testid="tm-object"
-            data-kind={kindClass(object.kind)}
-            data-touched={touchedIds.has(object.id) ? "true" : "false"}
-            style={{
-              left: `${String(planPosition(object.positionX))}%`,
-              top: `${String(planPosition(object.positionZ))}%`,
-            }}
-            title={typeof object.kind === "string" ? object.kind : object.id}
-          />
-        ))}
-        {at.objects.length === 0 && <span className="tm__empty">Empty room</span>}
-      </div>
+      {anchor?.exact === false ? (
+        <p className="tm__warn" data-testid="tm-anchor-warning">
+          {anchor.reason ?? "The room this trail started from cannot be recovered."}
+          {" "}Nothing is drawn for this moment — a plan the record cannot
+          support would be more misleading than no plan.
+        </p>
+      ) : (
+        <div className="tm__plan" data-testid="tm-plan" aria-label="Top-down plan at the selected moment">
+          {at.objects.map((object) => (
+            <span
+              key={object.id}
+              className={[
+                "tm__object",
+                `tm__object--${kindClass(object.kind)}`,
+                touched.changed.has(object.id) ? "tm__object--touched" : "",
+              ].filter((part) => part !== "").join(" ")}
+              data-testid="tm-object"
+              data-kind={kindClass(object.kind)}
+              data-touched={touched.changed.has(object.id) ? "true" : "false"}
+              style={{
+                left: `${String(planPosition(object.positionX))}%`,
+                top: `${String(planPosition(object.positionZ))}%`,
+              }}
+              title={typeof object.kind === "string" ? object.kind : object.id}
+            />
+          ))}
+          {/* Removed objects are gone from the reconstruction by definition,
+              so they are ghosted where they stood — otherwise a deletion is
+              the one change the plan cannot show. */}
+          {touched.removed.map((object) => (
+            <span
+              key={`removed-${object.id}`}
+              className={`tm__object tm__object--${kindClass(object.kind)} tm__object--removed`}
+              data-testid="tm-object-removed"
+              data-kind={kindClass(object.kind)}
+              style={{
+                left: `${String(planPosition(object.positionX))}%`,
+                top: `${String(planPosition(object.positionZ))}%`,
+              }}
+              title={`Removed here: ${typeof object.kind === "string" ? object.kind : object.id}`}
+            />
+          ))}
+          {at.objects.length === 0 && touched.removed.length === 0 && (
+            <span className="tm__empty">Empty room</span>
+          )}
+        </div>
+      )}
+
+      {touched.removed.length > 0 && (
+        <p className="tm__note" data-testid="tm-removed">
+          {touched.removed.length === 1
+            ? "1 object removed here — ghosted where it stood."
+            : `${String(touched.removed.length)} objects removed here — ghosted where they stood.`}
+        </p>
+      )}
 
       <label className="tm__scrub">
         <span className="tm__scrub-label">
@@ -189,31 +293,48 @@ export function TimeMachinePanel({ entries, live, onRestore }: TimeMachinePanelP
       </label>
 
       <footer className="tm__foot">
-        {restore === null ? (
-          <p className="tm__note" data-testid="tm-restore-state">
-            This is the current layout.
+        {/* The coverage statement. A furniture plan draws furniture changes;
+            markup, lighting and event edits are recorded in the same trail and
+            are not drawn. Saying which, with the replayer's own tallies, is
+            what separates a drawing from a claim. */}
+        <p className="tm__note" data-testid="tm-coverage">
+          This plan is rebuilt from {String(coverage.drawn)} recorded furniture
+          change{coverage.drawn === 1 ? "" : "s"}.
+          {coverage.omitted !== "" && ` Also recorded, but not drawn here: ${coverage.omitted}.`}
+          {coverage.unreadable > 0
+            && ` ${String(coverage.unreadable)} record${coverage.unreadable === 1 ? "" : "s"} could not be read back.`}
+        </p>
+
+        {!trailComplete && (
+          <p className="tm__warn" data-testid="tm-truncated">
+            Earlier changes are not loaded, so this reconstruction starts
+            partway through the trail. Restoring stays unavailable until the
+            whole trail is held.
           </p>
-        ) : (
-          <>
-            <p className="tm__note" data-testid="tm-restore-state">
-              Restoring appends a reversible change ({restoreSummary}) — it never erases history.
-            </p>
-            {onRestore !== undefined && (
-              <button
-                type="button"
-                className="tm__restore"
-                data-testid="tm-restore"
-                onClick={() => { onRestore(restore); }}
-              >
-                Restore the room to this moment
-              </button>
-            )}
-          </>
         )}
-        {at.issues.length > 0 && (
-          <p className="tm__warn" data-testid="tm-issues">
-            {String(at.issues.length)} point(s) in the trail could not be replayed exactly.
-          </p>
+
+        {trailComplete && anchor?.exact !== false && (
+          restore === null ? (
+            <p className="tm__note" data-testid="tm-restore-state">
+              This is the current layout.
+            </p>
+          ) : (
+            <>
+              <p className="tm__note" data-testid="tm-restore-state">
+                Restoring appends a reversible change ({restoreSummary}) — it never erases history.
+              </p>
+              {onRestore !== undefined && (
+                <button
+                  type="button"
+                  className="tm__restore"
+                  data-testid="tm-restore"
+                  onClick={() => { onRestore(restore); }}
+                >
+                  Restore the room to this moment
+                </button>
+              )}
+            </>
+          )
         )}
       </footer>
     </section>

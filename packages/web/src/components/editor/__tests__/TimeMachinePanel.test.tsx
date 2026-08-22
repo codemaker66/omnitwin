@@ -89,3 +89,76 @@ describe("TimeMachinePanel", () => {
     expect(screen.getByTestId("time-machine-panel").textContent).toContain("No recorded history yet");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Honesty about the reconstruction.
+//
+// A history surface earns trust by being MORE precise about its limits than
+// about its contents. These four pin the places where the panel currently
+// knows something and does not say it — or, worse, draws a confident room it
+// cannot support. Each is a live defect, not a hypothetical.
+// ---------------------------------------------------------------------------
+
+describe("TimeMachinePanel — what the reconstruction does and does not show", () => {
+  it("marks an object that was REMOVED at the selected change", () => {
+    // touchedByEntry types `removed` in the payload and never iterates it, so
+    // scrubbing to the moment a table was deleted highlights nothing — and a
+    // deletion is precisely the change an operator is hunting for.
+    const trail: readonly AuditLogEntry[] = [
+      ...TRAIL,
+      entry(30, {
+        payload: { label: "Remove chair", added: [], removed: [{ object: CHAIR, index: 1 }], updated: [] },
+        inverse: { label: "Remove chair", added: [{ object: CHAIR, index: 1 }], removed: [], updated: [] },
+      }),
+    ];
+    render(<TimeMachinePanel entries={trail} live={[TABLE]} />);
+
+    const panel = screen.getByTestId("time-machine-panel");
+    expect(panel.textContent).toContain("Remove chair");
+    expect(panel.textContent).toMatch(/removed here/i);
+  });
+
+  it("refuses to draw a room it cannot reconstruct, and prints the engine's own reason", () => {
+    // A fold summary has no inverse, so deriveBaseFromLive cannot recover the
+    // starting room. The panel currently throws that reason away and renders a
+    // confidently wrong plan.
+    const folded: readonly AuditLogEntry[] = [
+      entry(5, { intent: "log.summarized", payload: { folded: 500 }, inverse: null }),
+      ...TRAIL,
+    ];
+    render(<TimeMachinePanel entries={folded} live={[TABLE, CHAIR]} />);
+
+    const panel = screen.getByTestId("time-machine-panel");
+    expect(panel.textContent).toContain("summarized");
+    expect(screen.queryByTestId("tm-plan")).toBeNull();
+  });
+
+  it("states the coverage of the reconstruction with real counts", () => {
+    // verifyReplayable().counts and replayActions().skipped are both computed
+    // today and discarded. Markup and lighting are recorded but not drawn on a
+    // furniture plan — saying so is the difference between a drawing and a claim.
+    const mixed: readonly AuditLogEntry[] = [
+      ...TRAIL,
+      entry(30, { intent: "markup.draw", payload: { label: "Sketch" }, inverse: { label: "Sketch" } }),
+      entry(40, { intent: "lighting.rig.reset", payload: { label: "Rig" }, inverse: { label: "Rig" } }),
+    ];
+    render(<TimeMachinePanel entries={mixed} live={[TABLE, CHAIR]} />);
+
+    const coverage = screen.getByTestId("tm-coverage").textContent ?? "";
+    expect(coverage).toMatch(/2 recorded furniture changes/i);
+    expect(coverage).toMatch(/not drawn here/i);
+  });
+
+  it("withdraws restore entirely when the trail is known to be truncated", () => {
+    // Anchored to the oldest page while the live room reflects everything
+    // after it: any restore computed from that is wrong. Absent, not disabled
+    // — a disabled control still tells the operator the feature applies here.
+    const onRestore = vi.fn();
+    render(<TimeMachinePanel entries={TRAIL} live={[TABLE, CHAIR]} trailComplete={false} onRestore={onRestore} />);
+
+    fireEvent.change(screen.getByTestId("tm-scrubber"), { target: { value: "0" } });
+
+    expect(screen.queryByTestId("tm-restore")).toBeNull();
+    expect(screen.getByTestId("time-machine-panel").textContent).toMatch(/earlier changes/i);
+  });
+});
