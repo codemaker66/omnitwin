@@ -266,14 +266,50 @@ export function EditorBridge(): null {
 
 let bridgeSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-function scheduleAutoSave(isAuthenticated: boolean): void {
+const AUTOSAVE_DEBOUNCE_MS = 3000;
+/** Short retry when the tick lands mid-save. Not the full debounce: the work
+ *  is already pending, we are only waiting for the socket to clear. */
+const AUTOSAVE_RETRY_MS = 400;
+
+/** Exported so the autosave contract can be tested by behaviour rather than
+ *  by asserting on this module's source text. */
+export function scheduleAutoSave(isAuthenticated: boolean): void {
   if (bridgeSaveTimer !== null) clearTimeout(bridgeSaveTimer);
-  bridgeSaveTimer = setTimeout(() => {
-    const state = useEditorStore.getState();
-    if (state.isDirty && !state.isSaving && state.configId !== null) {
-      void state.saveToServer(isAuthenticated);
-    }
-  }, 3000);
+  bridgeSaveTimer = setTimeout(() => { attemptAutoSave(isAuthenticated); }, AUTOSAVE_DEBOUNCE_MS);
+}
+
+/** The debounce has already elapsed; decide what to do with the tick.
+ *  Separate from scheduleAutoSave so a mid-save retry re-CHECKS rather than
+ *  restarting the full debounce — the work is already pending, and making the
+ *  operator wait another three seconds for a socket to clear is not a wait,
+ *  it is a stall. */
+function attemptAutoSave(isAuthenticated: boolean): void {
+  bridgeSaveTimer = null;
+  const state = useEditorStore.getState();
+  // A save is in flight. The old code matched nothing here and rescheduled
+  // nothing, so the dirty state sat until the operator happened to make
+  // another gesture — and if they had finished editing, it was never saved
+  // at all. Come back for it instead of dropping the tick.
+  if (state.isSaving) {
+    bridgeSaveTimer = setTimeout(() => { attemptAutoSave(isAuthenticated); }, AUTOSAVE_RETRY_MS);
+    return;
+  }
+  if (state.isDirty && state.configId !== null) {
+    void state.saveToServer(isAuthenticated);
+  }
+}
+
+/** Resolve once no save is in flight. */
+async function settleInFlightSave(): Promise<void> {
+  if (!useEditorStore.getState().isSaving) return;
+  await new Promise<void>((resolve) => {
+    const unsubscribe = useEditorStore.subscribe((state) => {
+      if (!state.isSaving) {
+        unsubscribe();
+        resolve();
+      }
+    });
+  });
 }
 
 /**
@@ -284,14 +320,21 @@ function scheduleAutoSave(isAuthenticated: boolean): void {
  *
  * Returns true when the pending save is either unnecessary or reaches the
  * server. Returns false when saveToServer records a save failure.
+ *
+ * A save already in flight is AWAITED, never treated as success. It carries
+ * the objects as they were when it started, so returning true would tell the
+ * enquiry and review flows the venue holds the latest layout while newer
+ * objects had never been pushed — reporting success over a stale layout is an
+ * unfounded claim, not merely a bug.
  */
 export async function flushAutoSave(): Promise<boolean> {
   if (bridgeSaveTimer !== null) {
     clearTimeout(bridgeSaveTimer);
     bridgeSaveTimer = null;
   }
+  await settleInFlightSave();
   const state = useEditorStore.getState();
-  if (state.isDirty && !state.isSaving && state.configId !== null) {
+  if (state.isDirty && state.configId !== null) {
     return await state.saveToServer(useAuthStore.getState().isAuthenticated);
   }
   return true;
