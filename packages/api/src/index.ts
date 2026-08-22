@@ -109,7 +109,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // must read the X-Forwarded-For header for rate-limiting to key
   // on real client IPs. `true` trusts every hop, which would let a
   // client mint fresh limiter buckets by forging the header IF the
-  // edge appended rather than replaced it. Measured 2026-08-18 from
+  // edge appended rather than replaced it. Measured 2026-08-22 from
   // outside: three requests with one forged value, one with another,
   // one with none, all counted down a single bucket (99→94) — the
   // edge overwrites the header, so the forgery buys nothing.
