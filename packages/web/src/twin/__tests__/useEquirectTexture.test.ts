@@ -49,6 +49,16 @@ async function completeLod(lod: 512 | 4096 | 8192): Promise<void> {
   });
 }
 
+/** Fail every pending image of one LOD and flush the stream continuation. */
+async function failLod(lod: 512 | 4096 | 8192): Promise<void> {
+  await act(async () => {
+    for (const image of imagesFor(lod)) {
+      image.onerror?.();
+    }
+    await Promise.resolve();
+  });
+}
+
 describe("useEquirectTexture", () => {
   beforeEach(() => {
     // Textures are shared module state by design (the registry) — cold-start
@@ -193,6 +203,44 @@ describe("useEquirectTexture", () => {
     // The ladder stops at the 4096 ceiling: no 8192 request ever went out.
     expect(MockImage.instances).toHaveLength(2);
     expect(imagesFor(8192)).toHaveLength(0);
+  });
+
+  it("reports only a complete current-node stream failure and never forwards its URL", async () => {
+    const onStreamError = vi.fn();
+    renderHook(() =>
+      useEquirectTexture("scan_secret", `${BASE}?token=do-not-render`, 4096, onStreamError),
+    );
+
+    await failLod(512);
+    expect(onStreamError).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(imagesFor(4096)).toHaveLength(1);
+    });
+    await failLod(4096);
+
+    await waitFor(() => {
+      expect(onStreamError).toHaveBeenCalledTimes(1);
+    });
+    expect(onStreamError).toHaveBeenCalledWith("scan_secret");
+    expect(onStreamError.mock.calls.flat().join(" ")).not.toContain("token");
+  });
+
+  it("does not report an error when a failed preview recovers at the base tier", async () => {
+    const onStreamError = vi.fn();
+    const { result } = renderHook(() =>
+      useEquirectTexture("scan_recovery", BASE, 4096, onStreamError),
+    );
+
+    await failLod(512);
+    await waitFor(() => {
+      expect(imagesFor(4096)).toHaveLength(1);
+    });
+    await completeLod(4096);
+    await waitFor(() => {
+      expect(result.current.lod).toBe(4096);
+    });
+
+    expect(onStreamError).not.toHaveBeenCalled();
   });
 
   it("streams 512 → 4096 → 8192 in order under maxLod 8192", async () => {

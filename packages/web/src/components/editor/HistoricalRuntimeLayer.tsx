@@ -13,6 +13,7 @@ import { SplatMesh } from "@sparkjsdev/spark";
 import { Matrix4, type Group } from "three";
 import type { PhaseLayoutRuntimeAvailableBinding } from "@omnitwin/types";
 import {
+  authorizeHistoricalRuntimeBinding,
   fetchVerifiedHistoricalRuntimeAsset,
   type VerifiedHistoricalRuntimeAsset,
 } from "../../api/historical-runtime-assets.js";
@@ -25,22 +26,31 @@ import {
   HISTORICAL_RUNTIME_MAX_SPLATS_PER_RESOURCE,
   HistoricalRuntimeCache,
   historicalRuntimeBindingKey,
+  historicalRuntimeBindingMatchesRoom,
+  historicalRuntimeCacheScopeKey,
   historicalRuntimeCombinedSplatsWithinBudget,
   historicalRuntimeCompressedBytes,
   historicalRuntimeCrossfadeAllowed,
   historicalRuntimeDecodedSplatsWithinViewerBudget,
   historicalRuntimeResourceCanRender,
   historicalRuntimeRemainingAdjacentSplatBudget,
+  historicalRuntimeResourceKey,
   historicalRuntimeViewerCapacity,
+  guardHistoricalRuntimeCacheAuthRevision,
 } from "../../lib/historical-runtime-cache.js";
 import { resolveHistoricalRuntimeAssetToRrfTransform } from "../../lib/historical-runtime-transform.js";
+import { useAuthStore } from "../../stores/auth-store.js";
+import { useEditorStore } from "../../stores/editor-store.js";
 import { useHistoricalRuntimeStatusStore } from "../../stores/historical-runtime-status-store.js";
-import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
+import {
+  useLayoutTimelinePreviewStore,
+  type LayoutTimelinePreviewSessionMode,
+} from "../../stores/layout-timeline-preview-store.js";
 import { sparkRendererAdmissionGate } from "../scene/spark-renderer-lifecycle.js";
 
 const MAX_REMEMBERED_SPLAT_COUNTS = 32;
 const splatBudgetByBinding = new WeakMap<PhaseLayoutRuntimeAvailableBinding, number>();
-const splatCountByBindingKey = new Map<string, number>();
+const splatCountByResourceKey = new Map<string, number>();
 
 export interface HistoricalRuntimeMesh {
   visible: boolean;
@@ -111,14 +121,22 @@ export function historicalRuntimePresentationCanAcknowledge(params: {
     params.attachedKey === params.candidateKey;
 }
 
+/** `showPending` empties the scene but must not evict the same Day/Week room package. */
+export function historicalRuntimeShouldRetainCacheWindow(params: {
+  readonly previewMode: LayoutTimelinePreviewSessionMode;
+  readonly hasActiveFrame: boolean;
+}): boolean {
+  return params.previewMode === "unavailable" && !params.hasActiveFrame;
+}
+
 function rememberSplatCount(binding: PhaseLayoutRuntimeAvailableBinding, count: number): void {
-  const key = historicalRuntimeBindingKey(binding);
-  splatCountByBindingKey.delete(key);
-  splatCountByBindingKey.set(key, count);
-  while (splatCountByBindingKey.size > MAX_REMEMBERED_SPLAT_COUNTS) {
-    const oldest = splatCountByBindingKey.keys().next();
+  const key = historicalRuntimeResourceKey(binding);
+  splatCountByResourceKey.delete(key);
+  splatCountByResourceKey.set(key, count);
+  while (splatCountByResourceKey.size > MAX_REMEMBERED_SPLAT_COUNTS) {
+    const oldest = splatCountByResourceKey.keys().next();
     if (oldest.done === true) break;
-    splatCountByBindingKey.delete(oldest.value);
+    splatCountByResourceKey.delete(oldest.value);
   }
 }
 
@@ -193,11 +211,21 @@ export async function decodeHistoricalRuntimePackage(
   }
 }
 
+// Dormant T-541 wiring only: production timeline data is unavailable-only and
+// the current member GET/automatic HEAD route intentionally returns 404. This
+// cache cannot produce a real ready historical resource until that contract is
+// implemented and independently authenticated.
 const historicalRuntimeCache = new HistoricalRuntimeCache<HistoricalRuntimeResource>({
+  authorizeBinding: authorizeHistoricalRuntimeBinding,
   fetchMember: fetchVerifiedHistoricalRuntimeAsset,
   decode: decodeHistoricalRuntimePackage,
   dispose: disposeHistoricalRuntimeResource,
 });
+guardHistoricalRuntimeCacheAuthRevision(
+  historicalRuntimeCache,
+  useAuthStore,
+  () => { splatCountByResourceKey.clear(); },
+);
 
 function setResourceOpacity(resource: HistoricalRuntimeResource | null, opacity: number): void {
   if (resource === null || resource.disposed) return;
@@ -229,6 +257,11 @@ function useHistoricalRuntimeViewportWidth(): number {
 
 export function HistoricalRuntimeLayer(): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
+  const selectedVenueId = useEditorStore((state) => state.venueId);
+  const selectedSpaceId = useEditorStore((state) => state.spaceId);
+  const authUser = useAuthStore((state) => state.user);
+  const authSessionId = useAuthStore((state) => state.authSessionId);
+  const authContextRevision = useAuthStore((state) => state.authContextRevision);
   const previewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const activeFrame = useLayoutTimelinePreviewStore((state) => state.activeFrame);
   const previewTransitionFromFrame = useLayoutTimelinePreviewStore(
@@ -269,9 +302,30 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   const viewportWidth = useHistoricalRuntimeViewportWidth();
   const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 
-  const historicalRuntime = activeFrame?.historicalRuntime ?? null;
-  const availableBinding = historicalRuntime?.state === "available"
+  const cacheScopeKey = historicalRuntimeCacheScopeKey({
+    user: authUser,
+    venueId: selectedVenueId,
+    spaceId: selectedSpaceId,
+    authSessionId,
+    authContextRevision,
+  });
+  const frameHasRoomAuthority = previewMode === "keyframe" || previewMode === "transition";
+  const historicalRuntime = frameHasRoomAuthority
+    ? activeFrame?.historicalRuntime ?? null
+    : null;
+  const availableBindingCandidate = historicalRuntime?.state === "available"
     ? historicalRuntime.binding
+    : null;
+  const selectedRoom = useMemo(
+    () => selectedVenueId === null || selectedSpaceId === null
+      ? null
+      : { venueId: selectedVenueId, spaceId: selectedSpaceId },
+    [selectedSpaceId, selectedVenueId],
+  );
+  const bindingMatchesSelectedRoom = availableBindingCandidate !== null && selectedRoom !== null &&
+    historicalRuntimeBindingMatchesRoom(availableBindingCandidate, selectedRoom);
+  const availableBinding = cacheScopeKey !== null && bindingMatchesSelectedRoom
+    ? availableBindingCandidate
     : null;
   const transform = useMemo(
     () => availableBinding === null
@@ -290,19 +344,26 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   const candidateBinding = transform?.ok === true && activeFitsBudget && !rendererQuarantined
     ? availableBinding
     : null;
-  const candidateKey = candidateBinding === null ? null : historicalRuntimeBindingKey(candidateBinding);
-  const candidateRecord = candidateKey === null ? undefined : snapshot.records.get(candidateKey);
-  const knownActiveSplatCount = candidateKey === null
+  const candidateBindingKey = candidateBinding === null
+    ? null
+    : historicalRuntimeBindingKey(candidateBinding);
+  const candidateResourceKey = candidateBinding === null
+    ? null
+    : historicalRuntimeResourceKey(candidateBinding);
+  const candidateRecord = candidateBindingKey === null
     ? undefined
-    : candidateRecord?.resource?.splatCount ?? splatCountByBindingKey.get(candidateKey);
+    : snapshot.records.get(candidateBindingKey);
+  const knownActiveSplatCount = candidateResourceKey === null
+    ? undefined
+    : candidateRecord?.resource?.splatCount ?? splatCountByResourceKey.get(candidateResourceKey);
   const activeFitsSplatBudget = knownActiveSplatCount === undefined ||
     historicalRuntimeDecodedSplatsWithinViewerBudget(
       knownActiveSplatCount,
       viewerCapacity.maxSplats,
     );
   const activeBinding = activeFitsSplatBudget ? candidateBinding : null;
-  const activeKey = activeBinding === null ? null : candidateKey;
-  const activeRecord = activeKey === null ? undefined : candidateRecord;
+  const activeKey = activeBinding === null ? null : candidateResourceKey;
+  const activeRecord = activeBinding === null ? undefined : candidateRecord;
   const activeEnvelopeKey = activeFrame?.venueRuntime === null || activeFrame?.venueRuntime === undefined
     ? null
     : frozenRoomEnvelopeKey(activeFrame.venueRuntime);
@@ -312,18 +373,24 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   const transitionToBinding = previewTransitionToFrame?.historicalRuntime?.state === "available"
     ? previewTransitionToFrame.historicalRuntime.binding
     : null;
-  const transitionFromKey = transitionFromBinding === null
+  const transitionFromBindingKey = transitionFromBinding === null
     ? null
     : historicalRuntimeBindingKey(transitionFromBinding);
-  const transitionToKey = transitionToBinding === null
+  const transitionToBindingKey = transitionToBinding === null
     ? null
     : historicalRuntimeBindingKey(transitionToBinding);
-  const transitionFromRecord = transitionFromKey === null
+  const transitionFromKey = transitionFromBinding === null
+    ? null
+    : historicalRuntimeResourceKey(transitionFromBinding);
+  const transitionToKey = transitionToBinding === null
+    ? null
+    : historicalRuntimeResourceKey(transitionToBinding);
+  const transitionFromRecord = transitionFromBindingKey === null
     ? undefined
-    : snapshot.records.get(transitionFromKey);
-  const transitionToRecord = transitionToKey === null
+    : snapshot.records.get(transitionFromBindingKey);
+  const transitionToRecord = transitionToBindingKey === null
     ? undefined
-    : snapshot.records.get(transitionToKey);
+    : snapshot.records.get(transitionToBindingKey);
   const timelineRuntimeBlend = useMemo<TimelineRuntimeBlendResources | null>(() => {
     if (
       previewTransitionMode !== "same-event-morph"
@@ -361,9 +428,11 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
     previewTransitionRoomEnvelopeChanged,
     reducedMotion,
     transitionFromBinding,
+    transitionFromBindingKey,
     transitionFromKey,
     transitionFromRecord,
     transitionToBinding,
+    transitionToBindingKey,
     transitionToKey,
     transitionToRecord,
   ]);
@@ -376,8 +445,13 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
       ? previewTransitionToFrame.historicalRuntime
       : previewTransitionFromFrame.historicalRuntime;
   const effectiveAdjacentRuntime = transitionAdjacentRuntime ?? adjacentRuntime;
-  const adjacentBindingCandidate = effectiveAdjacentRuntime?.state === "available"
+  const adjacentBindingCandidateUnscoped = effectiveAdjacentRuntime?.state === "available"
     ? effectiveAdjacentRuntime.binding
+    : null;
+  const adjacentBindingCandidate = adjacentBindingCandidateUnscoped !== null &&
+    selectedRoom !== null &&
+    historicalRuntimeBindingMatchesRoom(adjacentBindingCandidateUnscoped, selectedRoom)
+    ? adjacentBindingCandidateUnscoped
     : null;
   const adjacentTransform = useMemo(
     () => adjacentBindingCandidate === null
@@ -387,10 +461,11 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   );
   const adjacentCandidateKey = adjacentBindingCandidate === null
     ? null
-    : historicalRuntimeBindingKey(adjacentBindingCandidate);
+    : historicalRuntimeResourceKey(adjacentBindingCandidate);
   const adjacentSplatCount = adjacentCandidateKey === null
     ? undefined
-    : splatCountByBindingKey.get(adjacentCandidateKey);
+    : splatCountByResourceKey.get(adjacentCandidateKey);
+  const adjacentSharesActiveResource = activeKey !== null && adjacentCandidateKey === activeKey;
   const adjacentFitsSplatBudget = adjacentSplatCount === undefined ||
     historicalRuntimeDecodedSplatsWithinViewerBudget(
       adjacentSplatCount,
@@ -405,7 +480,7 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
     viewerSplatBudget: viewerCapacity.maxSplats,
     combinedResidentSplatBudget,
   });
-  const adjacentFitsCombinedSplatBudget = adjacentSplatCount === undefined ||
+  const adjacentFitsCombinedSplatBudget = adjacentSharesActiveResource || adjacentSplatCount === undefined ||
     (knownActiveSplatCount !== undefined &&
       historicalRuntimeCombinedSplatsWithinBudget(
         knownActiveSplatCount,
@@ -414,7 +489,9 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
       ));
   const adjacentFitsBudget = activeBinding !== null && adjacentBindingCandidate !== null &&
     adjacentBindingCandidate.visualAssets.length <= HISTORICAL_RUNTIME_MAX_MEMBERS &&
-    historicalRuntimeCompressedBytes(activeBinding) + historicalRuntimeCompressedBytes(adjacentBindingCandidate)
+    historicalRuntimeCompressedBytes(activeBinding) + (
+      adjacentSharesActiveResource ? 0 : historicalRuntimeCompressedBytes(adjacentBindingCandidate)
+    )
       <= viewerCapacity.maxCompressedBytes;
   const adjacentBinding = activeBinding !== null &&
     viewerCapacity.allowAdjacent &&
@@ -428,8 +505,14 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   const decodeAdjacent = activeBinding !== null && adjacentBinding !== null &&
     activeRecord?.status === "ready" &&
     remainingAdjacentSplatBudget > 0;
+  const retainCacheWindow = historicalRuntimeShouldRetainCacheWindow({
+    previewMode,
+    hasActiveFrame: activeFrame !== null,
+  });
 
   useLayoutEffect(() => {
+    historicalRuntimeCache.setScope(cacheScopeKey);
+    if (retainCacheWindow) return;
     if (activeBinding !== null) splatBudgetByBinding.set(activeBinding, viewerCapacity.maxSplats);
     if (adjacentBinding !== null) {
       splatBudgetByBinding.set(adjacentBinding, remainingAdjacentSplatBudget);
@@ -438,13 +521,17 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
       active: activeBinding,
       adjacent: adjacentBinding,
       decodeAdjacent,
+      expectedRoom: selectedRoom ?? undefined,
     });
   }, [
     activeBinding,
     adjacentBinding,
+    cacheScopeKey,
     decodeAdjacent,
     remainingAdjacentSplatBudget,
+    retainCacheWindow,
     retryRevision,
+    selectedRoom,
     viewerCapacity.maxSplats,
   ]);
 
@@ -457,7 +544,7 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
   useEffect(() => () => {
     cancelPresentationFrame();
     historicalRuntimeCache.clear();
-    splatCountByBindingKey.clear();
+    splatCountByResourceKey.clear();
   }, [cancelPresentationFrame]);
 
   useLayoutEffect(() => {
@@ -485,6 +572,22 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
         state: "unavailable",
         bindingId: null,
         message: "No exact historical room capture is bound to this timeline frame.",
+      });
+      return;
+    }
+    if (cacheScopeKey === null) {
+      publish({
+        state: "unavailable",
+        bindingId: historicalRuntime.binding?.bindingId ?? null,
+        message: "An authenticated selected-room context is required for historical room rendering.",
+      });
+      return;
+    }
+    if (availableBindingCandidate !== null && !bindingMatchesSelectedRoom) {
+      publish({
+        state: "unavailable",
+        bindingId: availableBindingCandidate.bindingId,
+        message: "The historical room binding does not match the selected room.",
       });
       return;
     }
@@ -544,6 +647,9 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
     activeFitsSplatBudget,
     activeKey,
     activeRecord?.status,
+    availableBindingCandidate,
+    bindingMatchesSelectedRoom,
+    cacheScopeKey,
     historicalRuntime,
     presentedKey,
     previewMode,
@@ -654,8 +760,8 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
       const transition = state.transition;
       const progress = transition?.fromFrame.historicalRuntime?.state === "available"
         && transition.toFrame.historicalRuntime?.state === "available"
-        && historicalRuntimeBindingKey(transition.fromFrame.historicalRuntime.binding) === timelineRuntimeBlend.fromKey
-        && historicalRuntimeBindingKey(transition.toFrame.historicalRuntime.binding) === timelineRuntimeBlend.toKey
+        && historicalRuntimeResourceKey(transition.fromFrame.historicalRuntime.binding) === timelineRuntimeBlend.fromKey
+        && historicalRuntimeResourceKey(transition.toFrame.historicalRuntime.binding) === timelineRuntimeBlend.toKey
         ? transition.progress
         : null;
       if (progress === null || progress === previousProgress) return;
@@ -670,8 +776,8 @@ export function HistoricalRuntimeLayer(): ReactElement | null {
       const transition = useLayoutTimelinePreviewStore.getState().transition;
       const progress = transition?.fromFrame.historicalRuntime?.state === "available"
         && transition.toFrame.historicalRuntime?.state === "available"
-        && historicalRuntimeBindingKey(transition.fromFrame.historicalRuntime.binding) === blend.fromKey
-        && historicalRuntimeBindingKey(transition.toFrame.historicalRuntime.binding) === blend.toKey
+        && historicalRuntimeResourceKey(transition.fromFrame.historicalRuntime.binding) === blend.fromKey
+        && historicalRuntimeResourceKey(transition.toFrame.historicalRuntime.binding) === blend.toKey
         ? transition.progress
         : null;
       if (progress !== null && progress !== lastTransitionBlendProgressRef.current) {

@@ -109,9 +109,16 @@ export function preloadDollhouse(meshUrl: string): void {
   useGLTF.preload(meshUrl, true, true, configureDollhouseLoader);
 }
 
+/** Evict one parsed GLTF entry. Local blob leases call this during their
+ * ownership cleanup; public URL-backed assets deliberately remain cached. */
+export function clearDollhouse(meshUrl: string): void {
+  useGLTF.clear(meshUrl);
+}
+
 interface DollhouseMeshProps {
   readonly meshUrl: string;
   readonly cutawayPlanes: readonly Plane[] | null;
+  readonly onOwnedSceneReady?: (meshUrl: string, scene: Group) => void;
 }
 
 /**
@@ -121,8 +128,15 @@ interface DollhouseMeshProps {
  * stays on as well so the loader is covered even if drei reorders its
  * extension hooks. WebP textures decode natively; no KTX2/basis transcoder.
  */
-function DollhouseMesh({ meshUrl, cutawayPlanes }: DollhouseMeshProps): ReactElement {
+function DollhouseMesh({
+  meshUrl,
+  cutawayPlanes,
+  onOwnedSceneReady,
+}: DollhouseMeshProps): ReactElement {
   const gltf = useGLTF(meshUrl, true, true, configureDollhouseLoader);
+  useLayoutEffect(() => {
+    onOwnedSceneReady?.(meshUrl, gltf.scene);
+  }, [gltf.scene, meshUrl, onOwnedSceneReady]);
   const preparedScene = useMemo(
     () =>
       cutawayPlanes === null
@@ -344,6 +358,8 @@ export interface DollhouseStageProps {
   readonly currentId: string;
   /** Dot click (drag-guarded) — Task 6 wires this into the dive flight. */
   readonly onDive: (id: string) => void;
+  /** Local-only ownership bridge. Public cached stages must leave this absent. */
+  readonly onOwnedSceneReady?: (meshUrl: string, scene: Group) => void;
   /** Optional venue-scoped camera-facing section treatment. */
   readonly cutaway?: {
     readonly enabled: boolean;
@@ -359,6 +375,7 @@ export function DollhouseStage({
   currentId,
   onDive,
   cutaway,
+  onOwnedSceneReady,
 }: DollhouseStageProps): ReactElement {
   const cutawayPlane = useMemo(() => {
     const plane = new Plane();
@@ -390,7 +407,11 @@ export function DollhouseStage({
           simply exposes them, the low directional adds facade legibility. */}
       <ambientLight intensity={2.2} />
       <directionalLight position={[12, 30, 18]} intensity={0.8} />
-      <DollhouseMesh meshUrl={meshUrl} cutawayPlanes={clippingPlanes} />
+      <DollhouseMesh
+        meshUrl={meshUrl}
+        cutawayPlanes={clippingPlanes}
+        {...(onOwnedSceneReady === undefined ? {} : { onOwnedSceneReady })}
+      />
       {cutaway !== undefined && (
         <DollhouseCutawayController
           plane={cutawayPlane}

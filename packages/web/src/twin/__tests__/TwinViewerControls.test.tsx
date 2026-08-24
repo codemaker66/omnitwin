@@ -12,13 +12,14 @@ import { TwinViewerControls } from "../TwinViewerControls.js";
 // only offered where the browser actually supports it.
 // -----------------------------------------------------------------------------
 
-function renderControls(): void {
+function renderControls(engagementEnabled = true): void {
   const ref = createRef<HTMLDivElement>();
   render(
     <TwinViewerControls
       venueSlug="trades-hall"
       venueName="Trades Hall Glasgow"
       viewerRef={ref}
+      engagementEnabled={engagementEnabled}
     />,
   );
 }
@@ -76,5 +77,19 @@ describe("TwinViewerControls", () => {
     });
     renderControls();
     expect(screen.getByLabelText("Enter full screen")).toBeTruthy();
+  });
+
+  it("removes share and enquiry while retaining fullscreen in local evidence review", () => {
+    Object.defineProperty(document, "fullscreenEnabled", {
+      value: true,
+      configurable: true,
+    });
+    renderControls(false);
+
+    expect(screen.queryByLabelText("Copy link to this walkthrough")).toBeNull();
+    expect(screen.queryByRole("button", { name: /enquire about hosting/i })).toBeNull();
+    expect(screen.getByLabelText("Enter full screen")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("localRoomEvidence");
+    expect(writeText).not.toHaveBeenCalled();
   });
 });

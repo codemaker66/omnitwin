@@ -4,11 +4,17 @@ import {
   decodeHistoricalRuntimePackage,
   disposeHistoricalRuntimeResource,
   historicalRuntimePresentationCanAcknowledge,
+  historicalRuntimeShouldRetainCacheWindow,
   historicalRuntimeTimelineBlendHasDistinctResources,
   historicalRuntimeTimelineBlendOpacities,
   type HistoricalRuntimeMesh,
 } from "../HistoricalRuntimeLayer.js";
 import { historicalRuntimeBindingFixture } from "../../../test-utils/historical-runtime-binding.js";
+import {
+  historicalRuntimeCapturedVisualKey,
+  historicalRuntimeCrossfadeAllowed,
+  historicalRuntimeResourceKey,
+} from "../../../lib/historical-runtime-cache.js";
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -132,6 +138,52 @@ describe("timeline-owned historical runtime blend", () => {
     expect(historicalRuntimeTimelineBlendHasDistinctResources(null, "runtime:b")).toBe(false);
   });
 
+  it("never crossfades distinct snapshots or package IDs with identical captured content", () => {
+    const from = historicalRuntimeBindingFixture({ sizeBytes: 3 });
+    const to = historicalRuntimeBindingFixture({
+      bindingId: "12111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "23222222-2222-4222-8222-222222222222",
+      runtimePackageId: "67666666-6666-4666-8666-666666666666",
+      runtimePackageContentDigest: from.runtimePackageContentDigest,
+      sizeBytes: 3,
+    });
+    const fromKey = historicalRuntimeResourceKey(from);
+    const toKey = historicalRuntimeResourceKey(to);
+    expect(from.bindingId).not.toBe(to.bindingId);
+    expect(from.runtimePackageId).not.toBe(to.runtimePackageId);
+    expect(toKey).toBe(fromKey);
+    expect(historicalRuntimeTimelineBlendHasDistinctResources(fromKey, toKey)).toBe(false);
+
+    const memberAlias = historicalRuntimeBindingFixture({
+      bindingId: "13111111-1111-4111-8111-111111111111",
+      canonicalSnapshotId: "24222222-2222-4222-8222-222222222222",
+      runtimePackageId: "68666666-6666-4666-8666-666666666666",
+      runtimePackageContentDigest: from.runtimePackageContentDigest,
+      assetVersionId: "98999999-9999-4999-8999-999999999999",
+      fileName: "grand-hall-alias.sog",
+      sizeBytes: 3,
+    });
+    expect(historicalRuntimeResourceKey(memberAlias)).not.toBe(fromKey);
+    expect(historicalRuntimeCapturedVisualKey(memberAlias))
+      .toBe(historicalRuntimeCapturedVisualKey(from));
+    for (const [transitionFrom, transitionTo] of [
+      [from, memberAlias],
+      [memberAlias, from],
+      [to, memberAlias],
+    ] as const) {
+      expect(historicalRuntimeCrossfadeAllowed({
+        from: transitionFrom,
+        to: transitionTo,
+        sameEnvelope: true,
+        reducedMotion: false,
+        combinedByteBudget: 1_024,
+        fromSplatCount: 1,
+        toSplatCount: 1,
+        combinedSplatBudget: 10,
+      })).toBe(false);
+    }
+  });
+
   it("tracks the timeline progress exactly instead of starting an independent clock", () => {
     expect(historicalRuntimeTimelineBlendOpacities(0)).toEqual({ from: 1, to: 0 });
     expect(historicalRuntimeTimelineBlendOpacities(0.25)).toEqual({ from: 0.75, to: 0.25 });
@@ -143,5 +195,14 @@ describe("timeline-owned historical runtime blend", () => {
     expect(historicalRuntimeTimelineBlendOpacities(Number.NaN)).toEqual({ from: 1, to: 0 });
     expect(historicalRuntimeTimelineBlendOpacities(-1)).toEqual({ from: 1, to: 0 });
     expect(historicalRuntimeTimelineBlendOpacities(2)).toEqual({ from: 0, to: 1 });
+  });
+});
+
+describe("Day/Week historical runtime cache handoff", () => {
+  it("retains only a pending null-frame range", () => {
+    expect(historicalRuntimeShouldRetainCacheWindow({ previewMode: "unavailable", hasActiveFrame: false })).toBe(true);
+    expect(historicalRuntimeShouldRetainCacheWindow({ previewMode: "unavailable", hasActiveFrame: true })).toBe(false);
+    expect(historicalRuntimeShouldRetainCacheWindow({ previewMode: "schedule-gap", hasActiveFrame: false })).toBe(false);
+    expect(historicalRuntimeShouldRetainCacheWindow({ previewMode: "inactive", hasActiveFrame: false })).toBe(false);
   });
 });

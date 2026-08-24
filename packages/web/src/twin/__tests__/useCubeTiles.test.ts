@@ -104,6 +104,15 @@ async function completeLod(lod: 256 | 1024): Promise<void> {
   });
 }
 
+async function failLod(lod: 256 | 1024): Promise<void> {
+  await act(async () => {
+    for (const image of imagesFor(lod)) {
+      image.onerror?.();
+    }
+    await Promise.resolve();
+  });
+}
+
 function canvasThatDrew(src: string): HTMLCanvasElement {
   const recorded = contexts.find((context) => context.drawnSrcs.includes(src));
   if (recorded === undefined) {
@@ -197,6 +206,23 @@ describe("useCubeTiles", () => {
         }
       }
     }
+  });
+
+  it("reports a cubemap failure only after both tiers fail", async () => {
+    const onStreamError = vi.fn();
+    renderHook(() => useCubeTiles("scan_failed", BASE, onStreamError));
+
+    await failLod(256);
+    expect(onStreamError).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(imagesFor(1024)).toHaveLength(6);
+    });
+    await failLod(1024);
+
+    await waitFor(() => {
+      expect(onStreamError).toHaveBeenCalledTimes(1);
+    });
+    expect(onStreamError).toHaveBeenCalledWith("scan_failed");
   });
 
   it("disposes the previous texture when the node changes and restarts at 256", async () => {

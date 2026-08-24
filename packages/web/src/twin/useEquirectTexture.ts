@@ -379,9 +379,12 @@ export function useEquirectTexture(
   nodeId: string,
   base: string,
   maxLod: TwinEquirectLod = 4096,
+  onStreamError?: (nodeId: string) => void,
 ): EquirectTextureState {
   const [state, setState] = useState<EquirectTextureState>({ texture: null, lod: 0 });
   const slotRef = useRef<StreamSlot>({ key: "", applied: 0, live: null, release: null });
+  const onStreamErrorRef = useRef(onStreamError);
+  onStreamErrorRef.current = onStreamError;
 
   useEffect(() => {
     const key = JSON.stringify([base, nodeId]);
@@ -427,6 +430,12 @@ export function useEquirectTexture(
         };
         slot.applied = lod;
         setState({ texture, lod });
+      }
+      // A failed preview followed by a successful base is still usable. Report
+      // only after the whole permitted ladder has failed and only while this
+      // exact stream is current; aborts and superseded nodes are not errors.
+      if (!cancelled && slotRef.current.key === key && slot.applied === 0) {
+        onStreamErrorRef.current?.(nodeId);
       }
     };
 

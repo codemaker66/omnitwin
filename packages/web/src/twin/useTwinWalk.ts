@@ -62,8 +62,13 @@ export interface TwinWalk {
   readonly hopTo: (id: string, opts?: { readonly teleport?: boolean }) => void;
 }
 
-export function useTwinWalk(manifest: TwinManifest): TwinWalk {
+export function useTwinWalk(
+  manifest: TwinManifest,
+  urlStateEnabled = true,
+): TwinWalk {
   const [searchParams, setSearchParams] = useSearchParams();
+  const urlStateEnabledRef = useRef(urlStateEnabled);
+  urlStateEnabledRef.current = urlStateEnabled;
 
   const nodeIds = useMemo(
     () => new Set(manifest.nodes.map((node) => node.id)),
@@ -101,6 +106,9 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
   }, [manifest, nodeIds]);
 
   const [currentId, setCurrentId] = useState<string>(() => {
+    if (!urlStateEnabled) {
+      return fallbackId;
+    }
     const param = searchParams.get("node");
     return param !== null && nodeIds.has(param) ? param : fallbackId;
   });
@@ -123,6 +131,9 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
   /** Set ?node= while preserving any other params the page carries. */
   const writeNodeParam = useCallback(
     (id: string, mode: "push" | "replace") => {
+      if (!urlStateEnabledRef.current) {
+        return;
+      }
       setSearchParams(
         (previous) => {
           const next = new URLSearchParams(previous);
@@ -202,6 +213,9 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
   // is an instant, springless swap; a missing or unknown param is
   // canonicalised back to the node underfoot without adding history.
   useEffect(() => {
+    if (!urlStateEnabled) {
+      return;
+    }
     const param = searchParams.get("node");
     if (param !== null && nodeIds.has(param)) {
       if (param !== currentIdRef.current) {
@@ -210,7 +224,22 @@ export function useTwinWalk(manifest: TwinManifest): TwinWalk {
       return;
     }
     writeNodeParam(currentIdRef.current, "replace");
-  }, [searchParams, nodeIds, arriveAt, writeNodeParam]);
+  }, [searchParams, nodeIds, arriveAt, writeNodeParam, urlStateEnabled]);
+
+  // A public viewer may be re-used inside a local evidence surface without a
+  // remount. Cancel any in-flight public hop before it can settle through a
+  // stale callback, then reset the isolated walk without touching history.
+  useEffect(() => {
+    if (urlStateEnabled) {
+      return;
+    }
+    cancelHopLoop();
+    currentIdRef.current = fallbackId;
+    targetIdRef.current = null;
+    setCurrentId(fallbackId);
+    setTargetId(null);
+    setProgress(0);
+  }, [cancelHopLoop, fallbackId, urlStateEnabled]);
 
   // Never leave a frame loop running after unmount.
   useEffect(() => cancelHopLoop, [cancelHopLoop]);

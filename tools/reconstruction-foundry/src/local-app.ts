@@ -1,4 +1,8 @@
-import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import {
+  spawn,
+  type ChildProcess,
+  type SpawnOptions,
+} from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   createServer,
@@ -45,6 +49,23 @@ import {
   LOCAL_FOUNDRY_APP_JAVASCRIPT,
 } from "./local-app-assets.js";
 import {
+  LOCAL_ROOM_REALITY_REVIEW_CSS,
+  LOCAL_ROOM_REALITY_REVIEW_HTML,
+  LOCAL_ROOM_REALITY_REVIEW_JAVASCRIPT,
+} from "./local-room-reality-review-assets.js";
+import {
+  LocalRoomRealityReviewError,
+  compileLocalRoomRealityReviewDraftV0,
+  compileLocalRoomRealityReviewSurfaceV0,
+  type LocalRoomRealityReviewDraftV0,
+  type LocalRoomRealityReviewSurfaceV0,
+} from "./local-room-reality-review.js";
+import {
+  LOCAL_E57_POINT_CLASSIFICATION_MASK_MAXIMUM_BODY_BYTES,
+  LocalE57PointClassificationMaskError,
+  compileLocalE57PointClassificationMaskV0,
+} from "./local-e57-point-classification-mask.js";
+import {
   LocalReferenceVerificationControllerV0,
   type CreateLocalReferenceVerificationControllerOptionsV0,
   type LocalReferenceVerificationPublicV0,
@@ -60,6 +81,20 @@ import {
   type LocalOfflineNormalizationPreviewDto,
   type LocalOfflineNormalizationPreviewStartRequest,
 } from "./local-offline-normalization-preview.js";
+import {
+  LocalSogCandidateGatewayError,
+  prepareGrandHallSmallLocalSogCandidateGatewayV0,
+  type LocalSogCandidateMemberLeaseV0,
+  type PreparedLocalSogCandidateGatewayV0,
+} from "./local-sog-candidate-gateway.js";
+import {
+  LocalRoomEvidenceCandidateError,
+  localRoomEvidenceConsumerUrlV0,
+  parseLocalRoomEvidenceRouteV0,
+  prepareGrandHallLocalRoomEvidenceCandidateV0,
+  type LocalRoomEvidenceMemberResponseV0,
+  type PreparedLocalRoomEvidenceCandidateV0,
+} from "./local-room-evidence-candidate.js";
 
 export const LOCAL_FOUNDRY_HOST = "127.0.0.1";
 // A guided review may contain hundreds of files. Four hours gives a human time
@@ -104,7 +139,8 @@ const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   ].join("; "),
   "Cross-Origin-Opener-Policy": "same-origin",
   "Cross-Origin-Resource-Policy": "same-origin",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), display-capture=(), fullscreen=(), payment=(), usb=(), serial=(), bluetooth=()",
+  "Permissions-Policy":
+    "camera=(), microphone=(), geolocation=(), display-capture=(), fullscreen=(), payment=(), usb=(), serial=(), bluetooth=()",
   Pragma: "no-cache",
   "Referrer-Policy": "no-referrer",
   "X-Content-Type-Options": "nosniff",
@@ -120,7 +156,10 @@ export type LocalFoundryAppPhase =
   | "stopping"
   | "stopped";
 
-export type LocalFoundryStopReason = "operator" | "session_expired" | "programmatic";
+export type LocalFoundryStopReason =
+  | "operator"
+  | "session_expired"
+  | "programmatic";
 
 export type LocalFoundryProcessingLaneId =
   | "source_review"
@@ -154,17 +193,17 @@ interface LocalFoundryProcessingOutlineBaseV0 {
 }
 
 export type LocalFoundryProcessingOutlineV0 =
-  | LocalFoundryProcessingOutlineBaseV0 & {
+  | (LocalFoundryProcessingOutlineBaseV0 & {
       readonly state: "outline_only";
       readonly lanes: readonly LocalFoundryProcessingLaneV0[];
       readonly affectedAssets: readonly [];
-    }
-  | LocalFoundryProcessingOutlineBaseV0 & {
+    })
+  | (LocalFoundryProcessingOutlineBaseV0 & {
       readonly state: "unavailable";
       readonly reason: "xgrids_xbin_has_no_reviewed_route";
       readonly lanes: readonly [];
       readonly affectedAssets: LocalFoundryProcessingLaneV0["representedAssets"];
-    };
+    });
 
 export type LocalFoundryQualityStrategyId =
   | "preserve_captured_detail"
@@ -221,18 +260,18 @@ interface LocalFoundryQualityDecisionBoardBaseV0 {
 }
 
 export type LocalFoundryQualityDecisionBoardV0 =
-  | LocalFoundryQualityDecisionBoardBaseV0 & {
+  | (LocalFoundryQualityDecisionBoardBaseV0 & {
       readonly state: "available";
       readonly cards: readonly LocalFoundryQualityDecisionCardV0[];
       readonly affectedAssets: readonly [];
-    }
-  | LocalFoundryQualityDecisionBoardBaseV0 & {
+    })
+  | (LocalFoundryQualityDecisionBoardBaseV0 & {
       readonly state: "unavailable";
       readonly reason: "xgrids_xbin_has_no_reviewed_route";
       readonly cards: readonly [];
       readonly affectedAssets: LocalFoundryProcessingLaneV0["representedAssets"];
       readonly nextAction: "Request an official export in an open documented format or a vendor-supported route; do not decode XBIN here.";
-    };
+    });
 
 export interface LocalFoundryPlanPreviewResponseV0 {
   readonly preview: FoundryPlanPreviewV0;
@@ -249,7 +288,8 @@ const PROCESSING_OUTLINE_LANE_SPECS: readonly {
   {
     id: "source_review",
     heading: "Source review",
-    explanation: "Admitted files are represented for read-only source inspection.",
+    explanation:
+      "Admitted files are represented for read-only source inspection.",
     roles: ["inspect_sources"],
   },
   {
@@ -278,7 +318,11 @@ const PROCESSING_OUTLINE_LANE_SPECS: readonly {
     heading: "Alignment and operational geometry",
     explanation:
       "Captured source closure is represented for alignment, fusion, and optional operational geometry without a measured-truth claim.",
-    roles: ["register_sources", "fuse_measured_geometry", "build_operational_mesh"],
+    roles: [
+      "register_sources",
+      "fuse_measured_geometry",
+      "build_operational_mesh",
+    ],
   },
   {
     id: "captured_appearance",
@@ -339,11 +383,61 @@ export interface LocalFoundryPublicState {
   readonly operatorEvidenceChecklist?: FoundryOperatorEvidenceChecklistV5;
 }
 
+export type LocalRoomRealityReviewPublicStateV0 =
+  | {
+      readonly state: "empty";
+      readonly authority: "none";
+      readonly execution: "disabled";
+      readonly packageExport: "disabled";
+      readonly realMediaRead: "not_performed";
+      readonly surface: null;
+      readonly draft: null;
+    }
+  | {
+      readonly state: "ready";
+      readonly authority: "none";
+      readonly execution: "disabled";
+      readonly packageExport: "disabled";
+      readonly realMediaRead: "not_performed";
+      readonly surface: LocalRoomRealityReviewSurfaceV0;
+      readonly draft: LocalRoomRealityReviewDraftV0 | null;
+    };
+
 export interface LocalFoundryAppOptions {
   readonly source: string;
   readonly port?: number;
   readonly host?: string;
   readonly sessionTtlMs?: number;
+  /**
+   * Trusted, explicit opt-in for the exact owner-attested Grand Hall local
+   * appearance candidate. Paths can be supplied only by the launching process.
+   */
+  readonly localSogCandidate?: {
+    readonly manifestRelativePath: string;
+    readonly ownerAuthorizedVenviewerProductUse: true;
+    readonly allowedConsumerOrigin?: string;
+  };
+  /** @internal Focused HTTP-boundary tests only. Production callers omit this. */
+  readonly localSogCandidateTestHooks?: {
+    readonly preparedGateway: PreparedLocalSogCandidateGatewayV0;
+  };
+  /** Trusted process-only roots/files for the owner-authorized evidence view. */
+  readonly localRoomEvidence?: {
+    readonly manifestRelativePath: string;
+    readonly twinBundleRoot: string;
+    readonly ownerAuthorizedVenviewerProductUse: true;
+    readonly allowedConsumerOrigin?: string;
+    readonly publicReferenceImageRoot?: string;
+    readonly xgridsRawRoot?: string;
+    readonly e57StageRoot?: string;
+    readonly referenceVideoPath?: string;
+    readonly capturedReferenceImagePath?: string;
+    readonly generatedReferenceImagePath?: string;
+  };
+  /** @internal Focused HTTP-boundary tests only. */
+  readonly localRoomEvidenceTestHooks?: {
+    readonly preparedGateway: PreparedLocalRoomEvidenceCandidateV0;
+  };
   /** Trusted process configuration only; never accepted from the browser. */
   readonly privateStateRoot?: string;
   /**
@@ -368,6 +462,10 @@ export interface LocalFoundryAppHandle {
   readonly port: number;
   readonly origin: string;
   readonly url: string;
+  readonly localSogCandidateDescriptorUrl?: string;
+  readonly localSogCandidateConsumerUrl?: string;
+  readonly localRoomEvidenceDescriptorUrl?: string;
+  readonly localRoomEvidenceConsumerUrl?: string;
   readonly sourceLabel: string;
   readonly closed: Promise<LocalFoundryAppClosed>;
   readonly stop: () => Promise<void>;
@@ -397,8 +495,13 @@ function safeSourceLabel(source: string): string {
 }
 
 function validatePort(port: number): void {
-  if (!Number.isInteger(port) || (port !== 0 && (port < 1_024 || port > 65_535))) {
-    throw new Error("The local app port must be between 1024 and 65535, or omitted for an automatic port.");
+  if (
+    !Number.isInteger(port) ||
+    (port !== 0 && (port < 1_024 || port > 65_535))
+  ) {
+    throw new Error(
+      "The local app port must be between 1024 and 65535, or omitted for an automatic port.",
+    );
   }
 }
 
@@ -434,11 +537,17 @@ function requireSessionToken(url: URL, expectedToken: string): void {
     entries[0]?.[0] !== "token" ||
     !constantTimeTokenMatch(entries[0][1], expectedToken)
   ) {
-    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+    throw new SafeHttpError(
+      401,
+      "This local session link is missing or has expired.",
+    );
   }
 }
 
-function requireArtifactTokenAndDigest(url: URL, expectedToken: string): string {
+function requireArtifactTokenAndDigest(
+  url: URL,
+  expectedToken: string,
+): string {
   const entries = [...url.searchParams.entries()];
   const tokenValues = url.searchParams.getAll("token");
   const digestValues = url.searchParams.getAll("digest");
@@ -448,11 +557,17 @@ function requireArtifactTokenAndDigest(url: URL, expectedToken: string): string 
     digestValues.length !== 1 ||
     !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
   ) {
-    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+    throw new SafeHttpError(
+      401,
+      "This local session link is missing or has expired.",
+    );
   }
   const digest = RuntimeSha256Schema.safeParse(digestValues[0]);
   if (!digest.success) {
-    throw new SafeHttpError(409, "That draft fingerprint is invalid or no longer current.");
+    throw new SafeHttpError(
+      409,
+      "That draft fingerprint is invalid or no longer current.",
+    );
   }
   return digest.data;
 }
@@ -472,20 +587,32 @@ function requireOfflinePreviewArtifactToken(
     digestValues.length !== 1 ||
     !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
   ) {
-    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+    throw new SafeHttpError(
+      401,
+      "This local session link is missing or has expired.",
+    );
   }
   const requestId = requestIdValues[0] ?? "";
   const digest = digestValues[0] ?? "";
   if (!VERIFICATION_REQUEST_ID_PATTERN.test(requestId)) {
-    throw new SafeHttpError(409, "That private preview request is invalid or no longer current.");
+    throw new SafeHttpError(
+      409,
+      "That private preview request is invalid or no longer current.",
+    );
   }
   if (!OFFLINE_PREVIEW_DIGEST_PATTERN.test(digest)) {
-    throw new SafeHttpError(409, "That private preview fingerprint is invalid or no longer current.");
+    throw new SafeHttpError(
+      409,
+      "That private preview fingerprint is invalid or no longer current.",
+    );
   }
   return { requestId, digest };
 }
 
-function requireSourceFactsTokenAndDigest(url: URL, expectedToken: string): string {
+function requireSourceFactsTokenAndDigest(
+  url: URL,
+  expectedToken: string,
+): string {
   const entries = [...url.searchParams.entries()];
   const tokenValues = url.searchParams.getAll("token");
   const digestValues = url.searchParams.getAll("digest");
@@ -495,16 +622,25 @@ function requireSourceFactsTokenAndDigest(url: URL, expectedToken: string): stri
     digestValues.length !== 1 ||
     !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
   ) {
-    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+    throw new SafeHttpError(
+      401,
+      "This local session link is missing or has expired.",
+    );
   }
   const digest = digestValues[0] ?? "";
   if (!/^[a-f0-9]{64}$/u.test(digest)) {
-    throw new SafeHttpError(409, "That Source Facts fingerprint is invalid or no longer current.");
+    throw new SafeHttpError(
+      409,
+      "That Source Facts fingerprint is invalid or no longer current.",
+    );
   }
   return digest;
 }
 
-function requireSourceReadinessTokenAndDigest(url: URL, expectedToken: string): string {
+function requireSourceReadinessTokenAndDigest(
+  url: URL,
+  expectedToken: string,
+): string {
   const entries = [...url.searchParams.entries()];
   const tokenValues = url.searchParams.getAll("token");
   const digestValues = url.searchParams.getAll("digest");
@@ -514,11 +650,17 @@ function requireSourceReadinessTokenAndDigest(url: URL, expectedToken: string): 
     digestValues.length !== 1 ||
     !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
   ) {
-    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+    throw new SafeHttpError(
+      401,
+      "This local session link is missing or has expired.",
+    );
   }
   const digest = digestValues[0] ?? "";
   if (!/^[a-f0-9]{64}$/u.test(digest)) {
-    throw new SafeHttpError(409, "That Source Readiness fingerprint is invalid or no longer current.");
+    throw new SafeHttpError(
+      409,
+      "That Source Readiness fingerprint is invalid or no longer current.",
+    );
   }
   return digest;
 }
@@ -536,7 +678,10 @@ function requireOperatorEvidenceChecklistTokenAndDigest(
     digestValues.length !== 1 ||
     !constantTimeTokenMatch(tokenValues[0] ?? "", expectedToken)
   ) {
-    throw new SafeHttpError(401, "This local session link is missing or has expired.");
+    throw new SafeHttpError(
+      401,
+      "This local session link is missing or has expired.",
+    );
   }
   const digest = digestValues[0] ?? "";
   if (!/^[a-f0-9]{64}$/u.test(digest)) {
@@ -565,7 +710,8 @@ function send(
   response.statusCode = statusCode;
   response.setHeader("Content-Type", contentType);
   response.setHeader("Content-Length", Buffer.byteLength(body));
-  for (const [name, value] of Object.entries(extraHeaders)) response.setHeader(name, value);
+  for (const [name, value] of Object.entries(extraHeaders))
+    response.setHeader(name, value);
   response.end(body);
 }
 
@@ -582,7 +728,8 @@ function sendBytes(
   response.statusCode = statusCode;
   response.setHeader("Content-Type", contentType);
   response.setHeader("Content-Length", body.byteLength);
-  for (const [name, value] of Object.entries(extraHeaders)) response.setHeader(name, value);
+  for (const [name, value] of Object.entries(extraHeaders))
+    response.setHeader(name, value);
   let disposed = false;
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
   const disposeOnce = (): void => {
@@ -637,8 +784,19 @@ function sendBytes(
   writeNext();
 }
 
-function sendJson(response: ServerResponse, statusCode: number, value: unknown): void {
-  send(response, statusCode, "application/json; charset=utf-8", `${JSON.stringify(value)}\n`);
+function sendJson(
+  response: ServerResponse,
+  statusCode: number,
+  value: unknown,
+  extraHeaders: Readonly<Record<string, string>> = {},
+): void {
+  send(
+    response,
+    statusCode,
+    "application/json; charset=utf-8",
+    `${JSON.stringify(value)}\n`,
+    extraHeaders,
+  );
 }
 
 function sendError(response: ServerResponse, error: SafeHttpError): void {
@@ -650,7 +808,10 @@ function assertLoopbackSocket(request: IncomingMessage): void {
     request.socket.localAddress !== LOCAL_FOUNDRY_HOST ||
     request.socket.remoteAddress !== LOCAL_FOUNDRY_HOST
   ) {
-    throw new SafeHttpError(403, "This app accepts connections from this computer only.");
+    throw new SafeHttpError(
+      403,
+      "This app accepts connections from this computer only.",
+    );
   }
 }
 
@@ -658,14 +819,137 @@ function assertHostAndOrigin(
   request: IncomingMessage,
   expectedHost: string,
   expectedOrigin: string,
+  allowedConsumerOrigin?: string | null,
 ): void {
   if (request.headers.host !== expectedHost) {
-    throw new SafeHttpError(421, "The local app address is not valid for this session.");
+    throw new SafeHttpError(
+      421,
+      "The local app address is not valid for this session.",
+    );
   }
   const origin = request.headers.origin;
-  if (origin !== undefined && origin !== expectedOrigin) {
-    throw new SafeHttpError(403, "Requests from another website are not accepted.");
+  if (
+    origin !== undefined &&
+    origin !== expectedOrigin &&
+    origin !== allowedConsumerOrigin
+  ) {
+    throw new SafeHttpError(
+      403,
+      "Requests from another website are not accepted.",
+    );
   }
+}
+
+const LOCAL_SOG_CANDIDATE_MEMBER_ROUTE =
+  /^\/api\/local-sog-candidate\/members\/([a-z0-9][a-z0-9-]{0,63})\.sog$/u;
+
+function localSogCandidateMemberId(pathname: string): string | null {
+  return LOCAL_SOG_CANDIDATE_MEMBER_ROUTE.exec(pathname)?.[1] ?? null;
+}
+
+function isLocalSogCandidateRoute(pathname: string): boolean {
+  return (
+    pathname === "/api/local-sog-candidate" ||
+    localSogCandidateMemberId(pathname) !== null
+  );
+}
+
+function isLocalRoomEvidenceRoute(pathname: string): boolean {
+  return parseLocalRoomEvidenceRouteV0(pathname) !== null;
+}
+
+function sendLocalSogCandidateMember(
+  response: ServerResponse,
+  lease: LocalSogCandidateMemberLeaseV0,
+  corsHeaders: Readonly<Record<string, string>>,
+): void {
+  setSecurityHeaders(response);
+  response.statusCode = lease.statusCode;
+  response.setHeader("Content-Type", "application/octet-stream");
+  response.setHeader("Content-Length", lease.contentLength);
+  response.setHeader("Accept-Ranges", "bytes");
+  response.setHeader("ETag", `"${lease.sha256}"`);
+  response.setHeader("X-Foundry-Sha256", lease.sha256);
+  response.setHeader("X-Foundry-Size-Bytes", String(lease.sizeBytes));
+  response.setHeader(
+    "Content-Disposition",
+    `inline; filename="${lease.memberId}.sog"`,
+  );
+  if (lease.contentRange !== null) {
+    response.setHeader("Content-Range", lease.contentRange);
+  }
+  for (const [name, value] of Object.entries(corsHeaders)) {
+    response.setHeader(name, value);
+  }
+  const stream = lease.createReadStream();
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    stream.destroy();
+    void lease.close().catch(() => response.destroy());
+  };
+  response.once("finish", dispose);
+  response.once("close", dispose);
+  response.once("error", dispose);
+  stream.once("error", (error) => {
+    dispose();
+    response.destroy(error);
+  });
+  stream.pipe(response);
+}
+
+function sendLocalRoomEvidenceMember(
+  response: ServerResponse,
+  member: LocalRoomEvidenceMemberResponseV0,
+  corsHeaders: Readonly<Record<string, string>>,
+): void {
+  const { lease } = member;
+  setSecurityHeaders(response);
+  response.statusCode = lease.statusCode;
+  response.setHeader("Content-Type", member.mediaType);
+  response.setHeader("Content-Length", lease.contentLength);
+  response.setHeader("Accept-Ranges", "bytes");
+  response.setHeader("ETag", `"${lease.sha256}"`);
+  response.setHeader("X-Foundry-Sha256", lease.sha256);
+  response.setHeader("X-Foundry-Size-Bytes", String(lease.sizeBytes));
+  response.setHeader(
+    "Content-Disposition",
+    `inline; filename="${lease.memberId}.${member.suffix}"`,
+  );
+  if (lease.contentRange !== null) {
+    response.setHeader("Content-Range", lease.contentRange);
+  }
+  for (const [name, value] of Object.entries(corsHeaders)) {
+    response.setHeader(name, value);
+  }
+  const stream = lease.createReadStream();
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    stream.destroy();
+    void lease.close().catch(() => response.destroy());
+  };
+  response.once("finish", dispose);
+  response.once("close", dispose);
+  response.once("error", dispose);
+  stream.once("error", (error) => {
+    dispose();
+    response.destroy(error);
+  });
+  stream.pipe(response);
+}
+
+function localSogCandidateConsumerUrl(
+  consumerOrigin: string,
+  descriptorUrl: string,
+): string {
+  const url = new URL("/dev/trades-hall-visual", consumerOrigin);
+  url.searchParams.set("venue", "trades-hall");
+  url.searchParams.set("room", "grand-hall");
+  url.searchParams.set("localSogCandidate", descriptorUrl);
+  return url.toString();
 }
 
 async function readJsonObject(
@@ -673,13 +957,17 @@ async function readJsonObject(
   maximumBytes: number,
   requestName: string,
 ): Promise<Record<string, unknown>> {
-  const contentType = request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase();
+  const contentType = request.headers["content-type"]
+    ?.split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
   if (contentType !== "application/json") {
     throw new SafeHttpError(415, `${requestName} must use JSON.`);
   }
   const contentLength = request.headers["content-length"];
   if (contentLength !== undefined) {
-    if (!/^\d+$/u.test(contentLength)) throw new SafeHttpError(400, "The request size is invalid.");
+    if (!/^\d+$/u.test(contentLength))
+      throw new SafeHttpError(400, "The request size is invalid.");
     if (Number(contentLength) > maximumBytes) {
       request.resume();
       throw new SafeHttpError(413, "The request is too large.");
@@ -705,7 +993,8 @@ async function readJsonObject(
       if (!rejected) resolveBody(Buffer.concat(chunks));
     });
     request.on("error", () => {
-      if (!rejected) rejectBody(new SafeHttpError(400, "The request could not be read."));
+      if (!rejected)
+        rejectBody(new SafeHttpError(400, "The request could not be read."));
     });
   });
   let parsed: unknown;
@@ -714,11 +1003,7 @@ async function readJsonObject(
   } catch {
     throw new SafeHttpError(400, `${requestName} is not valid JSON.`);
   }
-  if (
-    parsed === null ||
-    typeof parsed !== "object" ||
-    Array.isArray(parsed)
-  ) {
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new SafeHttpError(400, `${requestName} must be one JSON object.`);
   }
   return parsed as Record<string, unknown>;
@@ -756,22 +1041,34 @@ function assertRequiredExactKeys(
   }
 }
 
-function requireSameOriginPost(request: IncomingMessage, expectedOrigin: string): void {
+function requireSameOriginPost(
+  request: IncomingMessage,
+  expectedOrigin: string,
+): void {
   if (request.headers.origin !== expectedOrigin) {
     throw new SafeHttpError(403, "The request must come from this local app.");
   }
 }
 
 function parseVerificationRequestId(value: unknown): string {
-  if (typeof value !== "string" || !VERIFICATION_REQUEST_ID_PATTERN.test(value)) {
+  if (
+    typeof value !== "string" ||
+    !VERIFICATION_REQUEST_ID_PATTERN.test(value)
+  ) {
     throw new SafeHttpError(400, "The approved-file check request is invalid.");
   }
   return value;
 }
 
 function parseOfflinePreviewRequestId(value: unknown): string {
-  if (typeof value !== "string" || !VERIFICATION_REQUEST_ID_PATTERN.test(value)) {
-    throw new SafeHttpError(400, "The private offline preview request is invalid.");
+  if (
+    typeof value !== "string" ||
+    !VERIFICATION_REQUEST_ID_PATTERN.test(value)
+  ) {
+    throw new SafeHttpError(
+      400,
+      "The private offline preview request is invalid.",
+    );
   }
   return value;
 }
@@ -788,13 +1085,19 @@ function parseOfflinePreviewStartRequest(
     typeof body.receiptSha256 !== "string" ||
     !INTAKE_RECEIPT_SHA256_PATTERN.test(body.receiptSha256)
   ) {
-    throw new SafeHttpError(409, "The intake receipt changed. Refresh this local page before trying again.");
+    throw new SafeHttpError(
+      409,
+      "The intake receipt changed. Refresh this local page before trying again.",
+    );
   }
   if (
     typeof body.previewAssetId !== "string" ||
     !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,159}$/u.test(body.previewAssetId)
   ) {
-    throw new SafeHttpError(400, "The private preview asset reference is invalid.");
+    throw new SafeHttpError(
+      400,
+      "The private preview asset reference is invalid.",
+    );
   }
   return {
     receiptSha256: body.receiptSha256,
@@ -803,9 +1106,11 @@ function parseOfflinePreviewStartRequest(
   };
 }
 
-function parseVerificationJobReference(
-  body: Record<string, unknown>,
-): { readonly jobId: string; readonly revision: number; readonly run: number } {
+function parseVerificationJobReference(body: Record<string, unknown>): {
+  readonly jobId: string;
+  readonly revision: number;
+  readonly run: number;
+} {
   if (
     typeof body.jobId !== "string" ||
     !Number.isSafeInteger(body.revision) ||
@@ -813,7 +1118,10 @@ function parseVerificationJobReference(
     !Number.isSafeInteger(body.run) ||
     (body.run as number) < 1
   ) {
-    throw new SafeHttpError(400, "The approved-file check reference is invalid.");
+    throw new SafeHttpError(
+      400,
+      "The approved-file check reference is invalid.",
+    );
   }
   return {
     jobId: body.jobId,
@@ -825,17 +1133,25 @@ function parseVerificationJobReference(
 function parseVerificationAdmissionDigest(value: unknown): string {
   const parsed = RuntimeSha256Schema.safeParse(value);
   if (!parsed.success) {
-    throw new SafeHttpError(409, "The review draft changed. Build the approved-file check again.");
+    throw new SafeHttpError(
+      409,
+      "The review draft changed. Build the approved-file check again.",
+    );
   }
   return parsed.data;
 }
 
-function safeVerificationRouteFailure(action: "start" | "status" | "cancel" | "resume" | "report"): SafeHttpError {
+function safeVerificationRouteFailure(
+  action: "start" | "status" | "cancel" | "resume" | "report",
+): SafeHttpError {
   const messages = {
-    start: "The approved-file check could not start because the source or review may have changed. Build a fresh receipt and review draft.",
+    start:
+      "The approved-file check could not start because the source or review may have changed. Build a fresh receipt and review draft.",
     status: "The current approved-file check could not be read safely.",
-    cancel: "The approved-file check could not be stopped from this request. Check its current state and try again.",
-    resume: "The approved-file check could not restart safely. Check its current state or build a fresh check.",
+    cancel:
+      "The approved-file check could not be stopped from this request. Check its current state and try again.",
+    resume:
+      "The approved-file check could not restart safely. Check its current state or build a fresh check.",
     report: "A verified report is not ready for this approved-file check.",
   } as const;
   return new SafeHttpError(409, messages[action]);
@@ -848,7 +1164,10 @@ async function readEmptyJsonObject(request: IncomingMessage): Promise<void> {
     "The stop request",
   );
   if (Object.keys(parsed).length !== 0) {
-    throw new SafeHttpError(400, "The stop request cannot contain options or file paths.");
+    throw new SafeHttpError(
+      400,
+      "The stop request cannot contain options or file paths.",
+    );
   }
 }
 
@@ -862,7 +1181,11 @@ function listen(server: Server, port: number): Promise<number> {
       server.off("error", onError);
       const address = server.address() as AddressInfo | null;
       if (address === null || address.address !== LOCAL_FOUNDRY_HOST) {
-        rejectPort(new Error("The local app did not bind to the required loopback address."));
+        rejectPort(
+          new Error(
+            "The local app did not bind to the required loopback address.",
+          ),
+        );
         return;
       }
       resolvePort(address.port);
@@ -915,7 +1238,8 @@ export function compileLocalFoundryProcessingOutlineV0(
       const representedAssetIds = new Set<string>();
       for (const route of routes) {
         if (!specification.roles.includes(route.role)) continue;
-        for (const assetId of route.inputAssetIds) representedAssetIds.add(assetId);
+        for (const assetId of route.inputAssetIds)
+          representedAssetIds.add(assetId);
       }
       if (representedAssetIds.size === 0) continue;
       lanes.push({
@@ -931,12 +1255,14 @@ export function compileLocalFoundryProcessingOutlineV0(
     const routedBeyondReview = new Set<string>();
     for (const route of routes) {
       if (
-        route.role === "inspect_sources" || route.role === "qa_candidate" ||
+        route.role === "inspect_sources" ||
+        route.role === "qa_candidate" ||
         route.role === "package_candidate"
       ) {
         continue;
       }
-      for (const assetId of route.inputAssetIds) routedBeyondReview.add(assetId);
+      for (const assetId of route.inputAssetIds)
+        routedBeyondReview.add(assetId);
     }
     const reviewAndPackageOnlyIds = manifest.assets
       .map((asset) => asset.id)
@@ -1030,7 +1356,9 @@ export function compileLocalFoundryQualityDecisionBoardV0(
     selectionStatement: "No winner is selected before a decisive comparison.",
     disclaimer: LOCAL_FOUNDRY_QUALITY_DECISION_BOARD_DISCLAIMER,
   };
-  const assetById = new Map(manifest.assets.map((asset) => [asset.id, asset] as const));
+  const assetById = new Map(
+    manifest.assets.map((asset) => [asset.id, asset] as const),
+  );
   const representedAssets = (
     assetIds: readonly string[],
   ): LocalFoundryProcessingLaneV0["representedAssets"] =>
@@ -1047,26 +1375,30 @@ export function compileLocalFoundryQualityDecisionBoardV0(
 
   try {
     const routes = compileFoundryStageAssetRoutingV0(manifest, options);
-    const routeAssetIds = (role: FoundryPipelineWorkerRole): readonly string[] =>
+    const routeAssetIds = (
+      role: FoundryPipelineWorkerRole,
+    ): readonly string[] =>
       routes.find((route) => route.role === role)?.inputAssetIds ?? [];
-    const routeAssetIdSet = (roles: readonly FoundryPipelineWorkerRole[]): Set<string> =>
-      new Set(roles.flatMap((role) => routeAssetIds(role)));
+    const routeAssetIdSet = (
+      roles: readonly FoundryPipelineWorkerRole[],
+    ): Set<string> => new Set(roles.flatMap((role) => routeAssetIds(role)));
     const capturedIds = (
       candidateIds: ReadonlySet<string>,
       predicate: (inputType: FoundryInputType) => boolean,
-    ): string[] => manifest.assets
-      .filter((asset) =>
-        candidateIds.has(asset.id) &&
-        asset.provenanceClass === "captured" &&
-        predicate(asset.inputType)
-      )
-      .map((asset) => asset.id)
-      .sort(compareOutlineAssetIds);
+    ): string[] =>
+      manifest.assets
+        .filter(
+          (asset) =>
+            candidateIds.has(asset.id) &&
+            asset.provenanceClass === "captured" &&
+            predicate(asset.inputType),
+        )
+        .map((asset) => asset.id)
+        .sort(compareOutlineAssetIds);
 
     const appearanceRouteIds = routeAssetIdSet(["enhance_captured_appearance"]);
-    const splatIds = capturedIds(
-      appearanceRouteIds,
-      (inputType) => QUALITY_SPLAT_TYPES.has(inputType),
+    const splatIds = capturedIds(appearanceRouteIds, (inputType) =>
+      QUALITY_SPLAT_TYPES.has(inputType),
     );
     const geometryRouteIds = routeAssetIdSet([
       "normalize_point_cloud",
@@ -1074,8 +1406,9 @@ export function compileLocalFoundryQualityDecisionBoardV0(
       "reconstruct_from_images",
       "register_sources",
     ]);
-    const geometryIds = [...routeAssetIds("register_sources")]
-      .sort(compareOutlineAssetIds);
+    const geometryIds = [...routeAssetIds("register_sources")].sort(
+      compareOutlineAssetIds,
+    );
     const anchorIds = capturedIds(
       geometryRouteIds,
       (inputType) =>
@@ -1083,44 +1416,56 @@ export function compileLocalFoundryQualityDecisionBoardV0(
     );
     const photoVideoIds = capturedIds(
       geometryRouteIds,
-      (inputType) => QUALITY_IMAGE_TYPES.has(inputType) || inputType === "video",
+      (inputType) =>
+        QUALITY_IMAGE_TYPES.has(inputType) || inputType === "video",
     );
-    const photoDetailIds = [...new Set([...geometryIds, ...splatIds])]
-      .sort(compareOutlineAssetIds);
-    const aiRouteIds = [...routeAssetIds("infer_hd_appearance")]
-      .sort(compareOutlineAssetIds);
+    const photoDetailIds = [...new Set([...geometryIds, ...splatIds])].sort(
+      compareOutlineAssetIds,
+    );
+    const aiRouteIds = [...routeAssetIds("infer_hd_appearance")].sort(
+      compareOutlineAssetIds,
+    );
     const aiIds = representedAssets(aiRouteIds);
     const evidenceAssetIds = (
       evidenceKind: FoundryIngestManifestV0["assets"][number]["evidenceKinds"][number],
-    ): string[] => manifest.assets
-      .filter((asset) => asset.evidenceKinds.includes(evidenceKind))
-      .map((asset) => asset.id)
-      .sort(compareOutlineAssetIds);
-    const transformEvidenceIds = (reviewedOnly: boolean): string[] =>
-      [...new Set(manifest.transforms
-        .filter((transform) => !reviewedOnly || transform.state === "reviewed")
-        .flatMap((transform) => [
-          ...transform.provenanceAssetIds,
-          transform.transformArtifactAssetId,
-          transform.residualReportAssetId,
-          transform.projectionArtifactAssetId,
-          transform.reviewerAttestationAssetId,
-        ])
-        .filter((assetId): assetId is string => assetId !== null))]
+    ): string[] =>
+      manifest.assets
+        .filter((asset) => asset.evidenceKinds.includes(evidenceKind))
+        .map((asset) => asset.id)
         .sort(compareOutlineAssetIds);
+    const transformEvidenceIds = (reviewedOnly: boolean): string[] =>
+      [
+        ...new Set(
+          manifest.transforms
+            .filter(
+              (transform) => !reviewedOnly || transform.state === "reviewed",
+            )
+            .flatMap((transform) => [
+              ...transform.provenanceAssetIds,
+              transform.transformArtifactAssetId,
+              transform.residualReportAssetId,
+              transform.projectionArtifactAssetId,
+              transform.reviewerAttestationAssetId,
+            ])
+            .filter((assetId): assetId is string => assetId !== null),
+        ),
+      ].sort(compareOutlineAssetIds);
     const allTransformEvidenceIds = transformEvidenceIds(false);
     const reviewedTransformEvidenceIds = transformEvidenceIds(true);
-    const calibrationIds = [...new Set([
-      ...manifest.assets
-        .filter((asset) =>
-          asset.inputType === "calibration_bundle" ||
-          asset.evidenceKinds.includes("calibration_record")
-        )
-        .map((asset) => asset.id),
-      ...manifest.assets
-        .filter((asset) => photoVideoIds.includes(asset.id))
-        .flatMap((asset) => asset.calibrationAssetIds),
-    ])].sort(compareOutlineAssetIds);
+    const calibrationIds = [
+      ...new Set([
+        ...manifest.assets
+          .filter(
+            (asset) =>
+              asset.inputType === "calibration_bundle" ||
+              asset.evidenceKinds.includes("calibration_record"),
+          )
+          .map((asset) => asset.id),
+        ...manifest.assets
+          .filter((asset) => photoVideoIds.includes(asset.id))
+          .flatMap((asset) => asset.calibrationAssetIds),
+      ]),
+    ].sort(compareOutlineAssetIds);
     const controlIds = manifest.assets
       .filter((asset) => asset.inputType === "control_network")
       .map((asset) => asset.id)
@@ -1138,37 +1483,40 @@ export function compileLocalFoundryQualityDecisionBoardV0(
           : "not_present";
     const completeRegistrationState: LocalFoundryQualityEvidenceRequirementV0["state"] =
       allTransformEvidenceIds.length > 0 ? "not_evaluated" : "not_present";
-    const controlResidualIds = [...new Set([
-      ...controlIds,
-      ...residualIds,
-      ...allTransformEvidenceIds,
-    ])].sort(compareOutlineAssetIds);
+    const controlResidualIds = [
+      ...new Set([...controlIds, ...residualIds, ...allTransformEvidenceIds]),
+    ].sort(compareOutlineAssetIds);
     const controlResidualState: LocalFoundryQualityEvidenceRequirementV0["state"] =
       controlResidualIds.length > 0 ? "not_evaluated" : "not_present";
     const coordinateEvidenceIds = geometryIds.filter((assetId) => {
       const asset = assetById.get(assetId);
-      return asset !== undefined &&
+      return (
+        asset !== undefined &&
         (asset.coordinateFrameId !== null ||
-          !["none", "unknown"].includes(asset.inspection.scaleValue));
+          !["none", "unknown"].includes(asset.inspection.scaleValue))
+      );
     });
     const rightsState = (
       assetIds: readonly string[],
     ): LocalFoundryQualityEvidenceRequirementV0["state"] => {
       const relevantAssets = assetIds
         .map((assetId) => assetById.get(assetId))
-        .filter((asset): asset is FoundryIngestManifestV0["assets"][number] =>
-          asset !== undefined
+        .filter(
+          (asset): asset is FoundryIngestManifestV0["assets"][number] =>
+            asset !== undefined,
         );
       if (relevantAssets.length === 0) return "not_present";
-      const reviewed = manifest.legalReviewState === "approved" && relevantAssets.every(
-        (asset) =>
-          asset.rights.basis !== "unknown" &&
-          asset.rights.commercialUse === "allowed" &&
-          asset.rights.modelTrainingUse === "allowed" &&
-          asset.rights.redistribution === "allowed" &&
-          asset.rights.termsReviewedAt !== null &&
-          asset.rights.termsReference !== null,
-      );
+      const reviewed =
+        manifest.legalReviewState === "approved" &&
+        relevantAssets.every(
+          (asset) =>
+            asset.rights.basis !== "unknown" &&
+            asset.rights.commercialUse === "allowed" &&
+            asset.rights.modelTrainingUse === "allowed" &&
+            asset.rights.redistribution === "allowed" &&
+            asset.rights.termsReviewedAt !== null &&
+            asset.rights.termsReference !== null,
+        );
       return reviewed ? "reviewed_present" : "present_unreviewed";
     };
     const presentState = (
@@ -1186,19 +1534,18 @@ export function compileLocalFoundryQualityDecisionBoardV0(
       state,
       representedAssets: representedAssets(assetIds),
     });
-    const runtimeComparisonEvidenceIds = [...new Set([
-      ...fixedViewIds,
-      ...qualityReportIds,
-    ])].sort(compareOutlineAssetIds);
-    const humanReviewIds = [...new Set([
-      ...qualityReportIds,
-      ...reviewerAttestationIds,
-    ])].sort(compareOutlineAssetIds);
+    const runtimeComparisonEvidenceIds = [
+      ...new Set([...fixedViewIds, ...qualityReportIds]),
+    ].sort(compareOutlineAssetIds);
+    const humanReviewIds = [
+      ...new Set([...qualityReportIds, ...reviewerAttestationIds]),
+    ].sort(compareOutlineAssetIds);
     const cards: LocalFoundryQualityDecisionCardV0[] = [
       {
         id: "preserve_captured_detail",
         heading: "Preserve detail already present in captured splats",
-        status: splatIds.length > 0 ? "comparison_required" : "source_capture_needed",
+        status:
+          splatIds.length > 0 ? "comparison_required" : "source_capture_needed",
         derivativeClass: "captured_runtime_comparison",
         expectedGain: "unmeasured",
         representedAssets: representedAssets(splatIds),
@@ -1233,9 +1580,10 @@ export function compileLocalFoundryQualityDecisionBoardV0(
       {
         id: "add_captured_photo_detail",
         heading: "Add real captured photo or video detail",
-        status: photoVideoIds.length > 0 && anchorIds.length > 0
-          ? "candidate"
-          : "source_capture_needed",
+        status:
+          photoVideoIds.length > 0 && anchorIds.length > 0
+            ? "candidate"
+            : "source_capture_needed",
         derivativeClass: "enhanced_captured_derived",
         expectedGain: "unmeasured",
         representedAssets: representedAssets(photoDetailIds),
@@ -1449,12 +1797,18 @@ export async function startLocalFoundryApp(
 ): Promise<LocalFoundryAppHandle> {
   const host = options.host ?? LOCAL_FOUNDRY_HOST;
   if (host !== LOCAL_FOUNDRY_HOST) {
-    throw new Error("The Foundry local app can bind only to 127.0.0.1 (this computer).");
+    throw new Error(
+      "The Foundry local app can bind only to 127.0.0.1 (this computer).",
+    );
   }
   const source = options.source.trim();
-  if (source.length === 0) throw new Error("Choose one source file or folder before starting the local app.");
+  if (source.length === 0)
+    throw new Error(
+      "Choose one source file or folder before starting the local app.",
+    );
   const requestedPort = options.port ?? 0;
-  const sessionTtlMs = options.sessionTtlMs ?? LOCAL_FOUNDRY_DEFAULT_SESSION_TTL_MS;
+  const sessionTtlMs =
+    options.sessionTtlMs ?? LOCAL_FOUNDRY_DEFAULT_SESSION_TTL_MS;
   const offlinePreviewResponseChunkDelayMs =
     options.offlineNormalizationPreviewTestHooks?.responseChunkDelayMs ?? 0;
   validatePort(requestedPort);
@@ -1463,19 +1817,63 @@ export async function startLocalFoundryApp(
     !Number.isInteger(offlinePreviewResponseChunkDelayMs) ||
     offlinePreviewResponseChunkDelayMs < 0 ||
     offlinePreviewResponseChunkDelayMs > 1_000 ||
-    (
-      offlinePreviewResponseChunkDelayMs > 0 &&
-      process.env.NODE_ENV !== "test"
-    )
+    (offlinePreviewResponseChunkDelayMs > 0 && process.env.NODE_ENV !== "test")
   ) {
     throw new TypeError(
       "offline preview response pacing is available only to bounded tests",
     );
   }
 
+  if (
+    options.localSogCandidateTestHooks !== undefined &&
+    process.env.NODE_ENV !== "test"
+  ) {
+    throw new TypeError(
+      "local SOG candidate test hooks are available only to bounded tests",
+    );
+  }
+  if (
+    options.localRoomEvidenceTestHooks !== undefined &&
+    process.env.NODE_ENV !== "test"
+  ) {
+    throw new TypeError(
+      "local room-evidence test hooks are available only to bounded tests",
+    );
+  }
+  const localSogCandidateGateway:
+    | PreparedLocalSogCandidateGatewayV0
+    | undefined =
+    options.localSogCandidateTestHooks?.preparedGateway ??
+    (options.localSogCandidate === undefined
+      ? undefined
+      : await prepareGrandHallSmallLocalSogCandidateGatewayV0({
+          sourceRoot: source,
+          manifestRelativePath: options.localSogCandidate.manifestRelativePath,
+          ownerAuthorizedVenviewerProductUse:
+            options.localSogCandidate.ownerAuthorizedVenviewerProductUse,
+          ...(options.localSogCandidate.allowedConsumerOrigin === undefined
+            ? {}
+            : {
+                allowedConsumerOrigin:
+                  options.localSogCandidate.allowedConsumerOrigin,
+              }),
+        }));
+  const localRoomEvidenceGateway:
+    | PreparedLocalRoomEvidenceCandidateV0
+    | undefined =
+    options.localRoomEvidenceTestHooks?.preparedGateway ??
+    (options.localRoomEvidence === undefined
+      ? undefined
+      : await prepareGrandHallLocalRoomEvidenceCandidateV0({
+          sourceRoot: source,
+          ...options.localRoomEvidence,
+        }));
+
   const sessionToken = randomBytes(32).toString("base64url");
   if (!SESSION_TOKEN_PATTERN.test(sessionToken)) {
-    throw new Error("The local app session token does not meet the required security length.");
+    throw new Error(
+      "The local app session token does not meet the required security length.",
+    );
   }
 
   const startedAt = new Date();
@@ -1488,7 +1886,11 @@ export async function startLocalFoundryApp(
   let operatorEvidenceChecklist: FoundryOperatorEvidenceChecklistV5 | undefined;
   let admissionDraft: FoundryGuidedAdmissionDraft | undefined;
   let planPreview: FoundryPlanPreviewV0 | undefined;
-  let trustedStartupSourceIdentity: ReferenceVerificationSourceIdentityV0 | undefined;
+  let roomRealityReviewSurface: LocalRoomRealityReviewSurfaceV0 | undefined;
+  let roomRealityReviewDraft: LocalRoomRealityReviewDraftV0 | undefined;
+  let trustedStartupSourceIdentity:
+    | ReferenceVerificationSourceIdentityV0
+    | undefined;
   let referenceVerification: LocalReferenceVerificationControllerV0 | undefined;
   const offlineNormalizationPreview =
     options.offlineNormalizationPreview === undefined
@@ -1530,13 +1932,31 @@ export async function startLocalFoundryApp(
 
   const publicState = (): LocalFoundryPublicState => {
     const visiblePhase = phase === "stopped" ? "stopping" : phase;
-    const progress = visiblePhase === "ready"
-      ? { step: 3 as const, totalSteps: 3 as const, message: "The receipt is ready. No files are approved yet." }
-      : visiblePhase === "failed"
-        ? { step: 1 as const, totalSteps: 3 as const, message: "The check stopped without issuing a receipt." }
-        : visiblePhase === "stopping"
-          ? { step: 1 as const, totalSteps: 3 as const, message: "The local session is stopping." }
-          : { step: 1 as const, totalSteps: 3 as const, message: "Reading files one at a time and calculating fingerprints. Large captures can take a while." };
+    const progress =
+      visiblePhase === "ready"
+        ? {
+            step: 3 as const,
+            totalSteps: 3 as const,
+            message: "The receipt is ready. No files are approved yet.",
+          }
+        : visiblePhase === "failed"
+          ? {
+              step: 1 as const,
+              totalSteps: 3 as const,
+              message: "The check stopped without issuing a receipt.",
+            }
+          : visiblePhase === "stopping"
+            ? {
+                step: 1 as const,
+                totalSteps: 3 as const,
+                message: "The local session is stopping.",
+              }
+            : {
+                step: 1 as const,
+                totalSteps: 3 as const,
+                message:
+                  "Reading files one at a time and calculating fingerprints. Large captures can take a while.",
+              };
     return {
       phase: visiblePhase,
       sourceLabel,
@@ -1569,9 +1989,7 @@ export async function startLocalFoundryApp(
                 offlineNormalizationPreviewRequestId,
               )
             : phase === "ready" && receipt !== undefined
-              ? offlineNormalizationPreview.availability(
-                  receipt.receiptSha256,
-                )
+              ? offlineNormalizationPreview.availability(receipt.receiptSha256)
               : structuredClone(
                   LOCAL_OFFLINE_NORMALIZATION_PREVIEW_INITIAL_DTO,
                 ),
@@ -1585,16 +2003,49 @@ export async function startLocalFoundryApp(
     };
   };
 
+  const roomRealityReviewPublicState =
+    (): LocalRoomRealityReviewPublicStateV0 => {
+      if (roomRealityReviewSurface === undefined) {
+        return {
+          state: "empty",
+          authority: "none",
+          execution: "disabled",
+          packageExport: "disabled",
+          realMediaRead: "not_performed",
+          surface: null,
+          draft: null,
+        };
+      }
+      return {
+        state: "ready",
+        authority: "none",
+        execution: "disabled",
+        packageExport: "disabled",
+        realMediaRead: "not_performed",
+        surface: roomRealityReviewSurface,
+        draft: roomRealityReviewDraft ?? null,
+      };
+    };
+
   const server = createServer((request, response) => {
     void (async () => {
       assertLoopbackSocket(request);
-      assertHostAndOrigin(request, expectedHost, origin);
       let url: URL;
       try {
         url = new URL(request.url ?? "/", origin);
       } catch {
         throw new SafeHttpError(400, "The request address is invalid.");
       }
+      assertHostAndOrigin(
+        request,
+        expectedHost,
+        origin,
+        isLocalSogCandidateRoute(url.pathname)
+          ? localSogCandidateGateway?.allowedConsumerOrigin
+          : isLocalRoomEvidenceRoute(url.pathname)
+            ? localRoomEvidenceGateway?.allowedConsumerOrigin
+            : undefined,
+      );
       const method = request.method ?? "GET";
 
       if (
@@ -1603,7 +2054,10 @@ export async function startLocalFoundryApp(
         url.pathname !== "/api/state" &&
         url.pathname !== "/api/stop"
       ) {
-        throw new SafeHttpError(409, "The local session is preparing to stop safely.");
+        throw new SafeHttpError(
+          409,
+          "The local session is preparing to stop safely.",
+        );
       }
 
       if (method === "GET" && url.pathname === "/") {
@@ -1619,12 +2073,318 @@ export async function startLocalFoundryApp(
       }
       if (method === "GET" && url.pathname === "/app.js") {
         assertNoQuery(url);
-        send(response, 200, "text/javascript; charset=utf-8", LOCAL_FOUNDRY_APP_JAVASCRIPT);
+        send(
+          response,
+          200,
+          "text/javascript; charset=utf-8",
+          LOCAL_FOUNDRY_APP_JAVASCRIPT,
+        );
+        return;
+      }
+      if (method === "GET" && url.pathname === "/room-review") {
+        const queryEntries = [...url.searchParams.entries()];
+        if (queryEntries.length > 0) requireSessionToken(url, sessionToken);
+        send(
+          response,
+          200,
+          "text/html; charset=utf-8",
+          LOCAL_ROOM_REALITY_REVIEW_HTML,
+        );
+        return;
+      }
+      if (method === "GET" && url.pathname === "/room-review.css") {
+        assertNoQuery(url);
+        send(
+          response,
+          200,
+          "text/css; charset=utf-8",
+          LOCAL_ROOM_REALITY_REVIEW_CSS,
+        );
+        return;
+      }
+      if (method === "GET" && url.pathname === "/room-review.js") {
+        assertNoQuery(url);
+        send(
+          response,
+          200,
+          "text/javascript; charset=utf-8",
+          LOCAL_ROOM_REALITY_REVIEW_JAVASCRIPT,
+        );
         return;
       }
       if (method === "GET" && url.pathname === "/api/state") {
         requireSessionToken(url, sessionToken);
         sendJson(response, 200, publicState());
+        return;
+      }
+      if (isLocalSogCandidateRoute(url.pathname)) {
+        if (localSogCandidateGateway === undefined) {
+          throw new SafeHttpError(
+            404,
+            "No local SOG candidate is enabled for this session.",
+          );
+        }
+        requireSessionToken(url, sessionToken);
+        if (
+          !localSogCandidateGateway.acceptsRequestOrigin(
+            request.headers.origin,
+            origin,
+          )
+        ) {
+          throw new SafeHttpError(
+            403,
+            "Requests from another website are not accepted.",
+          );
+        }
+        const corsHeaders = localSogCandidateGateway.corsHeaders(
+          request.headers.origin,
+          origin,
+        );
+        if (method === "OPTIONS") {
+          const requestedMethod =
+            request.headers["access-control-request-method"];
+          const requestedHeaders =
+            request.headers["access-control-request-headers"];
+          if (
+            request.headers.origin === undefined ||
+            request.headers.origin === origin ||
+            requestedMethod !== "GET" ||
+            (requestedHeaders !== undefined &&
+              requestedHeaders.trim().toLowerCase() !== "range")
+          ) {
+            throw new SafeHttpError(
+              403,
+              "The local candidate preflight request is not allowed.",
+            );
+          }
+          send(response, 204, "text/plain; charset=utf-8", "", {
+            ...corsHeaders,
+            "Access-Control-Allow-Methods": "GET",
+            "Access-Control-Allow-Headers": "Range",
+          });
+          return;
+        }
+        if (method === "GET" && url.pathname === "/api/local-sog-candidate") {
+          sendJson(
+            response,
+            200,
+            localSogCandidateGateway.descriptor(origin, sessionToken),
+            corsHeaders,
+          );
+          return;
+        }
+        const memberId = localSogCandidateMemberId(url.pathname);
+        if (method === "GET" && memberId !== null) {
+          const result = await localSogCandidateGateway.openMember(
+            memberId,
+            request.headers.range,
+          );
+          if (result.state === "range_not_satisfiable") {
+            sendJson(
+              response,
+              416,
+              { error: "The requested byte range is not available." },
+              {
+                ...corsHeaders,
+                "Accept-Ranges": "bytes",
+                "Content-Range": `bytes */${String(result.sizeBytes)}`,
+              },
+            );
+            return;
+          }
+          sendLocalSogCandidateMember(response, result.lease, corsHeaders);
+          return;
+        }
+        throw new SafeHttpError(405, "This request method is not allowed.");
+      }
+      const roomEvidenceRoute = parseLocalRoomEvidenceRouteV0(url.pathname);
+      if (roomEvidenceRoute !== null) {
+        if (localRoomEvidenceGateway === undefined) {
+          throw new SafeHttpError(
+            404,
+            "No local room-evidence candidate is enabled for this session.",
+          );
+        }
+        if (roomEvidenceRoute.kind === "twin") {
+          assertNoQuery(url);
+          if (
+            !constantTimeTokenMatch(roomEvidenceRoute.pathToken, sessionToken)
+          ) {
+            throw new SafeHttpError(
+              401,
+              "This local session link is missing or has expired.",
+            );
+          }
+        } else {
+          requireSessionToken(url, sessionToken);
+        }
+        if (
+          !localRoomEvidenceGateway.acceptsRequestOrigin(
+            request.headers.origin,
+            origin,
+          )
+        ) {
+          throw new SafeHttpError(
+            403,
+            "Requests from another website are not accepted.",
+          );
+        }
+        const corsHeaders = localRoomEvidenceGateway.corsHeaders(
+          request.headers.origin,
+          origin,
+        );
+        if (method === "OPTIONS") {
+          const requestedMethod =
+            request.headers["access-control-request-method"];
+          const requestedHeaders =
+            request.headers["access-control-request-headers"];
+          if (
+            request.headers.origin === undefined ||
+            request.headers.origin === origin ||
+            requestedMethod !== "GET" ||
+            (requestedHeaders !== undefined &&
+              requestedHeaders.trim().toLowerCase() !== "range")
+          ) {
+            throw new SafeHttpError(
+              403,
+              "The room-evidence preflight request is not allowed.",
+            );
+          }
+          send(response, 204, "text/plain; charset=utf-8", "", {
+            ...corsHeaders,
+            "Access-Control-Allow-Methods": "GET",
+            "Access-Control-Allow-Headers": "Range",
+          });
+          return;
+        }
+        if (method !== "GET") {
+          throw new SafeHttpError(405, "This request method is not allowed.");
+        }
+        if (roomEvidenceRoute.kind === "descriptor") {
+          sendJson(
+            response,
+            200,
+            localRoomEvidenceGateway.descriptor(origin, sessionToken),
+            corsHeaders,
+          );
+          return;
+        }
+        const result =
+          roomEvidenceRoute.kind === "member"
+            ? await localRoomEvidenceGateway.openMember(
+                roomEvidenceRoute.memberId,
+                roomEvidenceRoute.suffix,
+                request.headers.range,
+              )
+            : await localRoomEvidenceGateway.openTwinMember(
+                roomEvidenceRoute.relativePath,
+                request.headers.range,
+              );
+        if (result.state === "range_not_satisfiable") {
+          sendJson(
+            response,
+            416,
+            { error: "The requested byte range is not available." },
+            {
+              ...corsHeaders,
+              "Accept-Ranges": "bytes",
+              "Content-Range": `bytes */${String(result.sizeBytes)}`,
+            },
+          );
+          return;
+        }
+        sendLocalRoomEvidenceMember(response, result.response, corsHeaders);
+        return;
+      }
+      if (
+        method === "GET" &&
+        url.pathname === "/api/room-reality-review/state"
+      ) {
+        requireSessionToken(url, sessionToken);
+        sendJson(response, 200, roomRealityReviewPublicState());
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/room-reality-review/dossier"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_DRAFT_BODY_BYTES,
+          "The Room Reality Package review dossier",
+        );
+        try {
+          roomRealityReviewSurface =
+            compileLocalRoomRealityReviewSurfaceV0(body);
+          roomRealityReviewDraft = undefined;
+        } catch (error: unknown) {
+          throw new SafeHttpError(
+            400,
+            error instanceof LocalRoomRealityReviewError
+              ? error.message
+              : "The Room Reality Package review dossier is invalid. No review state changed.",
+          );
+        }
+        sendJson(response, 201, roomRealityReviewSurface);
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/room-reality-review/draft"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        if (roomRealityReviewSurface === undefined) {
+          throw new SafeHttpError(
+            409,
+            "Open a current Room Reality Package review dossier before building a draft.",
+          );
+        }
+        const body = await readJsonObject(
+          request,
+          LOCAL_FOUNDRY_MAX_DRAFT_BODY_BYTES,
+          "The Room Reality Package review draft request",
+        );
+        try {
+          roomRealityReviewDraft = compileLocalRoomRealityReviewDraftV0(
+            roomRealityReviewSurface,
+            body,
+          );
+        } catch (error: unknown) {
+          throw new SafeHttpError(
+            400,
+            error instanceof LocalRoomRealityReviewError
+              ? error.message
+              : "The Room Reality Package review draft is invalid. No draft was recorded.",
+          );
+        }
+        sendJson(response, 201, roomRealityReviewDraft);
+        return;
+      }
+      if (
+        method === "POST" &&
+        url.pathname === "/api/room-reality-review/e57-classification-mask"
+      ) {
+        requireSessionToken(url, sessionToken);
+        requireSameOriginPost(request, origin);
+        const body = await readJsonObject(
+          request,
+          LOCAL_E57_POINT_CLASSIFICATION_MASK_MAXIMUM_BODY_BYTES,
+          "The local E57 point-classification mask request",
+        );
+        try {
+          const mask = compileLocalE57PointClassificationMaskV0(body);
+          sendJson(response, 201, mask);
+        } catch (error: unknown) {
+          throw new SafeHttpError(
+            400,
+            error instanceof LocalE57PointClassificationMaskError
+              ? error.message
+              : "The local E57 point-classification mask request is invalid. No mask was created.",
+          );
+        }
         return;
       }
       if (method === "GET" && url.pathname === "/api/receipt") {
@@ -1639,15 +2399,21 @@ export async function startLocalFoundryApp(
           `${JSON.stringify(receipt, null, 2)}\n`,
           {
             "Content-Disposition":
-              "attachment; filename=\"foundry-universal-intake-receipt-v0.json\"",
+              'attachment; filename="foundry-universal-intake-receipt-v0.json"',
           },
         );
         return;
       }
       if (method === "GET" && url.pathname === "/api/source-facts") {
-        const requestedDigest = requireSourceFactsTokenAndDigest(url, sessionToken);
+        const requestedDigest = requireSourceFactsTokenAndDigest(
+          url,
+          sessionToken,
+        );
         if (sourceFacts === undefined || phase !== "ready") {
-          throw new SafeHttpError(409, "The Source Facts artifact is not ready yet.");
+          throw new SafeHttpError(
+            409,
+            "The Source Facts artifact is not ready yet.",
+          );
         }
         if (requestedDigest !== sourceFacts.factsSha256) {
           throw new SafeHttpError(
@@ -1660,14 +2426,23 @@ export async function startLocalFoundryApp(
           200,
           "application/json; charset=utf-8",
           `${serializeUniversalSourceFactsV5Artifact(sourceFacts)}\n`,
-          { "Content-Disposition": "attachment; filename=\"foundry-universal-source-facts-v5.json\"" },
+          {
+            "Content-Disposition":
+              'attachment; filename="foundry-universal-source-facts-v5.json"',
+          },
         );
         return;
       }
       if (method === "GET" && url.pathname === "/api/source-readiness") {
-        const requestedDigest = requireSourceReadinessTokenAndDigest(url, sessionToken);
+        const requestedDigest = requireSourceReadinessTokenAndDigest(
+          url,
+          sessionToken,
+        );
         if (sourceReadiness === undefined || phase !== "ready") {
-          throw new SafeHttpError(409, "The Source Readiness artifact is not ready yet.");
+          throw new SafeHttpError(
+            409,
+            "The Source Readiness artifact is not ready yet.",
+          );
         }
         if (requestedDigest !== sourceReadiness.readinessSha256) {
           throw new SafeHttpError(
@@ -1680,7 +2455,10 @@ export async function startLocalFoundryApp(
           200,
           "application/json; charset=utf-8",
           `${serializeFoundrySourceReadinessMapV5(sourceReadiness)}\n`,
-          { "Content-Disposition": "attachment; filename=\"foundry-source-readiness-map-v5.json\"" },
+          {
+            "Content-Disposition":
+              'attachment; filename="foundry-source-readiness-map-v5.json"',
+          },
         );
         return;
       }
@@ -1711,7 +2489,7 @@ export async function startLocalFoundryApp(
           `${serializeFoundryOperatorEvidenceChecklistV5(operatorEvidenceChecklist)}\n`,
           {
             "Content-Disposition":
-              "attachment; filename=\"foundry-operator-evidence-checklist-v5.json\"",
+              'attachment; filename="foundry-operator-evidence-checklist-v5.json"',
           },
         );
         return;
@@ -1719,7 +2497,10 @@ export async function startLocalFoundryApp(
       if (method === "POST" && url.pathname === "/api/admission-draft") {
         requireSessionToken(url, sessionToken);
         if (request.headers.origin !== origin) {
-          throw new SafeHttpError(403, "The draft request must come from this local app.");
+          throw new SafeHttpError(
+            403,
+            "The draft request must come from this local app.",
+          );
         }
         if (receipt === undefined || phase !== "ready") {
           throw new SafeHttpError(409, "The receipt is not ready for review.");
@@ -1769,7 +2550,10 @@ export async function startLocalFoundryApp(
         }
         await serializeVerificationTransition(async () => {
           if (phase !== "ready") {
-            throw new SafeHttpError(409, "The local session is no longer ready for a new review draft.");
+            throw new SafeHttpError(
+              409,
+              "The local session is no longer ready for a new review draft.",
+            );
           }
           if (
             referenceVerification !== undefined &&
@@ -1801,9 +2585,15 @@ export async function startLocalFoundryApp(
         return;
       }
       if (method === "GET" && url.pathname === "/api/admission-review") {
-        const requestedDigest = requireArtifactTokenAndDigest(url, sessionToken);
+        const requestedDigest = requireArtifactTokenAndDigest(
+          url,
+          sessionToken,
+        );
         if (admissionDraft === undefined || phase !== "ready") {
-          throw new SafeHttpError(409, "Build the review draft before downloading it.");
+          throw new SafeHttpError(
+            409,
+            "Build the review draft before downloading it.",
+          );
         }
         if (requestedDigest !== admissionDraft.review.reviewSha256) {
           throw new SafeHttpError(
@@ -1816,14 +2606,23 @@ export async function startLocalFoundryApp(
           200,
           "application/json; charset=utf-8",
           `${JSON.stringify(admissionDraft.review, null, 2)}\n`,
-          { "Content-Disposition": "attachment; filename=\"foundry-admission-review-draft.json\"" },
+          {
+            "Content-Disposition":
+              'attachment; filename="foundry-admission-review-draft.json"',
+          },
         );
         return;
       }
       if (method === "GET" && url.pathname === "/api/admission-result") {
-        const requestedDigest = requireArtifactTokenAndDigest(url, sessionToken);
+        const requestedDigest = requireArtifactTokenAndDigest(
+          url,
+          sessionToken,
+        );
         if (admissionDraft === undefined || phase !== "ready") {
-          throw new SafeHttpError(409, "Build the review draft before downloading its result.");
+          throw new SafeHttpError(
+            409,
+            "Build the review draft before downloading its result.",
+          );
         }
         if (requestedDigest !== admissionDraft.result.resultSha256) {
           throw new SafeHttpError(
@@ -1836,11 +2635,17 @@ export async function startLocalFoundryApp(
           200,
           "application/json; charset=utf-8",
           `${JSON.stringify(admissionDraft.result, null, 2)}\n`,
-          { "Content-Disposition": "attachment; filename=\"foundry-admission-result-draft.json\"" },
+          {
+            "Content-Disposition":
+              'attachment; filename="foundry-admission-result-draft.json"',
+          },
         );
         return;
       }
-      if (method === "POST" && url.pathname === "/api/reference-verification/start") {
+      if (
+        method === "POST" &&
+        url.pathname === "/api/reference-verification/start"
+      ) {
         requireSessionToken(url, sessionToken);
         requireSameOriginPost(request, origin);
         const body = await readJsonObject(
@@ -1859,35 +2664,44 @@ export async function startLocalFoundryApp(
         const requestId = parseVerificationRequestId(body.requestId);
         let publicVerification: LocalReferenceVerificationPublicV0;
         try {
-          publicVerification = await serializeVerificationTransition(async () => {
-            if (
-              phase !== "ready" ||
-              receipt === undefined ||
-              admissionDraft === undefined ||
-              trustedStartupSourceIdentity === undefined ||
-              admissionDraft.result.resultSha256 !== admissionResultSha256
-            ) {
-              throw safeVerificationRouteFailure("start");
-            }
-            if (referenceVerification === undefined) {
-              referenceVerification = await LocalReferenceVerificationControllerV0.create({
-                source,
-                trustedStartupSourceIdentity,
-                receipt,
-                admissionDraft,
-                ...(options.privateStateRoot === undefined
-                  ? {}
-                  : { privateStateRoot: options.privateStateRoot }),
-                ...(options.referenceVerificationTestHooks === undefined
-                  ? {}
-                  : { testHooks: options.referenceVerificationTestHooks }),
-              });
-            }
-            if (referenceVerification.admissionResultSha256 !== admissionResultSha256) {
-              throw safeVerificationRouteFailure("start");
-            }
-            return referenceVerification.start(admissionResultSha256, requestId);
-          });
+          publicVerification = await serializeVerificationTransition(
+            async () => {
+              if (
+                phase !== "ready" ||
+                receipt === undefined ||
+                admissionDraft === undefined ||
+                trustedStartupSourceIdentity === undefined ||
+                admissionDraft.result.resultSha256 !== admissionResultSha256
+              ) {
+                throw safeVerificationRouteFailure("start");
+              }
+              if (referenceVerification === undefined) {
+                referenceVerification =
+                  await LocalReferenceVerificationControllerV0.create({
+                    source,
+                    trustedStartupSourceIdentity,
+                    receipt,
+                    admissionDraft,
+                    ...(options.privateStateRoot === undefined
+                      ? {}
+                      : { privateStateRoot: options.privateStateRoot }),
+                    ...(options.referenceVerificationTestHooks === undefined
+                      ? {}
+                      : { testHooks: options.referenceVerificationTestHooks }),
+                  });
+              }
+              if (
+                referenceVerification.admissionResultSha256 !==
+                admissionResultSha256
+              ) {
+                throw safeVerificationRouteFailure("start");
+              }
+              return referenceVerification.start(
+                admissionResultSha256,
+                requestId,
+              );
+            },
+          );
         } catch (error: unknown) {
           if (error instanceof SafeHttpError) throw error;
           throw safeVerificationRouteFailure("start");
@@ -1895,7 +2709,10 @@ export async function startLocalFoundryApp(
         sendJson(response, 202, publicVerification);
         return;
       }
-      if (method === "POST" && url.pathname === "/api/reference-verification/status") {
+      if (
+        method === "POST" &&
+        url.pathname === "/api/reference-verification/status"
+      ) {
         requireSessionToken(url, sessionToken);
         requireSameOriginPost(request, origin);
         const body = await readJsonObject(
@@ -1903,15 +2720,25 @@ export async function startLocalFoundryApp(
           LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
           "The approved-file check status request",
         );
-        assertRequiredExactKeys(body, ["jobId", "revision", "run"], "The approved-file check status request");
+        assertRequiredExactKeys(
+          body,
+          ["jobId", "revision", "run"],
+          "The approved-file check status request",
+        );
         const job = parseVerificationJobReference(body);
         try {
-          const publicVerification = await serializeVerificationTransition(async () => {
-            if (phase !== "ready" || referenceVerification === undefined) {
-              throw safeVerificationRouteFailure("status");
-            }
-            return referenceVerification.status(job.jobId, job.revision, job.run);
-          });
+          const publicVerification = await serializeVerificationTransition(
+            async () => {
+              if (phase !== "ready" || referenceVerification === undefined) {
+                throw safeVerificationRouteFailure("status");
+              }
+              return referenceVerification.status(
+                job.jobId,
+                job.revision,
+                job.run,
+              );
+            },
+          );
           sendJson(response, 200, publicVerification);
         } catch (error: unknown) {
           if (error instanceof SafeHttpError) throw error;
@@ -1919,7 +2746,10 @@ export async function startLocalFoundryApp(
         }
         return;
       }
-      if (method === "POST" && url.pathname === "/api/reference-verification/current") {
+      if (
+        method === "POST" &&
+        url.pathname === "/api/reference-verification/current"
+      ) {
         requireSessionToken(url, sessionToken);
         requireSameOriginPost(request, origin);
         const body = await readJsonObject(
@@ -1927,7 +2757,11 @@ export async function startLocalFoundryApp(
           LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
           "The current approved-file check request",
         );
-        assertRequiredExactKeys(body, [], "The current approved-file check request");
+        assertRequiredExactKeys(
+          body,
+          [],
+          "The current approved-file check request",
+        );
         try {
           const current = await serializeVerificationTransition(async () => {
             if (phase !== "ready") throw safeVerificationRouteFailure("status");
@@ -1942,7 +2776,10 @@ export async function startLocalFoundryApp(
         }
         return;
       }
-      if (method === "POST" && url.pathname === "/api/reference-verification/cancel") {
+      if (
+        method === "POST" &&
+        url.pathname === "/api/reference-verification/cancel"
+      ) {
         requireSessionToken(url, sessionToken);
         requireSameOriginPost(request, origin);
         const body = await readJsonObject(
@@ -1950,15 +2787,25 @@ export async function startLocalFoundryApp(
           LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
           "The stop-approved-file-check request",
         );
-        assertRequiredExactKeys(body, ["jobId", "revision", "run"], "The stop-approved-file-check request");
+        assertRequiredExactKeys(
+          body,
+          ["jobId", "revision", "run"],
+          "The stop-approved-file-check request",
+        );
         const job = parseVerificationJobReference(body);
         try {
-          const publicVerification = await serializeVerificationTransition(async () => {
-            if (phase !== "ready" || referenceVerification === undefined) {
-              throw safeVerificationRouteFailure("cancel");
-            }
-            return referenceVerification.cancel(job.jobId, job.revision, job.run);
-          });
+          const publicVerification = await serializeVerificationTransition(
+            async () => {
+              if (phase !== "ready" || referenceVerification === undefined) {
+                throw safeVerificationRouteFailure("cancel");
+              }
+              return referenceVerification.cancel(
+                job.jobId,
+                job.revision,
+                job.run,
+              );
+            },
+          );
           sendJson(response, 200, publicVerification);
         } catch (error: unknown) {
           if (error instanceof SafeHttpError) throw error;
@@ -1966,7 +2813,10 @@ export async function startLocalFoundryApp(
         }
         return;
       }
-      if (method === "POST" && url.pathname === "/api/reference-verification/resume") {
+      if (
+        method === "POST" &&
+        url.pathname === "/api/reference-verification/resume"
+      ) {
         requireSessionToken(url, sessionToken);
         requireSameOriginPost(request, origin);
         const body = await readJsonObject(
@@ -1985,23 +2835,25 @@ export async function startLocalFoundryApp(
         );
         const requestId = parseVerificationRequestId(body.requestId);
         try {
-          const publicVerification = await serializeVerificationTransition(async () => {
-            if (
-              phase !== "ready" ||
-              admissionDraft === undefined ||
-              referenceVerification === undefined ||
-              admissionDraft.result.resultSha256 !== admissionResultSha256
-            ) {
-              throw safeVerificationRouteFailure("resume");
-            }
-            return referenceVerification.resume(
-              job.jobId,
-              job.revision,
-              job.run,
-              admissionResultSha256,
-              requestId,
-            );
-          });
+          const publicVerification = await serializeVerificationTransition(
+            async () => {
+              if (
+                phase !== "ready" ||
+                admissionDraft === undefined ||
+                referenceVerification === undefined ||
+                admissionDraft.result.resultSha256 !== admissionResultSha256
+              ) {
+                throw safeVerificationRouteFailure("resume");
+              }
+              return referenceVerification.resume(
+                job.jobId,
+                job.revision,
+                job.run,
+                admissionResultSha256,
+                requestId,
+              );
+            },
+          );
           sendJson(response, 202, publicVerification);
         } catch (error: unknown) {
           if (error instanceof SafeHttpError) throw error;
@@ -2009,7 +2861,10 @@ export async function startLocalFoundryApp(
         }
         return;
       }
-      if (method === "POST" && url.pathname === "/api/reference-verification/report") {
+      if (
+        method === "POST" &&
+        url.pathname === "/api/reference-verification/report"
+      ) {
         requireSessionToken(url, sessionToken);
         requireSameOriginPost(request, origin);
         const body = await readJsonObject(
@@ -2017,15 +2872,25 @@ export async function startLocalFoundryApp(
           LOCAL_FOUNDRY_MAX_REQUEST_BODY_BYTES,
           "The approved-file report request",
         );
-        assertRequiredExactKeys(body, ["jobId", "revision", "run"], "The approved-file report request");
+        assertRequiredExactKeys(
+          body,
+          ["jobId", "revision", "run"],
+          "The approved-file report request",
+        );
         const job = parseVerificationJobReference(body);
         try {
-          const publicVerification = await serializeVerificationTransition(async () => {
-            if (phase !== "ready" || referenceVerification === undefined) {
-              throw safeVerificationRouteFailure("report");
-            }
-            return referenceVerification.report(job.jobId, job.revision, job.run);
-          });
+          const publicVerification = await serializeVerificationTransition(
+            async () => {
+              if (phase !== "ready" || referenceVerification === undefined) {
+                throw safeVerificationRouteFailure("report");
+              }
+              return referenceVerification.report(
+                job.jobId,
+                job.revision,
+                job.run,
+              );
+            },
+          );
           sendJson(response, 200, publicVerification);
         } catch (error: unknown) {
           if (error instanceof SafeHttpError) throw error;
@@ -2101,11 +2966,17 @@ export async function startLocalFoundryApp(
           offlineNormalizationPreview === undefined ||
           offlineNormalizationPreviewRequestId !== requestId
         ) {
-          throw new SafeHttpError(409, "That private preview request is no longer current.");
+          throw new SafeHttpError(
+            409,
+            "That private preview request is no longer current.",
+          );
         }
         const current = offlineNormalizationPreview.status(requestId);
         if (current === null) {
-          throw new SafeHttpError(409, "That private preview request is no longer current.");
+          throw new SafeHttpError(
+            409,
+            "That private preview request is no longer current.",
+          );
         }
         sendJson(response, 200, current);
         return;
@@ -2131,11 +3002,17 @@ export async function startLocalFoundryApp(
           offlineNormalizationPreview === undefined ||
           offlineNormalizationPreviewRequestId !== requestId
         ) {
-          throw new SafeHttpError(409, "That private preview request is no longer current.");
+          throw new SafeHttpError(
+            409,
+            "That private preview request is no longer current.",
+          );
         }
         const current = await offlineNormalizationPreview.cancel(requestId);
         if (current === null) {
-          throw new SafeHttpError(409, "That private preview request is no longer current.");
+          throw new SafeHttpError(
+            409,
+            "That private preview request is no longer current.",
+          );
         }
         sendJson(response, 200, current);
         return;
@@ -2152,16 +3029,25 @@ export async function startLocalFoundryApp(
           offlineNormalizationPreview === undefined ||
           offlineNormalizationPreviewRequestId !== artifactRequest.requestId
         ) {
-          throw new SafeHttpError(409, "That private preview output is no longer current.");
+          throw new SafeHttpError(
+            409,
+            "That private preview output is no longer current.",
+          );
         }
         const report = offlineNormalizationPreview.readVerifiedReport(
           artifactRequest.requestId,
         );
         if (report === null) {
-          throw new SafeHttpError(409, "The verified private preview output is not available.");
+          throw new SafeHttpError(
+            409,
+            "The verified private preview output is not available.",
+          );
         }
         if (artifactRequest.digest !== report.output.sha256) {
-          throw new SafeHttpError(409, "That private preview output fingerprint is no longer current.");
+          throw new SafeHttpError(
+            409,
+            "That private preview output fingerprint is no longer current.",
+          );
         }
         const lease = offlineNormalizationPreview.acquireVerifiedOutput(
           artifactRequest.requestId,
@@ -2184,7 +3070,7 @@ export async function startLocalFoundryApp(
             lease.normalizedGlb,
             {
               "Content-Disposition":
-                "attachment; filename=\"foundry-private-offline-format-preview.glb\"",
+                'attachment; filename="foundry-private-offline-format-preview.glb"',
             },
             () => {
               lease.release();
@@ -2209,16 +3095,25 @@ export async function startLocalFoundryApp(
           offlineNormalizationPreview === undefined ||
           offlineNormalizationPreviewRequestId !== artifactRequest.requestId
         ) {
-          throw new SafeHttpError(409, "That private preview report is no longer current.");
+          throw new SafeHttpError(
+            409,
+            "That private preview report is no longer current.",
+          );
         }
         const report = offlineNormalizationPreview.readVerifiedReport(
           artifactRequest.requestId,
         );
         if (report === null) {
-          throw new SafeHttpError(409, "The verified private preview report is not available.");
+          throw new SafeHttpError(
+            409,
+            "The verified private preview report is not available.",
+          );
         }
         if (artifactRequest.digest !== report.reportSha256) {
-          throw new SafeHttpError(409, "That private preview report fingerprint is no longer current.");
+          throw new SafeHttpError(
+            409,
+            "That private preview report fingerprint is no longer current.",
+          );
         }
         send(
           response,
@@ -2227,7 +3122,7 @@ export async function startLocalFoundryApp(
           `${JSON.stringify(report, null, 2)}\n`,
           {
             "Content-Disposition":
-              "attachment; filename=\"foundry-private-offline-format-preview-report.json\"",
+              'attachment; filename="foundry-private-offline-format-preview-report.json"',
           },
         );
         return;
@@ -2235,10 +3130,16 @@ export async function startLocalFoundryApp(
       if (method === "POST" && url.pathname === "/api/plan-preview") {
         requireSessionToken(url, sessionToken);
         if (request.headers.origin !== origin) {
-          throw new SafeHttpError(403, "The plan request must come from this local app.");
+          throw new SafeHttpError(
+            403,
+            "The plan request must come from this local app.",
+          );
         }
         if (admissionDraft === undefined || phase !== "ready") {
-          throw new SafeHttpError(409, "Build the review draft before comparing plans.");
+          throw new SafeHttpError(
+            409,
+            "Build the review draft before comparing plans.",
+          );
         }
         const body = await readJsonObject(
           request,
@@ -2329,9 +3230,15 @@ export async function startLocalFoundryApp(
         return;
       }
       if (method === "GET" && url.pathname === "/api/plan-dossier") {
-        const requestedDigest = requireArtifactTokenAndDigest(url, sessionToken);
+        const requestedDigest = requireArtifactTokenAndDigest(
+          url,
+          sessionToken,
+        );
         if (planPreview === undefined || phase !== "ready") {
-          throw new SafeHttpError(409, "Build the plan preview before downloading it.");
+          throw new SafeHttpError(
+            409,
+            "Build the plan preview before downloading it.",
+          );
         }
         if (requestedDigest !== planPreview.previewSha256) {
           throw new SafeHttpError(
@@ -2344,7 +3251,10 @@ export async function startLocalFoundryApp(
           200,
           "application/json; charset=utf-8",
           `${JSON.stringify(planPreview, null, 2)}\n`,
-          { "Content-Disposition": "attachment; filename=\"foundry-plan-preview.json\"" },
+          {
+            "Content-Disposition":
+              'attachment; filename="foundry-plan-preview.json"',
+          },
         );
         return;
       }
@@ -2353,7 +3263,10 @@ export async function startLocalFoundryApp(
         requireSameOriginPost(request, origin);
         await readEmptyJsonObject(request);
         if (operatorStopPreparing) {
-          throw new SafeHttpError(409, "The local session is already preparing to stop safely.");
+          throw new SafeHttpError(
+            409,
+            "The local session is already preparing to stop safely.",
+          );
         }
         operatorStopPreparing = true;
         const phaseBeforeStop = phase;
@@ -2390,7 +3303,12 @@ export async function startLocalFoundryApp(
       if (
         [
           "/",
+          "/room-review",
           "/api/state",
+          "/api/room-reality-review/state",
+          "/api/room-reality-review/dossier",
+          "/api/room-reality-review/draft",
+          "/api/room-reality-review/e57-classification-mask",
           "/api/receipt",
           "/api/source-facts",
           "/api/source-readiness",
@@ -2426,7 +3344,20 @@ export async function startLocalFoundryApp(
         response,
         error instanceof SafeHttpError
           ? error
-          : new SafeHttpError(500, "The local app stopped this request safely."),
+          : error instanceof LocalSogCandidateGatewayError
+            ? new SafeHttpError(
+                409,
+                "The local SOG candidate changed or is no longer granted for this session.",
+              )
+            : error instanceof LocalRoomEvidenceCandidateError
+              ? new SafeHttpError(
+                  409,
+                  "The local room-evidence member changed, is busy, or is no longer granted for this session.",
+                )
+              : new SafeHttpError(
+                  500,
+                  "The local app stopped this request safely.",
+                ),
       );
     });
   });
@@ -2465,6 +3396,8 @@ export async function startLocalFoundryApp(
       operatorEvidenceChecklist = undefined;
       admissionDraft = undefined;
       planPreview = undefined;
+      roomRealityReviewSurface = undefined;
+      roomRealityReviewDraft = undefined;
       trustedStartupSourceIdentity = undefined;
       offlineNormalizationPreviewRequestId = undefined;
       safeFailure = undefined;
@@ -2494,6 +3427,32 @@ export async function startLocalFoundryApp(
   }
   expectedHost = `${LOCAL_FOUNDRY_HOST}:${String(boundPort)}`;
   origin = `http://${expectedHost}`;
+  const localSogCandidateDescriptorUrl =
+    localSogCandidateGateway === undefined
+      ? undefined
+      : `${origin}/api/local-sog-candidate?token=${encodeURIComponent(sessionToken)}`;
+  const localSogCandidateConsumerLink =
+    localSogCandidateDescriptorUrl === undefined ||
+    localSogCandidateGateway?.allowedConsumerOrigin === null ||
+    localSogCandidateGateway?.allowedConsumerOrigin === undefined
+      ? undefined
+      : localSogCandidateConsumerUrl(
+          localSogCandidateGateway.allowedConsumerOrigin,
+          localSogCandidateDescriptorUrl,
+        );
+  const localRoomEvidenceDescriptorUrl =
+    localRoomEvidenceGateway === undefined
+      ? undefined
+      : `${origin}/api/local-room-evidence-candidate?token=${encodeURIComponent(sessionToken)}`;
+  const localRoomEvidenceConsumerLink =
+    localRoomEvidenceDescriptorUrl === undefined ||
+    localRoomEvidenceGateway?.allowedConsumerOrigin === null ||
+    localRoomEvidenceGateway?.allowedConsumerOrigin === undefined
+      ? undefined
+      : localRoomEvidenceConsumerUrlV0(
+          localRoomEvidenceGateway.allowedConsumerOrigin,
+          localRoomEvidenceDescriptorUrl,
+        );
 
   const stopExpiredSession = (): void => {
     void stopServer("session_expired").catch(() => {
@@ -2507,13 +3466,19 @@ export async function startLocalFoundryApp(
     .then(async (identity) => {
       if (phase !== "inspecting") return undefined;
       trustedStartupSourceIdentity = identity;
-      return inspectUniversalIntakeWithSourceFactsV5(source, { signal: inspectionAbort.signal });
+      return inspectUniversalIntakeWithSourceFactsV5(source, {
+        signal: inspectionAbort.signal,
+      });
     })
     .then((candidate) => {
       if (candidate === undefined) return;
       if (phase !== "inspecting") return;
-      const parsedReceipt = FoundryUniversalIntakeReceiptSchema.parse(candidate.receipt);
-      const parsedSourceFacts = FoundryUniversalSourceFactsV5Schema.parse(candidate.sourceFacts);
+      const parsedReceipt = FoundryUniversalIntakeReceiptSchema.parse(
+        candidate.receipt,
+      );
+      const parsedSourceFacts = FoundryUniversalSourceFactsV5Schema.parse(
+        candidate.sourceFacts,
+      );
       const parsedSourceReadiness = FoundrySourceReadinessMapV5Schema.parse(
         compileFoundrySourceReadinessMapV5({
           receipt: parsedReceipt,
@@ -2544,6 +3509,18 @@ export async function startLocalFoundryApp(
     port: boundPort,
     origin,
     url: `${origin}/?token=${encodeURIComponent(sessionToken)}`,
+    ...(localSogCandidateDescriptorUrl === undefined
+      ? {}
+      : { localSogCandidateDescriptorUrl }),
+    ...(localSogCandidateConsumerLink === undefined
+      ? {}
+      : { localSogCandidateConsumerUrl: localSogCandidateConsumerLink }),
+    ...(localRoomEvidenceDescriptorUrl === undefined
+      ? {}
+      : { localRoomEvidenceDescriptorUrl }),
+    ...(localRoomEvidenceConsumerLink === undefined
+      ? {}
+      : { localRoomEvidenceConsumerUrl: localRoomEvidenceConsumerLink }),
     sourceLabel,
     closed,
     stop: async () => stopServer("programmatic"),
@@ -2572,10 +3549,15 @@ export function localFoundryBrowserLaunchSpec(
     tokenEntries[0]?.[0] !== "token" ||
     !SESSION_TOKEN_PATTERN.test(tokenEntries[0][1])
   ) {
-    throw new Error("Refusing to open a browser for an invalid local Foundry URL.");
+    throw new Error(
+      "Refusing to open a browser for an invalid local Foundry URL.",
+    );
   }
   if (platform === "win32") {
-    return { command: "rundll32", args: ["url.dll,FileProtocolHandler", url.toString()] };
+    return {
+      command: "rundll32",
+      args: ["url.dll,FileProtocolHandler", url.toString()],
+    };
   }
   if (platform === "darwin") return { command: "open", args: [url.toString()] };
   return { command: "xdg-open", args: [url.toString()] };
@@ -2587,8 +3569,11 @@ export type BrowserProcessLauncher = (
   options: SpawnOptions,
 ) => Pick<ChildProcess, "once" | "unref">;
 
-const defaultBrowserProcessLauncher: BrowserProcessLauncher = (command, args, options) =>
-  spawn(command, [...args], options);
+const defaultBrowserProcessLauncher: BrowserProcessLauncher = (
+  command,
+  args,
+  options,
+) => spawn(command, [...args], options);
 
 export function openLocalFoundryAppInBrowser(
   url: string,

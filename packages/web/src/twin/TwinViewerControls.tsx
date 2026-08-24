@@ -67,6 +67,9 @@ export interface TwinViewerControlsProps {
    *  builder so the recipient lands standing where the sender stood.
    *  Defaults to the plain location for callers without one. */
   readonly shareUrl?: () => string;
+  /** Public enquiry/share affordances are intentionally absent in local
+   * evidence review. Fullscreen remains available because it carries no URL. */
+  readonly engagementEnabled?: boolean;
 }
 
 export function TwinViewerControls({
@@ -74,6 +77,7 @@ export function TwinViewerControls({
   venueName,
   viewerRef,
   shareUrl,
+  engagementEnabled = true,
 }: TwinViewerControlsProps): ReactElement {
   const fullscreen = useFullscreen(viewerRef);
   const [copied, setCopied] = useState(false);
@@ -102,7 +106,7 @@ export function TwinViewerControls({
 
   return (
     <>
-      {enquireOpen && (
+      {engagementEnabled && enquireOpen && (
         <TwinEnquiryModal
           venueSlug={venueSlug}
           venueName={venueName}
@@ -112,7 +116,7 @@ export function TwinViewerControls({
         />
       )}
       <div className="vv-twin-controls">
-        <button
+        {engagementEnabled && <button
           type="button"
           className="vv-twin-enquire"
           aria-label={twinEnquireAria(venueName)}
@@ -133,9 +137,9 @@ export function TwinViewerControls({
             <path d="M22 2 11 13M22 2l-7 20-4-9-9-4Z" />
           </svg>
           {TWIN_ENQUIRE_LABEL}
-        </button>
+        </button>}
 
-      <button
+      {engagementEnabled && <button
         type="button"
         className="vv-twin-utility-btn"
         onClick={onShare}
@@ -167,7 +171,7 @@ export function TwinViewerControls({
             <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
           </svg>
         )}
-      </button>
+      </button>}
 
       {fullscreen.supported && (
         <button
@@ -207,13 +211,13 @@ export function TwinViewerControls({
         </button>
       )}
 
-        <p
+        {engagementEnabled && <p
           className="vv-sr-only"
           aria-live="polite"
           data-testid="twin-share-status"
         >
           {announce}
-        </p>
+        </p>}
       </div>
     </>
   );

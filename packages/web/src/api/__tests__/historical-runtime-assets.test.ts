@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   HistoricalRuntimeAssetError,
+  authorizeHistoricalRuntimeBinding,
   fetchVerifiedHistoricalRuntimeAsset,
   sha256Hex,
 } from "../historical-runtime-assets.js";
@@ -204,4 +205,67 @@ describe("fetchVerifiedHistoricalRuntimeAsset", () => {
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ redirect: "error" }));
   });
 
+});
+
+describe("authorizeHistoricalRuntimeBinding", () => {
+  it("models T-541's future HEAD proof without claiming the current 404 route is available", async () => {
+    const binding = historicalRuntimeBindingFixture({ sizeBytes: 3 });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, {
+      status: 200,
+      headers: verifiedHeaders(binding),
+    }));
+    const digest = vi.fn();
+    await authorizeHistoricalRuntimeBinding(binding, new AbortController().signal, {
+      fetch: fetchMock,
+      getAuthToken: vi.fn().mockResolvedValue("session-token"),
+      digest,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/runtime-bindings/${binding.bindingId}/members/0/`),
+      expect.objectContaining({ method: "HEAD", redirect: "error" }),
+    );
+    expect(digest).not.toHaveBeenCalled();
+  });
+
+  it("fails closed against today's intentionally unavailable member/automatic-HEAD route", async () => {
+    const binding = historicalRuntimeBindingFixture({ sizeBytes: 3 });
+    await expect(authorizeHistoricalRuntimeBinding(
+      binding,
+      new AbortController().signal,
+      {
+        fetch: vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 404 })),
+        getAuthToken: vi.fn().mockResolvedValue("session-token"),
+        digest: vi.fn(),
+      },
+    )).rejects.toMatchObject({ code: "HTTP_UNAVAILABLE", status: 404 });
+  });
+
+  it("fails closed on a mismatched binding proof", async () => {
+    const binding = historicalRuntimeBindingFixture({ sizeBytes: 3 });
+    await expect(authorizeHistoricalRuntimeBinding(
+      binding,
+      new AbortController().signal,
+      {
+        fetch: vi.fn<typeof fetch>().mockResolvedValue(new Response(null, {
+          status: 200,
+          headers: verifiedHeaders(binding),
+        })),
+        getAuthToken: vi.fn().mockResolvedValue("session-token"),
+        digest: vi.fn(),
+      },
+    )).resolves.toBeUndefined();
+
+    await expect(authorizeHistoricalRuntimeBinding(
+      binding,
+      new AbortController().signal,
+      {
+        fetch: vi.fn<typeof fetch>().mockResolvedValue(new Response(null, {
+          status: 200,
+          headers: { ...verifiedHeaders(binding), "x-runtime-binding-digest": "0".repeat(64) },
+        })),
+        getAuthToken: vi.fn().mockResolvedValue("session-token"),
+        digest: vi.fn(),
+      },
+    )).rejects.toMatchObject({ code: "HEADER_MISMATCH" });
+  });
 });

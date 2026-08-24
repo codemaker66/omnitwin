@@ -117,8 +117,12 @@ including after the four-hour limit, until it receives both confirmations.
 ```powershell
 pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- local-app --source C:\path\to\capture-drop
 pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- inspect-intake --source C:\path\to\capture-drop
+pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- inspect-source-facts --source C:\path\to\capture-drop
 pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- admit-intake-draft --receipt C:\path\to\receipt.json --review C:\path\to\review.json
 pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- stage-intake-draft --source C:\path\to\capture-drop --receipt C:\path\to\receipt.json --review C:\path\to\review.json --out C:\path\to\verified-stage
+pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- compose-capture-bundle --input C:\path\to\bundle-input.json
+pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- assess-adapters --manifest C:\path\to\foundry-ingest-manifest-v0.json --host C:\path\to\host-capabilities.json
+pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- assemble-room-package --input C:\path\to\assembly-input.json
 pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- plan-job-draft --request C:\path\to\plan-request.json --manifest C:\path\to\foundry-ingest-manifest-v0.json
 pnpm --silent --filter @omnitwin/reconstruction-foundry-cli foundry -- verify-training-candidate --bundle C:\path\to\extracted-run --venue-id trades-hall --run-id 20260713T120000Z-pod-abc123
 pnpm --silent --filter @omnitwin/reconstruction-foundry-cli lcc2-frontier -- --manifest "C:\path\to\scene.lcc2" --environment exclude
@@ -128,6 +132,56 @@ pnpm --filter @omnitwin/reconstruction-foundry-cli foundry -- verify-candidate -
 pnpm --filter @omnitwin/reconstruction-foundry-cli foundry -- prepare-signing-request --payload C:\Downloads\signing-payload.json --out C:\foundry\signing-request
 pnpm --filter @omnitwin/reconstruction-foundry-cli foundry -- assemble-attestation --payload C:\Downloads\signing-payload.json --key-id venue-release-key --signature-base64 BASE64_FROM_KMS --out C:\foundry\attestation.dsse.json
 ```
+
+The new universal-bundle commands form a deliberately non-executable contract
+lane:
+
+1. `inspect-source-facts` performs the complete V5 inspection and adds bounded,
+   receipt-bound ordinary point-cloud PLY facts. It does not reconstruct or
+   authorize the input. XGRIDS XBIN still stops with the official-export/SDK
+   requirement.
+2. `compose-capture-bundle` combines two or more independently reviewed intake
+   admission results. Its input contains `projectId`, `createdAt`, `createdBy`,
+   and `mounts`; every mount supplies a unique `namespaceId` and the complete
+   self-digested `admissionResult`. It remaps all IDs, preserves the strictest legal
+   state, and rejects the same bytes mounted from separate roots.
+3. `assess-adapters` compares one exact ingest manifest with an explicit host
+   inventory. The inventory must list every reviewed dependency in canonical
+   order: `pye57_read_only_metadata_probe`,
+   `pye57_cartesian_geometry_reader`, `gltf_transform_core`,
+   `gltf_validator`, and `meshoptimizer`. The output distinguishes detection,
+   structural inspection, deterministic local processing, vendor-export,
+   dependency, rights, and execution-activation blockers. It never discovers
+   host software or launches it implicitly.
+   The pye57 Cartesian reader is only a local authority-none subset seam: it
+   accepts at most a 256 MiB container, 1,000,000 Cartesian points, 64 scans,
+   and 79 fixed-size batches with complete explicit poses. It re-reads a scan
+   from its beginning for each batch and is not a streaming or Grand Hall-scale
+   processing worker. The accepted 0.4.19 binding exposes `seek`, but the tiny
+   ASTM-E57 fixture probe returned libE57Format `ErrorNotImplemented`.
+   Checkpoint resume therefore replays and verifies the bounded source prefix.
+   Each bridge command has a deadline and hashes the whole container before and
+   after use, including possible image-blob bytes, while never decoding or
+   extracting images. The absolute interpreter and bridge/source identities are
+   caller-supplied and unverified; path hashes do not close swap-and-restore
+   races and cannot serve as production activation evidence.
+4. `assemble-room-package` validates a proposed architectural package against
+   one exact ingest manifest and reference catalog. Its input contains
+   `ingestManifest`, `verifiedIngestManifestSha256`, `packageDraft`, and
+   `referenceCatalog`. A structurally complete result is explicitly a sealed
+   `local_unverified_candidate`: its catalog is caller-supplied, member
+   identities and movable-object classification remain unverified, release
+   eligibility is blocked, and signing, publication, export authority,
+   RuntimePackage registration, and runtime activation all remain
+   unauthorized.
+
+These commands do not yet make the browser a drag-and-drop reconstruction
+engine. They make the previously disconnected intake, multi-root composition,
+adapter honesty, and package-assembly contracts reachable and reproducible.
+Actual reconstruction workers, metric fusion, human transform/Scene Authority
+review, purpose-specific rights clearance, and an authenticated activation
+boundary are still required before any result can drive the production room
+runtime.
 
 `lcc2-frontier` reads the vendor's `.lcc2` JSON tree and selects the files used
 by every leaf node at the declared highest-detail level. It does not guess the

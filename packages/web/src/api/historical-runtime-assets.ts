@@ -107,6 +107,72 @@ export async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 }
 
 /**
+ * Dormant client shape for T-541's future independently authenticated HEAD
+ * proof. The current API deliberately returns 404 for member GET and automatic
+ * HEAD, while production timeline bindings are unavailable-only. Consequently
+ * this function cannot authorize a real ready resource on the current branch;
+ * its success path is exercised only as a synthetic contract test.
+ */
+export async function authorizeHistoricalRuntimeBinding(
+  binding: PhaseLayoutRuntimeAvailableBinding,
+  signal: AbortSignal,
+  dependencies: HistoricalRuntimeAssetRequestDependencies = defaultDependencies,
+): Promise<void> {
+  throwIfAborted(signal);
+  const member = binding.visualAssets[0];
+  if (member === undefined || !memberBelongsToBinding(binding, member)) {
+    throw new HistoricalRuntimeAssetError(
+      "BINDING_MISMATCH",
+      "Historical runtime binding has no exact member to authorize.",
+    );
+  }
+  const token = await dependencies.getAuthToken();
+  throwIfAborted(signal);
+  if (token === null) {
+    throw new HistoricalRuntimeAssetError(
+      "AUTH_UNAVAILABLE",
+      "An authenticated session is required for historical runtime bytes.",
+    );
+  }
+
+  let response: Response;
+  try {
+    response = await dependencies.fetch(`${API_URL}${memberPath(binding, member)}`, {
+      method: "HEAD",
+      headers: { Authorization: `Bearer ${token}` },
+      redirect: "error",
+      signal,
+    });
+  } catch (error: unknown) {
+    if (signal.aborted || isAbortError(error)) {
+      throw new HistoricalRuntimeAssetError("ABORTED", "Historical runtime request was cancelled.");
+    }
+    throw new HistoricalRuntimeAssetError(
+      "NETWORK_ERROR",
+      "Historical runtime binding could not be authorized.",
+    );
+  }
+  if (response.status !== 200) {
+    throw new HistoricalRuntimeAssetError(
+      "HTTP_UNAVAILABLE",
+      "Historical runtime binding is unavailable.",
+      response.status,
+    );
+  }
+  requireExactHeader(response, "content-type", member.mimeType);
+  requireExactHeader(response, "content-length", String(member.sizeBytes));
+  requireExactHeader(response, "cache-control", "private, no-store");
+  requireExactHeader(response, "x-content-sha256", member.sha256);
+  requireExactHeader(response, "x-runtime-binding-digest", binding.bindingDigest);
+  requireExactHeader(
+    response,
+    "x-runtime-package-content-digest",
+    binding.runtimePackageContentDigest,
+  );
+  requireExactHeader(response, "x-asset-version-id", member.assetVersionId);
+}
+
+/**
  * Fetch one immutable phase-runtime member and authenticate every identity
  * header plus the complete response body before returning bytes to a decoder.
  */

@@ -39,6 +39,16 @@
   user-select: text;
 }
 
+.visual-shell.is-master-evidence-shell {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr);
+}
+
+.visual-shell.is-master-evidence-shell .visual-stage {
+  grid-column: 1;
+  grid-row: 2;
+}
+
 .visual-topbar {
   grid-column: 1 / -1;
   grid-row: 1;
@@ -116,15 +126,20 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
   min-height: 34px;
-  padding: 0 18px;
+  padding: 4px 10px;
+  box-sizing: border-box;
   border: 1px solid rgba(215, 170, 73, 0.58);
   border-radius: 8px;
   background: rgba(96, 57, 16, 0.38);
   color: #f3c86a;
   font-size: 13px;
   font-weight: 780;
-  white-space: nowrap;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
 }
 
 .visual-runtime-cell {
@@ -257,6 +272,204 @@
 .visual-synthetic-stand-in-label span {
   color: var(--gold);
   font-size: 14px;
+}
+
+.local-sog-candidate-panel {
+  position: absolute;
+  right: 24px;
+  bottom: 18px;
+  z-index: 13;
+  width: auto;
+  max-width: min(560px, calc(100% - 48px));
+  max-height: min(68vh, 620px);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid rgba(230, 188, 99, 0.48);
+  border-radius: 14px;
+  background: rgba(7, 10, 12, 0.9);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  color: #eee5d8;
+  font-size: 11px;
+  line-height: 1.38;
+  backdrop-filter: blur(15px);
+}
+
+.local-sog-candidate-panel.is-expanded {
+  width: min(520px, calc(100% - 48px));
+}
+
+.local-sog-candidate-panel__boundary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.local-sog-candidate-panel__boundary span {
+  padding: 3px 7px;
+  border: 1px solid rgba(239, 156, 145, 0.36);
+  border-radius: 999px;
+  background: rgba(119, 48, 39, 0.2);
+  color: #f2b8ae;
+  font-size: 9px;
+  font-weight: 820;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.local-sog-candidate-panel__boundary .local-sog-candidate-panel__toggle {
+  min-height: 22px;
+  margin-inline-start: auto;
+  padding: 2px 7px;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+}
+
+.local-sog-candidate-panel__compact-summary {
+  margin: 7px 0 0;
+  color: #e4d5c0;
+  font-weight: 720;
+  text-align: end;
+}
+
+.local-sog-candidate-panel__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.local-sog-candidate-panel__heading strong,
+.local-sog-candidate-panel__heading span {
+  display: block;
+}
+
+.local-sog-candidate-panel__heading strong {
+  color: #fff5e5;
+  font-size: 13px;
+}
+
+.local-sog-candidate-panel__heading span {
+  margin-top: 2px;
+  color: #baaE9f;
+}
+
+.local-sog-candidate-panel button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(230, 188, 99, 0.4);
+  border-radius: 7px;
+  background: rgba(215, 170, 73, 0.14);
+  color: #f0ce80;
+  font: inherit;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.local-sog-candidate-panel__status,
+.local-sog-candidate-panel__caveat,
+.local-sog-candidate-panel__state,
+.local-sog-candidate-panel__error p,
+.local-sog-candidate-panel__details p {
+  margin: 7px 0 0;
+}
+
+.local-sog-candidate-panel__status {
+  color: #e6bc63;
+  font-weight: 740;
+}
+
+.local-sog-candidate-panel__caveat,
+.local-sog-candidate-panel__details p {
+  color: #c7bdb0;
+}
+
+.local-sog-candidate-panel__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0 0;
+}
+
+.local-sog-candidate-panel__metrics div {
+  min-width: 0;
+  padding: 7px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.local-sog-candidate-panel dt {
+  color: #94897c;
+  font-size: 9px;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.local-sog-candidate-panel dd {
+  margin: 2px 0 0;
+  color: #f0e6d8;
+  font-weight: 680;
+}
+
+.local-sog-candidate-panel__details {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.local-sog-candidate-panel__details summary {
+  color: #e6bc63;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.local-sog-candidate-panel__provenance {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+}
+
+.local-sog-candidate-panel__provenance div {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.local-sog-candidate-panel code {
+  overflow-wrap: anywhere;
+  color: #cdd9dd;
+  font-size: 9px;
+}
+
+.local-sog-candidate-panel__members {
+  display: grid;
+  gap: 7px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.local-sog-candidate-panel__members li {
+  display: grid;
+  gap: 2px;
+  padding: 7px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.local-sog-candidate-panel__error,
+.local-sog-candidate-panel__stream-error {
+  margin-top: 9px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(137, 48, 40, 0.22);
+  color: #f3b5ad;
+}
+
+.local-sog-candidate-panel__error button {
+  margin-top: 8px;
 }
 
 .visual-layer-controls {
@@ -1135,6 +1348,14 @@
     overflow-x: auto;
     padding-bottom: 4px;
   }
+
+  .local-sog-candidate-panel {
+    max-width: calc(100% - 32px);
+  }
+
+  .local-sog-candidate-panel.is-expanded {
+    width: min(520px, calc(100% - 32px));
+  }
 }
 
 @media (max-width: 760px) {
@@ -1177,10 +1398,525 @@
     font-size: 10px;
   }
 
+  .local-sog-candidate-panel {
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    max-width: calc(100% - 24px);
+    max-height: min(52vh, 440px);
+    padding: 10px;
+  }
+
+  .local-sog-candidate-panel.is-expanded {
+    width: calc(100% - 24px);
+  }
+
+  .local-sog-candidate-panel__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .visual-callout,
   .visual-selected-ring,
   .visual-density-heatmap {
     transform: scale(0.82);
     transform-origin: center;
+  }
+}
+
+/* Grand Hall master evidence review ------------------------------------------------ */
+
+.visual-stage.is-master-evidence {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.visual-stage.is-master-evidence .visual-canvas-frame {
+  position: relative;
+  inset: auto;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.visual-stage.is-master-evidence .vv-twin,
+.visual-stage.is-master-evidence .vv-twin-main,
+.visual-stage.is-master-evidence .vv-twin-main--viewer {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.grand-hall-evidence-stage-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  color: rgba(244, 234, 216, 0.72);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.grand-hall-evidence-dock {
+  position: relative;
+  z-index: 30;
+  grid-row: 2;
+  width: 100%;
+  max-height: min(58vh, 610px);
+  overflow: auto;
+  border-top: 1px solid rgba(215, 170, 73, 0.32);
+  background: linear-gradient(180deg, rgba(11, 16, 18, 0.97), rgba(5, 9, 11, 0.99));
+  box-shadow: 0 -18px 46px rgba(0, 0, 0, 0.38);
+  color: #f2e7d2;
+  scrollbar-color: rgba(215, 170, 73, 0.42) transparent;
+}
+
+.grand-hall-evidence-dock button,
+.grand-hall-reference-media button {
+  font: inherit;
+}
+
+.grand-hall-evidence-dock__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 18px 8px;
+}
+
+.grand-hall-evidence-dock__header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.grand-hall-evidence-dock__header strong {
+  color: #fff6e5;
+  font-size: 14px;
+}
+
+.grand-hall-evidence-dock__header span,
+.grand-hall-evidence-dock__active span {
+  color: rgba(231, 216, 187, 0.66);
+  font-size: 11px;
+}
+
+.grand-hall-evidence-dock__header button,
+.grand-hall-evidence-dock__error button,
+.grand-hall-evidence-dock__ledger footer button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(215, 170, 73, 0.34);
+  border-radius: 999px;
+  background: rgba(215, 170, 73, 0.09);
+  color: #ebcf91;
+  padding: 7px 11px;
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.grand-hall-evidence-dock__boundary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 18px 9px;
+}
+
+.grand-hall-evidence-dock__boundary span {
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 4px 8px;
+  color: rgba(244, 234, 216, 0.77);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+}
+
+.grand-hall-evidence-dock__boundary span:first-child {
+  border-color: rgba(104, 204, 144, 0.34);
+  color: #9fe0b6;
+}
+
+.grand-hall-evidence-dock__modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  padding: 0 18px 9px;
+}
+
+.grand-hall-evidence-dock__modes button {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(244, 234, 216, 0.72);
+  text-align: left;
+  cursor: pointer;
+}
+
+.grand-hall-evidence-dock__modes button.is-active {
+  border-color: rgba(215, 170, 73, 0.55);
+  background: linear-gradient(180deg, rgba(215, 170, 73, 0.18), rgba(215, 170, 73, 0.06));
+  color: #fff0cd;
+  box-shadow: inset 3px 0 0 #d7aa49;
+}
+
+.grand-hall-evidence-dock__modes button:disabled {
+  cursor: wait;
+  opacity: 0.48;
+}
+
+.grand-hall-evidence-dock__modes strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grand-hall-evidence-dock__modes span,
+.grand-hall-evidence-dock__active,
+.grand-hall-evidence-dock__state,
+.grand-hall-evidence-dock__error {
+  font-size: 10px;
+}
+
+.grand-hall-evidence-dock__active,
+.grand-hall-evidence-dock__state,
+.grand-hall-evidence-dock__error {
+  margin: 0;
+  padding: 0 18px 10px;
+}
+
+.grand-hall-evidence-dock__active {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.grand-hall-evidence-dock__stream {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 0 18px 10px;
+  color: #a9d7b9;
+  font-size: 10px;
+}
+
+.grand-hall-evidence-dock__stream span {
+  color: rgba(231, 216, 187, 0.66);
+}
+
+.grand-hall-evidence-dock__stream.is-error {
+  color: #ffb2a7;
+}
+
+.grand-hall-evidence-dock__stream button {
+  margin-left: auto;
+  border: 1px solid rgba(255, 151, 133, 0.38);
+  border-radius: 999px;
+  background: rgba(137, 36, 28, 0.22);
+  color: #ffc0b6;
+  padding: 5px 9px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.grand-hall-evidence-dock__ledger {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 4px 18px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.grand-hall-evidence-dock__ledger section {
+  min-width: 0;
+  padding-top: 10px;
+}
+
+.grand-hall-evidence-dock__ledger h3 {
+  margin: 0 0 7px;
+  color: #e3bd6b;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.grand-hall-evidence-dock__ledger dl,
+.grand-hall-evidence-dock__ledger ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.grand-hall-evidence-dock__ledger dl > div,
+.grand-hall-evidence-dock__ledger li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(244, 234, 216, 0.65);
+  font-size: 9px;
+}
+
+.grand-hall-evidence-dock__ledger dt,
+.grand-hall-evidence-dock__ledger dd {
+  margin: 0;
+}
+
+.grand-hall-evidence-dock__ledger dd,
+.grand-hall-evidence-dock__ledger li > strong {
+  color: rgba(244, 234, 216, 0.9);
+  text-align: right;
+}
+
+.grand-hall-evidence-dock__ledger li small {
+  display: block;
+  max-width: 36ch;
+  margin-top: 2px;
+  color: rgba(244, 234, 216, 0.48);
+  line-height: 1.35;
+}
+
+.grand-hall-evidence-dock__ledger section > p {
+  color: rgba(244, 234, 216, 0.58);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.grand-hall-evidence-dock__ledger footer {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 10px;
+  color: rgba(244, 234, 216, 0.5);
+  font-size: 9px;
+}
+
+.grand-hall-evidence-dock__ledger footer code {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(244, 234, 216, 0.45);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grand-hall-evidence-dock__ledger footer button {
+  margin-left: auto;
+}
+
+.grand-hall-reference-media {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  background: #080c0e;
+  color: #f2e7d2;
+}
+
+.grand-hall-reference-media__choices {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(215, 170, 73, 0.19);
+}
+
+.grand-hall-reference-media__choices button {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(244, 234, 216, 0.69);
+  padding: 7px 10px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.grand-hall-reference-media__choices button.is-active {
+  border-color: rgba(215, 170, 73, 0.58);
+  background: rgba(215, 170, 73, 0.14);
+  color: #fff1d1;
+}
+
+.grand-hall-reference-media__choices em {
+  color: #e8ba5c;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+}
+
+.grand-hall-reference-media__viewport {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(215, 170, 73, 0.07), transparent 45%),
+    #050809;
+}
+
+.grand-hall-reference-media__viewport img,
+.grand-hall-reference-media__viewport video {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: contain;
+}
+
+.grand-hall-reference-media__status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 20px;
+  background: rgba(4, 7, 9, 0.72);
+  color: rgba(244, 234, 216, 0.78);
+  font-size: 11px;
+  text-align: center;
+}
+
+.grand-hall-reference-media__status p {
+  max-width: 54ch;
+  margin: 0;
+}
+
+.grand-hall-reference-media__status button {
+  border: 1px solid rgba(215, 170, 73, 0.38);
+  border-radius: 999px;
+  background: rgba(215, 170, 73, 0.1);
+  color: #efcf8e;
+  padding: 7px 11px;
+  cursor: pointer;
+}
+
+.grand-hall-reference-media__generated-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  border: 1px solid rgba(240, 187, 75, 0.7);
+  border-radius: 999px;
+  background: rgba(24, 15, 3, 0.9);
+  color: #ffd67b;
+  padding: 6px 10px;
+  font-size: 9px;
+  letter-spacing: 0.09em;
+}
+
+.grand-hall-reference-media__provenance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(8, 12, 14, 0.98);
+}
+
+.grand-hall-reference-media__provenance > div {
+  display: grid;
+  gap: 2px;
+}
+
+.grand-hall-reference-media__provenance strong,
+.grand-hall-reference-media__provenance span,
+.grand-hall-reference-media__provenance p {
+  margin: 0;
+  font-size: 9px;
+}
+
+.grand-hall-reference-media__provenance span,
+.grand-hall-reference-media__provenance p {
+  color: rgba(244, 234, 216, 0.55);
+}
+
+.grand-hall-reference-media__provenance p {
+  max-width: 54ch;
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  .grand-hall-evidence-dock {
+    max-height: min(62vh, 460px);
+  }
+
+  .grand-hall-evidence-dock__header {
+    padding-inline: 12px;
+  }
+
+  .grand-hall-evidence-dock__header span {
+    display: none;
+  }
+
+  .grand-hall-evidence-dock__boundary,
+  .grand-hall-evidence-dock__modes {
+    padding-inline: 12px;
+  }
+
+  .grand-hall-evidence-dock__boundary span {
+    font-size: 8px;
+  }
+
+  .grand-hall-evidence-dock__modes {
+    gap: 5px;
+  }
+
+  .grand-hall-evidence-dock__modes button {
+    padding: 7px;
+  }
+
+  .grand-hall-evidence-dock__modes span {
+    display: none;
+  }
+
+  .grand-hall-evidence-dock__active {
+    display: grid;
+    padding-inline: 12px;
+  }
+
+  .grand-hall-evidence-dock__ledger {
+    grid-template-columns: 1fr;
+    padding-inline: 12px;
+  }
+
+  .grand-hall-evidence-dock__ledger footer {
+    display: grid;
+  }
+
+  .grand-hall-evidence-dock__ledger footer button {
+    margin-left: 0;
+    justify-self: start;
+  }
+
+  .grand-hall-reference-media__provenance {
+    display: grid;
+  }
+
+  .grand-hall-reference-media__provenance p {
+    display: none;
   }
 }

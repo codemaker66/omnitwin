@@ -17,14 +17,14 @@ import { useTwinMode, type TwinMode } from "../useTwinMode.js";
 // -----------------------------------------------------------------------------
 
 /** Harness: the mode plus a live view of the search params and history. */
-function useHarness(hasMesh: boolean): {
+function useHarness(hasMesh: boolean, urlStateEnabled = true): {
   mode: TwinMode;
   setMode: (mode: TwinMode) => void;
   modeParam: string | null;
   nodeParam: string | null;
   navigate: ReturnType<typeof useNavigate>;
 } {
-  const { mode, setMode } = useTwinMode(hasMesh);
+  const { mode, setMode } = useTwinMode(hasMesh, urlStateEnabled);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   return {
@@ -163,5 +163,40 @@ describe("useTwinMode — history semantics", () => {
       void result.current.navigate(-1);
     });
     expect(result.current.mode).toBe("plan");
+  });
+});
+
+describe("useTwinMode — isolated local evidence mode", () => {
+  it("changes modes locally without changing a token-bearing URL", () => {
+    const { result } = renderHook(
+      () => useHarness(true, false),
+      { wrapper: routerWrapper("/dev?mode=plan&localRoomEvidence=secret") },
+    );
+
+    expect(result.current.mode).toBe("walk");
+    expect(result.current.modeParam).toBe("plan");
+    act(() => {
+      result.current.setMode("dollhouse");
+    });
+    expect(result.current.mode).toBe("dollhouse");
+    expect(result.current.modeParam).toBe("plan");
+  });
+
+  it("blocks a stale public setter after switching into isolated mode", () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }: { readonly enabled: boolean }) => useHarness(true, enabled),
+      {
+        initialProps: { enabled: true },
+        wrapper: routerWrapper("/dev?localRoomEvidence=secret"),
+      },
+    );
+    const stalePublicSetter = result.current.setMode;
+
+    rerender({ enabled: false });
+    act(() => {
+      stalePublicSetter("dollhouse");
+    });
+    expect(result.current.mode).toBe("dollhouse");
+    expect(result.current.modeParam).toBeNull();
   });
 });

@@ -258,6 +258,9 @@ export interface PanoStageProps {
    * never influences streaming itself.
    */
   readonly onTier?: (nodeId: string, tier: "preview" | "base") => void;
+  /** Reports that every permitted texture tier failed for this node. The
+   * caller owns user-facing copy so raw local URLs never cross into the HUD. */
+  readonly onStreamError?: (nodeId: string) => void;
 }
 
 function CubePanoStage({
@@ -268,9 +271,10 @@ function CubePanoStage({
   opacity,
   renderOrder = 0,
   onTier,
+  onStreamError,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
-  const { texture, lod } = useCubeTiles(nodeId, assetBase);
+  const { texture, lod } = useCubeTiles(nodeId, assetBase, onStreamError);
   const onTierRef = useRef(onTier);
   onTierRef.current = onTier;
 
@@ -340,6 +344,7 @@ function EquirectPanoStage({
   hopping = false,
   exposure,
   onTier,
+  onStreamError,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
   const camera = useThree((state) => state.camera);
@@ -390,7 +395,7 @@ function EquirectPanoStage({
     hopping && !isEquirectBaseWarm(nodeId, assetBase)
       ? TWIN_EQUIRECT_LODS[0]
       : streamCeiling;
-  const { texture, lod } = useEquirectTexture(nodeId, assetBase, maxLod);
+  const { texture, lod } = useEquirectTexture(nodeId, assetBase, maxLod, onStreamError);
 
   const material = useMemo(() => {
     const uniforms: EquirectPanoUniforms = {

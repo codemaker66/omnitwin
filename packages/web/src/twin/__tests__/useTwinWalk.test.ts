@@ -68,6 +68,15 @@ function useHarness(manifest: TwinManifest): {
   return { walk, node: searchParams.get("node"), setSearchParams };
 }
 
+function useIsolatedHarness(manifest: TwinManifest, urlStateEnabled: boolean): {
+  walk: ReturnType<typeof useTwinWalk>;
+  node: string | null;
+} {
+  const walk = useTwinWalk(manifest, urlStateEnabled);
+  const [searchParams] = useSearchParams();
+  return { walk, node: searchParams.get("node") };
+}
+
 function routerWrapper(initialEntry: string) {
   return function Wrapper({ children }: { children: ReactNode }): ReactElement {
     return createElement(MemoryRouter, { initialEntries: [initialEntry] }, children);
@@ -276,5 +285,61 @@ describe("useTwinWalk — URL is the source of truth for back/forward", () => {
     // The cancelled hop's frame loop is dead — no further state changes.
     flushFrames(50);
     expect(result.current.walk.currentId).toBe("scan_003");
+  });
+});
+
+describe("useTwinWalk — isolated local evidence mode", () => {
+  it("ignores and never rewrites URL state while walking", () => {
+    const { result } = renderHook(
+      () => useIsolatedHarness(fixtureManifest(), false),
+      { wrapper: routerWrapper("/dev?node=scan_002&localRoomEvidence=secret") },
+    );
+
+    expect(result.current.walk.currentId).toBe("scan_000");
+    expect(result.current.node).toBe("scan_002");
+    act(() => {
+      result.current.walk.hopTo("scan_003", { teleport: true });
+    });
+    expect(result.current.walk.currentId).toBe("scan_003");
+    expect(result.current.node).toBe("scan_002");
+  });
+
+  it("blocks a stale public callback after switching into isolated mode", () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }: { readonly enabled: boolean }) =>
+        useIsolatedHarness(fixtureManifest(), enabled),
+      {
+        initialProps: { enabled: true },
+        wrapper: routerWrapper("/dev?node=scan_000&localRoomEvidence=secret"),
+      },
+    );
+    const stalePublicHop = result.current.walk.hopTo;
+
+    rerender({ enabled: false });
+    act(() => {
+      stalePublicHop("scan_003", { teleport: true });
+    });
+
+    expect(result.current.node).toBe("scan_000");
+  });
+
+  it("cancels an in-flight public hop before it can settle into URL history", () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }: { readonly enabled: boolean }) =>
+        useIsolatedHarness(fixtureManifest(), enabled),
+      {
+        initialProps: { enabled: true },
+        wrapper: routerWrapper("/dev?node=scan_000&localRoomEvidence=secret"),
+      },
+    );
+    act(() => {
+      result.current.walk.hopTo("scan_001");
+    });
+    flushFrames(2);
+    rerender({ enabled: false });
+    flushFrames(400);
+
+    expect(result.current.node).toBe("scan_000");
+    expect(result.current.walk.targetId).toBeNull();
   });
 });

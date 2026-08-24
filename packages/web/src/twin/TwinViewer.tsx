@@ -51,6 +51,7 @@ import {
   twinViewpointAnnouncement,
 } from "./twin-copy.js";
 import { prefersReducedMotion } from "./reduced-motion.js";
+import { LocalEvidenceDollhouseStage } from "./LocalEvidenceDollhouseStage.js";
 import { TwinCoachHint } from "./TwinCoachHint.js";
 import { TwinMinimap } from "./TwinMinimap.js";
 import { TwinViewerControls } from "./TwinViewerControls.js";
@@ -736,12 +737,27 @@ export interface TwinViewerProps {
   readonly manifest: TwinManifest;
   /** Bundle base URL including the venue segment, e.g. `/twin/trades-hall`. */
   readonly assetBase: string;
+  /** Local evidence review is isolated from URL/history and removes public
+   * share/enquiry controls so an ephemeral descriptor token cannot escape. */
+  readonly experience?: "public" | "local-evidence-review";
+  /** Required review-specific disclosure when experience is local evidence. */
+  readonly evidenceDisclosure?: string;
 }
 
-export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactElement | null {
-  const walk = useTwinWalk(manifest);
+type LocalEvidenceStageFailure =
+  | { readonly kind: "panorama"; readonly nodeId: string; readonly retryRevision: number }
+  | { readonly kind: "mesh" };
+
+export function TwinViewer({
+  manifest,
+  assetBase,
+  experience = "public",
+  evidenceDisclosure,
+}: TwinViewerProps): ReactElement | null {
+  const localEvidenceReview = experience === "local-evidence-review";
+  const walk = useTwinWalk(manifest, !localEvidenceReview);
   const hasMesh = manifest.mesh !== undefined;
-  const { mode, setMode } = useTwinMode(hasMesh);
+  const { mode, setMode } = useTwinMode(hasMesh, !localEvidenceReview);
   const [yaw, setYaw] = useState(0);
   // The element the fullscreen button takes fullscreen — the viewer root, so
   // the canvas AND the HUD stay inside the fullscreen surface.
@@ -764,6 +780,48 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const [stageLive, setStageLive] = useState(false);
   const [shimmerPhase, setShimmerPhase] = useState<TwinShimmerPhase>("loading");
   const initialNodeIdRef = useRef(walk.currentId);
+  const [panoramaRetryRevision, setPanoramaRetryRevision] = useState(0);
+  const panoramaRetryRevisionRef = useRef(0);
+  const [meshRetryRevision, setMeshRetryRevision] = useState(0);
+  const [localEvidenceStageFailure, setLocalEvidenceStageFailure] =
+    useState<LocalEvidenceStageFailure | null>(null);
+
+  const onLocalPanoStreamError = useCallback(
+    (nodeId: string): void => {
+      // A superseded PanoStage may finish failing after Retry has already
+      // remounted a fresh stream. Ignore that stale completion.
+      if (
+        !localEvidenceReview ||
+        panoramaRetryRevisionRef.current !== panoramaRetryRevision
+      ) {
+        return;
+      }
+      setLocalEvidenceStageFailure((failure) =>
+        failure ?? { kind: "panorama", nodeId, retryRevision: panoramaRetryRevision },
+      );
+    },
+    [localEvidenceReview, panoramaRetryRevision],
+  );
+
+  const onLocalMeshError = useCallback((): void => {
+    if (!localEvidenceReview) {
+      return;
+    }
+    setLocalEvidenceStageFailure({ kind: "mesh" });
+  }, [localEvidenceReview]);
+
+  const retryLocalPanorama = useCallback((): void => {
+    setLocalEvidenceStageFailure(null);
+    // Move the stale-callback guard in the same event as the retry request,
+    // before React commits and unmounts the previous PanoStage.
+    panoramaRetryRevisionRef.current += 1;
+    setPanoramaRetryRevision(panoramaRetryRevisionRef.current);
+  }, []);
+
+  const retryLocalMesh = useCallback((): void => {
+    setLocalEvidenceStageFailure(null);
+    setMeshRetryRevision((revision) => revision + 1);
+  }, []);
 
   // — the exact-view deep link (?look=): decoded ONCE from the pristine URL.
   // Applied only when it names the node the walk actually opened on (the share
@@ -772,6 +830,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const [searchParams] = useSearchParams();
   const initialLookRef = useRef(
     (() => {
+      if (localEvidenceReview) {
+        return manifest.entryLook !== undefined && walk.currentId === manifest.entryNodeId
+          ? { nodeId: walk.currentId, ...manifest.entryLook }
+          : null;
+      }
       const look = decodeTwinLook(searchParams.get("look"));
       if (look !== null && look.nodeId === walk.currentId) {
         return look;
@@ -796,9 +859,9 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   // repeat visits this session all skip straight to "done".
   const [firstLight, setFirstLight] = useState<"waiting" | "running" | "done">(() =>
     firstLightEligible({
-      hasNodeParam: searchParams.get("node") !== null,
-      hasLookParam: searchParams.get("look") !== null,
-      hasModeParam: searchParams.get("mode") !== null,
+      hasNodeParam: !localEvidenceReview && searchParams.get("node") !== null,
+      hasLookParam: !localEvidenceReview && searchParams.get("look") !== null,
+      hasModeParam: !localEvidenceReview && searchParams.get("mode") !== null,
       reducedMotion: prefersReducedMotion(),
       seenThisSession: firstLightSeen(),
     })
@@ -902,7 +965,10 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
 
   // Hop smoothness: neighbours' full panos are cache-warmed while the
   // visitor lingers, so travel sharpens from disk, not the network.
-  useTwinPrefetch(manifest.imagery === "equirect" ? walk.neighbors : [], assetBase);
+  useTwinPrefetch(
+    !localEvidenceReview && manifest.imagery === "equirect" ? walk.neighbors : [],
+    assetBase,
+  );
 
   // The dive (Phase 2, Task 6): down = dollhouse → node (arrive lands the
   // walk there); up = surfacing (mode already dollhouse; flight ends on the
@@ -936,7 +1002,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   // they reach for the mesh (finding [33]). The walk's own first paint still
   // never competes with the fetch (the 2.5 s delay).
   useEffect(() => {
-    if (meshUrl === null || !(desktopCanWarm || warmMesh)) {
+    if (
+      meshUrl === null ||
+      localEvidenceReview ||
+      !(desktopCanWarm || warmMesh)
+    ) {
       return;
     }
     const timer = window.setTimeout(
@@ -948,7 +1018,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     return () => {
       window.clearTimeout(timer);
     };
-  }, [meshUrl, desktopCanWarm, warmMesh]);
+  }, [desktopCanWarm, localEvidenceReview, meshUrl, warmMesh]);
 
   const nodesById = useMemo(
     () => new Map<string, TwinScanNode>(manifest.nodes.map((node) => [node.id, node])),
@@ -969,7 +1039,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   // visitor is actually walking).
   const [parallaxReady, setParallaxReady] = useState(false);
   useEffect(() => {
-    if (!stageLive || parallaxReady) {
+    if (localEvidenceReview || !stageLive || parallaxReady) {
       return;
     }
     if (
@@ -995,7 +1065,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     return () => {
       window.clearTimeout(timer);
     };
-  }, [stageLive, parallaxReady]);
+  }, [localEvidenceReview, stageLive, parallaxReady]);
   // "In motion" holds true through the sub-frame gaps BETWEEN chained hops, so
   // the arriving pano keeps deferring its heavy base upload for the whole walk —
   // not just one hop — and fires it only once you actually stop (~250 ms after
@@ -1135,6 +1205,61 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     stages.push({ node: targetNode, opacity: walk.progress, renderOrder: 1 });
   }
 
+  const dollhouseStage =
+    mode === "walk" || meshUrl === null ? null : (
+      localEvidenceReview ? (
+        <LocalEvidenceDollhouseStage
+          key={meshRetryRevision}
+          sourceUrl={meshUrl}
+          nodes={manifest.nodes}
+          currentId={walk.currentId}
+          cutaway={
+            dollhouseCutawayInsetM === undefined
+              ? undefined
+              : {
+                  enabled: mode === "dollhouse" && !dive.diving,
+                  target: extent.center,
+                  insetM: dollhouseCutawayInsetM,
+                  ...(dollhouseCutawayMinimumY === undefined
+                    ? {}
+                    : { minimumY: dollhouseCutawayMinimumY }),
+                }
+          }
+          onDive={(id) => {
+            dive.dive(id, {
+              position: [...orbitPosRef.current],
+              direction: "down",
+            });
+          }}
+          onError={onLocalMeshError}
+        />
+      ) : (
+        <DollhouseStage
+          meshUrl={meshUrl}
+          nodes={manifest.nodes}
+          currentId={walk.currentId}
+          cutaway={
+            dollhouseCutawayInsetM === undefined
+              ? undefined
+              : {
+                  enabled: mode === "dollhouse" && !dive.diving,
+                  target: extent.center,
+                  insetM: dollhouseCutawayInsetM,
+                  ...(dollhouseCutawayMinimumY === undefined
+                    ? {}
+                    : { minimumY: dollhouseCutawayMinimumY }),
+                }
+          }
+          onDive={(id) => {
+            dive.dive(id, {
+              position: [...orbitPosRef.current],
+              direction: "down",
+            });
+          }}
+        />
+      )
+    );
+
   return (
     <div
       ref={viewerRef}
@@ -1185,7 +1310,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
             />
             {stages.map(({ node, opacity, renderOrder }) => (
               <PanoStage
-                key={node.id}
+                key={
+                  localEvidenceReview
+                    ? `${String(panoramaRetryRevision)}:${node.id}`
+                    : node.id
+                }
                 nodeId={node.id}
                 position={e57PointToThree(node.pose.t)}
                 quaternion={e57QuatToThree(node.pose.q)}
@@ -1196,6 +1325,9 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 exposure={node.exposure}
                 imagery={manifest.imagery}
                 onTier={onPanoTier}
+                {...(localEvidenceReview
+                  ? { onStreamError: onLocalPanoStreamError }
+                  : {})}
               />
             ))}
             {/* The moonshot: during hops the panos are projected onto the real
@@ -1203,10 +1335,10 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 a sliding crossfade. Invisible at rest (the spheres remain the
                 optically-perfect photograph); pixel-identical at both hop
                 endpoints by construction, so there is no seam to hide. */}
-            {parallaxReady && (
+            {!localEvidenceReview && parallaxReady && (
               <NeighborWarmer neighbors={walk.neighbors} assetBase={assetBase} />
             )}
-            {parallaxReady && meshUrl !== null && (
+            {!localEvidenceReview && parallaxReady && meshUrl !== null && (
               <Suspense fallback={null}>
                 <ParallaxStage
                   meshUrl={meshUrl}
@@ -1233,29 +1365,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           meshUrl !== null && (
             <>
               <Suspense fallback={null}>
-                <DollhouseStage
-                  meshUrl={meshUrl}
-                  nodes={manifest.nodes}
-                  currentId={walk.currentId}
-                  cutaway={
-                    dollhouseCutawayInsetM === undefined
-                      ? undefined
-                      : {
-                          enabled: mode === "dollhouse" && !dive.diving,
-                          target: extent.center,
-                          insetM: dollhouseCutawayInsetM,
-                          ...(dollhouseCutawayMinimumY === undefined
-                            ? {}
-                            : { minimumY: dollhouseCutawayMinimumY }),
-                        }
-                  }
-                  onDive={(id) => {
-                    dive.dive(id, {
-                      position: [...orbitPosRef.current],
-                      direction: "down",
-                    });
-                  }}
-                />
+                {dollhouseStage}
               </Suspense>
               <MeshOrbitRig mode={mode} extent={extent} enabled={!dive.diving} />
               <CameraProbe position={orbitPosRef} />
@@ -1289,6 +1399,42 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           )
         )}
       </Canvas>
+
+      {localEvidenceReview && localEvidenceStageFailure !== null && (
+        <section
+          className="vv-twin-local-evidence-error"
+          role="alert"
+          aria-live="assertive"
+          data-testid="twin-local-evidence-error"
+        >
+          <p>
+            {localEvidenceStageFailure.kind === "panorama"
+              ? "Captured panorama could not be opened. Check the local evidence gateway, then retry."
+              : "Mesh review could not be opened. The captured panorama walk remains available."}
+          </p>
+          {localEvidenceStageFailure.kind === "panorama" ? (
+            <button type="button" className="vv-twin-retry" onClick={retryLocalPanorama}>
+              Retry panorama
+            </button>
+          ) : (
+            <div className="vv-twin-local-evidence-error-actions">
+              <button type="button" className="vv-twin-retry" onClick={retryLocalMesh}>
+                Retry mesh
+              </button>
+              <button
+                type="button"
+                className="vv-twin-retry"
+                onClick={() => {
+                  setLocalEvidenceStageFailure(null);
+                  setMode("walk");
+                }}
+              >
+                Return to Walk
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Settle vignette — deepens a few percent in motion, relaxes on arrival.
           Kept static at rest under reduced motion (never breathes). */}
@@ -1337,7 +1483,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           // Reaching for the view-mode switch is intent to see the mesh — warm
           // the dollhouse now so the switch/dive is instant (finding [33]).
           onWarmMesh={() => {
-            setWarmMesh(true);
+            if (!localEvidenceReview) setWarmMesh(true);
           }}
         />
       )}
@@ -1346,10 +1492,10 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           type="button"
           className="vv-twin-surface"
           onPointerEnter={() => {
-            setWarmMesh(true);
+            if (!localEvidenceReview) setWarmMesh(true);
           }}
           onFocus={() => {
-            setWarmMesh(true);
+            if (!localEvidenceReview) setWarmMesh(true);
           }}
           onClick={() => {
             // Surfacing: same flight, reversed — the mode flips first so the
@@ -1368,8 +1514,13 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         venueName={manifest.name}
         viewerRef={viewerRef}
         shareUrl={shareUrl}
+        engagementEnabled={!localEvidenceReview}
       />
-      <p className="vv-twin-disclosure vv-twin-viewer-disclosure">{TWIN_DISCLOSURE}</p>
+      <p className="vv-twin-disclosure vv-twin-viewer-disclosure">
+        {localEvidenceReview
+          ? evidenceDisclosure ?? "Captured panorama presentation · not registered · no operational authority"
+          : TWIN_DISCLOSURE}
+      </p>
       {/* The coach waits in the wings until the overture has played. */}
       {mode === "walk" && firstLight === "done" && <TwinCoachHint />}
       {mode === "walk" && (

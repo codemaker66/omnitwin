@@ -17,7 +17,12 @@ const mockUser = {
 
 beforeEach(() => {
   useAuthStore.setState({
-    user: null, isAuthenticated: false, isLoading: false, error: null,
+    user: null,
+    isAuthenticated: false,
+    isLoading: false,
+    error: null,
+    authSessionId: null,
+    authContextRevision: 0,
   });
 });
 
@@ -34,6 +39,35 @@ describe("setUser", () => {
     useAuthStore.getState().setUser(null);
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it("advances private-resource ownership when Clerk replaces a same-user session", () => {
+    useAuthStore.getState().setUser(mockUser, "session-a");
+    const firstRevision = useAuthStore.getState().authContextRevision;
+
+    useAuthStore.getState().setUser(mockUser, "session-a");
+    expect(useAuthStore.getState()).toMatchObject({
+      authSessionId: "session-a",
+      authContextRevision: firstRevision,
+    });
+
+    useAuthStore.getState().setUser(mockUser, "session-b");
+    expect(useAuthStore.getState()).toMatchObject({
+      authSessionId: "session-b",
+      authContextRevision: firstRevision + 1,
+    });
+  });
+
+  it("advances when an authoritative claims update reaches the same Clerk session", () => {
+    useAuthStore.getState().setUser(mockUser, "session-a");
+    const firstRevision = useAuthStore.getState().authContextRevision;
+
+    useAuthStore.getState().setUser({ ...mockUser, role: "viewer" }, "session-a");
+    expect(useAuthStore.getState()).toMatchObject({
+      authSessionId: "session-a",
+      authContextRevision: firstRevision + 1,
+      user: expect.objectContaining({ role: "viewer" }),
+    });
   });
 });
 
@@ -53,6 +87,17 @@ describe("logout", () => {
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().isLoading).toBe(false);
+    expect(useAuthStore.getState().authSessionId).toBeNull();
+  });
+
+  it("advances the private-resource generation across logout and same-user relogin", () => {
+    useAuthStore.getState().setUser(mockUser);
+    const firstSession = useAuthStore.getState().authContextRevision;
+    useAuthStore.getState().logout();
+    const loggedOut = useAuthStore.getState().authContextRevision;
+    useAuthStore.getState().setUser(mockUser);
+    expect(loggedOut).toBe(firstSession + 1);
+    expect(useAuthStore.getState().authContextRevision).toBe(loggedOut + 1);
   });
 });
 

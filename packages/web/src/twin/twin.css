@@ -135,6 +135,47 @@
   inset: 0;
 }
 
+/* Local review stages are demand-loaded from an ephemeral loopback gateway.
+ * Fail closed in a sticky, fixed-copy notice: raw loader errors can contain
+ * token-bearing URLs and therefore never enter this DOM surface. */
+.vv-twin-local-evidence-error {
+  position: absolute;
+  left: 50%;
+  top: calc(82px + env(safe-area-inset-top));
+  z-index: 12;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  width: min(32rem, calc(100% - 32px));
+  padding: 16px 18px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(240, 198, 107, 0.46);
+  border-radius: 14px;
+  background: rgba(7, 16, 15, 0.94);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.vv-twin-local-evidence-error p {
+  margin: 0;
+  max-width: 27rem;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.vv-twin-local-evidence-error .vv-twin-retry {
+  padding: 8px 18px;
+  background: rgba(3, 7, 7, 0.68);
+}
+
+.vv-twin-local-evidence-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
 /* The opening: the canvas holds black until the first pano texture is on
  * stage (TwinViewer flips --live), then blooms in. The stage behind is
  * already --black-2, so there is never a white or void flash. */

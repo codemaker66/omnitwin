@@ -38,6 +38,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { GrandHallRoom } from "../components/GrandHallRoom.js";
+import { LocalSogCandidatePanel } from "../components/visual/LocalSogCandidatePanel.js";
+import {
+  GrandHallEvidenceDock,
+  type GrandHallEvidenceDockState,
+  type GrandHallEvidenceMode,
+  type GrandHallEvidenceSummary,
+} from "../components/visual/GrandHallEvidenceDock.js";
+import { GrandHallReferenceMedia } from "../components/visual/GrandHallReferenceMedia.js";
 import type { AdaptiveResolutionOptions } from "../components/AdaptiveResolution.js";
 import { RoomMesh } from "../components/editor/RoomMesh.js";
 import {
@@ -66,6 +74,17 @@ import {
   type RuntimeAssetViewTransform,
   type RuntimeRoomTarget,
 } from "../lib/runtime-package-resolution.js";
+import { historicalRuntimeViewerCapacity } from "../lib/historical-runtime-cache.js";
+import {
+  localSogCandidateRequestFromSearchParams,
+  type LocalSogCandidateRequest,
+} from "../lib/local-sog-candidate.js";
+import { useLocalSogCandidate } from "../hooks/use-local-sog-candidate.js";
+import {
+  localGrandHallEvidenceRequestFromSearchParams,
+  type LocalGrandHallEvidenceRequest,
+} from "../lib/local-grand-hall-evidence.js";
+import { useLocalGrandHallEvidence } from "../hooks/use-local-grand-hall-evidence.js";
 import {
   runGuestFlowReplayInBrowser,
   type GuestFlowReplayRunMode,
@@ -82,10 +101,16 @@ import {
 import type { AgentTrajectory, EventPhaseGraph, EvidenceTargetType, GuestFlowPoint, GuestFlowReplayArtifact, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 import { SYNTHETIC_GRAND_HALL_STAND_IN_LABEL } from "../lib/synthetic-grand-hall-stand-in.js";
 import "./TradesHallVisualPage.css";
+import "../twin/twin.css";
 
 const LazySparkSplatLayer = lazy(async () => {
   const module = await import("../components/scene/SparkSplatLayer.js");
   return { default: module.SparkSplatLayer };
+});
+
+const LazyTwinViewer = lazy(async () => {
+  const module = await import("../twin/TwinViewer.js");
+  return { default: module.TwinViewer };
 });
 
 type VisualLayerMode = "hybrid" | "mesh" | "splat";
@@ -93,6 +118,7 @@ type LoadStatus = "empty" | "invalid" | "loading" | "loaded" | "error";
 type PhaseGraphLoadStatus = "fixture" | "loading" | "loaded" | "error";
 type TruthSummaryStatus = "loading" | "loaded" | "fallback";
 type ReplayStatus = "fixture" | "loading" | "api" | GuestFlowReplayRunMode | "error";
+type ActiveVisualAssetSource = "local" | "registered" | "none";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -244,6 +270,11 @@ export function shouldUseLeanVisualMesh(viewportWidth: number): boolean {
 
 function readVisualViewportWidth(): number {
   return typeof window === "undefined" ? 1440 : window.innerWidth;
+}
+
+function readVisualDeviceMemoryGb(): number {
+  if (typeof navigator === "undefined") return 4;
+  return (navigator as Navigator & { readonly deviceMemory?: number }).deviceMemory ?? 4;
 }
 
 function useVisualViewportWidth(): number {
@@ -533,13 +564,16 @@ function VenueCommandTopBar({
   phase,
   visualState,
   runtimeTarget,
+  masterEvidenceActive = false,
 }: {
   readonly phase: VisualEventPhase;
   readonly visualState: VisualState;
   readonly runtimeTarget: RuntimeRoomTarget;
+  readonly masterEvidenceActive?: boolean;
 }): ReactElement {
   const runtimeLabel = visualState.status === "loaded" ||
     visualState.status === "loading" ||
+    visualState.status === "error" ||
     visualState.status === "invalid"
     ? visualState.message
     : "No real asset loaded yet";
@@ -552,7 +586,11 @@ function VenueCommandTopBar({
         </span>
         <div>
           <p className="visual-brand-title">Venviewer</p>
-          <p className="visual-brand-subtitle">{TRADES_HALL_VISUAL_DEMO_STATE.shellLabel}</p>
+          <p className="visual-brand-subtitle">
+            {masterEvidenceActive
+              ? "Grand Hall master evidence view"
+              : TRADES_HALL_VISUAL_DEMO_STATE.shellLabel}
+          </p>
         </div>
       </div>
       <div className="visual-topbar-cell">
@@ -563,25 +601,41 @@ function VenueCommandTopBar({
       </div>
       <div className="visual-topbar-cell">
         <div>
-          <p className="visual-field-label">Room / phase</p>
-          <p className="visual-field-value">{runtimeTarget.roomLabel} / {phase.label}</p>
+          <p className="visual-field-label">
+            {masterEvidenceActive ? "Room / review" : "Room / phase"}
+          </p>
+          <p className="visual-field-value">
+            {runtimeTarget.roomLabel} / {masterEvidenceActive ? "Evidence review" : phase.label}
+          </p>
         </div>
       </div>
       <div className="visual-topbar-cell">
         <span className="visual-review-pill">
           <ShieldQuestion size={15} aria-hidden="true" />
-          Planning evidence / human review required
+          {masterEvidenceActive
+            ? "Multimodal evidence / technical alignment pending"
+            : "Planning evidence / human review required"}
         </span>
       </div>
       <div className="visual-topbar-cell">
-        <CheckCircle2 size={17} aria-hidden="true" color="#78d292" />
+        <CheckCircle2
+          size={17}
+          aria-hidden="true"
+          color={masterEvidenceActive ? "#d7aa49" : "#78d292"}
+        />
         <div>
-          <p className="visual-field-label">Save status</p>
-          <p className="visual-field-value">Internal draft saved</p>
+          <p className="visual-field-label">
+            {masterEvidenceActive ? "Session" : "Save status"}
+          </p>
+          <p className="visual-field-value">
+            {masterEvidenceActive ? "Ephemeral local review" : "Internal draft saved"}
+          </p>
         </div>
       </div>
       <div className="visual-runtime-cell">
-        <p className="visual-field-label">Runtime asset</p>
+        <p className="visual-field-label">
+          {masterEvidenceActive ? "Technical state" : "Runtime asset"}
+        </p>
         <p className="visual-field-value visual-runtime-status">{runtimeLabel}</p>
       </div>
       <div className="visual-top-icon" aria-hidden="true">
@@ -1480,7 +1534,97 @@ export function TradesHallVisualPage(): ReactElement {
   const viewportWidth = useVisualViewportWidth();
   const eventId = searchParams.get("eventId");
   const runtimeTarget = useMemo(() => runtimeRoomTargetFromSearchParams(searchParams), [searchParams]);
-  const [layerMode, setLayerMode] = useState<VisualLayerMode>("hybrid");
+  const viewerCapacity = useMemo(() => historicalRuntimeViewerCapacity({
+    deviceMemoryGb: readVisualDeviceMemoryGb(),
+    mobile: viewportWidth <= 767,
+  }), [viewportWidth]);
+  const requestedLocalGrandHallEvidence = useMemo(
+    () => localGrandHallEvidenceRequestFromSearchParams(searchParams, import.meta.env.DEV),
+    [searchParams],
+  );
+  const localGrandHallEvidenceRequest = useMemo<LocalGrandHallEvidenceRequest>(() => {
+    if (
+      requestedLocalGrandHallEvidence.kind !== "none" &&
+      searchParams.has("localSogCandidate")
+    ) {
+      return {
+        kind: "invalid",
+        message: "Choose the master room-evidence grant or the legacy SOG grant, not both.",
+      };
+    }
+    if (requestedLocalGrandHallEvidence.kind !== "ready") {
+      return requestedLocalGrandHallEvidence;
+    }
+    if (
+      runtimeTarget.error !== null ||
+      runtimeTarget.venue !== "trades-hall" ||
+      runtimeTarget.room !== "grand-hall"
+    ) {
+      return {
+        kind: "invalid",
+        message: "The Grand Hall master evidence view is only available for Trades Hall / Grand Hall.",
+      };
+    }
+    return requestedLocalGrandHallEvidence;
+  }, [
+    requestedLocalGrandHallEvidence,
+    runtimeTarget.error,
+    runtimeTarget.room,
+    runtimeTarget.venue,
+    searchParams,
+  ]);
+  const localGrandHallEvidence = useLocalGrandHallEvidence(
+    localGrandHallEvidenceRequest,
+  );
+  const masterEvidenceExplicit = localGrandHallEvidence.explicit;
+  const requestedLocalSogCandidate = useMemo(
+    () => localSogCandidateRequestFromSearchParams(searchParams, import.meta.env.DEV),
+    [searchParams],
+  );
+  const localSogCandidateRequest = useMemo<LocalSogCandidateRequest>(() => {
+    if (masterEvidenceExplicit) {
+      return localGrandHallEvidence.status === "ready"
+        ? {
+            kind: "ready",
+            descriptorUrl:
+              localGrandHallEvidence.candidate.presentations.splat.descriptorUrl,
+          }
+        : { kind: "none" };
+    }
+    if (requestedLocalSogCandidate.kind !== "ready") return requestedLocalSogCandidate;
+    if (runtimeTarget.error !== null || runtimeTarget.room !== "grand-hall") {
+      return {
+        kind: "invalid",
+        message: "The local Grand Hall candidate can only be inspected in the Trades Hall / Grand Hall view.",
+      };
+    }
+    return requestedLocalSogCandidate;
+  }, [
+    localGrandHallEvidence,
+    masterEvidenceExplicit,
+    requestedLocalSogCandidate,
+    runtimeTarget.error,
+    runtimeTarget.room,
+  ]);
+  const localSogCandidate = useLocalSogCandidate(
+    localSogCandidateRequest,
+    viewportWidth,
+    viewerCapacity.maxSplats,
+  );
+  const localCandidateExplicit = masterEvidenceExplicit || localSogCandidate.explicit;
+  const [evidenceMode, setEvidenceMode] = useState<GrandHallEvidenceMode>("spatial");
+  const [spatialRetryRevision, setSpatialRetryRevision] = useState(0);
+  const spatialStageGenerationRef = useRef(0);
+  const evidenceModeRef = useRef<GrandHallEvidenceMode>(evidenceMode);
+  evidenceModeRef.current = evidenceMode;
+  const handleEvidenceModeChange = useCallback((nextMode: GrandHallEvidenceMode) => {
+    if (nextMode === evidenceModeRef.current) return;
+    spatialStageGenerationRef.current += 1;
+    setEvidenceMode(nextMode);
+  }, []);
+  const [layerMode, setLayerMode] = useState<VisualLayerMode>(
+    () => localCandidateExplicit ? "splat" : "hybrid",
+  );
   const [opacity, setOpacity] = useState(0.82);
   const [activeMode, setActiveMode] = useState<VisualCommandMode>("design");
   const [selectedPhaseId, setSelectedPhaseId] = useState(TRADES_HALL_VISUAL_DEMO_STATE.defaultPhaseId);
@@ -1499,6 +1643,7 @@ export function TradesHallVisualPage(): ReactElement {
   const [visualCameraInteractionActive, setVisualCameraInteractionActive] = useState(false);
   const [splatLoadCounts, setSplatLoadCounts] = useState<Record<string, number>>({});
   const [splatLoadBounds, setSplatLoadBounds] = useState<Record<string, RuntimeSplatBounds>>({});
+  const [splatLoadErrors, setSplatLoadErrors] = useState<Record<string, string>>({});
   const [visualState, setVisualState] = useState<VisualState>(() => {
     if (runtimeTarget.error !== null) {
       return { status: "invalid", message: runtimeTarget.error, splatCount: null };
@@ -1510,9 +1655,205 @@ export function TradesHallVisualPage(): ReactElement {
     () => decideRuntimeAsset(null, publishedPackage),
     [publishedPackage],
   );
-  const activeSplatUrls = assetDecision.splatUrls;
-  const activeSplatUrlKey = activeSplatUrls.join("|");
-  const hasRegisteredRuntimeAsset = assetDecision.source === "package" && activeSplatUrls.length > 0;
+  const registeredSplatUrls = assetDecision.splatUrls;
+  const registeredSplatUrlKey = registeredSplatUrls.join("|");
+  const localCandidateSelection = localSogCandidate.status === "ready"
+    ? localSogCandidate.selection
+    : null;
+  const localCandidateSelectionKey = localCandidateSelection?.selectionKey ?? null;
+  const localCandidateSelectionMemberCount = localCandidateSelection?.members.length ?? 0;
+  const localCandidateDescriptor = localSogCandidate.status === "ready"
+    ? localSogCandidate.candidate
+    : null;
+  const localCandidateStatus = localSogCandidate.status;
+  const localCandidateErrorMessage = localSogCandidate.status === "error"
+    ? localSogCandidate.message
+    : null;
+  const localSogCandidateRetry = localSogCandidate.retry;
+  const handleSpatialEvidenceRetry = useCallback(() => {
+    spatialStageGenerationRef.current += 1;
+    setSpatialRetryRevision((revision) => revision + 1);
+    setSplatLoadCounts({});
+    setSplatLoadBounds({});
+    setSplatLoadErrors({});
+    setVisualState({
+      status: "loading",
+      message: "Reloading the exact spatial-capture grant · appearance only · operational scene authority unregistered",
+      splatCount: null,
+    });
+    localSogCandidateRetry();
+  }, [localSogCandidateRetry]);
+  const masterEvidenceCandidate = localGrandHallEvidence.status === "ready"
+    ? localGrandHallEvidence.candidate
+    : null;
+  const masterEvidenceStatus = localGrandHallEvidence.status;
+  const masterEvidenceErrorMessage = localGrandHallEvidence.status === "error"
+    ? localGrandHallEvidence.message
+    : null;
+  const masterEvidenceRetry = localGrandHallEvidence.retry;
+  const masterSpatialStageActive = !masterEvidenceExplicit || evidenceMode === "spatial";
+  const masterEvidenceSummary = useMemo<GrandHallEvidenceSummary | null>(() => {
+    if (masterEvidenceCandidate === null) return null;
+    const preferredTier = localCandidateSelection?.tier ??
+      masterEvidenceCandidate.presentations.splat.tiers.find(
+        (tier) => tier.splatCount <= viewerCapacity.maxSplats,
+      ) ?? masterEvidenceCandidate.presentations.splat.tiers[1];
+    if (preferredTier === undefined) return null;
+    const source = (sourceId: string) =>
+      masterEvidenceCandidate.sources.find((item) => item.sourceId === sourceId);
+    const reference = (id: string) =>
+      masterEvidenceCandidate.referenceOnly.find((item) => item.id === id);
+    const splatInventory = reference("lcc2-sog-inventory");
+    const btreeInventory = reference("lcc2-btree-indexes");
+    const e57 = reference("matterport-e57");
+    const matterpakObj = reference("matterpak-obj");
+    const historical = reference("historical-colmap-cubefaces");
+    const excludedBrushSeries = reference("brush-splat-ply-series");
+    return {
+      candidateId: masterEvidenceCandidate.candidateId,
+      candidateRevision: masterEvidenceCandidate.candidateRevision,
+      candidateDigest: masterEvidenceCandidate.candidateDigest,
+      splatFiles: splatInventory !== undefined && "count" in splatInventory
+        ? splatInventory.count
+        : 0,
+      selectedSplatTier: preferredTier.id,
+      selectedSplatMembers: preferredTier.memberCount,
+      declaredSplats: preferredTier.splatCount,
+      panoramaViewpoints:
+        masterEvidenceCandidate.presentations.panoramaWalk.presentationManifest.nodes.length,
+      capturedImages: masterEvidenceCandidate.presentations.capturedImages.members.length,
+      unclassifiedImages:
+        masterEvidenceCandidate.presentations.unclassifiedImages.members.length,
+      generatedImages: masterEvidenceCandidate.presentations.generatedImages.members.length,
+      editedReferenceVideos: 1,
+      meshPlyFiles: masterEvidenceCandidate.presentations.meshReview.members.filter(
+        (member) => member.suffix === "ply",
+      ).length,
+      smallObjFiles: masterEvidenceCandidate.presentations.meshReview.members.filter(
+        (member) => member.suffix === "obj",
+      ).length,
+      btreeFiles: btreeInventory !== undefined && "count" in btreeInventory
+        ? btreeInventory.count
+        : 0,
+      poseCount: masterEvidenceCandidate.presentations.reports.poseCount,
+      historicalCubefaces: historical !== undefined && "memberCount" in historical
+        ? historical.memberCount
+        : 0,
+      excludedDerivativeReason:
+        excludedBrushSeries !== undefined && "reason" in excludedBrushSeries
+          ? excludedBrushSeries.reason
+          : "No exact admitted browser member identity is available.",
+      rawXgridsBytes: source("raw-xgrids-portalcam")?.totalBytes ?? 0,
+      e57Bytes: e57 !== undefined && "sizeBytes" in e57 ? e57.sizeBytes : 0,
+      matterpakObjBytes:
+        matterpakObj !== undefined && "sizeBytes" in matterpakObj
+          ? matterpakObj.sizeBytes
+          : 0,
+      technicalSlots: masterEvidenceCandidate.pipelineReadySlots,
+    };
+  }, [
+    localCandidateSelection?.tier,
+    masterEvidenceCandidate,
+    viewerCapacity.maxSplats,
+  ]);
+  const masterEvidenceDockState = useMemo<GrandHallEvidenceDockState>(() => {
+    if (masterEvidenceStatus === "error") {
+      return {
+        status: "error",
+        message: masterEvidenceErrorMessage ?? "The exact evidence profile is unavailable.",
+        retryable: true,
+        retry: masterEvidenceRetry,
+      };
+    }
+    if (masterEvidenceStatus === "ready" && masterEvidenceSummary !== null) {
+      return {
+        status: "ready",
+        summary: masterEvidenceSummary,
+        retry: masterEvidenceRetry,
+      };
+    }
+    return { status: "loading" };
+  }, [
+    masterEvidenceErrorMessage,
+    masterEvidenceRetry,
+    masterEvidenceStatus,
+    masterEvidenceSummary,
+  ]);
+  const registeredSplatMembers = useMemo(
+    () => registeredSplatUrls.map((url) => ({ identity: `registered:${url}`, url })),
+    [registeredSplatUrls],
+  );
+  const activeSplatMembers: readonly { readonly identity: string; readonly url: string }[] = useMemo(
+    () => localCandidateExplicit
+      ? localCandidateSelection?.members ?? []
+      : registeredSplatMembers,
+    [localCandidateExplicit, localCandidateSelection, registeredSplatMembers],
+  );
+  const activeSplatUrls = useMemo(
+    () => activeSplatMembers.map((member) => member.url),
+    [activeSplatMembers],
+  );
+  const activeSplatIdentityKey = `${activeSplatMembers
+    .map((member) => member.identity)
+    .join("|")}${masterEvidenceExplicit ? `:retry-${String(spatialRetryRevision)}` : ""}`;
+  const activeSplatIdentityKeyRef = useRef(activeSplatIdentityKey);
+  activeSplatIdentityKeyRef.current = activeSplatIdentityKey;
+  const hasRegisteredRuntimeAsset = !localCandidateExplicit &&
+    assetDecision.source === "package" &&
+    registeredSplatUrls.length > 0;
+  const hasLocalSogCandidate = localCandidateDescriptor !== null && localCandidateSelection !== null;
+  const hasCapturedVisual = hasRegisteredRuntimeAsset || hasLocalSogCandidate;
+  const activeVisualAssetSource: ActiveVisualAssetSource = hasLocalSogCandidate
+    ? "local"
+    : hasRegisteredRuntimeAsset
+      ? "registered"
+      : "none";
+  const activeVisualAssetSourceRef = useRef<ActiveVisualAssetSource>(activeVisualAssetSource);
+  activeVisualAssetSourceRef.current = activeVisualAssetSource;
+  const activeSplatError = activeSplatUrls
+    .map((url) => splatLoadErrors[url])
+    .find((message): message is string => message !== undefined) ?? null;
+  const masterSpatialRuntime = useMemo(() => {
+    const totalMembers = localCandidateSelection?.members.length ??
+      masterEvidenceSummary?.selectedSplatMembers ?? 0;
+    const loadedMembers = activeSplatUrls.filter(
+      (url) => splatLoadCounts[url] !== undefined,
+    ).length;
+    const browserReportedSplats = loadedMembers === 0
+      ? null
+      : activeSplatUrls.reduce(
+          (total, url) => total + (splatLoadCounts[url] ?? 0),
+          0,
+        );
+    const errorMessage = activeSplatError ?? localCandidateErrorMessage;
+    return {
+      status: errorMessage !== null
+        ? "error" as const
+        : totalMembers > 0 && loadedMembers === totalMembers
+          ? "loaded" as const
+          : totalMembers > 0
+            ? "loading" as const
+            : "idle" as const,
+      loadedMembers,
+      totalMembers,
+      browserReportedSplats,
+      message: errorMessage,
+      retry: handleSpatialEvidenceRetry,
+    };
+  }, [
+    activeSplatError,
+    activeSplatUrls,
+    handleSpatialEvidenceRetry,
+    localCandidateErrorMessage,
+    localCandidateSelection?.members.length,
+    masterEvidenceSummary?.selectedSplatMembers,
+    splatLoadCounts,
+  ]);
+  const visibleAssetDecision = useMemo(
+    () => localCandidateExplicit ? decideRuntimeAsset(null, null) : assetDecision,
+    [assetDecision, localCandidateExplicit],
+  );
+  const visiblePublishedPackage = localCandidateExplicit ? null : publishedPackage;
   const baseRuntimeAssetViewTransform = useMemo(
     () => runtimeAssetViewTransformForRoom(runtimeTarget.room),
     [runtimeTarget.room],
@@ -1522,15 +1863,17 @@ export function TradesHallVisualPage(): ReactElement {
     [runtimeTarget.room],
   );
   const mergedSplatBounds = useMemo(
-    () => runtimeTarget.room === "reception-room"
-      ? mergeRuntimeSplatBounds(activeSplatUrls, splatLoadBounds)
+    () => hasRegisteredRuntimeAsset && runtimeTarget.room === "reception-room"
+      ? mergeRuntimeSplatBounds(registeredSplatUrls, splatLoadBounds)
       : null,
-    [activeSplatUrls, runtimeTarget.room, splatLoadBounds],
+    [hasRegisteredRuntimeAsset, registeredSplatUrls, runtimeTarget.room, splatLoadBounds],
   );
   const runtimeAssetViewTransform = useMemo(
     () => fittedZUpRuntimeTransform(mergedSplatBounds, baseRuntimeAssetViewTransform),
     [baseRuntimeAssetViewTransform, mergedSplatBounds],
   );
+  const activeSplatViewTransform = localCandidateDescriptor?.presentationTransform ??
+    runtimeAssetViewTransform;
   const eventPhases = useMemo(
     () => phaseGraph === null
       ? TRADES_HALL_VISUAL_DEMO_STATE.eventPhases
@@ -1539,8 +1882,13 @@ export function TradesHallVisualPage(): ReactElement {
   );
   const selectedPhase = visualPhaseById(selectedPhaseId, eventPhases);
   const truthTargets = useMemo(
-    () => buildTruthModeTargets({ phase: selectedPhase, runtimeTarget, assetDecision, publishedPackage }),
-    [assetDecision, publishedPackage, runtimeTarget, selectedPhase],
+    () => buildTruthModeTargets({
+      phase: selectedPhase,
+      runtimeTarget,
+      assetDecision: visibleAssetDecision,
+      publishedPackage: visiblePublishedPackage,
+    }),
+    [runtimeTarget, selectedPhase, visibleAssetDecision, visiblePublishedPackage],
   );
   const selectedTruthTarget = truthTargets.find((target) => target.id === selectedTruthTargetId) ?? truthTargets[0] ?? {
     id: "room",
@@ -1565,17 +1913,28 @@ export function TradesHallVisualPage(): ReactElement {
   const splatVisible = activeSplatUrls.length > 0 && (
     hasRegisteredRuntimeAsset || layerMode === "hybrid" || layerMode === "splat"
   );
-  const visualCameraPosition = hasRegisteredRuntimeAsset ? runtimeAssetCameraView.position : VISUAL_CAMERA_POSITION;
-  const visualCameraTarget = hasRegisteredRuntimeAsset ? runtimeAssetCameraView.target : VISUAL_CAMERA_TARGET;
-  const visualCameraDistanceLimits = hasRegisteredRuntimeAsset
+  const localPresentationCamera = localCandidateDescriptor?.presentationCamera ?? null;
+  const visualCameraPosition = localPresentationCamera?.position ?? (
+    hasRegisteredRuntimeAsset ? runtimeAssetCameraView.position : VISUAL_CAMERA_POSITION
+  );
+  const visualCameraTarget = localPresentationCamera?.target ?? (
+    hasRegisteredRuntimeAsset ? runtimeAssetCameraView.target : VISUAL_CAMERA_TARGET
+  );
+  const visualCameraDistanceLimits = hasLocalSogCandidate
+    ? { minDistance: 1.2, maxDistance: 24 }
+    : hasRegisteredRuntimeAsset
     ? {
       minDistance: runtimeAssetCameraView.minDistance,
       maxDistance: runtimeAssetCameraView.maxDistance,
     }
     : VISUAL_CAMERA_DISTANCE_LIMITS;
   const visualRuntimeCameraView = hasRegisteredRuntimeAsset ? runtimeAssetCameraView : null;
-  const visualCameraFov = visualRuntimeCameraView?.fov ?? 46;
-  const visualCameraKey = hasRegisteredRuntimeAsset ? "runtime-asset-camera" : "procedural-camera";
+  const visualCameraFov = localPresentationCamera?.fov ?? visualRuntimeCameraView?.fov ?? 46;
+  const visualCameraKey = hasLocalSogCandidate
+    ? `local-candidate-camera:${localCandidateSelection.selectionKey}`
+    : hasRegisteredRuntimeAsset
+      ? "runtime-asset-camera"
+      : "procedural-camera";
   const visualCanvasDpr = visualCanvasDprForViewportWidth(viewportWidth);
   const visualCanvasGl = visualCanvasGlForViewportWidth(viewportWidth);
   const isNarrowVisualViewport = viewportWidth <= 640;
@@ -1586,8 +1945,8 @@ export function TradesHallVisualPage(): ReactElement {
   const overlayLegendPlacement: FloatingWidgetPlacement = isNarrowVisualViewport
     ? { type: "anchor", anchor: "top-left", offsetX: 16, offsetY: 66 }
     : { type: "anchor", anchor: "top-right", offsetX: 24, offsetY: 22 };
-  const smoothVisualControls = hasRegisteredRuntimeAsset && shouldUseSmoothVisualControls(viewportWidth);
-  const visualMouseButtons = hasRegisteredRuntimeAsset
+  const smoothVisualControls = hasCapturedVisual && shouldUseSmoothVisualControls(viewportWidth);
+  const visualMouseButtons = hasCapturedVisual
     ? visualMouseButtonsForViewportWidth(viewportWidth)
     : LEAN_VISUAL_MOUSE_BUTTONS;
   const visualFallbackRoomGeometry = roomGeometries[runtimeTarget.roomLabel] ?? GRAND_HALL_ROOM_GEOMETRY;
@@ -1595,7 +1954,9 @@ export function TradesHallVisualPage(): ReactElement {
   const visualFallbackRoomVariant = visualFallbackIsSyntheticGrandHall
     ? "grand-hall-synthetic"
     : "generic";
-  const visualFallbackRoomDetail = shouldUseLeanVisualMesh(viewportWidth) || visualCameraInteractionActive
+  const visualFallbackRoomDetail = hasLocalSogCandidate ||
+    shouldUseLeanVisualMesh(viewportWidth) ||
+    visualCameraInteractionActive
     ? "lean"
     : "detailed";
 
@@ -1654,10 +2015,11 @@ export function TradesHallVisualPage(): ReactElement {
       setVisualState({ status: "invalid", message: runtimeTarget.error, splatCount: null });
       return;
     }
+    if (localCandidateExplicit) return;
     if (assetDecision.source === "none") {
       setVisualState(EMPTY_STATE);
     }
-  }, [assetDecision.source, runtimeTarget.error]);
+  }, [assetDecision.source, localCandidateExplicit, runtimeTarget.error]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1728,22 +2090,143 @@ export function TradesHallVisualPage(): ReactElement {
   // When a package asset becomes the active decision,
   // show a loading line until Spark resolves it; onLoad/onError refine it.
   useEffect(() => {
-    if (assetDecision.source === "package" && activeSplatUrls.length > 0) {
+    if (
+      !localCandidateExplicit &&
+      assetDecision.source === "package" &&
+      registeredSplatUrls.length > 0
+    ) {
       setSplatLoadCounts({});
       setSplatLoadBounds({});
+      setSplatLoadErrors({});
       setOverlays(RUNTIME_ASSET_DEFAULT_OVERLAYS);
       setOpacity(1);
       setSelectedTruthTargetId("runtimeAsset");
       setVisualState({
         status: "loading",
-        message: `Loading runtime asset chunks (0/${activeSplatUrls.length.toLocaleString("en-GB")})`,
+        message: `Loading runtime asset chunks (0/${registeredSplatUrls.length.toLocaleString("en-GB")})`,
         splatCount: null,
       });
       setLayerMode("splat");
     }
-  }, [activeSplatUrlKey, activeSplatUrls.length, assetDecision.source]);
+  }, [
+    assetDecision.source,
+    localCandidateExplicit,
+    registeredSplatUrlKey,
+    registeredSplatUrls.length,
+  ]);
 
+  useEffect(() => {
+    if (!localCandidateExplicit) return;
+    setSplatLoadCounts({});
+    setSplatLoadBounds({});
+    setSplatLoadErrors({});
+    if (masterEvidenceExplicit && masterEvidenceStatus === "error") {
+      setVisualState({
+        status: "error",
+        message: masterEvidenceErrorMessage ?? "The Grand Hall evidence profile could not be loaded.",
+        splatCount: null,
+      });
+      return;
+    }
+    if (masterEvidenceExplicit && masterEvidenceStatus === "loading") {
+      setVisualState({
+        status: "loading",
+        message: "Verifying Grand Hall multimodal evidence · owner-authorized use · technically unregistered",
+        splatCount: null,
+      });
+      return;
+    }
+    if (localCandidateStatus === "error") {
+      setVisualState({
+        status: "error",
+        message: localCandidateErrorMessage ?? "The local candidate descriptor could not be loaded.",
+        splatCount: null,
+      });
+      return;
+    }
+    if (localCandidateStatus === "loading") {
+      setVisualState({
+        status: "loading",
+        message: "Loading spatial capture · appearance only · operational scene authority unregistered",
+        splatCount: null,
+      });
+      return;
+    }
+    if (localCandidateStatus === "ready" && localCandidateSelectionKey !== null) {
+      setOverlays(RUNTIME_ASSET_DEFAULT_OVERLAYS);
+      setOpacity(1);
+      setSelectedTruthTargetId("room");
+      setLayerMode("splat");
+      setVisualState({
+        status: "loading",
+        message: `Loading spatial-capture SOG tier (0/${localCandidateSelectionMemberCount.toLocaleString("en-GB")}) · appearance only · operational scene authority unregistered`,
+        splatCount: null,
+      });
+    }
+  }, [
+    localCandidateErrorMessage,
+    localCandidateExplicit,
+    localCandidateSelectionKey,
+    localCandidateSelectionMemberCount,
+    localCandidateStatus,
+    masterEvidenceExplicit,
+    masterEvidenceErrorMessage,
+    masterEvidenceStatus,
+  ]);
+
+  useEffect(() => {
+    if (!masterEvidenceExplicit) return;
+    setLayerMode("splat");
+    setOverlays(RUNTIME_ASSET_DEFAULT_OVERLAYS);
+    setActiveOverlay("guestFlow");
+    setReplayRunning(false);
+  }, [masterEvidenceExplicit]);
+
+  useEffect(() => {
+    if (!masterEvidenceExplicit || masterEvidenceCandidate === null) return;
+    setSplatLoadCounts({});
+    setSplatLoadBounds({});
+    setSplatLoadErrors({});
+    if (evidenceMode === "twin") {
+      setVisualState({
+        status: "loading",
+        message: "Walk + mesh selected · captured panorama and bounded GLB load only on demand · operational scene authority unregistered",
+        splatCount: null,
+      });
+      return;
+    }
+    if (evidenceMode === "reference") {
+      setVisualState({
+        status: "loading",
+        message: "Reference media selected · one exact still, edited video, or generated concept loads at a time · no spatial authority",
+        splatCount: null,
+      });
+      return;
+    }
+    if (localCandidateSelectionKey !== null) {
+      setVisualState({
+        status: "loading",
+        message: `Reloading spatial-capture SOG tier (0/${localCandidateSelectionMemberCount.toLocaleString("en-GB")}) · appearance only · operational scene authority unregistered`,
+        splatCount: null,
+      });
+    }
+  }, [
+    evidenceMode,
+    localCandidateSelectionKey,
+    localCandidateSelectionMemberCount,
+    masterEvidenceCandidate,
+    masterEvidenceExplicit,
+  ]);
+
+  const spatialStageGeneration = spatialStageGenerationRef.current;
   const handleLoad = useCallback((event: SparkSplatLoadEvent) => {
+    if (
+      spatialStageGenerationRef.current !== spatialStageGeneration ||
+      activeSplatIdentityKeyRef.current !== activeSplatIdentityKey ||
+      (masterEvidenceExplicit && evidenceModeRef.current !== "spatial")
+    ) {
+      return;
+    }
     setSplatLoadCounts((current) => ({
       ...current,
       [event.url]: event.splatCount,
@@ -1755,10 +2238,14 @@ export function TradesHallVisualPage(): ReactElement {
         [event.url]: bounds,
       }));
     }
-  }, []);
+  }, [activeSplatIdentityKey, masterEvidenceExplicit, spatialStageGeneration]);
 
   useEffect(() => {
-    if (assetDecision.source !== "package" || activeSplatUrls.length === 0) return;
+    if (activeVisualAssetSource === "none" || activeSplatUrls.length === 0) return;
+    if (activeSplatError !== null) {
+      setVisualState({ status: "error", message: activeSplatError, splatCount: null });
+      return;
+    }
     const loadedCount = activeSplatUrls.filter((url) => splatLoadCounts[url] !== undefined).length;
     if (loadedCount === 0) return;
     const totalSplats = activeSplatUrls.reduce((sum, url) => sum + (splatLoadCounts[url] ?? 0), 0);
@@ -1766,25 +2253,41 @@ export function TradesHallVisualPage(): ReactElement {
     setVisualState({
       status: allLoaded ? "loaded" : "loading",
       message: allLoaded
-        ? assetDecision.evidenceLabel
-        : `Loading runtime asset chunks (${loadedCount.toLocaleString("en-GB")}/${activeSplatUrls.length.toLocaleString("en-GB")})`,
+        ? activeVisualAssetSource === "local"
+          ? "Spatial capture · appearance only · operational scene authority unregistered"
+          : assetDecision.evidenceLabel
+        : activeVisualAssetSource === "local"
+          ? `Loading spatial-capture SOG tier (${loadedCount.toLocaleString("en-GB")}/${activeSplatUrls.length.toLocaleString("en-GB")}) · operational scene authority unregistered`
+          : `Loading runtime asset chunks (${loadedCount.toLocaleString("en-GB")}/${activeSplatUrls.length.toLocaleString("en-GB")})`,
       splatCount: totalSplats,
     });
   }, [
-    activeSplatUrlKey,
+    activeSplatIdentityKey,
+    activeSplatError,
     activeSplatUrls,
+    activeVisualAssetSource,
     assetDecision.evidenceLabel,
-    assetDecision.source,
     splatLoadCounts,
   ]);
 
   const handleError = useCallback((event: SparkSplatErrorEvent) => {
+    if (
+      spatialStageGenerationRef.current !== spatialStageGeneration ||
+      activeSplatIdentityKeyRef.current !== activeSplatIdentityKey ||
+      (masterEvidenceExplicit && evidenceModeRef.current !== "spatial")
+    ) {
+      return;
+    }
+    const message = activeVisualAssetSourceRef.current === "local"
+      ? "A local SOG member could not be rendered. Reload the candidate after checking the local gateway."
+      : event.error.message;
+    setSplatLoadErrors((current) => ({ ...current, [event.url]: message }));
     setVisualState({
       status: "error",
-      message: event.error.message,
+      message,
       splatCount: null,
     });
-  }, []);
+  }, [activeSplatIdentityKey, masterEvidenceExplicit, spatialStageGeneration]);
 
   const toggleOverlay = useCallback((key: VisualOverlayKey) => {
     setActiveOverlay(key);
@@ -1798,12 +2301,25 @@ export function TradesHallVisualPage(): ReactElement {
   }, []);
 
   return (
-    <main className="visual-shell">
-      <VenueCommandTopBar phase={selectedPhase} visualState={visualState} runtimeTarget={runtimeTarget} />
-      <VenueCommandRail activeMode={activeMode} onModeChange={setActiveMode} />
-      <section className="visual-stage" aria-label="Trades Hall visual command canvas">
+    <main className={`visual-shell${masterEvidenceExplicit ? " is-master-evidence-shell" : ""}`}>
+      <VenueCommandTopBar
+        phase={selectedPhase}
+        visualState={visualState}
+        runtimeTarget={runtimeTarget}
+        masterEvidenceActive={masterEvidenceExplicit}
+      />
+      {!masterEvidenceExplicit && (
+        <VenueCommandRail activeMode={activeMode} onModeChange={setActiveMode} />
+      )}
+      <section
+        className={`visual-stage${masterEvidenceExplicit ? " is-master-evidence" : ""}`}
+        aria-label={masterEvidenceExplicit
+          ? "Grand Hall multimodal room evidence"
+          : "Trades Hall visual command canvas"}
+      >
         <div className="visual-canvas-frame">
-          <Canvas
+          {masterSpatialStageActive ? (
+            <Canvas
             frameloop="demand"
             dpr={visualCanvasDpr}
             performance={VISUAL_CANVAS_PERFORMANCE}
@@ -1823,13 +2339,13 @@ export function TradesHallVisualPage(): ReactElement {
               onCameraInteractionChange={setVisualCameraInteractionActive}
             />
             <color attach="background" args={["#111415"]} />
-            <ambientLight intensity={hasRegisteredRuntimeAsset ? 0.75 : 0.16} />
+            <ambientLight intensity={hasCapturedVisual ? 0.75 : 0.16} />
             <directionalLight
-              color={hasRegisteredRuntimeAsset ? "#ffffff" : "#f2bd78"}
+              color={hasCapturedVisual ? "#ffffff" : "#f2bd78"}
               position={[6, 9, 6]}
-              intensity={hasRegisteredRuntimeAsset ? 0.65 : 0.42}
+              intensity={hasCapturedVisual ? 0.65 : 0.42}
             />
-            {meshVisible && (
+            {!masterEvidenceExplicit && meshVisible && (
               visualFallbackRoomGeometry !== undefined ? (
                 <RoomMesh
                   geometry={visualFallbackRoomGeometry}
@@ -1842,15 +2358,17 @@ export function TradesHallVisualPage(): ReactElement {
             )}
             {activeSplatUrls.length > 0 ? (
               <Suspense fallback={null}>
-                {activeSplatUrls.map((splatUrl, index) => (
+                {activeSplatMembers.map((member, index) => (
                   <LazySparkSplatLayer
-                    key={splatUrl}
-                    url={splatUrl}
+                    key={`${member.identity}${masterEvidenceExplicit
+                      ? `:retry-${String(spatialRetryRevision)}`
+                      : ""}`}
+                    url={member.url}
                     visible={splatVisible}
                     opacity={opacity}
-                    position={runtimeAssetViewTransform.position}
-                    rotation={runtimeAssetViewTransform.rotation}
-                    scale={runtimeAssetViewTransform.scale}
+                    position={activeSplatViewTransform.position}
+                    rotation={activeSplatViewTransform.rotation}
+                    scale={activeSplatViewTransform.scale}
                     includeRendererHost={index === 0}
                     onLoad={handleLoad}
                     onError={handleError}
@@ -1858,9 +2376,44 @@ export function TradesHallVisualPage(): ReactElement {
                 ))}
               </Suspense>
             ) : null}
-          </Canvas>
+            </Canvas>
+          ) : masterEvidenceCandidate !== null && evidenceMode === "twin" ? (
+            <Suspense
+              fallback={<p className="grand-hall-evidence-stage-state">Loading captured panorama walk…</p>}
+            >
+              <LazyTwinViewer
+                manifest={masterEvidenceCandidate.presentations.panoramaWalk.presentationManifest}
+                assetBase={masterEvidenceCandidate.presentations.panoramaWalk.assetBaseUrl}
+                experience="local-evidence-review"
+                evidenceDisclosure="Captured Grand Hall panoramas and venue-context mesh · presentation only · source-manifest frame · operational scene authority unregistered"
+              />
+            </Suspense>
+          ) : masterEvidenceCandidate !== null && evidenceMode === "reference" ? (
+            <GrandHallReferenceMedia
+              capturedImages={masterEvidenceCandidate.presentations.capturedImages.members}
+              unclassifiedImages={masterEvidenceCandidate.presentations.unclassifiedImages.members}
+              generatedImages={masterEvidenceCandidate.presentations.generatedImages.members}
+              video={masterEvidenceCandidate.presentations.videoReference}
+            />
+          ) : (
+            <p className="grand-hall-evidence-stage-state">Verifying the exact evidence stage…</p>
+          )}
         </div>
-        {meshVisible && visualFallbackIsSyntheticGrandHall && (
+        {!masterEvidenceExplicit && (
+          <LocalSogCandidatePanel
+            state={localSogCandidate}
+            streamError={hasLocalSogCandidate ? activeSplatError : null}
+          />
+        )}
+        {masterEvidenceExplicit && (
+          <GrandHallEvidenceDock
+            state={masterEvidenceDockState}
+            mode={evidenceMode}
+            onModeChange={handleEvidenceModeChange}
+            spatialRuntime={masterSpatialRuntime}
+          />
+        )}
+        {!masterEvidenceExplicit && masterSpatialStageActive && meshVisible && visualFallbackIsSyntheticGrandHall && (
           <p
             className="visual-synthetic-stand-in-label"
             data-testid="visual-synthetic-stand-in-label"
@@ -1869,7 +2422,8 @@ export function TradesHallVisualPage(): ReactElement {
             {SYNTHETIC_GRAND_HALL_STAND_IN_LABEL}
           </p>
         )}
-        <FloatingWidgetFrame
+        {masterSpatialStageActive && !masterEvidenceExplicit && (
+          <FloatingWidgetFrame
           id="visual-layer-controls"
           title="Visual layer"
           compactLabel={layerMode}
@@ -1880,16 +2434,20 @@ export function TradesHallVisualPage(): ReactElement {
           autoCompact={visualCameraInteractionActive}
         >
           <CanvasLayerControls mode={layerMode} onModeChange={setLayerMode} />
-        </FloatingWidgetFrame>
-        <VenueCanvasOverlays
+          </FloatingWidgetFrame>
+        )}
+        {masterSpatialStageActive && !masterEvidenceExplicit && (
+          <VenueCanvasOverlays
           overlays={overlays}
           replay={guestFlowReplay}
           replayProgress={replayProgress}
-          planningCuesVisible={!hasRegisteredRuntimeAsset}
+          planningCuesVisible={!hasCapturedVisual}
           isNarrowViewport={isNarrowVisualViewport}
           cameraInteractionActive={visualCameraInteractionActive}
-        />
-        <FloatingWidgetFrame
+          />
+        )}
+        {masterSpatialStageActive && !masterEvidenceExplicit && (
+          <FloatingWidgetFrame
           id="visual-overlay-legend"
           title="Overlay controls"
           compactLabel="Overlays"
@@ -1913,8 +2471,10 @@ export function TradesHallVisualPage(): ReactElement {
               setReplayProgress(0);
             }}
           />
-        </FloatingWidgetFrame>
-        <FloatingWidgetFrame
+          </FloatingWidgetFrame>
+        )}
+        {masterSpatialStageActive && !masterEvidenceExplicit && (
+          <FloatingWidgetFrame
           id="visual-view-status"
           title="View status"
           compactLabel="3D"
@@ -1925,9 +2485,11 @@ export function TradesHallVisualPage(): ReactElement {
           autoCompact={visualCameraInteractionActive}
         >
           <ViewTool activeMode={activeMode} />
-        </FloatingWidgetFrame>
+          </FloatingWidgetFrame>
+        )}
       </section>
-      <TruthModePanel
+      {!masterEvidenceExplicit && (
+        <TruthModePanel
         activeMode={activeMode}
         phase={selectedPhase}
         truthTargets={truthTargets}
@@ -1936,13 +2498,15 @@ export function TradesHallVisualPage(): ReactElement {
         truthSummaryStatus={truthSummaryStatus}
         visualState={visualState}
         runtimeTarget={runtimeTarget}
-        packageId={publishedPackage?.id ?? null}
-        activeAssetUrl={assetDecision.splatUrl}
+        packageId={visiblePublishedPackage?.id ?? null}
+        activeAssetUrl={visibleAssetDecision.splatUrl}
         opacity={opacity}
         onOpacityChange={setOpacity}
         onSelectTruthTarget={setSelectedTruthTargetId}
-      />
-      <footer className="visual-bottom">
+        />
+      )}
+      {!masterEvidenceExplicit && (
+        <footer className="visual-bottom">
         <EventPhaseGraph
           phases={eventPhases}
           selectedPhaseId={selectedPhaseId}
@@ -1951,7 +2515,8 @@ export function TradesHallVisualPage(): ReactElement {
         />
         <ReplayStatusStrip replay={guestFlowReplay} replayStatus={replayStatus} />
         <VisualInsightCards activeOverlay={activeOverlay} onInsightSelect={handleInsightSelect} />
-      </footer>
+        </footer>
+      )}
     </main>
   );
 }

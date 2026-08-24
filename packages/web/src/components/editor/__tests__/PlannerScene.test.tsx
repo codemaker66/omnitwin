@@ -63,6 +63,7 @@ const {
   plannerRoomDetailForViewportWidth,
   plannerRuntimeRendererRequested,
   plannerSceneWarmupMode,
+  shouldMountHistoricalRuntimeLayer,
   shouldRenderPlannerSceneOverlays,
   shouldMountLiveRuntimeSplat,
   shouldUseSmoothPlannerControls,
@@ -305,7 +306,7 @@ describe("PlannerScene", () => {
     expect(source).toContain("<CockpitPlanningCamera dimensionsOverride={authoritativeFrozenPreview ? dimensions : undefined}");
     expect(source).toContain("<group position={furnitureOffset}>");
     expect(source).toContain("{runtimeRendererRequested && (");
-    expect(source).toContain("{expectedHistoricalRuntime !== null && (");
+    expect(source).toContain("{historicalRuntimeLayerRequested && (");
     expect(source.match(/<LazySparkRendererHost\s*\/>/gu)).toHaveLength(1);
     expect(source).toContain("includeRendererHost={false}");
   });
@@ -320,6 +321,14 @@ describe("PlannerScene", () => {
     expect(requested).toBe(true);
     requested = plannerRuntimeRendererRequested(requested, false, false);
     expect(requested).toBe(true);
+  });
+
+  it("keeps the historical layer mounted across Day/Week pending ranges, then releases it on exit", () => {
+    expect(shouldMountHistoricalRuntimeLayer(false, "keyframe", false)).toBe(false);
+    expect(shouldMountHistoricalRuntimeLayer(false, "keyframe", true)).toBe(true);
+    expect(shouldMountHistoricalRuntimeLayer(true, "unavailable", false)).toBe(true);
+    expect(shouldMountHistoricalRuntimeLayer(true, "schedule-gap", false)).toBe(true);
+    expect(shouldMountHistoricalRuntimeLayer(true, "inactive", false)).toBe(false);
   });
 
   it("fails closed for pending, unavailable, and schedule-gap previews, then restores live room on exit", () => {

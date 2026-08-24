@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 // -----------------------------------------------------------------------------
@@ -32,15 +32,27 @@ function parseMode(param: string | null, hasMesh: boolean): TwinMode {
   return hasMesh && (param === "dollhouse" || param === "plan") ? param : "walk";
 }
 
-export function useTwinMode(hasMesh: boolean): TwinModeState {
+export function useTwinMode(
+  hasMesh: boolean,
+  urlStateEnabled = true,
+): TwinModeState {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [isolatedMode, setIsolatedMode] = useState<TwinMode>("walk");
+  const urlStateEnabledRef = useRef(urlStateEnabled);
+  urlStateEnabledRef.current = urlStateEnabled;
   const param = searchParams.get("mode");
-  const mode = parseMode(param, hasMesh);
+  const mode = urlStateEnabled ? parseMode(param, hasMesh) : parseMode(isolatedMode, hasMesh);
 
   // Canonicalise: walk is spelt by ABSENCE. A present param that parses to
   // walk (invalid value, explicit "walk", or a mesh-less bundle) is dropped
   // without adding history, preserving every other param (?node= included).
   useEffect(() => {
+    if (!urlStateEnabled) {
+      if (!hasMesh && isolatedMode !== "walk") {
+        setIsolatedMode("walk");
+      }
+      return;
+    }
     if (param !== null && parseMode(param, hasMesh) === "walk") {
       setSearchParams(
         (previous) => {
@@ -51,11 +63,15 @@ export function useTwinMode(hasMesh: boolean): TwinModeState {
         { replace: true },
       );
     }
-  }, [param, hasMesh, setSearchParams]);
+  }, [param, hasMesh, isolatedMode, setSearchParams, urlStateEnabled]);
 
   const setMode = useCallback(
     (next: TwinMode) => {
       if (next === mode || (!hasMesh && next !== "walk")) {
+        return;
+      }
+      if (!urlStateEnabledRef.current) {
+        setIsolatedMode(next);
         return;
       }
       // Crossing the dollhouse boundary is a navigation (push once); every
@@ -74,7 +90,7 @@ export function useTwinMode(hasMesh: boolean): TwinModeState {
         { replace: !crossesDollhouse },
       );
     },
-    [mode, hasMesh, setSearchParams],
+    [mode, hasMesh, setSearchParams, urlStateEnabled],
   );
 
   return { mode, setMode };

@@ -1,198 +1,161 @@
 # Evidence-to-Runtime Reconstruction Foundry
 
-The Reconstruction Foundry now has two deliberately separate product lanes:
+Status: **T-486 in progress**, updated 2026-08-09.
 
-1. the current **local multimodal super-app lane**, which turns dropped capture
-   files into inspectable, truth-labelled evidence and guided next actions; and
-2. an optional **runtime release lane** for an already reviewed Twin bundle.
+The Foundry is an evidence-first local pipeline. Its current implementation can
+inventory sources, establish bounded structural facts, compose independently
+admitted roots, report adapter blockers, and assemble a blocked Room Reality
+Package candidate for local review. It is not yet a drag-and-drop
+reconstruction engine or a raw-capture-to-production-`RuntimePackage` bridge.
 
-The local lane is the current T-508 priority. It needs no account, remote
-service, object store, signing step, deployment, or production database. The
-release lane remains documented below, but it is not a prerequisite for local
-capture intake, reconstruction experiments, visual-quality work, or evidence
-review.
+## Product truth
 
-## Current local multimodal super-app boundary
+- A Room Reality Package represents stable architectural reality: walls,
+  floors, doors, windows, fixed features, coordinate frames, representations,
+  provenance, and review references.
+- Tables, chairs, stages, bars, and other event furniture are independent
+  planner objects. Captured movable objects cannot become placement,
+  measurement, collision, or export authority merely because they appear in a
+  scan or image.
+- A timeline snapshot binds an exact immutable room-package ID, revision, and
+  digest separately from an independently frozen furniture layout. Many Day or
+  Week phases may correctly reuse the same room package.
+- A room-package crossfade is meaningful only when two genuinely different,
+  rights-cleared, reviewed captured room revisions exist. Furniture changes do
+  not justify manufacturing a second room revision.
+- Generated or ImageGen-derived presentation assets remain visibly labelled
+  non-authoritative stand-ins. They cannot supply measurements, collision,
+  exports, or room truth.
 
-```mermaid
-flowchart LR
-  A["Drop files or a folder"] --> B["Read-only byte inventory"]
-  B --> C["Universal Intake Receipt"]
-  C --> D["Versioned format-specific Source Facts"]
-  D --> E["Source Readiness Map"]
-  E --> F["Operator Evidence Checklist"]
-  F --> G["Guided processing plan"]
-  G --> H["Local compute when suitable"]
-  G --> I["Optional reviewed compute handoff"]
-  H --> J["Captured / metric / enhanced / generated outputs kept separate"]
-  I --> J
-```
-
-The boundary is intentionally evidence-first:
-
-- Discovery and inspection are read-only. Source bytes are never silently
-  converted, renamed, moved, admitted, trained on, uploaded, or published.
-- Every file is represented by a relative path, size, format evidence and exact
-  byte fingerprint. Duplicate content remains explicit.
-- Source Facts profiles are immutable once used. Adding SPZ, Gaussian PLY,
-  image roles, video, calibration or another family creates a new profile or
-  schema version rather than changing the meaning of an earlier artifact.
-- Readiness describes observed source families; it does not select a recipe or
-  claim that missing families are required.
-- The checklist converts every unresolved fact into a falsifiable evidence
-  request. An unresolved result remains valid and visible.
-- XGRIDS XBIN stays an all-or-nothing stop until an official open export exists;
-  the app does not attempt to interpret the opaque payload.
-
-### Truth layers
-
-The super app must never flatten different kinds of output into one apparent
-truth:
-
-| Layer | Intended use | What it must not imply |
-| --- | --- | --- |
-| Captured visual | faithful presentation of observed appearance | metric authority |
-| Metric / planning | measurement, collision, cutaway and registration | photographic completeness |
-| Enhanced captured | denoised, re-rendered or locally refined captured evidence | that generated detail was observed |
-| Generated cinematic | explicitly labelled aesthetic continuation or repair | captured, metric or evidential truth |
-| Concept / imagination | design variants and speculative scenes | current venue state |
-
-The architecture therefore favours **mesh for geometry and planning, splat for
-appearance, and explicit overlays for derived semantics**. Hybrid output is a
-composition of labelled representations, not a licence to transfer authority
-from one representation to another.
-
-### Implemented local coverage
-
-- Universal Intake Receipt V0 inventories and fingerprints dropped sources.
-- Universal Source Facts V1 remains frozen and establishes bounded E57, binary
-  GLB, streaming OBJ and stored-ZIP SOG v2 structure while preserving
-  format-specific unknowns.
-- Universal Source Facts V2, Source Readiness Map V2 and Operator Evidence
-  Checklist V2 remain frozen. V2 reuses the exact V1 asset contracts and adds
-  SPZ without changing V1 bytes, meanings or digest domains.
-- The active local app uses Universal Source Facts V5, Source Readiness Map V5
-  and Operator Evidence Checklist V5. V3 added classic Gaussian PLY, V4 added
-  bounded media-container structure, and V5 adds calibration/trajectory
-  document structure without changing earlier bytes, meanings or digest
-  domains.
-- The SOG inspector validates stored members, metadata declarations, CRCs,
-  signed descriptors and complete RIFF member structure on the same open handle
-  used for the full-file fingerprint. It does not decode WebP pixels or Gaussian
-  attributes.
-- The SPZ inspector validates legacy v1-v3 single-member gzip streams,
-  including bounded trailing ILV extension records when declared, and current
-  v4 header/extension/TOC/Zstandard stream structure on that same already-open,
-  identity-checked handle. It verifies exact declared lengths and complete
-  compression ranges but does not decode Gaussian attributes or infer physical
-  units, venue frame, renderer support, appearance fidelity, accuracy,
-  registration, provenance or rights.
-- Gzip headers have a published 1 MiB inspection cap. Crossing it is reported
-  as a resource limit, not as malformed input. V4 Zstandard inspection is
-  feature-tested at use time: Node runtimes before `createZstdDecompress`
-  support can still import and use the V1/legacy paths, while a v4 file receives
-  the stable `SPZ_V4_ZSTD_RUNTIME_UNAVAILABLE` result.
-- The Gaussian PLY inspector accepts a deliberately bounded PLY 1.0
-  binary-little-endian, single-vertex-element profile. It derives byte offsets
-  from arbitrary declared property order, requires the classic float32
-  position/DC/opacity/scale/rotation set, accepts all-or-none normal
-  placeholders and SH degrees 0–4, and proves the exact fixed-width payload
-  equation on the same already-open handle. It does not decode attribute
-  values or infer units, frame, renderer support, visual fidelity, provenance,
-  accuracy, registration or rights. ASCII point clouds, mesh PLY, big-endian,
-  list/multi-element and PlayCanvas packed PLY receive explicit untargeted or
-  unsupported outcomes rather than false Gaussian facts.
-- The media inspector establishes bounded SOF0/SOF2 eight-bit Huffman JPEG,
-  static PNG or selected ISO-BMFF movie/video declarations. It does not turn
-  container validity into decoded pixels/samples, capture role, provenance,
-  calibration, visual fidelity, sequence or rights evidence.
-- The calibration/trajectory inspector establishes only complete UTF-8 CSV
-  record structure or bounded duplicate-key-safe JSON syntax/tree shape on the
-  same identity-checked handle. Exact decimal lexemes remain text. Field/key
-  semantics, clock domain, epoch/time units/cadence, frame/CRS/units,
-  transform/quaternion convention, calibration applicability,
-  synchronization, accuracy/drift, provenance, rights and registration remain
-  explicit unknowns.
-- V1-V5 artifact digests prove canonical local self-consistency only. Issuance is
-  internal to the high-level inspected-intake path, `authority` remains `none`,
-  and neither the digest nor schema validity authenticates who ran the
-  inspector or independently attests the source.
-- The current real authority-none SOG evidence chain is recorded in
-  `docs/reports/reception-room-sog-source-facts-v1-evidence-2026-07-16.json`.
-- The authority-none eight-file Reception SPZ V2 evidence chain is recorded in
-  `docs/reports/reception-room-spz-source-facts-v2-evidence-2026-07-17.json`.
-- The authority-none real Gaussian PLY V3 evidence chain is recorded in
-  `docs/reports/reception-room-gaussian-ply-source-facts-v3-evidence-2026-07-17.json`.
-- The authority-none real JPEG/PNG V4 evidence chains are recorded in
-  `docs/reports/reception-room-image-video-container-source-facts-v4-evidence-2026-07-17.json`.
-- The authority-none real trajectory-document V5 evidence chains are recorded
-  in
-  `docs/reports/calibration-trajectory-source-facts-v5-evidence-2026-07-17.json`.
-
-The next bounded local profile should cover ordinary non-Gaussian point
-geometry without widening V1-V5, beginning with PLY and adding LAS/LAZ or XYZ
-only where real local inputs and explicit limits support them. Property/header
-structure must stay separate from units, frame/CRS, accuracy, provenance,
-rights and authority.
-
-This ordinary local path does not depend on the optional release workflow
-below. No cybersecurity, credential, cloud, deployment or publication work is
-required to continue the super-app source-understanding slices.
-
-## Optional runtime release boundary
-
-For an already prepared and independently reviewed Twin bundle, the Foundry
-also implements D-014's artifact-factory separation, D-019's detached
-DSSE/in-toto posture, and D-024's transform and Scene Authority evidence
-requirement without claiming that T-091 or full VSIR is complete.
+## Verified local contract graph
 
 ```mermaid
 flowchart LR
-  A["Read-only Twin bundle"] --> B["Deterministic local QA"]
-  B --> C["Private digest-addressed R2 candidate"]
-  C --> D["Independent server readback + QA"]
-  D --> E["Append-only human public review"]
-  E --> F["External KMS signs exact DSSE PAE bytes"]
-  F --> G["Trusted-key verification + private envelope receipt"]
-  G --> H["Immutable public R2 publication + readback"]
-  H --> I["CAS production channel pointer"]
-  I --> J["Browser resolves pointer and hashes manifest bytes"]
-  I --> K["Audited one-click rollback"]
+  A["CLI-selected file or folder"] --> B["Universal Intake Receipt"]
+  B --> C["Versioned Source Facts"]
+  B --> D["Authority-none admission draft"]
+  D --> E["Optional verified local stage"]
+  D --> F["Multi-root metadata composition"]
+  F --> G["Adapter capability assessment"]
+  G --> H["Room Reality Package local candidate"]
+  H --> I["Local metadata and contract review draft"]
+  E --> J["Narrow permit-gated GLB preview core"]
 ```
 
-## Trust boundaries
+The arrows are contract relationships, not an automatic workflow. No current
+browser accepts arbitrary capture paths or capture-media drag/drop. The local
+app receives one source path from the launching process and cannot switch that
+path from the browser.
 
-- The local CLI can prepare, upload, and verify only private candidates. It has
-  no publish, promote, rollback, delete, list, bucket-policy, or private-key
-  capability.
-- The API accepts a candidate prefix, not caller-asserted manifest/QA status.
-  It reads and reconstructs the candidate before persisting evidence.
-- Release, QA, review, attestation, publication, and channel-event records are
-  append-only at both application and database layers.
-- The production channel row is the sole mutable record. Revision and expected
-  active-release compare-and-swap protect it from lost updates.
-- Public approval requires exact visual-object hashes plus TransformArtifact
-  and Scene Authority Map digest references.
-- DSSE verification checks the signature over exact PAE/payload bytes before
-  trusting or parsing the in-toto statement. The API stores public keys only.
-- Public objects use a release-digest prefix, create-if-absent writes,
-  immutable caching, and byte readback.
-- The public descriptor is `no-store`; runtime assets are immutable. The
-  browser verifies raw manifest bytes before schema parsing or asset loading.
+### Implemented surfaces
 
-## Discoverable surfaces
+| Surface                       | Verified boundary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Local guided app              | Reads the one source selected at process launch, shows the V5 receipt/facts/review/plan-preview flow, and listens only on loopback. Its plan is explanatory and starts no reconstruction worker or provider job.                                                                                                                                                                                                                                                                                 |
+| Source Facts V6               | `inspect-source-facts` retains the exact V5 artifact and full self-digested receipt identity set, then adds bounded ordinary point-cloud PLY header and exact-payload-extent facts. It does not decode coordinates or establish units, frame, accuracy, rights, authority, or movable-object classification.                                                                                                                                                                                     |
+| Draft admission and staging   | Admission is all-path, digest-bound, authority `none`, and non-executable. Staging rehashes and copies admitted bytes to a separate local stage, then verifies the stage.                                                                                                                                                                                                                                                                                                                        |
+| Multi-root capture bundle     | Combines two or more complete admission results by deterministic namespace remapping. It embeds each original admission, preserves the strictest legal state, rejects duplicate content mounted from separate roots, and grants no new capability. It performs no source reads or registration/fusion.                                                                                                                                                                                           |
+| Adapter assessment            | Purely compares one exact manifest, one explicit host-capability inventory, and repository implementation truth. It distinguishes detection, structural inspection, exact-asset compatibility, worker, dependency, vendor-export, rights, and activation blockers. It does not inspect bytes, discover software, or launch tools.                                                                                                                                                                |
+| Bounded E57 geometry seam     | A deterministic authority-none crop core plus local pye57 bridge is exercised against a genuine tiny ASTM E57 fixture. Resume checkpoints are source-replayed, callback values are detached, resource limits and child deadlines are fixed, poses are explicit and normalized, and image bytes may be hashed but are never decoded or extracted. The 256 MiB/1,000,000-point/64-scan cap makes the recorded Grand Hall E57 explicitly incompatible.                                              |
+| Metric-registration proposal  | A deterministic library contract fits a proper source-to-target 3D similarity from exact root/frame/unit/digest-bound correspondences with fixed fit and held-out partitions, bounded to 4,096 correspondences. It records residuals and conditioning and self-verifies. Independent adversarial review returned GO for this bounded proposal contract only. Source overlap remains `not_computed`, no reviewed TransformArtifact is created, every placement/measurement/export/runtime authority is `none`, and no operator CLI/UI exists.                         |
+| Room Reality Package assembly | Validates an explicit package draft and caller-supplied reference catalog. A structurally resolved result is still `local_unverified_candidate`, authority `none`, with unauthenticated catalog, unverified exact member identities, unverified movable-object classification, blocked release eligibility, and every signing/publication/export/registration/activation capability disabled.                                                                                                    |
+| Local Room Reality review     | The candidate-metadata path in `/room-review` accepts candidate/evidence JSON, validates strict transform, Scene Authority, and QA bodies as unauthenticated inputs, and builds a digest-bound review draft for source comparison, alignment, scale, crop, completeness, privacy, and movable objects. That path reads no real media, decodes no geometry, applies no correction, and cannot approve or release a candidate.                                                                                 |
+| Browser-local E57 crop review | `/room-review` also opens generated `FoundryE57GeometryCropV0` JSON locally, capped at 12 MiB and 50,000 points per artifact, and can overlay two distinct compatible artifacts in bounded Canvas memory. It requires explicit decisions for all seven review dimensions. Raw E57 and source images are not read and the artifacts are not uploaded. Authority remains `none`; execution, correction, TransformArtifact/Scene Authority creation, QA, export, and activation are not authorized. Browser QA used generated test crops only (100,000 overlaid points): mobile averaged 55.1 ms, max 85.7 ms; desktop averaged 58.45 ms, max 69.8 ms. This P2 path is not 60 fps. |
+| GLB format previews           | The local app retains its memory-only, signed-permit GLB format preview. Separately, the Foundry package exports a durable Linux-only resumable preview core with host-pinned rights/lease decisions, authenticated records, a kernel-serialized fenced writer lease, crash-safe publication, checkpoint resume, fresh verification, and create-only review output. Non-Linux hosts fail before touching roots. It is test-reached only, authority `none`, and production execution is disabled. |
+| Day/Week runtime cache        | Unit-verified browser code authorizes independent immutable snapshot bindings while reusing one decode for the same exact captured-room visual members and transform across Day/Week furniture changes. Package metadata and aliases cannot justify a room crossfade. This is renderer/cache infrastructure only; authenticated historical runtime delivery still fails closed.                                                                                                                  |
 
-- Platform-admin navigation: **Dashboard → Runtime Foundry**.
-- Capture pipeline handoff: **Capture Factory → Open Runtime Foundry**.
-- Legacy room diagnostics: visible link inside Runtime Foundry.
-- Public runtime: `/venues/:venueSlug/twin`.
-- Operator CLI: `pnpm reconstruction:foundry --help`.
+## Source Facts version boundary
 
-## Deliberate deployment boundary
+- V1 established bounded E57, binary GLB, streaming OBJ, and stored-ZIP SOG
+  structure.
+- V2 added SPZ structure.
+- V3 added the bounded classic Gaussian PLY profile.
+- V4 added bounded JPEG, PNG, and selected ISO-BMFF declarations.
+- V5 added bounded CSV/JSON calibration and trajectory document structure.
+- V6 preserves V5 byte meaning and adds ordinary point-cloud PLY structural
+  facts. Recognized mesh, classic Gaussian, and PlayCanvas packed PLY profiles
+  are excluded from the ordinary-point result; other Gaussian variants require
+  review. V6 uses header bytes retained during the full-file hash and verifies
+  the complete intake-receipt/V5/V6 identity chain before return.
 
-The repository contains migration 0049 and production adapters, but repository
-work alone does not apply that migration, provision R2/KMS, upload customer
-bytes, publish a release, move the production pointer, merge the branch, or
-deploy services. Those remain explicit owner-controlled operations documented
-in `docs/operations/reconstruction-foundry-runbook.md`.
+All Source Facts artifacts remain local self-consistency evidence with
+`authority: none`. Successful structure inspection is not a claim of useful
+decoded values, physical accuracy, provenance, rights, registration, visual
+quality, or processing readiness. XGRIDS XBIN remains an official-export/SDK
+stop; no opaque payload decoder is implemented.
 
+## Execution and custody boundary
+
+General local reconstruction compute does not exist yet. The repository has
+worker cores and plan-only contracts, but no production-reachable executor
+that binds a verified stage, approved purpose-specific rights, worker profile,
+durable attempt/fence, output custody, and final authority review.
+
+The durable GLB preview is the one narrow real-compute exception. It normalizes
+only the reviewed static-geometry GLB subset and preserves decoded semantics.
+Its local HMAC-authenticated records are mutation evidence, not independent
+identity or release authority. Its reviewed built-in persistence backend is
+Linux-only and uses pinned private roots, no-follow directory handles, kernel
+lease serialization, monotonic fences, and crash-safe no-overwrite
+publication. Windows and macOS fail closed before touching roots; a separate
+reviewed backend would be required there. Output remains
+`private_quarantine_review_only`.
+
+## Release and browser boundary
+
+The repository retains candidate preparation/upload/verification services,
+keyless signing-request helpers, release-domain contracts, and migration 0049.
+Their presence does not prove an operational production release system.
+
+This architecture does **not** claim that any of the following currently
+exists as a verified end-to-end path:
+
+- a discoverable **Dashboard → Runtime Foundry** operator UI;
+- a Capture Factory handoff into that UI;
+- an applied production Foundry migration or provisioned R2/KMS environment;
+- public publication, channel promotion, or rollback performed for this work;
+- browser resolution of the active release followed by raw-manifest hash
+  verification;
+- a canonical Room Reality candidate registered as a production
+  `RuntimePackage`;
+- authenticated historical-runtime activation or private member delivery.
+
+T-541 remains the required independent activation boundary. Until it exists,
+historical runtime availability and member delivery correctly remain
+unavailable/fail-closed.
+
+## Current Grand Hall evidence
+
+The deterministic preflight in
+`docs/operations/grand-hall-universal-foundry-preflight-2026-08-09.md` used the
+existing frozen manifest plus an explicit host inventory. It did not read,
+copy, decode, transform, upload, train on, or freshly hash real capture media.
+It found 310 assets, zero deterministic local processing workers for those
+exact assets, zero production-ready assets, 309 requiring legal review, and
+one legally blocked asset. Structural inspection coverage must not be
+misreported as reconstruction support. The later browser crop review used
+generated test artifacts, not real Grand Hall capture media.
+
+## Remaining gates
+
+1. Record purpose-specific processing rights for one exact Grand Hall bundle.
+2. Obtain a reviewed official XGRIDS/PortalCam export or SDK bridge; do not
+   decode XBIN speculatively.
+3. Add a durable production execution attempt/fence and select a reviewed
+   deployment backend. The current durable preview backend is Linux-only;
+   Windows and macOS remain unavailable.
+4. Replace the narrow 256 MiB/1,000,000-point/64-scan, scan-re-reading pye57 crop
+   seam with a Grand Hall-scale resumable streaming E57 worker. Obtain real,
+   independently reviewed correspondences or controls for compatible derived
+   roots, run the bounded registration proposal, review held-out residuals and
+   overlap, then implement fusion. Review scale, axes, origin, crop,
+   completeness, and privacy against the real evidence.
+5. Produce reviewed movable-object masks, TransformArtifact, QA evidence, and
+   Scene Authority Map for the exact derived members.
+6. Bridge the reviewed candidate into the existing canonical runtime contract
+   only through T-541's independently authenticated activation.
+7. Run desktop/mobile real-browser proof and the 500-object performance path
+   with private, rights-cleared bytes.
+
+No real Grand Hall Room Reality Package or two-package room crossfade is
+claimed until those gates are complete.

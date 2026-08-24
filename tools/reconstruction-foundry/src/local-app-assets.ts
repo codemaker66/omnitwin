@@ -15,6 +15,7 @@ export const LOCAL_FOUNDRY_APP_HTML = `<!doctype html>
           <span class="brand-mark" aria-hidden="true">RF</span>
           <span>Reconstruction Foundry</span>
         </a>
+        <a class="room-review-link" href="/room-review">Review a Room Reality Package</a>
         <div class="trust-line" aria-label="This app uses loopback only and reads the source without changing it">
           <span class="trust-dot" aria-hidden="true"></span>
           Loopback-only app · read-only source
@@ -411,6 +412,7 @@ body::before {
 .masthead { align-items: center; display: flex; gap: 24px; justify-content: space-between; }
 .brand { align-items: center; color: var(--text); display: inline-flex; font-size: .84rem; font-weight: 800; gap: 10px; letter-spacing: .01em; text-decoration: none; }
 .brand-mark { align-items: center; background: var(--mint); border-radius: 8px; color: #0b2221; display: inline-flex; font-family: Georgia, serif; font-size: .76rem; height: 31px; justify-content: center; width: 31px; }
+.room-review-link { border: 1px solid rgba(126, 224, 209, .3); border-radius: 999px; color: var(--text); font-size: .72rem; font-weight: 850; margin-left: auto; min-height: 40px; padding: 11px 14px; text-decoration: none; }
 .trust-line { align-items: center; border: 1px solid rgba(126, 224, 209, .3); border-radius: 999px; color: var(--mint); display: flex; font-size: .72rem; font-weight: 800; gap: 8px; padding: 9px 12px; }
 .trust-dot { background: var(--mint); border-radius: 50%; box-shadow: 0 0 0 4px rgba(126, 224, 209, .12); height: 7px; width: 7px; }
 
@@ -757,8 +759,9 @@ noscript { background: #6f2f24; bottom: 0; color: white; left: 0; padding: 14px;
 
 @media (max-width: 580px) {
   .shell { padding: 17px; }
-  .masthead { align-items: flex-start; }
+  .masthead { align-items: flex-start; flex-wrap: wrap; }
   .brand > span:last-child { display: none; }
+  .room-review-link { margin-left: 0; order: 3; text-align: center; width: 100%; }
   .intro { margin-top: 52px; }
   .intro h1 { font-size: clamp(2.35rem, 13vw, 3.6rem); }
   .workbench { border-radius: 16px; padding: 18px; }

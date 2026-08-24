@@ -1,4 +1,5 @@
 import type { FileHandle } from "node:fs/promises";
+import { z } from "zod";
 import {
   FOUNDRY_GAUSSIAN_PLY_COMMENT_MAX_COUNT,
   FOUNDRY_GAUSSIAN_PLY_ELEMENT_MAX_COUNT,
@@ -170,8 +171,7 @@ export interface FoundryPlyPointCloudPropertyFacts {
 export interface FoundryPlyPointCloudSourceFacts {
   readonly format: "ply_binary_little_endian";
   readonly profile: "ordinary_point_geometry_fixed_width_scalar";
-  readonly inspectionCoverage:
-    "complete_header_and_exact_fixed_width_payload_layout";
+  readonly inspectionCoverage: "complete_header_and_exact_fixed_width_payload_layout";
   readonly plyVersion: "1.0";
   readonly header: {
     readonly bytes: number;
@@ -224,17 +224,18 @@ export interface FoundryPlyPointCloudSourceFactsSourceBinding {
 }
 
 export type FoundryPlyPointCloudSourceFactsOutcome =
-  FoundryPlyPointCloudSourceFactsSourceBinding & (
-    | {
-        readonly state: "established";
-        readonly facts: FoundryPlyPointCloudSourceFacts;
-      }
-    | {
-        readonly state: "facts_not_established";
-        readonly category: FoundryPlyPointCloudSourceFactsFailureCategory;
-        readonly code: FoundryPlyPointCloudSourceFactsFailureCode;
-      }
-  );
+  FoundryPlyPointCloudSourceFactsSourceBinding &
+    (
+      | {
+          readonly state: "established";
+          readonly facts: FoundryPlyPointCloudSourceFacts;
+        }
+      | {
+          readonly state: "facts_not_established";
+          readonly category: FoundryPlyPointCloudSourceFactsFailureCategory;
+          readonly code: FoundryPlyPointCloudSourceFactsFailureCode;
+        }
+    );
 
 interface ScalarTypeFacts {
   readonly canonicalType: FoundryPlyPointCloudScalarCanonicalType;
@@ -270,14 +271,26 @@ const DECIMAL_INTEGER = /^[0-9]+$/u;
 const HEADER_READ_CHUNK_BYTES = 64 * 1024;
 const PLAYCANVAS_PACKED_CHUNK_SIZE = 256;
 const PLAYCANVAS_PACKED_REQUIRED_CHUNK_PROPERTIES = Object.freeze([
-  "min_x", "min_y", "min_z",
-  "max_x", "max_y", "max_z",
-  "min_scale_x", "min_scale_y", "min_scale_z",
-  "max_scale_x", "max_scale_y", "max_scale_z",
+  "min_x",
+  "min_y",
+  "min_z",
+  "max_x",
+  "max_y",
+  "max_z",
+  "min_scale_x",
+  "min_scale_y",
+  "min_scale_z",
+  "max_scale_x",
+  "max_scale_y",
+  "max_scale_z",
 ] as const);
 const PLAYCANVAS_PACKED_COLOR_CHUNK_PROPERTIES = Object.freeze([
-  "min_r", "min_g", "min_b",
-  "max_r", "max_g", "max_b",
+  "min_r",
+  "min_g",
+  "min_b",
+  "max_r",
+  "max_g",
+  "max_b",
 ] as const);
 const PLAYCANVAS_PACKED_VERTEX_PROPERTIES = Object.freeze([
   "packed_position",
@@ -286,11 +299,20 @@ const PLAYCANVAS_PACKED_VERTEX_PROPERTIES = Object.freeze([
   "packed_color",
 ] as const);
 const CLASSIC_GAUSSIAN_PROPERTIES = Object.freeze([
-  "x", "y", "z",
-  "f_dc_0", "f_dc_1", "f_dc_2",
+  "x",
+  "y",
+  "z",
+  "f_dc_0",
+  "f_dc_1",
+  "f_dc_2",
   "opacity",
-  "scale_0", "scale_1", "scale_2",
-  "rot_0", "rot_1", "rot_2", "rot_3",
+  "scale_0",
+  "scale_1",
+  "scale_2",
+  "rot_0",
+  "rot_1",
+  "rot_2",
+  "rot_3",
 ] as const);
 
 class PointPlyInspectionFailure extends Error {
@@ -304,7 +326,9 @@ class PointPlyInspectionFailure extends Error {
 }
 
 function fail(category: FailureCategory, code: FailureCode): never {
-  if (FOUNDRY_POINT_PLY_SOURCE_FACTS_FAILURE_CATEGORY_BY_CODE[code] !== category) {
+  if (
+    FOUNDRY_POINT_PLY_SOURCE_FACTS_FAILURE_CATEGORY_BY_CODE[code] !== category
+  ) {
     throw new PointPlyInspectionFailure(
       "parse_failure",
       "POINT_PLY_INSPECTION_FAILED",
@@ -323,11 +347,13 @@ function sameFileIdentity(
   left: Awaited<ReturnType<FileHandle["stat"]>>,
   right: Awaited<ReturnType<FileHandle["stat"]>>,
 ): boolean {
-  return left.dev === right.dev &&
+  return (
+    left.dev === right.dev &&
     left.ino === right.ino &&
     left.size === right.size &&
     left.mtimeMs === right.mtimeMs &&
-    left.ctimeMs === right.ctimeMs;
+    left.ctimeMs === right.ctimeMs
+  );
 }
 
 async function statHandle(
@@ -469,15 +495,15 @@ interface ParsedPointHeader {
   readonly objInfoCount: number;
 }
 
-function scalarType(
-  type: string,
-): ScalarTypeFacts & {
+function scalarType(type: string): ScalarTypeFacts & {
   readonly declaredType: FoundryPlyPointCloudScalarDeclaredType;
 } {
   const declaredType = type as FoundryPlyPointCloudScalarDeclaredType;
-  const facts = (SCALAR_TYPES as Partial<
-    Record<FoundryPlyPointCloudScalarDeclaredType, ScalarTypeFacts>
-  >)[declaredType];
+  const facts = (
+    SCALAR_TYPES as Partial<
+      Record<FoundryPlyPointCloudScalarDeclaredType, ScalarTypeFacts>
+    >
+  )[declaredType];
   if (facts === undefined) {
     fail("unsupported_variant", "POINT_PLY_SCALAR_TYPE_UNSUPPORTED");
   }
@@ -518,10 +544,7 @@ function parseFormat(tokens: readonly string[]): void {
     fail("unsupported_variant", "POINT_PLY_ASCII_ENCODING_UNSUPPORTED");
   }
   if (encoding === "binary_big_endian") {
-    fail(
-      "unsupported_variant",
-      "POINT_PLY_BINARY_BIG_ENDIAN_UNSUPPORTED",
-    );
+    fail("unsupported_variant", "POINT_PLY_BINARY_BIG_ENDIAN_UNSUPPORTED");
   }
   if (encoding === "binary_little_endian_compressed") {
     fail("unsupported_variant", "POINT_PLY_COMPRESSED_LAYOUT_UNSUPPORTED");
@@ -591,9 +614,7 @@ function parseProperty(
   };
 }
 
-function parseHeaderDeclarations(
-  header: CapturedHeader,
-): {
+function parseHeaderDeclarations(header: CapturedHeader): {
   readonly elements: ParsedElement[];
   readonly commentCount: number;
   readonly objInfoCount: number;
@@ -668,7 +689,7 @@ function isPlayCanvasPackedLayout(elements: readonly ParsedElement[]): boolean {
   if (chunk === undefined || vertex === undefined) return false;
   const chunkProperties =
     chunk.properties.length ===
-      PLAYCANVAS_PACKED_REQUIRED_CHUNK_PROPERTIES.length
+    PLAYCANVAS_PACKED_REQUIRED_CHUNK_PROPERTIES.length
       ? PLAYCANVAS_PACKED_REQUIRED_CHUNK_PROPERTIES
       : [
           ...PLAYCANVAS_PACKED_REQUIRED_CHUNK_PROPERTIES,
@@ -718,10 +739,7 @@ function parsePointHeader(header: CapturedHeader): ParsedPointHeader {
   parseFormat(formatTokens);
   const parsed = parseHeaderDeclarations(header);
   if (isPlayCanvasPackedLayout(parsed.elements)) {
-    fail(
-      "unsupported_variant",
-      "POINT_PLY_PACKED_GAUSSIAN_PROFILE_EXCLUDED",
-    );
+    fail("unsupported_variant", "POINT_PLY_PACKED_GAUSSIAN_PROFILE_EXCLUDED");
   }
   const vertices = parsed.elements.filter(
     (element) => element.name === "vertex",
@@ -750,10 +768,7 @@ function parsePointHeader(header: CapturedHeader): ParsedPointHeader {
     fail("unsupported_variant", "POINT_PLY_GAUSSIAN_PROFILE_EXCLUDED");
   }
   if (!["x", "y", "z"].every((name) => names.has(name))) {
-    fail(
-      "unsupported_variant",
-      "POINT_PLY_REQUIRED_POSITION_PROPERTY_MISSING",
-    );
+    fail("unsupported_variant", "POINT_PLY_REQUIRED_POSITION_PROPERTY_MISSING");
   }
   return {
     vertex: { ...vertex, properties: scalarProperties },
@@ -762,9 +777,7 @@ function parsePointHeader(header: CapturedHeader): ParsedPointHeader {
   };
 }
 
-function propertyFacts(
-  properties: readonly ParsedScalarProperty[],
-): {
+function propertyFacts(properties: readonly ParsedScalarProperty[]): {
   readonly properties: FoundryPlyPointCloudPropertyFacts[];
   readonly recordStrideBytes: number;
 } {
@@ -797,10 +810,7 @@ function requiredCoordinateProperties(
   const y = properties.find((property) => property.name === "y");
   const z = properties.find((property) => property.name === "z");
   if (x === undefined || y === undefined || z === undefined) {
-    fail(
-      "unsupported_variant",
-      "POINT_PLY_REQUIRED_POSITION_PROPERTY_MISSING",
-    );
+    fail("unsupported_variant", "POINT_PLY_REQUIRED_POSITION_PROPERTY_MISSING");
   }
   return {
     names: ["x", "y", "z"],
@@ -828,17 +838,14 @@ function inspectLayout(
   if (BigInt(header.bytes) + payloadBig !== BigInt(fileSize)) {
     fail("parse_failure", "POINT_PLY_PAYLOAD_LENGTH_MISMATCH");
   }
-  const coordinateProperties = requiredCoordinateProperties(
-    layout.properties,
-  );
+  const coordinateProperties = requiredCoordinateProperties(layout.properties);
   const additionalNames = layout.properties
     .filter((property) => !["x", "y", "z"].includes(property.name))
     .map((property) => property.name);
   return {
     format: "ply_binary_little_endian",
     profile: "ordinary_point_geometry_fixed_width_scalar",
-    inspectionCoverage:
-      "complete_header_and_exact_fixed_width_payload_layout",
+    inspectionCoverage: "complete_header_and_exact_fixed_width_payload_layout",
     plyVersion: "1.0",
     header: {
       bytes: header.bytes,
@@ -877,6 +884,441 @@ function inspectLayout(
   };
 }
 
+const PointPlyPropertyFactsSchema = z
+  .object({
+    ordinal: z
+      .number()
+      .int()
+      .min(0)
+      .max(FOUNDRY_POINT_PLY_PROPERTY_MAX_COUNT - 1),
+    name: z
+      .string()
+      .regex(PLY_NAME)
+      .max(FOUNDRY_POINT_PLY_HEADER_LINE_MAX_BYTES),
+    declaredType: z.enum([
+      "char",
+      "int8",
+      "uchar",
+      "uint8",
+      "short",
+      "int16",
+      "ushort",
+      "uint16",
+      "int",
+      "int32",
+      "uint",
+      "uint32",
+      "float",
+      "float32",
+      "double",
+      "float64",
+    ]),
+    canonicalType: z.enum([
+      "int8",
+      "uint8",
+      "int16",
+      "uint16",
+      "int32",
+      "uint32",
+      "float32",
+      "float64",
+    ]),
+    byteOffset: z
+      .number()
+      .int()
+      .min(0)
+      .max(FOUNDRY_POINT_PLY_VERTEX_STRIDE_MAX_BYTES),
+    byteWidth: z.union([
+      z.literal(1),
+      z.literal(2),
+      z.literal(4),
+      z.literal(8),
+    ]),
+  })
+  .strict();
+
+export const FoundryPlyPointCloudSourceFactsSchema = z
+  .object({
+    format: z.literal("ply_binary_little_endian"),
+    profile: z.literal("ordinary_point_geometry_fixed_width_scalar"),
+    inspectionCoverage: z.literal(
+      "complete_header_and_exact_fixed_width_payload_layout",
+    ),
+    plyVersion: z.literal("1.0"),
+    header: z
+      .object({
+        bytes: z
+          .number()
+          .int()
+          .positive()
+          .max(FOUNDRY_POINT_PLY_HEADER_MAX_BYTES),
+        lineEndings: z.enum(["lf", "crlf", "mixed"]),
+        comments: z
+          .object({
+            count: z
+              .number()
+              .int()
+              .min(0)
+              .max(FOUNDRY_POINT_PLY_COMMENT_MAX_COUNT),
+            retainedVerbatim: z.literal(false),
+            authoritative: z.literal(false),
+          })
+          .strict(),
+        objInfo: z
+          .object({
+            count: z
+              .number()
+              .int()
+              .min(0)
+              .max(FOUNDRY_POINT_PLY_COMMENT_MAX_COUNT),
+            retainedVerbatim: z.literal(false),
+            authoritative: z.literal(false),
+          })
+          .strict(),
+      })
+      .strict(),
+    vertices: z
+      .object({
+        count: z
+          .number()
+          .int()
+          .positive()
+          .max(FOUNDRY_POINT_PLY_VERTEX_MAX_COUNT),
+        recordStrideBytes: z
+          .number()
+          .int()
+          .positive()
+          .max(FOUNDRY_POINT_PLY_VERTEX_STRIDE_MAX_BYTES),
+        payloadBytes: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .max(FOUNDRY_POINT_PLY_SOURCE_MAX_BYTES),
+        properties: z
+          .array(PointPlyPropertyFactsSchema)
+          .min(3)
+          .max(FOUNDRY_POINT_PLY_PROPERTY_MAX_COUNT),
+        requiredCoordinateProperties: z
+          .object({
+            names: z.tuple([z.literal("x"), z.literal("y"), z.literal("z")]),
+            ordinals: z.tuple([
+              z.number().int().nonnegative(),
+              z.number().int().nonnegative(),
+              z.number().int().nonnegative(),
+            ]),
+            byteOffsets: z.tuple([
+              z.number().int().nonnegative(),
+              z.number().int().nonnegative(),
+              z.number().int().nonnegative(),
+            ]),
+            canonicalTypes: z.tuple([
+              z.enum([
+                "int8",
+                "uint8",
+                "int16",
+                "uint16",
+                "int32",
+                "uint32",
+                "float32",
+                "float64",
+              ]),
+              z.enum([
+                "int8",
+                "uint8",
+                "int16",
+                "uint16",
+                "int32",
+                "uint32",
+                "float32",
+                "float64",
+              ]),
+              z.enum([
+                "int8",
+                "uint8",
+                "int16",
+                "uint16",
+                "int32",
+                "uint32",
+                "float32",
+                "float64",
+              ]),
+            ]),
+          })
+          .strict(),
+        additionalProperties: z
+          .object({
+            count: z
+              .number()
+              .int()
+              .nonnegative()
+              .max(FOUNDRY_POINT_PLY_PROPERTY_MAX_COUNT),
+            names: z
+              .array(
+                z
+                  .string()
+                  .regex(PLY_NAME)
+                  .max(FOUNDRY_POINT_PLY_HEADER_LINE_MAX_BYTES),
+              )
+              .max(FOUNDRY_POINT_PLY_PROPERTY_MAX_COUNT),
+          })
+          .strict(),
+      })
+      .strict(),
+    container: z
+      .object({
+        sourceSizeBytes: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .max(FOUNDRY_POINT_PLY_SOURCE_MAX_BYTES),
+        headerBytes: z
+          .number()
+          .int()
+          .positive()
+          .max(FOUNDRY_POINT_PLY_HEADER_MAX_BYTES),
+        payloadOffsetBytes: z
+          .number()
+          .int()
+          .positive()
+          .max(FOUNDRY_POINT_PLY_HEADER_MAX_BYTES),
+        payloadBytes: z
+          .number()
+          .int()
+          .safe()
+          .positive()
+          .max(FOUNDRY_POINT_PLY_SOURCE_MAX_BYTES),
+        exactFileLengthVerified: z.literal(true),
+        trailingBytes: z.literal(0),
+      })
+      .strict(),
+    limitations: z.tuple([
+      z.literal(FOUNDRY_POINT_PLY_SOURCE_FACTS_LIMITATIONS[0]),
+      z.literal(FOUNDRY_POINT_PLY_SOURCE_FACTS_LIMITATIONS[1]),
+      z.literal(FOUNDRY_POINT_PLY_SOURCE_FACTS_LIMITATIONS[2]),
+      z.literal(FOUNDRY_POINT_PLY_SOURCE_FACTS_LIMITATIONS[3]),
+      z.literal(FOUNDRY_POINT_PLY_SOURCE_FACTS_LIMITATIONS[4]),
+    ]),
+  })
+  .strict()
+  .superRefine((facts, ctx) => {
+    const { vertices, container, header } = facts;
+    if (
+      header.comments.count + header.objInfo.count >
+      FOUNDRY_POINT_PLY_COMMENT_MAX_COUNT
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["header"],
+        message:
+          "Point PLY comment and obj_info count exceeds the combined limit",
+      });
+    }
+    if (
+      container.headerBytes !== header.bytes ||
+      container.payloadOffsetBytes !== header.bytes ||
+      container.payloadBytes !== vertices.payloadBytes ||
+      container.sourceSizeBytes !==
+        container.headerBytes + container.payloadBytes ||
+      vertices.payloadBytes !== vertices.count * vertices.recordStrideBytes
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["container"],
+        message: "Point PLY container byte facts are inconsistent",
+      });
+    }
+    let expectedOffset = 0;
+    const names = new Set<string>();
+    for (const [ordinal, property] of vertices.properties.entries()) {
+      const expectedScalar = SCALAR_TYPES[property.declaredType];
+      if (
+        property.ordinal !== ordinal ||
+        property.byteOffset !== expectedOffset ||
+        property.canonicalType !== expectedScalar.canonicalType ||
+        property.byteWidth !== expectedScalar.byteWidth
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["vertices", "properties", ordinal],
+          message: "Point PLY scalar property layout is inconsistent",
+        });
+      }
+      if (names.has(property.name)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["vertices", "properties", ordinal, "name"],
+          message: "Point PLY property names must be unique",
+        });
+      }
+      names.add(property.name);
+      expectedOffset += property.byteWidth;
+    }
+    if (expectedOffset !== vertices.recordStrideBytes) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vertices", "recordStrideBytes"],
+        message: "Point PLY property widths do not match the vertex stride",
+      });
+    }
+    const coordinateProperties = (["x", "y", "z"] as const).map((name) =>
+      vertices.properties.find((property) => property.name === name),
+    );
+    if (coordinateProperties.some((property) => property === undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vertices", "requiredCoordinateProperties"],
+        message: "Point PLY coordinate properties must reference x, y, and z",
+      });
+    } else {
+      const coordinates = coordinateProperties.filter(
+        (property): property is z.infer<typeof PointPlyPropertyFactsSchema> =>
+          property !== undefined,
+      );
+      if (
+        JSON.stringify(vertices.requiredCoordinateProperties.ordinals) !==
+          JSON.stringify(coordinates.map((property) => property.ordinal)) ||
+        JSON.stringify(vertices.requiredCoordinateProperties.byteOffsets) !==
+          JSON.stringify(coordinates.map((property) => property.byteOffset)) ||
+        JSON.stringify(vertices.requiredCoordinateProperties.canonicalTypes) !==
+          JSON.stringify(coordinates.map((property) => property.canonicalType))
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["vertices", "requiredCoordinateProperties"],
+          message: "Point PLY coordinate property references are inconsistent",
+        });
+      }
+    }
+    const additionalNames = vertices.properties
+      .filter((property) => !["x", "y", "z"].includes(property.name))
+      .map((property) => property.name);
+    if (
+      vertices.additionalProperties.count !== additionalNames.length ||
+      JSON.stringify(vertices.additionalProperties.names) !==
+        JSON.stringify(additionalNames)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vertices", "additionalProperties"],
+        message: "Point PLY additional-property facts are inconsistent",
+      });
+    }
+  });
+
+const FoundryPlyPointCloudSourceBindingSchema = z
+  .object({
+    sourceSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    sourceSizeBytes: z.number().int().safe(),
+  })
+  .strict();
+
+export const FoundryPlyPointCloudSourceFactsOutcomeSchema = z.union([
+  FoundryPlyPointCloudSourceBindingSchema.extend({
+    state: z.literal("established"),
+    facts: FoundryPlyPointCloudSourceFactsSchema,
+  })
+    .strict()
+    .superRefine((outcome, ctx) => {
+      if (outcome.sourceSizeBytes !== outcome.facts.container.sourceSizeBytes) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["facts", "container", "sourceSizeBytes"],
+          message:
+            "Established point PLY facts must match the exact bound source size",
+        });
+      }
+    }),
+  FoundryPlyPointCloudSourceBindingSchema.extend({
+    state: z.literal("facts_not_established"),
+    category: z.enum([
+      "parse_failure",
+      "resource_limit",
+      "unsupported_variant",
+      "unsupported_container",
+      "cancelled",
+    ]),
+    code: z.enum(FOUNDRY_POINT_PLY_SOURCE_FACTS_FAILURE_CODES),
+  })
+    .strict()
+    .superRefine((outcome, ctx) => {
+      if (
+        FOUNDRY_POINT_PLY_SOURCE_FACTS_FAILURE_CATEGORY_BY_CODE[
+          outcome.code
+        ] !== outcome.category
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["category"],
+          message:
+            "Point PLY failure category must match its stable failure code",
+        });
+      }
+    }),
+]);
+
+/**
+ * Inspects the exact retained header prefix produced by the full-file hash
+ * stream. This avoids rereading mutable source bytes after digest finalization.
+ */
+export function inspectPlyPointCloudSourceFactsFromHashedHeader(
+  retainedHeaderInput: Uint8Array,
+  fileSize: number,
+  sourceSha256: string,
+  signal?: AbortSignal,
+): FoundryPlyPointCloudSourceFactsOutcome {
+  const binding: FoundryPlyPointCloudSourceFactsSourceBinding = {
+    sourceSha256,
+    sourceSizeBytes: fileSize,
+  };
+  try {
+    assertNotCancelled(signal);
+    if (!Number.isSafeInteger(fileSize) || fileSize <= 0) {
+      fail("resource_limit", "POINT_PLY_SOURCE_SIZE_INVALID");
+    }
+    if (fileSize > FOUNDRY_POINT_PLY_SOURCE_MAX_BYTES) {
+      fail("resource_limit", "POINT_PLY_SOURCE_SIZE_LIMIT_EXCEEDED");
+    }
+    const expectedBytes = Math.min(
+      fileSize,
+      FOUNDRY_POINT_PLY_HEADER_MAX_BYTES + 1,
+    );
+    if (retainedHeaderInput.byteLength !== expectedBytes) {
+      fail("parse_failure", "POINT_PLY_HANDLE_READ_FAILED");
+    }
+    const captured = Buffer.from(
+      retainedHeaderInput.buffer,
+      retainedHeaderInput.byteOffset,
+      retainedHeaderInput.byteLength,
+    );
+    const header = captureHeader(captured);
+    const parsed = parsePointHeader(header);
+    const facts = inspectLayout(header, parsed, fileSize);
+    assertNotCancelled(signal);
+    return FoundryPlyPointCloudSourceFactsOutcomeSchema.parse({
+      ...binding,
+      state: "established",
+      facts,
+    });
+  } catch (error: unknown) {
+    if (error instanceof PointPlyInspectionFailure) {
+      return FoundryPlyPointCloudSourceFactsOutcomeSchema.parse({
+        ...binding,
+        state: "facts_not_established",
+        category: error.category,
+        code: error.code,
+      });
+    }
+    return FoundryPlyPointCloudSourceFactsOutcomeSchema.parse({
+      ...binding,
+      state: "facts_not_established",
+      category: "parse_failure",
+      code: "POINT_PLY_INSPECTION_FAILED",
+    });
+  }
+}
+
 /**
  * Inspects one already-open, identity-bound ordinary PLY point source.
  * The profile reads only the bounded ASCII header and verifies the exact
@@ -908,29 +1350,33 @@ export async function inspectPlyPointCloudSourceFacts(
       fail("parse_failure", "POINT_PLY_SOURCE_SIZE_MISMATCH");
     }
     const captured = await readHeaderCapture(handle, fileSize, signal);
-    const header = captureHeader(captured);
-    const parsed = parsePointHeader(header);
-    const facts = inspectLayout(header, parsed, fileSize);
+    const outcome = inspectPlyPointCloudSourceFactsFromHashedHeader(
+      captured,
+      fileSize,
+      sourceSha256,
+      signal,
+    );
+    if (outcome.state === "facts_not_established") return outcome;
     assertNotCancelled(signal);
     const after = await statHandle(handle, signal);
     if (!sameFileIdentity(before, after) || after.size !== fileSize) {
       fail("parse_failure", "POINT_PLY_SOURCE_CHANGED");
     }
-    return { ...binding, state: "established", facts };
+    return outcome;
   } catch (error: unknown) {
     if (error instanceof PointPlyInspectionFailure) {
-      return {
+      return FoundryPlyPointCloudSourceFactsOutcomeSchema.parse({
         ...binding,
         state: "facts_not_established",
         category: error.category,
         code: error.code,
-      };
+      });
     }
-    return {
+    return FoundryPlyPointCloudSourceFactsOutcomeSchema.parse({
       ...binding,
       state: "facts_not_established",
       category: "parse_failure",
       code: "POINT_PLY_INSPECTION_FAILED",
-    };
+    });
   }
 }

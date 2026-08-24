@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "omnitwin.foundry.adapter-host-capability-inventory.v0",
+  "hostId": "grand-hall-local-foundry-20260809",
+  "observedAt": "2026-08-09T17:33:37.737Z",
+  "platform": "win32",
+  "dependencies": [
+    {
+      "id": "pye57_read_only_metadata_probe",
+      "status": "available",
+      "version": "0.4.19"
+    },
+    {
+      "id": "pye57_cartesian_geometry_reader",
+      "status": "available",
+      "version": "0.4.19"
+    },
+    {
+      "id": "gltf_transform_core",
+      "status": "available",
+      "version": "4.3.0"
+    },
+    {
+      "id": "gltf_validator",
+      "status": "available",
+      "version": "2.0.0-dev.3.10"
+    },
+    {
+      "id": "meshoptimizer",
+      "status": "available",
+      "version": "1.2.0"
+    }
+  ]
+}

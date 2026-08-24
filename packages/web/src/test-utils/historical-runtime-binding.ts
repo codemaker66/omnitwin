@@ -36,7 +36,11 @@ const DEFAULT_TRANSFORM: TransformArtifactV0 = {
 export interface HistoricalRuntimeBindingFixtureOptions {
   readonly bindingId?: string;
   readonly canonicalSnapshotId?: string;
+  readonly venueId?: string;
+  readonly spaceId?: string;
   readonly runtimePackageId?: string;
+  readonly runtimePackageRevision?: number;
+  readonly runtimePackageContentDigest?: string;
   readonly assetVersionId?: string;
   readonly sha256?: string;
   readonly sizeBytes?: number;
@@ -71,7 +75,11 @@ export function historicalRuntimeBindingFixture(
       evidenceStatus: "human_reviewed" as const,
     };
   });
-  const runtimePackageContentDigest = "b".repeat(64);
+  const runtimePackageContentDigest = options.runtimePackageContentDigest ?? (
+    options.runtimePackageId === undefined
+      ? "b".repeat(64)
+      : phaseLayoutRuntimeCompositionDigest({ fixtureRuntimePackageId: runtimePackageId })
+  );
   const compositionDigest = phaseLayoutRuntimeCompositionDigest({
     runtimePackageId,
     runtimePackageContentDigest,
@@ -86,15 +94,15 @@ export function historicalRuntimeBindingFixture(
     phaseLayoutSnapshotId: bindingId,
     canonicalSnapshotId: options.canonicalSnapshotId ?? "22222222-2222-4222-8222-222222222222",
     snapshotHash: "c".repeat(64),
-    venueId: "33333333-3333-4333-8333-333333333333",
+    venueId: options.venueId ?? "33333333-3333-4333-8333-333333333333",
     venueSlug: "trades-hall",
-    spaceId: "44444444-4444-4444-8444-444444444444",
+    spaceId: options.spaceId ?? "44444444-4444-4444-8444-444444444444",
     spaceSlug: "grand-hall",
     boundBy: "55555555-5555-4555-8555-555555555555",
     boundAt: "2026-08-03T10:05:00.000Z",
     availability: "available" as const,
     runtimePackageId,
-    runtimePackageRevision: 2,
+    runtimePackageRevision: options.runtimePackageRevision ?? 2,
     runtimePackageContentDigest,
     runtimeManifestDigest: "d".repeat(64),
     runtimePackageEvidenceStatus: "human_reviewed" as const,

@@ -22,10 +22,17 @@ export interface HistoricalRuntimeCacheRecord<TResource> {
 
 export interface HistoricalRuntimeCacheSnapshot<TResource> {
   readonly revision: number;
-  readonly records: ReadonlyMap<string, HistoricalRuntimeCacheRecord<TResource>>;
+  readonly records: ReadonlyMap<
+    string,
+    HistoricalRuntimeCacheRecord<TResource>
+  >;
 }
 
 export interface HistoricalRuntimeCacheDependencies<TResource> {
+  readonly authorizeBinding: (
+    binding: PhaseLayoutRuntimeAvailableBinding,
+    signal: AbortSignal,
+  ) => Promise<void>;
   readonly fetchMember: (
     binding: PhaseLayoutRuntimeAvailableBinding,
     member: PhaseLayoutRuntimeAvailableBinding["visualAssets"][number],
@@ -39,9 +46,20 @@ export interface HistoricalRuntimeCacheDependencies<TResource> {
   readonly dispose: (resource: TResource) => void;
 }
 
-interface MutableRecord<TResource> {
+interface MutableBindingRecord {
   readonly key: string;
   readonly binding: PhaseLayoutRuntimeAvailableBinding;
+  readonly resourceKey: string;
+  readonly generation: number;
+  readonly controller: AbortController;
+  authorizationStatus: "authorizing" | "authorized" | "error";
+  authorizationPromise: Promise<void> | null;
+  error: Error | null;
+}
+
+interface MutableResourceRecord<TResource> {
+  readonly key: string;
+  readonly ownerBinding: PhaseLayoutRuntimeAvailableBinding;
   readonly generation: number;
   readonly controller: AbortController;
   status: HistoricalRuntimeCacheStatus;
@@ -57,6 +75,25 @@ export interface HistoricalRuntimeCacheWindow {
   readonly active: PhaseLayoutRuntimeAvailableBinding | null;
   readonly adjacent: PhaseLayoutRuntimeAvailableBinding | null;
   readonly decodeAdjacent: boolean;
+  /** Reject stale or malformed bindings before private member bytes are requested. */
+  readonly expectedRoom?: {
+    readonly venueId: string;
+    readonly spaceId: string;
+  };
+}
+
+export interface HistoricalRuntimeCacheScopeInput {
+  readonly user: {
+    readonly id: string;
+    readonly venueId: string | null;
+    readonly role: string;
+    readonly platformRole: string;
+  } | null;
+  readonly venueId: string | null;
+  readonly spaceId: string | null;
+  /** Clerk session identity; null only for explicitly sessionless/dev auth. */
+  readonly authSessionId: string | null;
+  readonly authContextRevision: number;
 }
 
 export const HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET =
@@ -97,9 +134,11 @@ export function historicalRuntimeDecodedSplatsWithinViewerBudget(
   decodedSplats: number,
   maxSplats: number,
 ): boolean {
-  return Number.isInteger(decodedSplats) &&
+  return (
+    Number.isInteger(decodedSplats) &&
     decodedSplats >= 0 &&
-    decodedSplats <= maxSplats;
+    decodedSplats <= maxSplats
+  );
 }
 
 export function historicalRuntimeCombinedSplatsWithinBudget(
@@ -107,9 +146,17 @@ export function historicalRuntimeCombinedSplatsWithinBudget(
   adjacentSplats: number,
   combinedBudget: number,
 ): boolean {
-  return historicalRuntimeDecodedSplatsWithinViewerBudget(activeSplats, combinedBudget) &&
-    historicalRuntimeDecodedSplatsWithinViewerBudget(adjacentSplats, combinedBudget) &&
-    activeSplats + adjacentSplats <= combinedBudget;
+  return (
+    historicalRuntimeDecodedSplatsWithinViewerBudget(
+      activeSplats,
+      combinedBudget,
+    ) &&
+    historicalRuntimeDecodedSplatsWithinViewerBudget(
+      adjacentSplats,
+      combinedBudget,
+    ) &&
+    activeSplats + adjacentSplats <= combinedBudget
+  );
 }
 
 export function historicalRuntimeRemainingAdjacentSplatBudget(params: {
@@ -122,10 +169,13 @@ export function historicalRuntimeRemainingAdjacentSplatBudget(params: {
     params.viewerSplatBudget,
     params.combinedResidentSplatBudget,
   );
-  if (!historicalRuntimeDecodedSplatsWithinViewerBudget(
-    params.activeSplatCount,
-    residentBudget,
-  )) return 0;
+  if (
+    !historicalRuntimeDecodedSplatsWithinViewerBudget(
+      params.activeSplatCount,
+      residentBudget,
+    )
+  )
+    return 0;
   return residentBudget - params.activeSplatCount;
 }
 
@@ -133,9 +183,36 @@ function asError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
 }
 
-/** Identity includes every frozen package, composition, transform, and scope proof. */
-export function historicalRuntimeBindingKey(binding: PhaseLayoutRuntimeAvailableBinding): string {
-  return [
+function historicalRuntimeOrderedMemberIdentity(
+  binding: PhaseLayoutRuntimeAvailableBinding,
+): readonly (readonly [
+  number,
+  string,
+  string,
+  string,
+  string,
+  string,
+  number,
+])[] {
+  return binding.visualAssets.map(
+    (member) =>
+      [
+        member.memberIndex,
+        member.assetVersionId,
+        member.fileName,
+        member.fileExt,
+        member.mimeType,
+        member.sha256,
+        member.sizeBytes,
+      ] as const,
+  );
+}
+
+/** Identity includes every frozen binding proof and exact ordered member. */
+export function historicalRuntimeBindingKey(
+  binding: PhaseLayoutRuntimeAvailableBinding,
+): string {
+  return JSON.stringify([
     binding.venueId,
     binding.spaceId,
     binding.bindingId,
@@ -144,13 +221,81 @@ export function historicalRuntimeBindingKey(binding: PhaseLayoutRuntimeAvailable
     binding.runtimePackageContentDigest,
     binding.compositionDigest,
     binding.transformArtifactDigest,
-  ].join(":");
+    historicalRuntimeOrderedMemberIdentity(binding),
+  ]);
+}
+
+/**
+ * Exact decoded room identity. Snapshot/binding/package database IDs stay
+ * outside this key because each binding is authorized separately before
+ * sharing identical captured content and decoder-visible ordered members.
+ */
+export function historicalRuntimeResourceKey(
+  binding: PhaseLayoutRuntimeAvailableBinding,
+): string {
+  return JSON.stringify([
+    binding.venueId,
+    binding.spaceId,
+    binding.transformArtifactDigest,
+    historicalRuntimeOrderedMemberIdentity(binding),
+  ]);
+}
+
+/**
+ * Decoder-visible captured-room identity. Database aliases and nonvisual
+ * package members are deliberately excluded: neither can justify a visual
+ * room crossfade. Exact transform equality is still checked separately by the
+ * crossfade policy.
+ */
+export function historicalRuntimeCapturedVisualKey(
+  binding: PhaseLayoutRuntimeAvailableBinding,
+): string {
+  return JSON.stringify([
+    binding.venueId,
+    binding.spaceId,
+    binding.transformArtifactDigest,
+    binding.visualAssets.map((member) => [
+      member.memberIndex,
+      member.fileExt,
+      member.mimeType,
+      member.sha256,
+      member.sizeBytes,
+    ]),
+  ]);
+}
+
+/** Private browser-memory ownership, including claims that can change for the same user. */
+export function historicalRuntimeCacheScopeKey(
+  input: HistoricalRuntimeCacheScopeInput,
+): string | null {
+  if (input.user === null || input.venueId === null || input.spaceId === null)
+    return null;
+  return JSON.stringify([
+    input.user.id,
+    input.user.venueId,
+    input.user.role,
+    input.user.platformRole,
+    input.venueId,
+    input.spaceId,
+    input.authSessionId,
+    input.authContextRevision,
+  ]);
+}
+
+export function historicalRuntimeBindingMatchesRoom(
+  binding: PhaseLayoutRuntimeAvailableBinding,
+  room: { readonly venueId: string; readonly spaceId: string },
+): boolean {
+  return binding.venueId === room.venueId && binding.spaceId === room.spaceId;
 }
 
 export function historicalRuntimeCompressedBytes(
   binding: PhaseLayoutRuntimeAvailableBinding,
 ): number {
-  return binding.visualAssets.reduce((total, member) => total + member.sizeBytes, 0);
+  return binding.visualAssets.reduce(
+    (total, member) => total + member.sizeBytes,
+    0,
+  );
 }
 
 export function historicalRuntimeCrossfadeAllowed(params: {
@@ -164,26 +309,39 @@ export function historicalRuntimeCrossfadeAllowed(params: {
   readonly combinedSplatBudget: number;
 }): boolean {
   const { from, to } = params;
-  return !params.reducedMotion &&
+  return (
+    !params.reducedMotion &&
     params.sameEnvelope &&
+    // Resource identity is deliberately stricter than captured-visual
+    // identity (it includes ordered member aliases/versions). Package content
+    // digests also bind nonvisual members and evidence, so only a changed
+    // decoder-visible capture can justify a visual crossfade.
+    historicalRuntimeCapturedVisualKey(from) !==
+      historicalRuntimeCapturedVisualKey(to) &&
+    historicalRuntimeResourceKey(from) !== historicalRuntimeResourceKey(to) &&
     from.venueId === to.venueId &&
     from.spaceId === to.spaceId &&
     from.transformArtifactId === to.transformArtifactId &&
     from.transformArtifactDigest === to.transformArtifactDigest &&
-    historicalRuntimeCompressedBytes(from) + historicalRuntimeCompressedBytes(to) <=
+    historicalRuntimeCompressedBytes(from) +
+      historicalRuntimeCompressedBytes(to) <=
       params.combinedByteBudget &&
     historicalRuntimeCombinedSplatsWithinBudget(
       params.fromSplatCount,
       params.toSplatCount,
       params.combinedSplatBudget,
-    );
+    )
+  );
 }
 
 export function historicalRuntimeBindingWithinViewerBudget(
   binding: PhaseLayoutRuntimeAvailableBinding,
 ): boolean {
-  return binding.visualAssets.length <= HISTORICAL_RUNTIME_MAX_MEMBERS &&
-    historicalRuntimeCompressedBytes(binding) <= HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET;
+  return (
+    binding.visualAssets.length <= HISTORICAL_RUNTIME_MAX_MEMBERS &&
+    historicalRuntimeCompressedBytes(binding) <=
+      HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET
+  );
 }
 
 export function historicalRuntimeResourceCanRender<TResource>(params: {
@@ -193,21 +351,25 @@ export function historicalRuntimeResourceCanRender<TResource>(params: {
   readonly displayedResource: TResource | null;
   readonly activeResource: TResource | null;
 }): boolean {
-  return params.activeKey !== null &&
+  return (
+    params.activeKey !== null &&
     params.displayKey === params.activeKey &&
     params.activeStatus === "ready" &&
     params.displayedResource !== null &&
-    params.activeResource === params.displayedResource;
+    params.activeResource === params.displayedResource
+  );
 }
 
 /**
- * Two-entry cache for the selected package and, at most, one adjacent package.
- * Fetches dedupe per immutable binding, decode jobs are serialized globally,
- * and generation checks prevent evicted work from publishing across rooms.
+ * Binding authorization records and decoded package resources have separate
+ * identities. Snapshot bindings are authorized independently while identical
+ * immutable room content shares one bounded fetch/decode/resource.
  */
 export class HistoricalRuntimeCache<TResource> {
   readonly #dependencies: HistoricalRuntimeCacheDependencies<TResource>;
-  readonly #records = new Map<string, MutableRecord<TResource>>();
+  readonly #bindings = new Map<string, MutableBindingRecord>();
+  readonly #resources = new Map<string, MutableResourceRecord<TResource>>();
+  readonly #authorizedBindingKeys = new Set<string>();
   readonly #listeners = new Set<() => void>();
   #generation = 0;
   #revision = 0;
@@ -217,7 +379,8 @@ export class HistoricalRuntimeCache<TResource> {
   };
   #fetchTail: Promise<void> = Promise.resolve();
   #decodeTail: Promise<void> = Promise.resolve();
-  #activeKey: string | null = null;
+  #activeResourceKey: string | null = null;
+  #scopeKey: string | null = null;
 
   constructor(dependencies: HistoricalRuntimeCacheDependencies<TResource>) {
     this.#dependencies = dependencies;
@@ -225,70 +388,148 @@ export class HistoricalRuntimeCache<TResource> {
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.#listeners.add(listener);
-    return () => { this.#listeners.delete(listener); };
+    return () => {
+      this.#listeners.delete(listener);
+    };
   };
 
-  readonly getSnapshot = (): HistoricalRuntimeCacheSnapshot<TResource> => this.#snapshot;
+  readonly getSnapshot = (): HistoricalRuntimeCacheSnapshot<TResource> =>
+    this.#snapshot;
+
+  /** Same-scope Day/Week views reuse resources; auth or selected-room changes retire them. */
+  setScope(scopeKey: string | null): void {
+    if (scopeKey === this.#scopeKey) return;
+    this.#scopeKey = scopeKey;
+    this.clear();
+  }
 
   setWindow(window: HistoricalRuntimeCacheWindow): void {
-    const activeFitsBudget = window.active === null ||
-      historicalRuntimeBindingWithinViewerBudget(window.active);
-    const activeBinding = activeFitsBudget ? window.active : null;
-    const activeKey = activeBinding === null ? null : historicalRuntimeBindingKey(activeBinding);
-    const requestedAdjacentKey = window.adjacent === null
-      ? null
-      : historicalRuntimeBindingKey(window.adjacent);
-    const adjacentFitsBudget = activeBinding !== null && window.adjacent !== null &&
-      window.adjacent.visualAssets.length <= HISTORICAL_RUNTIME_MAX_MEMBERS &&
-      historicalRuntimeCompressedBytes(activeBinding)
-        + historicalRuntimeCompressedBytes(window.adjacent)
-        <= HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET;
-    const adjacentKey = adjacentFitsBudget ? requestedAdjacentKey : null;
-    this.#activeKey = activeKey;
-    const allowed = new Set<string>();
-    if (activeKey !== null) allowed.add(activeKey);
-    if (adjacentKey !== null && adjacentKey !== activeKey) allowed.add(adjacentKey);
+    const roomMatches = (
+      binding: PhaseLayoutRuntimeAvailableBinding | null,
+    ): boolean =>
+      binding !== null &&
+      (window.expectedRoom === undefined ||
+        historicalRuntimeBindingMatchesRoom(binding, window.expectedRoom));
+    const requestedActive = roomMatches(window.active) ? window.active : null;
+    const requestedAdjacent = roomMatches(window.adjacent)
+      ? window.adjacent
+      : null;
+    const activeFitsBudget =
+      requestedActive === null ||
+      historicalRuntimeBindingWithinViewerBudget(requestedActive);
+    const activeBinding = activeFitsBudget ? requestedActive : null;
+    const activeBindingKey =
+      activeBinding === null
+        ? null
+        : historicalRuntimeBindingKey(activeBinding);
+    const activeResourceKey =
+      activeBinding === null
+        ? null
+        : historicalRuntimeResourceKey(activeBinding);
+    const adjacentBindingKey =
+      requestedAdjacent === null
+        ? null
+        : historicalRuntimeBindingKey(requestedAdjacent);
+    const adjacentResourceKey =
+      requestedAdjacent === null
+        ? null
+        : historicalRuntimeResourceKey(requestedAdjacent);
+    const adjacentAdditionalBytes =
+      activeResourceKey !== null && adjacentResourceKey === activeResourceKey
+        ? 0
+        : requestedAdjacent === null
+          ? 0
+          : historicalRuntimeCompressedBytes(requestedAdjacent);
+    const adjacentFitsBudget =
+      activeBinding !== null &&
+      requestedAdjacent !== null &&
+      requestedAdjacent.visualAssets.length <= HISTORICAL_RUNTIME_MAX_MEMBERS &&
+      historicalRuntimeCompressedBytes(activeBinding) +
+        adjacentAdditionalBytes <=
+        HISTORICAL_RUNTIME_DESKTOP_BYTE_BUDGET;
+    const admittedAdjacentBindingKey = adjacentFitsBudget
+      ? adjacentBindingKey
+      : null;
+    const admittedAdjacentResourceKey = adjacentFitsBudget
+      ? adjacentResourceKey
+      : null;
+    this.#activeResourceKey = activeResourceKey;
 
-    for (const [key, record] of this.#records) {
-      if (allowed.has(key)) continue;
-      this.#evictRecord(record);
-      this.#records.delete(key);
+    const allowedBindings = new Set<string>();
+    const allowedResources = new Set<string>();
+    if (activeBindingKey !== null && activeResourceKey !== null) {
+      allowedBindings.add(activeBindingKey);
+      allowedResources.add(activeResourceKey);
+    }
+    if (
+      admittedAdjacentBindingKey !== null &&
+      admittedAdjacentResourceKey !== null
+    ) {
+      allowedBindings.add(admittedAdjacentBindingKey);
+      allowedResources.add(admittedAdjacentResourceKey);
+    }
+
+    for (const [key, binding] of this.#bindings) {
+      if (allowedBindings.has(key)) continue;
+      this.#evictBinding(binding);
+      this.#bindings.delete(key);
+    }
+    for (const [key, resource] of this.#resources) {
+      if (allowedResources.has(key)) continue;
+      this.#evictResource(resource);
+      this.#resources.delete(key);
     }
 
     if (activeBinding !== null) {
-      const active = this.#recordFor(activeBinding);
-      this.#cancelVerifiedExpiry(active);
-      void this.#ensureDecoded(active);
+      const resource = this.#resourceFor(activeBinding);
+      const active = this.#bindingFor(activeBinding, resource);
+      this.#cancelVerifiedExpiry(resource);
+      void this.#ensureReady(active, resource);
     }
-    if (activeBinding !== null && window.adjacent !== null && adjacentKey !== null && adjacentKey !== activeKey) {
-      const adjacent = this.#recordFor(window.adjacent);
-      if (window.decodeAdjacent) {
-        void this.#ensureDecoded(adjacent);
+    if (
+      activeBinding !== null &&
+      requestedAdjacent !== null &&
+      admittedAdjacentBindingKey !== null &&
+      admittedAdjacentBindingKey !== activeBindingKey
+    ) {
+      const resource = this.#resourceFor(requestedAdjacent);
+      const adjacent = this.#bindingFor(requestedAdjacent, resource);
+      if (resource.key === activeResourceKey) {
+        void this.#ensureAuthorized(adjacent, resource).catch(() => undefined);
+      } else if (window.decodeAdjacent) {
+        void this.#ensureReady(adjacent, resource);
       } else {
-        void this.#ensureFetched(adjacent).catch(() => undefined);
+        void this.#ensureAuthorized(adjacent, resource).catch(() => undefined);
+        void this.#ensureFetched(resource).catch(() => undefined);
       }
     }
     this.#publish();
   }
 
   clear(): void {
-    this.#activeKey = null;
-    for (const record of this.#records.values()) this.#evictRecord(record);
-    this.#records.clear();
+    this.#activeResourceKey = null;
+    for (const binding of this.#bindings.values()) this.#evictBinding(binding);
+    for (const resource of this.#resources.values())
+      this.#evictResource(resource);
+    this.#bindings.clear();
+    this.#resources.clear();
+    this.#authorizedBindingKeys.clear();
     this.#publish();
   }
 
-  #recordFor(binding: PhaseLayoutRuntimeAvailableBinding): MutableRecord<TResource> {
-    const key = historicalRuntimeBindingKey(binding);
-    const existing = this.#records.get(key);
+  #resourceFor(
+    binding: PhaseLayoutRuntimeAvailableBinding,
+  ): MutableResourceRecord<TResource> {
+    const key = historicalRuntimeResourceKey(binding);
+    const existing = this.#resources.get(key);
     if (existing !== undefined && existing.status !== "error") return existing;
     if (existing !== undefined) {
-      this.#evictRecord(existing);
-      this.#records.delete(key);
+      this.#evictResource(existing);
+      this.#resources.delete(key);
     }
-    const record: MutableRecord<TResource> = {
+    const resource: MutableResourceRecord<TResource> = {
       key,
-      binding,
+      ownerBinding: binding,
       generation: ++this.#generation,
       controller: new AbortController(),
       status: "fetching",
@@ -299,50 +540,173 @@ export class HistoricalRuntimeCache<TResource> {
       decodePromise: null,
       verifiedExpiryTimer: null,
     };
-    this.#records.set(key, record);
+    this.#resources.set(key, resource);
+    return resource;
+  }
+
+  #bindingFor(
+    binding: PhaseLayoutRuntimeAvailableBinding,
+    resource: MutableResourceRecord<TResource>,
+  ): MutableBindingRecord {
+    const key = historicalRuntimeBindingKey(binding);
+    const existing = this.#bindings.get(key);
+    if (
+      existing !== undefined &&
+      existing.authorizationStatus !== "error" &&
+      existing.resourceKey === resource.key
+    )
+      return existing;
+    if (existing !== undefined) {
+      this.#evictBinding(existing);
+      this.#bindings.delete(key);
+    }
+    const authorized = this.#authorizedBindingKeys.has(key);
+    const record: MutableBindingRecord = {
+      key,
+      binding,
+      resourceKey: resource.key,
+      generation: ++this.#generation,
+      controller: new AbortController(),
+      authorizationStatus: authorized ? "authorized" : "authorizing",
+      authorizationPromise: null,
+      error: null,
+    };
+    this.#bindings.set(key, record);
     return record;
   }
 
-  #isCurrent(record: MutableRecord<TResource>): boolean {
-    const current = this.#records.get(record.key);
-    return current === record &&
+  #isCurrentBinding(record: MutableBindingRecord): boolean {
+    const current = this.#bindings.get(record.key);
+    return (
+      current === record &&
       current.generation === record.generation &&
-      !record.controller.signal.aborted;
+      !record.controller.signal.aborted
+    );
+  }
+
+  #isCurrentResource(record: MutableResourceRecord<TResource>): boolean {
+    const current = this.#resources.get(record.key);
+    return (
+      current === record &&
+      current.generation === record.generation &&
+      !record.controller.signal.aborted
+    );
+  }
+
+  #rememberAuthorizedBinding(key: string): void {
+    this.#authorizedBindingKeys.delete(key);
+    this.#authorizedBindingKeys.add(key);
+    while (this.#authorizedBindingKeys.size > 64) {
+      const oldest = this.#authorizedBindingKeys.values().next();
+      if (oldest.done === true) break;
+      this.#authorizedBindingKeys.delete(oldest.value);
+    }
+  }
+
+  #ensureAuthorized(
+    record: MutableBindingRecord,
+    resource: MutableResourceRecord<TResource>,
+  ): Promise<void> {
+    if (record.authorizationStatus === "authorized") return Promise.resolve();
+    if (record.authorizationPromise !== null)
+      return record.authorizationPromise;
+    record.authorizationStatus = "authorizing";
+    record.error = null;
+    this.#publish();
+    const ownerKey = historicalRuntimeBindingKey(resource.ownerBinding);
+    const authorization =
+      record.key === ownerKey
+        ? this.#ensureFetched(resource).then(() => undefined)
+        : this.#dependencies.authorizeBinding(
+            record.binding,
+            record.controller.signal,
+          );
+    const promise = authorization.then(
+      () => {
+        if (
+          !this.#isCurrentBinding(record) ||
+          !this.#isCurrentResource(resource)
+        ) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+        this.#rememberAuthorizedBinding(record.key);
+        record.authorizationStatus = "authorized";
+        record.error = null;
+        this.#publish();
+      },
+      (value: unknown) => {
+        if (this.#isCurrentBinding(record)) {
+          record.authorizationStatus = "error";
+          record.error = asError(value);
+          this.#publish();
+        }
+        throw value;
+      },
+    );
+    record.authorizationPromise = promise;
+    void promise.then(
+      () => {
+        if (record.authorizationPromise === promise)
+          record.authorizationPromise = null;
+      },
+      () => {
+        if (record.authorizationPromise === promise)
+          record.authorizationPromise = null;
+      },
+    );
+    return promise;
   }
 
   #ensureFetched(
-    record: MutableRecord<TResource>,
+    record: MutableResourceRecord<TResource>,
   ): Promise<readonly VerifiedHistoricalRuntimeAsset[]> {
-    if (record.verifiedAssets !== null) return Promise.resolve(record.verifiedAssets);
+    if (record.verifiedAssets !== null)
+      return Promise.resolve(record.verifiedAssets);
     if (record.fetchPromise !== null) return record.fetchPromise;
 
     record.status = "fetching";
     record.error = null;
     this.#publish();
-    const job = async (): Promise<readonly VerifiedHistoricalRuntimeAsset[]> => {
-      if (!this.#isCurrent(record)) throw new DOMException("Aborted", "AbortError");
+    const job = async (): Promise<
+      readonly VerifiedHistoricalRuntimeAsset[]
+    > => {
+      if (!this.#isCurrentResource(record))
+        throw new DOMException("Aborted", "AbortError");
       const assets: VerifiedHistoricalRuntimeAsset[] = [];
-      for (const member of record.binding.visualAssets) {
-        if (!this.#isCurrent(record)) throw new DOMException("Aborted", "AbortError");
-        assets.push(await this.#dependencies.fetchMember(
-          record.binding,
-          member,
-          record.controller.signal,
-        ));
+      for (const member of record.ownerBinding.visualAssets) {
+        if (!this.#isCurrentResource(record))
+          throw new DOMException("Aborted", "AbortError");
+        assets.push(
+          await this.#dependencies.fetchMember(
+            record.ownerBinding,
+            member,
+            record.controller.signal,
+          ),
+        );
       }
-      if (!this.#isCurrent(record)) throw new DOMException("Aborted", "AbortError");
+      if (!this.#isCurrentResource(record))
+        throw new DOMException("Aborted", "AbortError");
+      this.#rememberAuthorizedBinding(
+        historicalRuntimeBindingKey(record.ownerBinding),
+      );
       record.verifiedAssets = assets;
       record.status = "verified";
-      if (record.key !== this.#activeKey && record.decodePromise === null) {
+      if (
+        record.key !== this.#activeResourceKey &&
+        record.decodePromise === null
+      ) {
         this.#scheduleVerifiedExpiry(record);
       }
       this.#publish();
       return assets;
     };
     const queued = this.#fetchTail.then(job, job);
-    this.#fetchTail = queued.then(() => undefined, () => undefined);
+    this.#fetchTail = queued.then(
+      () => undefined,
+      () => undefined,
+    );
     const promise = queued.catch((value: unknown) => {
-      if (this.#isCurrent(record)) {
+      if (this.#isCurrentResource(record)) {
         record.error = asError(value);
         record.status = "error";
         this.#publish();
@@ -361,15 +725,12 @@ export class HistoricalRuntimeCache<TResource> {
     return promise;
   }
 
-  #ensureDecoded(record: MutableRecord<TResource>): Promise<TResource | null> {
+  #ensureDecoded(
+    record: MutableResourceRecord<TResource>,
+  ): Promise<TResource | null> {
     if (record.resource !== null) return Promise.resolve(record.resource);
     if (record.decodePromise !== null) return record.decodePromise;
-    // The verified-only TTL applies while an adjacent package is waiting to
-    // be selected, not once a deliberately scheduled decode owns the bytes.
     this.#cancelVerifiedExpiry(record);
-    // Queue verification now, before the serialized decoder job runs. This
-    // gives the selected package fetch priority over the adjacent prefetch
-    // scheduled later in setWindow, while decode work remains one-at-a-time.
     const verifiedAssets = this.#ensureFetched(record);
 
     const job = async (): Promise<TResource | null> => {
@@ -379,19 +740,19 @@ export class HistoricalRuntimeCache<TResource> {
       } catch {
         return null;
       }
-      if (!this.#isCurrent(record)) return null;
+      if (!this.#isCurrentResource(record)) return null;
       record.status = "decoding";
       this.#publish();
 
       let resource: TResource;
       try {
         resource = await this.#dependencies.decode(
-          record.binding,
+          record.ownerBinding,
           assets,
           record.controller.signal,
         );
       } catch (value: unknown) {
-        if (this.#isCurrent(record)) {
+        if (this.#isCurrentResource(record)) {
           record.error = asError(value);
           record.status = "error";
           record.verifiedAssets = null;
@@ -400,7 +761,7 @@ export class HistoricalRuntimeCache<TResource> {
         return null;
       }
 
-      if (!this.#isCurrent(record)) {
+      if (!this.#isCurrentResource(record)) {
         this.#dependencies.dispose(resource);
         return null;
       }
@@ -413,7 +774,10 @@ export class HistoricalRuntimeCache<TResource> {
     };
 
     const queued = this.#decodeTail.then(job, job);
-    this.#decodeTail = queued.then(() => undefined, () => undefined);
+    this.#decodeTail = queued.then(
+      () => undefined,
+      () => undefined,
+    );
     record.decodePromise = queued;
     void queued.then(
       () => {
@@ -426,7 +790,24 @@ export class HistoricalRuntimeCache<TResource> {
     return queued;
   }
 
-  #evictRecord(record: MutableRecord<TResource>): void {
+  async #ensureReady(
+    binding: MutableBindingRecord,
+    resource: MutableResourceRecord<TResource>,
+  ): Promise<TResource | null> {
+    const authorization = this.#ensureAuthorized(binding, resource).then(
+      () => true,
+      () => false,
+    );
+    const decoded = this.#ensureDecoded(resource);
+    const [authorized, value] = await Promise.all([authorization, decoded]);
+    return authorized ? value : null;
+  }
+
+  #evictBinding(record: MutableBindingRecord): void {
+    record.controller.abort();
+  }
+
+  #evictResource(record: MutableResourceRecord<TResource>): void {
     record.controller.abort();
     this.#cancelVerifiedExpiry(record);
     if (record.resource !== null) {
@@ -436,25 +817,30 @@ export class HistoricalRuntimeCache<TResource> {
     record.verifiedAssets = null;
   }
 
-  #scheduleVerifiedExpiry(record: MutableRecord<TResource>): void {
+  #scheduleVerifiedExpiry(record: MutableResourceRecord<TResource>): void {
     this.#cancelVerifiedExpiry(record);
     record.verifiedExpiryTimer = setTimeout(() => {
       record.verifiedExpiryTimer = null;
       if (
-        !this.#isCurrent(record) ||
-        record.key === this.#activeKey ||
+        !this.#isCurrentResource(record) ||
+        record.key === this.#activeResourceKey ||
         record.decodePromise !== null ||
         record.resource !== null ||
         record.status !== "verified"
-      ) return;
-      record.controller.abort();
-      record.verifiedAssets = null;
-      this.#records.delete(record.key);
+      )
+        return;
+      for (const [key, binding] of this.#bindings) {
+        if (binding.resourceKey !== record.key) continue;
+        this.#evictBinding(binding);
+        this.#bindings.delete(key);
+      }
+      this.#evictResource(record);
+      this.#resources.delete(record.key);
       this.#publish();
     }, HISTORICAL_RUNTIME_VERIFIED_PREFETCH_TTL_MS);
   }
 
-  #cancelVerifiedExpiry(record: MutableRecord<TResource>): void {
+  #cancelVerifiedExpiry(record: MutableResourceRecord<TResource>): void {
     if (record.verifiedExpiryTimer === null) return;
     clearTimeout(record.verifiedExpiryTimer);
     record.verifiedExpiryTimer = null;
@@ -462,17 +848,48 @@ export class HistoricalRuntimeCache<TResource> {
 
   #publish(): void {
     const records = new Map<string, HistoricalRuntimeCacheRecord<TResource>>();
-    for (const [key, record] of this.#records) {
+    for (const [key, binding] of this.#bindings) {
+      const resource = this.#resources.get(binding.resourceKey);
+      const authorizationPending =
+        binding.authorizationStatus === "authorizing";
+      const authorizationFailed = binding.authorizationStatus === "error";
+      const status: HistoricalRuntimeCacheStatus = authorizationFailed
+        ? "error"
+        : authorizationPending
+          ? "fetching"
+          : (resource?.status ?? "error");
       records.set(key, {
         key,
-        binding: record.binding,
-        status: record.status,
-        resource: record.resource,
-        error: record.error,
+        binding: binding.binding,
+        status,
+        resource: status === "ready" ? (resource?.resource ?? null) : null,
+        error: authorizationFailed ? binding.error : (resource?.error ?? null),
       });
     }
     this.#revision += 1;
     this.#snapshot = { revision: this.#revision, records };
     for (const listener of this.#listeners) listener();
   }
+}
+
+export interface HistoricalRuntimeAuthRevisionSource {
+  readonly getState: () => { readonly authContextRevision: number };
+  readonly subscribe: (
+    listener: (state: { readonly authContextRevision: number }) => void,
+  ) => () => void;
+}
+
+/** Abort private resources in the same synchronous store transition that changes auth. */
+export function guardHistoricalRuntimeCacheAuthRevision<TResource>(
+  cache: HistoricalRuntimeCache<TResource>,
+  source: HistoricalRuntimeAuthRevisionSource,
+  onClear?: () => void,
+): () => void {
+  let revision = source.getState().authContextRevision;
+  return source.subscribe((state) => {
+    if (state.authContextRevision === revision) return;
+    revision = state.authContextRevision;
+    cache.clear();
+    onClear?.();
+  });
 }

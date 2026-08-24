@@ -12,7 +12,11 @@ import {
   type FoundryInputType,
 } from "@omnitwin/types";
 import { z } from "zod";
-import { domainSeparatedSha256, toCanonicalJson } from "./canonical-json.js";
+import {
+  domainSeparatedSha256,
+  stableCanonicalJson,
+  toCanonicalJson,
+} from "./canonical-json.js";
 import { FoundryIntegrityError } from "./errors.js";
 import {
   FOUNDRY_HASH_BUFFER_BYTES,
@@ -44,22 +48,22 @@ import type {
   UniversalSourceFactsV4ReceiptFileIdentity,
   UniversalSourceFactsV4FileResult,
 } from "./source-facts-v4.js";
-import type {
-  FoundryUniversalSourceFactsV5,
-  UniversalSourceFactsV5FileResult,
+import {
+  createUniversalSourceFactsV5ArtifactFromReceipt,
+  UniversalSourceFactsV5FileResultSchema,
+  type FoundryUniversalSourceFactsV5,
+  type UniversalSourceFactsV5FileResult,
 } from "./source-facts-v5.js";
-import type {
-  FoundryGaussianPlySourceFactsOutcome,
-} from "./gaussian-ply-source-facts.js";
-import type {
-  FoundryMediaContainerSourceFactsOutcome,
-} from "./media-container-source-facts.js";
-import type {
-  FoundryCalibrationTrajectorySourceFactsOutcome,
-} from "./calibration-trajectory-source-facts.js";
-import type {
-  FoundrySpzSourceFactsOutcome,
-} from "./spz-source-facts.js";
+import {
+  FoundryUniversalSourceFactsV6Schema,
+  type FoundryUniversalSourceFactsV6,
+  type FoundryPointPlyRefinementInputV6,
+} from "./source-facts-v6.js";
+import type { FoundryGaussianPlySourceFactsOutcome } from "./gaussian-ply-source-facts.js";
+import type { FoundryPlyPointCloudSourceFactsOutcome } from "./ply-point-cloud-source-facts.js";
+import type { FoundryMediaContainerSourceFactsOutcome } from "./media-container-source-facts.js";
+import type { FoundryCalibrationTrajectorySourceFactsOutcome } from "./calibration-trajectory-source-facts.js";
+import type { FoundrySpzSourceFactsOutcome } from "./spz-source-facts.js";
 
 export const FOUNDRY_UNIVERSAL_INTAKE_RECEIPT_V0 =
   "omnitwin.foundry.universal-intake-receipt.v0";
@@ -121,7 +125,8 @@ const FoundryIntakeQuarantineItemSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["nextAction"],
-        message: "quarantine reason must carry its canonical plain-language next action",
+        message:
+          "quarantine reason must carry its canonical plain-language next action",
       });
     }
   });
@@ -152,8 +157,15 @@ const FoundryIntakeFileBaseSchema = z
       .object({
         method: z.literal("bounded_stream"),
         hashBufferBytes: z.literal(FOUNDRY_HASH_BUFFER_BYTES),
-        headerBytesRead: z.number().int().min(0).max(FOUNDRY_MAX_HASH_HEAD_BYTES),
-        magicHex: z.string().regex(/^(?:[a-f0-9]{2})*$/u).max(256),
+        headerBytesRead: z
+          .number()
+          .int()
+          .min(0)
+          .max(FOUNDRY_MAX_HASH_HEAD_BYTES),
+        magicHex: z
+          .string()
+          .regex(/^(?:[a-f0-9]{2})*$/u)
+          .max(256),
       })
       .strict(),
     status: z.literal("quarantined"),
@@ -162,29 +174,41 @@ const FoundryIntakeFileBaseSchema = z
   })
   .strict();
 
-export const FoundryUniversalIntakeFileSchema = FoundryIntakeFileBaseSchema.extend({
-  duplicate: FoundryIntakeDuplicateSchema,
-})
-  .strict()
-  .superRefine((file, ctx) => {
-    if (JSON.stringify(file.quarantine) !== JSON.stringify(quarantineFor(file.detection))) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["quarantine"],
-        message: "quarantine reasons must match format, rights, and provenance evidence",
-      });
-    }
-  });
-export type FoundryUniversalIntakeFile = z.infer<typeof FoundryUniversalIntakeFileSchema>;
+export const FoundryUniversalIntakeFileSchema =
+  FoundryIntakeFileBaseSchema.extend({
+    duplicate: FoundryIntakeDuplicateSchema,
+  })
+    .strict()
+    .superRefine((file, ctx) => {
+      if (
+        JSON.stringify(file.quarantine) !==
+        JSON.stringify(quarantineFor(file.detection))
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["quarantine"],
+          message:
+            "quarantine reasons must match format, rights, and provenance evidence",
+        });
+      }
+    });
+export type FoundryUniversalIntakeFile = z.infer<
+  typeof FoundryUniversalIntakeFileSchema
+>;
 
 export const FoundryIntakeDuplicateGroupSchema = z
   .object({
     sha256: z.string().regex(SHA256_HEX),
     sizeBytes: z.number().int().safe().nonnegative(),
-    paths: z.array(FoundryRelativePathSchema).min(2).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
+    paths: z
+      .array(FoundryRelativePathSchema)
+      .min(2)
+      .max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
   })
   .strict();
-export type FoundryIntakeDuplicateGroup = z.infer<typeof FoundryIntakeDuplicateGroupSchema>;
+export type FoundryIntakeDuplicateGroup = z.infer<
+  typeof FoundryIntakeDuplicateGroupSchema
+>;
 
 const FoundryUniversalIntakeReceiptBaseSchema = z
   .object({
@@ -210,14 +234,34 @@ const FoundryUniversalIntakeReceiptBaseSchema = z
       .object({
         fileCount: z.number().int().min(0).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
         totalBytes: z.number().int().safe().nonnegative(),
-        quarantinedCount: z.number().int().min(0).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
-        unknownFormatCount: z.number().int().min(0).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
-        ambiguousFormatCount: z.number().int().min(0).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
-        duplicateGroupCount: z.number().int().min(0).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
+        quarantinedCount: z
+          .number()
+          .int()
+          .min(0)
+          .max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
+        unknownFormatCount: z
+          .number()
+          .int()
+          .min(0)
+          .max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
+        ambiguousFormatCount: z
+          .number()
+          .int()
+          .min(0)
+          .max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
+        duplicateGroupCount: z
+          .number()
+          .int()
+          .min(0)
+          .max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
       })
       .strict(),
-    files: z.array(FoundryUniversalIntakeFileSchema).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
-    duplicateGroups: z.array(FoundryIntakeDuplicateGroupSchema).max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
+    files: z
+      .array(FoundryUniversalIntakeFileSchema)
+      .max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
+    duplicateGroups: z
+      .array(FoundryIntakeDuplicateGroupSchema)
+      .max(FOUNDRY_INTAKE_MAX_FILE_COUNT),
   })
   .strict();
 
@@ -228,14 +272,19 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function duplicateKey(file: Pick<ReceiptFileBase, "sha256" | "sizeBytes">): string {
+function duplicateKey(
+  file: Pick<ReceiptFileBase, "sha256" | "sizeBytes">,
+): string {
   return `${file.sha256}:${String(file.sizeBytes)}`;
 }
 
 function buildDuplicateGroups(
   files: readonly Pick<ReceiptFileBase, "path" | "sha256" | "sizeBytes">[],
 ): FoundryIntakeDuplicateGroup[] {
-  const grouped = new Map<string, Array<Pick<ReceiptFileBase, "path" | "sha256" | "sizeBytes">>>();
+  const grouped = new Map<
+    string,
+    Array<Pick<ReceiptFileBase, "path" | "sha256" | "sizeBytes">>
+  >();
   for (const file of files) {
     const group = grouped.get(duplicateKey(file)) ?? [];
     group.push(file);
@@ -248,7 +297,9 @@ function buildDuplicateGroups(
       sizeBytes: group[0]?.sizeBytes ?? 0,
       paths: group.map((file) => file.path).sort(compareText),
     }))
-    .sort((left, right) => compareText(left.paths[0] ?? "", right.paths[0] ?? ""));
+    .sort((left, right) =>
+      compareText(left.paths[0] ?? "", right.paths[0] ?? ""),
+    );
 }
 
 function addDuplicateStatus(
@@ -256,18 +307,21 @@ function addDuplicateStatus(
   duplicateGroups: readonly FoundryIntakeDuplicateGroup[],
 ): FoundryUniversalIntakeFile[] {
   const groups = new Map<string, FoundryIntakeDuplicateGroup>(
-    duplicateGroups.map((group) => [`${group.sha256}:${String(group.sizeBytes)}`, group] as const),
+    duplicateGroups.map(
+      (group) => [`${group.sha256}:${String(group.sizeBytes)}`, group] as const,
+    ),
   );
   return files.map((file) => {
     const group = groups.get(duplicateKey(file));
     return {
       ...file,
-      duplicate: group === undefined
-        ? { status: "unique" as const, groupSha256: null }
-        : {
-            status: "exact_content_duplicate" as const,
-            groupSha256: group.sha256,
-          },
+      duplicate:
+        group === undefined
+          ? { status: "unique" as const, groupSha256: null }
+          : {
+              status: "exact_content_duplicate" as const,
+              groupSha256: group.sha256,
+            },
     };
   });
 }
@@ -290,8 +344,12 @@ function expectedSummary(
     fileCount: files.length,
     totalBytes,
     quarantinedCount: files.length,
-    unknownFormatCount: files.filter((file) => file.detection.status === "unknown").length,
-    ambiguousFormatCount: files.filter((file) => file.detection.status === "ambiguous").length,
+    unknownFormatCount: files.filter(
+      (file) => file.detection.status === "unknown",
+    ).length,
+    ambiguousFormatCount: files.filter(
+      (file) => file.detection.status === "ambiguous",
+    ).length,
     duplicateGroupCount: duplicateGroups.length,
   };
 }
@@ -305,66 +363,121 @@ function validateReceiptConsistency(
   ctx: z.RefinementCtx,
 ): void {
   const sortedPaths = receipt.files.map((file) => file.path).sort(compareText);
-  if (new Set(sortedPaths).size !== sortedPaths.length ||
-      sortedPaths.some((path, index) => path !== receipt.files[index]?.path)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["files"], message: "file paths must be unique and sorted" });
+  if (
+    new Set(sortedPaths).size !== sortedPaths.length ||
+    sortedPaths.some((path, index) => path !== receipt.files[index]?.path)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["files"],
+      message: "file paths must be unique and sorted",
+    });
   }
   const expectedGroups = buildDuplicateGroups(receipt.files);
   const expectedFiles = addDuplicateStatus(receipt.files, expectedGroups);
   const expected = expectedSummary(expectedFiles, expectedGroups);
   if (JSON.stringify(receipt.summary) !== JSON.stringify(expected)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["summary"], message: "receipt summary does not match files" });
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["summary"],
+      message: "receipt summary does not match files",
+    });
   }
-  if (JSON.stringify(receipt.duplicateGroups) !== JSON.stringify(expectedGroups)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["duplicateGroups"], message: "duplicate groups do not match file hashes" });
+  if (
+    JSON.stringify(receipt.duplicateGroups) !== JSON.stringify(expectedGroups)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["duplicateGroups"],
+      message: "duplicate groups do not match file hashes",
+    });
   }
-  if (receipt.files.some((file, index) =>
-    JSON.stringify(file.duplicate) !== JSON.stringify(expectedFiles[index]?.duplicate)
-  )) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["files"], message: "file duplicate status is inconsistent" });
+  if (
+    receipt.files.some(
+      (file, index) =>
+        JSON.stringify(file.duplicate) !==
+        JSON.stringify(expectedFiles[index]?.duplicate),
+    )
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["files"],
+      message: "file duplicate status is inconsistent",
+    });
   }
   const { receiptSha256: _receiptSha256, ...payload } = receipt;
   if (receipt.receiptSha256 !== receiptPayloadSha256(payload)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["receiptSha256"], message: "receipt digest does not match its canonical payload" });
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["receiptSha256"],
+      message: "receipt digest does not match its canonical payload",
+    });
   }
 }
 
-export const FoundryUniversalIntakeReceiptSchema = FoundryUniversalIntakeReceiptBaseSchema.extend({
-  receiptSha256: z.string().regex(SHA256_HEX),
-})
-  .strict()
-  .superRefine(validateReceiptConsistency);
+export const FoundryUniversalIntakeReceiptSchema =
+  FoundryUniversalIntakeReceiptBaseSchema.extend({
+    receiptSha256: z.string().regex(SHA256_HEX),
+  })
+    .strict()
+    .superRefine(validateReceiptConsistency);
 export type FoundryUniversalIntakeReceipt = z.infer<
   typeof FoundryUniversalIntakeReceiptSchema
 >;
 
-function contextualDetection(probe: FoundryFileProbe): FoundryFileDetection | null {
+function contextualDetection(
+  probe: FoundryFileProbe,
+): FoundryFileDetection | null {
   const name = probe.relativePath.split("/").at(-1)?.toLowerCase() ?? "";
-  if (["cameras.txt", "images.txt", "points3d.txt", "frames.txt", "rigs.txt"].includes(name)) {
+  if (
+    [
+      "cameras.txt",
+      "images.txt",
+      "points3d.txt",
+      "frames.txt",
+      "rigs.txt",
+    ].includes(name)
+  ) {
     return FoundryFileDetectionSchema.parse({
       status: "detected",
-      candidates: [{
-        inputType: "colmap_sparse_model",
-        confidence: "medium",
-        evidence: ["colmap_sparse_text_filename"],
-      }],
-      caveats: ["COLMAP sparse text classification requires a bounded strict parser."],
+      candidates: [
+        {
+          inputType: "colmap_sparse_model",
+          confidence: "medium",
+          evidence: ["colmap_sparse_text_filename"],
+        },
+      ],
+      caveats: [
+        "COLMAP sparse text classification requires a bounded strict parser.",
+      ],
     });
   }
   if (["poses.txt", "poses.yaml", "poses.yml"].includes(name)) {
     return FoundryFileDetectionSchema.parse({
       status: "detected",
-      candidates: [{ inputType: "trajectory", confidence: "medium", evidence: ["poses_filename"] }],
-      caveats: ["Pose convention, units, frame, and quaternion order require review."],
+      candidates: [
+        {
+          inputType: "trajectory",
+          confidence: "medium",
+          evidence: ["poses_filename"],
+        },
+      ],
+      caveats: [
+        "Pose convention, units, frame, and quaternion order require review.",
+      ],
     });
   }
   return null;
 }
 
-export function classifyUniversalIntakeProbe(input: unknown): FoundryFileDetection {
+export function classifyUniversalIntakeProbe(
+  input: unknown,
+): FoundryFileDetection {
   const probe = FoundryFileProbeSchema.parse(input);
   const detected = detectFoundryInputFile(probe);
-  return detected.status === "unknown" ? contextualDetection(probe) ?? detected : detected;
+  return detected.status === "unknown"
+    ? (contextualDetection(probe) ?? detected)
+    : detected;
 }
 
 function quarantineFor(detection: FoundryFileDetection): Array<{
@@ -374,14 +487,23 @@ function quarantineFor(detection: FoundryFileDetection): Array<{
   const reasons: FoundryIntakeQuarantineReason[] = [];
   if (detection.status === "unknown") reasons.push("format_unknown");
   if (detection.status === "ambiguous") reasons.push("format_ambiguous");
-  if (detection.candidates.some((candidate) => candidate.confidence === "low")) {
+  if (
+    detection.candidates.some((candidate) => candidate.confidence === "low")
+  ) {
     reasons.push("low_confidence_detection");
   }
-  if (detection.candidates.some((candidate) => OPAQUE_OR_PROPRIETARY_TYPES.has(candidate.inputType))) {
+  if (
+    detection.candidates.some((candidate) =>
+      OPAQUE_OR_PROPRIETARY_TYPES.has(candidate.inputType),
+    )
+  ) {
     reasons.push("opaque_or_proprietary_format");
   }
   reasons.push("rights_unreviewed", "provenance_unreviewed");
-  return reasons.map((reason) => ({ reason, nextAction: FOUNDRY_QUARANTINE_NEXT_ACTIONS[reason] }));
+  return reasons.map((reason) => ({
+    reason,
+    nextAction: FOUNDRY_QUARANTINE_NEXT_ACTIONS[reason],
+  }));
 }
 
 interface LocatedIntakeFile {
@@ -425,8 +547,11 @@ function sameIdentity(
 
 function isWithin(root: string, candidate: string): boolean {
   const fromRoot = relative(comparable(root), comparable(candidate));
-  return fromRoot === "" || (
-    fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot)
+  return (
+    fromRoot === "" ||
+    (fromRoot !== ".." &&
+      !fromRoot.startsWith(`..${sep}`) &&
+      !isAbsolute(fromRoot))
   );
 }
 
@@ -442,7 +567,10 @@ function safeRelativePath(path: string): string {
 }
 
 function assertSupportedSourcePath(sourceInput: string): void {
-  if (process.platform === "win32" && sourceInput.replaceAll("/", "\\").startsWith("\\\\")) {
+  if (
+    process.platform === "win32" &&
+    sourceInput.replaceAll("/", "\\").startsWith("\\\\")
+  ) {
     throw new FoundryIntegrityError(
       "INTAKE_REMOTE_OR_DEVICE_PATH",
       "UNC and device paths are not accepted; copy the source to a local or removable drive first.",
@@ -466,7 +594,10 @@ async function walkIntakeDirectory(
   const files: LocatedIntakeFile[] = [];
   const caseFoldedPaths = new Map<string, string>();
   let directoryCount = 0;
-  async function walk(directory: string, parentParts: readonly string[]): Promise<void> {
+  async function walk(
+    directory: string,
+    parentParts: readonly string[],
+  ): Promise<void> {
     assertIntakeNotCancelled(signal);
     directoryCount += 1;
     if (directoryCount > FOUNDRY_INTAKE_MAX_DIRECTORY_COUNT) {
@@ -500,7 +631,10 @@ async function walkIntakeDirectory(
       } else if (entry.isFile() && metadata.isFile()) {
         const canonical = await realpath(absolutePath);
         if (!isWithin(root, canonical)) {
-          throw new FoundryIntegrityError("INTAKE_PATH_ESCAPE", `Intake path escapes its root: ${relativePath}`);
+          throw new FoundryIntegrityError(
+            "INTAKE_PATH_ESCAPE",
+            `Intake path escapes its root: ${relativePath}`,
+          );
         }
         const canonicalMetadata = await lstat(canonical);
         if (canonicalMetadata.isSymbolicLink() || !canonicalMetadata.isFile()) {
@@ -512,7 +646,10 @@ async function walkIntakeDirectory(
         const folded = relativePath.toLocaleLowerCase("en-US");
         const collision = caseFoldedPaths.get(folded);
         if (collision !== undefined) {
-          throw new FoundryIntegrityError("INTAKE_CASE_COLLISION", `Case-insensitive intake path collision: ${collision} and ${relativePath}`);
+          throw new FoundryIntegrityError(
+            "INTAKE_CASE_COLLISION",
+            `Case-insensitive intake path collision: ${collision} and ${relativePath}`,
+          );
         }
         caseFoldedPaths.set(folded, relativePath);
         files.push({
@@ -521,16 +658,24 @@ async function walkIntakeDirectory(
           expectedIdentity: regularFileIdentity(canonicalMetadata),
         });
         if (files.length > FOUNDRY_INTAKE_MAX_FILE_COUNT) {
-          throw new FoundryIntegrityError("INTAKE_FILE_COUNT_OUT_OF_BOUNDS", `Intake exceeds ${String(FOUNDRY_INTAKE_MAX_FILE_COUNT)} files.`);
+          throw new FoundryIntegrityError(
+            "INTAKE_FILE_COUNT_OUT_OF_BOUNDS",
+            `Intake exceeds ${String(FOUNDRY_INTAKE_MAX_FILE_COUNT)} files.`,
+          );
         }
       } else {
-        throw new FoundryIntegrityError("INTAKE_NON_REGULAR_ENTRY", `Only regular files are inspected: ${relativePath}`);
+        throw new FoundryIntegrityError(
+          "INTAKE_NON_REGULAR_ENTRY",
+          `Only regular files are inspected: ${relativePath}`,
+        );
       }
     }
   }
   await walk(root, []);
   assertIntakeNotCancelled(signal);
-  return files.sort((left, right) => compareText(left.relativePath, right.relativePath));
+  return files.sort((left, right) =>
+    compareText(left.relativePath, right.relativePath),
+  );
 }
 
 async function locateIntakeSource(
@@ -543,7 +688,10 @@ async function locateIntakeSource(
   const requestedMetadata = await lstat(requested);
   assertIntakeNotCancelled(signal);
   if (requestedMetadata.isSymbolicLink()) {
-    throw new FoundryIntegrityError("INTAKE_SOURCE_SYMLINK", `Symbolic links are not inspected: ${requested}`);
+    throw new FoundryIntegrityError(
+      "INTAKE_SOURCE_SYMLINK",
+      `Symbolic links are not inspected: ${requested}`,
+    );
   }
   const canonical = await realpath(requested);
   const metadata = await lstat(canonical);
@@ -566,17 +714,26 @@ async function locateIntakeSource(
     return {
       kind: "file",
       label,
-      files: [{
-        absolutePath: canonical,
-        relativePath: label,
-        expectedIdentity: regularFileIdentity(metadata),
-      }],
+      files: [
+        {
+          absolutePath: canonical,
+          relativePath: label,
+          expectedIdentity: regularFileIdentity(metadata),
+        },
+      ],
     };
   }
   if (metadata.isDirectory()) {
-    return { kind: "directory", label, files: await walkIntakeDirectory(canonical, signal) };
+    return {
+      kind: "directory",
+      label,
+      files: await walkIntakeDirectory(canonical, signal),
+    };
   }
-  throw new FoundryIntegrityError("INTAKE_SOURCE_NOT_SUPPORTED", `Intake source must be a file or directory: ${requested}`);
+  throw new FoundryIntegrityError(
+    "INTAKE_SOURCE_NOT_SUPPORTED",
+    `Intake source must be a file or directory: ${requested}`,
+  );
 }
 
 function assertIntakeSourceUnchanged(
@@ -670,6 +827,85 @@ export interface InspectUniversalIntakeWithSourceFactsV5Result {
   readonly sourceFacts: FoundryUniversalSourceFactsV5;
 }
 
+export interface InspectUniversalIntakeWithSourceFactsV6Result {
+  readonly receipt: FoundryUniversalIntakeReceipt;
+  readonly sourceFacts: FoundryUniversalSourceFactsV6;
+}
+
+/**
+ * Verifies V6's declared identities against the complete self-digested intake
+ * receipt. A V6 artifact on its own deliberately does not authenticate receipt
+ * membership.
+ */
+export function verifyUniversalIntakeWithSourceFactsV6Result(
+  input: unknown,
+): InspectUniversalIntakeWithSourceFactsV6Result {
+  const pair = z
+    .object({
+      receipt: FoundryUniversalIntakeReceiptSchema,
+      sourceFacts: FoundryUniversalSourceFactsV6Schema,
+    })
+    .strict()
+    .parse(input);
+  const expectedIdentities = pair.receipt.files
+    .map(sourceFactsV4Identity)
+    .sort((left, right) => compareText(left.path, right.path));
+  if (
+    pair.sourceFacts.receiptSha256 !== pair.receipt.receiptSha256 ||
+    stableCanonicalJson(toCanonicalJson(expectedIdentities)) !==
+      stableCanonicalJson(
+        toCanonicalJson(pair.sourceFacts.receiptFileIdentities),
+      )
+  ) {
+    throw new FoundryIntegrityError(
+      "SOURCE_FACTS_V6_RECEIPT_PAIR_MISMATCH",
+      "Source Facts V6 identities do not match the complete self-digested intake receipt.",
+    );
+  }
+  const baseFactsV5 = pair.sourceFacts.baseFactsV5;
+  const baseFactsV5AssetsByPath =
+    baseFactsV5.state === "available"
+      ? new Map(
+          baseFactsV5.assets.map(
+            (asset) => [asset.source.path, asset] as const,
+          ),
+        )
+      : null;
+  const v5Results: UniversalSourceFactsV5FileResult[] =
+    baseFactsV5.state === "available"
+      ? expectedIdentities.map((identity) => {
+          const asset = baseFactsV5AssetsByPath?.get(identity.path);
+          return UniversalSourceFactsV5FileResultSchema.parse(
+            asset === undefined
+              ? {
+                  kind: "untargeted" as const,
+                  source: {
+                    path: identity.path,
+                    sizeBytes: identity.sizeBytes,
+                    sha256: identity.sha256,
+                  },
+                }
+              : { kind: "asset" as const, asset },
+          );
+        })
+      : [];
+  const expectedBaseFactsV5 = createUniversalSourceFactsV5ArtifactFromReceipt(
+    pair.receipt.receiptSha256,
+    expectedIdentities,
+    v5Results,
+  );
+  if (
+    stableCanonicalJson(toCanonicalJson(expectedBaseFactsV5)) !==
+    stableCanonicalJson(toCanonicalJson(baseFactsV5))
+  ) {
+    throw new FoundryIntegrityError(
+      "SOURCE_FACTS_V6_BASE_V5_RECEIPT_MISMATCH",
+      "Embedded Source Facts V5 do not reproduce from the complete intake receipt and retained per-file results.",
+    );
+  }
+  return pair;
+}
+
 export async function inspectUniversalIntake(
   sourceInput: string,
   options: InspectUniversalIntakeOptions = {},
@@ -681,7 +917,10 @@ export async function inspectUniversalIntake(
     assertIntakeNotCancelled(options.signal);
     inspectedFiles.push(await inspectLocatedFile(file, options.signal));
   }
-  const sourceAfterInspection = await locateIntakeSource(sourceInput, options.signal);
+  const sourceAfterInspection = await locateIntakeSource(
+    sourceInput,
+    options.signal,
+  );
   assertIntakeNotCancelled(options.signal);
   assertIntakeSourceUnchanged(source, sourceAfterInspection);
   const duplicateGroups = buildDuplicateGroups(inspectedFiles);
@@ -729,9 +968,11 @@ function assertLocatedSourceMatchesReceipt(
     source.files.length !== receipt.files.length ||
     source.files.some((file, index) => {
       const receiptFile = receipt.files[index];
-      return receiptFile === undefined ||
+      return (
+        receiptFile === undefined ||
         file.relativePath !== receiptFile.path ||
-        file.expectedIdentity.size !== receiptFile.sizeBytes;
+        file.expectedIdentity.size !== receiptFile.sizeBytes
+      );
     });
   if (differs) {
     throw new FoundryIntegrityError(
@@ -752,9 +993,13 @@ export async function inspectUniversalIntakeWithSourceFacts(
 ): Promise<InspectUniversalIntakeWithSourceFactsResult> {
   const receipt = await inspectUniversalIntake(sourceInput, options);
   const identities = receipt.files.map(sourceFactsIdentity);
-  if (identities.some((identity) =>
-    identity.detection.candidates.some((candidate) => candidate.inputType === "xgrids_xbin")
-  )) {
+  if (
+    identities.some((identity) =>
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "xgrids_xbin",
+      ),
+    )
+  ) {
     return {
       receipt,
       sourceFacts: createUniversalSourceFactsArtifactFromReceipt(
@@ -767,7 +1012,9 @@ export async function inspectUniversalIntakeWithSourceFacts(
   assertIntakeNotCancelled(options.signal);
   const source = await locateIntakeSource(sourceInput, options.signal);
   assertLocatedSourceMatchesReceipt(source, receipt);
-  const receiptByPath = new Map(receipt.files.map((file) => [file.path, file] as const));
+  const receiptByPath = new Map(
+    receipt.files.map((file) => [file.path, file] as const),
+  );
   const results: UniversalSourceFactsFileResult[] = [];
   for (const located of source.files) {
     assertIntakeNotCancelled(options.signal);
@@ -779,9 +1026,14 @@ export async function inspectUniversalIntakeWithSourceFacts(
       );
     }
     const identity = sourceFactsIdentity(receiptFile);
-    const collector = createUniversalSourceFactsStreamCollector(located.relativePath);
+    const collector = createUniversalSourceFactsStreamCollector(
+      located.relativePath,
+    );
     const magicHex = receiptFile.inspection.magicHex;
-    const inspectAsSog = identity.detection.candidates.some((candidate) => candidate.inputType === "sog") &&
+    const inspectAsSog =
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "sog",
+      ) &&
       !magicHex.startsWith("4153544d2d453537") &&
       !magicHex.startsWith("676c5446");
     let sogInspection: FoundrySogSourceFactsOutcome | undefined;
@@ -804,18 +1056,26 @@ export async function inspectUniversalIntakeWithSourceFacts(
           }
         : undefined,
     );
-    if (digest.sizeBytes !== identity.sizeBytes || digest.sha256 !== identity.sha256) {
+    if (
+      digest.sizeBytes !== identity.sizeBytes ||
+      digest.sha256 !== identity.sha256
+    ) {
       throw new FoundryIntegrityError(
         "SOURCE_FACTS_BYTE_BINDING_MISMATCH",
         "The Source Facts byte stream did not match the intake receipt; no artifact was issued.",
       );
     }
-    results.push(collector.finalize(
-      identity,
-      sogInspection === undefined ? undefined : { sogInspection },
-    ));
+    results.push(
+      collector.finalize(
+        identity,
+        sogInspection === undefined ? undefined : { sogInspection },
+      ),
+    );
   }
-  const sourceAfterFacts = await locateIntakeSource(sourceInput, options.signal);
+  const sourceAfterFacts = await locateIntakeSource(
+    sourceInput,
+    options.signal,
+  );
   assertIntakeSourceUnchanged(source, sourceAfterFacts);
   return {
     receipt,
@@ -842,9 +1102,13 @@ export async function inspectUniversalIntakeWithSourceFactsV2(
   } = await import("./source-facts-v2.js");
   const receipt = await inspectUniversalIntake(sourceInput, options);
   const identities = receipt.files.map(sourceFactsIdentity);
-  if (identities.some((identity) =>
-    identity.detection.candidates.some((candidate) => candidate.inputType === "xgrids_xbin")
-  )) {
+  if (
+    identities.some((identity) =>
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "xgrids_xbin",
+      ),
+    )
+  ) {
     return {
       receipt,
       sourceFacts: createUniversalSourceFactsV2ArtifactFromReceipt(
@@ -857,7 +1121,9 @@ export async function inspectUniversalIntakeWithSourceFactsV2(
   assertIntakeNotCancelled(options.signal);
   const source = await locateIntakeSource(sourceInput, options.signal);
   assertLocatedSourceMatchesReceipt(source, receipt);
-  const receiptByPath = new Map(receipt.files.map((file) => [file.path, file] as const));
+  const receiptByPath = new Map(
+    receipt.files.map((file) => [file.path, file] as const),
+  );
   const results: UniversalSourceFactsV2FileResult[] = [];
   for (const located of source.files) {
     assertIntakeNotCancelled(options.signal);
@@ -869,14 +1135,24 @@ export async function inspectUniversalIntakeWithSourceFactsV2(
       );
     }
     const identity = sourceFactsIdentity(receiptFile);
-    const collector = createUniversalSourceFactsV2StreamCollector(located.relativePath);
+    const collector = createUniversalSourceFactsV2StreamCollector(
+      located.relativePath,
+    );
     const magicHex = receiptFile.inspection.magicHex;
     const e57Magic = magicHex.startsWith("4153544d2d453537");
     const glbMagic = magicHex.startsWith("676c5446");
-    const inspectAsSog = identity.detection.candidates.some((candidate) => candidate.inputType === "sog") &&
-      !e57Magic && !glbMagic;
-    const inspectAsSpz = identity.detection.candidates.some((candidate) => candidate.inputType === "spz") &&
-      !e57Magic && !glbMagic;
+    const inspectAsSog =
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "sog",
+      ) &&
+      !e57Magic &&
+      !glbMagic;
+    const inspectAsSpz =
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "spz",
+      ) &&
+      !e57Magic &&
+      !glbMagic;
     let sogInspection: FoundrySogSourceFactsOutcome | undefined;
     let spzInspection: FoundrySpzSourceFactsOutcome | undefined;
     const digest = await sha256RegularFileWithHead(
@@ -898,7 +1174,8 @@ export async function inspectUniversalIntakeWithSourceFactsV2(
               );
               return;
             }
-            const { inspectSpzSourceFacts } = await import("./spz-source-facts.js");
+            const { inspectSpzSourceFacts } =
+              await import("./spz-source-facts.js");
             spzInspection = await inspectSpzSourceFacts(
               handle,
               sizeBytes,
@@ -908,18 +1185,26 @@ export async function inspectUniversalIntakeWithSourceFactsV2(
           }
         : undefined,
     );
-    if (digest.sizeBytes !== identity.sizeBytes || digest.sha256 !== identity.sha256) {
+    if (
+      digest.sizeBytes !== identity.sizeBytes ||
+      digest.sha256 !== identity.sha256
+    ) {
       throw new FoundryIntegrityError(
         "SOURCE_FACTS_V2_BYTE_BINDING_MISMATCH",
         "The Source Facts V2 byte stream did not match the intake receipt; no artifact was issued.",
       );
     }
-    results.push(collector.finalize(identity, {
-      ...(sogInspection === undefined ? {} : { sogInspection }),
-      ...(spzInspection === undefined ? {} : { spzInspection }),
-    }));
+    results.push(
+      collector.finalize(identity, {
+        ...(sogInspection === undefined ? {} : { sogInspection }),
+        ...(spzInspection === undefined ? {} : { spzInspection }),
+      }),
+    );
   }
-  const sourceAfterFacts = await locateIntakeSource(sourceInput, options.signal);
+  const sourceAfterFacts = await locateIntakeSource(
+    sourceInput,
+    options.signal,
+  );
   assertIntakeSourceUnchanged(source, sourceAfterFacts);
   return {
     receipt,
@@ -948,9 +1233,13 @@ export async function inspectUniversalIntakeWithSourceFactsV3(
   } = await import("./source-facts-v3.js");
   const receipt = await inspectUniversalIntake(sourceInput, options);
   const identities = receipt.files.map(sourceFactsIdentity);
-  if (identities.some((identity) =>
-    identity.detection.candidates.some((candidate) => candidate.inputType === "xgrids_xbin")
-  )) {
+  if (
+    identities.some((identity) =>
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "xgrids_xbin",
+      ),
+    )
+  ) {
     return {
       receipt,
       sourceFacts: createUniversalSourceFactsV3ArtifactFromReceipt(
@@ -963,7 +1252,9 @@ export async function inspectUniversalIntakeWithSourceFactsV3(
   assertIntakeNotCancelled(options.signal);
   const source = await locateIntakeSource(sourceInput, options.signal);
   assertLocatedSourceMatchesReceipt(source, receipt);
-  const receiptByPath = new Map(receipt.files.map((file) => [file.path, file] as const));
+  const receiptByPath = new Map(
+    receipt.files.map((file) => [file.path, file] as const),
+  );
   const results: UniversalSourceFactsV3FileResult[] = [];
   for (const located of source.files) {
     assertIntakeNotCancelled(options.signal);
@@ -975,20 +1266,34 @@ export async function inspectUniversalIntakeWithSourceFactsV3(
       );
     }
     const identity = sourceFactsIdentity(receiptFile);
-    const collector = createUniversalSourceFactsV3StreamCollector(located.relativePath);
+    const collector = createUniversalSourceFactsV3StreamCollector(
+      located.relativePath,
+    );
     const magicHex = receiptFile.inspection.magicHex;
     const e57Magic = magicHex.startsWith("4153544d2d453537");
     const glbMagic = magicHex.startsWith("676c5446");
-    const inspectAsGaussianPly = !e57Magic && !glbMagic &&
-      identity.detection.candidates.some((candidate) =>
-        candidate.inputType === "gaussian_ply" || candidate.inputType === "ply_point_cloud"
+    const inspectAsGaussianPly =
+      !e57Magic &&
+      !glbMagic &&
+      identity.detection.candidates.some(
+        (candidate) =>
+          candidate.inputType === "gaussian_ply" ||
+          candidate.inputType === "ply_point_cloud",
       );
-    const inspectAsSog = !inspectAsGaussianPly &&
-      identity.detection.candidates.some((candidate) => candidate.inputType === "sog") &&
-      !e57Magic && !glbMagic;
-    const inspectAsSpz = !inspectAsGaussianPly &&
-      identity.detection.candidates.some((candidate) => candidate.inputType === "spz") &&
-      !e57Magic && !glbMagic;
+    const inspectAsSog =
+      !inspectAsGaussianPly &&
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "sog",
+      ) &&
+      !e57Magic &&
+      !glbMagic;
+    const inspectAsSpz =
+      !inspectAsGaussianPly &&
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "spz",
+      ) &&
+      !e57Magic &&
+      !glbMagic;
     let sogInspection: FoundrySogSourceFactsOutcome | undefined;
     let spzInspection: FoundrySpzSourceFactsOutcome | undefined;
     let gaussianPlyInspection: FoundryGaussianPlySourceFactsOutcome | undefined;
@@ -1003,7 +1308,8 @@ export async function inspectUniversalIntakeWithSourceFactsV3(
       inspectAsSog || inspectAsSpz || inspectAsGaussianPly
         ? async (handle, sizeBytes, sourceSha256) => {
             if (inspectAsGaussianPly) {
-              const { inspectGaussianPlySourceFacts } = await import("./gaussian-ply-source-facts.js");
+              const { inspectGaussianPlySourceFacts } =
+                await import("./gaussian-ply-source-facts.js");
               gaussianPlyInspection = await inspectGaussianPlySourceFacts(
                 handle,
                 sizeBytes,
@@ -1021,7 +1327,8 @@ export async function inspectUniversalIntakeWithSourceFactsV3(
               );
               return;
             }
-            const { inspectSpzSourceFacts } = await import("./spz-source-facts.js");
+            const { inspectSpzSourceFacts } =
+              await import("./spz-source-facts.js");
             spzInspection = await inspectSpzSourceFacts(
               handle,
               sizeBytes,
@@ -1031,19 +1338,29 @@ export async function inspectUniversalIntakeWithSourceFactsV3(
           }
         : undefined,
     );
-    if (digest.sizeBytes !== identity.sizeBytes || digest.sha256 !== identity.sha256) {
+    if (
+      digest.sizeBytes !== identity.sizeBytes ||
+      digest.sha256 !== identity.sha256
+    ) {
       throw new FoundryIntegrityError(
         "SOURCE_FACTS_V3_BYTE_BINDING_MISMATCH",
         "The Source Facts V3 byte stream did not match the intake receipt; no artifact was issued.",
       );
     }
-    results.push(collector.finalize(identity, {
-      ...(sogInspection === undefined ? {} : { sogInspection }),
-      ...(spzInspection === undefined ? {} : { spzInspection }),
-      ...(gaussianPlyInspection === undefined ? {} : { gaussianPlyInspection }),
-    }));
+    results.push(
+      collector.finalize(identity, {
+        ...(sogInspection === undefined ? {} : { sogInspection }),
+        ...(spzInspection === undefined ? {} : { spzInspection }),
+        ...(gaussianPlyInspection === undefined
+          ? {}
+          : { gaussianPlyInspection }),
+      }),
+    );
   }
-  const sourceAfterFacts = await locateIntakeSource(sourceInput, options.signal);
+  const sourceAfterFacts = await locateIntakeSource(
+    sourceInput,
+    options.signal,
+  );
   assertIntakeSourceUnchanged(source, sourceAfterFacts);
   return {
     receipt,
@@ -1069,12 +1386,15 @@ function hasMediaContainerReceiptCandidate(
   identity: UniversalSourceFactsReceiptFileIdentity,
 ): boolean {
   return MEDIA_CONTAINER_RECEIPT_INPUT_TYPES.some((inputType) =>
-    identity.detection.candidates.some((candidate) => candidate.inputType === inputType)
+    identity.detection.candidates.some(
+      (candidate) => candidate.inputType === inputType,
+    ),
   );
 }
 
 function receiptPathExtension(relativePath: string): string {
-  const leaf = relativePath.replaceAll("\\", "/").split("/").at(-1) ?? relativePath;
+  const leaf =
+    relativePath.replaceAll("\\", "/").split("/").at(-1) ?? relativePath;
   const dot = leaf.lastIndexOf(".");
   return dot < 0 ? "" : leaf.slice(dot).toLowerCase();
 }
@@ -1085,14 +1405,26 @@ function claimedBySourceFactsV1ThroughV3(
   glbMagic: boolean,
 ): boolean {
   if (e57Magic || glbMagic) return true;
-  const candidates = new Set(identity.detection.candidates.map((candidate) => candidate.inputType));
+  const candidates = new Set(
+    identity.detection.candidates.map((candidate) => candidate.inputType),
+  );
   const suffix = receiptPathExtension(identity.path);
-  return candidates.has("gaussian_ply") || candidates.has("ply_point_cloud") ||
-    candidates.has("spz") || suffix === ".spz" ||
-    candidates.has("sog") || suffix === ".sog" ||
-    candidates.has("generic_e57") || candidates.has("matterport_e57") || suffix === ".e57" ||
-    candidates.has("glb_gltf") || suffix === ".gltf" || suffix === ".glb" ||
-    candidates.has("obj") || suffix === ".obj";
+  return (
+    candidates.has("gaussian_ply") ||
+    candidates.has("ply_point_cloud") ||
+    candidates.has("spz") ||
+    suffix === ".spz" ||
+    candidates.has("sog") ||
+    suffix === ".sog" ||
+    candidates.has("generic_e57") ||
+    candidates.has("matterport_e57") ||
+    suffix === ".e57" ||
+    candidates.has("glb_gltf") ||
+    suffix === ".gltf" ||
+    suffix === ".glb" ||
+    candidates.has("obj") ||
+    suffix === ".obj"
+  );
 }
 
 function sourceFactsV4Identity(
@@ -1120,9 +1452,13 @@ export async function inspectUniversalIntakeWithSourceFactsV4(
   } = await import("./source-facts-v4.js");
   const receipt = await inspectUniversalIntake(sourceInput, options);
   const identities = receipt.files.map(sourceFactsV4Identity);
-  if (identities.some((identity) =>
-    identity.detection.candidates.some((candidate) => candidate.inputType === "xgrids_xbin")
-  )) {
+  if (
+    identities.some((identity) =>
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "xgrids_xbin",
+      ),
+    )
+  ) {
     return {
       receipt,
       sourceFacts: createUniversalSourceFactsV4ArtifactFromReceipt(
@@ -1135,7 +1471,9 @@ export async function inspectUniversalIntakeWithSourceFactsV4(
   assertIntakeNotCancelled(options.signal);
   const source = await locateIntakeSource(sourceInput, options.signal);
   assertLocatedSourceMatchesReceipt(source, receipt);
-  const receiptByPath = new Map(receipt.files.map((file) => [file.path, file] as const));
+  const receiptByPath = new Map(
+    receipt.files.map((file) => [file.path, file] as const),
+  );
   const results: UniversalSourceFactsV4FileResult[] = [];
   for (const located of source.files) {
     assertIntakeNotCancelled(options.signal);
@@ -1147,25 +1485,51 @@ export async function inspectUniversalIntakeWithSourceFactsV4(
       );
     }
     const identity = sourceFactsV4Identity(receiptFile);
-    const collector = createUniversalSourceFactsV4StreamCollector(located.relativePath);
+    const collector = createUniversalSourceFactsV4StreamCollector(
+      located.relativePath,
+    );
     const magicHex = receiptFile.inspection.magicHex;
     const e57Magic = magicHex.startsWith("4153544d2d453537");
     const glbMagic = magicHex.startsWith("676c5446");
-    const inheritedTarget = claimedBySourceFactsV1ThroughV3(identity, e57Magic, glbMagic);
-    const inspectAsGaussianPly = !e57Magic && !glbMagic &&
-      identity.detection.candidates.some((candidate) =>
-        candidate.inputType === "gaussian_ply" || candidate.inputType === "ply_point_cloud"
+    const inheritedTarget = claimedBySourceFactsV1ThroughV3(
+      identity,
+      e57Magic,
+      glbMagic,
+    );
+    const inspectAsGaussianPly =
+      !e57Magic &&
+      !glbMagic &&
+      identity.detection.candidates.some(
+        (candidate) =>
+          candidate.inputType === "gaussian_ply" ||
+          candidate.inputType === "ply_point_cloud",
       );
     const suffix = receiptPathExtension(identity.path);
-    const inspectAsSpz = !inspectAsGaussianPly && !e57Magic && !glbMagic &&
-      (identity.detection.candidates.some((candidate) => candidate.inputType === "spz") || suffix === ".spz");
-    const inspectAsSog = !inspectAsGaussianPly && !inspectAsSpz && !e57Magic && !glbMagic &&
-      (identity.detection.candidates.some((candidate) => candidate.inputType === "sog") || suffix === ".sog");
-    const inspectAsMediaContainer = !inheritedTarget && hasMediaContainerReceiptCandidate(identity);
+    const inspectAsSpz =
+      !inspectAsGaussianPly &&
+      !e57Magic &&
+      !glbMagic &&
+      (identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "spz",
+      ) ||
+        suffix === ".spz");
+    const inspectAsSog =
+      !inspectAsGaussianPly &&
+      !inspectAsSpz &&
+      !e57Magic &&
+      !glbMagic &&
+      (identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "sog",
+      ) ||
+        suffix === ".sog");
+    const inspectAsMediaContainer =
+      !inheritedTarget && hasMediaContainerReceiptCandidate(identity);
     let sogInspection: FoundrySogSourceFactsOutcome | undefined;
     let spzInspection: FoundrySpzSourceFactsOutcome | undefined;
     let gaussianPlyInspection: FoundryGaussianPlySourceFactsOutcome | undefined;
-    let mediaContainerInspection: FoundryMediaContainerSourceFactsOutcome | undefined;
+    let mediaContainerInspection:
+      | FoundryMediaContainerSourceFactsOutcome
+      | undefined;
     const digest = await sha256RegularFileWithHead(
       located.absolutePath,
       0,
@@ -1174,10 +1538,14 @@ export async function inspectUniversalIntakeWithSourceFactsV4(
       (chunk, absoluteOffset) => {
         collector.observe(chunk, absoluteOffset);
       },
-      inspectAsSog || inspectAsSpz || inspectAsGaussianPly || inspectAsMediaContainer
+      inspectAsSog ||
+        inspectAsSpz ||
+        inspectAsGaussianPly ||
+        inspectAsMediaContainer
         ? async (handle, sizeBytes, sourceSha256) => {
             if (inspectAsGaussianPly) {
-              const { inspectGaussianPlySourceFacts } = await import("./gaussian-ply-source-facts.js");
+              const { inspectGaussianPlySourceFacts } =
+                await import("./gaussian-ply-source-facts.js");
               gaussianPlyInspection = await inspectGaussianPlySourceFacts(
                 handle,
                 sizeBytes,
@@ -1196,7 +1564,8 @@ export async function inspectUniversalIntakeWithSourceFactsV4(
               return;
             }
             if (inspectAsSpz) {
-              const { inspectSpzSourceFacts } = await import("./spz-source-facts.js");
+              const { inspectSpzSourceFacts } =
+                await import("./spz-source-facts.js");
               spzInspection = await inspectSpzSourceFacts(
                 handle,
                 sizeBytes,
@@ -1205,7 +1574,8 @@ export async function inspectUniversalIntakeWithSourceFactsV4(
               );
               return;
             }
-            const { inspectMediaContainerSourceFacts } = await import("./media-container-source-facts.js");
+            const { inspectMediaContainerSourceFacts } =
+              await import("./media-container-source-facts.js");
             mediaContainerInspection = await inspectMediaContainerSourceFacts(
               handle,
               sizeBytes,
@@ -1215,20 +1585,32 @@ export async function inspectUniversalIntakeWithSourceFactsV4(
           }
         : undefined,
     );
-    if (digest.sizeBytes !== identity.sizeBytes || digest.sha256 !== identity.sha256) {
+    if (
+      digest.sizeBytes !== identity.sizeBytes ||
+      digest.sha256 !== identity.sha256
+    ) {
       throw new FoundryIntegrityError(
         "SOURCE_FACTS_V4_BYTE_BINDING_MISMATCH",
         "The Source Facts V4 byte stream did not match the intake receipt; no artifact was issued.",
       );
     }
-    results.push(collector.finalize(identity, {
-      ...(sogInspection === undefined ? {} : { sogInspection }),
-      ...(spzInspection === undefined ? {} : { spzInspection }),
-      ...(gaussianPlyInspection === undefined ? {} : { gaussianPlyInspection }),
-      ...(mediaContainerInspection === undefined ? {} : { mediaContainerInspection }),
-    }));
+    results.push(
+      collector.finalize(identity, {
+        ...(sogInspection === undefined ? {} : { sogInspection }),
+        ...(spzInspection === undefined ? {} : { spzInspection }),
+        ...(gaussianPlyInspection === undefined
+          ? {}
+          : { gaussianPlyInspection }),
+        ...(mediaContainerInspection === undefined
+          ? {}
+          : { mediaContainerInspection }),
+      }),
+    );
   }
-  const sourceAfterFacts = await locateIntakeSource(sourceInput, options.signal);
+  const sourceAfterFacts = await locateIntakeSource(
+    sourceInput,
+    options.signal,
+  );
   assertIntakeSourceUnchanged(source, sourceAfterFacts);
   return {
     receipt,
@@ -1246,7 +1628,8 @@ function registrationDocumentReceiptTarget(
   if (
     identity.detection.status !== "detected" ||
     identity.detection.candidates.length !== 1
-  ) return null;
+  )
+    return null;
   const inputType = identity.detection.candidates[0]?.inputType;
   return inputType === "calibration_bundle" || inputType === "trajectory"
     ? inputType
@@ -1270,11 +1653,13 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
   } = await import("./source-facts-v5.js");
   const receipt = await inspectUniversalIntake(sourceInput, options);
   const identities = receipt.files.map(sourceFactsV4Identity);
-  if (identities.some((identity) =>
-    identity.detection.candidates.some(
-      (candidate) => candidate.inputType === "xgrids_xbin",
+  if (
+    identities.some((identity) =>
+      identity.detection.candidates.some(
+        (candidate) => candidate.inputType === "xgrids_xbin",
+      ),
     )
-  )) {
+  ) {
     return {
       receipt,
       sourceFacts: createUniversalSourceFactsV5ArtifactFromReceipt(
@@ -1287,7 +1672,9 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
   assertIntakeNotCancelled(options.signal);
   const source = await locateIntakeSource(sourceInput, options.signal);
   assertLocatedSourceMatchesReceipt(source, receipt);
-  const receiptByPath = new Map(receipt.files.map((file) => [file.path, file] as const));
+  const receiptByPath = new Map(
+    receipt.files.map((file) => [file.path, file] as const),
+  );
   const results: UniversalSourceFactsV5FileResult[] = [];
   for (const located of source.files) {
     assertIntakeNotCancelled(options.signal);
@@ -1299,7 +1686,9 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
       );
     }
     const identity = sourceFactsV4Identity(receiptFile);
-    const collector = createUniversalSourceFactsV5StreamCollector(located.relativePath);
+    const collector = createUniversalSourceFactsV5StreamCollector(
+      located.relativePath,
+    );
     const magicHex = receiptFile.inspection.magicHex;
     const e57Magic = magicHex.startsWith("4153544d2d453537");
     const glbMagic = magicHex.startsWith("676c5446");
@@ -1308,40 +1697,56 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
       e57Magic,
       glbMagic,
     );
-    const inspectAsGaussianPly = !e57Magic && !glbMagic &&
-      identity.detection.candidates.some((candidate) =>
-        candidate.inputType === "gaussian_ply" ||
-        candidate.inputType === "ply_point_cloud"
+    const inspectAsGaussianPly =
+      !e57Magic &&
+      !glbMagic &&
+      identity.detection.candidates.some(
+        (candidate) =>
+          candidate.inputType === "gaussian_ply" ||
+          candidate.inputType === "ply_point_cloud",
       );
     const suffix = receiptPathExtension(identity.path);
-    const inspectAsSpz = !inspectAsGaussianPly && !e57Magic && !glbMagic &&
+    const inspectAsSpz =
+      !inspectAsGaussianPly &&
+      !e57Magic &&
+      !glbMagic &&
       (identity.detection.candidates.some(
         (candidate) => candidate.inputType === "spz",
-      ) || suffix === ".spz");
-    const inspectAsSog = !inspectAsGaussianPly && !inspectAsSpz &&
-      !e57Magic && !glbMagic &&
+      ) ||
+        suffix === ".spz");
+    const inspectAsSog =
+      !inspectAsGaussianPly &&
+      !inspectAsSpz &&
+      !e57Magic &&
+      !glbMagic &&
       (identity.detection.candidates.some(
         (candidate) => candidate.inputType === "sog",
-      ) || suffix === ".sog");
-    const inspectAsMediaContainer = !inheritedTarget &&
-      hasMediaContainerReceiptCandidate(identity);
-    const registrationTarget = !inheritedTarget && !inspectAsMediaContainer
-      ? registrationDocumentReceiptTarget(identity)
-      : null;
-    const registrationFormat = registrationTarget !== null
-      ? suffix === ".csv"
-        ? "csv" as const
-        : suffix === ".json"
-          ? "json" as const
-          : null
-      : null;
+      ) ||
+        suffix === ".sog");
+    const inspectAsMediaContainer =
+      !inheritedTarget && hasMediaContainerReceiptCandidate(identity);
+    const registrationTarget =
+      !inheritedTarget && !inspectAsMediaContainer
+        ? registrationDocumentReceiptTarget(identity)
+        : null;
+    const registrationFormat =
+      registrationTarget !== null
+        ? suffix === ".csv"
+          ? ("csv" as const)
+          : suffix === ".json"
+            ? ("json" as const)
+            : null
+        : null;
 
     let sogInspection: FoundrySogSourceFactsOutcome | undefined;
     let spzInspection: FoundrySpzSourceFactsOutcome | undefined;
     let gaussianPlyInspection: FoundryGaussianPlySourceFactsOutcome | undefined;
-    let mediaContainerInspection: FoundryMediaContainerSourceFactsOutcome | undefined;
+    let mediaContainerInspection:
+      | FoundryMediaContainerSourceFactsOutcome
+      | undefined;
     let calibrationTrajectoryInspection:
-      FoundryCalibrationTrajectorySourceFactsOutcome | undefined;
+      | FoundryCalibrationTrajectorySourceFactsOutcome
+      | undefined;
     const digest = await sha256RegularFileWithHead(
       located.absolutePath,
       0,
@@ -1350,13 +1755,15 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
       (chunk, absoluteOffset) => {
         collector.observe(chunk, absoluteOffset);
       },
-      inspectAsSog || inspectAsSpz || inspectAsGaussianPly ||
-        inspectAsMediaContainer || registrationFormat !== null
+      inspectAsSog ||
+        inspectAsSpz ||
+        inspectAsGaussianPly ||
+        inspectAsMediaContainer ||
+        registrationFormat !== null
         ? async (handle, sizeBytes, sourceSha256) => {
             if (inspectAsGaussianPly) {
-              const { inspectGaussianPlySourceFacts } = await import(
-                "./gaussian-ply-source-facts.js"
-              );
+              const { inspectGaussianPlySourceFacts } =
+                await import("./gaussian-ply-source-facts.js");
               gaussianPlyInspection = await inspectGaussianPlySourceFacts(
                 handle,
                 sizeBytes,
@@ -1375,9 +1782,8 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
               return;
             }
             if (inspectAsSpz) {
-              const { inspectSpzSourceFacts } = await import(
-                "./spz-source-facts.js"
-              );
+              const { inspectSpzSourceFacts } =
+                await import("./spz-source-facts.js");
               spzInspection = await inspectSpzSourceFacts(
                 handle,
                 sizeBytes,
@@ -1387,9 +1793,8 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
               return;
             }
             if (inspectAsMediaContainer) {
-              const { inspectMediaContainerSourceFacts } = await import(
-                "./media-container-source-facts.js"
-              );
+              const { inspectMediaContainerSourceFacts } =
+                await import("./media-container-source-facts.js");
               mediaContainerInspection = await inspectMediaContainerSourceFacts(
                 handle,
                 sizeBytes,
@@ -1399,9 +1804,8 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
               return;
             }
             if (registrationFormat === null) return;
-            const { inspectCalibrationTrajectorySourceFacts } = await import(
-              "./calibration-trajectory-source-facts.js"
-            );
+            const { inspectCalibrationTrajectorySourceFacts } =
+              await import("./calibration-trajectory-source-facts.js");
             calibrationTrajectoryInspection =
               await inspectCalibrationTrajectorySourceFacts(
                 handle,
@@ -1413,25 +1817,35 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
           }
         : undefined,
     );
-    if (digest.sizeBytes !== identity.sizeBytes || digest.sha256 !== identity.sha256) {
+    if (
+      digest.sizeBytes !== identity.sizeBytes ||
+      digest.sha256 !== identity.sha256
+    ) {
       throw new FoundryIntegrityError(
         "SOURCE_FACTS_V5_BYTE_BINDING_MISMATCH",
         "The Source Facts V5 byte stream did not match the intake receipt; no artifact was issued.",
       );
     }
-    results.push(collector.finalize(identity, {
-      ...(sogInspection === undefined ? {} : { sogInspection }),
-      ...(spzInspection === undefined ? {} : { spzInspection }),
-      ...(gaussianPlyInspection === undefined ? {} : { gaussianPlyInspection }),
-      ...(mediaContainerInspection === undefined
-        ? {}
-        : { mediaContainerInspection }),
-      ...(calibrationTrajectoryInspection === undefined
-        ? {}
-        : { calibrationTrajectoryInspection }),
-    }));
+    results.push(
+      collector.finalize(identity, {
+        ...(sogInspection === undefined ? {} : { sogInspection }),
+        ...(spzInspection === undefined ? {} : { spzInspection }),
+        ...(gaussianPlyInspection === undefined
+          ? {}
+          : { gaussianPlyInspection }),
+        ...(mediaContainerInspection === undefined
+          ? {}
+          : { mediaContainerInspection }),
+        ...(calibrationTrajectoryInspection === undefined
+          ? {}
+          : { calibrationTrajectoryInspection }),
+      }),
+    );
   }
-  const sourceAfterFacts = await locateIntakeSource(sourceInput, options.signal);
+  const sourceAfterFacts = await locateIntakeSource(
+    sourceInput,
+    options.signal,
+  );
   assertIntakeSourceUnchanged(source, sourceAfterFacts);
   return {
     receipt,
@@ -1441,4 +1855,109 @@ export async function inspectUniversalIntakeWithSourceFactsV5(
       results,
     ),
   };
+}
+
+/**
+ * Issues Source Facts V6 by retaining the exact V5 artifact and adding one
+ * separately identity-bound ordinary point-cloud PLY refinement for every
+ * receipt candidate. The extra pass is read-only; the bounded parser consumes
+ * the retained prefix captured by the same full-file hash stream, so it does
+ * not reread mutable source bytes after digest finalization.
+ *
+ * V6 does not decode point values, establish units or a coordinate frame,
+ * classify captured furniture, reconstruct geometry, or grant authority.
+ */
+export async function inspectUniversalIntakeWithSourceFactsV6(
+  sourceInput: string,
+  options: InspectUniversalIntakeOptions = {},
+): Promise<InspectUniversalIntakeWithSourceFactsV6Result> {
+  const { receipt, sourceFacts: baseFactsV5 } =
+    await inspectUniversalIntakeWithSourceFactsV5(sourceInput, options);
+  const { createUniversalSourceFactsV6ArtifactFromV5 } =
+    await import("./source-facts-v6.js");
+  const identities = receipt.files.map(sourceFactsV4Identity);
+  if (baseFactsV5.state === "unavailable") {
+    return verifyUniversalIntakeWithSourceFactsV6Result({
+      receipt,
+      sourceFacts: createUniversalSourceFactsV6ArtifactFromV5(
+        baseFactsV5,
+        identities,
+        [],
+      ),
+    });
+  }
+
+  assertIntakeNotCancelled(options.signal);
+  const source = await locateIntakeSource(sourceInput, options.signal);
+  assertLocatedSourceMatchesReceipt(source, receipt);
+  const receiptByPath = new Map(
+    receipt.files.map((file) => [file.path, file] as const),
+  );
+  const refinements: FoundryPointPlyRefinementInputV6[] = [];
+  for (const located of source.files) {
+    assertIntakeNotCancelled(options.signal);
+    const receiptFile = receiptByPath.get(located.relativePath);
+    if (receiptFile === undefined) {
+      throw new FoundryIntegrityError(
+        "SOURCE_FACTS_V6_RECEIPT_FILE_MISSING",
+        "The Source Facts V6 pass found a file that is absent from the intake receipt.",
+      );
+    }
+    const isPointPlyCandidate = receiptFile.detection.candidates.some(
+      (candidate) => candidate.inputType === "ply_point_cloud",
+    );
+    if (!isPointPlyCandidate) continue;
+
+    const {
+      FOUNDRY_POINT_PLY_HEADER_MAX_BYTES,
+      inspectPlyPointCloudSourceFactsFromHashedHeader,
+    } = await import("./ply-point-cloud-source-facts.js");
+    const retainedHeader = Buffer.allocUnsafe(
+      Math.min(receiptFile.sizeBytes, FOUNDRY_POINT_PLY_HEADER_MAX_BYTES + 1),
+    );
+    const digest = await sha256RegularFileWithHead(
+      located.absolutePath,
+      0,
+      located.expectedIdentity,
+      options.signal,
+      (chunk, absoluteOffset) => {
+        if (absoluteOffset >= retainedHeader.length) return;
+        const copied = Math.min(
+          chunk.length,
+          retainedHeader.length - absoluteOffset,
+        );
+        retainedHeader.set(chunk.subarray(0, copied), absoluteOffset);
+      },
+    );
+    const outcome: FoundryPlyPointCloudSourceFactsOutcome =
+      inspectPlyPointCloudSourceFactsFromHashedHeader(
+        retainedHeader,
+        digest.sizeBytes,
+        digest.sha256,
+        options.signal,
+      );
+    if (
+      digest.sizeBytes !== receiptFile.sizeBytes ||
+      digest.sha256 !== receiptFile.sha256
+    ) {
+      throw new FoundryIntegrityError(
+        "SOURCE_FACTS_V6_BYTE_BINDING_MISMATCH",
+        "The point PLY refinement did not match the intake receipt; no V6 artifact was issued.",
+      );
+    }
+    refinements.push({ path: receiptFile.path, outcome });
+  }
+  const sourceAfterFacts = await locateIntakeSource(
+    sourceInput,
+    options.signal,
+  );
+  assertIntakeSourceUnchanged(source, sourceAfterFacts);
+  return verifyUniversalIntakeWithSourceFactsV6Result({
+    receipt,
+    sourceFacts: createUniversalSourceFactsV6ArtifactFromV5(
+      baseFactsV5,
+      identities,
+      refinements,
+    ),
+  });
 }

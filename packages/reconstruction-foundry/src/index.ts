@@ -1,4 +1,5 @@
 export * from "./candidate.js";
+export * from "./adapter-capability-assessment.js";
 export * from "./activation-v1-authenticated-evidence-bytes.js";
 export * from "./activation-v1-runner-transcript-frame-order.js";
 export * from "./canonical-json.js";
@@ -6,6 +7,12 @@ export * from "./dsse.js";
 export * from "./errors.js";
 export * from "./execution-control.js";
 export * from "./execution-replay.js";
+export * from "./e57-geometry-worker.js";
+export * from "./e57-scan-sharded-reduction.js";
+export * from "./e57-point-classification-mask.js";
+export * from "./bounded-point-source-fusion.js";
+export * from "./local-pye57-geometry-reader.js";
+export * from "./local-pye57-sequential-geometry-reader.js";
 export * from "./glb.js";
 export * from "./guided-admission.js";
 export * from "./hash.js";
@@ -138,11 +145,15 @@ export type {
 export * from "./inventory.js";
 export * from "./intake-admission.js";
 export * from "./intake-receipt.js";
+export * from "./multi-root-capture-bundle.js";
 export * from "./source-facts.js";
 export * from "./sog-source-facts.js";
 export * from "./spz-source-facts.js";
 export * from "./gaussian-ply-source-facts.js";
+export * from "./ply-point-cloud-source-facts.js";
 export * from "./media-container-source-facts.js";
+export * from "./metric-registration-proposal.js";
+export * from "./generated-point-correspondence-collection.js";
 export * from "./calibration-trajectory-source-facts.js";
 export {
   FOUNDRY_SOURCE_FACTS_V2_LIMITATIONS,
@@ -210,6 +221,21 @@ export type {
   UniversalSourceFactsV5ReceiptFileIdentity,
   UniversalSourceFactsV5StreamCollector,
 } from "./source-facts-v5.js";
+export {
+  FOUNDRY_POINT_PLY_NEXT_ACTIONS,
+  FOUNDRY_SOURCE_FACTS_V6_LIMITATIONS,
+  FOUNDRY_UNIVERSAL_SOURCE_FACTS_V6,
+  FOUNDRY_UNIVERSAL_SOURCE_FACTS_V6_DIGEST_DOMAIN,
+  FoundryPointPlySourceFactsRefinementV6Schema,
+  FoundryUniversalSourceFactsV6Schema,
+  createUniversalSourceFactsV6ArtifactFromV5,
+  serializeUniversalSourceFactsV6Artifact,
+} from "./source-facts-v6.js";
+export type {
+  FoundryPointPlyRefinementInputV6,
+  FoundryPointPlySourceFactsRefinementV6,
+  FoundryUniversalSourceFactsV6,
+} from "./source-facts-v6.js";
 export * from "./source-readiness.js";
 export * from "./operator-evidence-checklist.js";
 export {
@@ -317,6 +343,7 @@ export type {
   VerifyFoundryOperatorEvidenceChecklistV5Input,
 } from "./operator-evidence-checklist-v5.js";
 export * from "./intake-staging.js";
+export * from "./local-resumable-normalization-preview.js";
 export * from "./training-candidate.js";
 export * from "./object-store.js";
 export * from "./path-safety.js";
@@ -327,5 +354,6 @@ export * from "./preparation.js";
 export * from "./provider-recommendation.js";
 export * from "./qa.js";
 export * from "./release.js";
+export * from "./room-reality-package-assembly.js";
 export * from "./s3-candidate-store.js";
 export * from "./webp.js";

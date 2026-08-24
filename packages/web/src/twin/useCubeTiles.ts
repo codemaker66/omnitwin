@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CubeTexture, SRGBColorSpace } from "three";
 import {
   TWIN_FACES,
@@ -130,8 +130,14 @@ async function buildLodTexture(
  * swaps in. `base` is the bundle base including the venue segment, e.g.
  * `/twin/trades-hall`.
  */
-export function useCubeTiles(nodeId: string, base: string): CubeTilesState {
+export function useCubeTiles(
+  nodeId: string,
+  base: string,
+  onStreamError?: (nodeId: string) => void,
+): CubeTilesState {
   const [state, setState] = useState<CubeTilesState>({ texture: null, lod: 0 });
+  const onStreamErrorRef = useRef(onStreamError);
+  onStreamErrorRef.current = onStreamError;
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +162,11 @@ export function useCubeTiles(nodeId: string, base: string): CubeTilesState {
         live?.dispose();
         live = texture;
         setState({ texture, lod });
+      }
+      // A partial low-LOD failure can recover at the next tier. Surface a
+      // failure only when neither tier produced a renderable cubemap.
+      if (!cancelled && live === null) {
+        onStreamErrorRef.current?.(nodeId);
       }
     };
 

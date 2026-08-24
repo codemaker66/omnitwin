@@ -144,6 +144,15 @@ export function plannerRuntimeRendererRequested(
   return previouslyRequested || hasLiveRuntime || hasHistoricalRuntime;
 }
 
+/** Keep one requested package layer alive through Day/Week reloads, but not no-capture sessions. */
+export function shouldMountHistoricalRuntimeLayer(
+  previouslyRequested: boolean,
+  mode: LayoutTimelinePreviewSessionMode,
+  hasHistoricalRuntime: boolean,
+): boolean {
+  return mode !== "inactive" && (previouslyRequested || hasHistoricalRuntime);
+}
+
 function readViewportWidth(): number {
   return typeof window === "undefined" ? 1440 : window.innerWidth;
 }
@@ -417,6 +426,13 @@ export function PlannerScene(): ReactElement {
     expectedHistoricalRuntime !== null,
   );
   const runtimeRendererRequested = runtimeRendererRequestedRef.current;
+  const historicalRuntimeLayerRequestedRef = useRef(false);
+  historicalRuntimeLayerRequestedRef.current = shouldMountHistoricalRuntimeLayer(
+    historicalRuntimeLayerRequestedRef.current,
+    timelinePreviewMode,
+    expectedHistoricalRuntime !== null,
+  );
+  const historicalRuntimeLayerRequested = historicalRuntimeLayerRequestedRef.current;
   const meshVisible = authoritativeFrozenPreview
     || (!timelinePreviewActive && (!hasAsset || layerMode !== "splat"));
   const splatActive = hasAsset && layerMode !== "mesh";
@@ -557,7 +573,7 @@ export function PlannerScene(): ReactElement {
               <LazySparkRendererHost />
             </Suspense>
           )}
-          {expectedHistoricalRuntime !== null && (
+          {historicalRuntimeLayerRequested && (
             <Suspense fallback={null}>
               <LazyHistoricalRuntimeLayer />
             </Suspense>

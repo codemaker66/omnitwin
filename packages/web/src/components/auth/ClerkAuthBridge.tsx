@@ -17,7 +17,7 @@ import { getCurrentAuthUser, PlatformRoleSchema } from "../../api/auth.js";
 
 export function ClerkAuthBridge(): null {
   const { isLoaded, isSignedIn, user } = useUser();
-  const { getToken } = useAuth();
+  const { getToken, sessionId } = useAuth();
 
   useEffect(() => {
     let cancelled = false;
@@ -48,22 +48,22 @@ export function ClerkAuthBridge(): null {
         platformRole,
         venueId,
         name: user.fullName ?? user.firstName ?? email.split("@")[0] ?? "User",
-      });
+      }, sessionId ?? null);
 
       void getCurrentAuthUser()
         .then((dbUser) => {
-          if (!cancelled) useAuthStore.getState().setUser(dbUser);
+          if (!cancelled) useAuthStore.getState().setUser(dbUser, sessionId ?? null);
         })
         .catch(() => {
           // Keep the Clerk-derived fallback. API calls remain server-gated,
           // and uninvited users will fail closed at the endpoint boundary.
         });
     } else {
-      useAuthStore.getState().setUser(null);
+      useAuthStore.getState().setUser(null, sessionId ?? null);
     }
 
     return () => { cancelled = true; };
-  }, [getToken, isLoaded, isSignedIn, user]);
+  }, [getToken, isLoaded, isSignedIn, sessionId, user]);
 
   // Register getToken with the API client's auth-bridge module so
   // non-React code (api/client.ts, api/enquiries.ts) can fetch tokens.
@@ -76,7 +76,7 @@ export function ClerkAuthBridge(): null {
       setTokenGetter(null);
     }
     return () => { setTokenGetter(null); };
-  }, [getToken, isSignedIn]);
+  }, [getToken, isSignedIn, sessionId]);
 
   return null;
 }
