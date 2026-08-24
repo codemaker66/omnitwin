@@ -308,6 +308,7 @@ describe("useRoomRuntimeSplat", () => {
     expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
       key: result.current.exactGrandHallRuntimeKey,
       status: "pending",
+      attemptNonce: 1,
     });
     expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/verifying exact protected bytes/i);
   });
@@ -326,7 +327,7 @@ describe("useRoomRuntimeSplat", () => {
     });
     const staleKey = result.current.exactGrandHallRuntimeKey;
     if (staleKey === null) throw new Error("Expected the first exact runtime key.");
-    useCockpitStore.getState().completeExactGrandHallRuntime(staleKey, "verified");
+    useCockpitStore.getState().completeExactGrandHallRuntime(staleKey, 1, "verified");
     expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("verified");
 
     act(() => {
@@ -342,10 +343,11 @@ describe("useRoomRuntimeSplat", () => {
     });
     expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("pending");
 
-    useCockpitStore.getState().completeExactGrandHallRuntime(staleKey, "failed");
+    useCockpitStore.getState().completeExactGrandHallRuntime(staleKey, 1, "failed");
     expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
       key: result.current.exactGrandHallRuntimeKey,
       status: "pending",
+      attemptNonce: 2,
     });
   });
 

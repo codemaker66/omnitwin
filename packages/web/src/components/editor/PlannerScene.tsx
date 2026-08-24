@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactElement, type ReactNode } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import type { SpaceDimensions } from "@omnitwin/types";
-import { PerspectiveCamera } from "three";
+import type { SpaceDimensions, SpatialLayerDescriptorV0 } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
 import type { AdaptiveResolutionOptions } from "../AdaptiveResolution.js";
@@ -38,10 +36,17 @@ import {
   resolvePlannerLayerPolicy,
 } from "../../lib/planner-layer-composition.js";
 import { GRAND_HALL_CAPTURED_SOG_MEMBERS } from "../../lib/grand-hall-captured-source.js";
+import { runtimeAssetCameraViewForRoom } from "../../lib/runtime-package-resolution.js";
 import {
-  runtimeAssetCameraViewForRoom,
-  type RuntimeAssetCameraView,
-} from "../../lib/runtime-package-resolution.js";
+  GRAND_HALL_APPEARANCE_LAYER_ID,
+  GRAND_HALL_STRUCTURAL_PROXY_LAYER_ID,
+  createGrandHallRoomSceneManifest,
+} from "../../lib/grand-hall-room-scene.js";
+import {
+  layerStateForRoomResolve,
+  resolveRoomSceneComposition,
+  type RoomSceneLayerLoadState,
+} from "../../lib/room-scene-composition.js";
 import { shouldRenderPlannerMotionOverlays } from "../../lib/planner-render-policy.js";
 import { inkTargetOpacity, roomResolvePhase } from "../../lib/room-resolve-model.js";
 import { CockpitSplatLayer } from "./CockpitSplatLayer.js";
@@ -51,6 +56,9 @@ import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
 import { CockpitCameraFocus } from "./CockpitCameraFocus.js";
 import { CockpitPlanningCamera } from "./CockpitPlanningCamera.js";
 import { ExactGrandHallSplatLayer } from "./ExactGrandHallSplatLayer.js";
+import { RoomSceneCompositor } from "../scene/RoomSceneCompositor.js";
+import { GrandHallStructuralProxyLayer } from "../scene/GrandHallStructuralProxyLayer.js";
+import { GrandHallCapturedCamera } from "../scene/GrandHallCapturedCamera.js";
 
 /**
  * Computes render dimensions from room geometry polygon data.
@@ -65,10 +73,19 @@ export const PLANNER_CANVAS_PERFORMANCE = {
   debounce: 180,
 } as const;
 const CAMERA_INTERACTION_SETTLE_MS = 420;
-const EXACT_GRAND_HALL_MEMBER_KEY = GRAND_HALL_CAPTURED_SOG_MEMBERS
-  .map((member) => member.fileName)
-  .join("|");
 const EXACT_GRAND_HALL_CAMERA_VIEW = runtimeAssetCameraViewForRoom("grand-hall");
+
+export function exactGrandHallArrivalResetKey(
+  runtimeKey: ExactGrandHallRuntimeKey | null,
+  attemptNonce: number,
+): string {
+  const identity = runtimeKey === null
+    ? "exact-grand-hall-unresolved"
+    : serializeExactGrandHallRuntimeKey(runtimeKey);
+  return GRAND_HALL_CAPTURED_SOG_MEMBERS
+    .map((member) => `${identity}:${String(attemptNonce)}:${member.fileName}`)
+    .join("|");
+}
 
 export interface PlannerCanvasGlOptions {
   readonly antialias: boolean;
@@ -125,8 +142,14 @@ function usePlannerViewportWidth(): number {
   return viewportWidth;
 }
 
-function isCameraNavigationPointer(event: PointerEvent<HTMLDivElement>): boolean {
-  return event.pointerType === "touch" || event.button === 1 || event.button === 2;
+function isCameraNavigationPointer(
+  event: PointerEvent<HTMLDivElement>,
+  capturedOnly: boolean,
+): boolean {
+  return event.pointerType === "touch"
+    || event.button === 1
+    || event.button === 2
+    || (capturedOnly && event.button === 0);
 }
 
 function PlannerMotionOverlayLayers({
@@ -183,49 +206,6 @@ function PlannerScenePrecompiler({
   return null;
 }
 
-/**
- * Source-space inspection camera for captured-only rooms. It deliberately
- * avoids CameraRig's procedural-room dimensions and uses the view derived from
- * the registered runtime asset bounds.
- */
-function CapturedSourceCamera({
-  view,
-  smoothControls,
-}: {
-  readonly view: RuntimeAssetCameraView;
-  readonly smoothControls: boolean;
-}): ReactElement {
-  const { camera, invalidate } = useThree();
-
-  useEffect(() => {
-    camera.position.set(view.position[0], view.position[1], view.position[2]);
-    camera.lookAt(view.target[0], view.target[1], view.target[2]);
-    if (camera instanceof PerspectiveCamera) {
-      camera.fov = view.fov;
-      camera.updateProjectionMatrix();
-    }
-    invalidate();
-  }, [camera, invalidate, view]);
-
-  return (
-    <OrbitControls
-      makeDefault
-      regress={smoothControls}
-      enableDamping={smoothControls}
-      dampingFactor={smoothControls ? view.dampingFactor : 0}
-      target={view.target}
-      minDistance={view.minDistance}
-      maxDistance={view.maxDistance}
-      panSpeed={view.panSpeed}
-      rotateSpeed={view.rotateSpeed}
-      zoomSpeed={view.zoomSpeed}
-      minPolarAngle={view.minPolarAngle}
-      maxPolarAngle={view.maxPolarAngle}
-      onChange={() => { invalidate(); }}
-    />
-  );
-}
-
 function useRoomDimensions(): SpaceDimensions {
   const space = useEditorStore((s) => s.space);
   return useMemo(() => {
@@ -267,28 +247,44 @@ function sameExactGrandHallRuntimeKey(
  */
 export function useExactGrandHallRuntimeCallbacks(
   key: ExactGrandHallRuntimeKey | null,
+  attemptNonce: number,
 ): ExactGrandHallRuntimeCallbacks {
-  const currentKeyRef = useRef(key);
-  currentKeyRef.current = key;
+  const currentAttemptRef = useRef({ key, attemptNonce });
+  currentAttemptRef.current = { key, attemptNonce };
   const isCurrentKey = useCallback((): boolean => (
-    key !== null && sameExactGrandHallRuntimeKey(key, currentKeyRef.current)
+    key !== null
+    && sameExactGrandHallRuntimeKey(key, currentAttemptRef.current.key)
   ), [key]);
+  const isCurrentAttempt = useCallback((): boolean => (
+    isCurrentKey()
+    && attemptNonce > 0
+    && currentAttemptRef.current.attemptNonce === attemptNonce
+  ), [attemptNonce, isCurrentKey]);
   const onReady = useCallback((): void => {
-    if (key === null || !isCurrentKey()) return;
-    useCockpitStore.getState().completeExactGrandHallRuntime(key, "verified");
-  }, [isCurrentKey, key]);
+    if (key === null || !isCurrentAttempt()) return;
+    useCockpitStore.getState().completeExactGrandHallRuntime(key, attemptNonce, "verified");
+  }, [attemptNonce, isCurrentAttempt, key]);
   const onFailed = useCallback((): void => {
-    if (key === null || !isCurrentKey()) return;
-    useCockpitStore.getState().completeExactGrandHallRuntime(key, "failed");
-  }, [isCurrentKey, key]);
+    if (key === null || !isCurrentAttempt()) return;
+    useCockpitStore.getState().completeExactGrandHallRuntime(key, attemptNonce, "failed");
+  }, [attemptNonce, isCurrentAttempt, key]);
   const onSourceOnlyError = useCallback((): void => {
-    if (key === null || !isCurrentKey()) return;
-    useCockpitStore.getState().clearExactGrandHallRuntime(key);
-  }, [isCurrentKey, key]);
+    if (key === null || !isCurrentAttempt()) return;
+    useCockpitStore.getState().clearExactGrandHallRuntime(key, attemptNonce);
+  }, [attemptNonce, isCurrentAttempt, key]);
   const onSourceOnlyRetry = useCallback((): void => {
     if (key === null || !isCurrentKey()) return;
-    useCockpitStore.getState().beginExactGrandHallRuntime(key);
-  }, [isCurrentKey, key]);
+    const store = useCockpitStore.getState();
+    const lifecycle = store.exactGrandHallRuntime;
+    if (
+      lifecycle !== null
+      && (
+        !sameExactGrandHallRuntimeKey(lifecycle.key, key)
+        || lifecycle.attemptNonce !== attemptNonce
+      )
+    ) return;
+    store.beginExactGrandHallRuntime(key);
+  }, [attemptNonce, isCurrentKey, key]);
   return { onReady, onFailed, onSourceOnlyError, onSourceOnlyRetry };
 }
 
@@ -313,10 +309,14 @@ export function PlannerScene(): ReactElement {
     () => (space !== null ? resolveRoomGeometry(space) : null),
     [space],
   );
-  // The Grand Hall capture is architecture-authoritative: layer controls may
+  // The Grand Hall capture is appearance-authoritative: layer controls may
   // not blend generated room pixels into it, and a missing capture fails
   // closed. Other rooms retain the existing Mesh ↔ Splat ↔ Hybrid policy.
   const layerMode = useCockpitStore((s) => s.layerMode);
+  const grandHallPresentation = useCockpitStore((s) => s.grandHallPresentation);
+  const grandHallCameraMode = useCockpitStore((s) => s.grandHallCameraMode);
+  const exactGrandHallLifecycle = useCockpitStore((s) => s.exactGrandHallRuntime);
+  const exactGrandHallAttemptNonce = useCockpitStore((s) => s.exactGrandHallAttemptNonce);
   const {
     splatUrls,
     transform,
@@ -327,8 +327,14 @@ export function PlannerScene(): ReactElement {
     exactGrandHallRuntimeKey,
     roomIdentity,
   } = useRoomRuntimeSplat();
+  const currentExactAttemptNonce = exactGrandHallRuntimeKey !== null
+    && exactGrandHallLifecycle !== null
+    && sameExactGrandHallRuntimeKey(exactGrandHallRuntimeKey, exactGrandHallLifecycle.key)
+    ? exactGrandHallLifecycle.attemptNonce
+    : 0;
   const exactGrandHallRuntimeCallbacks = useExactGrandHallRuntimeCallbacks(
     exactGrandHallRuntimeKey,
+    currentExactAttemptNonce,
   );
   const layerPolicy = resolvePlannerLayerPolicy({
     currentRoom: space === null
@@ -342,9 +348,11 @@ export function PlannerScene(): ReactElement {
     requestedMode: layerMode,
   });
   const roomVariant = layerPolicy.kind === "captured-only" ? "grand-hall" : "generic";
-  const exactGrandHall = layerPolicy.kind === "captured-only"
+  const exactGrandHallRuntimePackageId = layerPolicy.kind === "captured-only"
     && delivery === "verified-grand-hall"
-    && runtimePackageId !== null;
+    ? runtimePackageId
+    : null;
+  const exactGrandHall = exactGrandHallRuntimePackageId !== null;
   const layerComposition = resolvePlannerLayerComposition({
     policy: layerPolicy,
     hasCapturedAsset: hasAsset,
@@ -355,21 +363,65 @@ export function PlannerScene(): ReactElement {
   // phase, and publish it for the quiet caption + the stage's honesty
   // attribute. The arrival set resets when the room's chunk list changes
   // (the hook rebuilds the array each render, so key on its joined value).
-  const arrivals = useChunkArrivals(exactGrandHall ? EXACT_GRAND_HALL_MEMBER_KEY : splatUrls.join("|"));
+  const exactArrivalResetKey = useMemo(
+    () => exactGrandHallArrivalResetKey(exactGrandHallRuntimeKey, exactGrandHallAttemptNonce),
+    [exactGrandHallAttemptNonce, exactGrandHallRuntimeKey],
+  );
+  const arrivals = useChunkArrivals(exactGrandHall ? exactArrivalResetKey : splatUrls.join("|"));
   const totalChunks = exactGrandHall ? GRAND_HALL_CAPTURED_SOG_MEMBERS.length : splatUrls.length;
   const loadedChunks = Math.min(arrivals.loadedCount, totalChunks);
   const failedChunks = Math.min(arrivals.failedCount, totalChunks - loadedChunks);
-  const resolvePhase = exactGrandHall && failedChunks > 0
+  const roomSceneManifest = useMemo(() => {
+    if (exactGrandHallRuntimePackageId === null) return null;
+    return createGrandHallRoomSceneManifest(exactGrandHallRuntimePackageId);
+  }, [exactGrandHallRuntimePackageId]);
+  const exactRuntimeStatus = exactGrandHallLifecycle !== null
+    && exactGrandHallRuntimeKey !== null
+    && sameExactGrandHallRuntimeKey(exactGrandHallLifecycle.key, exactGrandHallRuntimeKey)
+    ? exactGrandHallLifecycle.status
+    : "pending";
+  const roomSceneLayerStates = useMemo<Readonly<Record<string, RoomSceneLayerLoadState>>>(() => ({
+    [GRAND_HALL_APPEARANCE_LAYER_ID]: exactRuntimeStatus === "verified"
+      ? { status: "ready", loadedUnits: totalChunks, totalUnits: totalChunks }
+      : exactRuntimeStatus === "failed" || failedChunks > 0
+        ? { status: "failed", loadedUnits: loadedChunks, totalUnits: totalChunks }
+        : { status: "loading", loadedUnits: loadedChunks, totalUnits: totalChunks },
+    [GRAND_HALL_STRUCTURAL_PROXY_LAYER_ID]: {
+      status: "ready",
+      loadedUnits: 1,
+      totalUnits: 1,
+    },
+  }), [exactRuntimeStatus, failedChunks, loadedChunks, totalChunks]);
+  const roomSceneComposition = useMemo(() => (
+    roomSceneManifest === null
+      ? null
+      : resolveRoomSceneComposition(roomSceneManifest, {
+        presentation: grandHallPresentation,
+        layerStates: roomSceneLayerStates,
+      })
+  ), [grandHallPresentation, roomSceneLayerStates, roomSceneManifest]);
+  const exactResolveInput = roomSceneComposition === null
+    ? null
+    : layerStateForRoomResolve(roomSceneComposition.activeLoadState);
+  const resolvePhase = exactGrandHall && roomSceneComposition?.activeLoadState.status === "failed"
     ? "fallback"
-    : roomResolvePhase({ splatStatus, hasAsset, totalChunks, loadedChunks, failedChunks });
+    : exactGrandHall && exactResolveInput !== null
+      ? roomResolvePhase(exactResolveInput)
+      : roomResolvePhase({ splatStatus, hasAsset, totalChunks, loadedChunks, failedChunks });
+  const resolveLoadedChunks = exactResolveInput?.loadedChunks ?? loadedChunks;
+  const resolveTotalChunks = exactResolveInput?.totalChunks ?? totalChunks;
   useEffect(() => {
-    useCockpitStore.getState().setRoomResolve({ phase: resolvePhase, loadedChunks, totalChunks });
-  }, [loadedChunks, resolvePhase, totalChunks]);
+    useCockpitStore.getState().setRoomResolve({
+      phase: resolvePhase,
+      loadedChunks: resolveLoadedChunks,
+      totalChunks: resolveTotalChunks,
+    });
+  }, [resolveLoadedChunks, resolvePhase, resolveTotalChunks]);
   // Ink recedes only where captured chunks actually arrived — it honestly
   // persists over any region whose chunk failed.
   const inkOpacity = inkTargetOpacity({ splatActive, loadedChunks, totalChunks });
   const cameraInteractionClearTimer = useRef<number | null>(null);
-  const sceneWarmupSignature = `${space?.id ?? "unresolved-room"}:${roomVariant}:${layerPolicy.kind}:${layerMode}:${String(hasAsset)}`;
+  const sceneWarmupSignature = `${space?.id ?? "unresolved-room"}:${roomVariant}:${layerPolicy.kind}:${layerMode}:${grandHallPresentation}:${grandHallCameraMode}:${String(hasAsset)}`;
 
   const clearCameraInteractionTimer = useCallback((): void => {
     if (cameraInteractionClearTimer.current === null) return;
@@ -378,10 +430,10 @@ export function PlannerScene(): ReactElement {
   }, []);
 
   const markCameraInteractionActive = useCallback((event: PointerEvent<HTMLDivElement>): void => {
-    if (!isCameraNavigationPointer(event)) return;
+    if (!isCameraNavigationPointer(event, layerPolicy.kind === "captured-only")) return;
     clearCameraInteractionTimer();
     useCockpitStore.getState().setCameraInteractionActive(true);
-  }, [clearCameraInteractionTimer]);
+  }, [clearCameraInteractionTimer, layerPolicy.kind]);
 
   const markCameraInteractionSettling = useCallback((): void => {
     clearCameraInteractionTimer();
@@ -395,6 +447,39 @@ export function PlannerScene(): ReactElement {
     clearCameraInteractionTimer();
     useCockpitStore.getState().setCameraInteractionActive(false);
   }, [clearCameraInteractionTimer]);
+
+  const renderGrandHallLayer = useCallback((layer: SpatialLayerDescriptorV0): ReactNode => {
+    if (layer.id === GRAND_HALL_APPEARANCE_LAYER_ID && exactGrandHallRuntimePackageId !== null) {
+      return (
+        <ExactGrandHallSplatLayer
+          key={exactGrandHallRuntimeKey === null
+            ? "exact-grand-hall-unresolved"
+            : serializeExactGrandHallRuntimeKey(exactGrandHallRuntimeKey)}
+          runtimePackageId={exactGrandHallRuntimePackageId}
+          transform={transform}
+          active={splatActive && grandHallPresentation === "appearance"}
+          onChunkLoaded={arrivals.markLoaded}
+          onChunkFailed={arrivals.markFailed}
+          onReady={exactGrandHallRuntimeCallbacks.onReady}
+          onFailed={exactGrandHallRuntimeCallbacks.onFailed}
+        />
+      );
+    }
+    if (layer.id === GRAND_HALL_STRUCTURAL_PROXY_LAYER_ID) {
+      return <GrandHallStructuralProxyLayer />;
+    }
+    return null;
+  }, [
+    arrivals.markFailed,
+    arrivals.markLoaded,
+    exactGrandHallRuntimeCallbacks.onFailed,
+    exactGrandHallRuntimeCallbacks.onReady,
+    exactGrandHallRuntimeKey,
+    grandHallPresentation,
+    exactGrandHallRuntimePackageId,
+    splatActive,
+    transform,
+  ]);
 
   return (
     <PlannerCanvasBoundary
@@ -444,30 +529,21 @@ export function PlannerScene(): ReactElement {
               targetOpacity={inkOpacity}
             />
           )}
-          {hasAsset && (
+          {roomSceneManifest !== null && roomSceneComposition !== null ? (
+            <RoomSceneCompositor
+              manifest={roomSceneManifest}
+              composition={roomSceneComposition}
+              renderLayer={renderGrandHallLayer}
+            />
+          ) : hasAsset && (
             <group name="captured-room-source">
-              {exactGrandHall ? (
-                <ExactGrandHallSplatLayer
-                  key={exactGrandHallRuntimeKey === null
-                    ? "exact-grand-hall-unresolved"
-                    : serializeExactGrandHallRuntimeKey(exactGrandHallRuntimeKey)}
-                  runtimePackageId={runtimePackageId}
-                  transform={transform}
-                  active={splatActive}
-                  onChunkLoaded={arrivals.markLoaded}
-                  onChunkFailed={arrivals.markFailed}
-                  onReady={exactGrandHallRuntimeCallbacks.onReady}
-                  onFailed={exactGrandHallRuntimeCallbacks.onFailed}
-                />
-              ) : (
-                <CockpitSplatLayer
-                  urls={splatUrls}
-                  transform={transform}
-                  active={splatActive}
-                  onChunkLoaded={arrivals.markLoaded}
-                  onChunkFailed={arrivals.markFailed}
-                />
-              )}
+              <CockpitSplatLayer
+                urls={splatUrls}
+                transform={transform}
+                active={splatActive}
+                onChunkLoaded={arrivals.markLoaded}
+                onChunkFailed={arrivals.markFailed}
+              />
             </group>
           )}
           {layerPolicy.kind === "configurable" && (
@@ -488,7 +564,8 @@ export function PlannerScene(): ReactElement {
             </group>
           )}
           {layerPolicy.kind === "captured-only" ? (
-            <CapturedSourceCamera
+            <GrandHallCapturedCamera
+              mode={grandHallCameraMode}
               view={EXACT_GRAND_HALL_CAMERA_VIEW}
               smoothControls={smoothCameraControls}
             />

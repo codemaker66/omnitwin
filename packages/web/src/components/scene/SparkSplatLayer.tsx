@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
 
 type Vector3Tuple = readonly [number, number, number];
@@ -27,6 +27,39 @@ export interface SparkSplatErrorEvent {
   readonly error: Error;
 }
 
+export interface SparkRendererRuntimeState {
+  readonly activeSplats: number;
+  readonly maxSplats: number;
+  readonly sorting: boolean;
+  readonly sortDirty: boolean;
+  readonly dirty: boolean;
+  readonly maxStdDev: number;
+  readonly minPixelRadius: number;
+  readonly maxPixelRadius: number;
+  readonly minAlpha: number;
+  readonly enable2DGS: boolean;
+  readonly preBlurAmount: number;
+  readonly blurAmount: number;
+  readonly focalDistance: number;
+  readonly apertureAngle: number;
+  readonly falloff: number;
+  readonly clipXY: number;
+  readonly focalAdjustment: number;
+  readonly encodeLinear: boolean;
+  readonly sortRadial: boolean;
+  readonly minSortIntervalMs: number;
+  readonly enableLod: boolean;
+  readonly enableDriveLod: boolean;
+  readonly enableLodFetching: boolean;
+  readonly lodSplatCount: number | null;
+  readonly lodSplatScale: number;
+  readonly lodRenderScale: number;
+  readonly lodInflate: boolean;
+  readonly pagedExtSplats: boolean;
+  readonly maxPagedSplats: number;
+  readonly numLodFetchers: number;
+}
+
 export interface SparkSplatLayerProps {
   readonly url: string;
   readonly visible?: boolean;
@@ -35,8 +68,11 @@ export interface SparkSplatLayerProps {
   readonly rotation?: Vector3Tuple;
   readonly scale?: ScaleValue;
   readonly includeRendererHost?: boolean;
+  /** false selects camera Z-depth sorting; undefined preserves Spark's default. */
+  readonly sortRadial?: boolean;
   readonly onLoad?: (event: SparkSplatLoadEvent) => void;
   readonly onError?: (event: SparkSplatErrorEvent) => void;
+  readonly onRendererState?: (state: SparkRendererRuntimeState) => void;
 }
 
 function asError(value: unknown): Error {
@@ -73,7 +109,13 @@ function applyLayerProps(
   }
 }
 
-export function SparkRendererHost(): ReactElement {
+export function SparkRendererHost({
+  onRendererState,
+  sortRadial,
+}: {
+  readonly onRendererState?: (state: SparkRendererRuntimeState) => void;
+  readonly sortRadial?: boolean;
+}): ReactElement {
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
   const sparkRenderer = useMemo(
@@ -82,8 +124,9 @@ export function SparkRendererHost(): ReactElement {
       onDirty: invalidate,
       transparent: true,
       depthWrite: false,
+      sortRadial,
     }),
-    [gl, invalidate],
+    [gl, invalidate, sortRadial],
   );
 
   useEffect(() => {
@@ -91,6 +134,41 @@ export function SparkRendererHost(): ReactElement {
       sparkRenderer.dispose();
     };
   }, [sparkRenderer]);
+
+  useFrame(() => {
+    onRendererState?.({
+      activeSplats: sparkRenderer.activeSplats,
+      maxSplats: sparkRenderer.maxSplats,
+      sorting: sparkRenderer.sorting,
+      sortDirty: sparkRenderer.sortDirty,
+      dirty: sparkRenderer.dirty,
+      maxStdDev: sparkRenderer.maxStdDev,
+      minPixelRadius: sparkRenderer.minPixelRadius,
+      maxPixelRadius: sparkRenderer.maxPixelRadius,
+      minAlpha: sparkRenderer.minAlpha,
+      enable2DGS: sparkRenderer.enable2DGS,
+      preBlurAmount: sparkRenderer.preBlurAmount,
+      blurAmount: sparkRenderer.blurAmount,
+      focalDistance: sparkRenderer.focalDistance,
+      apertureAngle: sparkRenderer.apertureAngle,
+      falloff: sparkRenderer.falloff,
+      clipXY: sparkRenderer.clipXY,
+      focalAdjustment: sparkRenderer.focalAdjustment,
+      encodeLinear: sparkRenderer.encodeLinear,
+      sortRadial: sparkRenderer.sortRadial,
+      minSortIntervalMs: sparkRenderer.minSortIntervalMs,
+      enableLod: sparkRenderer.enableLod,
+      enableDriveLod: sparkRenderer.enableDriveLod,
+      enableLodFetching: sparkRenderer.enableLodFetching,
+      lodSplatCount: sparkRenderer.lodSplatCount ?? null,
+      lodSplatScale: sparkRenderer.lodSplatScale,
+      lodRenderScale: sparkRenderer.lodRenderScale,
+      lodInflate: sparkRenderer.lodInflate,
+      pagedExtSplats: sparkRenderer.pagedExtSplats,
+      maxPagedSplats: sparkRenderer.maxPagedSplats,
+      numLodFetchers: sparkRenderer.numLodFetchers,
+    });
+  });
 
   return <primitive object={sparkRenderer} />;
 }
@@ -106,6 +184,8 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
     rotation = DEFAULT_ROTATION,
     scale = DEFAULT_SCALE,
     includeRendererHost = true,
+    sortRadial,
+    onRendererState,
   } = props;
   const invalidate = useThree((state) => state.invalidate);
   const [mesh, setMesh] = useState<SplatMesh | null>(null);
@@ -175,7 +255,9 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
 
   return (
     <>
-      {includeRendererHost && <SparkRendererHost />}
+      {includeRendererHost && (
+        <SparkRendererHost onRendererState={onRendererState} sortRadial={sortRadial} />
+      )}
       {mesh !== null && <primitive object={mesh} />}
     </>
   );

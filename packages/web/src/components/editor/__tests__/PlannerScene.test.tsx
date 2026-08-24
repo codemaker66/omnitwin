@@ -90,6 +90,7 @@ function mockSplat(overrides: {
 
 const {
   PlannerScene,
+  exactGrandHallArrivalResetKey,
   plannerAdaptiveResolutionForViewportWidth,
   plannerCanvasDprForViewportWidth,
   plannerCanvasGlForViewportWidth,
@@ -137,6 +138,19 @@ afterEach(() => {
 });
 
 describe("PlannerScene", () => {
+  it("changes the exact arrival reset boundary for every room/package attempt", () => {
+    const first = exactGrandHallArrivalResetKey(EXACT_GRAND_HALL_RUNTIME_KEY, 1);
+    const retry = exactGrandHallArrivalResetKey(EXACT_GRAND_HALL_RUNTIME_KEY, 2);
+    const nextPackage = exactGrandHallArrivalResetKey({
+      ...EXACT_GRAND_HALL_RUNTIME_KEY,
+      runtimePackageId: "20000000-0000-4000-8000-000000000002",
+    }, 1);
+
+    expect(first).not.toBe(retry);
+    expect(first).not.toBe(nextPackage);
+    expect(first.split("|")).toHaveLength(11);
+  });
+
   it("mounts an R3F canvas host", () => {
     const { container, getByTestId } = render(<PlannerScene />);
     expect(container.querySelector(".planner-scene-canvas-host")).not.toBeNull();
@@ -158,13 +172,13 @@ describe("PlannerScene", () => {
 
     const { getByTestId } = render(<PlannerScene />);
     const elements = getByTestId("r3f-canvas").getAttribute("data-scene-elements") ?? "";
-    expect(elements).toContain("group:captured-room-source");
-    expect(elements).toContain("ExactGrandHallSplatLayer");
+    expect(elements).toContain("RoomSceneCompositor");
+    expect(elements).not.toContain("group:captured-room-source");
     expect(elements).not.toContain("RoomMesh");
     expect(elements).not.toContain("GrandHallRoom");
     expect(elements).not.toContain("InkArchitectureLayer");
     expect(elements).not.toContain("group:planning-overlays");
-    expect(elements).toContain("CapturedSourceCamera");
+    expect(elements).toContain("GrandHallCapturedCamera");
     expect(elements).not.toContain("CameraRig");
     expect(elements).not.toContain("CockpitCameraFocus");
     expect(elements).not.toContain("CockpitPlanningCamera");
@@ -219,10 +233,31 @@ describe("PlannerScene", () => {
     expect(elements).not.toContain("InkArchitectureLayer");
     expect(elements).not.toContain("group:planning-overlays");
     expect(elements).not.toContain("group:captured-room-source");
-    expect(elements).toContain("CapturedSourceCamera");
+    expect(elements).toContain("GrandHallCapturedCamera");
     expect(elements).not.toContain("CameraRig");
     expect(elements).not.toContain("CockpitCameraFocus");
     expect(elements).not.toContain("CockpitPlanningCamera");
+  });
+
+  it("does not reuse verified lifecycle state from another room key with the same package", async () => {
+    useEditorStore.setState({ space: GRAND_HALL_SPACE });
+    mockSplat({
+      hasAsset: true,
+      status: "loaded",
+      delivery: "verified-grand-hall",
+      runtimePackageId: EXACT_GRAND_HALL_RUNTIME_KEY.runtimePackageId,
+      exactGrandHallRuntimeKey: EXACT_GRAND_HALL_RUNTIME_KEY,
+      roomIdentity: VERIFIED_GRAND_HALL_IDENTITY,
+    });
+    const staleKey = { ...EXACT_GRAND_HALL_RUNTIME_KEY, spaceId: "another-grand-hall-space" };
+    const staleAttempt = useCockpitStore.getState().beginExactGrandHallRuntime(staleKey);
+    useCockpitStore.getState().completeExactGrandHallRuntime(staleKey, staleAttempt, "verified");
+
+    render(<PlannerScene />);
+
+    await waitFor(() => {
+      expect(useCockpitStore.getState().roomResolve.phase).toBe("developing");
+    });
   });
 
   it("preserves normal procedural layers for another venue's grand-hall slug", () => {
@@ -256,7 +291,7 @@ describe("PlannerScene", () => {
     expect(elements).toContain("InvalidateOnToggle");
     expect(elements).toContain("XrayToggle");
     expect(elements).toContain("fog");
-    expect(elements).not.toContain("CapturedSourceCamera");
+    expect(elements).not.toContain("GrandHallCapturedCamera");
     expect(elements).not.toContain("ExactGrandHallSplatLayer");
   });
 
@@ -337,24 +372,32 @@ describe("PlannerScene", () => {
 
 describe("PlannerScene exact Grand Hall lifecycle callbacks", () => {
   it("publishes renderer success and failure for the active room/package key", () => {
-    useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
-    const { result } = renderHook(() => (
-      useExactGrandHallRuntimeCallbacks(EXACT_GRAND_HALL_RUNTIME_KEY)
-    ));
+    const firstAttempt = useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
+    const { result, rerender } = renderHook(
+      ({ attemptNonce }: { readonly attemptNonce: number }) => (
+        useExactGrandHallRuntimeCallbacks(EXACT_GRAND_HALL_RUNTIME_KEY, attemptNonce)
+      ),
+      { initialProps: { attemptNonce: firstAttempt } },
+    );
 
     act(() => { result.current.onReady(); });
     expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("verified");
 
-    useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
+    const secondAttempt = useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
+    rerender({ attemptNonce: secondAttempt });
     act(() => { result.current.onFailed(); });
     expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("failed");
   });
 
   it("invalidates verified state on Canvas failure and requires post-attach readiness after retry", () => {
     useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
-    const { result } = renderHook(() => (
-      useExactGrandHallRuntimeCallbacks(EXACT_GRAND_HALL_RUNTIME_KEY)
-    ));
+    const { result } = renderHook(() => {
+      const lifecycle = useCockpitStore((state) => state.exactGrandHallRuntime);
+      return useExactGrandHallRuntimeCallbacks(
+        EXACT_GRAND_HALL_RUNTIME_KEY,
+        lifecycle?.attemptNonce ?? 0,
+      );
+    });
 
     act(() => { result.current.onReady(); });
     expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("verified");
@@ -366,18 +409,40 @@ describe("PlannerScene exact Grand Hall lifecycle callbacks", () => {
     expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
       key: EXACT_GRAND_HALL_RUNTIME_KEY,
       status: "pending",
+      attemptNonce: 2,
     });
 
     act(() => { result.current.onReady(); });
     expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("verified");
   });
 
-  it("cannot publish a stale renderer callback after the runtime key changes", () => {
+  it("rejects a stale same-package retry callback after a newer attempt begins", () => {
+    const firstAttempt = useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
     const { result, rerender } = renderHook(
-      ({ runtimeKey }: { readonly runtimeKey: ExactGrandHallRuntimeKey }) => (
-        useExactGrandHallRuntimeCallbacks(runtimeKey)
+      ({ attemptNonce }: { readonly attemptNonce: number }) => (
+        useExactGrandHallRuntimeCallbacks(EXACT_GRAND_HALL_RUNTIME_KEY, attemptNonce)
       ),
-      { initialProps: { runtimeKey: EXACT_GRAND_HALL_RUNTIME_KEY } },
+      { initialProps: { attemptNonce: firstAttempt } },
+    );
+    const staleRetry = result.current.onSourceOnlyRetry;
+    const secondAttempt = useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
+    rerender({ attemptNonce: secondAttempt });
+
+    act(() => { staleRetry(); });
+
+    expect(useCockpitStore.getState().exactGrandHallRuntime?.attemptNonce).toBe(secondAttempt);
+  });
+
+  it("cannot publish a stale renderer callback after the runtime key changes", () => {
+    const firstAttempt = useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_GRAND_HALL_RUNTIME_KEY);
+    const { result, rerender } = renderHook(
+      ({ runtimeKey, attemptNonce }: {
+        readonly runtimeKey: ExactGrandHallRuntimeKey;
+        readonly attemptNonce: number;
+      }) => (
+        useExactGrandHallRuntimeCallbacks(runtimeKey, attemptNonce)
+      ),
+      { initialProps: { runtimeKey: EXACT_GRAND_HALL_RUNTIME_KEY, attemptNonce: firstAttempt } },
     );
     const staleReady = result.current.onReady;
     const staleRetry = result.current.onSourceOnlyRetry;
@@ -385,14 +450,15 @@ describe("PlannerScene exact Grand Hall lifecycle callbacks", () => {
       ...EXACT_GRAND_HALL_RUNTIME_KEY,
       runtimePackageId: "20000000-0000-4000-8000-000000000002",
     };
-    useCockpitStore.getState().beginExactGrandHallRuntime(nextKey);
-    rerender({ runtimeKey: nextKey });
+    const nextAttempt = useCockpitStore.getState().beginExactGrandHallRuntime(nextKey);
+    rerender({ runtimeKey: nextKey, attemptNonce: nextAttempt });
 
     act(() => { staleReady(); });
     act(() => { staleRetry(); });
     expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
       key: nextKey,
       status: "pending",
+      attemptNonce: nextAttempt,
     });
   });
 });

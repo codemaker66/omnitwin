@@ -76,6 +76,7 @@ const DEPLOYED_GIT_SHA = "a".repeat(40);
 const CONTENT_DIGEST = "d".repeat(64);
 const READ_SECRET = "route-test-read-secret-never-return";
 const WRITE_SECRET = "route-test-write-secret-never-return";
+const WRITE_SESSION_TOKEN = "route-test-write-session-token-never-return";
 const DATABASE_PASSWORD = "route-test-database-password-never-return";
 const PRIVATE_BUCKET = "grand-hall-private-route-test";
 const STORAGE_ACCOUNT = "route-test-storage-account-never-return";
@@ -116,6 +117,7 @@ function intakeEnv(enabled: boolean): Env {
     GIT_SHA: DEPLOYED_GIT_SHA,
     RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "route-test-write-key-id-never-return",
     RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: WRITE_SECRET,
+    RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: WRITE_SESSION_TOKEN,
   });
 }
 
@@ -189,6 +191,7 @@ function expectSecretsRedacted(response: LightMyRequestResponse): void {
   for (const secret of [
     READ_SECRET,
     WRITE_SECRET,
+    WRITE_SESSION_TOKEN,
     DATABASE_PASSWORD,
     PRIVATE_BUCKET,
     STORAGE_ACCOUNT,

@@ -25,6 +25,25 @@ const FORBIDDEN_PHRASES = [
 ];
 
 describe("roomResolvePhase", () => {
+  it("keeps an atomic appearance layer developing until its renderer reports ready", () => {
+    expect(roomResolvePhase({
+      splatStatus: "loaded",
+      hasAsset: true,
+      totalChunks: 11,
+      loadedChunks: 11,
+      failedChunks: 0,
+      atomicReady: false,
+    })).toBe("developing");
+
+    expect(roomResolvePhase({
+      splatStatus: "loaded",
+      hasAsset: true,
+      totalChunks: 11,
+      loadedChunks: 11,
+      failedChunks: 0,
+      atomicReady: true,
+    })).toBe("resolved");
+  });
   it("is 'ink' while the runtime package registry is still resolving", () => {
     expect(roomResolvePhase({
       splatStatus: "loading", hasAsset: false, totalChunks: 0, loadedChunks: 0,

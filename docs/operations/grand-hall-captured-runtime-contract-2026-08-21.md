@@ -1,6 +1,6 @@
 # Grand Hall captured-runtime contract — 2026-08-21
 
-Status: implemented contract; environment intake and browser/WebGL QA have not been run.
+Status: implemented contract; staging intake and authenticated package-browser/WebGL QA have not been run. Local source-bound dev-fixture diagnostics are separate and do not establish package acceptance.
 
 ## Authority and scope
 
@@ -69,7 +69,7 @@ The only write path for this exact source is the platform-admin-protected API ca
 
 The target-binding digest changes when the selected target, API origin, database connection identity, storage account, private bucket, object prefix, frontier receipt, or binding secret changes. Member uploads and commit reject a stale binding; the operator must run preflight again.
 
-The serving credential is read-only. The separate intake credential is put-only and must not have read, list, or delete authority; the API constrains its only PutObject call to conditional creation and never issues an unconditional overwrite. Their access-key IDs must differ. Remove the intake credential and disable the capability after the intended intake is complete; keep the read credential only for authenticated serving.
+The serving credential is read-only. The intake writer receives a separate locally signed, short-lived credential triple (access-key ID, secret access key, and session token), restricted to `PutObject` on the immutable Grand Hall prefix. The write-capable parent remains only in the trusted local operator environment and its access-key ID must differ from the serving principal's access-key ID. The API passes the session token only to the intake writer, constrains its only PutObject call to conditional creation, and never issues an unconditional overwrite. The child must not have read, list, delete, or out-of-prefix authority. Remove all three child fields and disable the capability after intake; retain only the read credential for authenticated serving.
 
 ## Immutable registration and provenance
 
@@ -83,29 +83,98 @@ Authenticated latest-package discovery and authenticated private preview both ap
 
 `captured-room-source` contains only the admitted visual frontier. The renderer keeps all eleven members invisible and detached until the full set has verified and decoded to exactly 6,019,684 Gaussians. Any transfer, source, digest, size, member-count, or decoded-count failure disposes the partial set and leaves architecture blank.
 
-One ten-minute absolute browser-load deadline starts before authenticated token acquisition and ends only after the complete eleven-member resource is atomically attached. The same abort signal spans token acquisition, metadata and all sequential member fetches, response-body reads, SHA-256 work, Spark initialization, decoded-count validation, and attachment. The ten-minute bound accommodates the canonical 106,479,738-byte transfer and 6,019,684-Gaussian decode on modest connections/devices while remaining deterministic. Timeout aborts in-flight transport, disposes every invisible decoded or partial mesh, leaves all source pixels detached, and emits terminal failure only for the still-current room/package request. The renderer is React-keyed by the collision-free `spaceId` + `venueId` + immutable `runtimePackageId` identity, so even a same-package room or venue change remounts it, disposes the old resource, and starts a fresh pending load. Cleanup and retry cancel the old clock; stale timeout and completion callbacks cannot verify or fail a newer room/package lifecycle.
+One ten-minute absolute browser-load deadline starts before authenticated token acquisition and ends only after the complete eleven-member resource is atomically attached. The same abort signal spans token acquisition, metadata and all sequential member fetches, response-body reads, SHA-256 work, Spark initialization, decoded-count validation, and attachment. The ten-minute bound was budgeted for the canonical 106,479,738-byte transfer and 6,019,684-Gaussian decode; suitability on modest connections or devices remains unvalidated. Timeout aborts in-flight transport, disposes every invisible decoded or partial mesh, leaves all source pixels detached, and emits terminal failure only for the still-current room/package request. The renderer is React-keyed by the collision-free `spaceId` + `venueId` + immutable `runtimePackageId` identity, so even a same-package room or venue change remounts it, disposes the old resource, and starts a fresh pending load. Every load/retry also receives a monotonic attempt nonce; completion, failure, and cleanup must match both identity and nonce. Cleanup and retry cancel the old clock, so stale callbacks cannot verify, fail, or clear a newer room/package attempt, including a same-package retry.
 
 `planning-overlays` is disabled for this source-only Grand Hall view. Furniture, routes, measurement, placement, and selection require a separately reviewed room-local collision/alignment artifact and cannot currently contribute pixels that might be confused with captured architecture.
 
-The same verified-room policy also gates the surrounding planner chrome. The generic rectangular minimap, heritage inset, furniture markers, route-conflict controls, capacity and circulation estimates, layout quantities, operational simulations, cost/share/ops lenses, measurement and placement controls, and generated-furniture status are absent for Grand Hall. The cockpit retains source-inspection status and any independently linked event timeline, and explains that operational geometry is unavailable. Pending or unavailable room identity fails closed with distinct neutral copy; it is never labelled as Grand Hall or as a verified capture.
+The same receipt-admitted-room policy also gates the surrounding planner chrome. In this internal state, `verified` means byte/receipt admission only; it is not visual, layout, structural, or operational verification. The generic rectangular minimap, heritage inset, furniture markers, route-conflict controls, capacity and circulation estimates, layout quantities, operational simulations, cost/share/ops lenses, measurement and placement controls, and generated-furniture status are absent for Grand Hall. The cockpit retains source-inspection status and any independently linked event timeline, and explains that operational geometry is unavailable. Pending or unavailable room identity fails closed with distinct neutral copy; it is never labelled as Grand Hall or as a verified capture.
 
 That boundary applies to navigation and failure paths as well as visible controls. Direct blueprint URLs pass through the same room-identity policy; capture-only, pending, and unavailable identities remain in 3D source inspection. A WebGL failure offers retry and neutral source-unavailable copy, never generic 2D room geometry. Keyboard history, notes, save/share/review actions, guest-flow replay, demo fixtures, phase density/guest/staff/ops metrics, clipping, x-ray, procedural fog, generic colour grading, and Mesh/Hybrid alternative labels are disabled. Runtime status is keyed to the current room and immutable package, becomes verified only after the complete eleven-member resource is attached, becomes failed on terminal admission/decode failure, clears its mounted claim when the Canvas detaches, restarts as pending before same-package retry, and rejects stale completion callbacks after a room or package change.
 
 The exterior facade remains a separate venue-presentation concern. Exterior images such as `packages/web/public/images/venue/trades-hall-exterior.jpg` and `packages/web/public/images/brand/facade-art.webp` are not deleted by this contract; they simply have no authority inside the Grand Hall captured-room layer.
 
+## RoomScene composition amendment — 2026-08-23
+
+T-541 wraps this exact captured runtime in a typed `RoomSceneManifestV0`; it
+does not replace or weaken T-540's byte, package, transport, or atomic-attach
+rules. The manifest and compositor are defined by
+`packages/types/src/room-scene-manifest.ts`,
+`packages/web/src/lib/grand-hall-room-scene.ts`, and
+`packages/web/src/lib/room-scene-composition.ts`.
+
+The Grand Hall scene currently registers exactly two layers:
+
+- `Appearance`: the eleven-member `CAPTURED` SOG frontier, with appearance
+  authority only; and
+- `StructuralProxy`: a hidden-by-default `RECONSTRUCTED` QA witness showing
+  the exact selected-SOG extent, the pose-centre 5th–95th-percentile envelope,
+  and an unreviewed diagnostic spawn marker.
+
+`Collision`, `HeroVolume`, `Semantic`, `Planner`, and
+`CinematicDerivative` are deliberately absent. The source-envelope witness is
+not a room shell, floor, wall, portal map, measured alignment, or collision
+mesh, and its lines cannot substitute for captured appearance. Conversely,
+captured splats cannot silently acquire geometry, navigation, planning,
+collision, or export authority. When a requested layer is missing, invalid, or
+not ready, composition fails closed for that layer instead of borrowing pixels
+or authority from a different slot.
+
+The Grand Hall camera surface now exposes orbit, dollhouse, and human
+diagnostic modes. The default orbit view starts at transformed source-pose
+position 19,890 inside the Hall and looks horizontally toward the centre of
+the supplied 5th–95th-percentile pose envelope. Its source rotation convention
+and optical FOV remain unvalidated, so this is a source-position-derived
+inspection view rather than a matched camera. Orbit/dollhouse coordinates are
+bounded to that supplied pose envelope instead of extrapolating outside the
+interior-trained capture. Human mode fixes the eye-height convention at 1.65
+m, pins Y to an unreviewed floor candidate, and clamps X/Z to the same
+diagnostic AABB. These limits do not prevent wall crossing, establish room
+containment, or certify walkability/collision. A reviewed room transform,
+floor, portals, and structural shell remain prerequisites for operational
+navigation.
+
+The supplied LCC2 declares `renderingHints.sortingMethod = "depth"`. The
+Grand Hall exact renderer therefore configures Spark with
+`sortRadial: false`; this honors source ordering metadata without changing any
+captured coordinate, colour, transform, opening, surface, or architectural
+feature.
+
+“The Room Resolves” now consumes aggregate state across every visible declared
+layer, with `failed → absent → loading → ready` precedence and sanitized summed
+unit counts. It cannot report the captured room as resolved until all eleven
+appearance members are attached; a partial or zero-unit `ready` state is
+converted to failure. Choosing the QA proxy changes the presentation witness,
+not truth or captured-layer readiness.
+
+The permanent truth vocabulary is `MEASURED`, `CAPTURED`, `RECONSTRUCTED`,
+`ENHANCED_CAPTURED`, `GENERATED_CINEMATIC`, and `PROCEDURAL_PLANNER`. The fixed
+layer slots are `Appearance`, `StructuralProxy`, `Collision`, `HeroVolume`,
+`Semantic`, `Planner`, and `CinematicDerivative`. Their detailed contracts are
+recorded in `docs/architecture/room-scene-compositor.md` and
+`docs/specs/visual-asset-manifest.md`.
+
+Owner-confirmed XGRIDS and Matterport authority is recorded separately in the
+append-only `state/source_rights.json` ledger with the documentary evidence
+location still marked pending. The records retain redistribution and
+third-party dissemination permission. That authority removes a project-
+specific data-rights blocker; it does not change truth class or override
+unrelated code, SDK, research implementation, model-weight, checkpoint, or
+provider licences.
+
 ## Deployment and evidence state
 
-As of 2026-08-22, the code path and its regression tests exist in the isolated `codex/grand-hall-exact-runtime` worktree. No target environment has been selected or authorized for mutation. No member has been uploaded by this work, no AssetVersion or RuntimePackage has been registered by this work, no application deployment or package activation has been performed, and no browser/WebGL QA has been run.
+As of 2026-08-24, the owner has selected and authorized the dedicated staging target ID `trades-hall-grand-hall-staging` and authenticated staging-only browser/WebGL QA. The target has not been provisioned, the branch has not been pushed, and no service, database, bucket, credential, migration, upload, AssetVersion, RuntimePackage, deployment, or package activation has been created or changed by this work. Local source-bound browser/WebGL diagnostics are recorded separately in `docs/reports/visual-lineage-benchmark.md`; authenticated staging/package QA has not run.
 
 The remaining operational gates are:
 
-- receive the selected target ID and exact API origin;
+- provision the selected target's clean API origin, fresh database, and private R2 bucket;
 - receive an existing platform-admin bearer token or have an authorized operator run the command;
-- provision separate put-only R2 credentials if that principal does not already exist;
+- provision the read-only serving credential and locally sign the separate temporary PutObject-only child credential triple;
 - complete the conditional-create and idempotent-retry rehearsal in a dedicated staging target;
+- configure a real live `VITE_CLERK_PUBLISHABLE_KEY` through the provider secret manager before any production web build;
 - deploy this code to the explicitly approved target, enable intake temporarily, and run the documented intake command;
-- disable intake and remove its write credentials after successful registration;
-- run fixed-camera source-only visual QA only after explicit browser-test permission; and
+- disable intake and remove all five target/deployment/temporary-child fields after successful registration;
+- run the authorized authenticated staging/package fixed-camera visual QA without extending that authority to production; and
 - separately review and sign any future room-local collision/floor alignment before metric placement is enabled.
 
 Follow `docs/operations/grand-hall-frontier-intake-runbook.md` for the operational procedure. This contract does not certify operational geometry, public evidence, deployment, or visual acceptance.

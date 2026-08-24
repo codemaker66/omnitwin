@@ -158,7 +158,7 @@ describe("CockpitTopBar", () => {
     expect(screen.queryByText(/verifying exact protected bytes/i)).toBeNull();
     unmount();
 
-    useCockpitStore.getState().beginExactGrandHallRuntime({
+    const currentAttempt = useCockpitStore.getState().beginExactGrandHallRuntime({
       spaceId: "space-grand-hall",
       venueId: "venue-trades-hall",
       roomSlug: "grand-hall",
@@ -169,7 +169,7 @@ describe("CockpitTopBar", () => {
       venueId: "venue-trades-hall",
       roomSlug: "grand-hall",
       runtimePackageId: "current-package",
-    }, "verified");
+    }, currentAttempt, "verified");
     renderTopBar(CAPTURED_ONLY_POLICY);
     expect(screen.getByText(/all 11 members attached/i)).toBeTruthy();
   });

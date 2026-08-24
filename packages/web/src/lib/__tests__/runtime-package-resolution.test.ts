@@ -446,47 +446,38 @@ describe("runtimeAssetCameraViewForRoom", () => {
       arrivalPosition: null,
       arrivalTarget: null,
       arrivalDurationMs: 0,
-      fov: 48,
-      minDistance: 2,
-      panSpeed: 0.35,
-      rotateSpeed: 0.5,
-      zoomSpeed: 0.5,
+      fov: 60,
+      minDistance: 0.2,
+      panSpeed: 0.2,
+      rotateSpeed: 0.36,
+      zoomSpeed: 0.32,
       dampingFactor: 0.14,
       minPolarAngle: Math.PI * 0.08,
       maxPolarAngle: Math.PI * 0.49,
     });
-    expect(cameraView.target[0]).toBeCloseTo(0, 10);
-    expect(cameraView.target[1]).toBeCloseTo(5.16655647754669, 10);
-    expect(cameraView.target[2]).toBeCloseTo(0, 10);
+    expect(cameraView.position).toEqual([
+      -0.03426186932373998,
+      2.15606153541565,
+      8.015104841842623,
+    ]);
+    expect(cameraView.target).toEqual([
+      0.15796363067625974,
+      2.15606153541565,
+      -0.19184415815737577,
+    ]);
     expect(cameraView.targetBounds).not.toBeNull();
     expect(cameraView.cameraBounds).not.toBeNull();
     if (cameraView.targetBounds === null || cameraView.cameraBounds === null) {
       throw new Error("Grand Hall camera tuning must include runtime bounds.");
     }
-    expect(cameraView.targetBounds.min[0]).toBeCloseTo(-7.95813846588134, 10);
-    expect(cameraView.targetBounds.min[1]).toBeCloseTo(0, 10);
-    expect(cameraView.targetBounds.min[2]).toBeCloseTo(-11.27625536918643, 10);
-    expect(cameraView.targetBounds.max[0]).toBeCloseTo(7.95813846588134, 10);
-    expect(cameraView.targetBounds.max[1]).toBeCloseTo(10.33311295509338, 10);
-    expect(cameraView.targetBounds.max[2]).toBeCloseTo(11.27625536918643, 10);
-    const cameraDistance = Math.hypot(
-      cameraView.position[0] - cameraView.target[0],
-      cameraView.position[1] - cameraView.target[1],
-      cameraView.position[2] - cameraView.target[2],
-    );
-    const boundingRadius = Math.hypot(
-      7.95813846588134,
-      5.16655647754669,
-      11.27625536918643,
-    );
-    const minimumFramingDistance = boundingRadius / Math.sin((cameraView.fov / 2) * (Math.PI / 180));
-    expect(cameraDistance).toBeGreaterThan(minimumFramingDistance);
+    expect(cameraView.targetBounds.min).toEqual([-4.28351186932374, 1.51073853541565, -9.840649158157376]);
+    expect(cameraView.targetBounds.max).toEqual([4.599439130676259, 4.82764553541565, 9.456960841842625]);
     expect(cameraView.position[0]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[0]);
     expect(cameraView.position[0]).toBeLessThanOrEqual(cameraView.cameraBounds.max[0]);
     expect(cameraView.position[1]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[1]);
     expect(cameraView.position[1]).toBeLessThanOrEqual(cameraView.cameraBounds.max[1]);
     expect(cameraView.position[2]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[2]);
     expect(cameraView.position[2]).toBeLessThanOrEqual(cameraView.cameraBounds.max[2]);
-    expect(cameraView.note).toMatch(/source-only/i);
+    expect(cameraView.note).toMatch(/source-pose-position/i);
   });
 });

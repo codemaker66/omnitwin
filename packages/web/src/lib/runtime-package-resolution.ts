@@ -5,6 +5,7 @@ import {
   type TradesHallRuntimeRoomSlug,
 } from "@omnitwin/types";
 import { parseRuntimeSplatUrl } from "./runtime-visual-asset.js";
+import { GRAND_HALL_NAVIGATION_PROFILE } from "./grand-hall-navigation-profile.js";
 
 // ---------------------------------------------------------------------------
 // Runtime asset decision for /dev/trades-hall-visual.
@@ -189,53 +190,35 @@ const RECEPTION_ROOM_XGRIDS_CAMERA_VIEW: RuntimeAssetCameraView = {
   },
   note: "Reception Room uses a restrained interior cinematic inspection camera; approximate until signed alignment lands.",
 };
-const GRAND_HALL_CAMERA_FOV = 48;
 const GRAND_HALL_WORLD_BOUNDING_RADIUS = Math.hypot(
   GRAND_HALL_WORLD_HALF_WIDTH,
   GRAND_HALL_WORLD_CENTER_Y,
   GRAND_HALL_WORLD_HALF_DEPTH,
 );
-const GRAND_HALL_CAMERA_DISTANCE = (
-  GRAND_HALL_WORLD_BOUNDING_RADIUS
-  / Math.sin((GRAND_HALL_CAMERA_FOV / 2) * (Math.PI / 180))
-) * 1.12;
-const GRAND_HALL_CAMERA_ELEVATION = Math.PI * 0.12;
 const GRAND_HALL_XGRIDS_CAMERA_VIEW: RuntimeAssetCameraView = {
-  position: [
-    0,
-    GRAND_HALL_WORLD_CENTER_Y + Math.sin(GRAND_HALL_CAMERA_ELEVATION) * GRAND_HALL_CAMERA_DISTANCE,
-    Math.cos(GRAND_HALL_CAMERA_ELEVATION) * GRAND_HALL_CAMERA_DISTANCE,
-  ],
-  target: [0, GRAND_HALL_WORLD_CENTER_Y, 0],
+  position: GRAND_HALL_NAVIGATION_PROFILE.inspectionCamera.position,
+  target: GRAND_HALL_NAVIGATION_PROFILE.inspectionCamera.target,
   arrivalPosition: null,
   arrivalTarget: null,
   arrivalDurationMs: 0,
-  fov: GRAND_HALL_CAMERA_FOV,
-  minDistance: 2,
-  maxDistance: GRAND_HALL_WORLD_BOUNDING_RADIUS * 4,
-  panSpeed: 0.35,
-  rotateSpeed: 0.5,
-  zoomSpeed: 0.5,
+  fov: GRAND_HALL_NAVIGATION_PROFILE.inspectionCamera.fov,
+  minDistance: 0.2,
+  maxDistance: GRAND_HALL_WORLD_BOUNDING_RADIUS,
+  panSpeed: 0.2,
+  rotateSpeed: 0.36,
+  zoomSpeed: 0.32,
   dampingFactor: 0.14,
   minPolarAngle: Math.PI * 0.08,
   maxPolarAngle: Math.PI * 0.49,
   targetBounds: {
-    min: [-GRAND_HALL_WORLD_HALF_WIDTH, 0, -GRAND_HALL_WORLD_HALF_DEPTH],
-    max: [GRAND_HALL_WORLD_HALF_WIDTH, GRAND_HALL_WORLD_HEIGHT, GRAND_HALL_WORLD_HALF_DEPTH],
+    min: GRAND_HALL_NAVIGATION_PROFILE.poseCentreBounds.min,
+    max: GRAND_HALL_NAVIGATION_PROFILE.poseCentreBounds.max,
   },
   cameraBounds: {
-    min: [
-      -GRAND_HALL_WORLD_BOUNDING_RADIUS * 2,
-      0,
-      -GRAND_HALL_WORLD_BOUNDING_RADIUS * 2,
-    ],
-    max: [
-      GRAND_HALL_WORLD_BOUNDING_RADIUS * 2,
-      GRAND_HALL_WORLD_CENTER_Y + GRAND_HALL_WORLD_BOUNDING_RADIUS * 2,
-      GRAND_HALL_WORLD_BOUNDING_RADIUS * 3,
-    ],
+    min: GRAND_HALL_NAVIGATION_PROFILE.poseCentreBounds.min,
+    max: GRAND_HALL_NAVIGATION_PROFILE.poseCentreBounds.max,
   },
-  note: "Fine-frontier-bounded Grand Hall source-only inspection camera; not a metric planning alignment.",
+  note: "Source-pose-position Grand Hall interior inspection camera bounded to the captured trajectory envelope; orientation and FOV are not source-calibrated.",
 };
 
 function slugIsSafe(value: string): boolean {

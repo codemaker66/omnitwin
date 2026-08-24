@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "ledgerType": "source-rights",
+  "revisionPolicy": "append-only",
+  "revisions": [
+    {
+      "revisionId": "owner-authority-confirmation-2026-08-23-v1",
+      "recordedOn": "2026-08-23",
+      "authoritySource": "project_owner_statement",
+      "records": [
+        {
+          "id": "grand-hall-xgrids-owner-confirmation-v1",
+          "sourceFamily": "xgrids-grand-hall-big-model-variations",
+          "authorityStatus": "confirmed_by_project_owner",
+          "authorityStatement": "Authority status: confirmed by project owner",
+          "scope": [
+            "data_use",
+            "reconstruction",
+            "training",
+            "enhancement",
+            "derivatives",
+            "commercial_venviewer_development",
+            "reverse_engineering",
+            "software_integration"
+          ],
+          "scopeStatement": "Scope: data use, reconstruction, training, enhancement, derivatives, commercial Venviewer development, reverse engineering and software integration",
+          "additionalPermissions": [
+            "redistribution",
+            "third_party_dissemination"
+          ],
+          "evidenceLocation": "PROJECT_EVIDENCE_STORE/PENDING_ATTACHMENT",
+          "evidenceLocationStatus": "pending",
+          "unrelatedLicensesRequireSeparateReview": true
+        },
+        {
+          "id": "trades-hall-matterport-owner-confirmation-v1",
+          "sourceFamily": "matterport-trades-hall",
+          "authorityStatus": "confirmed_by_project_owner",
+          "authorityStatement": "Authority status: confirmed by project owner",
+          "scope": [
+            "data_use",
+            "reconstruction",
+            "training",
+            "enhancement",
+            "derivatives",
+            "commercial_venviewer_development",
+            "reverse_engineering",
+            "software_integration"
+          ],
+          "scopeStatement": "Scope: data use, reconstruction, training, enhancement, derivatives, commercial Venviewer development, reverse engineering and software integration",
+          "additionalPermissions": [
+            "redistribution",
+            "third_party_dissemination"
+          ],
+          "evidenceLocation": "PROJECT_EVIDENCE_STORE/PENDING_ATTACHMENT",
+          "evidenceLocationStatus": "pending",
+          "unrelatedLicensesRequireSeparateReview": true
+        }
+      ],
+      "separateLicenseReviewStatement": "Unrelated third-party code, SDK, research implementation, model-weight and checkpoint licences remain separate and require independent review."
+    }
+  ]
+}

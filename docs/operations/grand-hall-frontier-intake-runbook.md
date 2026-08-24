@@ -1,13 +1,13 @@
 # Grand Hall exact-frontier intake runbook
 
-Date: 2026-08-22
+Date: 2026-08-24
 Status: operator procedure, not evidence that intake or deployment occurred
 Task: T-540
 Owner: Venviewer engineering / an explicitly authorized platform administrator
 
 ## Purpose and hard boundary
 
-This runbook uploads and immutably registers only the pinned eleven-member XGRIDS SOG frontier for Trades Hall's individual Grand Hall. It deliberately does not publish the package, construct a whole venue, add neighbouring rooms, merge the exterior facade, certify operational geometry, or grant permission for browser automation.
+This runbook uploads and immutably registers only the pinned eleven-member XGRIDS SOG frontier for Trades Hall's individual Grand Hall. It deliberately does not publish the package, construct a whole venue, add neighbouring rooms, merge the exterior facade, or certify operational geometry. This procedure does not itself grant browser automation; the owner has separately authorized authenticated browser/WebGL QA for the dedicated staging target only.
 
 The intake CLI talks only to the selected Venviewer API over HTTPS. That same API process owns the target database connection and the private R2 configuration. Binary uploads are proxied through the authenticated API; the operator is never given R2 account, bucket, object-key, or credential material by preflight.
 
@@ -15,23 +15,26 @@ No generative-modelling, image-generation, or video-generation key is needed. Ge
 
 ## Current execution state
 
-Do not treat this file as an execution record. As of 2026-08-22:
+Do not treat this file as an execution record. As of 2026-08-24:
 
-- no target environment has been selected for mutation;
+- the owner has selected and authorized the dedicated staging target ID
+  `trades-hall-grand-hall-staging`, but it has not been provisioned;
 - no canonical member has been uploaded by this work;
 - no AssetVersion or RuntimePackage has been registered by this work;
-- no code or package activation has been deployed by this work; and
-- no browser/WebGL visual QA has been run.
+- no branch has been pushed and no code, migration, or package activation has
+  been deployed by this work; and
+- local source-fixture render-presence diagnostics exist, but no authenticated
+  staging/package browser-WebGL visual QA has been run.
 
 ## Required operator inputs
 
 Obtain all of the following before changing a target environment:
 
-1. The explicitly selected target ID. It must be a 3–80 character lowercase identifier containing only letters, digits, `.`, `_`, or `-`, and it must identify one API/database/private-bucket deployment unambiguously.
+1. The explicitly selected target ID. For this staging run it is `trades-hall-grand-hall-staging`; it must identify one API/database/private-bucket deployment unambiguously.
 2. The selected API's exact clean HTTPS origin, with no credentials, path, query, fragment, or trailing path component.
 3. An existing bearer token for a user who is currently authorized as a Venviewer platform administrator, or an authorized platform administrator who will run the command. Never place the token in this repository, an environment example, a command argument, a screenshot, or an operations record.
-4. A distinct same-bucket R2 principal that is limited to object creation for the runtime-profile bucket/prefix, if one has not already been provisioned. Its access-key ID must differ from the serving principal's access-key ID.
-5. Explicit browser permission before any later authenticated browser or WebGL QA.
+4. A dedicated write-capable R2 parent credential held only by the trusted local operator process. Use it to sign a shortest-workable-lifetime child credential with `scope: "object-read-write"`, `actions: ["PutObject"]`, and `paths.prefixPaths: ["venues/trades-hall/rooms/grand-hall/xgrids/grand-hall-big-model-sog-fine-v1/"]`. The parent access-key ID must differ from the serving principal's access-key ID. Never place the parent in Railway, chat, the repository, screenshots, or receipts.
+5. Explicit browser permission before any later authenticated staging/package browser or WebGL QA. The owner granted this for the dedicated staging target on 2026-08-24; it does not extend to production.
 
 The CLI also requires the reviewed local Git commit ID. The command below obtains it directly from `HEAD`, validates its lowercase hexadecimal form, and places it in the secret-free receipt. Before any network request, the CLI independently proves that this commit exists, is the exact repository `HEAD`, and that the tracked and untracked worktree is clean. Run only from the exact reviewed checkout; do not type an arbitrary digest. The selected API must be configured with the same commit as its deployed intake build, and both preflight and commit must return that exact value.
 
@@ -49,18 +52,19 @@ Deploy the reviewed T-540 code to the selected API before enabling intake. Confi
 |---|---|
 | `DATABASE_URL` | Existing connection for the explicitly selected database. Do not copy a URL between targets merely to make the binding pass. |
 | `PUBLIC_API_ORIGIN` | The selected clean HTTPS API origin. It must exactly equal the CLI `--api-origin`. |
-| `GIT_SHA` | Existing Docker build stamp for the running artifact (`BUILD_GIT_SHA` in the Dockerfile). For intake it must be a lowercase 40–64 digit commit SHA, never `dev`, and must exactly equal `RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA`. Do not hand-set it independently of the image build. |
+| `BUILD_GIT_SHA` | Set in Railway to `${{RAILWAY_GIT_COMMIT_SHA}}`. The Dockerfile derives runtime `GIT_SHA` from this build arg; do not set `GIT_SHA` independently. The resulting stamp must be the exact lowercase 40–64 digit reviewed successor commit and must equal `RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA`. |
 | `RUNTIME_PROFILE_R2_ACCOUNT_ID` | Existing private-runtime R2 account. |
 | `RUNTIME_PROFILE_R2_PRIVATE_BUCKET` | Existing non-public runtime-profile bucket. |
 | `RUNTIME_PROFILE_R2_ACCESS_KEY_ID` | Read-only serving principal. |
 | `RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY` | Read-only serving secret. |
 | `RUNTIME_PROFILE_INTAKE_TARGET_ID` | The selected target ID. It must exactly equal the CLI `--target-id`. |
 | `RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA` | Intentional intake deployment selection: the exact lowercase 40–64 digit reviewed commit expected in the running image. It must equal both the image-stamped `GIT_SHA` and CLI `--reviewed-git-sha`; do not use a caller assertion, branch name, or mutable release label. |
-| `RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID` | Separate intake principal, scoped to put-only access for the same private bucket and canonical prefix. |
-| `RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY` | Separate intake secret. |
+| `RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID` | Access-key ID from the locally signed, short-lived child credential. It is used only by the intake writer. |
+| `RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY` | Secret access key from the same short-lived child credential. |
+| `RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN` | Session token from the same short-lived child credential. Treat it as a bearer secret and configure it only with the other two child fields. |
 | `RUNTIME_PROFILE_INTAKE_ENABLED` | `true` only for the approved intake window; its default and normal resting value are `false`. |
 
-The read principal needs only the object-read authority required for complete verification and authenticated serving. The intake principal must not have read, list, or delete authority. The API always supplies `If-None-Match: *` on its only PutObject call and never issues an unconditional overwrite, so it cannot replace an existing canonical key. Keep public bucket access, `r2.dev`, and custom public domains disabled.
+The read principal needs only the object-read authority required for complete verification and authenticated serving. The locally signed child credential must be restricted to `PutObject` on the immutable code-owned prefix above; it must not have read, list, delete, or out-of-prefix authority. The API passes its session token only to the intake writer, always supplies `If-None-Match: *` on its only PutObject call, and never issues an unconditional overwrite. Keep the write-capable parent local. Keep public bucket access, `r2.dev`, and custom public domains disabled.
 
 Configuration is complete only when the API starts successfully and `/health/version` reports the intended image-stamped `GIT_SHA`. Intake-enabled startup validation rejects a missing, `dev`, malformed, or mismatched build stamp before the routes can use storage or the database. The configured deployed Git SHA is required whenever intake is enabled; it is not inferred from an operator request. Do not infer the target from a shell prompt, a project name, a browser tab, or the operator's local `.env` file.
 
@@ -74,13 +78,13 @@ If any bound server configuration changes after preflight, the server returns `G
 
 Production intake is prohibited until the same build has passed this rehearsal against a dedicated staging database and private bucket. Do not rehearse in a shared or production bucket.
 
-1. Configure staging with its own target ID, API origin, database, bucket, read-only principal, and distinct put-only principal. Enable intake temporarily.
+1. Configure staging with target ID `trades-hall-grand-hall-staging`, its own API origin, database, private bucket, read-only principal, and locally signed temporary PutObject-only child credential. Enable intake temporarily.
 2. Run the supported `--rehearse-conditional-put` command below. It refuses any target that is not a fresh, dedicated staging target with exactly 11 `upload_required` members.
 3. The rehearsal holds one unchanged preflight response in memory and submits member 0's exact bytes twice through the same API-relative path and headers. It accepts only HTTP 201 with `created: true`, followed by HTTP 200 with `created: false`.
 4. The rehearsal reads and validates member 1, corrupts only an in-memory copy without touching the supplied source, requires HTTP 409 `GRAND_HALL_STORAGE_CONFLICT`, then runs a read-only verification preflight. It succeeds only if member 0 is verified and member 1 remains `upload_required`. It never calls commit or registration.
 5. Run the full CLI command below. It must verify the already-present exact member, upload the remaining exact members, rehash all 11 remote objects, and create one `internal_ready` package.
 6. Run the identical full CLI command again. It must upload no members and report that the same immutable package was reused. A second package revision or changed content digest fails the rehearsal.
-7. Capture the safe evidence listed below, set `RUNTIME_PROFILE_INTAKE_ENABLED=false`, remove all four `RUNTIME_PROFILE_INTAKE_*` target/deployment/write-credential values, and redeploy staging.
+7. Capture the safe evidence listed below, set `RUNTIME_PROFILE_INTAKE_ENABLED=false`, remove all five `RUNTIME_PROFILE_INTAKE_*` target/deployment/temporary-write-credential values, and redeploy staging.
 
 The unit and route suites are required in addition to this rehearsal; mocks cannot establish that the selected R2-compatible service enforces conditional create.
 
@@ -227,7 +231,7 @@ Record the following without secrets or private storage identifiers:
 
 With `pnpm --silent`, standard output is exactly one JSON evidence receipt; progress is written to standard error. The rehearsal receipt contains the server-authenticated operator ID, timestamp, locally proven reviewed Git SHA, server deployed Git SHA, selected target/origin, source and binding digests, ordered initial and verification preflights, both member-0 HTTP/`created` results, the corrupt-buffer HTTP/code result, and explicit `committed: false` / `registered: false` assertions. The apply receipt contains the same identity/source/preflight evidence, every PUT HTTP/`created` result, and the returned package ID, revision, content digest, `created` value, member count, byte total, and Gaussian total. It contains no token, local source path, private key, upload headers, storage account, bucket, object key, or database identity. Preserve the JSON bytes unchanged; do not substitute screenshots for the receipt.
 
-The receipt cannot record a future configuration change. Retain the separately dated deployment change that disables intake and removes its four intake-only target/deployment/write fields, then link that record to the three staging receipts.
+The receipt cannot record a future configuration change. Retain the separately dated deployment change that disables intake and removes its five intake-only target/deployment/temporary-write fields, then link that record to the three staging receipts.
 
 Do not record the bearer token, `DATABASE_URL`, R2 credentials, account ID, bucket name, private object keys, response authorization headers, or a local absolute source path in shared logs/screenshots.
 
@@ -236,9 +240,9 @@ Do not record the bearer token, `DATABASE_URL`, R2 credentials, account ID, buck
 After successful registration:
 
 1. Set `RUNTIME_PROFILE_INTAKE_ENABLED=false`.
-2. Remove `RUNTIME_PROFILE_INTAKE_TARGET_ID`, `RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA`, `RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID`, and `RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY` together from the deployment.
+2. Remove `RUNTIME_PROFILE_INTAKE_TARGET_ID`, `RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA`, `RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID`, `RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY`, and `RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN` together from the deployment.
 3. Redeploy/restart the API and confirm preflight now returns `GRAND_HALL_INTAKE_DISABLED` to an authorized request.
-4. Revoke the put-only R2 principal if it is single-use. Do not revoke the separate read-only serving principal.
+4. Let the child credential expire. If immediate invalidation is required, revoke its dedicated write-capable parent. Do not revoke the separate read-only serving principal.
 5. Keep the package `internal_ready`. Publishing, public evidence claims, metric planning, and any package promotion require their own reviewed authority.
 
 ## Remaining visual gate

@@ -42,6 +42,20 @@ describe("T-087 Spark renderer dependency unit", () => {
     expect(source).not.toMatch(/import\s+\{[^}]*\bSplat\b[^}]*\}\s+from\s+["']@react-three\/drei["']/);
   });
 
+  it("uses the production-like demand loop for deterministic fixed-camera captures", async () => {
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const source = await fs.readFile(path.resolve("src/pages/SplatFixturePage.tsx"), "utf-8");
+
+    expect(source).toContain('frameloop={fixedCamera ? "demand" : "always"}');
+    expect(source).toMatch(/<Canvas\s+flat/u);
+    expect(source).toContain("queueMicrotask");
+    expect(source).toContain("visible={allLoaded}");
+    expect(source).toContain("{fixedCamera ? null : (");
+    expect(source).toContain("truthModeEnabled && !fixedCamera");
+    expect(source).toContain('if (allLoaded) fixtureBridge().status = "loaded"');
+  });
+
   it("loads real runtime assets through Spark's SplatMesh API, not textSplats", async () => {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");

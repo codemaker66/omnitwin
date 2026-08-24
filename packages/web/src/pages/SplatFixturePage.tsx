@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { Color, FrontSide } from "three";
+import { Color, FrontSide, NoToneMapping, PerspectiveCamera } from "three";
 import { textSplats } from "@sparkjsdev/spark";
+import type { VisualLineageSparkRuntimeStateV0 } from "@omnitwin/types";
 import { useSearchParams } from "react-router-dom";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
 import {
   SparkSplatLayer,
   type SparkSplatErrorEvent,
   type SparkSplatLoadEvent,
+  type SparkRendererRuntimeState,
 } from "../components/scene/SparkSplatLayer.js";
 import {
   buildProceduralTruthSummary,
@@ -28,11 +30,46 @@ interface SplatFixtureBridge {
     error?: string;
     elapsedMs: number;
   }[];
+  settings?: {
+    readonly camera: {
+      readonly position: readonly [number, number, number];
+      readonly target: readonly [number, number, number];
+      readonly fov: number;
+      readonly near: number;
+      readonly far: number;
+    };
+    readonly group: {
+      readonly zUp: boolean;
+      readonly offset: readonly [number, number, number];
+    };
+    readonly renderer: {
+      readonly dpr: number;
+      readonly antialias: boolean;
+      readonly fixedCamera: boolean;
+      readonly transparent: true;
+      readonly depthWrite: false;
+    };
+  };
+  actualCamera?: {
+    readonly position: readonly [number, number, number];
+    readonly quaternion: readonly [number, number, number, number];
+    readonly projectionMatrix: readonly number[];
+    readonly fov: number | null;
+    readonly near: number;
+    readonly far: number;
+  };
+  actualRenderer?: {
+    readonly toneMapping: string;
+    readonly outputColorSpace: string;
+  };
+  renderedFrameCount: number;
+  sparkRuntimeState?: VisualLineageSparkRuntimeStateV0;
 }
 
 declare global {
   interface Window {
     __splatFixture?: SplatFixtureBridge;
+    __splatFixtureRequestRender?: () => void;
   }
 }
 
@@ -41,6 +78,7 @@ function fixtureBridge(): SplatFixtureBridge {
     status: "loading",
     startedAtMs: performance.now(),
     results: [],
+    renderedFrameCount: 0,
   };
   return window.__splatFixture;
 }
@@ -80,14 +118,77 @@ function parseVec3(raw: string | null): readonly [number, number, number] | null
   return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
 }
 
+function FixtureCameraProbe(): null {
+  const invalidate = useThree((state) => state.invalidate);
+
+  useEffect(() => {
+    window.__splatFixtureRequestRender = invalidate;
+    return () => {
+      delete window.__splatFixtureRequestRender;
+    };
+  }, [invalidate]);
+
+  useFrame(({ camera, gl }) => {
+    const actualCamera = {
+      position: [camera.position.x, camera.position.y, camera.position.z],
+      quaternion: [camera.quaternion.x, camera.quaternion.y, camera.quaternion.z, camera.quaternion.w],
+      projectionMatrix: camera.projectionMatrix.toArray(),
+      fov: camera instanceof PerspectiveCamera ? camera.fov : null,
+      near: camera.near,
+      far: camera.far,
+    } as const;
+    const actualRenderer = {
+      toneMapping: gl.toneMapping === NoToneMapping ? "NoToneMapping" : `three:${String(gl.toneMapping)}`,
+      outputColorSpace: gl.outputColorSpace,
+    } as const;
+    queueMicrotask(() => {
+      const bridge = fixtureBridge();
+      bridge.actualCamera = actualCamera;
+      bridge.actualRenderer = actualRenderer;
+      bridge.renderedFrameCount += 1;
+    });
+  });
+  return null;
+}
+
+function FixedFixtureCamera({
+  position,
+  target,
+}: {
+  readonly position: readonly [number, number, number];
+  readonly target: readonly [number, number, number];
+}): null {
+  const camera = useThree((state) => state.camera);
+
+  useLayoutEffect(() => {
+    camera.position.set(...position);
+    camera.lookAt(...target);
+    camera.updateMatrixWorld(true);
+  }, [camera, position, target]);
+
+  return null;
+}
+
+function parsePositiveNumber(raw: string | null, fallback: number): number {
+  const value = Number.parseFloat(raw ?? "");
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.ReactElement {
   const expected = urls.length;
+  const [allLoaded, setAllLoaded] = useState(false);
+
+  useEffect(() => {
+    if (allLoaded) fixtureBridge().status = "loaded";
+  }, [allLoaded]);
 
   const settle = useCallback((entry: SplatFixtureBridge["results"][number]) => {
     const bridge = fixtureBridge();
     bridge.results.push(entry);
     if (bridge.results.length >= expected) {
-      bridge.status = bridge.results.every((r) => r.ok) ? "loaded" : "error";
+      const loaded = bridge.results.every((r) => r.ok);
+      if (loaded) setAllLoaded(true);
+      else bridge.status = "error";
     }
   }, [expected]);
 
@@ -110,6 +211,10 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
     });
   }, [settle]);
 
+  const onRendererState = useCallback((state: SparkRendererRuntimeState) => {
+    fixtureBridge().sparkRuntimeState = state;
+  }, []);
+
   useEffect(() => {
     fixtureBridge();
   }, []);
@@ -120,7 +225,10 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
         <SparkSplatLayer
           key={url}
           url={url}
+          visible={allLoaded}
           includeRendererHost={index === 0}
+          sortRadial={false}
+          onRendererState={onRendererState}
           onLoad={onLoad}
           onError={onError}
         />
@@ -143,7 +251,16 @@ export function SplatFixturePage(): React.ReactElement {
   const zUp = searchParams.get("zUp") === "1";
   const cam = useMemo(() => parseVec3(searchParams.get("cam")), [searchParams]);
   const look = useMemo(() => parseVec3(searchParams.get("look")), [searchParams]);
+  const offset = useMemo(() => parseVec3(searchParams.get("offset")), [searchParams]);
   const fov = Number.parseFloat(searchParams.get("fov") ?? "") || (splatUrls ? 60 : 48);
+  const near = parsePositiveNumber(searchParams.get("near"), 0.1);
+  const far = parsePositiveNumber(searchParams.get("far"), 120);
+  const dpr = parsePositiveNumber(searchParams.get("dpr"), 1);
+  const antialias = searchParams.get("antialias") !== "0";
+  const fixedCamera = searchParams.get("fixed") === "1";
+  const cameraPosition = cam ?? [0, 0.6, 3.4] as const;
+  const cameraTarget = look ?? (splatUrls === null ? [0, -0.1, -2.8] as const : [0, 0, 0] as const);
+  const groupOffset = offset ?? [0, 0, 0] as const;
   const truthSummary = useMemo(
     () => buildProceduralTruthSummary({
       surface: "spark_fixture",
@@ -152,6 +269,20 @@ export function SplatFixturePage(): React.ReactElement {
     }),
     [],
   );
+
+  useEffect(() => {
+    fixtureBridge().settings = {
+      camera: { position: cameraPosition, target: cameraTarget, fov, near, far },
+      group: { zUp, offset: groupOffset },
+      renderer: {
+        dpr,
+        antialias,
+        fixedCamera,
+        transparent: true,
+        depthWrite: false,
+      },
+    };
+  }, [antialias, cameraPosition, cameraTarget, dpr, far, fixedCamera, fov, groupOffset, near, zUp]);
 
   return (
     <main style={{
@@ -162,16 +293,20 @@ export function SplatFixturePage(): React.ReactElement {
       fontFamily: "Inter, system-ui, sans-serif",
     }}>
       <Canvas
-        dpr={[1, 2]}
+        flat
+        dpr={[dpr, dpr]}
+        frameloop={fixedCamera ? "demand" : "always"}
         camera={{
           fov,
-          near: 0.1,
-          far: 120,
-          position: cam ?? [0, 0.6, 3.4],
+          near,
+          far,
+          position: cameraPosition,
         }}
-        gl={{ antialias: true, powerPreference: "high-performance" }}
+        gl={{ antialias, powerPreference: "high-performance" }}
       >
         <color attach="background" args={["#101217"]} />
+        {fixedCamera ? <FixedFixtureCamera position={cameraPosition} target={cameraTarget} /> : null}
+        <FixtureCameraProbe />
         <hemisphereLight args={["#fff4d8", "#30243a", 1.8]} />
         <directionalLight position={[2, 4, 3]} intensity={1.1} />
         {splatUrls === null ? (
@@ -183,36 +318,43 @@ export function SplatFixturePage(): React.ReactElement {
             </mesh>
           </>
         ) : (
-          <group rotation={zUp ? [-Math.PI / 2, 0, 0] : [0, 0, 0]}>
+          <group
+            rotation={zUp ? [-Math.PI / 2, 0, 0] : [0, 0, 0]}
+            position={groupOffset}
+          >
             <UrlSplatScene urls={splatUrls} />
           </group>
         )}
-        <OrbitControls
-          enablePan={splatUrls !== null}
-          minDistance={splatUrls === null ? 2.4 : 0.2}
-          maxDistance={splatUrls === null ? 5.2 : 40}
-          target={look ?? (splatUrls === null ? [0, -0.1, -2.8] : [0, 0, 0])}
-        />
+        {fixedCamera ? null : (
+          <OrbitControls
+            enablePan={splatUrls !== null}
+            minDistance={splatUrls === null ? 2.4 : 0.2}
+            maxDistance={splatUrls === null ? 5.2 : 40}
+            target={cameraTarget}
+          />
+        )}
       </Canvas>
 
-      <div style={{
-        position: "absolute",
-        left: 24,
-        top: 24,
-        maxWidth: 360,
-        padding: "14px 16px",
-        border: "1px solid rgba(216, 173, 74, 0.38)",
-        background: "rgba(16, 18, 23, 0.72)",
-        backdropFilter: "blur(14px)",
-      }}>
-        <div style={{ fontSize: 13, letterSpacing: 0, color: "#d8ad4a", marginBottom: 6 }}>
-          Spark fixture
+      {fixedCamera ? null : (
+        <div style={{
+          position: "absolute",
+          left: 24,
+          top: 24,
+          maxWidth: 360,
+          padding: "14px 16px",
+          border: "1px solid rgba(216, 173, 74, 0.38)",
+          background: "rgba(16, 18, 23, 0.72)",
+          backdropFilter: "blur(14px)",
+        }}>
+          <div style={{ fontSize: 13, letterSpacing: 0, color: "#d8ad4a", marginBottom: 6 }}>
+            Spark fixture
+          </div>
+          <div style={{ fontSize: 15, lineHeight: 1.45 }}>
+            Three.js 0.180 + Spark 2.0 smoke route.
+          </div>
         </div>
-        <div style={{ fontSize: 15, lineHeight: 1.45 }}>
-          Three.js 0.180 + Spark 2.0 smoke route.
-        </div>
-      </div>
-      {truthModeEnabled && <TruthModeIndicator summary={truthSummary} />}
+      )}
+      {truthModeEnabled && !fixedCamera && <TruthModeIndicator summary={truthSummary} />}
     </main>
   );
 }

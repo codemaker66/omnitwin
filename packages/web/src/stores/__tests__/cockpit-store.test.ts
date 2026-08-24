@@ -34,6 +34,19 @@ describe("cockpit-store", () => {
     expect(useCockpitStore.getState().layerMode).toBe("splat");
   });
 
+  it("stores Grand Hall presentation and camera modes independently of generic layer mode", () => {
+    const api = useCockpitStore.getState();
+    expect(api.grandHallPresentation).toBe("appearance");
+    expect(api.grandHallCameraMode).toBe("orbit");
+
+    api.setGrandHallPresentation("structural-proxy");
+    api.setGrandHallCameraMode("human");
+
+    expect(useCockpitStore.getState().grandHallPresentation).toBe("structural-proxy");
+    expect(useCockpitStore.getState().grandHallCameraMode).toBe("human");
+    expect(useCockpitStore.getState().layerMode).toBe("hybrid");
+  });
+
   it("stores keyed planner identity without changing the raw layer preference", () => {
     useCockpitStore.getState().setLayerMode("mesh");
     useCockpitStore.getState().setPlannerRoomIdentity({
@@ -85,15 +98,17 @@ describe("cockpit-store", () => {
     expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
       key: EXACT_KEY_A,
       status: "pending",
+      attemptNonce: 1,
     });
     expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/verifying exact protected bytes/i);
 
-    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, "verified");
+    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, 1, "verified");
     expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("verified");
     expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/all 11 members attached/i);
 
     useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_KEY_A);
-    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, "failed");
+    expect(useCockpitStore.getState().exactGrandHallRuntime?.attemptNonce).toBe(2);
+    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, 2, "failed");
     expect(useCockpitStore.getState().exactGrandHallRuntime?.status).toBe("failed");
     expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/architectural layer hidden/i);
   });
@@ -103,14 +118,30 @@ describe("cockpit-store", () => {
     store.beginExactGrandHallRuntime(EXACT_KEY_A);
     useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_KEY_B);
 
-    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, "verified");
-    useCockpitStore.getState().clearExactGrandHallRuntime(EXACT_KEY_A);
+    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, 1, "verified");
+    useCockpitStore.getState().clearExactGrandHallRuntime(EXACT_KEY_A, 1);
 
     expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
       key: EXACT_KEY_B,
       status: "pending",
+      attemptNonce: 2,
     });
     expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/verifying exact protected bytes/i);
+  });
+
+  it("rejects completion and cleanup callbacks from an earlier same-package attempt", () => {
+    const store = useCockpitStore.getState();
+    const firstAttempt = store.beginExactGrandHallRuntime(EXACT_KEY_A);
+    const secondAttempt = useCockpitStore.getState().beginExactGrandHallRuntime(EXACT_KEY_A);
+
+    useCockpitStore.getState().completeExactGrandHallRuntime(EXACT_KEY_A, firstAttempt, "verified");
+    useCockpitStore.getState().clearExactGrandHallRuntime(EXACT_KEY_A, firstAttempt);
+
+    expect(useCockpitStore.getState().exactGrandHallRuntime).toEqual({
+      key: EXACT_KEY_A,
+      status: "pending",
+      attemptNonce: secondAttempt,
+    });
   });
 
   it("defaults roomResolve to the ink phase with no chunks", () => {
@@ -194,12 +225,15 @@ describe("cockpit-store", () => {
     const s = useCockpitStore.getState();
     expect(s.activeMode).toBe("design");
     expect(s.layerMode).toBe("hybrid");
+    expect(s.grandHallPresentation).toBe("appearance");
+    expect(s.grandHallCameraMode).toBe("orbit");
     expect(s.overlayVisibility.guestFlow).toBe(true);
     expect(s.selectedPhaseId).toBeNull();
     expect(s.runtimeAssetStatus).toBe(
       "Captured visual layer not yet available — planning on reviewed geometry",
     );
     expect(s.exactGrandHallRuntime).toBeNull();
+    expect(s.exactGrandHallAttemptNonce).toBe(0);
     expect(s.plannerRoomIdentity).toBeNull();
     expect(s.roomResolve).toEqual({ phase: "ink", loadedChunks: 0, totalChunks: 0 });
     expect(s.layersOpen).toBe(false);

@@ -27,6 +27,7 @@ const env = validateEnv({
   GIT_SHA: "a".repeat(40),
   RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "put-only-key",
   RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "put-only-secret",
+  RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "put-only-session-token",
 });
 
 describe("Grand Hall private R2 intake contract", () => {
@@ -39,9 +40,11 @@ describe("Grand Hall private R2 intake contract", () => {
       accessKeyId: "read-only-key",
       secretAccessKey: "read-only-secret",
     });
+    expect(read.credentials).not.toHaveProperty("sessionToken");
     expect(write.credentials).toEqual({
       accessKeyId: "put-only-key",
       secretAccessKey: "put-only-secret",
+      sessionToken: "put-only-session-token",
     });
     expect(write.credentials).not.toEqual(read.credentials);
   });

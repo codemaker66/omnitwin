@@ -39,6 +39,15 @@ function resolveIdentity(
   useCockpitStore.getState().setPlannerRoomIdentity(identity);
 }
 
+function declareExactGrandHallRuntime(target: Space): void {
+  useCockpitStore.getState().beginExactGrandHallRuntime({
+    spaceId: target.id,
+    venueId: target.venueId,
+    roomSlug: "grand-hall",
+    runtimePackageId: "20000000-0000-4000-8000-000000000001",
+  });
+}
+
 beforeEach(() => {
   useCockpitStore.getState().reset();
   useEditorStore.getState().reset();
@@ -68,14 +77,22 @@ describe("CanvasLayerControls", () => {
     const grandHall = space("grand-hall");
     useEditorStore.setState({ space: grandHall });
     resolveIdentity(grandHall);
+    declareExactGrandHallRuntime(grandHall);
     render(<CanvasLayerControls />);
 
-    expect(screen.getByRole("status", { name: "Captured source" })).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Captured appearance" })).toBeTruthy();
     expect(screen.getByText("Captured room source only. Alternative architecture layers are unavailable.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /mesh/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /splat/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /hybrid/i })).toBeNull();
     expect(useCockpitStore.getState().layerMode).toBe("mesh");
+
+    expect(screen.getByRole("group", { name: "Grand Hall evidence view" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Source envelope QA" }));
+    expect(useCockpitStore.getState().grandHallPresentation).toBe("structural-proxy");
+    expect(screen.getByRole("status", { name: "Reconstructed QA" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Human diagnostic" }));
+    expect(useCockpitStore.getState().grandHallCameraMode).toBe("human");
 
     const receptionRoom = space("reception-room");
     act(() => {
@@ -116,10 +133,11 @@ describe("CanvasLayerControls", () => {
     const grandHall = space("grand-hall");
     useEditorStore.setState({ space: grandHall });
     resolveIdentity(grandHall);
+    declareExactGrandHallRuntime(grandHall);
     render(<CanvasLayerControls />);
 
     act(() => { useCockpitStore.getState().setLayerMode("hybrid"); });
-    expect(screen.getByRole("status", { name: "Captured source" })).toBeTruthy();
+    expect(screen.getByRole("status", { name: "Captured appearance" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /splat/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /hybrid/i })).toBeNull();
   });
@@ -136,6 +154,30 @@ describe("CanvasLayerControls", () => {
     expect(useCockpitStore.getState().layerMode).toBe("mesh");
     expect(mesh.getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("does not expose proxy or camera controls before an exact package is declared", () => {
+    const grandHall = space("grand-hall");
+    useEditorStore.setState({ space: grandHall });
+    resolveIdentity(grandHall);
+    render(<CanvasLayerControls />);
+
+    expect(screen.getByRole("status", { name: "Source unavailable" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Grand Hall evidence view" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Source envelope QA" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Human diagnostic" })).toBeNull();
+    expect(screen.getByText(/No RoomScene layer controls are active/i)).toBeTruthy();
+  });
+
+  it("does not expose controls for a stale exact lifecycle from another room identity", () => {
+    const grandHall = space("grand-hall");
+    useEditorStore.setState({ space: grandHall });
+    resolveIdentity(grandHall);
+    declareExactGrandHallRuntime(space("grand-hall", grandHall.venueId, "stale-space"));
+    render(<CanvasLayerControls />);
+
+    expect(screen.getByRole("status", { name: "Source unavailable" })).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Grand Hall evidence view" })).toBeNull();
   });
 
   it("fails closed when the stored identity belongs to another room key", () => {

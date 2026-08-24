@@ -19,12 +19,17 @@ export interface RoomResolveInput {
    *  phase (a dead chunk must never wedge the caption open) while the ink
    *  layer honestly persists over the region they would have covered. */
   readonly failedChunks?: number;
+  /** Atomic layers may finish every download/decode before the renderer has
+   * attached the complete verified set. False prevents a premature resolved
+   * claim; undefined preserves progressive-layer behaviour. */
+  readonly atomicReady?: boolean;
 }
 
 export function roomResolvePhase(input: RoomResolveInput): RoomResolvePhase {
   if (input.splatStatus === "loading") return "ink";
   if (input.hasAsset && input.totalChunks > 0) {
     const settledChunks = input.loadedChunks + (input.failedChunks ?? 0);
+    if (input.atomicReady === false) return "developing";
     return settledChunks >= input.totalChunks ? "resolved" : "developing";
   }
   return "fallback";

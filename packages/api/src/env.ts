@@ -55,6 +55,7 @@ const EnvSchema = z.object({
   RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: z.string().regex(/^[a-f0-9]{40,64}$/u).optional(),
   RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
   RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: z.string().min(1).optional(),
   // Docker-stamped running-artifact identity. Development may omit/use `dev`,
   // but intake-enabled deployments must provide the exact reviewed commit.
   GIT_SHA: z.string().min(1).optional(),
@@ -205,6 +206,7 @@ const EnvSchema = z.object({
     env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA,
     env.RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID,
     env.RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY,
+    env.RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN,
   ];
   const runtimeProfileIntakeSet = runtimeProfileIntakeFields
     .filter((field) => field !== undefined).length;
@@ -212,7 +214,7 @@ const EnvSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["RUNTIME_PROFILE_INTAKE_TARGET_ID"],
-      message: "Runtime-profile intake configuration is incomplete — set target ID, deployed Git SHA, and both intake-only R2 credential fields together or none",
+      message: "Runtime-profile intake configuration is incomplete — set target ID, deployed Git SHA, and all three temporary intake R2 credential fields together or none",
     });
   }
   if (

@@ -38,10 +38,13 @@ const LAYER_CONTROLS_AVOID_SELECTORS = [
 /**
  * Mesh / Splat / Hybrid renderer toggle, docked over the stage. Drives the
  * cockpit store's layer mode, which the scene reads to choose between the
- * procedural mesh and the measured Gaussian-splat capture.
+ * procedural mesh and captured Gaussian-splat appearance.
  */
 export function CanvasLayerControls(): ReactElement {
   const layerMode = useCockpitStore((s) => s.layerMode);
+  const grandHallPresentation = useCockpitStore((s) => s.grandHallPresentation);
+  const grandHallCameraMode = useCockpitStore((s) => s.grandHallCameraMode);
+  const exactGrandHallRuntime = useCockpitStore((s) => s.exactGrandHallRuntime);
   const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
   const roomIdentity = useCockpitStore((s) => s.plannerRoomIdentity);
   const space = useEditorStore((s) => s.space);
@@ -57,19 +60,32 @@ export function CanvasLayerControls(): ReactElement {
     requestedMode: layerMode,
   });
   const effectiveMode: CockpitLayerMode = layerPolicy.effectiveMode;
+  const hasDeclaredGrandHallRoomScene = layerPolicy.kind === "captured-only"
+    && space !== null
+    && exactGrandHallRuntime !== null
+    && exactGrandHallRuntime.key.spaceId === space.id
+    && exactGrandHallRuntime.key.venueId === space.venueId
+    && exactGrandHallRuntime.key.roomSlug === space.slug;
+  const grandHallStatusLabel = !hasDeclaredGrandHallRoomScene
+    ? "Source unavailable"
+    : grandHallPresentation === "structural-proxy"
+      ? "Reconstructed QA"
+      : "Captured appearance";
   const lockedReason = layerPolicy.kind === "identity-pending"
     ? "Room identity is resolving. Architecture remains hidden."
     : layerPolicy.kind === "identity-unavailable"
       ? "Room identity is unavailable. Architecture remains hidden."
       : layerPolicy.kind === "captured-only"
-        ? "Captured room source only. Alternative architecture layers are unavailable."
+        ? hasDeclaredGrandHallRoomScene
+          ? "Captured room source only. Alternative architecture layers are unavailable."
+          : "No exact captured package is available. Architecture remains hidden."
         : null;
   const lockedLabel = layerPolicy.kind === "identity-pending"
     ? "Identity resolving"
     : layerPolicy.kind === "identity-unavailable"
       ? "Source unavailable"
       : layerPolicy.kind === "captured-only"
-        ? "Captured source"
+        ? grandHallStatusLabel
         : null;
   const compactLabel = lockedLabel ?? LAYER_META[effectiveMode].label;
   return (
@@ -88,6 +104,62 @@ export function CanvasLayerControls(): ReactElement {
       zIndex={32}
       autoCompact={cameraInteractionActive}
     >
+      {layerPolicy.kind === "captured-only" ? (
+        <div className="grand-hall-source-controls">
+          <div
+            className="cockpit-layer-controls cockpit-layer-controls--locked"
+            role="status"
+            aria-label={grandHallStatusLabel}
+            aria-live="polite"
+          >
+            {grandHallPresentation === "structural-proxy" && hasDeclaredGrandHallRoomScene
+              ? <Cuboid size={14} aria-hidden="true" />
+              : <Sparkles size={14} aria-hidden="true" />}
+            <strong className="cockpit-layer-controls__locked-label">{grandHallStatusLabel}</strong>
+            <span className="cockpit-layer-controls__lock-note">{lockedReason}</span>
+          </div>
+          {hasDeclaredGrandHallRoomScene ? <>
+          <div className="grand-hall-source-controls__group" role="group" aria-label="Grand Hall evidence view">
+            <button
+              type="button"
+              aria-pressed={grandHallPresentation === "appearance"}
+              className={grandHallPresentation === "appearance" ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
+              onClick={() => { useCockpitStore.getState().setGrandHallPresentation("appearance"); }}
+            >
+              Captured appearance
+            </button>
+            <button
+              type="button"
+              aria-pressed={grandHallPresentation === "structural-proxy"}
+              className={grandHallPresentation === "structural-proxy" ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
+              onClick={() => { useCockpitStore.getState().setGrandHallPresentation("structural-proxy"); }}
+            >
+              Source envelope QA
+            </button>
+          </div>
+          <div className="grand-hall-source-controls__group" role="group" aria-label="Grand Hall camera mode">
+            {(["orbit", "human", "dollhouse"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={grandHallCameraMode === mode}
+                className={grandHallCameraMode === mode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
+                onClick={() => { useCockpitStore.getState().setGrandHallCameraMode(mode); }}
+              >
+                {mode === "orbit" ? "Orbit" : mode === "human" ? "Human diagnostic" : "Dollhouse"}
+              </button>
+            ))}
+          </div>
+          <p className="grand-hall-source-controls__disclosure">
+            Source envelope QA is reconstructed diagnostic data, not a measured room shell.
+          </p>
+          </> : (
+            <p className="grand-hall-source-controls__disclosure">
+              No RoomScene layer controls are active until an exact package is declared.
+            </p>
+          )}
+        </div>
+      ) : (
       <div
         className={lockedReason === null
           ? "cockpit-layer-controls"
@@ -120,6 +192,7 @@ export function CanvasLayerControls(): ReactElement {
           </>
         )}
       </div>
+      )}
     </FloatingWidgetFrame>
   );
 }

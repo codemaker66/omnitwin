@@ -46,6 +46,7 @@ vi.mock("../hooks/use-room-runtime-splat.js", () => ({
     status: "none",
     delivery: "none",
     runtimePackageId: null,
+    exactGrandHallRuntimeKey: null,
     roomIdentity: null,
   }),
 }));

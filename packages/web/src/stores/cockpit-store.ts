@@ -23,6 +23,8 @@ function allOverlaysOn(): OverlayVisibility {
 const DEFAULT_RUNTIME_ASSET_STATUS = CAPTURED_LAYER_FALLBACK_STATUS;
 
 export type ExactGrandHallRuntimeStatus = "pending" | "verified" | "failed";
+export type GrandHallScenePresentation = "appearance" | "structural-proxy";
+export type GrandHallCameraMode = "orbit" | "human" | "dollhouse";
 
 export interface ExactGrandHallRuntimeKey {
   readonly spaceId: string;
@@ -39,6 +41,7 @@ export function serializeExactGrandHallRuntimeKey(key: ExactGrandHallRuntimeKey)
 export interface ExactGrandHallRuntimeLifecycle {
   readonly key: ExactGrandHallRuntimeKey;
   readonly status: ExactGrandHallRuntimeStatus;
+  readonly attemptNonce: number;
 }
 
 export const EXACT_GRAND_HALL_RUNTIME_LABELS: Readonly<Record<ExactGrandHallRuntimeStatus, string>> = {
@@ -102,11 +105,15 @@ function sameExactGrandHallRuntimeKey(
 interface CockpitState {
   readonly activeMode: CockpitMode;
   readonly layerMode: CockpitLayerMode;
+  readonly grandHallPresentation: GrandHallScenePresentation;
+  readonly grandHallCameraMode: GrandHallCameraMode;
   readonly overlayVisibility: OverlayVisibility;
   readonly selectedPhaseId: string | null;
   readonly runtimeAssetStatus: string;
   /** Exact capture lifecycle, bound to one room and immutable package. */
   readonly exactGrandHallRuntime: ExactGrandHallRuntimeLifecycle | null;
+  /** Monotonic reset boundary for same-package retries and callback arrivals. */
+  readonly exactGrandHallAttemptNonce: number;
   /** Venue-API identity for the room currently resolved by the runtime hook. */
   readonly plannerRoomIdentity: PlannerRoomIdentity | null;
   readonly roomResolve: CockpitRoomResolve;
@@ -120,18 +127,24 @@ interface CockpitState {
   readonly flowArrivalMinutes: number;
   readonly setMode: (mode: CockpitMode) => void;
   readonly setLayerMode: (mode: CockpitLayerMode) => void;
+  readonly setGrandHallPresentation: (presentation: GrandHallScenePresentation) => void;
+  readonly setGrandHallCameraMode: (mode: GrandHallCameraMode) => void;
   readonly toggleOverlay: (key: CockpitOverlayKey) => void;
   readonly setOverlay: (key: CockpitOverlayKey, visible: boolean) => void;
   readonly selectPhase: (phaseId: string | null) => void;
   readonly setPlannedGuestCount: (count: number | null) => void;
   readonly setFlowArrivalMinutes: (minutes: number) => void;
   readonly setRuntimeAssetStatus: (status: string) => void;
-  readonly beginExactGrandHallRuntime: (key: ExactGrandHallRuntimeKey) => void;
+  readonly beginExactGrandHallRuntime: (key: ExactGrandHallRuntimeKey) => number;
   readonly completeExactGrandHallRuntime: (
     key: ExactGrandHallRuntimeKey,
+    attemptNonce: number,
     status: Exclude<ExactGrandHallRuntimeStatus, "pending">,
   ) => void;
-  readonly clearExactGrandHallRuntime: (key?: ExactGrandHallRuntimeKey) => void;
+  readonly clearExactGrandHallRuntime: (
+    key?: ExactGrandHallRuntimeKey,
+    attemptNonce?: number,
+  ) => void;
   readonly setPlannerRoomIdentity: (identity: PlannerRoomIdentity | null) => void;
   readonly setRoomResolve: (resolve: CockpitRoomResolve) => void;
   readonly toggleLayers: () => void;
@@ -146,10 +159,13 @@ interface CockpitState {
 export const useCockpitStore = create<CockpitState>((set) => ({
   activeMode: "design",
   layerMode: "hybrid",
+  grandHallPresentation: "appearance",
+  grandHallCameraMode: "orbit",
   overlayVisibility: allOverlaysOn(),
   selectedPhaseId: null,
   runtimeAssetStatus: DEFAULT_RUNTIME_ASSET_STATUS,
   exactGrandHallRuntime: null,
+  exactGrandHallAttemptNonce: 0,
   plannerRoomIdentity: null,
   roomResolve: DEFAULT_ROOM_RESOLVE,
   layersOpen: false,
@@ -160,6 +176,8 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   flowArrivalMinutes: 30,
   setMode: (mode) => { set({ activeMode: mode }); },
   setLayerMode: (mode) => { set({ layerMode: mode }); },
+  setGrandHallPresentation: (grandHallPresentation) => { set({ grandHallPresentation }); },
+  setGrandHallCameraMode: (grandHallCameraMode) => { set({ grandHallCameraMode }); },
   toggleOverlay: (key) => {
     set((state) => ({
       overlayVisibility: { ...state.overlayVisibility, [key]: !state.overlayVisibility[key] },
@@ -177,30 +195,43 @@ export const useCockpitStore = create<CockpitState>((set) => ({
     set({ runtimeAssetStatus: status, exactGrandHallRuntime: null });
   },
   beginExactGrandHallRuntime: (key) => {
-    set({
-      exactGrandHallRuntime: { key, status: "pending" },
-      runtimeAssetStatus: EXACT_GRAND_HALL_RUNTIME_LABELS.pending,
+    let nextAttemptNonce = 0;
+    set((state) => {
+      const attemptNonce = state.exactGrandHallAttemptNonce + 1;
+      nextAttemptNonce = attemptNonce;
+      return {
+        exactGrandHallRuntime: { key, status: "pending", attemptNonce },
+        exactGrandHallAttemptNonce: attemptNonce,
+        runtimeAssetStatus: EXACT_GRAND_HALL_RUNTIME_LABELS.pending,
+      };
     });
+    return nextAttemptNonce;
   },
-  completeExactGrandHallRuntime: (key, status) => {
+  completeExactGrandHallRuntime: (key, attemptNonce, status) => {
     set((state) => {
       if (
         state.exactGrandHallRuntime === null
         || !sameExactGrandHallRuntimeKey(state.exactGrandHallRuntime.key, key)
+        || state.exactGrandHallRuntime.attemptNonce !== attemptNonce
       ) {
         return state;
       }
       return {
-        exactGrandHallRuntime: { key, status },
+        exactGrandHallRuntime: {
+          key,
+          status,
+          attemptNonce: state.exactGrandHallRuntime.attemptNonce,
+        },
         runtimeAssetStatus: EXACT_GRAND_HALL_RUNTIME_LABELS[status],
       };
     });
   },
-  clearExactGrandHallRuntime: (key) => {
+  clearExactGrandHallRuntime: (key, attemptNonce) => {
     set((state) => {
       if (
         state.exactGrandHallRuntime === null
         || (key !== undefined && !sameExactGrandHallRuntimeKey(state.exactGrandHallRuntime.key, key))
+        || (attemptNonce !== undefined && state.exactGrandHallRuntime.attemptNonce !== attemptNonce)
       ) {
         return state;
       }
@@ -240,10 +271,13 @@ export const useCockpitStore = create<CockpitState>((set) => ({
     set({
       activeMode: "design",
       layerMode: "hybrid",
+      grandHallPresentation: "appearance",
+      grandHallCameraMode: "orbit",
       overlayVisibility: allOverlaysOn(),
       selectedPhaseId: null,
       runtimeAssetStatus: DEFAULT_RUNTIME_ASSET_STATUS,
       exactGrandHallRuntime: null,
+      exactGrandHallAttemptNonce: 0,
       plannerRoomIdentity: null,
       roomResolve: DEFAULT_ROOM_RESOLVE,
       layersOpen: false,

@@ -15,7 +15,7 @@ Regenerate after each `tasks.md` change.
 - **A4** — strategy readiness
 - **A5** — July authority, migration, Twin, and gate hardening closure
 - **A6** — completed Capture-to-Truth, proof architect, and mission-control programme
-- **A7** — current capture-only Grand Hall runtime closure
+- **A7** — current Grand Hall runtime and visual super-pipeline
 - **B** — next 2 weeks, gap closing + ops follow-on
 - **C** — weeks 3–6, reconstruction + edge cases
 - **D** — Tier 3, Geass cluster
@@ -175,8 +175,17 @@ flowchart TD
         T485(["T-485 - persisted Ops review authority"])
     end
 
-    subgraph A7 [a7 · capture-only grand hall runtime closure]
+    subgraph A7 [a7 · grand hall visual super-pipeline]
         T540(["T-540 - exact Grand Hall runtime + server-bound intake"])
+        T541(["T-541 - RoomScene compositor + lineage slice"])
+        T542(["T-542 - reviewed structural authority"])
+        T543(["T-543 - professional captured-source pack"])
+        T544(["T-544 - captured-master bake-off"])
+        T545(["T-545 - Hero Volume pilot"])
+        T546(["T-546 - materials + lighting"])
+        T547(["T-547 - generated repair bake-off"])
+        T548(["T-548 - runtime distillery"])
+        T549(["T-549 - provider-neutral Foundry"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -520,6 +529,22 @@ flowchart TD
     T481 --> T485
     T087 --> T540
     T423 --> T540
+    T116 --> T541
+    T498 --> T541
+    T540 --> T541
+    T118 --> T542
+    T541 --> T542
+    T203 --> T543
+    T541 --> T543
+    T543 --> T544
+    T117 --> T545
+    T120 --> T545
+    T542 --> T545
+    T544 --> T545
+    T545 --> T546
+    T546 --> T547
+    T547 --> T548
+    T548 --> T549
 
     classDef done fill:#b8965a,color:#1a2e3b
     classDef inprogress fill:#7d9579,color:#f4ede0
@@ -528,10 +553,10 @@ flowchart TD
     classDef notstarted fill:#f4ede0,color:#1a2e3b
 
     class T002,T019,T052,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T095,T096,T097,T098,T099,T113,T114,T115,T116,T122,T123,T124,T127,T135,T136,T137,T156,T203,T204,T209,T210,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420,T421,T422,T423,T424,T428,T435,T441,T442,T443,T444,T445,T446,T447,T448,T449,T454,T455,T456,T457,T463,T464,T465,T466,T467,T471,T472,T473,T474,T475,T476,T477,T478,T479 done
-    class T001,T060,T092,T118,T453,T469,T470 blocked
-    class T160,T480,T481,T482,T483,T484,T485 done
+    class T001,T060,T092,T118,T453,T469,T470,T542 blocked
+    class T160,T480,T481,T482,T483,T484,T485,T541 done
     class T540 inprogress
-    class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T117,T118,T120,T121,T386,T388,T389,T458,T459,T460,T461,T462 notstarted
+    class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T117,T120,T121,T386,T388,T389,T458,T459,T460,T461,T462,T543,T544,T545,T546,T547,T548,T549 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
 ```
 
@@ -563,6 +588,24 @@ T-483 records the public leaflet/craft-quiz experience; T-485 records the
 separate append-only reviewed-evidence authority that can clear Event
 Architect's existing Ops admission gate without allowing simulated flow to
 approve itself.
+
+Subgraph A7 records the current Grand Hall evidence path. T-540 preserves the
+exact eleven-member capture-only SOG frontier and its server-bound private
+intake while environment activation remains open. `T-116/T-498/T-540 → T-541`
+then expresses the minimum visual-super-pipeline slice: reference T-116's
+transform-artifact contract without claiming a reviewed Grand Hall transform,
+preserve the honest Room Resolves experience, and compose the exact protected
+capture through a typed RoomScene with deterministic fixed-camera diagnostics.
+T-541 is locally complete; its local diagnostic output remains `not_reviewed`
+and is not a matched-camera
+fidelity pass, deployment, or public evidence record. T-542 owns the reviewed
+room-local transform and is blocked while its hard dependency T-118 remains
+blocked. The supplied OBJ and any SOG source-envelope proxy are
+diagnostic reconstructed witnesses only. Neither is a reviewed Grand Hall room
+shell, walkable boundary, floor datum, safe-spawn source, or collision mesh, and
+neither may authorize invented windows, doors, openings, walls, or floor pixels.
+No push, merge, deployment, intake activation, or generative enhancement is
+implied by this subgraph.
 
 `T-464` records the 2026-06-17 runtime-canvas performance hardening slice:
 the mostly static internal visual and public runtime canvases now demand-render

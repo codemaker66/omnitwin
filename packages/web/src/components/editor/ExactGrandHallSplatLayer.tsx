@@ -308,7 +308,8 @@ export function ExactGrandHallSplatLayer({
   if (resource === null || resource.runtimePackageId !== runtimePackageId) return null;
   return (
     <>
-      <SparkRendererHost />
+      {/* The supplied LCC2 manifest declares sortingMethod=depth. */}
+      <SparkRendererHost sortRadial={false} />
       {resource.meshes.map((mesh, index) => (
         <primitive
           key={`${resource.runtimePackageId}:${GRAND_HALL_CAPTURED_SOG_MEMBERS[index]?.fileName ?? String(index)}`}

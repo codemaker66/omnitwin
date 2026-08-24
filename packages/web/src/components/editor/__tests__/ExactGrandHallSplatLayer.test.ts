@@ -19,6 +19,7 @@ const exactLayerMocks = vi.hoisted(() => ({
   invalidate: vi.fn(),
   createdMeshes: [] as unknown[],
   stallMeshInitialization: false,
+  sparkRendererHost: vi.fn<(props: { readonly sortRadial?: boolean }) => null>(() => null),
 }));
 
 vi.mock("@react-three/fiber", () => ({
@@ -49,7 +50,9 @@ vi.mock("@sparkjsdev/spark", () => ({
     }
   },
 }));
-vi.mock("../../scene/SparkSplatLayer.js", () => ({ SparkRendererHost: () => null }));
+vi.mock("../../scene/SparkSplatLayer.js", () => ({
+  SparkRendererHost: exactLayerMocks.sparkRendererHost,
+}));
 
 const {
   decodeExactGrandHallResource,
@@ -237,6 +240,9 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
     );
     expect(onChunkLoaded.mock.calls.map(([memberName]) => memberName)).toEqual(
       GRAND_HALL_CAPTURED_SOG_MEMBERS.map((member) => member.fileName),
+    );
+    expect(exactLayerMocks.sparkRendererHost.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ sortRadial: false }),
     );
   });
 

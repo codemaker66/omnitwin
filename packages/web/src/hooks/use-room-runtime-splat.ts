@@ -225,9 +225,9 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
       return undefined;
     }
 
-    store.beginExactGrandHallRuntime(exactGrandHallRuntimeKey);
+    const attemptNonce = store.beginExactGrandHallRuntime(exactGrandHallRuntimeKey);
     return () => {
-      useCockpitStore.getState().clearExactGrandHallRuntime(exactGrandHallRuntimeKey);
+      useCockpitStore.getState().clearExactGrandHallRuntime(exactGrandHallRuntimeKey, attemptNonce);
     };
   }, [exactGrandHallRuntimeKey, runtimeLabel]);
 

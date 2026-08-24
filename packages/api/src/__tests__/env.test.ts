@@ -208,10 +208,23 @@ describe("production environment validation", () => {
       RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
       RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
       RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
+      RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "runtime-put-only-session-token",
     }))).toThrow("deployed Git SHA");
   });
 
-  it("accepts an explicitly targeted intake with separate write credentials", () => {
+  it("REJECTS temporary intake credentials without their session token", () => {
+    expect(() => withoutVitest(() => validateEnv({
+      ...validProdBase,
+      RUNTIME_PROFILE_INTAKE_ENABLED: "true",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
+      GIT_SHA: "a".repeat(40),
+      RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
+      RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
+    }))).toThrow("all three temporary intake R2 credential fields");
+  });
+
+  it("accepts an explicitly targeted intake with separate temporary write credentials", () => {
     const env = withoutVitest(() => validateEnv({
       ...validProdBase,
       RUNTIME_PROFILE_INTAKE_ENABLED: "true",
@@ -220,9 +233,12 @@ describe("production environment validation", () => {
       GIT_SHA: "a".repeat(40),
       RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
       RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
+      RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "runtime-put-only-session-token",
     }));
     expect(env.RUNTIME_PROFILE_INTAKE_TARGET_ID).toBe("production-grand-hall");
     expect(env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA).toBe("a".repeat(40));
+    expect(env.RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN)
+      .toBe("runtime-put-only-session-token");
   });
 
   it("REJECTS reuse of the private serving access key for intake writes", () => {
@@ -234,6 +250,7 @@ describe("production environment validation", () => {
       GIT_SHA: "a".repeat(40),
       RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: validProdBase.RUNTIME_PROFILE_R2_ACCESS_KEY_ID,
       RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-write-secret",
+      RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "runtime-write-session-token",
     }))).toThrow("distinct put-only access key");
   });
 
@@ -249,6 +266,7 @@ describe("production environment validation", () => {
       RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
       RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
       RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
+      RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "runtime-put-only-session-token",
       GIT_SHA: gitSha,
     }))).toThrow("Docker-stamped GIT_SHA");
   });

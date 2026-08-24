@@ -49,6 +49,7 @@ const env = validateEnv({
   GIT_SHA: "a".repeat(40),
   RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "put-only-key",
   RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "put-only-secret",
+  RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "put-only-session-token",
 });
 
 function rejectWhenAborted(signal: AbortSignal | undefined): Promise<never> {

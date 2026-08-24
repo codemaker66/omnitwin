@@ -74,6 +74,7 @@ export function grandHallRuntimeIntakeConfigured(env: Env): boolean {
     env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA !== undefined &&
     env.RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID !== undefined &&
     env.RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY !== undefined &&
+    env.RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN !== undefined &&
     env.RUNTIME_PROFILE_R2_ACCOUNT_ID !== undefined &&
     env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID !== undefined &&
     env.RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY !== undefined &&
@@ -212,13 +213,19 @@ export function isGrandHallConditionalCreateConflict(error: unknown): boolean {
     record["name"] === "PreconditionFailed" || record["name"] === "ConditionalRequestConflict";
 }
 
-export function grandHallR2ReadClientOptions(env: Env) {
+function grandHallR2ClientBaseOptions(env: Env) {
   return {
     region: "auto",
     endpoint: `https://${env.RUNTIME_PROFILE_R2_ACCOUNT_ID ?? ""}.r2.cloudflarestorage.com`,
     forcePathStyle: true,
     maxAttempts: 3,
     requestChecksumCalculation: "WHEN_REQUIRED" as const,
+  };
+}
+
+export function grandHallR2ReadClientOptions(env: Env) {
+  return {
+    ...grandHallR2ClientBaseOptions(env),
     credentials: {
       accessKeyId: env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID ?? "",
       secretAccessKey: env.RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY ?? "",
@@ -228,10 +235,11 @@ export function grandHallR2ReadClientOptions(env: Env) {
 
 export function grandHallR2WriteClientOptions(env: Env) {
   return {
-    ...grandHallR2ReadClientOptions(env),
+    ...grandHallR2ClientBaseOptions(env),
     credentials: {
       accessKeyId: env.RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID ?? "",
       secretAccessKey: env.RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY ?? "",
+      sessionToken: env.RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN ?? "",
     },
   };
 }
