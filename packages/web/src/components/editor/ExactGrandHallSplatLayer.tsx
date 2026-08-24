@@ -2,7 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 
 import { useThree } from "@react-three/fiber";
 import { SplatMesh } from "@sparkjsdev/spark";
 import type { VerifiedRuntimePackagePreview } from "../../api/runtime-package-preview-transport.js";
-import { fetchVerifiedRuntimePackagePreview } from "../../api/runtime-package-preview-transport.js";
+import {
+  fetchRuntimePackagePreviewMetadata,
+  fetchVerifiedRuntimePackagePreviewMember,
+} from "../../api/runtime-package-preview-transport.js";
 import {
   GRAND_HALL_CAPTURED_SOG_MEMBERS,
   GRAND_HALL_CAPTURED_SOURCE,
@@ -71,6 +74,29 @@ function abortError(): DOMException {
 
 function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) throw abortError();
+}
+
+/**
+ * Admit the exact eleven-member frontier before requesting any protected
+ * member bytes, then fetch each member through the per-request auth boundary.
+ */
+async function fetchExactGrandHallPreview(
+  runtimePackageId: string,
+  signal: AbortSignal,
+): Promise<VerifiedRuntimePackagePreview> {
+  const preview = await fetchRuntimePackagePreviewMetadata(runtimePackageId, signal);
+  const admission = validateGrandHallCapturedPreview(preview);
+  if (!admission.ok) {
+    throw new Error("The exact Grand Hall preview metadata failed its immutable frontier contract.");
+  }
+
+  const members: VerifiedRuntimePackagePreview["members"][number][] = [];
+  for (let index = 0; index < GRAND_HALL_CAPTURED_SOG_MEMBERS.length; index += 1) {
+    throwIfAborted(signal);
+    members.push(await fetchVerifiedRuntimePackagePreviewMember(preview, index, signal));
+  }
+  throwIfAborted(signal);
+  return { preview, members };
 }
 
 async function awaitInitialization(
@@ -251,7 +277,7 @@ export function ExactGrandHallSplatLayer({
     resourceRef.current = null;
     invalidate();
 
-    void fetchVerifiedRuntimePackagePreview(runtimePackageId, loadDeadline.signal)
+    void fetchExactGrandHallPreview(runtimePackageId, loadDeadline.signal)
       .then((verified) => decodeExactGrandHallResource(verified, transform, loadDeadline.signal))
       .then((decoded) => {
         if (disposed || terminal || loadDeadline.signal.aborted || requestIdRef.current !== requestId) {

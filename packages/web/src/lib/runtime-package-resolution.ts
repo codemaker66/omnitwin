@@ -37,6 +37,23 @@ export interface RuntimeRoomTarget {
   readonly error: string | null;
 }
 
+export type RuntimePackagePreviewTarget =
+  | {
+      readonly kind: "absent";
+      readonly runtimePackageId: null;
+      readonly error: null;
+    }
+  | {
+      readonly kind: "exact";
+      readonly runtimePackageId: string;
+      readonly error: null;
+    }
+  | {
+      readonly kind: "invalid";
+      readonly runtimePackageId: null;
+      readonly error: string;
+    };
+
 export interface RuntimeAssetDecision {
   readonly splatUrl: string | null;
   readonly splatUrls: readonly string[];
@@ -80,6 +97,12 @@ export interface RuntimeAssetCameraView {
 
 const DEFAULT_VENUE = "trades-hall";
 const DEFAULT_ROOM: TradesHallRuntimeRoomSlug = "grand-hall";
+const CANONICAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+const INVALID_RUNTIME_PACKAGE_PREVIEW_TARGET = {
+  kind: "invalid",
+  runtimePackageId: null,
+  error: "runtimePackageId must appear exactly once as a canonical UUID.",
+} as const satisfies RuntimePackagePreviewTarget;
 const IDENTITY_RUNTIME_ASSET_VIEW_TRANSFORM: RuntimeAssetViewTransform = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
@@ -227,6 +250,30 @@ function slugIsSafe(value: string): boolean {
 
 function roomForSlug(slug: string): (typeof TRADES_HALL_RUNTIME_ROOMS)[number] | null {
   return TRADES_HALL_RUNTIME_ROOMS.find((room) => room.slug === slug) ?? null;
+}
+
+/**
+ * Parses the optional exact-package selector without ever collapsing an
+ * invalid or ambiguous request into latest-package discovery.
+ */
+export function runtimePackagePreviewTargetFromSearchParams(
+  searchParams: URLSearchParams,
+): RuntimePackagePreviewTarget {
+  const values = searchParams.getAll("runtimePackageId");
+  if (values.length === 0) {
+    return { kind: "absent", runtimePackageId: null, error: null };
+  }
+  if (values.length !== 1) return INVALID_RUNTIME_PACKAGE_PREVIEW_TARGET;
+
+  const runtimePackageId = values[0];
+  if (runtimePackageId === undefined || !CANONICAL_UUID_PATTERN.test(runtimePackageId)) {
+    return INVALID_RUNTIME_PACKAGE_PREVIEW_TARGET;
+  }
+  return {
+    kind: "exact",
+    runtimePackageId: runtimePackageId.toLowerCase(),
+    error: null,
+  };
 }
 
 export function runtimeRoomTargetFromSearchParams(searchParams: URLSearchParams): RuntimeRoomTarget {

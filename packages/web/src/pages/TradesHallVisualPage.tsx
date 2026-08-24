@@ -63,6 +63,7 @@ import {
   decideRuntimeAsset,
   runtimeAssetCameraViewForRoom,
   runtimeAssetViewTransformForRoom,
+  runtimePackagePreviewTargetFromSearchParams,
   runtimeRoomTargetFromSearchParams,
   type RuntimeAssetCameraBounds,
   type RuntimeAssetCameraView,
@@ -123,6 +124,12 @@ interface ExactCapturedSourceState {
   readonly status: ExactCapturedSourceStatus;
   readonly loadedMembers: ReadonlySet<string>;
 }
+
+const EMPTY_EXACT_CAPTURED_SOURCE_STATE: ExactCapturedSourceState = {
+  runtimePackageId: null,
+  status: "idle",
+  loadedMembers: new Set(),
+};
 
 interface TruthModeTargetOption {
   readonly id: "table" | "route" | "room" | "runtimeAsset" | "reviewGate";
@@ -432,11 +439,13 @@ function buildTruthModeTargets(input: {
   readonly runtimeTarget: RuntimeRoomTarget;
   readonly assetDecision: ReturnType<typeof decideRuntimeAsset>;
   readonly publishedPackage: RuntimePackage | null;
+  readonly exactRuntimePackageId: string | null;
   readonly exactCapturedSourceStatus: ExactCapturedSourceStatus | null;
   readonly exactCapturedSourceMounted: boolean;
   readonly capturedOnly: boolean;
 }): readonly TruthModeTargetOption[] {
-  const runtimeAssetTargetId = input.publishedPackage?.id ??
+  const runtimeAssetTargetId = input.exactRuntimePackageId ??
+    input.publishedPackage?.id ??
     input.assetDecision.splatUrl ??
     `${input.runtimeTarget.room}:runtime-asset`;
   const runtimeAssetSource = input.exactCapturedSourceMounted
@@ -582,7 +591,8 @@ function VenueCommandTopBar({
 }): ReactElement {
   const runtimeLabel = visualState.status === "loaded" ||
     visualState.status === "loading" ||
-    visualState.status === "invalid"
+    visualState.status === "invalid" ||
+    visualState.status === "error"
     ? visualState.message
     : "No real asset loaded yet";
 
@@ -1641,8 +1651,21 @@ export function TradesHallVisualPage(): ReactElement {
   const viewportWidth = useVisualViewportWidth();
   const eventId = searchParams.get("eventId");
   const runtimeTarget = useMemo(() => runtimeRoomTargetFromSearchParams(searchParams), [searchParams]);
-  const isCapturedOnlyGrandHallTarget = runtimeTarget.venue === "trades-hall"
+  const runtimePackagePreviewTarget = useMemo(
+    () => runtimePackagePreviewTargetFromSearchParams(searchParams),
+    [searchParams],
+  );
+  const resolvesToTradesHallGrandHall = runtimeTarget.venue === "trades-hall"
     && runtimeTarget.room === "grand-hall";
+  const isCapturedOnlyGrandHallTarget = resolvesToTradesHallGrandHall
+    && runtimeTarget.error === null;
+  const runtimePackagePreviewRequested = runtimePackagePreviewTarget.kind !== "absent";
+  const runtimePackagePreviewError = runtimePackagePreviewTarget.kind === "invalid"
+    ? runtimePackagePreviewTarget.error
+    : runtimePackagePreviewTarget.kind === "exact" && !isCapturedOnlyGrandHallTarget
+      ? "Exact runtime package preview is restricted to Trades Hall Grand Hall."
+      : null;
+  const isCapturedSourceSurface = resolvesToTradesHallGrandHall || runtimePackagePreviewRequested;
   const [layerMode, setLayerMode] = useState<VisualLayerMode>("hybrid");
   const [opacity, setOpacity] = useState(0.82);
   const [activeMode, setActiveMode] = useState<VisualCommandMode>("design");
@@ -1656,7 +1679,7 @@ export function TradesHallVisualPage(): ReactElement {
   const [truthSummary, setTruthSummary] = useState<TruthModeSummary | null>(null);
   const [truthSummaryStatus, setTruthSummaryStatus] = useState<TruthSummaryStatus>("fallback");
   const [guestFlowReplay, setGuestFlowReplay] = useState<GuestFlowReplayArtifact | null>(() => (
-    isCapturedOnlyGrandHallTarget ? null : TRADES_HALL_VISUAL_DEMO_STATE.guestFlowReplay
+    isCapturedSourceSurface ? null : TRADES_HALL_VISUAL_DEMO_STATE.guestFlowReplay
   ));
   const [replayStatus, setReplayStatus] = useState<ReplayStatus>("fixture");
   const [replayProgress, setReplayProgress] = useState(0.42);
@@ -1664,19 +1687,19 @@ export function TradesHallVisualPage(): ReactElement {
   const [visualCameraInteractionActive, setVisualCameraInteractionActive] = useState(false);
   const [splatLoadCounts, setSplatLoadCounts] = useState<Record<string, number>>({});
   const [splatLoadBounds, setSplatLoadBounds] = useState<Record<string, RuntimeSplatBounds>>({});
-  const [exactCapturedSourceState, setExactCapturedSourceState] = useState<ExactCapturedSourceState>(() => ({
-    runtimePackageId: null,
-    status: "idle",
-    loadedMembers: new Set(),
-  }));
+  const [exactCapturedSourceState, setExactCapturedSourceState] = useState<ExactCapturedSourceState>(
+    EMPTY_EXACT_CAPTURED_SOURCE_STATE,
+  );
   const [visualState, setVisualState] = useState<VisualState>(() => {
-    if (runtimeTarget.error !== null) {
-      return { status: "invalid", message: runtimeTarget.error, splatCount: null };
+    const initialError = runtimePackagePreviewError ?? runtimeTarget.error;
+    if (initialError !== null) {
+      return { status: "invalid", message: initialError, splatCount: null };
     }
     return EMPTY_STATE;
   });
 
-  const targetPublishedPackage = publishedPackage !== null
+  const targetPublishedPackage = !runtimePackagePreviewRequested
+    && publishedPackage !== null
     && publishedPackage.venueSlug === runtimeTarget.venue
     && publishedPackage.roomSlug === runtimeTarget.room
     ? publishedPackage
@@ -1691,18 +1714,27 @@ export function TradesHallVisualPage(): ReactElement {
     && validateGrandHallCapturedSource(targetPublishedPackage).ok
     ? targetPublishedPackage
     : null;
-  const exactGrandHallPackageId = exactGrandHallPackage?.id ?? null;
-  const exactCapturedSourceStatus: ExactCapturedSourceStatus | null = !isCapturedOnlyGrandHallTarget
-    ? null
-    : exactGrandHallPackageId === null
-      ? "idle"
-      : exactCapturedSourceState.runtimePackageId === exactGrandHallPackageId
-        ? exactCapturedSourceState.status
-        : "pending";
+  const explicitGrandHallPackageId = runtimePackagePreviewTarget.kind === "exact"
+    && runtimePackagePreviewError === null
+    ? runtimePackagePreviewTarget.runtimePackageId
+    : null;
+  const exactGrandHallPackageId = explicitGrandHallPackageId ?? exactGrandHallPackage?.id ?? null;
+  const displayedExactCapturedSourceState: ExactCapturedSourceState = exactGrandHallPackageId === null
+    ? EMPTY_EXACT_CAPTURED_SOURCE_STATE
+    : exactCapturedSourceState.runtimePackageId === exactGrandHallPackageId
+      ? exactCapturedSourceState
+      : {
+          runtimePackageId: exactGrandHallPackageId,
+          status: "pending",
+          loadedMembers: EMPTY_EXACT_CAPTURED_SOURCE_STATE.loadedMembers,
+        };
+  const exactCapturedSourceStatus: ExactCapturedSourceStatus | null = isCapturedSourceSurface
+    ? displayedExactCapturedSourceState.status
+    : null;
   const exactCapturedSourceMounted = exactCapturedSourceStatus === "verified";
   const activeSplatUrls = assetDecision.splatUrls;
   const activeSplatUrlKey = activeSplatUrls.join("|");
-  const hasRegisteredRuntimeAsset = exactGrandHallPackage !== null
+  const hasRegisteredRuntimeAsset = exactGrandHallPackageId !== null
     || (assetDecision.source === "package" && activeSplatUrls.length > 0);
   const baseRuntimeAssetViewTransform = useMemo(
     () => runtimeAssetViewTransformForRoom(runtimeTarget.room),
@@ -1724,11 +1756,11 @@ export function TradesHallVisualPage(): ReactElement {
   );
   const eventPhases = useMemo(
     () => phaseGraph === null
-      ? isCapturedOnlyGrandHallTarget
+      ? isCapturedSourceSurface
         ? []
         : TRADES_HALL_VISUAL_DEMO_STATE.eventPhases
       : visualEventPhasesFromGraph(phaseGraph),
-    [isCapturedOnlyGrandHallTarget, phaseGraph],
+    [isCapturedSourceSurface, phaseGraph],
   );
   const selectedPhase = eventPhases.length === 0
     ? null
@@ -1739,15 +1771,17 @@ export function TradesHallVisualPage(): ReactElement {
       runtimeTarget,
       assetDecision,
       publishedPackage: targetPublishedPackage,
+      exactRuntimePackageId: exactGrandHallPackageId,
       exactCapturedSourceStatus,
       exactCapturedSourceMounted,
-      capturedOnly: isCapturedOnlyGrandHallTarget,
+      capturedOnly: isCapturedSourceSurface,
     }),
     [
       assetDecision,
       exactCapturedSourceMounted,
       exactCapturedSourceStatus,
-      isCapturedOnlyGrandHallTarget,
+      exactGrandHallPackageId,
+      isCapturedSourceSurface,
       runtimeTarget,
       selectedPhase,
       targetPublishedPackage,
@@ -1772,7 +1806,7 @@ export function TradesHallVisualPage(): ReactElement {
     [activeMode, selectedPhase, selectedTruthTarget, visualState],
   );
   const displayedTruthSummary = truthSummary ?? fallbackTruthSummary;
-  const meshVisible = !isCapturedOnlyGrandHallTarget
+  const meshVisible = !isCapturedSourceSurface
     && !hasRegisteredRuntimeAsset
     && (layerMode === "hybrid" || layerMode === "mesh");
   const splatVisible = activeSplatUrls.length > 0 && (
@@ -1806,6 +1840,7 @@ export function TradesHallVisualPage(): ReactElement {
   const visualFallbackRoomGeometry = roomGeometries[runtimeTarget.roomLabel] ?? GRAND_HALL_ROOM_GEOMETRY;
   const visualFallbackRoomVariant = runtimeTarget.room === "grand-hall" ? "grand-hall" : "generic";
   const linkedGrandHallTimelineVisible = isCapturedOnlyGrandHallTarget
+    && runtimePackagePreviewError === null
     && uuidOrNull(eventId) !== null
     && phaseGraphStatus === "loaded"
     && phaseGraph !== null
@@ -1813,7 +1848,7 @@ export function TradesHallVisualPage(): ReactElement {
 
   useEffect(() => {
     let cancelled = false;
-    if (isCapturedOnlyGrandHallTarget) {
+    if (isCapturedSourceSurface) {
       setGuestFlowReplay(null);
       setReplayStatus("fixture");
       setReplayProgress(0);
@@ -1860,30 +1895,33 @@ export function TradesHallVisualPage(): ReactElement {
 
     void loadReplay();
     return () => { cancelled = true; };
-  }, [eventId, isCapturedOnlyGrandHallTarget, selectedPhaseId]);
+  }, [eventId, isCapturedSourceSurface, selectedPhaseId]);
 
   useEffect(() => {
-    if (isCapturedOnlyGrandHallTarget || !replayRunning) return;
+    if (isCapturedSourceSurface || !replayRunning) return;
     const id = window.setInterval(() => {
       setReplayProgress((current) => Number(((current + 0.025) % 1).toFixed(3)));
     }, 220);
     return () => { window.clearInterval(id); };
-  }, [isCapturedOnlyGrandHallTarget, replayRunning]);
+  }, [isCapturedSourceSurface, replayRunning]);
 
   useEffect(() => {
-    if (runtimeTarget.error !== null) {
-      setVisualState({ status: "invalid", message: runtimeTarget.error, splatCount: null });
+    const selectionError = runtimePackagePreviewError ?? runtimeTarget.error;
+    if (selectionError !== null) {
+      setVisualState({ status: "invalid", message: selectionError, splatCount: null });
       return;
     }
-    if (assetDecision.source === "none" && exactGrandHallPackage === null) {
+    if (assetDecision.source === "none" && exactGrandHallPackageId === null) {
       setVisualState(EMPTY_STATE);
     }
-  }, [assetDecision.source, exactGrandHallPackage, runtimeTarget.error]);
+  }, [assetDecision.source, exactGrandHallPackageId, runtimePackagePreviewError, runtimeTarget.error]);
 
   useEffect(() => {
     let cancelled = false;
-    const linkedEventId = isCapturedOnlyGrandHallTarget
-      ? uuidOrNull(eventId)
+    const linkedEventId = isCapturedSourceSurface
+      ? runtimePackagePreviewError === null && isCapturedOnlyGrandHallTarget
+        ? uuidOrNull(eventId)
+        : null
       : eventId === null || eventId.trim().length === 0
         ? null
         : eventId;
@@ -1907,7 +1945,7 @@ export function TradesHallVisualPage(): ReactElement {
       });
 
     return () => { cancelled = true; };
-  }, [eventId, isCapturedOnlyGrandHallTarget]);
+  }, [eventId, isCapturedOnlyGrandHallTarget, isCapturedSourceSurface, runtimePackagePreviewError]);
 
   useEffect(() => {
     if (eventPhases.some((phase) => phase.id === selectedPhaseId)) return;
@@ -1916,7 +1954,7 @@ export function TradesHallVisualPage(): ReactElement {
   }, [eventPhases, selectedPhaseId]);
 
   useEffect(() => {
-    if (isCapturedOnlyGrandHallTarget) {
+    if (isCapturedSourceSurface) {
       setTruthSummary(null);
       setTruthSummaryStatus("fallback");
       return undefined;
@@ -1940,7 +1978,7 @@ export function TradesHallVisualPage(): ReactElement {
       });
 
     return () => { cancelled = true; };
-  }, [isCapturedOnlyGrandHallTarget, selectedTruthTarget.targetId, selectedTruthTarget.targetType]);
+  }, [isCapturedSourceSurface, selectedTruthTarget.targetId, selectedTruthTarget.targetType]);
 
   // Fetch the latest usable runtime package for the selected room. A failure
   // or empty API result leaves publishedPackage null and keeps fallback.
@@ -1950,14 +1988,14 @@ export function TradesHallVisualPage(): ReactElement {
     // is the primary guard, while this prevents stale package state from
     // lingering after a failed or indefinitely pending request.
     setPublishedPackage(null);
-    if (runtimeTarget.error !== null) {
+    if (runtimeTarget.error !== null || runtimePackagePreviewRequested) {
       return () => { cancelled = true; };
     }
     void getLatestRuntimePackage({ venue: runtimeTarget.venue, room: runtimeTarget.room })
       .then((pkg) => { if (!cancelled) setPublishedPackage(pkg); })
       .catch(() => { if (!cancelled) setPublishedPackage(null); });
     return () => { cancelled = true; };
-  }, [runtimeTarget.error, runtimeTarget.room, runtimeTarget.venue]);
+  }, [runtimePackagePreviewRequested, runtimeTarget.error, runtimeTarget.room, runtimeTarget.venue]);
 
   // When a package asset becomes the active decision,
   // show a loading line until Spark resolves it; onLoad/onError refine it.
@@ -1979,11 +2017,7 @@ export function TradesHallVisualPage(): ReactElement {
 
   useEffect(() => {
     if (exactGrandHallPackageId === null) {
-      setExactCapturedSourceState({
-        runtimePackageId: null,
-        status: "idle",
-        loadedMembers: new Set(),
-      });
+      setExactCapturedSourceState(EMPTY_EXACT_CAPTURED_SOURCE_STATE);
       return;
     }
     setExactCapturedSourceState({
@@ -2069,17 +2103,10 @@ export function TradesHallVisualPage(): ReactElement {
   const handleExactGrandHallChunkLoaded = useCallback((memberName: string) => {
     if (exactGrandHallPackageId === null) return;
     setExactCapturedSourceState((current) => {
-      if (
-        current.runtimePackageId === exactGrandHallPackageId
-        && current.status === "failed"
-      ) {
+      if (current.runtimePackageId !== exactGrandHallPackageId || current.status === "failed") {
         return current;
       }
-      const next = new Set(
-        current.runtimePackageId === exactGrandHallPackageId
-          ? current.loadedMembers
-          : [],
-      );
+      const next = new Set(current.loadedMembers);
       if (next.has(memberName)) return current;
       next.add(memberName);
       const complete = next.size === GRAND_HALL_CAPTURED_SOG_MEMBERS.length;
@@ -2093,10 +2120,13 @@ export function TradesHallVisualPage(): ReactElement {
 
   const handleExactGrandHallChunkFailed = useCallback(() => {
     if (exactGrandHallPackageId === null) return;
-    setExactCapturedSourceState({
-      runtimePackageId: exactGrandHallPackageId,
-      status: "failed",
-      loadedMembers: new Set(),
+    setExactCapturedSourceState((current) => {
+      if (current.runtimePackageId !== exactGrandHallPackageId) return current;
+      return {
+        runtimePackageId: exactGrandHallPackageId,
+        status: "failed",
+        loadedMembers: new Set(),
+      };
     });
   }, [exactGrandHallPackageId]);
 
@@ -2114,20 +2144,20 @@ export function TradesHallVisualPage(): ReactElement {
   return (
     <main className={[
       "visual-shell",
-      isCapturedOnlyGrandHallTarget ? "visual-shell--captured-source" : "",
+      isCapturedSourceSurface ? "visual-shell--captured-source" : "",
       linkedGrandHallTimelineVisible ? "visual-shell--linked-event" : "",
     ].filter(Boolean).join(" ")}>
       <VenueCommandTopBar
         phase={selectedPhase}
         visualState={visualState}
         runtimeTarget={runtimeTarget}
-        capturedOnly={isCapturedOnlyGrandHallTarget}
+        capturedOnly={isCapturedSourceSurface}
       />
-      {!isCapturedOnlyGrandHallTarget && (
+      {!isCapturedSourceSurface && (
         <VenueCommandRail activeMode={activeMode} onModeChange={setActiveMode} />
       )}
       <section className="visual-stage" aria-label="Trades Hall visual command canvas">
-        <div className={isCapturedOnlyGrandHallTarget
+        <div className={isCapturedSourceSurface
           ? "visual-canvas-frame visual-canvas-frame--captured-source"
           : "visual-canvas-frame"}
         >
@@ -2164,9 +2194,10 @@ export function TradesHallVisualPage(): ReactElement {
                 <GrandHallRoom />
               )
             )}
-            {exactGrandHallPackage !== null ? (
+            {exactGrandHallPackageId !== null ? (
               <ExactGrandHallSplatLayer
-                runtimePackageId={exactGrandHallPackage.id}
+                key={exactGrandHallPackageId}
+                runtimePackageId={exactGrandHallPackageId}
                 transform={runtimeAssetViewTransform}
                 active
                 onChunkLoaded={handleExactGrandHallChunkLoaded}
@@ -2195,7 +2226,7 @@ export function TradesHallVisualPage(): ReactElement {
         <FloatingWidgetFrame
           id="visual-layer-controls"
           title="Visual layer"
-          compactLabel={isCapturedOnlyGrandHallTarget ? "splat" : layerMode}
+          compactLabel={isCapturedSourceSurface ? "splat" : layerMode}
           defaultPlacement={layerControlsPlacement}
           defaultMinimized={isNarrowVisualViewport}
           storageScope={visualWidgetStorageScope}
@@ -2205,10 +2236,10 @@ export function TradesHallVisualPage(): ReactElement {
           <CanvasLayerControls
             mode={layerMode}
             onModeChange={setLayerMode}
-            capturedOnly={isCapturedOnlyGrandHallTarget}
+            capturedOnly={isCapturedSourceSurface}
           />
         </FloatingWidgetFrame>
-        {!isCapturedOnlyGrandHallTarget && guestFlowReplay !== null && (
+        {!isCapturedSourceSurface && guestFlowReplay !== null && (
           <>
             <VenueCanvasOverlays
               overlays={overlays}
@@ -2245,7 +2276,7 @@ export function TradesHallVisualPage(): ReactElement {
             </FloatingWidgetFrame>
           </>
         )}
-        {!isCapturedOnlyGrandHallTarget && (
+        {!isCapturedSourceSurface && (
           <FloatingWidgetFrame
             id="visual-view-status"
             title="View status"
@@ -2260,12 +2291,12 @@ export function TradesHallVisualPage(): ReactElement {
           </FloatingWidgetFrame>
         )}
       </section>
-      {isCapturedOnlyGrandHallTarget ? (
+      {isCapturedSourceSurface ? (
         <CapturedSourceInspectionPanel
           runtimeTarget={runtimeTarget}
-          packageId={targetPublishedPackage?.id ?? null}
+          packageId={exactGrandHallPackageId}
           sourceTarget={selectedTruthTarget}
-          sourceState={exactCapturedSourceState}
+          sourceState={displayedExactCapturedSourceState}
           visualState={visualState}
         />
       ) : selectedPhase !== null ? (
@@ -2295,7 +2326,7 @@ export function TradesHallVisualPage(): ReactElement {
             sourceOnly
           />
         </footer>
-      ) : !isCapturedOnlyGrandHallTarget ? (
+      ) : !isCapturedSourceSurface ? (
         <footer className="visual-bottom">
           <EventPhaseGraph
             phases={eventPhases}

@@ -247,4 +247,12 @@ After successful registration:
 
 ## Remaining visual gate
 
-Registration is not visual acceptance. With explicit browser permission, perform authenticated source-only WebGL QA at the reviewed fixed cameras and compare the render directly with the supplied capture. Confirm that the renderer shows no invented doors, windows, central dark floor, procedural surfaces, generated fill, planning geometry, neighbouring rooms, or exterior facade. Until that review is recorded, T-540 remains `in-progress`.
+Registration is not visual acceptance. Take the immutable `runtimePackageId` from the successful apply receipt and open the authenticated staging web origin at:
+
+```text
+/dev/trades-hall-visual?venue=trades-hall&room=grand-hall&runtimePackageId=<apply-receipt-runtime-package-id>
+```
+
+Do not omit the selector or substitute a latest-package URL for exact-package QA. Confirm in the browser network record that `/assets/runtime-packages/latest` is not requested, the displayed package ID exactly matches the apply receipt, metadata is admitted before member zero is requested, and only the authenticated private-preview member endpoints transfer the eleven SOG objects.
+
+With explicit browser permission, perform authenticated source-only WebGL QA at the reviewed fixed cameras and compare the render directly with the supplied capture. Confirm that the renderer shows no invented doors, windows, central dark floor, procedural surfaces, generated fill, planning geometry, neighbouring rooms, or exterior facade. Until that review is recorded, T-540 remains `in-progress`.

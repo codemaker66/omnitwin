@@ -21,6 +21,9 @@ interface ExactGrandHallSplatLayerMockProps {
   readonly onChunkFailed?: (memberName: string) => void;
 }
 
+const EXPLICIT_RUNTIME_PACKAGE_A = "30000000-0000-4000-8000-000000000001";
+const EXPLICIT_RUNTIME_PACKAGE_B = "30000000-0000-4000-8000-000000000002";
+
 const { getLatestRuntimePackageMock } = vi.hoisted(() => ({
   getLatestRuntimePackageMock: vi.fn(),
 }));
@@ -212,6 +215,43 @@ function VisualRouteSwitcher(): React.ReactElement {
   );
 }
 
+function RuntimePackagePreviewRouteSwitcher(): React.ReactElement {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          void navigate(
+            `/dev/trades-hall-visual?venue=trades-hall&room=grand-hall&runtimePackageId=${EXPLICIT_RUNTIME_PACKAGE_A}`,
+          );
+        }}
+      >
+        Open package A
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          void navigate(
+            `/dev/trades-hall-visual?venue=trades-hall&room=grand-hall&runtimePackageId=${EXPLICIT_RUNTIME_PACKAGE_B}`,
+          );
+        }}
+      >
+        Open package B
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          void navigate("/dev/trades-hall-visual?venue=trades-hall&room=grand-hall");
+        }}
+      >
+        Use latest package
+      </button>
+      <TradesHallVisualPage />
+    </>
+  );
+}
+
 beforeEach(() => {
   Object.defineProperty(window, "innerWidth", {
     configurable: true,
@@ -249,6 +289,24 @@ function latestExactGrandHallLayerProps(): ExactGrandHallSplatLayerMockProps {
     throw new Error("Expected the exact Grand Hall layer to have rendered.");
   }
   return props;
+}
+
+function exactGrandHallLayerPropsFor(runtimePackageId: string): ExactGrandHallSplatLayerMockProps {
+  const call = [...exactGrandHallSplatLayerMock.mock.calls]
+    .reverse()
+    .find(([props]) => props.runtimePackageId === runtimePackageId);
+  const props = call?.[0];
+  if (props === undefined) {
+    throw new Error(`Expected the exact Grand Hall layer to render package ${runtimePackageId}.`);
+  }
+  return props;
+}
+
+function expectNoArchitectureMounted(): void {
+  expect(screen.queryByTestId("exact-grand-hall-splat-layer")).toBeNull();
+  expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+  expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
+  expect(screen.queryByTestId("grand-hall-room")).toBeNull();
 }
 
 function mount(initialEntry = "/dev/trades-hall-visual"): void {
@@ -602,6 +660,153 @@ describe("TradesHallVisualPage", () => {
     });
   });
 
+  it("mounts a valid explicit Grand Hall package without latest discovery or URL-sourced architecture", async () => {
+    mount(
+      `/dev/trades-hall-visual?venue=trades-hall&room=grand-hall&runtimePackageId=${EXPLICIT_RUNTIME_PACKAGE_A}`
+        + "&splatUrl=https%3A%2F%2Funtrusted.invalid%2Finvented.sog",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exact-grand-hall-splat-layer").textContent).toBe(
+        EXPLICIT_RUNTIME_PACKAGE_A,
+      );
+    });
+
+    expect(getLatestRuntimePackageMock).not.toHaveBeenCalled();
+    expect(screen.getByText("Captured source inspection")).toBeTruthy();
+    expect(screen.getAllByText(EXPLICIT_RUNTIME_PACKAGE_A).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+    expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
+    expect(screen.queryByTestId("grand-hall-room")).toBeNull();
+    expect(document.body.textContent).not.toContain("untrusted.invalid");
+  });
+
+  it.each([
+    [
+      "malformed",
+      "/dev/trades-hall-visual?venue=trades-hall&room=grand-hall&runtimePackageId=not-a-package-id",
+    ],
+    [
+      "duplicate",
+      `/dev/trades-hall-visual?venue=trades-hall&room=grand-hall`
+        + `&runtimePackageId=${EXPLICIT_RUNTIME_PACKAGE_A}`
+        + `&runtimePackageId=${EXPLICIT_RUNTIME_PACKAGE_B}`,
+    ],
+  ])("fails closed for a %s explicit package selector", async (_caseName, initialEntry) => {
+    mount(initialEntry);
+
+    await act(async () => { await Promise.resolve(); });
+
+    expect(getLatestRuntimePackageMock).not.toHaveBeenCalled();
+    expect(exactGrandHallSplatLayerMock).not.toHaveBeenCalled();
+    expectNoArchitectureMounted();
+    expect(screen.getByText("Captured source inspection")).toBeTruthy();
+  });
+
+  it.each([
+    ["another room", "venue=trades-hall&room=reception-room"],
+    ["another venue", "venue=city-hall&room=grand-hall"],
+  ])("fails closed when an explicit package selector targets %s", async (_caseName, targetQuery) => {
+    mount(
+      `/dev/trades-hall-visual?${targetQuery}&runtimePackageId=${EXPLICIT_RUNTIME_PACKAGE_A}`,
+    );
+
+    await act(async () => { await Promise.resolve(); });
+
+    expect(getLatestRuntimePackageMock).not.toHaveBeenCalled();
+    expect(exactGrandHallSplatLayerMock).not.toHaveBeenCalled();
+    expectNoArchitectureMounted();
+  });
+
+  it("resets verification when the explicit package changes and ignores stale package callbacks", async () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          `/dev/trades-hall-visual?venue=trades-hall&room=grand-hall&runtimePackageId=${EXPLICIT_RUNTIME_PACKAGE_A}`,
+        ]}
+      >
+        <RuntimePackagePreviewRouteSwitcher />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exact-grand-hall-splat-layer").textContent).toBe(
+        EXPLICIT_RUNTIME_PACKAGE_A,
+      );
+    });
+    const packageAProps = exactGrandHallLayerPropsFor(EXPLICIT_RUNTIME_PACKAGE_A);
+    const packageAChunkLoaded = packageAProps.onChunkLoaded;
+    const packageAChunkFailed = packageAProps.onChunkFailed;
+    if (packageAChunkLoaded === undefined || packageAChunkFailed === undefined) {
+      throw new Error("Expected package A verification callbacks.");
+    }
+    act(() => {
+      for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS) {
+        packageAChunkLoaded(member.fileName);
+      }
+    });
+    await waitFor(() => {
+      expect(screen.getByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open package B" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exact-grand-hall-splat-layer").textContent).toBe(
+        EXPLICIT_RUNTIME_PACKAGE_B,
+      );
+      expect(screen.getAllByText("Verifying exact Grand Hall source (0/11)").length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeNull();
+
+    act(() => {
+      for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS) {
+        packageAChunkLoaded(member.fileName);
+      }
+      packageAChunkFailed(GRAND_HALL_CAPTURED_SOG_MEMBERS[0].fileName);
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Verifying exact Grand Hall source (0/11)").length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeNull();
+    expect(screen.queryByText("The exact captured Grand Hall source failed verification and is not mounted.")).toBeNull();
+    expect(getLatestRuntimePackageMock).not.toHaveBeenCalled();
+  });
+
+  it("restores latest-package discovery when the explicit selector is removed", async () => {
+    const latestPackage = makeExactGrandHallRuntimePackage();
+    getLatestRuntimePackageMock.mockResolvedValue(latestPackage);
+    render(
+      <MemoryRouter
+        initialEntries={[
+          `/dev/trades-hall-visual?venue=trades-hall&room=grand-hall&runtimePackageId=${EXPLICIT_RUNTIME_PACKAGE_A}`,
+        ]}
+      >
+        <RuntimePackagePreviewRouteSwitcher />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exact-grand-hall-splat-layer").textContent).toBe(
+        EXPLICIT_RUNTIME_PACKAGE_A,
+      );
+    });
+    expect(getLatestRuntimePackageMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Use latest package" }));
+
+    await waitFor(() => {
+      expect(getLatestRuntimePackageMock).toHaveBeenCalledTimes(1);
+      expect(getLatestRuntimePackageMock).toHaveBeenCalledWith({
+        venue: "trades-hall",
+        room: "grand-hall",
+      });
+      expect(screen.getByTestId("exact-grand-hall-splat-layer").textContent).toBe(latestPackage.id);
+    });
+    expect(screen.getAllByText(latestPackage.id).length).toBeGreaterThan(0);
+  });
+
   it("loads Truth Mode summary for the selected table by default", async () => {
     mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room");
     await waitFor(() => {
@@ -849,6 +1054,9 @@ describe("TradesHallVisualPage", () => {
       expect(screen.getByText("The exact captured Grand Hall source failed verification and is not mounted.")).toBeTruthy();
       expect(screen.getByText(/Captured pixels and all architectural fallbacks remain hidden/i)).toBeTruthy();
     });
+    expect(document.querySelector("header")?.textContent).toContain(
+      "The exact Grand Hall source could not be verified; architecture is hidden.",
+    );
     expect(screen.queryByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeNull();
     expect(screen.queryByText(/Captured source pixels are shown/i)).toBeNull();
   });

@@ -10,6 +10,7 @@ import {
   plannerRuntimeChipLabel,
   runtimeAssetCameraViewForRoom,
   runtimeAssetViewTransformForRoom,
+  runtimePackagePreviewTargetFromSearchParams,
   runtimeRoomTargetFromSearchParams,
 } from "../runtime-package-resolution.js";
 
@@ -96,6 +97,63 @@ const FORBIDDEN_PHRASES = [
   "guaranteed accessible",
   "black label",
 ];
+
+describe("runtimePackagePreviewTargetFromSearchParams", () => {
+  it("distinguishes an absent selector from an exact package request", () => {
+    expect(runtimePackagePreviewTargetFromSearchParams(new URLSearchParams())).toEqual({
+      kind: "absent",
+      runtimePackageId: null,
+      error: null,
+    });
+
+    expect(runtimePackagePreviewTargetFromSearchParams(new URLSearchParams({
+      runtimePackageId: "20000000-0000-4000-8000-000000000001",
+    }))).toEqual({
+      kind: "exact",
+      runtimePackageId: "20000000-0000-4000-8000-000000000001",
+      error: null,
+    });
+  });
+
+  it("accepts canonical UUID hex case and normalizes the exact identity to lower case", () => {
+    expect(runtimePackagePreviewTargetFromSearchParams(new URLSearchParams({
+      runtimePackageId: "ABCDEF12-3456-4ABC-8DEF-ABCDEF123456",
+    }))).toEqual({
+      kind: "exact",
+      runtimePackageId: "abcdef12-3456-4abc-8def-abcdef123456",
+      error: null,
+    });
+  });
+
+  it.each([
+    "",
+    " ",
+    "not-a-runtime-package-id",
+    "20000000000040008000000000000001",
+    "{20000000-0000-4000-8000-000000000001}",
+    " 20000000-0000-4000-8000-000000000001",
+    "20000000-0000-4000-8000-000000000001 ",
+  ])("rejects a non-canonical selector without latest fallback: %j", (runtimePackageId) => {
+    const target = runtimePackagePreviewTargetFromSearchParams(new URLSearchParams({ runtimePackageId }));
+    expect(target).toEqual({
+      kind: "invalid",
+      runtimePackageId: null,
+      error: "runtimePackageId must appear exactly once as a canonical UUID.",
+    });
+  });
+
+  it("rejects duplicate selectors even when both values are individually valid", () => {
+    const searchParams = new URLSearchParams();
+    searchParams.append("runtimePackageId", "20000000-0000-4000-8000-000000000001");
+    searchParams.append("runtimePackageId", "20000000-0000-4000-8000-000000000002");
+
+    expect(runtimePackagePreviewTargetFromSearchParams(searchParams)).toEqual({
+      kind: "invalid",
+      runtimePackageId: null,
+      error: "runtimePackageId must appear exactly once as a canonical UUID.",
+    });
+  });
+});
 
 describe("runtimeRoomTargetFromSearchParams", () => {
   it("defaults to Trades Hall Grand Hall", () => {

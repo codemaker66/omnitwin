@@ -15,7 +15,8 @@ import {
 } from "../../../stores/cockpit-store.js";
 
 const exactLayerMocks = vi.hoisted(() => ({
-  fetchVerifiedRuntimePackagePreview: vi.fn(),
+  fetchRuntimePackagePreviewMetadata: vi.fn(),
+  fetchVerifiedRuntimePackagePreviewMember: vi.fn(),
   invalidate: vi.fn(),
   createdMeshes: [] as unknown[],
   stallMeshInitialization: false,
@@ -28,7 +29,8 @@ vi.mock("@react-three/fiber", () => ({
   }),
 }));
 vi.mock("../../../api/runtime-package-preview-transport.js", () => ({
-  fetchVerifiedRuntimePackagePreview: exactLayerMocks.fetchVerifiedRuntimePackagePreview,
+  fetchRuntimePackagePreviewMetadata: exactLayerMocks.fetchRuntimePackagePreviewMetadata,
+  fetchVerifiedRuntimePackagePreviewMember: exactLayerMocks.fetchVerifiedRuntimePackagePreviewMember,
 }));
 vi.mock("@sparkjsdev/spark", () => ({
   SplatMesh: class SplatMesh {
@@ -157,6 +159,19 @@ function verifiedFixture(runtimePackageId = PACKAGE_ID): VerifiedRuntimePackageP
   };
 }
 
+function mockSuccessfulTransport(runtimePackageId = PACKAGE_ID): VerifiedRuntimePackagePreview {
+  const verified = verifiedFixture(runtimePackageId);
+  exactLayerMocks.fetchRuntimePackagePreviewMetadata.mockResolvedValue(verified.preview);
+  exactLayerMocks.fetchVerifiedRuntimePackagePreviewMember.mockImplementation(
+    (_preview: RuntimePackagePreview, index: number) => {
+      const member = verified.members[index];
+      if (member === undefined) throw new Error("Expected exact Grand Hall member fixture.");
+      return Promise.resolve(member);
+    },
+  );
+  return verified;
+}
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -216,7 +231,20 @@ describe("exact Grand Hall all-or-nothing decode", () => {
 
 describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
   it("reports ready only after all eleven decoded members attach in one commit", async () => {
-    exactLayerMocks.fetchVerifiedRuntimePackagePreview.mockResolvedValue(verifiedFixture());
+    const verified = verifiedFixture();
+    const transportEvents: string[] = [];
+    exactLayerMocks.fetchRuntimePackagePreviewMetadata.mockImplementation(() => {
+      transportEvents.push("metadata");
+      return Promise.resolve(verified.preview);
+    });
+    exactLayerMocks.fetchVerifiedRuntimePackagePreviewMember.mockImplementation(
+      (_preview: RuntimePackagePreview, index: number) => {
+        transportEvents.push(`member:${String(index)}`);
+        const member = verified.members[index];
+        if (member === undefined) throw new Error("Expected exact Grand Hall member fixture.");
+        return Promise.resolve(member);
+      },
+    );
     const onChunkLoaded = vi.fn<(memberName: string) => void>();
     let attachedAtReady = 0;
     let container: HTMLElement | null = null;
@@ -244,10 +272,43 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
     expect(exactLayerMocks.sparkRendererHost.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ sortRadial: false }),
     );
+    expect(transportEvents).toEqual([
+      "metadata",
+      ...GRAND_HALL_CAPTURED_SOG_MEMBERS.map((_, index) => `member:${String(index)}`),
+    ]);
+  });
+
+  it("rejects non-exact metadata before requesting any protected member", async () => {
+    const preview = previewFixture();
+    const wrongRoomPreview: RuntimePackagePreview = {
+      ...preview,
+      roomSlug: "reception-room",
+      manifestJson: {
+        ...preview.manifestJson,
+        roomSlug: "reception-room",
+      },
+    };
+    exactLayerMocks.fetchRuntimePackagePreviewMetadata.mockResolvedValue(wrongRoomPreview);
+    const onReady = vi.fn();
+    const onFailed = vi.fn();
+
+    const rendered = render(createElement(ExactGrandHallSplatLayer, {
+      runtimePackageId: PACKAGE_ID,
+      transform: TRANSFORM,
+      active: true,
+      onReady,
+      onFailed,
+    }));
+
+    await waitFor(() => { expect(onFailed).toHaveBeenCalledOnce(); });
+    expect(exactLayerMocks.fetchRuntimePackagePreviewMetadata).toHaveBeenCalledOnce();
+    expect(exactLayerMocks.fetchVerifiedRuntimePackagePreviewMember).not.toHaveBeenCalled();
+    expect(onReady).not.toHaveBeenCalled();
+    expect(rendered.container.querySelector("primitive")).toBeNull();
   });
 
   it("reports a terminal failure while leaving every source member detached", async () => {
-    exactLayerMocks.fetchVerifiedRuntimePackagePreview.mockRejectedValue(
+    exactLayerMocks.fetchRuntimePackagePreviewMetadata.mockRejectedValue(
       new Error("protected preview unavailable"),
     );
     const onChunkFailed = vi.fn();
@@ -272,10 +333,10 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
   it("times out stalled transport, aborts it, and emits one terminal detached failure", async () => {
     vi.useFakeTimers();
     let transportSignal: AbortSignal | undefined;
-    exactLayerMocks.fetchVerifiedRuntimePackagePreview.mockImplementation(
+    exactLayerMocks.fetchRuntimePackagePreviewMetadata.mockImplementation(
       (_runtimePackageId: string, signal: AbortSignal) => {
         transportSignal = signal;
-        return new Promise<VerifiedRuntimePackagePreview>(() => undefined);
+        return new Promise<RuntimePackagePreview>(() => undefined);
       },
     );
     const onChunkFailed = vi.fn();
@@ -303,7 +364,7 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
   it("times out decoder initialization and disposes the invisible partial resource", async () => {
     vi.useFakeTimers();
     exactLayerMocks.stallMeshInitialization = true;
-    exactLayerMocks.fetchVerifiedRuntimePackagePreview.mockResolvedValue(verifiedFixture());
+    mockSuccessfulTransport();
     const onReady = vi.fn();
     const onFailed = vi.fn();
     const rendered = render(createElement(ExactGrandHallSplatLayer, {
@@ -333,12 +394,20 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
       spaceId: "grand-hall-space-b",
       venueId: "trades-hall-venue-b",
     };
-    let resolveFirst: ((value: VerifiedRuntimePackagePreview) => void) | undefined;
-    exactLayerMocks.fetchVerifiedRuntimePackagePreview
-      .mockImplementationOnce(() => new Promise<VerifiedRuntimePackagePreview>((resolvePromise) => {
+    let resolveFirst: ((value: RuntimePackagePreview) => void) | undefined;
+    exactLayerMocks.fetchRuntimePackagePreviewMetadata
+      .mockImplementationOnce(() => new Promise<RuntimePackagePreview>((resolvePromise) => {
         resolveFirst = resolvePromise;
       }))
-      .mockResolvedValueOnce(verifiedFixture());
+      .mockResolvedValueOnce(verifiedFixture().preview);
+    const verified = verifiedFixture();
+    exactLayerMocks.fetchVerifiedRuntimePackagePreviewMember.mockImplementation(
+      (_preview: RuntimePackagePreview, index: number) => {
+        const member = verified.members[index];
+        if (member === undefined) throw new Error("Expected exact Grand Hall member fixture.");
+        return Promise.resolve(member);
+      },
+    );
     const onReady = vi.fn();
     const onFailed = vi.fn();
     const rendered = render(createElement(ExactGrandHallSplatLayer, {
@@ -363,7 +432,7 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
     expect(onReady).toHaveBeenCalledOnce();
 
     await act(async () => {
-      resolveFirst?.(verifiedFixture());
+      resolveFirst?.(verifiedFixture().preview);
       for (let index = 0; index < 4; index += 1) await Promise.resolve();
       await vi.advanceTimersByTimeAsync(EXACT_GRAND_HALL_LOAD_DEADLINE_MS);
     });
@@ -380,9 +449,17 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
       spaceId: "grand-hall-space-c",
       venueId: "trades-hall-venue-c",
     };
-    exactLayerMocks.fetchVerifiedRuntimePackagePreview
-      .mockResolvedValueOnce(verifiedFixture())
-      .mockImplementationOnce(() => new Promise<VerifiedRuntimePackagePreview>(() => undefined));
+    const verified = verifiedFixture();
+    exactLayerMocks.fetchRuntimePackagePreviewMetadata
+      .mockResolvedValueOnce(verified.preview)
+      .mockImplementationOnce(() => new Promise<RuntimePackagePreview>(() => undefined));
+    exactLayerMocks.fetchVerifiedRuntimePackagePreviewMember.mockImplementation(
+      (_preview: RuntimePackagePreview, index: number) => {
+        const member = verified.members[index];
+        if (member === undefined) throw new Error("Expected exact Grand Hall member fixture.");
+        return Promise.resolve(member);
+      },
+    );
     const firstReady = vi.fn();
     const rendered = render(createElement(ExactGrandHallSplatLayer, {
       key: serializeExactGrandHallRuntimeKey(RUNTIME_KEY),
