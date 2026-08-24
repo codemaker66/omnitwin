@@ -312,13 +312,15 @@ try {
   $issuedAtEpochSeconds = Get-StrictInt64 $payload.issuedAtEpochSeconds
   $expiresAtEpochSeconds = Get-StrictInt64 $payload.expiresAtEpochSeconds
   $ttlSeconds = Get-StrictInt64 $payload.ttlSeconds
+  $minimumHandoffStartRemainingSeconds = 1200
+  $minimumSuccessfulHandoffRemainingSeconds = 900
   if ($ttlSeconds -lt 900 -or $ttlSeconds -gt 3600 -or
       $expiresAtEpochSeconds - $issuedAtEpochSeconds -ne $ttlSeconds) {
     throw 'Protected credential payload has an invalid lifetime.'
   }
   $nowEpochSeconds = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
   if ($issuedAtEpochSeconds -gt $nowEpochSeconds + 60 -or
-      $expiresAtEpochSeconds -le $nowEpochSeconds) {
+      $expiresAtEpochSeconds - $nowEpochSeconds -lt $minimumHandoffStartRemainingSeconds) {
     throw 'Protected credential payload is outside its valid time window.'
   }
   $issuedAtText = ([DateTimeOffset]::FromUnixTimeSeconds($issuedAtEpochSeconds)).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [Globalization.CultureInfo]::InvariantCulture)
@@ -409,6 +411,11 @@ try {
 
   $failureExitCode = 65
   foreach ($field in $allowedFields) {
+    $remainingLifetimeSeconds = $expiresAtEpochSeconds - `
+      [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    if ($remainingLifetimeSeconds -lt $minimumSuccessfulHandoffRemainingSeconds) {
+      throw 'Protected credential lifetime is too short to continue Railway handoff.'
+    }
     $property = $payload.railwayVariables.PSObject.Properties[$field]
     if ($null -eq $property -or -not ($property.Value -is [string])) {
       throw 'Protected credential payload does not contain an allowlisted Railway field.'
@@ -423,6 +430,11 @@ try {
       -ProjectId $projectId `
       -EnvironmentId $environmentId `
       -ServiceId $serviceId
+    $remainingLifetimeSeconds = $expiresAtEpochSeconds - `
+      [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    if ($remainingLifetimeSeconds -lt $minimumSuccessfulHandoffRemainingSeconds) {
+      throw 'Protected credential lifetime is too short after a Railway write.'
+    }
     $value = $null
   }
 } catch {

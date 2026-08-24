@@ -749,13 +749,30 @@ describe("Grand Hall R2 temporary-writer Railway stdin boundary", () => {
   );
 
   it.skipIf(!REVIEWED_RAILWAY_CLI_AVAILABLE)(
+    "rejects a valid child that lacks the minimum safe Railway handoff lifetime",
+    async () => {
+      const directory = await temporaryDirectory();
+      const output = join(directory, "near-expiry.dpapi");
+      const executable = REVIEWED_RAILWAY_CLI_PATH;
+      const issuedAt = Math.floor(Date.now() / 1_000);
+      const credential = mintGrandHallR2TemporaryWriter(parent, issuedAt, 900);
+      await writeGrandHallR2TemporaryWriterSecretFileAtomic(output, credential);
+      await expect(stageGrandHallR2CredentialInRailwayWithCurrentUserDpapi(
+        output,
+        executable,
+        railwayTarget(),
+      )).rejects.toThrow("exit 62, output bytes 0");
+    },
+  );
+
+  it.skipIf(!REVIEWED_RAILWAY_CLI_AVAILABLE)(
     "rejects a DPAPI-authenticated payload whose integer lifetime fields are incoherent",
     async () => {
       const directory = await temporaryDirectory();
       const output = join(directory, "incoherent.dpapi");
       const executable = REVIEWED_RAILWAY_CLI_PATH;
       const issuedAt = Math.floor(Date.now() / 1_000);
-      const credential = mintGrandHallR2TemporaryWriter(parent, issuedAt, 900);
+      const credential = mintGrandHallR2TemporaryWriter(parent, issuedAt, TTL_SECONDS);
       const malformed = Buffer.from(`${JSON.stringify({
         ...credential,
         ttlSeconds: 901,
@@ -781,7 +798,7 @@ describe("Grand Hall R2 temporary-writer Railway stdin boundary", () => {
       const output = join(directory, "unbound-session.dpapi");
       const executable = REVIEWED_RAILWAY_CLI_PATH;
       const issuedAt = Math.floor(Date.now() / 1_000);
-      const credential = mintGrandHallR2TemporaryWriter(parent, issuedAt, 900);
+      const credential = mintGrandHallR2TemporaryWriter(parent, issuedAt, TTL_SECONDS);
       const malformed = Buffer.from(`${JSON.stringify({
         ...credential,
         railwayVariables: {

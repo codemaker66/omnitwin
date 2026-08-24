@@ -1,12 +1,13 @@
 # =============================================================================
 # OMNITWIN — Continuous Integration
 # =============================================================================
-# Five jobs run in parallel against every push to master and every pull
-# request targeting master:
+# Six jobs run in parallel against every push to master or the dedicated
+# Grand Hall staging branch, and every pull request targeting master:
 #
 #   audit      - pnpm audit at moderate severity and above
 #   lint       — ESLint v9 across all packages, zero errors required
 #   typecheck  — `tsc --noEmit` across all packages, zero errors required
+#   build      — Production build for every package
 #   test       — Vitest across all packages, all tests must pass
 #   e2e        — Playwright E2E against a Vite dev server (Chromium only)
 #
@@ -26,7 +27,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, codex/grand-hall-exact-runtime]
   pull_request:
     branches: [master]
 
