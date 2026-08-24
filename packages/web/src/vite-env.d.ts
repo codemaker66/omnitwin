@@ -1,11 +1,13 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  /** Auth/deployment isolation tier. Defaults to production for production-mode builds. */
+  readonly VITE_DEPLOYMENT_TIER?: "production" | "staging";
   /** Clerk publishable key. Required in production. */
   readonly VITE_CLERK_PUBLISHABLE_KEY?: string;
   /** Enable Clerk social providers only after production OAuth provider credentials are verified. */
   readonly VITE_CLERK_GOOGLE_SIGN_IN_ENABLED?: string;
-  /** Backend API URL. Defaults to http://localhost:3001. */
+  /** Clean HTTPS backend origin in production (no trailing slash); localhost default in development. */
   readonly VITE_API_URL?: string;
   /** Cloudflare R2 public URL for file previews. Optional. */
   readonly VITE_R2_PUBLIC_URL?: string;

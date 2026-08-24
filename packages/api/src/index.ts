@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import rawBody from "fastify-raw-body";
+import { sql } from "drizzle-orm";
 import { validateEnv, type Env } from "./env.js";
 import { createDb } from "./db/client.js";
 import { setAuthDb } from "./middleware/auth.js";
@@ -67,10 +68,22 @@ import { registerSecurityHeaders } from "./middleware/security-headers.js";
 import { registerRequestId } from "./middleware/request-id.js";
 import { registerErrorNormalizer } from "./middleware/error-normalizer.js";
 import { registerMetrics } from "./observability/metrics.js";
+import {
+  GRAND_HALL_STAGING_DATABASE_NAME,
+  GRAND_HALL_STAGING_DATABASE_ROLE,
+  GRAND_HALL_STAGING_TARGET_ID,
+} from "./lib/grand-hall-frontier-contract.js";
 
 // ---------------------------------------------------------------------------
 // OMNITWIN API — Fastify server entry point
 // ---------------------------------------------------------------------------
+
+export function isGrandHallStagingDatabaseIdentity(
+  row: Readonly<Record<string, unknown>> | undefined,
+): boolean {
+  return row?.["database_name"] === GRAND_HALL_STAGING_DATABASE_NAME &&
+    row["database_role"] === GRAND_HALL_STAGING_DATABASE_ROLE;
+}
 
 /** Builds and configures the Fastify instance (exported for testing).
  *  Accepts a pre-validated Env so the direct-run entry point can validate
@@ -311,22 +324,39 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // code on failure.
   const dbProbe = async (_request: unknown, reply: { status: (n: number) => void }): Promise<
     | { status: "ok" }
-    | { status: "degraded"; code: "DB_UNREACHABLE"; message: string }
+    | {
+      status: "degraded";
+      code: "DB_UNREACHABLE" | "DB_TARGET_MISMATCH";
+      message: string;
+    }
   > => {
     try {
-      // Cheapest possible query — forces a round-trip without reading
-      // any rows. Drizzle + neondatabase/serverless establishes the
-      // connection lazily on first query, so this also catches the
-      // "DATABASE_URL points at a dead endpoint" case.
-      const { sql } = await import("drizzle-orm");
-      await db.execute(sql`SELECT 1`);
+      if (env.VENVIEWER_DEPLOYMENT_TARGET_ID === GRAND_HALL_STAGING_TARGET_ID) {
+        const identity = await db.execute(sql`
+          SELECT
+            current_database()::text AS database_name,
+            current_user::text AS database_role
+        `);
+        if (!isGrandHallStagingDatabaseIdentity(identity.rows[0])) {
+          reply.status(503);
+          return {
+            status: "degraded" as const,
+            code: "DB_TARGET_MISMATCH" as const,
+            message: "Database readiness target did not match the reviewed staging boundary",
+          };
+        }
+      } else {
+        // Generic deployments need only a round-trip. Grand Hall staging uses
+        // the stronger server-reported identity proof above on every probe.
+        await db.execute(sql`SELECT 1`);
+      }
       return { status: "ok" as const };
-    } catch (err) {
+    } catch {
       reply.status(503);
       return {
         status: "degraded" as const,
         code: "DB_UNREACHABLE",
-        message: err instanceof Error ? err.message : String(err),
+        message: "Database readiness probe failed",
       };
     }
   };

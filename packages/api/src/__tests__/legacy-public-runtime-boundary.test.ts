@@ -126,7 +126,7 @@ describe("legacy public runtime boundary", () => {
     expect(runtimeProfileR2IsConfigured(testEnv)).toBe(false);
     expect(runtimeProfileR2IsConfigured({
       ...testEnv,
-      RUNTIME_PROFILE_R2_ACCOUNT_ID: "private-account",
+      RUNTIME_PROFILE_R2_ACCOUNT_ID: "a".repeat(32),
       RUNTIME_PROFILE_R2_ACCESS_KEY_ID: "private-key",
       RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: "private-secret",
       RUNTIME_PROFILE_R2_PRIVATE_BUCKET: "runtime-profiles-private",

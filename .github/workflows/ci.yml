@@ -136,12 +136,15 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build all packages
-        # The web build asserts a Clerk publishable key is present. This is
-        # the documented build-CHECK fixture, not a credential: it proves the
-        # bundle compiles and the artifact is discarded. A bundle built with
-        # it must never be served — a real deploy supplies the real key.
+        # These are documented non-deployable build-CHECK fixtures, not
+        # credentials. The explicit local context keeps this path separate
+        # from Vercel's provider-bound staging/production assertions. The
+        # compiled artifact is discarded and must never be served.
         env:
-          VITE_CLERK_PUBLISHABLE_KEY: pk_live_localbuildcheck
+          VENVIEWER_WEB_LOCAL_BUILD_CONTEXT: reviewed-local-only
+          VITE_API_URL: https://api.venviewer.com
+          VITE_CLERK_PUBLISHABLE_KEY: pk_live_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          VITE_DEPLOYMENT_TIER: production
         run: pnpm build
 
   test:

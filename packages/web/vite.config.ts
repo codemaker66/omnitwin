@@ -23,9 +23,9 @@ import {
 // dynamic-import boundary.
 // ---------------------------------------------------------------------------
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  assertRequiredProductionEnv(mode, env);
+  assertRequiredProductionEnv(mode, env, command);
   const clerkPublishableKey = resolveWebClerkPublishableKey(env) ?? "";
   const sentrySourceMapUpload = mode === "production"
     ? getSentrySourceMapUploadConfig(env)

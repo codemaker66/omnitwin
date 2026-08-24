@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
@@ -8,6 +8,11 @@ import {
   GRAND_HALL_FRONTIER_MEMBERS,
   GRAND_HALL_FRONTIER_RECEIPT_SHA256,
   GRAND_HALL_MANIFEST_SHA256,
+  GRAND_HALL_STAGING_DATABASE_NAME,
+  GRAND_HALL_STAGING_DATABASE_ROLE,
+  GRAND_HALL_STAGING_GIT_BRANCH,
+  GRAND_HALL_STAGING_PRIVATE_BUCKET,
+  GRAND_HALL_STAGING_TARGET_ID,
   grandHallObjectKey,
   type GrandHallFrontierMemberSpec,
 } from "../lib/grand-hall-frontier-contract.js";
@@ -17,8 +22,11 @@ import {
   commitGrandHallRuntimeIntake,
   createDatabaseGrandHallRegistrationStore,
   prepareGrandHallRuntimeIntake,
+  probeGrandHallRuntimeConditionalCreateConflict,
   uploadGrandHallRuntimeMember,
+  type GrandHallMemberUploadResult,
   type GrandHallPrivateObjectStore,
+  type GrandHallPrepareResult,
   type GrandHallRegistrationStore,
   type GrandHallRemoteObject,
 } from "../services/grand-hall-runtime-intake.js";
@@ -58,6 +66,16 @@ const MemberHeadersSchema = z.object({
   "x-venviewer-frontier-receipt-sha256": z.string().regex(/^sha256:[a-f0-9]{64}$/u),
 }).passthrough();
 
+const RehearsalHeadersSchema = z.object({
+  "content-type": z.literal("application/octet-stream"),
+  "content-length": z.coerce.number().int().positive().max(MAX_MEMBER_BYTES),
+  "x-venviewer-intake-target-id": z.string().min(3).max(80),
+  "x-venviewer-intake-api-origin": z.string().url().max(500),
+  "x-venviewer-intake-deployed-git-sha": z.string().regex(GIT_SHA),
+  "x-venviewer-manifest-sha256": z.string().regex(SHA256_HEX),
+  "x-venviewer-frontier-receipt-sha256": z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+}).passthrough();
+
 interface GrandHallRuntimeIntakeRoutesOptions {
   readonly db: Database;
   readonly env: Env;
@@ -69,8 +87,23 @@ interface GrandHallRuntimeIntakeRoutesOptions {
 type S3Client = import("@aws-sdk/client-s3").S3Client;
 
 export function grandHallRuntimeIntakeConfigured(env: Env): boolean {
+  let publicApiOrigin: URL | null = null;
+  try {
+    publicApiOrigin = env.PUBLIC_API_ORIGIN === undefined
+      ? null
+      : new URL(env.PUBLIC_API_ORIGIN);
+  } catch {
+    publicApiOrigin = null;
+  }
+  let databaseUrl: URL | null = null;
+  try {
+    databaseUrl = new URL(env.DATABASE_URL);
+  } catch {
+    databaseUrl = null;
+  }
   return env.RUNTIME_PROFILE_INTAKE_ENABLED === "true" &&
-    env.RUNTIME_PROFILE_INTAKE_TARGET_ID !== undefined &&
+    env.VENVIEWER_DEPLOYMENT_TARGET_ID === GRAND_HALL_STAGING_TARGET_ID &&
+    env.RUNTIME_PROFILE_INTAKE_TARGET_ID === GRAND_HALL_STAGING_TARGET_ID &&
     env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA !== undefined &&
     env.RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID !== undefined &&
     env.RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY !== undefined &&
@@ -78,10 +111,29 @@ export function grandHallRuntimeIntakeConfigured(env: Env): boolean {
     env.RUNTIME_PROFILE_R2_ACCOUNT_ID !== undefined &&
     env.RUNTIME_PROFILE_R2_ACCESS_KEY_ID !== undefined &&
     env.RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY !== undefined &&
-    env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET !== undefined &&
-    env.PUBLIC_API_ORIGIN !== undefined &&
+    env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET === GRAND_HALL_STAGING_PRIVATE_BUCKET &&
+    publicApiOrigin !== null &&
+    publicApiOrigin.protocol === "https:" &&
+    publicApiOrigin.hostname.endsWith(".up.railway.app") &&
+    publicApiOrigin.hostname !== "up.railway.app" &&
+    publicApiOrigin.origin === env.PUBLIC_API_ORIGIN &&
+    env.RAILWAY_PROJECT_NAME === GRAND_HALL_STAGING_TARGET_ID &&
+    env.RAILWAY_ENVIRONMENT_NAME === GRAND_HALL_STAGING_TARGET_ID &&
+    env.RAILWAY_SERVICE_NAME === GRAND_HALL_STAGING_TARGET_ID &&
+    env.RAILWAY_GIT_BRANCH === GRAND_HALL_STAGING_GIT_BRANCH &&
+    env.RAILWAY_PUBLIC_DOMAIN === publicApiOrigin.hostname &&
+    databaseUrl !== null &&
+    databaseUrl.hostname === env.VENVIEWER_STAGING_EXPECTED_DATABASE_HOST &&
+    databaseUrl.username === GRAND_HALL_STAGING_DATABASE_ROLE &&
+    databaseUrl.pathname === `/${GRAND_HALL_STAGING_DATABASE_NAME}` &&
+    env.FRONTEND_URL?.endsWith(".vercel.app") === true &&
+    env.VENVIEWER_STAGING_EXPECTED_WEB_ORIGIN === env.FRONTEND_URL &&
+    env.CORS_ORIGINS === env.FRONTEND_URL &&
+    env.CLERK_SECRET_KEY?.startsWith("sk_test_") === true &&
+    env.CLERK_WEBHOOK_SECRET?.startsWith("whsec_") === true &&
     env.GIT_SHA !== undefined &&
     GIT_SHA.test(env.GIT_SHA) &&
+    env.VENVIEWER_STAGING_REVIEWED_GIT_SHA === env.GIT_SHA &&
     env.GIT_SHA === env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA;
 }
 
@@ -142,7 +194,8 @@ function targetError(
     };
   }
   if (
-    input.targetId !== env.RUNTIME_PROFILE_INTAKE_TARGET_ID ||
+    input.targetId !== GRAND_HALL_STAGING_TARGET_ID ||
+    env.RUNTIME_PROFILE_INTAKE_TARGET_ID !== GRAND_HALL_STAGING_TARGET_ID ||
     input.apiOrigin !== env.PUBLIC_API_ORIGIN ||
     input.reviewedGitSha !== env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA
   ) {
@@ -163,6 +216,114 @@ function targetError(
     };
   }
   return null;
+}
+
+function rehearsalIntegrityError(message: string): GrandHallRuntimeIntakeError {
+  return new GrandHallRuntimeIntakeError(
+    500,
+    "GRAND_HALL_INTAKE_INTEGRITY_ERROR",
+    message,
+  );
+}
+
+function rehearsalStorageConflict(message: string): GrandHallRuntimeIntakeError {
+  return new GrandHallRuntimeIntakeError(
+    409,
+    "GRAND_HALL_STORAGE_CONFLICT",
+    message,
+  );
+}
+
+function preparedResultHasCanonicalShape(prepared: GrandHallPrepareResult): boolean {
+  if (prepared.members.length !== GRAND_HALL_FRONTIER_MEMBERS.length) return false;
+  if (prepared.existingMemberCount + prepared.uploadRequiredCount !== prepared.members.length) {
+    return false;
+  }
+  return prepared.members.every((candidate, memberIndex) => {
+    const member = GRAND_HALL_FRONTIER_MEMBERS[memberIndex];
+    return member !== undefined &&
+      candidate.memberIndex === memberIndex &&
+      candidate.fileName === member.fileName &&
+      candidate.sizeBytes === member.sizeBytes &&
+      candidate.sha256 === member.sha256;
+  });
+}
+
+function assertRehearsalPreparedState(
+  prepared: GrandHallPrepareResult,
+  expectedExistingIndexes: ReadonlySet<number>,
+  stage: "initial" | "final",
+): void {
+  if (!preparedResultHasCanonicalShape(prepared)) {
+    throw rehearsalIntegrityError("The Grand Hall rehearsal received inconsistent storage evidence.");
+  }
+  const expectedExistingCount = expectedExistingIndexes.size;
+  const expectedUploadCount = GRAND_HALL_FRONTIER_MEMBERS.length - expectedExistingCount;
+  const statusMatches = prepared.members.every((member, memberIndex) =>
+    member.status === (expectedExistingIndexes.has(memberIndex)
+      ? "verified_existing"
+      : "upload_required"));
+  if (
+    prepared.existingMemberCount !== expectedExistingCount ||
+    prepared.uploadRequiredCount !== expectedUploadCount ||
+    !statusMatches
+  ) {
+    throw rehearsalStorageConflict(stage === "initial"
+      ? "The conditional-PUT rehearsal requires a fresh empty Grand Hall storage prefix."
+      : "The conditional-PUT rehearsal did not leave exactly one verified Grand Hall member.");
+  }
+}
+
+function assertRehearsalUploadResult(
+  result: GrandHallMemberUploadResult,
+  expectedCreated: boolean,
+): void {
+  const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+  if (
+    member === undefined ||
+    result.created !== expectedCreated ||
+    result.memberIndex !== 0 ||
+    result.fileName !== member.fileName ||
+    result.sizeBytes !== member.sizeBytes ||
+    result.sha256 !== member.sha256
+  ) {
+    throw rehearsalIntegrityError("The Grand Hall rehearsal returned inconsistent PUT evidence.");
+  }
+}
+
+interface GrandHallConditionalPutRehearsalResult {
+  readonly initial: GrandHallPrepareResult;
+  readonly final: GrandHallPrepareResult;
+}
+
+async function runGrandHallConditionalPutRehearsal(
+  objectStore: GrandHallPrivateObjectStore,
+  exactBytes: Buffer,
+  signal: AbortSignal,
+): Promise<GrandHallConditionalPutRehearsalResult> {
+  const initial = await prepareGrandHallRuntimeIntake(objectStore, signal);
+  assertRehearsalPreparedState(initial, new Set(), "initial");
+
+  const created = await uploadGrandHallRuntimeMember(objectStore, 0, exactBytes, signal);
+  assertRehearsalUploadResult(created, true);
+  const retried = await uploadGrandHallRuntimeMember(objectStore, 0, exactBytes, signal);
+  assertRehearsalUploadResult(retried, false);
+
+  const corruptBytes = Buffer.from(exactBytes);
+  corruptBytes[0] = (corruptBytes[0] ?? 0) ^ 0xff;
+  try {
+    await probeGrandHallRuntimeConditionalCreateConflict(
+      objectStore,
+      corruptBytes,
+      signal,
+    );
+  } finally {
+    corruptBytes.fill(0);
+  }
+
+  const final = await prepareGrandHallRuntimeIntake(objectStore, signal);
+  assertRehearsalPreparedState(final, new Set([0]), "final");
+  return { initial, final };
 }
 
 function asyncByteBody(value: unknown): value is AsyncIterable<Uint8Array | string> {
@@ -213,10 +374,32 @@ export function isGrandHallConditionalCreateConflict(error: unknown): boolean {
     record["name"] === "PreconditionFailed" || record["name"] === "ConditionalRequestConflict";
 }
 
+function grandHallR2Endpoint(accountId: string | undefined): string {
+  if (accountId === undefined || !/^[a-f0-9]{32}$/u.test(accountId)) {
+    throw new Error("Grand Hall private-storage account identity is invalid");
+  }
+  const expectedHostname = `${accountId}.r2.cloudflarestorage.com`;
+  const endpoint = new URL(`https://${expectedHostname}`);
+  if (
+    endpoint.protocol !== "https:" ||
+    endpoint.username !== "" ||
+    endpoint.password !== "" ||
+    endpoint.hostname !== expectedHostname ||
+    endpoint.port !== "" ||
+    endpoint.pathname !== "/" ||
+    endpoint.search !== "" ||
+    endpoint.hash !== "" ||
+    endpoint.origin !== `https://${expectedHostname}`
+  ) {
+    throw new Error("Grand Hall private-storage endpoint identity is invalid");
+  }
+  return endpoint.origin;
+}
+
 function grandHallR2ClientBaseOptions(env: Env) {
   return {
     region: "auto",
-    endpoint: `https://${env.RUNTIME_PROFILE_R2_ACCOUNT_ID ?? ""}.r2.cloudflarestorage.com`,
+    endpoint: grandHallR2Endpoint(env.RUNTIME_PROFILE_R2_ACCOUNT_ID),
     forcePathStyle: true,
     maxAttempts: 3,
     requestChecksumCalculation: "WHEN_REQUIRED" as const,
@@ -355,7 +538,11 @@ export async function grandHallRuntimeIntakeRoutes(
     readonly signal: AbortSignal;
     readonly startWork: () => () => void;
   }
+  interface GrandHallExclusiveReservation {
+    readonly startWork: () => () => void;
+  }
   const uploadLeases = new WeakMap<object, GrandHallUploadLease>();
+  const exclusiveReservations = new WeakMap<object, GrandHallExclusiveReservation>();
 
   const bindRequestAbort = (reply: FastifyReply): {
     readonly signal: AbortSignal;
@@ -434,6 +621,32 @@ export async function grandHallRuntimeIntakeRoutes(
     };
   };
 
+  const acquireExclusiveReservation = (reply: FastifyReply): GrandHallExclusiveReservation => {
+    activeOperation = true;
+    let handlerStarted = false;
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      reply.raw.off("finish", releaseIfHandlerDidNotStart);
+      reply.raw.off("close", releaseIfHandlerDidNotStart);
+      activeOperation = false;
+    };
+    const releaseIfHandlerDidNotStart = (): void => {
+      if (!handlerStarted) release();
+    };
+    reply.raw.once("finish", releaseIfHandlerDidNotStart);
+    reply.raw.once("close", releaseIfHandlerDidNotStart);
+    return {
+      startWork: () => {
+        handlerStarted = true;
+        reply.raw.off("finish", releaseIfHandlerDidNotStart);
+        reply.raw.off("close", releaseIfHandlerDidNotStart);
+        return release;
+      },
+    };
+  };
+
   server.addContentTypeParser(
     "application/octet-stream",
     { parseAs: "buffer", bodyLimit: MAX_MEMBER_BYTES },
@@ -443,7 +656,7 @@ export async function grandHallRuntimeIntakeRoutes(
   );
 
   const runExclusively = async <T>(operation: () => Promise<T>): Promise<T> => {
-    if (activeOperation) {
+    if (activeOperation || activeUploads > 0) {
       throw new GrandHallRuntimeIntakeError(
         429,
         "GRAND_HALL_INTAKE_BUSY",
@@ -539,6 +752,147 @@ export async function grandHallRuntimeIntakeRoutes(
   );
 
   server.put(
+    "/grand-hall-frontier-intake/rehearsal",
+    {
+      onRequest: [
+        authenticate,
+        authorizePlatformAdmin(),
+        async (request, reply) => {
+          const parsedHeaders = RehearsalHeadersSchema.safeParse(request.headers);
+          if (!parsedHeaders.success) {
+            return validationError(reply, parsedHeaders.error.issues);
+          }
+          const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+          if (member === undefined || parsedHeaders.data["content-length"] !== member.sizeBytes) {
+            noStore(reply);
+            return reply.status(409).send({
+              error: "The rehearsal body length does not match canonical Grand Hall member 0.",
+              code: "GRAND_HALL_FRONTIER_MISMATCH",
+            });
+          }
+          const targetFailure = targetError(options.env, {
+            targetId: parsedHeaders.data["x-venviewer-intake-target-id"],
+            apiOrigin: parsedHeaders.data["x-venviewer-intake-api-origin"],
+            reviewedGitSha: parsedHeaders.data["x-venviewer-intake-deployed-git-sha"],
+            manifestSha256: parsedHeaders.data["x-venviewer-manifest-sha256"],
+            frontierReceiptSha256: parsedHeaders.data["x-venviewer-frontier-receipt-sha256"],
+          });
+          if (targetFailure !== null) {
+            noStore(reply);
+            return reply.status(targetFailure.statusCode).send({
+              error: targetFailure.message,
+              code: targetFailure.code,
+            });
+          }
+          if (objectStore === null) {
+            noStore(reply);
+            return reply.status(503).send({
+              error: "Grand Hall intake is unavailable on this server.",
+              code: "GRAND_HALL_INTAKE_DISABLED",
+            });
+          }
+          if (activeOperation || activeUploads > 0) {
+            noStore(reply);
+            return reply.header("Retry-After", "1").status(429).send({
+              error: "Grand Hall intake is busy; try the rehearsal again shortly.",
+              code: "GRAND_HALL_INTAKE_BUSY",
+            });
+          }
+          exclusiveReservations.set(request.raw, acquireExclusiveReservation(reply));
+          uploadLeases.set(request.raw, acquireUploadLease(request.raw, reply));
+        },
+      ],
+      bodyLimit: MAX_MEMBER_BYTES,
+    },
+    async (request, reply) => {
+      const exclusiveReservation = exclusiveReservations.get(request.raw);
+      const uploadLease = uploadLeases.get(request.raw);
+      const settleExclusiveWork = exclusiveReservation?.startWork() ?? (() => undefined);
+      const settleUploadWork = uploadLease?.startWork() ?? (() => undefined);
+      try {
+        if (exclusiveReservation === undefined || uploadLease === undefined || objectStore === null) {
+          throw rehearsalIntegrityError("The Grand Hall rehearsal admission lease was not preserved.");
+        }
+        if (uploadLease.signal.aborted) {
+          if (reply.sent || reply.raw.destroyed) return reply;
+          return safeErrorReply(reply, new GrandHallRuntimeIntakeError(
+            502,
+            "GRAND_HALL_STORAGE_FAILED",
+            "The server could not access the private Grand Hall storage target.",
+          ));
+        }
+        if (!Buffer.isBuffer(request.body)) {
+          return validationError(reply, "An exact binary Grand Hall member-0 body is required.");
+        }
+        const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+        if (
+          member === undefined ||
+          request.body.byteLength !== member.sizeBytes ||
+          createHash("sha256").update(request.body).digest("hex") !== member.sha256
+        ) {
+          throw rehearsalStorageConflict(
+            "The rehearsal body does not match exact canonical Grand Hall member 0.",
+          );
+        }
+
+        const result = await runGrandHallConditionalPutRehearsal(
+          objectStore,
+          request.body,
+          uploadLease.signal,
+        );
+        noStore(reply);
+        return reply.send({
+          data: {
+            schemaVersion: "venviewer.grand-hall-intake-rehearsal.v1",
+            operatorUserId: request.user.id,
+            targetId: options.env.RUNTIME_PROFILE_INTAKE_TARGET_ID,
+            deployedGitSha: options.env.GIT_SHA,
+            apiOrigin: options.env.PUBLIC_API_ORIGIN,
+            manifestSha256: GRAND_HALL_MANIFEST_SHA256,
+            frontierReceiptSha256: GRAND_HALL_FRONTIER_RECEIPT_SHA256,
+            member: {
+              memberIndex: 0,
+              fileName: member.fileName,
+              sizeBytes: member.sizeBytes,
+              sha256: member.sha256,
+            },
+            initialPreflight: {
+              existingMemberCount: result.initial.existingMemberCount,
+              uploadRequiredCount: result.initial.uploadRequiredCount,
+            },
+            conditionalPut: {
+              created: { statusCode: 201, created: true },
+              exactRetry: { statusCode: 200, created: false },
+              corruptCopy: {
+                statusCode: 409,
+                code: "GRAND_HALL_STORAGE_CONFLICT",
+                storedBytesUnchanged: true,
+              },
+            },
+            finalPreflight: {
+              existingMemberCount: result.final.existingMemberCount,
+              uploadRequiredCount: result.final.uploadRequiredCount,
+            },
+            commitAttempted: false,
+            registrationAttempted: false,
+          },
+        });
+      } catch (error) {
+        request.log.warn({
+          code: error instanceof GrandHallRuntimeIntakeError ? error.code : "GRAND_HALL_INTAKE_FAILED",
+          userId: request.user.id,
+        }, "Grand Hall conditional-PUT rehearsal failed");
+        return safeErrorReply(reply, error);
+      } finally {
+        settleUploadWork();
+        settleExclusiveWork();
+        uploadLeases.delete(request.raw);
+        exclusiveReservations.delete(request.raw);
+      }
+    },
+  );
+
+  server.put(
     "/grand-hall-frontier-intake/members/:memberIndex",
     {
       onRequest: [
@@ -586,7 +940,7 @@ export async function grandHallRuntimeIntakeRoutes(
               code: "GRAND_HALL_INTAKE_TARGET_MISMATCH",
             });
           }
-          if (activeUploads >= MAX_CONCURRENT_UPLOADS) {
+          if (activeOperation || activeUploads >= MAX_CONCURRENT_UPLOADS) {
             noStore(reply);
             return reply.header("Retry-After", "1").status(429).send({
               error: "Grand Hall intake uploads are busy; try again shortly.",
@@ -631,7 +985,10 @@ export async function grandHallRuntimeIntakeRoutes(
         );
         noStore(reply);
         return reply.status(uploaded.created ? 201 : 200).send({
-          data: uploaded,
+          data: {
+            operatorUserId: request.user.id,
+            ...uploaded,
+          },
         });
       } catch (error) {
         const paramsForLog = MemberParamsSchema.safeParse(request.params);

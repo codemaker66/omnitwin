@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { request as httpRequest, type ClientRequest } from "node:http";
 import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,17 +10,53 @@ import {
   GRAND_HALL_FRONTIER_RECEIPT_SHA256,
   GRAND_HALL_FRONTIER_TOTAL_BYTES,
   GRAND_HALL_MANIFEST_SHA256,
+  GRAND_HALL_STAGING_DATABASE_NAME,
+  GRAND_HALL_STAGING_DATABASE_ROLE,
+  GRAND_HALL_STAGING_GIT_BRANCH,
+  GRAND_HALL_STAGING_PRIVATE_BUCKET,
+  GRAND_HALL_STAGING_TARGET_ID,
+  type GrandHallFrontierMemberSpec,
 } from "../lib/grand-hall-frontier-contract.js";
-import type {
-  GrandHallCommitResult,
-  GrandHallMemberUploadResult,
-  GrandHallPrepareResult,
-  GrandHallPrivateObjectStore,
-  GrandHallRegistrationStore,
+import {
+  type GrandHallCommitResult,
+  type GrandHallMemberUploadResult,
+  type GrandHallPrepareResult,
+  type GrandHallPrivateObjectStore,
+  type GrandHallRegistrationStore,
 } from "../services/grand-hall-runtime-intake.js";
 import type { RuntimePackageRevisionRow } from "../services/runtime-package-revisions.js";
 
 process.env["NODE_ENV"] = "test";
+
+vi.mock("../lib/grand-hall-frontier-contract.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/grand-hall-frontier-contract.js")>();
+  const members = Array.from({ length: 11 }, (_, memberIndex) => {
+    const fileIndex = memberIndex + 100;
+    const bytes = Buffer.from(`exact-grand-hall-route-member-${String(fileIndex)}`, "utf8");
+    return {
+      fileIndex,
+      relativePath: `data/3dgs/route-test-${String(memberIndex)}.sog`,
+      fileName: `route-test-${String(memberIndex)}.sog`,
+      depth: 5,
+      nodeCount: 1,
+      gaussianCount: memberIndex + 1,
+      sizeBytes: bytes.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    } satisfies GrandHallFrontierMemberSpec;
+  });
+  return {
+    ...actual,
+    GRAND_HALL_FRONTIER_MEMBERS: members,
+    GRAND_HALL_FRONTIER_TOTAL_BYTES: members.reduce(
+      (total, member) => total + member.sizeBytes,
+      0,
+    ),
+    GRAND_HALL_FRONTIER_GAUSSIAN_COUNT: members.reduce(
+      (total, member) => total + member.gaussianCount,
+      0,
+    ),
+  };
+});
 
 const serviceMocks = vi.hoisted(() => ({
   prepare: vi.fn<
@@ -44,6 +81,13 @@ const serviceMocks = vi.hoisted(() => ({
       signal?: AbortSignal,
     ) => Promise<GrandHallMemberUploadResult>
   >(),
+  probe: vi.fn<
+    (
+      objectStore: GrandHallPrivateObjectStore,
+      corruptBytes: Uint8Array,
+      signal?: AbortSignal,
+    ) => Promise<void>
+  >(),
   createRegistrationStore: vi.fn<
     (db: Database) => GrandHallRegistrationStore
   >(),
@@ -58,6 +102,7 @@ vi.mock("../services/grand-hall-runtime-intake.js", async (importOriginal) => {
     prepareGrandHallRuntimeIntake: serviceMocks.prepare,
     commitGrandHallRuntimeIntake: serviceMocks.commit,
     uploadGrandHallRuntimeMember: serviceMocks.upload,
+    probeGrandHallRuntimeConditionalCreateConflict: serviceMocks.probe,
     createDatabaseGrandHallRegistrationStore: serviceMocks.createRegistrationStore,
   };
 });
@@ -70,16 +115,16 @@ const {
 const ADMIN_USER_ID = "10000000-0000-4000-8000-000000000001";
 const PACKAGE_ID = "10000000-0000-4000-8000-000000000002";
 const PRIMARY_ASSET_ID = "10000000-0000-4000-8000-000000000003";
-const TARGET_ID = "production-grand-hall-2026-08";
-const API_ORIGIN = "https://api.venviewer.example";
+const TARGET_ID = GRAND_HALL_STAGING_TARGET_ID;
+const API_ORIGIN = "https://trades-hall-grand-hall-staging.up.railway.app";
 const DEPLOYED_GIT_SHA = "a".repeat(40);
 const CONTENT_DIGEST = "d".repeat(64);
 const READ_SECRET = "route-test-read-secret-never-return";
 const WRITE_SECRET = "route-test-write-secret-never-return";
 const WRITE_SESSION_TOKEN = "route-test-write-session-token-never-return";
 const DATABASE_PASSWORD = "route-test-database-password-never-return";
-const PRIVATE_BUCKET = "grand-hall-private-route-test";
-const STORAGE_ACCOUNT = "route-test-storage-account-never-return";
+const PRIVATE_BUCKET = GRAND_HALL_STAGING_PRIVATE_BUCKET;
+const STORAGE_ACCOUNT = "c".repeat(32);
 const CONFIRMATION = "register_exact_internal_ready_grand_hall_frontier";
 
 const validTargetRequest = {
@@ -105,19 +150,39 @@ function intakeEnv(enabled: boolean): Env {
   return validateEnv({
     NODE_ENV: "test",
     DATABASE_URL:
-      `postgresql://route-test:${DATABASE_PASSWORD}@database.internal:5432/venviewer`,
+      `postgresql://${GRAND_HALL_STAGING_DATABASE_ROLE}:${DATABASE_PASSWORD}@ep-grand-hall-pooler.eu-west-2.aws.neon.tech/${GRAND_HALL_STAGING_DATABASE_NAME}?sslmode=require`,
+    CLERK_SECRET_KEY: "sk_test_route-test",
+    CLERK_WEBHOOK_SECRET: "whsec_route-test",
+    FRONTEND_URL: "https://codex-grand-hall-venviewer.vercel.app",
+    VENVIEWER_STAGING_EXPECTED_WEB_ORIGIN:
+      "https://codex-grand-hall-venviewer.vercel.app",
+    CORS_ORIGINS: "https://codex-grand-hall-venviewer.vercel.app",
     PUBLIC_API_ORIGIN: API_ORIGIN,
     RUNTIME_PROFILE_R2_ACCOUNT_ID: STORAGE_ACCOUNT,
     RUNTIME_PROFILE_R2_ACCESS_KEY_ID: "route-test-read-key-id-never-return",
     RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: READ_SECRET,
     RUNTIME_PROFILE_R2_PRIVATE_BUCKET: PRIVATE_BUCKET,
     RUNTIME_PROFILE_INTAKE_ENABLED: enabled ? "true" : "false",
-    RUNTIME_PROFILE_INTAKE_TARGET_ID: TARGET_ID,
-    RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: DEPLOYED_GIT_SHA,
+    VENVIEWER_DEPLOYMENT_TARGET_ID: TARGET_ID,
+    VENVIEWER_STAGING_REVIEWED_GIT_SHA: DEPLOYED_GIT_SHA,
     GIT_SHA: DEPLOYED_GIT_SHA,
-    RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "route-test-write-key-id-never-return",
-    RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: WRITE_SECRET,
-    RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: WRITE_SESSION_TOKEN,
+    ...(enabled
+      ? {
+          RUNTIME_PROFILE_INTAKE_TARGET_ID: TARGET_ID,
+          RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: DEPLOYED_GIT_SHA,
+          RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID:
+            "route-test-write-key-id-never-return",
+          RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: WRITE_SECRET,
+          RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: WRITE_SESSION_TOKEN,
+        }
+      : {}),
+    RAILWAY_PROJECT_NAME: TARGET_ID,
+    RAILWAY_ENVIRONMENT_NAME: TARGET_ID,
+    RAILWAY_SERVICE_NAME: TARGET_ID,
+    RAILWAY_PUBLIC_DOMAIN: "trades-hall-grand-hall-staging.up.railway.app",
+    RAILWAY_GIT_BRANCH: GRAND_HALL_STAGING_GIT_BRANCH,
+    VENVIEWER_STAGING_EXPECTED_DATABASE_HOST:
+      "ep-grand-hall-pooler.eu-west-2.aws.neon.tech",
   });
 }
 
@@ -193,11 +258,10 @@ function expectSecretsRedacted(response: LightMyRequestResponse): void {
     WRITE_SECRET,
     WRITE_SESSION_TOKEN,
     DATABASE_PASSWORD,
-    PRIVATE_BUCKET,
     STORAGE_ACCOUNT,
     "route-test-read-key-id-never-return",
     "route-test-write-key-id-never-return",
-    "database.internal",
+    "ep-grand-hall-pooler.eu-west-2.aws.neon.tech",
   ]) {
     expect(response.body).not.toContain(secret);
   }
@@ -262,6 +326,59 @@ function validCommitRequest(env: Env): Record<string, string> {
   };
 }
 
+function exactMemberBytes(memberIndex: number): Buffer {
+  const member = GRAND_HALL_FRONTIER_MEMBERS[memberIndex];
+  if (member === undefined) throw new Error("Test upload member is missing.");
+  return Buffer.from(`exact-grand-hall-route-member-${String(member.fileIndex)}`, "utf8");
+}
+
+function prepareResult(existingIndexes: ReadonlySet<number>): GrandHallPrepareResult {
+  const members = GRAND_HALL_FRONTIER_MEMBERS.map((member, memberIndex) => ({
+    memberIndex,
+    fileName: member.fileName,
+    sizeBytes: member.sizeBytes,
+    sha256: member.sha256,
+    status: existingIndexes.has(memberIndex)
+      ? "verified_existing" as const
+      : "upload_required" as const,
+  }));
+  return {
+    members,
+    existingMemberCount: existingIndexes.size,
+    uploadRequiredCount: members.length - existingIndexes.size,
+  };
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolvePromise: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  if (resolvePromise === undefined) throw new Error("Deferred promise was not initialized.");
+  return { promise, resolve: resolvePromise };
+}
+
+function rehearsalHeaders(
+  overrides: Readonly<Record<string, string>> = {},
+): Record<string, string> {
+  const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+  if (member === undefined) throw new Error("Test rehearsal member is missing.");
+  return {
+    authorization: `Bearer ${authToken("admin")}`,
+    "content-type": "application/octet-stream",
+    "content-length": String(member.sizeBytes),
+    "x-venviewer-intake-target-id": TARGET_ID,
+    "x-venviewer-intake-api-origin": API_ORIGIN,
+    "x-venviewer-intake-deployed-git-sha": DEPLOYED_GIT_SHA,
+    "x-venviewer-manifest-sha256": GRAND_HALL_MANIFEST_SHA256,
+    "x-venviewer-frontier-receipt-sha256": GRAND_HALL_FRONTIER_RECEIPT_SHA256,
+    ...overrides,
+  };
+}
+
 function uploadHeaders(env: Env, memberIndex: number): Record<string, string> {
   const member = GRAND_HALL_FRONTIER_MEMBERS[memberIndex];
   if (member === undefined) throw new Error("Test upload member is missing.");
@@ -283,6 +400,7 @@ function uploadHeaders(env: Env, memberIndex: number): Record<string, string> {
 function startStalledBinaryUpload(
   port: number,
   headers: Record<string, string>,
+  path = "/admin/assets/grand-hall-frontier-intake/members/0",
 ): {
   readonly request: ClientRequest;
   readonly response: Promise<{ readonly statusCode: number; readonly body: string }>;
@@ -294,7 +412,7 @@ function startStalledBinaryUpload(
         hostname: "127.0.0.1",
         port,
         method: "PUT",
-        path: "/admin/assets/grand-hall-frontier-intake/members/0",
+        path,
         headers,
       }, (incoming) => {
         const chunks: Buffer[] = [];
@@ -319,6 +437,8 @@ beforeEach(() => {
   serviceMocks.prepare.mockReset();
   serviceMocks.commit.mockReset();
   serviceMocks.upload.mockReset();
+  serviceMocks.probe.mockReset();
+  serviceMocks.probe.mockResolvedValue(undefined);
   serviceMocks.createRegistrationStore.mockReset();
 });
 
@@ -586,6 +706,350 @@ describe("Grand Hall frontier intake route boundary", () => {
     }
   });
 
+  it("requires one platform-admin authentication for the binary rehearsal", async () => {
+    const dependencies = fakeDependencies();
+    const exactBytes = exactMemberBytes(0);
+    const anonymousHeaders = rehearsalHeaders();
+    delete anonymousHeaders["authorization"];
+    const server = await routeServer(intakeEnv(true), dependencies);
+    try {
+      const anonymous = await server.inject({
+        method: "PUT",
+        url: "/admin/assets/grand-hall-frontier-intake/rehearsal",
+        headers: anonymousHeaders,
+        payload: exactBytes,
+      });
+      const operator = await server.inject({
+        method: "PUT",
+        url: "/admin/assets/grand-hall-frontier-intake/rehearsal",
+        headers: {
+          ...rehearsalHeaders(),
+          authorization: `Bearer ${authToken("operator")}`,
+        },
+        payload: exactBytes,
+      });
+
+      expect(anonymous.statusCode).toBe(401);
+      expect(operator.statusCode).toBe(403);
+      expect(serviceMocks.prepare).not.toHaveBeenCalled();
+      expect(serviceMocks.upload).not.toHaveBeenCalled();
+      expect(dependencies.registerExactFrontier).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it.each([
+    [
+      "target identity",
+      { "x-venviewer-intake-target-id": "different-staging-target" },
+      exactMemberBytes(0),
+      "GRAND_HALL_INTAKE_TARGET_MISMATCH",
+    ],
+    [
+      "deployed build identity",
+      { "x-venviewer-intake-deployed-git-sha": "b".repeat(40) },
+      exactMemberBytes(0),
+      "GRAND_HALL_INTAKE_TARGET_MISMATCH",
+    ],
+    [
+      "source identity",
+      { "x-venviewer-manifest-sha256": "b".repeat(64) },
+      exactMemberBytes(0),
+      "GRAND_HALL_FRONTIER_MISMATCH",
+    ],
+    [
+      "same-length changed body",
+      {},
+      (() => {
+        const bytes = exactMemberBytes(0);
+        bytes[0] = (bytes[0] ?? 0) ^ 0xff;
+        return bytes;
+      })(),
+      "GRAND_HALL_STORAGE_CONFLICT",
+    ],
+  ] as const)("rejects changed rehearsal %s before storage work", async (
+    _name,
+    headerOverrides,
+    payload,
+    code,
+  ) => {
+    const dependencies = fakeDependencies();
+    const server = await routeServer(intakeEnv(true), dependencies);
+    try {
+      const response = await server.inject({
+        method: "PUT",
+        url: "/admin/assets/grand-hall-frontier-intake/rehearsal",
+        headers: rehearsalHeaders(headerOverrides),
+        payload,
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ code });
+      expect(serviceMocks.prepare).not.toHaveBeenCalled();
+      expect(serviceMocks.upload).not.toHaveBeenCalled();
+      expect(dependencies.open).not.toHaveBeenCalled();
+      expect(dependencies.putCreateOnly).not.toHaveBeenCalled();
+      expect(dependencies.registerExactFrontier).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("requires a fresh 0-existing/11-missing rehearsal target before any PUT", async () => {
+    const dependencies = fakeDependencies();
+    serviceMocks.prepare.mockResolvedValue(prepareResult(new Set([0])));
+    const server = await routeServer(intakeEnv(true), dependencies);
+    try {
+      const response = await server.inject({
+        method: "PUT",
+        url: "/admin/assets/grand-hall-frontier-intake/rehearsal",
+        headers: rehearsalHeaders(),
+        payload: exactMemberBytes(0),
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ code: "GRAND_HALL_STORAGE_CONFLICT" });
+      expect(serviceMocks.prepare).toHaveBeenCalledOnce();
+      expect(serviceMocks.upload).not.toHaveBeenCalled();
+      expect(dependencies.putCreateOnly).not.toHaveBeenCalled();
+      expect(dependencies.registerExactFrontier).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("runs create, retry, corrupt-copy, and read-back evidence in one request without registration", async () => {
+    const env = intakeEnv(true);
+    const dependencies = fakeDependencies();
+    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    if (member === undefined) throw new Error("Test rehearsal member is missing.");
+    const exactBytes = exactMemberBytes(0);
+    let corruptBytesReference: Uint8Array | undefined;
+    serviceMocks.prepare
+      .mockResolvedValueOnce(prepareResult(new Set()))
+      .mockResolvedValueOnce(prepareResult(new Set([0])));
+    serviceMocks.upload
+      .mockResolvedValueOnce({
+        created: true,
+        memberIndex: 0,
+        fileName: member.fileName,
+        sizeBytes: member.sizeBytes,
+        sha256: member.sha256,
+      })
+      .mockResolvedValueOnce({
+        created: false,
+        memberIndex: 0,
+        fileName: member.fileName,
+        sizeBytes: member.sizeBytes,
+        sha256: member.sha256,
+      });
+    serviceMocks.probe.mockImplementationOnce((_store, bytes) => {
+      corruptBytesReference = bytes;
+      expect(bytes.byteLength).toBe(exactBytes.byteLength);
+      expect(Buffer.from(bytes)).not.toEqual(exactBytes);
+      return Promise.resolve();
+    });
+    const server = await routeServer(env, dependencies);
+    try {
+      const response = await server.inject({
+        method: "PUT",
+        url: "/admin/assets/grand-hall-frontier-intake/rehearsal",
+        headers: rehearsalHeaders(),
+        payload: exactBytes,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expectNoStore(response);
+      expectSecretsRedacted(response);
+      expect(serviceMocks.prepare).toHaveBeenCalledTimes(2);
+      expect(serviceMocks.upload).toHaveBeenCalledTimes(2);
+      expect(serviceMocks.probe).toHaveBeenCalledOnce();
+      expect(serviceMocks.upload.mock.calls[0]?.[1]).toBe(0);
+      expect(serviceMocks.upload.mock.calls[0]?.[2]).toEqual(exactBytes);
+      expect(serviceMocks.upload.mock.calls[1]?.[2]).toEqual(exactBytes);
+      expect(corruptBytesReference?.every((byte) => byte === 0)).toBe(true);
+      expect(serviceMocks.commit).not.toHaveBeenCalled();
+      expect(dependencies.registerExactFrontier).not.toHaveBeenCalled();
+      expect(parsedData(response)).toEqual({
+        schemaVersion: "venviewer.grand-hall-intake-rehearsal.v1",
+        operatorUserId: ADMIN_USER_ID,
+        targetId: TARGET_ID,
+        deployedGitSha: DEPLOYED_GIT_SHA,
+        apiOrigin: API_ORIGIN,
+        manifestSha256: GRAND_HALL_MANIFEST_SHA256,
+        frontierReceiptSha256: GRAND_HALL_FRONTIER_RECEIPT_SHA256,
+        member: {
+          memberIndex: 0,
+          fileName: member.fileName,
+          sizeBytes: member.sizeBytes,
+          sha256: member.sha256,
+        },
+        initialPreflight: {
+          existingMemberCount: 0,
+          uploadRequiredCount: 11,
+        },
+        conditionalPut: {
+          created: { statusCode: 201, created: true },
+          exactRetry: { statusCode: 200, created: false },
+          corruptCopy: {
+            statusCode: 409,
+            code: "GRAND_HALL_STORAGE_CONFLICT",
+            storedBytesUnchanged: true,
+          },
+        },
+        finalPreflight: {
+          existingMemberCount: 1,
+          uploadRequiredCount: 10,
+        },
+        commitAttempted: false,
+        registrationAttempted: false,
+      });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("holds the exclusive intake gate for the complete one-request rehearsal", async () => {
+    const dependencies = fakeDependencies();
+    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    if (member === undefined) throw new Error("Test rehearsal member is missing.");
+    const initial = deferred<GrandHallPrepareResult>();
+    serviceMocks.prepare
+      .mockImplementationOnce(() => initial.promise)
+      .mockResolvedValueOnce(prepareResult(new Set([0])));
+    serviceMocks.upload
+      .mockResolvedValueOnce({
+        created: true,
+        memberIndex: 0,
+        fileName: member.fileName,
+        sizeBytes: member.sizeBytes,
+        sha256: member.sha256,
+      })
+      .mockResolvedValueOnce({
+        created: false,
+        memberIndex: 0,
+        fileName: member.fileName,
+        sizeBytes: member.sizeBytes,
+        sha256: member.sha256,
+      });
+    const server = await routeServer(intakeEnv(true), dependencies);
+    try {
+      const rehearsal = server.inject({
+        method: "PUT",
+        url: "/admin/assets/grand-hall-frontier-intake/rehearsal",
+        headers: rehearsalHeaders(),
+        payload: exactMemberBytes(0),
+      });
+      await vi.waitFor(() => {
+        expect(serviceMocks.prepare).toHaveBeenCalledOnce();
+      });
+
+      const concurrentPreflight = await server.inject({
+        method: "POST",
+        url: "/admin/assets/grand-hall-frontier-intake/preflight",
+        headers: { authorization: `Bearer ${authToken("admin")}` },
+        payload: validTargetRequest,
+      });
+      const concurrentUpload = await server.inject({
+        method: "PUT",
+        url: "/admin/assets/grand-hall-frontier-intake/members/0",
+        headers: uploadHeaders(intakeEnv(true), 0),
+        payload: exactMemberBytes(0),
+      });
+
+      expect(concurrentPreflight.statusCode).toBe(429);
+      expect(concurrentPreflight.json()).toMatchObject({ code: "GRAND_HALL_INTAKE_BUSY" });
+      expect(concurrentUpload.statusCode).toBe(429);
+      expect(concurrentUpload.json()).toMatchObject({ code: "GRAND_HALL_INTAKE_BUSY" });
+      initial.resolve(prepareResult(new Set()));
+      expect((await rehearsal).statusCode).toBe(200);
+      expect(serviceMocks.commit).not.toHaveBeenCalled();
+      expect(dependencies.registerExactFrontier).not.toHaveBeenCalled();
+    } finally {
+      initial.resolve(prepareResult(new Set()));
+      await server.close();
+    }
+  });
+
+  it("times out a stalled rehearsal body and releases both admission gates", async () => {
+    const dependencies = fakeDependencies();
+    const server = await routeServer(intakeEnv(true), dependencies, 150);
+    let client: ClientRequest | undefined;
+    try {
+      await server.listen({ host: "127.0.0.1", port: 0 });
+      const address = server.server.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("Test server did not bind to a TCP port.");
+      }
+      const stalled = startStalledBinaryUpload(
+        address.port,
+        rehearsalHeaders(),
+        "/admin/assets/grand-hall-frontier-intake/rehearsal",
+      );
+      client = stalled.request;
+      const timedOut = await stalled.response;
+
+      expect(timedOut.statusCode).toBe(408);
+      expect(JSON.parse(timedOut.body)).toMatchObject({ code: "GRAND_HALL_INTAKE_TIMEOUT" });
+      expect(serviceMocks.prepare).not.toHaveBeenCalled();
+      expect(serviceMocks.upload).not.toHaveBeenCalled();
+
+      serviceMocks.prepare.mockResolvedValue(prepareResult(new Set()));
+      const recovered = await server.inject({
+        method: "POST",
+        url: "/admin/assets/grand-hall-frontier-intake/preflight",
+        headers: { authorization: `Bearer ${authToken("admin")}` },
+        payload: validTargetRequest,
+      });
+      expect(recovered.statusCode).toBe(200);
+      expect(serviceMocks.prepare).toHaveBeenCalledOnce();
+    } finally {
+      client?.destroy();
+      await server.close();
+    }
+  });
+
+  it("fails closed when the post-rehearsal storage evidence is not exactly 1-existing/10-missing", async () => {
+    const dependencies = fakeDependencies();
+    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    if (member === undefined) throw new Error("Test rehearsal member is missing.");
+    serviceMocks.prepare
+      .mockResolvedValueOnce(prepareResult(new Set()))
+      .mockResolvedValueOnce(prepareResult(new Set([0, 1])));
+    serviceMocks.upload
+      .mockResolvedValueOnce({
+        created: true,
+        memberIndex: 0,
+        fileName: member.fileName,
+        sizeBytes: member.sizeBytes,
+        sha256: member.sha256,
+      })
+      .mockResolvedValueOnce({
+        created: false,
+        memberIndex: 0,
+        fileName: member.fileName,
+        sizeBytes: member.sizeBytes,
+        sha256: member.sha256,
+      });
+    const server = await routeServer(intakeEnv(true), dependencies);
+    try {
+      const response = await server.inject({
+        method: "PUT",
+        url: "/admin/assets/grand-hall-frontier-intake/rehearsal",
+        headers: rehearsalHeaders(),
+        payload: exactMemberBytes(0),
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ code: "GRAND_HALL_STORAGE_CONFLICT" });
+      expect(serviceMocks.commit).not.toHaveBeenCalled();
+      expect(dependencies.registerExactFrontier).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
+
   it("rejects an unauthenticated binary upload before parsing or storage work", async () => {
     const dependencies = fakeDependencies();
     const server = await routeServer(intakeEnv(true), dependencies);
@@ -727,6 +1191,14 @@ describe("Grand Hall frontier intake route boundary", () => {
         expect.any(Buffer),
         expect.any(AbortSignal),
       );
+      expect(parsedData(response)).toEqual({
+        operatorUserId: ADMIN_USER_ID,
+        created: true,
+        memberIndex: 0,
+        fileName: member.fileName,
+        sizeBytes: member.sizeBytes,
+        sha256: member.sha256,
+      });
       expect(response.body).not.toMatch(/r2Key|privateBucket|storageAccount|databaseTarget/u);
     } finally {
       await server.close();
@@ -757,6 +1229,10 @@ describe("Grand Hall frontier intake route boundary", () => {
       expect(serviceMocks.upload).toHaveBeenCalledOnce();
       expectNoStore(response);
       expectSecretsRedacted(response);
+      expect(parsedData(response)).toMatchObject({
+        operatorUserId: ADMIN_USER_ID,
+        created: false,
+      });
     } finally {
       await server.close();
     }

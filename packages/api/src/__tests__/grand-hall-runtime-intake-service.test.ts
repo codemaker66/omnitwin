@@ -11,6 +11,7 @@ import {
   GrandHallRuntimeIntakeError,
   commitGrandHallRuntimeIntake,
   prepareGrandHallRuntimeIntake,
+  probeGrandHallRuntimeConditionalCreateConflict,
   uploadGrandHallRuntimeMember,
   verifyGrandHallRemoteObject,
   type GrandHallPrivateObjectStore,
@@ -191,6 +192,100 @@ describe("Grand Hall runtime intake service", () => {
     } satisfies Partial<GrandHallRuntimeIntakeError>);
     expect(putCreateOnly).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it("supports the exact create, retry, corrupt-copy, and final-read rehearsal without changing stored bytes", async () => {
+    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    if (member === undefined) throw new Error("Test contract requires a first member.");
+    const stored = new Map<number, Uint8Array>();
+    const putBodies: Buffer[] = [];
+    const open = vi.fn<GrandHallPrivateObjectStore["open"]>((candidate) => {
+      const bytes = stored.get(candidate.fileIndex);
+      if (bytes === undefined) return Promise.resolve(null);
+      return Promise.resolve({
+        contentLength: bytes.byteLength,
+        body: (async function* streamStoredBytes() {
+          await Promise.resolve();
+          yield bytes;
+        })(),
+        close: () => undefined,
+      });
+    });
+    const putCreateOnly = vi.fn<GrandHallPrivateObjectStore["putCreateOnly"]>(
+      (candidate, bytes) => {
+        putBodies.push(Buffer.from(bytes));
+        if (stored.has(candidate.fileIndex)) return Promise.resolve("exists");
+        stored.set(candidate.fileIndex, Buffer.from(bytes));
+        return Promise.resolve("created");
+      },
+    );
+    const objectStore: GrandHallPrivateObjectStore = { open, putCreateOnly };
+    const exactBytes = exactMemberBytes(member);
+    const corruptBytes = corruptMemberBytes(member);
+
+    const initial = await prepareGrandHallRuntimeIntake(objectStore);
+    const created = await uploadGrandHallRuntimeMember(objectStore, 0, exactBytes);
+    const retried = await uploadGrandHallRuntimeMember(objectStore, 0, exactBytes);
+    await probeGrandHallRuntimeConditionalCreateConflict(objectStore, corruptBytes);
+    corruptBytes.fill(0);
+    const final = await prepareGrandHallRuntimeIntake(objectStore);
+
+    expect(initial).toMatchObject({ existingMemberCount: 0, uploadRequiredCount: 11 });
+    expect(created.created).toBe(true);
+    expect(retried.created).toBe(false);
+    expect(putCreateOnly).toHaveBeenCalledTimes(3);
+    expect(putBodies[2]).toEqual(corruptMemberBytes(member));
+    expect(corruptBytes.every((byte) => byte === 0)).toBe(true);
+    expect(final).toMatchObject({ existingMemberCount: 1, uploadRequiredCount: 10 });
+    expect(final.members[0]?.status).toBe("verified_existing");
+    expect(stored.get(member.fileIndex)).toEqual(exactBytes);
+  });
+
+  it("fails closed when storage reports the corrupt conditional-create probe as created", async () => {
+    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    if (member === undefined) throw new Error("Test contract requires a first member.");
+    const exactBytes = exactMemberBytes(member);
+    const objectStore: GrandHallPrivateObjectStore = {
+      open: () => Promise.resolve(remoteObject(member)),
+      putCreateOnly: () => Promise.resolve("created"),
+    };
+
+    await expect(probeGrandHallRuntimeConditionalCreateConflict(
+      objectStore,
+      corruptMemberBytes(member),
+    )).rejects.toMatchObject({
+      statusCode: 500,
+      code: "GRAND_HALL_INTAKE_INTEGRITY_ERROR",
+    } satisfies Partial<GrandHallRuntimeIntakeError>);
+    expect(exactBytes).toEqual(exactMemberBytes(member));
+  });
+
+  it("fails closed when an exists response still changes the stored canonical bytes", async () => {
+    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    if (member === undefined) throw new Error("Test contract requires a first member.");
+    let stored = Buffer.from(exactMemberBytes(member));
+    const objectStore: GrandHallPrivateObjectStore = {
+      open: () => Promise.resolve({
+        contentLength: stored.byteLength,
+        body: (async function* streamStoredBytes() {
+          await Promise.resolve();
+          yield stored;
+        })(),
+        close: () => undefined,
+      }),
+      putCreateOnly: (_candidate, bytes) => {
+        stored = Buffer.from(bytes);
+        return Promise.resolve("exists");
+      },
+    };
+
+    await expect(probeGrandHallRuntimeConditionalCreateConflict(
+      objectStore,
+      corruptMemberBytes(member),
+    )).rejects.toMatchObject({
+      statusCode: 409,
+      code: "GRAND_HALL_STORAGE_CONFLICT",
+    } satisfies Partial<GrandHallRuntimeIntakeError>);
   });
 
   it("aborts a hung private-storage PUT at the fixed deadline and fails generically", async () => {

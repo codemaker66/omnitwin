@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { validateEnv, EnvSchema } from "../env.js";
+import {
+  GRAND_HALL_STAGING_DATABASE_NAME,
+  GRAND_HALL_STAGING_DATABASE_ROLE,
+  GRAND_HALL_STAGING_GIT_BRANCH,
+  GRAND_HALL_STAGING_PRIVATE_BUCKET,
+  GRAND_HALL_STAGING_TARGET_ID,
+} from "../lib/grand-hall-frontier-contract.js";
+
+const CLOUDFLARE_ACCOUNT_ID = "a".repeat(32);
 
 // ---------------------------------------------------------------------------
 // env.ts — Zod environment validation tests
@@ -94,10 +103,33 @@ describe("production environment validation", () => {
     CLERK_WEBHOOK_SECRET: "whsec_abc",
     FRONTEND_URL: "https://app.omnitwin.com",
     PUBLIC_API_ORIGIN: "https://api.omnitwin.com",
-    RUNTIME_PROFILE_R2_ACCOUNT_ID: "runtime-account",
+    RUNTIME_PROFILE_R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
     RUNTIME_PROFILE_R2_ACCESS_KEY_ID: "runtime-access-key",
     RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: "runtime-secret-key",
     RUNTIME_PROFILE_R2_PRIVATE_BUCKET: "runtime-profiles-private",
+  };
+  const validIntakeBase = {
+    ...validProdBase,
+    VENVIEWER_DEPLOYMENT_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
+    VENVIEWER_STAGING_REVIEWED_GIT_SHA: "a".repeat(40),
+    GIT_SHA: "a".repeat(40),
+    RUNTIME_PROFILE_INTAKE_ENABLED: "false",
+    DATABASE_URL:
+      `postgresql://${GRAND_HALL_STAGING_DATABASE_ROLE}:staging-pass@ep-grand-hall-pooler.eu-west-2.aws.neon.tech/${GRAND_HALL_STAGING_DATABASE_NAME}?sslmode=require`,
+    CLERK_SECRET_KEY: "sk_test_staging",
+    FRONTEND_URL: "https://codex-grand-hall-venviewer.vercel.app",
+    VENVIEWER_STAGING_EXPECTED_WEB_ORIGIN:
+      "https://codex-grand-hall-venviewer.vercel.app",
+    CORS_ORIGINS: "https://codex-grand-hall-venviewer.vercel.app",
+    PUBLIC_API_ORIGIN: "https://trades-hall-grand-hall-staging.up.railway.app",
+    RUNTIME_PROFILE_R2_PRIVATE_BUCKET: GRAND_HALL_STAGING_PRIVATE_BUCKET,
+    RAILWAY_PROJECT_NAME: GRAND_HALL_STAGING_TARGET_ID,
+    RAILWAY_ENVIRONMENT_NAME: GRAND_HALL_STAGING_TARGET_ID,
+    RAILWAY_SERVICE_NAME: GRAND_HALL_STAGING_TARGET_ID,
+    RAILWAY_PUBLIC_DOMAIN: "trades-hall-grand-hall-staging.up.railway.app",
+    RAILWAY_GIT_BRANCH: GRAND_HALL_STAGING_GIT_BRANCH,
+    VENVIEWER_STAGING_EXPECTED_DATABASE_HOST:
+      "ep-grand-hall-pooler.eu-west-2.aws.neon.tech",
   };
 
   it("accepts a fully-configured production environment", () => {
@@ -175,7 +207,7 @@ describe("production environment validation", () => {
     expect(() => validateEnv({
       NODE_ENV: "development",
       DATABASE_URL: "postgresql://user:pass@host/db",
-      RUNTIME_PROFILE_R2_ACCOUNT_ID: "runtime-account",
+      RUNTIME_PROFILE_R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       RUNTIME_PROFILE_R2_PRIVATE_BUCKET: "runtime-profiles-private",
     })).toThrow("Runtime-profile R2 configuration is incomplete");
   });
@@ -191,32 +223,66 @@ describe("production environment validation", () => {
     expect(env.RUNTIME_PROFILE_INTAKE_ENABLED).toBeUndefined();
   });
 
-  it("REJECTS partial or enabled-without-target runtime-profile intake configuration", () => {
+  it.each([
+    "RUNTIME_PROFILE_INTAKE_ADMIN_TOKEN",
+    "RUNTIME_PROFILE_INTAKE_ADMIN_TOKEN_RELAY",
+    "RUNTIME_PROFILE_INTAKE_EXPECTED_STAGING_API_ORIGIN",
+    "RUNTIME_PROFILE_INTAKE_EXPECTED_STAGING_WEB_ORIGIN",
+    "VENVIEWER_GRAND_HALL_R2_ACCOUNT_ID",
+    "VENVIEWER_GRAND_HALL_R2_BUCKET",
+    "VENVIEWER_GRAND_HALL_R2_WRITER_PARENT_ACCESS_KEY_ID",
+    "VENVIEWER_GRAND_HALL_R2_WRITER_PARENT_SECRET_ACCESS_KEY",
+    "VENVIEWER_GRAND_HALL_REVIEWED_GIT_SHA",
+    "VENVIEWER_PLATFORM_ADMIN_BOOTSTRAP_TARGET_ID",
+    "VENVIEWER_PLATFORM_ADMIN_BOOTSTRAP_EXPECTED_DATABASE_HOST",
+  ] as const)("REJECTS deployed local-only operator variable %s even when empty", (field) => {
     expect(() => withoutVitest(() => validateEnv({
       ...validProdBase,
-      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      [field]: "",
+    }))).toThrow(field);
+    expect(() => withoutVitest(() => validateEnv({
+      ...validProdBase,
+      [field]: "must-never-be-deployed",
+    }))).toThrow(field);
+  });
+
+  it("REJECTS partial or enabled-without-target runtime-profile intake configuration", () => {
+    expect(() => withoutVitest(() => validateEnv({
+      ...validIntakeBase,
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
     }))).toThrow("Runtime-profile intake configuration is incomplete");
 
     expect(() => withoutVitest(() => validateEnv({
-      ...validProdBase,
+      ...validIntakeBase,
       RUNTIME_PROFILE_INTAKE_ENABLED: "true",
     }))).toThrow("Enabled runtime-profile intake requires");
 
     expect(() => withoutVitest(() => validateEnv({
-      ...validProdBase,
+      ...validIntakeBase,
       RUNTIME_PROFILE_INTAKE_ENABLED: "true",
-      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
       RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
       RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
       RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "runtime-put-only-session-token",
     }))).toThrow("deployed Git SHA");
   });
 
+  it("REJECTS a disabled deployment that retains the complete temporary intake group", () => {
+    expect(() => withoutVitest(() => validateEnv({
+      ...validIntakeBase,
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
+      RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
+      RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
+      RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
+      RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "runtime-put-only-session-token",
+    }))).toThrow("Disabled runtime-profile intake requires removal");
+  });
+
   it("REJECTS temporary intake credentials without their session token", () => {
     expect(() => withoutVitest(() => validateEnv({
-      ...validProdBase,
+      ...validIntakeBase,
       RUNTIME_PROFILE_INTAKE_ENABLED: "true",
-      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
       RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
       GIT_SHA: "a".repeat(40),
       RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
@@ -226,29 +292,151 @@ describe("production environment validation", () => {
 
   it("accepts an explicitly targeted intake with separate temporary write credentials", () => {
     const env = withoutVitest(() => validateEnv({
-      ...validProdBase,
+      ...validIntakeBase,
       RUNTIME_PROFILE_INTAKE_ENABLED: "true",
-      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
       RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
       GIT_SHA: "a".repeat(40),
       RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
       RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
       RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "runtime-put-only-session-token",
     }));
-    expect(env.RUNTIME_PROFILE_INTAKE_TARGET_ID).toBe("production-grand-hall");
+    expect(env.RUNTIME_PROFILE_INTAKE_TARGET_ID).toBe(GRAND_HALL_STAGING_TARGET_ID);
     expect(env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA).toBe("a".repeat(40));
     expect(env.RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN)
       .toBe("runtime-put-only-session-token");
   });
 
-  it("REJECTS reuse of the private serving access key for intake writes", () => {
+  it("keeps the exact staging resource boundary active while intake is disabled", () => {
+    const env = withoutVitest(() => validateEnv(validIntakeBase));
+    expect(env.RUNTIME_PROFILE_INTAKE_ENABLED).toBe("false");
+    expect(env.VENVIEWER_DEPLOYMENT_TARGET_ID).toBe(
+      GRAND_HALL_STAGING_TARGET_ID,
+    );
+
+    for (const override of [
+      { DATABASE_URL: validProdBase.DATABASE_URL },
+      { PUBLIC_API_ORIGIN: validProdBase.PUBLIC_API_ORIGIN },
+      { RUNTIME_PROFILE_R2_PRIVATE_BUCKET: validProdBase.RUNTIME_PROFILE_R2_PRIVATE_BUCKET },
+      {
+        FRONTEND_URL: validProdBase.FRONTEND_URL,
+        CORS_ORIGINS: validProdBase.FRONTEND_URL,
+      },
+      { CLERK_SECRET_KEY: validProdBase.CLERK_SECRET_KEY },
+      { VENVIEWER_STAGING_REVIEWED_GIT_SHA: "b".repeat(40) },
+    ]) {
+      expect(() => withoutVitest(() => validateEnv({
+        ...validIntakeBase,
+        ...override,
+      }))).toThrow();
+    }
+  });
+
+  it("REJECTS malformed runtime-profile R2 account IDs before endpoint construction", () => {
+    for (const accountId of [
+      "evil.example\\",
+      "evil.example/",
+      "evil.example?",
+      "evil.example#",
+      "A".repeat(32),
+      "a".repeat(31),
+    ]) {
+      expect(() => withoutVitest(() => validateEnv({
+        ...validIntakeBase,
+        RUNTIME_PROFILE_R2_ACCOUNT_ID: accountId,
+      }))).toThrow("exactly 32 lowercase hexadecimal characters");
+    }
+  });
+
+  it.each([
+    "SENTRY_DSN",
+    "SENTRY_ENVIRONMENT",
+    "SENTRY_TRACES_SAMPLE_RATE",
+    "SENTRY_AUTH_TOKEN",
+    "SENTRY_ORG",
+    "SENTRY_PROJECT",
+    "SENTRY_RELEASE",
+    "POSTHOG_KEY",
+    "POSTHOG_HOST",
+  ] as const)("REJECTS inherited staging telemetry variable %s even when empty", (field) => {
+    expect(() => withoutVitest(() => validateEnv({
+      ...validIntakeBase,
+      [field]: "",
+    }))).toThrow(`${field}: Grand Hall staging telemetry variables must be absent`);
+  });
+
+  it("REJECTS removing the persistent staging marker in the intake-disabled state", () => {
+    const { VENVIEWER_DEPLOYMENT_TARGET_ID: _, ...withoutTarget } = validIntakeBase;
+    expect(() => withoutVitest(() => validateEnv(withoutTarget)))
+      .toThrow("persistent target");
+  });
+
+  it("forces the dedicated Railway Git branch into the complete staging boundary", () => {
     expect(() => withoutVitest(() => validateEnv({
       ...validProdBase,
+      RAILWAY_GIT_BRANCH: GRAND_HALL_STAGING_GIT_BRANCH,
+    }))).toThrow("Grand Hall staging");
+    expect(() => withoutVitest(() => validateEnv({
+      ...validIntakeBase,
+      RAILWAY_GIT_BRANCH: "main",
+    }))).toThrow(`Git branch to equal ${GRAND_HALL_STAGING_GIT_BRANCH}`);
+  });
+
+  it("REJECTS intake on a non-staging target, production API origin, or another bucket", () => {
+    const completeIntake = {
+      ...validIntakeBase,
       RUNTIME_PROFILE_INTAKE_ENABLED: "true",
-      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
       RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
       GIT_SHA: "a".repeat(40),
-      RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: validProdBase.RUNTIME_PROFILE_R2_ACCESS_KEY_ID,
+      RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
+      RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
+      RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "runtime-put-only-session-token",
+    };
+    expect(() => withoutVitest(() => validateEnv({
+      ...completeIntake,
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+    }))).toThrow(GRAND_HALL_STAGING_TARGET_ID);
+    expect(() => withoutVitest(() => validateEnv({
+      ...completeIntake,
+      PUBLIC_API_ORIGIN: "https://api.venviewer.com",
+    }))).toThrow("Railway staging origin");
+    expect(() => withoutVitest(() => validateEnv({
+      ...completeIntake,
+      RUNTIME_PROFILE_R2_PRIVATE_BUCKET: "venviewer-prod-runtime-profiles-private",
+    }))).toThrow(`exact private staging bucket ${GRAND_HALL_STAGING_PRIVATE_BUCKET}`);
+    expect(() => withoutVitest(() => validateEnv({
+      ...completeIntake,
+      RAILWAY_ENVIRONMENT_NAME: "production",
+    }))).toThrow("Railway-provided project, environment, and service names");
+    expect(() => withoutVitest(() => validateEnv({
+      ...completeIntake,
+      RAILWAY_PUBLIC_DOMAIN: "api.venviewer.com",
+    }))).toThrow("Railway-provided public domain");
+    expect(() => withoutVitest(() => validateEnv({
+      ...completeIntake,
+      DATABASE_URL:
+        "postgresql://prod:secret@ep-production-pooler.eu-west-2.aws.neon.tech/production?sslmode=require",
+    }))).toThrow("code-pinned Neon role");
+    expect(() => withoutVitest(() => validateEnv({
+      ...completeIntake,
+      FRONTEND_URL: "https://venviewer.com",
+      CORS_ORIGINS: "https://venviewer.com",
+    }))).toThrow("Vercel Preview origin");
+    expect(() => withoutVitest(() => validateEnv({
+      ...completeIntake,
+      CLERK_SECRET_KEY: "sk_live_production",
+    }))).toThrow("isolated Clerk staging test secret");
+  });
+
+  it("REJECTS reuse of the private serving access key for intake writes", () => {
+    expect(() => withoutVitest(() => validateEnv({
+      ...validIntakeBase,
+      RUNTIME_PROFILE_INTAKE_ENABLED: "true",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
+      RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
+      GIT_SHA: "a".repeat(40),
+      RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: validIntakeBase.RUNTIME_PROFILE_R2_ACCESS_KEY_ID,
       RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-write-secret",
       RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "runtime-write-session-token",
     }))).toThrow("distinct put-only access key");
@@ -260,9 +448,9 @@ describe("production environment validation", () => {
     ["different commit", "b".repeat(40)],
   ] as const)("REJECTS an intake-enabled %s build Git SHA", (_name, gitSha) => {
     expect(() => withoutVitest(() => validateEnv({
-      ...validProdBase,
+      ...validIntakeBase,
       RUNTIME_PROFILE_INTAKE_ENABLED: "true",
-      RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+      RUNTIME_PROFILE_INTAKE_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
       RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
       RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "runtime-put-only-key",
       RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "runtime-put-only-secret",
@@ -274,14 +462,14 @@ describe("production environment validation", () => {
   it("REJECTS a runtime-profile bucket shared with upload or Foundry storage", () => {
     for (const collision of [
       {
-        R2_ACCOUNT_ID: "upload-account",
+        R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
         R2_ACCESS_KEY_ID: "upload-key",
         R2_SECRET_ACCESS_KEY: "upload-secret",
         R2_BUCKET_NAME: "runtime-profiles-private",
         R2_PUBLIC_URL: "https://uploads.example.com",
       },
       {
-        FOUNDRY_R2_ACCOUNT_ID: "foundry-account",
+        FOUNDRY_R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
         FOUNDRY_R2_ACCESS_KEY_ID: "foundry-key",
         FOUNDRY_R2_SECRET_ACCESS_KEY: "foundry-secret",
         FOUNDRY_R2_CANDIDATE_BUCKET: "runtime-profiles-private",
@@ -289,7 +477,7 @@ describe("production environment validation", () => {
         FOUNDRY_R2_PUBLIC_URL: "https://releases.example.com",
       },
       {
-        FOUNDRY_R2_ACCOUNT_ID: "foundry-account",
+        FOUNDRY_R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
         FOUNDRY_R2_ACCESS_KEY_ID: "foundry-key",
         FOUNDRY_R2_SECRET_ACCESS_KEY: "foundry-secret",
         FOUNDRY_R2_CANDIDATE_BUCKET: "foundry-private-candidates",
@@ -321,7 +509,7 @@ describe("production environment validation", () => {
   it("REJECTS incomplete R2 config (some but not all fields)", () => {
     expect(() => validateEnv({
       ...validProdBase,
-      R2_ACCOUNT_ID: "acct",
+      R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       R2_BUCKET_NAME: "bucket",
       // Missing R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY
     })).toThrow("R2 configuration is incomplete");
@@ -331,7 +519,7 @@ describe("production environment validation", () => {
     expect(() => {
       withoutVitest(() => validateEnv({
         ...validProdBase,
-        R2_ACCOUNT_ID: "acct",
+        R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
         R2_ACCESS_KEY_ID: "key",
         R2_SECRET_ACCESS_KEY: "secret",
         R2_BUCKET_NAME: "bucket",
@@ -346,7 +534,7 @@ describe("production environment validation", () => {
   it("REJECTS R2 config missing R2_PUBLIC_URL (F29)", () => {
     expect(() => validateEnv({
       ...validProdBase,
-      R2_ACCOUNT_ID: "acct",
+      R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       R2_ACCESS_KEY_ID: "key",
       R2_SECRET_ACCESS_KEY: "secret",
       R2_BUCKET_NAME: "bucket",
@@ -364,12 +552,12 @@ describe("production environment validation", () => {
   it("accepts a segregated Reconstruction Foundry bucket configuration", () => {
     const env = withoutVitest(() => validateEnv({
       ...validProdBase,
-      R2_ACCOUNT_ID: "acct",
+      R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       R2_ACCESS_KEY_ID: "key",
       R2_SECRET_ACCESS_KEY: "secret",
       R2_BUCKET_NAME: "legacy-public-assets",
       R2_PUBLIC_URL: "https://assets.example.com",
-      FOUNDRY_R2_ACCOUNT_ID: "acct",
+      FOUNDRY_R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       FOUNDRY_R2_ACCESS_KEY_ID: "foundry-key",
       FOUNDRY_R2_SECRET_ACCESS_KEY: "foundry-secret",
       FOUNDRY_R2_CANDIDATE_BUCKET: "foundry-private-candidates",
@@ -385,7 +573,7 @@ describe("production environment validation", () => {
   it("allows Foundry credentials to be isolated from the legacy upload credential", () => {
     expect(() => withoutVitest(() => validateEnv({
       ...validProdBase,
-      FOUNDRY_R2_ACCOUNT_ID: "acct",
+      FOUNDRY_R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       FOUNDRY_R2_ACCESS_KEY_ID: "foundry-key",
       FOUNDRY_R2_SECRET_ACCESS_KEY: "foundry-secret",
       FOUNDRY_R2_CANDIDATE_BUCKET: "foundry-private-candidates",
@@ -397,12 +585,12 @@ describe("production environment validation", () => {
   it("REJECTS Foundry config without bucket segregation", () => {
     expect(() => withoutVitest(() => validateEnv({
       ...validProdBase,
-      R2_ACCOUNT_ID: "acct",
+      R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       R2_ACCESS_KEY_ID: "key",
       R2_SECRET_ACCESS_KEY: "secret",
       R2_BUCKET_NAME: "public-assets",
       R2_PUBLIC_URL: "https://assets.example.com",
-      FOUNDRY_R2_ACCOUNT_ID: "acct",
+      FOUNDRY_R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       FOUNDRY_R2_ACCESS_KEY_ID: "foundry-key",
       FOUNDRY_R2_SECRET_ACCESS_KEY: "foundry-secret",
       FOUNDRY_R2_CANDIDATE_BUCKET: "public-assets",
@@ -412,12 +600,12 @@ describe("production environment validation", () => {
 
     expect(() => withoutVitest(() => validateEnv({
       ...validProdBase,
-      R2_ACCOUNT_ID: "acct",
+      R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       R2_ACCESS_KEY_ID: "key",
       R2_SECRET_ACCESS_KEY: "secret",
       R2_BUCKET_NAME: "legacy-public-assets",
       R2_PUBLIC_URL: "https://assets.example.com",
-      FOUNDRY_R2_ACCOUNT_ID: "acct",
+      FOUNDRY_R2_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID,
       FOUNDRY_R2_ACCESS_KEY_ID: "foundry-key",
       FOUNDRY_R2_SECRET_ACCESS_KEY: "foundry-secret",
       FOUNDRY_R2_CANDIDATE_BUCKET: "foundry-private-candidates",

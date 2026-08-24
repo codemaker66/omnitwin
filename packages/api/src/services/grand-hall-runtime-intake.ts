@@ -420,6 +420,60 @@ export async function uploadGrandHallRuntimeMember(
   };
 }
 
+/**
+ * Rehearsal-only proof that the fixed canonical member-0 key cannot be replaced.
+ * The route constructs one same-length corrupt copy internally; callers cannot
+ * select a key or use this helper as a general upload path.
+ */
+export async function probeGrandHallRuntimeConditionalCreateConflict(
+  objectStore: GrandHallPrivateObjectStore,
+  corruptBytes: Uint8Array,
+  signal?: AbortSignal,
+): Promise<void> {
+  const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+  if (
+    corruptBytes.byteLength !== member.sizeBytes ||
+    createHash("sha256").update(corruptBytes).digest("hex") === member.sha256
+  ) {
+    throw new GrandHallRuntimeIntakeError(
+      500,
+      "GRAND_HALL_INTAKE_INTEGRITY_ERROR",
+      "The conditional-create rehearsal probe is not the expected corrupt member copy.",
+    );
+  }
+
+  const putDeadline = grandHallStorageDeadline(signal);
+  let result: "created" | "exists";
+  try {
+    result = await waitForStorageOperation(
+      objectStore.putCreateOnly(member, corruptBytes, putDeadline.signal),
+      putDeadline.signal,
+    );
+  } catch (error) {
+    if (putDeadline.signal.aborted) throw grandHallStorageFailure();
+    if (error instanceof GrandHallRuntimeIntakeError) throw error;
+    throw grandHallStorageFailure();
+  } finally {
+    putDeadline.dispose();
+  }
+  if (result !== "exists") {
+    throw new GrandHallRuntimeIntakeError(
+      500,
+      "GRAND_HALL_INTAKE_INTEGRITY_ERROR",
+      "Private storage did not reject the corrupt conditional-create probe.",
+    );
+  }
+
+  const verification = await verifyStoredMember(objectStore, member, signal);
+  if (verification !== "verified") {
+    throw new GrandHallRuntimeIntakeError(
+      500,
+      "GRAND_HALL_INTAKE_INTEGRITY_ERROR",
+      "Private storage changed after the corrupt conditional-create probe.",
+    );
+  }
+}
+
 export async function commitGrandHallRuntimeIntake(
   objectStore: GrandHallPrivateObjectStore,
   registrationStore: GrandHallRegistrationStore,

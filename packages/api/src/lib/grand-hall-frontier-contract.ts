@@ -10,6 +10,16 @@ import { runtimeAssetStorageKeySha256 } from "./runtime-asset-receipt.js";
 
 export const GRAND_HALL_VENUE_SLUG = "trades-hall";
 export const GRAND_HALL_ROOM_SLUG = "grand-hall";
+export const GRAND_HALL_STAGING_TARGET_ID =
+  "trades-hall-grand-hall-staging";
+export const GRAND_HALL_STAGING_GIT_BRANCH =
+  "codex/grand-hall-exact-runtime";
+export const GRAND_HALL_STAGING_PRIVATE_BUCKET =
+  "trades-hall-grand-hall-staging";
+export const GRAND_HALL_STAGING_DATABASE_NAME =
+  "trades_hall_grand_hall_staging";
+export const GRAND_HALL_STAGING_DATABASE_ROLE =
+  "trades_hall_grand_hall_staging_owner";
 export const GRAND_HALL_MANIFEST_FILE_NAME = "Grand_Hall.lcc2";
 export const GRAND_HALL_PRIVATE_STORAGE_ROOT =
   "venues/trades-hall/rooms/grand-hall/";

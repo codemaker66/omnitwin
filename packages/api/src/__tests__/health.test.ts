@@ -12,7 +12,7 @@ delete process.env["SENTRY_DSN"];
 delete process.env["SENTRY_ENVIRONMENT"];
 delete process.env["METRICS_TOKEN"];
 
-const { buildServer } = await import("../index.js");
+const { buildServer, isGrandHallStagingDatabaseIdentity } = await import("../index.js");
 
 let server: FastifyInstance;
 
@@ -59,6 +59,24 @@ describe("GET /health/db", () => {
     const body = JSON.parse(response.body) as { status: string; code: string };
     expect(body.status).toBe("degraded");
     expect(body.code).toBe("DB_UNREACHABLE");
+  });
+});
+
+describe("Grand Hall staging database readiness identity", () => {
+  it("accepts only the code-pinned database and role", () => {
+    expect(isGrandHallStagingDatabaseIdentity({
+      database_name: "trades_hall_grand_hall_staging",
+      database_role: "trades_hall_grand_hall_staging_owner",
+    })).toBe(true);
+    expect(isGrandHallStagingDatabaseIdentity({
+      database_name: "production",
+      database_role: "trades_hall_grand_hall_staging_owner",
+    })).toBe(false);
+    expect(isGrandHallStagingDatabaseIdentity({
+      database_name: "trades_hall_grand_hall_staging",
+      database_role: "production_owner",
+    })).toBe(false);
+    expect(isGrandHallStagingDatabaseIdentity(undefined)).toBe(false);
   });
 });
 

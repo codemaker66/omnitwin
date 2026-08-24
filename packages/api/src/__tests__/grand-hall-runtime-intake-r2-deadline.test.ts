@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { validateEnv } from "../env.js";
-import { GRAND_HALL_FRONTIER_MEMBERS } from "../lib/grand-hall-frontier-contract.js";
+import {
+  GRAND_HALL_FRONTIER_MEMBERS,
+  GRAND_HALL_STAGING_DATABASE_NAME,
+  GRAND_HALL_STAGING_DATABASE_ROLE,
+  GRAND_HALL_STAGING_GIT_BRANCH,
+  GRAND_HALL_STAGING_PRIVATE_BUCKET,
+  GRAND_HALL_STAGING_TARGET_ID,
+} from "../lib/grand-hall-frontier-contract.js";
 import {
   GRAND_HALL_STORAGE_OPERATION_DEADLINE_MS,
   GrandHallRuntimeIntakeError,
@@ -37,19 +44,35 @@ const { createGrandHallR2ObjectStore } = await import(
 
 const env = validateEnv({
   NODE_ENV: "test",
-  DATABASE_URL: "postgresql://branch:secret@database.internal/venviewer",
-  PUBLIC_API_ORIGIN: "https://api.venviewer.example",
-  RUNTIME_PROFILE_R2_ACCOUNT_ID: "private-runtime-account",
+  DATABASE_URL:
+    `postgresql://${GRAND_HALL_STAGING_DATABASE_ROLE}:secret@ep-grand-hall-pooler.eu-west-2.aws.neon.tech/${GRAND_HALL_STAGING_DATABASE_NAME}?sslmode=require`,
+  CLERK_SECRET_KEY: "sk_test_r2-deadline",
+  CLERK_WEBHOOK_SECRET: "whsec_r2-deadline",
+  FRONTEND_URL: "https://codex-grand-hall-venviewer.vercel.app",
+  CORS_ORIGINS: "https://codex-grand-hall-venviewer.vercel.app",
+  PUBLIC_API_ORIGIN: "https://trades-hall-grand-hall-staging.up.railway.app",
+  RUNTIME_PROFILE_R2_ACCOUNT_ID: "b".repeat(32),
   RUNTIME_PROFILE_R2_ACCESS_KEY_ID: "read-only-key",
   RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: "read-only-secret",
-  RUNTIME_PROFILE_R2_PRIVATE_BUCKET: "private-runtime-profiles",
+  RUNTIME_PROFILE_R2_PRIVATE_BUCKET: GRAND_HALL_STAGING_PRIVATE_BUCKET,
   RUNTIME_PROFILE_INTAKE_ENABLED: "true",
-  RUNTIME_PROFILE_INTAKE_TARGET_ID: "production-grand-hall",
+  VENVIEWER_DEPLOYMENT_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
+  VENVIEWER_STAGING_REVIEWED_GIT_SHA: "a".repeat(40),
+  VENVIEWER_STAGING_EXPECTED_WEB_ORIGIN:
+    "https://codex-grand-hall-venviewer.vercel.app",
+  RUNTIME_PROFILE_INTAKE_TARGET_ID: GRAND_HALL_STAGING_TARGET_ID,
   RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "a".repeat(40),
   GIT_SHA: "a".repeat(40),
   RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: "put-only-key",
   RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: "put-only-secret",
   RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: "put-only-session-token",
+  RAILWAY_PROJECT_NAME: GRAND_HALL_STAGING_TARGET_ID,
+  RAILWAY_ENVIRONMENT_NAME: GRAND_HALL_STAGING_TARGET_ID,
+  RAILWAY_SERVICE_NAME: GRAND_HALL_STAGING_TARGET_ID,
+  RAILWAY_PUBLIC_DOMAIN: "trades-hall-grand-hall-staging.up.railway.app",
+  RAILWAY_GIT_BRANCH: GRAND_HALL_STAGING_GIT_BRANCH,
+  VENVIEWER_STAGING_EXPECTED_DATABASE_HOST:
+    "ep-grand-hall-pooler.eu-west-2.aws.neon.tech",
 });
 
 function rejectWhenAborted(signal: AbortSignal | undefined): Promise<never> {

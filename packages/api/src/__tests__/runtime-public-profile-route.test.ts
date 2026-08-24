@@ -76,7 +76,7 @@ const testEnv: Env = {
   SENTRY_TRACES_SAMPLE_RATE: 0.1,
   AI_ASSISTANT_ENABLED: "false",
   PUBLIC_API_ORIGIN: "https://api.example.test",
-  RUNTIME_PROFILE_R2_ACCOUNT_ID: "private-account",
+  RUNTIME_PROFILE_R2_ACCOUNT_ID: "a".repeat(32),
   RUNTIME_PROFILE_R2_ACCESS_KEY_ID: "private-key",
   RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: "private-secret",
   RUNTIME_PROFILE_R2_PRIVATE_BUCKET: "runtime-profiles-private",

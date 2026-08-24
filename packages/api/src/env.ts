@@ -1,5 +1,12 @@
 import { z } from "zod";
 import { createPublicKey } from "node:crypto";
+import {
+  GRAND_HALL_STAGING_DATABASE_NAME,
+  GRAND_HALL_STAGING_DATABASE_ROLE,
+  GRAND_HALL_STAGING_GIT_BRANCH,
+  GRAND_HALL_STAGING_PRIVATE_BUCKET,
+  GRAND_HALL_STAGING_TARGET_ID,
+} from "./lib/grand-hall-frontier-contract.js";
 
 // ---------------------------------------------------------------------------
 // Zod-validated environment variables — fail fast on startup if missing
@@ -11,6 +18,11 @@ import { createPublicKey } from "node:crypto";
 // them ONLY when NODE_ENV === "production". This is the "fail fast in
 // prod, permissive in dev" pattern.
 // ---------------------------------------------------------------------------
+
+const CloudflareR2AccountIdSchema = z.string().regex(
+  /^[a-f0-9]{32}$/u,
+  "Cloudflare R2 account IDs must be exactly 32 lowercase hexadecimal characters",
+);
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -35,7 +47,7 @@ const EnvSchema = z.object({
   // CORS — comma-separated allowed origins (defaults to localhost for dev)
   CORS_ORIGINS: z.string().default("http://localhost:5173,http://localhost:5174"),
   // R2/S3 — optional (uploads disabled if not set)
-  R2_ACCOUNT_ID: z.string().min(1).optional(),
+  R2_ACCOUNT_ID: CloudflareR2AccountIdSchema.optional(),
   R2_ACCESS_KEY_ID: z.string().min(1).optional(),
   R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   R2_BUCKET_NAME: z.string().min(1).optional(),
@@ -43,7 +55,7 @@ const EnvSchema = z.object({
   // Reviewed runtime profiles — private, API-mediated storage only. These
   // credentials must be scoped to this one private bucket. Deliberately no
   // public URL exists: anonymous bytes are released only through API gates.
-  RUNTIME_PROFILE_R2_ACCOUNT_ID: z.string().min(1).optional(),
+  RUNTIME_PROFILE_R2_ACCOUNT_ID: CloudflareR2AccountIdSchema.optional(),
   RUNTIME_PROFILE_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
   RUNTIME_PROFILE_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   RUNTIME_PROFILE_R2_PRIVATE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u).optional(),
@@ -51,17 +63,43 @@ const EnvSchema = z.object({
   // capability. Its write-only credential is intentionally distinct from the
   // private runtime serving credential and can be removed after registration.
   RUNTIME_PROFILE_INTAKE_ENABLED: z.enum(["true", "false"]).optional(),
-  RUNTIME_PROFILE_INTAKE_TARGET_ID: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,79}$/u).optional(),
+  RUNTIME_PROFILE_INTAKE_TARGET_ID: z.literal(GRAND_HALL_STAGING_TARGET_ID).optional(),
   RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: z.string().regex(/^[a-f0-9]{40,64}$/u).optional(),
   RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
   RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   RUNTIME_PROFILE_INTAKE_R2_SESSION_TOKEN: z.string().min(1).optional(),
+  // Persistent Grand Hall staging identity. Unlike the temporary intake
+  // writer fields, these remain configured while intake is disabled for QA.
+  VENVIEWER_DEPLOYMENT_TARGET_ID: z.literal(GRAND_HALL_STAGING_TARGET_ID).optional(),
+  VENVIEWER_STAGING_REVIEWED_GIT_SHA: z.string().regex(/^[a-f0-9]{40,64}$/u).optional(),
+  VENVIEWER_STAGING_EXPECTED_WEB_ORIGIN: z.string().url().optional(),
+  // Local operator-process only. Defining any of these in the deployed API is
+  // a secret-boundary violation and must fail startup instead of being stripped.
+  RUNTIME_PROFILE_INTAKE_ADMIN_TOKEN: z.never().optional(),
+  RUNTIME_PROFILE_INTAKE_ADMIN_TOKEN_RELAY: z.never().optional(),
+  RUNTIME_PROFILE_INTAKE_EXPECTED_STAGING_API_ORIGIN: z.never().optional(),
+  RUNTIME_PROFILE_INTAKE_EXPECTED_STAGING_WEB_ORIGIN: z.never().optional(),
+  VENVIEWER_GRAND_HALL_R2_ACCOUNT_ID: z.never().optional(),
+  VENVIEWER_GRAND_HALL_R2_BUCKET: z.never().optional(),
+  VENVIEWER_GRAND_HALL_R2_WRITER_PARENT_ACCESS_KEY_ID: z.never().optional(),
+  VENVIEWER_GRAND_HALL_R2_WRITER_PARENT_SECRET_ACCESS_KEY: z.never().optional(),
+  VENVIEWER_GRAND_HALL_REVIEWED_GIT_SHA: z.never().optional(),
+  VENVIEWER_PLATFORM_ADMIN_BOOTSTRAP_TARGET_ID: z.never().optional(),
+  VENVIEWER_PLATFORM_ADMIN_BOOTSTRAP_EXPECTED_DATABASE_HOST: z.never().optional(),
+  // Railway-provided deployment identity. These remain mandatory and exact
+  // for the dedicated Grand Hall staging service, including intake-disabled QA.
+  RAILWAY_PROJECT_NAME: z.string().min(1).optional(),
+  RAILWAY_ENVIRONMENT_NAME: z.string().min(1).optional(),
+  RAILWAY_SERVICE_NAME: z.string().min(1).optional(),
+  RAILWAY_PUBLIC_DOMAIN: z.string().min(1).optional(),
+  RAILWAY_GIT_BRANCH: z.string().min(1).optional(),
+  VENVIEWER_STAGING_EXPECTED_DATABASE_HOST: z.string().min(1).optional(),
   // Docker-stamped running-artifact identity. Development may omit/use `dev`,
   // but intake-enabled deployments must provide the exact reviewed commit.
   GIT_SHA: z.string().min(1).optional(),
   // Reconstruction Foundry — candidates MUST remain in a private bucket;
   // verified releases are copied to a distinct, immutable public bucket.
-  FOUNDRY_R2_ACCOUNT_ID: z.string().min(1).optional(),
+  FOUNDRY_R2_ACCOUNT_ID: CloudflareR2AccountIdSchema.optional(),
   FOUNDRY_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
   FOUNDRY_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   FOUNDRY_R2_CANDIDATE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/u).optional(),
@@ -210,11 +248,28 @@ const EnvSchema = z.object({
   ];
   const runtimeProfileIntakeSet = runtimeProfileIntakeFields
     .filter((field) => field !== undefined).length;
+  const hasGrandHallStagingSignal =
+    env.VENVIEWER_DEPLOYMENT_TARGET_ID !== undefined ||
+    env.RUNTIME_PROFILE_INTAKE_TARGET_ID !== undefined ||
+    env.RAILWAY_PROJECT_NAME === GRAND_HALL_STAGING_TARGET_ID ||
+    env.RAILWAY_ENVIRONMENT_NAME === GRAND_HALL_STAGING_TARGET_ID ||
+    env.RAILWAY_SERVICE_NAME === GRAND_HALL_STAGING_TARGET_ID ||
+    env.RAILWAY_GIT_BRANCH === GRAND_HALL_STAGING_GIT_BRANCH;
   if (runtimeProfileIntakeSet > 0 && runtimeProfileIntakeSet < runtimeProfileIntakeFields.length) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["RUNTIME_PROFILE_INTAKE_TARGET_ID"],
       message: "Runtime-profile intake configuration is incomplete — set target ID, deployed Git SHA, and all three temporary intake R2 credential fields together or none",
+    });
+  }
+  if (
+    env.RUNTIME_PROFILE_INTAKE_ENABLED === "false" &&
+    runtimeProfileIntakeSet !== 0
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["RUNTIME_PROFILE_INTAKE_ENABLED"],
+      message: "Disabled runtime-profile intake requires removal of the target, deployed Git SHA, and all temporary writer credentials",
     });
   }
   if (
@@ -255,6 +310,162 @@ const EnvSchema = z.object({
       path: ["RUNTIME_PROFILE_INTAKE_R2_ACCESS_KEY_ID"],
       message: "Runtime-profile intake must use a distinct put-only access key; the serving access key remains read-only",
     });
+  }
+  if (hasGrandHallStagingSignal) {
+    let publicApiOrigin: URL | null = null;
+    try {
+      publicApiOrigin = env.PUBLIC_API_ORIGIN === undefined
+        ? null
+        : new URL(env.PUBLIC_API_ORIGIN);
+    } catch {
+      publicApiOrigin = null;
+    }
+    if (
+      publicApiOrigin === null ||
+      publicApiOrigin.protocol !== "https:" ||
+      publicApiOrigin.username !== "" ||
+      publicApiOrigin.password !== "" ||
+      publicApiOrigin.pathname !== "/" ||
+      publicApiOrigin.search !== "" ||
+      publicApiOrigin.hash !== "" ||
+      publicApiOrigin.port !== "" ||
+      env.PUBLIC_API_ORIGIN !== publicApiOrigin.origin ||
+      publicApiOrigin.hostname === "up.railway.app" ||
+      !publicApiOrigin.hostname.endsWith(".up.railway.app")
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["PUBLIC_API_ORIGIN"],
+        message: "Grand Hall staging is restricted to its dedicated clean Railway staging origin",
+      });
+    }
+    if (env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET !== GRAND_HALL_STAGING_PRIVATE_BUCKET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["RUNTIME_PROFILE_R2_PRIVATE_BUCKET"],
+        message: `Grand Hall staging requires the exact private staging bucket ${GRAND_HALL_STAGING_PRIVATE_BUCKET}`,
+      });
+    }
+    const exactRailwayNames = [
+      env.RAILWAY_PROJECT_NAME,
+      env.RAILWAY_ENVIRONMENT_NAME,
+      env.RAILWAY_SERVICE_NAME,
+    ];
+    if (exactRailwayNames.some((value) => value !== GRAND_HALL_STAGING_TARGET_ID)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["RAILWAY_ENVIRONMENT_NAME"],
+        message: `Grand Hall staging requires Railway-provided project, environment, and service names to equal ${GRAND_HALL_STAGING_TARGET_ID}`,
+      });
+    }
+    if (env.RAILWAY_GIT_BRANCH !== GRAND_HALL_STAGING_GIT_BRANCH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["RAILWAY_GIT_BRANCH"],
+        message: `Grand Hall staging requires Railway's Git branch to equal ${GRAND_HALL_STAGING_GIT_BRANCH}`,
+      });
+    }
+    if (
+      publicApiOrigin !== null &&
+      env.RAILWAY_PUBLIC_DOMAIN !== publicApiOrigin.hostname
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["RAILWAY_PUBLIC_DOMAIN"],
+        message: "Grand Hall staging requires the Railway-provided public domain to match PUBLIC_API_ORIGIN",
+      });
+    }
+    const expectedDatabaseHost = env.VENVIEWER_STAGING_EXPECTED_DATABASE_HOST;
+    let databaseUrl: URL | null = null;
+    try {
+      databaseUrl = new URL(env.DATABASE_URL);
+    } catch {
+      databaseUrl = null;
+    }
+    const databaseQueryKeys = databaseUrl === null
+      ? []
+      : Array.from(new Set(databaseUrl.searchParams.keys()));
+    if (
+      expectedDatabaseHost === undefined ||
+      expectedDatabaseHost.trim() !== expectedDatabaseHost ||
+      expectedDatabaseHost !== expectedDatabaseHost.toLowerCase() ||
+      !/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.neon\.tech$/u.test(expectedDatabaseHost) ||
+      !expectedDatabaseHost.includes("-pooler.") ||
+      databaseUrl === null ||
+      (databaseUrl.protocol !== "postgres:" && databaseUrl.protocol !== "postgresql:") ||
+      databaseUrl.hostname !== expectedDatabaseHost ||
+      (databaseUrl.port !== "" && databaseUrl.port !== "5432") ||
+      databaseUrl.username !== GRAND_HALL_STAGING_DATABASE_ROLE ||
+      databaseUrl.password.length === 0 ||
+      databaseUrl.pathname !== `/${GRAND_HALL_STAGING_DATABASE_NAME}` ||
+      databaseUrl.hash !== "" ||
+      databaseQueryKeys.some((key) => key !== "sslmode" && key !== "channel_binding") ||
+      databaseUrl.searchParams.getAll("sslmode").length !== 1 ||
+      databaseUrl.searchParams.get("sslmode") !== "require" ||
+      databaseUrl.searchParams.getAll("channel_binding").length > 1 ||
+      (
+        databaseUrl.searchParams.has("channel_binding") &&
+        databaseUrl.searchParams.get("channel_binding") !== "require"
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DATABASE_URL"],
+        message: `Grand Hall staging requires the code-pinned Neon role ${GRAND_HALL_STAGING_DATABASE_ROLE}, database ${GRAND_HALL_STAGING_DATABASE_NAME}, exact recorded pooled host, and strict TLS parameters`,
+      });
+    }
+    let stagingWebOrigin: URL | null = null;
+    try {
+      stagingWebOrigin = env.FRONTEND_URL === undefined
+        ? null
+        : new URL(env.FRONTEND_URL);
+    } catch {
+      stagingWebOrigin = null;
+    }
+    if (
+      stagingWebOrigin === null ||
+      stagingWebOrigin.protocol !== "https:" ||
+      stagingWebOrigin.port !== "" ||
+      stagingWebOrigin.pathname !== "/" ||
+      stagingWebOrigin.search !== "" ||
+      stagingWebOrigin.hash !== "" ||
+      stagingWebOrigin.origin !== env.FRONTEND_URL ||
+      env.VENVIEWER_STAGING_EXPECTED_WEB_ORIGIN !== stagingWebOrigin.origin ||
+      stagingWebOrigin.hostname === "vercel.app" ||
+      !stagingWebOrigin.hostname.endsWith(".vercel.app") ||
+      env.CORS_ORIGINS !== env.FRONTEND_URL
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["FRONTEND_URL"],
+        message: "Grand Hall staging requires one separately recorded exact clean Vercel Preview origin for FRONTEND_URL and CORS_ORIGINS",
+      });
+    }
+    if (
+      env.CLERK_SECRET_KEY?.startsWith("sk_test_") !== true ||
+      env.CLERK_WEBHOOK_SECRET?.startsWith("whsec_") !== true
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CLERK_SECRET_KEY"],
+        message: "Grand Hall staging requires the isolated Clerk staging test secret and webhook secret",
+      });
+    }
+    const isVitestStagingFixture =
+      env.NODE_ENV === "test" && process.env["VITEST"] !== undefined;
+    if (
+      (env.NODE_ENV !== "production" && !isVitestStagingFixture) ||
+      env.VENVIEWER_DEPLOYMENT_TARGET_ID !== GRAND_HALL_STAGING_TARGET_ID ||
+      env.RUNTIME_PROFILE_INTAKE_ENABLED === undefined ||
+      env.VENVIEWER_STAGING_REVIEWED_GIT_SHA === undefined ||
+      env.GIT_SHA !== env.VENVIEWER_STAGING_REVIEWED_GIT_SHA
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["VENVIEWER_DEPLOYMENT_TARGET_ID"],
+        message: `Grand Hall staging requires NODE_ENV=production, persistent target ${GRAND_HALL_STAGING_TARGET_ID}, an explicit intake enabled/disabled state, and Docker-stamped GIT_SHA equal to VENVIEWER_STAGING_REVIEWED_GIT_SHA`,
+      });
+    }
   }
 
   if (
@@ -385,11 +596,52 @@ const EnvSchema = z.object({
 
 export type Env = z.infer<typeof EnvSchema>;
 
+const GRAND_HALL_STAGING_FORBIDDEN_TELEMETRY_FIELDS = [
+  "SENTRY_DSN",
+  "SENTRY_ENVIRONMENT",
+  "SENTRY_TRACES_SAMPLE_RATE",
+  "SENTRY_AUTH_TOKEN",
+  "SENTRY_ORG",
+  "SENTRY_PROJECT",
+  "SENTRY_RELEASE",
+  "POSTHOG_KEY",
+  "POSTHOG_HOST",
+] as const;
+
+function rawEnvHasOwnField(
+  raw: Readonly<Record<string, string | undefined>>,
+  field: string,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(raw, field);
+}
+
+function rawEnvSignalsGrandHallStaging(
+  raw: Readonly<Record<string, string | undefined>>,
+): boolean {
+  return (
+    rawEnvHasOwnField(raw, "VENVIEWER_DEPLOYMENT_TARGET_ID") ||
+    rawEnvHasOwnField(raw, "RUNTIME_PROFILE_INTAKE_TARGET_ID") ||
+    raw["RAILWAY_PROJECT_NAME"] === GRAND_HALL_STAGING_TARGET_ID ||
+    raw["RAILWAY_ENVIRONMENT_NAME"] === GRAND_HALL_STAGING_TARGET_ID ||
+    raw["RAILWAY_SERVICE_NAME"] === GRAND_HALL_STAGING_TARGET_ID ||
+    raw["RAILWAY_GIT_BRANCH"] === GRAND_HALL_STAGING_GIT_BRANCH
+  );
+}
+
 /**
  * Validates environment variables and returns a typed object.
  * Throws with a descriptive error if any required variable is missing.
  */
 export function validateEnv(raw: Record<string, string | undefined> = process.env): Env {
+  if (rawEnvSignalsGrandHallStaging(raw)) {
+    const inheritedTelemetryField = GRAND_HALL_STAGING_FORBIDDEN_TELEMETRY_FIELDS
+      .find((field) => rawEnvHasOwnField(raw, field));
+    if (inheritedTelemetryField !== undefined) {
+      throw new Error(
+        `Environment validation failed:\n  ${inheritedTelemetryField}: Grand Hall staging telemetry variables must be absent, including empty values`,
+      );
+    }
+  }
   const result = EnvSchema.safeParse(raw);
   if (!result.success) {
     const errors = result.error.issues
