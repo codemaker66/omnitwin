@@ -1,0 +1,1472 @@
+{
+  "schemaVersion": "omnitwin.foundry.grand-hall-room-membership.v1",
+  "venueSlug": "trades-hall",
+  "roomSlug": "grand-hall",
+  "createdAt": "2026-08-25T15:40:48.129Z",
+  "createdBy": "codex-source-audit",
+  "authority": "none",
+  "reviewState": "agent_visual_audited_human_pending",
+  "readMode": "read_only",
+  "sourceMutationPermitted": false,
+  "sourceBindings": {
+    "e57": {
+      "sourceLocator": "E57_SOURCE_ROOT/cloud_0.e57",
+      "sha256": "sha256:975039d11fc04ca681f038e499f358124bbcab178ad5ce6324fa912212729cdd",
+      "byteLength": 20518437888,
+      "rootGuid": "424ff41f6e5d41969c635fcd61be9b3f",
+      "scanCount": 149,
+      "embeddedPinholeImageCount": 894,
+      "scope": "whole_building_not_room_isolated"
+    },
+    "matterpak": {
+      "objSourceLocator": "MATTERPAK_SOURCE_ROOT/424ff41f6e5d41969c635fcd61be9b3f.obj",
+      "objSha256": "sha256:cf7247b5343fe719dc0f1aaf6b64c667d238c69133b71c44ccd9f5c67b5878c7",
+      "objByteLength": 38381816,
+      "mtlSourceLocator": "MATTERPAK_SOURCE_ROOT/424ff41f6e5d41969c635fcd61be9b3f.mtl",
+      "mtlSha256": "sha256:8e43085c90e40e2e76b7e221038c13bd65f17893a3d097eb12ffea5445f85d7a",
+      "mtlByteLength": 20879,
+      "rootGuid": "424ff41f6e5d41969c635fcd61be9b3f",
+      "role": "room_boundary_reference_only",
+      "scope": "whole_building_not_room_isolated",
+      "lineageRelationship": "common_vendor_lineage_not_independent_control"
+    },
+    "xgridsRawProject": {
+      "captureLogRef": "state/capture_log.json",
+      "captureLogSlug": "grand-hall",
+      "captureLogCapturedAt": "2026-05-31T10:18:37",
+      "captureLogSizeMeaning": "xbin_only_not_project_total",
+      "projectLocator": "XGRIDS_CAPTURE_LOG_ROOT",
+      "observedProjectFileCount": 12,
+      "observedProjectDirectoryCount": 4,
+      "observedProjectByteLength": 41296996984,
+      "projectReceiptState": "required_not_generated",
+      "roomMembershipState": "unclassified_pending_lcc_point_cloud_preview",
+      "trainingEligible": false,
+      "runtimeEligible": false,
+      "exactRuntimeSubstitutionPermitted": false,
+      "creatorDataState": "not_exported",
+      "xbin": {
+        "relativePath": "2026-05-31-101837.xbin",
+        "sha256": "sha256:42aac50bea3e4fb526536101d140af379c0c0cb87094e3a25379e6cf617bbfe0",
+        "byteLength": 41095196672,
+        "containerSignature": "XBAG"
+      },
+      "poses": {
+        "relativePath": "project_data/poses.csv",
+        "sha256": "sha256:b86bc45d15b8b5a84d61160afe3e16e7659e195557a2b8c6567039bb74d83127",
+        "byteLength": 3659287,
+        "rowCount": 42850,
+        "durationSeconds": 4285.622582
+      }
+    },
+    "panoramaAuditSet": {
+      "sourceLocator": "MATTERPORT_PANORAMA_ROOT",
+      "sourceFileCount": 148,
+      "auditedFileCount": 50,
+      "auditedByteLength": 349099744,
+      "provisionalMaskAuthoringCandidateCount": 48,
+      "wholeFrameExcludedCount": 2,
+      "widthPx": 8192,
+      "heightPx": 4096,
+      "projection": "equirectangular",
+      "poseState": "absent_from_export",
+      "candidateSequenceHypothesis": "candidate_sweep_number_equals_e57_scan_index_plus_one",
+      "lineageState": "historical_correspondence_not_byte_lineage",
+      "crosswalkEvidence": {
+        "schemaVersion": "omnitwin.foundry.grand-hall-panorama-crosswalk-evidence.v1",
+        "createdAt": "2026-08-25T16:01:19.230Z",
+        "createdBy": "codex-source-audit",
+        "authority": "diagnostic_only",
+        "inputScope": "exact_bound_preview_and_panorama_files_only",
+        "method": {
+          "implementationId": "codex-normalized-cyclic-correlation-v1",
+          "pythonVersion": "3.13.6",
+          "pillowVersion": "12.0.0",
+          "numpyVersion": "2.4.2",
+          "grayscaleMode": "Pillow-L",
+          "resizedWidthPx": 128,
+          "resizedHeightPx": 64,
+          "resizeFilter": "LANCZOS",
+          "numericType": "float64",
+          "normalization": "per_image_zero_mean_population_standard_deviation",
+          "cyclicHorizontalShiftCount": 128,
+          "score": "mean_normalized_pixel_product",
+          "runnerPool": "scan_000_through_scan_049_preview_evidence"
+        },
+        "pairResults": [
+          {
+            "scanIndex": 0,
+            "candidatePanoramaSweepNumber": 1,
+            "previewSha256": "sha256:4a066187b1cfe5f6503e985507ceb336ed0e1c8d7e38bac9ff0166d667bcd44b",
+            "candidatePanoramaSha256": "sha256:0543e2ce83bbbb5b8c4a8c689a49391092cc6d856124f8ac095d33b09c1db814",
+            "candidateMatchRank": 2,
+            "candidateMatchScore": 0.549338157184,
+            "bestCyclicShiftColumns": 114,
+            "runnerUpScanIndex": 17,
+            "runnerUpScore": 0.57282459298,
+            "candidateMinusRunnerUpScore": -0.023486435796,
+            "agentVisualDisposition": "candidate_pair_visually_consistent",
+            "humanConfirmationRecorded": false,
+            "e57ByteLineageEstablished": false
+          },
+          {
+            "scanIndex": 17,
+            "candidatePanoramaSweepNumber": 18,
+            "previewSha256": "sha256:6214a070fd78cd1ce9f7d609f6b8362ebc19855390c5a1cda8a6a93ac0d01ba9",
+            "candidatePanoramaSha256": "sha256:55b0b7f00c4eda9eb9290236ffb20a82790b073207d5db967f49dd3bcfee45d0",
+            "candidateMatchRank": 1,
+            "candidateMatchScore": 0.737353724269,
+            "bestCyclicShiftColumns": 1,
+            "runnerUpScanIndex": 0,
+            "runnerUpScore": 0.593010987842,
+            "candidateMinusRunnerUpScore": 0.144342736427,
+            "agentVisualDisposition": "candidate_pair_visually_consistent",
+            "humanConfirmationRecorded": false,
+            "e57ByteLineageEstablished": false
+          },
+          {
+            "scanIndex": 18,
+            "candidatePanoramaSweepNumber": 19,
+            "previewSha256": "sha256:3fb6f61545887d05faa9e1d4dacab37d202b53a2c7cfa47b29de6c2823caab55",
+            "candidatePanoramaSha256": "sha256:5abf5ab9e8b3a26d5621c0c3e06462886e573fd8f40bf68e213dec41812b0f57",
+            "candidateMatchRank": 1,
+            "candidateMatchScore": 0.92628683284,
+            "bestCyclicShiftColumns": 115,
+            "runnerUpScanIndex": 49,
+            "runnerUpScore": 0.515050144388,
+            "candidateMinusRunnerUpScore": 0.411236688452,
+            "agentVisualDisposition": "candidate_pair_visually_consistent",
+            "humanConfirmationRecorded": false,
+            "e57ByteLineageEstablished": false
+          },
+          {
+            "scanIndex": 47,
+            "candidatePanoramaSweepNumber": 48,
+            "previewSha256": "sha256:5ba2b68df6488ca143e1b794df1c2ddc652c8cb6d399dfca9ae17cc163502e43",
+            "candidatePanoramaSha256": "sha256:ab11ad1641301eb022ebde0f5fba7c35d60cbd46670c653e4106051236d12742",
+            "candidateMatchRank": 1,
+            "candidateMatchScore": 0.771665555079,
+            "bestCyclicShiftColumns": 62,
+            "runnerUpScanIndex": 46,
+            "runnerUpScore": 0.637515636246,
+            "candidateMinusRunnerUpScore": 0.134149918833,
+            "agentVisualDisposition": "candidate_pair_visually_consistent",
+            "humanConfirmationRecorded": false,
+            "e57ByteLineageEstablished": false
+          },
+          {
+            "scanIndex": 48,
+            "candidatePanoramaSweepNumber": 49,
+            "previewSha256": "sha256:12a42e361010bf7f12a3b27aa2aa26960383feda5ed9a7586cf8d309b721ca7a",
+            "candidatePanoramaSha256": "sha256:9b56c52c567f24a46cd28e5423236ec45f097b0d334b58440bebcd5c105f6859",
+            "candidateMatchRank": 1,
+            "candidateMatchScore": 0.763364762054,
+            "bestCyclicShiftColumns": 32,
+            "runnerUpScanIndex": 0,
+            "runnerUpScore": 0.361578070825,
+            "candidateMinusRunnerUpScore": 0.401786691229,
+            "agentVisualDisposition": "candidate_pair_visually_consistent",
+            "humanConfirmationRecorded": false,
+            "e57ByteLineageEstablished": false
+          },
+          {
+            "scanIndex": 49,
+            "candidatePanoramaSweepNumber": 50,
+            "previewSha256": "sha256:6edaa39bf49e7f77f9dcf02f87facd30b599ab6834fc8f59353ad8432aa17c83",
+            "candidatePanoramaSha256": "sha256:16f47e73aafed50c5d055b627443979717318c1ef4d2e02465bbe40821917246",
+            "candidateMatchRank": 1,
+            "candidateMatchScore": 0.536273536587,
+            "bestCyclicShiftColumns": 37,
+            "runnerUpScanIndex": 18,
+            "runnerUpScore": 0.518530080291,
+            "candidateMinusRunnerUpScore": 0.017743456296,
+            "agentVisualDisposition": "candidate_pair_visually_consistent",
+            "humanConfirmationRecorded": false,
+            "e57ByteLineageEstablished": false
+          }
+        ],
+        "evidenceSha256": "sha256:aecf6168948d66dbde4d6e302c682a72cef323106fb3eaf52e20587c9844ca7f"
+      }
+    },
+    "previewEvidenceSet": {
+      "sourceLocator": "E57_PREVIEW_EVIDENCE_ROOT",
+      "fileCount": 50,
+      "byteLength": 1589997,
+      "derivationState": "historical_unverified",
+      "authority": "diagnostic_only"
+    },
+    "historicalPilotManifest": {
+      "artifactRef": "docs/operations/grand-hall-pilot-ingest-manifest-2026-07-19.json",
+      "canonicalSha256": "sha256:63516c0b1c9583086108879659b771809c5bea4272c175c9dbb809a6c66bfd89",
+      "fileSha256": "sha256:af47826e91d9cbbac0730019d3c2349ec5534fe4daafe9ac1975ebea4492a4c4",
+      "byteLength": 638899,
+      "assetCount": 310,
+      "preservation": "immutable_do_not_rewrite",
+      "relationship": "successor_evidence_does_not_modify_t507",
+      "historicalCandidateScope": "authority_none_diagnostic_not_room_membership"
+    }
+  },
+  "scopeRules": {
+    "visualLocationInferenceOnly": true,
+    "geometricCameraCentreMembershipEstablished": false,
+    "roomBoundaryArtifactState": "required_not_authored",
+    "panoramaMaskArtifactRequirement": {
+      "state": "required_not_authored",
+      "appliesTo": "non_excluded_candidate_panoramas_only",
+      "coordinateSpace": "original_8192x4096_equirectangular_pixel_grid",
+      "maskPolarity": "stored_value_255_means_excluded",
+      "horizontalSeamRule": "wraps_between_x_8191_and_x_0",
+      "verticalRule": "clamped_y_0_through_y_4095",
+      "encoding": "png_grayscale8_binary_v1",
+      "mediaType": "image/png",
+      "widthPx": 8192,
+      "heightPx": 4096,
+      "sampleLayout": "single_channel_grayscale_8bit",
+      "permittedStoredValues": [
+        0,
+        255
+      ],
+      "includedValue": 0,
+      "excludedValue": 255,
+      "alphaChannelPermitted": false,
+      "colorProfilePermitted": false,
+      "embeddedOrientationPermitted": false,
+      "pixelOrigin": "top_left_x_increases_right_y_increases_down",
+      "resamplingPermitted": false,
+      "unionSemantics": "pixel_excluded_if_any_reason_mask_stored_value_is_255",
+      "allowedReasonCodes": [
+        "outside_room_through_portal",
+        "nadir_capture_rig",
+        "nadir_blur_or_stitch_cap",
+        "zenith_blur_or_stitch_cap",
+        "operator_or_moving_person",
+        "stitching_seam"
+      ]
+    },
+    "pointMaskArtifactState": "required_not_authored",
+    "numericScanSelectionSufficient": false,
+    "axisAlignedCropSufficient": false,
+    "generatedFillPermitted": false,
+    "proceduralPixelReplacementPermitted": false,
+    "synthesizedPixelReplacementPermitted": false,
+    "panoStageNadirCrownPermitted": false,
+    "maskedOrUnknownPixelDisposition": "remain_transparent_or_unknown_never_filled",
+    "neighbouringRoomPixelsPermitted": false,
+    "facadeAssetsPermitted": false,
+    "trainingAuthorized": false,
+    "runtimeAuthorized": false,
+    "structuralAuthorityGranted": false,
+    "collisionAuthorityGranted": false,
+    "exportAuthorityGranted": false,
+    "publicEvidenceAuthorized": false
+  },
+  "scanRecords": [
+    {
+      "scanIndex": 0,
+      "candidatePanoramaSweepNumber": 1,
+      "visualLocationInference": "visually_mixed_portal_threshold",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_spans_portal_or_threshold",
+      "allowedUse": "portal_boundary_and_mask_authoring_evidence_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_000_preview.jpg",
+        "sha256": "sha256:4a066187b1cfe5f6503e985507ceb336ed0e1c8d7e38bac9ff0166d667bcd44b",
+        "byteLength": 30836
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_001jpg.jpg",
+        "sha256": "sha256:0543e2ce83bbbb5b8c4a8c689a49391092cc6d856124f8ac095d33b09c1db814",
+        "byteLength": 6419919
+      }
+    },
+    {
+      "scanIndex": 1,
+      "candidatePanoramaSweepNumber": 2,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_001_preview.jpg",
+        "sha256": "sha256:1e85131f986f49349144e25e74fff670614e527b7542314997c47f4c67d2e82d",
+        "byteLength": 32191
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_002jpg.jpg",
+        "sha256": "sha256:4cd7a859326224c92d8f7f09a2b743b9df1c52686828a44b68d15157fd19b3f9",
+        "byteLength": 7167306
+      }
+    },
+    {
+      "scanIndex": 2,
+      "candidatePanoramaSweepNumber": 3,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_002_preview.jpg",
+        "sha256": "sha256:a54a8bc45747fe9fb320a73b867a9f74cd277e6ea9430e61e1155b42a483c503",
+        "byteLength": 32276
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_003jpg.jpg",
+        "sha256": "sha256:efb5b0ad338eb6f90cd28f8a9ef2686770cc925326a6e849fb3d8c5efcdc1013",
+        "byteLength": 7273335
+      }
+    },
+    {
+      "scanIndex": 3,
+      "candidatePanoramaSweepNumber": 4,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_003_preview.jpg",
+        "sha256": "sha256:9b4abbb6a77903d24739270cb92c4bc9226e08348084437208b54dab50b99d7e",
+        "byteLength": 32755
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_004jpg.jpg",
+        "sha256": "sha256:000cb3ed8662ce46cf6fbbce0f60e7f6473733f40bb1e914eb7e1d341163d796",
+        "byteLength": 7230128
+      }
+    },
+    {
+      "scanIndex": 4,
+      "candidatePanoramaSweepNumber": 5,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_004_preview.jpg",
+        "sha256": "sha256:c8e5a64309ac4036279d703ca53293971a1a54e467c3ce777d303f8441fb7b32",
+        "byteLength": 33465
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_005jpg.jpg",
+        "sha256": "sha256:c05866d4281d7e9aea8b5e77ad597539bd5a974996e6f647e7e0d244e8cbeadc",
+        "byteLength": 7321149
+      }
+    },
+    {
+      "scanIndex": 5,
+      "candidatePanoramaSweepNumber": 6,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_005_preview.jpg",
+        "sha256": "sha256:83af8dd52600fe89c282abfd35611a15e9e05855e47e0413b1301fcd7b4db867",
+        "byteLength": 31758
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_006jpg.jpg",
+        "sha256": "sha256:0b44e49bfc722d7ba28b2ff8e49b78ae41c624ce1bb9c46eb39a3fe92f8b7ef4",
+        "byteLength": 7108761
+      }
+    },
+    {
+      "scanIndex": 6,
+      "candidatePanoramaSweepNumber": 7,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_006_preview.jpg",
+        "sha256": "sha256:4cf59c7cc0afd00f225ce28acdf64540c6c001cf01fddefdbe1caa1a39a055c9",
+        "byteLength": 31866
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_007jpg.jpg",
+        "sha256": "sha256:f8422af40e93c2decb3334fa53ece5e23e1fc906d22653266eda8349f183e8d0",
+        "byteLength": 7166074
+      }
+    },
+    {
+      "scanIndex": 7,
+      "candidatePanoramaSweepNumber": 8,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_007_preview.jpg",
+        "sha256": "sha256:c95889544a46c14f2019ba3d37e1e0eb599c7c8280684ef116fc2e54061239fc",
+        "byteLength": 31523
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_008jpg.jpg",
+        "sha256": "sha256:0b01f4119bfc295def830dc52123c4e513e2fa1401e1222214501789e3b88ddd",
+        "byteLength": 7137908
+      }
+    },
+    {
+      "scanIndex": 8,
+      "candidatePanoramaSweepNumber": 9,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_008_preview.jpg",
+        "sha256": "sha256:ccffd85b0eee59e1ac2df3bf7b7c6c974dd741508954347249325769d3c71249",
+        "byteLength": 31665
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_009jpg.jpg",
+        "sha256": "sha256:a73fb75086f37b6c2ad39d5ac987437c768fd3982d0e1c22a7e5e049d8d88e61",
+        "byteLength": 7284259
+      }
+    },
+    {
+      "scanIndex": 9,
+      "candidatePanoramaSweepNumber": 10,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_009_preview.jpg",
+        "sha256": "sha256:023eb69ef5cbef6eeff2e9d73212db1fc7263f015e5663b59dafa15a591e9189",
+        "byteLength": 32457
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_010jpg.jpg",
+        "sha256": "sha256:019783308b63906d3b77b4c65fc81c5af509224db8c26304f19cd067e2f7f7a4",
+        "byteLength": 7497496
+      }
+    },
+    {
+      "scanIndex": 10,
+      "candidatePanoramaSweepNumber": 11,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_010_preview.jpg",
+        "sha256": "sha256:514e6001c3e57de2df8368e6b56199ebfe4bee43b4e12ebc1c7160098ca992cd",
+        "byteLength": 32124
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_011jpg.jpg",
+        "sha256": "sha256:623f0fc42961c42f38124bea148d8baea515352e490b1b4a3a79887267a9d194",
+        "byteLength": 7257004
+      }
+    },
+    {
+      "scanIndex": 11,
+      "candidatePanoramaSweepNumber": 12,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_011_preview.jpg",
+        "sha256": "sha256:af0e0d9de3f64ec183f16ad281a71b56bab3fdf3752db5f5e6a5ec68dfd29115",
+        "byteLength": 32105
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_012jpg.jpg",
+        "sha256": "sha256:86261016a1e7d64d78e8e40f25a3e6769f56f60789f44679acb0898a7cd6c30d",
+        "byteLength": 7094442
+      }
+    },
+    {
+      "scanIndex": 12,
+      "candidatePanoramaSweepNumber": 13,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_012_preview.jpg",
+        "sha256": "sha256:197898a9e55ee3304acc260d0bde9ec52e84b0fd28c6844fb20893d149bdc9e8",
+        "byteLength": 32259
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_013jpg.jpg",
+        "sha256": "sha256:0109353480a479c9403c4141e4b528d76471ef42920316b7f769cc3f27b7fb33",
+        "byteLength": 7185097
+      }
+    },
+    {
+      "scanIndex": 13,
+      "candidatePanoramaSweepNumber": 14,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_013_preview.jpg",
+        "sha256": "sha256:39b48a569d5eb697e8e144426e2ec753139624d662c16083dfd55a4f2f00d8ae",
+        "byteLength": 33271
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_014jpg.jpg",
+        "sha256": "sha256:b847ed87baef462d022dffafd27588a71f9e05dfd17fbe21a76bfcd018cb9d58",
+        "byteLength": 7046375
+      }
+    },
+    {
+      "scanIndex": 14,
+      "candidatePanoramaSweepNumber": 15,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_014_preview.jpg",
+        "sha256": "sha256:fabc27a092af5975dc6a1cd0786da7babe40f6589ed39b6033bf1abaedde4826",
+        "byteLength": 32061
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_015jpg.jpg",
+        "sha256": "sha256:ee0f91c31a0ea3c83682757b9924e1c8f57cac896999913880d864df7145c456",
+        "byteLength": 7026422
+      }
+    },
+    {
+      "scanIndex": 15,
+      "candidatePanoramaSweepNumber": 16,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_015_preview.jpg",
+        "sha256": "sha256:a2953fdd2ad8ce88787c584d25c60d2a4904582036dbf842f50e07d12339f94b",
+        "byteLength": 31764
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_016jpg.jpg",
+        "sha256": "sha256:62c90822137ef16da6f10b868f76953e4840c6f6f2089ba4d79646f7d9107a03",
+        "byteLength": 7155914
+      }
+    },
+    {
+      "scanIndex": 16,
+      "candidatePanoramaSweepNumber": 17,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_016_preview.jpg",
+        "sha256": "sha256:7f9f4092c9df0c55cf570987af8831e8a732ce8ba4e7acb9e89ffef2bb5f24c6",
+        "byteLength": 32690
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_017jpg.jpg",
+        "sha256": "sha256:63e97f44f5975d41182c01e0f390f93b5e93f13ba74c4f9753c844972d5b18d2",
+        "byteLength": 7210498
+      }
+    },
+    {
+      "scanIndex": 17,
+      "candidatePanoramaSweepNumber": 18,
+      "visualLocationInference": "visually_mixed_portal_threshold",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_spans_portal_or_threshold",
+      "allowedUse": "portal_boundary_and_mask_authoring_evidence_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_017_preview.jpg",
+        "sha256": "sha256:6214a070fd78cd1ce9f7d609f6b8362ebc19855390c5a1cda8a6a93ac0d01ba9",
+        "byteLength": 31925
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_018jpg.jpg",
+        "sha256": "sha256:55b0b7f00c4eda9eb9290236ffb20a82790b073207d5db967f49dd3bcfee45d0",
+        "byteLength": 6743540
+      }
+    },
+    {
+      "scanIndex": 18,
+      "candidatePanoramaSweepNumber": 19,
+      "visualLocationInference": "visually_consistent_adjacent_space",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_adjacent_space",
+      "allowedUse": "whole_frame_exclusion_and_boundary_evidence_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "not_applicable_whole_frame_excluded",
+      "wholeFrameExclusionReason": "outside_room_camera_view",
+      "previewEvidence": {
+        "relativePath": "scan_018_preview.jpg",
+        "sha256": "sha256:3fb6f61545887d05faa9e1d4dacab37d202b53a2c7cfa47b29de6c2823caab55",
+        "byteLength": 32517
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_019jpg.jpg",
+        "sha256": "sha256:5abf5ab9e8b3a26d5621c0c3e06462886e573fd8f40bf68e213dec41812b0f57",
+        "byteLength": 5479109
+      }
+    },
+    {
+      "scanIndex": 19,
+      "candidatePanoramaSweepNumber": 20,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_019_preview.jpg",
+        "sha256": "sha256:e8ee24d01f959c09532f397935dd2c37de510d65f1b85d4484ec2fd8f619893c",
+        "byteLength": 32657
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_020jpg.jpg",
+        "sha256": "sha256:249929896a872e81d6b906d0cb347cbad84fbead53c0af26c1e901b025633963",
+        "byteLength": 7204303
+      }
+    },
+    {
+      "scanIndex": 20,
+      "candidatePanoramaSweepNumber": 21,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_020_preview.jpg",
+        "sha256": "sha256:65e736c8d6ce3c01907195891a47ead90415edc73c175b423252b53513b7261b",
+        "byteLength": 31975
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_021jpg.jpg",
+        "sha256": "sha256:236a7ade5fc008bea2c97b57138117b494f922adc326bdb3f5ee25ecf54044f9",
+        "byteLength": 7179852
+      }
+    },
+    {
+      "scanIndex": 21,
+      "candidatePanoramaSweepNumber": 22,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_021_preview.jpg",
+        "sha256": "sha256:e9a03074e400b53c3c691aeb02c9796e8ce0cd13120942aa05fb76047910cc7e",
+        "byteLength": 32005
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_022jpg.jpg",
+        "sha256": "sha256:f9da015cbf821bb7e4ab0f8bfc1dcc74fa7e74f67bb6b33cf3f5dc7d80328f90",
+        "byteLength": 7087482
+      }
+    },
+    {
+      "scanIndex": 22,
+      "candidatePanoramaSweepNumber": 23,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_022_preview.jpg",
+        "sha256": "sha256:ac0374777bbe55abc6277caea91a301266f0abf8fae04c244b4586f5f6299200",
+        "byteLength": 33496
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_023jpg.jpg",
+        "sha256": "sha256:ffdc2fd3e7a87f237e6354dcc3cc966af98315e71f60efd4860f6f3b45e1e7ce",
+        "byteLength": 7291544
+      }
+    },
+    {
+      "scanIndex": 23,
+      "candidatePanoramaSweepNumber": 24,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_023_preview.jpg",
+        "sha256": "sha256:6e3cbc0b4861ed2acb25e9b1ef30ddee8a9b5fc65b5cdc3fcc5a91745701949e",
+        "byteLength": 31947
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_024jpg.jpg",
+        "sha256": "sha256:c84cddab64cba83b173dd4c690668e71a012fd978e6aac4b4692aea7f9a6fcbb",
+        "byteLength": 7115586
+      }
+    },
+    {
+      "scanIndex": 24,
+      "candidatePanoramaSweepNumber": 25,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_024_preview.jpg",
+        "sha256": "sha256:c1344f3356bb3e960d48a41626bbd88009336bd0e5176e942c9f3507b0f548a5",
+        "byteLength": 32058
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_025jpg.jpg",
+        "sha256": "sha256:b54a46c5e2c39497f5c876c01e95ffb24dffe3b53f9df6af3c5b35a9d8adebca",
+        "byteLength": 7163043
+      }
+    },
+    {
+      "scanIndex": 25,
+      "candidatePanoramaSweepNumber": 26,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_025_preview.jpg",
+        "sha256": "sha256:fb00302b91841bc275eb5e3fe94e2cd727938532b4725a28742f549e6441a19c",
+        "byteLength": 31366
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_026jpg.jpg",
+        "sha256": "sha256:d2d0d4cce03f6c6d0e37d33a413bb600c5f80ad1ae6354b2d3cc5d40b5f962e6",
+        "byteLength": 7230395
+      }
+    },
+    {
+      "scanIndex": 26,
+      "candidatePanoramaSweepNumber": 27,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_026_preview.jpg",
+        "sha256": "sha256:893ebc798cf03cbbdf336e7cc658cfb856ffbb6f2cf9b66a747e1a74081a503a",
+        "byteLength": 31189
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_027jpg.jpg",
+        "sha256": "sha256:89b9d9b3ecc9f3ab3888346d144420befdee7d7057a3d260a5632da0062042a8",
+        "byteLength": 7154478
+      }
+    },
+    {
+      "scanIndex": 27,
+      "candidatePanoramaSweepNumber": 28,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_027_preview.jpg",
+        "sha256": "sha256:8dfa8d2fb3d4d9de0f24e3362c6688f25fd15829ba7c321816cd9531e49c28b2",
+        "byteLength": 30795
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_028jpg.jpg",
+        "sha256": "sha256:252a3cd35c425a2f4624ed6f9b22500b158909752a76363fb03cc2d54109c0c5",
+        "byteLength": 7098762
+      }
+    },
+    {
+      "scanIndex": 28,
+      "candidatePanoramaSweepNumber": 29,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_028_preview.jpg",
+        "sha256": "sha256:2740ede2ad22d968a4a95477823088fc6e9ec04fa4b4125ea8f99d928e52c7ea",
+        "byteLength": 31033
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_029jpg.jpg",
+        "sha256": "sha256:1f244ac995a35a1ed970e872170428c0ba2eb00b657d5f4dd4ba7b9931dd7759",
+        "byteLength": 7243629
+      }
+    },
+    {
+      "scanIndex": 29,
+      "candidatePanoramaSweepNumber": 30,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_029_preview.jpg",
+        "sha256": "sha256:6d031320cda671a0e35c820d903020769287c5a9b53e33e1d6ad6f9c45cc8227",
+        "byteLength": 31684
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_030jpg.jpg",
+        "sha256": "sha256:f284668f3ab5ca9497a440c2bbdd77e378fc317e5eaaaf95995157d93e4ec324",
+        "byteLength": 7354976
+      }
+    },
+    {
+      "scanIndex": 30,
+      "candidatePanoramaSweepNumber": 31,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_030_preview.jpg",
+        "sha256": "sha256:a4558ffa7f8d6546f6dc4a56ae8718cc3c672d2e114df2ecf8a0154e7dd1deb1",
+        "byteLength": 31694
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_031jpg.jpg",
+        "sha256": "sha256:558ab617ebce19ab7c9b198be2a92d674ce4b8aab13a41dc9d8e4ba97481ee09",
+        "byteLength": 7078261
+      }
+    },
+    {
+      "scanIndex": 31,
+      "candidatePanoramaSweepNumber": 32,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_031_preview.jpg",
+        "sha256": "sha256:e6d10bbef538c686fdab35acfedccdfa6195b0fc78c391d21a513e2dad752205",
+        "byteLength": 31426
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_032jpg.jpg",
+        "sha256": "sha256:38ca1834e7ee476a178d2756216e09e7aa8d2ae95cb1a1a914a4c2d3ee2cda40",
+        "byteLength": 7106648
+      }
+    },
+    {
+      "scanIndex": 32,
+      "candidatePanoramaSweepNumber": 33,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_032_preview.jpg",
+        "sha256": "sha256:68125bd7dd00d8866d75806861a5080f66cdddcac1e9e220fa4f6d539ccecc22",
+        "byteLength": 32099
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_033jpg.jpg",
+        "sha256": "sha256:e82e85bea034b648fc18aee86b3410451132abf41121013faebf4eb60c3d6fa3",
+        "byteLength": 7171558
+      }
+    },
+    {
+      "scanIndex": 33,
+      "candidatePanoramaSweepNumber": 34,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_033_preview.jpg",
+        "sha256": "sha256:f800b56281c912f58fa60b74f1832490b2a75506933157ec5f18795d6e5d93e1",
+        "byteLength": 32662
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_034jpg.jpg",
+        "sha256": "sha256:dc857fedea96b5e2e1acd9a8da97d96c5512dbfc31acb8c7f4db27fe27a7f3bb",
+        "byteLength": 7120936
+      }
+    },
+    {
+      "scanIndex": 34,
+      "candidatePanoramaSweepNumber": 35,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_034_preview.jpg",
+        "sha256": "sha256:9bfe98bd41edcb5a87a3cd461b79a22999917b0907941208c366e687dd7c6f40",
+        "byteLength": 31511
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_035jpg.jpg",
+        "sha256": "sha256:ea3ec8cf72ac5ac8d1765659cf4dc314ebf62ecb1e7b24bc481b20ec41fd080e",
+        "byteLength": 7280235
+      }
+    },
+    {
+      "scanIndex": 35,
+      "candidatePanoramaSweepNumber": 36,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_035_preview.jpg",
+        "sha256": "sha256:a6ffbcefa3588dd273b27ba7dadb60cc615d6d5390f33f204bdfb81252d5c0b5",
+        "byteLength": 31169
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_036jpg.jpg",
+        "sha256": "sha256:839714e1bc307bd29332ab1be144481fb3307fd7d771b01a85e26f82046ad056",
+        "byteLength": 7095982
+      }
+    },
+    {
+      "scanIndex": 36,
+      "candidatePanoramaSweepNumber": 37,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_036_preview.jpg",
+        "sha256": "sha256:b8c805352ecd38f4439d618dcd61832579312c8a91cd751ae68438faca9ab496",
+        "byteLength": 31098
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_037jpg.jpg",
+        "sha256": "sha256:c5572ae32bd1aac224f9db5bc643f7ced7259eff9b9916c6aedb845d6fafeed4",
+        "byteLength": 7109195
+      }
+    },
+    {
+      "scanIndex": 37,
+      "candidatePanoramaSweepNumber": 38,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_037_preview.jpg",
+        "sha256": "sha256:69f730220bb2f08dcf87cb9cb62b6316fb2289d20985211435179b6b11b2f8a6",
+        "byteLength": 31871
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_038jpg.jpg",
+        "sha256": "sha256:27fa2a4976cccccf9fb7fddb7455581fae41cc730d9f03aa9742a3cc80cdcc50",
+        "byteLength": 7068851
+      }
+    },
+    {
+      "scanIndex": 38,
+      "candidatePanoramaSweepNumber": 39,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_038_preview.jpg",
+        "sha256": "sha256:330334ca96d5a1037e48984b87c86d73994e1fe2ff3e07bf76bc3d575a1db648",
+        "byteLength": 31660
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_039jpg.jpg",
+        "sha256": "sha256:53adbd580abcef63c853993964f34204bc329bdb93b2130a4d2e29de5bab750f",
+        "byteLength": 6880385
+      }
+    },
+    {
+      "scanIndex": 39,
+      "candidatePanoramaSweepNumber": 40,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_039_preview.jpg",
+        "sha256": "sha256:950dbb899ad133a3fb5b359634eddedfd9e3fdf704f55980d1297e29467f8bcb",
+        "byteLength": 33708
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_040jpg.jpg",
+        "sha256": "sha256:f9a78354d6f701cc1e0c0c707551d2fb6f8db9d8f582041e886ed2d6d485252d",
+        "byteLength": 6674875
+      }
+    },
+    {
+      "scanIndex": 40,
+      "candidatePanoramaSweepNumber": 41,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_040_preview.jpg",
+        "sha256": "sha256:17a1d40c696721b010aef3030058b3ee3500fc63a3b466986e9fe069326021be",
+        "byteLength": 33173
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_041jpg.jpg",
+        "sha256": "sha256:d9d056e2453a223144514bdca224bbdfb7e76f4bd7130008a3d811afa67eb974",
+        "byteLength": 6691673
+      }
+    },
+    {
+      "scanIndex": 41,
+      "candidatePanoramaSweepNumber": 42,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_041_preview.jpg",
+        "sha256": "sha256:9d057df31deec244ba0c0175283bab255807c963e1bdcf4230ad43af95019065",
+        "byteLength": 31827
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_042jpg.jpg",
+        "sha256": "sha256:d17a7ef141b8237edd06962cfd91178345c52085384904452eb54282527e6013",
+        "byteLength": 6705297
+      }
+    },
+    {
+      "scanIndex": 42,
+      "candidatePanoramaSweepNumber": 43,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_042_preview.jpg",
+        "sha256": "sha256:504c373b2fde42c3912efcacffcc0847ad17aa30e294e42e0626f2891985249e",
+        "byteLength": 33126
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_043jpg.jpg",
+        "sha256": "sha256:c3fdd8cc7dbb1ae366b509885e3bcfc423650b4493d44f22e78b2402aff7efbf",
+        "byteLength": 6646981
+      }
+    },
+    {
+      "scanIndex": 43,
+      "candidatePanoramaSweepNumber": 44,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_043_preview.jpg",
+        "sha256": "sha256:01f0b67686816fea087c781b46c743ec459ec21a14f65ab83848d632af0aa628",
+        "byteLength": 30476
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_044jpg.jpg",
+        "sha256": "sha256:bbf7220d89d9726d561f98fb93d9ab0d44223007f49bb57b1de6c813b596e859",
+        "byteLength": 6641597
+      }
+    },
+    {
+      "scanIndex": 44,
+      "candidatePanoramaSweepNumber": 45,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_044_preview.jpg",
+        "sha256": "sha256:f70e619b7e8d78dcc407568a1b8117a79f60f9800c4f6866e853b4f50ed51c37",
+        "byteLength": 31131
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_045jpg.jpg",
+        "sha256": "sha256:e02d1eda50f9e6749f20130f001d0abfdc8e76d18c86dce2df2a540c7f485e44",
+        "byteLength": 6871996
+      }
+    },
+    {
+      "scanIndex": 45,
+      "candidatePanoramaSweepNumber": 46,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_045_preview.jpg",
+        "sha256": "sha256:32501d5ffde93d4d02cd76f0c0e6fb4a209fb3f175bf93179b7bf70b0bdd1e1b",
+        "byteLength": 30462
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_046jpg.jpg",
+        "sha256": "sha256:7112c76da5b5548780f5ecc47ac2f05259a506f6c70879dda85ac90a1e01a171",
+        "byteLength": 6920426
+      }
+    },
+    {
+      "scanIndex": 46,
+      "candidatePanoramaSweepNumber": 47,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "candidate_sequence_unverified",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_046_preview.jpg",
+        "sha256": "sha256:9a10f9175058f3a3211b71613749240fe6eca3bf39825106895c91e32243d529",
+        "byteLength": 30837
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_047jpg.jpg",
+        "sha256": "sha256:e12b452eb8367d7a9650f78b865d4b96320d67c1699b906e94de10619fde61c8",
+        "byteLength": 6799371
+      }
+    },
+    {
+      "scanIndex": 47,
+      "candidatePanoramaSweepNumber": 48,
+      "visualLocationInference": "visually_consistent_grand_hall_interior",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_grand_hall_interior",
+      "allowedUse": "mask_authoring_candidate_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_047_preview.jpg",
+        "sha256": "sha256:5ba2b68df6488ca143e1b794df1c2ddc652c8cb6d399dfca9ae17cc163502e43",
+        "byteLength": 31329
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_048jpg.jpg",
+        "sha256": "sha256:ab11ad1641301eb022ebde0f5fba7c35d60cbd46670c653e4106051236d12742",
+        "byteLength": 6950596
+      }
+    },
+    {
+      "scanIndex": 48,
+      "candidatePanoramaSweepNumber": 49,
+      "visualLocationInference": "visually_mixed_portal_threshold",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_spans_portal_or_threshold",
+      "allowedUse": "portal_boundary_and_mask_authoring_evidence_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "required_not_authored",
+      "wholeFrameExclusionReason": null,
+      "previewEvidence": {
+        "relativePath": "scan_048_preview.jpg",
+        "sha256": "sha256:12a42e361010bf7f12a3b27aa2aa26960383feda5ed9a7586cf8d309b721ca7a",
+        "byteLength": 26509
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_049jpg.jpg",
+        "sha256": "sha256:9b56c52c567f24a46cd28e5423236ec45f097b0d334b58440bebcd5c105f6859",
+        "byteLength": 5434582
+      }
+    },
+    {
+      "scanIndex": 49,
+      "candidatePanoramaSweepNumber": 50,
+      "visualLocationInference": "visually_consistent_adjacent_space",
+      "inferenceBasis": "agent_visual_inspection_of_digest_bound_historical_preview",
+      "inferenceConfidence": "provisional_human_review_required",
+      "rationaleCode": "view_visually_consistent_with_adjacent_space",
+      "allowedUse": "whole_frame_exclusion_and_boundary_evidence_only",
+      "roomBoundaryPoseTestState": "not_run_reviewed_boundary_absent",
+      "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
+      "fullFrameTrainingEligible": false,
+      "pixelMaskState": "not_applicable_whole_frame_excluded",
+      "wholeFrameExclusionReason": "outside_room_camera_view",
+      "previewEvidence": {
+        "relativePath": "scan_049_preview.jpg",
+        "sha256": "sha256:6edaa39bf49e7f77f9dcf02f87facd30b599ab6834fc8f59353ad8432aa17c83",
+        "byteLength": 30516
+      },
+      "candidatePanoramaEvidence": {
+        "relativePath": "sweep_050jpg.jpg",
+        "sha256": "sha256:16f47e73aafed50c5d055b627443979717318c1ef4d2e02465bbe40821917246",
+        "byteLength": 5921513
+      }
+    }
+  ],
+  "humanReview": {
+    "state": "pending",
+    "reviewer": null,
+    "reviewedAt": null,
+    "acceptedMembershipSha256": null
+  },
+  "membershipSha256": "sha256:e2822de20e28bbeeb7ca81c8aad96214852e39bdc206e3d378d37d80c2904c68"
+}

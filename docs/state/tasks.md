@@ -2,7 +2,7 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-08-24.
+Updated: 2026-08-25.
 
 ## Latest task notes
 
@@ -603,6 +603,7 @@ Updated: 2026-08-24.
 | T-547 | Grand Hall generated-repair and relighting bake-off. | not-started | 3 | 5-10 | T-546 | USER-2026-08-23, D-012 | Audit licences/weights, then compare approved Fixer, ArtiFixer3D+, Gaussian SR and relighting candidates with blind identity-preservation tests. All outputs remain `GENERATED_CINEMATIC` or traceable `ENHANCED_CAPTURED`, never collision/planning authority or a captured-master replacement. Coordinate with T-504 rather than duplicating its licence findings. |
 | T-548 | Grand Hall direct-from-master runtime distillery. | not-started | 5 | 10-20 | T-547 | USER-2026-08-23, D-008, D-013 | Produce hash-addressed Ultra, High, Standard, Mobile, Client-safe and Cinematic derivatives directly from the selected masters, with tier budgets, quality evidence, provenance, streaming admission and browser/device acceptance. Avoid serial lossy retranscoding. |
 | T-549 | Provider-neutral Grand Hall Foundry and signed room-package path. | not-started | 5 | 10-20 | T-548 | USER-2026-08-23, FOUNDRY-001, D-013 | Define maintainable reconstruction/enhancement provider contracts, canonical ingest, quality diagnosis, active-recapture hooks, optional XGRIDS recovery adapter where evidence makes it valuable, and signed multi-layer room packages. Vendor formats remain providers, never the Venviewer canonical schema. |
+| T-550 | Grand Hall visual room-scope successor evidence. | in-progress | 5 | 1-2 | T-541 | USER-2026-08-25, T-507, D-012, D-024 | Preserve the immutable T-507 pilot while recording separate, authority-free, digest-bound visual room-scope inference for E57 scans 000-049 and candidate panorama correspondence. This is not geometric camera-centre membership. Human review, a reviewed non-convex room boundary, and per-pixel/per-ray masks remain required before training, runtime, structural, collision, export, or public authority can be granted. |
 
 ## Status legend
 
@@ -669,6 +670,7 @@ Updated: 2026-08-24.
 - **USER-2026-08-22** — direct user instruction to use the supplied Grand Hall export set in the protected capture-only runtime and preserve exact room scope.
 - **USER-2026-08-23** — direct user continuation directive for the Grand Hall visual super-pipeline, explicit owner-confirmed rights, truth classes, RoomScene compositor, lineage diagnosis, and dependency-ordered programme.
 - **USER-2026-08-24** — direct user authorization for the isolated `trades-hall-grand-hall-staging` provider target and authenticated staging-only QA, with the controlling instruction to commit locally without pushing, deploying, provisioning, migrating, or running intake yet.
+- **USER-2026-08-25** — direct user supply of the raw Grand Hall XGRIDS project, Matterport panoramas, MatterPak OBJ, and full-building E57, with the standing instruction to use only source-accurate Grand Hall content and exclude neighbouring rooms, facade assets, invented architecture, generated fill, and capture artifacts.
 - **CGT-1** — first ChatGPT review (whole product).
 - **CGT-2** — second ChatGPT review (Genjutsu architecture).
 - **CGT-DR** — ChatGPT deep research Parts 1+2.

@@ -2515,6 +2515,7 @@ export * from "./event-architect-engine.js";
 export * from "./reconstruction-release.js";
 export * from "./reconstruction-review-evidence.js";
 export * from "./omnitwin-foundry.js";
+export * from "./omnitwin-foundry-grand-hall-room-membership.js";
 export * from "./omnitwin-foundry-derivative-rights.js";
 export * from "./omnitwin-foundry-derivative-rights-custody.js";
 export * from "./omnitwin-foundry-derivative-execution-v1.js";
