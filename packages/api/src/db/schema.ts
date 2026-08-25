@@ -109,6 +109,30 @@ export const users = pgTable("users", {
 });
 
 // ---------------------------------------------------------------------------
+// 3b. onboarding_audit_events
+//
+// Clerk can authenticate anyone with a valid session token, but Venviewer
+// must not create local planner users unless the person was pre-provisioned
+// by email or belongs to an explicitly approved domain. This audit table
+// records every first-link/create decision and every denied onboarding
+// attempt so operators can reconcile Clerk signups against local access.
+// ---------------------------------------------------------------------------
+
+export const onboardingAuditEvents = pgTable("onboarding_audit_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clerkId: text("clerk_id").notNull(),
+  email: varchar("email", { length: 255 }),
+  source: varchar("source", { length: 40 }).notNull(),
+  decision: varchar("decision", { length: 60 }).notNull(),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("onboarding_audit_clerk_idx").on(table.clerkId),
+  index("onboarding_audit_email_idx").on(table.email),
+  index("onboarding_audit_created_at_idx").on(table.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
 // 4. asset_definitions (global furniture catalogue — no venue_id)
 // ---------------------------------------------------------------------------
 
