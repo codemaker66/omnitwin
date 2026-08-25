@@ -31,6 +31,7 @@ import {
   setInertCutawayPlane,
   updateVerticalCutawayPlane,
 } from "./dollhouse-cutaway.js";
+import { applyDollhouseCaps, meshRootWorldMatrix } from "./dollhouse-peel.js";
 import { pruneDollhouseShell } from "./dollhouse-shell.js";
 
 // -----------------------------------------------------------------------------
@@ -124,12 +125,22 @@ interface DollhouseMeshProps {
  */
 function DollhouseMesh({ meshUrl, cutawayPlanes }: DollhouseMeshProps): ReactElement {
   const gltf = useGLTF(meshUrl, true, true, configureDollhouseLoader);
-  // The capture tore where it looked through glass; those shreds are what made
-  // the window bays read as broken from outside. Prune them off the cached
-  // scene once, before anything clones it — geometry is shared by reference, so
-  // the cutaway clone and every later mount inherit the repair. Idempotent.
+  // Two load-time repairs on the cached scene, once, before anything clones it —
+  // geometry is shared by reference, so the cutaway clone and every later mount
+  // inherit both. Each is flagged idempotent on the geometry.
+  //   1. Prune: the capture tore where it looked through glass; those shreds
+  //      made the window bays read as broken from outside.
+  //   2. Caps: split each chunk so overheads that used to backface-cull into
+  //      view-dependent holes (the dome's sweeping gold arc, the annex plates
+  //      over the storey void) draw DoubleSide instead, while the high flat
+  //      lids stay cullable so every room is still seen into from above. The
+  //      caps classify in the WORLD frame, which does not exist yet on the
+  //      cached scene — meshRootWorldMatrix() supplies the twin-basis group
+  //      transform the JSX below will mount it under. Order matters: the prune
+  //      rewrites the index the split then partitions.
   const shellScene = useMemo(() => {
     pruneDollhouseShell(gltf.scene);
+    applyDollhouseCaps(gltf.scene, undefined, meshRootWorldMatrix());
     return gltf.scene;
   }, [gltf.scene]);
   const preparedScene = useMemo(

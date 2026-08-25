@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import { Matrix4 } from "three";
 import type { TwinScanNode } from "@omnitwin/types";
 import { E57_TO_THREE_QUAT, MESH_OFFSET_M, e57PointToThree } from "../twin-basis.js";
 
@@ -49,6 +50,22 @@ vi.mock("three/examples/jsm/libs/meshopt_decoder.module.js", () => ({
   MeshoptDecoder: fakeDecoder,
 }));
 
+// Passthrough spy on the caps split — the fix for "large segments cut away as
+// the camera angle changes" lives or dies on this call happening, on the CACHED
+// scene, with the twin-basis world transform. The real function degrades to a
+// zero report on the fake scene, so spying costs the test nothing.
+const applyCapsSpy = vi.hoisted(() =>
+  vi.fn<(root: unknown, rule: unknown, world: unknown) => void>(),
+);
+vi.mock("../dollhouse-peel.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../dollhouse-peel.js")>();
+  const applyDollhouseCaps: typeof original.applyDollhouseCaps = (root, rule, world) => {
+    applyCapsSpy(root, rule, world);
+    return original.applyDollhouseCaps(root, rule, world);
+  };
+  return { ...original, applyDollhouseCaps };
+});
+
 const {
   DOLLHOUSE_DOT_PULSE_BASE,
   DOLLHOUSE_DOT_RADIUS_M,
@@ -77,6 +94,7 @@ function mount(onDive: (id: string) => void = vi.fn()) {
 beforeEach(() => {
   invalidate.mockClear();
   useGLTFMock.mockClear();
+  applyCapsSpy.mockClear();
   frameCallbacks.length = 0;
 });
 
@@ -97,6 +115,19 @@ describe("DollhouseStage — mesh frame", () => {
     expect(extendLoader).toBeDefined();
     extendLoader?.({ setMeshoptDecoder });
     expect(setMeshoptDecoder).toHaveBeenCalledWith(fakeDecoder);
+  });
+
+  it("runs the caps split on the cached scene, in the twin-basis world frame", () => {
+    mount();
+    expect(applyCapsSpy).toHaveBeenCalledTimes(1);
+    const [root, rule, world] = applyCapsSpy.mock.calls[0] ?? [];
+    // The CACHED scene — before the cutaway clone — so every clone inherits.
+    expect(root).toEqual({ isFakeGltfScene: true });
+    // Default rule (trades-hall calibration), explicit world transform: the
+    // cached scene is not yet under the twin-basis group, so "down" does not
+    // exist without it.
+    expect(rule).toBeUndefined();
+    expect(world).toBeInstanceOf(Matrix4);
   });
 
   it("wraps the GLB scene in a group carrying E57_TO_THREE_QUAT and MESH_OFFSET_M", () => {
