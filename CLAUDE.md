@@ -261,3 +261,10 @@ matches what you're about to do.
   wiring a splat scene's progress to React state, or debugging a splat
   scene that reaches its "loaded" state but renders a blank canvas
   (especially when it works on localhost and fails deployed).
+
+- `.claude/gotchas/spark-render-target-effects.md`
+  Read this when: adding any effect that renders the scene to an
+  off-screen target (drei `ContactShadows`, `Environment` probes,
+  `useFBO`, EffectComposer passes) into a scene containing a Spark
+  splat, or debugging a splat scene whose floor erupts into unsorted
+  colour blobs after an unrelated visual addition.

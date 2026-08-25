@@ -32,9 +32,18 @@ As of 2026-08-24, verified directly:
 - `codex/universal-foundry` forked from master at `8b9dd430` on **2026-07-20**
   and is **112 commits behind master**.
 - The branch still has **`RENDER_SCALE = 2.0`** (`packages/web/src/constants/scale.ts:16`).
-  Master moved the scene to true metres (`RENDER_SCALE = 1.0`, commit
-  `43be45c0`) and landed generated furniture proxies for the whole placeable
-  catalogue (`a82ef463`). **Neither reached this branch.**
+  Master is at true metres (`RENDER_SCALE = 1.0`) and carries generated
+  furniture proxies for the whole placeable catalogue — both arrived on master
+  via `a82ef463`. (`43be45c0` is the original true-metres commit on
+  `feature/diary-p0-slice-3`; it is **not itself on master** but remains a
+  valid, minimal cherry-pick source. Correction credited to Codex, round 2.)
+  **Neither change reached this branch.**
+- A second branch exists that this document's first draft missed:
+  **`codex/grand-hall-exact-runtime`** (worktree
+  `C:/Users/blake/omnitwin2-grand-hall-exact-runtime`), clean at `9937450a`,
+  already at true metres, consuming the new BIG Grand Hall capture. It is the
+  staging candidate; the rebase guidance below applies to
+  `codex/universal-foundry` only.
 - Consequence: any "human scale" / collision / boundary-clamp work done on this
   branch as-is is built on a world where X and Z are doubled and Y is not. Eye
   height, capsule radius and room-boundary clamps computed at scale 2.0 are
@@ -176,16 +185,19 @@ not "load one splat and place UI over it".
 ### [AMENDMENT 5 — extend the existing ADRs, do not re-invent them]
 
 This architecture largely re-derives decisions already recorded. Reconcile with,
-do not reinvent:
+do not reinvent — and build on **accepted** decisions first (correction credited
+to Codex, round 2: D-019 and D-024 are `Status: accepted`; D-009–D-013 are
+`Status: proposed`):
 
-- `SpatialLayerDescriptor` ≈ **ADR-009 (typed spatial-layer graph, VSIR-0)**.
-- Pose/frame indirection between layers ≈ **ADR-010 (pose-frame indirection)**.
-- The Truth Classes in §4 ≈ **ADR-012 (provenance / truth-mode separation)**.
-- "Master ≠ delivery format" ≈ **ADR-013 (format strategy)**.
-- Confidence per layer ≈ **ADR-011 (Spatial Confidence Budget)**.
+- **Build on accepted: D-019 and D-024** (D-024 is the Scene Authority Map).
+- Retain the concepts from the proposed set:
+  `SpatialLayerDescriptor` ≈ **D-009 (typed spatial-layer graph, VSIR-0)**;
+  pose/frame indirection ≈ **D-010**; the Truth Classes in §4 ≈ **D-012**;
+  "master ≠ delivery format" ≈ **D-013**; confidence per layer ≈ **D-011
+  (Spatial Confidence Budget)** — but do not treat proposed ADRs as landed.
 
 Read `docs/architecture/adr/` first. The compositor contract must extend these
-files; a sixth parallel spatial-layer schema is a defect, not progress.
+files; a parallel spatial-layer schema is a defect, not progress.
 
 ---
 
@@ -310,9 +322,13 @@ resolve deliberately, not by luck:
 - `TimelinePreviewFurniture` imports `FurnitureProxy` / `InstancedFurnitureLayer`,
   both rewritten on master by `a82ef463`.
 
-If a full rebase is too large to do safely in one pass, cherry-pick `43be45c0`
-(true metres) and `a82ef463` (furniture) first so Step D runs against a correct
-world, and schedule the full reconciliation as its own task.
+If a full rebase is too large to do safely in one pass, use the staged sequence
+Codex proposed and Claude accepted (round 2): keep `2ba77de2`; cherry-pick
+`43be45c0` **alone** for true metres (do not pair it with `a82ef463`, which
+spans 181 files and conflicts heavily with this branch); bring `d5faa397`
+separately for the loopback-fetch test guard; port the furniture integration as
+a deliberately scoped change rather than importing all of `a82ef463`; schedule
+the full master reconciliation as its own task with explicit approval.
 
 **B. Introduce a typed room-scene composition contract.** Smallest
 production-quality equivalent of `VisualAssetManifest`, `RoomSceneManifest`,
@@ -352,11 +368,14 @@ render in-app, reserve it as an external reference image tied to the same camera
   `C:/GRAND_HALL_BIG_MODEL_VARIATIONS` at its manifest-name check
   (`local-sog-candidate-gateway.ts` ~1000-1006), so do not point the harness there
   expecting the current corridor to serve it.
-- `C:/GRAND_HALL_BIG_MODEL_VARIATIONS` holds **9 variants**
-  (`scans_BIG_MODEL_TH_GH_1..9`, 4.8 GB) — nine reconstructions of the same room.
-  These are exactly the "lineage A" / Phase-4 baseline candidates. Diff them
-  against each other and against SOG/SPZ at the fixed cameras. Do not treat them
-  as opaque.
+- `C:/GRAND_HALL_BIG_MODEL_VARIATIONS` holds **9 packaging combinations, not
+  nine independent reconstructions** (verified: the SOG cores in GH_1/2/3 are
+  byte-identical, sha256 `ad9ee1a5…`; three identical SOG cores, three SPZ,
+  three native-LCC, with optional OBJ/PLY additions — correction credited to
+  Codex, round 2). The lineage comparison is therefore **across formats of one
+  reconstruction** (LCC vs PLY vs SPZ vs SOG at fixed cameras), not across
+  variants. Do not treat the folder as opaque, and do not waste cameras
+  diffing identical cores.
 
 **F. Create integration points, not fake implementations.** Typed
 placeholders/interfaces for Hero Volumes, material layers, enhancement providers,
