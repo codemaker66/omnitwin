@@ -8,6 +8,7 @@ import {
   type RuntimeTransformAlignmentMethod,
   type RuntimeTransformReferenceType,
 } from "./runtime-venue-manifest.js";
+import { GrandHallRoomOnlyRuntimeEvidenceV2Schema } from "./grand-hall-room-only-runtime-evidence.js";
 
 // ---------------------------------------------------------------------------
 // Room-agnostic runtime asset registry contracts
@@ -513,6 +514,7 @@ export const RuntimePackageManifestJsonSchema = z.object({
     pointCloudAssetVersionId: z.string().uuid().nullable(),
   }).strict(),
   compositionBasis: RuntimePackageCompositionBasisSchema.optional(),
+  roomOnlyEvidence: GrandHallRoomOnlyRuntimeEvidenceV2Schema.optional(),
   generatedAt: z.string().regex(ISO_DATE_TIME, "generatedAt must be an ISO datetime.").optional(),
   notes: z.string().trim().max(2000).optional(),
 }).strict().superRefine((manifest, ctx) => {

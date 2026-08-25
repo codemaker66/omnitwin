@@ -11,6 +11,7 @@ import {
   GRAND_HALL_REVIEWED_RAILWAY_CLI_SHA256,
   GRAND_HALL_REVIEWED_RAILWAY_CLI_VERSION,
 } from "./grand-hall-railway-cli-contract.js";
+import { rejectRetiredGrandHallV1Intake } from "./grand-hall-v1-intake-retired.js";
 
 export const GRAND_HALL_R2_DPAPI_ARTIFACT_HEADER =
   "VENVIEWER-GRAND-HALL-R2-DPAPI-V1\n";
@@ -312,6 +313,7 @@ export async function protectGrandHallR2CredentialWithCurrentUserDpapi(
   plaintext: Buffer,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<void> {
+  rejectRetiredGrandHallV1Intake();
   if (!isAbsolute(outputPath)) {
     throw dpapiError("DPAPI output path must be absolute.");
   }
@@ -334,6 +336,7 @@ export async function stageGrandHallR2CredentialInRailwayWithCurrentUserDpapi(
   target: GrandHallR2RailwayTargetIds,
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<void> {
+  rejectRetiredGrandHallV1Intake();
   if (!isAbsolute(inputPath)) {
     throw dpapiError("DPAPI input path must be absolute.");
   }

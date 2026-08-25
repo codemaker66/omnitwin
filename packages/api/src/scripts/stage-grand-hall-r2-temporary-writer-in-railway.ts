@@ -16,6 +16,7 @@ import {
   GRAND_HALL_REVIEWED_RAILWAY_CLI_SHA256,
   GRAND_HALL_REVIEWED_RAILWAY_CLI_VERSION,
 } from "./grand-hall-railway-cli-contract.js";
+import { rejectRetiredGrandHallV1Intake } from "./grand-hall-v1-intake-retired.js";
 
 const RAILWAY_STATUS_DEADLINE_MS = 30_000;
 const RAILWAY_VERSION_DEADLINE_MS = 10_000;
@@ -443,6 +444,9 @@ export async function runGrandHallR2RailwayStage(input: {
   readonly argv: readonly string[];
   readonly dependencies?: GrandHallR2RailwayStageDependencies;
 }): Promise<void> {
+  // Fail before parsing the artifact, inspecting Railway, or decrypting any
+  // credential. The v1 handoff is permanently retired.
+  rejectRetiredGrandHallV1Intake();
   const options = parseGrandHallR2RailwayStageArgs(input.argv);
   const dependencies = input.dependencies ?? {};
   const platform = dependencies.platform ?? process.platform;

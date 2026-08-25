@@ -5,12 +5,14 @@ import {
   resolveRoomSceneComposition,
 } from "../room-scene-composition.js";
 import { createGrandHallRoomSceneManifest } from "../grand-hall-room-scene.js";
+import { syntheticGrandHallRoomOnlyEvidence } from "../../test-fixtures/grand-hall-room-only-evidence.js";
 
 const PACKAGE_ID = "22222222-2222-4222-8222-222222222222";
+const EVIDENCE = syntheticGrandHallRoomOnlyEvidence();
 
 describe("resolveRoomSceneComposition", () => {
   it("renders captured appearance by default and never substitutes the proxy when it fails", () => {
-    const manifest = createGrandHallRoomSceneManifest(PACKAGE_ID);
+    const manifest = createGrandHallRoomSceneManifest(PACKAGE_ID, EVIDENCE);
     const failed: Readonly<Record<string, RoomSceneLayerLoadState>> = {
       "grand-hall-captured-appearance": {
         status: "failed",
@@ -34,7 +36,7 @@ describe("resolveRoomSceneComposition", () => {
   });
 
   it("shows only the explicit structural diagnostic when selected", () => {
-    const manifest = createGrandHallRoomSceneManifest(PACKAGE_ID);
+    const manifest = createGrandHallRoomSceneManifest(PACKAGE_ID, EVIDENCE);
     const result = resolveRoomSceneComposition(manifest, {
       presentation: "structural-proxy",
       layerStates: {
@@ -78,7 +80,7 @@ describe("resolveRoomSceneComposition", () => {
   });
 
   it("aggregates every visible appearance-related layer before resolving", () => {
-    const manifest = createGrandHallRoomSceneManifest(PACKAGE_ID);
+    const manifest = createGrandHallRoomSceneManifest(PACKAGE_ID, EVIDENCE);
     const appearance = manifest.layerDescriptors[0];
     if (appearance === undefined) throw new Error("Expected captured appearance layer.");
     const layeredManifest = {

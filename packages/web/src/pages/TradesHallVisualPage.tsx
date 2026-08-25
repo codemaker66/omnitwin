@@ -40,7 +40,10 @@ import {
 import { GrandHallRoom } from "../components/GrandHallRoom.js";
 import type { AdaptiveResolutionOptions } from "../components/AdaptiveResolution.js";
 import { RoomMesh } from "../components/editor/RoomMesh.js";
-import { ExactGrandHallSplatLayer } from "../components/editor/ExactGrandHallSplatLayer.js";
+import {
+  ExactGrandHallSplatLayer,
+  type ExactGrandHallAdmissionSummary,
+} from "../components/editor/ExactGrandHallSplatLayer.js";
 import {
   computeCameraTarget,
   computeDefaultCameraPosition,
@@ -70,11 +73,7 @@ import {
   type RuntimeAssetViewTransform,
   type RuntimeRoomTarget,
 } from "../lib/runtime-package-resolution.js";
-import {
-  GRAND_HALL_CAPTURED_SOG_MEMBERS,
-  GRAND_HALL_CAPTURED_SOURCE,
-  validateGrandHallCapturedSource,
-} from "../lib/grand-hall-captured-source.js";
+import { validateGrandHallCapturedSource } from "../lib/grand-hall-captured-source.js";
 import {
   runGuestFlowReplayInBrowser,
   type GuestFlowReplayRunMode,
@@ -98,6 +97,9 @@ const LazySparkSplatLayer = lazy(async () => {
 
 type VisualLayerMode = "hybrid" | "mesh" | "splat";
 type LoadStatus = "empty" | "invalid" | "loading" | "loaded" | "error";
+type ExactAdmissionState = ExactGrandHallAdmissionSummary & {
+  readonly runtimePackageId: string;
+};
 type PhaseGraphLoadStatus = "fixture" | "loading" | "loaded" | "error";
 type TruthSummaryStatus = "loading" | "loaded" | "fallback";
 type ReplayStatus = "fixture" | "loading" | "api" | GuestFlowReplayRunMode | "error";
@@ -442,6 +444,7 @@ function buildTruthModeTargets(input: {
   readonly exactRuntimePackageId: string | null;
   readonly exactCapturedSourceStatus: ExactCapturedSourceStatus | null;
   readonly exactCapturedSourceMounted: boolean;
+  readonly exactMemberCount: number | null;
   readonly capturedOnly: boolean;
 }): readonly TruthModeTargetOption[] {
   const runtimeAssetTargetId = input.exactRuntimePackageId ??
@@ -462,7 +465,9 @@ function buildTruthModeTargets(input: {
   const runtimeAssetAssumption = input.exactCapturedSourceMounted
     ? "Captured source pixels are shown without procedural architecture or planning overlays."
     : input.exactCapturedSourceStatus === "pending"
-      ? `Captured pixels remain hidden until all ${String(GRAND_HALL_CAPTURED_SOG_MEMBERS.length)} source members verify, decode, and attach.`
+      ? input.exactMemberCount === null
+        ? "Captured pixels remain hidden until the accepted room-only inventory verifies, decodes, and attaches."
+        : `Captured pixels remain hidden until all ${String(input.exactMemberCount)} accepted cropped-output members verify, decode, and attach.`
       : input.exactCapturedSourceStatus === "failed"
         ? "Captured pixels and all architectural fallbacks remain hidden after verification failure."
       : input.exactCapturedSourceStatus === "idle"
@@ -1279,14 +1284,21 @@ function RuntimeAssetPackagePanel({
   );
 }
 
-function capturedSourceStatusLabel(state: ExactCapturedSourceState): string {
+function capturedSourceStatusLabel(
+  state: ExactCapturedSourceState,
+  admission: ExactGrandHallAdmissionSummary | null,
+): string {
   switch (state.status) {
     case "idle":
       return "Waiting for the exact registered package";
     case "pending":
-      return `${String(state.loadedMembers.size)}/${String(GRAND_HALL_CAPTURED_SOG_MEMBERS.length)} members verified`;
+      return admission === null
+        ? "Accepted inventory metadata is still verifying"
+        : `${String(state.loadedMembers.size)}/${String(admission.memberNames.length)} members verified`;
     case "verified":
-      return `${String(GRAND_HALL_CAPTURED_SOG_MEMBERS.length)}/${String(GRAND_HALL_CAPTURED_SOG_MEMBERS.length)} members verified and mounted`;
+      return admission === null
+        ? "Accepted inventory verified and mounted"
+        : `${String(admission.memberNames.length)}/${String(admission.memberNames.length)} members verified and mounted`;
     case "failed":
       return "Verification failed; captured pixels are hidden";
   }
@@ -1297,12 +1309,14 @@ function CapturedSourceInspectionPanel({
   packageId,
   sourceTarget,
   sourceState,
+  admission,
   visualState,
 }: {
   readonly runtimeTarget: RuntimeRoomTarget;
   readonly packageId: string | null;
   readonly sourceTarget: TruthModeTargetOption;
   readonly sourceState: ExactCapturedSourceState;
+  readonly admission: ExactGrandHallAdmissionSummary | null;
   readonly visualState: VisualState;
 }): ReactElement {
   return (
@@ -1330,7 +1344,7 @@ function CapturedSourceInspectionPanel({
             <span className="visual-truth-icon"><FileCheck2 size={17} aria-hidden="true" /></span>
             <div>
               <p className="visual-row-title">Byte admission</p>
-              <p className="visual-row-copy">{capturedSourceStatusLabel(sourceState)}</p>
+              <p className="visual-row-copy">{capturedSourceStatusLabel(sourceState, admission)}</p>
             </div>
           </div>
           <p className="visual-url-copy" style={{ color: statusTone(visualState.status) }}>
@@ -1352,15 +1366,15 @@ function CapturedSourceInspectionPanel({
           </div>
           <div className="visual-runtime-details">
             <span>Frontier</span>
-            <strong>{GRAND_HALL_CAPTURED_SOG_MEMBERS.length.toLocaleString("en-GB")} ordered SOG members</strong>
+            <strong>{admission === null ? "pending acceptance" : `${admission.memberNames.length.toLocaleString("en-GB")} accepted cropped SOG members`}</strong>
           </div>
           <div className="visual-runtime-details">
             <span>Source bytes</span>
-            <strong>{GRAND_HALL_CAPTURED_SOURCE.totalBytes.toLocaleString("en-GB")}</strong>
+            <strong>{admission?.totalBytes.toLocaleString("en-GB") ?? "unknown"}</strong>
           </div>
           <div className="visual-runtime-details">
             <span>Gaussians</span>
-            <strong>{GRAND_HALL_CAPTURED_SOURCE.gaussianCount.toLocaleString("en-GB")}</strong>
+            <strong>{admission?.totalGaussianCount.toLocaleString("en-GB") ?? "unknown"}</strong>
           </div>
           <p className="visual-url-copy">
             Procedural architecture, generated geometry, room-planning overlays, and exterior pixels are excluded.
@@ -1690,6 +1704,7 @@ export function TradesHallVisualPage(): ReactElement {
   const [exactCapturedSourceState, setExactCapturedSourceState] = useState<ExactCapturedSourceState>(
     EMPTY_EXACT_CAPTURED_SOURCE_STATE,
   );
+  const [exactAdmissionState, setExactAdmissionState] = useState<ExactAdmissionState | null>(null);
   const [visualState, setVisualState] = useState<VisualState>(() => {
     const initialError = runtimePackagePreviewError ?? runtimeTarget.error;
     if (initialError !== null) {
@@ -1706,12 +1721,21 @@ export function TradesHallVisualPage(): ReactElement {
     : null;
 
   const assetDecision = useMemo(
-    () => decideRuntimeAsset(null, targetPublishedPackage),
-    [targetPublishedPackage],
+    // Captured-source surfaces never delegate rejected exact metadata to the
+    // generic URL renderer. Missing/legacy room-only evidence means blank.
+    () => decideRuntimeAsset(
+      null,
+      isCapturedSourceSurface ? null : targetPublishedPackage,
+    ),
+    [isCapturedSourceSurface, targetPublishedPackage],
   );
-  const exactGrandHallPackage = isCapturedOnlyGrandHallTarget
-    && targetPublishedPackage !== null
-    && validateGrandHallCapturedSource(targetPublishedPackage).ok
+  const exactGrandHallValidation = useMemo(
+    () => isCapturedOnlyGrandHallTarget && targetPublishedPackage !== null
+      ? validateGrandHallCapturedSource(targetPublishedPackage)
+      : null,
+    [isCapturedOnlyGrandHallTarget, targetPublishedPackage],
+  );
+  const exactGrandHallPackage = exactGrandHallValidation?.ok === true
     ? targetPublishedPackage
     : null;
   const explicitGrandHallPackageId = runtimePackagePreviewTarget.kind === "exact"
@@ -1719,6 +1743,25 @@ export function TradesHallVisualPage(): ReactElement {
     ? runtimePackagePreviewTarget.runtimePackageId
     : null;
   const exactGrandHallPackageId = explicitGrandHallPackageId ?? exactGrandHallPackage?.id ?? null;
+  const activeExactGrandHallPackageIdRef = useRef(exactGrandHallPackageId);
+  activeExactGrandHallPackageIdRef.current = exactGrandHallPackageId;
+  const publishedAdmission = useMemo<ExactGrandHallAdmissionSummary | null>(
+    () => exactGrandHallValidation?.ok === true
+      ? {
+          memberNames: exactGrandHallValidation.evidence.croppedVisual.members.map(
+            (member) => member.fileName,
+          ),
+          totalBytes: exactGrandHallValidation.evidence.croppedVisual.totalBytes,
+          totalGaussianCount:
+            exactGrandHallValidation.evidence.croppedVisual.totalGaussianCount,
+        }
+      : null,
+    [exactGrandHallValidation],
+  );
+  const exactAdmission = publishedAdmission
+    ?? (exactAdmissionState?.runtimePackageId === exactGrandHallPackageId
+      ? exactAdmissionState
+      : null);
   const displayedExactCapturedSourceState: ExactCapturedSourceState = exactGrandHallPackageId === null
     ? EMPTY_EXACT_CAPTURED_SOURCE_STATE
     : exactCapturedSourceState.runtimePackageId === exactGrandHallPackageId
@@ -1774,6 +1817,7 @@ export function TradesHallVisualPage(): ReactElement {
       exactRuntimePackageId: exactGrandHallPackageId,
       exactCapturedSourceStatus,
       exactCapturedSourceMounted,
+      exactMemberCount: exactAdmission?.memberNames.length ?? null,
       capturedOnly: isCapturedSourceSurface,
     }),
     [
@@ -1781,6 +1825,7 @@ export function TradesHallVisualPage(): ReactElement {
       exactCapturedSourceMounted,
       exactCapturedSourceStatus,
       exactGrandHallPackageId,
+      exactAdmission,
       isCapturedSourceSurface,
       runtimeTarget,
       selectedPhase,
@@ -2018,13 +2063,17 @@ export function TradesHallVisualPage(): ReactElement {
   useEffect(() => {
     if (exactGrandHallPackageId === null) {
       setExactCapturedSourceState(EMPTY_EXACT_CAPTURED_SOURCE_STATE);
+      setExactAdmissionState(null);
       return;
     }
-    setExactCapturedSourceState({
-      runtimePackageId: exactGrandHallPackageId,
-      status: "pending",
-      loadedMembers: new Set(),
-    });
+    setExactCapturedSourceState((current) =>
+      current.runtimePackageId === exactGrandHallPackageId
+        ? current
+        : {
+            runtimePackageId: exactGrandHallPackageId,
+            status: "pending",
+            loadedMembers: new Set(),
+          });
     setOverlays(RUNTIME_ASSET_DEFAULT_OVERLAYS);
     setOpacity(1);
     setSelectedTruthTargetId("runtimeAsset");
@@ -2052,10 +2101,12 @@ export function TradesHallVisualPage(): ReactElement {
       status: verified ? "loaded" : "loading",
       message: verified
         ? "Exact captured Grand Hall source verified"
-        : `Verifying exact Grand Hall source (${String(loadedMemberCount)}/${String(GRAND_HALL_CAPTURED_SOG_MEMBERS.length)})`,
-      splatCount: verified ? GRAND_HALL_CAPTURED_SOURCE.gaussianCount : null,
+        : exactAdmission === null
+          ? "Verifying accepted Grand Hall room-only inventory metadata"
+          : `Verifying accepted Grand Hall cropped output (${String(loadedMemberCount)}/${String(exactAdmission.memberNames.length)})`,
+      splatCount: verified ? exactAdmission?.totalGaussianCount ?? null : null,
     });
-  }, [exactCapturedSourceState, exactGrandHallPackageId]);
+  }, [exactAdmission, exactCapturedSourceState, exactGrandHallPackageId]);
 
   const handleLoad = useCallback((event: SparkSplatLoadEvent) => {
     setSplatLoadCounts((current) => ({
@@ -2101,32 +2152,62 @@ export function TradesHallVisualPage(): ReactElement {
   }, []);
 
   const handleExactGrandHallChunkLoaded = useCallback((memberName: string) => {
-    if (exactGrandHallPackageId === null) return;
+    if (
+      exactGrandHallPackageId === null
+      || activeExactGrandHallPackageIdRef.current !== exactGrandHallPackageId
+    ) return;
     setExactCapturedSourceState((current) => {
-      if (current.runtimePackageId !== exactGrandHallPackageId || current.status === "failed") {
+      if (
+        current.runtimePackageId === exactGrandHallPackageId
+        && current.status === "failed"
+      ) {
         return current;
       }
-      const next = new Set(current.loadedMembers);
+      const next = new Set(
+        current.runtimePackageId === exactGrandHallPackageId
+          ? current.loadedMembers
+          : [],
+      );
       if (next.has(memberName)) return current;
       next.add(memberName);
-      const complete = next.size === GRAND_HALL_CAPTURED_SOG_MEMBERS.length;
       return {
         runtimePackageId: exactGrandHallPackageId,
-        status: complete ? "verified" : "pending",
+        status: "pending",
         loadedMembers: next,
       };
     });
   }, [exactGrandHallPackageId]);
 
-  const handleExactGrandHallChunkFailed = useCallback(() => {
-    if (exactGrandHallPackageId === null) return;
-    setExactCapturedSourceState((current) => {
-      if (current.runtimePackageId !== exactGrandHallPackageId) return current;
-      return {
-        runtimePackageId: exactGrandHallPackageId,
-        status: "failed",
-        loadedMembers: new Set(),
-      };
+  const handleExactGrandHallAdmission = useCallback(
+    (summary: ExactGrandHallAdmissionSummary) => {
+      if (
+        exactGrandHallPackageId === null
+        || activeExactGrandHallPackageIdRef.current !== exactGrandHallPackageId
+      ) return;
+      setExactAdmissionState({ runtimePackageId: exactGrandHallPackageId, ...summary });
+    },
+    [exactGrandHallPackageId],
+  );
+
+  const handleExactGrandHallReady = useCallback(() => {
+    if (
+      exactGrandHallPackageId === null
+      || activeExactGrandHallPackageIdRef.current !== exactGrandHallPackageId
+    ) return;
+    setExactCapturedSourceState((current) => current.runtimePackageId === exactGrandHallPackageId
+      ? { ...current, status: "verified" }
+      : current);
+  }, [exactGrandHallPackageId]);
+
+  const handleExactGrandHallFailed = useCallback(() => {
+    if (
+      exactGrandHallPackageId === null
+      || activeExactGrandHallPackageIdRef.current !== exactGrandHallPackageId
+    ) return;
+    setExactCapturedSourceState({
+      runtimePackageId: exactGrandHallPackageId,
+      status: "failed",
+      loadedMembers: new Set(),
     });
   }, [exactGrandHallPackageId]);
 
@@ -2200,8 +2281,11 @@ export function TradesHallVisualPage(): ReactElement {
                 runtimePackageId={exactGrandHallPackageId}
                 transform={runtimeAssetViewTransform}
                 active
+                onAdmission={handleExactGrandHallAdmission}
                 onChunkLoaded={handleExactGrandHallChunkLoaded}
-                onChunkFailed={handleExactGrandHallChunkFailed}
+                onChunkFailed={handleExactGrandHallFailed}
+                onReady={handleExactGrandHallReady}
+                onFailed={handleExactGrandHallFailed}
               />
             ) : activeSplatUrls.length > 0 ? (
               <Suspense fallback={null}>
@@ -2297,6 +2381,7 @@ export function TradesHallVisualPage(): ReactElement {
           packageId={exactGrandHallPackageId}
           sourceTarget={selectedTruthTarget}
           sourceState={displayedExactCapturedSourceState}
+          admission={exactAdmission}
           visualState={visualState}
         />
       ) : selectedPhase !== null ? (

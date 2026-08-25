@@ -14,6 +14,7 @@ import {
   protectGrandHallR2CredentialWithCurrentUserDpapi,
 } from "./grand-hall-r2-credential-dpapi.js";
 import { safeGitChildEnvironment } from "./safe-git-child-environment.js";
+import { rejectRetiredGrandHallV1Intake } from "./grand-hall-v1-intake-retired.js";
 
 export const GRAND_HALL_R2_TEMPORARY_WRITER_PREFIX =
   GRAND_HALL_DEFAULT_OBJECT_PREFIX;
@@ -327,6 +328,7 @@ export function mintGrandHallR2TemporaryWriter(
   issuedAtEpochSeconds: number,
   ttlSeconds: number,
 ): GrandHallR2TemporaryWriterSecretFile {
+  rejectRetiredGrandHallV1Intake();
   if (!Number.isSafeInteger(issuedAtEpochSeconds) || issuedAtEpochSeconds < 0) {
     throw mintError("Issued-at time must be a non-negative integer number of epoch seconds.");
   }
@@ -456,6 +458,7 @@ export async function writeGrandHallR2TemporaryWriterSecretFileAtomic(
   credential: GrandHallR2TemporaryWriterSecretFile,
   dependencies: GrandHallR2TemporaryWriterSecretOutputDependencies = {},
 ): Promise<void> {
+  rejectRetiredGrandHallV1Intake();
   if (!isAbsolute(outPath)) throw mintError("Credential output path must be absolute.");
   const destination = resolve(outPath);
   const temporary = resolve(dirname(destination), `.${basename(destination)}.${randomUUID()}.tmp`);
@@ -510,6 +513,9 @@ export async function runGrandHallR2TemporaryWriterMint(input: {
   readonly now?: Date;
   readonly assertExternalOutput?: (outPath: string) => Promise<string>;
 }): Promise<void> {
+  // Fail before parsing paths or reading parent credentials. This v1 prefix
+  // targets the over-broad source frontier and must never regain PutObject.
+  rejectRetiredGrandHallV1Intake();
   const options = parseGrandHallR2TemporaryWriterArgs(input.argv);
   const assertExternalOutput = input.assertExternalOutput ??
     assertGrandHallR2TemporaryWriterOutputOutsideGitWorktree;

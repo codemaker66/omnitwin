@@ -1,14 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
 import { SplatMesh } from "@sparkjsdev/spark";
+import type { GrandHallRoomOnlyVisualMemberV2 } from "@omnitwin/types";
 import type { VerifiedRuntimePackagePreview } from "../../api/runtime-package-preview-transport.js";
 import {
   fetchRuntimePackagePreviewMetadata,
   fetchVerifiedRuntimePackagePreviewMember,
 } from "../../api/runtime-package-preview-transport.js";
 import {
-  GRAND_HALL_CAPTURED_SOG_MEMBERS,
-  GRAND_HALL_CAPTURED_SOURCE,
   validateGrandHallCapturedPreview,
 } from "../../lib/grand-hall-captured-source.js";
 import {
@@ -36,6 +35,7 @@ export interface ExactGrandHallMesh {
 export interface ExactGrandHallResource {
   readonly runtimePackageId: string;
   readonly meshes: readonly ExactGrandHallMesh[];
+  readonly memberNames: readonly string[];
   readonly splatCount: number;
 }
 
@@ -45,15 +45,23 @@ export interface ExactGrandHallSplatLayerProps {
   readonly active: boolean;
   readonly onChunkLoaded?: (memberName: string) => void;
   readonly onChunkFailed?: (memberName: string) => void;
-  /** Fires after React has atomically attached the complete decoded frontier. */
+  /** Receives the immutable accepted inventory before protected member reads. */
+  readonly onAdmission?: (summary: ExactGrandHallAdmissionSummary) => void;
+  /** Fires after React atomically attaches the complete accepted inventory. */
   readonly onReady?: () => void;
   /** Fires only for a terminal fetch, verification, or decode failure. */
   readonly onFailed?: () => void;
 }
 
+export interface ExactGrandHallAdmissionSummary {
+  readonly memberNames: readonly string[];
+  readonly totalBytes: number;
+  readonly totalGaussianCount: number;
+}
+
 type ExactGrandHallCallbacks = Pick<
   ExactGrandHallSplatLayerProps,
-  "onChunkLoaded" | "onChunkFailed" | "onReady" | "onFailed"
+  "onChunkLoaded" | "onChunkFailed" | "onAdmission" | "onReady" | "onFailed"
 >;
 
 interface ReadyNotification {
@@ -65,7 +73,7 @@ interface ReadyNotification {
 
 type ExactGrandHallMeshFactory = (
   member: VerifiedRuntimePackagePreview["members"][number],
-  expected: (typeof GRAND_HALL_CAPTURED_SOG_MEMBERS)[number],
+  expected: GrandHallRoomOnlyVisualMemberV2,
 ) => ExactGrandHallMesh;
 
 function abortError(): DOMException {
@@ -77,21 +85,27 @@ function throwIfAborted(signal: AbortSignal): void {
 }
 
 /**
- * Admit the exact eleven-member frontier before requesting any protected
- * member bytes, then fetch each member through the per-request auth boundary.
+ * Admit the exact evidence-bound cropped inventory before requesting any
+ * protected member bytes, then fetch each through the request auth boundary.
  */
 async function fetchExactGrandHallPreview(
   runtimePackageId: string,
   signal: AbortSignal,
+  onAdmission?: (summary: ExactGrandHallAdmissionSummary) => void,
 ): Promise<VerifiedRuntimePackagePreview> {
   const preview = await fetchRuntimePackagePreviewMetadata(runtimePackageId, signal);
   const admission = validateGrandHallCapturedPreview(preview);
   if (!admission.ok) {
-    throw new Error("The exact Grand Hall preview metadata failed its immutable frontier contract.");
+    throw new Error("The exact Grand Hall preview metadata failed its room-only evidence contract.");
   }
+  onAdmission?.({
+    memberNames: admission.evidence.croppedVisual.members.map((member) => member.fileName),
+    totalBytes: admission.evidence.croppedVisual.totalBytes,
+    totalGaussianCount: admission.evidence.croppedVisual.totalGaussianCount,
+  });
 
   const members: VerifiedRuntimePackagePreview["members"][number][] = [];
-  for (let index = 0; index < GRAND_HALL_CAPTURED_SOG_MEMBERS.length; index += 1) {
+  for (let index = 0; index < admission.evidence.croppedVisual.members.length; index += 1) {
     throwIfAborted(signal);
     members.push(await fetchVerifiedRuntimePackagePreviewMember(preview, index, signal));
   }
@@ -146,9 +160,9 @@ export function disposeExactGrandHallResource(resource: ExactGrandHallResource |
 }
 
 /**
- * Decode the verified frontier while every mesh remains invisible and
- * detached. The resource is returned only when all eleven members decode to
- * their exact expected Gaussian counts; any mismatch disposes the whole set.
+ * Decode the verified cropped output while every mesh remains invisible and
+ * detached. The resource returns only when all admitted members decode to
+ * their evidence-bound Gaussian counts; any mismatch disposes the whole set.
  */
 export async function decodeExactGrandHallResource(
   verified: VerifiedRuntimePackagePreview,
@@ -163,8 +177,11 @@ export async function decodeExactGrandHallResource(
   }),
 ): Promise<ExactGrandHallResource> {
   const admission = validateGrandHallCapturedPreview(verified.preview);
-  if (!admission.ok || verified.members.length !== GRAND_HALL_CAPTURED_SOG_MEMBERS.length) {
-    throw new Error("The exact Grand Hall capture failed its immutable frontier contract.");
+  if (
+    !admission.ok
+    || verified.members.length !== admission.evidence.croppedVisual.members.length
+  ) {
+    throw new Error("The exact Grand Hall capture failed its room-only evidence contract.");
   }
 
   const meshes: ExactGrandHallMesh[] = [];
@@ -173,7 +190,7 @@ export async function decodeExactGrandHallResource(
     for (let index = 0; index < verified.members.length; index += 1) {
       throwIfAborted(signal);
       const member = verified.members[index];
-      const expected = GRAND_HALL_CAPTURED_SOG_MEMBERS[index];
+      const expected = admission.evidence.croppedVisual.members[index];
       if (
         member === undefined
         || expected === undefined
@@ -182,7 +199,7 @@ export async function decodeExactGrandHallResource(
         || member.sha256 !== expected.sha256
         || member.bytes.byteLength !== expected.sizeBytes
       ) {
-        throw new Error("The exact Grand Hall member bytes do not match their frontier position.");
+        throw new Error("The exact Grand Hall member bytes do not match the admitted inventory.");
       }
 
       const mesh = createMesh(member, expected);
@@ -197,14 +214,20 @@ export async function decodeExactGrandHallResource(
       splatCount += mesh.numSplats;
     }
     throwIfAborted(signal);
-    if (splatCount !== GRAND_HALL_CAPTURED_SOURCE.gaussianCount) {
-      throw new Error("The exact Grand Hall frontier decoded to a different Gaussian total.");
+    if (splatCount !== admission.evidence.croppedVisual.totalGaussianCount) {
+      throw new Error("The exact Grand Hall crop decoded to a different Gaussian total.");
     }
-    return { runtimePackageId: verified.preview.runtimePackageId, meshes, splatCount };
+    return {
+      runtimePackageId: verified.preview.runtimePackageId,
+      meshes,
+      memberNames: admission.evidence.croppedVisual.members.map((member) => member.fileName),
+      splatCount,
+    };
   } catch (error: unknown) {
     disposeExactGrandHallResource({
       runtimePackageId: verified.preview.runtimePackageId,
       meshes,
+      memberNames: admission.evidence.croppedVisual.members.map((member) => member.fileName),
       splatCount,
     });
     throw error;
@@ -221,7 +244,7 @@ function setResourceActive(resource: ExactGrandHallResource | null, active: bool
 
 /**
  * Authenticated, receipt-verified, all-or-nothing Grand Hall renderer. No
- * member enters the scene until the complete frontier has fetched, hashed,
+ * member enters the scene until the complete admitted crop has fetched, hashed,
  * and decoded successfully.
  */
 export function ExactGrandHallSplatLayer({
@@ -230,6 +253,7 @@ export function ExactGrandHallSplatLayer({
   active,
   onChunkLoaded,
   onChunkFailed,
+  onAdmission,
   onReady,
   onFailed,
 }: ExactGrandHallSplatLayerProps): ReactElement | null {
@@ -241,12 +265,14 @@ export function ExactGrandHallSplatLayer({
   const callbacksRef = useRef<ExactGrandHallCallbacks>({
     onChunkLoaded,
     onChunkFailed,
+    onAdmission,
     onReady,
     onFailed,
   });
-  callbacksRef.current = { onChunkLoaded, onChunkFailed, onReady, onFailed };
+  callbacksRef.current = { onChunkLoaded, onChunkFailed, onAdmission, onReady, onFailed };
   const readyNotificationRef = useRef<ReadyNotification | null>(null);
   const requestIdRef = useRef(0);
+  const expectedMemberNamesRef = useRef<readonly string[]>([]);
 
   useEffect(() => {
     const requestId = requestIdRef.current + 1;
@@ -263,8 +289,8 @@ export function ExactGrandHallSplatLayer({
       disposeExactGrandHallResource(resourceRef.current);
       resourceRef.current = null;
       setResource(null);
-      for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS) {
-        requestCallbacks.onChunkFailed?.(member.fileName);
+      for (const memberName of expectedMemberNamesRef.current) {
+        requestCallbacks.onChunkFailed?.(memberName);
       }
       requestCallbacks.onFailed?.();
       invalidate();
@@ -275,10 +301,21 @@ export function ExactGrandHallSplatLayer({
     readyNotificationRef.current = null;
     disposeExactGrandHallResource(resourceRef.current);
     resourceRef.current = null;
+    expectedMemberNamesRef.current = [];
     invalidate();
 
-    void fetchExactGrandHallPreview(runtimePackageId, loadDeadline.signal)
-      .then((verified) => decodeExactGrandHallResource(verified, transform, loadDeadline.signal))
+    void fetchExactGrandHallPreview(
+      runtimePackageId,
+      loadDeadline.signal,
+      requestCallbacks.onAdmission,
+    )
+      .then((verified) => {
+        const admission = validateGrandHallCapturedPreview(verified.preview);
+        expectedMemberNamesRef.current = admission.ok
+          ? admission.evidence.croppedVisual.members.map((member) => member.fileName)
+          : [];
+        return decodeExactGrandHallResource(verified, transform, loadDeadline.signal);
+      })
       .then((decoded) => {
         if (disposed || terminal || loadDeadline.signal.aborted || requestIdRef.current !== requestId) {
           disposeExactGrandHallResource(decoded);
@@ -320,8 +357,8 @@ export function ExactGrandHallSplatLayer({
     ) return;
     readyNotificationRef.current = null;
     notification.deadline.complete();
-    for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS) {
-      notification.callbacks.onChunkLoaded?.(member.fileName);
+    for (const memberName of resource.memberNames) {
+      notification.callbacks.onChunkLoaded?.(memberName);
     }
     notification.callbacks.onReady?.();
   }, [resource, runtimePackageId]);
@@ -338,7 +375,7 @@ export function ExactGrandHallSplatLayer({
       <SparkRendererHost sortRadial={false} />
       {resource.meshes.map((mesh, index) => (
         <primitive
-          key={`${resource.runtimePackageId}:${GRAND_HALL_CAPTURED_SOG_MEMBERS[index]?.fileName ?? String(index)}`}
+          key={`${resource.runtimePackageId}:${resource.memberNames[index] ?? String(index)}`}
           object={mesh}
         />
       ))}

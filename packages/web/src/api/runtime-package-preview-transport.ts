@@ -1,4 +1,7 @@
 import {
+  GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES,
+  GRAND_HALL_ROOM_ONLY_MAX_MEMBER_COUNT,
+  GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES,
   RuntimePackagePreviewSchema,
   type RuntimePackagePreview,
   type RuntimePackagePreviewVisualAsset,
@@ -13,7 +16,8 @@ const RuntimePackagePreviewEnvelopeSchema = z.object({
 }).strict();
 
 const MAX_METADATA_BYTES = 1024 * 1024;
-const MAX_MEMBER_BYTES = 16 * 1024 * 1024;
+const MAX_MEMBER_BYTES = GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES;
+const MAX_EXACT_GRAND_HALL_PACKAGE_BYTES = GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES;
 const PRIVATE_NO_STORE = "private, no-store, max-age=0";
 const PRIVATE_VARY = "Origin, Authorization";
 
@@ -167,6 +171,20 @@ function requireSuccessfulResponse(response: Response): void {
   }
 }
 
+function previewInventoryWithinBrowserLimit(preview: RuntimePackagePreview): boolean {
+  if (preview.venueSlug !== "trades-hall" || preview.roomSlug !== "grand-hall") return true;
+  if (preview.visualAssets.length > GRAND_HALL_ROOM_ONLY_MAX_MEMBER_COUNT) return false;
+  let totalBytes = 0;
+  for (const member of preview.visualAssets) {
+    totalBytes += member.sizeBytes;
+    if (
+      !Number.isSafeInteger(totalBytes)
+      || totalBytes > MAX_EXACT_GRAND_HALL_PACKAGE_BYTES
+    ) return false;
+  }
+  return true;
+}
+
 function requestOptions(token: string, accept: string, signal: AbortSignal): RequestInit {
   return {
     method: "GET",
@@ -277,6 +295,12 @@ function parseMetadata(bytes: ArrayBuffer, requestedId: string): RuntimePackageP
   if (result.data.data.visualAssets.some((member) => member.sizeBytes > MAX_MEMBER_BYTES)) {
     throw transportError("RESPONSE_SCHEMA_INVALID", "Runtime package preview declares an oversized member.");
   }
+  if (!previewInventoryWithinBrowserLimit(result.data.data)) {
+    throw transportError(
+      "RESPONSE_SCHEMA_INVALID",
+      "Runtime package preview declares an oversized exact Grand Hall package.",
+    );
+  }
   return result.data.data;
 }
 
@@ -303,7 +327,11 @@ async function fetchMetadataWithToken(
 
 function requireValidPreview(value: RuntimePackagePreview): RuntimePackagePreview {
   const parsed = RuntimePackagePreviewSchema.safeParse(value);
-  if (!parsed.success || parsed.data.visualAssets.some((member) => member.sizeBytes > MAX_MEMBER_BYTES)) {
+  if (
+    !parsed.success
+    || parsed.data.visualAssets.some((member) => member.sizeBytes > MAX_MEMBER_BYTES)
+    || !previewInventoryWithinBrowserLimit(parsed.data)
+  ) {
     throw transportError("MEMBER_MISMATCH", "Runtime package preview member is not bound to valid metadata.");
   }
   return parsed.data;

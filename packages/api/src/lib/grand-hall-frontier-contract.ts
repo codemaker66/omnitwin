@@ -1,8 +1,13 @@
 import {
+  GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+  GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+  GrandHallRoomOnlyRuntimeEvidenceV2Schema,
   RegisterAssetVersionInputSchema,
   RegisterRuntimePackageInputSchema,
+  grandHallRoomOnlyEvidenceMatchesVisualMembers,
   stableCanonicalJson,
   type CanonicalJsonValue,
+  type GrandHallRoomOnlyRuntimeEvidenceV2,
   type RegisterAssetVersionInput,
   type RegisterRuntimePackageInput,
 } from "@omnitwin/types";
@@ -25,6 +30,8 @@ export const GRAND_HALL_PRIVATE_STORAGE_ROOT =
   "venues/trades-hall/rooms/grand-hall/";
 export const GRAND_HALL_DEFAULT_OBJECT_PREFIX =
   `${GRAND_HALL_PRIVATE_STORAGE_ROOT}xgrids/grand-hall-big-model-sog-fine-v1/`;
+export const GRAND_HALL_ROOM_ONLY_OBJECT_PREFIX =
+  `${GRAND_HALL_PRIVATE_STORAGE_ROOT}xgrids/grand-hall-room-only-sog-fine-v2/`;
 export const GRAND_HALL_MANIFEST_SHA256 =
   "927a92699de222e99d2684ca2567a35ab1e523a036461e6e01236b7b77b7f659";
 export const GRAND_HALL_FRONTIER_RECEIPT_SHA256 =
@@ -35,15 +42,34 @@ export const GRAND_HALL_LOD_SELECTION_POLICY =
 export const GRAND_HALL_FRONTIER_GAUSSIAN_COUNT = 6_019_684;
 export const GRAND_HALL_FRONTIER_TOTAL_BYTES = 106_479_738;
 
-export interface GrandHallFrontierMemberSpec {
-  readonly fileIndex: number;
+/**
+ * No accepted room-only evidence exists yet. Production remains fail-closed
+ * until a separately reviewed immutable evidence digest replaces this null
+ * trust root in a reviewed change. Tests may inject synthetic evidence through
+ * explicit dependency seams; those fixtures are never production authority.
+ */
+export const GRAND_HALL_ACCEPTED_ROOM_ONLY_RUNTIME_EVIDENCE_SHA256: string | null = null;
+
+export interface GrandHallRoomOnlyRuntimeAdmission {
+  readonly evidence: GrandHallRoomOnlyRuntimeEvidenceV2;
+  readonly acceptedEvidenceSha256: string;
+}
+
+export interface GrandHallRuntimeMemberSpec {
   readonly relativePath: string;
   readonly fileName: string;
-  readonly depth: 5;
-  readonly nodeCount: number;
+  readonly fileExt: ".sog";
   readonly gaussianCount: number;
   readonly sizeBytes: number;
   readonly sha256: string;
+  /** Omitted only by the immutable legacy source-frontier inventory. */
+  readonly objectPrefix?: string;
+}
+
+export interface GrandHallFrontierMemberSpec extends GrandHallRuntimeMemberSpec {
+  readonly fileIndex: number;
+  readonly depth: 5;
+  readonly nodeCount: number;
 }
 
 export const GRAND_HALL_FRONTIER_MEMBERS = [
@@ -51,6 +77,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 12,
     relativePath: "data/3dgs/0_0_0_1_0_1.sog",
     fileName: "0_0_0_1_0_1.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 4,
     gaussianCount: 556_880,
@@ -61,6 +88,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 13,
     relativePath: "data/3dgs/0_1_0_1_0_0.sog",
     fileName: "0_1_0_1_0_0.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 3,
     gaussianCount: 528_394,
@@ -71,6 +99,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 14,
     relativePath: "data/3dgs/0_2_0_0_1_1.sog",
     fileName: "0_2_0_0_1_1.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 4,
     gaussianCount: 608_233,
@@ -81,6 +110,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 15,
     relativePath: "data/3dgs/0_3_0_0_0_0.sog",
     fileName: "0_3_0_0_0_0.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 3,
     gaussianCount: 604_745,
@@ -91,6 +121,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 16,
     relativePath: "data/3dgs/0_3_0_1_0_1.sog",
     fileName: "0_3_0_1_0_1.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 3,
     gaussianCount: 585_011,
@@ -101,6 +132,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 17,
     relativePath: "data/3dgs/0_4_0_1_0_0.sog",
     fileName: "0_4_0_1_0_0.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 3,
     gaussianCount: 514_640,
@@ -111,6 +143,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 18,
     relativePath: "data/3dgs/0_5_0_0_0_1.sog",
     fileName: "0_5_0_0_0_1.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 3,
     gaussianCount: 504_860,
@@ -121,6 +154,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 19,
     relativePath: "data/3dgs/0_5_0_1_0_1.sog",
     fileName: "0_5_0_1_0_1.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 4,
     gaussianCount: 551_142,
@@ -131,6 +165,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 20,
     relativePath: "data/3dgs/0_6_0_0_0_1.sog",
     fileName: "0_6_0_0_0_1.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 4,
     gaussianCount: 597_926,
@@ -141,6 +176,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 21,
     relativePath: "data/3dgs/0_7_0_0_0_0.sog",
     fileName: "0_7_0_0_0_0.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 3,
     gaussianCount: 524_982,
@@ -151,6 +187,7 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     fileIndex: 22,
     relativePath: "data/3dgs/0_7_0_0_0_1.sog",
     fileName: "0_7_0_0_0_1.sog",
+    fileExt: ".sog",
     depth: 5,
     nodeCount: 3,
     gaussianCount: 442_871,
@@ -158,6 +195,70 @@ export const GRAND_HALL_FRONTIER_MEMBERS = [
     sha256: "5e4409b07084ce7089e77a17d1eec0d2c4691f7a9d9e52f55ef752529d356ea9",
   },
 ] as const satisfies readonly GrandHallFrontierMemberSpec[];
+
+export function grandHallRoomOnlyRuntimeAdmissionError(
+  admission: GrandHallRoomOnlyRuntimeAdmission | null,
+  visualMembers?: readonly {
+    readonly fileName: string;
+    readonly fileExt: string;
+    readonly sha256: string | null;
+    readonly sizeBytes: number | null;
+  }[],
+): string | null {
+  if (admission === null) {
+    return "No human-accepted Grand Hall room-only runtime evidence is registered.";
+  }
+  const parsed = GrandHallRoomOnlyRuntimeEvidenceV2Schema.safeParse(admission.evidence);
+  if (!parsed.success) {
+    return "Grand Hall room-only runtime evidence failed its immutable schema.";
+  }
+  if (
+    admission.acceptedEvidenceSha256 !== parsed.data.evidenceSha256
+    || !/^[a-f0-9]{64}$/u.test(admission.acceptedEvidenceSha256)
+  ) {
+    return "Grand Hall room-only runtime evidence is not the explicitly accepted digest.";
+  }
+  if (parsed.data.sourceFrontierReceiptSha256 !== GRAND_HALL_FRONTIER_RECEIPT_SHA256) {
+    return "Grand Hall room-only runtime evidence targets a different source frontier.";
+  }
+  const legacyMembers = GRAND_HALL_FRONTIER_MEMBERS.map((member) => ({
+    fileName: member.fileName,
+    fileExt: member.fileExt,
+    sha256: member.sha256,
+    sizeBytes: member.sizeBytes,
+  }));
+  const legacyByteIdentities = new Set(legacyMembers.map(
+    (member) => `${member.sha256}:${String(member.sizeBytes)}`,
+  ));
+  if (parsed.data.croppedVisual.members.some((member) =>
+    legacyByteIdentities.has(`${member.sha256}:${String(member.sizeBytes)}`))) {
+    return "No overbroad source-frontier member may be relabelled or mixed into cropped room-only output.";
+  }
+  if (
+    visualMembers !== undefined
+    && !grandHallRoomOnlyEvidenceMatchesVisualMembers(parsed.data, visualMembers)
+  ) {
+    return "Grand Hall cropped visual evidence does not bind the exact runtime members.";
+  }
+  return null;
+}
+
+export function grandHallRoomOnlyRuntimeMembers(
+  admission: GrandHallRoomOnlyRuntimeAdmission,
+): readonly GrandHallRuntimeMemberSpec[] {
+  const error = grandHallRoomOnlyRuntimeAdmissionError(admission);
+  if (error !== null) throw new Error(error);
+  const objectPrefix = `${GRAND_HALL_ROOM_ONLY_OBJECT_PREFIX}${admission.evidence.evidenceSha256}/`;
+  return admission.evidence.croppedVisual.members.map((member) => ({
+    relativePath: `data/3dgs/${member.fileName}`,
+    fileName: member.fileName,
+    fileExt: member.fileExt,
+    gaussianCount: member.gaussianCount,
+    sizeBytes: member.sizeBytes,
+    sha256: member.sha256,
+    objectPrefix,
+  }));
+}
 
 export interface GrandHallAssetRecord {
   readonly id: string;
@@ -178,8 +279,8 @@ export interface GrandHallAssetRecord {
 }
 
 export function grandHallObjectKey(
-  member: GrandHallFrontierMemberSpec,
-  objectPrefix = GRAND_HALL_DEFAULT_OBJECT_PREFIX,
+  member: GrandHallRuntimeMemberSpec,
+  objectPrefix = member.objectPrefix ?? GRAND_HALL_DEFAULT_OBJECT_PREFIX,
 ): string {
   return `${objectPrefix}${member.relativePath}`;
 }
@@ -205,6 +306,30 @@ export function buildGrandHallAssetRegistrationInputs(
       evidenceStatus: "unverified",
       runtimeStatus: "usable",
       notes: `Exact member of ${GRAND_HALL_FRONTIER_DECISION_ID}. Capture date, capture-session identity, and documentary rights evidence are not asserted.`,
+    })
+  );
+}
+
+export function buildGrandHallRoomOnlyAssetRegistrationInputs(
+  admission: GrandHallRoomOnlyRuntimeAdmission,
+): readonly RegisterAssetVersionInput[] {
+  return grandHallRoomOnlyRuntimeMembers(admission).map((member) =>
+    RegisterAssetVersionInputSchema.parse({
+      venueSlug: GRAND_HALL_VENUE_SLUG,
+      roomSlug: GRAND_HALL_ROOM_SLUG,
+      captureSessionId: null,
+      assetKind: "splat",
+      sourceType: "xgrids",
+      fileName: member.fileName,
+      fileExt: member.fileExt,
+      r2Key: grandHallObjectKey(member),
+      externalUrl: null,
+      mimeType: "application/octet-stream",
+      sha256: member.sha256,
+      sizeBytes: member.sizeBytes,
+      evidenceStatus: "human_reviewed",
+      runtimeStatus: "usable",
+      notes: `Accepted cropped output bound by room-only evidence sha256:${admission.evidence.evidenceSha256}. The legacy source frontier remains source evidence only.`,
     })
   );
 }
@@ -301,9 +426,84 @@ export function buildGrandHallRuntimePackagePayload(
         lodSelectionPolicy: GRAND_HALL_LOD_SELECTION_POLICY,
         expectedGaussianCount: GRAND_HALL_FRONTIER_GAUSSIAN_COUNT,
       },
-      notes: "Grand Hall XGRIDS quality frontier. The eleven authoritative leaf SOGs are declared in receipt order; env.sog, all ancestor LODs, SPZ, OBJ, and PLY are excluded. Capture date, capture-session identity, and documentary rights evidence are not asserted.",
+      notes: "Legacy Grand Hall XGRIDS quality frontier. The eleven leaf SOGs are byte-bound but carry no accepted room-only authority and are not runtime-admissible.",
     },
     evidenceStatus: "unverified",
+    runtimeStatus: "internal_ready",
+  });
+}
+
+export function buildGrandHallRoomOnlyRuntimePackagePayload(
+  registeredAssets: readonly GrandHallAssetRecord[],
+  admission: GrandHallRoomOnlyRuntimeAdmission,
+): RegisterRuntimePackageInput {
+  const error = grandHallRoomOnlyRuntimeAdmissionError(admission, registeredAssets);
+  if (error !== null) throw new Error(error);
+  const members = grandHallRoomOnlyRuntimeMembers(admission);
+  const expectedInputs = buildGrandHallRoomOnlyAssetRegistrationInputs(admission);
+  if (registeredAssets.length !== members.length) {
+    throw new Error("The runtime package does not contain the accepted cropped-output inventory.");
+  }
+  const ids: string[] = [];
+  const receipts = members.map((member, index) => {
+    const asset = registeredAssets[index];
+    const expectedInput = expectedInputs[index];
+    if (
+      asset === undefined
+      || expectedInput === undefined
+      || grandHallAssetIdentityErrors(asset, expectedInput).length > 0
+      || asset.evidenceStatus !== "human_reviewed"
+      || asset.r2Key === null
+    ) {
+      throw new Error(`Registered cropped-output asset ${String(index)} is not admissible.`);
+    }
+    ids.push(asset.id);
+    return {
+      assetVersionId: asset.id,
+      fileName: member.fileName,
+      fileExt: member.fileExt,
+      sha256: member.sha256,
+      sizeBytes: member.sizeBytes,
+      storageKeySha256: runtimeAssetStorageKeySha256(asset.r2Key),
+    };
+  });
+  const primaryVisualAssetVersionId = ids[0];
+  if (primaryVisualAssetVersionId === undefined) {
+    throw new Error("The accepted Grand Hall cropped output has no primary visual asset.");
+  }
+  return RegisterRuntimePackageInputSchema.parse({
+    venueSlug: GRAND_HALL_VENUE_SLUG,
+    roomSlug: GRAND_HALL_ROOM_SLUG,
+    primaryVisualAssetVersionId,
+    semanticMeshAssetVersionId: null,
+    collisionAssetVersionId: null,
+    pointCloudAssetVersionId: null,
+    manifestJson: {
+      schemaVersion: "venviewer.runtime-package.v1",
+      venueSlug: GRAND_HALL_VENUE_SLUG,
+      roomSlug: GRAND_HALL_ROOM_SLUG,
+      packageType: "room-runtime",
+      assets: {
+        primaryVisualAssetVersionId,
+        visualAssetVersionIds: ids,
+        visualAssetReceipts: receipts,
+        semanticMeshAssetVersionId: null,
+        collisionAssetVersionId: null,
+        pointCloudAssetVersionId: null,
+      },
+      compositionBasis: {
+        decisionId: GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+        decisionRef: `sha256:${admission.evidence.evidenceSha256}`,
+        hierarchySha256: admission.evidence.croppedVisual.memberSetSha256,
+        format: "sog",
+        level: "fine",
+        lodSelectionPolicy: GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+        expectedGaussianCount: admission.evidence.croppedVisual.totalGaussianCount,
+      },
+      roomOnlyEvidence: admission.evidence,
+      notes: "Grand Hall room-only v2 package. Runtime assets are distinct cropped outputs bound to separately accepted closed-boundary, portal, mask, and point-mask evidence; unknown pixels remain absent.",
+    },
+    evidenceStatus: "human_reviewed",
     runtimeStatus: "internal_ready",
   });
 }
@@ -328,10 +528,23 @@ export interface GrandHallRuntimePackageRecord {
 export function isCanonicalGrandHallRuntimePackage(
   pkg: GrandHallRuntimePackageRecord,
   orderedAssets: readonly GrandHallAssetRecord[],
+  acceptedEvidenceSha256: string | null =
+    GRAND_HALL_ACCEPTED_ROOM_ONLY_RUNTIME_EVIDENCE_SHA256,
 ): boolean {
+  const parsedEvidence = GrandHallRoomOnlyRuntimeEvidenceV2Schema.safeParse(
+    typeof pkg.manifestJson === "object" && pkg.manifestJson !== null
+      ? (pkg.manifestJson as { readonly roomOnlyEvidence?: unknown }).roomOnlyEvidence
+      : undefined,
+  );
+  if (!parsedEvidence.success || acceptedEvidenceSha256 === null) return false;
+  const admission: GrandHallRoomOnlyRuntimeAdmission = {
+    evidence: parsedEvidence.data,
+    acceptedEvidenceSha256,
+  };
+  if (grandHallRoomOnlyRuntimeAdmissionError(admission, orderedAssets) !== null) return false;
   let expected: RegisterRuntimePackageInput;
   try {
-    expected = buildGrandHallRuntimePackagePayload(orderedAssets);
+    expected = buildGrandHallRoomOnlyRuntimePackagePayload(orderedAssets, admission);
   } catch {
     return false;
   }
@@ -354,7 +567,7 @@ export function isCanonicalGrandHallRuntimePackage(
     actual.semanticMeshAssetVersionId === null &&
     actual.collisionAssetVersionId === null &&
     actual.pointCloudAssetVersionId === null &&
-    actual.evidenceStatus !== "rejected" &&
+    actual.evidenceStatus === "human_reviewed" &&
     (actual.runtimeStatus === "internal_ready" || actual.runtimeStatus === "published") &&
     stableCanonicalJson(actual.manifestJson as CanonicalJsonValue) ===
       stableCanonicalJson(expected.manifestJson as CanonicalJsonValue);

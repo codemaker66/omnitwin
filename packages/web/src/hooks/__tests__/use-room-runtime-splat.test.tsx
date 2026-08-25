@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import type { RuntimePackage } from "@omnitwin/types";
+import {
+  GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+  GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+  type RuntimePackage,
+} from "@omnitwin/types";
 import type { Space } from "../../api/spaces.js";
-import { GRAND_HALL_CAPTURED_SOG_MEMBERS } from "../../lib/grand-hall-captured-source.js";
+import { syntheticGrandHallRoomOnlyEvidence } from "../../test-fixtures/grand-hall-room-only-evidence.js";
 
 vi.mock("../../api/runtime-packages.js", () => ({ getLatestRuntimePackage: vi.fn() }));
 vi.mock("../../api/spaces.js", () => ({ getVenue: vi.fn() }));
@@ -12,6 +16,7 @@ const spacesApi = vi.mocked(await import("../../api/spaces.js"));
 const { useRoomRuntimeSplat } = await import("../use-room-runtime-splat.js");
 const { useEditorStore } = await import("../../stores/editor-store.js");
 const { useCockpitStore } = await import("../../stores/cockpit-store.js");
+const SYNTHETIC_EVIDENCE = syntheticGrandHallRoomOnlyEvidence();
 
 function spaceWith(slug: string, venueId = "v1", id = `space-${slug}`): Space {
   return {
@@ -89,13 +94,15 @@ function receptionRoomPackage(): RuntimePackage {
 function grandHallPackage(
   id = "20000000-0000-4000-8000-000000000001",
 ): RuntimePackage {
-  const assetIds = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((_, index) =>
+  const evidence = syntheticGrandHallRoomOnlyEvidence();
+  const members = evidence.croppedVisual.members;
+  const assetIds = members.map((_, index) =>
     `10000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
   );
-  const first = GRAND_HALL_CAPTURED_SOG_MEMBERS[0];
+  const first = members[0];
   const firstId = assetIds[0];
-  if (firstId === undefined) throw new Error("Grand Hall fixture missing.");
-  const receipts = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((member, index) => ({
+  if (firstId === undefined || first === undefined) throw new Error("Grand Hall fixture missing.");
+  const receipts = members.map((member, index) => ({
     assetVersionId: assetIds[index] ?? "",
     fileName: member.fileName,
     fileExt: ".sog" as const,
@@ -125,14 +132,15 @@ function grandHallPackage(
         pointCloudAssetVersionId: null,
       },
       compositionBasis: {
-        decisionId: "grand-hall-big-model-sog-fine-v1",
-        decisionRef: "sha256:8e7514e75aa19345dda1955f2cee3f9369339c553c2711c084cd04be4c9c1352",
-        hierarchySha256: "927a92699de222e99d2684ca2567a35ab1e523a036461e6e01236b7b77b7f659",
+        decisionId: GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+        decisionRef: `sha256:${evidence.evidenceSha256}`,
+        hierarchySha256: evidence.croppedVisual.memberSetSha256,
         format: "sog",
         level: "fine",
-        lodSelectionPolicy: "authoritative-leaf-nodes-exclude-environment-v1",
-        expectedGaussianCount: 6_019_684,
+        lodSelectionPolicy: GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+        expectedGaussianCount: evidence.croppedVisual.totalGaussianCount,
       },
+      roomOnlyEvidence: evidence,
     },
     evidenceStatus: "human_reviewed",
     runtimeStatus: "published",
@@ -159,7 +167,7 @@ function grandHallPackage(
       updatedAt: "2026-08-21T12:00:00.000Z",
     },
     primaryVisualAssetUrl: "https://untrusted.invalid/primary.sog",
-    visualAssetUrls: GRAND_HALL_CAPTURED_SOG_MEMBERS.map(
+    visualAssetUrls: members.map(
       (member) => `https://untrusted.invalid/${member.fileName}`,
     ),
   };
@@ -292,6 +300,13 @@ describe("useRoomRuntimeSplat", () => {
       delivery: "verified-grand-hall",
       runtimePackageId: "20000000-0000-4000-8000-000000000001",
       splatUrls: [],
+      exactGrandHallRoomOnlyEvidence: SYNTHETIC_EVIDENCE,
+      exactGrandHallMemberNames: [
+        "synthetic-grand-hall-crop-000.sog",
+        "synthetic-grand-hall-crop-001.sog",
+      ],
+      exactGrandHallTotalBytes: 78,
+      exactGrandHallGaussianCount: 303,
     });
     expect(result.current.roomIdentity).toMatchObject({
       status: "resolved",
@@ -311,6 +326,24 @@ describe("useRoomRuntimeSplat", () => {
       attemptNonce: 1,
     });
     expect(useCockpitStore.getState().runtimeAssetStatus).toMatch(/verifying exact protected bytes/i);
+  });
+
+  it("keeps verified Grand Hall blank for legacy v1 metadata and never exposes its URLs", async () => {
+    const legacy = grandHallPackage();
+    delete legacy.manifestJson.roomOnlyEvidence;
+    runtimeApi.getLatestRuntimePackage.mockResolvedValue(legacy);
+    useEditorStore.setState({ space: spaceWith("grand-hall") });
+    const { result } = renderHook(() => useRoomRuntimeSplat());
+
+    await waitFor(() => { expect(result.current.status).toBe("loaded"); });
+    expect(result.current).toMatchObject({
+      hasAsset: false,
+      delivery: "none",
+      runtimePackageId: null,
+      splatUrls: [],
+      exactGrandHallRoomOnlyEvidence: null,
+      exactGrandHallMemberNames: [],
+    });
   });
 
   it("resets exact runtime verification when the room/package key changes", async () => {

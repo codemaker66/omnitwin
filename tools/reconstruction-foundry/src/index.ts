@@ -1,4 +1,7 @@
 export * from "./cli.js";
+export * from "./grand-hall-xgrids-lcc-preflight.js";
+export * from "./grand-hall-xgrids-lcc-preflight-cli.js";
+export * from "./grand-hall-xgrids-lcc-windows.js";
 export * from "./lcc2-frontier-cli.js";
 export * from "./lcc2-frontier.js";
 export * from "./local-app.js";

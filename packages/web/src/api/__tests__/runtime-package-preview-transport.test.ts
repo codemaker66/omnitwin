@@ -1,4 +1,9 @@
-import type { RuntimePackagePreview } from "@omnitwin/types";
+import {
+  GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES,
+  GRAND_HALL_ROOM_ONLY_MAX_MEMBER_COUNT,
+  GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES,
+  type RuntimePackagePreview,
+} from "@omnitwin/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { API_URL } from "../../config/env.js";
 import {
@@ -85,6 +90,39 @@ function previewFixture(): RuntimePackagePreview {
       sha256: HASHES[index] ?? "0".repeat(64),
       sizeBytes: BODIES[index]?.byteLength ?? 1,
     })),
+  };
+}
+
+function syntheticGrandHallPreviewFixture(
+  memberCount: number,
+  memberBytes: number,
+): RuntimePackagePreview {
+  const preview = previewFixture();
+  const visualAssets = Array.from({ length: memberCount }, (_, index) => ({
+    assetVersionId: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    fileName: `grand-hall-${String(index)}.sog`,
+    fileExt: ".sog" as const,
+    sha256: index.toString(16).padStart(64, "0"),
+    sizeBytes: memberBytes,
+  }));
+  const visualAssetReceipts = visualAssets.map((member, index) => ({
+    ...member,
+    storageKeySha256: (index + 1).toString(16).padStart(2, "0").repeat(32),
+  }));
+  const primaryVisualAssetVersionId = visualAssets[0]?.assetVersionId;
+  if (primaryVisualAssetVersionId === undefined) throw new Error("Expected a primary member.");
+  return {
+    ...preview,
+    manifestJson: {
+      ...preview.manifestJson,
+      assets: {
+        ...preview.manifestJson.assets,
+        primaryVisualAssetVersionId,
+        visualAssetVersionIds: visualAssets.map((member) => member.assetVersionId),
+        visualAssetReceipts,
+      },
+    },
+    visualAssets,
   };
 }
 
@@ -190,6 +228,46 @@ describe("runtime package preview transport", () => {
       redirect: "error",
       signal: controller.signal,
     });
+  });
+
+  it("rejects an exact Grand Hall inventory above the shared atomic browser limit", async () => {
+    const preview = syntheticGrandHallPreviewFixture(
+      9,
+      GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES,
+    );
+    expect(preview.visualAssets.every((member) =>
+      member.sizeBytes <= GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES)).toBe(true);
+    expect(preview.visualAssets.reduce(
+      (total, member) => total + member.sizeBytes,
+      0,
+    )).toBeGreaterThan(GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      metadataResponse({ data: preview }),
+    );
+
+    await expect(fetchRuntimePackagePreviewMetadata(
+      PACKAGE_ID,
+      new AbortController().signal,
+      dependencies(fetchMock),
+    )).rejects.toMatchObject({ code: "RESPONSE_SCHEMA_INVALID" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("rejects exact Grand Hall member fan-out beyond the sequential loader limit", async () => {
+    const preview = syntheticGrandHallPreviewFixture(
+      GRAND_HALL_ROOM_ONLY_MAX_MEMBER_COUNT + 1,
+      1,
+    );
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      metadataResponse({ data: preview }),
+    );
+
+    await expect(fetchRuntimePackagePreviewMetadata(
+      PACKAGE_ID,
+      new AbortController().signal,
+      dependencies(fetchMock),
+    )).rejects.toMatchObject({ code: "RESPONSE_SCHEMA_INVALID" });
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it.each([

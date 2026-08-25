@@ -1,23 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
+  GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+  GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
   RuntimePackagePreviewSchema,
   RuntimePackageSchema,
   type RuntimePackage,
   type RuntimePackagePreview,
 } from "@omnitwin/types";
 import {
-  GRAND_HALL_CAPTURED_SOG_MEMBERS,
   validateGrandHallCapturedPreview,
   validateGrandHallCapturedSource,
 } from "../grand-hall-captured-source.js";
 import { decideRuntimeAsset } from "../runtime-package-resolution.js";
+import { syntheticGrandHallRoomOnlyEvidence } from "../../test-fixtures/grand-hall-room-only-evidence.js";
 
-const ASSET_IDS = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((_, index) =>
+const SYNTHETIC_EVIDENCE = syntheticGrandHallRoomOnlyEvidence();
+const SYNTHETIC_MEMBERS = SYNTHETIC_EVIDENCE.croppedVisual.members;
+const ASSET_IDS = SYNTHETIC_MEMBERS.map((_, index) =>
   `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
 );
 
 function grandHallPackage(): RuntimePackage {
-  const visualAssetReceipts = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((member, index) => ({
+  const visualAssetReceipts = SYNTHETIC_MEMBERS.map((member, index) => ({
     assetVersionId: ASSET_IDS[index] ?? "",
     fileName: member.fileName,
     fileExt: ".sog" as const,
@@ -25,11 +29,11 @@ function grandHallPackage(): RuntimePackage {
     sizeBytes: member.sizeBytes,
     storageKeySha256: (index + 1).toString(16).padStart(2, "0").repeat(32),
   }));
-  const visualAssetUrls = GRAND_HALL_CAPTURED_SOG_MEMBERS.map(
+  const visualAssetUrls = SYNTHETIC_MEMBERS.map(
     (member) => `https://assets.example/grand-hall/data/3dgs/${member.fileName}`,
   );
   const firstId = ASSET_IDS[0] ?? "";
-  const first = GRAND_HALL_CAPTURED_SOG_MEMBERS[0];
+  const first = SYNTHETIC_MEMBERS[0];
   if (first === undefined) throw new Error("Grand Hall source contract must have a primary member.");
 
   return {
@@ -54,14 +58,15 @@ function grandHallPackage(): RuntimePackage {
         pointCloudAssetVersionId: null,
       },
       compositionBasis: {
-        decisionId: "grand-hall-big-model-sog-fine-v1",
-        decisionRef: "sha256:8e7514e75aa19345dda1955f2cee3f9369339c553c2711c084cd04be4c9c1352",
-        hierarchySha256: "927a92699de222e99d2684ca2567a35ab1e523a036461e6e01236b7b77b7f659",
+        decisionId: GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+        decisionRef: `sha256:${SYNTHETIC_EVIDENCE.evidenceSha256}`,
+        hierarchySha256: SYNTHETIC_EVIDENCE.croppedVisual.memberSetSha256,
         format: "sog",
         level: "fine",
-        lodSelectionPolicy: "authoritative-leaf-nodes-exclude-environment-v1",
-        expectedGaussianCount: 6_019_684,
+        lodSelectionPolicy: GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+        expectedGaussianCount: SYNTHETIC_EVIDENCE.croppedVisual.totalGaussianCount,
       },
+      roomOnlyEvidence: SYNTHETIC_EVIDENCE,
     },
     evidenceStatus: "human_reviewed",
     runtimeStatus: "published",
@@ -120,23 +125,23 @@ function grandHallPreview(): RuntimePackagePreview {
 }
 
 describe("validateGrandHallCapturedSource", () => {
-  it("accepts only the exact ordered 11-member supplied SOG metadata", () => {
+  it("accepts only the distinct evidence-bound cropped-output inventory", () => {
     const pkg = RuntimePackageSchema.parse(grandHallPackage());
-    expect(validateGrandHallCapturedSource(pkg)).toEqual({ ok: true });
+    expect(validateGrandHallCapturedSource(pkg)).toMatchObject({ ok: true });
     expect(decideRuntimeAsset(null, pkg).source).toBe("none");
-    expect(validateGrandHallCapturedPreview(grandHallPreview())).toEqual({ ok: true });
+    expect(validateGrandHallCapturedPreview(grandHallPreview())).toMatchObject({ ok: true });
   });
 
   it("never treats an exact-looking external URL as byte authority", () => {
     const pkg = grandHallPackage();
-    pkg.visualAssetUrls = GRAND_HALL_CAPTURED_SOG_MEMBERS.map(
+    pkg.visualAssetUrls = SYNTHETIC_MEMBERS.map(
       (member) => `https://attacker.invalid/arbitrary/${member.fileName}`,
     );
     pkg.primaryVisualAssetUrl = pkg.visualAssetUrls[0] ?? null;
 
     // Immutable receipt metadata remains valid; URL transport is deliberately
     // ignored and the generic URL renderer is never admitted for Grand Hall.
-    expect(validateGrandHallCapturedSource(pkg)).toEqual({ ok: true });
+    expect(validateGrandHallCapturedSource(pkg)).toMatchObject({ ok: true });
     expect(decideRuntimeAsset(null, pkg)).toMatchObject({
       source: "none",
       splatUrls: [],
@@ -176,14 +181,14 @@ describe("validateGrandHallCapturedSource", () => {
   it("rejects a substituted byte digest or size", () => {
     const digestSwap = grandHallPackage();
     const digestReceipts = digestSwap.manifestJson.assets.visualAssetReceipts;
-    if (digestReceipts === undefined || digestReceipts[4] === undefined) throw new Error("Expected exact receipts.");
-    digestReceipts[4] = { ...digestReceipts[4], sha256: "f".repeat(64) };
+    if (digestReceipts === undefined || digestReceipts[0] === undefined) throw new Error("Expected exact receipts.");
+    digestReceipts[0] = { ...digestReceipts[0], sha256: "f".repeat(64) };
     expect(validateGrandHallCapturedSource(digestSwap)).toMatchObject({ ok: false });
 
     const sizeSwap = grandHallPackage();
     const sizeReceipts = sizeSwap.manifestJson.assets.visualAssetReceipts;
-    if (sizeReceipts === undefined || sizeReceipts[7] === undefined) throw new Error("Expected exact receipts.");
-    sizeReceipts[7] = { ...sizeReceipts[7], sizeBytes: sizeReceipts[7].sizeBytes + 1 };
+    if (sizeReceipts === undefined || sizeReceipts[1] === undefined) throw new Error("Expected exact receipts.");
+    sizeReceipts[1] = { ...sizeReceipts[1], sizeBytes: sizeReceipts[1].sizeBytes + 1 };
     expect(validateGrandHallCapturedSource(sizeSwap)).toMatchObject({ ok: false });
   });
 
@@ -191,7 +196,7 @@ describe("validateGrandHallCapturedSource", () => {
     const codecSwap = grandHallPackage();
     const codecReceipts = codecSwap.manifestJson.assets.visualAssetReceipts;
     if (codecReceipts === undefined || codecReceipts[0] === undefined) throw new Error("Expected exact receipts.");
-    codecReceipts[0] = { ...codecReceipts[0], fileName: "0_0_0_1_0_1.spz", fileExt: ".spz" };
+    codecReceipts[0] = { ...codecReceipts[0], fileName: "synthetic-crop.spz", fileExt: ".spz" };
     expect(validateGrandHallCapturedSource(codecSwap)).toMatchObject({ ok: false });
 
     const lodSwap = grandHallPackage();
@@ -205,9 +210,25 @@ describe("validateGrandHallCapturedSource", () => {
 
   it("rejects preview metadata whose protected member identity is substituted", () => {
     const preview = grandHallPreview();
-    const fourth = preview.visualAssets[3];
-    if (fourth === undefined) throw new Error("Expected fourth Grand Hall member.");
-    preview.visualAssets[3] = { ...fourth, sha256: "f".repeat(64) };
+    const second = preview.visualAssets[1];
+    if (second === undefined) throw new Error("Expected second Grand Hall member.");
+    preview.visualAssets[1] = { ...second, sha256: "f".repeat(64) };
     expect(validateGrandHallCapturedPreview(preview)).toMatchObject({ ok: false });
+  });
+
+  it("renders legacy v1 metadata blank even when its receipts are internally exact", () => {
+    const pkg = grandHallPackage();
+    delete pkg.manifestJson.roomOnlyEvidence;
+    pkg.manifestJson.compositionBasis = {
+      decisionId: "grand-hall-big-model-sog-fine-v1",
+      decisionRef: "sha256:8e7514e75aa19345dda1955f2cee3f9369339c553c2711c084cd04be4c9c1352",
+      hierarchySha256: "927a92699de222e99d2684ca2567a35ab1e523a036461e6e01236b7b77b7f659",
+      format: "sog",
+      level: "fine",
+      lodSelectionPolicy: "authoritative-leaf-nodes-exclude-environment-v1",
+      expectedGaussianCount: 6_019_684,
+    };
+    expect(validateGrandHallCapturedSource(pkg)).toMatchObject({ ok: false });
+    expect(decideRuntimeAsset(null, pkg)).toMatchObject({ source: "none", splatUrls: [] });
   });
 });

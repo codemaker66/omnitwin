@@ -1,12 +1,14 @@
-import type { RuntimePackagePreview } from "@omnitwin/types";
+import {
+  GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+  GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+  GRAND_HALL_ROOM_ONLY_MAX_TOTAL_GAUSSIAN_COUNT,
+  type RuntimePackagePreview,
+} from "@omnitwin/types";
 import { createElement } from "react";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { VerifiedRuntimePackagePreview } from "../../../api/runtime-package-preview-transport.js";
-import {
-  GRAND_HALL_CAPTURED_SOG_MEMBERS,
-  GRAND_HALL_CAPTURED_SOURCE,
-} from "../../../lib/grand-hall-captured-source.js";
+import { syntheticGrandHallRoomOnlyEvidence } from "../../../test-fixtures/grand-hall-room-only-evidence.js";
 import type { RuntimeAssetViewTransform } from "../../../lib/runtime-package-resolution.js";
 import { EXACT_GRAND_HALL_LOAD_DEADLINE_MS } from "../../../lib/exact-grand-hall-load-deadline.js";
 import {
@@ -70,7 +72,9 @@ const RUNTIME_KEY: ExactGrandHallRuntimeKey = {
   roomSlug: "grand-hall",
   runtimePackageId: PACKAGE_ID,
 };
-const ASSET_IDS = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((_, index) =>
+const SYNTHETIC_EVIDENCE = syntheticGrandHallRoomOnlyEvidence();
+const SYNTHETIC_MEMBERS = SYNTHETIC_EVIDENCE.croppedVisual.members;
+const ASSET_IDS = SYNTHETIC_MEMBERS.map((_, index) =>
   `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
 );
 const TRANSFORM: RuntimeAssetViewTransform = {
@@ -95,7 +99,7 @@ class FakeMesh implements ExactGrandHallMesh {
 }
 
 function previewFixture(): RuntimePackagePreview {
-  const receipts = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((member, index) => ({
+  const receipts = SYNTHETIC_MEMBERS.map((member, index) => ({
     assetVersionId: ASSET_IDS[index] ?? "",
     fileName: member.fileName,
     fileExt: ".sog" as const,
@@ -125,14 +129,15 @@ function previewFixture(): RuntimePackagePreview {
         pointCloudAssetVersionId: null,
       },
       compositionBasis: {
-        decisionId: GRAND_HALL_CAPTURED_SOURCE.decisionId,
-        decisionRef: GRAND_HALL_CAPTURED_SOURCE.frontierReceiptSha256,
-        hierarchySha256: GRAND_HALL_CAPTURED_SOURCE.manifestSha256,
+        decisionId: GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+        decisionRef: `sha256:${SYNTHETIC_EVIDENCE.evidenceSha256}`,
+        hierarchySha256: SYNTHETIC_EVIDENCE.croppedVisual.memberSetSha256,
         format: "sog",
         level: "fine",
-        lodSelectionPolicy: GRAND_HALL_CAPTURED_SOURCE.lodSelectionPolicy,
-        expectedGaussianCount: GRAND_HALL_CAPTURED_SOURCE.gaussianCount,
+        lodSelectionPolicy: GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+        expectedGaussianCount: SYNTHETIC_EVIDENCE.croppedVisual.totalGaussianCount,
       },
+      roomOnlyEvidence: SYNTHETIC_EVIDENCE,
     },
     evidenceStatus: "human_reviewed",
     runtimeStatus: "published",
@@ -182,7 +187,7 @@ afterEach(() => {
 
 describe("exact Grand Hall all-or-nothing decode", () => {
   it("keeps every member invisible until all exact counts have decoded", async () => {
-    const meshes = GRAND_HALL_CAPTURED_SOG_MEMBERS.map(
+    const meshes = SYNTHETIC_MEMBERS.map(
       (member) => new FakeMesh(member.gaussianCount),
     );
     let index = 0;
@@ -195,9 +200,9 @@ describe("exact Grand Hall all-or-nothing decode", () => {
       createMesh,
     );
 
-    expect(resource.splatCount).toBe(GRAND_HALL_CAPTURED_SOURCE.gaussianCount);
+    expect(resource.splatCount).toBe(SYNTHETIC_EVIDENCE.croppedVisual.totalGaussianCount);
     expect(resource.meshes).toEqual(meshes);
-    expect(createMesh).toHaveBeenCalledTimes(GRAND_HALL_CAPTURED_SOG_MEMBERS.length);
+    expect(createMesh).toHaveBeenCalledTimes(SYNTHETIC_MEMBERS.length);
     for (const mesh of meshes) {
       expect(mesh.visible).toBe(false);
       expect(mesh.opacity).toBe(0);
@@ -212,8 +217,8 @@ describe("exact Grand Hall all-or-nothing decode", () => {
   });
 
   it("disposes the complete partial set when one decoded count differs", async () => {
-    const meshes = GRAND_HALL_CAPTURED_SOG_MEMBERS.map(
-      (member, index) => new FakeMesh(member.gaussianCount + (index === 3 ? 1 : 0)),
+    const meshes = SYNTHETIC_MEMBERS.map(
+      (member, index) => new FakeMesh(member.gaussianCount + (index === 1 ? 1 : 0)),
     );
     let index = 0;
 
@@ -224,13 +229,12 @@ describe("exact Grand Hall all-or-nothing decode", () => {
       () => meshes[index++] ?? new FakeMesh(0),
     )).rejects.toThrow(/different Gaussian count/u);
 
-    expect(meshes.slice(0, 4).every((mesh) => mesh.dispose.mock.calls.length === 1)).toBe(true);
-    expect(meshes.slice(4).every((mesh) => mesh.dispose.mock.calls.length === 0)).toBe(true);
+    expect(meshes.every((mesh) => mesh.dispose.mock.calls.length === 1)).toBe(true);
   });
 });
 
 describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
-  it("reports ready only after all eleven decoded members attach in one commit", async () => {
+  it("reports ready only after the complete accepted inventory attaches in one commit", async () => {
     const verified = verifiedFixture();
     const transportEvents: string[] = [];
     exactLayerMocks.fetchRuntimePackagePreviewMetadata.mockImplementation(() => {
@@ -262,19 +266,19 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
     container = rendered.container;
 
     await waitFor(() => { expect(onReady).toHaveBeenCalledTimes(1); });
-    expect(attachedAtReady).toBe(GRAND_HALL_CAPTURED_SOG_MEMBERS.length);
+    expect(attachedAtReady).toBe(SYNTHETIC_MEMBERS.length);
     expect(rendered.container.querySelectorAll("primitive")).toHaveLength(
-      GRAND_HALL_CAPTURED_SOG_MEMBERS.length,
+      SYNTHETIC_MEMBERS.length,
     );
     expect(onChunkLoaded.mock.calls.map(([memberName]) => memberName)).toEqual(
-      GRAND_HALL_CAPTURED_SOG_MEMBERS.map((member) => member.fileName),
+      SYNTHETIC_MEMBERS.map((member) => member.fileName),
     );
     expect(exactLayerMocks.sparkRendererHost.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ sortRadial: false }),
     );
     expect(transportEvents).toEqual([
       "metadata",
-      ...GRAND_HALL_CAPTURED_SOG_MEMBERS.map((_, index) => `member:${String(index)}`),
+      ...SYNTHETIC_MEMBERS.map((_, index) => `member:${String(index)}`),
     ]);
   });
 
@@ -307,6 +311,45 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
     expect(rendered.container.querySelector("primitive")).toBeNull();
   });
 
+  it("rejects an unsafe Gaussian allocation hint before member fetch or mesh construction", async () => {
+    const preview = previewFixture();
+    const oversizedEvidence = {
+      ...SYNTHETIC_EVIDENCE,
+      croppedVisual: {
+        ...SYNTHETIC_EVIDENCE.croppedVisual,
+        totalGaussianCount: GRAND_HALL_ROOM_ONLY_MAX_TOTAL_GAUSSIAN_COUNT + 1,
+      },
+    };
+    const oversizedPreview: RuntimePackagePreview = {
+      ...preview,
+      manifestJson: {
+        ...preview.manifestJson,
+        compositionBasis: preview.manifestJson.compositionBasis === undefined
+          ? undefined
+          : {
+              ...preview.manifestJson.compositionBasis,
+              decisionRef: `sha256:${oversizedEvidence.evidenceSha256}`,
+              expectedGaussianCount: oversizedEvidence.croppedVisual.totalGaussianCount,
+            },
+        roomOnlyEvidence: oversizedEvidence,
+      },
+    };
+    exactLayerMocks.fetchRuntimePackagePreviewMetadata.mockResolvedValue(oversizedPreview);
+    const onFailed = vi.fn();
+
+    const rendered = render(createElement(ExactGrandHallSplatLayer, {
+      runtimePackageId: PACKAGE_ID,
+      transform: TRANSFORM,
+      active: true,
+      onFailed,
+    }));
+
+    await waitFor(() => { expect(onFailed).toHaveBeenCalledOnce(); });
+    expect(exactLayerMocks.fetchVerifiedRuntimePackagePreviewMember).not.toHaveBeenCalled();
+    expect(exactLayerMocks.createdMeshes).toHaveLength(0);
+    expect(rendered.container.querySelector("primitive")).toBeNull();
+  });
+
   it("reports a terminal failure while leaving every source member detached", async () => {
     exactLayerMocks.fetchRuntimePackagePreviewMetadata.mockRejectedValue(
       new Error("protected preview unavailable"),
@@ -326,7 +369,7 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
 
     await waitFor(() => { expect(onFailed).toHaveBeenCalledTimes(1); });
     expect(onReady).not.toHaveBeenCalled();
-    expect(onChunkFailed).toHaveBeenCalledTimes(GRAND_HALL_CAPTURED_SOG_MEMBERS.length);
+    expect(onChunkFailed).not.toHaveBeenCalled();
     expect(rendered.container.querySelector("primitive")).toBeNull();
   });
 
@@ -356,7 +399,7 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
     });
     expect(transportSignal?.aborted).toBe(true);
     expect(onFailed).toHaveBeenCalledOnce();
-    expect(onChunkFailed).toHaveBeenCalledTimes(GRAND_HALL_CAPTURED_SOG_MEMBERS.length);
+    expect(onChunkFailed).not.toHaveBeenCalled();
     expect(onReady).not.toHaveBeenCalled();
     expect(rendered.container.querySelector("primitive")).toBeNull();
   });
@@ -439,7 +482,7 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
     expect(onReady).toHaveBeenCalledOnce();
     expect(onFailed).not.toHaveBeenCalled();
     expect(rendered.container.querySelectorAll("primitive")).toHaveLength(
-      GRAND_HALL_CAPTURED_SOG_MEMBERS.length,
+      SYNTHETIC_MEMBERS.length,
     );
   });
 
@@ -471,7 +514,7 @@ describe("ExactGrandHallSplatLayer terminal lifecycle", () => {
     await waitFor(() => { expect(firstReady).toHaveBeenCalledOnce(); });
     const firstMeshes = [...exactLayerMocks.createdMeshes] as ExactGrandHallMesh[];
     expect(rendered.container.querySelectorAll("primitive")).toHaveLength(
-      GRAND_HALL_CAPTURED_SOG_MEMBERS.length,
+      SYNTHETIC_MEMBERS.length,
     );
 
     rendered.rerender(createElement(ExactGrandHallSplatLayer, {

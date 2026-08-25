@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Children, isValidElement, type ReactNode } from "react";
 import type { PlannerRoomIdentity } from "../../../lib/planner-layer-composition.js";
 import type { ExactGrandHallRuntimeKey } from "../../../stores/cockpit-store.js";
+import { syntheticGrandHallRoomOnlyEvidence } from "../../../test-fixtures/grand-hall-room-only-evidence.js";
 
 type CanvasMockProps = Readonly<{
   dpr?: unknown;
@@ -74,6 +75,8 @@ function mockSplat(overrides: {
   delivery?: "none" | "verified-grand-hall" | "url";
   runtimePackageId?: string | null;
   exactGrandHallRuntimeKey?: ExactGrandHallRuntimeKey | null;
+  exactGrandHallRoomOnlyEvidence?: ReturnType<typeof syntheticGrandHallRoomOnlyEvidence> | null;
+  exactGrandHallMemberNames?: readonly string[];
   roomIdentity?: PlannerRoomIdentity | null;
 } = {}): void {
   splatHookMock.useRoomRuntimeSplat.mockReturnValue({
@@ -84,6 +87,10 @@ function mockSplat(overrides: {
     delivery: overrides.delivery ?? "none",
     runtimePackageId: overrides.runtimePackageId ?? null,
     exactGrandHallRuntimeKey: overrides.exactGrandHallRuntimeKey ?? null,
+    exactGrandHallRoomOnlyEvidence: overrides.exactGrandHallRoomOnlyEvidence ?? null,
+    exactGrandHallMemberNames: overrides.exactGrandHallMemberNames ?? [],
+    exactGrandHallTotalBytes: null,
+    exactGrandHallGaussianCount: null,
     roomIdentity: overrides.roomIdentity ?? null,
   });
 }
@@ -139,16 +146,17 @@ afterEach(() => {
 
 describe("PlannerScene", () => {
   it("changes the exact arrival reset boundary for every room/package attempt", () => {
-    const first = exactGrandHallArrivalResetKey(EXACT_GRAND_HALL_RUNTIME_KEY, 1);
-    const retry = exactGrandHallArrivalResetKey(EXACT_GRAND_HALL_RUNTIME_KEY, 2);
+    const memberNames = ["crop-000.sog", "crop-001.sog"];
+    const first = exactGrandHallArrivalResetKey(EXACT_GRAND_HALL_RUNTIME_KEY, 1, memberNames);
+    const retry = exactGrandHallArrivalResetKey(EXACT_GRAND_HALL_RUNTIME_KEY, 2, memberNames);
     const nextPackage = exactGrandHallArrivalResetKey({
       ...EXACT_GRAND_HALL_RUNTIME_KEY,
       runtimePackageId: "20000000-0000-4000-8000-000000000002",
-    }, 1);
+    }, 1, memberNames);
 
     expect(first).not.toBe(retry);
     expect(first).not.toBe(nextPackage);
-    expect(first.split("|")).toHaveLength(11);
+    expect(first.split("|")).toHaveLength(2);
   });
 
   it("mounts an R3F canvas host", () => {
@@ -167,6 +175,10 @@ describe("PlannerScene", () => {
       delivery: "verified-grand-hall",
       runtimePackageId: "20000000-0000-4000-8000-000000000001",
       exactGrandHallRuntimeKey: EXACT_GRAND_HALL_RUNTIME_KEY,
+      exactGrandHallRoomOnlyEvidence: syntheticGrandHallRoomOnlyEvidence(),
+      exactGrandHallMemberNames: ["crop-000.sog", "crop-001.sog"],
+      exactGrandHallTotalBytes: 78,
+      exactGrandHallGaussianCount: 303,
       roomIdentity: VERIFIED_GRAND_HALL_IDENTITY,
     });
 
@@ -241,12 +253,17 @@ describe("PlannerScene", () => {
 
   it("does not reuse verified lifecycle state from another room key with the same package", async () => {
     useEditorStore.setState({ space: GRAND_HALL_SPACE });
+    const evidence = syntheticGrandHallRoomOnlyEvidence();
     mockSplat({
       hasAsset: true,
       status: "loaded",
       delivery: "verified-grand-hall",
       runtimePackageId: EXACT_GRAND_HALL_RUNTIME_KEY.runtimePackageId,
       exactGrandHallRuntimeKey: EXACT_GRAND_HALL_RUNTIME_KEY,
+      exactGrandHallRoomOnlyEvidence: evidence,
+      exactGrandHallMemberNames: evidence.croppedVisual.members.map(
+        (member) => member.fileName,
+      ),
       roomIdentity: VERIFIED_GRAND_HALL_IDENTITY,
     });
     const staleKey = { ...EXACT_GRAND_HALL_RUNTIME_KEY, spaceId: "another-grand-hall-space" };

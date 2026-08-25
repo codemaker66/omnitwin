@@ -90,6 +90,8 @@ export interface GrandHallValidation {
 
 export interface GrandHallRegistrationReport {
   readonly schemaVersion: "venviewer.grand-hall-big-model-intake.v1";
+  readonly artifactRole: "legacy_source_diagnostic";
+  readonly runtimeAdmissible: false;
   readonly requestedMode: "dry_run";
   readonly preflightStatus: "validated_dry_run" | "validation_failed";
   readonly manifestPath: string;
@@ -404,6 +406,8 @@ export async function prepareGrandHallRegistration(
     : null;
   return {
     schemaVersion: "venviewer.grand-hall-big-model-intake.v1",
+    artifactRole: "legacy_source_diagnostic",
+    runtimeAdmissible: false,
     requestedMode: "dry_run",
     preflightStatus: failed ? "validation_failed" : "validated_dry_run",
     manifestPath: options.args.manifestPath,

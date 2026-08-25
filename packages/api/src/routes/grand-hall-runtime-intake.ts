@@ -1,11 +1,10 @@
 import { createHash, createHmac } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES } from "@omnitwin/types";
 import { z } from "zod";
 import type { Database } from "../db/client.js";
 import type { Env } from "../env.js";
 import {
-  GRAND_HALL_DEFAULT_OBJECT_PREFIX,
-  GRAND_HALL_FRONTIER_MEMBERS,
   GRAND_HALL_FRONTIER_RECEIPT_SHA256,
   GRAND_HALL_MANIFEST_SHA256,
   GRAND_HALL_STAGING_DATABASE_NAME,
@@ -13,8 +12,11 @@ import {
   GRAND_HALL_STAGING_GIT_BRANCH,
   GRAND_HALL_STAGING_PRIVATE_BUCKET,
   GRAND_HALL_STAGING_TARGET_ID,
+  grandHallRoomOnlyRuntimeMembers,
+  grandHallRoomOnlyRuntimeAdmissionError,
   grandHallObjectKey,
-  type GrandHallFrontierMemberSpec,
+  type GrandHallRuntimeMemberSpec,
+  type GrandHallRoomOnlyRuntimeAdmission,
 } from "../lib/grand-hall-frontier-contract.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 import {
@@ -34,7 +36,6 @@ import {
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
 const GIT_SHA = /^[a-f0-9]{40,64}$/u;
 const INTAKE_CONFIRMATION = "register_exact_internal_ready_grand_hall_frontier";
-const MAX_MEMBER_BYTES = Math.max(...GRAND_HALL_FRONTIER_MEMBERS.map((member) => member.sizeBytes));
 const MAX_CONCURRENT_UPLOADS = 2;
 export const GRAND_HALL_UPLOAD_REQUEST_DEADLINE_MS = 60_000;
 
@@ -52,12 +53,13 @@ const CommitRequestSchema = TargetRequestSchema.extend({
 }).strict();
 
 const MemberParamsSchema = z.object({
-  memberIndex: z.coerce.number().int().min(0).max(GRAND_HALL_FRONTIER_MEMBERS.length - 1),
+  memberIndex: z.coerce.number().int().min(0).max(1_023),
 });
 
 const MemberHeadersSchema = z.object({
   "content-type": z.literal("application/octet-stream"),
-  "content-length": z.coerce.number().int().positive().max(MAX_MEMBER_BYTES),
+  "content-length": z.coerce.number().int().positive()
+    .max(GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES),
   "x-venviewer-intake-target-id": z.string().min(3).max(80),
   "x-venviewer-intake-api-origin": z.string().url().max(500),
   "x-venviewer-intake-target-binding-sha256": z.string().regex(SHA256_HEX),
@@ -68,7 +70,8 @@ const MemberHeadersSchema = z.object({
 
 const RehearsalHeadersSchema = z.object({
   "content-type": z.literal("application/octet-stream"),
-  "content-length": z.coerce.number().int().positive().max(MAX_MEMBER_BYTES),
+  "content-length": z.coerce.number().int().positive()
+    .max(GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES),
   "x-venviewer-intake-target-id": z.string().min(3).max(80),
   "x-venviewer-intake-api-origin": z.string().url().max(500),
   "x-venviewer-intake-deployed-git-sha": z.string().regex(GIT_SHA),
@@ -81,6 +84,8 @@ interface GrandHallRuntimeIntakeRoutesOptions {
   readonly env: Env;
   readonly objectStore?: GrandHallPrivateObjectStore;
   readonly registrationStore?: GrandHallRegistrationStore;
+  /** Test/review seam. Production has no value until real evidence is accepted. */
+  readonly roomOnlyAdmission?: GrandHallRoomOnlyRuntimeAdmission;
   readonly uploadRequestDeadlineMs?: number;
 }
 
@@ -137,8 +142,18 @@ export function grandHallRuntimeIntakeConfigured(env: Env): boolean {
     env.GIT_SHA === env.RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA;
 }
 
-export function grandHallRuntimeIntakeTargetBinding(env: Env): string | null {
-  if (!grandHallRuntimeIntakeConfigured(env)) return null;
+export function grandHallRuntimeIntakeTargetBinding(
+  env: Env,
+  admission: GrandHallRoomOnlyRuntimeAdmission | null = null,
+): string | null {
+  if (
+    !grandHallRuntimeIntakeConfigured(env)
+    || admission === null
+    || grandHallRoomOnlyRuntimeAdmissionError(admission) !== null
+  ) return null;
+  const members = grandHallRoomOnlyRuntimeMembers(admission);
+  const storagePrefix = members[0]?.objectPrefix;
+  if (storagePrefix === undefined) return null;
   return createHmac(
     "sha256",
     env.RUNTIME_PROFILE_INTAKE_R2_SECRET_ACCESS_KEY ?? "",
@@ -151,8 +166,9 @@ export function grandHallRuntimeIntakeTargetBinding(env: Env): string | null {
     databaseUrl: env.DATABASE_URL,
     storageAccountId: env.RUNTIME_PROFILE_R2_ACCOUNT_ID,
     storageBucket: env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET,
-    storagePrefix: GRAND_HALL_DEFAULT_OBJECT_PREFIX,
+    storagePrefix,
     frontierReceiptSha256: GRAND_HALL_FRONTIER_RECEIPT_SHA256,
+    roomOnlyEvidenceSha256: admission.evidence.evidenceSha256,
   })).digest("hex");
 }
 
@@ -185,6 +201,7 @@ function safeErrorReply(reply: FastifyReply, error: unknown) {
 function targetError(
   env: Env,
   input: z.infer<typeof TargetRequestSchema>,
+  roomOnlyAdmission: GrandHallRoomOnlyRuntimeAdmission | null,
 ): { readonly statusCode: 409 | 503; readonly code: string; readonly message: string } | null {
   if (!grandHallRuntimeIntakeConfigured(env)) {
     return {
@@ -215,6 +232,14 @@ function targetError(
       message: "The requested source identity is not the canonical Grand Hall frontier.",
     };
   }
+  const roomOnlyEvidenceError = grandHallRoomOnlyRuntimeAdmissionError(roomOnlyAdmission);
+  if (roomOnlyEvidenceError !== null) {
+    return {
+      statusCode: 409,
+      code: "GRAND_HALL_ROOM_ONLY_EVIDENCE_REQUIRED",
+      message: roomOnlyEvidenceError,
+    };
+  }
   return null;
 }
 
@@ -234,13 +259,16 @@ function rehearsalStorageConflict(message: string): GrandHallRuntimeIntakeError 
   );
 }
 
-function preparedResultHasCanonicalShape(prepared: GrandHallPrepareResult): boolean {
-  if (prepared.members.length !== GRAND_HALL_FRONTIER_MEMBERS.length) return false;
+function preparedResultHasCanonicalShape(
+  prepared: GrandHallPrepareResult,
+  runtimeMembers: readonly GrandHallRuntimeMemberSpec[],
+): boolean {
+  if (prepared.members.length !== runtimeMembers.length) return false;
   if (prepared.existingMemberCount + prepared.uploadRequiredCount !== prepared.members.length) {
     return false;
   }
   return prepared.members.every((candidate, memberIndex) => {
-    const member = GRAND_HALL_FRONTIER_MEMBERS[memberIndex];
+    const member = runtimeMembers[memberIndex];
     return member !== undefined &&
       candidate.memberIndex === memberIndex &&
       candidate.fileName === member.fileName &&
@@ -253,12 +281,13 @@ function assertRehearsalPreparedState(
   prepared: GrandHallPrepareResult,
   expectedExistingIndexes: ReadonlySet<number>,
   stage: "initial" | "final",
+  runtimeMembers: readonly GrandHallRuntimeMemberSpec[],
 ): void {
-  if (!preparedResultHasCanonicalShape(prepared)) {
+  if (!preparedResultHasCanonicalShape(prepared, runtimeMembers)) {
     throw rehearsalIntegrityError("The Grand Hall rehearsal received inconsistent storage evidence.");
   }
   const expectedExistingCount = expectedExistingIndexes.size;
-  const expectedUploadCount = GRAND_HALL_FRONTIER_MEMBERS.length - expectedExistingCount;
+  const expectedUploadCount = runtimeMembers.length - expectedExistingCount;
   const statusMatches = prepared.members.every((member, memberIndex) =>
     member.status === (expectedExistingIndexes.has(memberIndex)
       ? "verified_existing"
@@ -277,8 +306,9 @@ function assertRehearsalPreparedState(
 function assertRehearsalUploadResult(
   result: GrandHallMemberUploadResult,
   expectedCreated: boolean,
+  runtimeMembers: readonly GrandHallRuntimeMemberSpec[],
 ): void {
-  const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+  const member = runtimeMembers[0];
   if (
     member === undefined ||
     result.created !== expectedCreated ||
@@ -300,14 +330,20 @@ async function runGrandHallConditionalPutRehearsal(
   objectStore: GrandHallPrivateObjectStore,
   exactBytes: Buffer,
   signal: AbortSignal,
+  admission: GrandHallRoomOnlyRuntimeAdmission | null,
+  runtimeMembers: readonly GrandHallRuntimeMemberSpec[],
 ): Promise<GrandHallConditionalPutRehearsalResult> {
-  const initial = await prepareGrandHallRuntimeIntake(objectStore, signal);
-  assertRehearsalPreparedState(initial, new Set(), "initial");
+  const initial = await prepareGrandHallRuntimeIntake(objectStore, admission, signal);
+  assertRehearsalPreparedState(initial, new Set(), "initial", runtimeMembers);
 
-  const created = await uploadGrandHallRuntimeMember(objectStore, 0, exactBytes, signal);
-  assertRehearsalUploadResult(created, true);
-  const retried = await uploadGrandHallRuntimeMember(objectStore, 0, exactBytes, signal);
-  assertRehearsalUploadResult(retried, false);
+  const created = await uploadGrandHallRuntimeMember(
+    objectStore, 0, exactBytes, admission, signal,
+  );
+  assertRehearsalUploadResult(created, true, runtimeMembers);
+  const retried = await uploadGrandHallRuntimeMember(
+    objectStore, 0, exactBytes, admission, signal,
+  );
+  assertRehearsalUploadResult(retried, false, runtimeMembers);
 
   const corruptBytes = Buffer.from(exactBytes);
   corruptBytes[0] = (corruptBytes[0] ?? 0) ^ 0xff;
@@ -315,14 +351,15 @@ async function runGrandHallConditionalPutRehearsal(
     await probeGrandHallRuntimeConditionalCreateConflict(
       objectStore,
       corruptBytes,
+      admission,
       signal,
     );
   } finally {
     corruptBytes.fill(0);
   }
 
-  const final = await prepareGrandHallRuntimeIntake(objectStore, signal);
-  assertRehearsalPreparedState(final, new Set([0]), "final");
+  const final = await prepareGrandHallRuntimeIntake(objectStore, admission, signal);
+  assertRehearsalPreparedState(final, new Set([0]), "final", runtimeMembers);
   return { initial, final };
 }
 
@@ -429,7 +466,7 @@ export function grandHallR2WriteClientOptions(env: Env) {
 
 export function grandHallR2GetObjectInput(
   env: Env,
-  member: GrandHallFrontierMemberSpec,
+  member: GrandHallRuntimeMemberSpec,
 ) {
   return {
     Bucket: env.RUNTIME_PROFILE_R2_PRIVATE_BUCKET ?? "",
@@ -439,7 +476,7 @@ export function grandHallR2GetObjectInput(
 
 export function grandHallR2PutObjectInput(
   env: Env,
-  member: GrandHallFrontierMemberSpec,
+  member: GrandHallRuntimeMemberSpec,
   bytes: Uint8Array,
 ) {
   return {
@@ -526,6 +563,15 @@ export async function grandHallRuntimeIntakeRoutes(
   options: GrandHallRuntimeIntakeRoutesOptions,
 ): Promise<void> {
   const configured = grandHallRuntimeIntakeConfigured(options.env);
+  const roomOnlyAdmission = options.roomOnlyAdmission ?? null;
+  const runtimeMembers = roomOnlyAdmission !== null
+    && grandHallRoomOnlyRuntimeAdmissionError(roomOnlyAdmission) === null
+    ? grandHallRoomOnlyRuntimeMembers(roomOnlyAdmission)
+    : [];
+  const maxMemberBytes = Math.min(
+    GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES,
+    Math.max(1, ...runtimeMembers.map((member) => member.sizeBytes)),
+  );
   const objectStore = options.objectStore ?? (configured
     ? createGrandHallR2ObjectStore(options.env)
     : null);
@@ -649,7 +695,7 @@ export async function grandHallRuntimeIntakeRoutes(
 
   server.addContentTypeParser(
     "application/octet-stream",
-    { parseAs: "buffer", bodyLimit: MAX_MEMBER_BYTES },
+    { parseAs: "buffer", bodyLimit: maxMemberBytes },
     (_request, body, done) => {
       done(null, body);
     },
@@ -677,7 +723,7 @@ export async function grandHallRuntimeIntakeRoutes(
     async (request, reply) => {
       const parsed = TargetRequestSchema.safeParse(request.body);
       if (!parsed.success) return validationError(reply, parsed.error.issues);
-      const targetFailure = targetError(options.env, parsed.data);
+      const targetFailure = targetError(options.env, parsed.data, roomOnlyAdmission);
       if (targetFailure !== null) {
         noStore(reply);
         return reply.status(targetFailure.statusCode).send({
@@ -696,9 +742,13 @@ export async function grandHallRuntimeIntakeRoutes(
       try {
         const prepared = await runExclusively(() => prepareGrandHallRuntimeIntake(
           objectStore,
+          roomOnlyAdmission,
           requestAbort.signal,
         ));
-        const targetBindingSha256 = grandHallRuntimeIntakeTargetBinding(options.env);
+        const targetBindingSha256 = grandHallRuntimeIntakeTargetBinding(
+          options.env,
+          roomOnlyAdmission,
+        );
         if (targetBindingSha256 === null) {
           throw new GrandHallRuntimeIntakeError(
             500,
@@ -734,7 +784,7 @@ export async function grandHallRuntimeIntakeRoutes(
             targetBindingSha256,
             manifestSha256: GRAND_HALL_MANIFEST_SHA256,
             frontierReceiptSha256: GRAND_HALL_FRONTIER_RECEIPT_SHA256,
-            memberCount: GRAND_HALL_FRONTIER_MEMBERS.length,
+            memberCount: runtimeMembers.length,
             ...prepared,
             members,
           },
@@ -762,7 +812,7 @@ export async function grandHallRuntimeIntakeRoutes(
           if (!parsedHeaders.success) {
             return validationError(reply, parsedHeaders.error.issues);
           }
-          const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+          const member = runtimeMembers[0];
           if (member === undefined || parsedHeaders.data["content-length"] !== member.sizeBytes) {
             noStore(reply);
             return reply.status(409).send({
@@ -776,7 +826,7 @@ export async function grandHallRuntimeIntakeRoutes(
             reviewedGitSha: parsedHeaders.data["x-venviewer-intake-deployed-git-sha"],
             manifestSha256: parsedHeaders.data["x-venviewer-manifest-sha256"],
             frontierReceiptSha256: parsedHeaders.data["x-venviewer-frontier-receipt-sha256"],
-          });
+          }, roomOnlyAdmission);
           if (targetFailure !== null) {
             noStore(reply);
             return reply.status(targetFailure.statusCode).send({
@@ -802,7 +852,7 @@ export async function grandHallRuntimeIntakeRoutes(
           uploadLeases.set(request.raw, acquireUploadLease(request.raw, reply));
         },
       ],
-      bodyLimit: MAX_MEMBER_BYTES,
+      bodyLimit: maxMemberBytes,
     },
     async (request, reply) => {
       const exclusiveReservation = exclusiveReservations.get(request.raw);
@@ -824,7 +874,7 @@ export async function grandHallRuntimeIntakeRoutes(
         if (!Buffer.isBuffer(request.body)) {
           return validationError(reply, "An exact binary Grand Hall member-0 body is required.");
         }
-        const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+        const member = runtimeMembers[0];
         if (
           member === undefined ||
           request.body.byteLength !== member.sizeBytes ||
@@ -839,6 +889,8 @@ export async function grandHallRuntimeIntakeRoutes(
           objectStore,
           request.body,
           uploadLease.signal,
+          roomOnlyAdmission,
+          runtimeMembers,
         );
         noStore(reply);
         return reply.send({
@@ -907,7 +959,7 @@ export async function grandHallRuntimeIntakeRoutes(
               ...(parsedHeaders.success ? [] : parsedHeaders.error.issues),
             ]);
           }
-          const member = GRAND_HALL_FRONTIER_MEMBERS[parsedParams.data.memberIndex];
+          const member = runtimeMembers[parsedParams.data.memberIndex];
           if (member === undefined || parsedHeaders.data["content-length"] !== member.sizeBytes) {
             noStore(reply);
             return reply.status(409).send({
@@ -921,7 +973,7 @@ export async function grandHallRuntimeIntakeRoutes(
             reviewedGitSha: parsedHeaders.data["x-venviewer-intake-deployed-git-sha"],
             manifestSha256: parsedHeaders.data["x-venviewer-manifest-sha256"],
             frontierReceiptSha256: parsedHeaders.data["x-venviewer-frontier-receipt-sha256"],
-          });
+          }, roomOnlyAdmission);
           if (targetFailure !== null) {
             noStore(reply);
             return reply.status(targetFailure.statusCode).send({
@@ -929,7 +981,7 @@ export async function grandHallRuntimeIntakeRoutes(
               code: targetFailure.code,
             });
           }
-          const binding = grandHallRuntimeIntakeTargetBinding(options.env);
+          const binding = grandHallRuntimeIntakeTargetBinding(options.env, roomOnlyAdmission);
           if (
             binding === null ||
             parsedHeaders.data["x-venviewer-intake-target-binding-sha256"] !== binding
@@ -950,7 +1002,7 @@ export async function grandHallRuntimeIntakeRoutes(
           uploadLeases.set(request.raw, acquireUploadLease(request.raw, reply));
         },
       ],
-      bodyLimit: MAX_MEMBER_BYTES,
+      bodyLimit: maxMemberBytes,
     },
     async (request, reply) => {
       const uploadLease = uploadLeases.get(request.raw);
@@ -981,6 +1033,7 @@ export async function grandHallRuntimeIntakeRoutes(
           objectStore,
           parsedParams.data.memberIndex,
           request.body,
+          roomOnlyAdmission,
           uploadLease?.signal,
         );
         noStore(reply);
@@ -1011,7 +1064,7 @@ export async function grandHallRuntimeIntakeRoutes(
     async (request, reply) => {
       const parsed = CommitRequestSchema.safeParse(request.body);
       if (!parsed.success) return validationError(reply, parsed.error.issues);
-      const targetFailure = targetError(options.env, parsed.data);
+      const targetFailure = targetError(options.env, parsed.data, roomOnlyAdmission);
       if (targetFailure !== null) {
         noStore(reply);
         return reply.status(targetFailure.statusCode).send({
@@ -1019,7 +1072,10 @@ export async function grandHallRuntimeIntakeRoutes(
           code: targetFailure.code,
         });
       }
-      const targetBindingSha256 = grandHallRuntimeIntakeTargetBinding(options.env);
+      const targetBindingSha256 = grandHallRuntimeIntakeTargetBinding(
+        options.env,
+        roomOnlyAdmission,
+      );
       if (
         targetBindingSha256 === null ||
         parsed.data.targetBindingSha256 !== targetBindingSha256
@@ -1043,6 +1099,7 @@ export async function grandHallRuntimeIntakeRoutes(
           objectStore,
           registrationStore,
           request.user.id,
+          roomOnlyAdmission,
           requestAbort.signal,
         ));
         request.log.info({

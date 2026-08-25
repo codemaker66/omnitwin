@@ -4,18 +4,19 @@ import Fastify, { type FastifyInstance, type LightMyRequestResponse } from "fast
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Database } from "../db/client.js";
 import { validateEnv, type Env } from "../env.js";
+import { GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES } from "@omnitwin/types";
 import {
-  GRAND_HALL_FRONTIER_GAUSSIAN_COUNT,
   GRAND_HALL_FRONTIER_MEMBERS,
   GRAND_HALL_FRONTIER_RECEIPT_SHA256,
-  GRAND_HALL_FRONTIER_TOTAL_BYTES,
   GRAND_HALL_MANIFEST_SHA256,
   GRAND_HALL_STAGING_DATABASE_NAME,
   GRAND_HALL_STAGING_DATABASE_ROLE,
   GRAND_HALL_STAGING_GIT_BRANCH,
   GRAND_HALL_STAGING_PRIVATE_BUCKET,
   GRAND_HALL_STAGING_TARGET_ID,
+  grandHallRoomOnlyRuntimeMembers,
   type GrandHallFrontierMemberSpec,
+  type GrandHallRoomOnlyRuntimeAdmission,
 } from "../lib/grand-hall-frontier-contract.js";
 import {
   type GrandHallCommitResult,
@@ -25,6 +26,7 @@ import {
   type GrandHallRegistrationStore,
 } from "../services/grand-hall-runtime-intake.js";
 import type { RuntimePackageRevisionRow } from "../services/runtime-package-revisions.js";
+import { syntheticGrandHallRoomOnlyAdmission } from "./fixtures/grand-hall-room-only-evidence.js";
 
 process.env["NODE_ENV"] = "test";
 
@@ -37,6 +39,7 @@ vi.mock("../lib/grand-hall-frontier-contract.js", async (importOriginal) => {
       fileIndex,
       relativePath: `data/3dgs/route-test-${String(memberIndex)}.sog`,
       fileName: `route-test-${String(memberIndex)}.sog`,
+      fileExt: ".sog",
       depth: 5,
       nodeCount: 1,
       gaussianCount: memberIndex + 1,
@@ -55,6 +58,8 @@ vi.mock("../lib/grand-hall-frontier-contract.js", async (importOriginal) => {
       (total, member) => total + member.gaussianCount,
       0,
     ),
+    grandHallRoomOnlyRuntimeAdmissionError: (admission: unknown) =>
+      admission === null ? "Synthetic room-only evidence is required." : null,
   };
 });
 
@@ -62,6 +67,7 @@ const serviceMocks = vi.hoisted(() => ({
   prepare: vi.fn<
     (
       objectStore: GrandHallPrivateObjectStore,
+      admission: GrandHallRoomOnlyRuntimeAdmission | null,
       signal?: AbortSignal,
     ) => Promise<GrandHallPrepareResult>
   >(),
@@ -70,6 +76,7 @@ const serviceMocks = vi.hoisted(() => ({
       objectStore: GrandHallPrivateObjectStore,
       registrationStore: GrandHallRegistrationStore,
       actorUserId: string,
+      admission: GrandHallRoomOnlyRuntimeAdmission | null,
       signal?: AbortSignal,
     ) => Promise<GrandHallCommitResult>
   >(),
@@ -78,6 +85,7 @@ const serviceMocks = vi.hoisted(() => ({
       objectStore: GrandHallPrivateObjectStore,
       memberIndex: number,
       bytes: Uint8Array,
+      admission: GrandHallRoomOnlyRuntimeAdmission | null,
       signal?: AbortSignal,
     ) => Promise<GrandHallMemberUploadResult>
   >(),
@@ -85,6 +93,7 @@ const serviceMocks = vi.hoisted(() => ({
     (
       objectStore: GrandHallPrivateObjectStore,
       corruptBytes: Uint8Array,
+      admission: GrandHallRoomOnlyRuntimeAdmission | null,
       signal?: AbortSignal,
     ) => Promise<void>
   >(),
@@ -115,6 +124,8 @@ const {
 const ADMIN_USER_ID = "10000000-0000-4000-8000-000000000001";
 const PACKAGE_ID = "10000000-0000-4000-8000-000000000002";
 const PRIMARY_ASSET_ID = "10000000-0000-4000-8000-000000000003";
+const TEST_ROOM_ONLY_ADMISSION = syntheticGrandHallRoomOnlyAdmission();
+const TEST_RUNTIME_MEMBERS = grandHallRoomOnlyRuntimeMembers(TEST_ROOM_ONLY_ADMISSION);
 const TARGET_ID = GRAND_HALL_STAGING_TARGET_ID;
 const API_ORIGIN = "https://trades-hall-grand-hall-staging.up.railway.app";
 const DEPLOYED_GIT_SHA = "a".repeat(40);
@@ -224,6 +235,7 @@ async function routeServer(
     env,
     objectStore: dependencies.objectStore,
     registrationStore: dependencies.registrationStore,
+    roomOnlyAdmission: syntheticGrandHallRoomOnlyAdmission(),
     uploadRequestDeadlineMs,
     prefix: "/admin/assets",
   });
@@ -305,17 +317,20 @@ function commitResult(created: boolean): GrandHallCommitResult {
     packageRow: packageRow(),
     contentDigest: CONTENT_DIGEST,
     created,
-    assetVersionIds: GRAND_HALL_FRONTIER_MEMBERS.map((_, index) =>
+    assetVersionIds: TEST_RUNTIME_MEMBERS.map((_, index) =>
       `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`
     ),
-    verifiedMemberCount: GRAND_HALL_FRONTIER_MEMBERS.length,
-    verifiedTotalBytes: GRAND_HALL_FRONTIER_TOTAL_BYTES,
-    gaussianCount: GRAND_HALL_FRONTIER_GAUSSIAN_COUNT,
+    verifiedMemberCount: TEST_RUNTIME_MEMBERS.length,
+    verifiedTotalBytes: TEST_ROOM_ONLY_ADMISSION.evidence.croppedVisual.totalBytes,
+    gaussianCount: TEST_ROOM_ONLY_ADMISSION.evidence.croppedVisual.totalGaussianCount,
   };
 }
 
 function validCommitRequest(env: Env): Record<string, string> {
-  const targetBindingSha256 = grandHallRuntimeIntakeTargetBinding(env);
+  const targetBindingSha256 = grandHallRuntimeIntakeTargetBinding(
+    env,
+    TEST_ROOM_ONLY_ADMISSION,
+  );
   if (targetBindingSha256 === null) {
     throw new Error("Configured test intake environment did not produce a target binding.");
   }
@@ -327,13 +342,16 @@ function validCommitRequest(env: Env): Record<string, string> {
 }
 
 function exactMemberBytes(memberIndex: number): Buffer {
-  const member = GRAND_HALL_FRONTIER_MEMBERS[memberIndex];
+  const member = TEST_RUNTIME_MEMBERS[memberIndex];
   if (member === undefined) throw new Error("Test upload member is missing.");
-  return Buffer.from(`exact-grand-hall-route-member-${String(member.fileIndex)}`, "utf8");
+  return Buffer.from(
+    `synthetic-grand-hall-cropped-output-${String(memberIndex).padStart(3, "0")}`,
+    "utf8",
+  );
 }
 
 function prepareResult(existingIndexes: ReadonlySet<number>): GrandHallPrepareResult {
-  const members = GRAND_HALL_FRONTIER_MEMBERS.map((member, memberIndex) => ({
+  const members = TEST_RUNTIME_MEMBERS.map((member, memberIndex) => ({
     memberIndex,
     fileName: member.fileName,
     sizeBytes: member.sizeBytes,
@@ -364,7 +382,7 @@ function deferred<T>(): {
 function rehearsalHeaders(
   overrides: Readonly<Record<string, string>> = {},
 ): Record<string, string> {
-  const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+  const member = TEST_RUNTIME_MEMBERS[0];
   if (member === undefined) throw new Error("Test rehearsal member is missing.");
   return {
     authorization: `Bearer ${authToken("admin")}`,
@@ -380,9 +398,9 @@ function rehearsalHeaders(
 }
 
 function uploadHeaders(env: Env, memberIndex: number): Record<string, string> {
-  const member = GRAND_HALL_FRONTIER_MEMBERS[memberIndex];
+  const member = TEST_RUNTIME_MEMBERS[memberIndex];
   if (member === undefined) throw new Error("Test upload member is missing.");
-  const binding = grandHallRuntimeIntakeTargetBinding(env);
+  const binding = grandHallRuntimeIntakeTargetBinding(env, TEST_ROOM_ONLY_ADMISSION);
   if (binding === null) throw new Error("Test intake binding is missing.");
   return {
     authorization: `Bearer ${authToken("admin")}`,
@@ -458,12 +476,53 @@ describe("Grand Hall frontier intake route boundary", () => {
       RUNTIME_PROFILE_INTAKE_DEPLOYED_GIT_SHA: "b".repeat(40),
       GIT_SHA: "b".repeat(40),
     } satisfies Env;
-    const binding = grandHallRuntimeIntakeTargetBinding(base);
+    const binding = grandHallRuntimeIntakeTargetBinding(base, TEST_ROOM_ONLY_ADMISSION);
     expect(binding).toMatch(/^[a-f0-9]{64}$/u);
-    expect(grandHallRuntimeIntakeTargetBinding(differentUser)).not.toBe(binding);
-    expect(grandHallRuntimeIntakeTargetBinding(differentQuery)).not.toBe(binding);
-    expect(grandHallRuntimeIntakeTargetBinding(differentDeployment)).not.toBe(binding);
+    expect(grandHallRuntimeIntakeTargetBinding(
+      differentUser,
+      TEST_ROOM_ONLY_ADMISSION,
+    )).not.toBe(binding);
+    expect(grandHallRuntimeIntakeTargetBinding(
+      differentQuery,
+      TEST_ROOM_ONLY_ADMISSION,
+    )).not.toBe(binding);
+    expect(grandHallRuntimeIntakeTargetBinding(
+      differentDeployment,
+      TEST_ROOM_ONLY_ADMISSION,
+    )).not.toBe(binding);
     expect(binding).not.toContain(DATABASE_PASSWORD);
+  });
+
+  it("rejects an unconfigured room-only trust root before reading storage or registering", async () => {
+    const dependencies = fakeDependencies();
+    const server = Fastify({ logger: false });
+    await server.register(grandHallRuntimeIntakeRoutes, {
+      db: {} as Database,
+      env: intakeEnv(true),
+      objectStore: dependencies.objectStore,
+      registrationStore: dependencies.registrationStore,
+      prefix: "/admin/assets",
+    });
+    await server.ready();
+    try {
+      const response = await server.inject({
+        method: "POST",
+        url: "/admin/assets/grand-hall-frontier-intake/preflight",
+        headers: { authorization: `Bearer ${authToken("admin")}` },
+        payload: validTargetRequest,
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        code: "GRAND_HALL_ROOM_ONLY_EVIDENCE_REQUIRED",
+      });
+      expect(serviceMocks.prepare).not.toHaveBeenCalled();
+      expect(serviceMocks.commit).not.toHaveBeenCalled();
+      expect(dependencies.open).not.toHaveBeenCalled();
+      expect(dependencies.registerExactFrontier).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
   });
 
   it.each([
@@ -656,7 +715,7 @@ describe("Grand Hall frontier intake route boundary", () => {
         status: "upload_required",
       })),
       existingMemberCount: 0,
-      uploadRequiredCount: GRAND_HALL_FRONTIER_MEMBERS.length,
+      uploadRequiredCount: TEST_RUNTIME_MEMBERS.length,
     };
     serviceMocks.prepare.mockResolvedValue(prepared);
     const server = await routeServer(env, dependencies);
@@ -673,6 +732,9 @@ describe("Grand Hall frontier intake route boundary", () => {
       expect(serviceMocks.prepare).toHaveBeenCalledOnce();
       expect(serviceMocks.prepare).toHaveBeenCalledWith(
         dependencies.objectStore,
+        expect.objectContaining({
+          acceptedEvidenceSha256: TEST_ROOM_ONLY_ADMISSION.acceptedEvidenceSha256,
+        }),
         expect.any(AbortSignal),
       );
       expect(serviceMocks.createRegistrationStore).not.toHaveBeenCalled();
@@ -683,9 +745,9 @@ describe("Grand Hall frontier intake route boundary", () => {
         apiOrigin: API_ORIGIN,
         manifestSha256: GRAND_HALL_MANIFEST_SHA256,
         frontierReceiptSha256: GRAND_HALL_FRONTIER_RECEIPT_SHA256,
-        memberCount: GRAND_HALL_FRONTIER_MEMBERS.length,
+        memberCount: TEST_RUNTIME_MEMBERS.length,
         existingMemberCount: 0,
-        uploadRequiredCount: GRAND_HALL_FRONTIER_MEMBERS.length,
+        uploadRequiredCount: TEST_RUNTIME_MEMBERS.length,
       });
       expect(response.body).not.toContain("r2Key");
       expect(response.body).not.toContain("databaseTarget");
@@ -796,7 +858,7 @@ describe("Grand Hall frontier intake route boundary", () => {
     }
   });
 
-  it("requires a fresh 0-existing/11-missing rehearsal target before any PUT", async () => {
+  it("requires a fresh all-missing cropped-output rehearsal target before any PUT", async () => {
     const dependencies = fakeDependencies();
     serviceMocks.prepare.mockResolvedValue(prepareResult(new Set([0])));
     const server = await routeServer(intakeEnv(true), dependencies);
@@ -822,7 +884,7 @@ describe("Grand Hall frontier intake route boundary", () => {
   it("runs create, retry, corrupt-copy, and read-back evidence in one request without registration", async () => {
     const env = intakeEnv(true);
     const dependencies = fakeDependencies();
-    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    const member = TEST_RUNTIME_MEMBERS[0];
     if (member === undefined) throw new Error("Test rehearsal member is missing.");
     const exactBytes = exactMemberBytes(0);
     let corruptBytesReference: Uint8Array | undefined;
@@ -887,7 +949,7 @@ describe("Grand Hall frontier intake route boundary", () => {
         },
         initialPreflight: {
           existingMemberCount: 0,
-          uploadRequiredCount: 11,
+          uploadRequiredCount: 2,
         },
         conditionalPut: {
           created: { statusCode: 201, created: true },
@@ -900,7 +962,7 @@ describe("Grand Hall frontier intake route boundary", () => {
         },
         finalPreflight: {
           existingMemberCount: 1,
-          uploadRequiredCount: 10,
+          uploadRequiredCount: 1,
         },
         commitAttempted: false,
         registrationAttempted: false,
@@ -912,7 +974,7 @@ describe("Grand Hall frontier intake route boundary", () => {
 
   it("holds the exclusive intake gate for the complete one-request rehearsal", async () => {
     const dependencies = fakeDependencies();
-    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    const member = TEST_RUNTIME_MEMBERS[0];
     if (member === undefined) throw new Error("Test rehearsal member is missing.");
     const initial = deferred<GrandHallPrepareResult>();
     serviceMocks.prepare
@@ -1010,9 +1072,9 @@ describe("Grand Hall frontier intake route boundary", () => {
     }
   });
 
-  it("fails closed when the post-rehearsal storage evidence is not exactly 1-existing/10-missing", async () => {
+  it("fails closed when post-rehearsal storage is not one-existing/rest-missing", async () => {
     const dependencies = fakeDependencies();
-    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    const member = TEST_RUNTIME_MEMBERS[0];
     if (member === undefined) throw new Error("Test rehearsal member is missing.");
     serviceMocks.prepare
       .mockResolvedValueOnce(prepareResult(new Set()))
@@ -1071,7 +1133,7 @@ describe("Grand Hall frontier intake route boundary", () => {
   it("rejects a non-platform-admin binary upload before parsing or storage work", async () => {
     const env = intakeEnv(true);
     const dependencies = fakeDependencies();
-    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    const member = TEST_RUNTIME_MEMBERS[0];
     if (member === undefined) throw new Error("Test upload member is missing.");
     const server = await routeServer(env, dependencies);
     try {
@@ -1095,7 +1157,7 @@ describe("Grand Hall frontier intake route boundary", () => {
   it("rejects a disabled binary upload before parsing or storage work", async () => {
     const enabledEnv = intakeEnv(true);
     const dependencies = fakeDependencies();
-    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    const member = TEST_RUNTIME_MEMBERS[0];
     if (member === undefined) throw new Error("Test upload member is missing.");
     const server = await routeServer(intakeEnv(false), dependencies);
     try {
@@ -1117,7 +1179,7 @@ describe("Grand Hall frontier intake route boundary", () => {
   it("rejects a changed binary upload target binding before storage work", async () => {
     const env = intakeEnv(true);
     const dependencies = fakeDependencies();
-    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    const member = TEST_RUNTIME_MEMBERS[0];
     if (member === undefined) throw new Error("Test upload member is missing.");
     const server = await routeServer(env, dependencies);
     try {
@@ -1162,10 +1224,32 @@ describe("Grand Hall frontier intake route boundary", () => {
     }
   });
 
+  it("rejects a member larger than the shared authenticated-preview ceiling", async () => {
+    const env = intakeEnv(true);
+    const dependencies = fakeDependencies();
+    const server = await routeServer(env, dependencies);
+    try {
+      const response = await server.inject({
+        method: "PUT",
+        url: "/admin/assets/grand-hall-frontier-intake/members/0",
+        headers: {
+          ...uploadHeaders(env, 0),
+          "content-length": String(GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES + 1),
+        },
+        payload: Buffer.alloc(GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES + 1),
+      });
+      expect(response.statusCode).toBe(400);
+      expect(serviceMocks.upload).not.toHaveBeenCalled();
+      expect(dependencies.putCreateOnly).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
+
   it("accepts one exact API-proxied member without exposing private storage identity", async () => {
     const env = intakeEnv(true);
     const dependencies = fakeDependencies();
-    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    const member = TEST_RUNTIME_MEMBERS[0];
     if (member === undefined) throw new Error("Test upload member is missing.");
     serviceMocks.upload.mockResolvedValue({
       created: true,
@@ -1189,6 +1273,9 @@ describe("Grand Hall frontier intake route boundary", () => {
         dependencies.objectStore,
         0,
         expect.any(Buffer),
+        expect.objectContaining({
+          acceptedEvidenceSha256: TEST_ROOM_ONLY_ADMISSION.acceptedEvidenceSha256,
+        }),
         expect.any(AbortSignal),
       );
       expect(parsedData(response)).toEqual({
@@ -1208,7 +1295,7 @@ describe("Grand Hall frontier intake route boundary", () => {
   it("returns 200 for an exact idempotent member retry", async () => {
     const env = intakeEnv(true);
     const dependencies = fakeDependencies();
-    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    const member = TEST_RUNTIME_MEMBERS[0];
     if (member === undefined) throw new Error("Test upload member is missing.");
     serviceMocks.upload.mockResolvedValue({
       created: false,
@@ -1241,7 +1328,7 @@ describe("Grand Hall frontier intake route boundary", () => {
   it("times out stalled request bodies and releases both binary upload slots", async () => {
     const env = intakeEnv(true);
     const dependencies = fakeDependencies();
-    const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+    const member = TEST_RUNTIME_MEMBERS[0];
     if (member === undefined) throw new Error("Test upload member is missing.");
     serviceMocks.upload.mockResolvedValue({
       created: true,
@@ -1344,6 +1431,9 @@ describe("Grand Hall frontier intake route boundary", () => {
         dependencies.objectStore,
         dependencies.registrationStore,
         ADMIN_USER_ID,
+        expect.objectContaining({
+          acceptedEvidenceSha256: syntheticGrandHallRoomOnlyAdmission().acceptedEvidenceSha256,
+        }),
         expect.any(AbortSignal),
       );
       expect(serviceMocks.createRegistrationStore).not.toHaveBeenCalled();
@@ -1355,9 +1445,9 @@ describe("Grand Hall frontier intake route boundary", () => {
         revision: 1,
         contentDigest: CONTENT_DIGEST,
         created,
-        memberCount: GRAND_HALL_FRONTIER_MEMBERS.length,
-        totalBytes: GRAND_HALL_FRONTIER_TOTAL_BYTES,
-        gaussianCount: GRAND_HALL_FRONTIER_GAUSSIAN_COUNT,
+        memberCount: TEST_RUNTIME_MEMBERS.length,
+        totalBytes: TEST_ROOM_ONLY_ADMISSION.evidence.croppedVisual.totalBytes,
+        gaussianCount: TEST_ROOM_ONLY_ADMISSION.evidence.croppedVisual.totalGaussianCount,
       });
       expect(response.body).not.toContain(PRIMARY_ASSET_ID);
       expect(response.body).not.toContain("assetVersionIds");

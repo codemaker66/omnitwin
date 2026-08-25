@@ -1,6 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 Set-StrictMode -Version Latest
+$Host.UI.WriteErrorLine('GRAND_HALL_V1_INTAKE_RETIRED: legacy Grand Hall credential handoff is superseded; no credential was read or staged.')
+exit 64
+
+# Historical implementation below is intentionally unreachable. It remains
+# only for audit provenance until the retired v1 tooling is removed wholesale.
 $failureExitCode = 61
 
 function Get-RequiredHelperValue {

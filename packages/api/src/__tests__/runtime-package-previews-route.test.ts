@@ -4,6 +4,9 @@ import { Readable } from "node:stream";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
+  GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES,
+  GRAND_HALL_ROOM_ONLY_MAX_MEMBER_COUNT,
+  GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES,
   RegisterRuntimePackageInputSchema,
   RuntimePackageManifestJsonSchema,
   RuntimePackagePreviewSchema,
@@ -267,6 +270,56 @@ function grandHallSource(
   };
 }
 
+function syntheticGrandHallSource(
+  memberCount: number,
+  memberBytes: number,
+): RuntimePackagePreviewSource {
+  const assets: AssetVersionRow[] = Array.from({ length: memberCount }, (_, index) => ({
+    ...runtimeAsset(index % ASSET_IDS.length),
+    id: `10000000-0000-4000-8000-${String(index + 101).padStart(12, "0")}`,
+    roomSlug: "grand-hall",
+    fileName: `oversized-grand-hall-${String(index)}.sog`,
+    r2Key: `r2:venues/trades-hall/rooms/grand-hall/exact/oversized-grand-hall-${String(index)}.sog`,
+    sha256: index.toString(16).padStart(64, "0"),
+    sizeBytes: memberBytes,
+  }));
+  const primaryVisualAssetVersionId = assets[0]?.id;
+  if (primaryVisualAssetVersionId === undefined) throw new Error("Expected a primary asset.");
+  const baseManifest = RuntimePackageManifestJsonSchema.parse(immutablePackage().manifestJson);
+  const manifestJson = {
+    ...baseManifest,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    assets: {
+      ...baseManifest.assets,
+      primaryVisualAssetVersionId,
+      visualAssetVersionIds: assets.map((asset) => asset.id),
+      visualAssetReceipts: assets.map((asset) => {
+        if (asset.r2Key === null || asset.sha256 === null || asset.sizeBytes === null) {
+          throw new Error("Oversized Grand Hall fixture must have complete storage identity.");
+        }
+        return {
+          assetVersionId: asset.id,
+          fileName: asset.fileName,
+          fileExt: ".sog" as const,
+          sha256: asset.sha256,
+          sizeBytes: asset.sizeBytes,
+          storageKeySha256: runtimeAssetStorageKeySha256(asset.r2Key),
+        };
+      }),
+    },
+  };
+  return {
+    runtimePackage: immutablePackage({
+      venueSlug: "trades-hall",
+      roomSlug: "grand-hall",
+      primaryVisualAssetVersionId,
+      manifestJson,
+    }),
+    candidateVisualAssets: [...assets].reverse(),
+  };
+}
+
 describe("exact private runtime-package preview routes", () => {
   let server: FastifyInstance;
   let activeSource: RuntimePackagePreviewSource | null;
@@ -358,10 +411,77 @@ describe("exact private runtime-package preview routes", () => {
       headers: { authorization: `Bearer ${venueStaffToken}` },
     });
     expect(response.statusCode).toBe(409);
-    expect(response.json()).toMatchObject({ code: "GRAND_HALL_FRONTIER_MISMATCH" });
+    expect(response.json()).toMatchObject({
+      code: "GRAND_HALL_ROOM_ONLY_EVIDENCE_REQUIRED",
+    });
     expect(response.headers["cache-control"]).toBe("private, no-store, max-age=0");
     expect(response.headers["pragma"]).toBe("no-cache");
     expect(response.headers["vary"]).toBe("Origin, Authorization");
+    expect(loadRuntimeAssetObject).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized exact Grand Hall package before metadata response or object reads", async () => {
+    activeSource = syntheticGrandHallSource(9, GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES);
+    expect(activeSource.candidateVisualAssets.every((asset) =>
+      asset.sizeBytes === GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES)).toBe(true);
+    expect(activeSource.candidateVisualAssets.reduce(
+      (total, asset) => total + (asset.sizeBytes ?? 0),
+      0,
+    )).toBeGreaterThan(GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES);
+
+    const metadata = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+    expect(metadata.statusCode).toBe(409);
+    expect(metadata.json()).toMatchObject({
+      code: "GRAND_HALL_RUNTIME_PACKAGE_BYTES_EXCEEDED",
+    });
+
+    const first = activeSource.candidateVisualAssets[0];
+    if (first === undefined) throw new Error("Expected an oversized preview member.");
+    const asset = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}` +
+        `/assets/${first.id}/${first.fileName}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+    expect(asset.statusCode).toBe(409);
+    expect(asset.json()).toMatchObject({
+      code: "GRAND_HALL_RUNTIME_PACKAGE_BYTES_EXCEEDED",
+    });
+    expect(loadRuntimeAssetObject).not.toHaveBeenCalled();
+  });
+
+  it("rejects exact Grand Hall member fan-out before metadata response or object reads", async () => {
+    activeSource = syntheticGrandHallSource(
+      GRAND_HALL_ROOM_ONLY_MAX_MEMBER_COUNT + 1,
+      1,
+    );
+
+    const metadata = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+    expect(metadata.statusCode).toBe(409);
+    expect(metadata.json()).toMatchObject({
+      code: "GRAND_HALL_RUNTIME_PACKAGE_MEMBER_COUNT_EXCEEDED",
+    });
+
+    const first = activeSource.candidateVisualAssets[0];
+    if (first === undefined) throw new Error("Expected a fan-out preview member.");
+    const asset = await server.inject({
+      method: "GET",
+      url: `/admin/assets/runtime-package-previews/${PACKAGE_ID}` +
+        `/assets/${first.id}/${first.fileName}`,
+      headers: { authorization: `Bearer ${venueStaffToken}` },
+    });
+    expect(asset.statusCode).toBe(409);
+    expect(asset.json()).toMatchObject({
+      code: "GRAND_HALL_RUNTIME_PACKAGE_MEMBER_COUNT_EXCEEDED",
+    });
     expect(loadRuntimeAssetObject).not.toHaveBeenCalled();
   });
 

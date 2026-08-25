@@ -1,14 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Database } from "../db/client.js";
 import { assetVersions, generalAuditLog, runtimePackages } from "../db/schema.js";
-import {
-  GRAND_HALL_FRONTIER_MEMBERS,
-  buildGrandHallAssetRegistrationInputs,
-} from "../lib/grand-hall-frontier-contract.js";
+import { buildGrandHallRoomOnlyAssetRegistrationInputs } from "../lib/grand-hall-frontier-contract.js";
 import {
   GrandHallRuntimeIntakeError,
   createDatabaseGrandHallRegistrationStore,
 } from "../services/grand-hall-runtime-intake.js";
+import { syntheticGrandHallRoomOnlyAdmission } from "./fixtures/grand-hall-room-only-evidence.js";
 
 type AssetRow = typeof assetVersions.$inferSelect;
 type AssetInsert = typeof assetVersions.$inferInsert;
@@ -19,6 +17,7 @@ type AuditInsert = typeof generalAuditLog.$inferInsert;
 
 const NOW = new Date("2026-08-22T12:00:00.000Z");
 const ACTOR_USER_ID = "90000000-0000-4000-8000-000000000001";
+const roomOnlyAdmission = syntheticGrandHallRoomOnlyAdmission;
 
 interface FakeDatabaseState {
   readonly assets: readonly AssetRow[];
@@ -54,7 +53,7 @@ function canonicalAssetRow(
   memberIndex: number,
   overrides: Partial<AssetRow> = {},
 ): AssetRow {
-  const input = buildGrandHallAssetRegistrationInputs()[memberIndex];
+  const input = buildGrandHallRoomOnlyAssetRegistrationInputs(roomOnlyAdmission())[memberIndex];
   if (input === undefined) throw new Error("Test member index is outside the canonical frontier.");
   return {
     id: uuid(1, memberIndex + 1),
@@ -250,14 +249,14 @@ describe("database-backed Grand Hall frontier registration", () => {
     const harness = createFakeDatabase();
     const store = createDatabaseGrandHallRegistrationStore(harness.db);
 
-    const result = await store.registerExactFrontier(ACTOR_USER_ID);
+    const result = await store.registerExactFrontier(ACTOR_USER_ID, roomOnlyAdmission());
 
     expect(result.created).toBe(true);
     expect(result.packageRow.revision).toBe(1);
-    expect(result.packageRow.evidenceStatus).toBe("unverified");
+    expect(result.packageRow.evidenceStatus).toBe("human_reviewed");
     expect(result.packageRow.runtimeStatus).toBe("internal_ready");
     expect(result.assetVersionIds).toEqual(harness.state().assets.map((row) => row.id));
-    expect(harness.state().assets).toHaveLength(GRAND_HALL_FRONTIER_MEMBERS.length);
+    expect(harness.state().assets).toHaveLength(2);
     expect(harness.state().assets.every((row) => row.captureSessionId === null)).toBe(true);
     expect(harness.state().assets.every((row) => row.externalUrl === null)).toBe(true);
     expect(harness.state().packages).toEqual([result.packageRow]);
@@ -267,12 +266,15 @@ describe("database-backed Grand Hall frontier registration", () => {
       action: "grand_hall_runtime_intake.committed",
       targetType: "runtime_package",
       targetId: result.packageRow.id,
-      metadata: expect.objectContaining({ captureSessionId: null }),
+      metadata: expect.objectContaining({
+        captureSessionId: null,
+        roomOnlyEvidenceSha256: roomOnlyAdmission().acceptedEvidenceSha256,
+      }),
     });
     expect(harness.counters).toMatchObject({
       transactions: 1,
       statements: 3,
-      assetInsertAttempts: GRAND_HALL_FRONTIER_MEMBERS.length,
+      assetInsertAttempts: 2,
       packageInsertAttempts: 1,
       auditInsertAttempts: 1,
     });
@@ -281,15 +283,15 @@ describe("database-backed Grand Hall frontier registration", () => {
   it("reuses the exact assets and package without duplicate writes", async () => {
     const harness = createFakeDatabase();
     const store = createDatabaseGrandHallRegistrationStore(harness.db);
-    const created = await store.registerExactFrontier(ACTOR_USER_ID);
+    const created = await store.registerExactFrontier(ACTOR_USER_ID, roomOnlyAdmission());
 
-    const reused = await store.registerExactFrontier(ACTOR_USER_ID);
+    const reused = await store.registerExactFrontier(ACTOR_USER_ID, roomOnlyAdmission());
 
     expect(reused).toEqual({ ...created, created: false });
-    expect(harness.state().assets).toHaveLength(GRAND_HALL_FRONTIER_MEMBERS.length);
+    expect(harness.state().assets).toHaveLength(2);
     expect(harness.state().packages).toHaveLength(1);
     expect(harness.state().audits).toHaveLength(1);
-    expect(harness.counters.assetInsertAttempts).toBe(GRAND_HALL_FRONTIER_MEMBERS.length);
+    expect(harness.counters.assetInsertAttempts).toBe(2);
     expect(harness.counters.packageInsertAttempts).toBe(1);
     expect(harness.counters.auditInsertAttempts).toBe(1);
   });
@@ -301,7 +303,7 @@ describe("database-backed Grand Hall frontier registration", () => {
     const harness = createFakeDatabase({ assets: [conflicting] });
     const store = createDatabaseGrandHallRegistrationStore(harness.db);
 
-    await expect(store.registerExactFrontier(ACTOR_USER_ID)).rejects.toMatchObject({
+    await expect(store.registerExactFrontier(ACTOR_USER_ID, roomOnlyAdmission())).rejects.toMatchObject({
       statusCode: 409,
       code: "GRAND_HALL_ASSET_CONFLICT",
     } satisfies Partial<GrandHallRuntimeIntakeError>);
@@ -313,15 +315,15 @@ describe("database-backed Grand Hall frontier registration", () => {
   });
 
   it("rolls back earlier asset writes when a later asset insert fails", async () => {
-    const harness = createFakeDatabase({}, { assetInsertAttempt: 6 });
+    const harness = createFakeDatabase({}, { assetInsertAttempt: 2 });
     const store = createDatabaseGrandHallRegistrationStore(harness.db);
 
-    await expect(store.registerExactFrontier(ACTOR_USER_ID)).rejects.toThrow(
+    await expect(store.registerExactFrontier(ACTOR_USER_ID, roomOnlyAdmission())).rejects.toThrow(
       "simulated asset insert failure",
     );
 
     expect(harness.state()).toEqual({ assets: [], packages: [], audits: [] });
-    expect(harness.counters.assetInsertAttempts).toBe(6);
+    expect(harness.counters.assetInsertAttempts).toBe(2);
     expect(harness.counters.packageInsertAttempts).toBe(0);
     expect(harness.counters.auditInsertAttempts).toBe(0);
   });
@@ -330,12 +332,12 @@ describe("database-backed Grand Hall frontier registration", () => {
     const harness = createFakeDatabase({}, { failPackageInsert: true });
     const store = createDatabaseGrandHallRegistrationStore(harness.db);
 
-    await expect(store.registerExactFrontier(ACTOR_USER_ID)).rejects.toThrow(
+    await expect(store.registerExactFrontier(ACTOR_USER_ID, roomOnlyAdmission())).rejects.toThrow(
       "simulated runtime package insert failure",
     );
 
     expect(harness.state()).toEqual({ assets: [], packages: [], audits: [] });
-    expect(harness.counters.assetInsertAttempts).toBe(GRAND_HALL_FRONTIER_MEMBERS.length);
+    expect(harness.counters.assetInsertAttempts).toBe(2);
     expect(harness.counters.packageInsertAttempts).toBe(1);
     expect(harness.counters.auditInsertAttempts).toBe(0);
   });
@@ -344,13 +346,29 @@ describe("database-backed Grand Hall frontier registration", () => {
     const harness = createFakeDatabase({}, { failAuditInsert: true });
     const store = createDatabaseGrandHallRegistrationStore(harness.db);
 
-    await expect(store.registerExactFrontier(ACTOR_USER_ID)).rejects.toThrow(
+    await expect(store.registerExactFrontier(ACTOR_USER_ID, roomOnlyAdmission())).rejects.toThrow(
       "simulated audit insert failure",
     );
 
     expect(harness.state()).toEqual({ assets: [], packages: [], audits: [] });
-    expect(harness.counters.assetInsertAttempts).toBe(GRAND_HALL_FRONTIER_MEMBERS.length);
+    expect(harness.counters.assetInsertAttempts).toBe(2);
     expect(harness.counters.packageInsertAttempts).toBe(1);
     expect(harness.counters.auditInsertAttempts).toBe(1);
+  });
+
+  it("rejects missing or unaccepted room-only evidence before opening a transaction", async () => {
+    const harness = createFakeDatabase();
+    const store = createDatabaseGrandHallRegistrationStore(harness.db);
+    const wrong = roomOnlyAdmission();
+
+    await expect(store.registerExactFrontier(
+      ACTOR_USER_ID,
+      { ...wrong, acceptedEvidenceSha256: "f".repeat(64) },
+    )).rejects.toMatchObject({
+      code: "GRAND_HALL_ROOM_ONLY_EVIDENCE_REQUIRED",
+    } satisfies Partial<GrandHallRuntimeIntakeError>);
+
+    expect(harness.counters.transactions).toBe(0);
+    expect(harness.state()).toEqual({ assets: [], packages: [], audits: [] });
   });
 });

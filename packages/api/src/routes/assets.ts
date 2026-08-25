@@ -779,9 +779,14 @@ function serializeRuntimePackage(
 function canonicalGrandHallPackageCanLoad(
   pkg: RuntimePackageRow,
   orderedAssets: readonly AssetVersionRow[],
+  acceptedRoomOnlyEvidenceSha256: string | null,
 ): boolean {
   if (!isExactGrandHallRuntimeTarget(pkg.venueSlug, pkg.roomSlug)) return true;
-  return isCanonicalGrandHallRuntimePackage(pkg, orderedAssets);
+  return isCanonicalGrandHallRuntimePackage(
+    pkg,
+    orderedAssets,
+    acceptedRoomOnlyEvidenceSha256,
+  );
 }
 
 function redactVenueScopedRuntimePackage(runtimePackage: RuntimePackage): RuntimePackage {
@@ -1789,6 +1794,8 @@ export interface AssetRoutesOptions {
   readonly resolveRuntimeVenueId?: (venueSlug: string) => Promise<string | null>;
   /** Deterministic test seam. Production resolves the latest database package. */
   readonly loadLatestRuntimePackage?: LatestRuntimePackageDiscoveryLoader;
+  /** Test/review seam. Production is null until real room-only evidence is accepted. */
+  readonly acceptedGrandHallRoomOnlyEvidenceSha256?: string;
 }
 
 export function validateExactGrandHallRuntimeStorage(
@@ -1806,6 +1813,8 @@ export async function assetRoutes(
   opts: AssetRoutesOptions,
 ): Promise<void> {
   const { db, env } = opts;
+  const acceptedGrandHallRoomOnlyEvidenceSha256 =
+    opts.acceptedGrandHallRoomOnlyEvidenceSha256 ?? null;
   const resolveRuntimeVenueId = opts.resolveRuntimeVenueId ?? ((venueSlug: string) =>
     resolveActiveRuntimeVenueId(db, venueSlug));
   const loadLatestRuntimePackage = opts.loadLatestRuntimePackage ?? ((
@@ -1970,7 +1979,11 @@ export async function assetRoutes(
         if (
           visualAssetVersions === null
           || (visualAssetVersions !== null &&
-            !canonicalGrandHallPackageCanLoad(resolved.pkg, visualAssetVersions))
+            !canonicalGrandHallPackageCanLoad(
+              resolved.pkg,
+              visualAssetVersions,
+              acceptedGrandHallRoomOnlyEvidenceSha256,
+            ))
           || (venueScopedGrandHall && visualAssetVersions.some((asset) =>
             asset.r2Key === null
             || asset.externalUrl !== null

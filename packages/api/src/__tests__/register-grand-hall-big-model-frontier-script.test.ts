@@ -2,6 +2,14 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Lcc2HighestDetailFrontierReceiptV0 } from "@omnitwin/reconstruction-foundry-cli";
+import {
+  GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES,
+  GrandHallRoomOnlyRuntimeEvidenceMaterialV2Schema,
+  GrandHallRoomOnlyRuntimeEvidenceV2Schema,
+  computeGrandHallRoomOnlyRuntimeEvidenceV2Sha256,
+  computeGrandHallRoomOnlyVisualMemberSetSha256,
+  type GrandHallRoomOnlyVisualMemberV2,
+} from "@omnitwin/types";
 import { describe, expect, it, vi } from "vitest";
 import {
   GRAND_HALL_APPLY_BLOCKER,
@@ -28,7 +36,14 @@ import {
   REQUIRED_RUNTIME_PACKAGE_REVISION_CONSTRAINTS,
   REQUIRED_RUNTIME_PACKAGE_REVISION_TRIGGERS,
 } from "../scripts/register-reception-room-quality-frontier.js";
-import { isCanonicalGrandHallRuntimePackage } from "../lib/grand-hall-frontier-contract.js";
+import {
+  buildGrandHallRoomOnlyAssetRegistrationInputs,
+  buildGrandHallRoomOnlyRuntimePackagePayload,
+  grandHallRoomOnlyRuntimeAdmissionError,
+  isCanonicalGrandHallRuntimePackage,
+  type GrandHallRoomOnlyRuntimeAdmission,
+} from "../lib/grand-hall-frontier-contract.js";
+import { syntheticGrandHallRoomOnlyAdmission } from "./fixtures/grand-hall-room-only-evidence.js";
 import { computeRuntimePackageRevisionDigest } from "../services/runtime-package-revisions.js";
 
 const MANIFEST_PATH = "C:/GRAND_HALL_BIG_MODEL_VARIATIONS/scans_BIG_MODEL_TH_GH_1/lcc2-result/Grand_Hall.lcc2";
@@ -150,6 +165,54 @@ function assetRows(): readonly GrandHallAssetRecord[] {
     evidenceStatus: "unverified",
     runtimeStatus: "usable",
   }));
+}
+
+function croppedOutputRows(): readonly GrandHallAssetRecord[] {
+  return buildGrandHallRoomOnlyAssetRegistrationInputs(
+    syntheticGrandHallRoomOnlyAdmission(),
+  ).map((input, index) => ({
+    id: assetId(index + 100),
+    venueSlug: input.venueSlug,
+    roomSlug: input.roomSlug ?? null,
+    captureSessionId: null,
+    assetKind: input.assetKind,
+    sourceType: input.sourceType,
+    fileName: input.fileName,
+    fileExt: input.fileExt,
+    r2Key: input.r2Key ?? null,
+    externalUrl: null,
+    mimeType: input.mimeType ?? null,
+    sha256: input.sha256 ?? null,
+    sizeBytes: input.sizeBytes ?? null,
+    evidenceStatus: input.evidenceStatus,
+    runtimeStatus: input.runtimeStatus,
+  }));
+}
+
+function syntheticAdmissionWithMembers(
+  members: readonly GrandHallRoomOnlyVisualMemberV2[],
+): GrandHallRoomOnlyRuntimeAdmission {
+  const base = syntheticGrandHallRoomOnlyAdmission().evidence;
+  const { evidenceSha256: _evidenceSha256, ...baseMaterial } = base;
+  const material = GrandHallRoomOnlyRuntimeEvidenceMaterialV2Schema.parse({
+    ...baseMaterial,
+    croppedVisual: {
+      ...baseMaterial.croppedVisual,
+      memberSetSha256: computeGrandHallRoomOnlyVisualMemberSetSha256(members),
+      memberCount: members.length,
+      totalBytes: members.reduce((total, member) => total + member.sizeBytes, 0),
+      totalGaussianCount: members.reduce(
+        (total, member) => total + member.gaussianCount,
+        0,
+      ),
+      members,
+    },
+  });
+  const evidence = GrandHallRoomOnlyRuntimeEvidenceV2Schema.parse({
+    ...material,
+    evidenceSha256: computeGrandHallRoomOnlyRuntimeEvidenceV2Sha256(material),
+  });
+  return { evidence, acceptedEvidenceSha256: evidence.evidenceSha256 };
 }
 
 function readStore(rows: readonly GrandHallAssetRecord[] = []): GrandHallRegistrationReadStore {
@@ -297,21 +360,35 @@ describe("Grand Hall big-model read-only intake", () => {
     ])).toThrow("does not match");
   });
 
-  it("uses the same canonical eleven-member predicate at registration and serving", () => {
+  it("rejects legacy v1 and uses the same accepted-v2 predicate at registration and serving", () => {
     const rows = assetRows();
-    const input = buildGrandHallRuntimePackagePayload(rows);
-    expect(isCanonicalGrandHallRuntimePackage(input, rows)).toBe(true);
+    const legacy = buildGrandHallRuntimePackagePayload(rows);
+    expect(isCanonicalGrandHallRuntimePackage(legacy, rows)).toBe(false);
 
-    const first = rows[0];
+    const admission = syntheticGrandHallRoomOnlyAdmission();
+    const croppedRows = croppedOutputRows();
+    const input = buildGrandHallRoomOnlyRuntimePackagePayload(croppedRows, admission);
+    expect(isCanonicalGrandHallRuntimePackage(
+      input,
+      croppedRows,
+      admission.acceptedEvidenceSha256,
+    )).toBe(true);
+    expect(isCanonicalGrandHallRuntimePackage(
+      { ...input, evidenceStatus: "unverified" },
+      croppedRows,
+      admission.acceptedEvidenceSha256,
+    )).toBe(false);
+
+    const first = croppedRows[0];
     if (first === undefined) throw new Error("Test fixture needs a first row.");
     expect(isCanonicalGrandHallRuntimePackage(input, [
       { ...first, captureSessionId: assetId(80) },
-      ...rows.slice(1),
-    ])).toBe(false);
+      ...croppedRows.slice(1),
+    ], admission.acceptedEvidenceSha256)).toBe(false);
     expect(isCanonicalGrandHallRuntimePackage({
       ...input,
       pointCloudAssetVersionId: assetId(81),
-    }, rows)).toBe(false);
+    }, croppedRows, admission.acceptedEvidenceSha256)).toBe(false);
 
     const alteredNotes = {
       ...input,
@@ -333,8 +410,57 @@ describe("Grand Hall big-model read-only intake", () => {
     expect(computeRuntimePackageRevisionDigest(addedGeneratedAt)).not.toBe(
       computeRuntimePackageRevisionDigest(input),
     );
-    expect(isCanonicalGrandHallRuntimePackage(alteredNotes, rows)).toBe(false);
-    expect(isCanonicalGrandHallRuntimePackage(addedGeneratedAt, rows)).toBe(false);
+    expect(isCanonicalGrandHallRuntimePackage(
+      alteredNotes,
+      croppedRows,
+      admission.acceptedEvidenceSha256,
+    )).toBe(false);
+    expect(isCanonicalGrandHallRuntimePackage(
+      addedGeneratedAt,
+      croppedRows,
+      admission.acceptedEvidenceSha256,
+    )).toBe(false);
+  });
+
+  it("rejects renamed, reordered, subset, or mixed legacy source bytes as cropped output", () => {
+    const legacy = GRAND_HALL_FRONTIER_MEMBERS[3];
+    if (legacy === undefined) throw new Error("Legacy frontier fixture is incomplete.");
+    const renamedLegacy = {
+      fileName: "renamed-source-byte.sog",
+      fileExt: ".sog" as const,
+      sha256: legacy.sha256,
+      sizeBytes: legacy.sizeBytes,
+      gaussianCount: legacy.gaussianCount,
+    };
+    const subsetAdmission = syntheticAdmissionWithMembers([renamedLegacy]);
+    expect(grandHallRoomOnlyRuntimeAdmissionError(subsetAdmission)).toMatch(
+      /source-frontier member/u,
+    );
+
+    const distinct = syntheticGrandHallRoomOnlyAdmission().evidence.croppedVisual.members[0];
+    if (distinct === undefined) throw new Error("Synthetic cropped fixture is incomplete.");
+    const mixedAdmission = syntheticAdmissionWithMembers([distinct, renamedLegacy].reverse());
+    expect(grandHallRoomOnlyRuntimeAdmissionError(mixedAdmission)).toMatch(
+      /source-frontier member/u,
+    );
+  });
+
+  it("rejects an admission whose atomic browser package exceeds the shared total cap", () => {
+    const admission = syntheticGrandHallRoomOnlyAdmission();
+    const oversizedAdmission = {
+      ...admission,
+      evidence: {
+        ...admission.evidence,
+        croppedVisual: {
+          ...admission.evidence.croppedVisual,
+          totalBytes: GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES + 1,
+        },
+      },
+    } as GrandHallRoomOnlyRuntimeAdmission;
+
+    expect(grandHallRoomOnlyRuntimeAdmissionError(oversizedAdmission)).toMatch(
+      /immutable schema/u,
+    );
   });
 
   it("emits a useful dry-run with an explicit server-bound registration blocker", async () => {
@@ -345,6 +471,10 @@ describe("Grand Hall big-model read-only intake", () => {
     });
 
     expect(report.preflightStatus).toBe("validated_dry_run");
+    expect(report).toMatchObject({
+      artifactRole: "legacy_source_diagnostic",
+      runtimeAdmissible: false,
+    });
     expect(report.requestedMode).toBe("dry_run");
     expect(report.proposedRuntimePackage).toBeNull();
     expect(report.registration).toEqual({

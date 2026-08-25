@@ -2,8 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
-import type { EventPhaseGraph, EvidenceTargetType, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
-import { GRAND_HALL_CAPTURED_SOG_MEMBERS } from "../lib/grand-hall-captured-source.js";
+import {
+  GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+  GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+  type EventPhaseGraph,
+  type EvidenceTargetType,
+  type RuntimePackage,
+  type TruthModeSummary,
+} from "@omnitwin/types";
+import { syntheticGrandHallRoomOnlyEvidence } from "../test-fixtures/grand-hall-room-only-evidence.js";
 import { TRADES_HALL_VISUAL_DEMO_STATE } from "../lib/trades-hall-visual-demo-state.js";
 
 type OrbitControlsMockProps = Readonly<Record<string, unknown>>;
@@ -19,7 +26,22 @@ interface ExactGrandHallSplatLayerMockProps {
   readonly runtimePackageId: string;
   readonly onChunkLoaded?: (memberName: string) => void;
   readonly onChunkFailed?: (memberName: string) => void;
+  readonly onFailed?: () => void;
+  readonly onAdmission?: (summary: {
+    readonly memberNames: readonly string[];
+    readonly totalBytes: number;
+    readonly totalGaussianCount: number;
+  }) => void;
+  readonly onReady?: () => void;
 }
+
+const SYNTHETIC_ROOM_ONLY_EVIDENCE = syntheticGrandHallRoomOnlyEvidence();
+const SYNTHETIC_CROPPED_MEMBERS = SYNTHETIC_ROOM_ONLY_EVIDENCE.croppedVisual.members;
+const SYNTHETIC_ADMISSION_SUMMARY = {
+  memberNames: SYNTHETIC_CROPPED_MEMBERS.map((member) => member.fileName),
+  totalBytes: SYNTHETIC_ROOM_ONLY_EVIDENCE.croppedVisual.totalBytes,
+  totalGaussianCount: SYNTHETIC_ROOM_ONLY_EVIDENCE.croppedVisual.totalGaussianCount,
+} as const;
 
 const EXPLICIT_RUNTIME_PACKAGE_A = "30000000-0000-4000-8000-000000000001";
 const EXPLICIT_RUNTIME_PACKAGE_B = "30000000-0000-4000-8000-000000000002";
@@ -396,15 +418,15 @@ function makeRuntimePackage(roomSlug = "robert-adam-room"): RuntimePackage {
 }
 
 function makeExactGrandHallRuntimePackage(): RuntimePackage {
-  const assetVersionIds = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((_, index) =>
+  const assetVersionIds = SYNTHETIC_CROPPED_MEMBERS.map((_, index) =>
     `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
   );
-  const firstMember = GRAND_HALL_CAPTURED_SOG_MEMBERS[0];
+  const firstMember = SYNTHETIC_CROPPED_MEMBERS[0];
   const firstAssetVersionId = assetVersionIds[0];
-  if (firstAssetVersionId === undefined) {
+  if (firstAssetVersionId === undefined || firstMember === undefined) {
     throw new Error("Grand Hall source contract must contain a primary member.");
   }
-  const visualAssetReceipts = GRAND_HALL_CAPTURED_SOG_MEMBERS.map((member, index) => ({
+  const visualAssetReceipts = SYNTHETIC_CROPPED_MEMBERS.map((member, index) => ({
     assetVersionId: assetVersionIds[index] ?? "",
     fileName: member.fileName,
     fileExt: ".sog" as const,
@@ -435,21 +457,22 @@ function makeExactGrandHallRuntimePackage(): RuntimePackage {
         pointCloudAssetVersionId: null,
       },
       compositionBasis: {
-        decisionId: "grand-hall-big-model-sog-fine-v1",
-        decisionRef: "sha256:8e7514e75aa19345dda1955f2cee3f9369339c553c2711c084cd04be4c9c1352",
-        hierarchySha256: "927a92699de222e99d2684ca2567a35ab1e523a036461e6e01236b7b77b7f659",
+        decisionId: GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+        decisionRef: `sha256:${SYNTHETIC_ROOM_ONLY_EVIDENCE.evidenceSha256}`,
+        hierarchySha256: SYNTHETIC_ROOM_ONLY_EVIDENCE.croppedVisual.memberSetSha256,
         format: "sog",
         level: "fine",
-        lodSelectionPolicy: "authoritative-leaf-nodes-exclude-environment-v1",
-        expectedGaussianCount: 6_019_684,
+        lodSelectionPolicy: GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+        expectedGaussianCount: SYNTHETIC_ROOM_ONLY_EVIDENCE.croppedVisual.totalGaussianCount,
       },
+      roomOnlyEvidence: SYNTHETIC_ROOM_ONLY_EVIDENCE,
     },
     evidenceStatus: "human_reviewed",
     runtimeStatus: "published",
     createdAt: "2026-08-21T12:00:00.000Z",
     updatedAt: "2026-08-21T12:00:00.000Z",
     primaryVisualAssetUrl: "https://untrusted.invalid/primary.sog",
-    visualAssetUrls: GRAND_HALL_CAPTURED_SOG_MEMBERS.map(
+    visualAssetUrls: SYNTHETIC_CROPPED_MEMBERS.map(
       (member) => `https://untrusted.invalid/${member.fileName}`,
     ),
     primaryVisualAssetVersion: {
@@ -459,7 +482,7 @@ function makeExactGrandHallRuntimePackage(): RuntimePackage {
       captureSessionId: null,
       assetKind: "splat",
       sourceType: "xgrids",
-      r2Key: `venues/trades-hall/rooms/grand-hall/${firstMember.relativePath}`,
+      r2Key: `venues/trades-hall/rooms/grand-hall/${firstMember.fileName}`,
       fileName: firstMember.fileName,
       fileExt: ".sog",
       externalUrl: null,
@@ -737,13 +760,22 @@ describe("TradesHallVisualPage", () => {
     const packageAProps = exactGrandHallLayerPropsFor(EXPLICIT_RUNTIME_PACKAGE_A);
     const packageAChunkLoaded = packageAProps.onChunkLoaded;
     const packageAChunkFailed = packageAProps.onChunkFailed;
-    if (packageAChunkLoaded === undefined || packageAChunkFailed === undefined) {
+    const packageAReady = packageAProps.onReady;
+    const packageAAdmission = packageAProps.onAdmission;
+    if (
+      packageAChunkLoaded === undefined
+      || packageAChunkFailed === undefined
+      || packageAReady === undefined
+      || packageAAdmission === undefined
+    ) {
       throw new Error("Expected package A verification callbacks.");
     }
     act(() => {
-      for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS) {
+      packageAAdmission(SYNTHETIC_ADMISSION_SUMMARY);
+      for (const member of SYNTHETIC_CROPPED_MEMBERS) {
         packageAChunkLoaded(member.fileName);
       }
+      packageAReady();
     });
     await waitFor(() => {
       expect(screen.getByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeTruthy();
@@ -755,19 +787,19 @@ describe("TradesHallVisualPage", () => {
       expect(screen.getByTestId("exact-grand-hall-splat-layer").textContent).toBe(
         EXPLICIT_RUNTIME_PACKAGE_B,
       );
-      expect(screen.getAllByText("Verifying exact Grand Hall source (0/11)").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Verifying accepted Grand Hall room-only inventory metadata").length).toBeGreaterThan(0);
     });
     expect(screen.queryByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeNull();
 
     act(() => {
-      for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS) {
+      for (const member of SYNTHETIC_CROPPED_MEMBERS) {
         packageAChunkLoaded(member.fileName);
       }
-      packageAChunkFailed(GRAND_HALL_CAPTURED_SOG_MEMBERS[0].fileName);
+      packageAChunkFailed(SYNTHETIC_CROPPED_MEMBERS[0]?.fileName ?? "missing-member");
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText("Verifying exact Grand Hall source (0/11)").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Verifying accepted Grand Hall room-only inventory metadata").length).toBeGreaterThan(0);
     });
     expect(screen.queryByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeNull();
     expect(screen.queryByText("The exact captured Grand Hall source failed verification and is not mounted.")).toBeNull();
@@ -993,7 +1025,26 @@ describe("TradesHallVisualPage", () => {
     expect(screen.queryByText(/No runtime visual asset is mounted for this room/i)).toBeNull();
   });
 
-  it("keeps exact Grand Hall Truth Mode pending until all eleven members attach", async () => {
+  it("renders a discovered legacy v1 Grand Hall package blank without URL or procedural fallback", async () => {
+    const legacy = makeExactGrandHallRuntimePackage();
+    delete legacy.manifestJson.roomOnlyEvidence;
+    getLatestRuntimePackageMock.mockResolvedValue(legacy);
+    mount();
+
+    await waitFor(() => {
+      expect(getLatestRuntimePackageMock).toHaveBeenCalledWith({
+        venue: "trades-hall",
+        room: "grand-hall",
+      });
+    });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(exactGrandHallSplatLayerMock).not.toHaveBeenCalled();
+    expectNoArchitectureMounted();
+    expect(document.body.textContent).not.toContain("untrusted.invalid");
+  });
+
+  it("keeps exact Grand Hall Truth Mode pending until the accepted inventory attaches", async () => {
     getLatestRuntimePackageMock.mockResolvedValue(makeExactGrandHallRuntimePackage());
     getTruthModeSummaryMock.mockRejectedValue(new Error("No stored runtime-asset summary."));
     mount();
@@ -1009,16 +1060,78 @@ describe("TradesHallVisualPage", () => {
       throw new Error("Expected an exact Grand Hall loaded callback.");
     }
     act(() => {
-      for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS.slice(0, -1)) {
+      for (const member of SYNTHETIC_CROPPED_MEMBERS.slice(0, -1)) {
         onChunkLoaded(member.fileName);
       }
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText("Verifying exact Grand Hall source (10/11)").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Verifying accepted Grand Hall cropped output (1/2)").length).toBeGreaterThan(0);
     });
     expect(screen.getByText("The exact captured Grand Hall source is still verifying and is not mounted.")).toBeTruthy();
     expect(screen.queryByText("The exact receipt-bound captured Grand Hall source is mounted.")).toBeNull();
+    expect(screen.queryByText(/Captured source pixels are shown/i)).toBeNull();
+  });
+
+  it("enters a terminal hidden state when exact metadata fails before admission", async () => {
+    getLatestRuntimePackageMock.mockResolvedValue(makeExactGrandHallRuntimePackage());
+    mount();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exact-grand-hall-splat-layer")).toBeTruthy();
+    });
+    const onFailed = latestExactGrandHallLayerProps().onFailed;
+    if (onFailed === undefined) {
+      throw new Error("Expected the exact Grand Hall terminal failure callback.");
+    }
+    act(() => { onFailed(); });
+
+    await waitFor(() => {
+      expect(screen.getByText(
+        "The exact captured Grand Hall source failed verification and is not mounted.",
+      )).toBeTruthy();
+    });
+    expect(document.querySelector("header")?.textContent).toContain(
+      "The exact Grand Hall source could not be verified; architecture is hidden.",
+    );
+    expect(screen.queryByTestId("spark-splat-layer")).toBeNull();
+    expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
+    expect(screen.queryByTestId("grand-hall-room")).toBeNull();
+  });
+
+  it("enters a terminal hidden state when exact transfer fails after one member", async () => {
+    getLatestRuntimePackageMock.mockResolvedValue(makeExactGrandHallRuntimePackage());
+    mount();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("exact-grand-hall-splat-layer")).toBeTruthy();
+    });
+    const { onAdmission, onChunkLoaded, onFailed } = latestExactGrandHallLayerProps();
+    if (onAdmission === undefined || onChunkLoaded === undefined || onFailed === undefined) {
+      throw new Error("Expected exact Grand Hall admission, progress, and failure callbacks.");
+    }
+    const firstMember = SYNTHETIC_CROPPED_MEMBERS[0];
+    if (firstMember === undefined) throw new Error("Expected a first cropped member.");
+    act(() => {
+      onAdmission(SYNTHETIC_ADMISSION_SUMMARY);
+      onChunkLoaded(firstMember.fileName);
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText(
+        "Verifying accepted Grand Hall cropped output (1/2)",
+      ).length).toBeGreaterThan(0);
+    });
+
+    act(() => { onFailed(); });
+
+    await waitFor(() => {
+      expect(screen.getByText(
+        "The exact captured Grand Hall source failed verification and is not mounted.",
+      )).toBeTruthy();
+    });
+    expect(document.querySelector("header")?.textContent).toContain(
+      "The exact Grand Hall source could not be verified; architecture is hidden.",
+    );
     expect(screen.queryByText(/Captured source pixels are shown/i)).toBeNull();
   });
 
@@ -1031,14 +1144,15 @@ describe("TradesHallVisualPage", () => {
       expect(screen.getByTestId("exact-grand-hall-splat-layer")).toBeTruthy();
     });
     const layerProps = latestExactGrandHallLayerProps();
-    const { onChunkLoaded, onChunkFailed } = layerProps;
-    if (onChunkLoaded === undefined || onChunkFailed === undefined) {
+    const { onChunkLoaded, onChunkFailed, onReady } = layerProps;
+    if (onChunkLoaded === undefined || onChunkFailed === undefined || onReady === undefined) {
       throw new Error("Expected exact Grand Hall load and failure callbacks.");
     }
     act(() => {
-      for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS) {
+      for (const member of SYNTHETIC_CROPPED_MEMBERS) {
         onChunkLoaded(member.fileName);
       }
+      onReady();
     });
 
     await waitFor(() => {
@@ -1047,7 +1161,7 @@ describe("TradesHallVisualPage", () => {
     });
 
     act(() => {
-      onChunkFailed(GRAND_HALL_CAPTURED_SOG_MEMBERS[0].fileName);
+      onChunkFailed(SYNTHETIC_CROPPED_MEMBERS[0]?.fileName ?? "missing-member");
     });
 
     await waitFor(() => {

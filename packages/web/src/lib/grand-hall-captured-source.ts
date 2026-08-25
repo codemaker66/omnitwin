@@ -1,4 +1,12 @@
-import type { RuntimePackage, RuntimePackagePreview } from "@omnitwin/types";
+import {
+  GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID,
+  GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY,
+  GrandHallRoomOnlyRuntimeEvidenceV2Schema,
+  grandHallRoomOnlyEvidenceMatchesVisualMembers,
+  type GrandHallRoomOnlyRuntimeEvidenceV2,
+  type RuntimePackage,
+  type RuntimePackagePreview,
+} from "@omnitwin/types";
 
 export interface GrandHallCapturedSourceMember {
   readonly relativePath: string;
@@ -106,7 +114,10 @@ export const GRAND_HALL_CAPTURED_SOURCE = {
 } as const;
 
 export type GrandHallCapturedSourceValidation =
-  | { readonly ok: true }
+  | {
+      readonly ok: true;
+      readonly evidence: GrandHallRoomOnlyRuntimeEvidenceV2;
+    }
   | { readonly ok: false; readonly reason: string };
 
 function reject(reason: string): GrandHallCapturedSourceValidation {
@@ -115,15 +126,39 @@ function reject(reason: string): GrandHallCapturedSourceValidation {
 
 function exactCompositionBasis(
   basis: RuntimePackage["manifestJson"]["compositionBasis"],
+  evidence: GrandHallRoomOnlyRuntimeEvidenceV2,
 ): boolean {
   return basis !== undefined
-    && basis.decisionId === GRAND_HALL_CAPTURED_SOURCE.decisionId
-    && basis.decisionRef === GRAND_HALL_CAPTURED_SOURCE.frontierReceiptSha256
-    && basis.hierarchySha256 === GRAND_HALL_CAPTURED_SOURCE.manifestSha256
+    && basis.decisionId === GRAND_HALL_ROOM_ONLY_RUNTIME_DECISION_ID
+    && basis.decisionRef === `sha256:${evidence.evidenceSha256}`
+    && basis.hierarchySha256 === evidence.croppedVisual.memberSetSha256
     && basis.format === "sog"
     && basis.level === "fine"
-    && basis.lodSelectionPolicy === GRAND_HALL_CAPTURED_SOURCE.lodSelectionPolicy
-    && basis.expectedGaussianCount === GRAND_HALL_CAPTURED_SOURCE.gaussianCount;
+    && basis.lodSelectionPolicy === GRAND_HALL_ROOM_ONLY_RUNTIME_LOD_SELECTION_POLICY
+    && basis.expectedGaussianCount === evidence.croppedVisual.totalGaussianCount;
+}
+
+function admittedRoomOnlyEvidence(
+  manifest: RuntimePackage["manifestJson"],
+  visualMembers: readonly {
+    readonly fileName: string;
+    readonly fileExt: string;
+    readonly sha256: string | null;
+    readonly sizeBytes: number | null;
+  }[],
+): GrandHallRoomOnlyRuntimeEvidenceV2 | null {
+  const parsed = GrandHallRoomOnlyRuntimeEvidenceV2Schema.safeParse(
+    manifest.roomOnlyEvidence,
+  );
+  if (
+    !parsed.success
+    || parsed.data.sourceFrontierReceiptSha256 !==
+      GRAND_HALL_CAPTURED_SOURCE.frontierReceiptSha256
+    || !grandHallRoomOnlyEvidenceMatchesVisualMembers(parsed.data, visualMembers)
+  ) {
+    return null;
+  }
+  return parsed.data;
 }
 
 /**
@@ -146,19 +181,25 @@ export function validateGrandHallCapturedSource(
     return reject("wrong Grand Hall package target");
   }
 
-  if (!exactCompositionBasis(manifest.compositionBasis)) {
-    return reject("wrong Grand Hall frontier decision");
-  }
-
   const ids = manifest.assets.visualAssetVersionIds;
   const receipts = manifest.assets.visualAssetReceipts;
   if (
     ids === undefined
     || receipts === undefined
-    || ids.length !== GRAND_HALL_CAPTURED_SOG_MEMBERS.length
-    || receipts.length !== GRAND_HALL_CAPTURED_SOG_MEMBERS.length
+    || ids.length === 0
+    || ids.length !== receipts.length
   ) {
     return reject("wrong Grand Hall frontier member count");
+  }
+  const roomOnlyEvidence = admittedRoomOnlyEvidence(manifest, receipts);
+  if (
+    roomOnlyEvidence === null
+    || runtimePackage.evidenceStatus !== "human_reviewed"
+  ) {
+    return reject("Grand Hall package lacks accepted room-only evidence");
+  }
+  if (!exactCompositionBasis(manifest.compositionBasis, roomOnlyEvidence)) {
+    return reject("wrong Grand Hall room-only decision");
   }
 
   if (
@@ -170,8 +211,8 @@ export function validateGrandHallCapturedSource(
   }
 
   let totalBytes = 0;
-  for (let index = 0; index < GRAND_HALL_CAPTURED_SOG_MEMBERS.length; index += 1) {
-    const expected = GRAND_HALL_CAPTURED_SOG_MEMBERS[index];
+  for (let index = 0; index < roomOnlyEvidence.croppedVisual.members.length; index += 1) {
+    const expected = roomOnlyEvidence.croppedVisual.members[index];
     const id = ids[index];
     const receipt = receipts[index];
     if (expected === undefined || id === undefined || receipt === undefined) {
@@ -189,14 +230,15 @@ export function validateGrandHallCapturedSource(
     totalBytes += receipt.sizeBytes;
   }
 
-  if (totalBytes !== GRAND_HALL_CAPTURED_SOURCE.totalBytes) {
-    return reject("wrong Grand Hall frontier byte total");
+  if (totalBytes !== roomOnlyEvidence.croppedVisual.totalBytes) {
+    return reject("wrong Grand Hall cropped-output byte total");
   }
 
   const primary = runtimePackage.primaryVisualAssetVersion;
-  const first = GRAND_HALL_CAPTURED_SOG_MEMBERS[0];
+  const first = roomOnlyEvidence.croppedVisual.members[0];
   if (
-    primary.venueSlug !== GRAND_HALL_CAPTURED_SOURCE.venueSlug
+    first === undefined
+    || primary.venueSlug !== GRAND_HALL_CAPTURED_SOURCE.venueSlug
     || primary.roomSlug !== GRAND_HALL_CAPTURED_SOURCE.roomSlug
     || primary.assetKind !== "splat"
     || primary.sourceType !== "xgrids"
@@ -208,7 +250,7 @@ export function validateGrandHallCapturedSource(
     return reject("wrong Grand Hall primary asset receipt");
   }
 
-  return { ok: true };
+  return { ok: true, evidence: roomOnlyEvidence };
 }
 
 /**
@@ -228,26 +270,35 @@ export function validateGrandHallCapturedPreview(
   ) {
     return reject("wrong Grand Hall preview target");
   }
-  if (!exactCompositionBasis(preview.manifestJson.compositionBasis)) {
-    return reject("wrong Grand Hall preview frontier decision");
-  }
-
   const ids = preview.manifestJson.assets.visualAssetVersionIds;
   const receipts = preview.manifestJson.assets.visualAssetReceipts;
   if (
     ids === undefined
     || receipts === undefined
-    || ids.length !== GRAND_HALL_CAPTURED_SOG_MEMBERS.length
-    || receipts.length !== GRAND_HALL_CAPTURED_SOG_MEMBERS.length
-    || preview.visualAssets.length !== GRAND_HALL_CAPTURED_SOG_MEMBERS.length
+    || ids.length === 0
+    || receipts.length !== ids.length
+    || preview.visualAssets.length !== ids.length
     || preview.manifestJson.assets.primaryVisualAssetVersionId !== ids[0]
   ) {
     return reject("wrong Grand Hall preview member count");
   }
+  const roomOnlyEvidence = admittedRoomOnlyEvidence(
+    preview.manifestJson,
+    preview.visualAssets,
+  );
+  if (
+    roomOnlyEvidence === null
+    || preview.evidenceStatus !== "human_reviewed"
+  ) {
+    return reject("Grand Hall preview lacks accepted room-only evidence");
+  }
+  if (!exactCompositionBasis(preview.manifestJson.compositionBasis, roomOnlyEvidence)) {
+    return reject("wrong Grand Hall preview room-only decision");
+  }
 
   let totalBytes = 0;
-  for (let index = 0; index < GRAND_HALL_CAPTURED_SOG_MEMBERS.length; index += 1) {
-    const expected = GRAND_HALL_CAPTURED_SOG_MEMBERS[index];
+  for (let index = 0; index < roomOnlyEvidence.croppedVisual.members.length; index += 1) {
+    const expected = roomOnlyEvidence.croppedVisual.members[index];
     const id = ids[index];
     const receipt = receipts[index];
     const asset = preview.visualAssets[index];
@@ -271,7 +322,7 @@ export function validateGrandHallCapturedPreview(
     totalBytes += asset.sizeBytes;
   }
 
-  return totalBytes === GRAND_HALL_CAPTURED_SOURCE.totalBytes
-    ? { ok: true }
+  return totalBytes === roomOnlyEvidence.croppedVisual.totalBytes
+    ? { ok: true, evidence: roomOnlyEvidence }
     : reject("wrong Grand Hall preview byte total");
 }

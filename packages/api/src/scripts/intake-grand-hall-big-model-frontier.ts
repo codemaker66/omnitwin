@@ -43,6 +43,7 @@ import {
   receiveGrandHallAdminTokenFromBrowser,
 } from "./grand-hall-admin-token-loopback-relay.js";
 import { validateGrandHallFrontierReceipt } from "./register-grand-hall-big-model-frontier.js";
+import { rejectRetiredGrandHallV1Intake } from "./grand-hall-v1-intake-retired.js";
 
 export const GRAND_HALL_INTAKE_CONFIRMATION =
   "register_exact_internal_ready_grand_hall_frontier";
@@ -2003,6 +2004,9 @@ function completedOperationFailure(
 export async function runGrandHallFrontierIntake(
   options: RunGrandHallFrontierIntakeOptions,
 ): Promise<GrandHallFrontierIntakeResult> {
+  // Fail before argument parsing, environment/token access, Git inspection,
+  // local byte reads, or any authenticated HTTP request.
+  rejectRetiredGrandHallV1Intake();
   const args = parseGrandHallFrontierIntakeArgs(options.args);
   const env = options.env ?? process.env;
   assertExpectedStagingApiOrigin(args.apiOrigin, env);

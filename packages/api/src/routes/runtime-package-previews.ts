@@ -5,6 +5,9 @@ import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   RegisterRuntimePackageInputSchema,
+  GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES,
+  GRAND_HALL_ROOM_ONLY_MAX_MEMBER_COUNT,
+  GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES,
   RuntimePackageContentDigestSchema,
   RuntimePackageManifestJsonSchema,
   RuntimePackagePreviewSchema,
@@ -74,11 +77,13 @@ export interface RuntimePackagePreviewRoutesOptions {
   readonly loadRuntimeAssetObject?: PreviewObjectLoader;
   /** Deterministic test seam. Production resolves the active venue row. */
   readonly resolveRuntimeVenueId?: RuntimeVenueIdResolver;
+  /** Test/review seam. Production is null until real room-only evidence is accepted. */
+  readonly acceptedGrandHallRoomOnlyEvidenceSha256?: string;
   readonly now?: () => Date;
 }
 
 let cachedPreviewS3: import("@aws-sdk/client-s3").S3Client | null = null;
-const MAX_VERIFIED_PREVIEW_ASSET_BYTES = 16 * 1024 * 1024;
+const MAX_VERIFIED_PREVIEW_ASSET_BYTES = GRAND_HALL_ROOM_ONLY_MAX_MEMBER_BYTES;
 const MAX_CONCURRENT_VERIFIED_PREVIEW_TRANSFERS = 4;
 const VERIFIED_PREVIEW_UPSTREAM_TIMEOUT_MS = 60_000;
 let activeVerifiedPreviewTransfers = 0;
@@ -269,6 +274,26 @@ function protectedStorageError(
     : "RUNTIME_PACKAGE_PREVIEW_STORAGE_INVALID";
 }
 
+function exactGrandHallPackageByteLimitError(
+  pkg: RuntimePackageRow,
+  assets: readonly AssetVersionRow[],
+): string | null {
+  if (!isExactGrandHallRuntimeTarget(pkg.venueSlug, pkg.roomSlug)) return null;
+  if (assets.length > GRAND_HALL_ROOM_ONLY_MAX_MEMBER_COUNT) {
+    return "GRAND_HALL_RUNTIME_PACKAGE_MEMBER_COUNT_EXCEEDED";
+  }
+  let totalBytes = 0;
+  for (const asset of assets) {
+    if (asset.sizeBytes === null) return "RUNTIME_PACKAGE_PREVIEW_STORAGE_INVALID";
+    totalBytes += asset.sizeBytes;
+    if (
+      !Number.isSafeInteger(totalBytes)
+      || totalBytes > GRAND_HALL_ROOM_ONLY_MAX_TOTAL_BYTES
+    ) return "GRAND_HALL_RUNTIME_PACKAGE_BYTES_EXCEEDED";
+  }
+  return null;
+}
+
 function immutableCompositionReceiptError(
   pkg: RuntimePackageRow,
   assets: readonly AssetVersionRow[],
@@ -366,6 +391,7 @@ function assemblePreview(
 function resolveEligibleComposition(
   source: RuntimePackagePreviewSource,
   requestedId: string,
+  acceptedGrandHallRoomOnlyEvidenceSha256: string | null,
 ):
   | {
       readonly ok: true;
@@ -410,6 +436,15 @@ function resolveEligibleComposition(
       message: "Runtime package does not have a complete protected visual asset set",
     };
   }
+  const packageByteLimitError = exactGrandHallPackageByteLimitError(pkg, assets);
+  if (packageByteLimitError !== null) {
+    return {
+      ok: false,
+      status: 409,
+      code: packageByteLimitError,
+      message: "Runtime package exceeds the exact Grand Hall browser resource limits",
+    };
+  }
   const receiptError = immutableCompositionReceiptError(pkg, assets);
   if (receiptError !== null) {
     return {
@@ -421,13 +456,17 @@ function resolveEligibleComposition(
   }
   if (
     isExactGrandHallRuntimeTarget(pkg.venueSlug, pkg.roomSlug) &&
-    !isCanonicalGrandHallRuntimePackage(pkg, assets)
+    !isCanonicalGrandHallRuntimePackage(
+      pkg,
+      assets,
+      acceptedGrandHallRoomOnlyEvidenceSha256,
+    )
   ) {
     return {
       ok: false,
       status: 409,
-      code: "GRAND_HALL_FRONTIER_MISMATCH",
-      message: "Runtime package does not match the canonical Grand Hall frontier",
+      code: "GRAND_HALL_ROOM_ONLY_EVIDENCE_REQUIRED",
+      message: "Runtime package is not bound to accepted Grand Hall room-only evidence",
     };
   }
   const reviewedProfileId = matchReceptionReviewedRuntimeProfile(pkg, assets);
@@ -467,6 +506,8 @@ export async function runtimePackagePreviewRoutes(
     loadProtectedRuntimeAssetObject(opts.env, key, signal));
   const resolveVenueId = opts.resolveRuntimeVenueId ?? ((venueSlug: string) =>
     resolveActiveRuntimeVenueId(opts.db, venueSlug));
+  const acceptedGrandHallRoomOnlyEvidenceSha256 =
+    opts.acceptedGrandHallRoomOnlyEvidenceSha256 ?? null;
   const now = opts.now ?? (() => new Date());
 
   server.get(
@@ -500,7 +541,11 @@ export async function runtimePackagePreviewRoutes(
             code: "RUNTIME_PACKAGE_PREVIEW_NOT_FOUND",
           });
         }
-        const composition = resolveEligibleComposition(source, parsed.data.runtimePackageId);
+        const composition = resolveEligibleComposition(
+          source,
+          parsed.data.runtimePackageId,
+          acceptedGrandHallRoomOnlyEvidenceSha256,
+        );
         if (!composition.ok) {
           return reply.status(composition.status).send({
             error: composition.message,
@@ -587,7 +632,11 @@ export async function runtimePackagePreviewRoutes(
             code: "RUNTIME_PACKAGE_PREVIEW_ASSET_NOT_FOUND",
           });
         }
-        const composition = resolveEligibleComposition(source, parsed.data.runtimePackageId);
+        const composition = resolveEligibleComposition(
+          source,
+          parsed.data.runtimePackageId,
+          acceptedGrandHallRoomOnlyEvidenceSha256,
+        );
         if (!composition.ok) {
           return reply.status(composition.status).send({
             error: composition.message,

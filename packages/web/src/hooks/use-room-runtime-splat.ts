@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   TRADES_HALL_ENQUIRY_VENUE_SLUG,
+  type GrandHallRoomOnlyRuntimeEvidenceV2,
   type RuntimePackage,
 } from "@omnitwin/types";
 import { useEditorStore } from "../stores/editor-store.js";
@@ -41,6 +42,10 @@ export interface RoomRuntimeSplat {
   readonly delivery: "none" | "verified-grand-hall" | "url";
   readonly runtimePackageId: string | null;
   readonly exactGrandHallRuntimeKey: ExactGrandHallRuntimeKey | null;
+  readonly exactGrandHallRoomOnlyEvidence: GrandHallRoomOnlyRuntimeEvidenceV2 | null;
+  readonly exactGrandHallMemberNames: readonly string[];
+  readonly exactGrandHallTotalBytes: number | null;
+  readonly exactGrandHallGaussianCount: number | null;
   readonly roomIdentity: PlannerRoomIdentity | null;
 }
 
@@ -173,10 +178,11 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
   const verifiedTradesHallGrandHall = roomIdentity?.status === "resolved"
     && roomIdentity.venueSlug === TRADES_HALL_ENQUIRY_VENUE_SLUG
     && roomIdentity.roomSlug === "grand-hall";
-  const exactGrandHall = verifiedTradesHallGrandHall
-    && pkg !== null
-    && validateGrandHallCapturedSource(pkg).ok;
-  const exactGrandHallRuntimePackageId = exactGrandHall ? pkg.id : null;
+  const exactGrandHallValidation = verifiedTradesHallGrandHall && pkg !== null
+    ? validateGrandHallCapturedSource(pkg)
+    : null;
+  const exactGrandHall = exactGrandHallValidation?.ok === true;
+  const exactGrandHallRuntimePackageId = exactGrandHall && pkg !== null ? pkg.id : null;
   const exactGrandHallRuntimeKey = useMemo<ExactGrandHallRuntimeKey | null>(() => {
     if (
       exactGrandHallRuntimePackageId === null
@@ -192,7 +198,12 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
       runtimePackageId: exactGrandHallRuntimePackageId,
     };
   }, [exactGrandHallRuntimePackageId, spaceId, venueId]);
-  const decision = exactGrandHall ? decideRuntimeAsset(null, null) : decideRuntimeAsset(null, pkg);
+  // A verified Trades Hall Grand Hall identity is source-only even when the
+  // package metadata is legacy or malformed. Never hand those bytes to the
+  // generic URL decision path; accepted v2 evidence is the only admission.
+  const decision = verifiedTradesHallGrandHall
+    ? decideRuntimeAsset(null, null)
+    : decideRuntimeAsset(null, pkg);
   const delivery = exactGrandHall
     ? "verified-grand-hall"
     : decision.source === "package" && decision.splatUrls.length > 0
@@ -243,6 +254,20 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
     delivery,
     runtimePackageId: exactGrandHallRuntimePackageId,
     exactGrandHallRuntimeKey,
+    exactGrandHallRoomOnlyEvidence: exactGrandHallValidation?.ok === true
+      ? exactGrandHallValidation.evidence
+      : null,
+    exactGrandHallMemberNames: exactGrandHallValidation?.ok === true
+      ? exactGrandHallValidation.evidence.croppedVisual.members.map(
+          (member) => member.fileName,
+        )
+      : [],
+    exactGrandHallTotalBytes: exactGrandHallValidation?.ok === true
+      ? exactGrandHallValidation.evidence.croppedVisual.totalBytes
+      : null,
+    exactGrandHallGaussianCount: exactGrandHallValidation?.ok === true
+      ? exactGrandHallValidation.evidence.croppedVisual.totalGaussianCount
+      : null,
     roomIdentity,
   };
 }

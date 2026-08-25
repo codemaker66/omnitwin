@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { validateEnv } from "../env.js";
 import {
-  GRAND_HALL_FRONTIER_MEMBERS,
+  grandHallRoomOnlyRuntimeMembers,
   GRAND_HALL_STAGING_DATABASE_NAME,
   GRAND_HALL_STAGING_DATABASE_ROLE,
   GRAND_HALL_STAGING_GIT_BRANCH,
@@ -13,6 +13,10 @@ import {
   GrandHallRuntimeIntakeError,
   prepareGrandHallRuntimeIntake,
 } from "../services/grand-hall-runtime-intake.js";
+import { syntheticGrandHallRoomOnlyAdmission } from "./fixtures/grand-hall-room-only-evidence.js";
+
+const ROOM_ONLY_ADMISSION = syntheticGrandHallRoomOnlyAdmission();
+const ROOM_ONLY_MEMBERS = grandHallRoomOnlyRuntimeMembers(ROOM_ONLY_ADMISSION);
 
 const s3Mocks = vi.hoisted(() => ({
   send: vi.fn<(
@@ -103,7 +107,10 @@ describe("Grand Hall private R2 operation deadlines", () => {
         storageSignal = options?.abortSignal;
         return new Promise<never>(() => undefined);
       });
-      const operation = prepareGrandHallRuntimeIntake(createGrandHallR2ObjectStore(env));
+      const operation = prepareGrandHallRuntimeIntake(
+        createGrandHallR2ObjectStore(env),
+        ROOM_ONLY_ADMISSION,
+      );
       const rejected = expect(operation).rejects.toMatchObject({
         statusCode: 502,
         code: "GRAND_HALL_STORAGE_FAILED",
@@ -124,7 +131,7 @@ describe("Grand Hall private R2 operation deadlines", () => {
   it("destroys a GET response body whose async stream hangs past the deadline", async () => {
     vi.useFakeTimers();
     try {
-      const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+      const member = ROOM_ONLY_MEMBERS[0];
       if (member === undefined) throw new Error("Grand Hall contract needs a first member.");
       const destroy = vi.fn();
       const next = vi.fn<() => Promise<IteratorResult<Uint8Array>>>(
@@ -137,7 +144,10 @@ describe("Grand Hall private R2 operation deadlines", () => {
         },
         ContentLength: member.sizeBytes,
       });
-      const operation = prepareGrandHallRuntimeIntake(createGrandHallR2ObjectStore(env));
+      const operation = prepareGrandHallRuntimeIntake(
+        createGrandHallR2ObjectStore(env),
+        ROOM_ONLY_ADMISSION,
+      );
       const rejected = expect(operation).rejects.toMatchObject({
         statusCode: 502,
         code: "GRAND_HALL_STORAGE_FAILED",
@@ -157,7 +167,7 @@ describe("Grand Hall private R2 operation deadlines", () => {
   it("passes an abort signal to a hung conditional PUT send", async () => {
     vi.useFakeTimers();
     try {
-      const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+      const member = ROOM_ONLY_MEMBERS[0];
       if (member === undefined) throw new Error("Grand Hall contract needs a first member.");
       let storageSignal: AbortSignal | undefined;
       s3Mocks.send.mockImplementation((_command, options) => {

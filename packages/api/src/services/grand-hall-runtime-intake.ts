@@ -4,16 +4,16 @@ import { RegisterRuntimePackageInputSchema } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { assetVersions, generalAuditLog, runtimePackages } from "../db/schema.js";
 import {
-  GRAND_HALL_FRONTIER_GAUSSIAN_COUNT,
-  GRAND_HALL_FRONTIER_MEMBERS,
-  GRAND_HALL_FRONTIER_TOTAL_BYTES,
   GRAND_HALL_ROOM_SLUG,
   GRAND_HALL_VENUE_SLUG,
-  buildGrandHallAssetRegistrationInputs,
-  buildGrandHallRuntimePackagePayload,
+  buildGrandHallRoomOnlyAssetRegistrationInputs,
+  buildGrandHallRoomOnlyRuntimePackagePayload,
+  grandHallRoomOnlyRuntimeMembers,
+  grandHallRoomOnlyRuntimeAdmissionError,
   grandHallAssetIdentityErrors,
   type GrandHallAssetRecord,
-  type GrandHallFrontierMemberSpec,
+  type GrandHallRuntimeMemberSpec,
+  type GrandHallRoomOnlyRuntimeAdmission,
 } from "../lib/grand-hall-frontier-contract.js";
 import {
   computeRuntimePackageRevisionDigest,
@@ -28,6 +28,7 @@ export type GrandHallRuntimeIntakeErrorCode =
   | "GRAND_HALL_REMOTE_VERIFICATION_FAILED"
   | "GRAND_HALL_ASSET_CONFLICT"
   | "GRAND_HALL_INTAKE_INTEGRITY_ERROR"
+  | "GRAND_HALL_ROOM_ONLY_EVIDENCE_REQUIRED"
   | "GRAND_HALL_DATABASE_UNAVAILABLE";
 
 export const GRAND_HALL_STORAGE_OPERATION_DEADLINE_MS = 30_000;
@@ -52,12 +53,12 @@ export interface GrandHallRemoteObject {
 export interface GrandHallPrivateObjectStore {
   /** Returns null only when the exact server-owned key is absent. */
   open(
-    member: GrandHallFrontierMemberSpec,
+    member: GrandHallRuntimeMemberSpec,
     signal: AbortSignal,
   ): Promise<GrandHallRemoteObject | null>;
   /** Writes only when the fixed server-owned key is absent; never overwrites. */
   putCreateOnly(
-    member: GrandHallFrontierMemberSpec,
+    member: GrandHallRuntimeMemberSpec,
     bytes: Uint8Array,
     signal: AbortSignal,
   ): Promise<"created" | "exists">;
@@ -72,7 +73,10 @@ export interface GrandHallRegistrationResult {
 
 export interface GrandHallRegistrationStore {
   /** Production implementations must make all asset/package writes one locked transaction. */
-  registerExactFrontier(actorUserId: string): Promise<GrandHallRegistrationResult>;
+  registerExactFrontier(
+    actorUserId: string,
+    admission: GrandHallRoomOnlyRuntimeAdmission,
+  ): Promise<GrandHallRegistrationResult>;
 }
 
 export interface GrandHallPreparedMember {
@@ -93,6 +97,20 @@ export interface GrandHallCommitResult extends GrandHallRegistrationResult {
   readonly verifiedMemberCount: number;
   readonly verifiedTotalBytes: number;
   readonly gaussianCount: number;
+}
+
+function admittedRuntimeMembers(
+  admission: GrandHallRoomOnlyRuntimeAdmission | null,
+): readonly GrandHallRuntimeMemberSpec[] {
+  const admissionError = grandHallRoomOnlyRuntimeAdmissionError(admission);
+  if (admissionError !== null || admission === null) {
+    throw new GrandHallRuntimeIntakeError(
+      409,
+      "GRAND_HALL_ROOM_ONLY_EVIDENCE_REQUIRED",
+      admissionError ?? "Grand Hall room-only runtime evidence is required.",
+    );
+  }
+  return grandHallRoomOnlyRuntimeMembers(admission);
 }
 
 function safeChunkBytes(chunk: Uint8Array | string): Uint8Array {
@@ -230,7 +248,7 @@ function waitForStorageOperation<T>(
 
 export async function verifyGrandHallRemoteObject(
   object: GrandHallRemoteObject,
-  member: GrandHallFrontierMemberSpec,
+  member: GrandHallRuntimeMemberSpec,
   signal?: AbortSignal,
 ): Promise<void> {
   const hash = createHash("sha256");
@@ -288,7 +306,7 @@ export async function verifyGrandHallRemoteObject(
 
 async function verifyStoredMember(
   objectStore: GrandHallPrivateObjectStore,
-  member: GrandHallFrontierMemberSpec,
+  member: GrandHallRuntimeMemberSpec,
   parentSignal?: AbortSignal,
 ): Promise<"missing" | "verified"> {
   const deadline = grandHallStorageDeadline(parentSignal);
@@ -313,11 +331,13 @@ async function verifyStoredMember(
 
 export async function prepareGrandHallRuntimeIntake(
   objectStore: GrandHallPrivateObjectStore,
+  admission: GrandHallRoomOnlyRuntimeAdmission | null,
   signal?: AbortSignal,
 ): Promise<GrandHallPrepareResult> {
-  const members: GrandHallPreparedMember[] = [];
-  for (let memberIndex = 0; memberIndex < GRAND_HALL_FRONTIER_MEMBERS.length; memberIndex += 1) {
-    const member = GRAND_HALL_FRONTIER_MEMBERS[memberIndex];
+  const members = admittedRuntimeMembers(admission);
+  const preparedMembers: GrandHallPreparedMember[] = [];
+  for (let memberIndex = 0; memberIndex < members.length; memberIndex += 1) {
+    const member = members[memberIndex];
     if (member === undefined) {
       throw new GrandHallRuntimeIntakeError(
         500,
@@ -327,7 +347,7 @@ export async function prepareGrandHallRuntimeIntake(
     }
     const status = await verifyStoredMember(objectStore, member, signal);
     if (status === "verified") {
-      members.push({
+      preparedMembers.push({
         memberIndex,
         fileName: member.fileName,
         sizeBytes: member.sizeBytes,
@@ -336,7 +356,7 @@ export async function prepareGrandHallRuntimeIntake(
       });
       continue;
     }
-    members.push({
+    preparedMembers.push({
       memberIndex,
       fileName: member.fileName,
       sizeBytes: member.sizeBytes,
@@ -344,11 +364,13 @@ export async function prepareGrandHallRuntimeIntake(
       status: "upload_required",
     });
   }
-  const existingMemberCount = members.filter((member) => member.status === "verified_existing").length;
+  const existingMemberCount = preparedMembers.filter(
+    (member) => member.status === "verified_existing",
+  ).length;
   return {
-    members,
+    members: preparedMembers,
     existingMemberCount,
-    uploadRequiredCount: members.length - existingMemberCount,
+    uploadRequiredCount: preparedMembers.length - existingMemberCount,
   };
 }
 
@@ -364,9 +386,11 @@ export async function uploadGrandHallRuntimeMember(
   objectStore: GrandHallPrivateObjectStore,
   memberIndex: number,
   bytes: Uint8Array,
+  admission: GrandHallRoomOnlyRuntimeAdmission | null,
   signal?: AbortSignal,
 ): Promise<GrandHallMemberUploadResult> {
-  const member = GRAND_HALL_FRONTIER_MEMBERS[memberIndex];
+  const members = admittedRuntimeMembers(admission);
+  const member = members[memberIndex];
   if (member === undefined) {
     throw new GrandHallRuntimeIntakeError(
       409,
@@ -428,9 +452,18 @@ export async function uploadGrandHallRuntimeMember(
 export async function probeGrandHallRuntimeConditionalCreateConflict(
   objectStore: GrandHallPrivateObjectStore,
   corruptBytes: Uint8Array,
+  admission: GrandHallRoomOnlyRuntimeAdmission | null,
   signal?: AbortSignal,
 ): Promise<void> {
-  const member = GRAND_HALL_FRONTIER_MEMBERS[0];
+  const members = admittedRuntimeMembers(admission);
+  const member = members[0];
+  if (member === undefined) {
+    throw new GrandHallRuntimeIntakeError(
+      500,
+      "GRAND_HALL_INTAKE_INTEGRITY_ERROR",
+      "The accepted Grand Hall cropped-output inventory is empty.",
+    );
+  }
   if (
     corruptBytes.byteLength !== member.sizeBytes ||
     createHash("sha256").update(corruptBytes).digest("hex") === member.sha256
@@ -478,9 +511,18 @@ export async function commitGrandHallRuntimeIntake(
   objectStore: GrandHallPrivateObjectStore,
   registrationStore: GrandHallRegistrationStore,
   actorUserId: string,
+  admission: GrandHallRoomOnlyRuntimeAdmission | null,
   signal?: AbortSignal,
 ): Promise<GrandHallCommitResult> {
-  for (const member of GRAND_HALL_FRONTIER_MEMBERS) {
+  const members = admittedRuntimeMembers(admission);
+  if (admission === null) {
+    throw new GrandHallRuntimeIntakeError(
+      409,
+      "GRAND_HALL_ROOM_ONLY_EVIDENCE_REQUIRED",
+      "Grand Hall room-only runtime evidence is required.",
+    );
+  }
+  for (const member of members) {
     const status = await verifyStoredMember(objectStore, member, signal);
     if (status === "missing") {
       throw new GrandHallRuntimeIntakeError(
@@ -493,7 +535,7 @@ export async function commitGrandHallRuntimeIntake(
 
   let registration: GrandHallRegistrationResult;
   try {
-    registration = await registrationStore.registerExactFrontier(actorUserId);
+    registration = await registrationStore.registerExactFrontier(actorUserId, admission);
   } catch (error) {
     if (error instanceof GrandHallRuntimeIntakeError) throw error;
     throw new GrandHallRuntimeIntakeError(
@@ -504,9 +546,9 @@ export async function commitGrandHallRuntimeIntake(
   }
   return {
     ...registration,
-    verifiedMemberCount: GRAND_HALL_FRONTIER_MEMBERS.length,
-    verifiedTotalBytes: GRAND_HALL_FRONTIER_TOTAL_BYTES,
-    gaussianCount: GRAND_HALL_FRONTIER_GAUSSIAN_COUNT,
+    verifiedMemberCount: members.length,
+    verifiedTotalBytes: admission.evidence.croppedVisual.totalBytes,
+    gaussianCount: admission.evidence.croppedVisual.totalGaussianCount,
   };
 }
 
@@ -541,7 +583,9 @@ function assertExistingPackageIdentity(
   }
 }
 
-function assetInsertValues(input: ReturnType<typeof buildGrandHallAssetRegistrationInputs>[number]) {
+function assetInsertValues(
+  input: ReturnType<typeof buildGrandHallRoomOnlyAssetRegistrationInputs>[number],
+) {
   return {
     venueSlug: input.venueSlug,
     roomSlug: input.roomSlug ?? null,
@@ -565,7 +609,15 @@ export function createDatabaseGrandHallRegistrationStore(
   db: Database,
 ): GrandHallRegistrationStore {
   return {
-    async registerExactFrontier(actorUserId) {
+    async registerExactFrontier(actorUserId, admission) {
+      const admissionError = grandHallRoomOnlyRuntimeAdmissionError(admission);
+      if (admissionError !== null) {
+        throw new GrandHallRuntimeIntakeError(
+          409,
+          "GRAND_HALL_ROOM_ONLY_EVIDENCE_REQUIRED",
+          admissionError,
+        );
+      }
       const operation = async (): Promise<GrandHallRegistrationResult> => db.transaction(async (tx) => {
         await tx.execute(sql`set local lock_timeout = '5s'`);
         await tx.execute(sql`set local statement_timeout = '30s'`);
@@ -575,7 +627,7 @@ export function createDatabaseGrandHallRegistrationStore(
           )
         `);
 
-        const inputs = buildGrandHallAssetRegistrationInputs();
+        const inputs = buildGrandHallRoomOnlyAssetRegistrationInputs(admission);
         const keys = inputs.map((input) => input.r2Key).filter((key): key is string => key !== null && key !== undefined);
         const rows = await tx
           .select()
@@ -624,7 +676,10 @@ export function createDatabaseGrandHallRegistrationStore(
           }
           return row;
         });
-        const packageInput = buildGrandHallRuntimePackagePayload(orderedAssets);
+        const packageInput = buildGrandHallRoomOnlyRuntimePackagePayload(
+          orderedAssets,
+          admission,
+        );
         const contentDigest = computeRuntimePackageRevisionDigest(packageInput);
         const [existingPackage] = await tx
           .select()
@@ -688,8 +743,9 @@ export function createDatabaseGrandHallRegistrationStore(
             revision,
             contentDigest,
             memberCount: orderedAssets.length,
-            totalBytes: GRAND_HALL_FRONTIER_TOTAL_BYTES,
+            totalBytes: admission.evidence.croppedVisual.totalBytes,
             captureSessionId: null,
+            roomOnlyEvidenceSha256: admission.evidence.evidenceSha256,
           },
         });
         return {

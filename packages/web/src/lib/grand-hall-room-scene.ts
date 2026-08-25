@@ -1,13 +1,14 @@
 import {
+  GrandHallRoomOnlyRuntimeEvidenceV2Schema,
   OWNER_CONFIRMED_AUTHORITY_STATEMENT,
   OWNER_CONFIRMED_SCOPE_STATEMENT,
   ROOM_SCENE_MANIFEST_V0_VERSION,
   RoomSceneManifestV0Schema,
   SOURCE_RIGHTS_SCOPES,
+  type GrandHallRoomOnlyRuntimeEvidenceV2,
   type RoomSceneManifestV0,
 } from "@omnitwin/types";
 import {
-  GRAND_HALL_CAPTURED_SOG_MEMBERS,
   GRAND_HALL_CAPTURED_SOURCE,
 } from "./grand-hall-captured-source.js";
 import {
@@ -28,14 +29,17 @@ export const GRAND_HALL_POSE_SOURCE_SHA256 =
  */
 export function createGrandHallRoomSceneManifest(
   runtimePackageId: string,
+  evidenceInput: GrandHallRoomOnlyRuntimeEvidenceV2,
 ): RoomSceneManifestV0 {
+  const evidence = GrandHallRoomOnlyRuntimeEvidenceV2Schema.parse(evidenceInput);
+  const acceptedEvidenceId = "grand-hall-room-only-runtime-evidence-v2";
   return RoomSceneManifestV0Schema.parse({
     schemaVersion: ROOM_SCENE_MANIFEST_V0_VERSION,
     manifestId: GRAND_HALL_ROOM_SCENE_MANIFEST_ID,
     venueSlug: GRAND_HALL_CAPTURED_SOURCE.venueSlug,
     roomSlug: GRAND_HALL_CAPTURED_SOURCE.roomSlug,
     runtimePackageId,
-    createdAt: "2026-08-23T00:00:00.000Z",
+    createdAt: evidence.createdAt,
     sourceRights: [
       {
         id: "grand-hall-xgrids-owner-confirmation-v1",
@@ -52,13 +56,21 @@ export function createGrandHallRoomSceneManifest(
     ],
     qualityEvidence: [
       {
-        id: "grand-hall-exact-frontier-receipt",
-        status: "machine_checked",
+        id: acceptedEvidenceId,
+        status: "human_reviewed",
         confidence: "appearance_only",
-        evidenceRefs: [GRAND_HALL_CAPTURED_SOURCE.frontierReceiptSha256],
+        evidenceRefs: [
+          `sha256:${evidence.evidenceSha256}`,
+          evidence.sourceFrontierReceiptSha256,
+          evidence.acceptedScope.membershipArtifact.sha256,
+          evidence.acceptedScope.closedBoundaryArtifact.sha256,
+          evidence.acceptedScope.portalDecisionArtifact.sha256,
+          evidence.acceptedScope.panoramaMaskSetArtifact.sha256,
+          evidence.acceptedScope.pointMaskArtifact.sha256,
+        ],
         limitations: [
-          "Appearance evidence only; there is no reviewed Grand Hall room-local transform.",
-          "The eleven members become visible only after exact atomic byte verification.",
+          "Appearance evidence only; the accepted cropped inventory grants no collision authority.",
+          "Unknown and excluded regions remain transparent and are never procedurally filled.",
         ],
       },
       {
@@ -79,25 +91,28 @@ export function createGrandHallRoomSceneManifest(
     ],
     visualAssetManifests: [
       {
-        id: "grand-hall-exact-sog-frontier",
+        id: "grand-hall-room-only-sog-crop-v2",
         truthClass: "CAPTURED",
         format: "sog",
         lineageRole: "runtime_derivative",
         parentArtifactRefs: [
-          "Grand_Hall.lcc2",
-          `manifest:${GRAND_HALL_CAPTURED_SOURCE.manifestSha256}`,
+          evidence.sourceFrontierReceiptSha256,
+          evidence.acceptedScope.closedBoundaryArtifact.sha256,
+          evidence.acceptedScope.portalDecisionArtifact.sha256,
+          evidence.acceptedScope.panoramaMaskSetArtifact.sha256,
+          evidence.acceptedScope.pointMaskArtifact.sha256,
         ],
         sourceRightsId: "grand-hall-xgrids-owner-confirmation-v1",
-        qualityEvidenceIds: ["grand-hall-exact-frontier-receipt"],
-        members: GRAND_HALL_CAPTURED_SOG_MEMBERS.map((member, index) => ({
+        qualityEvidenceIds: [acceptedEvidenceId],
+        members: evidence.croppedVisual.members.map((member, index) => ({
           id: `sog-member-${String(index).padStart(2, "0")}`,
           fileName: member.fileName,
           sha256: `sha256:${member.sha256}`,
           sizeBytes: member.sizeBytes,
           gaussianCount: member.gaussianCount,
         })),
-        totalBytes: GRAND_HALL_CAPTURED_SOURCE.totalBytes,
-        totalGaussianCount: GRAND_HALL_CAPTURED_SOURCE.gaussianCount,
+        totalBytes: evidence.croppedVisual.totalBytes,
+        totalGaussianCount: evidence.croppedVisual.totalGaussianCount,
       },
     ],
     transformArtifacts: [],
@@ -112,14 +127,13 @@ export function createGrandHallRoomSceneManifest(
         truthClass: "CAPTURED",
         source: {
           type: "visual_asset_set",
-          visualAssetManifestId: "grand-hall-exact-sog-frontier",
+          visualAssetManifestId: "grand-hall-room-only-sog-crop-v2",
         },
         authorities: ["appearance"],
         spatialRegistration: {
-          type: "inspection_placement",
-          bindingRef: "grand-hall-source-inspection-transform-v1",
+          type: "unregistered",
         },
-        qualityEvidenceIds: ["grand-hall-exact-frontier-receipt"],
+        qualityEvidenceIds: [acceptedEvidenceId],
         sourceRightsId: "grand-hall-xgrids-owner-confirmation-v1",
         intents: ["inspection", "dollhouse"],
         loadPolicy: "atomic",
@@ -136,8 +150,7 @@ export function createGrandHallRoomSceneManifest(
         },
         authorities: ["diagnostic_navigation"],
         spatialRegistration: {
-          type: "inspection_placement",
-          bindingRef: "grand-hall-source-inspection-transform-v1",
+          type: "unregistered",
         },
         qualityEvidenceIds: ["grand-hall-source-envelope-diagnostic"],
         sourceRightsId: "grand-hall-xgrids-owner-confirmation-v1",

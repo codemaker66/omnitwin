@@ -35,7 +35,6 @@ import {
   resolvePlannerLayerComposition,
   resolvePlannerLayerPolicy,
 } from "../../lib/planner-layer-composition.js";
-import { GRAND_HALL_CAPTURED_SOG_MEMBERS } from "../../lib/grand-hall-captured-source.js";
 import { runtimeAssetCameraViewForRoom } from "../../lib/runtime-package-resolution.js";
 import {
   GRAND_HALL_APPEARANCE_LAYER_ID,
@@ -78,12 +77,13 @@ const EXACT_GRAND_HALL_CAMERA_VIEW = runtimeAssetCameraViewForRoom("grand-hall")
 export function exactGrandHallArrivalResetKey(
   runtimeKey: ExactGrandHallRuntimeKey | null,
   attemptNonce: number,
+  memberNames: readonly string[],
 ): string {
   const identity = runtimeKey === null
     ? "exact-grand-hall-unresolved"
     : serializeExactGrandHallRuntimeKey(runtimeKey);
-  return GRAND_HALL_CAPTURED_SOG_MEMBERS
-    .map((member) => `${identity}:${String(attemptNonce)}:${member.fileName}`)
+  return memberNames
+    .map((memberName) => `${identity}:${String(attemptNonce)}:${memberName}`)
     .join("|");
 }
 
@@ -325,6 +325,8 @@ export function PlannerScene(): ReactElement {
     delivery,
     runtimePackageId,
     exactGrandHallRuntimeKey,
+    exactGrandHallRoomOnlyEvidence,
+    exactGrandHallMemberNames,
     roomIdentity,
   } = useRoomRuntimeSplat();
   const currentExactAttemptNonce = exactGrandHallRuntimeKey !== null
@@ -364,17 +366,27 @@ export function PlannerScene(): ReactElement {
   // attribute. The arrival set resets when the room's chunk list changes
   // (the hook rebuilds the array each render, so key on its joined value).
   const exactArrivalResetKey = useMemo(
-    () => exactGrandHallArrivalResetKey(exactGrandHallRuntimeKey, exactGrandHallAttemptNonce),
-    [exactGrandHallAttemptNonce, exactGrandHallRuntimeKey],
+    () => exactGrandHallArrivalResetKey(
+      exactGrandHallRuntimeKey,
+      exactGrandHallAttemptNonce,
+      exactGrandHallMemberNames,
+    ),
+    [exactGrandHallAttemptNonce, exactGrandHallMemberNames, exactGrandHallRuntimeKey],
   );
   const arrivals = useChunkArrivals(exactGrandHall ? exactArrivalResetKey : splatUrls.join("|"));
-  const totalChunks = exactGrandHall ? GRAND_HALL_CAPTURED_SOG_MEMBERS.length : splatUrls.length;
+  const totalChunks = exactGrandHall ? exactGrandHallMemberNames.length : splatUrls.length;
   const loadedChunks = Math.min(arrivals.loadedCount, totalChunks);
   const failedChunks = Math.min(arrivals.failedCount, totalChunks - loadedChunks);
   const roomSceneManifest = useMemo(() => {
-    if (exactGrandHallRuntimePackageId === null) return null;
-    return createGrandHallRoomSceneManifest(exactGrandHallRuntimePackageId);
-  }, [exactGrandHallRuntimePackageId]);
+    if (
+      exactGrandHallRuntimePackageId === null
+      || exactGrandHallRoomOnlyEvidence === null
+    ) return null;
+    return createGrandHallRoomSceneManifest(
+      exactGrandHallRuntimePackageId,
+      exactGrandHallRoomOnlyEvidence,
+    );
+  }, [exactGrandHallRoomOnlyEvidence, exactGrandHallRuntimePackageId]);
   const exactRuntimeStatus = exactGrandHallLifecycle !== null
     && exactGrandHallRuntimeKey !== null
     && sameExactGrandHallRuntimeKey(exactGrandHallLifecycle.key, exactGrandHallRuntimeKey)
