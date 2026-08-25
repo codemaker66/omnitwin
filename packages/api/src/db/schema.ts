@@ -109,6 +109,27 @@ export const users = pgTable("users", {
 });
 
 // ---------------------------------------------------------------------------
+// 3b. user_onboarding_audit
+// ---------------------------------------------------------------------------
+
+export const userOnboardingAudit = pgTable("user_onboarding_audit", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clerkId: text("clerk_id").notNull(),
+  email: varchar("email", { length: 255 }),
+  decision: varchar("decision", { length: 20 }).notNull(),
+  reason: varchar("reason", { length: 60 }).notNull(),
+  source: varchar("source", { length: 40 }).notNull(),
+  matchedUserId: uuid("matched_user_id").references(() => users.id),
+  venueId: uuid("venue_id").references(() => venues.id),
+  role: varchar("role", { length: 20 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("user_onboarding_audit_clerk_idx").on(table.clerkId),
+  index("user_onboarding_audit_email_idx").on(table.email),
+  index("user_onboarding_audit_decision_idx").on(table.decision, table.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
 // 4. asset_definitions (global furniture catalogue — no venue_id)
 // ---------------------------------------------------------------------------
 
