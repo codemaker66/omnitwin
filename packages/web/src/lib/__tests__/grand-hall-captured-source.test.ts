@@ -8,11 +8,15 @@ import {
   type RuntimePackagePreview,
 } from "@omnitwin/types";
 import {
+  GRAND_HALL_CAPTURED_SOURCE,
   validateGrandHallCapturedPreview,
   validateGrandHallCapturedSource,
 } from "../grand-hall-captured-source.js";
 import { decideRuntimeAsset } from "../runtime-package-resolution.js";
-import { syntheticGrandHallRoomOnlyEvidence } from "../../test-fixtures/grand-hall-room-only-evidence.js";
+import {
+  GRAND_HALL_XGRIDS_LCC_PROJECT_RECEIPT_SHA256,
+  syntheticGrandHallRoomOnlyEvidence,
+} from "../../test-fixtures/grand-hall-room-only-evidence.js";
 
 const SYNTHETIC_EVIDENCE = syntheticGrandHallRoomOnlyEvidence();
 const SYNTHETIC_MEMBERS = SYNTHETIC_EVIDENCE.croppedVisual.members;
@@ -125,6 +129,19 @@ function grandHallPreview(): RuntimePackagePreview {
 }
 
 describe("validateGrandHallCapturedSource", () => {
+  it("keeps legacy frontier and raw XGRIDS project receipts as distinct lineage", () => {
+    expect(SYNTHETIC_EVIDENCE.sourceFrontierReceiptSha256).toBe(
+      GRAND_HALL_CAPTURED_SOURCE.frontierReceiptSha256,
+    );
+    expect(SYNTHETIC_EVIDENCE.acceptedScope.reviewedTransformArtifact.sourceXgridsReceiptSha256)
+      .toBe(GRAND_HALL_XGRIDS_LCC_PROJECT_RECEIPT_SHA256);
+    expect(SYNTHETIC_EVIDENCE.acceptedScope.outputInventoryMaskArtifact.xgridsSourceReceiptSha256)
+      .toBe(GRAND_HALL_XGRIDS_LCC_PROJECT_RECEIPT_SHA256);
+    expect(SYNTHETIC_EVIDENCE.sourceFrontierReceiptSha256).not.toBe(
+      SYNTHETIC_EVIDENCE.acceptedScope.reviewedTransformArtifact.sourceXgridsReceiptSha256,
+    );
+  });
+
   it("accepts only the distinct evidence-bound cropped-output inventory", () => {
     const pkg = RuntimePackageSchema.parse(grandHallPackage());
     expect(validateGrandHallCapturedSource(pkg)).toMatchObject({ ok: true });

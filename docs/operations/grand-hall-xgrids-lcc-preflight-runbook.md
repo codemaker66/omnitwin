@@ -170,8 +170,9 @@ The common current blockers are expected to include insufficient RAM, an
 unqualified scratch drive, and missing reviewed LCC 2.3-or-newer evidence.
 
 Never use a receipt to claim Grand Hall training, runtime, structural,
-collision, export, staging, or public authority. T-550's room boundary,
-panorama/point masks, and human room-scope review remain separate gates.
+collision, export, staging, or public authority. T-554's human-reviewed scope,
+selection volume, interfaces, and panorama masks plus T-557's reviewed
+registration and exact XGRIDS-output mask remain separate gates.
 
 ## Superseded 2026-08-25 diagnostic
 

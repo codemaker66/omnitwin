@@ -43,7 +43,10 @@ import {
   isCanonicalGrandHallRuntimePackage,
   type GrandHallRoomOnlyRuntimeAdmission,
 } from "../lib/grand-hall-frontier-contract.js";
-import { syntheticGrandHallRoomOnlyAdmission } from "./fixtures/grand-hall-room-only-evidence.js";
+import {
+  GRAND_HALL_XGRIDS_LCC_PROJECT_RECEIPT_SHA256,
+  syntheticGrandHallRoomOnlyAdmission,
+} from "./fixtures/grand-hall-room-only-evidence.js";
 import { computeRuntimePackageRevisionDigest } from "../services/runtime-package-revisions.js";
 
 const MANIFEST_PATH = "C:/GRAND_HALL_BIG_MODEL_VARIATIONS/scans_BIG_MODEL_TH_GH_1/lcc2-result/Grand_Hall.lcc2";
@@ -194,17 +197,29 @@ function syntheticAdmissionWithMembers(
 ): GrandHallRoomOnlyRuntimeAdmission {
   const base = syntheticGrandHallRoomOnlyAdmission().evidence;
   const { evidenceSha256: _evidenceSha256, ...baseMaterial } = base;
+  const totalGaussianCount = members.reduce(
+    (total, member) => total + member.gaussianCount,
+    0,
+  );
+  const excludedRecordCount = 20;
   const material = GrandHallRoomOnlyRuntimeEvidenceMaterialV2Schema.parse({
     ...baseMaterial,
+    acceptedScope: {
+      ...baseMaterial.acceptedScope,
+      outputInventoryMaskArtifact: {
+        ...baseMaterial.acceptedScope.outputInventoryMaskArtifact,
+        totalRecordCount: totalGaussianCount + excludedRecordCount,
+        includedRecordCount: totalGaussianCount,
+        excludedRecordCount,
+        bitsetByteLength: Math.ceil((totalGaussianCount + excludedRecordCount) / 8),
+      },
+    },
     croppedVisual: {
       ...baseMaterial.croppedVisual,
       memberSetSha256: computeGrandHallRoomOnlyVisualMemberSetSha256(members),
       memberCount: members.length,
       totalBytes: members.reduce((total, member) => total + member.sizeBytes, 0),
-      totalGaussianCount: members.reduce(
-        (total, member) => total + member.gaussianCount,
-        0,
-      ),
+      totalGaussianCount,
       members,
     },
   });
@@ -228,6 +243,21 @@ function readStore(rows: readonly GrandHallAssetRecord[] = []): GrandHallRegistr
 }
 
 describe("Grand Hall big-model read-only intake", () => {
+  it("keeps the legacy frontier receipt distinct from raw XGRIDS project lineage", () => {
+    const evidence = syntheticGrandHallRoomOnlyAdmission().evidence;
+
+    expect(evidence.sourceFrontierReceiptSha256).toBe(GRAND_HALL_FRONTIER_RECEIPT_SHA256);
+    expect(evidence.acceptedScope.reviewedTransformArtifact.sourceXgridsReceiptSha256).toBe(
+      GRAND_HALL_XGRIDS_LCC_PROJECT_RECEIPT_SHA256,
+    );
+    expect(evidence.acceptedScope.outputInventoryMaskArtifact.xgridsSourceReceiptSha256).toBe(
+      GRAND_HALL_XGRIDS_LCC_PROJECT_RECEIPT_SHA256,
+    );
+    expect(evidence.sourceFrontierReceiptSha256).not.toBe(
+      evidence.acceptedScope.reviewedTransformArtifact.sourceXgridsReceiptSha256,
+    );
+  });
+
   it("pins the exact ordered eleven-member SOG frontier and totals", () => {
     expect(GRAND_HALL_FRONTIER_MEMBERS.map((member) => member.fileName)).toEqual([
       "0_0_0_1_0_1.sog",

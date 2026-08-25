@@ -2516,6 +2516,7 @@ export * from "./reconstruction-release.js";
 export * from "./reconstruction-review-evidence.js";
 export * from "./omnitwin-foundry.js";
 export * from "./omnitwin-foundry-grand-hall-room-membership.js";
+export * from "./grand-hall-room-scope-artifacts.js";
 export * from "./grand-hall-room-only-runtime-evidence.js";
 export * from "./omnitwin-foundry-derivative-rights.js";
 export * from "./omnitwin-foundry-derivative-rights-custody.js";

@@ -12,9 +12,9 @@ register/deploy their v1 runtime package.
 
 The eleven-member `grand-hall-big-model-sog-fine-v1` frontier is immutable
 source and diagnostic evidence only. It is not a closed Grand Hall crop. Its
-camera/source membership does not prove a closed room boundary, the two portal
-interfaces remain human-pending, and relabelling any of its byte-identical
-members as room-only output is prohibited.
+camera/source membership does not prove a closed room boundary, all eight
+observed shared-index interfaces remain human-pending, and relabelling any of
+its byte-identical members as room-only output is prohibited.
 
 The previous procedure in this file is superseded. Git history retains it for
 audit provenance; it is intentionally absent from the current operator guide
@@ -44,16 +44,25 @@ No provider/API key is required or permitted for this retired procedure.
 All of the following must be separate immutable, human-accepted evidence:
 
 1. A reviewed Grand Hall membership artifact.
-2. A reviewed closed, non-camera-membership room volume.
-3. A portal decision resolving every boundary interface.
+2. A reviewed closed, non-convex, non-camera-membership selection volume that
+   is not rendered or exported as architecture.
+3. A decision resolving all eight observed boundary interfaces.
 4. Complete panorama masks in the original equirectangular pixel grid.
-5. A source-point membership mask.
-6. A newly derived cropped SOG inventory whose byte identities do not include
+5. A reviewed XGRIDS/LCC-output-to-MatterPak/E57 transform with declared frames,
+   non-collinear landmarks, residuals, and RMSE.
+6. A bit-exact point/Gaussian membership mask against the exact ordered
+   XGRIDS/LCC output inventory.
+7. A newly derived cropped SOG inventory whose byte identities do not include
    any complete, subset, renamed, reordered, or mixed legacy frontier member.
-7. A `venviewer.grand-hall-room-only-runtime-evidence.v2` digest binding all of
+8. A `venviewer.grand-hall-room-only-runtime-evidence.v2` digest binding all of
    the above, with a recorded human acceptance.
-8. An explicit production/staging trust-root change reviewed against that real
-   digest.
+9. Successful byte-level parsing and cross-binding of the concrete T-554 root
+   descriptor plus all six accepted artifacts; hashing; full image decoding;
+   exact-inventory checking; format-aware proof of real source-member record
+   kinds/boundaries/order/counts; and bitset validation through the API/intake
+   admission path.
+10. An explicit production/staging trust-root change reviewed against that real
+    digest after step 9 succeeds.
 
 Each cropped SOG member must be at most 16 MiB so intake and authenticated
 preview share one bounded buffering contract. Larger output must be split at
@@ -63,11 +72,13 @@ limits must not be weakened to admit it.
 
 ## Future operational work
 
-Only after the real accepted v2 evidence exists should engineering create a
-new v2 intake tool and a new reviewed runbook. That future tool must derive its
-private object prefix from the accepted evidence digest and exact cropped
-inventory. It must not reuse the legacy v1 prefix, credentials, package,
-commands, or confirmation text.
+Only after the real accepted v2 evidence exists should engineering pair the
+strict concrete-file verifier with an audited format-aware streamed member
+adapter, connect both to a new v2 API/intake admission path, and create a
+reviewed runbook. JSON summaries and opaque member hashes alone must never
+activate trust. That future tool must derive its private object prefix from the
+accepted evidence digest and exact cropped inventory. It must not reuse the
+legacy v1 prefix, credentials, package, commands, or confirmation text.
 
 Until then, staging intake, deployment, package activation, and authenticated
 runtime QA are blocked. Read-only source inspection and evidence authoring may

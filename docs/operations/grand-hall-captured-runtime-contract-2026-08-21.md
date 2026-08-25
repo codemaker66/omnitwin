@@ -36,18 +36,31 @@ These values bind the input frontier only. They grant no boundary, portal,
 mask, room-only, collision, structural, navigation, deployment, publication,
 or visual-acceptance authority.
 
+Do not conflate that legacy SOG-frontier receipt with the raw XGRIDS/LCC
+project receipt
+`sha256:dc2259089043ae4a1d95663f251d4bd94699124cd49baa3b8958a0d668389b8a`.
+The reviewed transform and exact output-inventory mask must bind the latter;
+the runtime envelope retains the former as separate historical frontier
+lineage.
+
 ## Successor v2 runtime evidence contract
 
-An exact Grand Hall runtime may be admitted only by one immutable
-`venviewer.grand-hall-room-only-runtime-evidence.v2` object that binds:
+The evidence envelope for an exact Grand Hall runtime requires the concrete
+authority-none T-554 root descriptor and one immutable
+`venviewer.grand-hall-room-only-runtime-evidence.v2` object that binds the
+following. The summary object is necessary but never sufficient without
+T-558's concrete-file verification and root-lineage cross-checks:
 
 - the source frontier receipt above;
 - a separately human-accepted room-membership artifact;
-- a separately human-accepted closed room volume, explicitly not camera
-  membership alone;
-- a human-accepted decision resolving every portal/interface;
+- a separately human-accepted closed, non-convex selection volume, explicitly
+  not camera membership alone and not renderable architecture;
+- a human-accepted decision resolving all eight observed portal/interfaces;
 - a complete accepted panorama mask set;
-- a complete accepted source-point mask;
+- a reviewed XGRIDS/LCC-output-to-MatterPak/E57 transform, with declared source
+  and target frames, non-collinear landmarks, residuals, and RMSE;
+- a complete bit-exact point/Gaussian membership mask against the exact ordered
+  XGRIDS/LCC output inventory;
 - a distinct derived cropped-output inventory and its ordered member digest;
 - a human reviewer and review instant; and
 - a runtime policy prohibiting generated fill, procedural or synthesized pixel
@@ -71,12 +84,17 @@ The production accepted-evidence SHA-256 trust root is deliberately `null`.
 Synthetic v2 fixtures exist only in tests and are not real acceptance
 artifacts. Therefore no current Grand Hall package is runtime-admissible.
 
-API registration, canonical/latest discovery, and authenticated preview reject
-missing, legacy, pending, wrong-scope, wrong-mask, wrong-boundary, wrong-portal,
-or non-`human_reviewed` evidence before private-object reads. The verified
-Trades Hall Grand Hall web route likewise fails closed: it does not fall back
-to generic/legacy bytes, procedural architecture, neighbouring rooms, facade,
-or generated pixels.
+The current API schema and summary-level admission prefilter reject missing,
+legacy, pending, wrong-scope, wrong-mask, wrong-boundary, wrong-interface, or
+non-`human_reviewed` evidence before private-package reads. JSON summaries do
+not prove that their referenced accepted files contain the claimed bytes. A
+strict concrete-file verifier exists as non-authoritative byte-integrity
+groundwork, but it cannot infer record boundaries or counts from opaque
+XGRIDS/LCC member bytes. It is not yet paired with an audited format-aware
+adapter or wired into the API/intake boundary, and it cannot activate trust.
+The verified Trades Hall Grand Hall web route likewise fails closed: it does
+not fall back to generic/legacy bytes, procedural architecture, neighbouring
+rooms, facade, or generated pixels.
 
 The former v1 credential and intake entry points are code-blocked with
 `GRAND_HALL_V1_INTAKE_RETIRED`. The read-only source validator remains only for
@@ -86,5 +104,10 @@ lineage diagnostics and explicitly reports `runtimeAdmissible: false`.
 
 Do not provision an intake capability or author a new operational runbook until
 the real distinct cropped output and every required human acceptance exist.
-After that gate, review a new digest-derived v2 object prefix and purpose-built
-tooling. Never reuse or rename the v1 bytes, prefix, credentials, or package.
+Then pair concrete-file verification with an audited format-aware streamed
+adapter that proves real record kinds, boundaries, order, and counts; wire and
+independently audit both at the API/intake boundary; and require them to succeed
+before reviewing any non-null trust root. Only after that gate may a new
+digest-derived v2 object prefix and purpose-built
+tooling be reviewed. Never reuse or rename the v1 bytes, prefix, credentials,
+or package.

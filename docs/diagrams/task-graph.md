@@ -192,11 +192,13 @@ flowchart TD
     subgraph A8 [a8 · grand hall evidence-to-v2 continuation]
         T550(["T-550 - visual room-scope successor evidence"])
         T551(["T-551 - room-9 source-boundary receipt"])
-        T552(["T-552 - fail-closed room-only v2 admission"])
+        T552(["T-552 - fail-closed room-only v2 prefilter"])
         T553(["T-553 - XGRIDS/LCC read-only preflight"])
-        T554(["T-554 - human-approved boundary + masks"])
+        T554(["T-554 - human-approved scope + volume + masks"])
         T555(["T-555 - Creator Data/nCore reconstruction"])
-        T556(["T-556 - room-only v2 captured master"])
+        T556(["T-556 - room-only v2 master candidate"])
+        T557(["T-557 - reviewed XGRIDS registration + output mask"])
+        T558(["T-558 - byte-verified v2 admission + trust gate"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -563,9 +565,16 @@ flowchart TD
     T551 --> T554
     T553 --> T555
     T554 --> T555
+    T554 --> T557
+    T555 --> T557
     T552 --> T556
     T554 --> T556
     T555 --> T556
+    T557 --> T556
+    T552 --> T558
+    T554 --> T558
+    T556 --> T558
+    T557 --> T558
 
     classDef done fill:#b8965a,color:#1a2e3b
     classDef inprogress fill:#7d9579,color:#f4ede0
@@ -575,7 +584,7 @@ flowchart TD
     classDef superseded fill:#6b7280,color:#f4ede0
 
     class T002,T019,T052,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T095,T096,T097,T098,T099,T113,T114,T115,T116,T122,T123,T124,T127,T135,T136,T137,T156,T203,T204,T209,T210,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420,T421,T422,T423,T424,T428,T435,T441,T442,T443,T444,T445,T446,T447,T448,T449,T454,T455,T456,T457,T463,T464,T465,T466,T467,T471,T472,T473,T474,T475,T476,T477,T478,T479 done
-    class T001,T060,T092,T118,T453,T469,T470,T542,T554,T555,T556 blocked
+    class T001,T060,T092,T118,T453,T469,T470,T542,T554,T555,T556,T557,T558 blocked
     class T160,T480,T481,T482,T483,T484,T485,T541,T551,T552,T553 done
     class T550 inprogress
     class T540 superseded
@@ -633,9 +642,19 @@ receipt without claiming a closed volume or transform authority. T-552 ensures
 the v1 bytes blank and requires a separately accepted digest plus genuinely new
 room-only byte identities before intake, discovery, preview, or rendering.
 T-553 binds the raw XGRIDS project and checks only whether the workstation may
-advance to LCC's estimator. T-554 through T-556 remain blocked on human room
-scope, portal/mask review, eligible hardware, a source-faithful Creator Data
-reconstruction, and matched-camera acceptance. No push, merge, deployment,
+advance to LCC's estimator. T-554 accepts source-frame scope, an independent
+selection volume, exhaustive interfaces, correspondence, and panorama masks;
+it cannot author a mask for a future XGRIDS inventory. T-555 produces retained
+Creator Data, then T-557 owns the reviewed XGRIDS-output-to-MatterPak/E57
+registration and exact output-inventory point/Gaussian mask. T-556 may apply
+those witnesses only after all four gates close, but it produces a candidate,
+not runtime authority. T-558 must byte-verify every concrete accepted artifact,
+source panorama, panorama mask, XGRIDS/LCC member and output bitset through the
+API/intake boundary, with a format-aware adapter proving actual source-member
+record boundaries/order/counts, before any trust root can activate. T-554
+through T-558 remain blocked on human review, eligible hardware, a source-faithful
+reconstruction, registration, matched-camera acceptance, and concrete-file
+admission. No push, merge, deployment,
 intake activation, source mutation, LCC launch, or generative enhancement is
 implied by either subgraph.
 

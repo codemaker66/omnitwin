@@ -1,0 +1,1291 @@
+import { createHash } from "node:crypto";
+import {
+  copyFile,
+  link,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+import {
+  CanonicalJsonValueSchema,
+  GRAND_HALL_CLOSED_BOUNDARY_V1,
+  GRAND_HALL_MATTERPAK_E57_SOURCE_FRAME,
+  GRAND_HALL_MATTERPAK_ROOM_KEY,
+  GRAND_HALL_OUTPUT_INVENTORY_MASK_V1,
+  GRAND_HALL_PANORAMA_HEIGHT_PX,
+  GRAND_HALL_PANORAMA_MASK_SET_V1,
+  GRAND_HALL_PANORAMA_WIDTH_PX,
+  GRAND_HALL_PORTAL_DECISIONS_V1,
+  GRAND_HALL_ROOM_MEMBERSHIP_V2,
+  GRAND_HALL_SCOPE_REVIEW_PACK_V1,
+  GRAND_HALL_XGRIDS_SOURCE_FRAME,
+  GRAND_HALL_XGRIDS_TO_MATTERPAK_E57_TRANSFORM_V1,
+  GrandHallClosedBoundaryV1MaterialSchema,
+  GrandHallClosedBoundaryV1Schema,
+  GrandHallInterfaceCandidateSchema,
+  GrandHallOutputInventoryMaskV1MaterialSchema,
+  GrandHallOutputInventoryMaskV1Schema,
+  GrandHallPanoramaMaskSetV1MaterialSchema,
+  GrandHallPanoramaMaskSetV1Schema,
+  GrandHallPanoramaSourceJpgIdentitySchema,
+  GrandHallPortalDecisionsV1MaterialSchema,
+  GrandHallPortalDecisionsV1Schema,
+  GrandHallReviewedTransformV1MaterialSchema,
+  GrandHallReviewedTransformV1Schema,
+  GrandHallRoomMembershipV2MaterialSchema,
+  GrandHallRoomMembershipV2Schema,
+  GrandHallScopeReviewPackMaterialV1Schema,
+  GrandHallScopeReviewPackV1Schema,
+  computeGrandHallClosedBoundaryV1Sha256,
+  computeGrandHallInterfaceInventorySha256,
+  computeGrandHallOutputInventoryMaskV1Sha256,
+  computeGrandHallOutputSourceOrderingSha256,
+  computeGrandHallPanoramaDirectoryInventorySha256,
+  computeGrandHallPanoramaMaskSetV1Sha256,
+  computeGrandHallPanoramaSourceInventorySha256,
+  computeGrandHallPortalDecisionsV1Sha256,
+  computeGrandHallReviewedTransformMatrixSha256,
+  computeGrandHallReviewedTransformV1Sha256,
+  computeGrandHallRoomMembershipV2Sha256,
+  computeGrandHallScopeReviewPackV1Sha256,
+  stableCanonicalJson,
+  type GrandHallOutputInventoryMaskV1,
+  type GrandHallPanoramaMaskSetV1,
+} from "@omnitwin/types";
+import sharp from "sharp";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+
+import {
+  GRAND_HALL_ACCEPTED_SCOPE_BUNDLE_VERIFIER_VERSION,
+  verifyGrandHallAcceptedScopeBundle,
+  type GrandHallAcceptedScopeArtifactFiles,
+  type VerifyGrandHallAcceptedScopeBundleOptions,
+} from "../grand-hall-accepted-scope-bundle-verifier.js";
+
+const PIXEL_COUNT = GRAND_HALL_PANORAMA_WIDTH_PX * GRAND_HALL_PANORAMA_HEIGHT_PX;
+
+const ARTIFACT_FILES: GrandHallAcceptedScopeArtifactFiles = {
+  scopeReviewPack: "artifacts/scope-review-pack.json",
+  roomMembership: "artifacts/room-membership.json",
+  portalDecisions: "artifacts/portal-decisions.json",
+  closedBoundary: "artifacts/closed-boundary.json",
+  panoramaMaskSet: "artifacts/panorama-mask-set.json",
+  reviewedTransform: "artifacts/reviewed-transform.json",
+  outputInventoryMask: "artifacts/output-inventory-mask.json",
+};
+
+type DeepMutable<T> = {
+  -readonly [Key in keyof T]: T[Key] extends readonly (infer Item)[]
+    ? DeepMutable<Item>[]
+    : T[Key] extends object
+      ? DeepMutable<T[Key]>
+      : T[Key];
+};
+
+interface AcceptedArtifacts {
+  readonly scopeReviewPack: ReturnType<typeof GrandHallScopeReviewPackV1Schema.parse>;
+  readonly membership: ReturnType<typeof GrandHallRoomMembershipV2Schema.parse>;
+  readonly portals: ReturnType<typeof GrandHallPortalDecisionsV1Schema.parse>;
+  readonly boundary: ReturnType<typeof GrandHallClosedBoundaryV1Schema.parse>;
+  readonly panoramaMasks: GrandHallPanoramaMaskSetV1;
+  readonly transform: ReturnType<typeof GrandHallReviewedTransformV1Schema.parse>;
+  readonly outputMask: GrandHallOutputInventoryMaskV1;
+}
+
+interface Fixture {
+  readonly temporaryRoot: string;
+  readonly bundleRoot: string;
+  readonly panoramaRoot: string;
+  readonly xgridsRoot: string;
+  readonly outsideRoot: string;
+  readonly options: VerifyGrandHallAcceptedScopeBundleOptions;
+  readonly sourceJpeg: Buffer;
+  readonly maskPng: Buffer;
+  readonly bitset: Buffer;
+  readonly sourceMemberBytes: readonly [Buffer, Buffer];
+  readonly artifacts: AcceptedArtifacts;
+}
+
+function digest(value: Uint8Array | string): `sha256:${string}` {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function syntheticDigest(seed: number): `sha256:${string}` {
+  return `sha256:${seed.toString(16).padStart(64, "0")}`;
+}
+
+const humanReview = {
+  state: "human_accepted" as const,
+  reviewerId: "synthetic-authorized-reviewer",
+  reviewerRole: "venue_owner_or_authorized_domain_reviewer" as const,
+  reviewedAt: "2026-08-25T12:30:00.000Z",
+  knowledgeBasis: ["synthetic exact source comparison"],
+  agentDecisionAuthority: "none" as const,
+};
+
+function interfaceCandidates() {
+  const specifications = [
+    [0, 2, 10],
+    [0, 3, 2],
+    [0, 4, 15],
+    [1, 10, 6],
+    [1, 11, 6],
+    [1, 12, 3],
+    [1, 13, 72],
+    [1, 14, 62],
+  ] as const;
+  return specifications.map(([group, submesh, sharedSourceVertexCount], index) =>
+    GrandHallInterfaceCandidateSchema.parse({
+      interfaceId: `matterpak-1-9-${String(group)}-${String(submesh)}`,
+      grandHallRoomKey: GRAND_HALL_MATTERPAK_ROOM_KEY,
+      adjacentSourceRoomKey:
+        `matterpak:g${String(group).padStart(3, "0")}:s${String(submesh).padStart(3, "0")}`,
+      sharedSourceVertexCount,
+      sharedSourceVertexSetSha256: syntheticDigest(100 + index),
+      boundsMeters: {
+        min: [index * 2, 0, 0],
+        max: [index * 2 + 1, 2, 3],
+      },
+    }),
+  );
+}
+
+function createAcceptedArtifacts(input: {
+  readonly sourceJpegSha256: string;
+  readonly sourceJpegByteLength: number;
+  readonly maskSha256: string;
+  readonly maskByteLength: number;
+  readonly memberSha256s: readonly [string, string];
+  readonly memberByteLengths: readonly [number, number];
+  readonly bitsetSha256: string;
+  readonly bitsetByteLength: number;
+}): AcceptedArtifacts {
+  const boundaryEvidenceSha256 = syntheticDigest(901);
+  const xgridsSourceReceiptSha256 = syntheticDigest(902);
+  const matterPakE57ReceiptSha256 = syntheticDigest(903);
+  const xgridsOutputInventorySha256 = syntheticDigest(904);
+  const pendingMembershipV1Sha256 = syntheticDigest(905);
+  const sources = Array.from({ length: 50 }, (_, scanIndex) =>
+    GrandHallPanoramaSourceJpgIdentitySchema.parse({
+      scanIndex,
+      sweepNumber: scanIndex + 1,
+      fileName: `sweep-${String(scanIndex + 1).padStart(3, "0")}.jpg`,
+      sha256: input.sourceJpegSha256,
+      byteLength: input.sourceJpegByteLength,
+      widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+      heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
+    }),
+  );
+  const sourcePanoramaInventorySha256 = computeGrandHallPanoramaSourceInventorySha256(sources);
+  const interfaces = interfaceCandidates();
+  const interfaceInventorySha256 = computeGrandHallInterfaceInventorySha256(interfaces);
+  const panoramaDirectoryFiles = [
+    ...sources.map((source, inventoryIndex) => ({
+      inventoryIndex,
+      fileName: source.fileName,
+      sha256: source.sha256,
+      byteLength: source.byteLength,
+      widthPx: source.widthPx,
+      heightPx: source.heightPx,
+      t554Eligibility: "candidate_numeric_sweep_1_through_50" as const,
+      embeddedSweepNumber: source.sweepNumber,
+      t554ReviewState: "human_pending" as const,
+      ineligibilityReason: null,
+    })),
+    ...Array.from({ length: 98 }, (_, offset) => ({
+      inventoryIndex: offset + 50,
+      fileName: `unreviewed-sweep-${String(offset + 51).padStart(3, "0")}.jpg`,
+      sha256: syntheticDigest(2_000 + offset),
+      byteLength: 10_000 + offset,
+      widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+      heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
+      t554Eligibility: "ineligible_unreviewed" as const,
+      embeddedSweepNumber: offset + 51,
+      t554ReviewState: "not_reviewed_in_t554" as const,
+      ineligibilityReason: "embedded_sweep_number_outside_1_through_50" as const,
+    })),
+  ];
+  const reviewPackMaterial = GrandHallScopeReviewPackMaterialV1Schema.parse({
+    schemaVersion: GRAND_HALL_SCOPE_REVIEW_PACK_V1,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    createdAt: "2026-08-25T12:00:00.000Z",
+    createdBy: "synthetic T-554 review-pack fixture",
+    authority: "none",
+    reviewState: "human_pending",
+    runtimeAuthorized: false,
+    trainingAuthorized: false,
+    generatedContentAuthorized: false,
+    productionTrust: null,
+    sourceEvidence: {
+      t550PendingMembershipV1Sha256: pendingMembershipV1Sha256,
+      t551SourceEvidenceSha256: boundaryEvidenceSha256,
+      t551SourceReceiptSha256: matterPakE57ReceiptSha256,
+      xgridsSourceReceiptSha256,
+      matterPakE57SourceReceiptSha256: matterPakE57ReceiptSha256,
+      panoramaDirectoryInventorySha256:
+        computeGrandHallPanoramaDirectoryInventorySha256(panoramaDirectoryFiles),
+      boundaryReviewManifestSha256: syntheticDigest(906),
+      panoramaReviewManifestSha256: syntheticDigest(907),
+    },
+    panoramaDirectoryFiles,
+    candidatePanoramaSources: sources,
+    panoramaSourceInventorySha256: sourcePanoramaInventorySha256,
+    interfaceCandidates: interfaces,
+    interfaceInventorySha256,
+    proposalArtifacts: {
+      roomMembership: {
+        state: "source_candidate_present_human_pending",
+        artifactSha256: pendingMembershipV1Sha256,
+      },
+      portalDecisions: { state: "not_authored_human_pending", artifactSha256: null },
+      closedSelectionVolume: { state: "not_authored_human_pending", artifactSha256: null },
+      panoramaMaskSet: { state: "not_authored_human_pending", artifactSha256: null },
+    },
+    deferredArtifacts: {
+      reviewedTransform: {
+        state: "not_available_deferred_to_t557",
+        proposalSha256: null,
+        artifactSha256: null,
+        humanDecisionRequested: false,
+      },
+      outputInventoryMask: {
+        state: "not_available_deferred_to_t557",
+        proposalSha256: null,
+        artifactSha256: null,
+        humanDecisionRequested: false,
+      },
+    },
+    requiredHumanDecisions: [
+      "accept_or_reject_room_membership",
+      "resolve_every_interface",
+      "accept_or_reject_closed_selection_volume",
+      "accept_or_reject_every_panorama_mask",
+    ],
+  });
+  const scopeReviewPack = GrandHallScopeReviewPackV1Schema.parse({
+    ...reviewPackMaterial,
+    artifactSha256: computeGrandHallScopeReviewPackV1Sha256(reviewPackMaterial),
+  });
+  const reviewPackSha256 = scopeReviewPack.artifactSha256;
+
+  const membershipMaterial = GrandHallRoomMembershipV2MaterialSchema.parse({
+    schemaVersion: GRAND_HALL_ROOM_MEMBERSHIP_V2,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    authority: "human_accepted",
+    productionTrust: null,
+    reviewPackSha256,
+    sourceMembershipV1Sha256: pendingMembershipV1Sha256,
+    sourceBoundaryEvidenceSha256: boundaryEvidenceSha256,
+    sourcePanoramaInventorySha256,
+    matterPakRoomMembership: {
+      includedRoomKeys: [GRAND_HALL_MATTERPAK_ROOM_KEY],
+      neighbouringRoomGeometryIncluded: false,
+      facadeGeometryIncluded: false,
+    },
+    cameraRecords: sources.map((source, index) => ({
+      source,
+      decision:
+        index === 0
+          ? {
+              disposition: "include_with_binary_pixel_mask" as const,
+              classification: "grand_hall_portal_threshold" as const,
+              maskRequired: true as const,
+              generatedFillPermitted: false as const,
+            }
+          : {
+              disposition: "exclude_whole_frame" as const,
+              classification: "adjacent_room_or_outside_grand_hall" as const,
+              maskRequired: false as const,
+              generatedFillPermitted: false as const,
+            },
+      decisionEvidenceSha256: syntheticDigest(1_000 + index),
+    })),
+    acceptedUnknownPixelDisposition: "transparent_or_unknown_never_filled",
+    humanReview,
+  });
+  const membership = GrandHallRoomMembershipV2Schema.parse({
+    ...membershipMaterial,
+    artifactSha256: computeGrandHallRoomMembershipV2Sha256(membershipMaterial),
+  });
+
+  const portalMaterial = GrandHallPortalDecisionsV1MaterialSchema.parse({
+    schemaVersion: GRAND_HALL_PORTAL_DECISIONS_V1,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    authority: "human_accepted",
+    productionTrust: null,
+    reviewPackSha256,
+    sourceBoundaryEvidenceSha256: boundaryEvidenceSha256,
+    interfaceInventorySha256,
+    interfaceCount: 8,
+    interfaceCandidates: interfaces,
+    decisions: interfaces.map((candidate, index) => ({
+      interfaceId: candidate.interfaceId,
+      resolution:
+        index === 0
+          ? ("close_at_reviewed_grand_hall_plane" as const)
+          : ("exclude_beyond_interface" as const),
+      grandHallSideEvidenceSha256: syntheticDigest(1_100 + index),
+      decisionNote: `Synthetic interface disposition ${String(index)}`,
+    })),
+    allInterfacesResolved: true,
+    humanReview,
+  });
+  const portals = GrandHallPortalDecisionsV1Schema.parse({
+    ...portalMaterial,
+    artifactSha256: computeGrandHallPortalDecisionsV1Sha256(portalMaterial),
+  });
+
+  const boundaryMaterial = GrandHallClosedBoundaryV1MaterialSchema.parse({
+    schemaVersion: GRAND_HALL_CLOSED_BOUNDARY_V1,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    authority: "human_accepted",
+    productionTrust: null,
+    reviewPackSha256,
+    roomMembershipArtifactSha256: membership.artifactSha256,
+    portalDecisionArtifactSha256: portals.artifactSha256,
+    portalInterfaceInventorySha256: interfaceInventorySha256,
+    portalInterfaceIds: interfaces.map((candidate) => candidate.interfaceId),
+    sourceFrame: GRAND_HALL_MATTERPAK_E57_SOURCE_FRAME,
+    units: "meters",
+    geometryRole: "non_rendered_selection_volume",
+    construction: "extruded_simple_xy_polygon",
+    nonConvex: true,
+    footprintXY: [[0, 0], [8, 0], [8, 5], [5, 5], [5, 3], [3, 3], [3, 5], [0, 5]],
+    zMin: -0.25,
+    zMax: 8,
+    pointOnBoundaryPolicy: "include_as_inside",
+    closedVolume: true,
+    cameraMembershipOnly: false,
+    rendered: false,
+    collisionGeometry: false,
+    exportedAsArchitecture: false,
+    generatedGeometryCreated: false,
+    semanticRefinements: interfaces.map((candidate, index) => ({
+      interfaceId: candidate.interfaceId,
+      operation:
+        index === 0 ? ("retain_grand_hall_side" as const) : ("exclude_beyond_interface" as const),
+      evidenceSha256: syntheticDigest(1_200 + index),
+      applied: true,
+      generatedGeometryCreated: false,
+    })),
+    humanReview,
+  });
+  const boundary = GrandHallClosedBoundaryV1Schema.parse({
+    ...boundaryMaterial,
+    artifactSha256: computeGrandHallClosedBoundaryV1Sha256(boundaryMaterial),
+  });
+
+  const panoramaMaskMaterial = GrandHallPanoramaMaskSetV1MaterialSchema.parse({
+    schemaVersion: GRAND_HALL_PANORAMA_MASK_SET_V1,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    authority: "human_accepted",
+    productionTrust: null,
+    reviewPackSha256,
+    membershipArtifactSha256: membership.artifactSha256,
+    portalDecisionArtifactSha256: portals.artifactSha256,
+    sourcePanoramaInventorySha256,
+    sourceRecordCount: 50,
+    maskCount: 1,
+    wholeFrameExclusionCount: 49,
+    sourceRecords: sources.map((source, index) =>
+      index === 0
+        ? {
+            source,
+            disposition: "include_with_binary_pixel_mask" as const,
+            mask: {
+              fileName: "masks/mask-000.png",
+              sha256: input.maskSha256,
+              byteLength: input.maskByteLength,
+              sourceJpgFileName: source.fileName,
+              sourceJpgSha256: source.sha256,
+              widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+              heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
+              encoding: "png_grayscale8_binary_v1" as const,
+              coordinateSpace: "original_8192x4096_equirectangular_pixel_grid" as const,
+              bitDepth: 8 as const,
+              channelCount: 1 as const,
+              permittedPixelValues: [0, 255] as const,
+              includedValue: 0 as const,
+              excludedValue: 255 as const,
+              includedPixelCount: PIXEL_COUNT - 1,
+              excludedPixelCount: 1,
+              alphaChannelPresent: false as const,
+              colourProfilePresent: false as const,
+              exifOrientationPresent: false as const,
+              resampled: false as const,
+              reasonCodes: ["unverified_or_unknown_pixels" as const],
+            },
+            wholeFrameExclusionReason: null,
+          }
+        : {
+            source,
+            disposition: "exclude_whole_frame" as const,
+            mask: null,
+            wholeFrameExclusionReason: "adjacent_room_or_outside_grand_hall" as const,
+          },
+    ),
+    unknownPixelDisposition: "transparent_or_unknown_never_filled",
+    generatedFillPermitted: false,
+    humanReview,
+  });
+  const panoramaMasks = GrandHallPanoramaMaskSetV1Schema.parse({
+    ...panoramaMaskMaterial,
+    artifactSha256: computeGrandHallPanoramaMaskSetV1Sha256(panoramaMaskMaterial),
+  });
+
+  const matrix = [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  ];
+  const landmarks = [
+    { id: "landmark-a", point: [0, 0, 0] as const },
+    { id: "landmark-b", point: [2, 0, 0] as const },
+    { id: "landmark-c", point: [0, 3, 1] as const },
+  ].map((landmark, index) => ({
+    id: landmark.id,
+    label: `Synthetic landmark ${String(index)}`,
+    source: landmark.point,
+    target: landmark.point,
+    residualM: 0,
+    provenanceRefs: [{
+      refType: "artifact" as const,
+      ref: syntheticDigest(1_300 + index),
+      role: "measured-landmark",
+    }],
+  }));
+  const transformMaterial = GrandHallReviewedTransformV1MaterialSchema.parse({
+    schemaVersion: GRAND_HALL_XGRIDS_TO_MATTERPAK_E57_TRANSFORM_V1,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    authority: "human_accepted",
+    productionTrust: null,
+    scopeReviewPackSha256: reviewPackSha256,
+    sourceXgridsReceiptSha256: xgridsSourceReceiptSha256,
+    sourceXgridsOutputInventorySha256: xgridsOutputInventorySha256,
+    targetMatterPakE57ReceiptSha256: matterPakE57ReceiptSha256,
+    targetBoundaryEvidenceSha256: boundaryEvidenceSha256,
+    transformArtifact: {
+      id: "grand-hall-xgrids-arf-to-cvf",
+      sourceFrame: "ARF",
+      targetFrame: "CVF",
+      units: "meters",
+      matrix,
+      alignmentMethod: "landmark_solve",
+      residualRmseM: 0,
+      landmarks,
+      provenance: {
+        state: "measured",
+        refs: [
+          {
+            refType: "artifact",
+            ref: xgridsSourceReceiptSha256,
+            role: "source_xgrids_receipt",
+          },
+          {
+            refType: "artifact",
+            ref: xgridsOutputInventorySha256,
+            role: "source_xgrids_output_inventory",
+          },
+          {
+            refType: "artifact",
+            ref: matterPakE57ReceiptSha256,
+            role: "target_matterpak_e57_receipt",
+          },
+          {
+            refType: "artifact",
+            ref: boundaryEvidenceSha256,
+            role: "target_boundary_evidence",
+          },
+        ],
+      },
+      creator: { actorType: "tool", id: "synthetic-transform-solver" },
+      reviewer: {
+        actorType: "human",
+        id: humanReview.reviewerId,
+        role: "venue-domain-reviewer",
+      },
+      date: humanReview.reviewedAt,
+    },
+    matrixSha256: computeGrandHallReviewedTransformMatrixSha256(matrix),
+    independentOverlayReviewCompleted: true,
+    humanReview,
+  });
+  const transform = GrandHallReviewedTransformV1Schema.parse({
+    ...transformMaterial,
+    artifactSha256: computeGrandHallReviewedTransformV1Sha256(transformMaterial),
+  });
+
+  const sourceMembers = [
+    {
+      memberIndex: 0,
+      fileName: "creator-data/member-000.lcc",
+      sha256: input.memberSha256s[0],
+      byteLength: input.memberByteLengths[0],
+      firstRecordIndex: 0,
+      recordCount: 4,
+    },
+    {
+      memberIndex: 1,
+      fileName: "creator-data/member-001.lcc",
+      sha256: input.memberSha256s[1],
+      byteLength: input.memberByteLengths[1],
+      firstRecordIndex: 4,
+      recordCount: 6,
+    },
+  ];
+  const outputMaskMaterial = GrandHallOutputInventoryMaskV1MaterialSchema.parse({
+    schemaVersion: GRAND_HALL_OUTPUT_INVENTORY_MASK_V1,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    authority: "human_accepted",
+    productionTrust: null,
+    scopeReviewPackSha256: reviewPackSha256,
+    sourceFrame: GRAND_HALL_XGRIDS_SOURCE_FRAME,
+    classificationFrame: GRAND_HALL_MATTERPAK_E57_SOURCE_FRAME,
+    recordKind: "gaussian",
+    xgridsSourceReceiptSha256,
+    xgridsOutputInventorySha256,
+    sourceOrderingSha256: computeGrandHallOutputSourceOrderingSha256(
+      GRAND_HALL_XGRIDS_SOURCE_FRAME,
+      sourceMembers,
+    ),
+    transformArtifactSha256: transform.artifactSha256,
+    closedBoundaryArtifactSha256: boundary.artifactSha256,
+    sourceMembers,
+    totalRecordCount: 10,
+    includedRecordCount: 5,
+    excludedRecordCount: 5,
+    encoding: "ordered_source_record_membership_bitset_v1",
+    bitOrder: "least_significant_bit_first_within_each_byte",
+    includedBitValue: 1,
+    excludedBitValue: 0,
+    bitsetFileName: "masks/output-membership.bin",
+    bitsetSha256: input.bitsetSha256,
+    bitsetByteLength: input.bitsetByteLength,
+    trailingPaddingBitCount: 6,
+    trailingPaddingBitsZero: true,
+    humanReview,
+  });
+  const outputMask = GrandHallOutputInventoryMaskV1Schema.parse({
+    ...outputMaskMaterial,
+    artifactSha256: computeGrandHallOutputInventoryMaskV1Sha256(outputMaskMaterial),
+  });
+  return { scopeReviewPack, membership, portals, boundary, panoramaMasks, transform, outputMask };
+}
+
+async function writeCanonical(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(
+    path,
+    `${stableCanonicalJson(CanonicalJsonValueSchema.parse(value))}\n`,
+    "utf8",
+  );
+}
+
+async function writeArtifacts(fixture: Fixture, artifacts: AcceptedArtifacts): Promise<void> {
+  await Promise.all([
+    writeCanonical(
+      join(fixture.bundleRoot, ARTIFACT_FILES.scopeReviewPack),
+      artifacts.scopeReviewPack,
+    ),
+    writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.roomMembership), artifacts.membership),
+    writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.portalDecisions), artifacts.portals),
+    writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.closedBoundary), artifacts.boundary),
+    writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.panoramaMaskSet), artifacts.panoramaMasks),
+    writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.reviewedTransform), artifacts.transform),
+    writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.outputInventoryMask), artifacts.outputMask),
+  ]);
+}
+
+async function restoreFixture(fixture: Fixture): Promise<void> {
+  await Promise.all([
+    rm(fixture.bundleRoot, { recursive: true, force: true }),
+    rm(fixture.xgridsRoot, { recursive: true, force: true }),
+    rm(fixture.outsideRoot, { recursive: true, force: true }),
+  ]);
+  await Promise.all([
+    mkdir(fixture.bundleRoot, { recursive: true }),
+    mkdir(join(fixture.bundleRoot, "masks"), { recursive: true }),
+    mkdir(join(fixture.xgridsRoot, "creator-data"), { recursive: true }),
+    mkdir(fixture.outsideRoot, { recursive: true }),
+  ]);
+  await writeArtifacts(fixture, fixture.artifacts);
+  await Promise.all([
+    writeFile(join(fixture.bundleRoot, "masks/mask-000.png"), fixture.maskPng),
+    writeFile(join(fixture.bundleRoot, "masks/output-membership.bin"), fixture.bitset),
+    writeFile(
+      join(fixture.xgridsRoot, "creator-data/member-000.lcc"),
+      fixture.sourceMemberBytes[0],
+    ),
+    writeFile(
+      join(fixture.xgridsRoot, "creator-data/member-001.lcc"),
+      fixture.sourceMemberBytes[1],
+    ),
+    writeFile(join(fixture.panoramaRoot, "sweep-001.jpg"), fixture.sourceJpeg),
+  ]);
+}
+
+function sealPanoramaMasks(
+  draft: DeepMutable<GrandHallPanoramaMaskSetV1>,
+): GrandHallPanoramaMaskSetV1 {
+  const { artifactSha256: _artifactSha256, ...candidate } = draft;
+  const material = GrandHallPanoramaMaskSetV1MaterialSchema.parse(candidate);
+  return GrandHallPanoramaMaskSetV1Schema.parse({
+    ...material,
+    artifactSha256: computeGrandHallPanoramaMaskSetV1Sha256(material),
+  });
+}
+
+function sealMembership(
+  draft: DeepMutable<AcceptedArtifacts["membership"]>,
+): AcceptedArtifacts["membership"] {
+  const { artifactSha256: _artifactSha256, ...candidate } = draft;
+  const material = GrandHallRoomMembershipV2MaterialSchema.parse(candidate);
+  return GrandHallRoomMembershipV2Schema.parse({
+    ...material,
+    artifactSha256: computeGrandHallRoomMembershipV2Sha256(material),
+  });
+}
+
+function sealBoundary(
+  draft: DeepMutable<AcceptedArtifacts["boundary"]>,
+): AcceptedArtifacts["boundary"] {
+  const { artifactSha256: _artifactSha256, ...candidate } = draft;
+  const material = GrandHallClosedBoundaryV1MaterialSchema.parse(candidate);
+  return GrandHallClosedBoundaryV1Schema.parse({
+    ...material,
+    artifactSha256: computeGrandHallClosedBoundaryV1Sha256(material),
+  });
+}
+
+function sealTransform(
+  draft: DeepMutable<AcceptedArtifacts["transform"]>,
+): AcceptedArtifacts["transform"] {
+  const { artifactSha256: _artifactSha256, ...candidate } = draft;
+  const material = GrandHallReviewedTransformV1MaterialSchema.parse(candidate);
+  return GrandHallReviewedTransformV1Schema.parse({
+    ...material,
+    artifactSha256: computeGrandHallReviewedTransformV1Sha256(material),
+  });
+}
+
+function sealOutputMask(
+  draft: DeepMutable<GrandHallOutputInventoryMaskV1>,
+): GrandHallOutputInventoryMaskV1 {
+  const { artifactSha256: _artifactSha256, ...candidate } = draft;
+  const material = GrandHallOutputInventoryMaskV1MaterialSchema.parse(candidate);
+  return GrandHallOutputInventoryMaskV1Schema.parse({
+    ...material,
+    artifactSha256: computeGrandHallOutputInventoryMaskV1Sha256(material),
+  });
+}
+
+async function installMaskVariant(
+  fixture: Fixture,
+  bytes: Buffer,
+  mutateMask?: (
+    mask: DeepMutable<GrandHallPanoramaMaskSetV1>["sourceRecords"][number] extends infer _Record
+      ? DeepMutable<GrandHallPanoramaMaskSetV1>["sourceRecords"][number]
+      : never,
+  ) => void,
+): Promise<void> {
+  const draft = structuredClone(fixture.artifacts.panoramaMasks) as DeepMutable<GrandHallPanoramaMaskSetV1>;
+  const first = draft.sourceRecords[0];
+  if (first === undefined || first.disposition !== "include_with_binary_pixel_mask") {
+    throw new Error("Synthetic fixture lost its included panorama record");
+  }
+  first.mask.sha256 = digest(bytes);
+  first.mask.byteLength = bytes.length;
+  mutateMask?.(first);
+  const sealed = sealPanoramaMasks(draft);
+  await Promise.all([
+    writeFile(join(fixture.bundleRoot, first.mask.fileName), bytes),
+    writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.panoramaMaskSet), sealed),
+  ]);
+}
+
+async function installBitsetVariant(
+  fixture: Fixture,
+  bytes: Buffer,
+  mutate?: (draft: DeepMutable<GrandHallOutputInventoryMaskV1>) => void,
+): Promise<void> {
+  const draft = structuredClone(fixture.artifacts.outputMask) as DeepMutable<GrandHallOutputInventoryMaskV1>;
+  draft.bitsetSha256 = digest(bytes);
+  mutate?.(draft);
+  const sealed = sealOutputMask(draft);
+  await Promise.all([
+    writeFile(join(fixture.bundleRoot, draft.bitsetFileName), bytes),
+    writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.outputInventoryMask), sealed),
+  ]);
+}
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ ((crc & 1) === 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function insertPngTextChunk(bytes: Buffer): Buffer {
+  const iendOffset = bytes.lastIndexOf(Buffer.from("IEND", "ascii")) - 4;
+  if (iendOffset < 8) throw new Error("Synthetic PNG has no IEND chunk");
+  const type = Buffer.from("tEXt", "ascii");
+  const data = Buffer.from("review\0unexpected-metadata", "latin1");
+  const chunk = Buffer.alloc(12 + data.length);
+  chunk.writeUInt32BE(data.length, 0);
+  type.copy(chunk, 4);
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(crc32(Buffer.concat([type, data])), 8 + data.length);
+  return Buffer.concat([bytes.subarray(0, iendOffset), chunk, bytes.subarray(iendOffset)]);
+}
+
+function stripPngToPixelChunks(bytes: Buffer): Buffer {
+  const retained: Buffer[] = [bytes.subarray(0, 8)];
+  let offset = 8;
+  while (offset < bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    const type = bytes.toString("ascii", offset + 4, offset + 8);
+    const chunkEnd = offset + 12 + length;
+    if (chunkEnd > bytes.length) throw new Error("Synthetic PNG chunk is truncated");
+    if (type === "IHDR" || type === "IDAT" || type === "IEND") {
+      retained.push(bytes.subarray(offset, chunkEnd));
+    }
+    offset = chunkEnd;
+  }
+  return Buffer.concat(retained);
+}
+
+async function createFixture(): Promise<Fixture> {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "grand-hall-accepted-bundle-"));
+  const bundleRoot = join(temporaryRoot, "bundle");
+  const panoramaRoot = join(temporaryRoot, "panoramas");
+  const xgridsRoot = join(temporaryRoot, "xgrids-output");
+  const outsideRoot = join(temporaryRoot, "outside");
+  await Promise.all([
+    mkdir(bundleRoot, { recursive: true }),
+    mkdir(panoramaRoot, { recursive: true }),
+    mkdir(xgridsRoot, { recursive: true }),
+    mkdir(outsideRoot, { recursive: true }),
+  ]);
+
+  const sourceJpeg = await sharp({
+    create: {
+      width: GRAND_HALL_PANORAMA_WIDTH_PX,
+      height: GRAND_HALL_PANORAMA_HEIGHT_PX,
+      channels: 3,
+      background: { r: 24, g: 32, b: 40 },
+    },
+  }).jpeg({ quality: 80, chromaSubsampling: "4:4:4" }).toBuffer();
+  const maskPixels = Buffer.alloc(PIXEL_COUNT, 0);
+  maskPixels[PIXEL_COUNT - 1] = 255;
+  const encodedMaskPng = await sharp(maskPixels, {
+    raw: {
+      width: GRAND_HALL_PANORAMA_WIDTH_PX,
+      height: GRAND_HALL_PANORAMA_HEIGHT_PX,
+      channels: 1,
+    },
+  }).toColourspace("b-w").png({ compressionLevel: 9, palette: false }).toBuffer();
+  const maskPng = stripPngToPixelChunks(encodedMaskPng);
+  const bitset = Buffer.from([0b00010111, 0b00000001]);
+  const sourceMemberBytes = [
+    Buffer.from([0x10, 0x11, 0x12, 0x13]),
+    Buffer.from([0x20, 0x21, 0x22, 0x23, 0x24, 0x25]),
+  ] as const;
+  const artifacts = createAcceptedArtifacts({
+    sourceJpegSha256: digest(sourceJpeg),
+    sourceJpegByteLength: sourceJpeg.length,
+    maskSha256: digest(maskPng),
+    maskByteLength: maskPng.length,
+    memberSha256s: [digest(sourceMemberBytes[0]), digest(sourceMemberBytes[1])],
+    memberByteLengths: [sourceMemberBytes[0].length, sourceMemberBytes[1].length],
+    bitsetSha256: digest(bitset),
+    bitsetByteLength: bitset.length,
+  });
+  const fixture: Fixture = {
+    temporaryRoot,
+    bundleRoot,
+    panoramaRoot,
+    xgridsRoot,
+    outsideRoot,
+    options: {
+      bundleRoot,
+      panoramaSourceRoot: panoramaRoot,
+      xgridsOutputRoot: xgridsRoot,
+      artifactFiles: ARTIFACT_FILES,
+      createXgridsSourceMemberInspector: () => {
+        let observedByteCount = 0;
+        return {
+          update: (bytes, absoluteOffset) => {
+            if (absoluteOffset !== observedByteCount) {
+              throw new Error("Synthetic member chunks were not delivered in native file order");
+            }
+            observedByteCount += bytes.byteLength;
+          },
+          finish: () => ({
+            recordKind: "gaussian" as const,
+            recordCount: observedByteCount,
+            recordOrder: "native_file_order" as const,
+          }),
+        };
+      },
+    },
+    sourceJpeg,
+    maskPng,
+    bitset,
+    sourceMemberBytes,
+    artifacts,
+  };
+  await mkdir(join(panoramaRoot, "seed"), { recursive: true });
+  const seedPath = join(panoramaRoot, "seed/source.jpg");
+  await writeFile(seedPath, sourceJpeg);
+  await Promise.all(
+    Array.from({ length: 50 }, async (_, index) => {
+      const path = join(panoramaRoot, `sweep-${String(index + 1).padStart(3, "0")}.jpg`);
+      await copyFile(seedPath, path);
+    }),
+  );
+  await rm(join(panoramaRoot, "seed"), { recursive: true, force: true });
+  await restoreFixture(fixture);
+  return fixture;
+}
+
+describe("Grand Hall accepted scope bundle verifier", () => {
+  let fixture: Fixture;
+
+  beforeAll(async () => {
+    fixture = await createFixture();
+  }, 30_000);
+
+  beforeEach(async () => {
+    await restoreFixture(fixture);
+  });
+
+  afterAll(async () => {
+    await rm(fixture.temporaryRoot, { recursive: true, force: true });
+  });
+
+  it("verifies the complete byte-bound bundle without activating production trust", async () => {
+    const result = await verifyGrandHallAcceptedScopeBundle(fixture.options);
+
+    expect(result).toMatchObject({
+      verifierVersion: GRAND_HALL_ACCEPTED_SCOPE_BUNDLE_VERIFIER_VERSION,
+      integrityVerified: true,
+      sourceRecordStructureVerified: true,
+      productionTrustActivated: false,
+      runtimeAdmissionAuthorized: false,
+      semanticAccuracyReReviewed: false,
+      panoramaSourceCount: 50,
+      panoramaMaskCount: 1,
+      xgridsSourceMemberCount: 2,
+      outputRecordCount: 10,
+      includedRecordCount: 5,
+      excludedRecordCount: 5,
+      verifiedFileCount: 61,
+    });
+  });
+
+  it("rejects accepted artifacts whose claimed T-554 review pack is absent", async () => {
+    await rm(join(fixture.bundleRoot, ARTIFACT_FILES.scopeReviewPack));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "PATH_NON_REGULAR",
+    });
+  });
+
+  it("rejects coherently re-sealed XGRIDS lineage that contradicts the T-554 root", async () => {
+    const driftedReceiptSha256 = syntheticDigest(9_998);
+    const transformDraft = structuredClone(fixture.artifacts.transform) as DeepMutable<
+      AcceptedArtifacts["transform"]
+    >;
+    transformDraft.sourceXgridsReceiptSha256 = driftedReceiptSha256;
+    const sourceReceiptProvenance = transformDraft.transformArtifact.provenance.refs.find(
+      (ref) => ref.role === "source_xgrids_receipt",
+    );
+    if (sourceReceiptProvenance === undefined) {
+      throw new Error("Synthetic transform lost its XGRIDS source receipt provenance");
+    }
+    sourceReceiptProvenance.ref = driftedReceiptSha256;
+    const transform = sealTransform(transformDraft);
+
+    const outputDraft = structuredClone(fixture.artifacts.outputMask) as DeepMutable<
+      GrandHallOutputInventoryMaskV1
+    >;
+    outputDraft.xgridsSourceReceiptSha256 = driftedReceiptSha256;
+    outputDraft.transformArtifactSha256 = transform.artifactSha256;
+    const outputMask = sealOutputMask(outputDraft);
+    await Promise.all([
+      writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.reviewedTransform), transform),
+      writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.outputInventoryMask), outputMask),
+    ]);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
+    });
+  });
+
+  it("rejects canonical artifact tampering with a stale self-digest", async () => {
+    const tampered = structuredClone(fixture.artifacts.membership) as DeepMutable<
+      AcceptedArtifacts["membership"]
+    >;
+    tampered.humanReview.reviewerId = "tampered-reviewer";
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.roomMembership), tampered);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "SCHEMA_INVALID",
+    });
+  });
+
+  it("rejects a re-sealed artifact that breaks cross-artifact transform binding", async () => {
+    const draft = structuredClone(fixture.artifacts.outputMask) as DeepMutable<
+      GrandHallOutputInventoryMaskV1
+    >;
+    draft.transformArtifactSha256 = syntheticDigest(9_999);
+    const sealed = sealOutputMask(draft);
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.outputInventoryMask), sealed);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
+    });
+  });
+
+  it("rejects a re-sealed boundary operation that contradicts its portal resolution", async () => {
+    const boundaryDraft = structuredClone(fixture.artifacts.boundary) as DeepMutable<
+      AcceptedArtifacts["boundary"]
+    >;
+    const secondRefinement = boundaryDraft.semanticRefinements[1];
+    if (secondRefinement === undefined) throw new Error("Synthetic boundary lost interface two");
+    secondRefinement.operation = "remove_non_architectural_capture_artifact";
+    const boundary = sealBoundary(boundaryDraft);
+    const outputDraft = structuredClone(fixture.artifacts.outputMask) as DeepMutable<
+      GrandHallOutputInventoryMaskV1
+    >;
+    outputDraft.closedBoundaryArtifactSha256 = boundary.artifactSha256;
+    const outputMask = sealOutputMask(outputDraft);
+    await Promise.all([
+      writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.closedBoundary), boundary),
+      writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.outputInventoryMask), outputMask),
+    ]);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
+    });
+  });
+
+  it("rejects malformed UTF-8 before schema or cross-binding evaluation", async () => {
+    const draft = structuredClone(fixture.artifacts.membership) as DeepMutable<
+      AcceptedArtifacts["membership"]
+    >;
+    draft.humanReview.reviewerId = "synthetic-reviewer-\ufffd\ufffd";
+    const sealed = sealMembership(draft);
+    const validBytes = Buffer.from(`${stableCanonicalJson(sealed)}\n`, "utf8");
+    const replacementBytes = Buffer.from("\ufffd\ufffd", "utf8");
+    const replacementOffset = validBytes.indexOf(replacementBytes);
+    if (replacementOffset < 0) throw new Error("Synthetic UTF-8 marker was not serialized");
+    const malformedBytes = Buffer.concat([
+      validBytes.subarray(0, replacementOffset),
+      Buffer.from([0xc0, 0xaf]),
+      validBytes.subarray(replacementOffset + replacementBytes.length),
+    ]);
+    await writeFile(
+      join(fixture.bundleRoot, ARTIFACT_FILES.roomMembership),
+      malformedBytes,
+    );
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "JSON_INVALID",
+    });
+  });
+
+  it("rejects a UTF-8 byte-order mark on otherwise canonical artifact JSON", async () => {
+    const canonical = await readFile(
+      join(fixture.bundleRoot, ARTIFACT_FILES.roomMembership),
+    );
+    await writeFile(
+      join(fixture.bundleRoot, ARTIFACT_FILES.roomMembership),
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), canonical]),
+    );
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "JSON_NON_CANONICAL",
+    });
+  });
+
+  it("rejects a mask encoded as RGB instead of one-channel grayscale8", async () => {
+    const encoded = await sharp({
+      create: {
+        width: GRAND_HALL_PANORAMA_WIDTH_PX,
+        height: GRAND_HALL_PANORAMA_HEIGHT_PX,
+        channels: 3,
+        background: { r: 0, g: 0, b: 0 },
+      },
+    }).png().toBuffer();
+    const bytes = stripPngToPixelChunks(encoded);
+    await installMaskVariant(fixture, bytes);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "MASK_PNG_INVALID",
+    });
+  });
+
+  it("rejects a mask whose decoded dimensions do not match the original source grid", async () => {
+    const encoded = await sharp(Buffer.from([0]), {
+      raw: { width: 1, height: 1, channels: 1 },
+    }).toColourspace("b-w").png().toBuffer();
+    const bytes = stripPngToPixelChunks(encoded);
+    await installMaskVariant(fixture, bytes);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "MASK_PNG_INVALID",
+    });
+  });
+
+  it("rejects non-binary grayscale mask values", async () => {
+    const encoded = await sharp(Buffer.alloc(PIXEL_COUNT, 1), {
+      raw: {
+        width: GRAND_HALL_PANORAMA_WIDTH_PX,
+        height: GRAND_HALL_PANORAMA_HEIGHT_PX,
+        channels: 1,
+      },
+    }).toColourspace("b-w").png({ compressionLevel: 9, palette: false }).toBuffer();
+    const bytes = stripPngToPixelChunks(encoded);
+    await installMaskVariant(fixture, bytes);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "MASK_PNG_INVALID",
+    });
+  });
+
+  it("rejects mask pixel counts that do not match the fully decoded binary grid", async () => {
+    await installMaskVariant(fixture, fixture.maskPng, (record) => {
+      if (record.disposition !== "include_with_binary_pixel_mask") return;
+      record.mask.includedPixelCount = PIXEL_COUNT;
+      record.mask.excludedPixelCount = 0;
+      record.mask.reasonCodes = [];
+    });
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "MASK_PNG_INVALID",
+    });
+  });
+
+  it("rejects metadata-bearing mask PNGs", async () => {
+    await installMaskVariant(fixture, insertPngTextChunk(fixture.maskPng));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "MASK_PNG_INVALID",
+    });
+  });
+
+  it("rejects a short output membership bitset", async () => {
+    await writeFile(join(fixture.bundleRoot, "masks/output-membership.bin"), Buffer.from([0x17]));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "FILE_SIZE_MISMATCH",
+    });
+  });
+
+  it("rejects nonzero high padding bits in the final LSB-first bitset byte", async () => {
+    await installBitsetVariant(fixture, Buffer.from([0b00010111, 0b10000001]), (draft) => {
+      draft.includedRecordCount = 6;
+      draft.excludedRecordCount = 4;
+    });
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "BITSET_INVALID",
+    });
+  });
+
+  it("rejects a bitset whose popcount differs from accepted record counts", async () => {
+    await installBitsetVariant(fixture, Buffer.from([0b00011111, 0b00000001]));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "BITSET_INVALID",
+    });
+  });
+
+  it("rejects stale source ordering after a member-order mutation", async () => {
+    const draft = structuredClone(fixture.artifacts.outputMask) as DeepMutable<
+      GrandHallOutputInventoryMaskV1
+    >;
+    draft.sourceMembers.reverse();
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.outputInventoryMask), draft);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "SCHEMA_INVALID",
+    });
+  });
+
+  it("rejects source-member byte drift", async () => {
+    await writeFile(
+      join(fixture.xgridsRoot, "creator-data/member-001.lcc"),
+      Buffer.alloc(fixture.sourceMemberBytes[1].length, 0x61),
+    );
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "FILE_DIGEST_MISMATCH",
+    });
+  });
+
+  it("rejects a format inspector that cannot corroborate member record counts", async () => {
+    await expect(
+      verifyGrandHallAcceptedScopeBundle({
+        ...fixture.options,
+        createXgridsSourceMemberInspector: (member) => ({
+          update: () => undefined,
+          finish: () => ({
+            recordKind: "gaussian",
+            recordCount: member.recordCount + 1,
+            recordOrder: "native_file_order",
+          }),
+        }),
+      }),
+    ).rejects.toMatchObject({ code: "SOURCE_MEMBER_INVALID" });
+  });
+
+  it("rejects same-path member replacement during same-descriptor streamed inspection", async () => {
+    let replacementPerformed = false;
+    await expect(
+      verifyGrandHallAcceptedScopeBundle({
+        ...fixture.options,
+        createXgridsSourceMemberInspector: (member) => {
+          let observedByteCount = 0;
+          return {
+            update: async (bytes, absoluteOffset) => {
+              if (absoluteOffset !== observedByteCount) {
+                throw new Error("Synthetic member chunks were not delivered in native file order");
+              }
+              observedByteCount += bytes.byteLength;
+              if (member.memberIndex !== 0 || replacementPerformed) return;
+              replacementPerformed = true;
+              const sourcePath = join(fixture.xgridsRoot, member.fileName);
+              const displacedPath = join(fixture.outsideRoot, "displaced-member-000.lcc");
+              await rename(sourcePath, displacedPath);
+              await writeFile(sourcePath, Buffer.from(bytes));
+            },
+            finish: () => ({
+              recordKind: "gaussian" as const,
+              recordCount: observedByteCount,
+              recordOrder: "native_file_order" as const,
+            }),
+          };
+        },
+      }),
+    ).rejects.toMatchObject({ code: "PATH_IDENTITY_CHANGED" });
+    expect(replacementPerformed).toBe(true);
+  });
+
+  it("rejects undeclared files in the dedicated XGRIDS source-member root", async () => {
+    await writeFile(join(fixture.xgridsRoot, "creator-data/undeclared.lcc"), "drift", "utf8");
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "SOURCE_INVENTORY_DRIFT",
+    });
+  });
+
+  it("rejects hard-linked evidence files", async () => {
+    const maskPath = join(fixture.bundleRoot, "masks/mask-000.png");
+    const outsideMask = join(fixture.outsideRoot, "hard-linked-mask.png");
+    await rm(maskPath);
+    await writeFile(outsideMask, fixture.maskPng);
+    await link(outsideMask, maskPath);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "PATH_LINK",
+    });
+  });
+
+  it("rejects a referenced symlink or directory reparse point", async () => {
+    const outsideMask = join(fixture.outsideRoot, "mask.png");
+    const linkedDirectory = join(fixture.bundleRoot, "linked-mask-directory");
+    await writeFile(outsideMask, fixture.maskPng);
+    await symlink(
+      fixture.outsideRoot,
+      linkedDirectory,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const draft = structuredClone(fixture.artifacts.panoramaMasks) as DeepMutable<
+      GrandHallPanoramaMaskSetV1
+    >;
+    const first = draft.sourceRecords[0];
+    if (first === undefined || first.disposition !== "include_with_binary_pixel_mask") {
+      throw new Error("Synthetic fixture lost its included panorama record");
+    }
+    first.mask.fileName = "linked-mask-directory/mask.png";
+    const sealed = sealPanoramaMasks(draft);
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.panoramaMaskSet), sealed);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "PATH_LINK",
+    });
+  });
+
+  it("rejects traversal before resolving an artifact path", async () => {
+    await expect(
+      verifyGrandHallAcceptedScopeBundle({
+        ...fixture.options,
+        artifactFiles: { ...ARTIFACT_FILES, roomMembership: "../room-membership.json" },
+      }),
+    ).rejects.toMatchObject({ code: "PATH_UNSAFE" });
+  });
+
+  it("rejects source JPEG drift before mask verification", async () => {
+    const sourcePath = join(fixture.panoramaRoot, "sweep-001.jpg");
+    const sourceBytes = await readFile(sourcePath);
+    sourceBytes[sourceBytes.length - 1] = (sourceBytes[sourceBytes.length - 1] ?? 0) ^ 1;
+    await writeFile(sourcePath, sourceBytes);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "FILE_DIGEST_MISMATCH",
+    });
+  });
+
+  it("fully decodes and rejects truncated JPEGs even when every identity is re-sealed", async () => {
+    const truncatedJpeg = Buffer.from(
+      fixture.sourceJpeg.subarray(0, Math.floor(fixture.sourceJpeg.length / 2)),
+    );
+    const artifacts = createAcceptedArtifacts({
+      sourceJpegSha256: digest(truncatedJpeg),
+      sourceJpegByteLength: truncatedJpeg.length,
+      maskSha256: digest(fixture.maskPng),
+      maskByteLength: fixture.maskPng.length,
+      memberSha256s: [digest(fixture.sourceMemberBytes[0]), digest(fixture.sourceMemberBytes[1])],
+      memberByteLengths: [
+        fixture.sourceMemberBytes[0].length,
+        fixture.sourceMemberBytes[1].length,
+      ],
+      bitsetSha256: digest(fixture.bitset),
+      bitsetByteLength: fixture.bitset.length,
+    });
+    await writeArtifacts(fixture, artifacts);
+    await Promise.all(
+      Array.from({ length: 50 }, (_, index) =>
+        writeFile(
+          join(fixture.panoramaRoot, `sweep-${String(index + 1).padStart(3, "0")}.jpg`),
+          truncatedJpeg,
+        ),
+      ),
+    );
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "SOURCE_JPEG_INVALID",
+    });
+  });
+});
