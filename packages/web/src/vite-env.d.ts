@@ -19,6 +19,8 @@ interface ImportMetaEnv {
   readonly VITE_SENTRY_RELEASE?: string;
   /** Optional browser traces sample rate in the inclusive range 0..1. */
   readonly VITE_SENTRY_TRACES_SAMPLE_RATE?: string;
+  /** Google Map Tiles API key for the Arrival hero. Optional; absence degrades to static photo. */
+  readonly VITE_GOOGLE_MAPS_TILES_KEY?: string;
 }
 
 interface ImportMeta {
