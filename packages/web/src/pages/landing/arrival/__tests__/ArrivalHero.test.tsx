@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
 import { Quaternion, Vector3 } from "three";
 import { useArrivalStore } from "../arrival-store.js";
+import { ARRIVAL_RAIL, sampleRail } from "../camera-rail.js";
 
 // -----------------------------------------------------------------------------
 // ArrivalHero — self-gating + wiring contract (Arrival Task 5).
@@ -101,6 +102,12 @@ beforeEach(() => {
   invalidate.mockClear();
   frameCallbacks.length = 0;
   lastDomElement = null;
+  // fakeCamera is a module-level singleton shared across every test (it
+  // stands in for the one THREE.Camera instance @react-three/fiber would
+  // hand out); reset it so a pose written by one test can never leak into
+  // the next test's assertions on camera.position/quaternion.
+  fakeCamera.position.set(0, 0, 0);
+  fakeCamera.quaternion.identity();
 });
 
 afterEach(() => {
@@ -183,6 +190,38 @@ describe("ArrivalHero — flight controls", () => {
     onFrame?.(undefined, 6);
     onFrame?.(undefined, 6);
     expect(useArrivalStore.getState().phase).toBe("arrived");
+    expect(invalidate).toHaveBeenCalled();
+  });
+});
+
+describe("ArrivalHero — held camera poses", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+  });
+
+  // Regression coverage for an Important review finding: GoogleTilesStage's
+  // first-idle readiness signal certifies "everything requested for the
+  // START-POSE camera has loaded" (that component's own header comment).
+  // Before this fix, "loading" left the camera at R3F's default pose
+  // (position.z=5, looking at the origin) — tiles streamed for the wrong,
+  // close-up view, so first-idle certified readiness for a view the flight
+  // never actually shows, and the real aerial start pose could still be
+  // unloaded when flight begins.
+  it("holds the rail's START pose (t=0) during loading, so first-idle certifies the right view", () => {
+    useArrivalStore.setState({ phase: "loading" });
+    render(<ArrivalHero />);
+    const expected = sampleRail(ARRIVAL_RAIL, 0);
+    expect(fakeCamera.position.equals(expected.position)).toBe(true);
+    expect(fakeCamera.quaternion.equals(expected.quaternion)).toBe(true);
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("holds the rail's FINAL pose (t=1) once arrived", () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    render(<ArrivalHero />);
+    const expected = sampleRail(ARRIVAL_RAIL, 1);
+    expect(fakeCamera.position.equals(expected.position)).toBe(true);
+    expect(fakeCamera.quaternion.equals(expected.quaternion)).toBe(true);
     expect(invalidate).toHaveBeenCalled();
   });
 });

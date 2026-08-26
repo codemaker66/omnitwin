@@ -44,9 +44,22 @@ function FlightCamera(): null {
     invalidate();
   });
 
-  // Arrived/exploded hold the rail's final pose (explode framing is Task 10's).
+  // Held poses outside active flight. "loading" snaps to the rail's START
+  // pose (t=0): GoogleTilesStage's first-idle readiness signal certifies
+  // "everything requested for the START-POSE camera has loaded" (see that
+  // component's header comment), so without this the tiles stream for R3F's
+  // default camera (position.z=5, looking at the origin) instead — readiness
+  // then certifies the wrong view, and when flight begins and the camera
+  // snaps to the aerial start, those tiles may not be loaded yet. Arrived
+  // and exploded hold the rail's FINAL pose (t=1; explode framing is Task
+  // 10's).
   useEffect(() => {
-    if (phase === "arrived" || phase === "exploded") {
+    if (phase === "loading") {
+      const pose = sampleRail(ARRIVAL_RAIL, 0);
+      camera.position.copy(pose.position);
+      camera.quaternion.copy(pose.quaternion);
+      invalidate();
+    } else if (phase === "arrived" || phase === "exploded") {
       const pose = sampleRail(ARRIVAL_RAIL, 1);
       camera.position.copy(pose.position);
       camera.quaternion.copy(pose.quaternion);
