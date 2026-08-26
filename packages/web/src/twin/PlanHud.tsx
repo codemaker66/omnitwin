@@ -117,8 +117,17 @@ export function PlanHud({
   onSelectFloor,
   pxPerMetre,
 }: PlanHudProps): ReactElement {
+  const activeStorey = storeys.find((storey) => storey.floor === activeFloor);
   return (
     <div className="vv-twin-plan-hud">
+      {/* The storey announcement mirrors the walk's arrival discipline:
+          switching levels re-draws the entire stage, and a screen-reader
+          user deserves the same "where am I now" the sighted one gets. */}
+      <p className="vv-sr-only" aria-live="polite" data-testid="twin-plan-live-region">
+        {activeStorey === undefined
+          ? ""
+          : [activeStorey.label, ...activeStorey.roomNames].join(" · ")}
+      </p>
       <PlanStoreyControl
         storeys={storeys}
         activeFloor={activeFloor}

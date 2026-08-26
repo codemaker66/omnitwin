@@ -1755,7 +1755,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   pickAtCentreRef={measurePickAtCentreRef}
                 />
               )}
-              {dive.diving && <DiveCamera flight={flightRef} />}
+              {/* Never in plan: the flight writes walking-height poses and
+                  lookAt rotations onto the scene's default camera, and in
+                  plan that is the orthographic drawing camera (review
+                  finding — belt to the mode-switch guard's braces). */}
+              {dive.diving && mode !== "plan" && <DiveCamera flight={flightRef} />}
               {/* The dive's crossfade: descending, the target pano closes in
                   late (the camera flies through the real mesh interior);
                   surfacing, the departed pano releases early. */}
@@ -1832,7 +1836,16 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       {hasMesh && (
         <TwinModeControl
           mode={mode}
-          setMode={setMode}
+          // A dive is not interruptible (useDive's own rule), so neither is
+          // the mode: switching to plan mid-flight would hand the plan's
+          // orthographic camera to DiveCamera's walking-height bezier — two
+          // uncoordinated writers on one camera (review finding). The flight
+          // lasts ~1.2 s; the click simply waits its turn.
+          setMode={(next) => {
+            if (!dive.diving) {
+              setMode(next);
+            }
+          }}
           // Reaching for the view-mode switch is intent to see the mesh — warm
           // the dollhouse now so the switch/dive is instant (finding [33]).
           onWarmMesh={() => {

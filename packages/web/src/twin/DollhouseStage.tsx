@@ -325,8 +325,11 @@ function DollhouseDot({
     }
     if (isCurrent && materialRef.current !== null) {
       // The breath: an ambient emissive swing on the node you are standing
-      // on. Its invalidate() keeps the demand loop painting in dollhouse
-      // mode, which OrbitControls damping relies on too.
+      // on. Its invalidate() keeps the pulse itself animating under the
+      // demand loop — and ONLY the pulse: OrbitControls damping self-
+      // sustains through drei's own change→invalidate wiring, so plan
+      // mode filtering this dot off another storey costs nothing but the
+      // breath (review-verified against drei's OrbitControls source).
       materialRef.current.emissiveIntensity =
         DOLLHOUSE_DOT_PULSE_BASE +
         DOLLHOUSE_DOT_PULSE_AMPLITUDE *

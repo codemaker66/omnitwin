@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactElement } from "react";
+import { useLayoutEffect, useMemo, useRef, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera } from "@react-three/drei";
 import { MOUSE, TOUCH, type OrthographicCamera as ThreeOrthographicCamera } from "three";
@@ -65,8 +65,10 @@ export function PlanRig({ frame, storeyKey, onScale }: PlanRigProps): ReactEleme
   onScaleRef.current = onScale;
 
   // Boot / re-fit: on storey entry the camera stands over the storey's centre
-  // at its fit zoom.
-  useEffect(() => {
+  // at its fit zoom. Layout-phase, so the scale bar's first paint already
+  // shows THIS storey's figure — an instrument must not open on a stale
+  // reading (review finding).
+  useLayoutEffect(() => {
     const camera = cameraRef.current;
     if (camera === null) {
       return;
