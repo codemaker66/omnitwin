@@ -129,6 +129,14 @@ import { RoomDossier } from "./RoomDossier.js";
  *  this chunk, which only downloads when the visitor steps in. */
 const FreshWalk = lazy(() => import("./FreshWalk.js"));
 
+/** The live hero flight costs nothing until it can actually run: Three +
+ *  3d-tiles-renderer live in this chunk, which only downloads once mounted —
+ *  and it self-gates to null (no key, or a failure) so the static photo
+ *  above always carries the page regardless of whether this chunk loads. */
+const ArrivalHero = lazy(() =>
+  import("../landing/arrival/ArrivalHero.js").then((m) => ({ default: m.ArrivalHero })),
+);
+
 type WalkState = "poster" | "loading" | "live" | "failed";
 import {
   ENQUIRY_EVENT_TYPES,
@@ -732,6 +740,13 @@ export function FreshPage(): ReactElement {
                 ref={aperture.imgRef}
               />
             </picture>
+            {/* The live flight: layered above the photo, self-gated to null
+                (no key, or any failure) so this <picture> always carries the
+                hero on its own. Suspense's fallback is the photo itself —
+                nothing renders while the chunk downloads. */}
+            <Suspense fallback={null}>
+              <ArrivalHero />
+            </Suspense>
             {/* The photo's drawn top edge: flat, then a fanlight over the
                 real dome, then the corner sweep — with a keystone tick. */}
             <svg className="fr-hero-fanlight" aria-hidden ref={aperture.svgRef}>
