@@ -3,6 +3,12 @@
 This file is a blank decision aid. It is **not** an acceptance artifact. An
 unchecked or `UNSURE` item remains unresolved and grants no authority.
 
+After using this aid, follow the
+[local T-554 acceptance runbook](../grand-hall-t554-acceptance-runbook.md).
+The formal human record is the generated `human-decisions.json`; the accepted
+volume is reviewed separately in `closed-selection-volume.json`. Do not treat
+marks in this Markdown file as machine-readable acceptance.
+
 Reviewer: `____________________________`
 
 Review date/time with timezone: `____________________________`
@@ -10,7 +16,32 @@ Review date/time with timezone: `____________________________`
 Knowledge basis (for example, captured the venue / knows the room in person):
 `__________________________________________________________________________`
 
-## A. Panorama membership
+## A. Exact room identity and source cleanup handling
+
+MatterPak room 9 is a source identifier, not a human room-name decision.
+Inspect the
+[source-bound T-551 room evidence](../grand-hall-room9-source-boundary-evidence-v1.json)
+and supplied source OBJ before choosing exactly one result:
+`ACCEPT_AS_GRAND_HALL`, `REJECT_AS_GRAND_HALL`, or `UNSURE`.
+
+MatterPak room 9 result: `______________________________________________`
+
+Evidence note:
+`__________________________________________________________________________`
+
+Inspect the source-bound cleanup handling for both named artifact classes.
+`ACCEPT_SOURCE_SCOPE_HANDLING_NO_ARCHITECTURAL_AUTHORITY` accepts only the
+scope handling; it does not assert that a real architectural window or mirror
+exists. The other results are `REJECT_SOURCE_SCOPE_HANDLING` and `UNSURE`.
+
+| Source cleanup class | Human result | Evidence note |
+|---|---|---|
+| `Window` |  |  |
+| `Mirror` |  |  |
+
+Any rejection or `UNSURE` stops accepted bundle creation.
+
+## B. Current 50-candidate panorama membership
 
 The current image-content hypothesis is only a visual aid: source panorama
 sweeps 001, 018, and 049 appear to contain mixed Grand Hall and adjacent-space
@@ -76,7 +107,37 @@ Use exactly one result per row: `INCLUDE`, `EXCLUDE`, or `UNSURE`.
 | 049 | `sweep_049jpg.jpg` | mixed room-boundary content |  |  |
 | 050 | `sweep_050jpg.jpg` | adjacent-space hypothesis |  |  |
 
-## B. Exhaustive interface dispositions
+## C. Remaining 98 panorama dispositions
+
+The 98 other supplied JPEGs are not automatically outside the Grand Hall and
+are not eligible for blanket exclusion. The generated formal
+`human-decisions.json` contains one exact-identity row for every file.
+
+The checked-in, source-bound review supplement currently shows clear possible
+Grand Hall evidence in sweeps 051–075. That observation has **not** been
+human-accepted, but it already prevents a blanket outside-room exclusion and
+keeps the current 50-image review set incomplete. Review those exact originals
+first and stop for a rebuilt T-550/review pack if the authorized reviewer
+confirms what the review pages show.
+
+Open every exact JPEG and record one result per formal row:
+
+- `EXCLUDE_OUTSIDE_GRAND_HALL` only after confirming that the frame contains no
+  Grand Hall evidence;
+- `GRAND_HALL_EVIDENCE_FOUND_REVIEW_SET_INCOMPLETE` if the frame contains or
+  may contain Grand Hall evidence; or
+- `UNSURE` while unresolved.
+
+- [ ] All 98 exact JPEGs were opened and inspected individually.
+- [ ] All 98 formal rows have evidence notes and no `UNSURE` remains.
+- [ ] No possible Grand Hall evidence was found outside the current 50-image
+  candidate set.
+
+If the final checkbox cannot honestly be checked, stop. Mark the affected rows
+`GRAND_HALL_EVIDENCE_FOUND_REVIEW_SET_INCOMPLETE` and rebuild the review set;
+do not force them to `EXCLUDE_OUTSIDE_GRAND_HALL`.
+
+## D. Exhaustive interface dispositions
 
 Every row must be resolved. Permitted final dispositions are:
 
@@ -98,14 +159,28 @@ Every row must be resolved. Permitted final dispositions are:
 | `matterpak-1-9-1-13` | `matterpak:g001:s013` | 72 |  |  |
 | `matterpak-1-9-1-14` | `matterpak:g001:s014` | 62 |  |  |
 
-## C. Later artifact reviews
+## E. Later artifact reviews
 
 These cannot be decided yet because the artifacts do not exist.
 
+- [ ] Authority-none JSON templates generated; exact room 9, `Window`,
+  `Mirror`, 50 candidate panoramas, 98 remaining panoramas, and eight interface
+  identities left unchanged.
+- [ ] Exact MatterPak room 9 accepted as the intended Grand Hall.
+- [ ] `Window` and `Mirror` source cleanup handling each accepted with no
+  architectural authority.
+- [ ] Formal `human-decisions.json` matches every qualified human decision above.
 - [ ] Non-convex invisible closed selection volume authored and reviewed.
 - [ ] Every included 8192×4096 binary panorama mask authored and reviewed.
 - [ ] Every mask compared against its exact source JPEG at original resolution.
+- [ ] Every reviewed mask is bound by exact SHA-256, byte length,
+  included-pixel count, and excluded-pixel count.
+- [ ] `bind-masks` preparation output was treated as `PENDING`; a human, not
+  the command, set `maskReviewed` after inspecting those exact bytes.
 - [ ] No invented windows, doors, floor, neighbouring room, facade, or fill.
+- [ ] Local accepted bundle contains preserved formal reviews, exact masks,
+  four derived artifacts, and a complete `publication-receipt.json` written
+  last.
 - [ ] T-555 real LCC/Creator Data output exists.
 - [ ] T-557 ARF→CVF transform has non-collinear, source-bound controls and human overlay review.
 - [ ] T-557 output-inventory bitset matches exact member order, byte length, popcount, and padding.
@@ -113,3 +188,11 @@ These cannot be decided yet because the artifacts do not exist.
 Final T-554 result: `PENDING / ACCEPT / REJECT`
 
 Reviewer signature or recorded identity: `____________________________`
+
+Even a final `ACCEPT` here does not authorize reconstruction, runtime
+admission, staging, deployment, publication, or production trust. The local
+acceptance gate must independently verify the completed formal JSON, all 148
+exact source JPEGs, closed volume, exact mask bindings, and mask bytes. The
+self-contained local bundle still retains
+`productionTrust: null`, `runtimeAdmissionAuthorized: false`, and
+`reconstructionAuthorized: false`.

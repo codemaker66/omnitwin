@@ -69,11 +69,22 @@ import {
   type GrandHallAcceptedScopeArtifactFiles,
   type VerifyGrandHallAcceptedScopeBundleOptions,
 } from "../grand-hall-accepted-scope-bundle-verifier.js";
+import {
+  GRAND_HALL_T554_CLOSED_VOLUME_REVIEW_V1,
+  GRAND_HALL_T554_HUMAN_DECISIONS_V1,
+  GrandHallT554ClosedVolumeReviewSchema,
+  GrandHallT554HumanDecisionsSchema,
+  computeGrandHallT554ClosedVolumeReviewSha256,
+  computeGrandHallT554HumanDecisionsSha256,
+} from "../grand-hall-t554-acceptance.js";
 
 const PIXEL_COUNT = GRAND_HALL_PANORAMA_WIDTH_PX * GRAND_HALL_PANORAMA_HEIGHT_PX;
 
 const ARTIFACT_FILES: GrandHallAcceptedScopeArtifactFiles = {
+  publicationReceipt: "publication-receipt.json",
   scopeReviewPack: "artifacts/scope-review-pack.json",
+  humanDecisions: "review/human-decisions.json",
+  closedVolumeReview: "review/closed-selection-volume-review.json",
   roomMembership: "artifacts/room-membership.json",
   portalDecisions: "artifacts/portal-decisions.json",
   closedBoundary: "artifacts/closed-boundary.json",
@@ -92,6 +103,8 @@ type DeepMutable<T> = {
 
 interface AcceptedArtifacts {
   readonly scopeReviewPack: ReturnType<typeof GrandHallScopeReviewPackV1Schema.parse>;
+  readonly humanDecisions: ReturnType<typeof GrandHallT554HumanDecisionsSchema.parse>;
+  readonly closedVolumeReview: ReturnType<typeof GrandHallT554ClosedVolumeReviewSchema.parse>;
   readonly membership: ReturnType<typeof GrandHallRoomMembershipV2Schema.parse>;
   readonly portals: ReturnType<typeof GrandHallPortalDecisionsV1Schema.parse>;
   readonly boundary: ReturnType<typeof GrandHallClosedBoundaryV1Schema.parse>;
@@ -122,13 +135,17 @@ function syntheticDigest(seed: number): `sha256:${string}` {
   return `sha256:${seed.toString(16).padStart(64, "0")}`;
 }
 
-const humanReview = {
-  state: "human_accepted" as const,
+const humanReviewer = {
   reviewerId: "synthetic-authorized-reviewer",
   reviewerRole: "venue_owner_or_authorized_domain_reviewer" as const,
   reviewedAt: "2026-08-25T12:30:00.000Z",
   knowledgeBasis: ["synthetic exact source comparison"],
   agentDecisionAuthority: "none" as const,
+};
+
+const humanReview = {
+  state: "human_accepted" as const,
+  ...humanReviewer,
 };
 
 function interfaceCandidates() {
@@ -161,6 +178,8 @@ function interfaceCandidates() {
 function createAcceptedArtifacts(input: {
   readonly sourceJpegSha256: string;
   readonly sourceJpegByteLength: number;
+  readonly firstNonCandidateSourceJpegSha256?: string;
+  readonly firstNonCandidateSourceJpegByteLength?: number;
   readonly maskSha256: string;
   readonly maskByteLength: number;
   readonly memberSha256s: readonly [string, string];
@@ -216,8 +235,12 @@ function createAcceptedArtifacts(input: {
     ...Array.from({ length: 98 }, (_, offset) => ({
       inventoryIndex: offset + 50,
       fileName: `unreviewed-sweep-${String(offset + 51).padStart(3, "0")}.jpg`,
-      sha256: syntheticDigest(2_000 + offset),
-      byteLength: 10_000 + offset,
+      sha256: offset === 0
+        ? input.firstNonCandidateSourceJpegSha256 ?? input.sourceJpegSha256
+        : input.sourceJpegSha256,
+      byteLength: offset === 0
+        ? input.firstNonCandidateSourceJpegByteLength ?? input.sourceJpegByteLength
+        : input.sourceJpegByteLength,
       widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
       heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
       t554Eligibility: "ineligible_unreviewed" as const,
@@ -291,6 +314,109 @@ function createAcceptedArtifacts(input: {
     artifactSha256: computeGrandHallScopeReviewPackV1Sha256(reviewPackMaterial),
   });
   const reviewPackSha256 = scopeReviewPack.artifactSha256;
+  const humanDecisions = GrandHallT554HumanDecisionsSchema.parse({
+    schemaVersion: GRAND_HALL_T554_HUMAN_DECISIONS_V1,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    reviewPackSha256,
+    authority: "none",
+    reviewState: "human_accepted",
+    finalDecision: "ACCEPT",
+    reviewer: humanReviewer,
+    generatedFillPermitted: false,
+    geometricCameraAuthority: "none",
+    matterPakRoomDecision: {
+      sourceRoomKey: GRAND_HALL_MATTERPAK_ROOM_KEY,
+      sourceMembershipV1Sha256: pendingMembershipV1Sha256,
+      sourceBoundaryEvidenceSha256: boundaryEvidenceSha256,
+      result: "ACCEPT_AS_GRAND_HALL",
+      note: "Synthetic room 9 review accepted only as Grand Hall source scope.",
+    },
+    cleanupArtifactInspections: ["Window", "Mirror"].map((artifactClass) => ({
+      artifactClass,
+      sourceBoundaryEvidenceSha256: boundaryEvidenceSha256,
+      result: "ACCEPT_SOURCE_SCOPE_HANDLING_NO_ARCHITECTURAL_AUTHORITY",
+      note: `Synthetic ${artifactClass} source-artifact inspection.`,
+    })),
+    panoramaDecisions: sources.map((source, index) => index === 0 ? {
+      sweepNumber: source.sweepNumber,
+      sourceJpgFileName: source.fileName,
+      sourceJpgSha256: source.sha256,
+      sourceJpgByteLength: source.byteLength,
+      widthPx: source.widthPx,
+      heightPx: source.heightPx,
+      result: "INCLUDE",
+      classification: "grand_hall_portal_threshold",
+      maskFileName: "masks/mask-000.png",
+      reviewedMaskBinding: {
+        sha256: input.maskSha256,
+        byteLength: input.maskByteLength,
+        includedPixelCount: PIXEL_COUNT - 1,
+        excludedPixelCount: 1,
+      },
+      maskReviewed: true,
+      maskReasonCodes: ["unverified_or_unknown_pixels"],
+      note: "Synthetic exact binary mask review.",
+    } : {
+      sweepNumber: source.sweepNumber,
+      sourceJpgFileName: source.fileName,
+      sourceJpgSha256: source.sha256,
+      sourceJpgByteLength: source.byteLength,
+      widthPx: source.widthPx,
+      heightPx: source.heightPx,
+      result: "EXCLUDE",
+      classification: "adjacent_room_or_outside_grand_hall",
+      maskFileName: null,
+      reviewedMaskBinding: null,
+      maskReviewed: false,
+      maskReasonCodes: [],
+      note: "Synthetic whole-frame exclusion.",
+    }),
+    nonCandidatePanoramaDecisions: panoramaDirectoryFiles.slice(50).map((source) => ({
+      inventoryIndex: source.inventoryIndex,
+      sourceJpgFileName: source.fileName,
+      sourceJpgSha256: source.sha256,
+      sourceJpgByteLength: source.byteLength,
+      widthPx: source.widthPx,
+      heightPx: source.heightPx,
+      embeddedSweepNumber: source.embeddedSweepNumber,
+      result: "EXCLUDE_OUTSIDE_GRAND_HALL",
+      note: "Synthetic reviewed non-candidate exclusion.",
+    })),
+    interfaceDecisions: interfaces.map((candidate, index) => ({
+      ...candidate,
+      result: index === 0
+        ? "CLOSE_AT_REVIEWED_GRAND_HALL_PLANE"
+        : "EXCLUDE_BEYOND_INTERFACE",
+      note: `Synthetic interface disposition ${String(index)}`,
+    })),
+  });
+  const humanDecisionsSha256 = computeGrandHallT554HumanDecisionsSha256(humanDecisions);
+  const closedFootprint = [
+    [0, 0], [8, 0], [8, 5], [5, 5], [5, 3], [3, 3], [3, 5], [0, 5],
+  ];
+  const closedVolumeReview = GrandHallT554ClosedVolumeReviewSchema.parse({
+    schemaVersion: GRAND_HALL_T554_CLOSED_VOLUME_REVIEW_V1,
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    reviewPackSha256,
+    authority: "none",
+    reviewState: "human_accepted",
+    finalDecision: "ACCEPT",
+    reviewer: humanReviewer,
+    sourceFrame: GRAND_HALL_MATTERPAK_E57_SOURCE_FRAME,
+    units: "meters",
+    geometryRole: "non_rendered_selection_volume",
+    construction: "extruded_simple_xy_polygon",
+    footprintXY: closedFootprint,
+    zMin: -0.25,
+    zMax: 8,
+    rendered: false,
+    collisionGeometry: false,
+    exportedAsArchitecture: false,
+    generatedGeometryCreated: false,
+    note: "Synthetic human-reviewed non-convex Grand Hall selection volume.",
+  });
 
   const membershipMaterial = GrandHallRoomMembershipV2MaterialSchema.parse({
     schemaVersion: GRAND_HALL_ROOM_MEMBERSHIP_V2,
@@ -324,7 +450,7 @@ function createAcceptedArtifacts(input: {
               maskRequired: false as const,
               generatedFillPermitted: false as const,
             },
-      decisionEvidenceSha256: syntheticDigest(1_000 + index),
+      decisionEvidenceSha256: humanDecisionsSha256,
     })),
     acceptedUnknownPixelDisposition: "transparent_or_unknown_never_filled",
     humanReview,
@@ -351,7 +477,7 @@ function createAcceptedArtifacts(input: {
         index === 0
           ? ("close_at_reviewed_grand_hall_plane" as const)
           : ("exclude_beyond_interface" as const),
-      grandHallSideEvidenceSha256: syntheticDigest(1_100 + index),
+      grandHallSideEvidenceSha256: humanDecisionsSha256,
       decisionNote: `Synthetic interface disposition ${String(index)}`,
     })),
     allInterfacesResolved: true,
@@ -378,7 +504,7 @@ function createAcceptedArtifacts(input: {
     geometryRole: "non_rendered_selection_volume",
     construction: "extruded_simple_xy_polygon",
     nonConvex: true,
-    footprintXY: [[0, 0], [8, 0], [8, 5], [5, 5], [5, 3], [3, 3], [3, 5], [0, 5]],
+    footprintXY: closedFootprint,
     zMin: -0.25,
     zMax: 8,
     pointOnBoundaryPolicy: "include_as_inside",
@@ -392,7 +518,7 @@ function createAcceptedArtifacts(input: {
       interfaceId: candidate.interfaceId,
       operation:
         index === 0 ? ("retain_grand_hall_side" as const) : ("exclude_beyond_interface" as const),
-      evidenceSha256: syntheticDigest(1_200 + index),
+      evidenceSha256: humanDecisionsSha256,
       applied: true,
       generatedGeometryCreated: false,
     })),
@@ -602,7 +728,17 @@ function createAcceptedArtifacts(input: {
     ...outputMaskMaterial,
     artifactSha256: computeGrandHallOutputInventoryMaskV1Sha256(outputMaskMaterial),
   });
-  return { scopeReviewPack, membership, portals, boundary, panoramaMasks, transform, outputMask };
+  return {
+    scopeReviewPack,
+    humanDecisions,
+    closedVolumeReview,
+    membership,
+    portals,
+    boundary,
+    panoramaMasks,
+    transform,
+    outputMask,
+  };
 }
 
 async function writeCanonical(path: string, value: unknown): Promise<void> {
@@ -620,6 +756,14 @@ async function writeArtifacts(fixture: Fixture, artifacts: AcceptedArtifacts): P
       join(fixture.bundleRoot, ARTIFACT_FILES.scopeReviewPack),
       artifacts.scopeReviewPack,
     ),
+    writeCanonical(
+      join(fixture.bundleRoot, ARTIFACT_FILES.humanDecisions),
+      artifacts.humanDecisions,
+    ),
+    writeCanonical(
+      join(fixture.bundleRoot, ARTIFACT_FILES.closedVolumeReview),
+      artifacts.closedVolumeReview,
+    ),
     writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.roomMembership), artifacts.membership),
     writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.portalDecisions), artifacts.portals),
     writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.closedBoundary), artifacts.boundary),
@@ -627,6 +771,59 @@ async function writeArtifacts(fixture: Fixture, artifacts: AcceptedArtifacts): P
     writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.reviewedTransform), artifacts.transform),
     writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.outputInventoryMask), artifacts.outputMask),
   ]);
+}
+
+function t554PayloadFileNames(artifacts: AcceptedArtifacts): readonly string[] {
+  const maskFileNames = artifacts.panoramaMasks.sourceRecords.flatMap((record) =>
+    record.disposition === "include_with_binary_pixel_mask" ? [record.mask.fileName] : [],
+  );
+  return [
+    ARTIFACT_FILES.scopeReviewPack,
+    ARTIFACT_FILES.humanDecisions,
+    ARTIFACT_FILES.closedVolumeReview,
+    ARTIFACT_FILES.roomMembership,
+    ARTIFACT_FILES.portalDecisions,
+    ARTIFACT_FILES.closedBoundary,
+    ARTIFACT_FILES.panoramaMaskSet,
+    ...maskFileNames,
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+async function buildPublicationReceipt(fixture: Fixture, artifacts: AcceptedArtifacts) {
+  const files = await Promise.all(t554PayloadFileNames(artifacts).map(async (fileName) => {
+    const bytes = await readFile(join(fixture.bundleRoot, fileName));
+    return { fileName, sha256: digest(bytes), byteLength: bytes.byteLength };
+  }));
+  return {
+    authority: "human_accepted" as const,
+    reviewPackSha256: artifacts.scopeReviewPack.artifactSha256,
+    humanDecisionsSha256: computeGrandHallT554HumanDecisionsSha256(artifacts.humanDecisions),
+    closedVolumeReviewSha256: computeGrandHallT554ClosedVolumeReviewSha256(
+      artifacts.closedVolumeReview,
+    ),
+    artifactSha256s: {
+      roomMembership: artifacts.membership.artifactSha256,
+      interfaceDecisions: artifacts.portals.artifactSha256,
+      closedBoundary: artifacts.boundary.artifactSha256,
+      panoramaMaskSet: artifacts.panoramaMasks.artifactSha256,
+    },
+    schemaVersion: "venviewer.grand-hall-t554-acceptance-publication.v1" as const,
+    state: "complete" as const,
+    productionTrust: null,
+    runtimeAdmissionAuthorized: false as const,
+    reconstructionAuthorized: false as const,
+    files,
+  };
+}
+
+async function writePublicationReceipt(
+  fixture: Fixture,
+  artifacts: AcceptedArtifacts,
+): Promise<void> {
+  await writeCanonical(
+    join(fixture.bundleRoot, ARTIFACT_FILES.publicationReceipt),
+    await buildPublicationReceipt(fixture, artifacts),
+  );
 }
 
 async function restoreFixture(fixture: Fixture): Promise<void> {
@@ -654,7 +851,10 @@ async function restoreFixture(fixture: Fixture): Promise<void> {
       fixture.sourceMemberBytes[1],
     ),
     writeFile(join(fixture.panoramaRoot, "sweep-001.jpg"), fixture.sourceJpeg),
+    writeFile(join(fixture.panoramaRoot, "unreviewed-sweep-051.jpg"), fixture.sourceJpeg),
+    rm(join(fixture.panoramaRoot, "unexpected-panorama.jpg"), { force: true }),
   ]);
+  await writePublicationReceipt(fixture, fixture.artifacts);
 }
 
 function sealPanoramaMasks(
@@ -731,6 +931,56 @@ function sealOutputMask(
   return GrandHallOutputInventoryMaskV1Schema.parse({
     ...material,
     artifactSha256: computeGrandHallOutputInventoryMaskV1Sha256(material),
+  });
+}
+
+async function writeArtifactsReboundToHumanDecisions(
+  fixture: Fixture,
+  humanDecisions: AcceptedArtifacts["humanDecisions"],
+): Promise<void> {
+  const decisionsSha256 = computeGrandHallT554HumanDecisionsSha256(humanDecisions);
+  const membershipDraft = structuredClone(fixture.artifacts.membership) as DeepMutable<
+    AcceptedArtifacts["membership"]
+  >;
+  membershipDraft.panoramaRecords.forEach((record) => {
+    record.decisionEvidenceSha256 = decisionsSha256;
+  });
+  const membership = sealMembership(membershipDraft);
+  const portalsDraft = structuredClone(fixture.artifacts.portals) as DeepMutable<
+    AcceptedArtifacts["portals"]
+  >;
+  portalsDraft.decisions.forEach((decision) => {
+    decision.grandHallSideEvidenceSha256 = decisionsSha256;
+  });
+  const portals = sealPortals(portalsDraft);
+  const boundaryDraft = structuredClone(fixture.artifacts.boundary) as DeepMutable<
+    AcceptedArtifacts["boundary"]
+  >;
+  boundaryDraft.roomMembershipArtifactSha256 = membership.artifactSha256;
+  boundaryDraft.portalDecisionArtifactSha256 = portals.artifactSha256;
+  boundaryDraft.semanticRefinements.forEach((refinement) => {
+    refinement.evidenceSha256 = decisionsSha256;
+  });
+  const boundary = sealBoundary(boundaryDraft);
+  const panoramaMasksDraft = structuredClone(fixture.artifacts.panoramaMasks) as DeepMutable<
+    GrandHallPanoramaMaskSetV1
+  >;
+  panoramaMasksDraft.membershipArtifactSha256 = membership.artifactSha256;
+  panoramaMasksDraft.portalDecisionArtifactSha256 = portals.artifactSha256;
+  const panoramaMasks = sealPanoramaMasks(panoramaMasksDraft);
+  const outputMaskDraft = structuredClone(fixture.artifacts.outputMask) as DeepMutable<
+    GrandHallOutputInventoryMaskV1
+  >;
+  outputMaskDraft.closedBoundaryArtifactSha256 = boundary.artifactSha256;
+  const outputMask = sealOutputMask(outputMaskDraft);
+  await writeArtifacts(fixture, {
+    ...fixture.artifacts,
+    humanDecisions,
+    membership,
+    portals,
+    boundary,
+    panoramaMasks,
+    outputMask,
   });
 }
 
@@ -897,14 +1147,61 @@ async function createFixture(): Promise<Fixture> {
   const seedPath = join(panoramaRoot, "seed/source.jpg");
   await writeFile(seedPath, sourceJpeg);
   await Promise.all(
-    Array.from({ length: 50 }, async (_, index) => {
-      const path = join(panoramaRoot, `sweep-${String(index + 1).padStart(3, "0")}.jpg`);
+    artifacts.scopeReviewPack.panoramaDirectoryFiles.map(async (source) => {
+      const path = join(panoramaRoot, source.fileName);
+      await mkdir(dirname(path), { recursive: true });
       await copyFile(seedPath, path);
     }),
   );
   await rm(join(panoramaRoot, "seed"), { recursive: true, force: true });
   await restoreFixture(fixture);
   return fixture;
+}
+
+function optionsWithInspectorMutation(
+  fixture: Fixture,
+  triggerMemberIndex: number,
+  mutate: () => Promise<void>,
+): { readonly options: VerifyGrandHallAcceptedScopeBundleOptions; wasPerformed(): boolean } {
+  let performed = false;
+  return {
+    options: {
+      ...fixture.options,
+      createXgridsSourceMemberInspector: (member) => {
+        let observedByteCount = 0;
+        return {
+          update: async (bytes, absoluteOffset) => {
+            if (absoluteOffset !== observedByteCount) {
+              throw new Error("Synthetic member chunks were not delivered in native file order");
+            }
+            observedByteCount += bytes.byteLength;
+            if (!performed && member.memberIndex === triggerMemberIndex) {
+              performed = true;
+              await mutate();
+            }
+          },
+          finish: () => ({
+            recordKind: "gaussian" as const,
+            recordCount: observedByteCount,
+            recordOrder: "native_file_order" as const,
+          }),
+        };
+      },
+    },
+    wasPerformed: () => performed,
+  };
+}
+
+async function removeFinalLf(path: string): Promise<void> {
+  const bytes = await readFile(path);
+  if (bytes[bytes.length - 1] !== 0x0a) throw new Error("Synthetic JSON lost its final LF");
+  await writeFile(path, bytes.subarray(0, bytes.length - 1));
+}
+
+async function flipFinalByte(path: string): Promise<void> {
+  const bytes = await readFile(path);
+  bytes[bytes.length - 1] = (bytes[bytes.length - 1] ?? 0) ^ 1;
+  await writeFile(path, bytes);
 }
 
 describe("Grand Hall accepted scope bundle verifier", () => {
@@ -932,13 +1229,19 @@ describe("Grand Hall accepted scope bundle verifier", () => {
       productionTrustActivated: false,
       runtimeAdmissionAuthorized: false,
       semanticAccuracyReReviewed: false,
-      panoramaSourceCount: 50,
+      humanDecisionsSha256: computeGrandHallT554HumanDecisionsSha256(
+        fixture.artifacts.humanDecisions,
+      ),
+      closedVolumeReviewSha256: computeGrandHallT554ClosedVolumeReviewSha256(
+        fixture.artifacts.closedVolumeReview,
+      ),
+      panoramaSourceCount: 148,
       panoramaMaskCount: 1,
       xgridsSourceMemberCount: 2,
       outputRecordCount: 10,
       includedRecordCount: 5,
       excludedRecordCount: 5,
-      verifiedFileCount: 61,
+      verifiedFileCount: 162,
     });
   });
 
@@ -950,19 +1253,36 @@ describe("Grand Hall accepted scope bundle verifier", () => {
       scopeDraft.panoramaE57SequenceHypotheses.map((hypothesis, index) => ({
         ...hypothesis,
         candidateScanIndex: index === 0 ? 148 : index - 1,
-      }));
+    }));
     const scopeReviewPack = sealScopeReviewPack(scopeDraft);
+    const humanDecisionsDraft = structuredClone(
+      fixture.artifacts.humanDecisions,
+    ) as DeepMutable<AcceptedArtifacts["humanDecisions"]>;
+    humanDecisionsDraft.reviewPackSha256 = scopeReviewPack.artifactSha256;
+    const humanDecisions = GrandHallT554HumanDecisionsSchema.parse(humanDecisionsDraft);
+    const humanDecisionsSha256 = computeGrandHallT554HumanDecisionsSha256(humanDecisions);
+    const volumeDraft = structuredClone(
+      fixture.artifacts.closedVolumeReview,
+    ) as DeepMutable<AcceptedArtifacts["closedVolumeReview"]>;
+    volumeDraft.reviewPackSha256 = scopeReviewPack.artifactSha256;
+    const closedVolumeReview = GrandHallT554ClosedVolumeReviewSchema.parse(volumeDraft);
 
     const membershipDraft = structuredClone(fixture.artifacts.membership) as DeepMutable<
       AcceptedArtifacts["membership"]
     >;
     membershipDraft.reviewPackSha256 = scopeReviewPack.artifactSha256;
+    membershipDraft.panoramaRecords.forEach((record) => {
+      record.decisionEvidenceSha256 = humanDecisionsSha256;
+    });
     const membership = sealMembership(membershipDraft);
 
     const portalsDraft = structuredClone(fixture.artifacts.portals) as DeepMutable<
       AcceptedArtifacts["portals"]
     >;
     portalsDraft.reviewPackSha256 = scopeReviewPack.artifactSha256;
+    portalsDraft.decisions.forEach((decision) => {
+      decision.grandHallSideEvidenceSha256 = humanDecisionsSha256;
+    });
     const portals = sealPortals(portalsDraft);
 
     const boundaryDraft = structuredClone(fixture.artifacts.boundary) as DeepMutable<
@@ -971,6 +1291,9 @@ describe("Grand Hall accepted scope bundle verifier", () => {
     boundaryDraft.reviewPackSha256 = scopeReviewPack.artifactSha256;
     boundaryDraft.roomMembershipArtifactSha256 = membership.artifactSha256;
     boundaryDraft.portalDecisionArtifactSha256 = portals.artifactSha256;
+    boundaryDraft.semanticRefinements.forEach((refinement) => {
+      refinement.evidenceSha256 = humanDecisionsSha256;
+    });
     const boundary = sealBoundary(boundaryDraft);
 
     const panoramaMasksDraft = structuredClone(fixture.artifacts.panoramaMasks) as DeepMutable<
@@ -994,15 +1317,19 @@ describe("Grand Hall accepted scope bundle verifier", () => {
     outputMaskDraft.transformArtifactSha256 = transform.artifactSha256;
     outputMaskDraft.closedBoundaryArtifactSha256 = boundary.artifactSha256;
     const outputMask = sealOutputMask(outputMaskDraft);
-    await writeArtifacts(fixture, {
+    const artifacts = {
       scopeReviewPack,
+      humanDecisions,
+      closedVolumeReview,
       membership,
       portals,
       boundary,
       panoramaMasks,
       transform,
       outputMask,
-    });
+    };
+    await writeArtifacts(fixture, artifacts);
+    await writePublicationReceipt(fixture, artifacts);
 
     const result = await verifyGrandHallAcceptedScopeBundle(fixture.options);
     expect(result.integrityVerified).toBe(true);
@@ -1017,6 +1344,212 @@ describe("Grand Hall accepted scope bundle verifier", () => {
 
     await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
       code: "PATH_NON_REGULAR",
+    });
+  });
+
+  it.each([
+    ["human decisions", ARTIFACT_FILES.humanDecisions],
+    ["closed-volume review", ARTIFACT_FILES.closedVolumeReview],
+  ])("rejects a bundle whose preserved %s record is absent", async (_label, relativePath) => {
+    await rm(join(fixture.bundleRoot, relativePath));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "PATH_NON_REGULAR",
+    });
+  });
+
+  it("rejects a bundle whose canonical publication receipt is absent", async () => {
+    await rm(join(fixture.bundleRoot, ARTIFACT_FILES.publicationReceipt));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "PATH_NON_REGULAR",
+    });
+  });
+
+  it("rejects incomplete or authority-bearing publication receipt state", async () => {
+    const receipt = await buildPublicationReceipt(fixture, fixture.artifacts);
+    const variants: readonly unknown[] = [
+      { ...receipt, state: "incomplete" },
+      { ...receipt, authority: "none" },
+      { ...receipt, productionTrust: "synthetic-trust-root" },
+      { ...receipt, runtimeAdmissionAuthorized: true },
+      { ...receipt, reconstructionAuthorized: true },
+    ];
+    for (const variant of variants) {
+      await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.publicationReceipt), variant);
+      await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+        code: "SCHEMA_INVALID",
+      });
+    }
+  });
+
+  it("rejects stale formal-review and accepted-artifact receipt digests", async () => {
+    const receipt = await buildPublicationReceipt(fixture, fixture.artifacts);
+    const variants: readonly unknown[] = [
+      { ...receipt, humanDecisionsSha256: syntheticDigest(8_001) },
+      {
+        ...receipt,
+        artifactSha256s: {
+          ...receipt.artifactSha256s,
+          roomMembership: syntheticDigest(8_002),
+        },
+      },
+    ];
+    for (const variant of variants) {
+      await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.publicationReceipt), variant);
+      await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+        code: "CROSS_BINDING_MISMATCH",
+      });
+    }
+  });
+
+  it("rejects a receipt that omits a required T-554 payload", async () => {
+    const receipt = await buildPublicationReceipt(fixture, fixture.artifacts);
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.publicationReceipt), {
+      ...receipt,
+      files: receipt.files.slice(1),
+    });
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "SOURCE_INVENTORY_DRIFT",
+    });
+  });
+
+  it("binds the complete closed-volume review note through the receipt digest", async () => {
+    const draft = structuredClone(fixture.artifacts.closedVolumeReview) as DeepMutable<
+      AcceptedArtifacts["closedVolumeReview"]
+    >;
+    draft.note = "A changed human note that the geometric artifact itself does not contain.";
+    const changed = GrandHallT554ClosedVolumeReviewSchema.parse(draft);
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.closedVolumeReview), changed);
+    await writePublicationReceipt(fixture, fixture.artifacts);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
+    });
+  });
+
+  it("rejects stale exact byte receipts even when canonical JSON semantics are unchanged", async () => {
+    const path = join(fixture.bundleRoot, ARTIFACT_FILES.scopeReviewPack);
+    const bytes = await readFile(path);
+    if (bytes[bytes.length - 1] !== 0x0a) throw new Error("Synthetic JSON lost its final LF");
+    await writeFile(path, bytes.subarray(0, bytes.length - 1));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "FILE_SIZE_MISMATCH",
+    });
+  });
+
+  it("rejects undeclared files in the exact accepted bundle inventory", async () => {
+    await writeFile(join(fixture.bundleRoot, "undeclared-payload.bin"), "drift", "utf8");
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "SOURCE_INVENTORY_DRIFT",
+    });
+  });
+
+  it("rejects duplicate keys in a formal T-554 review record", async () => {
+    const path = join(fixture.bundleRoot, ARTIFACT_FILES.humanDecisions);
+    const canonical = (await readFile(path)).toString("utf8");
+    const duplicateKeyJson = canonical.replace(
+      '"authority":"none"',
+      '"authority":"none","authority":"none"',
+    );
+    if (duplicateKeyJson === canonical) {
+      throw new Error("Synthetic duplicate-key mutation did not alter the review JSON");
+    }
+    await writeFile(path, duplicateKeyJson, "utf8");
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "JSON_INVALID",
+    });
+  });
+
+  it("rejects a structurally valid formal review that is still human pending", async () => {
+    const draft = structuredClone(fixture.artifacts.humanDecisions) as DeepMutable<
+      AcceptedArtifacts["humanDecisions"]
+    >;
+    draft.reviewState = "human_pending";
+    draft.finalDecision = "PENDING";
+    draft.reviewer = null;
+    const pending = GrandHallT554HumanDecisionsSchema.parse(draft);
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.humanDecisions), pending);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
+    });
+  });
+
+  it("rejects preserved human decisions whose recomputed digest is not artifact-bound", async () => {
+    const draft = structuredClone(fixture.artifacts.humanDecisions) as DeepMutable<
+      AcceptedArtifacts["humanDecisions"]
+    >;
+    const firstDecision = draft.panoramaDecisions[0];
+    if (firstDecision === undefined) throw new Error("Synthetic review lost panorama one");
+    firstDecision.note = "Tampered after artifact publication.";
+    const tampered = GrandHallT554HumanDecisionsSchema.parse(draft);
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.humanDecisions), tampered);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
+    });
+  });
+
+  it("rejects coherently re-digested decisions when artifact reviewers do not match", async () => {
+    const draft = structuredClone(fixture.artifacts.humanDecisions) as DeepMutable<
+      AcceptedArtifacts["humanDecisions"]
+    >;
+    if (draft.reviewer === null) throw new Error("Synthetic review lost its reviewer");
+    draft.reviewer.reviewerId = "different-authorized-reviewer";
+    const tampered = GrandHallT554HumanDecisionsSchema.parse(draft);
+    await writeArtifactsReboundToHumanDecisions(fixture, tampered);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
+    });
+  });
+
+  it("rejects a preserved volume whose reviewed geometry differs from the boundary", async () => {
+    const draft = structuredClone(fixture.artifacts.closedVolumeReview) as DeepMutable<
+      AcceptedArtifacts["closedVolumeReview"]
+    >;
+    draft.zMax = 7.5;
+    const tampered = GrandHallT554ClosedVolumeReviewSchema.parse(draft);
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.closedVolumeReview), tampered);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
+    });
+  });
+
+  it("rejects a preserved volume reviewer who differs from the boundary reviewer", async () => {
+    const draft = structuredClone(fixture.artifacts.closedVolumeReview) as DeepMutable<
+      AcceptedArtifacts["closedVolumeReview"]
+    >;
+    if (draft.reviewer === null) throw new Error("Synthetic volume lost its reviewer");
+    draft.reviewer.reviewerId = "different-volume-reviewer";
+    const tampered = GrandHallT554ClosedVolumeReviewSchema.parse(draft);
+    await writeCanonical(join(fixture.bundleRoot, ARTIFACT_FILES.closedVolumeReview), tampered);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
+    });
+  });
+
+  it("rejects a mask artifact that differs from a coherently re-digested reviewed binding", async () => {
+    const draft = structuredClone(fixture.artifacts.humanDecisions) as DeepMutable<
+      AcceptedArtifacts["humanDecisions"]
+    >;
+    const binding = draft.panoramaDecisions[0]?.reviewedMaskBinding;
+    if (binding === null || binding === undefined) {
+      throw new Error("Synthetic review lost its exact mask binding");
+    }
+    binding.sha256 = syntheticDigest(9_997);
+    const tampered = GrandHallT554HumanDecisionsSchema.parse(draft);
+    await writeArtifactsReboundToHumanDecisions(fixture, tampered);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "CROSS_BINDING_MISMATCH",
     });
   });
 
@@ -1302,6 +1835,59 @@ describe("Grand Hall accepted scope bundle verifier", () => {
     expect(replacementPerformed).toBe(true);
   });
 
+  it("rejects a publication receipt mutated during later XGRIDS inspection", async () => {
+    const mutation = optionsWithInspectorMutation(fixture, 0, () =>
+      removeFinalLf(join(fixture.bundleRoot, ARTIFACT_FILES.publicationReceipt)));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(mutation.options)).rejects.toMatchObject({
+      code: "PATH_IDENTITY_CHANGED",
+    });
+    expect(mutation.wasPerformed()).toBe(true);
+  });
+
+  it.each([
+    ["reviewed transform", ARTIFACT_FILES.reviewedTransform],
+    ["output inventory mask", ARTIFACT_FILES.outputInventoryMask],
+  ])("rejects the %s when mutated during later XGRIDS inspection", async (_label, fileName) => {
+    const mutation = optionsWithInspectorMutation(fixture, 0, () =>
+      removeFinalLf(join(fixture.bundleRoot, fileName)));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(mutation.options)).rejects.toMatchObject({
+      code: "PATH_IDENTITY_CHANGED",
+    });
+    expect(mutation.wasPerformed()).toBe(true);
+  });
+
+  it("rejects a panorama mutated after its initial 148-file verification", async () => {
+    const mutation = optionsWithInspectorMutation(fixture, 0, () =>
+      flipFinalByte(join(fixture.panoramaRoot, "sweep-001.jpg")));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(mutation.options)).rejects.toMatchObject({
+      code: "PATH_IDENTITY_CHANGED",
+    });
+    expect(mutation.wasPerformed()).toBe(true);
+  });
+
+  it("rejects an earlier XGRIDS member mutated while inspecting the next member", async () => {
+    const mutation = optionsWithInspectorMutation(fixture, 1, () =>
+      flipFinalByte(join(fixture.xgridsRoot, "creator-data/member-000.lcc")));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(mutation.options)).rejects.toMatchObject({
+      code: "PATH_IDENTITY_CHANGED",
+    });
+    expect(mutation.wasPerformed()).toBe(true);
+  });
+
+  it("rejects the output bitset when mutated during later XGRIDS inspection", async () => {
+    const mutation = optionsWithInspectorMutation(fixture, 0, () =>
+      flipFinalByte(join(fixture.bundleRoot, "masks/output-membership.bin")));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(mutation.options)).rejects.toMatchObject({
+      code: "PATH_IDENTITY_CHANGED",
+    });
+    expect(mutation.wasPerformed()).toBe(true);
+  });
+
   it("rejects undeclared files in the dedicated XGRIDS source-member root", async () => {
     await writeFile(join(fixture.xgridsRoot, "creator-data/undeclared.lcc"), "drift", "utf8");
 
@@ -1356,6 +1942,15 @@ describe("Grand Hall accepted scope bundle verifier", () => {
     ).rejects.toMatchObject({ code: "PATH_UNSAFE" });
   });
 
+  it("requires the canonical root publication-receipt.json artifact path", async () => {
+    await expect(
+      verifyGrandHallAcceptedScopeBundle({
+        ...fixture.options,
+        artifactFiles: { ...ARTIFACT_FILES, publicationReceipt: "review/receipt.json" },
+      }),
+    ).rejects.toMatchObject({ code: "ARGUMENT_INVALID" });
+  });
+
   it("rejects source JPEG drift before mask verification", async () => {
     const sourcePath = join(fixture.panoramaRoot, "sweep-001.jpg");
     const sourceBytes = await readFile(sourcePath);
@@ -1367,13 +1962,42 @@ describe("Grand Hall accepted scope bundle verifier", () => {
     });
   });
 
-  it("fully decodes and rejects truncated JPEGs even when every identity is re-sealed", async () => {
+  it("rejects a missing non-candidate panorama from the exact 148-file root", async () => {
+    await rm(join(fixture.panoramaRoot, "unreviewed-sweep-051.jpg"));
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "SOURCE_INVENTORY_DRIFT",
+    });
+  });
+
+  it("rejects undeclared panorama files outside the review-pack inventory", async () => {
+    await writeFile(join(fixture.panoramaRoot, "unexpected-panorama.jpg"), fixture.sourceJpeg);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "SOURCE_INVENTORY_DRIFT",
+    });
+  });
+
+  it("hashes and rejects byte drift in a non-candidate panorama", async () => {
+    const path = join(fixture.panoramaRoot, "unreviewed-sweep-051.jpg");
+    const bytes = await readFile(path);
+    bytes[bytes.length - 1] = (bytes[bytes.length - 1] ?? 0) ^ 1;
+    await writeFile(path, bytes);
+
+    await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({
+      code: "FILE_DIGEST_MISMATCH",
+    });
+  });
+
+  it("fully decodes a non-candidate and rejects truncation when every identity is re-sealed", async () => {
     const truncatedJpeg = Buffer.from(
       fixture.sourceJpeg.subarray(0, Math.floor(fixture.sourceJpeg.length / 2)),
     );
     const artifacts = createAcceptedArtifacts({
-      sourceJpegSha256: digest(truncatedJpeg),
-      sourceJpegByteLength: truncatedJpeg.length,
+      sourceJpegSha256: digest(fixture.sourceJpeg),
+      sourceJpegByteLength: fixture.sourceJpeg.length,
+      firstNonCandidateSourceJpegSha256: digest(truncatedJpeg),
+      firstNonCandidateSourceJpegByteLength: truncatedJpeg.length,
       maskSha256: digest(fixture.maskPng),
       maskByteLength: fixture.maskPng.length,
       memberSha256s: [digest(fixture.sourceMemberBytes[0]), digest(fixture.sourceMemberBytes[1])],
@@ -1385,13 +2009,10 @@ describe("Grand Hall accepted scope bundle verifier", () => {
       bitsetByteLength: fixture.bitset.length,
     });
     await writeArtifacts(fixture, artifacts);
-    await Promise.all(
-      Array.from({ length: 50 }, (_, index) =>
-        writeFile(
-          join(fixture.panoramaRoot, `sweep-${String(index + 1).padStart(3, "0")}.jpg`),
-          truncatedJpeg,
-        ),
-      ),
+    await writePublicationReceipt(fixture, artifacts);
+    await writeFile(
+      join(fixture.panoramaRoot, "unreviewed-sweep-051.jpg"),
+      truncatedJpeg,
     );
 
     await expect(verifyGrandHallAcceptedScopeBundle(fixture.options)).rejects.toMatchObject({

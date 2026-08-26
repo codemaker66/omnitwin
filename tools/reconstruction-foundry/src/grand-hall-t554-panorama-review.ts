@@ -1032,6 +1032,34 @@ async function readStableBytesMatching(
   return { bytes: captured, byteLength: digest.sizeBytes, sha256 };
 }
 
+export async function readGrandHallT554StablePanoramaBytes(
+  path: string,
+  evidence: GrandHallT554PanoramaInventoryFile,
+): Promise<Buffer> {
+  const stable = await readStableBytesMatching(
+    requireAbsolutePath(path, evidence.sourceLocator),
+    evidence.sourceLocator,
+    evidence.sha256,
+    evidence.byteLength,
+    MAX_JPEG_BYTES,
+  );
+  const dimensions = readJpegDimensions(
+    stable.bytes.subarray(0, JPEG_INSPECTION_HEAD_BYTES),
+  );
+  if (
+    dimensions.widthPx !== evidence.widthPx ||
+    dimensions.heightPx !== evidence.heightPx ||
+    dimensions.jpegFrame !== evidence.jpegFrame ||
+    dimensions.jfifHeaderPresent !== evidence.jfifHeaderPresent
+  ) {
+    throw new GrandHallT554PanoramaReviewError(
+      "SOURCE_CHANGED",
+      `${evidence.sourceLocator} no longer matches its inspected JPEG identity.`,
+    );
+  }
+  return stable.bytes;
+}
+
 async function loadT550Membership(path: string): Promise<LoadedT550Membership> {
   const absolute = requireAbsolutePath(path, "T-550 membership artifact");
   const stable = await readStableBytesMatching(

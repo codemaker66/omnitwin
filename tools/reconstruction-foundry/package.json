@@ -18,8 +18,10 @@
     "build": "tsc --project tsconfig.json",
     "foundry": "tsx src/entry.ts",
     "grand-hall-lcc-preflight": "tsx src/grand-hall-xgrids-lcc-preflight-entry.ts",
+    "grand-hall-t554-acceptance": "tsx src/grand-hall-t554-acceptance-entry.ts",
     "grand-hall-t554-boundary-review": "tsx src/grand-hall-t554-boundary-review-entry.mts",
     "grand-hall-t554-interface-atlas": "tsx src/grand-hall-t554-interface-atlas-entry.ts",
+    "grand-hall-t554-panorama-inventory-review": "tsx src/grand-hall-t554-panorama-inventory-review-entry.ts",
     "grand-hall-t554-panorama-review": "tsx src/grand-hall-t554-panorama-review-entry.ts",
     "lcc2-frontier": "tsx src/lcc2-frontier-entry.ts",
     "local-app": "tsx src/entry.ts local-app",
@@ -31,7 +33,8 @@
     "@omnitwin/reconstruction-foundry": "workspace:*",
     "@omnitwin/types": "workspace:*",
     "hash-wasm": "4.12.0",
-    "sharp": "0.35.3"
+    "sharp": "0.35.3",
+    "zod": "3.24.2"
   },
   "devDependencies": {
     "@types/node": "25.5.0",

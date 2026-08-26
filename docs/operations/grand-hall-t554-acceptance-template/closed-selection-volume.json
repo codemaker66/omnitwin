@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "venviewer.grand-hall-t554-closed-volume-review.v1",
+  "venueSlug": "trades-hall",
+  "roomSlug": "grand-hall",
+  "reviewPackSha256": "sha256:8a6bef9c3b9e5c27e4c1f62994d7d8d01a82b4afee9515d39f2513c36dcac3aa",
+  "authority": "none",
+  "reviewState": "human_pending",
+  "finalDecision": "PENDING",
+  "reviewer": null,
+  "sourceFrame": "CVF",
+  "units": "meters",
+  "geometryRole": "non_rendered_selection_volume",
+  "construction": "extruded_simple_xy_polygon",
+  "footprintXY": [],
+  "zMin": null,
+  "zMax": null,
+  "rendered": false,
+  "collisionGeometry": false,
+  "exportedAsArchitecture": false,
+  "generatedGeometryCreated": false,
+  "note": null
+}

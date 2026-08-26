@@ -355,6 +355,9 @@ importers:
       sharp:
         specifier: 0.35.3
         version: 0.35.3(@types/node@25.5.0)
+      zod:
+        specifier: 3.24.2
+        version: 3.24.2
     devDependencies:
       '@types/node':
         specifier: 25.5.0

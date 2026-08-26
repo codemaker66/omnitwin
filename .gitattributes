@@ -6,6 +6,12 @@ docs/specs/omnitwin-foundry-*.jsonl text eol=lf
 # EOL conversion may ever rewrite them on add or checkout.
 packages/api/drizzle/*.sql -text
 venviewer_training/gsplat-v1.5.3.source-lock.json text eol=lf
+# Grand Hall review evidence is byte-bound and exact-regeneration checked.
+# Keep textual payloads stable across Windows and Linux checkouts.
+docs/operations/grand-hall-t554-review-pack/**/*.json text eol=lf
+docs/operations/grand-hall-t554-review-pack/**/*.svg text eol=lf
+docs/operations/grand-hall-t554-acceptance-template/*.json text eol=lf
+docs/operations/grand-hall-t554-panorama-inventory-review/*.json text eol=lf
 # Byte-pinned evidence vector document (activation-v1 test suite) — exact
 # bytes, overriding the eol=lf rule above.
 docs/specs/omnitwin-foundry-activation-v1-authenticated-evidence-byte-vectors.json -text
