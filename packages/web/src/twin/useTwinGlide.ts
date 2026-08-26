@@ -483,20 +483,39 @@ export function useTwinGlide(manifest: TwinManifest): TwinGlide {
     [adjacency],
   );
 
-  return {
-    currentId,
-    targetId,
-    progress,
-    progressRef,
-    restId,
-    neighbors,
-    neighborsOf,
-    gliding: targetId !== null,
-    tangentRef,
-    hopTo,
-    glideAlong,
-    setHeld,
-    registerNextPicker,
-    settleInstantly,
-  };
+  // Memoized: consumers put the whole object in dependency arrays ("re-run
+  // when the walk changed"), and a fresh literal per render would turn those
+  // into run-every-render (review finding). Identity now changes exactly when
+  // a field does.
+  return useMemo(
+    () => ({
+      currentId,
+      targetId,
+      progress,
+      progressRef,
+      restId,
+      neighbors,
+      neighborsOf,
+      gliding: targetId !== null,
+      tangentRef,
+      hopTo,
+      glideAlong,
+      setHeld,
+      registerNextPicker,
+      settleInstantly,
+    }),
+    [
+      currentId,
+      targetId,
+      progress,
+      restId,
+      neighbors,
+      neighborsOf,
+      hopTo,
+      glideAlong,
+      setHeld,
+      registerNextPicker,
+      settleInstantly,
+    ],
+  );
 }

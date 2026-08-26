@@ -43,6 +43,9 @@ import {
   markFirstLightSeen,
 } from "./first-light.js";
 import { NavMarkers } from "./NavMarkers.js";
+import { PlanHud } from "./PlanHud.js";
+import { PlanRig } from "./PlanRig.js";
+import { planCutY, planFrame, storeysFromNodes } from "./plan-mode.js";
 import {
   NEIGHBOUR_WARM_SLICE_MS,
   NEIGHBOUR_WARM_TIMEOUT_MS,
@@ -161,10 +164,8 @@ interface DollyState {
   from: readonly [number, number, number];
   to: readonly [number, number, number];
   progress: number;
-  /** Yaw (three YXZ) to face while travelling; null outside hops. */
+  /** Yaw (three YXZ) to face while travelling; null outside rides. */
   travelYaw: number | null;
-  /** Changes per hop so the dolly captures a fresh start orientation. */
-  hopKey: string;
   /** True while the continuous glide owns movement: yaw rides a persistent
    *  spring toward the route tangent (corners round in the LOOK, since the
    *  position must stay on the scan-centre polyline), fov never surges, and
@@ -192,41 +193,20 @@ function shortestYawDelta(a: number, b: number): number {
 const dollyEuler = new Euler(0, 0, 0, "YXZ");
 
 /**
- * Travel fov breath — the Street-View surge: +4° at mid-hop, back to the
- * departing fov by settle. A pure function of the travel spring's progress
- * (sin π·p), so the breath and the dolly ride the SAME spring and can never
- * drift apart (house rule: springs, never tweens). Under
- * prefers-reduced-motion useTwinWalk teleports instead of springing, so no
- * travelling frame — and therefore no breath — ever runs.
+ * Camera position = lerp(from, to, fraction), read from refs each frame so
+ * per-frame motion never re-renders React. While a ride is travelling the
+ * dolly also owns orientation: the heading rides ONE persistent spring toward
+ * the live route tangent (corners round in the LOOK — the position must stay
+ * on the scan-centre polyline for the crossfade to stay optically honest),
+ * pitch is captured at ride entry and held (gazing up at the dome stays
+ * gazing up), and the fov is never touched — Street View and Matterport
+ * breathe none while travelling, and neither do we. WalkControls is disabled
+ * during rides and re-adopts the camera's pose when it re-engages at settle.
  *
- * The surge is a *single-step* gesture only: on a chained hold-to-walk it is
- * suppressed to zero (finding [28]). A held key fires a fresh hop the instant
- * the last one settles, and a per-hop sin() would strobe the fov ~1.5×/s —
- * seasick, not smooth. So a walk that flows node-to-node keeps a rock-steady
- * fov (Street View / Matterport breathe none while travelling); only a
- * deliberate, isolated click-step gets the surge.
- */
-export const HOP_FOV_BREATH_DEG = 4;
-
-/**
- * A hop that begins within this long (ms) of the previous one being active is a
- * chained hold-to-walk step, not a fresh intent — its fov surge is suppressed.
- * The inter-hop gap is one React round-trip (settle → continue-on-settle effect
- * → next hop), tens of ms; 250 ms clears it with margin while a deliberate
- * second click a third of a second later still reads as isolated and surges.
- * Measured on the wall clock, not frame delta: under the demand frameloop no
- * frames render while idle, so a delta accumulator would stop counting.
- */
-const HOP_CHAIN_WINDOW_MS = 250;
-
-/**
- * Camera position = lerp(from, to, progress), read from a ref each frame so
- * per-frame motion never re-renders React. While a hop is travelling the
- * dolly also owns orientation (Street View arrival rule: you end up facing
- * the direction you moved) and breathes the fov: WalkControls is disabled
- * during hops and re-adopts the camera's orientation and fov when it
- * re-engages at settle — the settle branch restores the exact pre-hop fov so
- * the handover carries zero residue from the breath.
+ * The per-hop smoothstep/fov-surge machinery this replaced is gone WITH the
+ * discrete hops themselves: every travel path — tap, hold, Usher — now moves
+ * through the glide walker, so a "hop that is not a glide" cannot occur
+ * (review finding: the branch was unreachable).
  */
 function CameraDolly({
   dolly,
@@ -239,17 +219,6 @@ function CameraDolly({
 }): null {
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
-  const hopStart = useRef<{
-    key: string;
-    yaw: number;
-    pitch: number;
-    fov: number;
-    chained: boolean;
-  } | null>(null);
-  // Wall-clock stamp (ms) of the most recent in-flight hop frame. A fresh hop
-  // that begins within HOP_CHAIN_WINDOW_MS of it is a hold-to-walk chain, so its
-  // fov surge is suppressed. Seeded −∞ so the first hop of a session surges.
-  const lastHopActiveMs = useRef(Number.NEGATIVE_INFINITY);
   // The glide's persistent heading: one spring living across every segment of
   // a ride, adopted from the camera on entry, stepped toward the live route
   // tangent each frame. Pitch is captured once and held — the visitor's gaze
@@ -257,7 +226,7 @@ function CameraDolly({
   const glideLook = useRef<{ yaw: SpringState; pitch: number } | null>(null);
 
   useFrame((_, delta) => {
-    const { from, to, progress, travelYaw, hopKey, glide } = dolly.current;
+    const { from, to, progress, travelYaw, glide } = dolly.current;
     const p = glide ? progressRef.current : progress;
     const x = from[0] + (to[0] - from[0]) * p;
     const y = from[1] + (to[1] - from[1]) * p;
@@ -290,43 +259,6 @@ function CameraDolly({
     if (glideLook.current !== null) {
       // Ride over: drop the heading spring; WalkControls re-adopts the pose.
       glideLook.current = null;
-    }
-
-    if (travelYaw !== null && progress > 0 && progress < 1) {
-      const now = performance.now();
-      if (hopStart.current === null || hopStart.current.key !== hopKey) {
-        dollyEuler.setFromQuaternion(camera.quaternion, "YXZ");
-        hopStart.current = {
-          key: hopKey,
-          yaw: dollyEuler.y,
-          pitch: dollyEuler.x,
-          fov: camera instanceof PerspectiveCamera ? camera.fov : 75,
-          chained: now - lastHopActiveMs.current < HOP_CHAIN_WINDOW_MS,
-        };
-      }
-      lastHopActiveMs.current = now;
-      const eased = progress * progress * (3 - 2 * progress); // smoothstep
-      const start = hopStart.current;
-      const yaw = start.yaw + shortestYawDelta(start.yaw, travelYaw) * eased;
-      // Pitch is the visitor's to keep — gazing up at the dome should stay
-      // gazing up as you walk. Only yaw eases, toward the heading of travel
-      // (finding [26]); the old code leveled pitch to 0 and yanked the view.
-      camera.quaternion.setFromEuler(dollyEuler.set(start.pitch, yaw, 0, "YXZ"));
-      if (camera instanceof PerspectiveCamera) {
-        // Isolated click-step surges; a chained hold-to-walk holds fov steady
-        // so the walk glides instead of strobing the zoom (finding [28]).
-        const surge = start.chained ? 0 : Math.sin(Math.PI * progress) * HOP_FOV_BREATH_DEG;
-        camera.fov = start.fov + surge;
-        camera.updateProjectionMatrix();
-      }
-      invalidate();
-    } else if (progress <= 0 || progress >= 1) {
-      if (hopStart.current !== null && camera instanceof PerspectiveCamera) {
-        camera.fov = hopStart.current.fov;
-        camera.updateProjectionMatrix();
-        invalidate();
-      }
-      hopStart.current = null;
     }
   });
 
@@ -884,8 +816,6 @@ function NeighborWarmer({
 
 /** Orbit tilt limit for the dollhouse — never under the floor plane. */
 const DOLLHOUSE_MAX_POLAR_RAD = (85 * Math.PI) / 180;
-/** Plan-mode interim tilt limit — keeps the vantage overhead until Task 7. */
-const PLAN_MAX_POLAR_RAD = (30 * Math.PI) / 180;
 /** Never let the orbit camera dolly closer than this (metres). */
 const ORBIT_MIN_DISTANCE_M = 2;
 /** Smallest orbit radius — tiny bundles still get a readable dollhouse. */
@@ -957,17 +887,16 @@ function nodeExtent(nodes: readonly TwinScanNode[]): NodeExtent {
 }
 
 /**
- * Orbit rig for the mesh modes: boots the camera to a vantage on mode entry
- * (three-quarter for dollhouse, overhead for plan), then hands control to
- * drei's OrbitControls around the node-extent centroid. The demand loop is
- * woken by the house `onChange={() => { invalidate(); }}` pattern.
+ * Orbit rig for DOLLHOUSE mode: boots the camera to the three-quarter
+ * vantage on mode entry, then hands control to drei's OrbitControls around
+ * the node-extent centroid. The demand loop is woken by the house
+ * `onChange={() => { invalidate(); }}` pattern. Plan mode has its own rig —
+ * PlanRig, the orthographic drawing camera.
  */
 function MeshOrbitRig({
-  mode,
   extent,
   enabled,
 }: {
-  readonly mode: TwinMode;
   readonly extent: NodeExtent;
   /** False while a dive flight owns the camera. */
   readonly enabled: boolean;
@@ -980,19 +909,14 @@ function MeshOrbitRig({
       return; // the DiveCamera owns the camera; it lands ON the boot vantage
     }
     const [cx, cy, cz] = extent.center;
-    if (mode === "plan") {
-      // Slight z lean keeps the up-vector defined when looking straight down.
-      camera.position.set(cx, cy + extent.radius * 2.4, cz + 0.01);
-    } else {
-      camera.position.set(
-        cx + extent.radius * 1.15,
-        cy + extent.radius * 0.95,
-        cz + extent.radius * 1.15,
-      );
-    }
+    camera.position.set(
+      cx + extent.radius * 1.15,
+      cy + extent.radius * 0.95,
+      cz + extent.radius * 1.15,
+    );
     camera.lookAt(cx, cy, cz);
     invalidate();
-  }, [mode, camera, extent, invalidate, enabled]);
+  }, [camera, extent, invalidate, enabled]);
 
   return (
     <OrbitControls
@@ -1000,7 +924,7 @@ function MeshOrbitRig({
       enabled={enabled}
       enableDamping
       target={extent.center}
-      maxPolarAngle={mode === "plan" ? PLAN_MAX_POLAR_RAD : DOLLHOUSE_MAX_POLAR_RAD}
+      maxPolarAngle={DOLLHOUSE_MAX_POLAR_RAD}
       minDistance={ORBIT_MIN_DISTANCE_M}
       maxDistance={extent.radius * 5}
       onChange={() => {
@@ -1274,7 +1198,10 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       // mesh modes must not inherit a walker still advancing off stage.
       walk.settleInstantly();
     }
-  }, [mode, walk]);
+    // The dep is the stable callback, not the walk object: this effect means
+    // "on mode transitions", and the walk's identity changes per segment
+    // commit (review finding).
+  }, [mode, walk.settleInstantly]);
 
   // Walking off the initial node ends the opening even without a base tier
   // (teleports and reduced-motion swaps land with no travelling report).
@@ -1326,6 +1253,18 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const extent = useMemo(() => nodeExtent(manifest.nodes), [manifest]);
   const dollhouseCutawayInsetM = dollhouseCutawayInsetForVenue(manifest.venueSlug);
 
+  // — the plan (the CAD drawing): storeys, the active one, and its frame.
+  // The choice is per-visit: entering plan opens on the storey underfoot, and
+  // leaving forgets the override so the next entry is grounded again.
+  const storeys = useMemo(() => storeysFromNodes(manifest.nodes), [manifest]);
+  const [planFloorChoice, setPlanFloorChoice] = useState<number | null>(null);
+  const [planScale, setPlanScale] = useState(0);
+  useEffect(() => {
+    if (mode !== "plan") {
+      setPlanFloorChoice(null);
+    }
+  }, [mode]);
+
   // Warm the dollhouse so a Surface dive never flies through an unloaded void.
   // Intent (a hover/focus on the mesh affordances) warms immediately; a capable
   // desktop also warms speculatively after a beat so its dive is always instant
@@ -1354,6 +1293,15 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
 
   const currentNode = nodesById.get(walk.currentId);
   const targetNode = walk.targetId === null ? undefined : nodesById.get(walk.targetId);
+  // The plan opens on the storey underfoot unless the visitor chose another.
+  const currentFloorForPlan = nodesById.get(walk.restId)?.floor;
+  const activePlanStorey =
+    storeys.find((storey) => storey.floor === (planFloorChoice ?? currentFloorForPlan)) ??
+    storeys[0];
+  const activePlanFrame = useMemo(
+    () => planFrame(manifest.nodes, activePlanStorey?.floor),
+    [manifest, activePlanStorey?.floor],
+  );
   const dollhouseCutawayMinimumY =
     dollhouseCutawayInsetM === undefined || currentNode === undefined
       ? undefined
@@ -1450,7 +1398,6 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     to: [0, 0, 0],
     progress: 0,
     travelYaw: null,
-    hopKey: "",
     glide: false,
   });
   useEffect(() => {
@@ -1463,7 +1410,6 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       dollyRef.current.to = from;
       dollyRef.current.progress = 0;
       dollyRef.current.travelYaw = null;
-      dollyRef.current.hopKey = "";
       dollyRef.current.glide = false;
     } else {
       const to = e57PointToThree(targetNode.pose.t);
@@ -1479,7 +1425,6 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         // three YXZ yaw facing the horizontal travel direction (-Z forward).
         dollyRef.current.travelYaw = Math.atan2(-tangent[0], -tangent[1]);
       }
-      dollyRef.current.hopKey = `${currentNode.id}->${targetNode.id}`;
     }
   });
 
@@ -1762,11 +1707,27 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                             : { minimumY: dollhouseCutawayMinimumY }),
                         }
                   }
+                  {...(mode === "plan" && activePlanStorey !== undefined
+                    ? {
+                        planSection: { cutY: planCutY(activePlanStorey) },
+                        dotFloor: activePlanStorey.floor,
+                      }
+                    : {})}
                   onDive={(id) => {
                     // A dot press while measuring would fly the visitor into
                     // the walk mid-measurement, taking the geometry the picks
                     // were made against off stage with it.
                     if (measureArmed) {
+                      return;
+                    }
+                    if (mode === "plan") {
+                      // From a DRAWING you go to a place, you don't fly to
+                      // it: the dive's swoop is choreographed for the
+                      // perspective orbit, and rendering it orthographic
+                      // reads as the building scaling, not the camera
+                      // moving. A plan click steps straight into the walk.
+                      walk.hopTo(id, { teleport: true });
+                      setMode("walk");
                       return;
                     }
                     dive.dive(id, {
@@ -1776,7 +1737,15 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   }}
                 />
               </Suspense>
-              <MeshOrbitRig mode={mode} extent={extent} enabled={!dive.diving} />
+              {mode === "plan" && activePlanStorey !== undefined ? (
+                <PlanRig
+                  frame={activePlanFrame}
+                  storeyKey={activePlanStorey.floor}
+                  onScale={setPlanScale}
+                />
+              ) : (
+                <MeshOrbitRig extent={extent} enabled={!dive.diving} />
+              )}
               <CameraProbe position={orbitPosRef} />
               {measureArmed && (
                 <MeasurePicker
@@ -1841,9 +1810,12 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       )}
 
       <div className="vv-twin-node-label" data-testid="twin-node-label">
-        {/* Keyed span: node changes remount the text through a 200 ms fade. */}
-        <span key={walk.currentId} className="vv-twin-node-label-text">
-          {twinNodeLabel(walk.currentId, manifest.name)}
+        {/* Keyed span: node changes remount the text through a 200 ms fade.
+            restId, like every other surface that names a place: a glide
+            crosses a node each ~1.7 s, and a label remount-fading per
+            crossing is a flip-book, not a readout (review finding). */}
+        <span key={walk.restId} className="vv-twin-node-label-text">
+          {twinNodeLabel(walk.restId, manifest.name)}
         </span>
         {shimmerPhase !== "done" && (
           <span
@@ -1942,6 +1914,14 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           // The Usher, not a teleport: a room reached by naming it glides the
           // real corridor route, exactly like a room reached by pointing at it.
           onWalkTo={usherTo}
+        />
+      )}
+      {mode === "plan" && activePlanStorey !== undefined && (
+        <PlanHud
+          storeys={storeys}
+          activeFloor={activePlanStorey.floor}
+          onSelectFloor={setPlanFloorChoice}
+          pxPerMetre={planScale}
         />
       )}
       {hasMesh && mode !== "walk" && !measuring && (

@@ -1,0 +1,186 @@
+/* ---------------------------------------------------------------------------
+   plan.css — the plan mode's DOM chrome (storey switcher + scale bar).
+
+   Component-adjacent by convention: twin.css is contended between parallel
+   lanes, so this sheet is imported by PlanHud.tsx alone and only READS the
+   .vv-twin palette custom properties, with the standard hard-coded fallbacks
+   as insurance for fixture renders outside .vv-twin.
+
+   Slot: bottom-LEFT column. In plan mode the bottom-left "See the plan" chip
+   (walk-only) and the Rooms pill (walk-only) are both off stage, and the
+   measure trigger holds bottom-RIGHT — so the column is free by the same
+   mode-disjointness argument measure.css records. The scale bar sits beside
+   the switcher in the same flex column; nothing overlaps the disclosure line
+   because the column is bottom-anchored above it.
+
+   Pointer contract: the HUD frame is pointer-events:none; only the controls
+   take the pointer (the .vv-twin-controls contract) — pan/zoom drags that
+   start on empty plan must reach the canvas.
+--------------------------------------------------------------------------- */
+
+.vv-twin-plan-hud {
+  position: absolute;
+  left: 18px;
+  bottom: 44px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  pointer-events: none;
+}
+
+/* — the storey switcher — */
+
+.vv-twin-plan-storeys {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  background: rgba(7, 16, 15, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.vv-twin-plan-storey {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-2, #e7d8bb);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.vv-twin-plan-storey-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.vv-twin-plan-storey-rooms {
+  font-size: 0.68rem;
+  color: var(--ink-3, #b9aa8b);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.vv-twin-plan-storey--active {
+  background: var(--gold, #d7a64b);
+  color: var(--black, #030707);
+}
+
+.vv-twin-plan-storey--active .vv-twin-plan-storey-label {
+  text-shadow: none;
+}
+
+.vv-twin-plan-storey--active .vv-twin-plan-storey-rooms {
+  color: rgba(3, 7, 7, 0.72);
+  text-shadow: none;
+}
+
+/* — the scale bar: an instrument, so its numbers are tabular — */
+
+.vv-twin-plan-scale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--rule, rgba(216, 174, 91, 0.28));
+  background: rgba(7, 16, 15, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.vv-twin-plan-scale-bar {
+  position: relative;
+  display: block;
+  height: 0;
+  border-top: 2px solid var(--ink, #fbf2df);
+}
+
+/* End ticks — the draughtsman's bar, not a progress bar. */
+.vv-twin-plan-scale-bar::before,
+.vv-twin-plan-scale-bar::after {
+  content: "";
+  position: absolute;
+  top: -5px;
+  width: 2px;
+  height: 8px;
+  background: var(--ink, #fbf2df);
+}
+
+.vv-twin-plan-scale-bar::before {
+  left: 0;
+}
+
+.vv-twin-plan-scale-bar::after {
+  right: 0;
+}
+
+.vv-twin-plan-scale-label {
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink, #fbf2df);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+}
+
+/* — small screens: the switcher tightens, the scale bar survives — */
+
+@media (max-width: 480px) {
+  .vv-twin-plan-hud {
+    left: 12px;
+    bottom: 40px;
+    gap: 8px;
+  }
+
+  .vv-twin-plan-storey {
+    padding: 6px 11px;
+  }
+
+  .vv-twin-plan-storey-rooms {
+    display: none;
+  }
+}
+
+/* — forced colors: system chrome wins, geometry stays honest — */
+
+@media (forced-colors: active) {
+  .vv-twin-plan-storeys,
+  .vv-twin-plan-scale {
+    background: Canvas;
+    border-color: CanvasText;
+  }
+
+  .vv-twin-plan-storey {
+    color: ButtonText;
+  }
+
+  .vv-twin-plan-storey--active {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .vv-twin-plan-scale-bar,
+  .vv-twin-plan-scale-bar::before,
+  .vv-twin-plan-scale-bar::after {
+    background: CanvasText;
+    border-color: CanvasText;
+  }
+
+  .vv-twin-plan-scale-label {
+    color: CanvasText;
+  }
+}

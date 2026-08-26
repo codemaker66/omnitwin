@@ -168,21 +168,29 @@ function DollhouseMesh({ meshUrl, cutawayPlanes }: DollhouseMeshProps): ReactEle
 interface DollhouseCutawayControllerProps {
   readonly plane: Plane;
   readonly floorPlane: Plane;
+  /** The plan's horizontal section — everything ABOVE its cut is removed. */
+  readonly ceilingPlane: Plane;
   readonly enabled: boolean;
   readonly target: readonly [number, number, number];
   readonly witnesses: readonly Vector3[];
   readonly insetM: number;
   readonly minimumY?: number;
+  /** Three-space y of the plan section cut; undefined leaves the plane inert.
+   *  Independent of `enabled` — the plan's section runs while the dollhouse's
+   *  camera-facing cutaway is off, and vice versa. */
+  readonly sectionCutY?: number;
 }
 
 function DollhouseCutawayController({
   plane,
   floorPlane,
+  ceilingPlane,
   enabled,
   target,
   witnesses,
   insetM,
   minimumY,
+  sectionCutY,
 }: DollhouseCutawayControllerProps): null {
   const gl = useThree((state) => state.gl);
   const wasEnabled = useRef(false);
@@ -200,6 +208,14 @@ function DollhouseCutawayController({
   }, [gl]);
 
   useFrame(({ camera }) => {
+    // The plan section: keep y <= cutY (three retains the plane's positive
+    // side; n=(0,-1,0), c=cutY ⇒ distance = cutY − y). A horizontal cut has
+    // no camera dependence, so this is a plain assignment per frame.
+    if (sectionCutY === undefined || !Number.isFinite(sectionCutY)) {
+      setInertCutawayPlane(ceilingPlane);
+    } else {
+      ceilingPlane.setComponents(0, -1, 0, sectionCutY);
+    }
     if (!enabled) {
       if (wasEnabled.current) {
         setInertCutawayPlane(plane);
@@ -229,8 +245,6 @@ interface DollhouseDotProps {
   readonly node: TwinScanNode;
   readonly isCurrent: boolean;
   readonly onDive: (id: string) => void;
-  readonly cutawayEnabled: boolean;
-  readonly cutawayPlanes: readonly Plane[] | null;
   readonly clippingPlanes: Plane[] | null;
 }
 
@@ -238,8 +252,6 @@ function DollhouseDot({
   node,
   isCurrent,
   onDive,
-  cutawayEnabled,
-  cutawayPlanes,
   clippingPlanes,
 }: DollhouseDotProps): ReactElement {
   const invalidate = useThree((state) => state.invalidate);
@@ -274,10 +286,13 @@ function DollhouseDot({
   }, [hovered, invalidate, gl]);
 
   useFrame((state, delta) => {
+    // Plane-derived visibility, unconditionally: an inert plane sits a
+    // million metres away, so at rest every dot passes and the check costs a
+    // handful of dot products. This is what hides dots behind the camera
+    // cutaway AND above the plan's storey section with one rule.
     const visible =
-      !cutawayEnabled ||
-      cutawayPlanes === null ||
-      cutawayPlanes.every(
+      clippingPlanes === null ||
+      clippingPlanes.every(
         (plane) => plane.distanceToPoint(cutawayPoint) >= DOLLHOUSE_DOT_RADIUS_M,
       );
     const group = groupRef.current;
@@ -371,6 +386,13 @@ export interface DollhouseStageProps {
     readonly insetM: number;
     readonly minimumY?: number;
   };
+  /** The plan's horizontal storey section — removes everything above cutY. */
+  readonly planSection?: {
+    readonly cutY: number;
+  };
+  /** Render only this storey's dots (the plan's active level). Undefined
+   *  renders every dot, as the dollhouse always has. */
+  readonly dotFloor?: number;
 }
 
 export function DollhouseStage({
@@ -379,6 +401,8 @@ export function DollhouseStage({
   currentId,
   onDive,
   cutaway,
+  planSection,
+  dotFloor,
 }: DollhouseStageProps): ReactElement {
   const cutawayPlane = useMemo(() => {
     const plane = new Plane();
@@ -390,10 +414,18 @@ export function DollhouseStage({
     setInertCutawayPlane(plane);
     return plane;
   }, []);
-  const cutawayConfigured = cutaway !== undefined;
+  const ceilingPlane = useMemo(() => {
+    const plane = new Plane();
+    setInertCutawayPlane(plane);
+    return plane;
+  }, []);
+  // One material-clone pass covers both treatments: the planes begin inert
+  // and only the controller ever moves them, so configuring either the
+  // camera cutaway or the plan section clones once and clips live.
+  const clippingConfigured = cutaway !== undefined || planSection !== undefined;
   const clippingPlanes = useMemo(
-    () => (cutawayConfigured ? [cutawayPlane, floorPlane] : null),
-    [cutawayConfigured, cutawayPlane, floorPlane],
+    () => (clippingConfigured ? [cutawayPlane, floorPlane, ceilingPlane] : null),
+    [clippingConfigured, cutawayPlane, floorPlane, ceilingPlane],
   );
   const cutawayWitnesses = useMemo(
     () =>
@@ -411,29 +443,31 @@ export function DollhouseStage({
       <ambientLight intensity={2.2} />
       <directionalLight position={[12, 30, 18]} intensity={0.8} />
       <DollhouseMesh meshUrl={meshUrl} cutawayPlanes={clippingPlanes} />
-      {cutaway !== undefined && (
+      {clippingConfigured && (
         <DollhouseCutawayController
           plane={cutawayPlane}
           floorPlane={floorPlane}
-          enabled={cutaway.enabled}
-          target={cutaway.target}
+          ceilingPlane={ceilingPlane}
+          enabled={cutaway?.enabled === true}
+          target={cutaway?.target ?? [0, 0, 0]}
           witnesses={cutawayWitnesses}
-          insetM={cutaway.insetM}
-          {...(cutaway.minimumY === undefined ? {} : { minimumY: cutaway.minimumY })}
+          insetM={cutaway?.insetM ?? 0}
+          {...(cutaway?.minimumY === undefined ? {} : { minimumY: cutaway.minimumY })}
+          {...(planSection === undefined ? {} : { sectionCutY: planSection.cutY })}
         />
       )}
       <group>
-        {nodes.map((node) => (
-          <DollhouseDot
-            key={node.id}
-            node={node}
-            isCurrent={node.id === currentId}
-            onDive={onDive}
-            cutawayEnabled={cutaway?.enabled === true}
-            cutawayPlanes={clippingPlanes}
-            clippingPlanes={clippingPlanes}
-          />
-        ))}
+        {nodes
+          .filter((node) => dotFloor === undefined || node.floor === dotFloor)
+          .map((node) => (
+            <DollhouseDot
+              key={node.id}
+              node={node}
+              isCurrent={node.id === currentId}
+              onDive={onDive}
+              clippingPlanes={clippingPlanes}
+            />
+          ))}
       </group>
     </group>
   );

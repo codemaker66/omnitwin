@@ -12,7 +12,6 @@ import {
 import type { TwinScanNode } from "@omnitwin/types";
 import { DOLLHOUSE_DOT_RADIUS_M } from "../DollhouseStage.js";
 import {
-  HOP_FOV_BREATH_DEG,
   SHIMMER_FADE_MS,
   TRADES_HALL_DOLLHOUSE_CUTAWAY_INSET_M,
   dollhouseCutawayInsetForVenue,
@@ -103,19 +102,9 @@ describe("shimmerPhaseAfterTier", () => {
   });
 });
 
-describe("travel fov breath", () => {
-  it("is a subtle +4 degree surge", () => {
-    expect(HOP_FOV_BREATH_DEG).toBe(4);
-  });
-
-  it("vanishes exactly at both hop endpoints (sin π·p)", () => {
-    // The breath is base + sin(π·progress)·HOP_FOV_BREATH_DEG; the settle
-    // handover to WalkControls relies on a zero contribution at p = 0 and 1.
-    expect(Math.sin(Math.PI * 0) * HOP_FOV_BREATH_DEG).toBeCloseTo(0, 10);
-    expect(Math.sin(Math.PI * 1) * HOP_FOV_BREATH_DEG).toBeCloseTo(0, 10);
-    expect(Math.sin(Math.PI * 0.5) * HOP_FOV_BREATH_DEG).toBeCloseTo(4, 10);
-  });
-});
+// The travel fov-breath suite left with the discrete hops themselves: every
+// travel path rides the continuous glide now, and the glide never touches
+// fov (Street View and Matterport breathe none while travelling either).
 
 describe("shimmer fade window", () => {
   it("outlives the 400 ms CSS fade so the element never pops off mid-fade", () => {
