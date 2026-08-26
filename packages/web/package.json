@@ -20,6 +20,7 @@
     "voice:generate": "node --experimental-strip-types --import ./scripts/convener-voice/register.mjs scripts/convener-voice/generate.mjs"
   },
   "dependencies": {
+    "3d-tiles-renderer": "0.5.2",
     "@clerk/react": "6.11.0",
     "@omnitwin/types": "workspace:*",
     "@react-spring/web": "10.0.3",

@@ -42,6 +42,9 @@
       "socket.io-parser": "4.2.7",
       "vite": "6.4.3",
       "ws@>=8.0.0 <8.21.0": "8.21.0"
+    },
+    "peerDependencyRules": {
+      "ignoreMissing": ["@babylonjs/core", "@babylonjs/loaders"]
     }
   },
   "devDependencies": {
