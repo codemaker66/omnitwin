@@ -249,6 +249,64 @@ describe("HallHandoff — mesh load", () => {
 
     cloneSpy.mockRestore();
   });
+
+  it("bumps material.needsUpdate exactly once, on the settling frame — never once per fade frame", () => {
+    // WebGLRenderer.setProgram's fast path (verified against the installed
+    // three source) only rechecks a material's compiled program when
+    // `.version` changes, and plain `transparent = ...` assignment never
+    // bumps that — only `.needsUpdate = true` does. The fade's OPENING
+    // transition needs no bump (a material's first-ever draw always forces a
+    // fresh program lookup); only the SETTLING transition (true -> false)
+    // does, and it must fire exactly once, not on every one of the fade's
+    // ~dozens of frames.
+    const needsUpdateSpy = vi.spyOn(Material.prototype, "needsUpdate", "set");
+    render(<HallHandoff />);
+    const onFrame = frameCallbacks[0];
+    expect(onFrame).toBeDefined();
+
+    for (let i = 0; i < 5; i += 1) {
+      onFrame?.(undefined, 0.05);
+    }
+    expect(needsUpdateSpy).not.toHaveBeenCalled();
+
+    for (let i = 0; i < 30; i += 1) {
+      onFrame?.(undefined, 0.25);
+    }
+    expect(needsUpdateSpy).toHaveBeenCalledTimes(1);
+    expect(needsUpdateSpy).toHaveBeenCalledWith(true);
+
+    // Already settled — the top-of-callback guard returns before the loop
+    // even runs — so a further frame adds no additional bump.
+    onFrame?.(undefined, 0.25);
+    expect(needsUpdateSpy).toHaveBeenCalledTimes(1);
+
+    needsUpdateSpy.mockRestore();
+  });
+});
+
+describe("HallHandoff — Suspense boundary (Critical fix: scoped suspension)", () => {
+  beforeEach(() => {
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
+  });
+
+  it("catches a suspending mesh in its OWN Suspense (fallback null) instead of propagating outward", () => {
+    // The real Suspense protocol: a component "suspends" by throwing a
+    // thenable during render. A never-resolving promise is enough to observe
+    // the SUSPENDED (fallback) state synchronously — this test never awaits
+    // resolution. Without HallHandoff's own <Suspense fallback={null}>, this
+    // throw would propagate to whatever ancestor boundary exists — in the
+    // real app, R3F's single Canvas-level Suspense, which hides every
+    // sibling (GoogleTilesStage included). Here, with no ancestor boundary
+    // at all, an uncaught propagation would fail this render outright.
+    useGLTFMock.mockImplementationOnce(() => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error -- React's Suspense protocol requires throwing a thenable, not an Error; this is the real mechanism, not a mistake.
+      throw new Promise<never>(() => {
+        // never resolves — the test only needs the SUSPENDED render pass.
+      });
+    });
+    const { container } = render(<HallHandoff />);
+    expect(container.firstChild).toBeNull();
+  });
 });
 
 describe("HallHandoff — fade spring tuning", () => {

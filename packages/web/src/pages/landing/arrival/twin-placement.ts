@@ -28,6 +28,21 @@ export interface TwinPlacement {
  * unmoved, until Task 8 calibrates it by eye against the rendered tiles (the
  * same nudge-tool process trades-hall-anchor.ts documents for the anchor
  * itself).
+ *
+ * TASK 8 TRIP-WIRE — read before setting a non-zero positionM[1] (vertical
+ * offset): HallHandoff.tsx runs the dollhouse-peel caps split
+ * (`applyDollhouseCaps(gltf.scene, undefined, meshRootWorldMatrix())`) against
+ * `meshRootWorldMatrix()` ALONE, never against this placement. That split is
+ * baked into the GLB's SHARED, globally-cached geometry — flagged idempotent,
+ * so whichever consumer (DollhouseStage or HallHandoff) loads it first fixes
+ * the classification for the life of the page. Its open/capped rule keys on
+ * absolute world height (dollhouse-peel.ts's `openPlateMinWorldY = 3m`); a
+ * vertical positionM offset here shifts the mesh's REAL world height without
+ * the caps split ever knowing, silently reclassifying plates against the
+ * wrong side of that 3m line. Confirm this is accounted for (pass a
+ * placement-aware matrix into the caps call, or confirm the calibrated offset
+ * is small enough not to cross the threshold) before shipping a non-zero
+ * vertical calibration.
  */
 export const TRADES_HALL_TWIN_PLACEMENT: TwinPlacement = {
   positionM: [0, 0, 0],

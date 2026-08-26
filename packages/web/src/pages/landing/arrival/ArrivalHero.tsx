@@ -28,8 +28,16 @@ import "./arrival.css";
 // So this component ALSO calls useTwinManifest independently (a second, small
 // JSON fetch is cheap; duplicating HallHandoff's own mesh-URL construction is
 // not, hence the shared tradesHallMeshUrl helper) and preloads the GLB as
-// soon as flight begins, in parallel with the tiles' final approach — by the
-// time HallHandoff mounts at arrival, the mesh is already warm.
+// early as possible — as soon as the manifest is ready, in EVERY phase except
+// fallback (loading, flight, arrived, exploded), not flight-only. Flight-only
+// warming left a cold-cache gap: reduced-motion visits go loading -> arrived
+// directly, skipping flight entirely, and HallHandoff mounts at arrived
+// regardless of whether flight ever ran — a flight-only trigger would never
+// fire for those visitors (nor for anyone who Skips before the fetch
+// finishes), so HallHandoff's own useGLTF would suspend against a cold 7 MB
+// cache right when it mounts. HallHandoffMesh has its own Suspense boundary
+// as a backstop for that case (see HallHandoff.tsx), but the real fix is
+// starting the download as early as this component can possibly know to.
 // -----------------------------------------------------------------------------
 
 export const ARRIVAL_SKIP_LABEL = "Skip the flight";
@@ -93,14 +101,15 @@ export function ArrivalHero(): ReactElement | null {
     }
   }, [apiToken]);
 
-  // Warm the dollhouse GLB during flight so arrival never pops (Task 7,
-  // Step 3). Runs at most once: the effect only re-fires when `phase` or the
-  // manifest's own state transition changes (useTwinManifest's returned
-  // object is referentially stable across renders until its internal
-  // setStatus actually fires), and preloadDollhouse itself degrades to a
-  // safe no-op if the GLB is already cached or in flight.
+  // Warm the dollhouse GLB as soon as possible so arrival never pops (Task 7,
+  // Step 3; widened post-review — see the file header comment for why
+  // flight-only warming left reduced-motion and early-Skip visitors cold).
+  // Fires in every phase except fallback: re-runs on each phase transition
+  // while the manifest stays ready (cheap — preloadDollhouse/useGLTF.preload
+  // degrades to a safe no-op if the GLB is already cached or in flight), and
+  // the manifest fetch itself starts the instant this component mounts.
   useEffect(() => {
-    if (phase !== "flight" || manifest.state !== "ready") {
+    if (phase === "fallback" || manifest.state !== "ready") {
       return;
     }
     const meshUrl = tradesHallMeshUrl(manifest.manifest);

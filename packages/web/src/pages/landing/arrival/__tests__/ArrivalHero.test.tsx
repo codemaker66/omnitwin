@@ -313,19 +313,36 @@ describe("ArrivalHero — HallHandoff mount gating (Task 7)", () => {
   });
 });
 
-describe("ArrivalHero — warms the dollhouse GLB during flight (Task 7, Step 3)", () => {
+describe("ArrivalHero — warms the dollhouse GLB as early as possible (Task 7, Step 3; widened post-review)", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
   });
 
-  it("preloads the mesh once flight begins with a ready, mesh-bearing manifest", () => {
+  // Widened from "flight only" after review: reduced-motion visits go
+  // loading -> arrived directly, never passing through flight, and a
+  // flight-only trigger left HallHandoff mounting against a cold cache in
+  // that case (and on an early Skip). The rule is now "any phase but
+  // fallback" — loading warms it before flight even starts.
+  it("preloads the mesh in every phase but fallback, with a ready, mesh-bearing manifest", () => {
+    for (const phase of ["loading", "flight", "arrived", "exploded"] as const) {
+      manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
+      useArrivalStore.setState({ phase });
+      render(<ArrivalHero />);
+      expect(tradesHallMeshUrlMock).toHaveBeenCalledWith(TWIN_FIXTURE_MANIFEST);
+      expect(preloadDollhouseMock).toHaveBeenCalledExactlyOnceWith(
+        "/twin/trades-hall/mesh/dollhouse.glb",
+      );
+      cleanup();
+      preloadDollhouseMock.mockClear();
+      tradesHallMeshUrlMock.mockClear();
+    }
+  });
+
+  it("never preloads in the fallback phase, even with a ready manifest", () => {
     manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
-    useArrivalStore.setState({ phase: "flight" });
+    useArrivalStore.setState({ phase: "fallback" });
     render(<ArrivalHero />);
-    expect(tradesHallMeshUrlMock).toHaveBeenCalledWith(TWIN_FIXTURE_MANIFEST);
-    expect(preloadDollhouseMock).toHaveBeenCalledExactlyOnceWith(
-      "/twin/trades-hall/mesh/dollhouse.glb",
-    );
+    expect(preloadDollhouseMock).not.toHaveBeenCalled();
   });
 
   it("does not preload before the manifest is ready", () => {
@@ -338,13 +355,6 @@ describe("ArrivalHero — warms the dollhouse GLB during flight (Task 7, Step 3)
   it("does not preload when the manifest errors", () => {
     manifestState = { state: "error", retry: vi.fn() };
     useArrivalStore.setState({ phase: "flight" });
-    render(<ArrivalHero />);
-    expect(preloadDollhouseMock).not.toHaveBeenCalled();
-  });
-
-  it("does not preload outside the flight phase, even with a ready manifest", () => {
-    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
-    useArrivalStore.setState({ phase: "loading" });
     render(<ArrivalHero />);
     expect(preloadDollhouseMock).not.toHaveBeenCalled();
   });

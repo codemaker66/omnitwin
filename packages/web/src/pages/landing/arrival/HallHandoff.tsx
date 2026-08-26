@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactElement } from "react";
+import { Suspense, useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
@@ -52,7 +52,29 @@ import { TRADES_HALL_TWIN_PLACEMENT, twinPlacementMatrix } from "./twin-placemen
 // material.side is never touched here: the peel system's per-triangle open/
 // capped split depends on FrontSide vs DoubleSide staying exactly as
 // applyDollhouseCaps set them. Only transparent/opacity move, and settling
-// snaps back to transparent = false (kills alpha-sort cost).
+// snaps back to transparent = false (kills alpha-sort cost) with an explicit
+// needsUpdate bump — see the useFrame comment for why that one bump matters.
+//
+// Suspense scoping: useGLTF suspends while the GLB streams in, and R3F's
+// <Canvas> wraps ALL of its children in ONE Suspense boundary. Without a
+// boundary of its own, HallHandoffMesh suspending would be caught by that
+// OUTER boundary, which hides EVERY sibling (GoogleTilesStage included) and
+// re-suspends the whole canvas blank until the GLB resolves — reachable via
+// reduced-motion (loading -> arrived skips `flight` entirely, so the old
+// flight-only preload never fired and HallHandoff mounts against a cold
+// cache) or an early Skip click. The <Suspense fallback={null}> below scopes
+// the suspension to just this mesh: tiles keep drawing, the reveal arrives
+// late instead of blanking the hero. ArrivalHero also now warms the GLB in
+// every phase except fallback (not flight-only), so a cold-cache suspend at
+// mount should be rare — this boundary is the backstop for when it isn't.
+//
+// Lights live in their OWN identity-transform group, sibling to the placement
+// group (DollhouseStage.tsx:407-413's structure) — never inside it. Putting
+// them inside would transform the light's declared position by
+// HANDOFF_PLACEMENT_MATRIX (today just the E57 basis rotation), swinging the
+// key light onto a different facade than the one it lights at /twin/trades-
+// hall, and making Task 8's placement calibration silently re-aim the light
+// as a side effect of moving the mesh.
 // -----------------------------------------------------------------------------
 
 /** The twin asset slug — NEVER "trades-hall-glasgow" (a different, 404ing namespace). */
@@ -148,6 +170,20 @@ function HallHandoffMesh({ meshUrl }: HallHandoffMeshProps): ReactElement {
   const gltf = useGLTF(meshUrl, true, true, configureHandoffLoader);
   const shellScene = useMemo(() => {
     pruneDollhouseShell(gltf.scene);
+    // TASK 8 TRIP-WIRE: this classifies every triangle's open/capped split
+    // against meshRootWorldMatrix() ALONE — the twin basis, with no placement
+    // offset. It runs once, on this GLB's SHARED geometry, flagged idempotent;
+    // whichever consumer (DollhouseStage or HallHandoff) loads it first bakes
+    // that classification in for every later consumer, permanently, for the
+    // life of the page. A non-zero TRADES_HALL_TWIN_PLACEMENT.positionM[1]
+    // (a vertical placement offset) is NEVER reflected here — the openPlateMinWorldY
+    // = 3m threshold (dollhouse-peel.ts) would silently classify against the
+    // WRONG absolute world height once the mesh is actually placed higher or
+    // lower than its native basis. Task 8 must account for this explicitly
+    // (e.g. pass the full placement-aware matrix here, or confirm the
+    // calibrated offset is small enough not to matter) before shipping a
+    // vertical calibration — see the matching note beside
+    // TRADES_HALL_TWIN_PLACEMENT in twin-placement.ts.
     applyDollhouseCaps(gltf.scene, undefined, meshRootWorldMatrix());
     return gltf.scene;
   }, [gltf.scene]);
@@ -172,6 +208,23 @@ function HallHandoffMesh({ meshUrl }: HallHandoffMeshProps): ReactElement {
     for (const material of handoff.materials) {
       material.transparent = !settled;
       material.opacity = settled ? 1 : spring.value;
+      if (settled) {
+        // Explicit, deliberate needsUpdate — verified against the installed
+        // three source (WebGLRenderer.js's setProgram): `transparent` feeds
+        // the `opaque` program-cache-key parameter (opaque_fragment.glsl
+        // hard-pins alpha to 1.0 under #ifdef OPAQUE), but setProgram's fast
+        // path only rechecks a material's program when `material.version`
+        // changes, and plain property assignment never bumps that — only
+        // `.needsUpdate = true` does. Fires exactly ONCE here (this branch
+        // only runs the single frame stepSpring newly reaches settled; every
+        // later frame returns at the top-of-function settled guard above),
+        // not once per fade frame, so it costs one cache-key recompute, not
+        // sixty. The FADE'S OWN opening transition (false -> true, above)
+        // needs no such bump: a material's first-ever draw always forces a
+        // fresh program lookup regardless of version bookkeeping, because
+        // materialProperties.__version starts undefined.
+        material.needsUpdate = true;
+      }
     }
     if (!settled) {
       invalidate();
@@ -179,14 +232,18 @@ function HallHandoffMesh({ meshUrl }: HallHandoffMeshProps): ReactElement {
   });
 
   return (
-    <group matrixAutoUpdate={false} matrix={HANDOFF_PLACEMENT_MATRIX}>
+    <group>
       {/* Matterport-style bake: the capture's lighting lives in the texture,
           the ambient wash simply exposes it (DollhouseStage.tsx's own rule
           for the same GLB — without it a PBR material this dim renders
-          essentially black). */}
+          essentially black). Deliberately OUTSIDE the placement group below:
+          see the file header comment on why the lights must stay in the
+          identity/anchor-local frame, not rotate with the twin basis. */}
       <ambientLight intensity={2.2} />
       <directionalLight position={[12, 30, 18]} intensity={0.8} />
-      <primitive object={handoff.scene} />
+      <group matrixAutoUpdate={false} matrix={HANDOFF_PLACEMENT_MATRIX}>
+        <primitive object={handoff.scene} />
+      </group>
     </group>
   );
 }
@@ -213,5 +270,12 @@ export function HallHandoff(): ReactElement | null {
   if (meshUrl === null) {
     return null;
   }
-  return <HallHandoffMesh meshUrl={meshUrl} />;
+  // Scoped suspension (see file header): catches useGLTF's suspend HERE,
+  // never letting it reach the Canvas-level Suspense that would otherwise
+  // hide every sibling (GoogleTilesStage included) while the GLB streams in.
+  return (
+    <Suspense fallback={null}>
+      <HallHandoffMesh meshUrl={meshUrl} />
+    </Suspense>
+  );
 }
