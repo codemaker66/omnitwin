@@ -236,6 +236,13 @@ export interface PanoStageProps {
   readonly assetBase: string;
   /** 0..1 crossfade opacity — the hop spring drives this. */
   readonly opacity: number;
+  /** Per-frame crossfade channel for the continuous glide: when provided, a
+   *  useFrame writes THIS value over the uniform every painted frame, and the
+   *  `opacity` prop is only the mount value. The glide advances at rAF cadence
+   *  and publishing that through React state re-rendered the whole viewer per
+   *  frame — the measured cost of the ride (55 long tasks against the look
+   *  drag's one) was React, not rendering. */
+  readonly opacityRef?: { readonly current: number };
   /** Draw order among concurrent stages — the departing pano (0) renders under
    *  the arriving pano (1) so the fade layers instead of flashing black. */
   readonly renderOrder?: number;
@@ -266,6 +273,7 @@ function CubePanoStage({
   quaternion,
   assetBase,
   opacity,
+  opacityRef,
   renderOrder = 0,
   onTier,
 }: PanoStageProps): ReactElement | null {
@@ -298,6 +306,14 @@ function CubePanoStage({
     },
     [material],
   );
+
+  // The glide's per-frame crossfade — a plain uniform write on frames the
+  // camera dolly is already pumping, so no invalidate of its own.
+  useFrame(() => {
+    if (opacityRef !== undefined) {
+      (material.uniforms as CubePanoUniforms).uOpacity.value = opacityRef.current;
+    }
+  });
 
   // Both the texture swap (256 → 1024 sharpen) and the crossfade opacity are
   // plain uniform writes — no material rebuild — followed by an invalidate so
@@ -336,6 +352,7 @@ function EquirectPanoStage({
   position,
   assetBase,
   opacity,
+  opacityRef,
   renderOrder = 0,
   hopping = false,
   exposure,
@@ -473,6 +490,14 @@ function EquirectPanoStage({
     (material.uniforms as EquirectPanoUniforms).uOpacity.value = opacity;
     invalidate();
   }, [opacity, material, invalidate]);
+
+  // The glide's per-frame crossfade — a plain uniform write on frames the
+  // camera dolly is already pumping, so no invalidate of its own.
+  useFrame(() => {
+    if (opacityRef !== undefined) {
+      (material.uniforms as EquirectPanoUniforms).uOpacity.value = opacityRef.current;
+    }
+  });
 
   // Continuous light: premultiplied gain*wb as one vec3 (identity when the
   // manifest carries no correction — old bundles keep rendering unchanged).

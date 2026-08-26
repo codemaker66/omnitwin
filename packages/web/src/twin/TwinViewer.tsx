@@ -91,7 +91,7 @@ import { useDive, type DiveDirection } from "./useDive.js";
 import { useTwinMode, type TwinMode } from "./useTwinMode.js";
 import { warmEquirectBase } from "./useEquirectTexture.js";
 import { useTwinPrefetch } from "./useTwinPrefetch.js";
-import { useTwinWalk } from "./useTwinWalk.js";
+import { useTwinGlide } from "./useTwinGlide.js";
 import { lookStateFromCamera, WalkControls } from "./WalkControls.js";
 
 // -----------------------------------------------------------------------------
@@ -165,7 +165,16 @@ interface DollyState {
   travelYaw: number | null;
   /** Changes per hop so the dolly captures a fresh start orientation. */
   hopKey: string;
+  /** True while the continuous glide owns movement: yaw rides a persistent
+   *  spring toward the route tangent (corners round in the LOOK, since the
+   *  position must stay on the scan-centre polyline), fov never surges, and
+   *  the segment roll-over carries no per-hop re-capture. */
+  glide: boolean;
 }
+
+/** Glide heading spring (ζ ≈ 1.02) — the camera operator leading the turn by
+ *  about half a second, which is what rounds a square corner into a pan. */
+const GLIDE_YAW_SPRING = { stiffness: 24, damping: 10 } as const;
 
 /** Shortest signed angular distance a→b (radians). */
 function shortestYawDelta(a: number, b: number): number {
@@ -221,8 +230,12 @@ const HOP_CHAIN_WINDOW_MS = 250;
  */
 function CameraDolly({
   dolly,
+  progressRef,
 }: {
   readonly dolly: MutableRefObject<DollyState>;
+  /** The walker's live segment fraction — per-frame position during a glide
+   *  comes from here, not from React-rendered state. */
+  readonly progressRef: { readonly current: number };
 }): null {
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
@@ -237,15 +250,46 @@ function CameraDolly({
   // that begins within HOP_CHAIN_WINDOW_MS of it is a hold-to-walk chain, so its
   // fov surge is suppressed. Seeded −∞ so the first hop of a session surges.
   const lastHopActiveMs = useRef(Number.NEGATIVE_INFINITY);
+  // The glide's persistent heading: one spring living across every segment of
+  // a ride, adopted from the camera on entry, stepped toward the live route
+  // tangent each frame. Pitch is captured once and held — the visitor's gaze
+  // height is theirs; only the heading is the camera operator's.
+  const glideLook = useRef<{ yaw: SpringState; pitch: number } | null>(null);
 
-  useFrame(() => {
-    const { from, to, progress, travelYaw, hopKey } = dolly.current;
-    const x = from[0] + (to[0] - from[0]) * progress;
-    const y = from[1] + (to[1] - from[1]) * progress;
-    const z = from[2] + (to[2] - from[2]) * progress;
+  useFrame((_, delta) => {
+    const { from, to, progress, travelYaw, hopKey, glide } = dolly.current;
+    const p = glide ? progressRef.current : progress;
+    const x = from[0] + (to[0] - from[0]) * p;
+    const y = from[1] + (to[1] - from[1]) * p;
+    const z = from[2] + (to[2] - from[2]) * p;
     if (camera.position.x !== x || camera.position.y !== y || camera.position.z !== z) {
       camera.position.set(x, y, z);
       invalidate();
+    }
+
+    if (glide) {
+      if (glideLook.current === null) {
+        dollyEuler.setFromQuaternion(camera.quaternion, "YXZ");
+        glideLook.current = {
+          yaw: { value: dollyEuler.y, velocity: 0 },
+          pitch: dollyEuler.x,
+        };
+      }
+      const look = glideLook.current;
+      if (travelYaw !== null) {
+        // Spring the HEADING, not the shortest-delta result: unwrap the
+        // target next to the spring's current value so a tangent crossing
+        // the ±π seam never spins the long way round.
+        const target = look.yaw.value + shortestYawDelta(look.yaw.value, travelYaw);
+        stepSpring(look.yaw, target, Math.min(delta, 1 / 20), GLIDE_YAW_SPRING);
+      }
+      camera.quaternion.setFromEuler(dollyEuler.set(look.pitch, look.yaw.value, 0, "YXZ"));
+      invalidate();
+      return;
+    }
+    if (glideLook.current !== null) {
+      // Ride over: drop the heading spring; WalkControls re-adopts the pose.
+      glideLook.current = null;
     }
 
     if (travelYaw !== null && progress > 0 && progress < 1) {
@@ -1092,7 +1136,7 @@ export interface TwinViewerProps {
 }
 
 export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactElement | null {
-  const walk = useTwinWalk(manifest);
+  const walk = useTwinGlide(manifest);
   const hasMesh = manifest.mesh !== undefined;
   const { mode, setMode } = useTwinMode(hasMesh);
   // The element the fullscreen button takes fullscreen — the viewer root, so
@@ -1159,9 +1203,9 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   );
   const firstLightOverlayRef = useRef<HTMLDivElement | null>(null);
 
-  // The Usher's pending route — state here (its consumer effect sits below,
-  // after the hop flag it needs); documentation lives at that effect.
-  const [usherQueue, setUsherQueue] = useState<readonly string[]>([]);
+  // The Usher rides the glide directly now (walk.glideAlong) — the old
+  // queue-of-hops state and its consumer effect are gone with the cadence
+  // they existed to paper over.
 
   const onPanoTier = useCallback((nodeId: string, tier: "preview" | "base") => {
     setStageLive(true);
@@ -1226,10 +1270,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       // spin forever (finding [21]); retire it the same way walking off the
       // initial node does — advance loading → fading and let it play out.
       setShimmerPhase((phase) => (phase === "loading" ? "fading" : phase));
-      // Leaving the walk abandons any Usher ride mid-route.
-      setUsherQueue([]);
+      // Leaving the walk lands any ride on its release-rule node NOW — the
+      // mesh modes must not inherit a walker still advancing off stage.
+      walk.settleInstantly();
     }
-  }, [mode]);
+  }, [mode, walk]);
 
   // Walking off the initial node ends the opening even without a base tier
   // (teleports and reduced-motion swaps land with no travelling report).
@@ -1368,24 +1413,6 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     };
   }, [hopping]);
 
-  // — The Usher (SS++ phase 1): a minimap pick GLIDES the real corridor route
-  // (shortest path over the nav graph) instead of teleport-cutting, building
-  // the visitor's mental model of how the building connects. The queue feeds
-  // the existing hop machine one neighbour at a time, so all the chained-hop
-  // craft (fov-surge suppression, base-tier deferral, seamless crossfade)
-  // applies automatically. A second pick mid-glide short-circuits straight to
-  // that target; any manual travel clears the ride.
-  useEffect(() => {
-    if (hopping || usherQueue.length === 0) {
-      return;
-    }
-    const [next, ...rest] = usherQueue;
-    if (next !== undefined && next !== walk.currentId) {
-      walk.hopTo(next);
-    }
-    setUsherQueue(rest);
-  }, [hopping, usherQueue, walk]);
-
   const diveNode = dive.target === null ? undefined : nodesById.get(dive.target);
 
   // Refresh the flight ref after every commit; DiveCamera reads it per frame.
@@ -1424,6 +1451,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     progress: 0,
     travelYaw: null,
     hopKey: "",
+    glide: false,
   });
   useEffect(() => {
     if (currentNode === undefined) {
@@ -1436,12 +1464,21 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       dollyRef.current.progress = 0;
       dollyRef.current.travelYaw = null;
       dollyRef.current.hopKey = "";
+      dollyRef.current.glide = false;
     } else {
       const to = e57PointToThree(targetNode.pose.t);
       dollyRef.current.to = to;
       dollyRef.current.progress = walk.progress;
-      // three YXZ yaw facing the horizontal travel direction (-Z forward).
-      dollyRef.current.travelYaw = Math.atan2(-(to[0] - from[0]), -(to[2] - from[2]));
+      dollyRef.current.glide = true;
+      // Heading target: the walker's live route tangent (already the active
+      // segment's direction, which the yaw spring rounds through corners).
+      // A stair's vertical segment reports no horizontal tangent — hold the
+      // previous heading rather than aim at noise.
+      const tangent = walk.tangentRef.current;
+      if (tangent !== null && (tangent[0] !== 0 || tangent[1] !== 0)) {
+        // three YXZ yaw facing the horizontal travel direction (-Z forward).
+        dollyRef.current.travelYaw = Math.atan2(-tangent[0], -tangent[1]);
+      }
       dollyRef.current.hopKey = `${currentNode.id}->${targetNode.id}`;
     }
   });
@@ -1453,12 +1490,15 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const shareUrl = useCallback((): string => {
     const url = new URL(window.location.href);
     if (mode === "walk") {
+      // restId: a share minted mid-glide names the last STILL frame — the
+      // camera pose being copied belongs to a standing view, not to a node
+      // the ride happens to be sweeping past.
       const live = liveLookRef.current;
-      url.searchParams.set("node", walk.currentId);
+      url.searchParams.set("node", walk.restId);
       url.searchParams.set(
         "look",
         encodeTwinLook({
-          nodeId: walk.currentId,
+          nodeId: walk.restId,
           yawDeg: (live.yawRad * 180) / Math.PI,
           pitchDeg: (live.pitchRad * 180) / Math.PI,
           fovDeg: live.fovDeg,
@@ -1466,7 +1506,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       );
     }
     return url.toString();
-  }, [mode, walk.currentId]);
+  }, [mode, walk.restId]);
 
   // The Usher, as one function rather than two copies. The minimap and the
   // quick-action rail must behave identically — a room reached by naming it
@@ -1483,8 +1523,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       // A second pick mid-ride short-circuits to that target rather than
       // queueing behind the journey the visitor has just changed their mind
       // about.
-      if (usherQueue.length > 0) {
-        setUsherQueue([]);
+      if (walk.gliding) {
         walk.hopTo(id, { teleport: true });
         return;
       }
@@ -1495,9 +1534,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         walk.hopTo(id, { teleport: true });
         return;
       }
-      setUsherQueue(route);
+      // One continuous ride over the whole corridor route — the Usher finally
+      // glides the way its name always promised.
+      walk.glideAlong(route);
     },
-    [manifest.edges, usherQueue.length, walk],
+    [manifest.edges, walk],
   );
 
   // — the measure tool.
@@ -1572,11 +1613,21 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   // but if the arriving node's texture is still streaming over the network the
   // opaque departing pano keeps filling the view, so a hop can never flash black
   // between nodes the way a symmetric 1−progress / progress fade did.
-  const stages: { node: TwinScanNode; opacity: number; renderOrder: number }[] = [
-    { node: currentNode, opacity: 1, renderOrder: 0 },
-  ];
+  const stages: {
+    node: TwinScanNode;
+    opacity: number;
+    renderOrder: number;
+    /** The arriving stage rides the walker's live fraction; the departing
+     *  stage stays a constant 1 underneath. */
+    opacityRef?: { readonly current: number };
+  }[] = [{ node: currentNode, opacity: 1, renderOrder: 0 }];
   if (targetNode !== undefined) {
-    stages.push({ node: targetNode, opacity: walk.progress, renderOrder: 1 });
+    stages.push({
+      node: targetNode,
+      opacity: walk.progress,
+      renderOrder: 1,
+      opacityRef: walk.progressRef,
+    });
   }
 
   return (
@@ -1591,10 +1642,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       aria-label={twinViewerLabel(manifest.name)}
       aria-roledescription={TWIN_VIEWER_ROLE}
     >
-      {/* Polite arrival announcement — where the walk just moved to (finding
-          [10]). Keyed span so identical text still re-announces on revisit. */}
+      {/* Polite arrival announcement — where the walk just STOPPED (finding
+          [10]). restId, deliberately: a glide sweeps nodes at walking pace and
+          announcing each would read the room out loud like a train timetable. */}
       <p className="vv-sr-only" aria-live="polite" data-testid="twin-live-region">
-        {twinViewpointAnnouncement(walk.currentId, manifest.nodes.length)}
+        {twinViewpointAnnouncement(walk.restId, manifest.nodes.length)}
       </p>
       <Canvas
         frameloop="demand"
@@ -1608,7 +1660,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 adopts the camera as its spring rest. */}
             <InitialLookRig look={initialLookRef.current} />
             <WalkControls enabled={!hopping && firstLight !== "running"} />
-            <CameraDolly dolly={dollyRef} />
+            <CameraDolly dolly={dollyRef} progressRef={walk.progressRef} />
             <FirstLightRig
               active={firstLight === "running"}
               overlayRef={firstLightOverlayRef}
@@ -1621,13 +1673,13 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
               hopping={hopping}
               currentNode={currentNode}
               neighbors={walk.neighbors}
+              neighborsOf={walk.neighborsOf}
               nodesById={nodesById}
-              onTravel={(id) => {
-                setUsherQueue([]); // manual travel always ends an Usher ride
-                walk.hopTo(id);
-              }}
+              onTravel={walk.hopTo}
+              onHoldChange={walk.setHeld}
+              registerNextPicker={walk.registerNextPicker}
             />
-            {stages.map(({ node, opacity, renderOrder }) => (
+            {stages.map(({ node, opacity, renderOrder, opacityRef }) => (
               <PanoStage
                 key={node.id}
                 nodeId={node.id}
@@ -1635,6 +1687,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 quaternion={e57QuatToThree(node.pose.q)}
                 assetBase={assetBase}
                 opacity={opacity}
+                {...(opacityRef === undefined ? {} : { opacityRef })}
                 renderOrder={renderOrder}
                 hopping={inMotion}
                 exposure={node.exposure}
@@ -1663,6 +1716,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                   currentNode={currentNode}
                   targetNode={targetNode}
                   progress={walk.progress}
+                  progressRef={walk.progressRef}
                 />
               </Suspense>
             )}
@@ -1683,10 +1737,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
               <NavMarkers
                 neighbors={walk.neighbors}
                 nodesById={nodesById}
-                onHop={(id) => {
-                  setUsherQueue([]); // manual travel always ends an Usher ride
-                  walk.hopTo(id);
-                }}
+                onHop={walk.hopTo}
               />
             )}
             <YawProbe lookRef={liveLookRef} />
@@ -1851,7 +1902,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
           guest told they are in the Grand Hall while looking at the Saloon has
           been lied to about the most basic claim the product makes. */}
       {mode === "walk" && (
-        <RoomDossier currentId={walk.currentId} venueName={manifest.name} />
+        <RoomDossier currentId={walk.restId} venueName={manifest.name} />
       )}
 
       {/* Offered next moves — now ONE, and the subtraction is deliberate. The
@@ -1887,7 +1938,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
       {mode === "walk" && (
         <RoomSelector
           nodes={manifest.nodes}
-          currentId={walk.currentId}
+          currentId={walk.restId}
           // The Usher, not a teleport: a room reached by naming it glides the
           // real corridor route, exactly like a room reached by pointing at it.
           onWalkTo={usherTo}

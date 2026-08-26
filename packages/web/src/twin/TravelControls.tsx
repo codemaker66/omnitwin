@@ -5,6 +5,7 @@ import type { TwinScanNode } from "@omnitwin/types";
 import { e57PointToThree } from "./twin-basis.js";
 import { prefersReducedMotion } from "./reduced-motion.js";
 import { pickTravelTarget, travelKeyToDirection, WASD_CONE_COS } from "./travel.js";
+import type { GlideNextPicker } from "./useTwinGlide.js";
 
 // -----------------------------------------------------------------------------
 // TravelControls — Street View + game-walk movement for the walk.
@@ -43,8 +44,17 @@ export interface TravelControlsProps {
   readonly hopping: boolean;
   readonly currentNode: TwinScanNode;
   readonly neighbors: readonly string[];
+  /** Nav-graph partners of ANY node — the extension picker steps off the
+   *  route's tail, which mid-glide is not the committed current node. */
+  readonly neighborsOf: (id: string) => readonly string[];
   readonly nodesById: ReadonlyMap<string, TwinScanNode>;
   readonly onTravel: (id: string) => void;
+  /** Hold-to-walk intent: true while any travel key is down. The glide keeps
+   *  extending while held and eases out onto a node on release. */
+  readonly onHoldChange: (held: boolean) => void;
+  /** Hands the glide the camera-relative travel cone so a held ride can keep
+   *  growing its route; returns the unregister. */
+  readonly registerNextPicker: (picker: GlideNextPicker) => () => void;
 }
 
 const scratchDir = new Vector3();
@@ -66,8 +76,11 @@ export function TravelControls({
   hopping,
   currentNode,
   neighbors,
+  neighborsOf,
   nodesById,
   onTravel,
+  onHoldChange,
+  registerNextPicker,
 }: TravelControlsProps): React.JSX.Element | null {
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
@@ -223,7 +236,10 @@ export function TravelControls({
   }, [enabled, gl, camera, invalidate, currentNode, neighbors, nodesById, onTravel]);
 
   // Held-key tracking + first step. Stable (keyed on `enabled` only) so a
-  // keyup is never dropped across the pointer effect's per-node churn.
+  // keyup is never dropped across the pointer effect's per-node churn. The
+  // hold intent reaches the glide the moment the FIRST key lands and clears
+  // when the LAST lifts — that edge is what turns "extend the ride" into
+  // "ease out onto a node".
   useEffect(() => {
     if (!enabled) {
       return;
@@ -234,18 +250,29 @@ export function TravelControls({
       }
       event.preventDefault();
       if (!heldKeysRef.current.includes(event.key)) {
+        if (heldKeysRef.current.length === 0) {
+          onHoldChange(true);
+        }
         heldKeysRef.current.push(event.key);
       }
       // Fire only on the true first press; OS auto-repeat is ignored — the
-      // continue-on-settle effect drives every subsequent glide.
+      // glide's own extension (and the continue-on-stop effect) drive every
+      // subsequent metre.
       if (!event.repeat) {
         stepRef.current(event.key);
       }
     };
     const onKeyUp = (event: KeyboardEvent): void => {
+      const before = heldKeysRef.current.length;
       heldKeysRef.current = heldKeysRef.current.filter((k) => k !== event.key);
+      if (before > 0 && heldKeysRef.current.length === 0) {
+        onHoldChange(false);
+      }
     };
     const clearHeld = (): void => {
+      if (heldKeysRef.current.length > 0) {
+        onHoldChange(false);
+      }
       heldKeysRef.current = [];
     };
     window.addEventListener("keydown", onKeyDown);
@@ -256,9 +283,48 @@ export function TravelControls({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", clearHeld);
-      heldKeysRef.current = [];
+      clearHeld();
     };
-  }, [enabled]);
+  }, [enabled, onHoldChange]);
+
+  // The extension picker: while a ride is held, the glide asks — from the
+  // route's TAIL, not the committed node — for the next scan in the held
+  // key's camera-relative direction. Registered whenever travel is enabled;
+  // the glide only consults it while held, so idle registration is inert.
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    const picker: GlideNextPicker = (fromId, prevId) => {
+      const key = heldKeysRef.current[heldKeysRef.current.length - 1];
+      if (key === undefined) {
+        return null;
+      }
+      const move = travelKeyToDirection(key);
+      const from = nodesById.get(fromId);
+      if (move === null || from === undefined) {
+        return null;
+      }
+      camera.getWorldDirection(scratchDir);
+      const fx = scratchDir.x;
+      const fz = scratchDir.z;
+      const flat = Math.hypot(fx, fz);
+      if (flat < 1e-6) {
+        return null;
+      }
+      const dirX = (fx / flat) * move.forward + (-fz / flat) * -move.right;
+      const dirZ = (fz / flat) * move.forward + (fx / flat) * -move.right;
+      return pickTravelTarget(
+        e57PointToThree(from.pose.t),
+        [dirX, 0, dirZ],
+        neighborsOf(fromId),
+        nodesById,
+        WASD_CONE_COS,
+        prevId,
+      );
+    };
+    return registerNextPicker(picker);
+  }, [enabled, camera, nodesById, neighborsOf, registerNextPicker]);
 
   // Continue-on-settle: when the walk goes idle with a key still held, begin
   // the next glide in the freshest facing direction. Runs on arrival (current

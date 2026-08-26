@@ -1,5 +1,5 @@
 import { useEffect, useMemo, type ReactElement } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import {
   BatchedMesh,
@@ -302,6 +302,12 @@ export interface ParallaxStageProps {
   readonly targetNode: TwinScanNode | undefined;
   /** 0→1 hop progress — the stage is visible only strictly between the two. */
   readonly progress: number;
+  /** Per-frame progress channel for the continuous glide: when provided, a
+   *  useFrame writes it over uProgress each painted frame and the stage stays
+   *  visible for the whole ride (there is no per-hop settle to hide behind).
+   *  Same reasoning as PanoStage's opacityRef — the per-frame value must not
+   *  travel through React state. */
+  readonly progressRef?: { readonly current: number };
 }
 
 export function ParallaxStage({
@@ -310,6 +316,7 @@ export function ParallaxStage({
   currentNode,
   targetNode,
   progress,
+  progressRef,
 }: ParallaxStageProps): ReactElement {
   const gltf = useGLTF(meshUrl);
 
@@ -379,9 +386,27 @@ export function ParallaxStage({
   // Until the target texture lands, hold on A (A projected alone still gives
   // true parallax against the dollying camera — no double image, no black).
   const bReady = targetNode !== undefined && uniforms.uMapB.value !== null;
-  uniforms.uProgress.value = bReady ? progress : 0;
+  uniforms.uProgress.value = bReady ? (progressRef?.current ?? progress) : 0;
 
-  const hopping = targetNode !== undefined && progress > 0 && progress < 1;
+  // The glide's per-frame progress — written on frames the camera dolly is
+  // already pumping. The bReady gate re-checks uMapB live: the target's
+  // texture can land mid-ride, between React renders.
+  useFrame(() => {
+    if (progressRef !== undefined) {
+      uniforms.uProgress.value =
+        targetNode !== undefined && uniforms.uMapB.value !== null
+          ? progressRef.current
+          : 0;
+    }
+  });
+
+  // Ref mode = a glide: the stage stays on for the whole ride (segment
+  // fractions touch 0 exactly at each node crossing, and blinking the mesh
+  // off for those single frames would strobe). Prop mode keeps the strict
+  // per-hop rule.
+  const hopping =
+    targetNode !== undefined &&
+    (progressRef !== undefined || (progress > 0 && progress < 1));
 
   return (
     <group quaternion={E57_TO_THREE_QUAT} position={MESH_OFFSET_M} visible={hopping}>
