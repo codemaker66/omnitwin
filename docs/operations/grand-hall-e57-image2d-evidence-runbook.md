@@ -69,10 +69,11 @@ The command never reads `F:\downloads (some very important)\TH Panoramic`.
 No `sweep_*.jpg` filename, digit token, GPano field, visual resemblance, or
 apparent one-based/zero-based ordering becomes E57 byte lineage.
 
-The external panorama-to-E57 mapping remains unresolved future T-550 work. A
-later authority-none crosswalk must use separately specified deterministic
-geometric registration and human review; it must not infer correspondence from
-the sequence alone.
+The external panorama-to-E57 mapping remains unresolved. T-560 owns a separate
+authority-none content-matching crosswalk whose outputs remain human-pending;
+it must not infer correspondence from sequence, filenames, GPano metadata, or
+stored image poses, and it cannot establish geometric registration or room
+membership.
 
 Current visual-scope observations remain separate from E57 identity:
 
@@ -260,7 +261,8 @@ make the native authority-none evidence pack reproducible and byte-bound. The
 2.93 GB payload remains local and was not pushed, uploaded, deployed,
 registered, or admitted to runtime.
 
-The external panorama crosswalk remains future T-550 work. T-554 remains
-blocked on authorized human room/scope decisions and exact original-grid masks.
+The external panorama crosswalk is separate T-560 work and remains
+authority-none and human-pending. T-554 remains blocked on authorized human
+room/scope decisions and exact original-grid masks.
 T-555 through T-558 retain their existing reconstruction, registration,
 candidate, and admission gates. Production trust remains `null`.

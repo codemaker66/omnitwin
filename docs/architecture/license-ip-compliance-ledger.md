@@ -77,6 +77,25 @@ Recommended additional fields:
 
 `needs_isolation` means the tool may be usable only behind a process boundary, offline workflow, separate service, dynamic-linking model, or other architecture reviewed for license obligations.
 
+## T-560 scoped offline evidence dependencies — 2026-08-26
+
+Approval in this section is limited to the local, offline, authority-none T-560
+candidate-crosswalk worker. It does not approve browser/runtime embedding,
+redistribution, public evidence, customer-facing output, production use, or a
+different artifact family. The exact archive, wheels, installed trees, licence
+files, notices, and native runtime files are enforced by
+`requirements-panorama-image2d-crosswalk.lock.json`.
+
+| Dependency/tool | Version/source | Licence evidence | Exact distribution identity | Scoped status |
+|---|---|---|---|---|
+| CPython standalone build | 3.12.12, python-build-standalone release `20260211` | Bound `LICENSE.txt`; SHA-256 `886a0ead2d89030ee62dbff52b04e47ab91998341295bb9c56fb952b4e081c7a` | Archive SHA-256 `93bf8e8c05ede0077b197a29c99ebdaf253497f27190097494265150b4e70ba8`; executable SHA-256 `711df14e4ef9f0890c5c84330faba821839f3f6757dbe27cbf69ac3de6852446` | `approved` only for the isolated local T-560 worker |
+| NumPy | 1.26.4, official PyPI wheel | BSD-3-Clause plus bundled third-party notices; licence/notice SHA-256 `e261222a74adff28f88160dac1c5cb302d93b67e9ca989eb83bf311e11a9970a` | Wheel SHA-256 `08beddf13648eb95f8d867350f6a018a4be2e5ad54c8d8caed89ebca558b2818`; installed-tree SHA-256 `d8320b77b843433708c3452ac7493a02502f7a047925560ad3fc4cf02ffbd7db` | `approved` only for local authority-none candidate generation |
+| opencv-python-headless | 4.10.0.84, official PyPI wheel | MIT and Apache-2.0 plus bundled third-party notices; licence SHA-256 `edef0fac1eb08d29d34563f724742e078da2513e196133a12c6ad9ff01e26107`; notice SHA-256 `0b33c5be17819d10ecad11360c6f2bd5a7df7c0f80a3314a81e28070d93818e2` | Wheel SHA-256 `afcf28bd1209dd58810d33defb622b325d3cbe49dcd7a43a902982c33e5fad05`; installed-tree SHA-256 `a8c682c567f1a58f03b7f7b6d21d1bd0b22889684fd3f5b881aab2212957c408` | `approved` only for local authority-none candidate generation |
+
+The worker uses no model weights, hosted API, network service, or generated
+content. Re-review is mandatory before shipping any binary, publishing an
+artifact, changing versions, or widening the exposure tier.
+
 ## Policy
 
 - Research-only tools may be used in experiments but must not be shipped, embedded, or used to support customer-facing claims without ledger review.

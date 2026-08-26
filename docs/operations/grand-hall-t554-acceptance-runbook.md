@@ -36,6 +36,8 @@ Do not run the `accept` command while any of these statements is false:
 - all eight exact interface candidates have a human disposition;
 - the reviewer has not accepted the diagnostic panorama-to-E57 sequence as
   camera geometry, pose, or correspondence;
+- the reviewer has not accepted a T-560 machine content-match candidate as
+  camera geometry, pose, room membership, or correspondence authority;
 - a qualified operator has authored a source-evidence-derived, non-convex,
   closed selection volume in MatterPak/E57 `CVF` metres;
 - a qualified reviewer has inspected and accepted that volume only as an
@@ -359,8 +361,9 @@ The command result and receipt must still report:
 
 `authority: "human_accepted"` applies only to the reviewed T-554 scope
 evidence. It does not turn the unverified panorama-to-E57 sequence hypothesis
-into camera geometry, authorize an LCC run, create a T-557 transform/output
-mask, admit a T-556 candidate, or permit staging.
+or any T-560 machine candidate into camera geometry or correspondence,
+authorize an LCC run, create a T-557 transform/output mask, admit a T-556
+candidate, or permit staging.
 
 ## If a command stops
 

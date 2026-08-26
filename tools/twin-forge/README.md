@@ -65,6 +65,23 @@ This candidate remains `matterpak_original`, unsigned, unreviewed, and outside
 Twin Forge publication. It is not the D-024 deterministic E57 room shell and
 does not satisfy a TransformArtifactV0 or T-091 gate.
 
+## T-560 panorama/Image2D candidate crosswalk
+
+The offline T-560 worker compares all 148 exact external panorama JPEGs with
+all 149 native E57 Image2D scan identities and writes authority-none,
+human-pending candidates. Follow
+[`grand-hall-panorama-image2d-crosswalk-runbook.md`](../../docs/operations/grand-hall-panorama-image2d-crosswalk-runbook.md)
+exactly.
+
+Only the pinned interpreter with `-I -S -B -X pycache_prefix=NUL` is supported.
+Generic `python`, environment activation alone, `python -B`, `python -m
+unittest`, or omission of any isolated flag is unsupported and fails closed.
+Tests run only through `tests/run_isolated_unittest.py` under the same boundary.
+
+The historical cube-basis report is an exact hash-bound witness for the
+reviewed cubeface ray convention only. It supplies no imagery, pose, geometry,
+room membership, architectural truth, or runtime authority.
+
 ## Run (Trades Hall, equirect)
 
 ```powershell
