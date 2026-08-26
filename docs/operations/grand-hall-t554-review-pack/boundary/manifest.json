@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "omnitwin.foundry.grand-hall-t554-boundary-review-pack.v1",
+  "schemaVersion": "omnitwin.foundry.grand-hall-t554-boundary-review-pack.v2",
   "subject": {
     "venueSlug": "trades-hall",
     "roomSlug": "grand-hall",
@@ -147,14 +147,14 @@
   },
   "room9Topology": {
     "faceCount": 119564,
-    "faceOrdinalsSha256": "sha256:f5d3083f00416e498077f88d9a0fe62a867197d146103ef4ecde34793de2b7d0",
+    "faceOrdinalsSha256": "sha256:bdad33cd4525d7b2edba37a8b7ee730ea0ba184b32e24e43123a0ad2bc4e4d75",
     "uniqueUndirectedEdgeCount": 180197,
     "edgeIncidenceCounts": {
       "1": 1702,
       "2": 178495
     },
     "boundaryEdgeCount": 1702,
-    "boundaryEdgesSha256": "sha256:4966ba26b58193f1601d3610542cb9a20a65deff588dd4efff2fcbb21fac05dd",
+    "boundaryEdgesSha256": "sha256:6e975b0b939d16c7ae2395130e40cc57fa333059b59281398dbaea52688ffb49",
     "boundaryVertexCount": 1675,
     "boundaryComponentCount": 301,
     "boundaryComponentKinds": {
@@ -195,8 +195,8 @@
           166507,
           166508
         ],
-        "sharedVertexIndicesSha256": "sha256:cfe00a7f08d306b1a747fadd2221a08cf8b22982591a59a12fa48c0f7420d8e1",
-        "sharedPositionsSha256": "sha256:46c6913c196c9bc23f7c0a7c727329043e65a616b804e044a8283cca4e41c845",
+        "sharedVertexIndicesSha256": "sha256:976d29bc2f481e8704f72477362150c307fb02cff99c74b7ae4acab4565ad5e0",
+        "sharedPositionsSha256": "sha256:44e04180eac940fcbbdc3d06f38fa1a8c97eecb9f402e29da90cfd70d052753d",
         "boundsMeters": {
           "min": [
             -1.33,
@@ -210,7 +210,7 @@
           ]
         },
         "room9BoundaryEdgeCount": 10,
-        "room9BoundaryEdgesSha256": "sha256:34fae35d94fbb9e03fe4c2f8a720adb1f8003c9a72f3253a046bf0237c57ebdc",
+        "room9BoundaryEdgesSha256": "sha256:7ca40408544ce7b0da1e5ad2f9be1cef7bde70295e24758b9d3d7fc8d3bbbdff",
         "disposition": null
       },
       {
@@ -230,8 +230,8 @@
           107610,
           125731
         ],
-        "sharedVertexIndicesSha256": "sha256:87456dca0b012a246a9eacdb478270d9a0bd6720cad1895cfc24962d4cd251d5",
-        "sharedPositionsSha256": "sha256:4a981f0e1067145cfae1eaa58a8b1bd978a0a3b7f8e64139d04b4959515b0343",
+        "sharedVertexIndicesSha256": "sha256:b01464499a7e07b27e7b0845a2c4707be6cf7eebcaa6dc707a663c46b182b025",
+        "sharedPositionsSha256": "sha256:dd93eb67c59d6d85abcf5d8953c5babd10c1b11283146bd427773c0814a708e7",
         "boundsMeters": {
           "min": [
             14.27,
@@ -245,7 +245,7 @@
           ]
         },
         "room9BoundaryEdgeCount": 1,
-        "room9BoundaryEdgesSha256": "sha256:01efac252a8602bf326d8952c0a621f1fb33c8e246024a8487e3f05e6e69c305",
+        "room9BoundaryEdgesSha256": "sha256:0e6e55466cac35834bc9519089290bbfe2f85c84aac967bb8db1ba7f8720fcaa",
         "disposition": null
       },
       {
@@ -278,8 +278,8 @@
           173667,
           176608
         ],
-        "sharedVertexIndicesSha256": "sha256:ac728edd912d998dfaa6dc54f0ac05efebe4f80102d4ff9757ea0dcfc93574a7",
-        "sharedPositionsSha256": "sha256:f8a4b16d41847428de7cc2b3c0cd1cb1ccd1398ddb50b2249c3e588c76b9dac4",
+        "sharedVertexIndicesSha256": "sha256:a872d4e26a0a6a5f55c259922f055bafb7ec7d81e171ba3cd83dddf1e59ded92",
+        "sharedPositionsSha256": "sha256:a1fae50cb43fa74f5ef227a39e21ef77118d29350f0af76bd2d902e63c18c2c8",
         "boundsMeters": {
           "min": [
             10.353001,
@@ -293,7 +293,7 @@
           ]
         },
         "room9BoundaryEdgeCount": 16,
-        "room9BoundaryEdgesSha256": "sha256:174d2dcee0d1696f393918873def0a45fa04835e3d7cae03da6b9c58f0fc5281",
+        "room9BoundaryEdgesSha256": "sha256:d0d3e4e1c8092a2dd03ea9d5fb5ed5779b9230c44e3a10ede81869a5fb87353e",
         "disposition": null
       },
       {
@@ -317,8 +317,8 @@
           218790,
           218791
         ],
-        "sharedVertexIndicesSha256": "sha256:0e35ffb16067beb58f778fb73425a7697819821db3c4b9df47b53e37ae410e62",
-        "sharedPositionsSha256": "sha256:12dc39d6a31765cbb09a81f168afdcfba7800b2bcb4002fcd51ce4c49904d4a8",
+        "sharedVertexIndicesSha256": "sha256:338dff979ab7ae3af6fe0a902ed92bcac0b6a26a8faf7a3deeb49f17e71e3b3c",
+        "sharedPositionsSha256": "sha256:39c69be5e3de4e62438ccdefcdcdad8a21003a206e58f216e13695d0ffd60be1",
         "boundsMeters": {
           "min": [
             -1.992,
@@ -332,7 +332,7 @@
           ]
         },
         "room9BoundaryEdgeCount": 6,
-        "room9BoundaryEdgesSha256": "sha256:e5cf6a3fdf72c54cdbd12fef8db06a06593db7bd9ddaaa3afaa72501409c233b",
+        "room9BoundaryEdgesSha256": "sha256:63717085d90efffc67db3ea0bb7ec8bbaede291c5d3e23c72fa2188b532aee71",
         "disposition": null
       },
       {
@@ -356,8 +356,8 @@
           200134,
           200135
         ],
-        "sharedVertexIndicesSha256": "sha256:28885fff2edc591a01b4e99fb4c3a7d732b5826401332d9064799315859da026",
-        "sharedPositionsSha256": "sha256:acfeffc4a076a60e2f4ac6608a0321397ddf080b8503014c5fa9a20345f3b286",
+        "sharedVertexIndicesSha256": "sha256:e8d75ce3a07e1da09b869aa8df61603cecf2ae0951d6ec2986fc3ddc40e00d5a",
+        "sharedPositionsSha256": "sha256:283e61a837bcbe4b7cdebb74eb0220cfc54d9b9ef23bdbd40b6bd4bc05eeee37",
         "boundsMeters": {
           "min": [
             6.07,
@@ -371,7 +371,7 @@
           ]
         },
         "room9BoundaryEdgeCount": 6,
-        "room9BoundaryEdgesSha256": "sha256:f0c878a404104a7e60736fe02ffdaa413ea9fc3ef4cf950dc5066ac319695ebd",
+        "room9BoundaryEdgesSha256": "sha256:4c42b4e4349501e4b2957d1a75586c5db44b5cb2804dc201b6a919498ea2b769",
         "disposition": null
       },
       {
@@ -392,8 +392,8 @@
           125081,
           125496
         ],
-        "sharedVertexIndicesSha256": "sha256:e5b0bb24dcb580ed02ca1d4164a05c7d417af91486ad293acd4bd28af627e3e0",
-        "sharedPositionsSha256": "sha256:e74ed0fea8a91c15b5e04503a963a66942f615db1a9c08274ef0f230a00fe665",
+        "sharedVertexIndicesSha256": "sha256:c74aeb2257623ce6320ebcfdf8848697da9576ff52be471ac5ecbf1e4b36c936",
+        "sharedPositionsSha256": "sha256:3d52b3338d3d7e19be564d416edefa889d554ef974ab3649e033c74d540f5445",
         "boundsMeters": {
           "min": [
             2.911,
@@ -407,7 +407,7 @@
           ]
         },
         "room9BoundaryEdgeCount": 3,
-        "room9BoundaryEdgesSha256": "sha256:7f8e20e9a7acd881777314bc8b683785e2eeb3e2efb1884a2cddc473eca4dfc6",
+        "room9BoundaryEdgesSha256": "sha256:1c418ff105f1abe7dfecbcb8e9ab6c1f91a6c26d60243a737e1466ac6b51aa6e",
         "disposition": null
       },
       {
@@ -420,7 +420,7 @@
           "groupIndex": 1,
           "subIndex": 13
         },
-        "candidateRole": "portal_plane_candidate",
+        "candidateRole": "shared_topology_unresolved",
         "reviewState": "pending",
         "sharedVertexCount": 72,
         "sharedVertexIndices": [
@@ -497,8 +497,8 @@
           234283,
           234290
         ],
-        "sharedVertexIndicesSha256": "sha256:5e7c47389a2db1a762a59a47e60e278f85a5e383e1ecab914c83baa4c70ddbdd",
-        "sharedPositionsSha256": "sha256:386dda3d34b32ce50c46318776989484e61457e063fe793e37a62c08817e17f0",
+        "sharedVertexIndicesSha256": "sha256:6398925c3ed06f15ac46b78c15c6020753ba93a2399ea1a8810e5e0f3dc7248d",
+        "sharedPositionsSha256": "sha256:ca82451a418c73f57373f682208b542090991bcd578042ca33afaf92ebc70122",
         "boundsMeters": {
           "min": [
             8.015938,
@@ -512,7 +512,7 @@
           ]
         },
         "room9BoundaryEdgeCount": 76,
-        "room9BoundaryEdgesSha256": "sha256:388040cf8af29f513174d8684c58479cf2c01f686ae4a38403e4f5fa14350e4a",
+        "room9BoundaryEdgesSha256": "sha256:155925b72a2acdb8bd3d6cd9696e562b7bb9baf27a27fac4a9400d1232807def",
         "disposition": null
       },
       {
@@ -525,7 +525,7 @@
           "groupIndex": 1,
           "subIndex": 14
         },
-        "candidateRole": "portal_plane_candidate",
+        "candidateRole": "shared_topology_unresolved",
         "reviewState": "pending",
         "sharedVertexCount": 62,
         "sharedVertexIndices": [
@@ -592,8 +592,8 @@
           233525,
           233530
         ],
-        "sharedVertexIndicesSha256": "sha256:00451c30639f3f601e6a8b6980a790a80bc236ebf9677911d94f58402abeb8e0",
-        "sharedPositionsSha256": "sha256:f536b94ebeae4b36d9291c00403acdf4747ecdf3b9c5c197f2afb31014c68811",
+        "sharedVertexIndicesSha256": "sha256:c864c649749a644f199f51c5827b73f9cdcebcc3925c899983a284e15092d31b",
+        "sharedPositionsSha256": "sha256:c1de02513e00dc321fd57b987a0ec7898de75ac576782e03ef8d3e3cd778c215",
         "boundsMeters": {
           "min": [
             -0.626,
@@ -607,15 +607,18 @@
           ]
         },
         "room9BoundaryEdgeCount": 62,
-        "room9BoundaryEdgesSha256": "sha256:799ad75617f365b8235ccb9f790f42609feeb6e023785898d4c298f51c2ec42c",
+        "room9BoundaryEdgesSha256": "sha256:0369ee6f869b7dd07eaec4f01c243bdf586ef56a766ad6a5fe37fe98529be6f3",
         "disposition": null
       }
     ]
   },
-  "portalDiagnostics": [
+  "sharedInterfacePlaneFitDiagnostics": [
     {
       "interfaceId": "matterpak-1-9-1-13",
-      "state": "review_only_not_closure",
+      "state": "review_only_shared_interface_plane_fit",
+      "selectionBasis": "two_largest_interfaces_by_exact_shared_source_vertex_count_with_at_least_three_vertices",
+      "architecturalInference": "none",
+      "portalOrDoorwayInferred": false,
       "method": {
         "name": "deterministic_total_least_squares_shared_vertex_plane_v1",
         "covariance": "population_covariance_sorted_source_vertex_indices",
@@ -683,7 +686,10 @@
     },
     {
       "interfaceId": "matterpak-1-9-1-14",
-      "state": "review_only_not_closure",
+      "state": "review_only_shared_interface_plane_fit",
+      "selectionBasis": "two_largest_interfaces_by_exact_shared_source_vertex_count_with_at_least_three_vertices",
+      "architecturalInference": "none",
+      "portalOrDoorwayInferred": false,
       "method": {
         "name": "deterministic_total_least_squares_shared_vertex_plane_v1",
         "covariance": "population_covariance_sorted_source_vertex_indices",
@@ -819,7 +825,7 @@
       "registrationState": "unreviewed_diagnostic_identity_only"
     },
     "classification": "T-551 deterministic vertical first-hit diagnostic",
-    "classificationSha256": "sha256:0a5500180a40ce2aceca5942b47e16a0963a7ebc5f6fe4a8cc8be851301630b2"
+    "classificationSha256": "sha256:20038d707650fe0f8a3bba1e69073d49d089bd804bdf0ef76952d705ec3a8345"
   },
   "sliceDiagnostics": [
     {
@@ -831,7 +837,7 @@
             "subIndex": 9
           },
           "segmentCount": 586,
-          "segmentsSha256": "sha256:18c1dc3584bce3678a9270757130d8025d6da39b2964d4dfbac2a6d2393546e3"
+          "segmentsSha256": "sha256:4e0c0e8f987cae90d2139f69e970fa51d7fe33c2eb500677cdf982b1f3e2eb49"
         },
         {
           "room": {
@@ -839,7 +845,7 @@
             "subIndex": 13
           },
           "segmentCount": 82,
-          "segmentsSha256": "sha256:b5617e97e100cdd06c977ac9acd03cfa4e2b3ffe9b0de7e70d78837be527a3ef"
+          "segmentsSha256": "sha256:1e3cd202c3f700c13e2089594f6581d53006c469cfce1264139a2e065d1a50b7"
         },
         {
           "room": {
@@ -847,7 +853,7 @@
             "subIndex": 14
           },
           "segmentCount": 33,
-          "segmentsSha256": "sha256:067a071611fa473ba2e3b14d4df93747f3adaeca6ebb74c0e2a01fbc3a15aa91"
+          "segmentsSha256": "sha256:17ef2339707876a039551373602adff05af04c0b8f326931975ada4ebb269ab6"
         }
       ]
     },
@@ -860,7 +866,7 @@
             "subIndex": 9
           },
           "segmentCount": 1446,
-          "segmentsSha256": "sha256:517a3b6ce18ca1adb005c828a3307dac69b671217b0f1428da0b54476bb8c5b3"
+          "segmentsSha256": "sha256:133861883dffa36a6945413b7f7d0aab9a009fd24825a88bf708ed40546d28e4"
         },
         {
           "room": {
@@ -868,7 +874,7 @@
             "subIndex": 13
           },
           "segmentCount": 87,
-          "segmentsSha256": "sha256:a25e7f32cd14fb09d7ebc4dfa5f126e83127c87b84e2f9cc9fab4ccdad9bd124"
+          "segmentsSha256": "sha256:fa8460ee49a04c2f05611f273a17e50cac6ef7ab4d7e212e5165146b78aacdab"
         },
         {
           "room": {
@@ -876,7 +882,7 @@
             "subIndex": 14
           },
           "segmentCount": 29,
-          "segmentsSha256": "sha256:2ba31de079d3c755e84058e1afd40437339341282df86d75a2e7cf9d255348ab"
+          "segmentsSha256": "sha256:37c0f8c267c56a9468671c544b3cc73523771f2aacb450b420a3b7eb979a396e"
         }
       ]
     },
@@ -889,7 +895,7 @@
             "subIndex": 9
           },
           "segmentCount": 2099,
-          "segmentsSha256": "sha256:4b4cb768b5ab92aafb038a5ddd255a3c65be752b74153507fd6216d5e8c5dfae"
+          "segmentsSha256": "sha256:630b060eb481c4926f440f1ca8fcf798372382a41e6a949421bfe009997ba848"
         },
         {
           "room": {
@@ -897,7 +903,7 @@
             "subIndex": 13
           },
           "segmentCount": 7,
-          "segmentsSha256": "sha256:6f699ffc5a2b7f1595ce0ab07c194af588545f9bfef3aa3149e65403ddde5f84"
+          "segmentsSha256": "sha256:91804a5039b6a0d9d1fa697a534a1527b504c1c5c248c792f0917605c9488366"
         },
         {
           "room": {
@@ -905,7 +911,7 @@
             "subIndex": 14
           },
           "segmentCount": 6,
-          "segmentsSha256": "sha256:9dd4aa527c72e6d31cc2e86c6c5a188cf8cc4ebe233b7ae34c4ebdf474a27693"
+          "segmentsSha256": "sha256:e0d5520e444dd8644e4451bc81445fbabb7b8aee92a5f3ea4f7b6529727e1884"
         }
       ]
     }
@@ -947,18 +953,18 @@
       "role": "exact_source_triangle_plane_slice"
     },
     {
-      "relativePath": "portal-room9-room13.svg",
+      "relativePath": "interface-plane-fit-room9-room13.svg",
       "mediaType": "image/svg+xml",
-      "byteLength": 13632,
-      "sha256": "sha256:92a275cedd432f0e65e54562d11641e1009268d4461e7d5a197c2923d6af15c7",
-      "role": "review_only_portal_plane_diagnostic"
+      "byteLength": 13876,
+      "sha256": "sha256:ea2aa6e04d044ff04f86d6d9b41981ea9d5a5ba18acd520a1484a8a6ec730c99",
+      "role": "review_only_shared_interface_plane_fit_diagnostic"
     },
     {
-      "relativePath": "portal-room9-room14.svg",
+      "relativePath": "interface-plane-fit-room9-room14.svg",
       "mediaType": "image/svg+xml",
-      "byteLength": 11937,
-      "sha256": "sha256:827bef8c242d3355952fb36bcfe6aa31345166a9b185f3af531d7a1c6a5c0362",
-      "role": "review_only_portal_plane_diagnostic"
+      "byteLength": 12181,
+      "sha256": "sha256:719f3d3e6bb01f80af50db00b3a982d76fc0f67e8614a54553c114529017a6e7",
+      "role": "review_only_shared_interface_plane_fit_diagnostic"
     }
   ],
   "authority": {
@@ -976,5 +982,5 @@
     "structuralAuthority": false,
     "generatedFillPermitted": false
   },
-  "manifestSha256": "sha256:6d0f6a230053ccc85275a80260c7b27cfd612ee5c7ca9964bc0ca8653b84de27"
+  "manifestSha256": "sha256:289dff7895d9e840671d503b74f576460f6e15b7ff32efae0ca12a866a875dd3"
 }

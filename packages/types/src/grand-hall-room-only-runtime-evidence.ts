@@ -85,7 +85,8 @@ const AcceptedMembershipArtifactSchema = z
     productionTrust: z.null(),
     reviewPackSha256: RuntimeSha256Schema,
     sourcePanoramaInventorySha256: RuntimeSha256Schema,
-    cameraRecordCount: z.literal(GRAND_HALL_REVIEW_PANORAMA_COUNT),
+    panoramaRecordCount: z.literal(GRAND_HALL_REVIEW_PANORAMA_COUNT),
+    geometricCameraAuthority: z.literal("none"),
   })
   .strict();
 
@@ -135,6 +136,7 @@ const AcceptedPanoramaMaskSetArtifactSchema = z
     membershipArtifactSha256: RuntimeSha256Schema,
     portalDecisionArtifactSha256: RuntimeSha256Schema,
     sourcePanoramaInventorySha256: RuntimeSha256Schema,
+    geometricCameraAuthority: z.literal("none"),
     sourceRecordCount: z.literal(GRAND_HALL_REVIEW_PANORAMA_COUNT),
     maskCount: z.number().int().positive(),
     wholeFrameExclusionCount: z.number().int().nonnegative(),

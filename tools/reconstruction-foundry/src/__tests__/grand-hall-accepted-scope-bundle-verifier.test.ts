@@ -34,6 +34,7 @@ import {
   GrandHallOutputInventoryMaskV1Schema,
   GrandHallPanoramaMaskSetV1MaterialSchema,
   GrandHallPanoramaMaskSetV1Schema,
+  GrandHallPanoramaE57SequenceHypothesisSchema,
   GrandHallPanoramaSourceJpgIdentitySchema,
   GrandHallPortalDecisionsV1MaterialSchema,
   GrandHallPortalDecisionsV1Schema,
@@ -172,15 +173,28 @@ function createAcceptedArtifacts(input: {
   const matterPakE57ReceiptSha256 = syntheticDigest(903);
   const xgridsOutputInventorySha256 = syntheticDigest(904);
   const pendingMembershipV1Sha256 = syntheticDigest(905);
-  const sources = Array.from({ length: 50 }, (_, scanIndex) =>
+  const sources = Array.from({ length: 50 }, (_, index) =>
     GrandHallPanoramaSourceJpgIdentitySchema.parse({
-      scanIndex,
-      sweepNumber: scanIndex + 1,
-      fileName: `sweep-${String(scanIndex + 1).padStart(3, "0")}.jpg`,
+      sweepNumber: index + 1,
+      fileName: `sweep-${String(index + 1).padStart(3, "0")}.jpg`,
       sha256: input.sourceJpegSha256,
       byteLength: input.sourceJpegByteLength,
       widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
       heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
+    }),
+  );
+  const sequenceHypotheses = sources.map((source, index) =>
+    GrandHallPanoramaE57SequenceHypothesisSchema.parse({
+      sourceSweepNumber: source.sweepNumber,
+      sourceJpgFileName: source.fileName,
+      sourceJpgSha256: source.sha256,
+      candidateScanIndex: index,
+      state: "sequence_hypothesis_unverified",
+      authority: "none",
+      geometricCameraAuthority: "none",
+      trainingAuthority: "none",
+      reconstructionAuthority: "none",
+      runtimeAuthority: "none",
     }),
   );
   const sourcePanoramaInventorySha256 = computeGrandHallPanoramaSourceInventorySha256(sources);
@@ -233,11 +247,13 @@ function createAcceptedArtifacts(input: {
       panoramaDirectoryInventorySha256:
         computeGrandHallPanoramaDirectoryInventorySha256(panoramaDirectoryFiles),
       boundaryReviewManifestSha256: syntheticDigest(906),
+      interfaceTopologyAtlasManifestSha256: syntheticDigest(908),
       panoramaReviewManifestSha256: syntheticDigest(907),
     },
     panoramaDirectoryFiles,
     candidatePanoramaSources: sources,
     panoramaSourceInventorySha256: sourcePanoramaInventorySha256,
+    panoramaE57SequenceHypotheses: sequenceHypotheses,
     interfaceCandidates: interfaces,
     interfaceInventorySha256,
     proposalArtifacts: {
@@ -286,12 +302,13 @@ function createAcceptedArtifacts(input: {
     sourceMembershipV1Sha256: pendingMembershipV1Sha256,
     sourceBoundaryEvidenceSha256: boundaryEvidenceSha256,
     sourcePanoramaInventorySha256,
+    geometricCameraAuthority: "none",
     matterPakRoomMembership: {
       includedRoomKeys: [GRAND_HALL_MATTERPAK_ROOM_KEY],
       neighbouringRoomGeometryIncluded: false,
       facadeGeometryIncluded: false,
     },
-    cameraRecords: sources.map((source, index) => ({
+    panoramaRecords: sources.map((source, index) => ({
       source,
       decision:
         index === 0
@@ -396,6 +413,7 @@ function createAcceptedArtifacts(input: {
     membershipArtifactSha256: membership.artifactSha256,
     portalDecisionArtifactSha256: portals.artifactSha256,
     sourcePanoramaInventorySha256,
+    geometricCameraAuthority: "none",
     sourceRecordCount: 50,
     maskCount: 1,
     wholeFrameExclusionCount: 49,
@@ -661,6 +679,28 @@ function sealMembership(
   });
 }
 
+function sealScopeReviewPack(
+  draft: DeepMutable<AcceptedArtifacts["scopeReviewPack"]>,
+): AcceptedArtifacts["scopeReviewPack"] {
+  const { artifactSha256: _artifactSha256, ...candidate } = draft;
+  const material = GrandHallScopeReviewPackMaterialV1Schema.parse(candidate);
+  return GrandHallScopeReviewPackV1Schema.parse({
+    ...material,
+    artifactSha256: computeGrandHallScopeReviewPackV1Sha256(material),
+  });
+}
+
+function sealPortals(
+  draft: DeepMutable<AcceptedArtifacts["portals"]>,
+): AcceptedArtifacts["portals"] {
+  const { artifactSha256: _artifactSha256, ...candidate } = draft;
+  const material = GrandHallPortalDecisionsV1MaterialSchema.parse(candidate);
+  return GrandHallPortalDecisionsV1Schema.parse({
+    ...material,
+    artifactSha256: computeGrandHallPortalDecisionsV1Sha256(material),
+  });
+}
+
 function sealBoundary(
   draft: DeepMutable<AcceptedArtifacts["boundary"]>,
 ): AcceptedArtifacts["boundary"] {
@@ -900,6 +940,76 @@ describe("Grand Hall accepted scope bundle verifier", () => {
       excludedRecordCount: 5,
       verifiedFileCount: 61,
     });
+  });
+
+  it("does not treat an authority-none panorama sequence hypothesis as a geometric transform", async () => {
+    const scopeDraft = structuredClone(fixture.artifacts.scopeReviewPack) as DeepMutable<
+      AcceptedArtifacts["scopeReviewPack"]
+    >;
+    scopeDraft.panoramaE57SequenceHypotheses =
+      scopeDraft.panoramaE57SequenceHypotheses.map((hypothesis, index) => ({
+        ...hypothesis,
+        candidateScanIndex: index === 0 ? 148 : index - 1,
+      }));
+    const scopeReviewPack = sealScopeReviewPack(scopeDraft);
+
+    const membershipDraft = structuredClone(fixture.artifacts.membership) as DeepMutable<
+      AcceptedArtifacts["membership"]
+    >;
+    membershipDraft.reviewPackSha256 = scopeReviewPack.artifactSha256;
+    const membership = sealMembership(membershipDraft);
+
+    const portalsDraft = structuredClone(fixture.artifacts.portals) as DeepMutable<
+      AcceptedArtifacts["portals"]
+    >;
+    portalsDraft.reviewPackSha256 = scopeReviewPack.artifactSha256;
+    const portals = sealPortals(portalsDraft);
+
+    const boundaryDraft = structuredClone(fixture.artifacts.boundary) as DeepMutable<
+      AcceptedArtifacts["boundary"]
+    >;
+    boundaryDraft.reviewPackSha256 = scopeReviewPack.artifactSha256;
+    boundaryDraft.roomMembershipArtifactSha256 = membership.artifactSha256;
+    boundaryDraft.portalDecisionArtifactSha256 = portals.artifactSha256;
+    const boundary = sealBoundary(boundaryDraft);
+
+    const panoramaMasksDraft = structuredClone(fixture.artifacts.panoramaMasks) as DeepMutable<
+      GrandHallPanoramaMaskSetV1
+    >;
+    panoramaMasksDraft.reviewPackSha256 = scopeReviewPack.artifactSha256;
+    panoramaMasksDraft.membershipArtifactSha256 = membership.artifactSha256;
+    panoramaMasksDraft.portalDecisionArtifactSha256 = portals.artifactSha256;
+    const panoramaMasks = sealPanoramaMasks(panoramaMasksDraft);
+
+    const transformDraft = structuredClone(fixture.artifacts.transform) as DeepMutable<
+      AcceptedArtifacts["transform"]
+    >;
+    transformDraft.scopeReviewPackSha256 = scopeReviewPack.artifactSha256;
+    const transform = sealTransform(transformDraft);
+
+    const outputMaskDraft = structuredClone(fixture.artifacts.outputMask) as DeepMutable<
+      GrandHallOutputInventoryMaskV1
+    >;
+    outputMaskDraft.scopeReviewPackSha256 = scopeReviewPack.artifactSha256;
+    outputMaskDraft.transformArtifactSha256 = transform.artifactSha256;
+    outputMaskDraft.closedBoundaryArtifactSha256 = boundary.artifactSha256;
+    const outputMask = sealOutputMask(outputMaskDraft);
+    await writeArtifacts(fixture, {
+      scopeReviewPack,
+      membership,
+      portals,
+      boundary,
+      panoramaMasks,
+      transform,
+      outputMask,
+    });
+
+    const result = await verifyGrandHallAcceptedScopeBundle(fixture.options);
+    expect(result.integrityVerified).toBe(true);
+    expect(transform.matrixSha256).toBe(fixture.artifacts.transform.matrixSha256);
+    expect(transform.transformArtifact.matrix).toEqual(
+      fixture.artifacts.transform.transformArtifact.matrix,
+    );
   });
 
   it("rejects accepted artifacts whose claimed T-554 review pack is absent", async () => {

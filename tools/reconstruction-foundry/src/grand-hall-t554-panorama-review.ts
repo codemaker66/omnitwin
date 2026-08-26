@@ -10,6 +10,7 @@ import {
   type FileHandle,
 } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { TextDecoder } from "node:util";
 
 import {
   domainSeparatedSha256,
@@ -18,6 +19,8 @@ import {
   toCanonicalJson,
 } from "@omnitwin/reconstruction-foundry";
 import {
+  GRAND_HALL_E57_SCAN_COUNT,
+  GRAND_HALL_REVIEWED_PANORAMA_CROSSWALK_SCAN_INDICES,
   FoundryGrandHallRoomMembershipV1Schema,
   type FoundryGrandHallRoomMembershipV1,
 } from "@omnitwin/types";
@@ -27,8 +30,20 @@ export const GRAND_HALL_T554_PANORAMA_REVIEW_SCHEMA =
   "omnitwin.foundry.grand-hall-t554-panorama-review.v1";
 export const GRAND_HALL_T554_PANORAMA_INVENTORY_DOMAIN =
   "OMNITWIN_GRAND_HALL_T554_PANORAMA_INVENTORY_V1";
+export const GRAND_HALL_T554_EXPECTED_PANORAMA_INVENTORY_SHA256 =
+  "sha256:949f4cbf365f33d47c5e75f46b881aff857695fbbb70879e27c4f23f4b2af176";
+export const GRAND_HALL_T554_DIAGNOSTIC_PREVIEW_INVENTORY_DOMAIN =
+  "OMNITWIN_GRAND_HALL_T554_DIAGNOSTIC_PREVIEW_INVENTORY_V1";
+export const GRAND_HALL_T554_EXPECTED_DIAGNOSTIC_PREVIEW_INVENTORY_SHA256 =
+  "sha256:98b44da5a90ddb469988c2d6acb2889856c0770992ad5a6302a975c7415eaa25";
+export const GRAND_HALL_T554_CROSSWALK_PAIR_INVENTORY_DOMAIN =
+  "OMNITWIN_GRAND_HALL_T554_CROSSWALK_PAIR_INVENTORY_V1";
+export const GRAND_HALL_T554_EXPECTED_CROSSWALK_PAIR_INVENTORY_SHA256 =
+  "sha256:467be768b91d3ebb7efc5c4bbd2c7e73d6f98680967bebd0d91537d7fe723c2f";
 export const GRAND_HALL_T554_PANORAMA_MANIFEST_DOMAIN =
   "OMNITWIN_GRAND_HALL_T554_PANORAMA_REVIEW_MANIFEST_V1";
+export const GRAND_HALL_T554_EXACT_PANORAMA_MANIFEST_SHA256 =
+  "sha256:4c23c3374dabd64e158c179ffaa38b32ae40876aaaf9da5f16ee57093f88f5bc";
 export const GRAND_HALL_T554_PANORAMA_SOURCE_LOCATOR = "MATTERPORT_PANORAMA_ROOT";
 export const GRAND_HALL_T554_PREVIEW_SOURCE_LOCATOR = "E57_PREVIEW_EVIDENCE_ROOT";
 export const GRAND_HALL_T554_CEILING_PLAN_SOURCE_LOCATOR =
@@ -40,11 +55,26 @@ export const GRAND_HALL_T554_EXPECTED_PREVIEW_WIDTH_PX = 512;
 export const GRAND_HALL_T554_EXPECTED_PREVIEW_HEIGHT_PX = 256;
 export const GRAND_HALL_T554_MEMBERSHIP_SHA256 =
   "sha256:e2822de20e28bbeeb7ca81c8aad96214852e39bdc206e3d378d37d80c2904c68";
+export const GRAND_HALL_T554_MEMBERSHIP_FILE_SHA256 =
+  "sha256:4cdc548f3c8ee3076b849f4704fbde1cdf7166dff0f5396e81798227602068a3";
+export const GRAND_HALL_T554_CROSSWALK_EVIDENCE_SHA256 =
+  "sha256:aecf6168948d66dbde4d6e302c682a72cef323106fb3eaf52e20587c9844ca7f";
 export const GRAND_HALL_T554_CEILING_PLAN_SHA256 =
   "sha256:e94e9d6389000ea18d64aa875e2af75ee88ad31d4df970d449b99a2591f6064a";
 export const GRAND_HALL_T554_CEILING_PLAN_BYTE_LENGTH = 1_982_157;
 export const GRAND_HALL_T554_CEILING_PLAN_WIDTH_PX = 2_893;
 export const GRAND_HALL_T554_CEILING_PLAN_HEIGHT_PX = 2_746;
+export const GRAND_HALL_T554_CEILING_PLAN_RECEIPT = Object.freeze({
+  sourceLocator: GRAND_HALL_T554_CEILING_PLAN_SOURCE_LOCATOR,
+  byteLength: GRAND_HALL_T554_CEILING_PLAN_BYTE_LENGTH,
+  sha256: GRAND_HALL_T554_CEILING_PLAN_SHA256,
+  mediaType: "image/jpeg" as const,
+  widthPx: GRAND_HALL_T554_CEILING_PLAN_WIDTH_PX,
+  heightPx: GRAND_HALL_T554_CEILING_PLAN_HEIGHT_PX,
+  jpegFrame: "baseline_dct" as const,
+  jfifHeaderPresent: true as const,
+  stableDuringRead: true as const,
+});
 export const GRAND_HALL_T554_OVERVIEW_FILENAME =
   "panorama-candidate-overview-review-only.png";
 export const GRAND_HALL_T554_CROSSWALK_FILENAME =
@@ -52,9 +82,240 @@ export const GRAND_HALL_T554_CROSSWALK_FILENAME =
 export const GRAND_HALL_T554_MANIFEST_FILENAME =
   "panorama-review-manifest-authority-none.json";
 
+export const GRAND_HALL_T554_AUTHORITY_NONE_WARNINGS = Object.freeze([
+  "Candidate scan-to-sweep correspondence is unverified and does not establish byte lineage or pose authority.",
+  "These resampled contact sheets are human-review aids only and must never be used as reconstruction, training, runtime, or public evidence inputs.",
+  "No panorama masks, inferred poses, closed boundary, generated fill, or human acceptance are contained in this package.",
+  "The historical equirect_filled workspace was not read or consumed.",
+] as const);
+
 const GRAND_HALL_T554_REVIEW_OUTPUT_FILE_NAMES = Object.freeze([
   GRAND_HALL_T554_OVERVIEW_FILENAME,
   GRAND_HALL_T554_CROSSWALK_FILENAME,
+] as const);
+
+const GRAND_HALL_T554_SEQUENCE_HYPOTHESIS_KEYS = Object.freeze([
+  "authority",
+  "candidateScanIndex",
+  "geometricCameraAuthority",
+  "reconstructionAuthority",
+  "runtimeAuthority",
+  "sourceJpgFileName",
+  "sourceJpgSha256",
+  "sourceSweepNumber",
+  "state",
+  "trainingAuthority",
+] as const);
+
+const GRAND_HALL_T554_MANIFEST_KEYS = Object.freeze([
+  "authority",
+  "derivatives",
+  "manifestSha256",
+  "networkAccess",
+  "proof",
+  "reviewState",
+  "schemaVersion",
+  "scopeGuards",
+  "sourceBindings",
+  "sourceMutationPermitted",
+  "subject",
+  "toolchain",
+  "warnings",
+] as const);
+
+const GRAND_HALL_T554_SUBJECT_KEYS = Object.freeze([
+  "roomSlug",
+  "scope",
+  "taskId",
+  "venueSlug",
+] as const);
+
+const GRAND_HALL_T554_SOURCE_BINDING_KEYS = Object.freeze([
+  "ceilingColorPlan",
+  "crosswalkEvidence",
+  "diagnosticPreviewInventory",
+  "panoramaE57SequenceHypotheses",
+  "panoramaInventory",
+  "t550Membership",
+] as const);
+
+const GRAND_HALL_T554_MEMBERSHIP_BINDING_KEYS = Object.freeze([
+  "authority",
+  "canonicalMembershipSha256",
+  "fileSha256",
+  "sourceLocator",
+] as const);
+
+const GRAND_HALL_T554_PANORAMA_INVENTORY_KEYS = Object.freeze([
+  "candidateRecordCount",
+  "fileCount",
+  "ineligibleUnreviewedRecordCount",
+  "inventorySha256",
+  "missingSweepNumbersWithin1To149",
+  "records",
+  "sourceLocator",
+  "totalBytes",
+] as const);
+
+const GRAND_HALL_T554_PANORAMA_RECORD_KEYS = Object.freeze([
+  "authority",
+  "byteLength",
+  "digitToken",
+  "generatedDerivativeInputPermitted",
+  "heightPx",
+  "humanReviewState",
+  "jfifHeaderPresent",
+  "jpegFrame",
+  "mediaType",
+  "namingAnomalies",
+  "publicEvidencePermitted",
+  "reconstructionInputPermitted",
+  "relativePath",
+  "reviewEligibility",
+  "runtimeInputPermitted",
+  "sha256",
+  "sourceLocator",
+  "stableDuringRead",
+  "sweepNumber",
+  "trainingInputPermitted",
+  "widthPx",
+] as const);
+
+const GRAND_HALL_T554_CANDIDATE_PANORAMA_RECORD_KEYS = Object.freeze([
+  ...GRAND_HALL_T554_PANORAMA_RECORD_KEYS,
+] as const);
+
+const GRAND_HALL_T554_INELIGIBLE_PANORAMA_RECORD_KEYS = Object.freeze([
+  ...GRAND_HALL_T554_PANORAMA_RECORD_KEYS,
+] as const);
+
+const GRAND_HALL_T554_PREVIEW_INVENTORY_KEYS = Object.freeze([
+  "authority",
+  "derivationState",
+  "fileCount",
+  "records",
+  "sourceLocator",
+  "totalBytes",
+] as const);
+
+const GRAND_HALL_T554_PREVIEW_RECORD_KEYS = Object.freeze([
+  "authority",
+  "byteLength",
+  "derivationState",
+  "heightPx",
+  "jfifHeaderPresent",
+  "jpegFrame",
+  "mediaType",
+  "reconstructionInputPermitted",
+  "relativePath",
+  "runtimeInputPermitted",
+  "scanIndex",
+  "sha256",
+  "sourceLocator",
+  "stableDuringRead",
+  "trainingInputPermitted",
+  "widthPx",
+] as const);
+
+const GRAND_HALL_T554_CEILING_BINDING_KEYS = Object.freeze([
+  "authority",
+  "byteLength",
+  "closedBoundaryEstablished",
+  "heightPx",
+  "jfifHeaderPresent",
+  "jpegFrame",
+  "maskAuthority",
+  "mediaType",
+  "poseAuthority",
+  "reconstructionInputPermitted",
+  "role",
+  "sha256",
+  "sourceLocator",
+  "stableDuringRead",
+  "widthPx",
+] as const);
+
+const GRAND_HALL_T554_CROSSWALK_KEYS = Object.freeze([
+  "authority",
+  "derivationState",
+  "e57ByteLineageEstablished",
+  "evidenceSha256",
+  "humanConfirmationRecorded",
+  "pairCount",
+  "pairs",
+] as const);
+
+const GRAND_HALL_T554_CROSSWALK_PAIR_KEYS = Object.freeze([
+  "agentVisualDisposition",
+  "bestCyclicShiftColumns",
+  "candidateMatchRank",
+  "candidateMatchScore",
+  "candidateMinusRunnerUpScore",
+  "candidatePanoramaSha256",
+  "candidatePanoramaSweepNumber",
+  "e57ByteLineageEstablished",
+  "humanConfirmationRecorded",
+  "previewSha256",
+  "runnerUpScanIndex",
+  "runnerUpScore",
+  "scanIndex",
+] as const);
+
+const GRAND_HALL_T554_SCOPE_GUARD_KEYS = Object.freeze([
+  "candidateMappingState",
+  "closedBoundaryEstablished",
+  "facadeAssetsPermitted",
+  "generatedFillPermitted",
+  "historicalFilledEquirectsConsumed",
+  "humanAcceptanceRecorded",
+  "inferredPosesGenerated",
+  "masksAccepted",
+  "masksGenerated",
+  "neighbouringRoomsPermitted",
+  "publicEvidenceAuthorized",
+  "reconstructionAuthorized",
+  "runtimeAuthorized",
+  "trainingAuthorized",
+] as const);
+
+const GRAND_HALL_T554_DERIVATIVE_KEYS = Object.freeze([
+  "authoritativeMasksResampled",
+  "mayBeUsedAsReconstructionInput",
+  "outputs",
+  "resamplingKernel",
+  "resamplingPurpose",
+] as const);
+
+const GRAND_HALL_T554_DERIVATIVE_OUTPUT_KEYS = Object.freeze([
+  "authority",
+  "byteLength",
+  "heightPx",
+  "mediaType",
+  "reconstructionInputPermitted",
+  "relativePath",
+  "role",
+  "sha256",
+  "widthPx",
+] as const);
+
+const GRAND_HALL_T554_TOOLCHAIN_KEYS = Object.freeze([
+  "labelRenderer",
+  "libvipsVersion",
+  "nodeVersion",
+  "outputEncoding",
+  "sharpVersion",
+] as const);
+
+const GRAND_HALL_T554_PROOF_KEYS = Object.freeze([
+  "ceilingColorPlanMatchedExactBytes",
+  "everyDiagnosticPreviewMatchedExactBytes",
+  "everyNonCandidateExplicitlyIneligibleUnreviewed",
+  "everyPanoramaHasStableSha256AndDimensions",
+  "everyT550CandidateMatchedExactBytes",
+  "networkRequests",
+  "outputDirectoryWasAbsentBeforePublish",
+  "outputPublishedByAtomicDirectoryRename",
+  "sourceWrites",
 ] as const);
 
 const JPEG_INSPECTION_HEAD_BYTES = 64 * 1024;
@@ -197,29 +458,28 @@ interface GrandHallT554ReviewRecordBase extends GrandHallT554PanoramaInventoryFi
 
 export interface GrandHallT554CandidateReviewRecord extends GrandHallT554ReviewRecordBase {
   readonly reviewEligibility: "t550_candidate_human_pending";
-  readonly candidateScanIndex: number;
-  readonly candidateMappingAuthority: "sequence_hypothesis_not_byte_lineage";
-  readonly visualLocationInference: GrandHallT554T550RecordBinding["visualLocationInference"];
-  readonly allowedUse: GrandHallT554T550RecordBinding["allowedUse"];
-  readonly panoramaCorrespondenceState: GrandHallT554T550RecordBinding["panoramaCorrespondenceState"];
-  readonly pixelMaskState: GrandHallT554T550RecordBinding["pixelMaskState"];
-  readonly wholeFrameExclusionReason: GrandHallT554T550RecordBinding["wholeFrameExclusionReason"];
 }
 
 export interface GrandHallT554IneligibleReviewRecord extends GrandHallT554ReviewRecordBase {
   readonly reviewEligibility: "not_in_t550_ineligible_unreviewed";
-  readonly candidateScanIndex: null;
-  readonly candidateMappingAuthority: "none";
-  readonly visualLocationInference: "not_reviewed";
-  readonly allowedUse: "inventory_binding_only";
-  readonly panoramaCorrespondenceState: "not_evaluated";
-  readonly pixelMaskState: "not_authored_not_requested";
-  readonly wholeFrameExclusionReason: null;
 }
 
 export type GrandHallT554PanoramaReviewRecord =
   | GrandHallT554CandidateReviewRecord
   | GrandHallT554IneligibleReviewRecord;
+
+export interface GrandHallT554PanoramaE57SequenceHypothesis {
+  readonly sourceSweepNumber: number;
+  readonly sourceJpgFileName: string;
+  readonly sourceJpgSha256: `sha256:${string}`;
+  readonly candidateScanIndex: number;
+  readonly state: "sequence_hypothesis_unverified";
+  readonly authority: "none";
+  readonly geometricCameraAuthority: "none";
+  readonly trainingAuthority: "none";
+  readonly reconstructionAuthority: "none";
+  readonly runtimeAuthority: "none";
+}
 
 export interface GrandHallT554JpegInspectionTestSeam {
   readonly afterHashBeforeJpegInspection?: () => Promise<void> | void;
@@ -452,6 +712,24 @@ export function computeGrandHallT554PanoramaInventorySha256(
   )}`;
 }
 
+export function computeGrandHallT554DiagnosticPreviewInventorySha256(
+  records: readonly unknown[],
+): `sha256:${string}` {
+  return `sha256:${domainSeparatedSha256(
+    GRAND_HALL_T554_DIAGNOSTIC_PREVIEW_INVENTORY_DOMAIN,
+    toCanonicalJson(records),
+  )}`;
+}
+
+export function computeGrandHallT554CrosswalkPairInventorySha256(
+  pairs: readonly unknown[],
+): `sha256:${string}` {
+  return `sha256:${domainSeparatedSha256(
+    GRAND_HALL_T554_CROSSWALK_PAIR_INVENTORY_DOMAIN,
+    toCanonicalJson(pairs),
+  )}`;
+}
+
 function validateInventoryPolicy(policy: GrandHallT554PanoramaInventoryPolicy): void {
   if (
     !Number.isSafeInteger(policy.expectedFileCount) ||
@@ -565,10 +843,9 @@ export async function collectGrandHallT554PanoramaInventory(
   };
 }
 
-export function buildGrandHallT554PanoramaReviewRecords(
-  files: readonly GrandHallT554PanoramaInventoryFile[],
+function t550BindingsBySweep(
   t550: GrandHallT554T550Binding,
-): readonly GrandHallT554PanoramaReviewRecord[] {
+): ReadonlyMap<number, GrandHallT554T550RecordBinding> {
   if (t550.records.length !== T550_CANDIDATE_COUNT) {
     throw new GrandHallT554PanoramaReviewError(
       "T550_BINDING_MISMATCH",
@@ -578,6 +855,45 @@ export function buildGrandHallT554PanoramaReviewRecords(
   const t550BySweep = new Map(
     t550.records.map((record) => [record.candidatePanoramaSweepNumber, record] as const),
   );
+  if (
+    t550BySweep.size !== T550_CANDIDATE_COUNT ||
+    new Set(t550.records.map((record) => record.scanIndex)).size !== T550_CANDIDATE_COUNT ||
+    t550.records.some(
+      (record) =>
+        !Number.isInteger(record.scanIndex) ||
+        record.scanIndex < 0 ||
+        record.scanIndex >= GRAND_HALL_E57_SCAN_COUNT,
+    )
+  ) {
+    throw new GrandHallT554PanoramaReviewError(
+      "T550_BINDING_MISMATCH",
+      "T-550 binding must contain unique source sweep and diagnostic scan identifiers.",
+    );
+  }
+  return t550BySweep;
+}
+
+function validateSourceBinding(
+  file: GrandHallT554PanoramaInventoryFile,
+  binding: GrandHallT554T550RecordBinding,
+): void {
+  if (
+    binding.relativePath !== file.relativePath ||
+    binding.sha256 !== file.sha256 ||
+    binding.byteLength !== file.byteLength
+  ) {
+    throw new GrandHallT554PanoramaReviewError(
+      "T550_BINDING_MISMATCH",
+      `T-550 evidence does not bind the current bytes for sweep ${String(file.sweepNumber)}.`,
+    );
+  }
+}
+
+export function buildGrandHallT554PanoramaReviewRecords(
+  files: readonly GrandHallT554PanoramaInventoryFile[],
+  t550: GrandHallT554T550Binding,
+): readonly GrandHallT554PanoramaReviewRecord[] {
+  const t550BySweep = t550BindingsBySweep(t550);
   return files.map((file) => {
     const base = {
       ...file,
@@ -594,38 +910,38 @@ export function buildGrandHallT554PanoramaReviewRecords(
         ...base,
         reviewEligibility: "not_in_t550_ineligible_unreviewed" as const,
         humanReviewState: "unreviewed" as const,
-        candidateScanIndex: null,
-        candidateMappingAuthority: "none" as const,
-        visualLocationInference: "not_reviewed" as const,
-        allowedUse: "inventory_binding_only" as const,
-        panoramaCorrespondenceState: "not_evaluated" as const,
-        pixelMaskState: "not_authored_not_requested" as const,
-        wholeFrameExclusionReason: null,
       };
     }
-    if (
-      binding.relativePath !== file.relativePath ||
-      binding.sha256 !== file.sha256 ||
-      binding.byteLength !== file.byteLength ||
-      binding.scanIndex + 1 !== file.sweepNumber
-    ) {
-      throw new GrandHallT554PanoramaReviewError(
-        "T550_BINDING_MISMATCH",
-        `T-550 evidence does not bind the current bytes for sweep ${String(file.sweepNumber)}.`,
-      );
-    }
+    validateSourceBinding(file, binding);
     return {
       ...base,
       reviewEligibility: "t550_candidate_human_pending" as const,
       humanReviewState: "pending" as const,
-      candidateScanIndex: binding.scanIndex,
-      candidateMappingAuthority: "sequence_hypothesis_not_byte_lineage" as const,
-      visualLocationInference: binding.visualLocationInference,
-      allowedUse: binding.allowedUse,
-      panoramaCorrespondenceState: binding.panoramaCorrespondenceState,
-      pixelMaskState: binding.pixelMaskState,
-      wholeFrameExclusionReason: binding.wholeFrameExclusionReason,
     };
+  });
+}
+
+export function buildGrandHallT554PanoramaE57SequenceHypotheses(
+  files: readonly GrandHallT554PanoramaInventoryFile[],
+  t550: GrandHallT554T550Binding,
+): readonly GrandHallT554PanoramaE57SequenceHypothesis[] {
+  const t550BySweep = t550BindingsBySweep(t550);
+  return files.flatMap((file) => {
+    const binding = t550BySweep.get(file.sweepNumber);
+    if (binding === undefined) return [];
+    validateSourceBinding(file, binding);
+    return [{
+      sourceSweepNumber: file.sweepNumber,
+      sourceJpgFileName: file.relativePath,
+      sourceJpgSha256: file.sha256,
+      candidateScanIndex: binding.scanIndex,
+      state: "sequence_hypothesis_unverified" as const,
+      authority: "none" as const,
+      geometricCameraAuthority: "none" as const,
+      trainingAuthority: "none" as const,
+      reconstructionAuthority: "none" as const,
+      runtimeAuthority: "none" as const,
+    }];
   });
 }
 
@@ -1078,19 +1394,19 @@ function blitRgb(
   }
 }
 
-function classificationColor(record: GrandHallT554CandidateReviewRecord): Rgb {
-  if (record.visualLocationInference === "visually_mixed_portal_threshold") return REVIEW_PORTAL;
-  if (record.visualLocationInference === "visually_consistent_adjacent_space") {
+function classificationColor(diagnostic: GrandHallT554T550RecordBinding): Rgb {
+  if (diagnostic.visualLocationInference === "visually_mixed_portal_threshold") return REVIEW_PORTAL;
+  if (diagnostic.visualLocationInference === "visually_consistent_adjacent_space") {
     return REVIEW_EXCLUDED;
   }
   return REVIEW_INTERIOR;
 }
 
-function classificationLabel(record: GrandHallT554CandidateReviewRecord): string {
-  if (record.visualLocationInference === "visually_mixed_portal_threshold") {
+function classificationLabel(diagnostic: GrandHallT554T550RecordBinding): string {
+  if (diagnostic.visualLocationInference === "visually_mixed_portal_threshold") {
     return "MIXED PORTAL - MASK REQUIRED";
   }
-  if (record.visualLocationInference === "visually_consistent_adjacent_space") {
+  if (diagnostic.visualLocationInference === "visually_consistent_adjacent_space") {
     return "ADJACENT SPACE - WHOLE FRAME EXCLUDE";
   }
   return "GRAND HALL CANDIDATE - MASK REQUIRED";
@@ -1194,6 +1510,8 @@ type CandidateByteLoader = (record: GrandHallT554CandidateReviewRecord) => Promi
 
 async function renderOverview(
   records: readonly GrandHallT554CandidateReviewRecord[],
+  hypothesesBySweep: ReadonlyMap<number, GrandHallT554PanoramaE57SequenceHypothesis>,
+  diagnosticsBySweep: ReadonlyMap<number, GrandHallT554T550RecordBinding>,
   loadBytes: CandidateByteLoader,
 ): Promise<RenderedReviewAsset> {
   if (records.length !== T550_CANDIDATE_COUNT) {
@@ -1233,6 +1551,14 @@ async function renderOverview(
     REVIEW_MUTED,
   );
   for (const [index, record] of records.entries()) {
+    const hypothesis = hypothesesBySweep.get(record.sweepNumber);
+    const diagnostic = diagnosticsBySweep.get(record.sweepNumber);
+    if (hypothesis === undefined || diagnostic === undefined) {
+      throw new GrandHallT554PanoramaReviewError(
+        "T550_BINDING_MISMATCH",
+        `Sweep ${String(record.sweepNumber)} has no separate diagnostic sequence hypothesis.`,
+      );
+    }
     const column = index % columns;
     const row = Math.floor(index / columns);
     const x = column * cellWidth;
@@ -1240,14 +1566,14 @@ async function renderOverview(
     const bytes = await loadBytes(record);
     const resized = await resizeVerifiedJpeg(bytes, record, cellWidth, imageHeight);
     blitRgb(canvas, width, resized, cellWidth, imageHeight, x, y);
-    drawBorder(canvas, width, height, x, y, cellWidth, rowHeight, 5, classificationColor(record));
+    drawBorder(canvas, width, height, x, y, cellWidth, rowHeight, 5, classificationColor(diagnostic));
     drawText(
       canvas,
       width,
       height,
       x + 10,
       y + imageHeight + 8,
-      `SCAN ${String(record.candidateScanIndex).padStart(3, "0")} / SWEEP ${String(record.sweepNumber).padStart(3, "0")}`,
+      `SWEEP ${String(record.sweepNumber).padStart(3, "0")} / HYP E57 SCAN ${String(hypothesis.candidateScanIndex).padStart(3, "0")}`,
       2,
       REVIEW_WHITE,
     );
@@ -1257,9 +1583,9 @@ async function renderOverview(
       height,
       x + 10,
       y + imageHeight + 28,
-      classificationLabel(record),
+      classificationLabel(diagnostic),
       2,
-      classificationColor(record),
+      classificationColor(diagnostic),
     );
     drawText(
       canvas,
@@ -1279,7 +1605,10 @@ type CrosswalkPair = FoundryGrandHallRoomMembershipV1["sourceBindings"]["panoram
 
 interface CrosswalkRenderInputs {
   readonly pairs: readonly CrosswalkPair[];
-  readonly candidates: ReadonlyMap<number, GrandHallT554CandidateReviewRecord>;
+  readonly candidates: ReadonlyMap<number, {
+    readonly source: GrandHallT554CandidateReviewRecord;
+    readonly diagnostic: GrandHallT554T550RecordBinding;
+  }>;
   readonly previews: ReadonlyMap<number, GrandHallT554PreviewRecord>;
   readonly loadCandidateBytes: CandidateByteLoader;
   readonly loadPreviewBytes: (record: GrandHallT554PreviewRecord) => Promise<Buffer>;
@@ -1345,8 +1674,8 @@ async function renderCrosswalk(inputs: CrosswalkRenderInputs): Promise<RenderedR
     }
     const y = headerHeight + index * rowHeight;
     const candidateRaster = await resizeVerifiedJpeg(
-      await inputs.loadCandidateBytes(candidate),
-      candidate,
+      await inputs.loadCandidateBytes(candidate.source),
+      candidate.source,
       panelWidth,
       panelHeight,
     );
@@ -1358,7 +1687,7 @@ async function renderCrosswalk(inputs: CrosswalkRenderInputs): Promise<RenderedR
     );
     blitRgb(canvas, width, candidateRaster, panelWidth, panelHeight, 0, y);
     blitRgb(canvas, width, previewRaster, panelWidth, panelHeight, 1_020, y);
-    drawBorder(canvas, width, height, 0, y, panelWidth, panelHeight, 5, classificationColor(candidate));
+    drawBorder(canvas, width, height, 0, y, panelWidth, panelHeight, 5, classificationColor(candidate.diagnostic));
     drawBorder(canvas, width, height, 1_020, y, panelWidth, panelHeight, 5, REVIEW_UNKNOWN);
     drawText(
       canvas,
@@ -1445,6 +1774,7 @@ export interface GrandHallT554PanoramaReviewManifest {
       readonly ineligibleUnreviewedRecordCount: 98;
       readonly records: readonly GrandHallT554PanoramaReviewRecord[];
     };
+    readonly panoramaE57SequenceHypotheses: readonly GrandHallT554PanoramaE57SequenceHypothesis[];
     readonly diagnosticPreviewInventory: {
       readonly sourceLocator: typeof GRAND_HALL_T554_PREVIEW_SOURCE_LOCATOR;
       readonly fileCount: 50;
@@ -1458,6 +1788,7 @@ export interface GrandHallT554PanoramaReviewManifest {
       readonly evidenceSha256: `sha256:${string}`;
       readonly pairCount: 6;
       readonly authority: "diagnostic_only";
+      readonly derivationState: "historical_unverified";
       readonly humanConfirmationRecorded: false;
       readonly e57ByteLineageEstablished: false;
       readonly pairs: readonly CrosswalkPair[];
@@ -1512,6 +1843,7 @@ interface GrandHallT554ManifestInputs {
   readonly membership: LoadedT550Membership;
   readonly inventory: GrandHallT554PanoramaInventory;
   readonly records: readonly GrandHallT554PanoramaReviewRecord[];
+  readonly sequenceHypotheses: readonly GrandHallT554PanoramaE57SequenceHypothesis[];
   readonly previews: readonly GrandHallT554PreviewRecord[];
   readonly ceilingPlan: GrandHallT554CeilingPlanEvidence;
   readonly outputs: readonly RenderedReviewAsset[];
@@ -1546,6 +1878,7 @@ function buildManifestMaterial(inputs: GrandHallT554ManifestInputs): Omit<
   if (
     candidates.length !== 50 ||
     ineligible.length !== 98 ||
+    inputs.sequenceHypotheses.length !== 50 ||
     inputs.previews.length !== 50 ||
     crosswalk.pairResults.length !== 6
   ) {
@@ -1583,6 +1916,7 @@ function buildManifestMaterial(inputs: GrandHallT554ManifestInputs): Omit<
         ineligibleUnreviewedRecordCount: 98,
         records: inputs.records,
       },
+      panoramaE57SequenceHypotheses: inputs.sequenceHypotheses,
       diagnosticPreviewInventory: {
         sourceLocator: GRAND_HALL_T554_PREVIEW_SOURCE_LOCATOR,
         fileCount: 50,
@@ -1599,6 +1933,7 @@ function buildManifestMaterial(inputs: GrandHallT554ManifestInputs): Omit<
         ),
         pairCount: 6,
         authority: "diagnostic_only",
+        derivationState: "historical_unverified",
         humanConfirmationRecorded: false,
         e57ByteLineageEstablished: false,
         pairs: crosswalk.pairResults,
@@ -1645,12 +1980,7 @@ function buildManifestMaterial(inputs: GrandHallT554ManifestInputs): Omit<
       sourceWrites: "none",
       networkRequests: "none",
     },
-    warnings: [
-      "Candidate scan-to-sweep correspondence is unverified and does not establish byte lineage or pose authority.",
-      "These resampled contact sheets are human-review aids only and must never be used as reconstruction, training, runtime, or public evidence inputs.",
-      "No panorama masks, inferred poses, closed boundary, generated fill, or human acceptance are contained in this package.",
-      "The historical equirect_filled workspace was not read or consumed.",
-    ],
+    warnings: [...GRAND_HALL_T554_AUTHORITY_NONE_WARNINGS],
   };
 }
 
@@ -1692,6 +2022,36 @@ function requireJsonRecord(value: unknown, label: string): Record<string, unknow
   return value as Record<string, unknown>;
 }
 
+function requireExactJsonKeys(
+  record: Readonly<Record<string, unknown>>,
+  expectedKeys: readonly string[],
+  label: string,
+): void {
+  const actual = Object.keys(record).sort((left, right) => left.localeCompare(right));
+  const expected = [...expectedKeys].sort((left, right) => left.localeCompare(right));
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new GrandHallT554PanoramaReviewError(
+      "OUTPUT_VERIFICATION_FAILED",
+      `${label} contains missing or unknown fields.`,
+    );
+  }
+}
+
+function requireSafePositiveInteger(value: unknown, label: string, maximum: number): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value <= 0 ||
+    value > maximum
+  ) {
+    throw new GrandHallT554PanoramaReviewError(
+      "OUTPUT_VERIFICATION_FAILED",
+      `${label} must be a bounded positive integer.`,
+    );
+  }
+  return value;
+}
+
 function requirePersistedSha256(value: unknown, label: string): `sha256:${string}` {
   if (typeof value !== "string" || !/^sha256:[0-9a-f]{64}$/.test(value)) {
     throw new GrandHallT554PanoramaReviewError(
@@ -1716,7 +2076,10 @@ function parsePersistedGrandHallT554Manifest(
 ): GrandHallT554PanoramaReviewManifest {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(bytes.toString("utf8"));
+    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+      throw new Error("UTF-8 BOM is not permitted.");
+    }
+    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch (error) {
     throw new GrandHallT554PanoramaReviewError(
       "OUTPUT_VERIFICATION_FAILED",
@@ -1725,6 +2088,7 @@ function parsePersistedGrandHallT554Manifest(
     );
   }
   const root = requireJsonRecord(parsed, "Panorama review manifest");
+  requireExactJsonKeys(root, GRAND_HALL_T554_MANIFEST_KEYS, "Panorama review manifest");
   const manifestSha256 = requirePersistedSha256(root.manifestSha256, "Manifest self-digest");
   const { manifestSha256: _manifestSha256, ...material } = root;
   const recomputed = `sha256:${domainSeparatedSha256(
@@ -1735,6 +2099,12 @@ function parsePersistedGrandHallT554Manifest(
     throw new GrandHallT554PanoramaReviewError(
       "OUTPUT_VERIFICATION_FAILED",
       "Persisted panorama review manifest self-digest is invalid.",
+    );
+  }
+  if (manifestSha256 !== GRAND_HALL_T554_EXACT_PANORAMA_MANIFEST_SHA256) {
+    throw new GrandHallT554PanoramaReviewError(
+      "OUTPUT_VERIFICATION_FAILED",
+      "Persisted exact Grand Hall panorama manifest differs from its checked golden receipt.",
     );
   }
   if (
@@ -1750,6 +2120,7 @@ function parsePersistedGrandHallT554Manifest(
     );
   }
   const subject = requireJsonRecord(root.subject, "Manifest subject");
+  requireExactJsonKeys(subject, GRAND_HALL_T554_SUBJECT_KEYS, "Manifest subject");
   if (
     subject.venueSlug !== "trades-hall" ||
     subject.roomSlug !== "grand-hall" ||
@@ -1762,33 +2133,53 @@ function parsePersistedGrandHallT554Manifest(
     );
   }
   const sourceBindings = requireJsonRecord(root.sourceBindings, "Manifest source bindings");
+  requireExactJsonKeys(
+    sourceBindings,
+    GRAND_HALL_T554_SOURCE_BINDING_KEYS,
+    "Manifest source bindings",
+  );
   const membershipBinding = requireJsonRecord(
     sourceBindings.t550Membership,
     "T-550 membership binding",
   );
+  requireExactJsonKeys(
+    membershipBinding,
+    GRAND_HALL_T554_MEMBERSHIP_BINDING_KEYS,
+    "T-550 membership binding",
+  );
+  const membershipFileSha256 = requirePersistedSha256(
+    membershipBinding.fileSha256,
+    "T-550 membership file digest",
+  );
   if (
     membershipBinding.sourceLocator !== "T550_MEMBERSHIP_ARTIFACT" ||
     membershipBinding.authority !== "none" ||
-    membershipBinding.canonicalMembershipSha256 !== GRAND_HALL_T554_MEMBERSHIP_SHA256
+    membershipBinding.canonicalMembershipSha256 !== GRAND_HALL_T554_MEMBERSHIP_SHA256 ||
+    membershipFileSha256 !== GRAND_HALL_T554_MEMBERSHIP_FILE_SHA256
   ) {
     throw new GrandHallT554PanoramaReviewError(
       "OUTPUT_VERIFICATION_FAILED",
       "Persisted T-550 membership binding drifted.",
     );
   }
-  requirePersistedSha256(membershipBinding.fileSha256, "T-550 membership file digest");
   const panoramaInventory = requireJsonRecord(
     sourceBindings.panoramaInventory,
     "Panorama inventory",
   );
+  requireExactJsonKeys(
+    panoramaInventory,
+    GRAND_HALL_T554_PANORAMA_INVENTORY_KEYS,
+    "Panorama inventory",
+  );
+  const persistedInventorySha256 = requirePersistedSha256(
+    panoramaInventory.inventorySha256,
+    "Panorama inventory digest",
+  );
   const panoramaRecords = panoramaInventory.records;
   if (
     panoramaInventory.sourceLocator !== GRAND_HALL_T554_PANORAMA_SOURCE_LOCATOR ||
-    panoramaInventory.fileCount !== 148 ||
-    panoramaInventory.candidateRecordCount !== 50 ||
-    panoramaInventory.ineligibleUnreviewedRecordCount !== 98 ||
     !Array.isArray(panoramaRecords) ||
-    panoramaRecords.length !== 148
+    panoramaRecords.length !== GRAND_HALL_T554_EXPECTED_SOURCE_FILE_COUNT
   ) {
     throw new GrandHallT554PanoramaReviewError(
       "OUTPUT_VERIFICATION_FAILED",
@@ -1797,13 +2188,82 @@ function parsePersistedGrandHallT554Manifest(
   }
   let candidateCount = 0;
   let ineligibleCount = 0;
+  let computedTotalBytes = 0;
+  const persistedInventoryFiles: GrandHallT554PanoramaInventoryFile[] = [];
   for (const [index, value] of panoramaRecords.entries()) {
     const record = requireJsonRecord(value, `Panorama record ${String(index)}`);
-    requirePersistedSha256(record.sha256, `Panorama record ${String(index)} digest`);
-    if (record.authority !== "none") {
+    const isCandidate = record.reviewEligibility === "t550_candidate_human_pending";
+    const isIneligible = record.reviewEligibility === "not_in_t550_ineligible_unreviewed";
+    if (!isCandidate && !isIneligible) {
       throw new GrandHallT554PanoramaReviewError(
         "OUTPUT_VERIFICATION_FAILED",
-        "A persisted panorama record claims authority.",
+        "A persisted panorama record has an unknown eligibility state.",
+      );
+    }
+    requireExactJsonKeys(
+      record,
+      isCandidate
+        ? GRAND_HALL_T554_CANDIDATE_PANORAMA_RECORD_KEYS
+        : GRAND_HALL_T554_INELIGIBLE_PANORAMA_RECORD_KEYS,
+      isCandidate
+        ? `Candidate panorama record ${String(index)}`
+        : `Ineligible panorama record ${String(index)}`,
+    );
+    const sha256 = requirePersistedSha256(
+      record.sha256,
+      `Panorama record ${String(index)} digest`,
+    );
+    const byteLength = requireSafePositiveInteger(
+      record.byteLength,
+      `Panorama record ${String(index)} byte length`,
+      MAX_JPEG_BYTES,
+    );
+    const expectedSweepNumber = EXPECTED_SOURCE_SWEEP_NUMBERS[index];
+    if (expectedSweepNumber === undefined || typeof record.relativePath !== "string") {
+      throw new GrandHallT554PanoramaReviewError(
+        "OUTPUT_VERIFICATION_FAILED",
+        "Persisted panorama source ordering or filename is malformed.",
+      );
+    }
+    let parsedFilename: ParsedGrandHallT554PanoramaFilename;
+    try {
+      parsedFilename = parseGrandHallT554PanoramaFilename(record.relativePath);
+    } catch (error) {
+      throw new GrandHallT554PanoramaReviewError(
+        "OUTPUT_VERIFICATION_FAILED",
+        `Panorama record ${String(index)} has an invalid source filename.`,
+        error,
+      );
+    }
+    const jpegFrame = record.jpegFrame;
+    const namingAnomaliesMatch =
+      Array.isArray(record.namingAnomalies) &&
+      JSON.stringify(record.namingAnomalies) === JSON.stringify(parsedFilename.namingAnomalies);
+    if (
+      record.authority !== "none" ||
+      record.sourceLocator !==
+        `${GRAND_HALL_T554_PANORAMA_SOURCE_LOCATOR}/${record.relativePath}` ||
+      record.mediaType !== "image/jpeg" ||
+      record.widthPx !== GRAND_HALL_T554_EXPECTED_WIDTH_PX ||
+      record.heightPx !== GRAND_HALL_T554_EXPECTED_HEIGHT_PX ||
+      (jpegFrame !== "baseline_dct" &&
+        jpegFrame !== "extended_sequential_dct" &&
+        jpegFrame !== "progressive_dct") ||
+      typeof record.jfifHeaderPresent !== "boolean" ||
+      record.stableDuringRead !== true ||
+      record.sweepNumber !== expectedSweepNumber ||
+      parsedFilename.sweepNumber !== expectedSweepNumber ||
+      record.digitToken !== parsedFilename.digitToken ||
+      !namingAnomaliesMatch ||
+      (isCandidate &&
+        (expectedSweepNumber > T550_CANDIDATE_COUNT || record.humanReviewState !== "pending")) ||
+      (isIneligible &&
+        (expectedSweepNumber <= T550_CANDIDATE_COUNT ||
+          record.humanReviewState !== "unreviewed"))
+    ) {
+      throw new GrandHallT554PanoramaReviewError(
+        "OUTPUT_VERIFICATION_FAILED",
+        "A persisted panorama source record drifted from its exact source-only semantics.",
       );
     }
     requireFalse(record.trainingInputPermitted, "Panorama training permission");
@@ -1811,24 +2271,119 @@ function parsePersistedGrandHallT554Manifest(
     requireFalse(record.runtimeInputPermitted, "Panorama runtime permission");
     requireFalse(record.publicEvidencePermitted, "Panorama public-evidence permission");
     requireFalse(record.generatedDerivativeInputPermitted, "Panorama derivative-input permission");
-    if (record.reviewEligibility === "t550_candidate_human_pending") candidateCount += 1;
-    else if (record.reviewEligibility === "not_in_t550_ineligible_unreviewed") {
-      ineligibleCount += 1;
-    } else {
-      throw new GrandHallT554PanoramaReviewError(
-        "OUTPUT_VERIFICATION_FAILED",
-        "A persisted panorama record has an unknown eligibility state.",
-      );
-    }
+    if (isCandidate) candidateCount += 1;
+    else ineligibleCount += 1;
+    computedTotalBytes += byteLength;
+    persistedInventoryFiles.push({
+      sourceLocator: record.sourceLocator,
+      byteLength,
+      sha256,
+      mediaType: "image/jpeg",
+      widthPx: GRAND_HALL_T554_EXPECTED_WIDTH_PX,
+      heightPx: GRAND_HALL_T554_EXPECTED_HEIGHT_PX,
+      jpegFrame,
+      jfifHeaderPresent: record.jfifHeaderPresent,
+      stableDuringRead: true,
+      relativePath: record.relativePath,
+      sweepNumber: expectedSweepNumber,
+      digitToken: parsedFilename.digitToken,
+      namingAnomalies: parsedFilename.namingAnomalies,
+    });
   }
-  if (candidateCount !== 50 || ineligibleCount !== 98) {
+  const observedSweepNumbers = new Set(
+    persistedInventoryFiles.map((record) => record.sweepNumber),
+  );
+  const computedMissingSweepNumbers = Array.from(
+    { length: GRAND_HALL_E57_SCAN_COUNT },
+    (_, index) => index + 1,
+  ).filter((sweepNumber) => !observedSweepNumbers.has(sweepNumber));
+  const recomputedInventorySha256 = computeGrandHallT554PanoramaInventorySha256(
+    persistedInventoryFiles,
+  );
+  if (
+    candidateCount !== T550_CANDIDATE_COUNT ||
+    ineligibleCount !==
+      GRAND_HALL_T554_EXPECTED_SOURCE_FILE_COUNT - T550_CANDIDATE_COUNT ||
+    panoramaInventory.fileCount !== persistedInventoryFiles.length ||
+    panoramaInventory.candidateRecordCount !== candidateCount ||
+    panoramaInventory.ineligibleUnreviewedRecordCount !== ineligibleCount ||
+    panoramaInventory.totalBytes !== computedTotalBytes ||
+    persistedInventorySha256 !== recomputedInventorySha256 ||
+    recomputedInventorySha256 !== GRAND_HALL_T554_EXPECTED_PANORAMA_INVENTORY_SHA256 ||
+    !Array.isArray(panoramaInventory.missingSweepNumbersWithin1To149) ||
+    JSON.stringify(panoramaInventory.missingSweepNumbersWithin1To149) !==
+      JSON.stringify(computedMissingSweepNumbers)
+  ) {
     throw new GrandHallT554PanoramaReviewError(
       "OUTPUT_VERIFICATION_FAILED",
-      "Persisted panorama records do not contain the exact 50+98 eligibility partition.",
+      "Persisted panorama inventory totals, digest, sweep range, or eligibility partition drifted.",
+    );
+  }
+  const sequenceHypotheses = sourceBindings.panoramaE57SequenceHypotheses;
+  if (!Array.isArray(sequenceHypotheses) || sequenceHypotheses.length !== 50) {
+    throw new GrandHallT554PanoramaReviewError(
+      "OUTPUT_VERIFICATION_FAILED",
+      "Persisted panorama-to-E57 sequence hypotheses must remain a separate 50-record array.",
+    );
+  }
+  const candidateRecordsBySweep = new Map<number, Readonly<Record<string, unknown>>>();
+  for (const value of panoramaRecords) {
+    const record = requireJsonRecord(value, "Candidate panorama source");
+    if (record.reviewEligibility === "t550_candidate_human_pending" && typeof record.sweepNumber === "number") {
+      candidateRecordsBySweep.set(record.sweepNumber, record);
+    }
+  }
+  const candidateScanIndices = new Set<number>();
+  for (const [index, value] of sequenceHypotheses.entries()) {
+    const hypothesis = requireJsonRecord(value, `Sequence hypothesis ${String(index)}`);
+    const hypothesisKeys = Object.keys(hypothesis).sort((left, right) => left.localeCompare(right));
+    if (
+      JSON.stringify(hypothesisKeys) !== JSON.stringify(GRAND_HALL_T554_SEQUENCE_HYPOTHESIS_KEYS) ||
+      hypothesis.state !== "sequence_hypothesis_unverified" ||
+      hypothesis.authority !== "none" ||
+      hypothesis.geometricCameraAuthority !== "none" ||
+      hypothesis.trainingAuthority !== "none" ||
+      hypothesis.reconstructionAuthority !== "none" ||
+      hypothesis.runtimeAuthority !== "none" ||
+      typeof hypothesis.sourceSweepNumber !== "number" ||
+      !Number.isInteger(hypothesis.sourceSweepNumber) ||
+      hypothesis.sourceSweepNumber !== index + 1 ||
+      typeof hypothesis.candidateScanIndex !== "number" ||
+      !Number.isInteger(hypothesis.candidateScanIndex) ||
+      hypothesis.candidateScanIndex < 0 ||
+      hypothesis.candidateScanIndex >= GRAND_HALL_E57_SCAN_COUNT
+    ) {
+      throw new GrandHallT554PanoramaReviewError(
+        "OUTPUT_VERIFICATION_FAILED",
+        "A persisted panorama-to-E57 relationship overstates its diagnostic sequence hypothesis.",
+      );
+    }
+    const source = candidateRecordsBySweep.get(hypothesis.sourceSweepNumber);
+    if (
+      source === undefined ||
+      source.relativePath !== hypothesis.sourceJpgFileName ||
+      source.sha256 !== hypothesis.sourceJpgSha256
+    ) {
+      throw new GrandHallT554PanoramaReviewError(
+        "OUTPUT_VERIFICATION_FAILED",
+        "A persisted sequence hypothesis does not bind its exact pure source panorama identity.",
+      );
+    }
+    candidateScanIndices.add(hypothesis.candidateScanIndex);
+  }
+  if (candidateScanIndices.size !== 50) {
+    throw new GrandHallT554PanoramaReviewError(
+      "OUTPUT_VERIFICATION_FAILED",
+      "Persisted sequence hypotheses must contain 50 unique diagnostic candidate scan indices.",
     );
   }
   const previewInventory = requireJsonRecord(
     sourceBindings.diagnosticPreviewInventory,
+    "Diagnostic preview inventory",
+  );
+  requireExactJsonKeys(
+    previewInventory,
+    GRAND_HALL_T554_PREVIEW_INVENTORY_KEYS,
     "Diagnostic preview inventory",
   );
   if (
@@ -1844,16 +2399,78 @@ function parsePersistedGrandHallT554Manifest(
       "Persisted diagnostic preview inventory drifted.",
     );
   }
+  let computedPreviewTotalBytes = 0;
+  const previewRecordsByScan = new Map<number, Readonly<Record<string, unknown>>>();
   for (const [index, value] of previewInventory.records.entries()) {
     const record = requireJsonRecord(value, `Diagnostic preview ${String(index)}`);
+    requireExactJsonKeys(
+      record,
+      GRAND_HALL_T554_PREVIEW_RECORD_KEYS,
+      `Diagnostic preview ${String(index)}`,
+    );
     requirePersistedSha256(record.sha256, `Diagnostic preview ${String(index)} digest`);
+    const byteLength = requireSafePositiveInteger(
+      record.byteLength,
+      `Diagnostic preview ${String(index)} byte length`,
+      MAX_JPEG_BYTES,
+    );
+    const expectedRelativePath = `scan_${String(index).padStart(3, "0")}_preview.jpg`;
+    if (
+      record.scanIndex !== index ||
+      record.relativePath !== expectedRelativePath ||
+      record.sourceLocator !==
+        `${GRAND_HALL_T554_PREVIEW_SOURCE_LOCATOR}/${expectedRelativePath}` ||
+      record.mediaType !== "image/jpeg" ||
+      record.widthPx !== GRAND_HALL_T554_EXPECTED_PREVIEW_WIDTH_PX ||
+      record.heightPx !== GRAND_HALL_T554_EXPECTED_PREVIEW_HEIGHT_PX ||
+      (record.jpegFrame !== "baseline_dct" &&
+        record.jpegFrame !== "extended_sequential_dct" &&
+        record.jpegFrame !== "progressive_dct") ||
+      typeof record.jfifHeaderPresent !== "boolean" ||
+      record.stableDuringRead !== true ||
+      record.authority !== "diagnostic_only" ||
+      record.derivationState !== "historical_unverified"
+    ) {
+      throw new GrandHallT554PanoramaReviewError(
+        "OUTPUT_VERIFICATION_FAILED",
+        "A persisted diagnostic preview drifted from its historical-unverified source evidence.",
+      );
+    }
     requireFalse(record.trainingInputPermitted, "Preview training permission");
     requireFalse(record.reconstructionInputPermitted, "Preview reconstruction permission");
     requireFalse(record.runtimeInputPermitted, "Preview runtime permission");
+    computedPreviewTotalBytes += byteLength;
+    previewRecordsByScan.set(index, record);
+  }
+  const recomputedPreviewInventorySha256 =
+    computeGrandHallT554DiagnosticPreviewInventorySha256(previewInventory.records);
+  if (
+    previewInventory.totalBytes !== computedPreviewTotalBytes ||
+    recomputedPreviewInventorySha256 !==
+      GRAND_HALL_T554_EXPECTED_DIAGNOSTIC_PREVIEW_INVENTORY_SHA256
+  ) {
+    throw new GrandHallT554PanoramaReviewError(
+      "OUTPUT_VERIFICATION_FAILED",
+      "Persisted diagnostic preview inventory receipt or total bytes drifted.",
+    );
   }
   const ceiling = requireJsonRecord(sourceBindings.ceilingColorPlan, "Ceiling colour plan");
+  requireExactJsonKeys(
+    ceiling,
+    GRAND_HALL_T554_CEILING_BINDING_KEYS,
+    "Ceiling colour plan",
+  );
+  const ceilingSha256 = requirePersistedSha256(ceiling.sha256, "Ceiling colour-plan digest");
   if (
-    ceiling.sourceLocator !== GRAND_HALL_T554_CEILING_PLAN_SOURCE_LOCATOR ||
+    ceiling.sourceLocator !== GRAND_HALL_T554_CEILING_PLAN_RECEIPT.sourceLocator ||
+    ceiling.byteLength !== GRAND_HALL_T554_CEILING_PLAN_RECEIPT.byteLength ||
+    ceilingSha256 !== GRAND_HALL_T554_CEILING_PLAN_RECEIPT.sha256 ||
+    ceiling.mediaType !== GRAND_HALL_T554_CEILING_PLAN_RECEIPT.mediaType ||
+    ceiling.widthPx !== GRAND_HALL_T554_CEILING_PLAN_RECEIPT.widthPx ||
+    ceiling.heightPx !== GRAND_HALL_T554_CEILING_PLAN_RECEIPT.heightPx ||
+    ceiling.jpegFrame !== GRAND_HALL_T554_CEILING_PLAN_RECEIPT.jpegFrame ||
+    ceiling.jfifHeaderPresent !== GRAND_HALL_T554_CEILING_PLAN_RECEIPT.jfifHeaderPresent ||
+    ceiling.stableDuringRead !== GRAND_HALL_T554_CEILING_PLAN_RECEIPT.stableDuringRead ||
     ceiling.authority !== "none" ||
     ceiling.role !== "human_boundary_reference_only"
   ) {
@@ -1862,15 +2479,21 @@ function parsePersistedGrandHallT554Manifest(
       "Persisted ceiling colour-plan binding drifted.",
     );
   }
-  requirePersistedSha256(ceiling.sha256, "Ceiling colour-plan digest");
   requireFalse(ceiling.closedBoundaryEstablished, "Ceiling-plan boundary claim");
   requireFalse(ceiling.poseAuthority, "Ceiling-plan pose authority");
   requireFalse(ceiling.maskAuthority, "Ceiling-plan mask authority");
   requireFalse(ceiling.reconstructionInputPermitted, "Ceiling-plan reconstruction permission");
   const crosswalk = requireJsonRecord(sourceBindings.crosswalkEvidence, "Crosswalk evidence");
+  requireExactJsonKeys(crosswalk, GRAND_HALL_T554_CROSSWALK_KEYS, "Crosswalk evidence");
+  const crosswalkEvidenceSha256 = requirePersistedSha256(
+    crosswalk.evidenceSha256,
+    "Crosswalk evidence digest",
+  );
   if (
     crosswalk.pairCount !== 6 ||
     crosswalk.authority !== "diagnostic_only" ||
+    crosswalk.derivationState !== "historical_unverified" ||
+    crosswalkEvidenceSha256 !== GRAND_HALL_T554_CROSSWALK_EVIDENCE_SHA256 ||
     crosswalk.humanConfirmationRecorded !== false ||
     crosswalk.e57ByteLineageEstablished !== false ||
     !Array.isArray(crosswalk.pairs) ||
@@ -1881,13 +2504,84 @@ function parsePersistedGrandHallT554Manifest(
       "Persisted crosswalk diagnostics overstate correspondence authority.",
     );
   }
-  requirePersistedSha256(crosswalk.evidenceSha256, "Crosswalk evidence digest");
   for (const [index, value] of crosswalk.pairs.entries()) {
     const pair = requireJsonRecord(value, `Crosswalk pair ${String(index)}`);
+    requireExactJsonKeys(
+      pair,
+      GRAND_HALL_T554_CROSSWALK_PAIR_KEYS,
+      `Crosswalk pair ${String(index)}`,
+    );
+    const expectedScanIndex = GRAND_HALL_REVIEWED_PANORAMA_CROSSWALK_SCAN_INDICES[index];
+    const candidatePanoramaSha256 = requirePersistedSha256(
+      pair.candidatePanoramaSha256,
+      `Crosswalk pair ${String(index)} candidate panorama digest`,
+    );
+    const previewSha256 = requirePersistedSha256(
+      pair.previewSha256,
+      `Crosswalk pair ${String(index)} preview digest`,
+    );
+    const candidateSource =
+      typeof pair.candidatePanoramaSweepNumber === "number"
+        ? candidateRecordsBySweep.get(pair.candidatePanoramaSweepNumber)
+        : undefined;
+    const previewSource =
+      typeof pair.scanIndex === "number"
+        ? previewRecordsByScan.get(pair.scanIndex)
+        : undefined;
+    const recordedDelta =
+      typeof pair.candidateMatchScore === "number" && typeof pair.runnerUpScore === "number"
+        ? pair.candidateMatchScore - pair.runnerUpScore
+        : Number.NaN;
+    if (
+      expectedScanIndex === undefined ||
+      pair.scanIndex !== expectedScanIndex ||
+      pair.candidatePanoramaSweepNumber !== expectedScanIndex + 1 ||
+      candidateSource?.sha256 !== candidatePanoramaSha256 ||
+      previewSource?.sha256 !== previewSha256 ||
+      typeof pair.candidateMatchRank !== "number" ||
+      !Number.isInteger(pair.candidateMatchRank) ||
+      pair.candidateMatchRank < 1 ||
+      pair.candidateMatchRank > T550_CANDIDATE_COUNT ||
+      typeof pair.candidateMatchScore !== "number" ||
+      !Number.isFinite(pair.candidateMatchScore) ||
+      pair.candidateMatchScore < -1 ||
+      pair.candidateMatchScore > 1 ||
+      typeof pair.bestCyclicShiftColumns !== "number" ||
+      !Number.isInteger(pair.bestCyclicShiftColumns) ||
+      pair.bestCyclicShiftColumns < 0 ||
+      pair.bestCyclicShiftColumns > 127 ||
+      typeof pair.runnerUpScanIndex !== "number" ||
+      !Number.isInteger(pair.runnerUpScanIndex) ||
+      pair.runnerUpScanIndex < 0 ||
+      pair.runnerUpScanIndex >= T550_CANDIDATE_COUNT ||
+      typeof pair.runnerUpScore !== "number" ||
+      !Number.isFinite(pair.runnerUpScore) ||
+      pair.runnerUpScore < -1 ||
+      pair.runnerUpScore > 1 ||
+      typeof pair.candidateMinusRunnerUpScore !== "number" ||
+      !Number.isFinite(pair.candidateMinusRunnerUpScore) ||
+      Math.abs(recordedDelta - pair.candidateMinusRunnerUpScore) > 1e-9 ||
+      pair.agentVisualDisposition !== "candidate_pair_visually_consistent"
+    ) {
+      throw new GrandHallT554PanoramaReviewError(
+        "OUTPUT_VERIFICATION_FAILED",
+        "A persisted crosswalk pair drifted from its exact candidate and preview evidence.",
+      );
+    }
     requireFalse(pair.humanConfirmationRecorded, "Crosswalk human confirmation");
     requireFalse(pair.e57ByteLineageEstablished, "Crosswalk E57 byte lineage");
   }
+  if (
+    computeGrandHallT554CrosswalkPairInventorySha256(crosswalk.pairs) !==
+    GRAND_HALL_T554_EXPECTED_CROSSWALK_PAIR_INVENTORY_SHA256
+  ) {
+    throw new GrandHallT554PanoramaReviewError(
+      "OUTPUT_VERIFICATION_FAILED",
+      "Persisted crosswalk pair inventory drifted from its fixed evidence receipt.",
+    );
+  }
   const scopeGuards = requireJsonRecord(root.scopeGuards, "Scope guards");
+  requireExactJsonKeys(scopeGuards, GRAND_HALL_T554_SCOPE_GUARD_KEYS, "Scope guards");
   if (scopeGuards.candidateMappingState !== "sequence_hypothesis_unverified") {
     throw new GrandHallT554PanoramaReviewError(
       "OUTPUT_VERIFICATION_FAILED",
@@ -1912,6 +2606,7 @@ function parsePersistedGrandHallT554Manifest(
     requireFalse(scopeGuards[property], `Scope guard ${property}`);
   }
   const derivatives = requireJsonRecord(root.derivatives, "Review derivatives");
+  requireExactJsonKeys(derivatives, GRAND_HALL_T554_DERIVATIVE_KEYS, "Review derivatives");
   if (
     derivatives.resamplingPurpose !== "review_display_only" ||
     derivatives.resamplingKernel !== REVIEW_IMAGE_KERNEL ||
@@ -1932,6 +2627,11 @@ function parsePersistedGrandHallT554Manifest(
   const observedOutputNames: string[] = [];
   for (const value of derivatives.outputs) {
     const output = requireJsonRecord(value, "Review output record");
+    requireExactJsonKeys(
+      output,
+      GRAND_HALL_T554_DERIVATIVE_OUTPUT_KEYS,
+      "Review output record",
+    );
     const name = output.relativePath;
     if (typeof name !== "string") {
       throw new GrandHallT554PanoramaReviewError(
@@ -1970,6 +2670,43 @@ function parsePersistedGrandHallT554Manifest(
       "Persisted review output names drifted.",
     );
   }
+  const toolchain = requireJsonRecord(root.toolchain, "Review toolchain");
+  requireExactJsonKeys(toolchain, GRAND_HALL_T554_TOOLCHAIN_KEYS, "Review toolchain");
+  if (
+    typeof toolchain.nodeVersion !== "string" ||
+    toolchain.nodeVersion.length === 0 ||
+    typeof toolchain.sharpVersion !== "string" ||
+    toolchain.sharpVersion.length === 0 ||
+    typeof toolchain.libvipsVersion !== "string" ||
+    toolchain.libvipsVersion.length === 0 ||
+    toolchain.labelRenderer !== "embedded_3x5_bitmap_font_v1" ||
+    toolchain.outputEncoding !== "png_rgb8_no_metadata"
+  ) {
+    throw new GrandHallT554PanoramaReviewError(
+      "OUTPUT_VERIFICATION_FAILED",
+      "Persisted review toolchain metadata drifted.",
+    );
+  }
+  const proof = requireJsonRecord(root.proof, "Review proof");
+  requireExactJsonKeys(proof, GRAND_HALL_T554_PROOF_KEYS, "Review proof");
+  if (
+    proof.everyPanoramaHasStableSha256AndDimensions !== true ||
+    proof.everyT550CandidateMatchedExactBytes !== true ||
+    proof.everyNonCandidateExplicitlyIneligibleUnreviewed !== true ||
+    proof.everyDiagnosticPreviewMatchedExactBytes !== true ||
+    proof.ceilingColorPlanMatchedExactBytes !== true ||
+    proof.outputDirectoryWasAbsentBeforePublish !== true ||
+    proof.outputPublishedByAtomicDirectoryRename !== true ||
+    proof.sourceWrites !== "none" ||
+    proof.networkRequests !== "none" ||
+    !Array.isArray(root.warnings) ||
+    JSON.stringify(root.warnings) !== JSON.stringify(GRAND_HALL_T554_AUTHORITY_NONE_WARNINGS)
+  ) {
+    throw new GrandHallT554PanoramaReviewError(
+      "OUTPUT_VERIFICATION_FAILED",
+      "Persisted review proof or warnings drifted.",
+    );
+  }
   return parsed as GrandHallT554PanoramaReviewManifest;
 }
 
@@ -1982,6 +2719,13 @@ async function readStableOutputBytes(
 ): Promise<StableBytesResult> {
   let captured: Buffer | undefined;
   try {
+    const before = await lstat(path);
+    if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) {
+      throw new GrandHallT554PanoramaReviewError(
+        "OUTPUT_VERIFICATION_FAILED",
+        `${label} must be one private regular file with no hard-link alias.`,
+      );
+    }
     const digest = await sha256RegularFileWithHead(
       path,
       0,
@@ -1989,6 +2733,13 @@ async function readStableOutputBytes(
       undefined,
       undefined,
       async (handle, sizeBytes, sourceSha256) => {
+        const opened = await handle.stat();
+        if (!opened.isFile() || opened.nlink !== 1) {
+          throw new GrandHallT554PanoramaReviewError(
+            "OUTPUT_VERIFICATION_FAILED",
+            `${label} gained a hard-link alias during verification.`,
+          );
+        }
         if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 1 || sizeBytes > maxBytes) {
           throw new GrandHallT554PanoramaReviewError(
             "OUTPUT_VERIFICATION_FAILED",
@@ -2005,6 +2756,13 @@ async function readStableOutputBytes(
         captured = bytes;
       },
     );
+    const after = await lstat(path);
+    if (after.isSymbolicLink() || !after.isFile() || after.nlink !== 1) {
+      throw new GrandHallT554PanoramaReviewError(
+        "OUTPUT_VERIFICATION_FAILED",
+        `${label} gained a hard-link alias during verification.`,
+      );
+    }
     const sha256 = `sha256:${digest.sha256}` as const;
     if (
       captured === undefined ||
@@ -2325,6 +3083,10 @@ async function buildGrandHallT554PanoramaReviewPackFromSources(
     sourceRoot: options.panoramaSourceRoot,
   });
   const records = buildGrandHallT554PanoramaReviewRecords(inventory.files, membership.binding);
+  const sequenceHypotheses = buildGrandHallT554PanoramaE57SequenceHypotheses(
+    inventory.files,
+    membership.binding,
+  );
   const previews = await collectPreviewEvidence(options.e57PreviewRoot, membership.document);
   const ceilingPlan = await inspectCeilingPlan(options.ceilingColorPlanPath);
   const candidateRecords = records
@@ -2332,9 +3094,27 @@ async function buildGrandHallT554PanoramaReviewPackFromSources(
       (record): record is GrandHallT554CandidateReviewRecord =>
         record.reviewEligibility === "t550_candidate_human_pending",
     )
-    .sort((left, right) => left.candidateScanIndex - right.candidateScanIndex);
+    .sort((left, right) => left.sweepNumber - right.sweepNumber);
+  const sequenceHypothesisBySweep = new Map(
+    sequenceHypotheses.map((hypothesis) => [hypothesis.sourceSweepNumber, hypothesis] as const),
+  );
+  const diagnosticsBySweep = t550BindingsBySweep(membership.binding);
   const candidateByScan = new Map(
-    candidateRecords.map((record) => [record.candidateScanIndex, record] as const),
+    sequenceHypotheses.map((hypothesis) => {
+      const source = candidateRecords[hypothesis.sourceSweepNumber - 1];
+      const diagnostic = diagnosticsBySweep.get(hypothesis.sourceSweepNumber);
+      if (
+        source === undefined ||
+        source.sweepNumber !== hypothesis.sourceSweepNumber ||
+        diagnostic === undefined
+      ) {
+        throw new GrandHallT554PanoramaReviewError(
+          "T550_BINDING_MISMATCH",
+          "A sequence hypothesis does not bind one exact sweep-ordered source panorama.",
+        );
+      }
+      return [hypothesis.candidateScanIndex, { source, diagnostic }] as const;
+    }),
   );
   const previewByScan = new Map(previews.map((record) => [record.scanIndex, record] as const));
   const panoramaRoot = await resolveDirectDirectory(
@@ -2365,7 +3145,12 @@ async function buildGrandHallT554PanoramaReviewPackFromSources(
         MAX_JPEG_BYTES,
       )
     ).bytes;
-  const overview = await renderOverview(candidateRecords, loadCandidateBytes);
+  const overview = await renderOverview(
+    candidateRecords,
+    sequenceHypothesisBySweep,
+    diagnosticsBySweep,
+    loadCandidateBytes,
+  );
   const crosswalk = await renderCrosswalk({
     pairs: membership.document.sourceBindings.panoramaAuditSet.crosswalkEvidence.pairResults,
     candidates: candidateByScan,
@@ -2378,6 +3163,7 @@ async function buildGrandHallT554PanoramaReviewPackFromSources(
     membership,
     inventory,
     records,
+    sequenceHypotheses,
     previews,
     ceilingPlan,
     outputs,

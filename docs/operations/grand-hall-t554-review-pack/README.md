@@ -9,8 +9,12 @@ deployment, generated fill, architectural repair, or production trust.
 ## What is already machine-checked
 
 - all 148 Matterport panorama JPEGs are inventoried by exact byte identity;
-- numeric sweeps 1–50 are exposed as review candidates and the other 98 files
-  remain explicitly unreviewed/ineligible for T-554;
+- numeric panorama sweeps 1–50 are exposed as source-image review candidates
+  and the other 98 files remain explicitly unreviewed/ineligible for T-554;
+- each candidate JPEG identity contains only its sweep number, filename, exact
+  bytes, and dimensions; the apparent sweep→E57 scan sequence is stored
+  separately as `sequence_hypothesis_unverified` with no geometric-camera,
+  training, reconstruction, or runtime authority;
 - MatterPak room 9 is shown directly from source geometry;
 - all eight exact shared-index interfaces are present and remain `PENDING`;
 - room 9 is correctly reported as non-watertight rather than silently capped;
@@ -20,28 +24,42 @@ deployment, generated fill, architectural repair, or production trust.
   closure surface, or generated content has been added.
 
 The canonical root descriptor is [review-pack.json](./review-pack.json). It
-binds the final boundary manifest, panorama manifest, 148-file inventory,
-50 review candidates, all eight interfaces, and the T-550/T-551/T-553 source
-receipts.
+binds the final boundary manifest, all-eight exact interface-topology atlas,
+panorama manifest, 148-file inventory,
+50 pure source-JPEG review candidates, the separate authority-none sequence
+hypotheses, all eight interfaces, and the T-550/T-551/T-553 source receipts.
 
 ## Open these files in this order
 
 1. [Panorama candidate overview](./panoramas/panorama-candidate-overview-review-only.png)
-   — inspect scans 000–049. The coloured labels are pending hypotheses, not
-   decisions.
+   — inspect source panorama sweeps 001–050. A displayed E57 scan number is a
+   separate diagnostic sequence hypothesis, not source identity, pose,
+   correspondence, or a decision.
 2. [Six diagnostic panorama pairs](./panoramas/panorama-crosswalk-six-review-only.png)
-   — useful visual comparisons only; the pairings are not byte lineage or
-   accepted correspondences.
+   — historical-unverified visual comparisons only; the pairings are not byte
+   lineage, geometric camera authority, or accepted correspondences.
 3. [Room-scale XY plan](./boundary/plan-xy.svg) — source room 9, rooms 13/14,
    candidate centres, and the complete eight-interface legend.
-4. [Room 9↔13 portal diagnostic](./boundary/portal-room9-room13.svg) and
-   [room 9↔14 portal diagnostic](./boundary/portal-room9-room14.svg) — point and
-   residual diagnostics only, explicitly not closure geometry.
-5. Exact source slices:
+4. All-eight exact-source interface atlas:
+   [0:2](./boundary/interfaces/interface-matterpak-1-9-0-2.svg),
+   [0:3](./boundary/interfaces/interface-matterpak-1-9-0-3.svg),
+   [0:4](./boundary/interfaces/interface-matterpak-1-9-0-4.svg),
+   [1:10](./boundary/interfaces/interface-matterpak-1-9-1-10.svg),
+   [1:11](./boundary/interfaces/interface-matterpak-1-9-1-11.svg),
+   [1:12](./boundary/interfaces/interface-matterpak-1-9-1-12.svg),
+   [1:13](./boundary/interfaces/interface-matterpak-1-9-1-13.svg), and
+   [1:14](./boundary/interfaces/interface-matterpak-1-9-1-14.svg). Each page
+   shows exact source triangles and shared topology in XY/XZ/YZ, with no inferred
+   doorway, closure, keep-side, mask, camera join, or generated contour.
+5. [Room 9↔13 shared-interface plane fit](./boundary/interface-plane-fit-room9-room13.svg) and
+   [room 9↔14 shared-interface plane fit](./boundary/interface-plane-fit-room9-room14.svg) — the
+   two largest exact shared-vertex interfaces by source count. These are residual
+   diagnostics only: they infer no portal, doorway, or closure geometry.
+6. Exact source slices:
    [Z=0.10 m](./boundary/slice-z-0.10m.svg),
    [Z=1.50 m](./boundary/slice-z-1.50m.svg), and
    [Z=2.50 m](./boundary/slice-z-2.50m.svg).
-6. [All-camera diagnostic overview](./boundary/camera-overview-diagnostic.svg)
+7. [All-camera diagnostic overview](./boundary/camera-overview-diagnostic.svg)
    only if needed. It is deliberately separate because all 149 diagnostic
    centres make the room-scale plan harder to read.
 
@@ -50,10 +68,11 @@ item `UNSURE` is safe; no unresolved item can become runtime authority.
 
 ## Baby-step workflow
 
-1. Look at panorama scan 000 in the overview.
+1. Look at source panorama sweep 001 in the overview.
 2. Mark it `INCLUDE`, `EXCLUDE`, or `UNSURE` in the checklist.
-3. Repeat through scan 049. You may overturn every current agent hypothesis.
-4. Look at the room-scale plan and portal diagrams.
+3. Repeat through source panorama sweep 050. You may overturn every current
+   image-content hypothesis. This review does not accept any E57 scan mapping.
+4. Look at the room-scale plan and all-eight interface atlas.
 5. Give one disposition for each of the eight interface IDs. Do not infer a
    doorway merely because two source submeshes share vertices.
 6. Stop. The closed selection volume and panorama masks do not exist yet.
@@ -93,7 +112,9 @@ free, and human confirmation of the installed LCC version/settings.
 
 ## Immutable review identities
 
-- root descriptor: `sha256:a0b39dae80cec0724f68ebced0b4662223304e82bff1233b8c477b23f0088c24`
-- boundary manifest: `sha256:6d0f6a230053ccc85275a80260c7b27cfd612ee5c7ca9964bc0ca8653b84de27`
-- panorama manifest: `sha256:c2d74ee55b27be9b4641d3b94968591d37735d353987d30adca4fc785b3636ef`
-- panorama inventory: `sha256:949f4cbf365f33d47c5e75f46b881aff857695fbbb70879e27c4f23f4b2af176`
+- root descriptor: `sha256:8a6bef9c3b9e5c27e4c1f62994d7d8d01a82b4afee9515d39f2513c36dcac3aa`
+- boundary manifest: `sha256:289dff7895d9e840671d503b74f576460f6e15b7ff32efae0ca12a866a875dd3`
+- all-eight interface atlas: `sha256:6f7b702ef8b74b22e6d83d516ff8a2b160ee78ddcdd66f7a06370982ed96e4bc`
+- panorama manifest: `sha256:4c23c3374dabd64e158c179ffaa38b32ae40876aaaf9da5f16ee57093f88f5bc`
+- full 148-file panorama-directory inventory: `sha256:949f4cbf365f33d47c5e75f46b881aff857695fbbb70879e27c4f23f4b2af176`
+- pure 50-JPEG source inventory v2: `sha256:2f726892ec3a29e7f0d608f22c4f4b0ca5ef89546b9d59072ab065ba336bd7f1`

@@ -21,6 +21,7 @@ import {
   GrandHallPanoramaMaskSetV1MaterialSchema,
   GrandHallPanoramaMaskSetV1Schema,
   GrandHallPanoramaDirectoryFileIdentitySchema,
+  GrandHallPanoramaE57SequenceHypothesisSchema,
   GrandHallPanoramaSourceJpgIdentitySchema,
   GrandHallInterfaceCandidateSchema,
   GrandHallPortalDecisionsV1MaterialSchema,
@@ -59,15 +60,31 @@ const humanReview = {
 };
 
 function panoramaSources() {
-  return Array.from({ length: 50 }, (_, scanIndex) =>
+  return Array.from({ length: 50 }, (_, index) =>
     GrandHallPanoramaSourceJpgIdentitySchema.parse({
-    scanIndex,
-    sweepNumber: scanIndex + 1,
-    fileName: `sweep-${String(scanIndex + 1).padStart(3, "0")}.jpg`,
-    sha256: receipt(scanIndex + 1),
-    byteLength: 1_000 + scanIndex,
+    sweepNumber: index + 1,
+    fileName: `sweep-${String(index + 1).padStart(3, "0")}.jpg`,
+    sha256: receipt(index + 1),
+    byteLength: 1_000 + index,
     widthPx: GRAND_HALL_PANORAMA_WIDTH_PX as 8192,
     heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX as 4096,
+  }));
+}
+
+function panoramaE57SequenceHypotheses(
+  sources: ReturnType<typeof panoramaSources>,
+) {
+  return sources.map((source, index) => GrandHallPanoramaE57SequenceHypothesisSchema.parse({
+    sourceSweepNumber: source.sweepNumber,
+    sourceJpgFileName: source.fileName,
+    sourceJpgSha256: source.sha256,
+    candidateScanIndex: index,
+    state: "sequence_hypothesis_unverified",
+    authority: "none",
+    geometricCameraAuthority: "none",
+    trainingAuthority: "none",
+    reconstructionAuthority: "none",
+    runtimeAuthority: "none",
   }));
 }
 
@@ -99,10 +116,11 @@ function interfaceCandidates() {
 
 function acceptedArtifacts() {
   const sources = panoramaSources();
+  const sequenceHypotheses = panoramaE57SequenceHypotheses(sources);
   const interfaces = interfaceCandidates();
   const directoryFiles = [
-    ...sources.map((source) => GrandHallPanoramaDirectoryFileIdentitySchema.parse({
-      inventoryIndex: source.scanIndex,
+    ...sources.map((source, inventoryIndex) => GrandHallPanoramaDirectoryFileIdentitySchema.parse({
+      inventoryIndex,
       fileName: source.fileName,
       sha256: source.sha256,
       byteLength: source.byteLength,
@@ -158,11 +176,13 @@ function acceptedArtifacts() {
       matterPakE57SourceReceiptSha256: receipt(114),
       panoramaDirectoryInventorySha256: directoryInventorySha256,
       boundaryReviewManifestSha256: receipt(115),
+      interfaceTopologyAtlasManifestSha256: receipt(119),
       panoramaReviewManifestSha256: receipt(116),
     },
     panoramaDirectoryFiles: directoryFiles,
     candidatePanoramaSources: sources,
     panoramaSourceInventorySha256: panoramaInventorySha256,
+    panoramaE57SequenceHypotheses: sequenceHypotheses,
     interfaceCandidates: interfaces,
     interfaceInventorySha256,
     proposalArtifacts: {
@@ -219,13 +239,14 @@ function acceptedArtifacts() {
     sourceMembershipV1Sha256: receipt(110),
     sourceBoundaryEvidenceSha256: receipt(111),
     sourcePanoramaInventorySha256: panoramaInventorySha256,
+    geometricCameraAuthority: "none" as const,
     matterPakRoomMembership: {
       includedRoomKeys: [GRAND_HALL_MATTERPAK_ROOM_KEY] as const,
       neighbouringRoomGeometryIncluded: false as const,
       facadeGeometryIncluded: false as const,
     },
-    cameraRecords: sources.map((source) => {
-      if (source.scanIndex === 18 || source.scanIndex === 49) {
+    panoramaRecords: sources.map((source, sourceIndex) => {
+      if (sourceIndex === 18 || sourceIndex === 49) {
         return {
           source,
           decision: {
@@ -234,20 +255,20 @@ function acceptedArtifacts() {
             maskRequired: false as const,
             generatedFillPermitted: false as const,
           },
-          decisionEvidenceSha256: receipt(200 + source.scanIndex),
+          decisionEvidenceSha256: receipt(200 + sourceIndex),
         };
       }
       return {
         source,
         decision: {
           disposition: "include_with_binary_pixel_mask" as const,
-          classification: source.scanIndex === 0 || source.scanIndex === 17 || source.scanIndex === 48
+          classification: sourceIndex === 0 || sourceIndex === 17 || sourceIndex === 48
             ? "grand_hall_portal_threshold" as const
             : "grand_hall_core" as const,
           maskRequired: true as const,
           generatedFillPermitted: false as const,
         },
-        decisionEvidenceSha256: receipt(200 + source.scanIndex),
+        decisionEvidenceSha256: receipt(200 + sourceIndex),
       };
     }),
     acceptedUnknownPixelDisposition: "transparent_or_unknown_never_filled" as const,
@@ -327,8 +348,8 @@ function acceptedArtifacts() {
     artifactSha256: computeGrandHallClosedBoundaryV1Sha256(boundaryMaterial),
   });
 
-  const sourceRecords = sources.map((source) => {
-    if (source.scanIndex === 18 || source.scanIndex === 49) {
+  const sourceRecords = sources.map((source, sourceIndex) => {
+    if (sourceIndex === 18 || sourceIndex === 49) {
       return {
         source,
         disposition: "exclude_whole_frame" as const,
@@ -340,9 +361,9 @@ function acceptedArtifacts() {
       source,
       disposition: "include_with_binary_pixel_mask" as const,
       mask: {
-        fileName: `mask-${String(source.scanIndex).padStart(3, "0")}.png`,
-        sha256: receipt(400 + source.scanIndex),
-        byteLength: 500 + source.scanIndex,
+        fileName: `mask-${String(sourceIndex).padStart(3, "0")}.png`,
+        sha256: receipt(400 + sourceIndex),
+        byteLength: 500 + sourceIndex,
         sourceJpgFileName: source.fileName,
         sourceJpgSha256: source.sha256,
         widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
@@ -375,6 +396,7 @@ function acceptedArtifacts() {
     membershipArtifactSha256: membership.artifactSha256,
     portalDecisionArtifactSha256: portal.artifactSha256,
     sourcePanoramaInventorySha256: panoramaInventorySha256,
+    geometricCameraAuthority: "none" as const,
     sourceRecordCount: 50 as const,
     maskCount: 48,
     wholeFrameExclusionCount: 2,
@@ -548,6 +570,53 @@ function acceptedArtifacts() {
 }
 
 describe("Grand Hall T-554 artifact contracts", () => {
+  it("keeps source JPEG identity independent from the unverified E57 sequence hypothesis", () => {
+    const sources = panoramaSources();
+    const sourceInventorySha256 = computeGrandHallPanoramaSourceInventorySha256(sources);
+    const hypotheses = panoramaE57SequenceHypotheses(sources);
+    const permutedHypotheses = hypotheses.map((hypothesis, index) => ({
+      ...hypothesis,
+      candidateScanIndex: index === 0 ? 148 : index - 1,
+    }));
+
+    expect(computeGrandHallPanoramaSourceInventorySha256(sources)).toBe(sourceInventorySha256);
+    expect(permutedHypotheses).not.toEqual(hypotheses);
+    expect(sources[0]).toEqual({
+      sweepNumber: 1,
+      fileName: "sweep-001.jpg",
+      sha256: receipt(1),
+      byteLength: 1_000,
+      widthPx: 8_192,
+      heightPx: 4_096,
+    });
+    expect(GrandHallPanoramaSourceJpgIdentitySchema.safeParse({
+      ...sources[0],
+      scanIndex: 0,
+    }).success).toBe(false);
+  });
+
+  it("cannot present a panorama-to-E57 sequence hypothesis as reviewed or authoritative", () => {
+    const [hypothesis] = panoramaE57SequenceHypotheses(panoramaSources());
+    if (hypothesis === undefined) throw new Error("Expected a synthetic sequence hypothesis.");
+
+    expect(GrandHallPanoramaE57SequenceHypothesisSchema.safeParse({
+      ...hypothesis,
+      state: "human_reviewed",
+    }).success).toBe(false);
+    expect(GrandHallPanoramaE57SequenceHypothesisSchema.safeParse({
+      ...hypothesis,
+      geometricCameraAuthority: "human_accepted",
+    }).success).toBe(false);
+    expect(GrandHallPanoramaE57SequenceHypothesisSchema.safeParse({
+      ...hypothesis,
+      runtimeAuthority: "human_accepted",
+    }).success).toBe(false);
+    expect(GrandHallPanoramaE57SequenceHypothesisSchema.safeParse({
+      ...hypothesis,
+      candidateScanIndex: 148,
+    }).success).toBe(true);
+  });
+
   it("keeps the review pack authority-none and validates all synthetic accepted artifacts", () => {
     const artifacts = acceptedArtifacts();
 
@@ -582,6 +651,19 @@ describe("Grand Hall T-554 artifact contracts", () => {
     expect(GrandHallPanoramaMaskSetV1Schema.safeParse(artifacts.panoramaMaskSet).success).toBe(true);
     expect(GrandHallReviewedTransformV1Schema.safeParse(artifacts.transform).success).toBe(true);
     expect(GrandHallOutputInventoryMaskV1Schema.safeParse(artifacts.outputMask).success).toBe(true);
+  });
+
+  it("prevents accepted panorama membership and masks from claiming geometric-camera authority", () => {
+    const { membershipMaterial, panoramaMaskSetMaterial } = acceptedArtifacts();
+
+    expect(GrandHallRoomMembershipV2MaterialSchema.safeParse({
+      ...membershipMaterial,
+      geometricCameraAuthority: "human_accepted",
+    }).success).toBe(false);
+    expect(GrandHallPanoramaMaskSetV1MaterialSchema.safeParse({
+      ...panoramaMaskSetMaterial,
+      geometricCameraAuthority: "human_accepted",
+    }).success).toBe(false);
   });
 
   it("rejects digest drift after an accepted decision changes", () => {
@@ -680,7 +762,7 @@ describe("Grand Hall T-554 artifact contracts", () => {
 
   it("allows human review to include all 50 source frames", () => {
     const { membershipMaterial, panoramaMaskSetMaterial } = acceptedArtifacts();
-    const allIncludedMembership = membershipMaterial.cameraRecords.map((record) => ({
+    const allIncludedMembership = membershipMaterial.panoramaRecords.map((record) => ({
       ...record,
       decision: {
         disposition: "include_with_binary_pixel_mask" as const,
@@ -723,7 +805,7 @@ describe("Grand Hall T-554 artifact contracts", () => {
 
     expect(GrandHallRoomMembershipV2MaterialSchema.safeParse({
       ...membershipMaterial,
-      cameraRecords: allIncludedMembership,
+      panoramaRecords: allIncludedMembership,
     }).success).toBe(true);
     expect(GrandHallPanoramaMaskSetV1MaterialSchema.safeParse({
       ...panoramaMaskSetMaterial,

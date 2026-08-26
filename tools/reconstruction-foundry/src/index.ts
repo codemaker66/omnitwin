@@ -5,6 +5,8 @@ export * from "./grand-hall-xgrids-lcc-windows.js";
 export * from "./grand-hall-accepted-scope-bundle-verifier.js";
 export * from "./grand-hall-t554-boundary-review.js";
 export * from "./grand-hall-t554-boundary-review-cli.js";
+export * from "./grand-hall-t554-interface-atlas.js";
+export * from "./grand-hall-t554-interface-atlas-cli.js";
 export * from "./grand-hall-t554-panorama-review.js";
 export * from "./grand-hall-t554-panorama-review-cli.js";
 export * from "./grand-hall-t554-review-pack.js";

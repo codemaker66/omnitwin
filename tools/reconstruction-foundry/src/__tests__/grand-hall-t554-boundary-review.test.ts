@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import {
   cpSync,
+  linkSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -16,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildT554BoundaryReviewPack,
   canonicalizeT554PoseDocument,
+  GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN,
   GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_SCHEMA,
   verifyPersistedT554BoundaryReviewPack,
   verifyT554SvgSafety,
@@ -23,6 +26,7 @@ import {
   type T554BoundaryReviewBuildInputs,
 } from "../grand-hall-t554-boundary-review.js";
 import { parseGrandHallT554BoundaryReviewArguments } from "../grand-hall-t554-boundary-review-cli.js";
+import { stableCanonicalJson, type JsonValue } from "../grand-hall-room9-boundary.js";
 
 const SYNTHETIC_OBJ = `
 v 0 0 0
@@ -115,6 +119,27 @@ function record(value: unknown, label: string): Readonly<Record<string, unknown>
   return value as Readonly<Record<string, unknown>>;
 }
 
+function mutableRecord(value: unknown, label: string): Record<string, unknown> {
+  return record(value, label) as Record<string, unknown>;
+}
+
+function resealBoundaryManifest(
+  directory: string,
+  mutate: (manifest: Record<string, unknown>) => void,
+): void {
+  const path = join(directory, "manifest.json");
+  const manifest = mutableRecord(JSON.parse(readFileSync(path, "utf8")), "boundary manifest");
+  mutate(manifest);
+  delete manifest.manifestSha256;
+  manifest.manifestSha256 = `sha256:${createHash("sha256")
+    .update(
+      `${GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN}\n${stableCanonicalJson(manifest as JsonValue)}`,
+      "utf8",
+    )
+    .digest("hex")}`;
+  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
 function materialNamesForRoom(value: unknown, groupIndex: number, subIndex: number): readonly unknown[] {
   if (!Array.isArray(value)) throw new Error("material references must be an array");
   for (const [index, entry] of value.entries()) {
@@ -143,7 +168,7 @@ describe("T-554 authority-none boundary review pack", () => {
     expect(pretty.posesJson).toEqual(compact.posesJson);
   });
 
-  it("builds deterministic source-only visuals with pending portal diagnostics", () => {
+  it("builds deterministic source-only visuals with unresolved interface diagnostics", () => {
     const first = buildT554BoundaryReviewPack(inputs());
     const second = buildT554BoundaryReviewPack(inputs());
     expect(second.manifestSha256).toBe(first.manifestSha256);
@@ -153,7 +178,7 @@ describe("T-554 authority-none boundary review pack", () => {
       expect(() => {
         verifyT554SvgSafety(svg);
       }).not.toThrow();
-      expect(svg).toContain("REVIEW PROPOSAL");
+      expect(svg).toContain("REVIEW");
       expect(svg).not.toContain("<script");
     }
 
@@ -187,9 +212,19 @@ describe("T-554 authority-none boundary review pack", () => {
         expect.objectContaining({ roomB: { groupIndex: 1, subIndex: 14 }, reviewState: "pending" }),
       ]),
     );
-    expect(manifest.portalDiagnostics).toEqual(
+    expect(exhaustive.interfaces).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ state: "review_only_not_closure", closureAuthored: false }),
+        expect.objectContaining({ candidateRole: "shared_topology_unresolved" }),
+      ]),
+    );
+    expect(manifest.sharedInterfacePlaneFitDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          state: "review_only_shared_interface_plane_fit",
+          architecturalInference: "none",
+          portalOrDoorwayInferred: false,
+          closureAuthored: false,
+        }),
       ]),
     );
   });
@@ -371,6 +406,117 @@ describe("checked-in T-554 boundary review artifact", () => {
       const linkedDirectory = join(temporaryRoot, "linked");
       symlinkSync(artifactDirectory, linkedDirectory, "junction");
       expect(() => verifyPersistedT554BoundaryReviewPack(linkedDirectory)).toThrow(/cannot be a link/u);
+    } finally {
+      rmSync(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects canonically resealed source, interface, output, and architectural claim attacks", () => {
+    const artifactDirectory = fileURLToPath(new URL(
+      "../../../../docs/operations/grand-hall-t554-review-pack/boundary/",
+      import.meta.url,
+    ));
+    const temporaryRoot = mkdtempSync(join(tmpdir(), "omnitwin-t554-boundary-adversarial-"));
+    const cases: readonly {
+      readonly name: string;
+      readonly mutate: (manifest: Record<string, unknown>) => void;
+    }[] = [
+      {
+        name: "invented portal role",
+        mutate: (manifest) => {
+          const exhaustive = mutableRecord(manifest.exhaustiveSharedInterfaces, "interfaces");
+          const interfaces = exhaustive.interfaces;
+          if (!Array.isArray(interfaces)) throw new Error("interface inventory is absent");
+          mutableRecord(interfaces[0], "first interface").candidateRole = "portal_plane_candidate";
+        },
+      },
+      {
+        name: "rewritten OBJ receipt",
+        mutate: (manifest) => {
+          const bindings = mutableRecord(manifest.sourceBindings, "source bindings");
+          mutableRecord(bindings.obj, "OBJ binding").sha256 = `sha256:${"0".repeat(64)}`;
+        },
+      },
+      {
+        name: "rewritten shared positions",
+        mutate: (manifest) => {
+          const exhaustive = mutableRecord(manifest.exhaustiveSharedInterfaces, "interfaces");
+          const interfaces = exhaustive.interfaces;
+          if (!Array.isArray(interfaces)) throw new Error("interface inventory is absent");
+          mutableRecord(interfaces[0], "first interface").sharedPositionsSha256 = `sha256:${"f".repeat(64)}`;
+        },
+      },
+      {
+        name: "rewritten interface bounds",
+        mutate: (manifest) => {
+          const exhaustive = mutableRecord(manifest.exhaustiveSharedInterfaces, "interfaces");
+          const interfaces = exhaustive.interfaces;
+          if (!Array.isArray(interfaces)) throw new Error("interface inventory is absent");
+          mutableRecord(interfaces[0], "first interface").boundsMeters = {
+            min: [0, 0, 0],
+            max: [999, 999, 999],
+          };
+        },
+      },
+      {
+        name: "rewritten plane-fit selection and metric",
+        mutate: (manifest) => {
+          const fits = manifest.sharedInterfacePlaneFitDiagnostics;
+          if (!Array.isArray(fits)) throw new Error("plane-fit inventory is absent");
+          const fit = mutableRecord(fits[0], "first plane fit");
+          fit.selectionBasis = "doorway_selected_by_operator";
+          fit.centroidMeters = [999, 999, 999];
+        },
+      },
+      {
+        name: "duplicate output path",
+        mutate: (manifest) => {
+          const outputs = manifest.outputs;
+          if (!Array.isArray(outputs)) throw new Error("output inventory is absent");
+          const first = mutableRecord(outputs[0], "first output");
+          mutableRecord(outputs[1], "second output").relativePath = first.relativePath;
+        },
+      },
+      {
+        name: "invented closed geometry method",
+        mutate: (manifest) => {
+          manifest.geometryMethod = { closedBoundaryEstablished: true, inferredDoorways: true };
+        },
+      },
+      {
+        name: "invented generated texture policy",
+        mutate: (manifest) => {
+          manifest.sourceTexturePolicy = { generatedFillPermitted: true };
+        },
+      },
+    ];
+    try {
+      cases.forEach(({ name, mutate }, index) => {
+        const directory = join(temporaryRoot, `case-${String(index)}`);
+        cpSync(artifactDirectory, directory, { recursive: true });
+        resealBoundaryManifest(directory, mutate);
+        expect(
+          () => verifyPersistedT554BoundaryReviewPack(directory),
+          name,
+        ).toThrow();
+      });
+    } finally {
+      rmSync(temporaryRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an externally hard-linked persisted boundary manifest", () => {
+    const artifactDirectory = fileURLToPath(new URL(
+      "../../../../docs/operations/grand-hall-t554-review-pack/boundary/",
+      import.meta.url,
+    ));
+    const temporaryRoot = mkdtempSync(join(tmpdir(), "omnitwin-t554-boundary-hardlink-"));
+    const directory = join(temporaryRoot, "copy");
+    const alias = join(temporaryRoot, "manifest-alias.json");
+    try {
+      cpSync(artifactDirectory, directory, { recursive: true });
+      linkSync(join(directory, "manifest.json"), alias);
+      expect(() => verifyPersistedT554BoundaryReviewPack(directory)).toThrow(/hard link/u);
     } finally {
       rmSync(temporaryRoot, { recursive: true, force: true });
     }

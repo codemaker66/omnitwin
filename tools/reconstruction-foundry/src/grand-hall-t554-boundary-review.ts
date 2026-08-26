@@ -3,8 +3,9 @@
  *
  * Every visual in this module is a direct, flat projection of hash-bound
  * MatterPak triangles, triangle/plane intersections, E57 camera centres, or
- * shared source vertices. Portal planes are explicitly diagnostic fits. This
- * module never authors a wall, portal closure, room volume, texture, or mask.
+ * shared source vertices. Plane fits are explicitly non-architectural review
+ * diagnostics. This module never authors a wall, portal closure, room volume,
+ * texture, or mask.
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -48,11 +49,20 @@ import {
   type VerticalFirstHitResult,
 } from "./grand-hall-room9-boundary.js";
 import { computePythonCanonicalPoseSha256 } from "./grand-hall-room9-source-receipt.js";
+import {
+  GRAND_HALL_T554_INTERFACE_DEFINITIONS,
+  checkT554InterfaceAtlas,
+  verifyPersistedT554InterfaceAtlasEvidence,
+  writeT554InterfaceAtlas,
+} from "./grand-hall-t554-interface-atlas.js";
+import { verifyT554SvgSafety } from "./grand-hall-t554-svg-safety.js";
+
+export { verifyT554SvgSafety } from "./grand-hall-t554-svg-safety.js";
 
 export const GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_SCHEMA =
-  "omnitwin.foundry.grand-hall-t554-boundary-review-pack.v1";
+  "omnitwin.foundry.grand-hall-t554-boundary-review-pack.v2";
 export const GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN =
-  "OMNITWIN_GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_V1";
+  "OMNITWIN_GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_V2";
 export const GRAND_HALL_T554_BOUNDARY_REVIEW_FATAL_MESSAGE =
   "Grand Hall T-554 boundary review generation failed; no review pack was issued.";
 
@@ -129,9 +139,12 @@ const OUTPUT_FILE_NAMES = Object.freeze([
   "slice-z-0.10m.svg",
   "slice-z-1.50m.svg",
   "slice-z-2.50m.svg",
-  "portal-room9-room13.svg",
-  "portal-room9-room14.svg",
+  "interface-plane-fit-room9-room13.svg",
+  "interface-plane-fit-room9-room14.svg",
 ]);
+const INTERFACE_ATLAS_DIRECTORY_NAME = "interfaces";
+const MAX_BOUNDARY_MANIFEST_BYTES = 4 * 1_024 * 1_024;
+const MAX_BOUNDARY_SVG_BYTES = 32 * 1_024 * 1_024;
 
 export interface T554StableSourceIdentity {
   readonly sourceLocator: string;
@@ -147,6 +160,7 @@ interface FileIdentitySnapshot {
   readonly device: bigint;
   readonly inode: bigint;
   readonly mode: bigint;
+  readonly links: bigint;
   readonly size: bigint;
   readonly modifiedNs: bigint;
   readonly changedNs: bigint;
@@ -224,17 +238,17 @@ interface InterfaceEvidence {
   readonly bounds: AxisAlignedBounds3;
   readonly room9BoundaryEdges: readonly Edge[];
   readonly room9BoundaryEdgesSha256: Sha256;
-  readonly candidateRole: "portal_plane_candidate" | "shared_topology_unresolved";
+  readonly candidateRole: "shared_topology_unresolved";
 }
 
-interface PortalPointProjection {
+interface InterfacePlanePointProjection {
   readonly vertexIndex: number;
   readonly u: number;
   readonly v: number;
   readonly signedResidualM: number;
 }
 
-interface PortalDiagnostic {
+interface InterfacePlaneFitDiagnostic {
   readonly interfaceId: string;
   readonly roomB: MatterportRoomKey;
   readonly centroid: Vec3;
@@ -249,7 +263,7 @@ interface PortalDiagnostic {
   readonly hullVertexIndices: readonly number[];
   readonly hullAreaSquareM: number;
   readonly hullPerimeterM: number;
-  readonly projectedPoints: readonly PortalPointProjection[];
+  readonly projectedPoints: readonly InterfacePlanePointProjection[];
 }
 
 interface SliceSegment {
@@ -274,7 +288,7 @@ interface BuiltGeometryEvidence {
   readonly rooms: readonly RoomTriangles[];
   readonly room9Topology: Room9Topology;
   readonly interfaces: readonly InterfaceEvidence[];
-  readonly portalDiagnostics: readonly PortalDiagnostic[];
+  readonly interfacePlaneFitDiagnostics: readonly InterfacePlaneFitDiagnostic[];
   readonly slices: readonly SliceEvidence[];
   readonly materialRefsByRoom: readonly {
     readonly room: MatterportRoomKey;
@@ -315,6 +329,7 @@ function descriptorIdentity(descriptor: number): FileIdentitySnapshot {
     device: stats.dev,
     inode: stats.ino,
     mode: stats.mode,
+    links: stats.nlink,
     size: stats.size,
     modifiedNs: stats.mtimeNs,
     changedNs: stats.ctimeNs,
@@ -327,6 +342,7 @@ function pathIdentity(path: string): FileIdentitySnapshot {
     device: stats.dev,
     inode: stats.ino,
     mode: stats.mode,
+    links: stats.nlink,
     size: stats.size,
     modifiedNs: stats.mtimeNs,
     changedNs: stats.ctimeNs,
@@ -338,6 +354,7 @@ function sameFileIdentity(left: FileIdentitySnapshot, right: FileIdentitySnapsho
     left.device === right.device &&
     left.inode === right.inode &&
     left.mode === right.mode &&
+    left.links === right.links &&
     left.size === right.size &&
     left.modifiedNs === right.modifiedNs &&
     left.changedNs === right.changedNs
@@ -649,10 +666,7 @@ function exhaustiveInterfaces(
         `${GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN}.interface-boundary-edges.${roomId(candidate.key)}`,
         interfaceBoundaryEdges,
       ),
-      candidateRole:
-        candidate.key.groupIndex === 1 && (candidate.key.subIndex === 13 || candidate.key.subIndex === 14)
-          ? "portal_plane_candidate"
-          : "shared_topology_unresolved",
+      candidateRole: "shared_topology_unresolved",
     });
   }
   return interfaces.sort((a, b) =>
@@ -764,11 +778,15 @@ function canonicalNormal(value: Vec3): Vec3 {
   return (value[largestAxis] ?? 0) < 0 ? scale(value, -1) : value;
 }
 
-function convexHull(points: readonly PortalPointProjection[]): readonly PortalPointProjection[] {
+function convexHull(points: readonly InterfacePlanePointProjection[]): readonly InterfacePlanePointProjection[] {
   const sorted = [...points].sort((a, b) => a.u - b.u || a.v - b.v || a.vertexIndex - b.vertexIndex);
-  const cross2 = (o: PortalPointProjection, a: PortalPointProjection, b: PortalPointProjection): number =>
+  const cross2 = (
+    o: InterfacePlanePointProjection,
+    a: InterfacePlanePointProjection,
+    b: InterfacePlanePointProjection,
+  ): number =>
     (a.u - o.u) * (b.v - o.v) - (a.v - o.v) * (b.u - o.u);
-  const lower: PortalPointProjection[] = [];
+  const lower: InterfacePlanePointProjection[] = [];
   for (const point of sorted) {
     while (lower.length >= 2) {
       const origin = requiredArrayItem(lower, lower.length - 2, "lower hull origin");
@@ -778,7 +796,7 @@ function convexHull(points: readonly PortalPointProjection[]): readonly PortalPo
     }
     lower.push(point);
   }
-  const upper: PortalPointProjection[] = [];
+  const upper: InterfacePlanePointProjection[] = [];
   for (const point of [...sorted].reverse()) {
     while (upper.length >= 2) {
       const origin = requiredArrayItem(upper, upper.length - 2, "upper hull origin");
@@ -793,10 +811,13 @@ function convexHull(points: readonly PortalPointProjection[]): readonly PortalPo
   return [...lower, ...upper];
 }
 
-function portalDiagnostic(model: ParsedMatterportObj, evidence: InterfaceEvidence): PortalDiagnostic {
+function interfacePlaneFitDiagnostic(
+  model: ParsedMatterportObj,
+  evidence: InterfaceEvidence,
+): InterfacePlaneFitDiagnostic {
   const points = evidence.sharedVertexIndices.map((index) => {
     const point = model.vertices[index];
-    if (point === undefined) throw new Error("portal interface vertex is absent");
+    if (point === undefined) throw new Error("shared interface vertex is absent");
     return { index, point };
   });
   const centroidRaw = [0, 1, 2].map(
@@ -829,7 +850,7 @@ function portalDiagnostic(model: ParsedMatterportObj, evidence: InterfaceEvidenc
   if (dot(basisVRaw, [0, 0, 1]) < 0) basisVRaw = scale(basisVRaw, -1);
   const basisU = quantizedVec3(basisURaw);
   const basisV = quantizedVec3(basisVRaw);
-  const projectedPoints = points.map(({ index, point }): PortalPointProjection => {
+  const projectedPoints = points.map(({ index, point }): InterfacePlanePointProjection => {
     const centered = subtract(point, centroidRaw);
     return {
       vertexIndex: index,
@@ -839,12 +860,12 @@ function portalDiagnostic(model: ParsedMatterportObj, evidence: InterfaceEvidenc
     };
   });
   const hull = convexHull(projectedPoints);
-  if (hull.length < 3) throw new Error("portal shared vertices do not form a reviewable hull");
+  if (hull.length < 3) throw new Error("shared-interface vertices do not form a reviewable hull");
   let twiceArea = 0;
   let perimeter = 0;
   for (let index = 0; index < hull.length; index += 1) {
-    const current = requiredArrayItem(hull, index, "portal hull point");
-    const next = requiredArrayItem(hull, (index + 1) % hull.length, "portal hull successor");
+    const current = requiredArrayItem(hull, index, "shared-interface hull point");
+    const next = requiredArrayItem(hull, (index + 1) % hull.length, "shared-interface hull successor");
     twiceArea += current.u * next.v - current.v * next.u;
     perimeter += Math.hypot(next.u - current.u, next.v - current.v);
   }
@@ -968,6 +989,63 @@ function requireRecord(value: unknown, label: string): Readonly<Record<string, u
   return value as Readonly<Record<string, unknown>>;
 }
 
+function requireArray(value: unknown, label: string): readonly unknown[] {
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
+  return value;
+}
+
+function requireSafeInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${label} must be a nonnegative safe integer`);
+  }
+  return value;
+}
+
+function requireFiniteNumber(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a finite number`);
+  }
+  return value;
+}
+
+function requireSha256(value: unknown, label: string): Sha256 {
+  if (typeof value !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(value)) {
+    throw new Error(`${label} must be a SHA-256 receipt`);
+  }
+  return value as Sha256;
+}
+
+function requireExactKeys(
+  record: Readonly<Record<string, unknown>>,
+  expectedKeys: readonly string[],
+  label: string,
+): void {
+  const actual = Object.keys(record).sort();
+  const expected = [...expectedKeys].sort();
+  if (stableCanonicalJson(actual) !== stableCanonicalJson(expected)) {
+    throw new Error(`${label} fields drifted`);
+  }
+}
+
+function requireExactRoom(value: unknown, expected: MatterportRoomKey, label: string): void {
+  const room = requireRecord(value, label);
+  requireExactKeys(room, ["groupIndex", "subIndex"], label);
+  if (room.groupIndex !== expected.groupIndex || room.subIndex !== expected.subIndex) {
+    throw new Error(`${label} differs from its exact source room`);
+  }
+}
+
+function requireFiniteBounds(value: unknown, label: string): AxisAlignedBounds3 {
+  const bounds = requireRecord(value, label);
+  requireExactKeys(bounds, ["min", "max"], label);
+  const minimum = finiteVector(bounds.min, 3, `${label} minimum`) as Vec3;
+  const maximum = finiteVector(bounds.max, 3, `${label} maximum`) as Vec3;
+  if (minimum.some((coordinate, index) => coordinate > (maximum[index] ?? Number.NEGATIVE_INFINITY))) {
+    throw new Error(`${label} minimum exceeds maximum`);
+  }
+  return { min: minimum, max: maximum };
+}
+
 function finiteVector(value: unknown, length: number, label: string): readonly number[] {
   if (!Array.isArray(value) || value.length !== length) {
     throw new Error(`${label} must contain ${String(length)} numbers`);
@@ -1051,9 +1129,18 @@ function buildGeometry(inputs: T554BoundaryReviewBuildInputs): BuiltGeometryEvid
   if (room9 === undefined) throw new Error("room 9 source selection is absent");
   const room9Topology = topologyForRoom9(room9.triangles);
   const interfaces = exhaustiveInterfaces(model, room9.triangles, room9Topology);
-  const portalInterfaces = interfaces.filter((item) => item.candidateRole === "portal_plane_candidate");
-  if (portalInterfaces.length !== 2) throw new Error("expected exactly two review-only portal candidates");
-  const portalDiagnostics = portalInterfaces.map((item) => portalDiagnostic(model, item));
+  const planeFitReviewInterfaces = [...interfaces]
+    .filter((item) => item.sharedVertexIndices.length >= 3)
+    .sort((a, b) =>
+      b.sharedVertexIndices.length - a.sharedVertexIndices.length || a.interfaceId.localeCompare(b.interfaceId),
+    )
+    .slice(0, 2);
+  if (planeFitReviewInterfaces.length !== 2) {
+    throw new Error("expected two source interfaces with enough vertices for review-only plane fits");
+  }
+  const interfacePlaneFitDiagnostics = planeFitReviewInterfaces.map((item) =>
+    interfacePlaneFitDiagnostic(model, item),
+  );
   const slices = SLICE_HEIGHTS_M.map((zM) => sliceEvidence(model, rooms, zM));
   const materialRefsByRoom = referencedMaterials(rooms, parseMtl(inputs.mtlText));
   return {
@@ -1063,7 +1150,7 @@ function buildGeometry(inputs: T554BoundaryReviewBuildInputs): BuiltGeometryEvid
     rooms,
     room9Topology,
     interfaces,
-    portalDiagnostics,
+    interfacePlaneFitDiagnostics,
     slices,
     materialRefsByRoom,
   };
@@ -1286,7 +1373,7 @@ function residualColor(value: number): string {
   return "#ef4444";
 }
 
-function renderPortalSvg(diagnostic: PortalDiagnostic): string {
+function renderInterfacePlaneFitSvg(diagnostic: InterfacePlaneFitDiagnostic): string {
   const padding = 0.35;
   const sourceMinU = diagnostic.projectedBounds.min[0] - padding;
   const sourceMaxU = diagnostic.projectedBounds.max[0] + padding;
@@ -1301,16 +1388,17 @@ function renderPortalSvg(diagnostic: PortalDiagnostic): string {
   const roomNumber = diagnostic.roomB.subIndex;
   const chunks = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${String(Math.max(1000, Math.ceil(width * 260)))}" height="${String(Math.max(1000, Math.ceil(height * 260)))}" viewBox="${formatNumber(minU)} ${formatNumber(-maxV)} ${formatNumber(width)} ${formatNumber(height)}" role="img" aria-labelledby="title desc">`,
-    `<title id="title">Room 9 to room ${String(roomNumber)} portal source review</title>`,
-    `<desc id="desc">Raw shared vertices projected into a deterministic PCA review plane, with convex hull and signed plane residual colours. This is not a closure plane.</desc>`,
+    `<title id="title">Room 9 to room ${String(roomNumber)} shared-interface plane-fit review</title>`,
+    `<desc id="desc">Raw shared vertices from one of the two largest source-topology interfaces projected into a deterministic PCA review plane, with convex hull and signed plane residual colours. This does not infer a portal, doorway, or closure plane.</desc>`,
     `<rect x="${formatNumber(minU)}" y="${formatNumber(-maxV)}" width="${formatNumber(width)}" height="${formatNumber(height)}" fill="#090d12"/>`,
-    `<text x="${formatNumber(minU + 0.08)}" y="${formatNumber(-maxV + 0.28)}" fill="#f5d28b" font-family="sans-serif" font-size="0.13">Room 9 ↔ ${String(roomNumber)} shared-source portal diagnostic</text>`,
-    `<text x="${formatNumber(minU + 0.08)}" y="${formatNumber(-maxV + 0.55)}" fill="#ef4444" font-family="sans-serif" font-weight="700" font-size="0.14">REVIEW PROPOSAL — NOT ARCHITECTURE — NOT A CLOSURE</text>`,
+    `<text x="${formatNumber(minU + 0.08)}" y="${formatNumber(-maxV + 0.28)}" fill="#f5d28b" font-family="sans-serif" font-size="0.13">Room 9 ↔ ${String(roomNumber)} shared-interface plane-fit diagnostic</text>`,
+    `<text x="${formatNumber(minU + 0.08)}" y="${formatNumber(-maxV + 0.52)}" fill="#ef4444" font-family="sans-serif" font-weight="700" font-size="0.12">REVIEW ONLY — NO PORTAL OR DOORWAY INFERRED</text>`,
+    `<text x="${formatNumber(minU + 0.08)}" y="${formatNumber(-maxV + 0.74)}" fill="#ef4444" font-family="sans-serif" font-weight="700" font-size="0.12">NOT ARCHITECTURE — NOT A CLOSURE</text>`,
     `<rect x="${formatNumber(diagnostic.projectedBounds.min[0])}" y="${formatNumber(-diagnostic.projectedBounds.max[1])}" width="${formatNumber(diagnostic.projectedBounds.max[0] - diagnostic.projectedBounds.min[0])}" height="${formatNumber(diagnostic.projectedBounds.max[1] - diagnostic.projectedBounds.min[1])}" fill="none" stroke="#f8fafc" stroke-width="0.012" stroke-dasharray="0.05 0.035"/>`,
   ];
   const hullPoints = diagnostic.hullVertexIndices.map((index) => {
     const point = diagnostic.projectedPoints.find((candidate) => candidate.vertexIndex === index);
-    if (point === undefined) throw new Error("portal hull references an absent projection");
+    if (point === undefined) throw new Error("interface plane-fit hull references an absent projection");
     return `${formatNumber(point.u)},${formatNumber(-point.v)}`;
   }).join(" ");
   chunks.push(`<polygon points="${hullPoints}" fill="#38bdf8" fill-opacity="0.12" stroke="#38bdf8" stroke-width="0.018"/>`);
@@ -1329,6 +1417,16 @@ function renderPortalSvg(diagnostic: PortalDiagnostic): string {
   return chunks.join("\n");
 }
 
+function outputRole(fileName: string): string {
+  return fileName === "plan-xy.svg"
+    ? "source_xy_plan_review"
+    : fileName === "camera-overview-diagnostic.svg"
+      ? "unregistered_all_camera_centres_diagnostic"
+      : fileName.startsWith("slice-")
+        ? "exact_source_triangle_plane_slice"
+        : "review_only_shared_interface_plane_fit_diagnostic";
+}
+
 function outputRecord(fileName: string, content: string): JsonValue {
   const bytes = new TextEncoder().encode(content);
   return {
@@ -1336,19 +1434,16 @@ function outputRecord(fileName: string, content: string): JsonValue {
     mediaType: "image/svg+xml",
     byteLength: bytes.byteLength,
     sha256: fileSha256(bytes),
-    role:
-      fileName === "plan-xy.svg"
-        ? "source_xy_plan_review"
-        : fileName === "camera-overview-diagnostic.svg"
-          ? "unregistered_all_camera_centres_diagnostic"
-        : fileName.startsWith("slice-")
-          ? "exact_source_triangle_plane_slice"
-          : "review_only_portal_plane_diagnostic",
+    role: outputRole(fileName),
   };
 }
 
 function roomKeyValue(room: MatterportRoomKey): JsonValue {
   return { groupIndex: room.groupIndex, subIndex: room.subIndex };
+}
+
+function axisAlignedBoundsValue(bounds: AxisAlignedBounds3): JsonValue {
+  return { min: [...bounds.min], max: [...bounds.max] };
 }
 
 function sourceIdentityValue(source: T554StableSourceIdentity): JsonValue {
@@ -1377,10 +1472,13 @@ function interfaceManifestValue(item: InterfaceEvidence): JsonValue {
   };
 }
 
-function portalManifestValue(item: PortalDiagnostic): JsonValue {
+function interfacePlaneFitManifestValue(item: InterfacePlaneFitDiagnostic): JsonValue {
   return {
     interfaceId: item.interfaceId,
-    state: "review_only_not_closure",
+    state: "review_only_shared_interface_plane_fit",
+    selectionBasis: "two_largest_interfaces_by_exact_shared_source_vertex_count_with_at_least_three_vertices",
+    architecturalInference: "none",
+    portalOrDoorwayInferred: false,
     method: {
       name: "deterministic_total_least_squares_shared_vertex_plane_v1",
       covariance: "population_covariance_sorted_source_vertex_indices",
@@ -1496,7 +1594,7 @@ function buildManifestMaterial(
       allInterfacesResolved: false,
       interfaces: geometry.interfaces.map(interfaceManifestValue),
     },
-    portalDiagnostics: geometry.portalDiagnostics.map(portalManifestValue),
+    sharedInterfacePlaneFitDiagnostics: geometry.interfacePlaneFitDiagnostics.map(interfacePlaneFitManifestValue),
     cameraCentres: {
       source: "retained E57_SOURCE_ROOT/poses.json raw byte identity plus canonical pose-value identity",
       count: geometry.cameras.length,
@@ -1548,28 +1646,6 @@ function buildManifestMaterial(
   };
 }
 
-export function verifyT554SvgSafety(svg: string): void {
-  if (!svg.startsWith("<svg ") || !svg.endsWith("</svg>\n")) throw new Error("review SVG is not a complete SVG document");
-  const inspected = svg.replace('xmlns="http://www.w3.org/2000/svg"', "");
-  const forbidden = [
-    /<script\b/iu,
-    /<foreignObject\b/iu,
-    /\bon[a-z]+\s*=/iu,
-    /(?:xlink:)?href\s*=/iu,
-    /javascript:/iu,
-    /url\s*\(/iu,
-    /file:\/\//iu,
-    /[A-Za-z]:[\\/]/u,
-    /(?:^|[\\/])Users[\\/]/iu,
-  ];
-  for (const pattern of forbidden) {
-    if (pattern.test(inspected)) throw new Error("review SVG contains a forbidden active or external reference");
-  }
-  if (/https?:\/\//iu.test(inspected) || /\/\//u.test(inspected)) {
-    throw new Error("review SVG contains an external URL");
-  }
-}
-
 export function buildT554BoundaryReviewPack(inputs: T554BoundaryReviewBuildInputs): T554BoundaryReviewPack {
   const geometry = buildGeometry(inputs);
   const files = new Map<string, string>();
@@ -1578,8 +1654,11 @@ export function buildT554BoundaryReviewPack(inputs: T554BoundaryReviewBuildInput
   for (const slice of geometry.slices) {
     files.set(`slice-z-${slice.zM.toFixed(2)}m.svg`, renderSliceSvg(geometry, slice));
   }
-  for (const portal of geometry.portalDiagnostics) {
-    files.set(`portal-room9-room${String(portal.roomB.subIndex)}.svg`, renderPortalSvg(portal));
+  for (const diagnostic of geometry.interfacePlaneFitDiagnostics) {
+    files.set(
+      `interface-plane-fit-room9-room${String(diagnostic.roomB.subIndex)}.svg`,
+      renderInterfacePlaneFitSvg(diagnostic),
+    );
   }
   if (
     files.size !== OUTPUT_FILE_NAMES.length ||
@@ -1610,84 +1689,470 @@ function assertNoAbsolutePaths(value: string): void {
   }
 }
 
+interface ValidatedBoundaryInterface {
+  readonly interfaceId: string;
+  readonly roomB: MatterportRoomKey;
+  readonly sharedVertexIndices: readonly number[];
+  readonly sharedPositionsSha256: Sha256;
+  readonly boundsMeters: AxisAlignedBounds3;
+  readonly room9BoundaryEdgeCount: number;
+  readonly room9BoundaryEdgesSha256: Sha256;
+}
+
+function validatePersistedSourceBindings(value: unknown): void {
+  const sourceBindings = requireRecord(value, "review source bindings");
+  requireExactKeys(
+    sourceBindings,
+    ["obj", "mtl", "colorPlan", "ceilingColorPlan", "posesRaw"],
+    "review source bindings",
+  );
+  const bindings = [
+    ["obj", EXPECTED_SOURCE_FILES.obj],
+    ["mtl", EXPECTED_SOURCE_FILES.mtl],
+    ["colorPlan", EXPECTED_SOURCE_FILES.colorPlan],
+    ["ceilingColorPlan", EXPECTED_SOURCE_FILES.ceilingColorPlan],
+    ["posesRaw", EXPECTED_SOURCE_FILES.poses],
+  ] as const;
+  for (const [key, expected] of bindings) {
+    const binding = requireRecord(sourceBindings[key], `${key} source binding`);
+    requireExactKeys(binding, ["sourceLocator", "byteLength", "sha256"], `${key} source binding`);
+    const exact: JsonValue = {
+      sourceLocator: expected.sourceLocator,
+      byteLength: expected.byteLength,
+      sha256: expected.sha256,
+    };
+    if (stableCanonicalJson(binding as JsonValue) !== stableCanonicalJson(exact)) {
+      throw new Error(`${key} source binding differs from the exact retained source receipt`);
+    }
+  }
+}
+
+function validatePersistedInterfaces(value: unknown): readonly ValidatedBoundaryInterface[] {
+  const exhaustive = requireRecord(value, "shared interfaces");
+  requireExactKeys(
+    exhaustive,
+    ["method", "interfaceCount", "allInterfacesResolved", "interfaces"],
+    "shared interfaces",
+  );
+  if (
+    exhaustive.method !== "intersect sorted source OBJ vertex-index sets with every other MatterPak room key" ||
+    exhaustive.interfaceCount !== GRAND_HALL_T554_INTERFACE_DEFINITIONS.length ||
+    exhaustive.allInterfacesResolved !== false
+  ) {
+    throw new Error("review manifest overstates or changes exhaustive interface discovery");
+  }
+  const interfaces = requireArray(exhaustive.interfaces, "shared interface inventory");
+  if (interfaces.length !== GRAND_HALL_T554_INTERFACE_DEFINITIONS.length) {
+    throw new Error("review manifest omitted or added a shared interface");
+  }
+  return interfaces.map((value, index) => {
+    const definition = GRAND_HALL_T554_INTERFACE_DEFINITIONS[index];
+    if (definition === undefined) throw new Error("shared interface definition inventory drifted");
+    const item = requireRecord(value, `interface ${String(index)}`);
+    requireExactKeys(item, [
+      "interfaceId", "roomA", "roomB", "candidateRole", "reviewState", "sharedVertexCount",
+      "sharedVertexIndices", "sharedVertexIndicesSha256", "sharedPositionsSha256", "boundsMeters",
+      "room9BoundaryEdgeCount", "room9BoundaryEdgesSha256", "disposition",
+    ], `interface ${String(index)}`);
+    if (
+      item.interfaceId !== definition.interfaceId ||
+      item.candidateRole !== "shared_topology_unresolved" ||
+      item.reviewState !== "pending" ||
+      item.disposition !== null
+    ) {
+      throw new Error(`interface ${String(index)} identity, role, or pending disposition drifted`);
+    }
+    requireExactRoom(item.roomA, GRAND_HALL_ROOM_9, `interface ${String(index)} room A`);
+    requireExactRoom(item.roomB, definition.roomB, `interface ${String(index)} room B`);
+    const sharedVertexIndices = requireArray(
+      item.sharedVertexIndices,
+      `interface ${String(index)} shared vertex indices`,
+    ).map((entry, vertexIndex) =>
+      requireSafeInteger(entry, `interface ${String(index)} shared vertex ${String(vertexIndex)}`),
+    );
+    if (
+      sharedVertexIndices.length === 0 ||
+      sharedVertexIndices.some((entry, vertexIndex) =>
+        vertexIndex > 0 && entry <= (sharedVertexIndices[vertexIndex - 1] ?? -1),
+      ) ||
+      item.sharedVertexCount !== sharedVertexIndices.length
+    ) {
+      throw new Error(`interface ${String(index)} shared vertex inventory drifted`);
+    }
+    const expectedIndicesSha256 = canonicalDigest(
+      `${GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN}.interface-indices.${roomId(definition.roomB)}`,
+      sharedVertexIndices,
+    );
+    if (requireSha256(item.sharedVertexIndicesSha256, `interface ${String(index)} index digest`) !== expectedIndicesSha256) {
+      throw new Error(`interface ${String(index)} shared vertex digest differs`);
+    }
+    const sharedPositionsSha256 = requireSha256(
+      item.sharedPositionsSha256,
+      `interface ${String(index)} position digest`,
+    );
+    const room9BoundaryEdgeCount = requireSafeInteger(
+      item.room9BoundaryEdgeCount,
+      `interface ${String(index)} room9 boundary edge count`,
+    );
+    const room9BoundaryEdgesSha256 = requireSha256(
+      item.room9BoundaryEdgesSha256,
+      `interface ${String(index)} room9 boundary edge digest`,
+    );
+    return {
+      interfaceId: definition.interfaceId,
+      roomB: definition.roomB,
+      sharedVertexIndices,
+      sharedPositionsSha256,
+      boundsMeters: requireFiniteBounds(item.boundsMeters, `interface ${String(index)} bounds`),
+      room9BoundaryEdgeCount,
+      room9BoundaryEdgesSha256,
+    };
+  });
+}
+
+function validatePersistedPlaneFits(
+  value: unknown,
+  interfaces: readonly ValidatedBoundaryInterface[],
+): void {
+  const planeFits = requireArray(value, "shared-interface plane-fit diagnostics");
+  if (planeFits.length !== 2) {
+    throw new Error("review manifest must contain two shared-interface plane-fit diagnostics");
+  }
+  const expectedInterfaceIds = [...interfaces]
+    .filter((item) => item.sharedVertexIndices.length >= 3)
+    .sort((left, right) =>
+      right.sharedVertexIndices.length - left.sharedVertexIndices.length ||
+      left.interfaceId.localeCompare(right.interfaceId),
+    )
+    .slice(0, 2)
+    .map((item) => item.interfaceId);
+  const expectedMethod: JsonValue = {
+    name: "deterministic_total_least_squares_shared_vertex_plane_v1",
+    covariance: "population_covariance_sorted_source_vertex_indices",
+    eigenSolver: "fixed_order_jacobi_64_iterations_or_1e-15_convergence",
+    normalSign: "largest_absolute_component_positive",
+    scalarQuantizationDecimalPlaces: FLOAT_QUANTIZATION_DECIMALS,
+  };
+  planeFits.forEach((value, index) => {
+    const item = requireRecord(value, `shared-interface plane-fit diagnostic ${String(index)}`);
+    requireExactKeys(item, [
+      "interfaceId", "state", "selectionBasis", "architecturalInference", "portalOrDoorwayInferred",
+      "method", "centroidMeters", "normal", "basisU", "basisV", "planeOffset", "eigenvaluesSquareM",
+      "rmsResidualM", "maximumAbsoluteResidualM", "projectedBoundsMeters", "hullVertexIndices",
+      "hullAreaSquareM", "hullPerimeterM", "closureAuthored", "keepSideChosen",
+    ], `shared-interface plane-fit diagnostic ${String(index)}`);
+    if (
+      item.interfaceId !== expectedInterfaceIds[index] ||
+      item.state !== "review_only_shared_interface_plane_fit" ||
+      item.selectionBasis !== "two_largest_interfaces_by_exact_shared_source_vertex_count_with_at_least_three_vertices" ||
+      item.architecturalInference !== "none" ||
+      item.portalOrDoorwayInferred !== false ||
+      item.closureAuthored !== false ||
+      item.keepSideChosen !== false
+    ) {
+      throw new Error("shared-interface plane-fit selection or authority claim drifted");
+    }
+    const method = requireRecord(item.method, `shared-interface plane-fit diagnostic ${String(index)} method`);
+    if (stableCanonicalJson(method as JsonValue) !== stableCanonicalJson(expectedMethod)) {
+      throw new Error("shared-interface plane-fit method drifted");
+    }
+    finiteVector(item.centroidMeters, 3, `shared-interface plane-fit diagnostic ${String(index)} centroid`);
+    finiteVector(item.normal, 3, `shared-interface plane-fit diagnostic ${String(index)} normal`);
+    finiteVector(item.basisU, 3, `shared-interface plane-fit diagnostic ${String(index)} basis U`);
+    finiteVector(item.basisV, 3, `shared-interface plane-fit diagnostic ${String(index)} basis V`);
+    finiteVector(item.eigenvaluesSquareM, 3, `shared-interface plane-fit diagnostic ${String(index)} eigenvalues`);
+    requireFiniteNumber(item.planeOffset, `shared-interface plane-fit diagnostic ${String(index)} offset`);
+    for (const [field, label] of [
+      ["rmsResidualM", "RMS residual"],
+      ["maximumAbsoluteResidualM", "maximum residual"],
+      ["hullAreaSquareM", "hull area"],
+      ["hullPerimeterM", "hull perimeter"],
+    ] as const) {
+      if (requireFiniteNumber(item[field], `shared-interface plane-fit diagnostic ${String(index)} ${label}`) < 0) {
+        throw new Error(`shared-interface plane-fit diagnostic ${String(index)} ${label} cannot be negative`);
+      }
+    }
+    const projectedBounds = requireRecord(
+      item.projectedBoundsMeters,
+      `shared-interface plane-fit diagnostic ${String(index)} projected bounds`,
+    );
+    requireExactKeys(projectedBounds, ["min", "max"], `shared-interface plane-fit diagnostic ${String(index)} projected bounds`);
+    const projectedMinimum = finiteVector(
+      projectedBounds.min,
+      2,
+      `shared-interface plane-fit diagnostic ${String(index)} projected minimum`,
+    );
+    const projectedMaximum = finiteVector(
+      projectedBounds.max,
+      2,
+      `shared-interface plane-fit diagnostic ${String(index)} projected maximum`,
+    );
+    if (projectedMinimum.some((coordinate, axis) => coordinate > (projectedMaximum[axis] ?? Number.NEGATIVE_INFINITY))) {
+      throw new Error(`shared-interface plane-fit diagnostic ${String(index)} projected bounds are inverted`);
+    }
+    const selectedInterface = interfaces.find((candidate) => candidate.interfaceId === item.interfaceId);
+    if (selectedInterface === undefined) throw new Error("shared-interface plane-fit references an absent interface");
+    const shared = new Set(selectedInterface.sharedVertexIndices);
+    const hull = requireArray(
+      item.hullVertexIndices,
+      `shared-interface plane-fit diagnostic ${String(index)} hull`,
+    ).map((entry, hullIndex) =>
+      requireSafeInteger(entry, `shared-interface plane-fit diagnostic ${String(index)} hull ${String(hullIndex)}`),
+    );
+    if (hull.length < 3 || new Set(hull).size !== hull.length || hull.some((entry) => !shared.has(entry))) {
+      throw new Error(`shared-interface plane-fit diagnostic ${String(index)} hull inventory drifted`);
+    }
+  });
+}
+
+function validatePersistedOutputs(value: unknown): readonly Readonly<Record<string, unknown>>[] {
+  const outputs = requireArray(value, "review output inventory");
+  if (outputs.length !== OUTPUT_FILE_NAMES.length) {
+    throw new Error("review manifest output inventory is incomplete");
+  }
+  return outputs.map((value, index) => {
+    const expectedName = OUTPUT_FILE_NAMES[index];
+    if (expectedName === undefined) throw new Error("review output definition inventory drifted");
+    const record = requireRecord(value, `review output ${String(index)}`);
+    requireExactKeys(record, ["relativePath", "mediaType", "byteLength", "sha256", "role"], `review output ${String(index)}`);
+    if (
+      record.relativePath !== expectedName ||
+      record.mediaType !== "image/svg+xml" ||
+      record.role !== outputRole(expectedName) ||
+      requireSafeInteger(record.byteLength, `review output ${String(index)} byte length`) === 0
+    ) {
+      throw new Error(`review output ${String(index)} identity, order, or role drifted`);
+    }
+    requireSha256(record.sha256, `review output ${String(index)} digest`);
+    return record;
+  });
+}
+
 function parseManifest(bytes: Uint8Array): Readonly<Record<string, unknown>> {
-  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error("review manifest is not strict UTF-8");
+  }
+  if (text.charCodeAt(0) === 0xfeff) throw new Error("review manifest cannot contain a BOM");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("review manifest is not JSON");
+  }
   const manifest = requireRecord(parsed, "review manifest");
+  requireExactKeys(manifest, [
+    "schemaVersion", "subject", "lineage", "sourceBindings", "poseRawToCanonicalLineage",
+    "sourceTexturePolicy", "geometryMethod", "room9Topology", "exhaustiveSharedInterfaces",
+    "sharedInterfacePlaneFitDiagnostics", "cameraCentres", "sliceDiagnostics", "outputs", "authority",
+    "manifestSha256",
+  ], "review manifest");
   if (manifest.schemaVersion !== GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_SCHEMA) {
     throw new Error("unsupported review manifest schema");
   }
-  if (typeof manifest.manifestSha256 !== "string") throw new Error("review manifest digest is absent");
+  const manifestSha256 = requireSha256(manifest.manifestSha256, "review manifest digest");
   const material: Record<string, unknown> = { ...manifest };
   delete material.manifestSha256;
   const canonical = material as JsonValue;
-  if (canonicalDigest(GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN, canonical) !== manifest.manifestSha256) {
+  if (canonicalDigest(GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN, canonical) !== manifestSha256) {
     throw new Error("review manifest canonical digest differs");
   }
   assertNoAbsolutePaths(JSON.stringify(manifest));
-  const sourceBindings = requireRecord(manifest.sourceBindings, "review source bindings");
-  const posesRaw = requireRecord(sourceBindings.posesRaw, "raw pose source binding");
+  const expectedSubject: JsonValue = {
+    venueSlug: "trades-hall",
+    roomSlug: "grand-hall",
+    matterpakRoom: roomKeyValue(GRAND_HALL_ROOM_9),
+  };
+  if (stableCanonicalJson(requireRecord(manifest.subject, "review subject") as JsonValue) !== stableCanonicalJson(expectedSubject)) {
+    throw new Error("review subject drifted");
+  }
+  const expectedLineage: JsonValue = {
+    t551SourceReceiptSha256: T551_SOURCE_RECEIPT_SHA256,
+    t551BoundaryEvidenceSha256: T551_EVIDENCE_SHA256,
+    coordinateFrame: "MatterPak local; metres; right-handed; Z-up",
+    e57ToMatterpakIdentityUse: "diagnostic_only_not_a_reviewed_transform_artifact",
+  };
+  if (stableCanonicalJson(requireRecord(manifest.lineage, "review lineage") as JsonValue) !== stableCanonicalJson(expectedLineage)) {
+    throw new Error("review lineage drifted");
+  }
+  validatePersistedSourceBindings(manifest.sourceBindings);
   const poseLineage = requireRecord(manifest.poseRawToCanonicalLineage, "raw-to-canonical pose lineage");
-  if (
-    posesRaw.sourceLocator !== EXPECTED_SOURCE_FILES.poses.sourceLocator ||
-    posesRaw.byteLength !== EXPECTED_SOURCE_FILES.poses.byteLength ||
-    posesRaw.sha256 !== EXPECTED_SOURCE_FILES.poses.sha256 ||
-    poseLineage.canonicalSha256 !== EXPECTED_POSE_CANONICAL_SHA256 ||
-    poseLineage.expectedCanonicalSha256 !== EXPECTED_POSE_CANONICAL_SHA256 ||
-    poseLineage.rawByteIdentityRequiredForRegeneration !== true ||
-    poseLineage.stagedPoseFileDependency !== false
-  ) {
+  const expectedPoseLineage: JsonValue = {
+    rawSourceBinding: "sourceBindings.posesRaw",
+    rawByteIdentityRequiredForRegeneration: true,
+    parse: "strict_utf8_then_json_parse",
+    schema: "149_contiguous_pose_keys_rotation4_translation3_finite_normalized_quaternions",
+    canonicalizationMethod: "python_sort_keys_compact_separators_finite_float_repr_pose_schema_v1",
+    canonicalSha256: EXPECTED_POSE_CANONICAL_SHA256,
+    expectedCanonicalSha256: EXPECTED_POSE_CANONICAL_SHA256,
+    disposition: "canonical_digest_proves_pose_value_equivalence_not_raw_byte_equivalence",
+    stagedPoseFileDependency: false,
+  };
+  if (stableCanonicalJson(poseLineage as JsonValue) !== stableCanonicalJson(expectedPoseLineage)) {
     throw new Error("retained raw pose binding or canonical pose lineage drifted");
   }
   const authority = requireRecord(manifest.authority, "review authority");
-  if (
-    authority.state !== "none" ||
-    authority.reviewState !== "human_pending" ||
-    authority.closedVolumeAuthored !== false ||
-    authority.runtimeAuthority !== false ||
-    authority.trainingAuthority !== false
-  ) {
+  const expectedAuthority: JsonValue = {
+    state: "none",
+    reviewState: "human_pending",
+    room9IdentityAccepted: false,
+    allInterfacesResolved: false,
+    nonConvexBoundaryAuthored: false,
+    portalClosureAuthored: false,
+    closedVolumeAuthored: false,
+    transformAuthorityGranted: false,
+    pointMaskAuthored: false,
+    trainingAuthority: false,
+    runtimeAuthority: false,
+    structuralAuthority: false,
+    generatedFillPermitted: false,
+  };
+  if (stableCanonicalJson(authority as JsonValue) !== stableCanonicalJson(expectedAuthority)) {
     throw new Error("review manifest escaped its authority-none boundary");
   }
-  const exhaustive = requireRecord(manifest.exhaustiveSharedInterfaces, "shared interfaces");
-  if (exhaustive.allInterfacesResolved !== false || !Array.isArray(exhaustive.interfaces)) {
-    throw new Error("review manifest overstates interface resolution");
-  }
-  for (const [index, value] of exhaustive.interfaces.entries()) {
-    const item = requireRecord(value, `interface ${String(index)}`);
-    if (item.reviewState !== "pending" || item.disposition !== null) {
-      throw new Error("review interface is not pending");
-    }
-  }
-  const portals = manifest.portalDiagnostics;
-  if (!Array.isArray(portals) || portals.length !== 2) throw new Error("review manifest must contain two portal diagnostics");
-  for (const [index, value] of portals.entries()) {
-    const item = requireRecord(value, `portal diagnostic ${String(index)}`);
-    if (item.state !== "review_only_not_closure" || item.closureAuthored !== false) {
-      throw new Error("portal diagnostic overstates closure authority");
-    }
-  }
+  const interfaces = validatePersistedInterfaces(manifest.exhaustiveSharedInterfaces);
+  validatePersistedPlaneFits(manifest.sharedInterfacePlaneFitDiagnostics, interfaces);
   const cameraCentres = requireRecord(manifest.cameraCentres, "camera centres");
+  requireExactKeys(cameraCentres, [
+    "source", "count", "primaryRoomScalePlan", "diagnosticOverview", "classification", "classificationSha256",
+  ], "camera centres");
   const primaryPlan = requireRecord(cameraCentres.primaryRoomScalePlan, "primary room-scale camera plan");
+  requireExactKeys(primaryPlan, [
+    "candidateScanIndexRange", "inclusionPolicy", "renderedCount", "renderedScanIndices",
+  ], "primary room-scale camera plan");
   const overview = requireRecord(cameraCentres.diagnosticOverview, "camera diagnostic overview");
+  requireExactKeys(overview, ["renderedCount", "labelsRenderedForScanIndices", "registrationState"], "camera diagnostic overview");
+  const candidateRange = requireRecord(primaryPlan.candidateScanIndexRange, "primary camera candidate range");
+  requireExactKeys(candidateRange, ["minimum", "maximum"], "primary camera candidate range");
+  const labelRange = requireRecord(overview.labelsRenderedForScanIndices, "camera label range");
+  requireExactKeys(labelRange, ["minimum", "maximum"], "camera label range");
+  const renderedScanIndices = requireArray(primaryPlan.renderedScanIndices, "primary rendered scan indices").map(
+    (entry, index) => requireSafeInteger(entry, `primary rendered scan index ${String(index)}`),
+  );
   if (
+    cameraCentres.source !== "retained E57_SOURCE_ROOT/poses.json raw byte identity plus canonical pose-value identity" ||
     cameraCentres.count !== 149 ||
-    !Array.isArray(primaryPlan.renderedScanIndices) ||
+    cameraCentres.classification !== "T-551 deterministic vertical first-hit diagnostic" ||
+    candidateRange.minimum !== 0 ||
+    candidateRange.maximum !== 49 ||
+    primaryPlan.inclusionPolicy !== "diagnostic_identity_centre_inside_exact_rooms_9_13_14_xy_bounds" ||
+    primaryPlan.renderedCount !== renderedScanIndices.length ||
+    renderedScanIndices.some((entry, index) => entry >= 149 || index > 0 && entry <= (renderedScanIndices[index - 1] ?? -1)) ||
     overview.renderedCount !== 149 ||
+    labelRange.minimum !== 0 ||
+    labelRange.maximum !== 49 ||
     overview.registrationState !== "unreviewed_diagnostic_identity_only"
   ) {
     throw new Error("camera-centre review inventory or registration disclaimer drifted");
   }
+  requireSha256(cameraCentres.classificationSha256, "camera classification digest");
+  validatePersistedOutputs(manifest.outputs);
   return manifest;
+}
+
+function crossBindBoundaryManifestToInterfaceAtlas(
+  manifest: Readonly<Record<string, unknown>>,
+  atlas: ReturnType<typeof verifyPersistedT554InterfaceAtlasEvidence>,
+): void {
+  const manifestSha256 = requireSha256(manifest.manifestSha256, "review manifest digest");
+  if (atlas.boundaryReviewManifestSha256 !== manifestSha256) {
+    throw new Error("interface atlas does not bind the exact boundary review manifest");
+  }
+  const sourceBindings = requireRecord(manifest.sourceBindings, "review source bindings");
+  const obj = requireRecord(sourceBindings.obj, "boundary OBJ binding");
+  if (stableCanonicalJson(obj as JsonValue) !== stableCanonicalJson(atlas.obj as JsonValue)) {
+    throw new Error("boundary and interface atlas OBJ source receipts differ");
+  }
+  const interfaces = validatePersistedInterfaces(manifest.exhaustiveSharedInterfaces);
+  if (interfaces.length !== atlas.interfaces.length) {
+    throw new Error("boundary and interface atlas inventories differ");
+  }
+  interfaces.forEach((item, index) => {
+    const atlasItem = atlas.interfaces[index];
+    if (atlasItem === undefined) throw new Error("interface atlas summary inventory drifted");
+    const atlasIndices = atlasItem.sharedVertices.map((vertex) => vertex.index);
+    const boundaryPositionDigest = canonicalDigest(
+      `${GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN}.interface-positions.${roomId(item.roomB)}`,
+      atlasItem.sharedVertices.map((vertex) => [vertex.index, ...vertex.position]),
+    );
+    const boundaryEdgeDigest = canonicalDigest(
+      `${GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN}.interface-boundary-edges.${roomId(item.roomB)}`,
+      atlasItem.room9BoundaryEdges,
+    );
+    if (
+      item.interfaceId !== atlasItem.interfaceId ||
+      atlasItem.roomA.groupIndex !== GRAND_HALL_ROOM_9.groupIndex ||
+      atlasItem.roomA.subIndex !== GRAND_HALL_ROOM_9.subIndex ||
+      item.roomB.groupIndex !== atlasItem.roomB.groupIndex ||
+      item.roomB.subIndex !== atlasItem.roomB.subIndex ||
+      stableCanonicalJson(item.sharedVertexIndices) !== stableCanonicalJson(atlasIndices) ||
+      item.sharedPositionsSha256 !== boundaryPositionDigest ||
+      stableCanonicalJson(axisAlignedBoundsValue(item.boundsMeters)) !==
+        stableCanonicalJson(axisAlignedBoundsValue(atlasItem.sharedBoundsMeters)) ||
+      item.room9BoundaryEdgeCount !== atlasItem.room9BoundaryEdges.length ||
+      item.room9BoundaryEdgeCount !== atlasItem.room9BoundaryEdgeCount ||
+      item.room9BoundaryEdgesSha256 !== boundaryEdgeDigest
+    ) {
+      throw new Error(`boundary interface ${item.interfaceId} differs from exact interface-atlas source evidence`);
+    }
+  });
 }
 
 function safeExistingOutputFile(outputDirectory: string, fileName: string): string {
   if (!/^[a-z0-9.-]+$/u.test(fileName) || fileName.includes("..")) throw new Error("review output filename is unsafe");
   const path = resolve(outputDirectory, fileName);
   if (dirname(path) !== resolve(outputDirectory)) throw new Error("review output escapes its directory");
-  if (lstatSync(path).isSymbolicLink()) throw new Error("review output cannot be a link");
+  const direct = lstatSync(path, { bigint: true });
+  if (direct.isSymbolicLink()) throw new Error("review output cannot be a link");
+  if (direct.nlink !== 1n) throw new Error("review output must have exactly one hard link");
   const canonical = realpathSync(path);
-  if (!statSync(canonical).isFile()) throw new Error("review output is not a regular file");
+  const canonicalStats = statSync(canonical, { bigint: true });
+  if (!canonicalStats.isFile()) throw new Error("review output is not a regular file");
+  if (canonicalStats.nlink !== 1n) throw new Error("review output must have exactly one hard link");
   return canonical;
+}
+
+function readStableExistingOutputFile(
+  outputDirectory: string,
+  fileName: string,
+  maximumByteLength: number,
+): Buffer {
+  const directPath = resolve(outputDirectory, fileName);
+  const canonicalBefore = safeExistingOutputFile(outputDirectory, fileName);
+  const descriptor = openSync(canonicalBefore, "r");
+  try {
+    const before = descriptorIdentity(descriptor);
+    const pathBefore = pathIdentity(canonicalBefore);
+    const byteLength = Number(before.size);
+    if (
+      !sameFileIdentity(before, pathBefore) ||
+      before.links !== 1n ||
+      !Number.isSafeInteger(byteLength) ||
+      byteLength < 1 ||
+      byteLength > maximumByteLength
+    ) {
+      throw new Error("review output failed its bounded stable-read precondition");
+    }
+    const bytes = readFileSync(descriptor);
+    const after = descriptorIdentity(descriptor);
+    const canonicalAfter = safeExistingOutputFile(outputDirectory, fileName);
+    const pathAfter = pathIdentity(canonicalAfter);
+    if (
+      bytes.byteLength !== byteLength ||
+      canonicalAfter !== canonicalBefore ||
+      realpathSync(directPath) !== canonicalBefore ||
+      !sameFileIdentity(before, after) ||
+      !sameFileIdentity(after, pathAfter) ||
+      after.links !== 1n
+    ) {
+      throw new Error("review output changed during its stable read");
+    }
+    return bytes;
+  } finally {
+    closeSync(descriptor);
+  }
 }
 
 export function verifyPersistedT554BoundaryReviewPack(outputDirectory: string): Sha256 {
@@ -1696,10 +2161,15 @@ export function verifyPersistedT554BoundaryReviewPack(outputDirectory: string): 
   const root = realpathSync(outputDirectory);
   if (!statSync(root).isDirectory()) throw new Error("review output must be a directory");
   const names = readdirSync(root).sort((a, b) => a.localeCompare(b));
-  const expectedNames = [...OUTPUT_FILE_NAMES, "manifest.json"].sort((a, b) => a.localeCompare(b));
+  const expectedNames = [
+    ...OUTPUT_FILE_NAMES,
+    "manifest.json",
+    INTERFACE_ATLAS_DIRECTORY_NAME,
+  ].sort((a, b) => a.localeCompare(b));
   if (JSON.stringify(names) !== JSON.stringify(expectedNames)) throw new Error("review output inventory drifted");
-  const manifestPath = safeExistingOutputFile(root, "manifest.json");
-  const manifest = parseManifest(readFileSync(manifestPath));
+  const manifest = parseManifest(
+    readStableExistingOutputFile(root, "manifest.json", MAX_BOUNDARY_MANIFEST_BYTES),
+  );
   const outputs = manifest.outputs;
   if (!Array.isArray(outputs) || outputs.length !== OUTPUT_FILE_NAMES.length) {
     throw new Error("review manifest output inventory is incomplete");
@@ -1713,13 +2183,17 @@ export function verifyPersistedT554BoundaryReviewPack(outputDirectory: string): 
     ) {
       throw new Error("review output record is malformed");
     }
-    const bytes = readFileSync(safeExistingOutputFile(root, record.relativePath));
+    const bytes = readStableExistingOutputFile(root, record.relativePath, MAX_BOUNDARY_SVG_BYTES);
     if (bytes.byteLength !== record.byteLength || fileSha256(bytes) !== record.sha256) {
       throw new Error("review output bytes drifted from the manifest");
     }
     const svg = new TextDecoder().decode(bytes);
     verifyT554SvgSafety(svg);
   }
+  const atlas = verifyPersistedT554InterfaceAtlasEvidence(
+    resolve(root, INTERFACE_ATLAS_DIRECTORY_NAME),
+  );
+  crossBindBoundaryManifestToInterfaceAtlas(manifest, atlas);
   return manifest.manifestSha256 as Sha256;
 }
 
@@ -1790,6 +2264,10 @@ export function writeT554BoundaryReviewPack(options: T554BoundaryReviewWriteOpti
       writeExclusive(resolve(stage, fileName), new TextEncoder().encode(content));
     }
     writeExclusive(resolve(stage, "manifest.json"), manifestBytes(pack));
+    writeT554InterfaceAtlas({
+      matterpakSourceRoot: options.matterpakSourceRoot,
+      outputDirectory: resolve(stage, INTERFACE_ATLAS_DIRECTORY_NAME),
+    });
     verifyPersistedT554BoundaryReviewPack(stage);
     if (existsSync(output)) throw new Error("review output appeared before atomic publish");
     renameSync(stage, output);
@@ -1811,13 +2289,21 @@ export function checkT554BoundaryReviewPack(options: T554BoundaryReviewWriteOpti
   for (const fileName of OUTPUT_FILE_NAMES) {
     const expectedText = expected.files.get(fileName);
     if (expectedText === undefined) throw new Error("expected review output is absent");
-    const actual = readFileSync(safeExistingOutputFile(root, fileName));
+    const actual = readStableExistingOutputFile(root, fileName, MAX_BOUNDARY_SVG_BYTES);
     const expectedBytes = new TextEncoder().encode(expectedText);
     if (!actual.equals(expectedBytes)) throw new Error("review SVG differs from exact regeneration");
   }
-  const actualManifest = readFileSync(safeExistingOutputFile(root, "manifest.json"));
+  const actualManifest = readStableExistingOutputFile(
+    root,
+    "manifest.json",
+    MAX_BOUNDARY_MANIFEST_BYTES,
+  );
   if (!actualManifest.equals(manifestBytes(expected))) {
     throw new Error("review manifest bytes differ from exact regeneration");
   }
+  checkT554InterfaceAtlas({
+    matterpakSourceRoot: options.matterpakSourceRoot,
+    outputDirectory: resolve(root, INTERFACE_ATLAS_DIRECTORY_NAME),
+  });
   return persisted;
 }

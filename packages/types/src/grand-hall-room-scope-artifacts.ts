@@ -24,6 +24,8 @@ export const GRAND_HALL_XGRIDS_TO_MATTERPAK_E57_TRANSFORM_V1 =
   "venviewer.grand-hall-xgrids-to-matterpak-e57-transform.v1";
 export const GRAND_HALL_OUTPUT_INVENTORY_MASK_V1 =
   "venviewer.grand-hall-output-inventory-mask.v1";
+export const GRAND_HALL_PANORAMA_SOURCE_INVENTORY_V2 =
+  "venviewer.grand-hall-panorama-source-inventory.v2";
 
 export const GRAND_HALL_XGRIDS_SOURCE_FRAME =
   "ARF";
@@ -34,6 +36,7 @@ export const GRAND_HALL_PANORAMA_WIDTH_PX = 8_192;
 export const GRAND_HALL_PANORAMA_HEIGHT_PX = 4_096;
 export const GRAND_HALL_REVIEW_PANORAMA_COUNT = 50;
 export const GRAND_HALL_PANORAMA_DIRECTORY_FILE_COUNT = 148;
+export const GRAND_HALL_E57_SCAN_COUNT = 149;
 export const GRAND_HALL_EXACT_INTERFACE_COUNT = 8;
 
 const MAX_SAFE_COUNT = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -78,7 +81,6 @@ const AcceptedHumanReviewSchema = z
 
 export const GrandHallPanoramaSourceJpgIdentitySchema = z
   .object({
-    scanIndex: z.number().int().min(0).max(GRAND_HALL_REVIEW_PANORAMA_COUNT - 1),
     sweepNumber: z.number().int().min(1).max(GRAND_HALL_REVIEW_PANORAMA_COUNT),
     fileName: SafeRelativeFileSchema.refine(
       (value) => /\.(?:jpg|jpeg)$/iu.test(value),
@@ -101,11 +103,11 @@ function refineExactPanoramaSources(
   path: readonly (string | number)[],
 ): void {
   sources.forEach((source, index) => {
-    if (source.scanIndex !== index || source.sweepNumber !== index + 1) {
+    if (source.sweepNumber !== index + 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: [...path, index],
-        message: "Grand Hall panorama sources must be the exact ordered scans 0..49 and sweeps 1..50",
+        message: "Grand Hall panorama sources must be the exact ordered source sweeps 1..50",
       });
     }
   });
@@ -124,7 +126,64 @@ export function computeGrandHallPanoramaSourceInventorySha256(
   const parsed = z.array(GrandHallPanoramaSourceJpgIdentitySchema)
     .length(GRAND_HALL_REVIEW_PANORAMA_COUNT)
     .parse(sources);
-  return canonicalDigest("venviewer.grand-hall-panorama-source-inventory.v1", parsed);
+  return canonicalDigest(GRAND_HALL_PANORAMA_SOURCE_INVENTORY_V2, parsed);
+}
+
+/**
+ * An authority-none diagnostic relationship between one source panorama and
+ * one E57 scan index. This is deliberately separate from the JPEG identity:
+ * sequence order is not geometric camera correspondence evidence.
+ */
+export const GrandHallPanoramaE57SequenceHypothesisSchema = z
+  .object({
+    sourceSweepNumber: z.number().int().min(1).max(GRAND_HALL_REVIEW_PANORAMA_COUNT),
+    sourceJpgFileName: SafeRelativeFileSchema.refine(
+      (value) => /\.(?:jpg|jpeg)$/iu.test(value),
+      "sequence hypothesis must name a source JPEG file",
+    ),
+    sourceJpgSha256: RuntimeSha256Schema,
+    candidateScanIndex: z.number().int().min(0).max(GRAND_HALL_E57_SCAN_COUNT - 1),
+    state: z.literal("sequence_hypothesis_unverified"),
+    authority: z.literal("none"),
+    geometricCameraAuthority: z.literal("none"),
+    trainingAuthority: z.literal("none"),
+    reconstructionAuthority: z.literal("none"),
+    runtimeAuthority: z.literal("none"),
+  })
+  .strict();
+
+export type GrandHallPanoramaE57SequenceHypothesis = z.infer<
+  typeof GrandHallPanoramaE57SequenceHypothesisSchema
+>;
+
+function refinePanoramaE57SequenceHypotheses(
+  hypotheses: readonly GrandHallPanoramaE57SequenceHypothesis[],
+  sources: readonly GrandHallPanoramaSourceJpgIdentity[],
+  ctx: z.RefinementCtx,
+  path: readonly (string | number)[],
+): void {
+  hypotheses.forEach((hypothesis, index) => {
+    const source = sources[index];
+    if (
+      source === undefined ||
+      hypothesis.sourceSweepNumber !== source.sweepNumber ||
+      hypothesis.sourceJpgFileName !== source.fileName ||
+      hypothesis.sourceJpgSha256 !== source.sha256
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [...path, index],
+        message: "each sequence hypothesis must bind the exact source panorama at the same sweep-ordered position",
+      });
+    }
+  });
+  if (new Set(hypotheses.map((hypothesis) => hypothesis.candidateScanIndex)).size !== hypotheses.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: [...path],
+      message: "diagnostic sequence hypotheses must contain one unique candidate scan index per source sweep",
+    });
+  }
 }
 
 const GrandHallPanoramaDirectoryFileBaseSchema = z
@@ -293,6 +352,7 @@ const GrandHallScopeReviewPackMaterialObjectSchema = z
         matterPakE57SourceReceiptSha256: RuntimeSha256Schema,
         panoramaDirectoryInventorySha256: RuntimeSha256Schema,
         boundaryReviewManifestSha256: RuntimeSha256Schema,
+        interfaceTopologyAtlasManifestSha256: RuntimeSha256Schema,
         panoramaReviewManifestSha256: RuntimeSha256Schema,
       })
       .strict(),
@@ -303,6 +363,9 @@ const GrandHallScopeReviewPackMaterialObjectSchema = z
       .array(GrandHallPanoramaSourceJpgIdentitySchema)
       .length(GRAND_HALL_REVIEW_PANORAMA_COUNT),
     panoramaSourceInventorySha256: RuntimeSha256Schema,
+    panoramaE57SequenceHypotheses: z
+      .array(GrandHallPanoramaE57SequenceHypothesisSchema)
+      .length(GRAND_HALL_REVIEW_PANORAMA_COUNT),
     interfaceCandidates: z.array(GrandHallInterfaceCandidateSchema)
       .length(GRAND_HALL_EXACT_INTERFACE_COUNT),
     interfaceInventorySha256: RuntimeSha256Schema,
@@ -428,6 +491,12 @@ function refineReviewPack(
     }
   });
   refineExactPanoramaSources(material.candidatePanoramaSources, ctx, ["candidatePanoramaSources"]);
+  refinePanoramaE57SequenceHypotheses(
+    material.panoramaE57SequenceHypotheses,
+    material.candidatePanoramaSources,
+    ctx,
+    ["panoramaE57SequenceHypotheses"],
+  );
   refineExactInterfaceInventory(material.interfaceCandidates, ctx, ["interfaceCandidates"]);
   if (
     material.sourceEvidence.panoramaDirectoryInventorySha256 !==
@@ -523,7 +592,7 @@ const MembershipDecisionSchema = z.discriminatedUnion("disposition", [
     .strict(),
 ]);
 
-const MembershipCameraRecordSchema = z
+const MembershipPanoramaRecordSchema = z
   .object({
     source: GrandHallPanoramaSourceJpgIdentitySchema,
     decision: MembershipDecisionSchema,
@@ -542,6 +611,7 @@ const GrandHallRoomMembershipMaterialObjectSchema = z
     sourceMembershipV1Sha256: RuntimeSha256Schema,
     sourceBoundaryEvidenceSha256: RuntimeSha256Schema,
     sourcePanoramaInventorySha256: RuntimeSha256Schema,
+    geometricCameraAuthority: z.literal("none"),
     matterPakRoomMembership: z
       .object({
         includedRoomKeys: z.tuple([z.literal(GRAND_HALL_MATTERPAK_ROOM_KEY)]),
@@ -549,7 +619,7 @@ const GrandHallRoomMembershipMaterialObjectSchema = z
         facadeGeometryIncluded: z.literal(false),
       })
       .strict(),
-    cameraRecords: z.array(MembershipCameraRecordSchema).length(GRAND_HALL_REVIEW_PANORAMA_COUNT),
+    panoramaRecords: z.array(MembershipPanoramaRecordSchema).length(GRAND_HALL_REVIEW_PANORAMA_COUNT),
     acceptedUnknownPixelDisposition: z.literal("transparent_or_unknown_never_filled"),
     humanReview: AcceptedHumanReviewSchema,
   })
@@ -563,8 +633,8 @@ function refineRoomMembership(
   material: GrandHallRoomMembershipMaterialObject,
   ctx: z.RefinementCtx,
 ): void {
-  const sources = material.cameraRecords.map((record) => record.source);
-  refineExactPanoramaSources(sources, ctx, ["cameraRecords"]);
+  const sources = material.panoramaRecords.map((record) => record.source);
+  refineExactPanoramaSources(sources, ctx, ["panoramaRecords"]);
   if (
     material.sourcePanoramaInventorySha256 !==
     computeGrandHallPanoramaSourceInventorySha256(sources)
@@ -575,10 +645,10 @@ function refineRoomMembership(
       message: "accepted membership must bind the exact ordered source panorama inventory",
     });
   }
-  if (!material.cameraRecords.some((record) => record.decision.disposition === "include_with_binary_pixel_mask")) {
+  if (!material.panoramaRecords.some((record) => record.decision.disposition === "include_with_binary_pixel_mask")) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["cameraRecords"],
+      path: ["panoramaRecords"],
       message: "accepted Grand Hall membership must retain at least one reviewed source frame",
     });
   }
@@ -609,7 +679,7 @@ export const GrandHallRoomMembershipV2Schema =
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["artifactSha256"],
-        message: "membership digest must bind every accepted camera and source-room decision",
+      message: "membership digest must bind every accepted panorama and source-room decision",
       });
     }
   });
@@ -1071,6 +1141,7 @@ const GrandHallPanoramaMaskSetMaterialObjectSchema = z
     membershipArtifactSha256: RuntimeSha256Schema,
     portalDecisionArtifactSha256: RuntimeSha256Schema,
     sourcePanoramaInventorySha256: RuntimeSha256Schema,
+    geometricCameraAuthority: z.literal("none"),
     sourceRecordCount: z.literal(GRAND_HALL_REVIEW_PANORAMA_COUNT),
     maskCount: z.number().int().positive().max(GRAND_HALL_REVIEW_PANORAMA_COUNT),
     wholeFrameExclusionCount: z.number().int().nonnegative().max(GRAND_HALL_REVIEW_PANORAMA_COUNT),
@@ -1128,7 +1199,7 @@ function refinePanoramaMaskSet(
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["sourceRecords", record.source.scanIndex, "mask"],
+        path: ["sourceRecords", record.source.sweepNumber - 1, "mask"],
         message: `mask ${String(index)} must bind the exact source JPG filename and byte identity`,
       });
     }

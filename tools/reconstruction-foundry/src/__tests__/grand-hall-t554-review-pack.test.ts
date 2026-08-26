@@ -1,4 +1,5 @@
-import { renameSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { linkSync, renameSync, writeFileSync } from "node:fs";
 import { cp, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,9 @@ import { fileURLToPath } from "node:url";
 
 import { GrandHallScopeReviewPackV1Schema } from "@omnitwin/types";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { stableCanonicalJson, type JsonValue } from "../grand-hall-room9-boundary.js";
+import { GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN } from "../grand-hall-t554-boundary-review.js";
 
 import {
   GRAND_HALL_T554_BOUNDARY_DIRECTORY_NAME,
@@ -30,6 +34,13 @@ const EXPECTED_INTERFACE_IDS = [
   "matterpak-1-9-1-14",
 ] as const;
 const temporaryRoots: string[] = [];
+
+function mutableRecord(value: unknown, label: string): Record<string, unknown> {
+  if (value === null || Array.isArray(value) || typeof value !== "object") {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
 
 async function temporaryRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "grand-hall-t554-root-test-"));
@@ -81,10 +92,13 @@ describe("Grand Hall T-554 root authority-none review descriptor", () => {
       exactRegenerationVerified: true,
     });
     expect(verified.boundaryManifestSha256).toBe(
-      "sha256:6d0f6a230053ccc85275a80260c7b27cfd612ee5c7ca9964bc0ca8653b84de27",
+      "sha256:289dff7895d9e840671d503b74f576460f6e15b7ff32efae0ca12a866a875dd3",
+    );
+    expect(verified.interfaceAtlasManifestSha256).toBe(
+      "sha256:6f7b702ef8b74b22e6d83d516ff8a2b160ee78ddcdd66f7a06370982ed96e4bc",
     );
     expect(verified.panoramaManifestSha256).toBe(
-      "sha256:c2d74ee55b27be9b4641d3b94968591d37735d353987d30adca4fc785b3636ef",
+      "sha256:4c23c3374dabd64e158c179ffaa38b32ae40876aaaf9da5f16ee57093f88f5bc",
     );
   }, 30_000);
 
@@ -100,14 +114,14 @@ describe("Grand Hall T-554 root authority-none review descriptor", () => {
     expect(
       built.artifact.interfaceCandidates.map((candidate) => candidate.sharedSourceVertexSetSha256),
     ).toEqual([
-      "sha256:cfe00a7f08d306b1a747fadd2221a08cf8b22982591a59a12fa48c0f7420d8e1",
-      "sha256:87456dca0b012a246a9eacdb478270d9a0bd6720cad1895cfc24962d4cd251d5",
-      "sha256:ac728edd912d998dfaa6dc54f0ac05efebe4f80102d4ff9757ea0dcfc93574a7",
-      "sha256:0e35ffb16067beb58f778fb73425a7697819821db3c4b9df47b53e37ae410e62",
-      "sha256:28885fff2edc591a01b4e99fb4c3a7d732b5826401332d9064799315859da026",
-      "sha256:e5b0bb24dcb580ed02ca1d4164a05c7d417af91486ad293acd4bd28af627e3e0",
-      "sha256:5e7c47389a2db1a762a59a47e60e278f85a5e383e1ecab914c83baa4c70ddbdd",
-      "sha256:00451c30639f3f601e6a8b6980a790a80bc236ebf9677911d94f58402abeb8e0",
+      "sha256:976d29bc2f481e8704f72477362150c307fb02cff99c74b7ae4acab4565ad5e0",
+      "sha256:b01464499a7e07b27e7b0845a2c4707be6cf7eebcaa6dc707a663c46b182b025",
+      "sha256:a872d4e26a0a6a5f55c259922f055bafb7ec7d81e171ba3cd83dddf1e59ded92",
+      "sha256:338dff979ab7ae3af6fe0a902ed92bcac0b6a26a8faf7a3deeb49f17e71e3b3c",
+      "sha256:e8d75ce3a07e1da09b869aa8df61603cecf2ae0951d6ec2986fc3ddc40e00d5a",
+      "sha256:c74aeb2257623ce6320ebcfdf8848697da9576ff52be471ac5ecbf1e4b36c936",
+      "sha256:6398925c3ed06f15ac46b78c15c6020753ba93a2399ea1a8810e5e0f3dc7248d",
+      "sha256:c864c649749a644f199f51c5827b73f9cdcebcc3925c899983a284e15092d31b",
     ]);
     expect(built.artifact.interfaceCandidates.at(0)?.boundsMeters).toEqual({
       min: [-1.33, -10.347, -0.595],
@@ -120,14 +134,24 @@ describe("Grand Hall T-554 root authority-none review descriptor", () => {
     expect(built.artifact.panoramaDirectoryFiles).toHaveLength(148);
     expect(built.artifact.candidatePanoramaSources).toHaveLength(50);
     expect(built.artifact.candidatePanoramaSources.at(0)).toMatchObject({
-      scanIndex: 0,
       sweepNumber: 1,
       fileName: "sweep_001jpg.jpg",
     });
     expect(built.artifact.candidatePanoramaSources.at(-1)).toMatchObject({
-      scanIndex: 49,
       sweepNumber: 50,
       fileName: "sweep_050jpg.jpg",
+    });
+    expect(built.artifact.candidatePanoramaSources.at(0)).not.toHaveProperty("scanIndex");
+    expect(built.artifact.panoramaE57SequenceHypotheses).toHaveLength(50);
+    expect(built.artifact.panoramaE57SequenceHypotheses.at(0)).toMatchObject({
+      sourceSweepNumber: 1,
+      candidateScanIndex: 0,
+      state: "sequence_hypothesis_unverified",
+      authority: "none",
+      geometricCameraAuthority: "none",
+      trainingAuthority: "none",
+      reconstructionAuthority: "none",
+      runtimeAuthority: "none",
     });
     const directoryFileNames = built.artifact.panoramaDirectoryFiles.map((file) => file.fileName);
     expect(directoryFileNames).toContain("sweep_099pg.jpg");
@@ -185,9 +209,11 @@ describe("Grand Hall T-554 root authority-none review descriptor", () => {
         matterPakE57SourceReceiptSha256:
           "sha256:0d331b5193f345ad5a127372b691ae02d2049fecdcfd0bc92b7f7cc27166997b",
         boundaryReviewManifestSha256:
-          "sha256:6d0f6a230053ccc85275a80260c7b27cfd612ee5c7ca9964bc0ca8653b84de27",
+          "sha256:289dff7895d9e840671d503b74f576460f6e15b7ff32efae0ca12a866a875dd3",
+        interfaceTopologyAtlasManifestSha256:
+          "sha256:6f7b702ef8b74b22e6d83d516ff8a2b160ee78ddcdd66f7a06370982ed96e4bc",
         panoramaReviewManifestSha256:
-          "sha256:c2d74ee55b27be9b4641d3b94968591d37735d353987d30adca4fc785b3636ef",
+          "sha256:4c23c3374dabd64e158c179ffaa38b32ae40876aaaf9da5f16ee57093f88f5bc",
       },
     });
   }, 30_000);
@@ -219,6 +245,31 @@ describe("Grand Hall T-554 root authority-none review descriptor", () => {
     await writeFile(manifestPath, mutated, "utf8");
 
     await expect(buildGrandHallT554RootReviewPack(copied)).rejects.toThrow();
+  }, 30_000);
+
+  it("rejects a canonically resealed boundary summary that the exact atlas does not bind", async () => {
+    const parent = await temporaryRoot();
+    const copied = join(parent, "review-pack");
+    await copyCompleteReviewPack(copied);
+    const manifestPath = join(copied, GRAND_HALL_T554_BOUNDARY_DIRECTORY_NAME, "manifest.json");
+    const manifest = mutableRecord(JSON.parse(await readFile(manifestPath, "utf8")), "boundary manifest");
+    const exhaustive = mutableRecord(manifest.exhaustiveSharedInterfaces, "boundary interfaces");
+    const interfaces = exhaustive.interfaces;
+    if (!Array.isArray(interfaces)) throw new Error("boundary interface inventory is absent");
+    mutableRecord(interfaces[0], "first boundary interface").sharedPositionsSha256 =
+      `sha256:${"f".repeat(64)}`;
+    delete manifest.manifestSha256;
+    manifest.manifestSha256 = `sha256:${createHash("sha256")
+      .update(
+        `${GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_DOMAIN}\n${stableCanonicalJson(manifest as JsonValue)}`,
+        "utf8",
+      )
+      .digest("hex")}`;
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
+    await expect(buildGrandHallT554RootReviewPack(copied)).rejects.toThrow(
+      /atlas does not bind the exact boundary review manifest/u,
+    );
   }, 30_000);
 
   it("rejects a byte-identical same-path manifest replacement after opening it", async () => {
@@ -263,6 +314,18 @@ describe("Grand Hall T-554 root authority-none review descriptor", () => {
       "T-554 root review descriptor already exists",
     );
   }, 45_000);
+
+  it("rejects an externally hard-linked persisted root descriptor", async () => {
+    const parent = await temporaryRoot();
+    const copied = join(parent, "review-pack");
+    await copyCompleteReviewPack(copied);
+    linkSync(
+      join(copied, GRAND_HALL_T554_ROOT_REVIEW_PACK_FILENAME),
+      join(parent, "review-pack-alias.json"),
+    );
+
+    await expect(verifyPersistedGrandHallT554RootReviewPack(copied)).rejects.toThrow(/hard-link count/u);
+  }, 30_000);
 
   it("preserves a replacement path when post-publication verification fails", async () => {
     const parent = await temporaryRoot();

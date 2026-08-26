@@ -48,7 +48,8 @@ export function syntheticGrandHallRoomOnlyEvidence(): GrandHallRoomOnlyRuntimeEv
         productionTrust: null,
         reviewPackSha256: receipt("8"),
         sourcePanoramaInventorySha256: receipt("9"),
-        cameraRecordCount: 50,
+        panoramaRecordCount: 50,
+        geometricCameraAuthority: "none",
       },
       closedBoundaryArtifact: {
         schemaVersion: "venviewer.grand-hall-closed-room-boundary.v1",
@@ -89,6 +90,7 @@ export function syntheticGrandHallRoomOnlyEvidence(): GrandHallRoomOnlyRuntimeEv
         membershipArtifactSha256: receipt("1"),
         portalDecisionArtifactSha256: receipt("3"),
         sourcePanoramaInventorySha256: receipt("9"),
+        geometricCameraAuthority: "none",
         sourceRecordCount: 50,
         maskCount: 48,
         wholeFrameExclusionCount: 2,

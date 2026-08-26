@@ -49,14 +49,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 0,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_mixed_portal_threshold",
-          "allowedUse": "portal_boundary_and_mask_authoring_evidence_only",
-          "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_002jpg.jpg",
@@ -79,14 +72,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 1,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_003jpg.jpg",
@@ -109,14 +95,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 2,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_004jpg.jpg",
@@ -139,14 +118,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 3,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_005jpg.jpg",
@@ -169,14 +141,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 4,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_006jpg.jpg",
@@ -199,14 +164,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 5,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_007jpg.jpg",
@@ -229,14 +187,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 6,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_008jpg.jpg",
@@ -259,14 +210,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 7,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_009jpg.jpg",
@@ -289,14 +233,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 8,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_010jpg.jpg",
@@ -319,14 +256,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 9,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_011jpg.jpg",
@@ -349,14 +279,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 10,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_012jpg.jpg",
@@ -379,14 +302,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 11,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_013jpg.jpg",
@@ -409,14 +325,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 12,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_014jpg.jpg",
@@ -439,14 +348,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 13,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_015jpg.jpg",
@@ -469,14 +371,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 14,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_016jpg.jpg",
@@ -499,14 +394,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 15,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_017jpg.jpg",
@@ -529,14 +417,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 16,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_018jpg.jpg",
@@ -559,14 +440,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 17,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_mixed_portal_threshold",
-          "allowedUse": "portal_boundary_and_mask_authoring_evidence_only",
-          "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_019jpg.jpg",
@@ -589,14 +463,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 18,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_adjacent_space",
-          "allowedUse": "whole_frame_exclusion_and_boundary_evidence_only",
-          "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
-          "pixelMaskState": "not_applicable_whole_frame_excluded",
-          "wholeFrameExclusionReason": "outside_room_camera_view"
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_020jpg.jpg",
@@ -619,14 +486,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 19,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_021jpg.jpg",
@@ -649,14 +509,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 20,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_022jpg.jpg",
@@ -679,14 +532,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 21,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_023jpg.jpg",
@@ -709,14 +555,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 22,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_024jpg.jpg",
@@ -739,14 +578,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 23,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_025jpg.jpg",
@@ -769,14 +601,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 24,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_026jpg.jpg",
@@ -799,14 +624,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 25,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_027jpg.jpg",
@@ -829,14 +647,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 26,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_028jpg.jpg",
@@ -859,14 +670,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 27,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_029jpg.jpg",
@@ -889,14 +693,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 28,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_030jpg.jpg",
@@ -919,14 +716,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 29,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_031jpg.jpg",
@@ -949,14 +739,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 30,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_032jpg.jpg",
@@ -979,14 +762,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 31,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_033jpg.jpg",
@@ -1009,14 +785,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 32,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_034jpg.jpg",
@@ -1039,14 +808,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 33,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_035jpg.jpg",
@@ -1069,14 +831,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 34,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_036jpg.jpg",
@@ -1099,14 +854,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 35,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_037jpg.jpg",
@@ -1129,14 +877,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 36,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_038jpg.jpg",
@@ -1159,14 +900,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 37,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_039jpg.jpg",
@@ -1189,14 +923,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 38,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_040jpg.jpg",
@@ -1219,14 +946,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 39,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_041jpg.jpg",
@@ -1249,14 +969,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 40,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_042jpg.jpg",
@@ -1279,14 +992,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 41,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_043jpg.jpg",
@@ -1309,14 +1015,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 42,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_044jpg.jpg",
@@ -1339,14 +1038,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 43,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_045jpg.jpg",
@@ -1369,14 +1061,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 44,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_046jpg.jpg",
@@ -1399,14 +1084,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 45,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_047jpg.jpg",
@@ -1429,14 +1107,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 46,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "candidate_sequence_unverified",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_048jpg.jpg",
@@ -1459,14 +1130,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 47,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_grand_hall_interior",
-          "allowedUse": "mask_authoring_candidate_only",
-          "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_049jpg.jpg",
@@ -1489,14 +1153,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 48,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_mixed_portal_threshold",
-          "allowedUse": "portal_boundary_and_mask_authoring_evidence_only",
-          "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
-          "pixelMaskState": "required_not_authored",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_050jpg.jpg",
@@ -1519,14 +1176,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "t550_candidate_human_pending",
-          "humanReviewState": "pending",
-          "candidateScanIndex": 49,
-          "candidateMappingAuthority": "sequence_hypothesis_not_byte_lineage",
-          "visualLocationInference": "visually_consistent_adjacent_space",
-          "allowedUse": "whole_frame_exclusion_and_boundary_evidence_only",
-          "panoramaCorrespondenceState": "diagnostic_pair_agent_reviewed",
-          "pixelMaskState": "not_applicable_whole_frame_excluded",
-          "wholeFrameExclusionReason": "outside_room_camera_view"
+          "humanReviewState": "pending"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_051jpg.jpg",
@@ -1549,14 +1199,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_052jpg.jpg",
@@ -1579,14 +1222,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_053jpg.jpg",
@@ -1609,14 +1245,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_054jpg.jpg",
@@ -1639,14 +1268,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_055jpg.jpg",
@@ -1669,14 +1291,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_056jpg.jpg",
@@ -1699,14 +1314,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_057jpg.jpg",
@@ -1729,14 +1337,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_058jpg.jpg",
@@ -1759,14 +1360,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_059jpg.jpg",
@@ -1789,14 +1383,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_060jpg.jpg",
@@ -1819,14 +1406,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_061jpg.jpg",
@@ -1849,14 +1429,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_062jpg.jpg",
@@ -1879,14 +1452,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_063jpg.jpg",
@@ -1909,14 +1475,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_064jpg.jpg",
@@ -1939,14 +1498,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_065jpg.jpg",
@@ -1969,14 +1521,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_066jpg.jpg",
@@ -1999,14 +1544,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_067jpg.jpg",
@@ -2029,14 +1567,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_068jpg.jpg",
@@ -2059,14 +1590,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_069jpg.jpg",
@@ -2089,14 +1613,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_070jpg.jpg",
@@ -2119,14 +1636,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_071jpg.jpg",
@@ -2149,14 +1659,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_072jpg.jpg",
@@ -2179,14 +1682,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_073jpg.jpg",
@@ -2209,14 +1705,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_074jpg.jpg",
@@ -2239,14 +1728,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_075jpg.jpg",
@@ -2269,14 +1751,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_076jpg.jpg",
@@ -2299,14 +1774,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_077jpg.jpg",
@@ -2329,14 +1797,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_078jpg.jpg",
@@ -2359,14 +1820,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_079jpg.jpg",
@@ -2389,14 +1843,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_080jpg.jpg",
@@ -2419,14 +1866,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_081jpg.jpg",
@@ -2449,14 +1889,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_082jpg.jpg",
@@ -2479,14 +1912,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_083jpg.jpg",
@@ -2509,14 +1935,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_084jpg.jpg",
@@ -2539,14 +1958,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_085jpg.jpg",
@@ -2569,14 +1981,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_086jpg.jpg",
@@ -2599,14 +2004,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_087jpg.jpg",
@@ -2629,14 +2027,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_088jpg.jpg",
@@ -2659,14 +2050,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_089jpg.jpg",
@@ -2689,14 +2073,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_090jpg.jpg",
@@ -2719,14 +2096,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_091jpg.jpg",
@@ -2749,14 +2119,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_092jpg.jpg",
@@ -2779,14 +2142,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_094jpg.jpg",
@@ -2809,14 +2165,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_095jpg.jpg",
@@ -2839,14 +2188,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_096jpg.jpg",
@@ -2869,14 +2211,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_097jpg.jpg",
@@ -2899,14 +2234,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_098jpg.jpg",
@@ -2929,14 +2257,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_099pg.jpg",
@@ -2961,14 +2282,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_100jpg.jpg",
@@ -2991,14 +2305,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_101jpg.jpg",
@@ -3021,14 +2328,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_102jpg.jpg",
@@ -3051,14 +2351,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_103jpg.jpg",
@@ -3081,14 +2374,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_104jpg.jpg",
@@ -3111,14 +2397,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_105jpg.jpg",
@@ -3141,14 +2420,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_106jpg.jpg",
@@ -3171,14 +2443,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_107jpg.jpg",
@@ -3201,14 +2466,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_108jpg.jpg",
@@ -3231,14 +2489,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_109jpg.jpg",
@@ -3261,14 +2512,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_110jpg.jpg",
@@ -3291,14 +2535,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_111jpg.jpg",
@@ -3321,14 +2558,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_112jpg.jpg",
@@ -3351,14 +2581,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_113jpg.jpg",
@@ -3381,14 +2604,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_114jpg.jpg",
@@ -3411,14 +2627,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_115jpg.jpg",
@@ -3441,14 +2650,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_116jpg.jpg",
@@ -3471,14 +2673,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_117jpg.jpg",
@@ -3501,14 +2696,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_118jpg.jpg",
@@ -3531,14 +2719,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_119jpg.jpg",
@@ -3561,14 +2742,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_120jpg.jpg",
@@ -3591,14 +2765,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_121jpg.jpg",
@@ -3621,14 +2788,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_122jpg.jpg",
@@ -3651,14 +2811,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_123jpg.jpg",
@@ -3681,14 +2834,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_124jpg.jpg",
@@ -3711,14 +2857,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_125jpg.jpg",
@@ -3741,14 +2880,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_126jpg.jpg",
@@ -3771,14 +2903,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_127jpg.jpg",
@@ -3801,14 +2926,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_128jpg.jpg",
@@ -3831,14 +2949,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_129jpg.jpg",
@@ -3861,14 +2972,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_130jpg.jpg",
@@ -3891,14 +2995,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_131jpg.jpg",
@@ -3921,14 +3018,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_132jpg.jpg",
@@ -3951,14 +3041,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_133jpg.jpg",
@@ -3981,14 +3064,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_134jpg.jpg",
@@ -4011,14 +3087,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_135jpg.jpg",
@@ -4041,14 +3110,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_136jpg.jpg",
@@ -4071,14 +3133,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_137jpg.jpg",
@@ -4101,14 +3156,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_138jpg.jpg",
@@ -4131,14 +3179,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_139jpg.jpg",
@@ -4161,14 +3202,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_140jpg.jpg",
@@ -4191,14 +3225,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_141jpg.jpg",
@@ -4221,14 +3248,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_142jpg.jpg",
@@ -4251,14 +3271,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_143jpg.jpg",
@@ -4281,14 +3294,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_144jpg.jpg",
@@ -4311,14 +3317,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_145pg.jpg",
@@ -4343,14 +3342,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_146jpg.jpg",
@@ -4373,14 +3365,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_147jpg.jpg",
@@ -4403,14 +3388,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_0148jpg.jpg",
@@ -4435,14 +3413,7 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         },
         {
           "sourceLocator": "MATTERPORT_PANORAMA_ROOT/sweep_0149jpg.jpg",
@@ -4467,17 +3438,612 @@
           "publicEvidencePermitted": false,
           "generatedDerivativeInputPermitted": false,
           "reviewEligibility": "not_in_t550_ineligible_unreviewed",
-          "humanReviewState": "unreviewed",
-          "candidateScanIndex": null,
-          "candidateMappingAuthority": "none",
-          "visualLocationInference": "not_reviewed",
-          "allowedUse": "inventory_binding_only",
-          "panoramaCorrespondenceState": "not_evaluated",
-          "pixelMaskState": "not_authored_not_requested",
-          "wholeFrameExclusionReason": null
+          "humanReviewState": "unreviewed"
         }
       ]
     },
+    "panoramaE57SequenceHypotheses": [
+      {
+        "sourceSweepNumber": 1,
+        "sourceJpgFileName": "sweep_001jpg.jpg",
+        "sourceJpgSha256": "sha256:0543e2ce83bbbb5b8c4a8c689a49391092cc6d856124f8ac095d33b09c1db814",
+        "candidateScanIndex": 0,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 2,
+        "sourceJpgFileName": "sweep_002jpg.jpg",
+        "sourceJpgSha256": "sha256:4cd7a859326224c92d8f7f09a2b743b9df1c52686828a44b68d15157fd19b3f9",
+        "candidateScanIndex": 1,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 3,
+        "sourceJpgFileName": "sweep_003jpg.jpg",
+        "sourceJpgSha256": "sha256:efb5b0ad338eb6f90cd28f8a9ef2686770cc925326a6e849fb3d8c5efcdc1013",
+        "candidateScanIndex": 2,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 4,
+        "sourceJpgFileName": "sweep_004jpg.jpg",
+        "sourceJpgSha256": "sha256:000cb3ed8662ce46cf6fbbce0f60e7f6473733f40bb1e914eb7e1d341163d796",
+        "candidateScanIndex": 3,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 5,
+        "sourceJpgFileName": "sweep_005jpg.jpg",
+        "sourceJpgSha256": "sha256:c05866d4281d7e9aea8b5e77ad597539bd5a974996e6f647e7e0d244e8cbeadc",
+        "candidateScanIndex": 4,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 6,
+        "sourceJpgFileName": "sweep_006jpg.jpg",
+        "sourceJpgSha256": "sha256:0b44e49bfc722d7ba28b2ff8e49b78ae41c624ce1bb9c46eb39a3fe92f8b7ef4",
+        "candidateScanIndex": 5,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 7,
+        "sourceJpgFileName": "sweep_007jpg.jpg",
+        "sourceJpgSha256": "sha256:f8422af40e93c2decb3334fa53ece5e23e1fc906d22653266eda8349f183e8d0",
+        "candidateScanIndex": 6,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 8,
+        "sourceJpgFileName": "sweep_008jpg.jpg",
+        "sourceJpgSha256": "sha256:0b01f4119bfc295def830dc52123c4e513e2fa1401e1222214501789e3b88ddd",
+        "candidateScanIndex": 7,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 9,
+        "sourceJpgFileName": "sweep_009jpg.jpg",
+        "sourceJpgSha256": "sha256:a73fb75086f37b6c2ad39d5ac987437c768fd3982d0e1c22a7e5e049d8d88e61",
+        "candidateScanIndex": 8,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 10,
+        "sourceJpgFileName": "sweep_010jpg.jpg",
+        "sourceJpgSha256": "sha256:019783308b63906d3b77b4c65fc81c5af509224db8c26304f19cd067e2f7f7a4",
+        "candidateScanIndex": 9,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 11,
+        "sourceJpgFileName": "sweep_011jpg.jpg",
+        "sourceJpgSha256": "sha256:623f0fc42961c42f38124bea148d8baea515352e490b1b4a3a79887267a9d194",
+        "candidateScanIndex": 10,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 12,
+        "sourceJpgFileName": "sweep_012jpg.jpg",
+        "sourceJpgSha256": "sha256:86261016a1e7d64d78e8e40f25a3e6769f56f60789f44679acb0898a7cd6c30d",
+        "candidateScanIndex": 11,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 13,
+        "sourceJpgFileName": "sweep_013jpg.jpg",
+        "sourceJpgSha256": "sha256:0109353480a479c9403c4141e4b528d76471ef42920316b7f769cc3f27b7fb33",
+        "candidateScanIndex": 12,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 14,
+        "sourceJpgFileName": "sweep_014jpg.jpg",
+        "sourceJpgSha256": "sha256:b847ed87baef462d022dffafd27588a71f9e05dfd17fbe21a76bfcd018cb9d58",
+        "candidateScanIndex": 13,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 15,
+        "sourceJpgFileName": "sweep_015jpg.jpg",
+        "sourceJpgSha256": "sha256:ee0f91c31a0ea3c83682757b9924e1c8f57cac896999913880d864df7145c456",
+        "candidateScanIndex": 14,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 16,
+        "sourceJpgFileName": "sweep_016jpg.jpg",
+        "sourceJpgSha256": "sha256:62c90822137ef16da6f10b868f76953e4840c6f6f2089ba4d79646f7d9107a03",
+        "candidateScanIndex": 15,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 17,
+        "sourceJpgFileName": "sweep_017jpg.jpg",
+        "sourceJpgSha256": "sha256:63e97f44f5975d41182c01e0f390f93b5e93f13ba74c4f9753c844972d5b18d2",
+        "candidateScanIndex": 16,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 18,
+        "sourceJpgFileName": "sweep_018jpg.jpg",
+        "sourceJpgSha256": "sha256:55b0b7f00c4eda9eb9290236ffb20a82790b073207d5db967f49dd3bcfee45d0",
+        "candidateScanIndex": 17,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 19,
+        "sourceJpgFileName": "sweep_019jpg.jpg",
+        "sourceJpgSha256": "sha256:5abf5ab9e8b3a26d5621c0c3e06462886e573fd8f40bf68e213dec41812b0f57",
+        "candidateScanIndex": 18,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 20,
+        "sourceJpgFileName": "sweep_020jpg.jpg",
+        "sourceJpgSha256": "sha256:249929896a872e81d6b906d0cb347cbad84fbead53c0af26c1e901b025633963",
+        "candidateScanIndex": 19,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 21,
+        "sourceJpgFileName": "sweep_021jpg.jpg",
+        "sourceJpgSha256": "sha256:236a7ade5fc008bea2c97b57138117b494f922adc326bdb3f5ee25ecf54044f9",
+        "candidateScanIndex": 20,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 22,
+        "sourceJpgFileName": "sweep_022jpg.jpg",
+        "sourceJpgSha256": "sha256:f9da015cbf821bb7e4ab0f8bfc1dcc74fa7e74f67bb6b33cf3f5dc7d80328f90",
+        "candidateScanIndex": 21,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 23,
+        "sourceJpgFileName": "sweep_023jpg.jpg",
+        "sourceJpgSha256": "sha256:ffdc2fd3e7a87f237e6354dcc3cc966af98315e71f60efd4860f6f3b45e1e7ce",
+        "candidateScanIndex": 22,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 24,
+        "sourceJpgFileName": "sweep_024jpg.jpg",
+        "sourceJpgSha256": "sha256:c84cddab64cba83b173dd4c690668e71a012fd978e6aac4b4692aea7f9a6fcbb",
+        "candidateScanIndex": 23,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 25,
+        "sourceJpgFileName": "sweep_025jpg.jpg",
+        "sourceJpgSha256": "sha256:b54a46c5e2c39497f5c876c01e95ffb24dffe3b53f9df6af3c5b35a9d8adebca",
+        "candidateScanIndex": 24,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 26,
+        "sourceJpgFileName": "sweep_026jpg.jpg",
+        "sourceJpgSha256": "sha256:d2d0d4cce03f6c6d0e37d33a413bb600c5f80ad1ae6354b2d3cc5d40b5f962e6",
+        "candidateScanIndex": 25,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 27,
+        "sourceJpgFileName": "sweep_027jpg.jpg",
+        "sourceJpgSha256": "sha256:89b9d9b3ecc9f3ab3888346d144420befdee7d7057a3d260a5632da0062042a8",
+        "candidateScanIndex": 26,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 28,
+        "sourceJpgFileName": "sweep_028jpg.jpg",
+        "sourceJpgSha256": "sha256:252a3cd35c425a2f4624ed6f9b22500b158909752a76363fb03cc2d54109c0c5",
+        "candidateScanIndex": 27,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 29,
+        "sourceJpgFileName": "sweep_029jpg.jpg",
+        "sourceJpgSha256": "sha256:1f244ac995a35a1ed970e872170428c0ba2eb00b657d5f4dd4ba7b9931dd7759",
+        "candidateScanIndex": 28,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 30,
+        "sourceJpgFileName": "sweep_030jpg.jpg",
+        "sourceJpgSha256": "sha256:f284668f3ab5ca9497a440c2bbdd77e378fc317e5eaaaf95995157d93e4ec324",
+        "candidateScanIndex": 29,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 31,
+        "sourceJpgFileName": "sweep_031jpg.jpg",
+        "sourceJpgSha256": "sha256:558ab617ebce19ab7c9b198be2a92d674ce4b8aab13a41dc9d8e4ba97481ee09",
+        "candidateScanIndex": 30,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 32,
+        "sourceJpgFileName": "sweep_032jpg.jpg",
+        "sourceJpgSha256": "sha256:38ca1834e7ee476a178d2756216e09e7aa8d2ae95cb1a1a914a4c2d3ee2cda40",
+        "candidateScanIndex": 31,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 33,
+        "sourceJpgFileName": "sweep_033jpg.jpg",
+        "sourceJpgSha256": "sha256:e82e85bea034b648fc18aee86b3410451132abf41121013faebf4eb60c3d6fa3",
+        "candidateScanIndex": 32,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 34,
+        "sourceJpgFileName": "sweep_034jpg.jpg",
+        "sourceJpgSha256": "sha256:dc857fedea96b5e2e1acd9a8da97d96c5512dbfc31acb8c7f4db27fe27a7f3bb",
+        "candidateScanIndex": 33,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 35,
+        "sourceJpgFileName": "sweep_035jpg.jpg",
+        "sourceJpgSha256": "sha256:ea3ec8cf72ac5ac8d1765659cf4dc314ebf62ecb1e7b24bc481b20ec41fd080e",
+        "candidateScanIndex": 34,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 36,
+        "sourceJpgFileName": "sweep_036jpg.jpg",
+        "sourceJpgSha256": "sha256:839714e1bc307bd29332ab1be144481fb3307fd7d771b01a85e26f82046ad056",
+        "candidateScanIndex": 35,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 37,
+        "sourceJpgFileName": "sweep_037jpg.jpg",
+        "sourceJpgSha256": "sha256:c5572ae32bd1aac224f9db5bc643f7ced7259eff9b9916c6aedb845d6fafeed4",
+        "candidateScanIndex": 36,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 38,
+        "sourceJpgFileName": "sweep_038jpg.jpg",
+        "sourceJpgSha256": "sha256:27fa2a4976cccccf9fb7fddb7455581fae41cc730d9f03aa9742a3cc80cdcc50",
+        "candidateScanIndex": 37,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 39,
+        "sourceJpgFileName": "sweep_039jpg.jpg",
+        "sourceJpgSha256": "sha256:53adbd580abcef63c853993964f34204bc329bdb93b2130a4d2e29de5bab750f",
+        "candidateScanIndex": 38,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 40,
+        "sourceJpgFileName": "sweep_040jpg.jpg",
+        "sourceJpgSha256": "sha256:f9a78354d6f701cc1e0c0c707551d2fb6f8db9d8f582041e886ed2d6d485252d",
+        "candidateScanIndex": 39,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 41,
+        "sourceJpgFileName": "sweep_041jpg.jpg",
+        "sourceJpgSha256": "sha256:d9d056e2453a223144514bdca224bbdfb7e76f4bd7130008a3d811afa67eb974",
+        "candidateScanIndex": 40,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 42,
+        "sourceJpgFileName": "sweep_042jpg.jpg",
+        "sourceJpgSha256": "sha256:d17a7ef141b8237edd06962cfd91178345c52085384904452eb54282527e6013",
+        "candidateScanIndex": 41,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 43,
+        "sourceJpgFileName": "sweep_043jpg.jpg",
+        "sourceJpgSha256": "sha256:c3fdd8cc7dbb1ae366b509885e3bcfc423650b4493d44f22e78b2402aff7efbf",
+        "candidateScanIndex": 42,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 44,
+        "sourceJpgFileName": "sweep_044jpg.jpg",
+        "sourceJpgSha256": "sha256:bbf7220d89d9726d561f98fb93d9ab0d44223007f49bb57b1de6c813b596e859",
+        "candidateScanIndex": 43,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 45,
+        "sourceJpgFileName": "sweep_045jpg.jpg",
+        "sourceJpgSha256": "sha256:e02d1eda50f9e6749f20130f001d0abfdc8e76d18c86dce2df2a540c7f485e44",
+        "candidateScanIndex": 44,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 46,
+        "sourceJpgFileName": "sweep_046jpg.jpg",
+        "sourceJpgSha256": "sha256:7112c76da5b5548780f5ecc47ac2f05259a506f6c70879dda85ac90a1e01a171",
+        "candidateScanIndex": 45,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 47,
+        "sourceJpgFileName": "sweep_047jpg.jpg",
+        "sourceJpgSha256": "sha256:e12b452eb8367d7a9650f78b865d4b96320d67c1699b906e94de10619fde61c8",
+        "candidateScanIndex": 46,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 48,
+        "sourceJpgFileName": "sweep_048jpg.jpg",
+        "sourceJpgSha256": "sha256:ab11ad1641301eb022ebde0f5fba7c35d60cbd46670c653e4106051236d12742",
+        "candidateScanIndex": 47,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 49,
+        "sourceJpgFileName": "sweep_049jpg.jpg",
+        "sourceJpgSha256": "sha256:9b56c52c567f24a46cd28e5423236ec45f097b0d334b58440bebcd5c105f6859",
+        "candidateScanIndex": 48,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      },
+      {
+        "sourceSweepNumber": 50,
+        "sourceJpgFileName": "sweep_050jpg.jpg",
+        "sourceJpgSha256": "sha256:16f47e73aafed50c5d055b627443979717318c1ef4d2e02465bbe40821917246",
+        "candidateScanIndex": 49,
+        "state": "sequence_hypothesis_unverified",
+        "authority": "none",
+        "geometricCameraAuthority": "none",
+        "trainingAuthority": "none",
+        "reconstructionAuthority": "none",
+        "runtimeAuthority": "none"
+      }
+    ],
     "diagnosticPreviewInventory": {
       "sourceLocator": "E57_PREVIEW_EVIDENCE_ROOT",
       "fileCount": 50,
@@ -5408,6 +4974,7 @@
       "evidenceSha256": "sha256:aecf6168948d66dbde4d6e302c682a72cef323106fb3eaf52e20587c9844ca7f",
       "pairCount": 6,
       "authority": "diagnostic_only",
+      "derivationState": "historical_unverified",
       "humanConfirmationRecorded": false,
       "e57ByteLineageEstablished": false,
       "pairs": [
@@ -5531,8 +5098,8 @@
         "mediaType": "image/png",
         "widthPx": 2000,
         "heightPx": 2840,
-        "byteLength": 9294987,
-        "sha256": "sha256:f7c8243e9b005cc0bb0cf89fb4d2f0f3ecc3ca1e5760b4a6ed4b3fa5006240a0",
+        "byteLength": 9295707,
+        "sha256": "sha256:8f8baaec78bbaf5aef6277ddc9cfc72bc57f75cea48ed67e2457f14716b808f8",
         "authority": "none",
         "role": "review_only_resampled_contact_sheet",
         "reconstructionInputPermitted": false
@@ -5574,5 +5141,5 @@
     "No panorama masks, inferred poses, closed boundary, generated fill, or human acceptance are contained in this package.",
     "The historical equirect_filled workspace was not read or consumed."
   ],
-  "manifestSha256": "sha256:c2d74ee55b27be9b4641d3b94968591d37735d353987d30adca4fc785b3636ef"
+  "manifestSha256": "sha256:4c23c3374dabd64e158c179ffaa38b32ae40876aaaf9da5f16ee57093f88f5bc"
 }

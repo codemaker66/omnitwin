@@ -1,4 +1,4 @@
-import { cp, mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { cp, link, mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,8 +7,16 @@ import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  domainSeparatedSha256,
+  toCanonicalJson,
+} from "@omnitwin/reconstruction-foundry";
+
+import {
+  GRAND_HALL_T554_MANIFEST_FILENAME,
+  GRAND_HALL_T554_PANORAMA_MANIFEST_DOMAIN,
   GrandHallT554PanoramaReviewError,
   assertGrandHallT554ReviewOutputSafety,
+  buildGrandHallT554PanoramaE57SequenceHypotheses,
   buildGrandHallT554PanoramaReviewRecords,
   collectGrandHallT554PanoramaInventory,
   computeGrandHallT554PanoramaInventorySha256,
@@ -17,16 +25,64 @@ import {
   parseGrandHallT554PanoramaFilename,
   verifyPersistedGrandHallT554PanoramaReviewPack,
   type GrandHallT554PanoramaInventoryFile,
+  type GrandHallT554PanoramaReviewManifest,
   type GrandHallT554T550Binding,
 } from "../grand-hall-t554-panorama-review.js";
 import { parseGrandHallT554PanoramaReviewArguments } from "../grand-hall-t554-panorama-review-cli.js";
 
 const temporaryRoots: string[] = [];
 
+type DeepMutable<T> = T extends readonly (infer Item)[]
+  ? DeepMutable<Item>[]
+  : T extends object
+    ? { -readonly [Key in keyof T]: DeepMutable<T[Key]> }
+    : T;
+
+type MutablePanoramaManifest = DeepMutable<GrandHallT554PanoramaReviewManifest>;
+
 async function temporaryRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "grand-hall-t554-panorama-test-"));
   temporaryRoots.push(root);
   return root;
+}
+
+function setJsonField(target: object, key: string, value: unknown): void {
+  if (!Reflect.set(target, key, value)) {
+    throw new Error(`Could not set adversarial JSON field ${key}.`);
+  }
+}
+
+function panoramaRecordAt(
+  manifest: MutablePanoramaManifest,
+  index: number,
+): object {
+  const record = manifest.sourceBindings.panoramaInventory.records[index];
+  if (record === undefined) throw new Error(`Expected panorama record ${String(index)}.`);
+  return record;
+}
+
+async function copyAndCanonicalResealManifest(
+  artifactDirectory: string,
+  mutate: (manifest: MutablePanoramaManifest) => void,
+): Promise<string> {
+  const root = await temporaryRoot();
+  const copyDirectory = join(root, "panoramas");
+  await cp(artifactDirectory, copyDirectory, { recursive: true });
+  const manifestPath = join(copyDirectory, GRAND_HALL_T554_MANIFEST_FILENAME);
+  const manifest = JSON.parse(
+    await readFile(manifestPath, "utf8"),
+  ) as MutablePanoramaManifest;
+  mutate(manifest);
+  const { manifestSha256: _oldDigest, ...material } = manifest;
+  const resealed = {
+    ...material,
+    manifestSha256: `sha256:${domainSeparatedSha256(
+      GRAND_HALL_T554_PANORAMA_MANIFEST_DOMAIN,
+      toCanonicalJson(material),
+    )}`,
+  };
+  await writeFile(manifestPath, `${JSON.stringify(resealed, null, 2)}\n`, "utf8");
+  return copyDirectory;
 }
 
 async function jpeg(width: number, height: number, red: number): Promise<Buffer> {
@@ -256,6 +312,7 @@ describe("Grand Hall T-554 eligibility records", () => {
     };
 
     const records = buildGrandHallT554PanoramaReviewRecords(files, binding);
+    const hypotheses = buildGrandHallT554PanoramaE57SequenceHypotheses(files, binding);
 
     expect(records).toHaveLength(148);
     expect(records.filter((record) => record.reviewEligibility === "t550_candidate_human_pending"))
@@ -266,6 +323,43 @@ describe("Grand Hall T-554 eligibility records", () => {
       ),
     ).toHaveLength(98);
     expect(records.slice(50).every((record) => !record.reconstructionInputPermitted)).toBe(true);
+    expect(records[0]).not.toHaveProperty("candidateScanIndex");
+    expect(hypotheses).toHaveLength(50);
+    expect(hypotheses[0]).toMatchObject({
+      sourceSweepNumber: 1,
+      candidateScanIndex: 0,
+      state: "sequence_hypothesis_unverified",
+      authority: "none",
+      geometricCameraAuthority: "none",
+      trainingAuthority: "none",
+      reconstructionAuthority: "none",
+      runtimeAuthority: "none",
+    });
+    expect(hypotheses[0]).not.toHaveProperty("panoramaCorrespondenceState");
+    expect(hypotheses[0]).not.toHaveProperty("visualLocationInference");
+
+    const permutedBinding: GrandHallT554T550Binding = {
+      ...binding,
+      records: binding.records.map((record, index) => ({
+        ...record,
+        scanIndex: index === 0 ? 148 : index - 1,
+      })),
+    };
+    expect(buildGrandHallT554PanoramaReviewRecords(files, permutedBinding)).toEqual(records);
+    expect(buildGrandHallT554PanoramaE57SequenceHypotheses(files, permutedBinding))
+      .not.toEqual(hypotheses);
+    expect(buildGrandHallT554PanoramaE57SequenceHypotheses(files, permutedBinding)[0])
+      .toMatchObject({ candidateScanIndex: 148 });
+
+    const outOfRangeBinding: GrandHallT554T550Binding = {
+      ...binding,
+      records: binding.records.map((record, index) => ({
+        ...record,
+        scanIndex: index === 0 ? 149 : index - 1,
+      })),
+    };
+    expect(() => buildGrandHallT554PanoramaE57SequenceHypotheses(files, outOfRangeBinding))
+      .toThrow(expect.objectContaining({ code: "T550_BINDING_MISMATCH" }));
 
     const mismatchedBinding: GrandHallT554T550Binding = {
       ...binding,
@@ -394,9 +488,9 @@ describe("checked-in Grand Hall T-554 panorama review pack", () => {
       verifyPersistedGrandHallT554PanoramaReviewPack(artifactDirectory),
     ).resolves.toMatchObject({
       manifestSha256:
-        "sha256:c2d74ee55b27be9b4641d3b94968591d37735d353987d30adca4fc785b3636ef",
+        "sha256:4c23c3374dabd64e158c179ffaa38b32ae40876aaaf9da5f16ee57093f88f5bc",
       manifestFileSha256:
-        "sha256:665c46af456e01ee1f61d59cce24f0e818258e56693d4ac01e550cebac9474ab",
+        "sha256:2c8b44ef2cd840fddc3f0a49e82b73fff37b33f1d546126ed941029c1cb52b86",
       outputCount: 2,
       persistedInventoryVerified: true,
       pngDecodeVerified: true,
@@ -419,6 +513,265 @@ describe("checked-in Grand Hall T-554 panorama review pack", () => {
     const bytes = await readFile(overview);
     bytes[bytes.length - 1] = (bytes[bytes.length - 1] ?? 0) ^ 1;
     await writeFile(overview, bytes);
+    await expect(
+      verifyPersistedGrandHallT554PanoramaReviewPack(copyDirectory),
+    ).rejects.toMatchObject({ code: "OUTPUT_VERIFICATION_FAILED" });
+  });
+
+  it("rejects a self-sealed hypothesis that presents itself as reviewed", async () => {
+    const copyDirectory = await copyAndCanonicalResealManifest(
+      artifactDirectory,
+      (manifest) => {
+        const firstHypothesis = manifest.sourceBindings.panoramaE57SequenceHypotheses[0];
+        if (firstHypothesis === undefined) {
+          throw new Error("Expected a persisted sequence hypothesis.");
+        }
+        setJsonField(firstHypothesis, "reviewedAt", "2026-08-25T00:00:00.000Z");
+      },
+    );
+
+    await expect(
+      verifyPersistedGrandHallT554PanoramaReviewPack(copyDirectory),
+    ).rejects.toMatchObject({ code: "OUTPUT_VERIFICATION_FAILED" });
+  });
+
+  it("rejects a self-sealed sequence change whose persisted overview still shows the old hypothesis", async () => {
+    const copyDirectory = await copyAndCanonicalResealManifest(
+      artifactDirectory,
+      (manifest) => {
+        const firstHypothesis = manifest.sourceBindings.panoramaE57SequenceHypotheses[0];
+        if (firstHypothesis === undefined) {
+          throw new Error("Expected a persisted sequence hypothesis.");
+        }
+        firstHypothesis.candidateScanIndex = 148;
+      },
+    );
+
+    await expect(
+      verifyPersistedGrandHallT554PanoramaReviewPack(copyDirectory),
+    ).rejects.toMatchObject({ code: "OUTPUT_VERIFICATION_FAILED" });
+  });
+
+  const selfSealedPanoramaManifestAttacks: ReadonlyArray<
+    readonly [string, (manifest: MutablePanoramaManifest) => void]
+  > = [
+    ["candidate source scanIndex injection", (manifest) => {
+      setJsonField(panoramaRecordAt(manifest, 0), "scanIndex", 0);
+    }],
+    ["candidate source geometric-camera authority", (manifest) => {
+      setJsonField(
+        panoramaRecordAt(manifest, 0),
+        "geometricCameraAuthority",
+        "human_accepted",
+      );
+    }],
+    ["ineligible source runtime authority", (manifest) => {
+      setJsonField(panoramaRecordAt(manifest, 50), "runtimeAuthority", "human_accepted");
+    }],
+    ["candidate source pose authority", (manifest) => {
+      setJsonField(panoramaRecordAt(manifest, 0), "poseAuthority", "human_accepted");
+    }],
+    ["unknown source-binding field", (manifest) => {
+      setJsonField(manifest.sourceBindings, "unexpectedAuthority", "human_accepted");
+    }],
+    ["root runtime authority", (manifest) => {
+      setJsonField(manifest, "runtimeAuthority", "human_accepted");
+    }],
+    ["mutated panorama inventory digest", (manifest) => {
+      manifest.sourceBindings.panoramaInventory.inventorySha256 =
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    }],
+    ["mutated panorama inventory total bytes", (manifest) => {
+      manifest.sourceBindings.panoramaInventory.totalBytes += 1;
+    }],
+    ["unknown panorama inventory field", (manifest) => {
+      setJsonField(
+        manifest.sourceBindings.panoramaInventory,
+        "runtimeAuthority",
+        "human_accepted",
+      );
+    }],
+    ["mutated missing-sweep inventory", (manifest) => {
+      manifest.sourceBindings.panoramaInventory.missingSweepNumbersWithin1To149 = [92, 93];
+    }],
+    ["mutated panorama inventory file count", (manifest) => {
+      setJsonField(manifest.sourceBindings.panoramaInventory, "fileCount", 147);
+    }],
+    ["mutated panorama eligibility count", (manifest) => {
+      setJsonField(manifest.sourceBindings.panoramaInventory, "candidateRecordCount", 49);
+    }],
+    ["out-of-range panorama source sweep", (manifest) => {
+      setJsonField(panoramaRecordAt(manifest, 0), "sweepNumber", 150);
+    }],
+    ["duplicate hypothesis source sweep", (manifest) => {
+      const first = manifest.sourceBindings.panoramaE57SequenceHypotheses[0];
+      const second = manifest.sourceBindings.panoramaE57SequenceHypotheses[1];
+      if (first === undefined || second === undefined) {
+        throw new Error("Expected two persisted sequence hypotheses.");
+      }
+      second.sourceSweepNumber = first.sourceSweepNumber;
+      second.sourceJpgFileName = first.sourceJpgFileName;
+      second.sourceJpgSha256 = first.sourceJpgSha256;
+    }],
+    ["mutated diagnostic-preview total bytes", (manifest) => {
+      manifest.sourceBindings.diagnosticPreviewInventory.totalBytes += 1;
+    }],
+    ["mutated diagnostic-preview digest", (manifest) => {
+      const preview = manifest.sourceBindings.diagnosticPreviewInventory.records[0];
+      if (preview === undefined) throw new Error("Expected one diagnostic preview record.");
+      setJsonField(
+        preview,
+        "sha256",
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      );
+    }],
+    ["mutated non-crosswalk diagnostic-preview digest", (manifest) => {
+      const preview = manifest.sourceBindings.diagnosticPreviewInventory.records[1];
+      if (preview === undefined) throw new Error("Expected a second diagnostic preview record.");
+      setJsonField(
+        preview,
+        "sha256",
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      );
+    }],
+    ["consistently resealed source panorama digest", (manifest) => {
+      const hypothesis = manifest.sourceBindings.panoramaE57SequenceHypotheses[1];
+      if (hypothesis === undefined) throw new Error("Expected a second sequence hypothesis.");
+      const replacement =
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+      setJsonField(panoramaRecordAt(manifest, 1), "sha256", replacement);
+      hypothesis.sourceJpgSha256 = replacement;
+      manifest.sourceBindings.panoramaInventory.inventorySha256 =
+        computeGrandHallT554PanoramaInventorySha256(
+          manifest.sourceBindings.panoramaInventory.records,
+        );
+    }],
+    ["mutated T-550 membership file receipt", (manifest) => {
+      setJsonField(
+        manifest.sourceBindings.t550Membership,
+        "fileSha256",
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      );
+    }],
+    ["mutated ceiling-plan byte length", (manifest) => {
+      setJsonField(manifest.sourceBindings.ceilingColorPlan, "byteLength", 1);
+    }],
+    ["mutated ceiling-plan digest", (manifest) => {
+      setJsonField(
+        manifest.sourceBindings.ceilingColorPlan,
+        "sha256",
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      );
+    }],
+    ["mutated ceiling-plan media type", (manifest) => {
+      setJsonField(manifest.sourceBindings.ceilingColorPlan, "mediaType", "image/png");
+    }],
+    ["mutated ceiling-plan dimensions", (manifest) => {
+      setJsonField(manifest.sourceBindings.ceilingColorPlan, "widthPx", 1);
+    }],
+    ["mutated ceiling-plan JPEG receipt", (manifest) => {
+      setJsonField(manifest.sourceBindings.ceilingColorPlan, "jpegFrame", "progressive_dct");
+    }],
+    ["mutated crosswalk scan index", (manifest) => {
+      const pair = manifest.sourceBindings.crosswalkEvidence.pairs[0];
+      if (pair === undefined) throw new Error("Expected one crosswalk pair.");
+      setJsonField(pair, "scanIndex", 148);
+    }],
+    ["mutated crosswalk candidate digest", (manifest) => {
+      const pair = manifest.sourceBindings.crosswalkEvidence.pairs[0];
+      if (pair === undefined) throw new Error("Expected one crosswalk pair.");
+      setJsonField(
+        pair,
+        "candidatePanoramaSha256",
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      );
+    }],
+    ["mutated crosswalk preview digest", (manifest) => {
+      const pair = manifest.sourceBindings.crosswalkEvidence.pairs[0];
+      if (pair === undefined) throw new Error("Expected one crosswalk pair.");
+      setJsonField(
+        pair,
+        "previewSha256",
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      );
+    }],
+    ["consistently rewritten crosswalk scores", (manifest) => {
+      const pair = manifest.sourceBindings.crosswalkEvidence.pairs[0];
+      if (pair === undefined) throw new Error("Expected one crosswalk pair.");
+      setJsonField(pair, "candidateMatchRank", 42);
+      setJsonField(pair, "candidateMatchScore", 0.5);
+      setJsonField(pair, "runnerUpScanIndex", 2);
+      setJsonField(pair, "runnerUpScore", 0.4);
+      setJsonField(pair, "candidateMinusRunnerUpScore", 0.1);
+    }],
+    ["architectural-authority warning injection", (manifest) => {
+      manifest.warnings[0] = "The scan sequence is accepted architectural camera authority.";
+    }],
+    ["mutated proof claim", (manifest) => {
+      setJsonField(manifest.proof, "sourceWrites", "permitted");
+    }],
+  ];
+
+  it.each(selfSealedPanoramaManifestAttacks)(
+    "rejects canonical-resealed %s",
+    async (_label, mutate) => {
+      const copyDirectory = await copyAndCanonicalResealManifest(
+        artifactDirectory,
+        mutate,
+      );
+
+      await expect(
+        verifyPersistedGrandHallT554PanoramaReviewPack(copyDirectory),
+      ).rejects.toMatchObject({ code: "OUTPUT_VERIFICATION_FAILED" });
+    },
+  );
+
+  it("rejects an externally hard-linked persisted panorama manifest", async () => {
+    const root = await temporaryRoot();
+    const copyDirectory = join(root, "panoramas");
+    await cp(artifactDirectory, copyDirectory, { recursive: true });
+    await link(
+      join(copyDirectory, GRAND_HALL_T554_MANIFEST_FILENAME),
+      join(root, "external-manifest-hardlink.json"),
+    );
+
+    await expect(
+      verifyPersistedGrandHallT554PanoramaReviewPack(copyDirectory),
+    ).rejects.toMatchObject({ code: "OUTPUT_VERIFICATION_FAILED" });
+  });
+
+  it("rejects invalid UTF-8 that a replacement decoder could self-seal", async () => {
+    const copyDirectory = await copyAndCanonicalResealManifest(
+      artifactDirectory,
+      (manifest) => {
+        manifest.toolchain.nodeVersion = "\uFFFD";
+      },
+    );
+    const manifestPath = join(copyDirectory, GRAND_HALL_T554_MANIFEST_FILENAME);
+    const validBytes = await readFile(manifestPath);
+    const replacementBytes = Buffer.from([0xef, 0xbf, 0xbd]);
+    const replacementOffset = validBytes.indexOf(replacementBytes);
+    if (replacementOffset < 0) throw new Error("Expected one UTF-8 replacement marker.");
+    const invalidBytes = Buffer.concat([
+      validBytes.subarray(0, replacementOffset),
+      Buffer.from([0xff]),
+      validBytes.subarray(replacementOffset + replacementBytes.length),
+    ]);
+    await writeFile(manifestPath, invalidBytes);
+
+    await expect(
+      verifyPersistedGrandHallT554PanoramaReviewPack(copyDirectory),
+    ).rejects.toMatchObject({ code: "OUTPUT_VERIFICATION_FAILED" });
+  });
+
+  it("rejects a UTF-8 BOM before an otherwise exact manifest", async () => {
+    const root = await temporaryRoot();
+    const copyDirectory = join(root, "panoramas");
+    await cp(artifactDirectory, copyDirectory, { recursive: true });
+    const manifestPath = join(copyDirectory, GRAND_HALL_T554_MANIFEST_FILENAME);
+    const bytes = await readFile(manifestPath);
+    await writeFile(manifestPath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]));
+
     await expect(
       verifyPersistedGrandHallT554PanoramaReviewPack(copyDirectory),
     ).rejects.toMatchObject({ code: "OUTPUT_VERIFICATION_FAILED" });

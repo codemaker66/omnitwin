@@ -12,64 +12,69 @@ Knowledge basis (for example, captured the venue / knows the room in person):
 
 ## A. Panorama membership
 
-The current hypothesis is only a visual aid: scans 000, 017, and 048 appear to
-cross a portal; scans 018 and 049 appear adjacent; the remaining scans appear
-consistent with the Grand Hall. The reviewer may overturn all of it.
+The current image-content hypothesis is only a visual aid: source panorama
+sweeps 001, 018, and 049 appear to contain mixed Grand Hall and adjacent-space
+content; sweeps 019 and 050 appear adjacent; the remaining source panoramas
+appear consistent with the Grand Hall. The reviewer may overturn all of it.
+
+The displayed E57 scan indices are a separate
+`sequence_hypothesis_unverified`. They are not part of the JPEG identities and
+this checklist cannot accept them as camera correspondence or pose evidence.
 
 Use exactly one result per row: `INCLUDE`, `EXCLUDE`, or `UNSURE`.
 
-| Scan | Sweep | Current hypothesis | Human result | Note |
-|---:|---:|---|---|---|
-| 000 | 001 | mixed portal |  |  |
-| 001 | 002 | Grand Hall candidate |  |  |
-| 002 | 003 | Grand Hall candidate |  |  |
-| 003 | 004 | Grand Hall candidate |  |  |
-| 004 | 005 | Grand Hall candidate |  |  |
-| 005 | 006 | Grand Hall candidate |  |  |
-| 006 | 007 | Grand Hall candidate |  |  |
-| 007 | 008 | Grand Hall candidate |  |  |
-| 008 | 009 | Grand Hall candidate |  |  |
-| 009 | 010 | Grand Hall candidate |  |  |
-| 010 | 011 | Grand Hall candidate |  |  |
-| 011 | 012 | Grand Hall candidate |  |  |
-| 012 | 013 | Grand Hall candidate |  |  |
-| 013 | 014 | Grand Hall candidate |  |  |
-| 014 | 015 | Grand Hall candidate |  |  |
-| 015 | 016 | Grand Hall candidate |  |  |
-| 016 | 017 | Grand Hall candidate |  |  |
-| 017 | 018 | mixed portal |  |  |
-| 018 | 019 | adjacent-space hypothesis |  |  |
-| 019 | 020 | Grand Hall candidate |  |  |
-| 020 | 021 | Grand Hall candidate |  |  |
-| 021 | 022 | Grand Hall candidate |  |  |
-| 022 | 023 | Grand Hall candidate |  |  |
-| 023 | 024 | Grand Hall candidate |  |  |
-| 024 | 025 | Grand Hall candidate |  |  |
-| 025 | 026 | Grand Hall candidate |  |  |
-| 026 | 027 | Grand Hall candidate |  |  |
-| 027 | 028 | Grand Hall candidate |  |  |
-| 028 | 029 | Grand Hall candidate |  |  |
-| 029 | 030 | Grand Hall candidate |  |  |
-| 030 | 031 | Grand Hall candidate |  |  |
-| 031 | 032 | Grand Hall candidate |  |  |
-| 032 | 033 | Grand Hall candidate |  |  |
-| 033 | 034 | Grand Hall candidate |  |  |
-| 034 | 035 | Grand Hall candidate |  |  |
-| 035 | 036 | Grand Hall candidate |  |  |
-| 036 | 037 | Grand Hall candidate |  |  |
-| 037 | 038 | Grand Hall candidate |  |  |
-| 038 | 039 | Grand Hall candidate |  |  |
-| 039 | 040 | Grand Hall candidate |  |  |
-| 040 | 041 | Grand Hall candidate |  |  |
-| 041 | 042 | Grand Hall candidate |  |  |
-| 042 | 043 | Grand Hall candidate |  |  |
-| 043 | 044 | Grand Hall candidate |  |  |
-| 044 | 045 | Grand Hall candidate |  |  |
-| 045 | 046 | Grand Hall candidate |  |  |
-| 046 | 047 | Grand Hall candidate |  |  |
-| 047 | 048 | Grand Hall candidate |  |  |
-| 048 | 049 | mixed portal |  |  |
-| 049 | 050 | adjacent-space hypothesis |  |  |
+| Sweep | Source JPEG | Current image-content hypothesis | Human result | Note |
+|---:|---|---|---|---|
+| 001 | `sweep_001jpg.jpg` | mixed room-boundary content |  |  |
+| 002 | `sweep_002jpg.jpg` | Grand Hall candidate |  |  |
+| 003 | `sweep_003jpg.jpg` | Grand Hall candidate |  |  |
+| 004 | `sweep_004jpg.jpg` | Grand Hall candidate |  |  |
+| 005 | `sweep_005jpg.jpg` | Grand Hall candidate |  |  |
+| 006 | `sweep_006jpg.jpg` | Grand Hall candidate |  |  |
+| 007 | `sweep_007jpg.jpg` | Grand Hall candidate |  |  |
+| 008 | `sweep_008jpg.jpg` | Grand Hall candidate |  |  |
+| 009 | `sweep_009jpg.jpg` | Grand Hall candidate |  |  |
+| 010 | `sweep_010jpg.jpg` | Grand Hall candidate |  |  |
+| 011 | `sweep_011jpg.jpg` | Grand Hall candidate |  |  |
+| 012 | `sweep_012jpg.jpg` | Grand Hall candidate |  |  |
+| 013 | `sweep_013jpg.jpg` | Grand Hall candidate |  |  |
+| 014 | `sweep_014jpg.jpg` | Grand Hall candidate |  |  |
+| 015 | `sweep_015jpg.jpg` | Grand Hall candidate |  |  |
+| 016 | `sweep_016jpg.jpg` | Grand Hall candidate |  |  |
+| 017 | `sweep_017jpg.jpg` | Grand Hall candidate |  |  |
+| 018 | `sweep_018jpg.jpg` | mixed room-boundary content |  |  |
+| 019 | `sweep_019jpg.jpg` | adjacent-space hypothesis |  |  |
+| 020 | `sweep_020jpg.jpg` | Grand Hall candidate |  |  |
+| 021 | `sweep_021jpg.jpg` | Grand Hall candidate |  |  |
+| 022 | `sweep_022jpg.jpg` | Grand Hall candidate |  |  |
+| 023 | `sweep_023jpg.jpg` | Grand Hall candidate |  |  |
+| 024 | `sweep_024jpg.jpg` | Grand Hall candidate |  |  |
+| 025 | `sweep_025jpg.jpg` | Grand Hall candidate |  |  |
+| 026 | `sweep_026jpg.jpg` | Grand Hall candidate |  |  |
+| 027 | `sweep_027jpg.jpg` | Grand Hall candidate |  |  |
+| 028 | `sweep_028jpg.jpg` | Grand Hall candidate |  |  |
+| 029 | `sweep_029jpg.jpg` | Grand Hall candidate |  |  |
+| 030 | `sweep_030jpg.jpg` | Grand Hall candidate |  |  |
+| 031 | `sweep_031jpg.jpg` | Grand Hall candidate |  |  |
+| 032 | `sweep_032jpg.jpg` | Grand Hall candidate |  |  |
+| 033 | `sweep_033jpg.jpg` | Grand Hall candidate |  |  |
+| 034 | `sweep_034jpg.jpg` | Grand Hall candidate |  |  |
+| 035 | `sweep_035jpg.jpg` | Grand Hall candidate |  |  |
+| 036 | `sweep_036jpg.jpg` | Grand Hall candidate |  |  |
+| 037 | `sweep_037jpg.jpg` | Grand Hall candidate |  |  |
+| 038 | `sweep_038jpg.jpg` | Grand Hall candidate |  |  |
+| 039 | `sweep_039jpg.jpg` | Grand Hall candidate |  |  |
+| 040 | `sweep_040jpg.jpg` | Grand Hall candidate |  |  |
+| 041 | `sweep_041jpg.jpg` | Grand Hall candidate |  |  |
+| 042 | `sweep_042jpg.jpg` | Grand Hall candidate |  |  |
+| 043 | `sweep_043jpg.jpg` | Grand Hall candidate |  |  |
+| 044 | `sweep_044jpg.jpg` | Grand Hall candidate |  |  |
+| 045 | `sweep_045jpg.jpg` | Grand Hall candidate |  |  |
+| 046 | `sweep_046jpg.jpg` | Grand Hall candidate |  |  |
+| 047 | `sweep_047jpg.jpg` | Grand Hall candidate |  |  |
+| 048 | `sweep_048jpg.jpg` | Grand Hall candidate |  |  |
+| 049 | `sweep_049jpg.jpg` | mixed room-boundary content |  |  |
+| 050 | `sweep_050jpg.jpg` | adjacent-space hypothesis |  |  |
 
 ## B. Exhaustive interface dispositions
 

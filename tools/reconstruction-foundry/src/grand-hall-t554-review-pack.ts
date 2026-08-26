@@ -32,6 +32,7 @@ import {
   GRAND_HALL_PANORAMA_WIDTH_PX,
   GRAND_HALL_REVIEW_PANORAMA_COUNT,
   GRAND_HALL_SCOPE_REVIEW_PACK_V1,
+  GrandHallPanoramaE57SequenceHypothesisSchema,
   GrandHallScopeReviewPackMaterialV1Schema,
   GrandHallScopeReviewPackV1Schema,
   computeGrandHallInterfaceInventorySha256,
@@ -40,6 +41,7 @@ import {
   computeGrandHallScopeReviewPackV1Sha256,
   type GrandHallInterfaceCandidate,
   type GrandHallPanoramaDirectoryFileIdentity,
+  type GrandHallPanoramaE57SequenceHypothesis,
   type GrandHallPanoramaSourceJpgIdentity,
   type GrandHallScopeReviewPackV1,
 } from "@omnitwin/types";
@@ -48,6 +50,7 @@ import {
   GRAND_HALL_T554_BOUNDARY_REVIEW_PACK_SCHEMA,
   verifyPersistedT554BoundaryReviewPack,
 } from "./grand-hall-t554-boundary-review.js";
+import { verifyPersistedT554InterfaceAtlasEvidence } from "./grand-hall-t554-interface-atlas.js";
 import {
   GRAND_HALL_T554_MANIFEST_FILENAME,
   GRAND_HALL_T554_PANORAMA_REVIEW_SCHEMA,
@@ -58,6 +61,7 @@ export const GRAND_HALL_T554_ROOT_REVIEW_PACK_FILENAME = "review-pack.json";
 export const GRAND_HALL_T554_BOUNDARY_DIRECTORY_NAME = "boundary";
 export const GRAND_HALL_T554_PANORAMA_DIRECTORY_NAME = "panoramas";
 export const GRAND_HALL_T554_BOUNDARY_MANIFEST_FILENAME = "manifest.json";
+export const GRAND_HALL_T554_INTERFACE_ATLAS_DIRECTORY_NAME = "interfaces";
 export const GRAND_HALL_T554_ROOT_CREATED_AT = "2026-08-25T19:35:34.419Z";
 export const GRAND_HALL_T554_ROOT_CREATED_BY = "venviewer-t554-root-descriptor-v1";
 
@@ -99,6 +103,15 @@ interface StableJsonFile {
   readonly fileSha256: Sha256;
 }
 
+interface StableJsonReadPolicy {
+  readonly expectedLinkCount: bigint;
+  readonly expectedFileObjectIdentity?: FileObjectIdentity;
+}
+
+const SINGLE_LINK_JSON_READ_POLICY: StableJsonReadPolicy = Object.freeze({
+  expectedLinkCount: 1n,
+});
+
 export interface GrandHallT554RootReviewPackDirectories {
   readonly rootDirectory: string;
   readonly boundaryDirectory: string;
@@ -117,6 +130,7 @@ export interface VerifiedGrandHallT554RootReviewPack {
   readonly artifactSha256: string;
   readonly fileSha256: Sha256;
   readonly boundaryManifestSha256: string;
+  readonly interfaceAtlasManifestSha256: string;
   readonly panoramaManifestSha256: string;
   readonly authority: "none";
   readonly exactRegenerationVerified: true;
@@ -278,9 +292,19 @@ function readStableJsonFile(
   maxBytes: number,
   label: string,
   testSeam: GrandHallT554RootReviewReaderTestSeam = {},
+  policy: StableJsonReadPolicy = SINGLE_LINK_JSON_READ_POLICY,
 ): StableJsonFile {
   if (!isAbsolute(path)) throw new Error(`${label} path must be absolute`);
   const pathBefore = directFileIdentity(path, label);
+  if (pathBefore.links !== policy.expectedLinkCount) {
+    throw new Error(`${label} hard-link count differs from its read policy`);
+  }
+  if (
+    policy.expectedFileObjectIdentity !== undefined &&
+    !sameFileObject(pathBefore, policy.expectedFileObjectIdentity)
+  ) {
+    throw new Error(`${label} is not the owned file object authorized by its read policy`);
+  }
   const canonicalBefore = realpathSync(path);
   const descriptor = openSync(canonicalBefore, "r");
   try {
@@ -306,13 +330,17 @@ function readStableJsonFile(
       !sameIdentity(before, after) ||
       !sameIdentity(after, pathAfter) ||
       realpathSync(path) !== canonicalBefore ||
-      pathAfter.links < 1n
+      pathAfter.links !== policy.expectedLinkCount ||
+      policy.expectedFileObjectIdentity !== undefined &&
+        !sameFileObject(pathAfter, policy.expectedFileObjectIdentity)
     ) {
       throw new Error(`${label} changed during its stable read`);
     }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      if (text.charCodeAt(0) === 0xfeff) throw new Error("BOM");
+      parsed = JSON.parse(text);
     } catch {
       throw new Error(`${label} must be strict UTF-8 JSON`);
     }
@@ -390,6 +418,7 @@ function boundaryInterfaces(boundary: UnknownRecord): readonly GrandHallInterfac
 interface PanoramaInventories {
   readonly directoryFiles: readonly GrandHallPanoramaDirectoryFileIdentity[];
   readonly candidateSources: readonly GrandHallPanoramaSourceJpgIdentity[];
+  readonly sequenceHypotheses: readonly GrandHallPanoramaE57SequenceHypothesis[];
 }
 
 function panoramaFileBase(record: UnknownRecord, inventoryIndex: number): {
@@ -453,7 +482,6 @@ function panoramaInventories(panorama: UnknownRecord): PanoramaInventories {
     }
     const eligibility = stringField(record, "reviewEligibility", `panorama record ${String(inventoryIndex)}`);
     if (eligibility === "t550_candidate_human_pending") {
-      const scanIndex = integerField(record, "candidateScanIndex", `panorama record ${String(inventoryIndex)}`);
       directoryFiles.push({
         inventoryIndex,
         fileName: base.fileName,
@@ -467,7 +495,6 @@ function panoramaInventories(panorama: UnknownRecord): PanoramaInventories {
         ineligibilityReason: null,
       });
       candidateSources.push({
-        scanIndex,
         sweepNumber: base.sweepNumber,
         fileName: base.fileName,
         sha256: base.sha256,
@@ -480,7 +507,6 @@ function panoramaInventories(panorama: UnknownRecord): PanoramaInventories {
     if (eligibility !== "not_in_t550_ineligible_unreviewed") {
       throw new Error(`panorama record ${String(inventoryIndex)} has an unknown T-554 eligibility`);
     }
-    literalField(record, "candidateScanIndex", null, `panorama record ${String(inventoryIndex)}`);
     directoryFiles.push({
       inventoryIndex,
       fileName: base.fileName,
@@ -494,10 +520,35 @@ function panoramaInventories(panorama: UnknownRecord): PanoramaInventories {
       ineligibilityReason: "embedded_sweep_number_outside_1_through_50",
     });
   });
-  candidateSources.sort((left, right) => left.scanIndex - right.scanIndex);
+  candidateSources.sort((left, right) => left.sweepNumber - right.sweepNumber);
+  const hypothesisValues = arrayField(
+    sourceBindings,
+    "panoramaE57SequenceHypotheses",
+    "panorama source bindings",
+  );
+  if (hypothesisValues.length !== GRAND_HALL_REVIEW_PANORAMA_COUNT) {
+    throw new Error("panorama manifest must expose exactly 50 authority-none sequence hypotheses");
+  }
+  const sequenceHypotheses = hypothesisValues.map((value, index) => {
+    const label = `panorama sequence hypothesis ${String(index)}`;
+    const hypothesis = asRecord(value, label);
+    return GrandHallPanoramaE57SequenceHypothesisSchema.parse({
+      sourceSweepNumber: integerField(hypothesis, "sourceSweepNumber", label),
+      sourceJpgFileName: stringField(hypothesis, "sourceJpgFileName", label),
+      sourceJpgSha256: sha256Field(hypothesis, "sourceJpgSha256", label),
+      candidateScanIndex: integerField(hypothesis, "candidateScanIndex", label),
+      state: field(hypothesis, "state", label),
+      authority: field(hypothesis, "authority", label),
+      geometricCameraAuthority: field(hypothesis, "geometricCameraAuthority", label),
+      trainingAuthority: field(hypothesis, "trainingAuthority", label),
+      reconstructionAuthority: field(hypothesis, "reconstructionAuthority", label),
+      runtimeAuthority: field(hypothesis, "runtimeAuthority", label),
+    });
+  });
   return {
     directoryFiles,
     candidateSources,
+    sequenceHypotheses,
   };
 }
 
@@ -523,6 +574,7 @@ function rootArtifact(
   boundary: StableJsonFile,
   panorama: StableJsonFile,
   boundaryManifestSha256: Sha256,
+  interfaceAtlasManifestSha256: Sha256,
   panoramaManifestSha256: Sha256,
 ): GrandHallScopeReviewPackV1 {
   assertManifestHeaders(boundary.document, panorama.document);
@@ -557,11 +609,13 @@ function rootArtifact(
       matterPakE57SourceReceiptSha256: T551_SOURCE_RECEIPT_SHA256,
       panoramaDirectoryInventorySha256: directoryInventorySha256,
       boundaryReviewManifestSha256: boundaryManifestSha256,
+      interfaceTopologyAtlasManifestSha256: interfaceAtlasManifestSha256,
       panoramaReviewManifestSha256: panoramaManifestSha256,
     },
     panoramaDirectoryFiles: [...panoramas.directoryFiles],
     candidatePanoramaSources: [...panoramas.candidateSources],
     panoramaSourceInventorySha256: candidateInventorySha256,
+    panoramaE57SequenceHypotheses: [...panoramas.sequenceHypotheses],
     interfaceCandidates: [...interfaces],
     interfaceInventorySha256,
     proposalArtifacts: {
@@ -612,10 +666,14 @@ async function verifiedSourceManifests(
   readonly boundary: StableJsonFile;
   readonly panorama: StableJsonFile;
   readonly boundaryManifestSha256: Sha256;
+  readonly interfaceAtlasManifestSha256: Sha256;
   readonly panoramaManifestSha256: Sha256;
 }> {
   const firstBoundaryDigest = verifyPersistedT554BoundaryReviewPack(
     directories.boundaryDirectory,
+  );
+  const firstInterfaceAtlas = verifyPersistedT554InterfaceAtlasEvidence(
+    resolve(directories.boundaryDirectory, GRAND_HALL_T554_INTERFACE_ATLAS_DIRECTORY_NAME),
   );
   const firstPanorama = await verifyPersistedGrandHallT554PanoramaReviewPack(
     directories.panoramaDirectory,
@@ -635,19 +693,30 @@ async function verifiedSourceManifests(
   const finalBoundaryDigest = verifyPersistedT554BoundaryReviewPack(
     directories.boundaryDirectory,
   );
+  const finalInterfaceAtlas = verifyPersistedT554InterfaceAtlasEvidence(
+    resolve(directories.boundaryDirectory, GRAND_HALL_T554_INTERFACE_ATLAS_DIRECTORY_NAME),
+  );
   const finalPanorama = await verifyPersistedGrandHallT554PanoramaReviewPack(
     directories.panoramaDirectory,
   );
   if (
     firstBoundaryDigest !== finalBoundaryDigest ||
+    firstInterfaceAtlas.manifestSha256 !== finalInterfaceAtlas.manifestSha256 ||
     firstPanorama.manifestSha256 !== finalPanorama.manifestSha256
   ) {
     throw new Error("a T-554 source manifest changed between its two persisted verifications");
+  }
+  if (
+    firstInterfaceAtlas.boundaryReviewManifestSha256 !== firstBoundaryDigest ||
+    finalInterfaceAtlas.boundaryReviewManifestSha256 !== finalBoundaryDigest
+  ) {
+    throw new Error("the T-554 interface atlas does not bind the exact boundary manifest");
   }
   return {
     boundary,
     panorama,
     boundaryManifestSha256: finalBoundaryDigest,
+    interfaceAtlasManifestSha256: finalInterfaceAtlas.manifestSha256,
     panoramaManifestSha256: finalPanorama.manifestSha256,
   };
 }
@@ -662,6 +731,7 @@ export async function buildGrandHallT554RootReviewPack(
     verified.boundary,
     verified.panorama,
     verified.boundaryManifestSha256,
+    verified.interfaceAtlasManifestSha256,
     verified.panoramaManifestSha256,
   );
   return {
@@ -698,7 +768,14 @@ export async function writeGrandHallT554RootReviewPack(
     // at outputPath therefore cannot reuse the published file identity while
     // failure cleanup decides which directory entry it is allowed to unlink.
     await testSeam.afterPublishBeforeVerification?.(outputPath);
-    const verified = await verifyPersistedGrandHallT554RootReviewPack(directories.rootDirectory);
+    const verified = await verifyPersistedGrandHallT554RootReviewPackWithPolicy(
+      directories.rootDirectory,
+      {},
+      {
+        expectedLinkCount: 2n,
+        expectedFileObjectIdentity: publishedIdentity,
+      },
+    );
     if (verified.artifactSha256 !== built.artifact.artifactSha256) {
       throw new Error("published T-554 root descriptor differs from its exact build");
     }
@@ -713,9 +790,10 @@ export async function writeGrandHallT554RootReviewPack(
   }
 }
 
-export async function verifyPersistedGrandHallT554RootReviewPack(
+async function verifyPersistedGrandHallT554RootReviewPackWithPolicy(
   rootDirectory: string,
-  testSeam: GrandHallT554RootReviewReaderTestSeam = {},
+  testSeam: GrandHallT554RootReviewReaderTestSeam,
+  rootDescriptorReadPolicy: StableJsonReadPolicy,
 ): Promise<VerifiedGrandHallT554RootReviewPack> {
   const directories = directReviewDirectories(rootDirectory);
   const built = await buildGrandHallT554RootReviewPack(directories.rootDirectory, testSeam);
@@ -725,6 +803,7 @@ export async function verifyPersistedGrandHallT554RootReviewPack(
     MAX_ROOT_REVIEW_PACK_BYTES,
     "T-554 root review descriptor",
     testSeam,
+    rootDescriptorReadPolicy,
   );
   const parsed = GrandHallScopeReviewPackV1Schema.parse(persisted.document);
   if (!persisted.bytes.equals(built.bytes) || parsed.artifactSha256 !== built.artifact.artifactSha256) {
@@ -735,8 +814,20 @@ export async function verifyPersistedGrandHallT554RootReviewPack(
     artifactSha256: parsed.artifactSha256,
     fileSha256: persisted.fileSha256,
     boundaryManifestSha256: parsed.sourceEvidence.boundaryReviewManifestSha256,
+    interfaceAtlasManifestSha256: parsed.sourceEvidence.interfaceTopologyAtlasManifestSha256,
     panoramaManifestSha256: parsed.sourceEvidence.panoramaReviewManifestSha256,
     authority: "none",
     exactRegenerationVerified: true,
   };
+}
+
+export async function verifyPersistedGrandHallT554RootReviewPack(
+  rootDirectory: string,
+  testSeam: GrandHallT554RootReviewReaderTestSeam = {},
+): Promise<VerifiedGrandHallT554RootReviewPack> {
+  return verifyPersistedGrandHallT554RootReviewPackWithPolicy(
+    rootDirectory,
+    testSeam,
+    SINGLE_LINK_JSON_READ_POLICY,
+  );
 }

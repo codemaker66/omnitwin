@@ -636,20 +636,23 @@ diagnostic reconstructed witnesses only. Neither is a reviewed Grand Hall room
 shell, walkable boundary, floor datum, safe-spawn source, or collision mesh, and
 neither may authorize invented windows, doors, openings, walls, or floor pixels.
 
-Subgraph A8 records the fail-closed successor. T-550 keeps visual membership
-human-pending. T-551 derives a deterministic, path-redacted room-9/E57 source
+Subgraph A8 records the fail-closed successor. T-550 keeps pure panorama-source
+membership human-pending and isolates the apparent panorama→E57 sequence as an
+authority-none, geometrically unverified hypothesis. T-551 derives a
+deterministic, path-redacted room-9/E57 source
 receipt without claiming a closed volume or transform authority. T-552 ensures
 the v1 bytes blank and requires a separately accepted digest plus genuinely new
 room-only byte identities before intake, discovery, preview, or rendering.
 T-553 binds the raw XGRIDS project and checks only whether the workstation may
 advance to LCC's estimator. T-554 accepts source-frame scope, an independent
-selection volume, exhaustive interfaces, correspondence, and panorama masks;
+selection volume, exhaustive interfaces, source-image membership, and panorama
+masks without turning the sequence hypothesis into camera correspondence;
 it cannot author a mask for a future XGRIDS inventory. T-555 produces retained
 Creator Data, then T-557 owns the reviewed XGRIDS-output-to-MatterPak/E57
 registration and exact output-inventory point/Gaussian mask. T-556 may apply
 those witnesses only after all four gates close, but it produces a candidate,
 not runtime authority. T-558 must byte-verify every concrete accepted artifact,
-source panorama, panorama mask, XGRIDS/LCC member and output bitset through the
+pure source panorama, panorama mask, XGRIDS/LCC member and output bitset through the
 API/intake boundary, with a format-aware adapter proving actual source-member
 record boundaries/order/counts, before any trust root can activate. T-554
 through T-558 remain blocked on human review, eligible hardware, a source-faithful

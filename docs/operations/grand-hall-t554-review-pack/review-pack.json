@@ -17,8 +17,9 @@
     "xgridsSourceReceiptSha256": "sha256:dc2259089043ae4a1d95663f251d4bd94699124cd49baa3b8958a0d668389b8a",
     "matterPakE57SourceReceiptSha256": "sha256:0d331b5193f345ad5a127372b691ae02d2049fecdcfd0bc92b7f7cc27166997b",
     "panoramaDirectoryInventorySha256": "sha256:8e9ca4e499ea8c789a51ce2f4e6799fb572fa1d3db8a1135f1c6518dfbc6f322",
-    "boundaryReviewManifestSha256": "sha256:6d0f6a230053ccc85275a80260c7b27cfd612ee5c7ca9964bc0ca8653b84de27",
-    "panoramaReviewManifestSha256": "sha256:c2d74ee55b27be9b4641d3b94968591d37735d353987d30adca4fc785b3636ef"
+    "boundaryReviewManifestSha256": "sha256:289dff7895d9e840671d503b74f576460f6e15b7ff32efae0ca12a866a875dd3",
+    "interfaceTopologyAtlasManifestSha256": "sha256:6f7b702ef8b74b22e6d83d516ff8a2b160ee78ddcdd66f7a06370982ed96e4bc",
+    "panoramaReviewManifestSha256": "sha256:4c23c3374dabd64e158c179ffaa38b32ae40876aaaf9da5f16ee57093f88f5bc"
   },
   "panoramaDirectoryFiles": [
     {
@@ -1800,7 +1801,6 @@
   ],
   "candidatePanoramaSources": [
     {
-      "scanIndex": 0,
       "sweepNumber": 1,
       "fileName": "sweep_001jpg.jpg",
       "sha256": "sha256:0543e2ce83bbbb5b8c4a8c689a49391092cc6d856124f8ac095d33b09c1db814",
@@ -1809,7 +1809,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 1,
       "sweepNumber": 2,
       "fileName": "sweep_002jpg.jpg",
       "sha256": "sha256:4cd7a859326224c92d8f7f09a2b743b9df1c52686828a44b68d15157fd19b3f9",
@@ -1818,7 +1817,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 2,
       "sweepNumber": 3,
       "fileName": "sweep_003jpg.jpg",
       "sha256": "sha256:efb5b0ad338eb6f90cd28f8a9ef2686770cc925326a6e849fb3d8c5efcdc1013",
@@ -1827,7 +1825,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 3,
       "sweepNumber": 4,
       "fileName": "sweep_004jpg.jpg",
       "sha256": "sha256:000cb3ed8662ce46cf6fbbce0f60e7f6473733f40bb1e914eb7e1d341163d796",
@@ -1836,7 +1833,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 4,
       "sweepNumber": 5,
       "fileName": "sweep_005jpg.jpg",
       "sha256": "sha256:c05866d4281d7e9aea8b5e77ad597539bd5a974996e6f647e7e0d244e8cbeadc",
@@ -1845,7 +1841,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 5,
       "sweepNumber": 6,
       "fileName": "sweep_006jpg.jpg",
       "sha256": "sha256:0b44e49bfc722d7ba28b2ff8e49b78ae41c624ce1bb9c46eb39a3fe92f8b7ef4",
@@ -1854,7 +1849,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 6,
       "sweepNumber": 7,
       "fileName": "sweep_007jpg.jpg",
       "sha256": "sha256:f8422af40e93c2decb3334fa53ece5e23e1fc906d22653266eda8349f183e8d0",
@@ -1863,7 +1857,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 7,
       "sweepNumber": 8,
       "fileName": "sweep_008jpg.jpg",
       "sha256": "sha256:0b01f4119bfc295def830dc52123c4e513e2fa1401e1222214501789e3b88ddd",
@@ -1872,7 +1865,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 8,
       "sweepNumber": 9,
       "fileName": "sweep_009jpg.jpg",
       "sha256": "sha256:a73fb75086f37b6c2ad39d5ac987437c768fd3982d0e1c22a7e5e049d8d88e61",
@@ -1881,7 +1873,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 9,
       "sweepNumber": 10,
       "fileName": "sweep_010jpg.jpg",
       "sha256": "sha256:019783308b63906d3b77b4c65fc81c5af509224db8c26304f19cd067e2f7f7a4",
@@ -1890,7 +1881,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 10,
       "sweepNumber": 11,
       "fileName": "sweep_011jpg.jpg",
       "sha256": "sha256:623f0fc42961c42f38124bea148d8baea515352e490b1b4a3a79887267a9d194",
@@ -1899,7 +1889,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 11,
       "sweepNumber": 12,
       "fileName": "sweep_012jpg.jpg",
       "sha256": "sha256:86261016a1e7d64d78e8e40f25a3e6769f56f60789f44679acb0898a7cd6c30d",
@@ -1908,7 +1897,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 12,
       "sweepNumber": 13,
       "fileName": "sweep_013jpg.jpg",
       "sha256": "sha256:0109353480a479c9403c4141e4b528d76471ef42920316b7f769cc3f27b7fb33",
@@ -1917,7 +1905,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 13,
       "sweepNumber": 14,
       "fileName": "sweep_014jpg.jpg",
       "sha256": "sha256:b847ed87baef462d022dffafd27588a71f9e05dfd17fbe21a76bfcd018cb9d58",
@@ -1926,7 +1913,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 14,
       "sweepNumber": 15,
       "fileName": "sweep_015jpg.jpg",
       "sha256": "sha256:ee0f91c31a0ea3c83682757b9924e1c8f57cac896999913880d864df7145c456",
@@ -1935,7 +1921,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 15,
       "sweepNumber": 16,
       "fileName": "sweep_016jpg.jpg",
       "sha256": "sha256:62c90822137ef16da6f10b868f76953e4840c6f6f2089ba4d79646f7d9107a03",
@@ -1944,7 +1929,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 16,
       "sweepNumber": 17,
       "fileName": "sweep_017jpg.jpg",
       "sha256": "sha256:63e97f44f5975d41182c01e0f390f93b5e93f13ba74c4f9753c844972d5b18d2",
@@ -1953,7 +1937,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 17,
       "sweepNumber": 18,
       "fileName": "sweep_018jpg.jpg",
       "sha256": "sha256:55b0b7f00c4eda9eb9290236ffb20a82790b073207d5db967f49dd3bcfee45d0",
@@ -1962,7 +1945,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 18,
       "sweepNumber": 19,
       "fileName": "sweep_019jpg.jpg",
       "sha256": "sha256:5abf5ab9e8b3a26d5621c0c3e06462886e573fd8f40bf68e213dec41812b0f57",
@@ -1971,7 +1953,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 19,
       "sweepNumber": 20,
       "fileName": "sweep_020jpg.jpg",
       "sha256": "sha256:249929896a872e81d6b906d0cb347cbad84fbead53c0af26c1e901b025633963",
@@ -1980,7 +1961,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 20,
       "sweepNumber": 21,
       "fileName": "sweep_021jpg.jpg",
       "sha256": "sha256:236a7ade5fc008bea2c97b57138117b494f922adc326bdb3f5ee25ecf54044f9",
@@ -1989,7 +1969,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 21,
       "sweepNumber": 22,
       "fileName": "sweep_022jpg.jpg",
       "sha256": "sha256:f9da015cbf821bb7e4ab0f8bfc1dcc74fa7e74f67bb6b33cf3f5dc7d80328f90",
@@ -1998,7 +1977,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 22,
       "sweepNumber": 23,
       "fileName": "sweep_023jpg.jpg",
       "sha256": "sha256:ffdc2fd3e7a87f237e6354dcc3cc966af98315e71f60efd4860f6f3b45e1e7ce",
@@ -2007,7 +1985,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 23,
       "sweepNumber": 24,
       "fileName": "sweep_024jpg.jpg",
       "sha256": "sha256:c84cddab64cba83b173dd4c690668e71a012fd978e6aac4b4692aea7f9a6fcbb",
@@ -2016,7 +1993,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 24,
       "sweepNumber": 25,
       "fileName": "sweep_025jpg.jpg",
       "sha256": "sha256:b54a46c5e2c39497f5c876c01e95ffb24dffe3b53f9df6af3c5b35a9d8adebca",
@@ -2025,7 +2001,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 25,
       "sweepNumber": 26,
       "fileName": "sweep_026jpg.jpg",
       "sha256": "sha256:d2d0d4cce03f6c6d0e37d33a413bb600c5f80ad1ae6354b2d3cc5d40b5f962e6",
@@ -2034,7 +2009,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 26,
       "sweepNumber": 27,
       "fileName": "sweep_027jpg.jpg",
       "sha256": "sha256:89b9d9b3ecc9f3ab3888346d144420befdee7d7057a3d260a5632da0062042a8",
@@ -2043,7 +2017,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 27,
       "sweepNumber": 28,
       "fileName": "sweep_028jpg.jpg",
       "sha256": "sha256:252a3cd35c425a2f4624ed6f9b22500b158909752a76363fb03cc2d54109c0c5",
@@ -2052,7 +2025,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 28,
       "sweepNumber": 29,
       "fileName": "sweep_029jpg.jpg",
       "sha256": "sha256:1f244ac995a35a1ed970e872170428c0ba2eb00b657d5f4dd4ba7b9931dd7759",
@@ -2061,7 +2033,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 29,
       "sweepNumber": 30,
       "fileName": "sweep_030jpg.jpg",
       "sha256": "sha256:f284668f3ab5ca9497a440c2bbdd77e378fc317e5eaaaf95995157d93e4ec324",
@@ -2070,7 +2041,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 30,
       "sweepNumber": 31,
       "fileName": "sweep_031jpg.jpg",
       "sha256": "sha256:558ab617ebce19ab7c9b198be2a92d674ce4b8aab13a41dc9d8e4ba97481ee09",
@@ -2079,7 +2049,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 31,
       "sweepNumber": 32,
       "fileName": "sweep_032jpg.jpg",
       "sha256": "sha256:38ca1834e7ee476a178d2756216e09e7aa8d2ae95cb1a1a914a4c2d3ee2cda40",
@@ -2088,7 +2057,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 32,
       "sweepNumber": 33,
       "fileName": "sweep_033jpg.jpg",
       "sha256": "sha256:e82e85bea034b648fc18aee86b3410451132abf41121013faebf4eb60c3d6fa3",
@@ -2097,7 +2065,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 33,
       "sweepNumber": 34,
       "fileName": "sweep_034jpg.jpg",
       "sha256": "sha256:dc857fedea96b5e2e1acd9a8da97d96c5512dbfc31acb8c7f4db27fe27a7f3bb",
@@ -2106,7 +2073,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 34,
       "sweepNumber": 35,
       "fileName": "sweep_035jpg.jpg",
       "sha256": "sha256:ea3ec8cf72ac5ac8d1765659cf4dc314ebf62ecb1e7b24bc481b20ec41fd080e",
@@ -2115,7 +2081,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 35,
       "sweepNumber": 36,
       "fileName": "sweep_036jpg.jpg",
       "sha256": "sha256:839714e1bc307bd29332ab1be144481fb3307fd7d771b01a85e26f82046ad056",
@@ -2124,7 +2089,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 36,
       "sweepNumber": 37,
       "fileName": "sweep_037jpg.jpg",
       "sha256": "sha256:c5572ae32bd1aac224f9db5bc643f7ced7259eff9b9916c6aedb845d6fafeed4",
@@ -2133,7 +2097,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 37,
       "sweepNumber": 38,
       "fileName": "sweep_038jpg.jpg",
       "sha256": "sha256:27fa2a4976cccccf9fb7fddb7455581fae41cc730d9f03aa9742a3cc80cdcc50",
@@ -2142,7 +2105,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 38,
       "sweepNumber": 39,
       "fileName": "sweep_039jpg.jpg",
       "sha256": "sha256:53adbd580abcef63c853993964f34204bc329bdb93b2130a4d2e29de5bab750f",
@@ -2151,7 +2113,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 39,
       "sweepNumber": 40,
       "fileName": "sweep_040jpg.jpg",
       "sha256": "sha256:f9a78354d6f701cc1e0c0c707551d2fb6f8db9d8f582041e886ed2d6d485252d",
@@ -2160,7 +2121,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 40,
       "sweepNumber": 41,
       "fileName": "sweep_041jpg.jpg",
       "sha256": "sha256:d9d056e2453a223144514bdca224bbdfb7e76f4bd7130008a3d811afa67eb974",
@@ -2169,7 +2129,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 41,
       "sweepNumber": 42,
       "fileName": "sweep_042jpg.jpg",
       "sha256": "sha256:d17a7ef141b8237edd06962cfd91178345c52085384904452eb54282527e6013",
@@ -2178,7 +2137,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 42,
       "sweepNumber": 43,
       "fileName": "sweep_043jpg.jpg",
       "sha256": "sha256:c3fdd8cc7dbb1ae366b509885e3bcfc423650b4493d44f22e78b2402aff7efbf",
@@ -2187,7 +2145,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 43,
       "sweepNumber": 44,
       "fileName": "sweep_044jpg.jpg",
       "sha256": "sha256:bbf7220d89d9726d561f98fb93d9ab0d44223007f49bb57b1de6c813b596e859",
@@ -2196,7 +2153,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 44,
       "sweepNumber": 45,
       "fileName": "sweep_045jpg.jpg",
       "sha256": "sha256:e02d1eda50f9e6749f20130f001d0abfdc8e76d18c86dce2df2a540c7f485e44",
@@ -2205,7 +2161,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 45,
       "sweepNumber": 46,
       "fileName": "sweep_046jpg.jpg",
       "sha256": "sha256:7112c76da5b5548780f5ecc47ac2f05259a506f6c70879dda85ac90a1e01a171",
@@ -2214,7 +2169,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 46,
       "sweepNumber": 47,
       "fileName": "sweep_047jpg.jpg",
       "sha256": "sha256:e12b452eb8367d7a9650f78b865d4b96320d67c1699b906e94de10619fde61c8",
@@ -2223,7 +2177,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 47,
       "sweepNumber": 48,
       "fileName": "sweep_048jpg.jpg",
       "sha256": "sha256:ab11ad1641301eb022ebde0f5fba7c35d60cbd46670c653e4106051236d12742",
@@ -2232,7 +2185,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 48,
       "sweepNumber": 49,
       "fileName": "sweep_049jpg.jpg",
       "sha256": "sha256:9b56c52c567f24a46cd28e5423236ec45f097b0d334b58440bebcd5c105f6859",
@@ -2241,7 +2193,6 @@
       "heightPx": 4096
     },
     {
-      "scanIndex": 49,
       "sweepNumber": 50,
       "fileName": "sweep_050jpg.jpg",
       "sha256": "sha256:16f47e73aafed50c5d055b627443979717318c1ef4d2e02465bbe40821917246",
@@ -2250,14 +2201,616 @@
       "heightPx": 4096
     }
   ],
-  "panoramaSourceInventorySha256": "sha256:ce83580f4ce81f6fefbfd12ec19b8b35b0fbd0259a617cedae6581cce8dbd5a3",
+  "panoramaSourceInventorySha256": "sha256:2f726892ec3a29e7f0d608f22c4f4b0ca5ef89546b9d59072ab065ba336bd7f1",
+  "panoramaE57SequenceHypotheses": [
+    {
+      "sourceSweepNumber": 1,
+      "sourceJpgFileName": "sweep_001jpg.jpg",
+      "sourceJpgSha256": "sha256:0543e2ce83bbbb5b8c4a8c689a49391092cc6d856124f8ac095d33b09c1db814",
+      "candidateScanIndex": 0,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 2,
+      "sourceJpgFileName": "sweep_002jpg.jpg",
+      "sourceJpgSha256": "sha256:4cd7a859326224c92d8f7f09a2b743b9df1c52686828a44b68d15157fd19b3f9",
+      "candidateScanIndex": 1,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 3,
+      "sourceJpgFileName": "sweep_003jpg.jpg",
+      "sourceJpgSha256": "sha256:efb5b0ad338eb6f90cd28f8a9ef2686770cc925326a6e849fb3d8c5efcdc1013",
+      "candidateScanIndex": 2,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 4,
+      "sourceJpgFileName": "sweep_004jpg.jpg",
+      "sourceJpgSha256": "sha256:000cb3ed8662ce46cf6fbbce0f60e7f6473733f40bb1e914eb7e1d341163d796",
+      "candidateScanIndex": 3,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 5,
+      "sourceJpgFileName": "sweep_005jpg.jpg",
+      "sourceJpgSha256": "sha256:c05866d4281d7e9aea8b5e77ad597539bd5a974996e6f647e7e0d244e8cbeadc",
+      "candidateScanIndex": 4,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 6,
+      "sourceJpgFileName": "sweep_006jpg.jpg",
+      "sourceJpgSha256": "sha256:0b44e49bfc722d7ba28b2ff8e49b78ae41c624ce1bb9c46eb39a3fe92f8b7ef4",
+      "candidateScanIndex": 5,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 7,
+      "sourceJpgFileName": "sweep_007jpg.jpg",
+      "sourceJpgSha256": "sha256:f8422af40e93c2decb3334fa53ece5e23e1fc906d22653266eda8349f183e8d0",
+      "candidateScanIndex": 6,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 8,
+      "sourceJpgFileName": "sweep_008jpg.jpg",
+      "sourceJpgSha256": "sha256:0b01f4119bfc295def830dc52123c4e513e2fa1401e1222214501789e3b88ddd",
+      "candidateScanIndex": 7,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 9,
+      "sourceJpgFileName": "sweep_009jpg.jpg",
+      "sourceJpgSha256": "sha256:a73fb75086f37b6c2ad39d5ac987437c768fd3982d0e1c22a7e5e049d8d88e61",
+      "candidateScanIndex": 8,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 10,
+      "sourceJpgFileName": "sweep_010jpg.jpg",
+      "sourceJpgSha256": "sha256:019783308b63906d3b77b4c65fc81c5af509224db8c26304f19cd067e2f7f7a4",
+      "candidateScanIndex": 9,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 11,
+      "sourceJpgFileName": "sweep_011jpg.jpg",
+      "sourceJpgSha256": "sha256:623f0fc42961c42f38124bea148d8baea515352e490b1b4a3a79887267a9d194",
+      "candidateScanIndex": 10,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 12,
+      "sourceJpgFileName": "sweep_012jpg.jpg",
+      "sourceJpgSha256": "sha256:86261016a1e7d64d78e8e40f25a3e6769f56f60789f44679acb0898a7cd6c30d",
+      "candidateScanIndex": 11,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 13,
+      "sourceJpgFileName": "sweep_013jpg.jpg",
+      "sourceJpgSha256": "sha256:0109353480a479c9403c4141e4b528d76471ef42920316b7f769cc3f27b7fb33",
+      "candidateScanIndex": 12,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 14,
+      "sourceJpgFileName": "sweep_014jpg.jpg",
+      "sourceJpgSha256": "sha256:b847ed87baef462d022dffafd27588a71f9e05dfd17fbe21a76bfcd018cb9d58",
+      "candidateScanIndex": 13,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 15,
+      "sourceJpgFileName": "sweep_015jpg.jpg",
+      "sourceJpgSha256": "sha256:ee0f91c31a0ea3c83682757b9924e1c8f57cac896999913880d864df7145c456",
+      "candidateScanIndex": 14,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 16,
+      "sourceJpgFileName": "sweep_016jpg.jpg",
+      "sourceJpgSha256": "sha256:62c90822137ef16da6f10b868f76953e4840c6f6f2089ba4d79646f7d9107a03",
+      "candidateScanIndex": 15,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 17,
+      "sourceJpgFileName": "sweep_017jpg.jpg",
+      "sourceJpgSha256": "sha256:63e97f44f5975d41182c01e0f390f93b5e93f13ba74c4f9753c844972d5b18d2",
+      "candidateScanIndex": 16,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 18,
+      "sourceJpgFileName": "sweep_018jpg.jpg",
+      "sourceJpgSha256": "sha256:55b0b7f00c4eda9eb9290236ffb20a82790b073207d5db967f49dd3bcfee45d0",
+      "candidateScanIndex": 17,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 19,
+      "sourceJpgFileName": "sweep_019jpg.jpg",
+      "sourceJpgSha256": "sha256:5abf5ab9e8b3a26d5621c0c3e06462886e573fd8f40bf68e213dec41812b0f57",
+      "candidateScanIndex": 18,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 20,
+      "sourceJpgFileName": "sweep_020jpg.jpg",
+      "sourceJpgSha256": "sha256:249929896a872e81d6b906d0cb347cbad84fbead53c0af26c1e901b025633963",
+      "candidateScanIndex": 19,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 21,
+      "sourceJpgFileName": "sweep_021jpg.jpg",
+      "sourceJpgSha256": "sha256:236a7ade5fc008bea2c97b57138117b494f922adc326bdb3f5ee25ecf54044f9",
+      "candidateScanIndex": 20,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 22,
+      "sourceJpgFileName": "sweep_022jpg.jpg",
+      "sourceJpgSha256": "sha256:f9da015cbf821bb7e4ab0f8bfc1dcc74fa7e74f67bb6b33cf3f5dc7d80328f90",
+      "candidateScanIndex": 21,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 23,
+      "sourceJpgFileName": "sweep_023jpg.jpg",
+      "sourceJpgSha256": "sha256:ffdc2fd3e7a87f237e6354dcc3cc966af98315e71f60efd4860f6f3b45e1e7ce",
+      "candidateScanIndex": 22,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 24,
+      "sourceJpgFileName": "sweep_024jpg.jpg",
+      "sourceJpgSha256": "sha256:c84cddab64cba83b173dd4c690668e71a012fd978e6aac4b4692aea7f9a6fcbb",
+      "candidateScanIndex": 23,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 25,
+      "sourceJpgFileName": "sweep_025jpg.jpg",
+      "sourceJpgSha256": "sha256:b54a46c5e2c39497f5c876c01e95ffb24dffe3b53f9df6af3c5b35a9d8adebca",
+      "candidateScanIndex": 24,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 26,
+      "sourceJpgFileName": "sweep_026jpg.jpg",
+      "sourceJpgSha256": "sha256:d2d0d4cce03f6c6d0e37d33a413bb600c5f80ad1ae6354b2d3cc5d40b5f962e6",
+      "candidateScanIndex": 25,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 27,
+      "sourceJpgFileName": "sweep_027jpg.jpg",
+      "sourceJpgSha256": "sha256:89b9d9b3ecc9f3ab3888346d144420befdee7d7057a3d260a5632da0062042a8",
+      "candidateScanIndex": 26,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 28,
+      "sourceJpgFileName": "sweep_028jpg.jpg",
+      "sourceJpgSha256": "sha256:252a3cd35c425a2f4624ed6f9b22500b158909752a76363fb03cc2d54109c0c5",
+      "candidateScanIndex": 27,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 29,
+      "sourceJpgFileName": "sweep_029jpg.jpg",
+      "sourceJpgSha256": "sha256:1f244ac995a35a1ed970e872170428c0ba2eb00b657d5f4dd4ba7b9931dd7759",
+      "candidateScanIndex": 28,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 30,
+      "sourceJpgFileName": "sweep_030jpg.jpg",
+      "sourceJpgSha256": "sha256:f284668f3ab5ca9497a440c2bbdd77e378fc317e5eaaaf95995157d93e4ec324",
+      "candidateScanIndex": 29,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 31,
+      "sourceJpgFileName": "sweep_031jpg.jpg",
+      "sourceJpgSha256": "sha256:558ab617ebce19ab7c9b198be2a92d674ce4b8aab13a41dc9d8e4ba97481ee09",
+      "candidateScanIndex": 30,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 32,
+      "sourceJpgFileName": "sweep_032jpg.jpg",
+      "sourceJpgSha256": "sha256:38ca1834e7ee476a178d2756216e09e7aa8d2ae95cb1a1a914a4c2d3ee2cda40",
+      "candidateScanIndex": 31,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 33,
+      "sourceJpgFileName": "sweep_033jpg.jpg",
+      "sourceJpgSha256": "sha256:e82e85bea034b648fc18aee86b3410451132abf41121013faebf4eb60c3d6fa3",
+      "candidateScanIndex": 32,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 34,
+      "sourceJpgFileName": "sweep_034jpg.jpg",
+      "sourceJpgSha256": "sha256:dc857fedea96b5e2e1acd9a8da97d96c5512dbfc31acb8c7f4db27fe27a7f3bb",
+      "candidateScanIndex": 33,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 35,
+      "sourceJpgFileName": "sweep_035jpg.jpg",
+      "sourceJpgSha256": "sha256:ea3ec8cf72ac5ac8d1765659cf4dc314ebf62ecb1e7b24bc481b20ec41fd080e",
+      "candidateScanIndex": 34,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 36,
+      "sourceJpgFileName": "sweep_036jpg.jpg",
+      "sourceJpgSha256": "sha256:839714e1bc307bd29332ab1be144481fb3307fd7d771b01a85e26f82046ad056",
+      "candidateScanIndex": 35,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 37,
+      "sourceJpgFileName": "sweep_037jpg.jpg",
+      "sourceJpgSha256": "sha256:c5572ae32bd1aac224f9db5bc643f7ced7259eff9b9916c6aedb845d6fafeed4",
+      "candidateScanIndex": 36,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 38,
+      "sourceJpgFileName": "sweep_038jpg.jpg",
+      "sourceJpgSha256": "sha256:27fa2a4976cccccf9fb7fddb7455581fae41cc730d9f03aa9742a3cc80cdcc50",
+      "candidateScanIndex": 37,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 39,
+      "sourceJpgFileName": "sweep_039jpg.jpg",
+      "sourceJpgSha256": "sha256:53adbd580abcef63c853993964f34204bc329bdb93b2130a4d2e29de5bab750f",
+      "candidateScanIndex": 38,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 40,
+      "sourceJpgFileName": "sweep_040jpg.jpg",
+      "sourceJpgSha256": "sha256:f9a78354d6f701cc1e0c0c707551d2fb6f8db9d8f582041e886ed2d6d485252d",
+      "candidateScanIndex": 39,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 41,
+      "sourceJpgFileName": "sweep_041jpg.jpg",
+      "sourceJpgSha256": "sha256:d9d056e2453a223144514bdca224bbdfb7e76f4bd7130008a3d811afa67eb974",
+      "candidateScanIndex": 40,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 42,
+      "sourceJpgFileName": "sweep_042jpg.jpg",
+      "sourceJpgSha256": "sha256:d17a7ef141b8237edd06962cfd91178345c52085384904452eb54282527e6013",
+      "candidateScanIndex": 41,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 43,
+      "sourceJpgFileName": "sweep_043jpg.jpg",
+      "sourceJpgSha256": "sha256:c3fdd8cc7dbb1ae366b509885e3bcfc423650b4493d44f22e78b2402aff7efbf",
+      "candidateScanIndex": 42,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 44,
+      "sourceJpgFileName": "sweep_044jpg.jpg",
+      "sourceJpgSha256": "sha256:bbf7220d89d9726d561f98fb93d9ab0d44223007f49bb57b1de6c813b596e859",
+      "candidateScanIndex": 43,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 45,
+      "sourceJpgFileName": "sweep_045jpg.jpg",
+      "sourceJpgSha256": "sha256:e02d1eda50f9e6749f20130f001d0abfdc8e76d18c86dce2df2a540c7f485e44",
+      "candidateScanIndex": 44,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 46,
+      "sourceJpgFileName": "sweep_046jpg.jpg",
+      "sourceJpgSha256": "sha256:7112c76da5b5548780f5ecc47ac2f05259a506f6c70879dda85ac90a1e01a171",
+      "candidateScanIndex": 45,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 47,
+      "sourceJpgFileName": "sweep_047jpg.jpg",
+      "sourceJpgSha256": "sha256:e12b452eb8367d7a9650f78b865d4b96320d67c1699b906e94de10619fde61c8",
+      "candidateScanIndex": 46,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 48,
+      "sourceJpgFileName": "sweep_048jpg.jpg",
+      "sourceJpgSha256": "sha256:ab11ad1641301eb022ebde0f5fba7c35d60cbd46670c653e4106051236d12742",
+      "candidateScanIndex": 47,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 49,
+      "sourceJpgFileName": "sweep_049jpg.jpg",
+      "sourceJpgSha256": "sha256:9b56c52c567f24a46cd28e5423236ec45f097b0d334b58440bebcd5c105f6859",
+      "candidateScanIndex": 48,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    },
+    {
+      "sourceSweepNumber": 50,
+      "sourceJpgFileName": "sweep_050jpg.jpg",
+      "sourceJpgSha256": "sha256:16f47e73aafed50c5d055b627443979717318c1ef4d2e02465bbe40821917246",
+      "candidateScanIndex": 49,
+      "state": "sequence_hypothesis_unverified",
+      "authority": "none",
+      "geometricCameraAuthority": "none",
+      "trainingAuthority": "none",
+      "reconstructionAuthority": "none",
+      "runtimeAuthority": "none"
+    }
+  ],
   "interfaceCandidates": [
     {
       "interfaceId": "matterpak-1-9-0-2",
       "grandHallRoomKey": "matterpak:g001:s009",
       "adjacentSourceRoomKey": "matterpak:g000:s002",
       "sharedSourceVertexCount": 10,
-      "sharedSourceVertexSetSha256": "sha256:cfe00a7f08d306b1a747fadd2221a08cf8b22982591a59a12fa48c0f7420d8e1",
+      "sharedSourceVertexSetSha256": "sha256:976d29bc2f481e8704f72477362150c307fb02cff99c74b7ae4acab4565ad5e0",
       "boundsMeters": {
         "min": [
           -1.33,
@@ -2276,7 +2829,7 @@
       "grandHallRoomKey": "matterpak:g001:s009",
       "adjacentSourceRoomKey": "matterpak:g000:s003",
       "sharedSourceVertexCount": 2,
-      "sharedSourceVertexSetSha256": "sha256:87456dca0b012a246a9eacdb478270d9a0bd6720cad1895cfc24962d4cd251d5",
+      "sharedSourceVertexSetSha256": "sha256:b01464499a7e07b27e7b0845a2c4707be6cf7eebcaa6dc707a663c46b182b025",
       "boundsMeters": {
         "min": [
           14.27,
@@ -2295,7 +2848,7 @@
       "grandHallRoomKey": "matterpak:g001:s009",
       "adjacentSourceRoomKey": "matterpak:g000:s004",
       "sharedSourceVertexCount": 15,
-      "sharedSourceVertexSetSha256": "sha256:ac728edd912d998dfaa6dc54f0ac05efebe4f80102d4ff9757ea0dcfc93574a7",
+      "sharedSourceVertexSetSha256": "sha256:a872d4e26a0a6a5f55c259922f055bafb7ec7d81e171ba3cd83dddf1e59ded92",
       "boundsMeters": {
         "min": [
           10.353001,
@@ -2314,7 +2867,7 @@
       "grandHallRoomKey": "matterpak:g001:s009",
       "adjacentSourceRoomKey": "matterpak:g001:s010",
       "sharedSourceVertexCount": 6,
-      "sharedSourceVertexSetSha256": "sha256:0e35ffb16067beb58f778fb73425a7697819821db3c4b9df47b53e37ae410e62",
+      "sharedSourceVertexSetSha256": "sha256:338dff979ab7ae3af6fe0a902ed92bcac0b6a26a8faf7a3deeb49f17e71e3b3c",
       "boundsMeters": {
         "min": [
           -1.992,
@@ -2333,7 +2886,7 @@
       "grandHallRoomKey": "matterpak:g001:s009",
       "adjacentSourceRoomKey": "matterpak:g001:s011",
       "sharedSourceVertexCount": 6,
-      "sharedSourceVertexSetSha256": "sha256:28885fff2edc591a01b4e99fb4c3a7d732b5826401332d9064799315859da026",
+      "sharedSourceVertexSetSha256": "sha256:e8d75ce3a07e1da09b869aa8df61603cecf2ae0951d6ec2986fc3ddc40e00d5a",
       "boundsMeters": {
         "min": [
           6.07,
@@ -2352,7 +2905,7 @@
       "grandHallRoomKey": "matterpak:g001:s009",
       "adjacentSourceRoomKey": "matterpak:g001:s012",
       "sharedSourceVertexCount": 3,
-      "sharedSourceVertexSetSha256": "sha256:e5b0bb24dcb580ed02ca1d4164a05c7d417af91486ad293acd4bd28af627e3e0",
+      "sharedSourceVertexSetSha256": "sha256:c74aeb2257623ce6320ebcfdf8848697da9576ff52be471ac5ecbf1e4b36c936",
       "boundsMeters": {
         "min": [
           2.911,
@@ -2371,7 +2924,7 @@
       "grandHallRoomKey": "matterpak:g001:s009",
       "adjacentSourceRoomKey": "matterpak:g001:s013",
       "sharedSourceVertexCount": 72,
-      "sharedSourceVertexSetSha256": "sha256:5e7c47389a2db1a762a59a47e60e278f85a5e383e1ecab914c83baa4c70ddbdd",
+      "sharedSourceVertexSetSha256": "sha256:6398925c3ed06f15ac46b78c15c6020753ba93a2399ea1a8810e5e0f3dc7248d",
       "boundsMeters": {
         "min": [
           8.015938,
@@ -2390,7 +2943,7 @@
       "grandHallRoomKey": "matterpak:g001:s009",
       "adjacentSourceRoomKey": "matterpak:g001:s014",
       "sharedSourceVertexCount": 62,
-      "sharedSourceVertexSetSha256": "sha256:00451c30639f3f601e6a8b6980a790a80bc236ebf9677911d94f58402abeb8e0",
+      "sharedSourceVertexSetSha256": "sha256:c864c649749a644f199f51c5827b73f9cdcebcc3925c899983a284e15092d31b",
       "boundsMeters": {
         "min": [
           -0.626,
@@ -2405,7 +2958,7 @@
       }
     }
   ],
-  "interfaceInventorySha256": "sha256:8839464ee23953e3bf2ea6a204ed976822a70f4d35ec315115af7a0134bc29c1",
+  "interfaceInventorySha256": "sha256:ef9ba6e5fc6e4f0a9555cc8a00ef92ebb997cb23af861bca9b88e0cf3df0ce32",
   "proposalArtifacts": {
     "roomMembership": {
       "state": "source_candidate_present_human_pending",
@@ -2444,5 +2997,5 @@
     "accept_or_reject_closed_selection_volume",
     "accept_or_reject_every_panorama_mask"
   ],
-  "artifactSha256": "sha256:a0b39dae80cec0724f68ebced0b4662223304e82bff1233b8c477b23f0088c24"
+  "artifactSha256": "sha256:8a6bef9c3b9e5c27e4c1f62994d7d8d01a82b4afee9515d39f2513c36dcac3aa"
 }

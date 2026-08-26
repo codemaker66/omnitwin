@@ -815,9 +815,19 @@ function verifyArtifactCrossBindings(artifacts: ParsedAcceptedArtifacts): void {
     "Accepted membership does not bind the panorama inventory named by the T-554 review pack.",
   );
   assertCanonicalEqual(
-    membership.cameraRecords.map((record) => record.source),
+    membership.panoramaRecords.map((record) => record.source),
     scopeReviewPack.candidatePanoramaSources,
     "Accepted membership sources do not exactly match the T-554 candidate panorama sources.",
+  );
+  assertEqual(
+    membership.geometricCameraAuthority,
+    "none",
+    "Accepted panorama membership cannot establish geometric camera authority.",
+  );
+  assertEqual(
+    panoramaMasks.geometricCameraAuthority,
+    "none",
+    "Accepted panorama masks cannot establish geometric camera authority.",
   );
   assertEqual(
     portals.sourceBoundaryEvidenceSha256,
@@ -923,7 +933,7 @@ function verifyArtifactCrossBindings(artifacts: ParsedAcceptedArtifacts): void {
     "Output inventory mask and transform do not bind the same XGRIDS output inventory.",
   );
 
-  membership.cameraRecords.forEach((membershipRecord, index) => {
+  membership.panoramaRecords.forEach((membershipRecord, index) => {
     const maskRecord = panoramaMasks.sourceRecords[index];
     if (maskRecord === undefined) {
       throw new GrandHallAcceptedScopeBundleVerificationError(
@@ -1003,7 +1013,7 @@ async function verifyPanoramaSources(
   totals: VerificationTotals,
 ): Promise<void> {
   const decodedIdentities = new Set<string>();
-  for (const record of membership.cameraRecords) {
+  for (const record of membership.panoramaRecords) {
     const source = record.source;
     const file = await readStableRegularFile(root, source.fileName, {
       captureBytes: true,
@@ -1421,7 +1431,7 @@ export async function verifyGrandHallAcceptedScopeBundle(
       reviewedTransform: artifacts.transform.artifactSha256,
       outputInventoryMask: artifacts.outputMask.artifactSha256,
     }),
-    panoramaSourceCount: artifacts.membership.cameraRecords.length,
+    panoramaSourceCount: artifacts.membership.panoramaRecords.length,
     panoramaMaskCount: artifacts.panoramaMasks.maskCount,
     xgridsSourceMemberCount: artifacts.outputMask.sourceMembers.length,
     outputRecordCount: artifacts.outputMask.totalRecordCount,
