@@ -108,6 +108,13 @@ Complete real sealed NumPy/OpenCV builder suite:
 Result: 40/40 passed in 91.534 seconds. The final helper rename was then
 covered by another 15/15 focused pass and does not alter matching behavior.
 
+After the method and operations record commits, the canonical combined command
+ran the builder module first and the core module second through the isolated
+entry point. Result: 67/67 passed in 86.552 seconds. A proposed generic
+discovery command was rejected because `unittest` inserted the tests directory
+into `sys.path`; that was a safe import-gate rejection. The runbook now uses
+explicit dependency-safe module order and does not weaken the gate.
+
 Static checks found all five Python files parseable, zero production functions
 over 50 lines (builder maximum 46; core maximum 48), strict duplicate-free
 canonical lock JSON, exact 43-key runtime control agreement, and no stale

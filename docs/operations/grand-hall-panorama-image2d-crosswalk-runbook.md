@@ -127,14 +127,18 @@ $env:TEMP = 'D:\codex-t560-test-tmp'
 $env:TMP = 'D:\codex-t560-test-tmp'
 
 & $python -I -S -B -X pycache_prefix=NUL `
-  tests\run_isolated_unittest.py discover `
-  -s tests -p 'test_*panorama_image2d_crosswalk.py' -v
+  tests\run_isolated_unittest.py `
+  tests.test_build_panorama_image2d_crosswalk `
+  tests.test_panorama_image2d_crosswalk -v
 
 Pop-Location
 ```
 
 Generic `python`, activation-only invocation, `python -B`, `python -m unittest`,
 or omission of `-I`, `-S`, `-B`, or `-X pycache_prefix=NUL` is unsupported.
+The explicit module order is intentional: the production import gate must run
+before the already-bound core module. Generic discovery inserts a test path
+before that gate and is correctly rejected.
 
 ## Step 4 — build the new no-replace local pack
 
