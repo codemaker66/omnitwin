@@ -1,7 +1,7 @@
 # T-560 panorama/Image2D candidate-crosswalk method audit
 
 Date: 2026-08-26
-Status: method accepted for the frozen local build/check; real run pending
+Status: method accepted; real local build and independent check complete
 Authority: none
 Implementation commit: `b04b4d2ae5093f1e6b2016b684c69187404571f3`
 
@@ -165,9 +165,25 @@ writers.
 
 ## Authority and completion boundary
 
-The method commit does not alter source data or create correspondence evidence.
-As of this audit revision, the real no-replace build and separate check have not
-run and the target output is absent. No source was modified; no output was
-uploaded, pushed, merged, deployed, registered, staged, trained from, rendered,
-or promoted. Production trust remains `null`, and T-554 through T-558 remain
+The real no-replace build ran from clean reviewed commit
+`9db0eb25bf662262ced313b73de7797835ee33f2` and completed with the exact
+148-panorama × 149-Data3D success result. A second fresh process recomputed the
+complete matrix and shortlisted verification, then strictly verified the
+existing pack with the same success result and zero writes.
+
+The final local identities are:
+
+- 4,773,324-byte complete matrix,
+  `sha256:7fc8c34eefda10890e462180fb59c9ffb8c9d7a4bfe56afdee5c1752c8b3bc36`;
+- 2,025,532-byte crosswalk,
+  `sha256:3b0a7757395904233e5fa1436dfe68c0a0daa9539c48ef079f70dde528c82215`;
+  and
+- 3,222-byte terminal receipt,
+  `sha256:219d5c79512844d3c078871433010447052e7f5e770d74a0da3acf714f62153d`.
+
+The crosswalk has 146 unique human-pending candidates, two ambiguous rows
+(`sweep_078jpg.jpg` and `sweep_079jpg.jpg`), and zero unsupported rows. Every
+row requires human review. No source was modified; no payload was uploaded,
+pushed, merged, deployed, registered, staged, trained from, rendered, or
+promoted. Production trust remains `null`, and T-554 through T-558 remain
 unchanged.

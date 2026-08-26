@@ -590,8 +590,8 @@ flowchart TD
 
     class T002,T019,T052,T080,T081,T082,T083,T084,T085,T086,T087,T088,T089,T090,T095,T096,T097,T098,T099,T113,T114,T115,T116,T122,T123,T124,T127,T135,T136,T137,T156,T203,T204,T209,T210,T353,T354,T355,T356,T357,T358,T359,T360,T361,T362,T363,T364,T365,T366,T367,T368,T369,T370,T371,T372,T373,T374,T375,T376,T377,T378,T379,T380,T381,T382,T383,T384,T385,T387,T390,T391,T392,T393,T394,T395,T396,T397,T398,T399,T400,T401,T402,T403,T404,T405,T406,T407,T408,T409,T410,T412,T418,T419,T420,T421,T422,T423,T424,T428,T435,T441,T442,T443,T444,T445,T446,T447,T448,T449,T454,T455,T456,T457,T463,T464,T465,T466,T467,T471,T472,T473,T474,T475,T476,T477,T478,T479 done
     class T001,T060,T092,T118,T453,T469,T470,T542,T554,T555,T556,T557,T558 blocked
-    class T160,T480,T481,T482,T483,T484,T485,T541,T551,T552,T553,T559 done
-    class T550,T560 inprogress
+    class T160,T480,T481,T482,T483,T484,T485,T541,T551,T552,T553,T559,T560 done
+    class T550 inprogress
     class T540 superseded
     class T003,T005,T018,T061,T062,T063,T064,T065,T066,T067,T068,T069,T071,T072,T091,T093,T094,T117,T120,T121,T386,T388,T389,T458,T459,T460,T461,T462,T543,T544,T545,T546,T547,T548,T549 notstarted
     class T053,T054,T070,T100,T101,T102,T103,T104,T105,T106,T107,T108,T109,T110,T119 deferred
@@ -667,7 +667,9 @@ uses those bound images only to derive authority-none content-match candidates
 for all 148 external panoramas, without using filenames, capture sequence,
 GPano metadata, stored image poses, or room labels. A T-560 candidate cannot
 close or weaken any T-554 through T-558 human, reconstruction, transform, mask,
-or admission gate. No push, merge, deployment,
+or admission gate. Its real receipt-last build and independent full
+recomputation check are complete; all 148 rows remain human-pending. No push,
+merge, deployment,
 intake activation, source mutation, LCC launch, or generative enhancement is
 implied by either subgraph.
 

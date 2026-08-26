@@ -1,0 +1,80 @@
+{
+  "authority": "none",
+  "configurationSha256": "6a1d6054f67b3d06fe2fd08f89c07c718dd2441b5b5a1345b54d8adda643951a",
+  "dependencyAttestation": {
+    "determinismScope": "same_host_same_binary_only",
+    "lockSha256": "639797f9047bd3022c2f04df1b6825a6082c81b4bc4bc4b8723abc6bdeb9dc10",
+    "packages": [
+      {
+        "installedFileCount": 811,
+        "installedTreeSha256": "d8320b77b843433708c3452ac7493a02502f7a047925560ad3fc4cf02ffbd7db",
+        "name": "numpy",
+        "wheelSha256": "08beddf13648eb95f8d867350f6a018a4be2e5ad54c8d8caed89ebca558b2818"
+      },
+      {
+        "installedFileCount": 89,
+        "installedTreeSha256": "a8c682c567f1a58f03b7f7b6d21d1bd0b22889684fd3f5b881aab2212957c408",
+        "name": "opencv-python-headless",
+        "wheelSha256": "afcf28bd1209dd58810d33defb622b325d3cbe49dcd7a43a902982c33e5fad05"
+      }
+    ],
+    "runtimeIdentitySha256": "085b393ab204137b5520234d887dc022e2e4ae57fa50e68f2a498d587ca0bc64"
+  },
+  "files": [
+    {
+      "relativePath": "candidate-score-matrix-authority-none.json",
+      "sha256": "7fc8c34eefda10890e462180fb59c9ffb8c9d7a4bfe56afdee5c1752c8b3bc36",
+      "sizeBytes": 4773324
+    },
+    {
+      "relativePath": "panorama-image2d-crosswalk-authority-none.json",
+      "sha256": "3b0a7757395904233e5fa1436dfe68c0a0daa9539c48ef079f70dde528c82215",
+      "sizeBytes": 2025532
+    }
+  ],
+  "generator": {
+    "files": [
+      {
+        "relativePath": "tools/twin-forge/e57-scripts/panorama_image2d_crosswalk.py",
+        "sha256": "1057a1aa10d639018db66b3da69bf9b4c3e2f28eba5ad57a236ce2eb0ca46659",
+        "sizeBytes": 112377
+      },
+      {
+        "relativePath": "tools/twin-forge/e57-scripts/build_panorama_image2d_crosswalk.py",
+        "sha256": "e7c285651e772bfc1db7eb7e1e80c17f5aba690e60953ecc444aa6333475e650",
+        "sizeBytes": 70236
+      },
+      {
+        "relativePath": "tools/twin-forge/e57-scripts/e57_image2d_evidence.py",
+        "sha256": "3a14201bc2887604af6ed795b885c467ca2c9eac0cabb01bfb67f853a1377d0f",
+        "sizeBytes": 33808
+      },
+      {
+        "relativePath": "tools/twin-forge/e57-scripts/e57_stage_guard.py",
+        "sha256": "5d698ad67c4b910af985b862d901c1b779576d035db5b707e70f45db1390b959",
+        "sizeBytes": 16115
+      }
+    ],
+    "reviewedGitSha": "9db0eb25bf662262ced313b73de7797835ee33f2"
+  },
+  "publicationComplete": true,
+  "receiptWrittenLast": true,
+  "schemaVersion": "venviewer.panorama-e57-crosswalk-publication-authority-none.v1",
+  "sourceBindings": {
+    "data3DIdentitySetSha256": "a45b9713b25c8debffd10b10efb694c6d9713ca988f8ff1ea11299cf8975c633",
+    "image2DManifest": {
+      "sha256": "fd13da9638d1a1e194fb0c1acaedbe07dea15e65d9c16353d29f6542ce3ad344",
+      "sizeBytes": 663151
+    },
+    "image2DReceipt": {
+      "sha256": "a19b4058ab6006744184101d0b8287f14a64390065743dc5ff63fb73fa882415",
+      "sizeBytes": 600
+    },
+    "panoramaIdentitySetSha256": "11b4ad3b7cf384c6b4dc68de7b39815513a23f8d73fdd118e6247122e952e619",
+    "panoramaInventorySha256": "949f4cbf365f33d47c5e75f46b881aff857695fbbb70879e27c4f23f4b2af176",
+    "panoramaManifest": {
+      "sha256": "2c8b44ef2cd840fddc3f0a49e82b73fff37b33f1d546126ed941029c1cb52b86",
+      "sizeBytes": 208604
+    }
+  }
+}

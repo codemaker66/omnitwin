@@ -2,7 +2,7 @@
 
 Date: 2026-08-26
 Task: T-560
-Status: **method frozen; real build/check not yet run**
+Status: **local authority-none build and independent check complete**
 Authority: **none**
 Method commit: `b04b4d2ae5093f1e6b2016b684c69187404571f3`
 
@@ -42,7 +42,7 @@ D:\venviewer-tools\t560-crosswalk-hermetic-py312-v2\Scripts\python.exe
 Historical cubeface-basis witness:
 F:\E57\equirect_ss\_equirect_v2_report.json
 
-New local output:
+Completed local output:
 D:\venviewer-evidence\trades-hall-grand-hall-panorama-image2d-crosswalk-v1
 ```
 
@@ -216,7 +216,29 @@ concurrent writer.
 
 ## Current completion state
 
-The implementation and tests are frozen at the method commit shown above. As
-of this runbook revision, the real output path is absent and the mandatory
-build plus independent check have not run. T-560 therefore remains
-`in-progress`.
+The implementation is frozen at the method commit shown above. The real build
+ran from reviewed clean commit
+`9db0eb25bf662262ced313b73de7797835ee33f2`; a separate process then recomputed
+the complete result and strictly verified the existing pack. Both commands
+ended with the exact 148×149 success line.
+
+The complete pack contains three files:
+
+- matrix: 4,773,324 bytes,
+  `sha256:7fc8c34eefda10890e462180fb59c9ffb8c9d7a4bfe56afdee5c1752c8b3bc36`;
+- crosswalk: 2,025,532 bytes,
+  `sha256:3b0a7757395904233e5fa1436dfe68c0a0daa9539c48ef079f70dde528c82215`;
+  and
+- terminal receipt: 3,222 bytes,
+  `sha256:219d5c79512844d3c078871433010447052e7f5e770d74a0da3acf714f62153d`.
+
+The crosswalk records 146 unique `candidate_human_pending` rows, two
+`ambiguous_human_pending` rows (`sweep_078jpg.jpg` and
+`sweep_079jpg.jpg`), and zero `no_supported_candidate` rows. All 148 rows
+require human review. The repository preserves only the small terminal receipt
+at [`grand-hall-panorama-image2d-crosswalk-v1.json`](./grand-hall-panorama-image2d-crosswalk-v1.json);
+the 6.8 MB payload remains local and unpushed. T-560 is complete only at this
+authority-none candidate-evidence boundary.
+
+Because the v1 output now exists and is no-replace, any authorized repeat build
+must use a new versioned sibling rather than deleting or overwriting v1.
