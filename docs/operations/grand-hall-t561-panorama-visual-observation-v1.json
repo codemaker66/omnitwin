@@ -1,0 +1,386 @@
+{
+  "schemaVersion": "omnitwin.foundry.grand-hall-t561-panorama-visual-observation-receipt.v1",
+  "state": "complete",
+  "authority": "none",
+  "manifestSha256": "sha256:87aa9cdb7a0a731832928586a4106806ae175ec17e559dd530bfe66d32934c83",
+  "panoramaInventorySha256": "sha256:949f4cbf365f33d47c5e75f46b881aff857695fbbb70879e27c4f23f4b2af176",
+  "observationSetSha256": "sha256:d235821e4251f2e849f99f387950803a1095102c7a11f3c4052fd42a647bbdb2",
+  "payloadFileCount": 71,
+  "outputFileCount": 72,
+  "payloads": [
+    {
+      "relativePath": "boundary-attention-sweep-001-review-only.png",
+      "byteLength": 4589942,
+      "sha256": "sha256:fc0ec270794bd3aab82201865f33c988a77f1fa580a9126f856255732184d9ca"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-002-review-only.png",
+      "byteLength": 4633669,
+      "sha256": "sha256:4ecd87b2d8d6649b0cf406d51e48cb0d479b6f3d3c05fcb5e9f7beab433b384f"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-003-review-only.png",
+      "byteLength": 4623951,
+      "sha256": "sha256:ec10678a20664604993ba2477fb3b7010ba5cef4e6bc9daaf26450f6b000b260"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-004-review-only.png",
+      "byteLength": 4640143,
+      "sha256": "sha256:e0d4375064b94bb9513dc498d49ddfb1bb7faea61e4e1fdead27e1ea1ed58229"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-005-review-only.png",
+      "byteLength": 4624382,
+      "sha256": "sha256:aaa960d505d28fe90511120fbb41f2fb9e31d021fe8b4ede0ba02633a6508275"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-006-review-only.png",
+      "byteLength": 4608929,
+      "sha256": "sha256:3b621634929cb003bcca10fc8c9c93c4b1b23e1ebf5e0097871ad86b2630ffee"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-007-review-only.png",
+      "byteLength": 4520923,
+      "sha256": "sha256:c5d35aa24368abc5a5ffc8a2cc6e07253b04c9199dba807c0ab0a06359757ac0"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-008-review-only.png",
+      "byteLength": 4477397,
+      "sha256": "sha256:91314435b61b2fb999adb17293af89474c1c4da875f8e0c456ee869c2955da2a"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-009-review-only.png",
+      "byteLength": 4620064,
+      "sha256": "sha256:938bb7db14b4d8302dcdf890cda3bcf95751438a92746cd82f1dab70e8b7401b"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-010-review-only.png",
+      "byteLength": 4621454,
+      "sha256": "sha256:230845af860841f80c145e6751b1518b1190954d8d530abf83700e599df4624a"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-011-review-only.png",
+      "byteLength": 4527293,
+      "sha256": "sha256:45370d8c6dee7ed734d74a4d91acaf0277ab437705aeaca939482077d3455775"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-012-review-only.png",
+      "byteLength": 4468993,
+      "sha256": "sha256:ebae15b4e47732eb426924e111cf9644d58fa8ffb7df11799924f30c707778f4"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-013-review-only.png",
+      "byteLength": 4646312,
+      "sha256": "sha256:ffdc14ea3122a4a916186cfeb0996f50b7bb570ef1d3b51a0e241481c087b294"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-014-review-only.png",
+      "byteLength": 4586008,
+      "sha256": "sha256:ce8bb4cf1567fdcaf9452c109f6f02ccd0991d54ce07b26178c3a16b54ae889b"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-015-review-only.png",
+      "byteLength": 4528278,
+      "sha256": "sha256:42937eeca707ee93f1ea85f070a57ecab3a2de2f0101da2c15273b1a239ede34"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-016-review-only.png",
+      "byteLength": 4547356,
+      "sha256": "sha256:90db16c8a5b4bb3d22ac8657cdc1f96ff244af33a089f0e7e38bb93a2adcd297"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-017-review-only.png",
+      "byteLength": 4624047,
+      "sha256": "sha256:661b42ac2cbfe45d5c01f3048edb81252da668376897a89158aae0a410bcf446"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-018-review-only.png",
+      "byteLength": 4617230,
+      "sha256": "sha256:88276bdf490ea4475f198ae8e546350d22f228a61531dfb8b715c9969d212294"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-019-review-only.png",
+      "byteLength": 4207357,
+      "sha256": "sha256:437f2270a198ec68876c920ed68bdd392168b40347c5b1dcda342c2c4f6737ee"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-020-review-only.png",
+      "byteLength": 4645207,
+      "sha256": "sha256:f81e55b035317cd569f25826c57a2171b08f3b25960241c35e34c475f69f873a"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-021-review-only.png",
+      "byteLength": 4557683,
+      "sha256": "sha256:05ace7053b5676e7d91100115e4e0b825aa5c3be02a66a0e9790dd25e239d0ba"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-022-review-only.png",
+      "byteLength": 4556722,
+      "sha256": "sha256:16f4f04b466f81201a14fe48e180ac3934e80c5ad84855557999552aa6d2c478"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-023-review-only.png",
+      "byteLength": 4677438,
+      "sha256": "sha256:eacb3876cc63a4e6771807d25b64019751b51e083970cb604a0d151a034bd948"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-024-review-only.png",
+      "byteLength": 4599575,
+      "sha256": "sha256:d87965bfba3cc45ff97162c4bf99aeec69e417b3b011ab4554fdaa25d910a6ce"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-025-review-only.png",
+      "byteLength": 4488683,
+      "sha256": "sha256:6386a9fd570fd5cb9326cfd70fe1492138b240c45ff1467d7d770bc7f8f8e3b7"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-026-review-only.png",
+      "byteLength": 4456890,
+      "sha256": "sha256:432b0aaed6b28c90b34b759c2c3018bcd8a1ff4581e0660c96e153d5eb786fa8"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-027-review-only.png",
+      "byteLength": 4537713,
+      "sha256": "sha256:f3dba3a730e4136b73962c0615d96f47eb0628774b8d8bb05c8071f274aac9da"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-029-review-only.png",
+      "byteLength": 4455659,
+      "sha256": "sha256:afbb6c93ebae301f463a196d48a217767f3711b93cd14b0bc89517b5da9ab7ea"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-030-review-only.png",
+      "byteLength": 4491213,
+      "sha256": "sha256:c6013c8e3aa2d5aec71a5de5aa47dbf778ed4aa2a6f8ffa38111022fde510756"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-031-review-only.png",
+      "byteLength": 4515322,
+      "sha256": "sha256:1bb7b547a0942350271dd94d34aac1baefb52c46fc9bc90d30aba3b82aef9ca4"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-032-review-only.png",
+      "byteLength": 4478823,
+      "sha256": "sha256:0911afa80cd9444d96b7d837cb7515c5aa3a63f000e70d08cff6889cc0f4e735"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-033-review-only.png",
+      "byteLength": 4549608,
+      "sha256": "sha256:8c4ad9bfe32d5e335acdd34fa1aa472dbe25323c826f1a5250bd9aabed127f98"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-037-review-only.png",
+      "byteLength": 4437639,
+      "sha256": "sha256:b425cca2a57379b90af7e2cd668f7c27907b752b7172596f48ff713edb16e136"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-038-review-only.png",
+      "byteLength": 4490234,
+      "sha256": "sha256:3f99ef49340b30c13b955cdf0a5c6a0890381b81ba15f3b0a37c13bd981ee821"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-039-review-only.png",
+      "byteLength": 4499053,
+      "sha256": "sha256:aeef6483abaf4438a9ee9350ec37fb2e3395d173ea691166c0b8ccfa7353f044"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-040-review-only.png",
+      "byteLength": 4548291,
+      "sha256": "sha256:2db4a3ab675994a1a6b8adb09f3d603f84f11b02f96ef0fce0a311d6bbe11015"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-041-review-only.png",
+      "byteLength": 4618897,
+      "sha256": "sha256:0680dbe90b9712e8a7af7747012c5fcc26f63302971f7fd52248e781df334f3b"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-042-review-only.png",
+      "byteLength": 4590636,
+      "sha256": "sha256:f600386d6f60b555af98b974fb413ee1878bb2aa2a957b5de3bd4847b9497ff3"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-043-review-only.png",
+      "byteLength": 4646467,
+      "sha256": "sha256:f228d099459611ba20c74b00082e1b748aaf95f87c3153fa841dd496494e0bec"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-044-review-only.png",
+      "byteLength": 4092705,
+      "sha256": "sha256:ce6f400cb0e24600f99af8923f1b76d0d6a9983a6bd63575d96327571e2a3d42"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-045-review-only.png",
+      "byteLength": 4501808,
+      "sha256": "sha256:8e1dfcec77f22d0609599a7b86e909fa12158039060a1d5746b2e61d65bd05cf"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-046-review-only.png",
+      "byteLength": 4437697,
+      "sha256": "sha256:6e6a75c1bc968e41cd747f1c034284772e0ba9a162b6bf0046f6716ff541a5ca"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-047-review-only.png",
+      "byteLength": 4303659,
+      "sha256": "sha256:d40a62140edfc8841110881e3ca0214cb5d23aeb17bab6730ff2779062448431"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-048-review-only.png",
+      "byteLength": 4324168,
+      "sha256": "sha256:a13539f6c9eb561f5965e68ded30537796b9f32ffb03f3d9087ec2e111863328"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-049-review-only.png",
+      "byteLength": 4078087,
+      "sha256": "sha256:9777fe6a6cbbcf34a31a86565f912b8ebdecadc3f9410207007623e8d9fc1abb"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-050-review-only.png",
+      "byteLength": 4324160,
+      "sha256": "sha256:d1e27faaa0720a71ccb50474fa1d5b5068e222d98e6a4c29d4de40f29db54344"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-051-review-only.png",
+      "byteLength": 4268302,
+      "sha256": "sha256:461624c272525c3ace6a4aaa2a12ad837f5749e5bad5ab6b8ea3029c59176c16"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-052-review-only.png",
+      "byteLength": 4177949,
+      "sha256": "sha256:eed7a0ca9ed0e0b0e3ea278053a7ef8b78d16db9186fb4098f0e8b6522d7d6ed"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-053-review-only.png",
+      "byteLength": 4133706,
+      "sha256": "sha256:3b0128f99655597cf1854536e3f7396bf4619d142c0e5663d0f3a05e108b737a"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-054-review-only.png",
+      "byteLength": 4125606,
+      "sha256": "sha256:7a5b6c8bc43f1d797d62ce5d41c81370b788b58e1424dfbe56746ec675d52342"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-055-review-only.png",
+      "byteLength": 4168091,
+      "sha256": "sha256:676ee9e4a779b2814d93ddb58698e5a141aa5739cd352eb5ca7366e05a9f216c"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-056-review-only.png",
+      "byteLength": 4187812,
+      "sha256": "sha256:5943ee50e9b5f20d1954eab8478c40e8e351e5a6bc2f6e9214f4834bd8f3d1ad"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-057-review-only.png",
+      "byteLength": 4025716,
+      "sha256": "sha256:42b17b490a602fd9d0063865edfc4e7d3bb25e15eefd7daef102f336ac024eed"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-058-review-only.png",
+      "byteLength": 3866222,
+      "sha256": "sha256:65b5ba61435762934bdc940dee0f3d444bcfd01d1735bb79fd574a3b5175ed62"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-059-review-only.png",
+      "byteLength": 3914998,
+      "sha256": "sha256:94173f89608ddee9c7b56e56ee8ce8a5345c8bcff87f0058c63c1272a473861d"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-060-review-only.png",
+      "byteLength": 3915688,
+      "sha256": "sha256:5a96d262c0a96fc3161d15756cb5118a6af183b3798ef05d8fd995f236286b1f"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-061-review-only.png",
+      "byteLength": 3843052,
+      "sha256": "sha256:38c013a9c961dc8b51de938523a0f22fda7ceb98e2bb2e04d5f94dc539a65b76"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-065-review-only.png",
+      "byteLength": 4074434,
+      "sha256": "sha256:e54da685d76073100371de6dedd479ab5b85646390d529d3256bb8ae9f4d6587"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-066-review-only.png",
+      "byteLength": 4120935,
+      "sha256": "sha256:01de1036486c18a3a36b0abedcfd04adb544b16798aeed2120d77a841f38526b"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-067-review-only.png",
+      "byteLength": 4132986,
+      "sha256": "sha256:f69d63738529de10cbcf99739c7fc2fea865e08e3bde27ced3c8a2886999703a"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-068-review-only.png",
+      "byteLength": 4150790,
+      "sha256": "sha256:2642904f325825543151312214c28ef9fd59f371c14998d70f8953c095e1774a"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-069-review-only.png",
+      "byteLength": 4283238,
+      "sha256": "sha256:2fef9004226f95691548207fe0d3b21c0a56077ece0a7dca26598b6b984dc733"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-070-review-only.png",
+      "byteLength": 4501788,
+      "sha256": "sha256:598ecc6cd28c30356d68b0767f898dfee3148f4b5fc95c674b4a4df5dbc46558"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-071-review-only.png",
+      "byteLength": 4576593,
+      "sha256": "sha256:997b18583ee1babb1a1e3cfa31a3b977747785dafe059bd3134877092e5cecb4"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-072-review-only.png",
+      "byteLength": 4188600,
+      "sha256": "sha256:a3139dfbd6118dd08b06b11c2e4adafef6eedecadae74e6a049e1dd9fd0d37bb"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-073-review-only.png",
+      "byteLength": 4282164,
+      "sha256": "sha256:09a7b02df580128b336da82e449d939f9643167c170bf128e53bcd9fd2d2a690"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-074-review-only.png",
+      "byteLength": 4280594,
+      "sha256": "sha256:4287de573e5940bebbfdcc73f9a000fd1a76fec068f046fe0606e81f68b64462"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-075-review-only.png",
+      "byteLength": 4362715,
+      "sha256": "sha256:3dc059189cfc98fcaf8a6ee6344b539b72bc6663516d69c609cd86dd56849c9f"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-148-review-only.png",
+      "byteLength": 4113258,
+      "sha256": "sha256:43a659b7ced20df5eb50c4f3270983a9344d3b90d5bddb22c3e8e29e835338cc"
+    },
+    {
+      "relativePath": "boundary-attention-sweep-149-review-only.png",
+      "byteLength": 4092278,
+      "sha256": "sha256:9086116be4f75c9aad61cf6e92cc9e7d0d637802dafcc1f9d01dc7933fd25bbb"
+    },
+    {
+      "relativePath": "panorama-visual-observations-authority-none.json",
+      "byteLength": 242707,
+      "sha256": "sha256:6234491aeb52c39dbd230cb4268c62637c16fd35d664ece129f536e85d75eb1f"
+    }
+  ],
+  "guards": {
+    "sourceMutationPermitted": false,
+    "humanAcceptanceRecorded": false,
+    "nativeResolutionHumanReviewCompleted": false,
+    "roomMembershipAuthority": "none",
+    "cameraStationInferred": false,
+    "cameraPoseAuthority": "none",
+    "maskGenerated": false,
+    "maskAuthority": "none",
+    "t550CandidateSetChanged": false,
+    "t554AcceptanceAuthorized": false,
+    "trainingAuthorized": false,
+    "reconstructionAuthorized": false,
+    "runtimeAuthorized": false,
+    "stagingAuthorized": false,
+    "publicEvidenceAuthorized": false,
+    "generatedContentUsed": false
+  },
+  "receiptSha256": "sha256:63f606bbe2a1e39fcf4c0f291c08571e4663e819da82cbbdd7ed845cc993b03c"
+}

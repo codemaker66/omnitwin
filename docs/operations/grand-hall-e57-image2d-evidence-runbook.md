@@ -75,20 +75,20 @@ it must not infer correspondence from sequence, filenames, GPano metadata, or
 stored image poses, and it cannot establish geometric registration or room
 membership.
 
-Current visual-scope observations remain separate from E57 identity:
+Later visual-scope observations remain separate from E57 identity. At the
+model's 2048x1024 display resolution, authority-none agents observed Grand Hall
+pixels in sweeps 001-061, 065-075, and 148-149 (74 exact source files), and
+observed no Grand Hall pixels in sweeps 062-064, 076-092, and 094-147 (74 exact
+source files). Numeric sweep 093 is absent from the exact 148-file inventory,
+not unresolved. The audit recorded zero agent uncertainty flags, but
+`nativeResolutionHumanReviewCompleted=false`.
 
-- sweeps 051-075 are camera stations in a distinct adjacent memorial/timber
-  room, not Grand Hall camera stations;
-- exact sweep 051 nevertheless contains Grand Hall pixels through a narrow
-  doorway at the equirectangular seam, so the whole image cannot be excluded
-  solely from its camera location;
-- sweeps 148-149 are circulation camera stations and contain only Grand Hall
-  pixels visible through a doorway; and
-- original-resolution per-pixel review remains required because contact-sheet
-  downsampling can hide narrow portal pixels.
-
-These are non-authoritative visual observations, not panorama-to-E57 mappings
-and not accepted T-554 decisions.
+These are not panorama-to-E57 mappings, camera-location classifications,
+human `INCLUDE`/`EXCLUDE` decisions, `measured_empty`, accepted T-554 evidence,
+or masks. Their authority is `none`, all 148 sources remain human-pending, and
+native 8192x4096 human review plus exact masks for every human-included source
+remain required. None of this changes or weakens the completed T-559 byte
+lineage evidence.
 
 ## Stop conditions
 

@@ -1,7 +1,7 @@
 # Grand Hall T-554 local scope-acceptance runbook
 
 Date: 2026-08-26
-Status: **local-only tooling available; human review still pending**
+Status: **v1 50/98 acceptance stopped; T-561 unified successor available; human review still pending**
 Task: T-554
 Authority before a qualified reviewer completes this workflow: **none**
 
@@ -11,6 +11,14 @@ decide what belongs to the Grand Hall, author a selection volume, draw a
 panorama mask, infer a doorway, or repair source geometry. It also does not
 authorize reconstruction, runtime admission, staging, deployment, public
 publication, production trust, or generated fill.
+
+**Do not run the preserved v1 `accept` workflow.** Its 50-candidate/98-other
+review split is now known to be incomplete and is superseded for acceptance.
+T-561 delivered a separately versioned successor with one unified 148-row
+human-pending decision surface. The v1 artifacts and hashes remain historical,
+authority-none evidence and must not be edited, replaced, or relabelled.
+Use [`grand-hall-t554-review-pack-v2-runbook.md`](./grand-hall-t554-review-pack-v2-runbook.md)
+for the successor workflow.
 
 The commands are intentionally fail-closed. Any `UNSURE`, an unreviewed one of
 the 148 supplied panoramas, rejected MatterPak room 9, unresolved `Window` or
@@ -28,11 +36,12 @@ Do not run the `accept` command while any of these statements is false:
 - the reviewer has inspected the source-bound `Window` and `Mirror` cleanup
   handling and accepted each only as scope handling with **no architectural
   authority**;
-- the reviewer has personally dispositioned all 148 supplied panorama JPEGs:
-  all 50 current review candidates and all 98 remaining inventory entries;
-- none of the 98 remaining entries contains possible Grand Hall evidence. If
-  even one does, the current 50-image review set is incomplete and this
-  workflow must stop until the review pack is rebuilt;
+- the reviewer has personally dispositioned all 148 supplied panorama JPEGs
+  through the completed T-561 successor, without using the preserved v1 50/98
+  split as eligibility authority;
+- the successor keeps agent observations separate from human decisions. An
+  agent-positive observation is not `INCLUDE`, and `no Grand Hall pixels
+  observed` is not `EXCLUDE` or `measured_empty`;
 - all eight exact interface candidates have a human disposition;
 - the reviewer has not accepted the diagnostic panorama-to-E57 sequence as
   camera geometry, pose, or correspondence;
@@ -44,6 +53,8 @@ Do not run the `accept` command while any of these statements is false:
   invisible selection boundary;
 - every included panorama has one reviewed mask on its exact original
   8192x4096 source grid;
+- `nativeResolutionHumanReviewCompleted` is `true` in the future accepted
+  successor only after that qualified human review. It is currently `false`;
 - each reviewed mask is bound in the decision record by its exact SHA-256,
   byte length, included-pixel count, and excluded-pixel count;
 - every mask contains only grayscale values `0` and `255`, where `0` means
@@ -107,17 +118,21 @@ The result must report `checked_exact_regeneration`, 98 source records,
 `sha256:fd1c53ef54db0ab3c34d1fc879ce22ce9a8c9947bc7aca1ade311ebe77d468a0`.
 It does not change eligibility, infer room membership, or accept a panorama.
 
-Corrected non-authoritative inspection identifies sweeps 051–075 as camera
-stations in a distinct adjacent memorial/timber room, not the Grand Hall.
-Exact sweep 051 nevertheless contains narrow doorway-visible Grand Hall pixels
-at the equirectangular seam. Sweeps 148–149 are circulation stations and
-contain only Grand Hall pixels visible through a doorway. These are visual
-scope observations, not final venue-owner decisions and not E57 scan mappings.
-Because Grand Hall pixels still exist outside the current 50-image set, the
-fail-closed stop condition remains: do not continue to final masks or `accept`.
-First have the authorized venue reviewer inspect the exact originals at full
-resolution, then rebuild T-550 and this review pack so every eligible source
-pixel receives normal `INCLUDE`/`EXCLUDE` review.
+A later all-source audit supersedes that contact-sheet interpretation. At the
+model's 2048x1024 display resolution, authority-none agents observed Grand Hall pixels in
+sweeps 001–061, 065–075, and 148–149 (74 exact source files), and observed no
+Grand Hall pixels in sweeps 062–064, 076–092, and 094–147 (74 exact source
+files). Numeric sweep 093 is absent from the exact 148-file inventory; it is
+not an unresolved source. The agent audit flagged no classification
+uncertainty, but it did not complete native 8192x4096 human inspection:
+`nativeResolutionHumanReviewCompleted=false`. These observations have
+`authority: none`; they are not final venue-owner decisions, pixel masks,
+camera-location classifications, or E57 scan mappings.
+
+The finding permanently stops the preserved v1 50/98 acceptance path. Do not
+continue from this supplement to v1 masks or `accept`. Wait for the separately
+versioned T-561 successor, then have an authorized venue reviewer inspect all
+148 exact originals and every included source's exact native-grid mask.
 
 To exercise generation itself, use a different absent sibling under
 `$reviewWork`; never overwrite the checked-in supplement or place output
@@ -131,16 +146,17 @@ Run:
 pnpm --silent --filter @omnitwin/reconstruction-foundry-cli grand-hall-t554-acceptance -- template --review-pack "$reviewPack" --out "$templateOut"
 ```
 
-The command writes only:
+The preserved v1 command writes only:
 
-- `human-decisions.json` - exact room 9, `Window`, `Mirror`, 50 candidate
-  panorama, 98 remaining panorama, and eight interface rows, all unresolved;
-  and
+- `human-decisions.json` - exact room 9, `Window`, `Mirror`, the historical 50
+  candidate panorama rows, 98 other panorama rows, and eight interface rows,
+  all unresolved; and
 - `closed-selection-volume.json` - an empty, human-pending volume review.
 
 The result must report `state: "generated_human_pending_template"`,
 `finalDecision: "PENDING"`, and `authority: "none"`. Template generation is
-not acceptance and creates no geometry or mask.
+not acceptance and creates no geometry or mask. This historical v1 template
+cannot be promoted to acceptance after the T-561 finding.
 
 An exact generated copy is also checked in at
 [`grand-hall-t554-acceptance-template`](./grand-hall-t554-acceptance-template/).
@@ -160,7 +176,12 @@ Copy-Item -LiteralPath (Join-Path $templateOut 'human-decisions.json') -Destinat
 Copy-Item -LiteralPath (Join-Path $templateOut 'closed-selection-volume.json') -Destination (Join-Path $reviewed 'closed-selection-volume.json')
 ```
 
-## Step 3 - Complete every human scope decision
+## Step 3 - Historical v1 decision instructions; do not use for acceptance
+
+The instructions below document the preserved v1 format only. They cannot
+produce an accepted result. The T-561 successor must replace the split
+candidate/non-candidate structure with one unified 148-row human decision
+surface before qualified review resumes.
 
 Use the [review pack](./grand-hall-t554-review-pack/README.md), its
 [blank checklist](./grand-hall-t554-review-pack/REVIEW-CHECKLIST.md), the 148
@@ -262,7 +283,7 @@ Every mask must be:
 Excluded and unknown pixels remain transparent or unknown downstream. Never
 inpaint, generatively replace, colour-grade, or fill them.
 
-## Step 6 - Bind, then human-review, the exact mask bytes
+## Step 6 - Historical v1 mask binding; do not run for acceptance
 
 The preparation command validates the exact mask inventory and PNG pixels,
 then copies each included mask's SHA-256, byte length, included-pixel count,
@@ -308,7 +329,11 @@ replace, rename, or edit a mask after binding. If any mask changes, rerun
 `bind-masks` into a fresh output directory and repeat the visual review. Do not
 guess or hand-copy a hash, byte length, or pixel count.
 
-## Step 7 - Run the local acceptance gate
+## Step 7 - Preserved v1 acceptance gate; do not run
+
+The command below is retained for historical reproducibility only. Its v1
+50/98 inputs are superseded, so running it cannot satisfy T-554. No T-561
+successor command or final artifact hash is documented yet.
 
 Set the final paths and choose a new output directory:
 
@@ -396,7 +421,11 @@ If the CLI says the bundle may already be committed but its terminal JSON could
 not be printed, inspect the named output. The receipt, not terminal display, is
 the local completion marker.
 
-## What happens after a genuine T-554 acceptance
+## What happens after a genuine successor T-554 acceptance
+
+This section applies only after genuine human acceptance through the completed
+authority-none T-561 successor. The
+preserved v1 50/98 command cannot produce a genuine acceptance.
 
 Stop after preserving the self-contained local bundle and reported digests.
 T-554 acceptance still does not authorize staging or runtime use.

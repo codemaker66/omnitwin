@@ -1,17 +1,24 @@
 # Grand Hall T-554 review pack
 
-Status: **human review pending — authority none**
+Status: **historical v1 review aid; stopped and superseded for acceptance — authority none**
 
 This pack is the first evidence gate for a source-faithful, Grand Hall-only
 reconstruction. It does not authorize training, reconstruction, runtime use,
 deployment, generated fill, architectural repair, or production trust.
 
+The checked-in JSON, PNG, and SVG evidence remains immutable. Do not use this
+pack's historical 50-candidate/98-other split to run T-554 acceptance. T-561
+has delivered a separately versioned successor with one unified 148-row
+human-pending review surface. Use
+[`grand-hall-t554-review-pack-v2-runbook.md`](../grand-hall-t554-review-pack-v2-runbook.md);
+do not use this preserved v1 pack for acceptance.
+
 ## What is already machine-checked
 
 - all 148 Matterport panorama JPEGs are inventoried by exact byte identity;
-- numeric panorama sweeps 1–50 are exposed as the current source-image review
-  candidates; the other 98 inventory entries are not assumed ineligible or
-  outside the room and each still requires an exact-JPEG human disposition;
+- numeric panorama sweeps 1–50 are exposed as the historical v1 source-image
+  candidates; the other 98 entries were never human-established as ineligible
+  or outside the room, and the split is now superseded for acceptance;
 - each candidate JPEG identity contains only its sweep number, filename, exact
   bytes, and dimensions; the apparent sweep→E57 scan sequence is stored
   separately as `sequence_hypothesis_unverified` with no geometric-camera,
@@ -43,24 +50,27 @@ regeneration-checked. It contains seven review pages plus one manifest (eight
 files total). Its manifest is
 `sha256:fd1c53ef54db0ab3c34d1fc879ce22ce9a8c9947bc7aca1ade311ebe77d468a0`.
 
-Corrected non-authoritative visual inspection identifies sweeps 051–075 as
-camera stations in a distinct adjacent memorial/timber room, not the Grand
-Hall. Exact sweep 051 nevertheless contains narrow doorway-visible Grand Hall
-pixels at the equirectangular seam. Sweeps 148–149 are circulation stations and
-contain only Grand Hall pixels visible through a doorway. These observations
-are neither human room-membership decisions nor E57 scan mappings. Grand Hall
-pixels outside the current 50-image candidate set keep it incomplete for
-per-pixel review, so it must not be accepted or used to author final masks. An
-authorized venue reviewer must confirm the affected exact sources at original
-resolution; T-550 and this root review pack must then be rebuilt before T-554
-acceptance can resume.
+A later all-source audit supersedes that contact-sheet interpretation. At the
+model's 2048x1024 display resolution, authority-none agents observed Grand
+Hall pixels in sweeps 001–061, 065–075, and 148–149 (74 exact source files),
+and observed no Grand Hall pixels in sweeps 062–064, 076–092, and 094–147
+(74 exact source files). Numeric sweep 093 is absent from the exact 148-file
+inventory, not unresolved. The audit recorded zero agent uncertainty flags,
+but `nativeResolutionHumanReviewCompleted=false`. These are agent
+observations, not human `INCLUDE`/`EXCLUDE` decisions, `measured_empty`, masks,
+camera-location classifications, or E57 scan mappings; their authority is
+`none` and all 148 records remain human-pending.
+
+The 24 positive observations outside the historical 1–50 group permanently
+stop this v1 pack's acceptance path. Preserve it as evidence and wait for the
+separately versioned T-561 successor before formal human review or mask work.
 
 ## Open these files in this order
 
 1. [Panorama candidate overview](./panoramas/panorama-candidate-overview-review-only.png)
-   — inspect source panorama sweeps 001–050. A displayed E57 scan number is a
-   separate diagnostic sequence hypothesis, not source identity, pose,
-   correspondence, or a decision.
+   — historical v1 aid for sweeps 001–050 only. It is not the current candidate
+   boundary. A displayed E57 scan number is a separate diagnostic sequence
+   hypothesis, not source identity, pose, correspondence, or a decision.
 2. [Six diagnostic panorama pairs](./panoramas/panorama-crosswalk-six-review-only.png)
    — historical-unverified visual comparisons only; the pairings are not byte
    lineage, geometric camera authority, or accepted correspondences.
@@ -68,13 +78,12 @@ acceptance can resume.
    [remaining-inventory supplement](../grand-hall-t554-panorama-inventory-review/)
    and then open the corresponding original under
    `F:\downloads (some very important)\TH Panoramic` whenever the resampled tile
-   is not decisive. Inspect every one of the 98 entries outside the current
-   50-candidate set. The formal template supplies their exact identities. The
-   current pages identify sweeps 051–075 as an adjacent-room camera sequence,
-   with a narrow doorway view in exact sweep 051, and sweeps 148–149 as
-   circulation views with only doorway-visible Grand Hall pixels. Stop for
-   authorized original-resolution confirmation and a rebuilt candidate set;
-   do not promote either sequence to Grand Hall camera stations.
+   is not decisive. It historically covers the 98 entries outside the v1
+   50-candidate set. The preserved template supplies their exact identities. The
+   current pages are historical contact-sheet aids only. The later 2048x1024
+   display-resolution audit recorded the exact 74/74 observation split above
+   and supersedes their earlier interpretation. Do not infer camera station,
+   room membership, whole-frame exclusion, or pixel authority from either aid.
 4. [Bound T-551 room-9 source evidence](../grand-hall-room9-source-boundary-evidence-v1.json)
    — inspect the exact room-9 selection and its explicit MatterPak
    `Window`/`Mirror` cleanup warning. Inspect the supplied source OBJ as needed.
@@ -105,74 +114,40 @@ acceptance can resume.
    only if needed. It is deliberately separate because all 149 diagnostic
    centres make the room-scale plan harder to read.
 
-Record decisions in [REVIEW-CHECKLIST.md](./REVIEW-CHECKLIST.md). Leaving an
-item `UNSURE` is safe; no unresolved item can become runtime authority.
-The checklist is a visual decision aid, not the formal submission. Use the
-[local T-554 acceptance runbook](../grand-hall-t554-acceptance-runbook.md) to
-generate authority-none JSON templates and, only after qualified human review
-of every decision, volume, and mask, run the local fail-closed acceptance gate.
+Do not record formal decisions in the historical
+[REVIEW-CHECKLIST.md](./REVIEW-CHECKLIST.md). Read the
+[local T-554 acceptance runbook](../grand-hall-t554-acceptance-runbook.md) for
+the explicit v1 stop condition and the remaining successor requirements. No
+current command may turn this pack into acceptance or runtime authority.
 
 ## Baby-step workflow
 
-1. Generate blank, authority-none JSON templates with the
-   [local acceptance runbook](../grand-hall-t554-acceptance-runbook.md), or copy
-   the [exact checked-in pending templates](../grand-hall-t554-acceptance-template/)
-   into a separate working directory. Room 9, both cleanup classes, all 148
-   panorama entries, and all eight interfaces are still unresolved; the volume
-   is empty. This grants no authority.
-2. Review exact MatterPak room 9 against the intended Grand Hall. Do not accept
-   the source room number as proof of room identity.
-3. Inspect the source-bound `Window` and `Mirror` cleanup handling. Accepting
-   either means only that its source scope handling is correct; it does not
-   assert that architectural windows or mirrors exist.
-4. Look at source panorama sweep 001 in the overview and mark it `INCLUDE`,
-   `EXCLUDE`, or `UNSURE` in the working formal JSON.
-5. Repeat through source panorama sweep 050. You may overturn every current
-   image-content hypothesis. This review accepts no E57 scan mapping.
-6. Generate the separate inventory-review supplement (seven pages plus one
-   manifest, eight files total) using the
-   [local acceptance runbook](../grand-hall-t554-acceptance-runbook.md). Its
-   output is a sibling directory named
-   `grand-hall-t554-panorama-inventory-review`, never a child of this immutable
-   review-pack root. The supplement preserves this pack's exact bytes and
-   digests, binds every tile to one of the remaining 98 source identities, and
-   remains authority-none and human-pending. The checked-in supplement was
-   exact-regeneration-verified against the supplied source directory.
-7. Open every supplement page and, when necessary, its exact original JPEG at
-   8192x4096. Disposition each of the remaining 98 formal rows.
-   Use `EXCLUDE_OUTSIDE_GRAND_HALL` only when the frame contains no Grand Hall
-   evidence. If any might contain Grand Hall evidence, record
-   `GRAND_HALL_EVIDENCE_FOUND_REVIEW_SET_INCOMPLETE` and stop for a rebuilt
-   review set.
-8. Look at the room-scale plan and all-eight interface atlas. Give one
-   disposition for each interface ID. Shared vertices do not prove a doorway.
-9. A qualified geometry operator authors a separate non-convex, invisible
-   selection volume. It has no render, collision, structural, or
+1. Stop. Do not run the v1 `accept` command or use the 50/98 split to create
+   formal decisions or masks.
+2. Preserve this directory and the sibling supplement byte-for-byte as
+   historical, authority-none evidence.
+3. Wait until T-561 publishes and checks a separately versioned successor with
+   one unified row for each of the 148 exact source JPEG identities.
+4. Have an authorized venue reviewer inspect every exact JPEG at native
+   8192x4096 resolution. The reviewer may overturn either agent observation
+   class. Only that later workflow may change
+   `nativeResolutionHumanReviewCompleted` from `false`.
+5. Review exact MatterPak room 9, both source cleanup classes, and all eight
+   source interfaces independently. No label or shared topology proves a room,
+   window, mirror, doorway, or portal.
+6. Have a qualified geometry operator author and review a separate non-convex,
+   invisible selection volume. It has no render, collision, structural, or
    architecture-export authority.
-10. A qualified operator authors one exact 8192×4096 grayscale binary mask for
-   every included panorama. Pixel `0` means included and pixel `255` means
-   excluded. A reviewed all-zero mask is valid; the process must never invent
-   an excluded pixel or reason.
-11. Run the local `bind-masks` preparation command. It validates the exact mask
-    PNGs and fills SHA-256, byte length, included-pixel count, and
-    excluded-pixel count into a new still-pending decision document. It cannot
-    perform or claim human review.
-12. The authorized human compares those exact bound mask bytes with their
-    exact source JPEGs at original resolution before setting `maskReviewed`.
-    No unresolved item may be accepted.
-13. Run the local acceptance gate. It re-verifies all 148 source JPEGs and the
-    exact reviewed mask bindings, then writes a self-contained local bundle.
-    `publication-receipt.json` is written last; an output without that complete
-    receipt grants no authority. Production trust remains `null`, and
-    reconstruction/runtime/staging stay unauthorized.
-14. Run XGRIDS/LCC Creator Data only on qualified hardware and under a separate
-    later authorization. After real output exists,
-    T-557 solves the ARF→CVF transform and creates a bit-exact mask against that
-    exact ordered output inventory.
-15. T-558 then verifies this concrete root descriptor plus every accepted file,
-    proving the exact T-550/T-551/T-553 lineage, and requires an audited,
-    format-aware streamed adapter to prove the real output record kind, order,
-    boundaries, and counts before any runtime trust can be considered.
+7. Author one exact 8192×4096 grayscale binary mask for every panorama the
+   human includes, bind its SHA-256/length/pixel counts, then have the human
+   compare those exact mask bytes with the exact source before setting
+   `maskReviewed`.
+8. Run only the future successor's fail-closed acceptance and verification
+   commands. No such command or final T-561 artifact hash is documented yet.
+9. Preserve `productionTrust: null` and keep reconstruction, runtime, staging,
+   deployment, and publication unauthorized after local scope acceptance.
+10. T-555, T-557, T-556, and T-558 remain separate later reconstruction,
+    registration/masking, bake-off, and concrete-byte admission gates.
 
 ## What is deliberately deferred
 
@@ -181,8 +156,9 @@ of every decision, volume, and mask, run the local fail-closed acceptance gate.
 - No portal/interface decision is authored.
 - MatterPak room 9 has not been human-accepted as the Grand Hall.
 - The `Window` and `Mirror` cleanup handling has not been human-accepted.
-- None of the 148 supplied panorama dispositions has been human-accepted; the
-  50/98 split is a review-work split, not an eligibility decision.
+- None of the 148 supplied panorama dispositions has been human-accepted. The
+  v1 50/98 split is stopped and superseded; the completed T-561 successor
+  remains `authority: none` with `nativeResolutionHumanReviewCompleted=false`.
 - No XGRIDS/LCC output exists from which to solve a reviewed transform.
 - No E57-record-order mask is being misrepresented as an XGRIDS output mask.
 - The local template, mask-binding preparation, and acceptance commands exist,

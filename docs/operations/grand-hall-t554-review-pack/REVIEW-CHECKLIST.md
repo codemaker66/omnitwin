@@ -1,13 +1,18 @@
 # Grand Hall T-554 human review checklist
 
-This file is a blank decision aid. It is **not** an acceptance artifact. An
-unchecked or `UNSURE` item remains unresolved and grants no authority.
+Status: **historical v1 50/98 decision aid; stopped and superseded for
+acceptance; authority none**
 
-After using this aid, follow the
-[local T-554 acceptance runbook](../grand-hall-t554-acceptance-runbook.md).
-The formal human record is the generated `human-decisions.json`; the accepted
-volume is reviewed separately in `closed-selection-volume.json`. Do not treat
-marks in this Markdown file as machine-readable acceptance.
+This file is a preserved blank decision aid. It is **not** an acceptance
+artifact. Do not use it to run T-554 acceptance: T-561 delivered a separately
+versioned unified 148-row successor. An unchecked or `UNSURE` item remains
+unresolved and grants no authority.
+
+Read the
+[local T-554 acceptance runbook](../grand-hall-t554-acceptance-runbook.md) for
+the explicit v1 stop condition. The preserved `human-decisions.json` and
+`closed-selection-volume.json` template cannot be promoted to acceptance. Do
+not treat marks in this Markdown file as machine-readable acceptance.
 
 Reviewer: `____________________________`
 
@@ -41,20 +46,23 @@ exists. The other results are `REJECT_SOURCE_SCOPE_HANDLING` and `UNSURE`.
 
 Any rejection or `UNSURE` stops accepted bundle creation.
 
-## B. Current 50-candidate panorama membership
+## B. Historical v1 50-candidate panorama table
 
-The current image-content hypothesis is only a visual aid: source panorama
-sweeps 001, 018, and 049 appear to contain mixed Grand Hall and adjacent-space
-content; sweeps 019 and 050 appear adjacent; the remaining source panoramas
-appear consistent with the Grand Hall. The reviewer may overturn all of it.
+This table preserves the old v1 review shape only. A later all-source audit at
+the model's 2048x1024 display resolution recorded Grand Hall pixels in every
+one of sweeps 001–050. That authority-none agent observation does not decide
+whether the whole image is inside the room, which pixels belong, or what a
+human must mark. Do not enter formal results in this historical table.
 
 The displayed E57 scan indices are a separate
 `sequence_hypothesis_unverified`. They are not part of the JPEG identities and
 this checklist cannot accept them as camera correspondence or pose evidence.
 
-Use exactly one result per row: `INCLUDE`, `EXCLUDE`, or `UNSURE`.
+The T-561 successor presents all 148 exact identities through one unified
+human-decision surface. Every row still remains `UNSURE` and
+`nativeResolutionHumanReviewCompleted=false` until qualified human review.
 
-| Sweep | Source JPEG | Current image-content hypothesis | Human result | Note |
+| Sweep | Source JPEG | Historical v1 hypothesis | Human result | Note |
 |---:|---|---|---|---|
 | 001 | `sweep_001jpg.jpg` | mixed room-boundary content |  |  |
 | 002 | `sweep_002jpg.jpg` | Grand Hall candidate |  |  |
@@ -107,24 +115,28 @@ Use exactly one result per row: `INCLUDE`, `EXCLUDE`, or `UNSURE`.
 | 049 | `sweep_049jpg.jpg` | mixed room-boundary content |  |  |
 | 050 | `sweep_050jpg.jpg` | adjacent-space hypothesis |  |  |
 
-## C. Remaining 98 panorama dispositions
+## C. Historical 98-other panorama table and corrected observation
 
-The 98 other supplied JPEGs are not automatically outside the Grand Hall and
-are not eligible for blanket exclusion. The generated formal
-`human-decisions.json` contains one exact-identity row for every file.
+The 98 other supplied JPEGs were never automatically outside the Grand Hall or
+eligible for blanket exclusion. The preserved v1 `human-decisions.json`
+contains one exact-identity row for every file, but it cannot now be promoted
+to acceptance.
 
-Corrected non-authoritative inspection of the checked-in, source-bound review
-supplement identifies sweeps 051–075 as a distinct adjacent-room camera
-sequence, not Grand Hall camera stations. Exact sweep 051 nevertheless contains
-narrow doorway-visible Grand Hall pixels at the equirectangular seam. Sweeps
-148–149 are circulation stations with only doorway-visible Grand Hall pixels.
-These observations have **not** been human-accepted and are not E57 mappings.
-The visible pixels prevent blanket outside-room exclusion and keep the current
-50-image review set incomplete. Review those exact originals at full resolution
-and stop for a rebuilt T-550/review pack if the authorized reviewer confirms
-the observations.
+A later all-source audit supersedes that contact-sheet interpretation. At the
+model's 2048x1024 display resolution, authority-none agents observed Grand
+Hall pixels in sweeps 001–061, 065–075, and 148–149 (74 exact source files),
+and observed no Grand Hall pixels in sweeps 062–064, 076–092, and 094–147
+(74 exact source files). Numeric sweep 093 is absent from the exact 148-file
+inventory, not an unresolved row. The audit recorded zero agent uncertainty
+flags, but `nativeResolutionHumanReviewCompleted=false`.
 
-Open every exact JPEG and record one result per formal row:
+The observation classes are neither human room-membership decisions nor E57
+mappings. `Grand Hall pixels observed` is not `INCLUDE`; `no Grand Hall pixels
+observed` is not `EXCLUDE` or `measured_empty`. All 148 exact sources remain
+human-pending, and the 24 positive observations outside the historical 1–50
+group stop and supersede this v1 acceptance path.
+
+For historical reference, the v1 row vocabulary was:
 
 - `EXCLUDE_OUTSIDE_GRAND_HALL` only after confirming that the frame contains no
   Grand Hall evidence;
@@ -132,14 +144,18 @@ Open every exact JPEG and record one result per formal row:
   may contain Grand Hall evidence; or
 - `UNSURE` while unresolved.
 
-- [ ] All 98 exact JPEGs were opened and inspected individually.
-- [ ] All 98 formal rows have evidence notes and no `UNSURE` remains.
-- [ ] No possible Grand Hall evidence was found outside the current 50-image
-  candidate set.
+Do not enter those results in the preserved v1 record. The future unified
+successor must capture the authorized human's decisions.
 
-If the final checkbox cannot honestly be checked, stop. Mark the affected rows
-`GRAND_HALL_EVIDENCE_FOUND_REVIEW_SET_INCOMPLETE` and rebuild the review set;
-do not force them to `EXCLUDE_OUTSIDE_GRAND_HALL`.
+- [x] A completed authority-none T-561 successor exists and binds all 148 exact
+  identities; this machine prerequisite is not human acceptance.
+- [ ] An authorized human opened and inspected all 148 exact JPEGs individually
+  at native 8192x4096 resolution.
+- [ ] The successor records `nativeResolutionHumanReviewCompleted=true` only
+  after that review, with no unresolved human result.
+
+Until every checkbox can honestly be checked in the future successor, stop. Do
+not convert agent observations into `INCLUDE`, `EXCLUDE`, or mask authority.
 
 ## D. Exhaustive interface dispositions
 
@@ -167,9 +183,9 @@ Every row must be resolved. Permitted final dispositions are:
 
 These cannot be decided yet because the artifacts do not exist.
 
-- [ ] Authority-none JSON templates generated; exact room 9, `Window`,
-  `Mirror`, 50 candidate panoramas, 98 remaining panoramas, and eight interface
-  identities left unchanged.
+- [ ] Separately versioned authority-none successor generated; exact room 9,
+  `Window`, `Mirror`, all 148 panorama identities, and eight interface
+  identities left unchanged. The preserved v1 50/98 template is not used.
 - [ ] Exact MatterPak room 9 accepted as the intended Grand Hall.
 - [ ] `Window` and `Mirror` source cleanup handling each accepted with no
   architectural authority.
@@ -189,7 +205,7 @@ These cannot be decided yet because the artifacts do not exist.
 - [ ] T-557 ARF→CVF transform has non-collinear, source-bound controls and human overlay review.
 - [ ] T-557 output-inventory bitset matches exact member order, byte length, popcount, and padding.
 
-Final T-554 result: `PENDING / ACCEPT / REJECT`
+Historical v1 T-554 result: `PENDING` (acceptance stopped)
 
 Reviewer signature or recorded identity: `____________________________`
 

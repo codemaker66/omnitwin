@@ -242,3 +242,24 @@ authority-none candidate-evidence boundary.
 
 Because the v1 output now exists and is no-replace, any authorized repeat build
 must use a new versioned sibling rather than deleting or overwriting v1.
+
+## Downstream T-561 visual-scope boundary
+
+A later, separately versioned T-561 audit examined all 148 exact panorama
+identities at the model's 2048x1024 display resolution. Its current
+authority-none agent observations record Grand Hall pixels in sweeps 001–061,
+065–075, and 148–149 (74 files), and no Grand Hall pixels observed in sweeps
+062–064, 076–092, and 094–147 (74 files). Numeric sweep 093 is absent from the
+source inventory. The observation pass has zero agent uncertainty flags, but
+`nativeResolutionHumanReviewCompleted=false`; all 148 rows remain
+human-pending. The later checked T-561 manifest self-digest is
+`sha256:87aa9cdb7a0a731832928586a4106806ae175ec17e559dd530bfe66d32934c83`;
+this does not grant T-560 or T-561 any additional authority.
+
+This does not rerun, alter, accept, or resolve T-560. In particular, the
+T-560 `ambiguous_human_pending` correspondence states for sweeps 078 and 079
+remain ambiguous: E57 identity correspondence and visible Grand Hall pixel
+observation are different axes. Neither result establishes human room
+membership, camera location, pose, transform, mask, training eligibility,
+reconstruction truth, runtime admission, staging, publication, or production
+trust. Both retain `authority: none`.

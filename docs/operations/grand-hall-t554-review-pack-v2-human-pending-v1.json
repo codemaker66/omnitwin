@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "omnitwin.foundry.grand-hall-t554-human-pending-review-pack-receipt.v1",
+  "state": "complete_human_pending",
+  "authority": "none",
+  "sourceBindings": {
+    "predecessorReviewPackArtifactSha256": "sha256:8a6bef9c3b9e5c27e4c1f62994d7d8d01a82b4afee9515d39f2513c36dcac3aa",
+    "predecessorReviewPackFileSha256": "sha256:d9a73c162790a239ea4d6b77a8b3300e215475f6eda219f7ba1eb0e0f81de220",
+    "t561ObservationInputFileSha256": "sha256:9b196214bab065ce353019797f81134ec782bf71cf9d9b203851911ae774f297",
+    "t561ObservationInputFileByteLength": 173677,
+    "t561ObservationSetSha256": "sha256:d235821e4251f2e849f99f387950803a1095102c7a11f3c4052fd42a647bbdb2",
+    "t561ManifestSha256": "sha256:87aa9cdb7a0a731832928586a4106806ae175ec17e559dd530bfe66d32934c83",
+    "t561ManifestFileSha256": "sha256:6234491aeb52c39dbd230cb4268c62637c16fd35d664ece129f536e85d75eb1f",
+    "t561ReceiptSha256": "sha256:63f606bbe2a1e39fcf4c0f291c08571e4663e819da82cbbdd7ed845cc993b03c",
+    "t561ReceiptFileSha256": "sha256:bebdfc93eee8b6a99c7d9a67b5c3f3c8661e2cbc4df86712b7df86ba8e7260ed"
+  },
+  "reviewPackSha256": "sha256:6a1c83a7784e39876d12f83294699fd9ad32ae85372f9b2a622b26cfce5e2037",
+  "humanDecisionsSha256": "sha256:12bc0015beb8dd2dcf4780f77319dc7dff6ba04926469a6c32391653d1457ca2",
+  "closedVolumeReviewSha256": "sha256:4cb152ec204d8239915b137f9875ef7296282927f2962ab2f94842fce64fa026",
+  "payloadFileCount": 3,
+  "outputFileCount": 4,
+  "payloads": [
+    {
+      "relativePath": "closed-selection-volume-review-template.json",
+      "byteLength": 673,
+      "sha256": "sha256:bf1422419b3be0b81216b5ddbe21821e68341e3cfd1e7b1e1c5d6453c7469a40"
+    },
+    {
+      "relativePath": "human-decisions-v2.json",
+      "byteLength": 114908,
+      "sha256": "sha256:70b9078cdfdeb13257650a95b8b7bca72f49159d88172e3aadae6df63f20385f"
+    },
+    {
+      "relativePath": "review-pack-v2.json",
+      "byteLength": 130485,
+      "sha256": "sha256:24c362e6a44c614d5b204ca188d50ed22263553a5272616f7185fc8c3f566a3c"
+    }
+  ],
+  "guards": {
+    "humanAcceptanceRecorded": false,
+    "nativeResolutionHumanReviewCompleted": false,
+    "masksAuthored": false,
+    "roomMembershipAuthority": "none",
+    "interfaceAuthority": "none",
+    "closedVolumeAuthority": "none",
+    "trainingAuthorized": false,
+    "reconstructionAuthorized": false,
+    "runtimeAuthorized": false,
+    "generatedContentAuthorized": false,
+    "publicEvidenceAuthorized": false
+  },
+  "receiptSha256": "sha256:d6b5e4da5d5bffb4207fd15524295c24055612106d38c45a659b754e38a38845"
+}
