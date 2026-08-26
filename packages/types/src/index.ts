@@ -2518,6 +2518,7 @@ export * from "./omnitwin-foundry.js";
 export * from "./omnitwin-foundry-grand-hall-room-membership.js";
 export * from "./grand-hall-room-scope-artifacts.js";
 export * from "./grand-hall-room-scope-artifacts-v2.js";
+export * from "./grand-hall-room-scope-artifacts-v3.js";
 export * from "./grand-hall-room-only-runtime-evidence.js";
 export * from "./omnitwin-foundry-derivative-rights.js";
 export * from "./omnitwin-foundry-derivative-rights-custody.js";

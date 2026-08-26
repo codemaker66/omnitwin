@@ -1,5 +1,12 @@
 # Grand Hall T-554 v2 unified human-review runbook
 
+> **STOP — superseded for audit only.** The persisted human-pending v2 pack is
+> immutable evidence of an earlier preparation run. Do not edit it, author masks
+> from it, or use it for acceptance. Its decision template used the wrong T-551
+> boundary binding and did not represent per-source native-grid attestations or
+> concrete interface-plane bindings. The additive v3 successor must be generated
+> and checked before human review begins.
+
 Date: 2026-08-26
 Task: T-554 successor preparation under T-561
 Status: exact human-pending pack generated and checked; no human decision or mask exists yet
@@ -89,8 +96,8 @@ steps in order:
    no Grand Hall pixels.
 3. For each of the 148 rows, choose `INCLUDE`, `EXCLUDE`, or leave `UNSURE`.
    Do not infer the answer from sweep number, camera location, or the agent hint.
-4. For every included source, draw an 8192x4096 grayscale binary mask: 255 only
-   for Grand Hall pixels and 0 for portals, neighbouring rooms, facade, capture
+4. For every included source, draw an 8192x4096 grayscale binary mask: 0 only
+   for Grand Hall pixels and 255 for portals, neighbouring rooms, facade, capture
    artifacts, and all uncertain pixels. Review the exact saved mask bytes.
 5. Separately accept or reject MatterPak room 9 as the intended Grand Hall.
 6. Separately inspect and resolve the source-bound `Window` and `Mirror` cleanup

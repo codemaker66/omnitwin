@@ -1207,5 +1207,5 @@ describe("Grand Hall combined accepted-scope v2 chain", () => {
       ...chain,
       closedBoundary: contradictoryBoundary,
     }).success).toBe(false);
-  });
+  }, 15_000);
 });

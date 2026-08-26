@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "omnitwin.foundry.grand-hall-t554-human-pending-review-pack-receipt.v3",
+  "state": "complete_human_pending",
+  "authority": "none",
+  "exactSourceChecks": {
+    "t561ExactRegenerationVerified": true,
+    "cleanupExactRegenerationVerified": true
+  },
+  "sourceBindings": {
+    "predecessorReviewPackArtifactSha256": "sha256:8a6bef9c3b9e5c27e4c1f62994d7d8d01a82b4afee9515d39f2513c36dcac3aa",
+    "predecessorReviewPackFileSha256": "sha256:d9a73c162790a239ea4d6b77a8b3300e215475f6eda219f7ba1eb0e0f81de220",
+    "predecessorReviewPackFileByteLength": 106944,
+    "t561ObservationInputFileSha256": "sha256:9b196214bab065ce353019797f81134ec782bf71cf9d9b203851911ae774f297",
+    "t561ObservationInputFileByteLength": 173677,
+    "t561ObservationSetSha256": "sha256:d235821e4251f2e849f99f387950803a1095102c7a11f3c4052fd42a647bbdb2",
+    "t561ManifestSha256": "sha256:87aa9cdb7a0a731832928586a4106806ae175ec17e559dd530bfe66d32934c83",
+    "t561ManifestFileSha256": "sha256:6234491aeb52c39dbd230cb4268c62637c16fd35d664ece129f536e85d75eb1f",
+    "t561ManifestFileByteLength": 242707,
+    "t561ReceiptSha256": "sha256:63f606bbe2a1e39fcf4c0f291c08571e4663e819da82cbbdd7ed845cc993b03c",
+    "t561ReceiptFileSha256": "sha256:bebdfc93eee8b6a99c7d9a67b5c3f3c8661e2cbc4df86712b7df86ba8e7260ed",
+    "t561ReceiptFileByteLength": 15552,
+    "t551SourceEvidenceSha256": "sha256:7ab3490a55f67d700a8ab84581e53c69e66b3dc831256bc9b70350d43f8b41c4",
+    "cleanupMarkerEvidenceSha256": "sha256:f3caf357bc50c67b235c0fa27b310ee4c4591f9718f1e0072ed4fa4b40af1424",
+    "cleanupTargetInventorySha256": "sha256:ae65274bbf649b35f4c0e559858c61d85fcb3b80e80028530990073a666b1518",
+    "cleanupEvidenceFileSha256": "sha256:fdd884eda9aa6cbd423cb1e6051ec70df2c9291aebd0d65d165886f8c0725777",
+    "cleanupEvidenceFileByteLength": 14432,
+    "cleanupReceiptSha256": "sha256:394473d6a989b520de601fdb9c3e7a779e2476df02fd681f1933f648fac135c3",
+    "cleanupReceiptFileSha256": "sha256:ef3a90633e91801c77304190d067b025ef93b44ea1c3d1c1f90a045ecb0dadaa",
+    "cleanupReceiptFileByteLength": 1571
+  },
+  "reviewPackSha256": "sha256:0906aeba265aea9879a65c5e7d698ddaaa5e54912d7024868c1a1abaaf618530",
+  "humanDecisionsSha256": "sha256:f49a6a835c179cfc37f6dc5977800ef15bef39ab3920651e8845ab7d22940c93",
+  "closedVolumeReviewSha256": "sha256:0fc3184050f79c5e09abad64344080b7fd6e9b4991752a4601cce6dbaa5f32e5",
+  "payloadFileCount": 3,
+  "outputFileCount": 4,
+  "payloads": [
+    {
+      "relativePath": "closed-selection-volume-review-template-v3.json",
+      "byteLength": 673,
+      "sha256": "sha256:cdb4eed8b02e368979d91c08cd8fe8e21626c3aae5990add6f87382f6d976cfd"
+    },
+    {
+      "relativePath": "human-decisions-v3.json",
+      "byteLength": 130068,
+      "sha256": "sha256:5de44997116549f532b721b0b640cff9fa72c1bc6d6c7281d23dc77088ba2d3e"
+    },
+    {
+      "relativePath": "review-pack-v3.json",
+      "byteLength": 130706,
+      "sha256": "sha256:9c7b18186c1065a5216eff64e9c27343d81105f1f4adbfd705ee4612782281dd"
+    }
+  ],
+  "guards": {
+    "humanAcceptanceRecorded": false,
+    "nativeResolutionHumanReviewCompleted": false,
+    "masksAuthored": false,
+    "cleanupAuthority": "none",
+    "roomMembershipAuthority": "none",
+    "interfaceAuthority": "none",
+    "closedVolumeAuthority": "none",
+    "trainingAuthorized": false,
+    "reconstructionAuthorized": false,
+    "runtimeAuthorized": false,
+    "generatedContentAuthorized": false,
+    "publicEvidenceAuthorized": false
+  },
+  "receiptWrittenLast": true,
+  "receiptSha256": "sha256:67800d907aebb1643ea8ee2dda580d76ca5849b400a46e52aef127339ee42b17"
+}

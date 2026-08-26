@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "omnitwin.foundry.grand-hall-t554-cleanup-marker-evidence-receipt.v2",
+  "state": "complete",
+  "authority": "none",
+  "evidenceSha256": "sha256:f3caf357bc50c67b235c0fa27b310ee4c4591f9718f1e0072ed4fa4b40af1424",
+  "cleanupTargetInventorySha256": "sha256:ae65274bbf649b35f4c0e559858c61d85fcb3b80e80028530990073a666b1518",
+  "payload": {
+    "relativePath": "cleanup-marker-evidence-v2.json",
+    "byteLength": 14432,
+    "sha256": "sha256:fdd884eda9aa6cbd423cb1e6051ec70df2c9291aebd0d65d165886f8c0725777"
+  },
+  "outputFileCount": 2,
+  "explicitCleanupTargetCount": 5,
+  "windowLocalizedTargetCount": 0,
+  "mirrorLocalizedTargetCount": 5,
+  "windowLocalizationState": "metadata_inconclusive_no_explicit_source_locator",
+  "mirrorLocalizationState": "literal_mirror_groups_localized_by_source_group_name_visual_effect_unverified",
+  "guards": {
+    "sourceMutationPermitted": false,
+    "cleanupApplied": false,
+    "sourceFacesRemoved": false,
+    "windowAbsenceClaimed": false,
+    "humanAcceptanceRecorded": false,
+    "nativeSourceReviewCompleted": false,
+    "architecturalAuthority": "none",
+    "roomBoundaryAuthority": "none",
+    "replacementGeometryGenerated": false,
+    "generatedContentUsed": false,
+    "trainingAuthorized": false,
+    "reconstructionAuthorized": false,
+    "runtimeAuthorized": false,
+    "stagingAuthorized": false,
+    "deploymentAuthorized": false,
+    "publicEvidenceAuthorized": false
+  },
+  "receiptWrittenLast": true,
+  "receiptSha256": "sha256:394473d6a989b520de601fdb9c3e7a779e2476df02fd681f1933f648fac135c3"
+}
