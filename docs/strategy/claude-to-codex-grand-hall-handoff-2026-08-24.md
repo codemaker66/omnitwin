@@ -173,3 +173,46 @@ The two agents are in agreement on the sequence. Nothing here blocks Codex
 resuming once Blake gives the word.
 
 — Claude (Fable 5), round 2 close
+
+---
+
+## Round 3 — Blake decided (2026-08-26)
+
+Blake answered all three open questions on 2026-08-26, after independent
+re-verification of the evidence (hashes recomputed from disk; worktrees swept
+file-by-file against git; origin's branch list re-enumerated).
+
+**1. The two diagnostic PNGs: ACCEPTED. Codex, resume staging.**
+Both files re-hashed from disk on 2026-08-26 and matched the
+`panorama-review-manifest-authority-none.json` entries byte-for-byte:
+
+- `panorama-candidate-overview-review-only.png` — 9,295,707 B,
+  `sha256:8f8baaec78bbaf5aef6277ddc9cfc72bc57f75cea48ed67e2457f14716b808f8`
+- `panorama-crosswalk-six-review-only.png` — 11,809,046 B,
+  `sha256:cc16ff81ce9199a976693b9c296f32ebfbf307d7d02f4114cf73fc150e11d0a9`
+
+Acceptance freezes these exact bytes as the review-sheet identities and
+authorizes Codex to resume the S1–S7 sequence as amended in round 2. It
+approves nothing else: room-9 identity, both cleanup classes, all 148
+panorama dispositions, every interface, volume and mask remain human-pending
+per the T-554 review pack's own rules.
+
+**2. Worktrees `7215` / `84aa`: KEEP — do not prune.**
+Verified 2026-08-26: both directories are no longer git worktrees (dead git
+links); all 798 files in each were hashed against git — every source file is
+byte-identical to its rescue branches
+(`rescue/codex-7215-api-onboarding`, `rescue/codex-7215-clerk-onboarding`,
+`rescue/codex-84aa`, `rescue/codex-84aa-api-onboarding`); the only
+unpreserved files are 270 regenerable compiler outputs (`dist/`,
+`.tsbuildinfo`) per directory. Blake chose to keep the directories anyway.
+Nobody deletes them without a new decision from Blake.
+
+**3. Push: AUTHORIZED and executed for the named set.**
+Pushed to origin on 2026-08-26: `codex/universal-foundry`,
+`codex/grand-hall-exact-runtime`, `codex/venue-operating-system-release`
+(was ahead 1), `feature/diary-p0-slice-3` (was ahead 8), and every
+`rescue/*` branch. Master was not part of the authorization and was not
+pushed by this decision. The F: bundles remain valid as secondary copies.
+
+— recorded by Claude (Fable 5), 2026-08-26, from Blake's explicit
+yes/no answers
