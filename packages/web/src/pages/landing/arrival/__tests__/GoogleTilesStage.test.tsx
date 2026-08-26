@@ -14,9 +14,15 @@ import { useArrivalStore } from "../arrival-store.js";
 // after mount and handed to `ref` there — never synchronously during render.
 // GoogleTilesStage's own event-wiring effect must therefore key off the
 // resolved instance (state), not fire once on mount with a still-null ref.
-// The fake tiles' addEventListener/removeEventListener/loadProgress surface
-// plus its test-only `dispatch`/`listenerCount` helpers let every guard be
-// driven and inspected directly.
+// The fake tiles' addEventListener/removeEventListener surface plus its
+// test-only `dispatch`/`listenerCount` helpers let every guard be driven and
+// inspected directly. tilesReady() fires on the FIRST tiles-load-end,
+// unconditionally: the real renderer's loadProgress is always exactly 1.0 at
+// that dispatch point (it zeroes inCacheSinceLoad before dispatching, and
+// loading is 0 by definition — node_modules/3d-tiles-renderer/src/core/
+// renderer/tiles/TilesRendererBase.js:915-924, getter at :393-400), so a
+// below-threshold tiles-load-end is a state the real renderer cannot produce
+// and is not modelled here.
 // -----------------------------------------------------------------------------
 
 const invalidate = vi.fn();
@@ -26,17 +32,15 @@ vi.mock("@react-three/fiber", () => ({
 }));
 
 interface FakeTilesController {
-  loadProgress: number;
   addEventListener: (type: string, cb: () => void) => void;
   removeEventListener: (type: string, cb: () => void) => void;
   dispatch: (type: string) => void;
   listenerCount: (type: string) => number;
 }
 
-function createFakeTiles(loadProgress: number): FakeTilesController {
+function createFakeTiles(): FakeTilesController {
   const listeners = new Map<string, Set<() => void>>();
   return {
-    loadProgress,
     addEventListener(type, cb) {
       const forType = listeners.get(type) ?? new Set<() => void>();
       forType.add(cb);
@@ -63,7 +67,6 @@ function createFakeTiles(loadProgress: number): FakeTilesController {
 const seen = vi.hoisted(() => ({
   plugins: [] as { plugin: { name: string }; args: unknown }[],
   tiles: null as FakeTilesController | null,
-  nextLoadProgress: 1,
 }));
 
 vi.mock("3d-tiles-renderer/r3f", () => {
@@ -78,7 +81,7 @@ vi.mock("3d-tiles-renderer/r3f", () => {
       // shape this fake actually needs to drive; React's Ref<T> is a union
       // that also includes a read-only RefObject, which this branch leaves
       // alone rather than fabricate an unused, untested code path for.
-      const instance = createFakeTiles(seen.nextLoadProgress);
+      const instance = createFakeTiles();
       seen.tiles = instance;
       if (typeof ref === "function") {
         ref(instance);
@@ -116,14 +119,13 @@ vi.mock("3d-tiles-renderer/plugins", () => ({
   },
 }));
 
-const { GoogleTilesStage, TILES_READY_PROGRESS } = await import("../GoogleTilesStage.js");
+const { GoogleTilesStage } = await import("../GoogleTilesStage.js");
 
 describe("GoogleTilesStage", () => {
   beforeEach(() => {
     useArrivalStore.getState().reset();
     seen.plugins.length = 0;
     seen.tiles = null;
-    seen.nextLoadProgress = 1;
     invalidate.mockClear();
   });
 
@@ -140,7 +142,8 @@ describe("GoogleTilesStage", () => {
     // args is a one-element tuple, not a bare object — TilesPlugin's `args`
     // types as Params extends any[] (ConstructorParameters<Plugin>), and
     // GoogleTilesStage passes it that way so tsc accepts it (see that
-    // component's inline comment for why this is runtime-equivalent).
+    // component's header comment for why the tuple form is used and why its
+    // reference must stay stable across renders).
     const [options] = auth?.args as [{ apiToken: string }];
     expect(options.apiToken).toBe("AIza-test");
   });
@@ -153,24 +156,38 @@ describe("GoogleTilesStage", () => {
   it("converts the Trades Hall anchor to radians for ReorientationPlugin", () => {
     render(<GoogleTilesStage apiToken="AIza-test" />);
     const reorient = seen.plugins.find((p) => p.plugin.name === "ReorientationPlugin");
-    const [options] = reorient?.args as [{ lat: number; lon: number; height: number }];
+    const [options] = reorient?.args as [
+      { lat: number; lon: number; height: number; azimuth: number },
+    ];
     // ReorientationPlugin's lat/lon are radians (node_modules/3d-tiles-renderer/
     // src/three/plugins/ReorientationPlugin.js JSDoc); TRADES_HALL_ANCHOR stays
     // in degrees, so GoogleTilesStage must convert at the call site.
     expect(options.lat).toBeCloseTo((55.859 * Math.PI) / 180, 10);
     expect(options.lon).toBeCloseTo((-4.2474 * Math.PI) / 180, 10);
     expect(options.height).toBe(20);
+    // Pins the deliberate azimuth wiring (TRADES_HALL_ANCHOR.azimuthDeg is
+    // currently 0) so a future edit can't silently drop it again.
+    expect(options.azimuth).toBe(0);
   });
 
-  it("does not announce tilesReady when tiles-load-end fires below TILES_READY_PROGRESS", () => {
-    seen.nextLoadProgress = TILES_READY_PROGRESS - 0.1;
-    render(<GoogleTilesStage apiToken="AIza-test" />);
-    seen.tiles?.dispatch("tiles-load-end");
-    expect(useArrivalStore.getState().phase).toBe("loading");
+  it("keeps plugin args referentially stable across re-renders (no plugin reconstruction)", () => {
+    // TilesPlugin disposes and reconstructs its plugin whenever `args`'
+    // first-level identity changes (useObjectDep — see the component's
+    // header comment). A fresh array/object literal built inline in JSX on
+    // every render would fail this test even though every value inside it is
+    // unchanged, because reference identity — not deep equality — is what
+    // the real library checks.
+    const lastArgsFor = (name: string): unknown =>
+      [...seen.plugins].reverse().find((p) => p.plugin.name === name)?.args;
+    const { rerender } = render(<GoogleTilesStage apiToken="AIza-test" />);
+    const authArgsBefore = lastArgsFor("GoogleCloudAuthPlugin");
+    const reorientArgsBefore = lastArgsFor("ReorientationPlugin");
+    rerender(<GoogleTilesStage apiToken="AIza-test" />);
+    expect(lastArgsFor("GoogleCloudAuthPlugin")).toBe(authArgsBefore);
+    expect(lastArgsFor("ReorientationPlugin")).toBe(reorientArgsBefore);
   });
 
-  it("announces tilesReady once loadProgress reaches TILES_READY_PROGRESS", () => {
-    seen.nextLoadProgress = TILES_READY_PROGRESS;
+  it("announces tilesReady on the first tiles-load-end", () => {
     render(<GoogleTilesStage apiToken="AIza-test" />);
     seen.tiles?.dispatch("tiles-load-end");
     expect(useArrivalStore.getState().phase).toBe("flight");
@@ -181,7 +198,6 @@ describe("GoogleTilesStage", () => {
     const spy = vi.fn(originalTilesReady);
     useArrivalStore.setState({ tilesReady: spy });
     try {
-      seen.nextLoadProgress = 1;
       render(<GoogleTilesStage apiToken="AIza-test" />);
       seen.tiles?.dispatch("tiles-load-end");
       seen.tiles?.dispatch("tiles-load-end");
