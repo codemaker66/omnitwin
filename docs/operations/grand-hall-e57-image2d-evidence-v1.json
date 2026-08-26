@@ -1,0 +1,17 @@
+{
+  "authority": "none",
+  "captureStagePlanSha256": "d9a75df3ffaf2706d97f454cbfae9a5c47ce0719c83af7f56da391ce0def3729",
+  "manifest": {
+    "relativePath": "image2d-inventory-authority-none.json",
+    "sha256": "fd13da9638d1a1e194fb0c1acaedbe07dea15e65d9c16353d29f6542ce3ad344",
+    "sizeBytes": 663151
+  },
+  "payload": {
+    "imageBytes": 2927438001,
+    "imageCount": 894
+  },
+  "publicationComplete": true,
+  "receiptWrittenLast": true,
+  "schemaVersion": "venviewer.e57-image2d-evidence-publication.v1",
+  "sourceE57Sha256": "975039d11fc04ca681f038e499f358124bbcab178ad5ce6324fa912212729cdd"
+}

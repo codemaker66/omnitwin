@@ -105,13 +105,17 @@ The result must report `checked_exact_regeneration`, 98 source records,
 `sha256:fd1c53ef54db0ab3c34d1fc879ce22ce9a8c9947bc7aca1ade311ebe77d468a0`.
 It does not change eligibility, infer room membership, or accept a panorama.
 
-The pages show clear possible Grand Hall evidence in sweeps 051–075. This is a
-non-authoritative visual observation, not a final venue-owner decision, but it
-triggers the fail-closed stop condition: do not continue to final masks or
-`accept` with the current 50-image candidate set. First have the authorized
-venue reviewer confirm those exact originals, then rebuild T-550 and this
-review pack so every confirmed Grand Hall source is eligible for normal
-`INCLUDE`/`EXCLUDE` review.
+Corrected non-authoritative inspection identifies sweeps 051–075 as camera
+stations in a distinct adjacent memorial/timber room, not the Grand Hall.
+Exact sweep 051 nevertheless contains narrow doorway-visible Grand Hall pixels
+at the equirectangular seam. Sweeps 148–149 are circulation stations and
+contain only Grand Hall pixels visible through a doorway. These are visual
+scope observations, not final venue-owner decisions and not E57 scan mappings.
+Because Grand Hall pixels still exist outside the current 50-image set, the
+fail-closed stop condition remains: do not continue to final masks or `accept`.
+First have the authorized venue reviewer inspect the exact originals at full
+resolution, then rebuild T-550 and this review pack so every eligible source
+pixel receives normal `INCLUDE`/`EXCLUDE` review.
 
 To exercise generation itself, use a different absent sibling under
 `$reviewWork`; never overwrite the checked-in supplement or place output

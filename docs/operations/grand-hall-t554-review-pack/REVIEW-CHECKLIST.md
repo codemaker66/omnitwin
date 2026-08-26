@@ -113,12 +113,16 @@ The 98 other supplied JPEGs are not automatically outside the Grand Hall and
 are not eligible for blanket exclusion. The generated formal
 `human-decisions.json` contains one exact-identity row for every file.
 
-The checked-in, source-bound review supplement currently shows clear possible
-Grand Hall evidence in sweeps 051–075. That observation has **not** been
-human-accepted, but it already prevents a blanket outside-room exclusion and
-keeps the current 50-image review set incomplete. Review those exact originals
-first and stop for a rebuilt T-550/review pack if the authorized reviewer
-confirms what the review pages show.
+Corrected non-authoritative inspection of the checked-in, source-bound review
+supplement identifies sweeps 051–075 as a distinct adjacent-room camera
+sequence, not Grand Hall camera stations. Exact sweep 051 nevertheless contains
+narrow doorway-visible Grand Hall pixels at the equirectangular seam. Sweeps
+148–149 are circulation stations with only doorway-visible Grand Hall pixels.
+These observations have **not** been human-accepted and are not E57 mappings.
+The visible pixels prevent blanket outside-room exclusion and keep the current
+50-image review set incomplete. Review those exact originals at full resolution
+and stop for a rebuilt T-550/review pack if the authorized reviewer confirms
+the observations.
 
 Open every exact JPEG and record one result per formal row:
 

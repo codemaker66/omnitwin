@@ -43,14 +43,17 @@ regeneration-checked. It contains seven review pages plus one manifest (eight
 files total). Its manifest is
 `sha256:fd1c53ef54db0ab3c34d1fc879ce22ce9a8c9947bc7aca1ade311ebe77d468a0`.
 
-Non-authoritative visual inspection of those source-bound pages found clear
-possible Grand Hall evidence in sweeps 051–075: they visibly continue the same
-wood-panelled, fireplace-and-window hall seen in the earlier review images.
-This is not a human room-membership decision, but it is enough to trigger the
-defined stop condition. The current 50-image candidate set is incomplete and
-must not be accepted or used to author final masks. An authorized venue
-reviewer must confirm the affected exact sources; T-550 and this root review
-pack must then be rebuilt before T-554 acceptance can resume.
+Corrected non-authoritative visual inspection identifies sweeps 051–075 as
+camera stations in a distinct adjacent memorial/timber room, not the Grand
+Hall. Exact sweep 051 nevertheless contains narrow doorway-visible Grand Hall
+pixels at the equirectangular seam. Sweeps 148–149 are circulation stations and
+contain only Grand Hall pixels visible through a doorway. These observations
+are neither human room-membership decisions nor E57 scan mappings. Grand Hall
+pixels outside the current 50-image candidate set keep it incomplete for
+per-pixel review, so it must not be accepted or used to author final masks. An
+authorized venue reviewer must confirm the affected exact sources at original
+resolution; T-550 and this root review pack must then be rebuilt before T-554
+acceptance can resume.
 
 ## Open these files in this order
 
@@ -67,8 +70,11 @@ pack must then be rebuilt before T-554 acceptance can resume.
    `F:\downloads (some very important)\TH Panoramic` whenever the resampled tile
    is not decisive. Inspect every one of the 98 entries outside the current
    50-candidate set. The formal template supplies their exact identities. The
-   current pages already expose possible Grand Hall evidence in sweeps 051–075,
-   so stop for authorized confirmation and a rebuilt candidate set.
+   current pages identify sweeps 051–075 as an adjacent-room camera sequence,
+   with a narrow doorway view in exact sweep 051, and sweeps 148–149 as
+   circulation views with only doorway-visible Grand Hall pixels. Stop for
+   authorized original-resolution confirmation and a rebuilt candidate set;
+   do not promote either sequence to Grand Hall camera stations.
 4. [Bound T-551 room-9 source evidence](../grand-hall-room9-source-boundary-evidence-v1.json)
    — inspect the exact room-9 selection and its explicit MatterPak
    `Window`/`Mirror` cleanup warning. Inspect the supplied source OBJ as needed.
