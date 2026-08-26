@@ -1,0 +1,110 @@
+{
+  "authority": "none",
+  "packages": [
+    {
+      "installedFileCount": 811,
+      "installedTreeSha256": "d8320b77b843433708c3452ac7493a02502f7a047925560ad3fc4cf02ffbd7db",
+      "license": "BSD-3-Clause AND LicenseRef-NumPy-Bundled-Third-Party-Notices",
+      "licenseFile": "numpy-1.26.4.dist-info/LICENSE.txt",
+      "licenseFileSha256": "e261222a74adff28f88160dac1c5cb302d93b67e9ca989eb83bf311e11a9970a",
+      "name": "numpy",
+      "runtimeFiles": [
+        {
+          "name": "multiarray",
+          "runtimeFileSha256": "5d4f44389d1b4e9aa62af63b716a0d4266dbb56fefa9bf27831f85b695994da5",
+          "wheelRuntimeMember": "numpy/core/_multiarray_umath.cp312-win_amd64.pyd"
+        },
+        {
+          "name": "openblas",
+          "runtimeFileSha256": "57b87772bf676b5c2d718c79dddc9f039d79ec3319fee1398cc305adff7b69e5",
+          "wheelRuntimeMember": "numpy.libs/libopenblas64__v0.3.23-293-gc2f4bdbb-gcc_10_3_0-2bde3a66a51006b2b53eb373ff767a3f.dll"
+        },
+        {
+          "name": "umathLinalg",
+          "runtimeFileSha256": "7652e82c6c53249b911dde9822b71a7ecbecbc699c79475862e779a51d7f1d0f",
+          "wheelRuntimeMember": "numpy/linalg/_umath_linalg.cp312-win_amd64.pyd"
+        }
+      ],
+      "sourceUrl": "https://files.pythonhosted.org/packages/16/2e/86f24451c2d530c88daf997cb8d6ac622c1d40d19f5a031ed68a4b73a374/numpy-1.26.4-cp312-cp312-win_amd64.whl",
+      "thirdPartyNoticeFile": "numpy-1.26.4.dist-info/LICENSE.txt",
+      "thirdPartyNoticeFileSha256": "e261222a74adff28f88160dac1c5cb302d93b67e9ca989eb83bf311e11a9970a",
+      "version": "1.26.4",
+      "wheelFile": "numpy-1.26.4-cp312-cp312-win_amd64.whl",
+      "wheelSha256": "08beddf13648eb95f8d867350f6a018a4be2e5ad54c8d8caed89ebca558b2818",
+      "wheelSizeBytes": 15517754
+    },
+    {
+      "installedFileCount": 89,
+      "installedTreeSha256": "a8c682c567f1a58f03b7f7b6d21d1bd0b22889684fd3f5b881aab2212957c408",
+      "license": "MIT AND Apache-2.0 AND LicenseRef-OpenCV-Bundled-Third-Party-Notices",
+      "licenseFile": "opencv_python_headless-4.10.0.84.dist-info/LICENSE.txt",
+      "licenseFileSha256": "edef0fac1eb08d29d34563f724742e078da2513e196133a12c6ad9ff01e26107",
+      "name": "opencv-python-headless",
+      "runtimeFiles": [
+        {
+          "name": "cv2",
+          "runtimeFileSha256": "4705689bc8cbe47b57e95560c648cbabdba43de1615d62a85ff21437285ee1b7",
+          "wheelRuntimeMember": "cv2/cv2.pyd"
+        }
+      ],
+      "sourceUrl": "https://files.pythonhosted.org/packages/26/d0/22f68eb23eea053a31655960f133c0be9726c6a881547e6e9e7e2a946c4f/opencv_python_headless-4.10.0.84-cp37-abi3-win_amd64.whl",
+      "thirdPartyNoticeFile": "opencv_python_headless-4.10.0.84.dist-info/LICENSE-3RD-PARTY.txt",
+      "thirdPartyNoticeFileSha256": "0b33c5be17819d10ecad11360c6f2bd5a7df7c0f80a3314a81e28070d93818e2",
+      "version": "4.10.0.84",
+      "wheelFile": "opencv_python_headless-4.10.0.84-cp37-abi3-win_amd64.whl",
+      "wheelSha256": "afcf28bd1209dd58810d33defb622b325d3cbe49dcd7a43a902982c33e5fad05",
+      "wheelSizeBytes": 38754031
+    }
+  ],
+  "runtime": {
+    "dependencyExistingPathsWriteSealed": true,
+    "dependencyImportAllowlistEnforced": true,
+    "determinismScope": "same_host_same_binary_only",
+    "environmentControls": {
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1"
+    },
+    "environmentControlsSetBeforeImports": true,
+    "logicalProcessorCount": 16,
+    "opencvBuildInformationSha256": "c12aff2ff928a5dcaca93118a4953c10d94d61b689d3f9f52b3a6804552127a7",
+    "opencvCpuFeaturesLine": "SSE SSE2 SSE3 *SSE4.1 *SSE4.2 *FP16 *AVX *AVX2",
+    "opencvOpenCl": false,
+    "opencvThreads": 1,
+    "platformMachine": "AMD64",
+    "platformProcessor": "AMD64 Family 23 Model 113 Stepping 0, AuthenticAMD",
+    "platformRelease": "11",
+    "platformSystem": "Windows",
+    "platformVersion": "10.0.26200",
+    "processorArchitecture": "AMD64",
+    "processorIdentifier": "AMD64 Family 23 Model 113 Stepping 0, AuthenticAMD",
+    "pythonBaseCompleteFileCount": 3387,
+    "pythonBaseCompleteTreeSha256": "938f67793bb344bbbf2a98532bbd17996877d2ccf3edf1d93771c3e2d3152883",
+    "pythonBytecodeCachePrefix": "NUL",
+    "pythonCompiler": "MSC v.1944 64 bit (AMD64)",
+    "pythonCoreLibrarySha256": "e3d09dc4129ab93f57bf9a30d7e16cdcb87e73cd27fbbc9377dd58275640e7e8",
+    "pythonDistributionArchiveRelativePath": "cpython-3.12.12+20260211-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+    "pythonDistributionArchiveSha256": "93bf8e8c05ede0077b197a29c99ebdaf253497f27190097494265150b4e70ba8",
+    "pythonDistributionArchiveSizeBytes": 21839326,
+    "pythonDistributionLicenseRelativePath": "t560-cpython-3.12.12-20260211-v1/python/LICENSE.txt",
+    "pythonDistributionLicenseSha256": "886a0ead2d89030ee62dbff52b04e47ab91998341295bb9c56fb952b4e081c7a",
+    "pythonDistributionLicenseSizeBytes": 25066,
+    "pythonDistributionSourceUrl": "https://github.com/astral-sh/python-build-standalone/releases/download/20260211/cpython-3.12.12%2B20260211-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+    "pythonDontWriteBytecode": true,
+    "pythonExecutableSha256": "711df14e4ef9f0890c5c84330faba821839f3f6757dbe27cbf69ac3de6852446",
+    "pythonIgnoreEnvironment": true,
+    "pythonImplementation": "CPython",
+    "pythonIsolated": true,
+    "pythonNoSite": true,
+    "pythonPathEnvironmentAbsent": true,
+    "pythonSafePath": true,
+    "pythonTag": "cp312-win_amd64",
+    "pythonVersion": "3.12.12",
+    "reviewedLocalModulesExplicitlyLoaded": true,
+    "startupHookFiles": [],
+    "userSiteEnabled": false,
+    "verifiedSiteRootAddedAfterSeal": true
+  },
+  "schemaVersion": "venviewer.panorama-e57-crosswalk-dependencies.v1"
+}
