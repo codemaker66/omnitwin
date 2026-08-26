@@ -1,7 +1,9 @@
 import { useEffect, useRef, type ReactElement } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useNavigate } from "react-router-dom";
 import { googleTilesApiKey } from "./arrival-config.js";
 import { useArrivalStore } from "./arrival-store.js";
+import { useExplodeOverlayStore } from "./ExplodedHall.js";
 import { GoogleTilesStage } from "./GoogleTilesStage.js";
 import { HallHandoff, TRADES_HALL_TWIN_SLUG, tradesHallMeshUrl } from "./HallHandoff.js";
 import { ARRIVAL_RAIL, FLIGHT_DURATION_S, sampleRail } from "./camera-rail.js";
@@ -38,6 +40,17 @@ import "./arrival.css";
 // cache right when it mounts. HallHandoffMesh has its own Suspense boundary
 // as a backstop for that case (see HallHandoff.tsx), but the real fix is
 // starting the download as early as this component can possibly know to.
+//
+// The storey label/CTA layer (Task 10) reads useExplodeOverlayStore — a small
+// store dedicated to bridging ExplodedHall's per-frame, camera-projected
+// state out of the Canvas to this DOM overlay (ExplodedHall.tsx's own header
+// justifies the choice of a zustand store over a lifted-callback or a
+// ref-based imperative writer). This component only ever READS it: which
+// labels to place where, and whether the explode spring is still moving —
+// the latter widens `animating` past "flight" so the Canvas keeps rendering
+// continuously while a storey is drifting, exactly like the flight sequence's
+// own continuous-motion treatment, rather than depending on demand mode's
+// invalidate-then-reschedule path for a motion this central to the page.
 // -----------------------------------------------------------------------------
 
 export const ARRIVAL_SKIP_LABEL = "Skip the flight";
@@ -94,6 +107,9 @@ export function ArrivalHero(): ReactElement | null {
   const phase = useArrivalStore((s) => s.phase);
   const apiToken = googleTilesApiKey();
   const manifest = useTwinManifest(TRADES_HALL_TWIN_SLUG);
+  const overlaySettled = useExplodeOverlayStore((s) => s.settled);
+  const overlayLabels = useExplodeOverlayStore((s) => s.labels);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (apiToken === null) {
@@ -122,7 +138,12 @@ export function ArrivalHero(): ReactElement | null {
     return null; // the static hero photo beneath carries the page (spec §6)
   }
 
-  const animating = phase === "flight";
+  // "always" during flight (unchanged, Task 6) OR while the explode spring is
+  // still moving (Task 10, Step 2) — a storey mid-drift is exactly the kind
+  // of continuous, springed motion this codebase always runs at "always"
+  // rather than leaning on demand mode's invalidate-then-reschedule path (see
+  // the file header comment).
+  const animating = phase === "flight" || !overlaySettled;
   return (
     <div className="arrival-hero" data-arrival-phase={phase}>
       <Canvas
@@ -150,6 +171,59 @@ export function ArrivalHero(): ReactElement | null {
           }}
         >
           {ARRIVAL_SKIP_LABEL}
+        </button>
+      )}
+      {/* Storey labels (Task 10): DOM, not drei <Html> — positioned every
+          unsettled frame from ExplodedHall's overlay bridge. Gated on the
+          overlay's OWN labels array rather than `phase === "exploded"`
+          directly, so a label lingers, tracking, through the tail of a
+          reassemble animation instead of vanishing the instant Close is
+          clicked while the storeys are still visibly mid-flight together
+          (ExplodedHall.tsx's LABEL_APPEAR_PROGRESS). */}
+      {overlayLabels.length > 0 && (
+        <div className="arrival-storeys">
+          {overlayLabels.map((entry) => (
+            <div
+              key={entry.bucket}
+              className="arrival-storey-label"
+              data-arrival-storey={entry.bucket}
+              style={{
+                transform: `translate(${String(entry.xPx)}px, ${String(entry.yPx)}px) translate(-50%, -50%)`,
+              }}
+            >
+              <button
+                type="button"
+                className="arrival-storey-name"
+                onClick={() => {
+                  // react-router-dom's NavigateFunction can return a Promise
+                  // (view transitions); this click has nothing to await it against.
+                  void navigate("/tour");
+                }}
+              >
+                {entry.label}
+              </button>
+              <button
+                type="button"
+                className="arrival-storey-plan"
+                onClick={() => {
+                  void navigate("/plan");
+                }}
+              >
+                Plan this room
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {phase === "exploded" && (
+        <button
+          type="button"
+          className="arrival-explode-close"
+          onClick={() => {
+            useArrivalStore.getState().reassemble();
+          }}
+        >
+          Close
         </button>
       )}
     </div>

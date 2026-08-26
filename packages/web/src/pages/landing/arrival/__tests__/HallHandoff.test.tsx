@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
-import { BufferGeometry, Group, Material, Matrix4, Mesh, MeshStandardMaterial } from "three";
+import {
+  BufferGeometry,
+  Group,
+  Material,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+} from "three";
 import type { TwinManifest } from "@omnitwin/types";
 import {
   TWIN_FIXTURE_MANIFEST,
@@ -25,17 +33,35 @@ import {
 //     invalidating once settled;
 //   - the source material useGLTF would hand to any OTHER consumer is never
 //     mutated — only the per-mount clone is (the cache-poisoning gate).
+//
+// Since Task 10, the placement group HallHandoffMesh renders is ExplodedHall
+// (this file no longer builds that JSX itself — see HallHandoff.tsx's own
+// header) — react-router-dom is mocked here purely so ExplodedHall's
+// unconditional useNavigate() call does not throw outside a Router; every
+// test below stays at the store's default "loading" phase, so ExplodedHall
+// never leaves its pre-split render path and none of ITS own behaviour is
+// exercised from this file (ExplodedHall.test.tsx owns that coverage).
 // -----------------------------------------------------------------------------
 
 const invalidate = vi.fn();
 const frameCallbacks: ((state: unknown, delta: number) => void)[] = [];
+const fakeCamera = new PerspectiveCamera();
 
 vi.mock("@react-three/fiber", () => ({
-  useThree: (selector: (state: { invalidate: () => void }) => unknown) =>
-    selector({ invalidate }),
+  useThree: (
+    selector: (state: {
+      invalidate: () => void;
+      camera: PerspectiveCamera;
+      size: { width: number; height: number };
+    }) => unknown,
+  ) => selector({ invalidate, camera: fakeCamera, size: { width: 800, height: 600 } }),
   useFrame: (callback: (state: unknown, delta: number) => void): void => {
     frameCallbacks.push(callback);
   },
+}));
+
+vi.mock("react-router-dom", () => ({
+  useNavigate: () => vi.fn(),
 }));
 
 function buildFakeScene(): { scene: Group; material: MeshStandardMaterial } {

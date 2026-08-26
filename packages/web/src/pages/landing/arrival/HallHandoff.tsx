@@ -4,7 +4,7 @@ import { useGLTF } from "@react-three/drei";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import type { GLTFLoader } from "three-stdlib";
 import { Material, type Object3D } from "three";
-import type { TwinManifest } from "@omnitwin/types";
+import type { TwinManifest, TwinScanNode } from "@omnitwin/types";
 import {
   isSpringSettled,
   stepSpring,
@@ -14,6 +14,7 @@ import {
 import { applyDollhouseCaps, meshRootWorldMatrix } from "../../../twin/dollhouse-peel.js";
 import { pruneDollhouseShell } from "../../../twin/dollhouse-shell.js";
 import { twinAssetBase, useTwinManifest } from "../../../twin/useTwinManifest.js";
+import { ExplodedHall } from "./ExplodedHall.js";
 import { TRADES_HALL_TWIN_PLACEMENT, twinPlacementMatrix } from "./twin-placement.js";
 
 // -----------------------------------------------------------------------------
@@ -75,6 +76,16 @@ import { TRADES_HALL_TWIN_PLACEMENT, twinPlacementMatrix } from "./twin-placemen
 // key light onto a different facade than the one it lights at /twin/trades-
 // hall, and making Task 8's placement calibration silently re-aim the light
 // as a side effect of moving the mesh.
+//
+// Storey grouping (Task 10) hooks in here rather than growing this file:
+// HallHandoffMesh's own job stays exactly "load + prep + fade" (Task 7,
+// unchanged above); placement, the explode split, and pointer/route wiring
+// are ExplodedHall's, which this component now mounts in place of the old
+// inline `<group matrix={HANDOFF_PLACEMENT_MATRIX}><primitive/></group>`. The
+// prepared scene and the same placement matrix are handed down as props so
+// ExplodedHall never re-derives either; manifest.nodes is threaded down
+// alongside meshUrl as the ONLY source of storey-bucket samples (Task 9's
+// contract — see ExplodedHall.tsx's own header for why).
 // -----------------------------------------------------------------------------
 
 /** The twin asset slug — NEVER "trades-hall-glasgow" (a different, 404ing namespace). */
@@ -164,9 +175,10 @@ function disposeHandoffScene(handoff: HandoffScene): void {
 
 interface HallHandoffMeshProps {
   readonly meshUrl: string;
+  readonly nodes: readonly TwinScanNode[];
 }
 
-function HallHandoffMesh({ meshUrl }: HallHandoffMeshProps): ReactElement {
+function HallHandoffMesh({ meshUrl, nodes }: HallHandoffMeshProps): ReactElement {
   const gltf = useGLTF(meshUrl, true, true, configureHandoffLoader);
   const shellScene = useMemo(() => {
     pruneDollhouseShell(gltf.scene);
@@ -241,9 +253,11 @@ function HallHandoffMesh({ meshUrl }: HallHandoffMeshProps): ReactElement {
           identity/anchor-local frame, not rotate with the twin basis. */}
       <ambientLight intensity={2.2} />
       <directionalLight position={[12, 30, 18]} intensity={0.8} />
-      <group matrixAutoUpdate={false} matrix={HANDOFF_PLACEMENT_MATRIX}>
-        <primitive object={handoff.scene} />
-      </group>
+      <ExplodedHall
+        scene={handoff.scene}
+        placementMatrix={HANDOFF_PLACEMENT_MATRIX}
+        nodes={nodes}
+      />
     </group>
   );
 }
@@ -275,7 +289,7 @@ export function HallHandoff(): ReactElement | null {
   // hide every sibling (GoogleTilesStage included) while the GLB streams in.
   return (
     <Suspense fallback={null}>
-      <HallHandoffMesh meshUrl={meshUrl} />
+      <HallHandoffMesh meshUrl={meshUrl} nodes={manifest.manifest.nodes} />
     </Suspense>
   );
 }

@@ -120,6 +120,33 @@ vi.mock("../../../../twin/DollhouseStage.js", () => ({
   preloadDollhouse: preloadDollhouseMock,
 }));
 
+const navigateMock = vi.fn();
+vi.mock("react-router-dom", () => ({
+  useNavigate: () => navigateMock,
+}));
+
+// ExplodedHall (Task 10) is mocked wholesale for the SAME reason HallHandoff
+// is above: this suite's job is ArrivalHero's own wiring (which labels reach
+// the DOM, whether the Canvas keeps rendering), not ExplodedHall's per-frame
+// bucketing/spring mechanics (ExplodedHall.test.tsx owns that) — and the real
+// module transitively imports DollhouseStage.js (drei's useGLTF), which this
+// file otherwise deliberately keeps out of scope entirely.
+interface FakeOverlayLabel {
+  readonly bucket: number;
+  readonly label: string;
+  readonly xPx: number;
+  readonly yPx: number;
+}
+interface FakeOverlayState {
+  readonly settled: boolean;
+  readonly labels: readonly FakeOverlayLabel[];
+}
+let overlayState: FakeOverlayState = { settled: true, labels: [] };
+vi.mock("../ExplodedHall.js", () => ({
+  useExplodeOverlayStore: (selector: (state: FakeOverlayState) => unknown) =>
+    selector(overlayState),
+}));
+
 type FakeManifestState =
   | { readonly state: "loading" }
   | { readonly state: "error"; readonly retry: () => void }
@@ -147,6 +174,8 @@ beforeEach(() => {
   manifestState = { state: "loading" };
   preloadDollhouseMock.mockClear();
   tradesHallMeshUrlMock.mockClear();
+  navigateMock.mockClear();
+  overlayState = { settled: true, labels: [] };
 });
 
 afterEach(() => {
@@ -365,5 +394,97 @@ describe("ArrivalHero — warms the dollhouse GLB as early as possible (Task 7, 
     render(<ArrivalHero />);
     expect(tradesHallMeshUrlMock).toHaveBeenCalledWith(TWIN_FIXTURE_MANIFEST_NO_MESH);
     expect(preloadDollhouseMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("ArrivalHero — explode overlay bridge (Task 10)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+  });
+
+  it('runs frameloop "always" while the explode overlay is unsettled, even outside flight', () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    overlayState = { settled: false, labels: [] };
+    render(<ArrivalHero />);
+    expect(screen.getByTestId("arrival-canvas").dataset["frameloop"]).toBe("always");
+  });
+
+  it('returns to "demand" once the overlay settles again', () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    overlayState = { settled: true, labels: [] };
+    render(<ArrivalHero />);
+    expect(screen.getByTestId("arrival-canvas").dataset["frameloop"]).toBe("demand");
+  });
+
+  it("renders no storey labels and no Close control when the overlay is empty", () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    overlayState = { settled: true, labels: [] };
+    render(<ArrivalHero />);
+    expect(document.querySelector(".arrival-storeys")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  });
+
+  it("renders one label per overlay entry, positioned from its projected pixel offset", () => {
+    useArrivalStore.setState({ phase: "exploded" });
+    overlayState = {
+      settled: true,
+      labels: [
+        { bucket: 0, label: "Reception Room & Robert Adam Room", xPx: 120, yPx: 340 },
+        { bucket: 1, label: "Grand Hall & Saloon", xPx: 400, yPx: 160 },
+      ],
+    };
+    render(<ArrivalHero />);
+
+    const groundLabel = document.querySelector('[data-arrival-storey="0"]');
+    const upperLabel = document.querySelector('[data-arrival-storey="1"]');
+    expect(groundLabel).not.toBeNull();
+    expect(upperLabel).not.toBeNull();
+    expect(groundLabel?.textContent).toContain("Reception Room & Robert Adam Room");
+    expect((groundLabel as HTMLElement).style.transform).toContain("translate(120px, 340px)");
+    expect((upperLabel as HTMLElement).style.transform).toContain("translate(400px, 160px)");
+  });
+
+  it('clicking a storey label\'s room name navigates to "/tour"', () => {
+    useArrivalStore.setState({ phase: "exploded" });
+    overlayState = {
+      settled: true,
+      labels: [{ bucket: 1, label: "Grand Hall & Saloon", xPx: 0, yPx: 0 }],
+    };
+    render(<ArrivalHero />);
+    fireEvent.click(screen.getByRole("button", { name: "Grand Hall & Saloon" }));
+    expect(navigateMock).toHaveBeenCalledExactlyOnceWith("/tour");
+  });
+
+  it('clicking "Plan this room" navigates to "/plan"', () => {
+    useArrivalStore.setState({ phase: "exploded" });
+    overlayState = {
+      settled: true,
+      labels: [{ bucket: 1, label: "Grand Hall & Saloon", xPx: 0, yPx: 0 }],
+    };
+    render(<ArrivalHero />);
+    fireEvent.click(screen.getByRole("button", { name: "Plan this room" }));
+    expect(navigateMock).toHaveBeenCalledExactlyOnceWith("/plan");
+  });
+
+  it('shows "Close" only while exploded, and it calls reassemble()', () => {
+    useArrivalStore.setState({ phase: "exploded" });
+    overlayState = {
+      settled: true,
+      labels: [{ bucket: 1, label: "Grand Hall & Saloon", xPx: 0, yPx: 0 }],
+    };
+    render(<ArrivalHero />);
+    const close = screen.getByRole("button", { name: "Close" });
+    fireEvent.click(close);
+    expect(useArrivalStore.getState().phase).toBe("arrived");
+  });
+
+  it("does not show Close while merely arrived, even if a label is (unusually) present", () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    overlayState = {
+      settled: false,
+      labels: [{ bucket: 1, label: "Grand Hall & Saloon", xPx: 0, yPx: 0 }],
+    };
+    render(<ArrivalHero />);
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
   });
 });
