@@ -56,5 +56,30 @@ describe("arrival phase machine", () => {
     s().reset();
     expect(s().phase).toBe("loading");
     expect(s().failReason).toBeNull();
+    expect(s().reducedMotion).toBe(false);
+  });
+
+  it("reassemble only acts from exploded phase", () => {
+    s().reassemble();
+    expect(s().phase).toBe("loading");
+    s().tilesReady();
+    s().reassemble();
+    expect(s().phase).toBe("flight");
+    s().flightDone();
+    s().reassemble();
+    expect(s().phase).toBe("arrived");
+  });
+
+  it("reset restores all initial state including reducedMotion", () => {
+    s().setReducedMotion(true);
+    s().tilesReady();
+    s().fail("tiles");
+    expect(s().phase).toBe("fallback");
+    expect(s().failReason).toBe("tiles");
+    expect(s().reducedMotion).toBe(true);
+    s().reset();
+    expect(s().phase).toBe("loading");
+    expect(s().failReason).toBeNull();
+    expect(s().reducedMotion).toBe(false);
   });
 });
