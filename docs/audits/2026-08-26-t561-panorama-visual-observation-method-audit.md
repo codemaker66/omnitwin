@@ -100,6 +100,11 @@ for this gate. Generated fill remains prohibited.
 
 ## Real-run result
 
+The implementation, strict contracts, sealed input, terminal receipts, and
+reviewed run record were frozen locally at commit
+`ff4910064c296cae75958aeb9fb05aa820b90635`. Both zero-write checks were rerun
+from that exact commit and passed.
+
 The no-replace real build completed at the disjoint local evidence root
 `D:\venviewer-evidence\grand-hall-t561-panorama-visual-observation-pack-v1`.
 It emitted 148 source records, 70 deterministic review aids, and 72 files /

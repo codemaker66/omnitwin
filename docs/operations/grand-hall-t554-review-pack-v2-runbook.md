@@ -16,6 +16,10 @@ authority-none review hints. Every human decision is blank (`UNSURE`), the
 closed selection volume is empty and pending, no mask or geometry is authored,
 and `nativeResolutionHumanReviewCompleted=false`.
 
+Frozen local implementation and reviewed-run commit:
+`ff4910064c296cae75958aeb9fb05aa820b90635`. The real v2 zero-write check was
+rerun from that exact commit and passed.
+
 ## Bound inputs
 
 - immutable predecessor review root:

@@ -21,6 +21,10 @@ staging, publication, or production trust.
 No API key, cloud provider, generative model, upload, deployment, or source
 mutation is used by this workflow.
 
+Frozen local implementation and reviewed-run commit:
+`ff4910064c296cae75958aeb9fb05aa820b90635`. The real zero-write check was
+rerun from that exact commit and passed.
+
 ## Bound inputs
 
 - Exact supplied panorama root:
