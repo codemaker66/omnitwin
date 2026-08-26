@@ -2,8 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
 import { Quaternion, Vector3 } from "three";
+import type { TwinManifest } from "@omnitwin/types";
 import { useArrivalStore } from "../arrival-store.js";
 import { ARRIVAL_RAIL, sampleRail } from "../camera-rail.js";
+import {
+  TWIN_FIXTURE_MANIFEST,
+  TWIN_FIXTURE_MANIFEST_NO_MESH,
+} from "../../../../twin/__fixtures__/twin-fixture.js";
 
 // -----------------------------------------------------------------------------
 // ArrivalHero — self-gating + wiring contract (Arrival Task 5).
@@ -95,6 +100,37 @@ vi.mock("../GoogleTilesStage.js", () => ({
   ),
 }));
 
+// HallHandoff (Task 7) is mocked wholesale here too: it pulls in useGLTF /
+// the meshopt decoder / the peel system, none of which this suite exercises
+// (HallHandoff.test.tsx owns that coverage) — ArrivalHero's own job is just
+// the wiring: mount it for arrived/exploded, and warm its mesh during
+// flight. tradesHallMeshUrl's fake mirrors the real one's shape closely
+// enough to prove the wiring without re-testing URL construction itself.
+const tradesHallMeshUrlMock = vi.fn((manifest: TwinManifest): string | null =>
+  manifest.mesh === undefined ? null : `/twin/trades-hall/${manifest.mesh.path}`,
+);
+vi.mock("../HallHandoff.js", () => ({
+  HallHandoff: () => <div data-testid="hall-handoff" />,
+  tradesHallMeshUrl: tradesHallMeshUrlMock,
+  TRADES_HALL_TWIN_SLUG: "trades-hall",
+}));
+
+const preloadDollhouseMock = vi.fn();
+vi.mock("../../../../twin/DollhouseStage.js", () => ({
+  preloadDollhouse: preloadDollhouseMock,
+}));
+
+type FakeManifestState =
+  | { readonly state: "loading" }
+  | { readonly state: "error"; readonly retry: () => void }
+  | { readonly state: "ready"; readonly manifest: TwinManifest };
+
+let manifestState: FakeManifestState = { state: "loading" };
+vi.mock("../../../../twin/useTwinManifest.js", () => ({
+  useTwinManifest: () => manifestState,
+  twinAssetBase: () => "/twin",
+}));
+
 const { ArrivalHero, ARRIVAL_SKIP_LABEL } = await import("../ArrivalHero.js");
 
 beforeEach(() => {
@@ -108,6 +144,9 @@ beforeEach(() => {
   // the next test's assertions on camera.position/quaternion.
   fakeCamera.position.set(0, 0, 0);
   fakeCamera.quaternion.identity();
+  manifestState = { state: "loading" };
+  preloadDollhouseMock.mockClear();
+  tradesHallMeshUrlMock.mockClear();
 });
 
 afterEach(() => {
@@ -247,5 +286,74 @@ describe("ArrivalHero — webgl context loss", () => {
     onLost?.();
     expect(useArrivalStore.getState().phase).toBe("fallback");
     expect(useArrivalStore.getState().failReason).toBe("webgl");
+  });
+});
+
+describe("ArrivalHero — HallHandoff mount gating (Task 7)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+  });
+
+  it("does not mount HallHandoff during loading or flight", () => {
+    for (const phase of ["loading", "flight"] as const) {
+      useArrivalStore.setState({ phase });
+      render(<ArrivalHero />);
+      expect(screen.queryByTestId("hall-handoff")).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("mounts HallHandoff once arrived, and keeps it mounted through exploded", () => {
+    for (const phase of ["arrived", "exploded"] as const) {
+      useArrivalStore.setState({ phase });
+      render(<ArrivalHero />);
+      expect(screen.getByTestId("hall-handoff")).not.toBeNull();
+      cleanup();
+    }
+  });
+});
+
+describe("ArrivalHero — warms the dollhouse GLB during flight (Task 7, Step 3)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+  });
+
+  it("preloads the mesh once flight begins with a ready, mesh-bearing manifest", () => {
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
+    useArrivalStore.setState({ phase: "flight" });
+    render(<ArrivalHero />);
+    expect(tradesHallMeshUrlMock).toHaveBeenCalledWith(TWIN_FIXTURE_MANIFEST);
+    expect(preloadDollhouseMock).toHaveBeenCalledExactlyOnceWith(
+      "/twin/trades-hall/mesh/dollhouse.glb",
+    );
+  });
+
+  it("does not preload before the manifest is ready", () => {
+    manifestState = { state: "loading" };
+    useArrivalStore.setState({ phase: "flight" });
+    render(<ArrivalHero />);
+    expect(preloadDollhouseMock).not.toHaveBeenCalled();
+  });
+
+  it("does not preload when the manifest errors", () => {
+    manifestState = { state: "error", retry: vi.fn() };
+    useArrivalStore.setState({ phase: "flight" });
+    render(<ArrivalHero />);
+    expect(preloadDollhouseMock).not.toHaveBeenCalled();
+  });
+
+  it("does not preload outside the flight phase, even with a ready manifest", () => {
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
+    useArrivalStore.setState({ phase: "loading" });
+    render(<ArrivalHero />);
+    expect(preloadDollhouseMock).not.toHaveBeenCalled();
+  });
+
+  it("does not preload a mesh-less ready manifest", () => {
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST_NO_MESH };
+    useArrivalStore.setState({ phase: "flight" });
+    render(<ArrivalHero />);
+    expect(tradesHallMeshUrlMock).toHaveBeenCalledWith(TWIN_FIXTURE_MANIFEST_NO_MESH);
+    expect(preloadDollhouseMock).not.toHaveBeenCalled();
   });
 });

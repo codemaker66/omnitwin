@@ -3,7 +3,10 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { googleTilesApiKey } from "./arrival-config.js";
 import { useArrivalStore } from "./arrival-store.js";
 import { GoogleTilesStage } from "./GoogleTilesStage.js";
+import { HallHandoff, TRADES_HALL_TWIN_SLUG, tradesHallMeshUrl } from "./HallHandoff.js";
 import { ARRIVAL_RAIL, FLIGHT_DURATION_S, sampleRail } from "./camera-rail.js";
+import { preloadDollhouse } from "../../../twin/DollhouseStage.js";
+import { useTwinManifest } from "../../../twin/useTwinManifest.js";
 import "./arrival.css";
 
 // -----------------------------------------------------------------------------
@@ -17,6 +20,16 @@ import "./arrival.css";
 // The store (Task 3) is the ONLY coupling to GoogleTilesStage (Task 4): that
 // component self-drives tilesReady()/fail("tiles") on first-idle/load-error,
 // so there is no readiness threshold to thread through here.
+//
+// HallHandoff (Task 7) mounts only for arrived/exploded — the reveal never
+// competes with the flight for GPU budget. Its own useTwinManifest("trades-
+// hall") call, though, would only start the manifest fetch once HallHandoff
+// itself mounts (i.e. once already arrived) — too late to warm the heavy GLB.
+// So this component ALSO calls useTwinManifest independently (a second, small
+// JSON fetch is cheap; duplicating HallHandoff's own mesh-URL construction is
+// not, hence the shared tradesHallMeshUrl helper) and preloads the GLB as
+// soon as flight begins, in parallel with the tiles' final approach — by the
+// time HallHandoff mounts at arrival, the mesh is already warm.
 // -----------------------------------------------------------------------------
 
 export const ARRIVAL_SKIP_LABEL = "Skip the flight";
@@ -72,12 +85,29 @@ function FlightCamera(): null {
 export function ArrivalHero(): ReactElement | null {
   const phase = useArrivalStore((s) => s.phase);
   const apiToken = googleTilesApiKey();
+  const manifest = useTwinManifest(TRADES_HALL_TWIN_SLUG);
 
   useEffect(() => {
     if (apiToken === null) {
       useArrivalStore.getState().fail("no-key");
     }
   }, [apiToken]);
+
+  // Warm the dollhouse GLB during flight so arrival never pops (Task 7,
+  // Step 3). Runs at most once: the effect only re-fires when `phase` or the
+  // manifest's own state transition changes (useTwinManifest's returned
+  // object is referentially stable across renders until its internal
+  // setStatus actually fires), and preloadDollhouse itself degrades to a
+  // safe no-op if the GLB is already cached or in flight.
+  useEffect(() => {
+    if (phase !== "flight" || manifest.state !== "ready") {
+      return;
+    }
+    const meshUrl = tradesHallMeshUrl(manifest.manifest);
+    if (meshUrl !== null) {
+      preloadDollhouse(meshUrl);
+    }
+  }, [phase, manifest]);
 
   if (apiToken === null || phase === "fallback") {
     return null; // the static hero photo beneath carries the page (spec §6)
@@ -100,6 +130,7 @@ export function ArrivalHero(): ReactElement | null {
       >
         <GoogleTilesStage apiToken={apiToken} />
         <FlightCamera />
+        {(phase === "arrived" || phase === "exploded") && <HallHandoff />}
       </Canvas>
       {phase === "flight" && (
         <button
