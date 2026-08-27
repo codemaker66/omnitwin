@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { runtimeAssetCameraViewForRoom } from "../lib/runtime-package-resolution.js";
 import type { EventPhaseGraph, EvidenceTargetType, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 
 type OrbitControlsMockProps = Readonly<Record<string, unknown>>;
@@ -578,22 +579,59 @@ describe("TradesHallVisualPage", () => {
     });
     expect(screen.queryByTestId("visual-room-mesh")).toBeNull();
     expect(screen.queryByTestId("grand-hall-room")).toBeNull();
+    // A REGISTERED package carries its own alignment, so it must NOT be framed
+    // by the staged capture's derived camera — that camera belongs to a
+    // different XGRIDS walk. The generic overview camera is correct here.
+    const derived = runtimeAssetCameraViewForRoom("reception-room", "package");
     expect(orbitControlsMock).toHaveBeenCalledWith(expect.objectContaining({
       enableDamping: true,
-      dampingFactor: 0.14,
-      target: [0, 0.9, -4.15],
-      minDistance: 1.2,
-      maxDistance: 13.5,
-      panSpeed: 0.16,
-      rotateSpeed: 0.36,
-      zoomSpeed: 0.32,
-      minPolarAngle: Math.PI * 0.14,
-      maxPolarAngle: Math.PI * 0.48,
+      dampingFactor: derived.dampingFactor,
+      target: derived.target,
+      minDistance: derived.minDistance,
+      maxDistance: derived.maxDistance,
+      panSpeed: derived.panSpeed,
+      rotateSpeed: derived.rotateSpeed,
+      zoomSpeed: derived.zoomSpeed,
+      minPolarAngle: derived.minPolarAngle,
+      maxPolarAngle: derived.maxPolarAngle,
     }));
     const runtimeControlsProps = orbitControlsMock.mock.calls
       .map(([props]) => props)
-      .find((props) => Array.isArray(props["target"]) && props["target"][2] === -4.15);
+      .find((props) => Array.isArray(props["target"]) && props["target"][1] === derived.target[1]);
     expect(runtimeControlsProps?.["onStart"]).toEqual(expect.any(Function));
+  });
+
+  it("mounts one layer per staged tile when an operator asks with ?staged=1", async () => {
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room&staged=1");
+    await waitFor(() => {
+      expect(screen.getAllByTestId("spark-splat-layer").length).toBeGreaterThan(0);
+    });
+    const urls = screen.getAllByTestId("spark-splat-layer").map((node) => node.textContent ?? "");
+    // Real captured tiles, served under this room's own namespace.
+    expect(urls.every((url) => url.startsWith("/splats/trades-hall/reception-room/"))).toBe(true);
+    // Coarsest tile first, so the room resolves from a rough whole into detail.
+    expect(urls[0]).toBe("/splats/trades-hall/reception-room/0_0.sog");
+  });
+
+  it("says a staged capture is unregistered rather than letting it read as reviewed", async () => {
+    mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room&staged=1");
+    await waitFor(() => {
+      expect(screen.getAllByTestId("spark-splat-layer").length).toBeGreaterThan(0);
+    });
+    const bodyText = document.body.textContent ?? "";
+    expect(bodyText).not.toMatch(/human reviewed/i);
+    expect(bodyText).not.toMatch(/survey-grade/i);
+    expect(bodyText).not.toMatch(/photoreal/i);
+  });
+
+  it("still refuses a manual splatUrl even when staged capture is opted into", async () => {
+    mount("/dev/trades-hall-visual?room=reception-room&staged=1&splatUrl=https%3A%2F%2Fassets.venviewer.test%2Fscene.ply");
+    await waitFor(() => {
+      expect(screen.getAllByTestId("spark-splat-layer").length).toBeGreaterThan(0);
+    });
+    // The opt-in permits the room's OWN capture, never a URL from the address bar.
+    const urls = screen.getAllByTestId("spark-splat-layer").map((node) => node.textContent ?? "");
+    expect(urls.some((url) => url.includes("assets.venviewer.test"))).toBe(false);
   });
 
   it("ignores manual splatUrl query params and keeps the procedural fallback", () => {

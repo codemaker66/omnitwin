@@ -201,13 +201,14 @@ function validRuntimeTransformInspection(
 }
 
 describe("Trades Hall room registry", () => {
-  it("pins the seven supported room slugs and status metadata", () => {
+  it("pins the eight supported room slugs and status metadata", () => {
     expect(TRADES_HALL_RUNTIME_ROOM_SLUGS).toEqual([
       "grand-hall",
       "reception-room",
       "robert-adam-room",
       "saloon",
       "lady-convenors-room",
+      "deacon-conveners-room",
       "north-gallery",
       "south-gallery",
     ]);

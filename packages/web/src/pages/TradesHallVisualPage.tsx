@@ -1506,18 +1506,28 @@ export function TradesHallVisualPage(): ReactElement {
   });
 
   const assetDecision = useMemo(
-    () => decideRuntimeAsset(null, publishedPackage),
-    [publishedPackage],
+    () => decideRuntimeAsset(null, publishedPackage, {
+      room: runtimeTarget.room,
+      // Staged, unregistered captures mount only when an operator explicitly
+      // asks for them with ?staged=1. Off by default so this route's ordinary
+      // state stays the reviewed-geometry fallback, and so nothing unregistered
+      // is ever shown to someone who did not deliberately ask to see it.
+      allowStagedCapture: searchParams.get("staged") === "1",
+    }),
+    [publishedPackage, runtimeTarget.room, searchParams],
   );
   const activeSplatUrls = assetDecision.splatUrls;
   const activeSplatUrlKey = activeSplatUrls.join("|");
-  const hasRegisteredRuntimeAsset = assetDecision.source === "package" && activeSplatUrls.length > 0;
+  // Whether a captured layer is mounted at all. This drives rendering and
+  // camera only — it is deliberately NOT a statement about registration or
+  // review, which the evidence label carries separately.
+  const hasCapturedLayer = assetDecision.source !== "none" && activeSplatUrls.length > 0;
   const baseRuntimeAssetViewTransform = useMemo(
-    () => runtimeAssetViewTransformForRoom(runtimeTarget.room),
+    () => runtimeAssetViewTransformForRoom(runtimeTarget.room, assetDecision.source),
     [runtimeTarget.room],
   );
   const runtimeAssetCameraView = useMemo(
-    () => runtimeAssetCameraViewForRoom(runtimeTarget.room),
+    () => runtimeAssetCameraViewForRoom(runtimeTarget.room, assetDecision.source),
     [runtimeTarget.room],
   );
   const mergedSplatBounds = useMemo(
@@ -1560,21 +1570,21 @@ export function TradesHallVisualPage(): ReactElement {
     [activeMode, selectedPhase, selectedTruthTarget, visualState],
   );
   const displayedTruthSummary = truthSummary ?? fallbackTruthSummary;
-  const meshVisible = !hasRegisteredRuntimeAsset && (layerMode === "hybrid" || layerMode === "mesh");
+  const meshVisible = !hasCapturedLayer && (layerMode === "hybrid" || layerMode === "mesh");
   const splatVisible = activeSplatUrls.length > 0 && (
-    hasRegisteredRuntimeAsset || layerMode === "hybrid" || layerMode === "splat"
+    hasCapturedLayer || layerMode === "hybrid" || layerMode === "splat"
   );
-  const visualCameraPosition = hasRegisteredRuntimeAsset ? runtimeAssetCameraView.position : VISUAL_CAMERA_POSITION;
-  const visualCameraTarget = hasRegisteredRuntimeAsset ? runtimeAssetCameraView.target : VISUAL_CAMERA_TARGET;
-  const visualCameraDistanceLimits = hasRegisteredRuntimeAsset
+  const visualCameraPosition = hasCapturedLayer ? runtimeAssetCameraView.position : VISUAL_CAMERA_POSITION;
+  const visualCameraTarget = hasCapturedLayer ? runtimeAssetCameraView.target : VISUAL_CAMERA_TARGET;
+  const visualCameraDistanceLimits = hasCapturedLayer
     ? {
       minDistance: runtimeAssetCameraView.minDistance,
       maxDistance: runtimeAssetCameraView.maxDistance,
     }
     : VISUAL_CAMERA_DISTANCE_LIMITS;
-  const visualRuntimeCameraView = hasRegisteredRuntimeAsset ? runtimeAssetCameraView : null;
+  const visualRuntimeCameraView = hasCapturedLayer ? runtimeAssetCameraView : null;
   const visualCameraFov = visualRuntimeCameraView?.fov ?? 42;
-  const visualCameraKey = hasRegisteredRuntimeAsset ? "runtime-asset-camera" : "procedural-camera";
+  const visualCameraKey = hasCapturedLayer ? "runtime-asset-camera" : "procedural-camera";
   const visualCanvasDpr = visualCanvasDprForViewportWidth(viewportWidth);
   const visualCanvasGl = visualCanvasGlForViewportWidth(viewportWidth);
   const isNarrowVisualViewport = viewportWidth <= 640;
@@ -1585,8 +1595,8 @@ export function TradesHallVisualPage(): ReactElement {
   const overlayLegendPlacement: FloatingWidgetPlacement = isNarrowVisualViewport
     ? { type: "anchor", anchor: "top-left", offsetX: 16, offsetY: 66 }
     : { type: "anchor", anchor: "top-right", offsetX: 24, offsetY: 22 };
-  const smoothVisualControls = hasRegisteredRuntimeAsset && shouldUseSmoothVisualControls(viewportWidth);
-  const visualMouseButtons = hasRegisteredRuntimeAsset
+  const smoothVisualControls = hasCapturedLayer && shouldUseSmoothVisualControls(viewportWidth);
+  const visualMouseButtons = hasCapturedLayer
     ? visualMouseButtonsForViewportWidth(viewportWidth)
     : LEAN_VISUAL_MOUSE_BUTTONS;
   const visualFallbackRoomGeometry = roomGeometries[runtimeTarget.roomLabel] ?? GRAND_HALL_ROOM_GEOMETRY;
@@ -1721,7 +1731,7 @@ export function TradesHallVisualPage(): ReactElement {
   // When a package asset becomes the active decision,
   // show a loading line until Spark resolves it; onLoad/onError refine it.
   useEffect(() => {
-    if (assetDecision.source === "package" && activeSplatUrls.length > 0) {
+    if (assetDecision.source !== "none" && activeSplatUrls.length > 0) {
       setSplatLoadCounts({});
       setSplatLoadBounds({});
       setOverlays(RUNTIME_ASSET_DEFAULT_OVERLAYS);
@@ -1751,7 +1761,7 @@ export function TradesHallVisualPage(): ReactElement {
   }, []);
 
   useEffect(() => {
-    if (assetDecision.source !== "package" || activeSplatUrls.length === 0) return;
+    if (assetDecision.source === "none" || activeSplatUrls.length === 0) return;
     const loadedCount = activeSplatUrls.filter((url) => splatLoadCounts[url] !== undefined).length;
     if (loadedCount === 0) return;
     const totalSplats = activeSplatUrls.reduce((sum, url) => sum + (splatLoadCounts[url] ?? 0), 0);
@@ -1865,7 +1875,7 @@ export function TradesHallVisualPage(): ReactElement {
           overlays={overlays}
           replay={guestFlowReplay}
           replayProgress={replayProgress}
-          planningCuesVisible={!hasRegisteredRuntimeAsset}
+          planningCuesVisible={!hasCapturedLayer}
           isNarrowViewport={isNarrowVisualViewport}
           cameraInteractionActive={visualCameraInteractionActive}
         />

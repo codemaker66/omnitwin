@@ -9,6 +9,14 @@ interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
   /** Cloudflare R2 public URL for file previews. Optional. */
   readonly VITE_R2_PUBLIC_URL?: string;
+  /**
+   * Origin serving captured splat tiles. Optional.
+   *
+   * Tiles are staged outside the repository, so production points this at
+   * R2. Unset, the app requests them from /splats, which the dev server
+   * serves from SPLAT_STAGING_ROOT.
+   */
+  readonly VITE_SPLAT_BASE_URL?: string;
   /** Base URL twin bundles are served from. Defaults to /twin (local public dir). */
   readonly VITE_TWIN_ASSET_BASE?: string;
   /** Sentry browser DSN. Optional; when omitted, browser error tracking is disabled. */

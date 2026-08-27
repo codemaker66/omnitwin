@@ -21,7 +21,7 @@ import {
 // usable package exists — never a blank canvas.
 
 const RUNTIME_VENUE = "trades-hall";
-const IDENTITY_TRANSFORM: RuntimeAssetViewTransform = runtimeAssetViewTransformForRoom("grand-hall");
+const IDENTITY_TRANSFORM: RuntimeAssetViewTransform = runtimeAssetViewTransformForRoom("grand-hall", "none");
 
 export type RoomRuntimeSplatStatus = "idle" | "loading" | "loaded" | "none";
 
@@ -68,7 +68,9 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
 
   const decision = decideRuntimeAsset(null, pkg);
   const hasAsset = decision.source === "package" && decision.splatUrls.length > 0;
-  const transform = roomSlug !== null ? runtimeAssetViewTransformForRoom(roomSlug) : IDENTITY_TRANSFORM;
+  const transform = roomSlug !== null
+    ? runtimeAssetViewTransformForRoom(roomSlug, decision.source)
+    : IDENTITY_TRANSFORM;
   const runtimeLabel = plannerRuntimeChipLabel(decision);
 
   useEffect(() => {

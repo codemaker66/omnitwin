@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   TRADES_HALL_RUNTIME_ROOMS as SHARED_TRADES_HALL_RUNTIME_ROOMS,
+  TRADES_HALL_RUNTIME_ROOM_SLUGS,
   type AssetEvidenceStatus,
   type RuntimePackage,
 } from "@omnitwin/types";
+import { roomAlignmentIsConfident, roomSplatBundle } from "../../data/room-splat-bundles.js";
 import {
   decideRuntimeAsset,
   evidenceStatusLabel,
@@ -320,96 +322,126 @@ describe("plannerRuntimeChipLabel", () => {
 });
 
 describe("runtimeAssetViewTransformForRoom", () => {
-  it("uses an approximate Z-up to Y-up transform for the Reception Room XGRIDS runtime package", () => {
-    const transform = runtimeAssetViewTransformForRoom("reception-room");
-    expect(transform.rotation[0]).toBeCloseTo(-Math.PI / 2);
-    expect(transform.scale).toBeCloseTo(0.63);
-    expect(transform.note).toMatch(/visual QA/i);
+  it("rotates every captured room from XGRIDS Z-up into the scene's Y-up", () => {
+    for (const slug of TRADES_HALL_RUNTIME_ROOM_SLUGS) {
+      const transform = runtimeAssetViewTransformForRoom(slug, "staged");
+      expect(transform.rotation[0]).toBeCloseTo(-Math.PI / 2);
+      expect(transform.rotation[1]).toBe(0);
+      expect(transform.rotation[2]).toBe(0);
+    }
   });
 
-  it("does not invent transforms for rooms without registered visual alignment", () => {
-    const transform = runtimeAssetViewTransformForRoom("grand-hall");
-    expect(transform).toMatchObject({
-      position: [0, 0, 0],
-      rotation: [0, 0, 0],
-      scale: 1,
-    });
+  it("never scales a room, because captures and the scene are both metric", () => {
+    // A scale factor here would mean the capture is not metric or that a room
+    // is being squeezed onto a stage it does not fit. Either should stop the
+    // pipeline rather than be absorbed into a fudged number, which is what the
+    // Reception Room's previous hand-tuned 0.63 was.
+    for (const slug of TRADES_HALL_RUNTIME_ROOM_SLUGS) {
+      expect(runtimeAssetViewTransformForRoom(slug, "staged").scale).toBe(1);
+    }
+  });
+
+  it("states where each transform came from instead of presenting it as settled", () => {
+    const note = runtimeAssetViewTransformForRoom("reception-room", "staged").note;
+    expect(note).toMatch(/derived from/i);
+    expect(note).toMatch(/capture/i);
+  });
+
+  it("does not claim a reviewed alignment for a whole-floor capture", () => {
+    // Robert Adam is a building scan in which the room is only a part, so the
+    // derived frame must not read as confirmed.
+    expect(roomAlignmentIsConfident("robert-adam-room")).toBe(false);
+  });
+});
+
+describe("transform is bound to the mounted asset, not the room", () => {
+  it("never applies a staged capture's frame to a registered package", () => {
+    // The staged transform is derived from one particular XGRIDS walk and is
+    // meaningless for any other asset. Applying it to a reviewed, registered
+    // package would place that asset using an unrelated capture's origin.
+    for (const slug of TRADES_HALL_RUNTIME_ROOM_SLUGS) {
+      const transform = runtimeAssetViewTransformForRoom(slug, "package");
+      expect(transform.position).toEqual([0, 0, 0]);
+      expect(transform.rotation).toEqual([0, 0, 0]);
+      expect(transform.scale).toBe(1);
+    }
+  });
+
+  it("keeps the generic overview camera for a registered package", () => {
+    for (const slug of TRADES_HALL_RUNTIME_ROOM_SLUGS) {
+      const view = runtimeAssetCameraViewForRoom(slug, "package");
+      expect(view.targetBounds).toBeNull();
+      expect(view.cameraBounds).toBeNull();
+    }
+  });
+
+  it("leaves the procedural scene untouched when nothing is mounted", () => {
+    for (const slug of TRADES_HALL_RUNTIME_ROOM_SLUGS) {
+      expect(runtimeAssetViewTransformForRoom(slug, "none").position).toEqual([0, 0, 0]);
+    }
   });
 });
 
 describe("runtimeAssetCameraViewForRoom", () => {
-  it("starts the Reception Room from a bounded cinematic interior inspection camera", () => {
-    const cameraView = runtimeAssetCameraViewForRoom("reception-room");
-    expect(cameraView.position[1]).toBeLessThan(20);
-    expect(cameraView.position[2]).toBeLessThan(22);
-    expect(cameraView.target[2]).toBeLessThan(0);
-    expect(cameraView.arrivalPosition).toEqual([0.25, 7.15, 14.1]);
-    expect(cameraView.arrivalTarget).toEqual([0, 1.2, -4]);
-    expect(cameraView.arrivalDurationMs).toBe(1400);
-    expect(cameraView.fov).toBeGreaterThanOrEqual(46);
-    expect(cameraView.minDistance).toBeLessThanOrEqual(1.25);
-    expect(cameraView.maxDistance).toBeLessThanOrEqual(14);
-    expect(cameraView.panSpeed).toBeLessThan(1);
-    expect(cameraView.rotateSpeed).toBeLessThan(1);
-    expect(cameraView.zoomSpeed).toBeLessThan(1);
-    expect(cameraView.dampingFactor).toBeGreaterThan(0);
-    expect(cameraView.dampingFactor).toBeLessThanOrEqual(0.14);
-    expect(cameraView.minPolarAngle).toBeGreaterThan(0);
-    expect(cameraView.maxPolarAngle).toBeLessThan(Math.PI / 2);
-    expect(cameraView.targetBounds).not.toBeNull();
-    expect(cameraView.cameraBounds).not.toBeNull();
-    if (cameraView.targetBounds === null || cameraView.cameraBounds === null) {
-      throw new Error("Reception Room camera tuning must include runtime bounds.");
+  it("keeps every captured room's camera and target inside their own bounds", () => {
+    for (const slug of TRADES_HALL_RUNTIME_ROOM_SLUGS) {
+      const view = runtimeAssetCameraViewForRoom(slug, "staged");
+      const { cameraBounds, targetBounds } = view;
+      if (cameraBounds === null || targetBounds === null) {
+        throw new Error(`${slug} camera tuning must include runtime bounds.`);
+      }
+      for (const axis of [0, 1, 2] as const) {
+        expect(view.position[axis]).toBeGreaterThanOrEqual(cameraBounds.min[axis]);
+        expect(view.position[axis]).toBeLessThanOrEqual(cameraBounds.max[axis]);
+        expect(view.target[axis]).toBeGreaterThanOrEqual(targetBounds.min[axis]);
+        expect(view.target[axis]).toBeLessThanOrEqual(targetBounds.max[axis]);
+      }
     }
-    expect(cameraView.position[0]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[0]);
-    expect(cameraView.position[0]).toBeLessThanOrEqual(cameraView.cameraBounds.max[0]);
-    expect(cameraView.position[1]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[1]);
-    expect(cameraView.position[1]).toBeLessThanOrEqual(cameraView.cameraBounds.max[1]);
-    expect(cameraView.position[2]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[2]);
-    expect(cameraView.position[2]).toBeLessThanOrEqual(cameraView.cameraBounds.max[2]);
-    expect(cameraView.target[0]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[0]);
-    expect(cameraView.target[0]).toBeLessThanOrEqual(cameraView.targetBounds.max[0]);
-    expect(cameraView.target[1]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[1]);
-    expect(cameraView.target[1]).toBeLessThanOrEqual(cameraView.targetBounds.max[1]);
-    expect(cameraView.target[2]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[2]);
-    expect(cameraView.target[2]).toBeLessThanOrEqual(cameraView.targetBounds.max[2]);
-    if (cameraView.arrivalPosition === null || cameraView.arrivalTarget === null) {
-      throw new Error("Reception Room camera tuning must include a cinematic arrival pose.");
-    }
-    expect(cameraView.arrivalPosition[0]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[0]);
-    expect(cameraView.arrivalPosition[0]).toBeLessThanOrEqual(cameraView.cameraBounds.max[0]);
-    expect(cameraView.arrivalPosition[1]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[1]);
-    expect(cameraView.arrivalPosition[1]).toBeLessThanOrEqual(cameraView.cameraBounds.max[1]);
-    expect(cameraView.arrivalPosition[2]).toBeGreaterThanOrEqual(cameraView.cameraBounds.min[2]);
-    expect(cameraView.arrivalPosition[2]).toBeLessThanOrEqual(cameraView.cameraBounds.max[2]);
-    expect(cameraView.arrivalTarget[0]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[0]);
-    expect(cameraView.arrivalTarget[0]).toBeLessThanOrEqual(cameraView.targetBounds.max[0]);
-    expect(cameraView.arrivalTarget[1]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[1]);
-    expect(cameraView.arrivalTarget[1]).toBeLessThanOrEqual(cameraView.targetBounds.max[1]);
-    expect(cameraView.arrivalTarget[2]).toBeGreaterThanOrEqual(cameraView.targetBounds.min[2]);
-    expect(cameraView.arrivalTarget[2]).toBeLessThanOrEqual(cameraView.targetBounds.max[2]);
-    expect(cameraView.note).toMatch(/interior/i);
   });
 
-  it("keeps an overview camera for rooms without registered runtime camera tuning", () => {
-    const cameraView = runtimeAssetCameraViewForRoom("grand-hall");
-    expect(cameraView).toMatchObject({
-      position: [0, 20, 22],
-      target: [0, 1.8, 0],
-      arrivalPosition: null,
-      arrivalTarget: null,
-      arrivalDurationMs: 0,
-      fov: 42,
-      minDistance: 1.5,
-      maxDistance: 34,
-      panSpeed: 0.8,
-      rotateSpeed: 1,
-      zoomSpeed: 1,
-      dampingFactor: 0.14,
-      minPolarAngle: 0,
-      maxPolarAngle: Math.PI * 0.49,
-      targetBounds: null,
-      cameraBounds: null,
-    });
+  it("keeps every arrival pose inside those same bounds", () => {
+    for (const slug of TRADES_HALL_RUNTIME_ROOM_SLUGS) {
+      const view = runtimeAssetCameraViewForRoom(slug, "staged");
+      const { cameraBounds, targetBounds, arrivalPosition, arrivalTarget } = view;
+      if (cameraBounds === null || targetBounds === null) {
+        throw new Error(`${slug} camera tuning must include runtime bounds.`);
+      }
+      if (arrivalPosition === null || arrivalTarget === null) {
+        throw new Error(`${slug} camera tuning must include an arrival pose.`);
+      }
+      for (const axis of [0, 1, 2] as const) {
+        expect(arrivalPosition[axis]).toBeGreaterThanOrEqual(cameraBounds.min[axis]);
+        expect(arrivalPosition[axis]).toBeLessThanOrEqual(cameraBounds.max[axis]);
+        expect(arrivalTarget[axis]).toBeGreaterThanOrEqual(targetBounds.min[axis]);
+        expect(arrivalTarget[axis]).toBeLessThanOrEqual(targetBounds.max[axis]);
+      }
+    }
+  });
+
+  it("stays a restrained interior camera rather than a free-flying one", () => {
+    for (const slug of TRADES_HALL_RUNTIME_ROOM_SLUGS) {
+      const view = runtimeAssetCameraViewForRoom(slug, "staged");
+      expect(view.panSpeed).toBeLessThan(1);
+      expect(view.rotateSpeed).toBeLessThan(1);
+      expect(view.zoomSpeed).toBeLessThan(1);
+      expect(view.dampingFactor).toBeGreaterThan(0);
+      expect(view.minPolarAngle).toBeGreaterThan(0);
+      expect(view.maxPolarAngle).toBeLessThan(Math.PI / 2);
+    }
+  });
+
+  it("never places the camera above a low room's ceiling", () => {
+    for (const slug of TRADES_HALL_RUNTIME_ROOM_SLUGS) {
+      const bundle = roomSplatBundle(slug);
+      if (bundle === null) continue;
+      const view = runtimeAssetCameraViewForRoom(slug, "staged");
+      expect(view.position[1]).toBeLessThan(bundle.extentM[1]);
+    }
+  });
+
+  it("stands further back for a larger room", () => {
+    const reception = runtimeAssetCameraViewForRoom("reception-room", "staged");
+    const grandHall = runtimeAssetCameraViewForRoom("grand-hall", "staged");
+    expect(grandHall.position[2]).toBeGreaterThan(reception.position[2]);
   });
 });

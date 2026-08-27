@@ -5,6 +5,7 @@ import {
   type TradesHallRuntimeRoomSlug,
 } from "@omnitwin/types";
 import { parseRuntimeSplatUrl } from "./runtime-visual-asset.js";
+import { deriveRoomCamera, roomSplatBundle, roomSplatTileUrls } from "../data/room-splat-bundles.js";
 
 // ---------------------------------------------------------------------------
 // Runtime asset decision for /dev/trades-hall-visual.
@@ -26,7 +27,16 @@ export const TRADES_HALL_RUNTIME_ROOMS = SHARED_TRADES_HALL_RUNTIME_ROOMS.map((r
   readonly label: string;
   readonly sourceHint: string;
 }[];
-export type RuntimeAssetSource = "package" | "none";
+/**
+ * Where a mounted captured layer came from.
+ *
+ * - `package`: a registered, immutable RuntimePackage. Authoritative.
+ * - `staged`: tiles staged from a capture and described by the generated
+ *   manifest, with no registry row yet. Real captured geometry, but it has not
+ *   been through registration, so it must never present as reviewed.
+ * - `none`: no captured layer; the procedural scene stands.
+ */
+export type RuntimeAssetSource = "package" | "staged" | "none";
 
 export interface RuntimeRoomTarget {
   readonly venue: string;
@@ -86,21 +96,6 @@ const IDENTITY_RUNTIME_ASSET_VIEW_TRANSFORM: RuntimeAssetViewTransform = {
   note: "No room-specific runtime transform is registered.",
 };
 
-// Temporary view transform for the Reception Room XGRIDS/SOG room chunks.
-// Reception Room.lcc2 root bounds:
-// min [-16.8106313, -19.0330453, -6.1218724]
-// max [11.5081897, 32.2435517, 3.4532032].
-// This rotates Z-up into Three's Y-up scene, scales the manifest room chunks
-// into the planner camera frame, and lifts the lowest source Z to the stage
-// floor. It is not a signed room-local alignment.
-// Move this into RuntimePackage manifest metadata once room transforms are
-// reviewed and signed.
-const RECEPTION_ROOM_XGRIDS_VIEW_TRANSFORM: RuntimeAssetViewTransform = {
-  position: [1.11, 2.57, 2.77],
-  rotation: [-Math.PI / 2, 0, 0],
-  scale: 0.63,
-  note: "Approximate XGRIDS SOG view transform; visual QA and signed room-local alignment still required.",
-};
 const DEFAULT_RUNTIME_ASSET_CAMERA_VIEW: RuntimeAssetCameraView = {
   position: [0, 20, 22],
   target: [0, 1.8, 0],
@@ -120,32 +115,6 @@ const DEFAULT_RUNTIME_ASSET_CAMERA_VIEW: RuntimeAssetCameraView = {
   cameraBounds: null,
   note: "Generic runtime asset overview camera.",
 };
-const RECEPTION_ROOM_XGRIDS_CAMERA_VIEW: RuntimeAssetCameraView = {
-  position: [0.2, 6.2, 13.4],
-  target: [0, 0.9, -4.15],
-  arrivalPosition: [0.25, 7.15, 14.1],
-  arrivalTarget: [0, 1.2, -4],
-  arrivalDurationMs: 1400,
-  fov: 48,
-  minDistance: 1.2,
-  maxDistance: 13.5,
-  panSpeed: 0.16,
-  rotateSpeed: 0.36,
-  zoomSpeed: 0.32,
-  dampingFactor: 0.14,
-  minPolarAngle: Math.PI * 0.14,
-  maxPolarAngle: Math.PI * 0.48,
-  targetBounds: {
-    min: [-5.8, 0.7, -9.2],
-    max: [5.8, 2.35, 4.8],
-  },
-  cameraBounds: {
-    min: [-6.8, 1.4, -11.8],
-    max: [6.8, 7.4, 14.2],
-  },
-  note: "Reception Room uses a restrained interior cinematic inspection camera; approximate until signed alignment lands.",
-};
-
 function slugIsSafe(value: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
 }
@@ -209,6 +178,16 @@ export const CAPTURED_LAYER_FALLBACK_STATUS =
   "Captured visual layer not yet available — planning on reviewed geometry";
 
 /**
+ * Copy for a staged-but-unregistered capture.
+ *
+ * Says exactly what it is. These are real captured tiles, but no registry row
+ * vouches for them and no human has signed the alignment, so the chip must not
+ * borrow the language of a reviewed asset.
+ */
+export const STAGED_CAPTURE_STATUS =
+  "Captured layer staged from source — not yet registered or alignment-reviewed";
+
+/**
  * Planner top-bar chip copy, derived from the runtime asset decision: the
  * evidence-state label while a captured layer is mounted, the atelier
  * fallback copy otherwise. The chip stays sourced from claim/evidence data —
@@ -218,14 +197,72 @@ export function plannerRuntimeChipLabel(decision: RuntimeAssetDecision): string 
   return decision.isProceduralFallback ? CAPTURED_LAYER_FALLBACK_STATUS : decision.evidenceLabel;
 }
 
-export function runtimeAssetViewTransformForRoom(room: TradesHallRuntimeRoomSlug): RuntimeAssetViewTransform {
-  if (room === "reception-room") return RECEPTION_ROOM_XGRIDS_VIEW_TRANSFORM;
-  return IDENTITY_RUNTIME_ASSET_VIEW_TRANSFORM;
+/**
+ * The room-local transform for the captured layer that is actually mounted.
+ *
+ * `source` is required, and that is the point: a transform belongs to the ASSET,
+ * not to the room. The staged transform is derived from one particular XGRIDS
+ * walk and is meaningless for any other asset — applying it to a registered
+ * package would place a reviewed asset using an unrelated capture's origin.
+ * Only `staged` gets the derived transform; a registered package carries its own
+ * alignment, and anything else keeps identity.
+ */
+export function runtimeAssetViewTransformForRoom(
+  room: TradesHallRuntimeRoomSlug,
+  source: RuntimeAssetSource,
+): RuntimeAssetViewTransform {
+  if (source !== "staged") return IDENTITY_RUNTIME_ASSET_VIEW_TRANSFORM;
+  const bundle = roomSplatBundle(room);
+  if (bundle === null) return IDENTITY_RUNTIME_ASSET_VIEW_TRANSFORM;
+  return {
+    position: bundle.transform.position,
+    rotation: bundle.transform.rotation,
+    scale: bundle.transform.scale,
+    note: bundle.alignmentNote,
+  };
 }
 
-export function runtimeAssetCameraViewForRoom(room: TradesHallRuntimeRoomSlug): RuntimeAssetCameraView {
-  if (room === "reception-room") return RECEPTION_ROOM_XGRIDS_CAMERA_VIEW;
-  return DEFAULT_RUNTIME_ASSET_CAMERA_VIEW;
+/**
+ * The inspection camera for the captured layer that is actually mounted.
+ *
+ * Framed from the staged capture's measured extent, which is only meaningful
+ * when that capture is what is on screen — hence the required `source`. The
+ * staged transform centres the room on the origin with its floor at y = 0, so
+ * the framing follows from size alone. Any other source keeps the generic
+ * overview camera.
+ */
+export function runtimeAssetCameraViewForRoom(
+  room: TradesHallRuntimeRoomSlug,
+  source: RuntimeAssetSource,
+): RuntimeAssetCameraView {
+  if (source !== "staged") return DEFAULT_RUNTIME_ASSET_CAMERA_VIEW;
+  const bundle = roomSplatBundle(room);
+  if (bundle === null) return DEFAULT_RUNTIME_ASSET_CAMERA_VIEW;
+
+  const camera = deriveRoomCamera(bundle.extentM);
+  const height = bundle.extentM[1];
+  return {
+    position: camera.position,
+    target: camera.target,
+    arrivalPosition: [camera.position[0], camera.position[1], camera.position[2] * 1.08],
+    arrivalTarget: camera.target,
+    arrivalDurationMs: 1400,
+    fov: camera.fov,
+    minDistance: camera.minDistance,
+    maxDistance: camera.maxDistance,
+    panSpeed: 0.16,
+    rotateSpeed: 0.36,
+    zoomSpeed: 0.32,
+    dampingFactor: 0.14,
+    minPolarAngle: Math.PI * 0.14,
+    maxPolarAngle: Math.PI * 0.48,
+    targetBounds: camera.targetBounds,
+    cameraBounds: {
+      min: [camera.targetBounds.min[0] * 1.2, 0.6, -camera.maxDistance],
+      max: [camera.targetBounds.max[0] * 1.2, Math.max(1.2, height * 0.95), camera.maxDistance],
+    },
+    note: bundle.alignmentNote,
+  };
 }
 
 function usablePackageUrl(published: RuntimePackage): string | null {
@@ -248,9 +285,33 @@ function usablePackageUrls(published: RuntimePackage, primaryUrl: string): reado
   return Array.from(new Set(usable));
 }
 
+export interface RuntimeAssetOptions {
+  /** The room, so staged tiles can be found when allowed. */
+  readonly room?: TradesHallRuntimeRoomSlug | null;
+  /**
+   * Whether staged-but-unregistered tiles may mount.
+   *
+   * Off by default, deliberately. Public and planner surfaces must not present
+   * a capture that no registry row vouches for and no human has aligned; they
+   * show the procedural scene and say the captured layer is not available yet.
+   * Internal review surfaces opt in, because looking at the capture is the
+   * whole point of them.
+   */
+  readonly allowStagedCapture?: boolean;
+}
+
+/**
+ * Chooses the captured layer for a room.
+ *
+ * A registered package always wins: it is immutable and carries a reviewed
+ * evidence state. Failing that, tiles staged from the capture are used so the
+ * room can actually be seen and worked on before registration — but they are
+ * reported as `staged` and labelled as unregistered, never as reviewed.
+ */
 export function decideRuntimeAsset(
   _manualUrl: string | null,
   published: RuntimePackage | null,
+  options: RuntimeAssetOptions = {},
 ): RuntimeAssetDecision {
   void _manualUrl;
   if (published !== null) {
@@ -276,6 +337,22 @@ export function decideRuntimeAsset(
         isProceduralFallback: false,
       };
     }
+  }
+
+  const room = options.room ?? null;
+  const stagedUrls = room === null || options.allowStagedCapture !== true
+    ? []
+    : roomSplatTileUrls(room, import.meta.env.VITE_SPLAT_BASE_URL);
+  if (stagedUrls.length > 0) {
+    const firstUrl = stagedUrls[0] ?? null;
+    return {
+      splatUrl: firstUrl,
+      splatUrls: stagedUrls,
+      source: "staged",
+      evidenceStatus: null,
+      evidenceLabel: STAGED_CAPTURE_STATUS,
+      isProceduralFallback: false,
+    };
   }
 
   return {

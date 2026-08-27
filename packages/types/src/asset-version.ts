@@ -157,6 +157,7 @@ export const TRADES_HALL_RUNTIME_ROOM_SLUGS = [
   "robert-adam-room",
   "saloon",
   "lady-convenors-room",
+  "deacon-conveners-room",
   "north-gallery",
   "south-gallery",
 ] as const;
@@ -306,6 +307,25 @@ export const TRADES_HALL_RUNTIME_ROOMS = [
     currentState: "splat_done_outside_repo",
     safeCopy: "splat exists outside repo / needs registration",
     nextAction: "Register external splat asset and runtime package",
+  },
+  {
+    // The Deacon Convener is the head of the Trades House of Glasgow. Note the
+    // "-er" spelling here against the existing lady-convenors-room "-or": the
+    // office is spelled Convener, and the older slug is left unchanged
+    // deliberately because renaming a live slug would orphan saved rows.
+    slug: "deacon-conveners-room",
+    roomSlug: "deacon-conveners-room",
+    displayName: "Deacon Convener's Room",
+    roomGroup: "support-room",
+    defaultStatus: "needs_registration",
+    captureStatus: "processed_needs_registration",
+    registryRuntimeStatus: "not_registered",
+    publicShowcaseEnabled: false,
+    internalVisualEnabled: true,
+    primaryCaptureSource: "xgrids",
+    currentState: "processed_output_found",
+    safeCopy: "processed output found / needs registration",
+    nextAction: "Register XGRIDS SOG bundle and verify internal runtime load",
   },
   {
     slug: "north-gallery",

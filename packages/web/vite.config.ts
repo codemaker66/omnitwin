@@ -6,6 +6,7 @@ import {
   getSentrySourceMapUploadConfig,
   resolveWebClerkPublishableKey,
 } from "./src/lib/production-env";
+import { splatStagingPlugin } from "./src/lib/splat-staging-plugin";
 
 // ---------------------------------------------------------------------------
 // Vite config — punch list #16 bundle splitting
@@ -31,6 +32,27 @@ export default defineConfig(({ mode }) => {
     ? getSentrySourceMapUploadConfig(env)
     : null;
   const plugins: PluginOption[] = [react()];
+
+  // Captured splat tiles are staged outside the repository (roughly a gigabyte
+  // across the eight Trades Hall rooms), so `public/` cannot hold them. In
+  // development they are served from SPLAT_STAGING_ROOT; production points
+  // VITE_SPLAT_BASE_URL at R2 instead. Absent the variable, the app still runs
+  // and falls back to its procedural scene.
+  const splatStaging = splatStagingPlugin(env["SPLAT_STAGING_ROOT"]);
+  if (splatStaging !== null) plugins.push(splatStaging);
+
+  // Where a production build fetches captured splat tiles.
+  //
+  // Tiles are not in the repo, so a production bundle cannot fall back to the
+  // dev middleware's "/splats" — that path does not exist on the deployed
+  // origin. This resolves to the public R2 bucket the tiles are published to
+  // by packages/api/src/scripts/publish-splat-tiles.ts. It is a public bucket
+  // URL, not a secret, and a real VITE_SPLAT_BASE_URL always wins so the
+  // bucket can be moved without a code change.
+  const publishedSplatBaseUrl = "https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev/splats";
+  const splatBaseUrl = (env["VITE_SPLAT_BASE_URL"] ?? "").trim().length > 0
+    ? (env["VITE_SPLAT_BASE_URL"] ?? "")
+    : (mode === "production" ? publishedSplatBaseUrl : "");
 
   if (sentrySourceMapUpload !== null) {
     plugins.push(...sentryVitePlugin({
@@ -60,6 +82,10 @@ export default defineConfig(({ mode }) => {
     plugins,
     define: {
       __VENVIEWER_CLERK_PUBLISHABLE_KEY__: JSON.stringify(clerkPublishableKey),
+      // Baked in so a production bundle knows where published tiles live without
+      // requiring a Vercel environment variable. Empty in development, where the
+      // staging middleware serves them from "/splats" instead.
+      "import.meta.env.VITE_SPLAT_BASE_URL": JSON.stringify(splatBaseUrl),
     },
     build: {
       target: "es2022",

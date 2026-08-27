@@ -89,6 +89,9 @@ const TradesHouseLeafletPage = lazy(() =>
 const TradesHouseCraftQuizPage = lazy(() =>
   import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage })),
 );
+const RoomCapturesPage = lazy(() =>
+  cockpitImport(() => import("./pages/RoomCapturesPage.js").then((m) => ({ default: m.RoomCapturesPage }))),
+);
 const TradesHallAssetStatusPage = lazy(() =>
   cockpitImport(() => import("./pages/TradesHallAssetStatusPage.js").then((m) => ({ default: m.TradesHallAssetStatusPage }))),
 );
@@ -458,6 +461,33 @@ export const router = createBrowserRouter([
         <CaptureIntakePage />
       </ProtectedRoute>,
     ),
+  },
+  {
+    // Room captures — the staged XGRIDS captures for every captured room.
+    // Admin-gated in production for the same reason as the visual console:
+    // these are unregistered working assets whose alignment is not signed,
+    // and six of the eight currently sit wrong. They must not reach clients.
+    // Placed above /venues/:venueSlug/rooms/:roomSlug so it can never fall
+    // through to the public showcase matcher.
+    path: "/venues/:venueSlug/captures/:roomSlug?",
+    element: import.meta.env.DEV
+      ? withSuspense(<RoomCapturesPage />)
+      : withClerk(
+        <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
+          <RoomCapturesPage />
+        </ProtectedRoute>,
+      ),
+  },
+  {
+    // Short internal door to the same room, for typing and sharing in ops.
+    path: "/captures/:roomSlug?",
+    element: import.meta.env.DEV
+      ? withSuspense(<RoomCapturesPage />)
+      : withClerk(
+        <ProtectedRoute allowedRoles={["admin"]} requiredPlatformRole="admin">
+          <RoomCapturesPage />
+        </ProtectedRoute>,
+      ),
   },
   {
     // Public walkable twin (Twin Phase 1). Placed above the room showcase
