@@ -22,6 +22,7 @@ export const GRAND_HALL_T554_NATIVE_TILE_BITMAP_BYTE_LENGTH =
   GRAND_HALL_T554_NATIVE_TILE_COUNT / 8;
 export const GRAND_HALL_T554_MINIMUM_DWELL_MS_PER_TILE = 750;
 export const GRAND_HALL_T554_MAXIMUM_CREDITED_HEARTBEAT_GAP_MS = 500;
+export const GRAND_HALL_T554_NATIVE_REVIEW_MAXIMUM_TELEMETRY_EVENTS = 4_096;
 
 const SESSION_NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/u;
@@ -103,6 +104,7 @@ export type GrandHallT554NativeReviewCoverageDisqualifierV1 =
   | "document_not_visible"
   | "document_not_focused"
   | "below_native_device_scale"
+  | "heartbeat_gap_exceeded"
   | "no_fully_visible_delivered_tiles"
   | "no_continuously_visible_tiles"
   | null;
@@ -160,6 +162,7 @@ export class GrandHallT554NativeReviewCoverageError extends Error {
       | "TILE_INVALID"
       | "TELEMETRY_INVALID"
       | "SEQUENCE_INVALID"
+      | "EVENT_LIMIT_REACHED"
       | "CLOCK_INVALID",
     message: string,
     cause?: unknown,
@@ -273,7 +276,8 @@ export class GrandHallT554NativeReviewCoverageControllerV1 {
   private readonly dwellMsByTile = new Uint32Array(
     GRAND_HALL_T554_NATIVE_TILE_COUNT,
   );
-  private readonly journal: GrandHallT554NativeReviewCoverageEventV1[] = [];
+  private eventCount = 0;
+  private lastEventSha256: string | null = null;
   private previousSample:
     | {
         readonly sample: GrandHallT554NativeReviewTelemetrySampleV1;
@@ -362,10 +366,16 @@ export class GrandHallT554NativeReviewCoverageControllerV1 {
         "telemetry is not bound to the active server review session and subject",
       );
     }
-    if (sample.sequence !== this.journal.length) {
+    if (sample.sequence !== this.eventCount) {
       throw new GrandHallT554NativeReviewCoverageError(
         "SEQUENCE_INVALID",
         "telemetry sequence must be gap-free and append-only",
+      );
+    }
+    if (this.eventCount >= GRAND_HALL_T554_NATIVE_REVIEW_MAXIMUM_TELEMETRY_EVENTS) {
+      throw new GrandHallT554NativeReviewCoverageError(
+        "EVENT_LIMIT_REACHED",
+        "native-review telemetry reached its fixed per-phase event limit",
       );
     }
 
@@ -411,6 +421,11 @@ export class GrandHallT554NativeReviewCoverageControllerV1 {
       disqualifier = "first_sample";
     } else if (currentDisqualifier !== null) {
       disqualifier = currentDisqualifier;
+    } else if (
+      serverMonotonicDeltaMs >
+      GRAND_HALL_T554_MAXIMUM_CREDITED_HEARTBEAT_GAP_MS
+    ) {
+      disqualifier = "heartbeat_gap_exceeded";
     } else if (this.previousSample.disqualifier !== null) {
       disqualifier = this.previousSample.disqualifier;
     } else {
@@ -421,13 +436,7 @@ export class GrandHallT554NativeReviewCoverageControllerV1 {
       if (creditedTiles.size === 0) {
         disqualifier = "no_continuously_visible_tiles";
       } else {
-        creditedDurationMs = Math.min(
-          GRAND_HALL_T554_MAXIMUM_CREDITED_HEARTBEAT_GAP_MS,
-          Math.max(
-            0,
-            serverMonotonicDeltaMs,
-          ),
-        );
+        creditedDurationMs = Math.max(0, serverMonotonicDeltaMs);
         disqualifier = null;
         for (const index of creditedTiles) {
           const current = this.dwellMsByTile[index] ?? 0;
@@ -445,7 +454,7 @@ export class GrandHallT554NativeReviewCoverageControllerV1 {
         completedTiles.add(index);
       }
     });
-    const previousEventSha256 = this.journal.at(-1)?.eventSha256 ?? null;
+    const previousEventSha256 = this.lastEventSha256;
     const material = {
       schemaVersion:
         "venviewer.grand-hall-t554-native-review-coverage-event.v1" as const,
@@ -475,7 +484,8 @@ export class GrandHallT554NativeReviewCoverageControllerV1 {
         material,
       ),
     };
-    this.journal.push(event);
+    this.eventCount += 1;
+    this.lastEventSha256 = event.eventSha256;
     this.previousSample = {
       sample,
       wallReceivedAtMs,
@@ -502,8 +512,8 @@ export class GrandHallT554NativeReviewCoverageControllerV1 {
         Buffer.from(this.sourceEpochNonce, "utf8"),
       ),
       renderGeneration: this.renderGeneration,
-      eventCount: this.journal.length,
-      lastEventSha256: this.journal.at(-1)?.eventSha256 ?? null,
+      eventCount: this.eventCount,
+      lastEventSha256: this.lastEventSha256,
       deliveredTileBitsetHex: bitmapFromIndexes(
         new Set(this.deliveredTileGenerations.keys()),
       ),
@@ -512,10 +522,6 @@ export class GrandHallT554NativeReviewCoverageControllerV1 {
       minimumDwellMsPerTile: GRAND_HALL_T554_MINIMUM_DWELL_MS_PER_TILE,
       complete: completedTiles.size === GRAND_HALL_T554_NATIVE_TILE_COUNT,
     };
-  }
-
-  events(): readonly GrandHallT554NativeReviewCoverageEventV1[] {
-    return structuredClone(this.journal);
   }
 
   dwellMsForTile(column: number, row: number): number {

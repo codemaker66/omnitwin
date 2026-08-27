@@ -4,6 +4,7 @@ import {
   GRAND_HALL_T554_MAXIMUM_CREDITED_HEARTBEAT_GAP_MS,
   GRAND_HALL_T554_MINIMUM_DWELL_MS_PER_TILE,
   GRAND_HALL_T554_NATIVE_TILE_COUNT,
+  GRAND_HALL_T554_NATIVE_REVIEW_MAXIMUM_TELEMETRY_EVENTS,
   GrandHallT554NativeReviewCoverageControllerV1,
   emptyGrandHallT554NativeTileBitmapHex,
 } from "../grand-hall-t554-native-review-coverage.js";
@@ -122,16 +123,26 @@ describe("Grand Hall T-554 server-derived native coverage", () => {
     expect(instance.snapshot().complete).toBe(false);
   });
 
-  it("caps long heartbeat gaps instead of treating absence as review time", () => {
+  it("disqualifies long heartbeat gaps instead of treating absence as review time", () => {
     const { instance, advance } = controller();
     instance.recordDeliveredTile(0, 0);
     instance.recordTelemetry(sample(0));
     advance(60_000);
     const event = instance.recordTelemetry(sample(1));
-    expect(event.derived.creditedDurationMs).toBe(
+    expect(event.derived.disqualifier).toBe("heartbeat_gap_exceeded");
+    expect(event.derived.creditedDurationMs).toBe(0);
+    expect(instance.dwellMsForTile(0, 0)).toBe(0);
+    expect(instance.snapshot().completedTileCount).toBe(0);
+
+    advance(GRAND_HALL_T554_MAXIMUM_CREDITED_HEARTBEAT_GAP_MS);
+    const resumed = instance.recordTelemetry(sample(2));
+    expect(resumed.derived.disqualifier).toBeNull();
+    expect(resumed.derived.creditedDurationMs).toBe(
       GRAND_HALL_T554_MAXIMUM_CREDITED_HEARTBEAT_GAP_MS,
     );
-    expect(instance.snapshot().completedTileCount).toBe(0);
+    expect(instance.dwellMsForTile(0, 0)).toBe(
+      GRAND_HALL_T554_MAXIMUM_CREDITED_HEARTBEAT_GAP_MS,
+    );
   });
 
   it.each([
@@ -278,26 +289,40 @@ describe("Grand Hall T-554 server-derived native coverage", () => {
     expect(instance.dwellMsForTile(0, 0)).toBe(0);
   });
 
-  it("chains immutable server-timestamped events and returns defensive copies", () => {
+  it("chains events without retaining browser-sized event history in memory", () => {
     const { instance, advance } = controller();
     instance.recordDeliveredTile(0, 0);
     const first = instance.recordTelemetry(sample(0));
-    advance(500);
-    const second = instance.recordTelemetry(sample(1));
-    expect(first.previousEventSha256).toBeNull();
-    expect(second.previousEventSha256).toBe(first.eventSha256);
-    expect(second.serverReceivedAt).toBe("2026-08-26T20:00:00.500Z");
-
-    const events = instance.events();
-    expect(events).toHaveLength(2);
-    Object.defineProperty(events[0]!, "eventSha256", {
+    const firstSha256 = first.eventSha256;
+    Object.defineProperty(first, "eventSha256", {
       configurable: true,
       enumerable: true,
       value: `sha256:${"0".repeat(64)}`,
       writable: true,
     });
-    expect(instance.events()[0]!.eventSha256).toBe(first.eventSha256);
+    advance(500);
+    const second = instance.recordTelemetry(sample(1));
+    expect(first.previousEventSha256).toBeNull();
+    expect(second.previousEventSha256).toBe(firstSha256);
+    expect(second.serverReceivedAt).toBe("2026-08-26T20:00:00.500Z");
     expect(instance.snapshot().eventCount).toBe(2);
+  });
+
+  it("fails closed at the fixed per-phase telemetry ceiling", () => {
+    const { instance } = controller();
+    for (
+      let sequence = 0;
+      sequence < GRAND_HALL_T554_NATIVE_REVIEW_MAXIMUM_TELEMETRY_EVENTS;
+      sequence += 1
+    ) {
+      instance.recordTelemetry(sample(sequence));
+    }
+    expect(() => instance.recordTelemetry(sample(
+      GRAND_HALL_T554_NATIVE_REVIEW_MAXIMUM_TELEMETRY_EVENTS,
+    ))).toThrow(/fixed per-phase event limit/u);
+    expect(instance.snapshot().eventCount).toBe(
+      GRAND_HALL_T554_NATIVE_REVIEW_MAXIMUM_TELEMETRY_EVENTS,
+    );
   });
 
   it("can complete all 512 tiles only after every delivered tile meets dwell", () => {

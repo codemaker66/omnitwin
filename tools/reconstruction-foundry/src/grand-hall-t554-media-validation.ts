@@ -27,8 +27,69 @@ export interface GrandHallT554MaskPixelCounts {
   readonly excludedPixelCount: number;
 }
 
+export type GrandHallT554MaskReasonSampleCounts = readonly [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+export interface GrandHallT554MaskReasonMapCounts {
+  /** Index zero is the included-pixel sample; indexes 1..5 are the fixed reason samples. */
+  readonly reasonSampleCounts: GrandHallT554MaskReasonSampleCounts;
+}
+
+export interface GrandHallT554MaskEvidencePixelCounts extends
+  GrandHallT554MaskPixelCounts,
+  GrandHallT554MaskReasonMapCounts {}
+
+interface GrandHallT554MaskValidationTestSeam {
+  readonly afterDecodedBuffersDestroyed?: (facts: {
+    readonly maskPixelsWereZeroed: boolean;
+    readonly reasonPixelsWereZeroed: boolean;
+  }) => void;
+}
+
+function reasonSampleCountTuple(
+  counts: readonly number[],
+): GrandHallT554MaskReasonSampleCounts {
+  return Object.freeze([
+    counts[0] ?? 0,
+    counts[1] ?? 0,
+    counts[2] ?? 0,
+    counts[3] ?? 0,
+    counts[4] ?? 0,
+    counts[5] ?? 0,
+  ]);
+}
+
+export interface GrandHallT554SourceJpegDecoderIdentity {
+  readonly schemaVersion:
+    "venviewer.grand-hall-t554-source-jpeg-decoder-identity.v1";
+  readonly library: "sharp";
+  readonly sharpVersion: string;
+  readonly libvipsVersion: string;
+  readonly pipeline: "captured-jpeg-buffer-to-unrotated-rgb8.v1";
+}
+
+export interface GrandHallT554DecodedSourceJpeg {
+  readonly widthPx: typeof GRAND_HALL_PANORAMA_WIDTH_PX;
+  readonly heightPx: typeof GRAND_HALL_PANORAMA_HEIGHT_PX;
+  readonly channelCount: 3;
+  readonly bitsPerSample: 8;
+  readonly alphaPresent: false;
+  readonly orientationMetadataPresent: false;
+  readonly decoderIdentity: GrandHallT554SourceJpegDecoderIdentity;
+  /** Owned mutable storage. The native media kernel must destroy it after use. */
+  readonly pixels: Buffer;
+}
+
 /** Fully decodes one exact 8,192 × 4,096 unrotated RGB source JPEG. */
-export async function validateGrandHallT554SourceJpegBytes(bytes: Buffer): Promise<void> {
+export async function decodeGrandHallT554SourceJpegBytes(
+  bytes: Buffer,
+): Promise<GrandHallT554DecodedSourceJpeg> {
   const decoderOptions = {
     failOn: "error",
     limitInputPixels: PANORAMA_PIXEL_COUNT,
@@ -38,6 +99,7 @@ export async function validateGrandHallT554SourceJpegBytes(bytes: Buffer): Promi
     metadata.format !== "jpeg" ||
     metadata.width !== GRAND_HALL_PANORAMA_WIDTH_PX ||
     metadata.height !== GRAND_HALL_PANORAMA_HEIGHT_PX ||
+    metadata.space !== "srgb" ||
     metadata.channels !== 3 ||
     metadata.depth !== "uchar" ||
     metadata.hasAlpha ||
@@ -55,7 +117,35 @@ export async function validateGrandHallT554SourceJpegBytes(bytes: Buffer): Promi
     decoded.info.channels !== 3 ||
     decoded.data.length !== PANORAMA_PIXEL_COUNT * 3
   ) {
+    decoded.data.fill(0);
     throw new Error("JPEG full decode does not match the exact RGB source panorama grid");
+  }
+  return {
+    widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+    heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
+    channelCount: 3,
+    bitsPerSample: 8,
+    alphaPresent: false,
+    orientationMetadataPresent: false,
+    decoderIdentity: {
+      schemaVersion:
+        "venviewer.grand-hall-t554-source-jpeg-decoder-identity.v1",
+      library: "sharp",
+      sharpVersion: sharp.versions.sharp,
+      libvipsVersion: sharp.versions.vips,
+      pipeline: "captured-jpeg-buffer-to-unrotated-rgb8.v1",
+    },
+    pixels: decoded.data,
+  };
+}
+
+/** Validates a source JPEG without retaining its decoded pixel buffer. */
+export async function validateGrandHallT554SourceJpegBytes(bytes: Buffer): Promise<void> {
+  const decoded = await decodeGrandHallT554SourceJpegBytes(bytes);
+  try {
+    // A successful full decode is the validation result.
+  } finally {
+    decoded.pixels.fill(0);
   }
 }
 
@@ -123,10 +213,7 @@ function inspectStrictGrayscalePng(bytes: Buffer): PngHeader {
   return header;
 }
 
-/** Fully decodes an exact grayscale8 mask and counts only permitted 0/255 samples. */
-export async function validateGrandHallT554MaskPngBytes(
-  bytes: Buffer,
-): Promise<GrandHallT554MaskPixelCounts> {
+async function decodeStrictGrayscalePng(bytes: Buffer): Promise<Buffer> {
   inspectStrictGrayscalePng(bytes);
   const decoderOptions = {
     failOn: "error" as const,
@@ -163,14 +250,103 @@ export async function validateGrandHallT554MaskPngBytes(
     decoded.info.channels !== 1 ||
     decoded.data.length !== PANORAMA_PIXEL_COUNT
   ) {
+    decoded.data.fill(0);
     throw new Error("decoded PNG grid or channel count drifted");
   }
+  return decoded.data;
+}
+
+/** Fully decodes an exact grayscale8 mask and counts only permitted 0/255 samples. */
+export async function validateGrandHallT554MaskPngBytes(
+  bytes: Buffer,
+): Promise<GrandHallT554MaskPixelCounts> {
+  const pixels = await decodeStrictGrayscalePng(bytes);
   let includedPixelCount = 0;
   let excludedPixelCount = 0;
-  for (const value of decoded.data) {
-    if (value === 0) includedPixelCount += 1;
-    else if (value === 255) excludedPixelCount += 1;
-    else throw new Error(`mask contains forbidden sample value ${String(value)}`);
+  try {
+    for (const value of pixels) {
+      if (value === 0) includedPixelCount += 1;
+      else if (value === 255) excludedPixelCount += 1;
+      else throw new Error(`mask contains forbidden sample value ${String(value)}`);
+    }
+    return { includedPixelCount, excludedPixelCount };
+  } finally {
+    pixels.fill(0);
   }
-  return { includedPixelCount, excludedPixelCount };
 }
+
+/** Fully decodes the canonical reason plane: 0 included, 1..5 fixed exclusion reasons. */
+export async function validateGrandHallT554MaskReasonMapPngBytes(
+  bytes: Buffer,
+): Promise<GrandHallT554MaskReasonMapCounts> {
+  const pixels = await decodeStrictGrayscalePng(bytes);
+  const counts = [0, 0, 0, 0, 0, 0];
+  try {
+    for (const value of pixels) {
+      if (value > 5) {
+        throw new Error(`mask reason map contains forbidden sample value ${String(value)}`);
+      }
+      counts[value] = (counts[value] ?? 0) + 1;
+    }
+    return {
+      reasonSampleCounts: reasonSampleCountTuple(counts),
+    };
+  } finally {
+    pixels.fill(0);
+  }
+}
+
+async function validateMaskEvidencePngBytes(
+  maskBytes: Buffer,
+  reasonMapBytes: Buffer,
+  seam: GrandHallT554MaskValidationTestSeam,
+): Promise<GrandHallT554MaskEvidencePixelCounts> {
+  let maskPixels: Buffer | undefined;
+  let reasonPixels: Buffer | undefined;
+  try {
+    maskPixels = await decodeStrictGrayscalePng(maskBytes);
+    reasonPixels = await decodeStrictGrayscalePng(reasonMapBytes);
+    const reasonSampleCounts = [0, 0, 0, 0, 0, 0];
+    let includedPixelCount = 0;
+    let excludedPixelCount = 0;
+    for (let offset = 0; offset < PANORAMA_PIXEL_COUNT; offset += 1) {
+      const mask = maskPixels[offset];
+      const reason = reasonPixels[offset];
+      if (mask === 0 && reason === 0) {
+        includedPixelCount += 1;
+        reasonSampleCounts[0] = (reasonSampleCounts[0] ?? 0) + 1;
+      } else if (mask === 255 && reason !== undefined && reason >= 1 && reason <= 5) {
+        excludedPixelCount += 1;
+        reasonSampleCounts[reason] = (reasonSampleCounts[reason] ?? 0) + 1;
+      } else {
+        throw new Error(
+          `binary mask and reason map disagree at source-grid offset ${String(offset)}`,
+        );
+      }
+    }
+    return {
+      includedPixelCount,
+      excludedPixelCount,
+      reasonSampleCounts: reasonSampleCountTuple(reasonSampleCounts),
+    };
+  } finally {
+    maskPixels?.fill(0);
+    reasonPixels?.fill(0);
+    seam.afterDecodedBuffersDestroyed?.({
+      maskPixelsWereZeroed: maskPixels?.every((value) => value === 0) ?? true,
+      reasonPixelsWereZeroed: reasonPixels?.every((value) => value === 0) ?? true,
+    });
+  }
+}
+
+/** Reopens both immutable evidence planes and derives all mask facts from their exact bytes. */
+export function validateGrandHallT554MaskEvidencePngBytes(
+  maskBytes: Buffer,
+  reasonMapBytes: Buffer,
+): Promise<GrandHallT554MaskEvidencePixelCounts> {
+  return validateMaskEvidencePngBytes(maskBytes, reasonMapBytes, {});
+}
+
+export const __testOnlyGrandHallT554MediaValidation = Object.freeze({
+  validateMaskEvidencePngBytes,
+});

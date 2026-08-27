@@ -24,11 +24,13 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   __testOnlyGrandHallT554NativeMediaKernel,
   GrandHallT554NativeMediaKernelError,
+  verifyGrandHallT554NativeMaskEvidence,
   verifyGrandHallT554NativeMaskPng,
   verifyGrandHallT554NativeSourceJpeg,
   type GrandHallT554NativeMediaInput,
 } from "../grand-hall-t554-native-media-kernel.js";
 import {
+  __testOnlyGrandHallT554MediaValidation,
   GRAND_HALL_T554_MASK_PNG_MAX_BYTES,
   GRAND_HALL_T554_SOURCE_JPEG_MAX_BYTES,
 } from "../grand-hall-t554-media-validation.js";
@@ -38,6 +40,9 @@ const temporaryPaths: string[] = [];
 let sourceJpeg: Buffer;
 let maskPng: Buffer;
 let nonBinaryMaskPng: Buffer;
+let reasonMapPng: Buffer;
+let mismatchedReasonMapPng: Buffer;
+let invalidReasonMapPng: Buffer;
 
 function digest(bytes: Buffer): `sha256:${string}` {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -66,17 +71,21 @@ function stripPngToPixelChunks(bytes: Buffer): Buffer {
   return Buffer.concat(retained);
 }
 
-async function createMaskPng(lastSample: 1 | 255): Promise<Buffer> {
+async function createGrayscalePng(lastSample: number): Promise<Buffer> {
   const pixels = Buffer.alloc(PIXEL_COUNT, 0);
   pixels[PIXEL_COUNT - 1] = lastSample;
-  const encoded = await sharp(pixels, {
-    raw: {
-      width: GRAND_HALL_PANORAMA_WIDTH_PX,
-      height: GRAND_HALL_PANORAMA_HEIGHT_PX,
-      channels: 1,
-    },
-  }).toColourspace("b-w").png({ compressionLevel: 9, palette: false }).toBuffer();
-  return stripPngToPixelChunks(encoded);
+  try {
+    const encoded = await sharp(pixels, {
+      raw: {
+        width: GRAND_HALL_PANORAMA_WIDTH_PX,
+        height: GRAND_HALL_PANORAMA_HEIGHT_PX,
+        channels: 1,
+      },
+    }).toColourspace("b-w").png({ compressionLevel: 9, palette: false }).toBuffer();
+    return stripPngToPixelChunks(encoded);
+  } finally {
+    pixels.fill(0);
+  }
 }
 
 async function createRoot(): Promise<string> {
@@ -116,8 +125,11 @@ beforeAll(async () => {
       background: { r: 24, g: 32, b: 40 },
     },
   }).jpeg({ quality: 80, chromaSubsampling: "4:4:4" }).toBuffer();
-  maskPng = await createMaskPng(255);
-  nonBinaryMaskPng = await createMaskPng(1);
+  maskPng = await createGrayscalePng(255);
+  nonBinaryMaskPng = await createGrayscalePng(1);
+  reasonMapPng = await createGrayscalePng(5);
+  mismatchedReasonMapPng = await createGrayscalePng(0);
+  invalidReasonMapPng = await createGrayscalePng(6);
 }, 30_000);
 
 afterEach(async () => {
@@ -129,7 +141,13 @@ afterEach(async () => {
 describe("Grand Hall T-554 native same-descriptor media kernel", () => {
   it("fully verifies one exact JPEG and returns only defensive byte copies", async () => {
     const fixture = await writeFixture("sweep_001jpg.jpg", sourceJpeg);
-    const verified = await verifyGrandHallT554NativeSourceJpeg(fixture.input);
+    let destroyed = false;
+    const verified = await __testOnlyGrandHallT554NativeMediaKernel.verifySourceJpeg(
+      fixture.input,
+      { afterTransientBuffersDestroyed: (facts) => {
+        destroyed = facts.rawBytesWereZeroed;
+      } },
+    );
 
     expect(verified).toMatchObject({ kind: "source_jpeg", fileName: fixture.input.fileName,
       sha256: fixture.input.expectedSha256, byteLength: sourceJpeg.length });
@@ -139,6 +157,12 @@ describe("Grand Hall T-554 native same-descriptor media kernel", () => {
     first[0] = (first[0] ?? 0) ^ 0xff;
     expect(second.equals(sourceJpeg)).toBe(true);
     expect(verified.copyBytes().equals(sourceJpeg)).toBe(true);
+    await verified.destroy();
+    expect(destroyed).toBe(true);
+    expect(() => verified.copyBytes()).toThrowError(expect.objectContaining({
+      code: "SOURCE_CLOSED",
+    }));
+    await expectKernelCode(verified.destroy(), "SOURCE_CLOSED");
   }, 30_000);
 
   it("derives exact mask polarity counts and returns defensive copies", async () => {
@@ -153,9 +177,13 @@ describe("Grand Hall T-554 native same-descriptor media kernel", () => {
     const first = verified.copyBytes();
     first.fill(0);
     expect(verified.copyBytes().equals(maskPng)).toBe(true);
+    await verified.destroy();
+    expect(() => verified.copyBytes()).toThrowError(expect.objectContaining({
+      code: "SOURCE_CLOSED",
+    }));
   }, 30_000);
 
-  it("rejects traversal, non-canonical basenames, and relative roots", async () => {
+  it("rejects traversal, non-canonical basenames, relative, UNC, and device roots", async () => {
     const root = await createRoot();
     const exact = inputFor(root, "source.jpg", Buffer.from([1]));
     const attacks = [
@@ -163,6 +191,10 @@ describe("Grand Hall T-554 native same-descriptor media kernel", () => {
       { ...exact, fileName: "nested/source.jpg" },
       { ...exact, fileName: "source.JPG" },
       { ...exact, sourceRoot: "." },
+      { ...exact, sourceRoot: "//server/share/capture" },
+      { ...exact, sourceRoot: "\\\\server\\share\\capture" },
+      { ...exact, sourceRoot: "\\\\?\\C:\\capture" },
+      { ...exact, sourceRoot: "\\\\.\\C:\\capture" },
     ];
     for (const attack of attacks) {
       await expectKernelCode(
@@ -194,6 +226,92 @@ describe("Grand Hall T-554 native same-descriptor media kernel", () => {
   it("rejects a grayscale8 mask containing a non-binary source-grid sample", async () => {
     const fixture = await writeFixture("non-binary-mask.png", nonBinaryMaskPng);
     await expectKernelCode(verifyGrandHallT554NativeMaskPng(fixture.input), "MEDIA_INVALID");
+  }, 30_000);
+
+  it("derives reason counts only from an exact source-aligned mask/reason pair", async () => {
+    const root = await createRoot();
+    const maskFileName = "paired-mask.png";
+    const reasonFileName = "paired-reason-map.png";
+    await writeFile(join(root, maskFileName), maskPng);
+    await writeFile(join(root, reasonFileName), reasonMapPng);
+    let rawBuffersDestroyed = false;
+    const verified = await __testOnlyGrandHallT554NativeMediaKernel.verifyMaskEvidence(
+      inputFor(root, maskFileName, maskPng),
+      inputFor(root, reasonFileName, reasonMapPng),
+      { afterTransientBuffersDestroyed: (facts) => {
+        rawBuffersDestroyed = facts.rawBytesWereZeroed;
+      } },
+    );
+
+    expect(verified).toMatchObject({
+      kind: "frozen_mask_evidence",
+      includedPixelCount: PIXEL_COUNT - 1,
+      excludedPixelCount: 1,
+      reasonSampleCounts: [PIXEL_COUNT - 1, 0, 0, 0, 0, 1],
+    });
+    expect(rawBuffersDestroyed).toBe(true);
+  }, 30_000);
+
+  it("keeps both descriptors pinned and rejects first-plane tampering during second-plane decode", async () => {
+    const root = await createRoot();
+    const maskFileName = "race-mask.png";
+    const reasonFileName = "race-reason-map.png";
+    const maskPath = join(root, maskFileName);
+    await writeFile(maskPath, maskPng);
+    await writeFile(join(root, reasonFileName), reasonMapPng);
+    let decodeCount = 0;
+
+    await expectKernelCode(__testOnlyGrandHallT554NativeMediaKernel.verifyMaskEvidence(
+      inputFor(root, maskFileName, maskPng),
+      inputFor(root, reasonFileName, reasonMapPng),
+      { afterDecode: async () => {
+        decodeCount += 1;
+        if (decodeCount !== 2) return;
+        const tampered = Buffer.from(maskPng);
+        try {
+          tampered[20] = (tampered[20] ?? 0) ^ 0xff;
+          await writeFile(maskPath, tampered);
+        } finally {
+          tampered.fill(0);
+        }
+      } },
+    ), "SOURCE_CHANGED");
+    expect(decodeCount).toBe(2);
+  }, 30_000);
+
+  it("rejects independently valid but contradictory planes and forbidden reason samples", async () => {
+    const root = await createRoot();
+    await writeFile(join(root, "mask.png"), maskPng);
+    await writeFile(join(root, "mismatched-reasons.png"), mismatchedReasonMapPng);
+    await writeFile(join(root, "invalid-reasons.png"), invalidReasonMapPng);
+
+    await expectKernelCode(verifyGrandHallT554NativeMaskEvidence(
+      inputFor(root, "mask.png", maskPng),
+      inputFor(root, "mismatched-reasons.png", mismatchedReasonMapPng),
+    ), "MEDIA_INVALID");
+    await expectKernelCode(verifyGrandHallT554NativeMaskEvidence(
+      inputFor(root, "mask.png", maskPng),
+      inputFor(root, "invalid-reasons.png", invalidReasonMapPng),
+    ), "MEDIA_INVALID");
+  }, 30_000);
+
+  it("zeroes decoded mask and reason buffers on success and contradictory-plane failure", async () => {
+    const destroyed: Array<{ readonly maskPixelsWereZeroed: boolean;
+      readonly reasonPixelsWereZeroed: boolean }> = [];
+    await expect(__testOnlyGrandHallT554MediaValidation.validateMaskEvidencePngBytes(
+      maskPng,
+      reasonMapPng,
+      { afterDecodedBuffersDestroyed: (facts) => { destroyed.push(facts); } },
+    )).resolves.toMatchObject({ includedPixelCount: PIXEL_COUNT - 1 });
+    await expect(__testOnlyGrandHallT554MediaValidation.validateMaskEvidencePngBytes(
+      maskPng,
+      mismatchedReasonMapPng,
+      { afterDecodedBuffersDestroyed: (facts) => { destroyed.push(facts); } },
+    )).rejects.toThrow(/disagree/u);
+    expect(destroyed).toEqual([
+      { maskPixelsWereZeroed: true, reasonPixelsWereZeroed: true },
+      { maskPixelsWereZeroed: true, reasonPixelsWereZeroed: true },
+    ]);
   }, 30_000);
 
   it("rejects oversized sparse JPEG and PNG files before opening them", async () => {

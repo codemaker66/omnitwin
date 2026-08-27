@@ -6,9 +6,16 @@ import { basename, dirname, isAbsolute, resolve } from "node:path";
 import {
   GRAND_HALL_T554_MASK_PNG_MAX_BYTES,
   GRAND_HALL_T554_SOURCE_JPEG_MAX_BYTES,
+  decodeGrandHallT554SourceJpegBytes,
+  validateGrandHallT554MaskEvidencePngBytes,
   validateGrandHallT554MaskPngBytes,
+  validateGrandHallT554MaskReasonMapPngBytes,
   validateGrandHallT554SourceJpegBytes,
+  type GrandHallT554DecodedSourceJpeg,
+  type GrandHallT554MaskEvidencePixelCounts,
   type GrandHallT554MaskPixelCounts,
+  type GrandHallT554MaskReasonMapCounts,
+  type GrandHallT554SourceJpegDecoderIdentity,
 } from "./grand-hall-t554-media-validation.js";
 
 export type GrandHallT554NativeMediaKernelErrorCode =
@@ -16,6 +23,7 @@ export type GrandHallT554NativeMediaKernelErrorCode =
   | "SOURCE_INVALID"
   | "SOURCE_CHANGED"
   | "SOURCE_IDENTITY_MISMATCH"
+  | "SOURCE_CLOSED"
   | "MEDIA_INVALID";
 
 export class GrandHallT554NativeMediaKernelError extends Error {
@@ -40,6 +48,8 @@ interface GrandHallT554VerifiedMediaCommon {
   readonly sha256: `sha256:${string}`;
   readonly byteLength: number;
   readonly copyBytes: () => Buffer;
+  /** Destroys the retained exact bytes. All later access fails closed. */
+  readonly destroy: () => Promise<void>;
 }
 
 export interface GrandHallT554VerifiedSourceJpeg extends GrandHallT554VerifiedMediaCommon {
@@ -51,11 +61,61 @@ export interface GrandHallT554VerifiedMaskPng extends GrandHallT554VerifiedMedia
   readonly kind: "frozen_binary_mask";
 }
 
+export interface GrandHallT554VerifiedMaskEvidence extends GrandHallT554MaskEvidencePixelCounts {
+  readonly kind: "frozen_mask_evidence";
+  readonly mask: {
+    readonly fileName: string;
+    readonly sha256: `sha256:${string}`;
+    readonly byteLength: number;
+  };
+  readonly reasonMap: {
+    readonly fileName: string;
+    readonly sha256: `sha256:${string}`;
+    readonly byteLength: number;
+  };
+}
+
 export interface GrandHallT554NativeMediaKernelTestSeam {
   readonly afterPathSnapshot?: (absolutePath: string) => Promise<void> | void;
   readonly afterDescriptorPinned?: (absolutePath: string) => Promise<void> | void;
   readonly afterExactRead?: (absolutePath: string) => Promise<void> | void;
   readonly afterDecode?: (absolutePath: string) => Promise<void> | void;
+  readonly afterBuffersDestroyed?: (facts: {
+    readonly rawBytesWereZeroed: boolean;
+    readonly decodedPixelsWereZeroed: boolean;
+  }) => Promise<void> | void;
+  readonly afterTransientBuffersDestroyed?: (facts: {
+    readonly rawBytesWereZeroed: boolean;
+  }) => Promise<void> | void;
+}
+
+export interface GrandHallT554PinnedSourceJpegVerification {
+  readonly fileName: string;
+  readonly sha256: `sha256:${string}`;
+  readonly byteLength: number;
+  readonly widthPx: 8192;
+  readonly heightPx: 4096;
+  readonly decodedChannelCount: 3;
+  readonly decodedBitsPerSample: 8;
+  readonly alphaPresent: false;
+  readonly orientationMetadataPresent: false;
+  readonly decodedPixelSha256: `sha256:${string}`;
+  readonly decoderIdentity: GrandHallT554SourceJpegDecoderIdentity;
+  readonly descriptorWitnessSha256: `sha256:${string}`;
+  readonly sameOpenDescriptorHashedAndDecoded: true;
+  readonly fullJpegDecodeCompleted: true;
+}
+
+export interface GrandHallT554PinnedSourceJpeg {
+  readonly verification: GrandHallT554PinnedSourceJpegVerification;
+  readonly copyExactRgb8Region: (
+    leftPx: number,
+    topPx: number,
+    widthPx: number,
+    heightPx: number,
+  ) => Buffer;
+  readonly finalize: () => Promise<GrandHallT554PinnedSourceJpegVerification>;
+  readonly abandon: () => Promise<void>;
 }
 
 interface ParsedMediaInput {
@@ -66,7 +126,7 @@ interface ParsedMediaInput {
 }
 
 interface MediaPolicy<T> {
-  readonly kind: "source_jpeg" | "frozen_binary_mask";
+  readonly kind: "source_jpeg" | "frozen_binary_mask" | "frozen_mask_reason_map";
   readonly extension: ".jpg" | ".jpeg" | ".png";
   readonly maximumBytes: number;
   readonly decode: (bytes: Buffer) => Promise<T>;
@@ -75,6 +135,7 @@ interface MediaPolicy<T> {
 const SHA256_PATTERN = /^sha256:[a-f0-9]{64}$/u;
 const CANONICAL_BASENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/u;
 const WINDOWS_DEVICE_PATTERN = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/iu;
+const WINDOWS_DRIVE_ROOT_PATTERN = /^[A-Za-z]:[\\/](?![\\/])/u;
 
 function fail(
   code: GrandHallT554NativeMediaKernelErrorCode,
@@ -113,6 +174,15 @@ function parseInput(
 ): ParsedMediaInput {
   if (typeof input.sourceRoot !== "string" || !isAbsolute(input.sourceRoot)) {
     throw fail("ARGUMENT_INVALID", "Native media source root must be absolute.");
+  }
+  if (
+    input.sourceRoot.startsWith("//") || input.sourceRoot.startsWith("\\\\") ||
+    (process.platform === "win32" && !WINDOWS_DRIVE_ROOT_PATTERN.test(input.sourceRoot))
+  ) {
+    throw fail(
+      "ARGUMENT_INVALID",
+      "Native media source root must be a local drive path, never UNC or a device namespace.",
+    );
   }
   if (typeof input.fileName !== "string") {
     throw fail("ARGUMENT_INVALID", "Native media filename must be a string.");
@@ -180,16 +250,28 @@ function assertStatesEqual(states: readonly BigIntStats[], label: string): void 
 }
 
 async function readExactly(handle: FileHandle, byteLength: number): Promise<Buffer> {
-  const bytes = Buffer.allocUnsafe(byteLength);
-  let offset = 0;
-  while (offset < byteLength) {
-    const result = await handle.read(bytes, offset, byteLength - offset, offset);
-    if (result.bytesRead < 1) throw fail("SOURCE_CHANGED", "Native media was truncated while read.");
-    offset += result.bytesRead;
+  const bytes = Buffer.alloc(byteLength);
+  const trailing = Buffer.alloc(1);
+  try {
+    let offset = 0;
+    while (offset < byteLength) {
+      const result = await handle.read(bytes, offset, byteLength - offset, offset);
+      if (result.bytesRead < 1) {
+        throw fail("SOURCE_CHANGED", "Native media was truncated while read.");
+      }
+      offset += result.bytesRead;
+    }
+    const trailingRead = await handle.read(trailing, 0, 1, byteLength);
+    if (trailingRead.bytesRead !== 0) {
+      throw fail("SOURCE_CHANGED", "Native media grew while read.");
+    }
+    return bytes;
+  } catch (error) {
+    bytes.fill(0);
+    throw error;
+  } finally {
+    trailing.fill(0);
   }
-  const trailing = await handle.read(Buffer.allocUnsafe(1), 0, 1, byteLength);
-  if (trailing.bytesRead !== 0) throw fail("SOURCE_CHANGED", "Native media grew while read.");
-  return bytes;
 }
 
 async function assertStablePhase(
@@ -206,8 +288,61 @@ async function assertStablePhase(
   assertStatesEqual([rootBefore, rootNow], "Native media source root");
 }
 
+async function assertPinnedStablePhase(
+  handle: FileHandle,
+  input: ParsedMediaInput,
+  absolutePath: string,
+  rootBefore: BigIntStats,
+  fileBefore: BigIntStats,
+  maximumBytes: number,
+): Promise<BigIntStats> {
+  const descriptorBefore = await handle.stat({ bigint: true });
+  assertFileStats(descriptorBefore, maximumBytes);
+  await assertStablePhase(
+    input,
+    absolutePath,
+    rootBefore,
+    fileBefore,
+    descriptorBefore,
+    maximumBytes,
+  );
+  const descriptorAfter = await handle.stat({ bigint: true });
+  assertFileStats(descriptorAfter, maximumBytes);
+  assertStatesEqual(
+    [fileBefore, descriptorBefore, descriptorAfter],
+    "Native media descriptor",
+  );
+  return descriptorAfter;
+}
+
 function sha256(bytes: Buffer): `sha256:${string}` {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function descriptorWitnessSha256(
+  input: ParsedMediaInput,
+  descriptor: BigIntStats,
+  decodedPixelSha256: `sha256:${string}`,
+  decoderIdentity: GrandHallT554SourceJpegDecoderIdentity,
+): `sha256:${string}` {
+  const material = JSON.stringify({
+    schemaVersion: "venviewer.grand-hall-t554-source-descriptor-witness.v1",
+    fileName: input.fileName,
+    rawSha256: input.expectedSha256,
+    rawByteLength: input.expectedByteLength,
+    decodedPixelSha256,
+    decoderIdentity,
+    descriptor: {
+      dev: descriptor.dev.toString(10),
+      ino: descriptor.ino.toString(10),
+      mode: descriptor.mode.toString(10),
+      nlink: descriptor.nlink.toString(10),
+      size: descriptor.size.toString(10),
+      mtimeNs: descriptor.mtimeNs.toString(10),
+      ctimeNs: descriptor.ctimeNs.toString(10),
+    },
+  });
+  return sha256(Buffer.from(material, "utf8"));
 }
 
 async function decodeMedia<T>(policy: MediaPolicy<T>, bytes: Buffer): Promise<T> {
@@ -221,10 +356,28 @@ async function decodeMedia<T>(policy: MediaPolicy<T>, bytes: Buffer): Promise<T>
 function commonResult(
   input: ParsedMediaInput,
   bytes: Buffer,
+  seam: GrandHallT554NativeMediaKernelTestSeam,
 ): GrandHallT554VerifiedMediaCommon {
-  const ownedBytes = Buffer.from(bytes);
+  let ownedBytes: Buffer | undefined = bytes;
   return { fileName: input.fileName, sha256: input.expectedSha256,
-    byteLength: input.expectedByteLength, copyBytes: () => Buffer.from(ownedBytes) };
+    byteLength: input.expectedByteLength,
+    copyBytes: () => {
+      if (ownedBytes === undefined) {
+        throw fail("SOURCE_CLOSED", "Verified native media bytes were destroyed.");
+      }
+      return Buffer.from(ownedBytes);
+    },
+    destroy: async () => {
+      if (ownedBytes === undefined) {
+        throw fail("SOURCE_CLOSED", "Verified native media bytes were already destroyed.");
+      }
+      const bytesToDestroy = ownedBytes;
+      ownedBytes = undefined;
+      bytesToDestroy.fill(0);
+      await seam.afterTransientBuffersDestroyed?.({
+        rawBytesWereZeroed: bytesToDestroy.every((value) => value === 0),
+      });
+    } };
 }
 
 async function verifyMedia<T>(
@@ -245,6 +398,7 @@ async function verifyMedia<T>(
   }
   await seam.afterPathSnapshot?.(absolutePath);
   let handle: FileHandle | undefined;
+  let bytes: Buffer | undefined;
   try {
     handle = await open(absolutePath, "r");
     const descriptorBefore = await handle.stat({ bigint: true });
@@ -253,7 +407,7 @@ async function verifyMedia<T>(
       input, absolutePath, rootBefore, fileBefore, descriptorBefore, policy.maximumBytes,
     );
     await seam.afterDescriptorPinned?.(absolutePath);
-    const bytes = await readExactly(handle, input.expectedByteLength);
+    bytes = await readExactly(handle, input.expectedByteLength);
     await seam.afterExactRead?.(absolutePath);
     const descriptorAfterRead = await handle.stat({ bigint: true });
     await assertStablePhase(
@@ -270,10 +424,130 @@ async function verifyMedia<T>(
     );
     return { input, bytes, decoded };
   } catch (error) {
+    const bytesToDestroy = bytes;
+    bytes = undefined;
+    bytesToDestroy?.fill(0);
+    await seam.afterTransientBuffersDestroyed?.({
+      rawBytesWereZeroed: bytesToDestroy?.every((value) => value === 0) ?? true,
+    });
     if (error instanceof GrandHallT554NativeMediaKernelError) throw error;
     throw fail("SOURCE_INVALID", "Native media could not be verified safely.", error);
   } finally {
     await handle?.close();
+  }
+}
+
+interface PinnedVerifiedMedia<T> {
+  readonly input: ParsedMediaInput;
+  readonly absolutePath: string;
+  readonly rootBefore: BigIntStats;
+  readonly fileBefore: BigIntStats;
+  readonly maximumBytes: number;
+  readonly handle: FileHandle;
+  readonly bytes: Buffer;
+  readonly decoded: T;
+}
+
+async function openPinnedVerifiedMedia<T>(
+  rawInput: GrandHallT554NativeMediaInput,
+  policy: MediaPolicy<T>,
+  seam: GrandHallT554NativeMediaKernelTestSeam,
+): Promise<PinnedVerifiedMedia<T>> {
+  const extensions = policy.kind === "source_jpeg" ? [".jpg", ".jpeg"] : [policy.extension];
+  const input = parseInput(rawInput, extensions, policy.maximumBytes);
+  const rootBefore = await inspectRoot(input.sourceRoot);
+  const absolutePath = resolve(input.sourceRoot, input.fileName);
+  if (comparablePath(dirname(absolutePath)) !== comparablePath(input.sourceRoot)) {
+    throw fail("ARGUMENT_INVALID", "Native media path escaped its fixed source root.");
+  }
+  const fileBefore = await inspectFilePath(absolutePath, input.fileName, policy.maximumBytes);
+  if (fileBefore.size !== BigInt(input.expectedByteLength)) {
+    throw fail("SOURCE_IDENTITY_MISMATCH", "Native media length differs from its exact identity.");
+  }
+  await seam.afterPathSnapshot?.(absolutePath);
+  let handle: FileHandle | undefined;
+  let bytes: Buffer | undefined;
+  try {
+    handle = await open(absolutePath, "r");
+    await assertPinnedStablePhase(
+      handle,
+      input,
+      absolutePath,
+      rootBefore,
+      fileBefore,
+      policy.maximumBytes,
+    );
+    await seam.afterDescriptorPinned?.(absolutePath);
+    bytes = await readExactly(handle, input.expectedByteLength);
+    await seam.afterExactRead?.(absolutePath);
+    await assertPinnedStablePhase(
+      handle,
+      input,
+      absolutePath,
+      rootBefore,
+      fileBefore,
+      policy.maximumBytes,
+    );
+    if (sha256(bytes) !== input.expectedSha256) {
+      throw fail("SOURCE_IDENTITY_MISMATCH", "Native media SHA-256 differs from its exact identity.");
+    }
+    const decoded = await decodeMedia(policy, bytes);
+    await seam.afterDecode?.(absolutePath);
+    await assertPinnedStablePhase(
+      handle,
+      input,
+      absolutePath,
+      rootBefore,
+      fileBefore,
+      policy.maximumBytes,
+    );
+    const pinned = { input, absolutePath, rootBefore, fileBefore,
+      maximumBytes: policy.maximumBytes, handle, bytes, decoded };
+    handle = undefined;
+    bytes = undefined;
+    return pinned;
+  } catch (error) {
+    const bytesToDestroy = bytes;
+    bytes = undefined;
+    bytesToDestroy?.fill(0);
+    await seam.afterTransientBuffersDestroyed?.({
+      rawBytesWereZeroed: bytesToDestroy?.every((value) => value === 0) ?? true,
+    });
+    if (error instanceof GrandHallT554NativeMediaKernelError) throw error;
+    throw fail("SOURCE_INVALID", "Native media could not be pinned safely.", error);
+  } finally {
+    await handle?.close();
+  }
+}
+
+function assertPinnedVerifiedMediaStable(
+  media: PinnedVerifiedMedia<unknown>,
+): Promise<BigIntStats> {
+  return assertPinnedStablePhase(
+    media.handle,
+    media.input,
+    media.absolutePath,
+    media.rootBefore,
+    media.fileBefore,
+    media.maximumBytes,
+  );
+}
+
+async function assertClosedVerifiedMediaPathStable(
+  media: PinnedVerifiedMedia<unknown>,
+): Promise<void> {
+  try {
+    const pathNow = await inspectFilePath(
+      media.absolutePath,
+      media.input.fileName,
+      media.maximumBytes,
+    );
+    const rootNow = await inspectRoot(media.input.sourceRoot);
+    assertStatesEqual([media.fileBefore, pathNow], "Native media closed file path");
+    assertStatesEqual([media.rootBefore, rootNow], "Native media closed source root");
+  } catch (error) {
+    if (error instanceof GrandHallT554NativeMediaKernelError) throw error;
+    throw fail("SOURCE_CHANGED", "Native media path changed while its evidence pair closed.", error);
   }
 }
 
@@ -291,13 +565,287 @@ const MASK_PNG_POLICY: MediaPolicy<GrandHallT554MaskPixelCounts> = {
   decode: validateGrandHallT554MaskPngBytes,
 };
 
+const MASK_REASON_MAP_PNG_POLICY: MediaPolicy<GrandHallT554MaskReasonMapCounts> = {
+  kind: "frozen_mask_reason_map",
+  extension: ".png",
+  maximumBytes: GRAND_HALL_T554_MASK_PNG_MAX_BYTES,
+  decode: validateGrandHallT554MaskReasonMapPngBytes,
+};
+
+class PinnedGrandHallT554SourceJpeg implements GrandHallT554PinnedSourceJpeg {
+  readonly verification: GrandHallT554PinnedSourceJpegVerification;
+  private lifecycle: "active" | "closing" | "closed" = "active";
+  private rawBytes: Buffer | undefined;
+  private decodedPixels: Buffer | undefined;
+
+  constructor(
+    private readonly input: ParsedMediaInput,
+    private readonly absolutePath: string,
+    private readonly rootBefore: BigIntStats,
+    private readonly fileBefore: BigIntStats,
+    descriptorWitnessState: BigIntStats,
+    private readonly handle: FileHandle,
+    rawBytes: Buffer,
+    decoded: GrandHallT554DecodedSourceJpeg,
+    private readonly seam: GrandHallT554NativeMediaKernelTestSeam,
+  ) {
+    const decodedPixelSha256 = sha256(decoded.pixels);
+    this.verification = Object.freeze({
+      fileName: input.fileName,
+      sha256: input.expectedSha256,
+      byteLength: input.expectedByteLength,
+      widthPx: decoded.widthPx,
+      heightPx: decoded.heightPx,
+      decodedChannelCount: decoded.channelCount,
+      decodedBitsPerSample: decoded.bitsPerSample,
+      alphaPresent: decoded.alphaPresent,
+      orientationMetadataPresent: decoded.orientationMetadataPresent,
+      decodedPixelSha256,
+      decoderIdentity: Object.freeze({ ...decoded.decoderIdentity }),
+      descriptorWitnessSha256: descriptorWitnessSha256(
+        input,
+        descriptorWitnessState,
+        decodedPixelSha256,
+        decoded.decoderIdentity,
+      ),
+      sameOpenDescriptorHashedAndDecoded: true,
+      fullJpegDecodeCompleted: true,
+    });
+    this.rawBytes = rawBytes;
+    this.decodedPixels = decoded.pixels;
+  }
+
+  copyExactRgb8Region(
+    leftPx: number,
+    topPx: number,
+    widthPx: number,
+    heightPx: number,
+  ): Buffer {
+    if (this.lifecycle !== "active") {
+      throw fail("SOURCE_CLOSED", "Native source descriptor epoch is no longer active.");
+    }
+    if (
+      !Number.isSafeInteger(leftPx) ||
+      !Number.isSafeInteger(topPx) ||
+      !Number.isSafeInteger(widthPx) ||
+      !Number.isSafeInteger(heightPx) ||
+      leftPx < 0 ||
+      topPx < 0 ||
+      widthPx < 1 ||
+      heightPx < 1 ||
+      leftPx + widthPx > this.verification.widthPx ||
+      topPx + heightPx > this.verification.heightPx
+    ) {
+      throw fail("ARGUMENT_INVALID", "RGB8 region is outside the exact decoded source grid.");
+    }
+    const pixels = this.decodedPixels;
+    if (pixels === undefined) {
+      throw fail("SOURCE_CLOSED", "Native source decoded pixels were destroyed.");
+    }
+    const bytesPerPixel = this.verification.decodedChannelCount;
+    const rowByteLength = widthPx * bytesPerPixel;
+    const copy = Buffer.alloc(rowByteLength * heightPx);
+    for (let rowOffset = 0; rowOffset < heightPx; rowOffset += 1) {
+      const sourceStart = (
+        (topPx + rowOffset) * this.verification.widthPx + leftPx
+      ) * bytesPerPixel;
+      pixels.copy(
+        copy,
+        rowOffset * rowByteLength,
+        sourceStart,
+        sourceStart + rowByteLength,
+      );
+    }
+    return copy;
+  }
+
+  private assertActive(): void {
+    if (this.lifecycle !== "active") {
+      throw fail("SOURCE_CLOSED", "Native source descriptor epoch is no longer active.");
+    }
+    this.lifecycle = "closing";
+  }
+
+  private async destroy(): Promise<void> {
+    const rawBytes = this.rawBytes;
+    const decodedPixels = this.decodedPixels;
+    this.rawBytes = undefined;
+    this.decodedPixels = undefined;
+    rawBytes?.fill(0);
+    decodedPixels?.fill(0);
+    if (this.seam.afterBuffersDestroyed !== undefined) {
+      await this.seam.afterBuffersDestroyed({
+        rawBytesWereZeroed: rawBytes?.every((value) => value === 0) ?? true,
+        decodedPixelsWereZeroed:
+          decodedPixels?.every((value) => value === 0) ?? true,
+      });
+    }
+  }
+
+  private async closeAndDestroy(): Promise<void> {
+    let closeError: unknown;
+    try {
+      await this.handle.close();
+    } catch (error) {
+      closeError = error;
+    }
+    try {
+      await this.destroy();
+    } finally {
+      this.lifecycle = "closed";
+    }
+    if (closeError !== undefined) {
+      throw fail("SOURCE_INVALID", "Native source descriptor could not be closed.", closeError);
+    }
+  }
+
+  async finalize(): Promise<GrandHallT554PinnedSourceJpegVerification> {
+    this.assertActive();
+    let stabilityError: unknown;
+    try {
+      await assertPinnedStablePhase(
+        this.handle,
+        this.input,
+        this.absolutePath,
+        this.rootBefore,
+        this.fileBefore,
+        GRAND_HALL_T554_SOURCE_JPEG_MAX_BYTES,
+      );
+    } catch (error) {
+      stabilityError = error;
+    }
+    let cleanupError: unknown;
+    try {
+      await this.closeAndDestroy();
+    } catch (error) {
+      cleanupError = error;
+    }
+    if (stabilityError !== undefined) {
+      if (
+        stabilityError instanceof GrandHallT554NativeMediaKernelError &&
+        stabilityError.code === "SOURCE_CHANGED"
+      ) {
+        throw stabilityError;
+      }
+      throw fail(
+        "SOURCE_CHANGED",
+        "Native source descriptor or path changed before epoch finalization.",
+        stabilityError,
+      );
+    }
+    if (cleanupError instanceof Error) throw cleanupError;
+    if (cleanupError !== undefined) {
+      throw fail(
+        "SOURCE_INVALID",
+        "Native source descriptor cleanup failed with a non-error value.",
+        cleanupError,
+      );
+    }
+    return this.verification;
+  }
+
+  async abandon(): Promise<void> {
+    this.assertActive();
+    await this.closeAndDestroy();
+  }
+}
+
+async function openPinnedSourceJpeg(
+  rawInput: GrandHallT554NativeMediaInput,
+  seam: GrandHallT554NativeMediaKernelTestSeam,
+): Promise<GrandHallT554PinnedSourceJpeg> {
+  const input = parseInput(
+    rawInput,
+    [".jpg", ".jpeg"],
+    GRAND_HALL_T554_SOURCE_JPEG_MAX_BYTES,
+  );
+  const rootBefore = await inspectRoot(input.sourceRoot);
+  const absolutePath = resolve(input.sourceRoot, input.fileName);
+  if (comparablePath(dirname(absolutePath)) !== comparablePath(input.sourceRoot)) {
+    throw fail("ARGUMENT_INVALID", "Native media path escaped its fixed source root.");
+  }
+  const fileBefore = await inspectFilePath(
+    absolutePath,
+    input.fileName,
+    GRAND_HALL_T554_SOURCE_JPEG_MAX_BYTES,
+  );
+  if (fileBefore.size !== BigInt(input.expectedByteLength)) {
+    throw fail("SOURCE_IDENTITY_MISMATCH", "Native media length differs from its exact identity.");
+  }
+  await seam.afterPathSnapshot?.(absolutePath);
+  let handle: FileHandle | undefined;
+  let bytes: Buffer | undefined;
+  let decoded: GrandHallT554DecodedSourceJpeg | undefined;
+  try {
+    handle = await open(absolutePath, "r");
+    await assertPinnedStablePhase(
+      handle,
+      input,
+      absolutePath,
+      rootBefore,
+      fileBefore,
+      GRAND_HALL_T554_SOURCE_JPEG_MAX_BYTES,
+    );
+    await seam.afterDescriptorPinned?.(absolutePath);
+    bytes = await readExactly(handle, input.expectedByteLength);
+    await seam.afterExactRead?.(absolutePath);
+    await assertPinnedStablePhase(
+      handle,
+      input,
+      absolutePath,
+      rootBefore,
+      fileBefore,
+      GRAND_HALL_T554_SOURCE_JPEG_MAX_BYTES,
+    );
+    if (sha256(bytes) !== input.expectedSha256) {
+      throw fail("SOURCE_IDENTITY_MISMATCH", "Native media SHA-256 differs from its exact identity.");
+    }
+    try {
+      decoded = await decodeGrandHallT554SourceJpegBytes(bytes);
+    } catch (error) {
+      throw fail("MEDIA_INVALID", "Native source_jpeg bytes failed full decode.", error);
+    }
+    await seam.afterDecode?.(absolutePath);
+    const descriptorAfterDecode = await assertPinnedStablePhase(
+      handle,
+      input,
+      absolutePath,
+      rootBefore,
+      fileBefore,
+      GRAND_HALL_T554_SOURCE_JPEG_MAX_BYTES,
+    );
+    const pinned = new PinnedGrandHallT554SourceJpeg(
+      input,
+      absolutePath,
+      rootBefore,
+      fileBefore,
+      descriptorAfterDecode,
+      handle,
+      bytes,
+      decoded,
+      seam,
+    );
+    handle = undefined;
+    bytes = undefined;
+    decoded = undefined;
+    return pinned;
+  } catch (error) {
+    bytes?.fill(0);
+    decoded?.pixels.fill(0);
+    if (error instanceof GrandHallT554NativeMediaKernelError) throw error;
+    throw fail("SOURCE_INVALID", "Native source descriptor epoch could not be opened safely.", error);
+  } finally {
+    await handle?.close();
+  }
+}
+
 async function verifySourceJpeg(
   input: GrandHallT554NativeMediaInput,
   seam: GrandHallT554NativeMediaKernelTestSeam,
 ): Promise<GrandHallT554VerifiedSourceJpeg> {
   const verified = await verifyMedia(input, SOURCE_JPEG_POLICY, seam);
   return Object.freeze({ kind: "source_jpeg" as const,
-    ...commonResult(verified.input, verified.bytes) });
+    ...commonResult(verified.input, verified.bytes, seam) });
 }
 
 async function verifyMaskPng(
@@ -306,7 +854,98 @@ async function verifyMaskPng(
 ): Promise<GrandHallT554VerifiedMaskPng> {
   const verified = await verifyMedia(input, MASK_PNG_POLICY, seam);
   return Object.freeze({ kind: "frozen_binary_mask" as const,
-    ...commonResult(verified.input, verified.bytes), ...verified.decoded });
+    ...commonResult(verified.input, verified.bytes, seam), ...verified.decoded });
+}
+
+async function verifyMaskEvidence(
+  maskInput: GrandHallT554NativeMediaInput,
+  reasonMapInput: GrandHallT554NativeMediaInput,
+  seam: GrandHallT554NativeMediaKernelTestSeam,
+): Promise<GrandHallT554VerifiedMaskEvidence> {
+  let mask: PinnedVerifiedMedia<GrandHallT554MaskPixelCounts> | undefined;
+  let reasonMap:
+    PinnedVerifiedMedia<GrandHallT554MaskReasonMapCounts> | undefined;
+  let result: GrandHallT554VerifiedMaskEvidence | undefined;
+  let operationError: unknown;
+  try {
+    mask = await openPinnedVerifiedMedia(maskInput, MASK_PNG_POLICY, seam);
+    reasonMap = await openPinnedVerifiedMedia(
+      reasonMapInput,
+      MASK_REASON_MAP_PNG_POLICY,
+      seam,
+    );
+    if (
+      comparablePath(mask.input.sourceRoot) !== comparablePath(reasonMap.input.sourceRoot) ||
+      mask.input.fileName === reasonMap.input.fileName
+    ) {
+      throw fail(
+        "ARGUMENT_INVALID",
+        "Mask and reason-map evidence must be distinct files in one exact local source root.",
+      );
+    }
+    let facts: GrandHallT554MaskEvidencePixelCounts;
+    try {
+      facts = await validateGrandHallT554MaskEvidencePngBytes(mask.bytes, reasonMap.bytes);
+    } catch (error) {
+      throw fail(
+        "MEDIA_INVALID",
+        "Native binary mask and reason map failed exact source-aligned decode.",
+        error,
+      );
+    }
+    await Promise.all([
+      assertPinnedVerifiedMediaStable(mask),
+      assertPinnedVerifiedMediaStable(reasonMap),
+    ]);
+    result = Object.freeze({
+      kind: "frozen_mask_evidence" as const,
+      mask: Object.freeze({ fileName: mask.input.fileName,
+        sha256: mask.input.expectedSha256, byteLength: mask.input.expectedByteLength }),
+      reasonMap: Object.freeze({ fileName: reasonMap.input.fileName,
+        sha256: reasonMap.input.expectedSha256,
+        byteLength: reasonMap.input.expectedByteLength }),
+      includedPixelCount: facts.includedPixelCount,
+      excludedPixelCount: facts.excludedPixelCount,
+      reasonSampleCounts: facts.reasonSampleCounts,
+    });
+  } catch (error) {
+    operationError = error;
+  }
+  let cleanupError: unknown;
+  try {
+    const handles = [mask?.handle, reasonMap?.handle].filter(
+      (handle): handle is FileHandle => handle !== undefined,
+    );
+    const closeResults = await Promise.allSettled(handles.map(async (handle) => handle.close()));
+    const buffers = [mask?.bytes, reasonMap?.bytes].filter(
+      (bytes): bytes is Buffer => bytes !== undefined,
+    );
+    buffers.forEach((bytes) => { bytes.fill(0); });
+    await seam.afterTransientBuffersDestroyed?.({
+      rawBytesWereZeroed: buffers.every((bytes) => bytes.every((value) => value === 0)),
+    });
+    if (closeResults.some((result) => result.status === "rejected")) {
+      throw fail("SOURCE_INVALID", "Pinned mask-evidence descriptors could not be closed.");
+    }
+    const media: PinnedVerifiedMedia<unknown>[] = [];
+    if (mask !== undefined) media.push(mask);
+    if (reasonMap !== undefined) media.push(reasonMap);
+    await Promise.all(media.map(assertClosedVerifiedMediaPathStable));
+  } catch (error) {
+    cleanupError = error;
+  }
+  if (operationError instanceof Error) throw operationError;
+  if (operationError !== undefined) {
+    throw fail("SOURCE_INVALID", "Mask-evidence verification failed with a non-error value.");
+  }
+  if (cleanupError instanceof Error) throw cleanupError;
+  if (cleanupError !== undefined) {
+    throw fail("SOURCE_INVALID", "Mask-evidence cleanup failed with a non-error value.");
+  }
+  if (result === undefined) {
+    throw fail("SOURCE_INVALID", "Mask-evidence verification produced no bounded result.");
+  }
+  return result;
 }
 
 export function verifyGrandHallT554NativeSourceJpeg(
@@ -321,7 +960,22 @@ export function verifyGrandHallT554NativeMaskPng(
   return verifyMaskPng(input, {});
 }
 
+export function verifyGrandHallT554NativeMaskEvidence(
+  maskInput: GrandHallT554NativeMediaInput,
+  reasonMapInput: GrandHallT554NativeMediaInput,
+): Promise<GrandHallT554VerifiedMaskEvidence> {
+  return verifyMaskEvidence(maskInput, reasonMapInput, {});
+}
+
+export function openGrandHallT554PinnedNativeSourceJpeg(
+  input: GrandHallT554NativeMediaInput,
+): Promise<GrandHallT554PinnedSourceJpeg> {
+  return openPinnedSourceJpeg(input, {});
+}
+
 export const __testOnlyGrandHallT554NativeMediaKernel = Object.freeze({
   verifySourceJpeg,
   verifyMaskPng,
+  verifyMaskEvidence,
+  openPinnedSourceJpeg,
 });

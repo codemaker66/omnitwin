@@ -18,6 +18,13 @@ no acceptance endpoint, acceptance button, accepted-artifact serializer,
 reconstruction command, runtime admission path, upload path, external model
 call, or generated-content path.
 
+As of 2026-08-27, the privileged media, registry, journal, coverage, mask,
+session-controller, fixed-asset, and loopback-security cores are implemented and
+tested. Production construction and browser launch remain deliberately
+unavailable until deterministic typed crash replay/import and concrete compiled
+implementation-pack byte verification are implemented. No human review has
+started.
+
 ## Trust boundary
 
 Keep the implementation inside `tools/reconstruction-foundry`. Do not place it
@@ -95,6 +102,11 @@ is rebuilt by strict replay; in-memory summaries are caches only. A missing,
 extra, corrupt, truncated, duplicated, reordered, or chain-broken event makes
 the review incomplete.
 
+This replay rule is a release gate, not a current capability claim. Until the
+typed importer also persists and reconstructs server-owned successful tile
+delivery, the session controller must report crash recovery blocked and the
+production/browser entry point must remain absent.
+
 Browser focus and visibility remain procedural telemetry, not cryptographic
 human-presence proof.
 
@@ -107,9 +119,14 @@ human-presence proof.
 - Apply edits deterministically without interpolation and with explicit
   panorama-seam handling.
 - Freeze to a canonical grayscale8 PNG containing only 0 and 255.
+- Freeze a paired canonical grayscale8 reason-map PNG whose zero sample means
+  included and whose nonzero sample records the exact exclusion category.
 - Reopen and fully decode the exact emitted PNG with the strict media kernel;
   derive every format fact, hash, length, included count, excluded count, and
-  reason/count consistency from bytes.
+  reason/count consistency from both persisted planes.
+- Record whether publication durability used directory `fsync` or the Windows
+  verified file-flush/reopen fallback; never imply one mechanism when the host
+  completed the other.
 - Review the frozen mask in a separate source-aligned native-grid coverage
   phase bound to source and mask raw/decoded hashes, render configuration,
   source epoch, and session nonce.

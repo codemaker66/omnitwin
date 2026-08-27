@@ -184,6 +184,20 @@ interface PersistedV3Pack {
   readonly receipt: GrandHallT554ReviewPackV3AnyReceipt;
 }
 
+export interface GrandHallT554ReviewPackV3SemanticArtifacts {
+  readonly reviewPack: GrandHallScopeReviewPackV3;
+  readonly humanDecisions: GrandHallT554HumanDecisionsV3;
+  readonly closedVolume: GrandHallT554ClosedVolumeReviewV1;
+  readonly receipt: GrandHallT554ReviewPackV3Receipt;
+}
+
+interface GrandHallT554ReviewPackV3AnySemanticArtifacts {
+  readonly reviewPack: GrandHallScopeReviewPackV3;
+  readonly humanDecisions: GrandHallT554HumanDecisionsV3;
+  readonly closedVolume: GrandHallT554ClosedVolumeReviewV1;
+  readonly receipt: GrandHallT554ReviewPackV3AnyReceipt;
+}
+
 type GrandHallT554ReviewPackV3ReceiptKind = "production" | "structural_test_only";
 
 interface ExactCheckRunners {
@@ -716,7 +730,7 @@ function assertPendingSecondaryDecisions(
   );
 }
 
-function assertPendingDocument(pack: PersistedV3Pack): void {
+function assertPendingDocument(pack: GrandHallT554ReviewPackV3AnySemanticArtifacts): void {
   const decisions = pack.humanDecisions;
   const volume = pack.closedVolume;
   if (decisions.reviewState !== "human_pending" || decisions.finalDecision !== "PENDING" ||
@@ -733,7 +747,9 @@ function assertPendingDocument(pack: PersistedV3Pack): void {
   assertPendingSecondaryDecisions(decisions);
 }
 
-function assertExactObservationSurface(pack: PersistedV3Pack): void {
+function assertExactObservationSurface(
+  pack: GrandHallT554ReviewPackV3AnySemanticArtifacts,
+): void {
   const review = pack.reviewPack;
   const t561 = review.sourceEvidence.t561AuthorityNoneObservation;
   if (review.panoramaRecords.length !== 148 ||
@@ -768,7 +784,9 @@ function assertDecisionRowsBound(
   }
 }
 
-function assertArtifactBindings(pack: PersistedV3Pack): void {
+function assertArtifactBindings(
+  pack: GrandHallT554ReviewPackV3AnySemanticArtifacts,
+): void {
   const { reviewPack: review, humanDecisions: decisions, closedVolume: volume } = pack;
   const t551 = review.sourceEvidence.t551SourceEvidenceSha256;
   if (t551 === review.sourceEvidence.boundaryReviewManifestSha256 ||
@@ -801,7 +819,9 @@ function assertReceiptPayloadFiles(pack: PersistedV3Pack): void {
   }
 }
 
-function assertReceiptArtifactBindings(pack: PersistedV3Pack): void {
+function assertReceiptSemanticBindings(
+  pack: GrandHallT554ReviewPackV3AnySemanticArtifacts,
+): void {
   const { receipt, reviewPack: review, humanDecisions: decisions, closedVolume: volume } = pack;
   const t561 = review.sourceEvidence.t561AuthorityNoneObservation;
   const bindings = receipt.sourceBindings;
@@ -820,7 +840,25 @@ function assertReceiptArtifactBindings(pack: PersistedV3Pack): void {
       "OUTPUT_VERIFICATION_FAILED", "V3 receipt semantic cross-bindings disagree.",
     );
   }
+}
+
+function assertReceiptArtifactBindings(pack: PersistedV3Pack): void {
+  assertReceiptSemanticBindings(pack);
   assertReceiptPayloadFiles(pack);
+}
+
+/**
+ * Verifies the complete cross-artifact semantic contract without reading or
+ * regenerating source files. Callers must independently bind the exact raw
+ * artifact bytes before relying on this result.
+ */
+export function assertGrandHallT554ReviewPackV3SemanticIntegrity(
+  artifacts: GrandHallT554ReviewPackV3SemanticArtifacts,
+): void {
+  assertExactObservationSurface(artifacts);
+  assertPendingDocument(artifacts);
+  assertArtifactBindings(artifacts);
+  assertReceiptSemanticBindings(artifacts);
 }
 
 async function inspectPersistedPack(
