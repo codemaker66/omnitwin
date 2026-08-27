@@ -50,6 +50,7 @@ __all__ = [
     "zenith_donor_weight",
     "ceiling_is_planar",
     "zenith_cone_mask",
+    "local_detail",
     "fill_zenith_hole",
 ]
 
@@ -195,6 +196,53 @@ def zenith_cone_mask(
 
 
 # ---------------------------------------------------------------------------
+# The evidence gate
+# ---------------------------------------------------------------------------
+
+"""How much more the donors must show before their pixels are taken.
+
+Not a tuned constant: the 2026-07-22 feasibility measured a REAL blind cone at
+texture 3.7 against donors' 15.0 and 14.0 for the same world patch — about a
+fourfold contrast. Three sits just under that and far above the noise, and the
+operating window either side is enormous. Swept on the synthetic pair:
+
+    margin   good ceiling wrongly touched   blind cone correctly filled
+      1.25                        5.56 %                        96.5 %
+      2.0                         2.80 %                        95.2 %
+      3.0                         1.65 %                        94.5 %
+
+Raising the bar more than doubles the precision and costs 2 points of recall,
+which is the right trade when the failure mode is overwriting a ceiling the
+customer can already see.
+"""
+ZENITH_EVIDENCE_MARGIN = 3.0
+
+
+def local_detail(gray: np.ndarray, radius: int = 3) -> np.ndarray:
+    """Local high-pass energy: mean |pixel - local mean| over a box window.
+
+    A blind cone is smooth because there is nothing there; real ceiling has
+    coffers, mouldings and downlights. This is the same quantity the 2026-07-22
+    feasibility measured as "texture 3.7 vs 15.0" when it proved the zenith was
+    recoverable, computed here per pixel so the gate can work locally.
+    """
+    g = np.asarray(gray, dtype=np.float64)
+    pad = np.pad(g, radius, mode="edge")
+    cs = pad.cumsum(0).cumsum(1)
+    cs = np.pad(cs, ((1, 0), (1, 0)), mode="constant")
+    k = 2 * radius + 1
+    h, w = g.shape
+    total = cs[k:k + h, k:k + w] - cs[0:h, k:k + w] - cs[k:k + h, 0:w] + cs[0:h, 0:w]
+    mean = total / (k * k)
+    dev = np.abs(g - mean)
+    pad_d = np.pad(dev, radius, mode="edge")
+    cd = pad_d.cumsum(0).cumsum(1)
+    cd = np.pad(cd, ((1, 0), (1, 0)), mode="constant")
+    tot_d = cd[k:k + h, k:k + w] - cd[0:h, k:k + w] - cd[k:k + h, 0:w] + cd[0:h, 0:w]
+    return tot_d / (k * k)
+
+
+# ---------------------------------------------------------------------------
 # The fill
 # ---------------------------------------------------------------------------
 
@@ -208,6 +256,8 @@ def fill_zenith_hole(
     hole_mask_eq: np.ndarray | None = None,
     ring_deg: float = 6.0,
     occluder: "nf.VoxelOccluder | None" = None,
+    evidence_margin: float = ZENITH_EVIDENCE_MARGIN,
+    detail_radius: int = 3,
 ) -> tuple[np.ndarray, dict]:
     """Fill the target sweep's zenith blind cone from neighbouring sweeps.
 
@@ -222,7 +272,17 @@ def fill_zenith_hole(
       4. per-donor exposure gain solved on the ring just outside the cone
          (median target/donor ratio per channel — the JPEGs are unharmonized);
       5. weighted blend of the survivors by zenith_donor_weight;
-      6. pixels no donor could witness are left AS THEY WERE and counted in
+      6. THE EVIDENCE GATE: keep the blend only where the donors actually show
+         MORE than the target already does. Not every sweep is blind overhead —
+         the Reception Room's own ceiling comes through sharp, mouldings and
+         downlights and all — and a fill applied there replaces good pixels
+         with reprojected ones, which the pilot caught as a visible pasted disc
+         and a flattened downlight. This is the comparison the 2026-07-22
+         feasibility used ("texture 3.7 vs 15.0"), per pixel: it is
+         self-calibrating, so a legitimately featureless plaster ceiling scores
+         equal on both sides and is correctly left alone, where a flat-region
+         detector would have called it a hole;
+      7. pixels no donor could witness are left AS THEY WERE and counted in
          `donorless_px` — never synthesized. A grey blob honestly reported
          beats invented ceiling.
 
@@ -313,13 +373,36 @@ def fill_zenith_hole(
         wsum[idx] += weights
         report["donors_used"] += 1
 
-    filled = target.copy()
     got = wsum > 0
-    if got.any():
-        blended = (acc[got] / wsum[got][:, None]).astype(np.float32)
-        filled[rows[got], cols[got]] = np.clip(blended, 0.0, 255.0)
-    report["filled_px"] = int(got.sum())
     report["donorless_px"] = int((~got).sum())
+    if not got.any():
+        report["kept_target_px"] = 0
+        return target.copy(), report
+
+    candidate = target.copy()
+    blended = (acc[got] / wsum[got][:, None]).astype(np.float32)
+    candidate[rows[got], cols[got]] = np.clip(blended, 0.0, 255.0)
+
+    # The evidence gate, measured on the cone band only (the rest is identical
+    # by construction, so there is nothing to compare there).
+    band = int(np.max(rows)) + 1 + detail_radius
+    band = min(band, h)
+    t_detail = local_detail(target[:band].mean(axis=2), detail_radius)
+    c_detail = local_detail(candidate[:band].mean(axis=2), detail_radius)
+    in_band = rows < band
+    better = np.zeros(rows.size, dtype=bool)
+    better[in_band] = (
+        c_detail[rows[in_band], cols[in_band]]
+        > t_detail[rows[in_band], cols[in_band]] * float(evidence_margin)
+    )
+
+    take = got & better
+    filled = target.copy()
+    if take.any():
+        idx = np.nonzero(take)[0]
+        filled[rows[idx], cols[idx]] = candidate[rows[idx], cols[idx]]
+    report["filled_px"] = int(take.sum())
+    report["kept_target_px"] = int((got & ~better).sum())
     return filled, report
 
 

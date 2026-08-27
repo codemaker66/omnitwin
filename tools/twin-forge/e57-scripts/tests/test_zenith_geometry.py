@@ -238,6 +238,36 @@ def test_fill_leaves_everything_outside_the_cone_untouched():
     print("  every pixel outside the blind cone is byte-identical")
 
 
+def test_a_sweep_that_already_sees_its_ceiling_is_left_alone():
+    """THE REGRESSION THE PILOT CAUGHT, pinned.
+
+    Not every sweep is blind overhead. Run against the real Reception Room
+    (scan_126) the first version filled all 1.16 M cone pixels of a ceiling
+    that was already sharp — mouldings, downlights and all — and pasted a
+    visible disc over it, flattening a downlight's bloom. A geometric mask
+    alone cannot know; the evidence gate compares what the donors show against
+    what the target already has, and declines when the target is no worse.
+    """
+    C_t = np.array([0.0, 0.0, EYE])
+    seeing = render_ceiling_pano(C_t)          # NO blind cone: a good capture
+    donors = [
+        (render_ceiling_pano(np.array([3.2, 0.4, EYE])), np.array([3.2, 0.4, EYE])),
+        (render_ceiling_pano(np.array([-2.9, 1.1, EYE])), np.array([-2.9, 1.1, EYE])),
+    ]
+    filled, report = zf.fill_zenith_hole(
+        seeing, C_t, donors, z_ceiling=Z_CEIL,
+        cone_half_deg=CONE_HALF_DEG, eye_height=EYE,
+    )
+    changed = int((filled != seeing).any(axis=2).sum())
+    total = int(report["hole_mask_eq"].sum())
+    print(f"  already-sharp ceiling: {report['filled_px']} filled, "
+          f"{report['kept_target_px']} kept, {changed}/{total} px touched")
+    assert report["kept_target_px"] > 0, "the gate never engaged"
+    assert changed < total * 0.02, (
+        f"a sweep that already sees its ceiling was overwritten: {changed}/{total} px"
+    )
+
+
 def test_no_donor_leaves_the_hole_honestly_reported():
     """With every donor inside its own cone there is no evidence; the fill must
     say so rather than invent ceiling."""
