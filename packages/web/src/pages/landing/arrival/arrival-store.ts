@@ -1,7 +1,32 @@
 import { create } from "zustand";
 
 export type ArrivalPhase = "loading" | "flight" | "arrived" | "exploded" | "fallback";
-export type ArrivalFailReason = "no-key" | "webgl" | "tiles" | "poster-tier";
+/**
+ * Every way the flight can be knocked over. The first four arrive as DATA —
+ * a gate result, a tiles `load-error`, a `webglcontextlost` event — and are
+ * turned into fail(reason) by whoever observes them. "crash" is the odd one
+ * out: it arrives as a THROWN EXCEPTION out of React's own render or commit,
+ * so only ArrivalErrorBoundary can name it (Task 12b).
+ */
+export type ArrivalFailReason = "no-key" | "webgl" | "tiles" | "poster-tier" | "crash";
+
+// Keyed by the union itself, so BOTH directions are compile-checked: a
+// missing member is an error (Record demands every key) and a stray member is
+// an error (excess-property checking under `satisfies`). A bare `as const`
+// array would only have caught the second, letting a newly-added reason slip
+// past the exhaustive fallback test that consumes the list below.
+const FAIL_REASON_KEYS = {
+  "no-key": true,
+  webgl: true,
+  tiles: true,
+  "poster-tier": true,
+  crash: true,
+} as const satisfies Record<ArrivalFailReason, true>;
+
+/** Every member of ArrivalFailReason. The one cast is Object.keys' own
+ *  well-known widening to string[]; FAIL_REASON_KEYS above is what actually
+ *  guarantees the contents. */
+export const ARRIVAL_FAIL_REASONS = Object.keys(FAIL_REASON_KEYS) as readonly ArrivalFailReason[];
 
 interface ArrivalState {
   phase: ArrivalPhase;

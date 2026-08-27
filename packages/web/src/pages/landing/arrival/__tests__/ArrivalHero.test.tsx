@@ -3,7 +3,11 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
 import { Quaternion, Vector3 } from "three";
 import type { TwinManifest } from "@omnitwin/types";
-import { useArrivalStore, type ArrivalFailReason } from "../arrival-store.js";
+import {
+  ARRIVAL_FAIL_REASONS,
+  useArrivalStore,
+  type ArrivalFailReason,
+} from "../arrival-store.js";
 import { useDeviceStore } from "../../../../stores/device-store.js";
 import { ARRIVAL_RAIL, sampleRail } from "../camera-rail.js";
 import {
@@ -653,8 +657,8 @@ describe("ArrivalHero — the invariant: any failure ends with nothing rendered 
   // The property that actually matters: whatever knocks the flight over,
   // FreshPage's static hero photo ends up carrying the page exactly as it
   // did before ArrivalHero existed — this component contributes nothing to
-  // the DOM once each reason has fully played out. no-key/poster-tier get
-  // there on the very first render (never having shown a canvas at all);
+  // the DOM once each reason has fully played out. no-key/poster-tier/crash
+  // get there on the very first render (never having shown a canvas at all);
   // tiles/webgl get there via the fade, so a transitionend is simulated for
   // those two before the final assertion.
   const CASES: ReadonlyArray<{
@@ -674,7 +678,33 @@ describe("ArrivalHero — the invariant: any failure ends with nothing rendered 
         useDeviceStore.getState().override("poster");
       },
     },
+    {
+      // Task 12b. Unlike the others, ArrivalHero can never PRODUCE "crash" —
+      // it is ArrivalErrorBoundary's reason, raised when a throw escapes this
+      // component's own render (see ArrivalErrorBoundary.test.tsx). What is
+      // worth asserting here is the other half: a fresh mount that INHERITS
+      // an already-crashed store — what a re-render of FreshPage produces —
+      // must still contribute nothing, exactly like the others.
+      reason: "crash",
+      trigger: () => {
+        vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+        useArrivalStore.getState().fail("crash");
+      },
+    },
   ];
+
+  const FADING: ReadonlyArray<ArrivalFailReason> = ["tiles", "webgl"];
+
+  it("covers every ArrivalFailReason — no reason may be added without a case here", () => {
+    // The whole point of this describe block is EXHAUSTIVENESS, and two
+    // hand-written lists silently stop being exhaustive the moment someone
+    // widens the union (as Task 12b did, with "crash"). ARRIVAL_FAIL_REASONS
+    // is derived from a Record keyed by the union itself, so it cannot drift
+    // from the type — which makes this a real gate rather than a third list
+    // to forget.
+    const covered = [...CASES.map((c) => c.reason), ...FADING].sort();
+    expect(covered).toEqual([...ARRIVAL_FAIL_REASONS].sort());
+  });
 
   for (const { reason, trigger } of CASES) {
     it(`"${reason}" lands on phase "fallback" with no canvas, no rendered content`, () => {
@@ -687,7 +717,7 @@ describe("ArrivalHero — the invariant: any failure ends with nothing rendered 
     });
   }
 
-  for (const reason of ["tiles", "webgl"] as const) {
+  for (const reason of FADING) {
     it(`"${reason}" lands on phase "fallback" with no canvas, once the fade completes`, () => {
       vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
       stubMatchMedia(false);

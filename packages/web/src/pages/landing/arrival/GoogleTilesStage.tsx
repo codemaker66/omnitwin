@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useThree } from "@react-three/fiber";
 import { MathUtils } from "three";
 import { TilesAttributionOverlay, TilesPlugin, TilesRenderer } from "3d-tiles-renderer/r3f";
 import { GoogleCloudAuthPlugin, ReorientationPlugin } from "3d-tiles-renderer/plugins";
+import type { Tile } from "3d-tiles-renderer/core";
 import type { TilesRenderer as TilesRendererImpl } from "3d-tiles-renderer/three";
 import { useArrivalStore } from "./arrival-store.js";
 import { TRADES_HALL_ANCHOR } from "./trades-hall-anchor.js";
@@ -78,6 +79,62 @@ interface GoogleTilesStageProps {
   readonly apiToken: string;
 }
 
+/** The renderer's own `load-error` payload — node_modules/3d-tiles-renderer/
+ *  src/core/renderer/tiles/TilesRendererBase.d.ts:25. `tile` is null when it
+ *  is the ROOT tileset that failed, which is the request that carries the
+ *  API key. */
+type TilesLoadErrorEvent = {
+  tile: Tile | null;
+  error: Error;
+  url: string | URL;
+} & { type: "load-error" };
+
+/**
+ * What a developer sees when the tiles will not load — Task 12b.
+ *
+ * The fallback itself needed no fixing: an invalid, mistyped, revoked,
+ * wrongly-restricted or over-quota key makes Google answer the root-tileset
+ * request with 400/403/429 and a JSON `{ error: … }` body, GoogleCloudAuth's
+ * getSessionToken() then reads `json.root` (undefined) and dereferences
+ * `tile.content` on it, and that TypeError — asynchronous, inside a .then —
+ * is caught by TilesRendererBase.update()'s own .catch and re-emitted as
+ * `load-error` (TilesRendererBase.js:823-832), which is exactly the event
+ * this component already subscribes to. Measured in a real browser: no
+ * uncaught exception, no unhandled rejection, the store reaches "fallback"
+ * and the photograph carries the page.
+ *
+ * What DID need fixing is that the library's own `console.error(error)` on
+ * the line above that dispatch was the only trace, and it reads
+ * "TypeError: Cannot read properties of undefined (reading 'content')" from
+ * inside a bundled dependency — naming neither Google, nor the key, nor the
+ * hero. It was misread as an uncaught crash and filed as this task. So: say
+ * it once, in English, next to the useless one.
+ *
+ * Deliberately not distinguishing 400 from 403 from 429 in the wording. The
+ * plugin throws away the Response before this event exists, so the status is
+ * genuinely not knowable here — and guessing at one cause would be worse
+ * than naming all of them, since the reader has to check the key anyway.
+ */
+function describeTilesFailure(event: TilesLoadErrorEvent): string {
+  if (event.tile === null) {
+    return (
+      "Arrival: Google Photorealistic 3D Tiles would not start, so the hero flight was " +
+      "abandoned and the static hero photo is carrying the page — the homepage is fine. " +
+      "The ROOT tileset request failed, and that is the request carrying the API key, so " +
+      "check VITE_GOOGLE_MAPS_TILES_KEY first: absent, mistyped, revoked, restricted to " +
+      "the wrong referrer or API, or over quota all fail here identically. (The " +
+      "TypeError below is 3d-tiles-renderer failing to parse a session token out of " +
+      "Google's JSON error body — it is a symptom, not the cause.) Request:"
+    );
+  }
+  return (
+    "Arrival: a Google 3D Tiles tile failed to load, so the hero flight was abandoned and " +
+    "the static hero photo is carrying the page — the homepage is fine. The session itself " +
+    "started, so this is usually the network; if it repeats from the same session, the key " +
+    "may have been revoked or its quota exhausted mid-flight. Request:"
+  );
+}
+
 /** Stable across every render — derives only from the module-level anchor. */
 const REORIENTATION_ARGS: ConstructorParameters<typeof ReorientationPlugin> = [
   {
@@ -91,6 +148,12 @@ const REORIENTATION_ARGS: ConstructorParameters<typeof ReorientationPlugin> = [
 export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElement {
   const invalidate = useThree((s) => s.invalidate);
   const [tiles, setTiles] = useState<TilesRendererImpl | null>(null);
+  // Once per MOUNT, not once per subscription: the wiring effect below
+  // re-runs whenever the tiles instance changes, and a collapsing tileset can
+  // emit load-error per tile per frame. A `let` inside the effect (as
+  // `announced` is, deliberately, since the store guards tilesReady()) would
+  // let the diagnostic repeat; nothing guards a console line.
+  const loggedFailure = useRef(false);
   const authArgs = useMemo<ConstructorParameters<typeof GoogleCloudAuthPlugin>>(
     // logoUrl is GOOGLE_MAPS_ATTRIBUTION_LOGO_URL, a module-scope constant
     // (see arrival-config.ts for provenance/NEEDS_CONTEXT) — it belongs
@@ -115,7 +178,12 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
       }
       invalidate();
     };
-    const onError = (): void => {
+    const onError = (event: TilesLoadErrorEvent): void => {
+      if (!loggedFailure.current) {
+        loggedFailure.current = true;
+        // eslint-disable-next-line no-console
+        console.error(describeTilesFailure(event), String(event.url), event.error);
+      }
       fail("tiles");
     };
     const onNeedsUpdate = (): void => {

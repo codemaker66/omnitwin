@@ -32,31 +32,38 @@ vi.mock("@react-three/fiber", () => ({
     selector({ invalidate }),
 }));
 
+// Listeners take the real event object. `load-error` carries a payload the
+// component now reads — { tile, error, url }, exactly the shape declared by
+// the installed package's own event map (node_modules/3d-tiles-renderer/src/
+// core/renderer/tiles/TilesRendererBase.d.ts:25) — so the fake must hand one
+// over rather than call listeners bare.
+type FakeListener = (event: { type: string }) => void;
+
 interface FakeTilesController {
-  addEventListener: (type: string, cb: () => void) => void;
-  removeEventListener: (type: string, cb: () => void) => void;
-  dispatch: (type: string) => void;
+  addEventListener: (type: string, cb: FakeListener) => void;
+  removeEventListener: (type: string, cb: FakeListener) => void;
+  dispatch: (type: string, payload?: Record<string, unknown>) => void;
   listenerCount: (type: string) => number;
 }
 
 function createFakeTiles(): FakeTilesController {
-  const listeners = new Map<string, Set<() => void>>();
+  const listeners = new Map<string, Set<FakeListener>>();
   return {
     addEventListener(type, cb) {
-      const forType = listeners.get(type) ?? new Set<() => void>();
+      const forType = listeners.get(type) ?? new Set<FakeListener>();
       forType.add(cb);
       listeners.set(type, forType);
     },
     removeEventListener(type, cb) {
       listeners.get(type)?.delete(cb);
     },
-    dispatch(type) {
+    dispatch(type, payload) {
       const forType = listeners.get(type);
       if (forType === undefined) {
         return;
       }
       for (const cb of forType) {
-        cb();
+        cb({ ...payload, type });
       }
     },
     listenerCount(type) {
@@ -64,6 +71,21 @@ function createFakeTiles(): FakeTilesController {
     },
   };
 }
+
+/**
+ * The EXACT event an invalid/revoked/restricted/over-quota key produces.
+ * Verified end to end, not invented: Google answers the root-tileset request
+ * with HTTP 400/403/429 and a JSON `{ error: {...} }` body; GoogleCloudAuth's
+ * getSessionToken() then reads `json.root` (undefined) and hands it to
+ * traverseSet, whose first callback dereferences `tile.content` — hence this
+ * TypeError, which TilesRendererBase.update()'s own .catch turns into
+ * `load-error` with `tile: null`. See task-12b-report.md for the measurements.
+ */
+const ROOT_AUTH_FAILURE = {
+  tile: null,
+  error: new TypeError("Cannot read properties of undefined (reading 'content')"),
+  url: "https://tile.googleapis.com/v1/3dtiles/root.json",
+};
 
 const seen = vi.hoisted(() => ({
   plugins: [] as { plugin: { name: string }; args: unknown }[],
@@ -122,16 +144,52 @@ vi.mock("3d-tiles-renderer/plugins", () => ({
 
 const { GoogleTilesStage } = await import("../GoogleTilesStage.js");
 
+/**
+ * A hand-rolled capture rather than vi.spyOn: spyOn's return type only
+ * resolves through its overloads for a concrete function type, and
+ * `console.error`'s `(...data: any[])` signature collapses it to `any`, which
+ * this repo's strictTypeChecked lint rejects (no-unsafe-call /
+ * no-unsafe-member-access). Six honest lines beat a file of suppressions.
+ */
+function captureConsoleError(): { calls: unknown[][]; restore: () => void } {
+  const calls: unknown[][] = [];
+  /* eslint-disable no-console -- capturing the channel IS the assertion here */
+  const original = console.error.bind(console);
+  console.error = (...args: unknown[]): void => {
+    calls.push(args);
+  };
+  return {
+    calls,
+    restore: () => {
+      console.error = original;
+    },
+  };
+  /* eslint-enable no-console */
+}
+
+/** Only OUR diagnostics, never anything else on the same channel. */
+function arrivalLogs(calls: readonly unknown[][]): unknown[][] {
+  return calls.filter((args) => typeof args[0] === "string" && args[0].startsWith("Arrival:"));
+}
+
 describe("GoogleTilesStage", () => {
+  // The component now writes a diagnostic on load-error (see the "explains
+  // itself" tests below). Captured rather than printed: the calls are the
+  // assertion surface, and letting it print would make every failure-path
+  // test noisy.
+  let consoleError: { calls: unknown[][]; restore: () => void };
+
   beforeEach(() => {
     useArrivalStore.getState().reset();
     seen.plugins.length = 0;
     seen.tiles = null;
     invalidate.mockClear();
+    consoleError = captureConsoleError();
   });
 
   afterEach(() => {
     cleanup();
+    consoleError.restore();
   });
 
   it("registers the Google auth plugin with the api token and the reorientation plugin", () => {
@@ -233,8 +291,71 @@ describe("GoogleTilesStage", () => {
 
   it('calls fail("tiles") on load-error', () => {
     render(<GoogleTilesStage apiToken="AIza-test" />);
-    seen.tiles?.dispatch("load-error");
+    seen.tiles?.dispatch("load-error", ROOT_AUTH_FAILURE);
     expect(useArrivalStore.getState().phase).toBe("fallback");
+    expect(useArrivalStore.getState().failReason).toBe("tiles");
+  });
+
+  it("explains a rejected API key instead of leaving a bare vendored TypeError", () => {
+    // THE POINT OF TASK 12b. The fallback itself already worked: the library
+    // catches its own async session-token rejection and dispatches
+    // `load-error`, which the handler above turns into fail("tiles"). What a
+    // developer with a bad key actually SAW, though, was one line —
+    // "TypeError: Cannot read properties of undefined (reading 'content')" —
+    // logged by 3d-tiles-renderer from inside a bundled dependency, naming
+    // neither Google, nor the key, nor the hero. It is misleading enough that
+    // it was read as an uncaught crash and filed as this very task.
+    render(<GoogleTilesStage apiToken="AIza-test" />);
+    seen.tiles?.dispatch("load-error", ROOT_AUTH_FAILURE);
+
+    const ours = arrivalLogs(consoleError.calls);
+    expect(ours).toHaveLength(1);
+    const [message] = ours[0] as [string];
+    // Names the one thing the reader can act on...
+    expect(message).toContain("VITE_GOOGLE_MAPS_TILES_KEY");
+    // ...every realistic way that key can be wrong, since the request shape
+    // is identical for all of them (400 invalid / 403 restricted or disabled
+    // / 429 over quota all return the same JSON error body)...
+    expect(message).toContain("revoked");
+    expect(message).toContain("quota");
+    // ...and says what actually happened to the page, so nobody hunts a bug
+    // that is really a fallback working as designed.
+    expect(message).toContain("static hero photo");
+    // The failing request and the underlying error travel with it, not
+    // instead of it.
+    expect(ours[0]).toContain(ROOT_AUTH_FAILURE.url);
+    expect(ours[0]).toContain(ROOT_AUTH_FAILURE.error);
+  });
+
+  it("says it once, however many times load-error fires", () => {
+    // A collapsing tileset can emit load-error per tile, per frame. One
+    // diagnostic is a diagnostic; a hundred is a second bug.
+    render(<GoogleTilesStage apiToken="AIza-test" />);
+    seen.tiles?.dispatch("load-error", ROOT_AUTH_FAILURE);
+    seen.tiles?.dispatch("load-error", ROOT_AUTH_FAILURE);
+    seen.tiles?.dispatch("load-error", ROOT_AUTH_FAILURE);
+    const ours = arrivalLogs(consoleError.calls);
+    expect(ours).toHaveLength(1);
+    expect(useArrivalStore.getState().failReason).toBe("tiles");
+  });
+
+  it("does not blame the key for a single failed tile", () => {
+    // `tile: null` means the ROOT tileset request failed — the request that
+    // carries the key, so the key is the honest first suspect. A non-null
+    // tile is one tile among thousands and is usually just the network;
+    // saying "your API key is wrong" there would be a false lead.
+    render(<GoogleTilesStage apiToken="AIza-test" />);
+    seen.tiles?.dispatch("load-error", {
+      tile: { __tile: true },
+      error: new Error("Failed to fetch"),
+      url: "https://tile.googleapis.com/v1/3dtiles/datasets/CgA/files/abc.glb",
+    });
+    const ours = arrivalLogs(consoleError.calls);
+    expect(ours).toHaveLength(1);
+    const [message] = ours[0] as [string];
+    expect(message).not.toContain("VITE_GOOGLE_MAPS_TILES_KEY");
+    expect(message).toContain("tile");
+    // Same outcome for the visitor either way — the flight is over.
     expect(useArrivalStore.getState().failReason).toBe("tiles");
   });
 
@@ -252,7 +373,7 @@ describe("GoogleTilesStage", () => {
     unmount();
     // Every listener this component attached must be gone — dispatching
     // load-error post-unmount must be a silent no-op, not a late fail("tiles").
-    tiles?.dispatch("load-error");
+    tiles?.dispatch("load-error", ROOT_AUTH_FAILURE);
     expect(useArrivalStore.getState().phase).toBe("loading");
   });
 
@@ -264,7 +385,7 @@ describe("GoogleTilesStage", () => {
       const { rerender } = render(<GoogleTilesStage apiToken="AIza-test" />);
       rerender(<GoogleTilesStage apiToken="AIza-test-2" />);
       expect(seen.tiles?.listenerCount("load-error")).toBe(1);
-      seen.tiles?.dispatch("load-error");
+      seen.tiles?.dispatch("load-error", ROOT_AUTH_FAILURE);
       expect(spy).toHaveBeenCalledTimes(1);
     } finally {
       useArrivalStore.setState({ fail: originalFail });

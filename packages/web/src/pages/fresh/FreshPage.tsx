@@ -132,12 +132,21 @@ const FreshWalk = lazy(() => import("./FreshWalk.js"));
 /** The live hero flight costs nothing until it can actually run: Three +
  *  3d-tiles-renderer live in this chunk, which only downloads once mounted —
  *  and it self-gates to null (no key, or a failure) so the static photo
- *  above always carries the page regardless of whether this chunk loads. */
+ *  above always carries the page regardless of whether this chunk loads.
+ *
+ *  "Regardless of whether this chunk loads" was, until Task 12b, not quite
+ *  true: `<Suspense>` is not an error boundary, so a REJECTED dynamic import
+ *  (the ordinary shape of a deploy that purges the chunk hashes this tab's
+ *  index.html still names) threw past it to the app root — and React 18
+ *  unmounts the whole root on an uncaught error, hero photograph included.
+ *  ArrivalErrorBoundary, imported eagerly precisely so it cannot be inside
+ *  the chunk it is guarding, is what makes the sentence true. */
 const ArrivalHero = lazy(() =>
   import("../landing/arrival/ArrivalHero.js").then((m) => ({ default: m.ArrivalHero })),
 );
 
 type WalkState = "poster" | "loading" | "live" | "failed";
+import { ArrivalErrorBoundary } from "../landing/arrival/ArrivalErrorBoundary.js";
 import {
   ENQUIRY_EVENT_TYPES,
   alsoFitsSentence,
@@ -743,10 +752,15 @@ export function FreshPage(): ReactElement {
             {/* The live flight: layered above the photo, self-gated to null
                 (no key, or any failure) so this <picture> always carries the
                 hero on its own. Suspense's fallback is the photo itself —
-                nothing renders while the chunk downloads. */}
-            <Suspense fallback={null}>
-              <ArrivalHero />
-            </Suspense>
+                nothing renders while the chunk downloads.
+                The boundary sits OUTSIDE the Suspense so it also catches a
+                rejected chunk import, which Suspense re-throws rather than
+                handles (Task 12b). */}
+            <ArrivalErrorBoundary>
+              <Suspense fallback={null}>
+                <ArrivalHero />
+              </Suspense>
+            </ArrivalErrorBoundary>
             {/* The photo's drawn top edge: flat, then a fanlight over the
                 real dome, then the corner sweep — with a keystone tick. */}
             <svg className="fr-hero-fanlight" aria-hidden ref={aperture.svgRef}>
