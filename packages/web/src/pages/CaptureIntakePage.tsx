@@ -15,6 +15,7 @@ import {
 import type { CaptureIntakeCaveat, CaptureIntakeOperatorStatus } from "@omnitwin/types";
 import { getCaptureIntakeOperatorStatus } from "../api/capture-intake.js";
 import "./CaptureIntakePage.css";
+import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -71,7 +72,9 @@ export function CaptureIntakePage(): ReactElement {
   }, [reloadToken]);
 
   return (
-    <main className="capture-intake-page" aria-label="Capture-to-Truth Factory">
+    <DashboardLayout mainLabel="Capture-to-Truth Factory">
+
+      <div className="capture-intake-page">
       <header className="capture-intake-hero">
         <div>
           <p className="capture-intake-kicker"><Fingerprint aria-hidden="true" /> Capture-to-Truth Factory</p>
@@ -88,7 +91,9 @@ export function CaptureIntakePage(): ReactElement {
         <section className="capture-intake-state capture-intake-state--error" role="alert"><AlertTriangle aria-hidden="true" /><div><h2>Operator status unavailable</h2><p>{state.message}</p></div><button type="button" onClick={reload}>Retry</button></section>
       )}
       {state.kind === "ready" && <CaptureStatus status={state.status} onReload={reload} />}
-    </main>
+      </div>
+
+    </DashboardLayout>
   );
 }
 

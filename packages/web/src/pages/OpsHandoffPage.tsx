@@ -5,6 +5,7 @@ import type { OpsHandoffPackBundle, OpsTask, TaskGroup } from "@omnitwin/types";
 import { getOpsHandoffPack } from "../api/ops-handoff.js";
 import { AIDraftPanel } from "../components/ai/AIDraftPanel.js";
 import "./OpsHandoffPage.css";
+import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -104,17 +105,20 @@ export function OpsHandoffPage(): ReactElement {
 
   if (state.kind === "loading") {
     return (
-      <main className="ops-handoff-page ops-handoff-centered" aria-label="Operations handoff loading">
+      <DashboardLayout mainLabel="Operations handoff loading">
+        <div className="ops-handoff-page ops-handoff-centered">
         <RefreshCw aria-hidden="true" className="ops-handoff-spin" />
         <h1>Loading handoff pack</h1>
         <p>Preparing the latest compiled operations view.</p>
-      </main>
+        </div>
+      </DashboardLayout>
     );
   }
 
   if (state.kind === "error") {
     return (
-      <main className="ops-handoff-page ops-handoff-centered" aria-label="Operations handoff unavailable">
+      <DashboardLayout mainLabel="Operations handoff unavailable">
+        <div className="ops-handoff-page ops-handoff-centered">
         <AlertCircle aria-hidden="true" />
         <h1>Handoff pack unavailable</h1>
         <p>{state.message}</p>
@@ -122,14 +126,17 @@ export function OpsHandoffPage(): ReactElement {
           <RefreshCw aria-hidden="true" />
           Retry
         </button>
-      </main>
+        </div>
+
+      </DashboardLayout>
     );
   }
 
   const { bundle } = state;
 
   return (
-    <main className="ops-handoff-page" aria-label="Operations handoff pack">
+    <DashboardLayout mainLabel="Operations handoff pack">
+      <div className="ops-handoff-page">
       <header className="ops-handoff-hero">
         <div>
           <p className="ops-handoff-kicker">Internal operations handoff</p>
@@ -352,6 +359,8 @@ export function OpsHandoffPage(): ReactElement {
           </ol>
         </section>
       )}
-    </main>
+      </div>
+
+    </DashboardLayout>
   );
 }

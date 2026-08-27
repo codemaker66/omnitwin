@@ -36,6 +36,7 @@ import { getVenue, listVenues, type Space, type Venue } from "../api/spaces.js";
 import { EventArchitectOpsReviewPanel } from "../components/event-architect/EventArchitectOpsReviewPanel.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import "./EventArchitectPage.css";
+import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 
 interface FormDraft {
   readonly venueId: string;
@@ -572,7 +573,8 @@ export function EventArchitectPage(): ReactElement {
     user?.role === "hallkeeper";
 
   return (
-    <main className="event-architect-page" aria-label="Event Architect workspace">
+    <DashboardLayout mainLabel="Event Architect workspace">
+      <div className="event-architect-page">
       <header className="event-architect-hero">
         <div>
           <p className="event-architect-kicker"><Sparkles aria-hidden="true" /> Event Architect</p>
@@ -751,6 +753,7 @@ export function EventArchitectPage(): ReactElement {
         <div><CircleDollarSign aria-hidden="true" /><strong>Exact minor units</strong><span>Budget comparisons run only with complete, referenced price-book inputs.</span></div>
         <div><Sparkles aria-hidden="true" /><strong>Simulated flow sidecar</strong><span>Deterministic replay metrics stay visibly separate from validator-owned checks and require venue review.</span></div>
       </aside>
-    </main>
+      </div>
+    </DashboardLayout>
   );
 }

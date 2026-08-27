@@ -13,6 +13,7 @@ import {
 } from "../lib/event-day-offline-queue.js";
 import { EventMissionControl } from "../components/mission-control/EventMissionControl.js";
 import "./EventDayOpsPage.css";
+import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -292,17 +293,23 @@ export function EventDayOpsPage(): ReactElement {
 
   if (state.kind === "loading") {
     return (
-      <main className="event-day-page event-day-centered">
+      <DashboardLayout>
+
+        <div className="event-day-page event-day-centered">
         <RefreshCw aria-hidden="true" className="event-day-spin" />
         <h1>Loading event-day board</h1>
         <p>Preparing the latest internal operations view.</p>
-      </main>
+        </div>
+
+      </DashboardLayout>
     );
   }
 
   if (state.kind === "error") {
     return (
-      <main className="event-day-page event-day-centered">
+      <DashboardLayout>
+
+        <div className="event-day-page event-day-centered">
         <AlertCircle aria-hidden="true" />
         <h1>Event-day board unavailable</h1>
         <p>{state.message}</p>
@@ -310,14 +317,18 @@ export function EventDayOpsPage(): ReactElement {
           <RefreshCw aria-hidden="true" />
           Retry
         </button>
-      </main>
+        </div>
+
+      </DashboardLayout>
     );
   }
 
   const readyBoard = state.board;
 
   return (
-    <main className="event-day-page">
+    <DashboardLayout>
+
+      <div className="event-day-page">
       <header className="event-day-hero">
         <div>
           <p className="event-day-kicker">Today&apos;s event</p>
@@ -544,6 +555,8 @@ export function EventDayOpsPage(): ReactElement {
           </ul>
         )}
       </Section>
-    </main>
+      </div>
+
+    </DashboardLayout>
   );
 }

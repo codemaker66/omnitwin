@@ -22,6 +22,10 @@ interface DashboardLayoutProps {
    *  every existing selector stay exactly as they are. */
   readonly activeView?: DashboardView;
   readonly onViewChange?: (view: DashboardView) => void;
+  /** The accessible name for this page's <main> landmark. The shell owns the
+   *  only <main> on the page, so a wrapped surface hands its name up rather
+   *  than keeping a second landmark of its own. */
+  readonly mainLabel?: string;
   readonly children: ReactNode;
 }
 
@@ -75,7 +79,7 @@ function LocalSignOutButton(props: { readonly onLocalSignOut: () => void }): Rea
   );
 }
 
-export function DashboardLayout({ activeView, onViewChange, children }: DashboardLayoutProps): React.ReactElement {
+export function DashboardLayout({ activeView, onViewChange, mainLabel, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const logoutLocal = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -203,7 +207,7 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
             <span className="vv-status-chip" data-tone="review">{user?.name ?? "Signed in"}</span>
           </div>
         </header>
-        <main className="dashboard-layout-content" id="dashboard-main" aria-label="Dashboard workspace">
+        <main className="dashboard-layout-content" id="dashboard-main" aria-label={mainLabel ?? "Dashboard workspace"}>
           {children}
         </main>
       </div>

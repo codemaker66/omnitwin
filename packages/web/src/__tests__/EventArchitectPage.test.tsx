@@ -12,6 +12,23 @@ import {
 import { EventArchitectPage } from "../pages/EventArchitectPage.js";
 import { useAuthStore } from "../stores/auth-store.js";
 
+// These pages now wear the app shell (DashboardLayout), which renders a Clerk
+// sign-out and fetches the venue name for its topbar. In production every one
+// of these routes is withClerk()-wrapped so both are real; here they are
+// stubbed so each spec keeps testing its PAGE, not the chrome around it.
+vi.mock("@clerk/react", () => ({
+  useClerk: () => ({ signOut: vi.fn() }),
+}));
+
+vi.mock("../api/spaces.js", () => ({
+  getVenue: vi.fn().mockResolvedValue({ id: "venue-1", name: "Trades Hall" }),
+}));
+
+vi.mock("../components/dashboard/NotificationCenter.js", () => ({
+  NotificationCenter: () => null,
+}));
+
+
 const {
   mockCreateEventArchitectRun,
   mockGetEventArchitectRun,

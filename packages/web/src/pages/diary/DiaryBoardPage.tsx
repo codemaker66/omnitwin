@@ -403,8 +403,8 @@ export function DiaryBoardPage(): ReactElement {
 
   if (user !== null && venueId === null) {
     return (
-      <DashboardLayout>
-        <div className="diary-page" aria-label={BOARD_COPY.title}>
+      <DashboardLayout mainLabel={BOARD_COPY.title}>
+        <div className="diary-page">
           <div className="diary-notice">{BOARD_COPY.noVenue}</div>
         </div>
       </DashboardLayout>

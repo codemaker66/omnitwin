@@ -5,6 +5,7 @@ import type { RoomAssetStatus } from "@omnitwin/types";
 import { getAdminAssetRooms } from "../api/asset-status.js";
 import { containsUnsafePublicClaim } from "../lib/safe-public-copy.js";
 import "./TradesHallAssetStatusPage.css";
+import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 
 type LoadState = "loading" | "loaded" | "error";
 
@@ -238,7 +239,8 @@ export function TradesHallAssetStatusPage(): ReactElement {
   const unsafeClaimDetected = useMemo(() => hasUnsafeClaim(rooms), [rooms]);
 
   return (
-    <main className="asset-status-shell" aria-label="Trades Hall asset registry">
+    <DashboardLayout mainLabel="Trades Hall asset registry">
+      <div className="asset-status-shell">
       <header className="asset-status-hero">
         <div>
           <p className="asset-status-eyebrow">Internal asset registry</p>
@@ -290,6 +292,8 @@ export function TradesHallAssetStatusPage(): ReactElement {
           ))}
         </section>
       )}
-    </main>
+      </div>
+
+    </DashboardLayout>
   );
 }
