@@ -39,6 +39,29 @@ import zenith_fill as zf  # noqa: E402
 # uniformly plain ceiling scores and well above the near-0 of a total blank.
 BLIND_RATIO = 0.45
 
+# WHY THERE IS NO ABSOLUTE DETAIL TEST HERE, having tried one.
+#
+# The ratio has a known false positive: scan_043 looks up at the Grand Hall's
+# dome, which is sharp and in no way blind, but its smooth painted ribs sit
+# inside a ring of deeply carved coffers, so the ratio reads 0.228 and flags
+# it. Adding "and the cone must be smooth in absolute terms" does remove that
+# flag — and also removes scan_058 and scan_059, the two sweeps that filled
+# BEST of all (detail x14 and x15, confirmed by eye). Those two are PARTIALLY
+# blind: a blank patch inside an otherwise detailed cone, which no whole-cone
+# statistic can see. Trading a false positive for two false negatives is a bad
+# trade, and the reason is structural rather than a matter of tuning:
+#
+#   THIS IS TRIAGE, NOT THE DECISION. A node flagged here still faces the
+#   fill's own gates — donor agreement inside the cone, the evidence gate, the
+#   likeness band — and those gates DID refuse scan_043, at -0.124 agreement,
+#   without any help from the survey. A false positive costs one node's
+#   compute. A false negative means a genuinely broken sweep is never even
+#   examined, and nothing downstream can recover it.
+#
+# So this stays permissive on purpose. If a per-pixel blindness measure is ever
+# wanted (the honest way to catch a blind PATCH inside a detailed cone), it
+# belongs here as a fraction-of-cone statistic, not as a whole-cone threshold.
+
 
 def survey_node(
     path: str, cone_half_deg: float = 25.0, ring_deg: float = 12.0, radius: int = 3

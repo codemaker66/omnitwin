@@ -40,6 +40,9 @@ import nadir_fill as nf
 
 __all__ = [
     "cone_grid",
+    "cone_grid_mask",
+    "sample_depth",
+    "fill_zenith_by_depth",
     "donor_votes",
     "consistency_at",
     "solve_cone_depth",
@@ -98,6 +101,22 @@ class ConeDepth:
     voters: np.ndarray
     #: (N,) bool — enough voters AND a decisive winner.
     confident: np.ndarray
+    #: (grid, grid) depth laid back out on the tangent-plane grid, NaN where
+    #: the ray fell outside the cone or was not confidently resolved. Kept so
+    #: full-resolution pixels can interpolate a surface from the coarse sweep.
+    depth_grid: np.ndarray
+    #: Half-width of the tangent grid, i.e. tan(cone_half_deg).
+    grid_half: float
+
+
+def cone_grid_mask(cone_half_deg: float, grid: int) -> tuple[np.ndarray, float]:
+    """The tangent-plane grid the cone is sampled on, and its half-width.
+    Shared so the sweep and the interpolation cannot disagree about the
+    layout — the one thing that would silently misplace every filled pixel."""
+    half = float(np.tan(np.radians(cone_half_deg)))
+    lin = np.linspace(-half, half, grid)
+    gx, gy = np.meshgrid(lin, lin)
+    return (gx * gx + gy * gy) <= (half * half + 1e-12), half
 
 
 def cone_grid(
@@ -111,10 +130,9 @@ def cone_grid(
     (dirs, rows, cols) with the rows/cols of the equirect pixel each ray came
     from, so a caller can write results back.
     """
-    half = np.tan(np.radians(cone_half_deg))
+    inside, half = cone_grid_mask(cone_half_deg, grid)
     lin = np.linspace(-half, half, grid)
     gx, gy = np.meshgrid(lin, lin)
-    inside = (gx * gx + gy * gy) <= (half * half + 1e-12)
     dirs = np.stack([gx[inside], gy[inside], np.ones(int(inside.sum()))], axis=-1)
     dirs /= np.linalg.norm(dirs, axis=-1, keepdims=True)
     rows, cols = nf.dirs_to_pixels(dirs, w, h)
@@ -286,6 +304,7 @@ def solve_cone_depth(
     n = dirs.shape[0]
     C_t = np.asarray(C_target, dtype=np.float64)
 
+    inside, grid_half = cone_grid_mask(cone_half_deg, grid)
     if len(donors) < MIN_VOTERS:
         zeros = np.zeros(n)
         return ConeDepth(
@@ -293,6 +312,7 @@ def solve_cone_depth(
             points=C_t + zeros[:, None] * dirs,
             confidence=zeros, voters=zeros,
             confident=np.zeros(n, dtype=bool),
+            depth_grid=np.full((grid, grid), np.nan), grid_half=grid_half,
         )
 
     inv = np.linspace(1.0 / far_m, 1.0 / near_m, steps)
@@ -371,7 +391,142 @@ def solve_cone_depth(
         disagreement = np.abs(depths[0] - depths[1])
         agrees = np.isfinite(disagreement) & (disagreement <= cross_check_m)
         confident &= agrees
+    # Lay the CONFIDENT depths back out on the tangent grid. Unconfident rays
+    # are left NaN rather than filled with their guess: a caller interpolating
+    # this surface must inherit the holes, not have them papered over.
+    depth_grid = np.full((grid, grid), np.nan)
+    slot = depth_grid[inside]
+    slot[confident] = depth[confident]
+    depth_grid[inside] = slot
+
     return ConeDepth(
         dirs=dirs, rows=rows, cols=cols, depth=depth, points=points,
         confidence=confidence, voters=voters, confident=confident,
+        depth_grid=depth_grid, grid_half=grid_half,
     )
+
+
+def sample_depth(result: ConeDepth, dirs: np.ndarray) -> np.ndarray:
+    """Depth at arbitrary ray directions, bilinearly interpolated from the
+    coarse sweep. NaN wherever any contributing grid cell was unresolved — a
+    pixel may only be filled when the surface around it is actually known.
+
+    The rays are mapped onto the same tangent plane the sweep used (x/z, y/z),
+    which is why the grid layout lives in one shared function.
+    """
+    d = np.asarray(dirs, dtype=np.float64)
+    grid = result.depth_grid.shape[0]
+    half = result.grid_half
+    z = np.maximum(d[:, 2], 1e-9)
+    gx = np.clip((d[:, 0] / z + half) / (2 * half) * (grid - 1), 0, grid - 1)
+    gy = np.clip((d[:, 1] / z + half) / (2 * half) * (grid - 1), 0, grid - 1)
+    x0 = np.floor(gx).astype(int)
+    y0 = np.floor(gy).astype(int)
+    x1 = np.minimum(x0 + 1, grid - 1)
+    y1 = np.minimum(y0 + 1, grid - 1)
+    fx = gx - x0
+    fy = gy - y0
+    g = result.depth_grid
+    out = (
+        g[y0, x0] * (1 - fx) * (1 - fy)
+        + g[y0, x1] * fx * (1 - fy)
+        + g[y1, x0] * (1 - fx) * fy
+        + g[y1, x1] * fx * fy
+    )
+    return out
+
+
+def fill_zenith_by_depth(
+    target_img: np.ndarray,
+    C_target: np.ndarray,
+    donors: list[tuple[np.ndarray, np.ndarray]],
+    result: ConeDepth,
+    cone_half_deg: float = 25.0,
+    evidence_ratio: float = 3.0,
+) -> tuple[np.ndarray, dict]:
+    """Fill the blind cone using the SWEPT SURFACE rather than an assumed plane.
+
+    Identical in spirit to zenith_fill.fill_zenith_hole — mirror rule, exposure
+    harmonisation by ring, evidence gate — but each pixel's world point comes
+    from the depth the donors themselves voted for, so a dome is reprojected as
+    a dome. Pixels whose surrounding surface was never resolved are left
+    untouched and counted; nothing is invented.
+    """
+    import zenith_fill as zf  # local: avoids a cycle, zf imports nothing here
+
+    target = np.asarray(target_img, dtype=np.float32)
+    h, w = target.shape[:2]
+    C_t = np.asarray(C_target, dtype=np.float64)
+
+    mask = zf.zenith_cone_mask(h, w, cone_half_deg)
+    rows, cols = np.nonzero(mask)
+    dirs = nf.equirect_grid_dirs(w, h, 0, h)[rows, cols]
+    depth = sample_depth(result, dirs)
+
+    report = {
+        "hole_mask_eq": mask,
+        "hole_px": int(mask.sum()),
+        "filled_px": 0,
+        "unresolved_px": int(np.isnan(depth).sum()),
+        "kept_target_px": 0,
+        "synth_px": 0,
+        "surface": "swept",
+    }
+    usable = np.isfinite(depth)
+    if not usable.any():
+        return target.copy(), report
+
+    P = C_t + depth[:, None] * dirs
+    acc = np.zeros((rows.size, 3))
+    wsum = np.zeros(rows.size)
+    for donor_img, C_d in donors:
+        donor_img = np.asarray(donor_img, dtype=np.float32)
+        C_d = np.asarray(C_d, dtype=np.float64)
+        allowed = usable & donor_votes(np.nan_to_num(P), C_d, cone_half_deg)
+        if not allowed.any():
+            continue
+        idx = np.nonzero(allowed)[0]
+        d_rows, d_cols = nf.dirs_to_pixels(P[idx] - C_d, w, h)
+        samples = nf.sample_equirect(donor_img, d_rows, d_cols).astype(np.float64)
+        rel = P[idx] - C_d
+        dist = np.linalg.norm(rel, axis=1)
+        weight = (np.clip(rel[:, 2] / np.maximum(dist, 1e-9), 0, 1) ** 2) / np.maximum(
+            dist ** 2, 1e-9
+        )
+        acc[idx] += samples * weight[:, None]
+        wsum[idx] += weight
+
+    got = wsum > 0
+    if not got.any():
+        report["kept_target_px"] = report["hole_px"]
+        return target.copy(), report
+
+    candidate = target.copy()
+    candidate[rows[got], cols[got]] = np.clip(
+        (acc[got] / wsum[got][:, None]).astype(np.float32), 0.0, 255.0
+    )
+
+    # THE EVIDENCE GATE, the same rule the planar fill learned the hard way:
+    # take a donor pixel only where it carries materially more detail than the
+    # target already has there. Without it the fill pastes a disc over ceiling
+    # the scanner saw perfectly well. Measured on the cone band only — outside
+    # it the two images are identical by construction.
+    radius = 3
+    band = min(int(rows.max()) + 1 + radius, h)
+    t_detail = zf.local_detail(target[:band].mean(axis=2), radius)
+    c_detail = zf.local_detail(candidate[:band].mean(axis=2), radius)
+    in_band = rows < band
+    better = np.zeros(rows.size, dtype=bool)
+    better[in_band] = (
+        c_detail[rows[in_band], cols[in_band]]
+        > t_detail[rows[in_band], cols[in_band]] * float(evidence_ratio)
+    )
+
+    take = got & better
+    filled = target.copy()
+    if take.any():
+        idx = np.nonzero(take)[0]
+        filled[rows[idx], cols[idx]] = candidate[rows[idx], cols[idx]]
+    report["filled_px"] = int(take.sum())
+    report["kept_target_px"] = int((got & ~better).sum())
+    return filled, report
