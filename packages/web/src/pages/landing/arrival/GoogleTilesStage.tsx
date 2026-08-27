@@ -6,6 +6,7 @@ import { GoogleCloudAuthPlugin, ReorientationPlugin } from "3d-tiles-renderer/pl
 import type { TilesRenderer as TilesRendererImpl } from "3d-tiles-renderer/three";
 import { useArrivalStore } from "./arrival-store.js";
 import { TRADES_HALL_ANCHOR } from "./trades-hall-anchor.js";
+import { GOOGLE_MAPS_ATTRIBUTION_LOGO_URL } from "./arrival-config.js";
 
 // -----------------------------------------------------------------------------
 // GoogleTilesStage — live Photorealistic 3D Tiles, reoriented so the Trades
@@ -17,7 +18,14 @@ import { TRADES_HALL_ANCHOR } from "./trades-hall-anchor.js";
 //                                      may begin)
 //   needs-update    → invalidate()    (demand-frameloop discipline)
 // The attribution overlay is a Google ToS requirement — it ships in every
-// phase and no prop may hide it.
+// phase and no prop may hide it. It renders whatever tiles.getAttributions()
+// returns, which is only as complete as what the plugins below feed it:
+// GoogleCloudAuthPlugin's logoUrl (see arrival-config.ts) is what makes the
+// brand/logo credit (not just the text/copyright line) appear at all —
+// omitting it is a silent compliance gap, not a visible error, since
+// getAttributions() simply skips the logo `if (this.logoUrl)` is falsy
+// (node_modules/3d-tiles-renderer/src/core/plugins/
+// GoogleCloudAuthPlugin.js:120-125).
 //
 // Ref timing (verified against the installed 0.5.2 source, not just its
 // docs): 3d-tiles-renderer/r3f's <TilesRenderer> creates the underlying
@@ -52,8 +60,13 @@ import { TRADES_HALL_ANCHOR } from "./trades-hall-anchor.js";
 // render when setTiles(instance) resolves. REORIENTATION_ARGS is therefore
 // hoisted to module scope (it depends only on the module-level
 // TRADES_HALL_ANCHOR, never on props); the GoogleCloudAuthPlugin args are
-// useMemo'd on [apiToken]. Both keep the SAME array reference across renders
-// unless their real inputs change, so each plugin constructs exactly once.
+// useMemo'd on [apiToken] alone — logoUrl rides along inside the same
+// options object because GOOGLE_MAPS_ATTRIBUTION_LOGO_URL is ITSELF a
+// module-scope constant (arrival-config.ts), not a prop or piece of state,
+// so it can never be the reason this memo should recompute; adding it to
+// the dep array would be a lie about what varies. Both keep the SAME array
+// reference across renders unless their real inputs change, so each plugin
+// constructs exactly once.
 // Separately, `args` types as a tuple (ConstructorParameters<Plugin>), not
 // the bare options object the package's JS-only README shows; a one-element
 // array constructs the plugin identically to passing the object directly for
@@ -79,7 +92,13 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
   const invalidate = useThree((s) => s.invalidate);
   const [tiles, setTiles] = useState<TilesRendererImpl | null>(null);
   const authArgs = useMemo<ConstructorParameters<typeof GoogleCloudAuthPlugin>>(
-    () => [{ apiToken }],
+    // logoUrl is GOOGLE_MAPS_ATTRIBUTION_LOGO_URL, a module-scope constant
+    // (see arrival-config.ts for provenance/NEEDS_CONTEXT) — it belongs
+    // inside this same factory, not a second useMemo or a fresh literal, so
+    // the tuple's first-level identity keeps depending on [apiToken] alone
+    // (see header comment above: a changed `args` reference disposes and
+    // reconstructs the plugin, costing a fresh billable Google session).
+    () => [{ apiToken, logoUrl: GOOGLE_MAPS_ATTRIBUTION_LOGO_URL }],
     [apiToken],
   );
 

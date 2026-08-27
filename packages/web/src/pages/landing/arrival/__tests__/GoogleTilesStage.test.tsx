@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { forwardRef, useEffect, type ReactNode, type Ref } from "react";
 import { useArrivalStore } from "../arrival-store.js";
+import { GOOGLE_MAPS_ATTRIBUTION_LOGO_URL } from "../arrival-config.js";
 
 // -----------------------------------------------------------------------------
 // GoogleTilesStage — render + event-wiring contract (Arrival Task 4).
@@ -146,6 +147,28 @@ describe("GoogleTilesStage", () => {
     // reference must stay stable across renders).
     const [options] = auth?.args as [{ apiToken: string }];
     expect(options.apiToken).toBe("AIza-test");
+  });
+
+  it("passes a non-empty, same-origin logoUrl to the Google auth plugin (Google brand-attribution requirement)", () => {
+    // Google's Map Tiles API Policies require a brand-attribution logo
+    // credit, not just the text/copyright line (docs/operations/
+    // arrival-google-tiles.md, Finding 2 / STOP-GATE). The installed
+    // GoogleCloudAuthPlugin.getAttributions() only ever pushes the logo
+    // credit `if (this.logoUrl)` (node_modules/3d-tiles-renderer/src/core/
+    // plugins/GoogleCloudAuthPlugin.js:120-125) — an absent or empty
+    // logoUrl silently drops the whole requirement in every phase, which
+    // is exactly the regression this test guards against.
+    render(<GoogleTilesStage apiToken="AIza-test" />);
+    const auth = seen.plugins.find((p) => p.plugin.name === "GoogleCloudAuthPlugin");
+    const [options] = auth?.args as [{ apiToken: string; logoUrl?: string }];
+    expect(options.logoUrl).toBeTruthy();
+    // Pins provenance: the exact self-hosted constant from arrival-config.ts,
+    // not an ad hoc literal that could silently drift from what that file's
+    // provenance comment documents.
+    expect(options.logoUrl).toBe(GOOGLE_MAPS_ATTRIBUTION_LOGO_URL);
+    // Same-origin, root-relative — self-hosted, never a runtime fetch from
+    // Google's or any third party's servers (see arrival-config.ts for why).
+    expect(options.logoUrl?.startsWith("/")).toBe(true);
   });
 
   it("always renders the attribution overlay (Google ToS)", () => {
