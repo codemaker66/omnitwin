@@ -53,6 +53,13 @@ const OverridePairSchema = z
   .refine(([a, b]) => a !== b, "navigation overrides cannot reference the same scan twice");
 const OverridesSchema = z
   .object({
+    // JSON cannot carry comments, and an override file is the one artifact
+    // that must never travel without its reasoning: each entry is a human
+    // asserting two viewpoints are joined in the real building, and the next
+    // reader needs to know what was looked at. `$comment` is the JSON-Schema
+    // convention for exactly this. Ignored by the builder; admitted here so
+    // strict mode does not reject the rationale living beside the data.
+    $comment: z.union([z.string(), z.array(z.string())]).optional(),
     add: z.array(OverridePairSchema).optional(),
     remove: z.array(OverridePairSchema).optional(),
   })

@@ -1,1 +1,34 @@
-{"add":[],"remove":[]}
+{
+  "$comment": [
+    "Reviewed nav-graph corrections for Trades Hall Glasgow.",
+    "",
+    "The forge's KNN graph is same-floor by construction, so the ONLY way two",
+    "storeys join is an explicit, human-reviewed link in this file. Until it was",
+    "written the bundle shipped as two islands - 84 viewpoints upstairs and 65",
+    "down, with no edge between them - so no visitor could walk between the",
+    "floors at all. The route finder returned 'unreachable' and the Usher",
+    "teleported, which is why nobody noticed.",
+    "",
+    "scan_080 <-> scan_081 is the grand staircase's lower flight, confirmed by",
+    "looking at the capture rather than by geometry alone:",
+    "  - scan_081 stands at the FOOT of the flight, facing up a run of stone",
+    "    treads with brass nosings between mahogany panelling, toward a pair of",
+    "    dark panelled doors at the head.",
+    "  - scan_080 stands AT those doors, on the same stone floor with the same",
+    "    brass-and-blue nosing detail - the head of that same flight.",
+    "  - Geometry agrees: 3.73 m of run for 1.29 m of rise, 3.94 m apart in 3D,",
+    "    well inside the graph's existing edge lengths (max 6.58 m). They are",
+    "    also consecutive in capture order: the operator walked from one to the",
+    "    other.",
+    "",
+    "REJECTED candidates, recorded so nobody re-proposes them:",
+    "  - scan_057 <-> scan_119 (2.97 m apart, 0.04 m of it horizontal): the same",
+    "    plan position on two storeys, with a floor slab between. Linking it",
+    "    would walk a guest down through the floor.",
+    "  - scan_078 <-> scan_140 (2.83 m run, 1.66 m rise - stair-SHAPED, and",
+    "    still wrong): scan_078 is mid-staircase but scan_140 is inside a",
+    "    furnished room, so the link would cross a wall. Geometry narrows the",
+    "    search; only the photographs decide."
+  ],
+  "add": [["scan_080", "scan_081"]]
+}
