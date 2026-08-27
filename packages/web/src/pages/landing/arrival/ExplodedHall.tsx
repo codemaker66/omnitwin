@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useNavigate } from "react-router-dom";
-import { create } from "zustand";
 import { Group, Mesh, Vector3, type Matrix4, type Object3D } from "three";
 import type { TwinScanNode } from "@omnitwin/types";
 import {
@@ -11,9 +10,12 @@ import {
   type SpringState,
 } from "../../../lib/springs.js";
 import { diveClickGuard } from "../../../twin/DollhouseStage.js";
-import { e57PointToThree } from "../../../twin/twin-basis.js";
 import { ROOM_DISPLAY_NAMES } from "../../../twin/shell/twin-rooms.js";
 import { useArrivalStore, type ArrivalPhase } from "./arrival-store.js";
+import {
+  useExplodeOverlayStore,
+  type StoreyLabelPlacement,
+} from "./explode-overlay-store.js";
 import {
   bucketForY,
   explodeOffsetY,
@@ -43,7 +45,9 @@ import {
 // 9) size the bucket count from whatever floors the manifest actually reports,
 // so a future multi-storey capture buckets correctly on its own, and a bucket
 // beyond ARRIVAL_STOREY_LABELS' length falls back to a generic ordinal rather
-// than fabricating a room name (storeyLabelFor below).
+// than fabricating a room name (storeyLabelFor below). Floor means today are
+// -1.70 m and +1.42 m with the boundary at roughly -0.14 m — see the TASK 8
+// TRIP-WIRE below storeySamplesFromNodes for why that margin matters.
 //
 // BUCKETING RUNS ONCE, ON FIRST ENTRY TO "exploded" (Step 1) — never eagerly
 // at mount, never again on a later re-explode. HallHandoff's own fade spring
@@ -90,25 +94,33 @@ import {
 //
 // THE BRIDGE OUT OF THE CANVAS (labels are DOM, projection needs the camera):
 //
-// A small dedicated zustand store (useExplodeOverlayStore below), matching
-// this file's OWN precedent (arrival-store.ts already bridges phase from
-// inside the Canvas to ArrivalHero's DOM — the skip button and
-// data-arrival-phase attribute are exactly this pattern) rather than lifting
-// React state via a callback prop or hand-rolling a ref + imperative DOM
-// writer. Kept as its OWN store, never folded into useArrivalStore, so the
-// phase machine stays free of per-frame projection numbers and the overlay
-// stays free of phase-transition rules — "isolated from the phase machine"
-// per the brief. Two pieces of data cross the boundary every unsettled frame:
-// whether the explode spring is at rest (ArrivalHero widens the Canvas's
-// frameloop to "always" while it is not, exactly like the flight's own
-// continuous-motion treatment) and each visible storey's current projected
-// screen position (ArrivalHero positions a DOM label there). A per-frame
-// zustand write re-renders ArrivalHero's small DOM overlay for the ~1 s the
-// spring is moving — a deliberate, bounded, user-triggered burst, not a
-// persistent per-frame cost — which this file judges an acceptable trade for
-// reusing an idiom the codebase already has, rather than adding a second,
-// bespoke imperative-DOM-mutation mechanism (the drei `<Html>` technique the
-// brief explicitly asks NOT to depend on) for one marketing-hero interaction.
+// A small dedicated zustand store (explode-overlay-store.ts, its own module
+// as of review round 1), matching this file pair's OWN precedent
+// (arrival-store.ts already bridges phase from inside the Canvas to
+// ArrivalHero's DOM — the skip button and data-arrival-phase attribute are
+// exactly this pattern) rather than lifting React state via a callback prop
+// or hand-rolling a ref + imperative DOM writer. Kept as its OWN store, never
+// folded into useArrivalStore, so the phase machine stays free of per-frame
+// projection numbers and the overlay stays free of phase-transition rules —
+// "isolated from the phase machine" per the brief.
+//
+// Two pieces of data cross the boundary every unsettled frame: whether the
+// explode spring is at rest, and each visible storey's current projected
+// screen position. The REAL cost of a naive single-store subscription is not
+// "a handful of divs re-rendering" — ArrivalHero renders the whole <Canvas>
+// subtree (GoogleTilesStage, FlightCamera, HallHandoff) as ITS OWN JSX
+// children, and React re-evaluates a component's ENTIRE returned tree,
+// Canvas children included, on every one of that component's re-renders
+// (children passed as `props.children` are fresh element objects each
+// parent render, and none of these are wrapped in React.memo) — so
+// subscribing to per-frame `labels` at the ArrivalHero level would mean ~60
+// full re-renders/second of the entire hero scene during the signature
+// interaction, not merely a cheap DOM update. The actual fix: ArrivalHero
+// subscribes ONLY to `settled` (a boolean that flips at most twice per
+// explode/reassemble cycle); the per-frame `labels` subscription lives in
+// ArrivalHero's own leaf `StoreyLabels` component, rendered as a Canvas
+// SIBLING with nothing under it but plain DOM — cheap to redraw at frame
+// rate, and incapable of touching the Canvas subtree at all.
 // -----------------------------------------------------------------------------
 
 /** Vertical gap between exploded storeys, in metres. */
@@ -142,44 +154,6 @@ function storeyLabelFor(bucket: number): string {
  *  rather than vanishing the instant Close is clicked while geometry is still
  *  visibly mid-flight back together. */
 const LABEL_APPEAR_PROGRESS = 0.02;
-
-// -----------------------------------------------------------------------------
-// The overlay bridge — see file header.
-// -----------------------------------------------------------------------------
-
-export interface StoreyLabelPlacement {
-  readonly bucket: number;
-  readonly label: string;
-  /** CSS pixel offset from the canvas's top-left corner. */
-  readonly xPx: number;
-  readonly yPx: number;
-}
-
-interface ExplodeOverlayState {
-  /** True whenever there is no explode spring actively moving — the default
-   *  (nothing has ever split) and every settled rest state alike. ArrivalHero
-   *  reads this to decide whether the Canvas needs "always" frameloop. */
-  readonly settled: boolean;
-  /** Empty until progress first crosses LABEL_APPEAR_PROGRESS; always empty
-   *  before the first split (nothing to label yet). */
-  readonly labels: readonly StoreyLabelPlacement[];
-  readonly reset: () => void;
-}
-
-const INITIAL_OVERLAY: Pick<ExplodeOverlayState, "settled" | "labels"> = {
-  settled: true,
-  labels: [],
-};
-
-/** Dedicated store bridging ExplodedHall's per-frame Canvas state to
- *  ArrivalHero's DOM overlay. Isolated from useArrivalStore on purpose — see
- *  the file header. */
-export const useExplodeOverlayStore = create<ExplodeOverlayState>((set) => ({
-  ...INITIAL_OVERLAY,
-  reset: () => {
-    set({ ...INITIAL_OVERLAY });
-  },
-}));
 
 // -----------------------------------------------------------------------------
 // Pure-ish bucketing + reparenting.
@@ -224,12 +198,35 @@ export interface StoreyBucket {
   readonly anchor: Vector3;
 }
 
+/** Containers this function has already emptied — a dev-mode tripwire, not a
+ *  hard guarantee (see bucketAndReparentChunks's own doc comment). */
+const emptiedContainers = new WeakSet<Object3D>();
+
 /**
  * Bucket every chunk mesh under `container` by world-space height and
  * reparent each into a fresh per-storey Group, via `Object3D.attach()` — see
  * the file header for why attach() rather than nesting inside the placement
  * matrix. Returns one StoreyBucket per bucket, indexed 0..boundaries.length
  * inclusive (bucketForY's full range), even if a bucket happens to be empty.
+ *
+ * PRECONDITION, AND WHY IT IS ENFORCED HERE RATHER THAN LEFT IMPLICIT: this
+ * function PERMANENTLY EMPTIES `container` — every chunk mesh is reparented
+ * OUT of it. That is safe exactly once per container that the caller owns
+ * exclusively (HallHandoff.tsx satisfies this today via
+ * cloneHandoffMaterials's `source.clone(true)`, a fresh scene graph every
+ * mount — see ExplodedHallProps.scene's own doc comment for the full
+ * contract). A future caller passing a SHARED, cached scene instead — e.g.
+ * drei's cached `gltf.scene`, which DollhouseStage.tsx uses directly for
+ * /twin/trades-hall — would silently empty that scene for every OTHER
+ * consumer of the same GLB, for the life of the page, with no error anywhere
+ * near the mistake.
+ *
+ * The dev-mode tripwire below cannot catch every shape this hazard could
+ * take (nothing can, cheaply, without coupling to drei's cache internals),
+ * but it does catch the shape the hazard actually takes in practice: the
+ * SAME container object reaching this function a second time, which is
+ * exactly what happens if a shared/cached scene gets bucketed more than
+ * once (two mounts, a remount, a second consumer).
  *
  * Collects chunks into a plain array BEFORE reparenting any of them: attach()
  * mutates the scene graph in place (removeFromParent + add), which would
@@ -239,6 +236,17 @@ export function bucketAndReparentChunks(
   container: Object3D,
   boundaries: readonly number[],
 ): readonly StoreyBucket[] {
+  if (import.meta.env.DEV && emptiedContainers.has(container)) {
+    // eslint-disable-next-line no-console -- deliberate dev-only tripwire for a real hazard (see this function's own doc comment).
+    console.warn(
+      "bucketAndReparentChunks: this container was already emptied by a previous call. " +
+        "This function requires a per-mount clone it owns exclusively — never a shared/cached " +
+        "scene (e.g. drei's cached gltf.scene). Reusing a shared scene here silently empties it " +
+        "for every other consumer.",
+    );
+  }
+  emptiedContainers.add(container);
+
   container.updateWorldMatrix(true, false);
 
   const chunks: Mesh[] = [];
@@ -285,13 +293,53 @@ export function bucketAndReparentChunks(
   });
 }
 
-/** Storey-bucketing samples from the manifest — the ONLY source of bucket
- *  boundaries (Task 9's contract: real scan heights, never chunk guesses). */
-function storeySamplesFromNodes(nodes: readonly TwinScanNode[]): readonly StoreySample[] {
-  return nodes.map((node) => ({
-    floor: node.floor,
-    yMeters: e57PointToThree(node.pose.t)[1],
-  }));
+/**
+ * Storey-bucketing samples from the manifest, transformed into the SAME
+ * frame a chunk's world centroid is computed in (Task 9's contract: real
+ * scan heights, never chunk guesses — but "real" only helps if it is real in
+ * the RIGHT frame).
+ *
+ * TASK 8 TRIP-WIRE: a chunk's world centroid (chunkWorldCentroid, above) is
+ * computed via `mesh.matrixWorld`, which includes EVERY ancestor transform up
+ * to the true scene root — including `placementMatrix`
+ * (HANDOFF_PLACEMENT_MATRIX), the outer calibration twinPlacementMatrix()
+ * composes on top of the twin basis. A node's pose, by contrast, starts life
+ * in the RAW E57/twin-basis frame. Converting it with the twin-basis
+ * conversion ALONE (no outer placement) would put storey boundaries in a
+ * DIFFERENT frame than the chunk centroids being bucketed against them —
+ * harmless only because TRADES_HALL_TWIN_PLACEMENT is seeded at
+ * positionM=[0,0,0]/headingRad=0 today, making `placementMatrix` numerically
+ * identical to the twin basis alone. The margin is not generous: today's real
+ * boundary sits at roughly -0.14 m, with floor means at -1.70 m and +1.42 m
+ * (see the file header) — a placement calibration at Task 8 with as little as
+ * ~1.5 m of vertical offset would push that boundary past one of the two
+ * floor means and silently reassign an entire storey's chunks to the wrong
+ * bucket, with no error and no test failure anywhere else in the app.
+ *
+ * The fix: transform each node's RAW pose by `placementMatrix` DIRECTLY,
+ * exactly as a chunk's own vertex is transformed — not the twin-basis
+ * conversion followed by a separate outer-affine step. This is
+ * mathematically identical to what a chunk vertex undergoes (placementMatrix
+ * = twinPlacementMatrix()'s outer affine composed with meshRootWorldMatrix(),
+ * whose rotation numerically reproduces the twin-basis conversion, pinned by
+ * twin-basis's own test) but keeps both sides of every future calibration
+ * flowing through the SAME single matrix, by construction, rather than
+ * trusting two call sites to apply the same decomposition correctly forever.
+ * If this function and chunkWorldCentroid are ever changed to compute Y in
+ * different frames again, `ExplodedHall.test.tsx`'s frame-unification test
+ * (a synthetic non-zero placement, including a real yaw) is the regression
+ * guard — it fails hard, not subtly, because it deliberately uses a large,
+ * unrealistic-looking offset.
+ */
+function storeySamplesFromNodes(
+  nodes: readonly TwinScanNode[],
+  placementMatrix: Matrix4,
+): readonly StoreySample[] {
+  const point = new Vector3();
+  return nodes.map((node) => {
+    point.set(node.pose.t[0], node.pose.t[1], node.pose.t[2]).applyMatrix4(placementMatrix);
+    return { floor: node.floor, yMeters: point.y };
+  });
 }
 
 /**
@@ -317,7 +365,20 @@ export function handleHallClick(
 // -----------------------------------------------------------------------------
 
 export interface ExplodedHallProps {
-  /** HallHandoff's prepared (prune+caps'd, material-cloned) scene. */
+  /**
+   * HallHandoff's prepared (prune+caps'd, material-cloned) scene.
+   *
+   * PRECONDITION: must be a per-mount clone this component owns exclusively —
+   * NEVER drei's cached `gltf.scene` (the object DollhouseStage.tsx uses
+   * directly for the SAME GLB). `bucketAndReparentChunks` (below)
+   * PERMANENTLY EMPTIES whatever it is given, by reparenting every chunk mesh
+   * out of it into fresh storey groups. HallHandoff.tsx satisfies this
+   * contract today via `cloneHandoffMaterials`'s `source.clone(true)` (Task
+   * 7) — a NEW scene graph every mount, safe to empty. Passing the shared
+   * cache directly would empty the dollhouse for every other consumer of
+   * that same GLB (e.g. /twin/trades-hall's DollhouseStage) for the life of
+   * the page.
+   */
   readonly scene: Object3D;
   /** HallHandoff's placement × basis matrix — applied unchanged until first
    *  explode; baked into each chunk's own transform by attach() thereafter. */
@@ -354,12 +415,12 @@ export function ExplodedHall({
     if (phase !== "exploded" || splitRef.current !== null) {
       return;
     }
-    const boundaries = storeyBoundaries(storeySamplesFromNodes(nodes));
+    const boundaries = storeyBoundaries(storeySamplesFromNodes(nodes, placementMatrix));
     const buckets = bucketAndReparentChunks(scene, boundaries);
     splitRef.current = { buckets };
     forceRenderAfterSplit((tick) => tick + 1);
     invalidate();
-  }, [phase, nodes, scene, invalidate]);
+  }, [phase, nodes, scene, placementMatrix, invalidate]);
 
   // A later re-explode / reassemble, once already split, still needs a frame
   // kicked off immediately — mirrors FlightCamera's own held-pose effect.
@@ -393,31 +454,64 @@ export function ExplodedHall({
     // loop should not depend on it. getState() is zustand's own escape hatch
     // for exactly this: a per-frame driver reading current truth with zero
     // dependency on when React's last commit happened to land.
-    const target = useArrivalStore.getState().phase === "exploded" ? 1 : 0;
+    const arrival = useArrivalStore.getState();
+    const target = arrival.phase === "exploded" ? 1 : 0;
     const spring = progressRef.current;
     if (isSpringSettled(spring, target)) {
       return; // last frame's write already reflects rest; nothing to redo
     }
-    stepSpring(spring, target, delta, EXPLODE_SPRING);
+    // Spec §2's reduced-motion requirement: an instant cross-dissolve, not an
+    // animated drift. Jumping the spring straight to its target — rather
+    // than skipping stepSpring for some alternative formula — keeps every
+    // downstream consumer of `spring.value` (the per-storey offsets, the
+    // label-visibility threshold, the settled flag) working unchanged; the
+    // only difference under reduced motion is that this happens in a single
+    // frame instead of several dozen.
+    if (arrival.reducedMotion) {
+      spring.value = target;
+      spring.velocity = 0;
+    } else {
+      stepSpring(spring, target, delta, EXPLODE_SPRING);
+    }
     const settled = isSpringSettled(spring, target);
 
     for (const { bucket, group } of split.buckets) {
       group.position.y = explodeOffsetY(bucket, spring.value, STOREY_SEPARATION_M);
     }
 
-    const labels: StoreyLabelPlacement[] =
-      spring.value > LABEL_APPEAR_PROGRESS
-        ? split.buckets.map(({ bucket, group, anchor }) => {
-            const world = group.localToWorld(anchor.clone());
-            const ndc = world.project(camera);
-            return {
-              bucket,
-              label: storeyLabelFor(bucket),
-              xPx: ((ndc.x + 1) / 2) * size.width,
-              yPx: ((1 - ndc.y) / 2) * size.height,
-            };
-          })
-        : [];
+    const labels: StoreyLabelPlacement[] = [];
+    if (spring.value > LABEL_APPEAR_PROGRESS) {
+      // camera.matrixWorld/.matrixWorldInverse are otherwise only refreshed
+      // inside gl.render(), which runs AFTER every useFrame subscriber this
+      // frame — a real one-render-call lag if the camera moved THIS frame.
+      // It does not, in practice: FlightCamera holds a static pose
+      // throughout arrived/exploded (a useEffect on phase change, never a
+      // per-frame write), so this call is a defensive no-op today, kept
+      // explicit rather than relying on that invariant silently.
+      // group.localToWorld() below already forces its OWN ancestor chain
+      // fresh internally (Object3D.localToWorld calls
+      // updateWorldMatrix(true, false) itself), so only the camera side
+      // needed this.
+      camera.updateWorldMatrix(true, false);
+      for (const { bucket, group, anchor } of split.buckets) {
+        const world = group.localToWorld(anchor.clone());
+        // A point behind the camera projects to mirrored/nonsensical NDC —
+        // check view-space Z (three's camera looks down its own -Z) BEFORE
+        // projecting, and simply omit that storey's label rather than place
+        // it somewhere on screen it does not belong.
+        const view = world.clone().applyMatrix4(camera.matrixWorldInverse);
+        if (view.z >= 0) {
+          continue;
+        }
+        const ndc = world.project(camera);
+        labels.push({
+          bucket,
+          label: storeyLabelFor(bucket),
+          xPx: ((ndc.x + 1) / 2) * size.width,
+          yPx: ((1 - ndc.y) / 2) * size.height,
+        });
+      }
+    }
     useExplodeOverlayStore.setState({ settled, labels });
 
     if (!settled) {

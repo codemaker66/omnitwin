@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useNavigate } from "react-router-dom";
 import { googleTilesApiKey } from "./arrival-config.js";
 import { useArrivalStore } from "./arrival-store.js";
-import { useExplodeOverlayStore } from "./ExplodedHall.js";
+import { useExplodeOverlayStore } from "./explode-overlay-store.js";
 import { GoogleTilesStage } from "./GoogleTilesStage.js";
 import { HallHandoff, TRADES_HALL_TWIN_SLUG, tradesHallMeshUrl } from "./HallHandoff.js";
 import { ARRIVAL_RAIL, FLIGHT_DURATION_S, sampleRail } from "./camera-rail.js";
@@ -41,19 +41,32 @@ import "./arrival.css";
 // as a backstop for that case (see HallHandoff.tsx), but the real fix is
 // starting the download as early as this component can possibly know to.
 //
-// The storey label/CTA layer (Task 10) reads useExplodeOverlayStore — a small
-// store dedicated to bridging ExplodedHall's per-frame, camera-projected
-// state out of the Canvas to this DOM overlay (ExplodedHall.tsx's own header
-// justifies the choice of a zustand store over a lifted-callback or a
-// ref-based imperative writer). This component only ever READS it: which
-// labels to place where, and whether the explode spring is still moving —
-// the latter widens `animating` past "flight" so the Canvas keeps rendering
-// continuously while a storey is drifting, exactly like the flight sequence's
-// own continuous-motion treatment, rather than depending on demand mode's
-// invalidate-then-reschedule path for a motion this central to the page.
+// THE STOREY LABEL/CTA LAYER (Task 10) IS SPLIT ACROSS TWO SUBSCRIPTIONS ON
+// PURPOSE (review round 1). explode-overlay-store.ts bridges ExplodedHall's
+// per-frame, camera-projected state out of the Canvas; the naive approach —
+// ArrivalHero itself subscribing to BOTH `settled` and `labels` — looks
+// cheap ("just re-rendering a handful of divs") but is not: ArrivalHero
+// renders the entire <Canvas> subtree (GoogleTilesStage, FlightCamera,
+// HallHandoff) as its own JSX children, and React re-evaluates a component's
+// whole returned tree on every one of ITS re-renders — Canvas children are
+// fresh element objects each render and none of them are React.memo'd — so a
+// `labels` write firing ~60 times a second while a storey drifts would mean
+// ~60 full re-renders of the hero scene per second, not a cheap DOM update.
+// So ArrivalHero subscribes ONLY to `settled` (flips at most twice per
+// explode/reassemble cycle, purely to widen `animating` below); the `labels`
+// subscription lives in StoreyLabels, a leaf component rendered as a Canvas
+// SIBLING with nothing under it but plain DOM. StoreyLabels re-rendering at
+// frame rate is genuinely cheap — a handful of positioned divs and buttons —
+// and it structurally cannot cause the Canvas subtree to redo anything.
 // -----------------------------------------------------------------------------
 
 export const ARRIVAL_SKIP_LABEL = "Skip the flight";
+
+/** The spec's own invitation copy (Act II) — the only way to explode the
+ *  Hall that does not require a canvas raycast, so keyboard/AT visitors can
+ *  reach it too. The 3D click (ExplodedHall's handleChunkClick) stays as an
+ *  additional, redundant path — this does not replace it. */
+export const ARRIVAL_OPEN_HALL_LABEL = "Open the Hall";
 
 /** Drives the camera along the rail while phase === "flight". */
 function FlightCamera(): null {
@@ -103,13 +116,91 @@ function FlightCamera(): null {
   return null;
 }
 
+/**
+ * Storey labels (Task 10): DOM, not drei <Html> — positioned every unsettled
+ * frame from ExplodedHall's overlay bridge, PLUS the "Close" control.
+ *
+ * A LEAF component, deliberately: it is the ONLY thing in ArrivalHero's tree
+ * subscribed to `labels`, so it is the only thing that re-renders on every
+ * unsettled frame — see the file header for why that separation matters. It
+ * owns its own `useNavigate()` rather than receiving one as a prop, since it
+ * has no other reason to couple to its parent's render.
+ *
+ * Gated on the overlay's OWN labels array rather than `phase === "exploded"`
+ * directly, so a label lingers, tracking, through the tail of a reassemble
+ * animation instead of vanishing the instant Close is clicked while the
+ * storeys are still visibly mid-flight together (ExplodedHall.tsx's
+ * LABEL_APPEAR_PROGRESS). "Close" itself is gated on phase directly — it is
+ * not a per-frame value, so reading it here does not reintroduce the cost
+ * this component exists to avoid.
+ */
+function StoreyLabels(): ReactElement | null {
+  const labels = useExplodeOverlayStore((s) => s.labels);
+  const phase = useArrivalStore((s) => s.phase);
+  const navigate = useNavigate();
+
+  if (labels.length === 0 && phase !== "exploded") {
+    return null;
+  }
+
+  return (
+    <>
+      {labels.length > 0 && (
+        <div className="arrival-storeys">
+          {labels.map((entry) => (
+            <div
+              key={entry.bucket}
+              className="arrival-storey-label"
+              data-arrival-storey={entry.bucket}
+              style={{
+                transform: `translate(${String(entry.xPx)}px, ${String(entry.yPx)}px) translate(-50%, -50%)`,
+              }}
+            >
+              <button
+                type="button"
+                className="arrival-storey-name"
+                onClick={() => {
+                  // react-router-dom's NavigateFunction can return a Promise
+                  // (view transitions); this click has nothing to await it against.
+                  void navigate("/tour");
+                }}
+              >
+                {entry.label}
+              </button>
+              <button
+                type="button"
+                className="arrival-storey-plan"
+                aria-label={`Plan ${entry.label}`}
+                onClick={() => {
+                  void navigate("/plan");
+                }}
+              >
+                Plan this room
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {phase === "exploded" && (
+        <button
+          type="button"
+          className="arrival-explode-close"
+          onClick={() => {
+            useArrivalStore.getState().reassemble();
+          }}
+        >
+          Close
+        </button>
+      )}
+    </>
+  );
+}
+
 export function ArrivalHero(): ReactElement | null {
   const phase = useArrivalStore((s) => s.phase);
   const apiToken = googleTilesApiKey();
   const manifest = useTwinManifest(TRADES_HALL_TWIN_SLUG);
   const overlaySettled = useExplodeOverlayStore((s) => s.settled);
-  const overlayLabels = useExplodeOverlayStore((s) => s.labels);
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (apiToken === null) {
@@ -142,7 +233,8 @@ export function ArrivalHero(): ReactElement | null {
   // still moving (Task 10, Step 2) — a storey mid-drift is exactly the kind
   // of continuous, springed motion this codebase always runs at "always"
   // rather than leaning on demand mode's invalidate-then-reschedule path (see
-  // the file header comment).
+  // the file header comment). This is the ONLY thing ArrivalHero reads from
+  // the overlay store — see StoreyLabels for the per-frame `labels` read.
   const animating = phase === "flight" || !overlaySettled;
   return (
     <div className="arrival-hero" data-arrival-phase={phase}>
@@ -173,59 +265,18 @@ export function ArrivalHero(): ReactElement | null {
           {ARRIVAL_SKIP_LABEL}
         </button>
       )}
-      {/* Storey labels (Task 10): DOM, not drei <Html> — positioned every
-          unsettled frame from ExplodedHall's overlay bridge. Gated on the
-          overlay's OWN labels array rather than `phase === "exploded"`
-          directly, so a label lingers, tracking, through the tail of a
-          reassemble animation instead of vanishing the instant Close is
-          clicked while the storeys are still visibly mid-flight together
-          (ExplodedHall.tsx's LABEL_APPEAR_PROGRESS). */}
-      {overlayLabels.length > 0 && (
-        <div className="arrival-storeys">
-          {overlayLabels.map((entry) => (
-            <div
-              key={entry.bucket}
-              className="arrival-storey-label"
-              data-arrival-storey={entry.bucket}
-              style={{
-                transform: `translate(${String(entry.xPx)}px, ${String(entry.yPx)}px) translate(-50%, -50%)`,
-              }}
-            >
-              <button
-                type="button"
-                className="arrival-storey-name"
-                onClick={() => {
-                  // react-router-dom's NavigateFunction can return a Promise
-                  // (view transitions); this click has nothing to await it against.
-                  void navigate("/tour");
-                }}
-              >
-                {entry.label}
-              </button>
-              <button
-                type="button"
-                className="arrival-storey-plan"
-                onClick={() => {
-                  void navigate("/plan");
-                }}
-              >
-                Plan this room
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      {phase === "exploded" && (
+      {phase === "arrived" && (
         <button
           type="button"
-          className="arrival-explode-close"
+          className="arrival-open-hall"
           onClick={() => {
-            useArrivalStore.getState().reassemble();
+            useArrivalStore.getState().explode();
           }}
         >
-          Close
+          {ARRIVAL_OPEN_HALL_LABEL}
         </button>
       )}
+      <StoreyLabels />
     </div>
   );
 }

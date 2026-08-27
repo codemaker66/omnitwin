@@ -10,6 +10,12 @@
 .arrival-hero {
   position: absolute;
   inset: 0;
+  /* Belt-and-suspenders for the labels' behind-camera guard (ExplodedHall.tsx
+     checks view-space Z before ever placing one): a label position is still
+     computed from a live projection, and this clips anything that ever ends
+     up outside the frame instead of letting it extend page scroll — .fr-
+     hero-frame itself does not clip. */
+  overflow: hidden;
 }
 
 .arrival-canvas {
@@ -126,6 +132,44 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .arrival-explode-close {
+    transition: none;
+  }
+}
+
+/* "Open the Hall" (Task 10 review round 1) — the spec's own Act II
+   invitation copy, and the only DOM (keyboard/AT-reachable) path to
+   explode(); the 3D canvas click stays as an additional, redundant trigger.
+   Bottom-center: distinct from the skip pill (bottom-right) and Close
+   (top-right) so all three can never visually compete, even though phase
+   gating means at most one of skip/open-hall/close is ever mounted at once. */
+.arrival-open-hall {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(16px, 4vw, 36px);
+  transform: translateX(-50%);
+  font-family: var(--fr-ui);
+  font-size: 14px;
+  color: var(--fr-ink);
+  background: color-mix(in srgb, var(--fr-paper) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--fr-rule);
+  border-radius: 999px;
+  padding: 12px 24px;
+  cursor: pointer;
+  transition:
+    border-color 180ms var(--fr-ease),
+    transform 140ms var(--fr-ease);
+}
+.arrival-open-hall:active {
+  transform: translateX(-50%) scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .arrival-open-hall:hover {
+    border-color: var(--fr-green);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .arrival-open-hall {
     transition: none;
   }
 }

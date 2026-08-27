@@ -13,6 +13,9 @@ import {
 import type { TwinScanNode } from "@omnitwin/types";
 import { diveClickGuard } from "../../../../twin/DollhouseStage.js";
 import { useArrivalStore } from "../arrival-store.js";
+import { useExplodeOverlayStore } from "../explode-overlay-store.js";
+import { explodeOffsetY } from "../storey-explode.js";
+import { twinPlacementMatrix } from "../twin-placement.js";
 
 // -----------------------------------------------------------------------------
 // ExplodedHall — click, springs, labels, CTAs (Arrival Task 10).
@@ -33,6 +36,16 @@ import { useArrivalStore } from "../arrival-store.js";
 // `mesh.getWorldPosition()` reflects wherever the mesh currently lives in the
 // live scene graph, however many groups deep, without this suite needing to
 // reach into the component's private split ref.
+//
+// IMPORTANT: react-dom (this file's render()) has NO idea what a `<group
+// matrix={...}>` JSX element means — react-three-fiber's reconciler is what
+// turns that into a real THREE.Object3D parent/child relationship, and it is
+// not in play here. So `placementMatrix` passed as a PROP never actually
+// gets applied to `scene`/its chunks via the rendered JSX in this suite; most
+// tests below use identity and never notice. The ONE test that needs a real,
+// non-identity placement to be meaningful (frame-unification, Important 2)
+// builds the real THREE.js parent chain itself, by hand, with a comment
+// explaining why it — alone — needs to.
 // -----------------------------------------------------------------------------
 
 const invalidate = vi.fn();
@@ -74,7 +87,6 @@ const {
   STOREY_SEPARATION_M,
   bucketAndReparentChunks,
   handleHallClick,
-  useExplodeOverlayStore,
 } = await import("../ExplodedHall.js");
 
 /** Latest registered useFrame callback — real R3F replaces the subscription
@@ -107,13 +119,27 @@ function buildTwoStoreyScene(): { scene: Group; lowerBox: Mesh; upperBox: Mesh }
   return { scene, lowerBox, upperBox };
 }
 
-function node(id: string, floor: number, zMeters: number): TwinScanNode {
-  return { id, index: 0, pose: { q: [1, 0, 0, 0], t: [0, 0, zMeters] }, floor, roomSlug: null };
+/**
+ * storeySamplesFromNodes applies `placementMatrix` DIRECTLY to the raw pose
+ * triple (Important 2's frame-unification fix) — with the IDENTITY
+ * placementMatrix these simplified tests pass, that is a no-op, no axis
+ * permutation. So the "height" here goes straight into t[1] (three's own Y
+ * slot), matching how buildTwoStoreyScene's boxes are ALSO placed directly
+ * in un-rotated three-space via `.position.set(x, y, z)` — both sides need
+ * to already agree on which slot is "up" when nothing is rotating either of
+ * them. (A REAL manifest pose is never this: it is E57-frame, and only
+ * agrees with three's Y after going through the real placementMatrix, which
+ * always carries the twin-basis rotation — see the frame-unification test
+ * below, which uses a real rotating placementMatrix and therefore a real
+ * E57-shaped fixture instead of this shortcut.)
+ *
+ * Chosen so the resulting boundary (midpoint of means, 4.5) splits
+ * buildTwoStoreyScene's boxes (world Y 1 and 8) into buckets 0 and 1 exactly.
+ */
+function node(id: string, floor: number, yMeters: number): TwinScanNode {
+  return { id, index: 0, pose: { q: [1, 0, 0, 0], t: [0, yMeters, 0] }, floor, roomSlug: null };
 }
 
-/** e57PointToThree maps E57 t[2] (Z-up height) to three's Y — chosen so the
- *  resulting boundary (midpoint of means, 4.5) splits buildTwoStoreyScene's
- *  boxes (world Y 1 and 8) into buckets 0 and 1 exactly. */
 const TWO_FLOOR_NODES: readonly TwinScanNode[] = [
   node("scan_000", 0, 1),
   node("scan_001", 1, 8),
@@ -191,18 +217,19 @@ describe("bucketAndReparentChunks", () => {
     high.getWorldPosition(scratch);
     expect(scratch.toArray()).toEqual([-3, 12, 4]);
 
-    // Settled offsets: applying explodeOffsetY at full progress (1) moves
-    // bucket 1 up by one separation and bucket 2 by two, ground floor never.
-    const explodeOffsetYByHand = (bucket: number): number => (bucket === 0 ? 0 : bucket * 1 * 6);
+    // Settled offsets: a REAL call to the exported explodeOffsetY (Task 9),
+    // at full progress (1) with the component's own STOREY_SEPARATION_M —
+    // this is the actual integration point ExplodedHall's useFrame uses,
+    // not a hand-rolled stand-in for it.
     for (const entry of result) {
-      entry.group.position.y = explodeOffsetYByHand(entry.bucket);
+      entry.group.position.y = explodeOffsetY(entry.bucket, 1, STOREY_SEPARATION_M);
     }
     low.getWorldPosition(scratch);
     expect(scratch.y).toBe(1); // ground floor: unmoved
     mid.getWorldPosition(scratch);
-    expect(scratch.y).toBe(6 + 6); // bucket 1: +1 * separation
+    expect(scratch.y).toBe(6 + STOREY_SEPARATION_M); // bucket 1: +1 * separation
     high.getWorldPosition(scratch);
-    expect(scratch.y).toBe(12 + 12); // bucket 2: +2 * separation
+    expect(scratch.y).toBe(12 + 2 * STOREY_SEPARATION_M); // bucket 2: +2 * separation
   });
 
   it("skips a chunk whose geometry has no position data, rather than crashing", () => {
@@ -230,6 +257,102 @@ describe("bucketAndReparentChunks", () => {
     const result = bucketAndReparentChunks(container, []);
     expect(result).toHaveLength(1);
     expect(result[0]?.group.children).toContain(only);
+  });
+
+  it("warns in dev mode when the same container is bucketed twice, without crashing (Important 1)", () => {
+    // The hazard this guards: a caller passing a shared/cached scene (never
+    // cloned per mount) rather than a fresh one — bucketing it more than
+    // once is exactly the shape that takes. HallHandoff.tsx never does this
+    // (cloneHandoffMaterials clones per mount), so this only fires for a
+    // FUTURE caller who bypasses that contract.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const box = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    box.position.set(0, 3, 0);
+    const container = new Group();
+    container.add(box);
+
+    bucketAndReparentChunks(container, []);
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    bucketAndReparentChunks(container, []);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("per-mount clone");
+
+    warnSpy.mockRestore();
+  });
+
+  it("buckets identically under a non-zero placement, because sample and chunk share one frame (Important 2, Task 8 trip-wire)", () => {
+    // twinPlacementMatrix — the REAL production composition (a genuine yaw
+    // AND a large translate, not just a translate) — applied to a
+    // deliberately unrealistic-looking offset: if storeySamplesFromNodes and
+    // chunkWorldCentroid ever again computed Y in two DIFFERENT frames, this
+    // heading+offset combination would misbucket badly, not subtly.
+    //
+    // react-dom cannot wire a JSX `<group matrix={...}>` prop into a real
+    // THREE.js parent/child relationship (see this file's header), so this
+    // test builds that relationship BY HAND: scene becomes a real child of a
+    // real Group carrying nonZeroPlacement, exactly as HallHandoffMesh's own
+    // placement group would in the real app.
+    const nonZeroPlacement = twinPlacementMatrix({ headingRad: 0.4, positionM: [10, 100, -10] });
+
+    useArrivalStore.setState({ phase: "exploded" });
+    const { scene, lowerBox, upperBox } = buildTwoStoreyScene();
+    const placementGroup = new Group();
+    placementGroup.matrixAutoUpdate = false;
+    placementGroup.matrix.copy(nonZeroPlacement);
+    placementGroup.add(scene);
+    placementGroup.updateMatrixWorld(true);
+
+    // The manifest's node poses are chosen to match each chunk's own LOCAL
+    // position exactly — so storeySamplesFromNodes and chunkWorldCentroid
+    // transform an IDENTICAL input through the IDENTICAL matrix, and any
+    // future frame mismatch would show up as a wrong bucket assignment here,
+    // for ANY placementMatrix — not just today's real (zero) one.
+    const nodes: readonly TwinScanNode[] = [
+      {
+        id: "scan_lo",
+        index: 0,
+        pose: {
+          q: [1, 0, 0, 0],
+          t: [lowerBox.position.x, lowerBox.position.y, lowerBox.position.z],
+        },
+        floor: 0,
+        roomSlug: null,
+      },
+      {
+        id: "scan_hi",
+        index: 1,
+        pose: {
+          q: [1, 0, 0, 0],
+          t: [upperBox.position.x, upperBox.position.y, upperBox.position.z],
+        },
+        floor: 1,
+        roomSlug: null,
+      },
+    ];
+
+    // Independently compute each chunk's ORIGINAL (pre-explode) world Y via
+    // the same matrix, without going through the component at all.
+    const originalLowerY = lowerBox.position.clone().applyMatrix4(nonZeroPlacement).y;
+    const originalUpperY = upperBox.position.clone().applyMatrix4(nonZeroPlacement).y;
+    // Don't assume the rotation preserves which one is numerically "lower" —
+    // derive it, so this test is robust to whatever the yaw does to order.
+    const groundIsLower = originalLowerY <= originalUpperY;
+    const groundBox = groundIsLower ? lowerBox : upperBox;
+    const movingBox = groundIsLower ? upperBox : lowerBox;
+    const groundOriginalY = groundIsLower ? originalLowerY : originalUpperY;
+    const movingOriginalY = groundIsLower ? originalUpperY : originalLowerY;
+
+    render(
+      <ExplodedHall scene={scene} placementMatrix={nonZeroPlacement} nodes={nodes} />,
+    );
+    stepUntilSettled();
+
+    const scratch = new Vector3();
+    groundBox.getWorldPosition(scratch);
+    expect(scratch.y).toBeCloseTo(groundOriginalY, 1); // ground storey: unmoved
+    movingBox.getWorldPosition(scratch);
+    expect(scratch.y).toBeCloseTo(movingOriginalY + STOREY_SEPARATION_M, 1); // +1 separation
   });
 });
 
@@ -440,5 +563,72 @@ describe("ExplodedHall — component", () => {
 
     unmount();
     expect(useExplodeOverlayStore.getState()).toMatchObject({ settled: true, labels: [] });
+  });
+
+  it("excludes a storey's label when its anchor is behind the camera (Minor 2)", () => {
+    // The test camera sits at (-40, 20, 40) looking at (0, 5, 0) — a point
+    // roughly on the opposite ray from the camera's own position is behind
+    // it. Single floor (no boundaries): everything lands in bucket 0, which
+    // never moves, so its pre-explode position IS its post-explode position.
+    useArrivalStore.setState({ phase: "exploded" });
+    const behindBox = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    behindBox.position.set(-120, 50, 120);
+    const scene = new Group();
+    scene.add(behindBox);
+    const nodes: readonly TwinScanNode[] = [node("scan_only", 0, 0)];
+
+    render(<ExplodedHall scene={scene} placementMatrix={new Matrix4()} nodes={nodes} />);
+    stepUntilSettled();
+
+    const overlay = useExplodeOverlayStore.getState();
+    expect(overlay.settled).toBe(true); // the spring itself still settles…
+    expect(overlay.labels).toEqual([]); // …but nothing is placed on screen
+  });
+});
+
+describe("ExplodedHall — reduced motion (spec §2, Important 4)", () => {
+  it("jumps straight to fully exploded in a single frame — no intermediate progress", () => {
+    useArrivalStore.setState({ phase: "exploded", reducedMotion: true });
+    const { scene, lowerBox, upperBox } = buildTwoStoreyScene();
+    render(
+      <ExplodedHall scene={scene} placementMatrix={new Matrix4()} nodes={TWO_FLOOR_NODES} />,
+    );
+
+    latestFrame()(undefined, 0.1); // one ordinary tick, not a settling loop
+    const scratch = new Vector3();
+    lowerBox.getWorldPosition(scratch);
+    expect(scratch.y).toBeCloseTo(1, 5);
+    upperBox.getWorldPosition(scratch);
+    expect(scratch.y).toBeCloseTo(8 + STOREY_SEPARATION_M, 5);
+    expect(useExplodeOverlayStore.getState().settled).toBe(true);
+  });
+
+  it("jumps straight back to assembled in a single frame on reassemble", () => {
+    useArrivalStore.setState({ phase: "exploded", reducedMotion: true });
+    const { scene, upperBox } = buildTwoStoreyScene();
+    render(
+      <ExplodedHall scene={scene} placementMatrix={new Matrix4()} nodes={TWO_FLOOR_NODES} />,
+    );
+    latestFrame()(undefined, 0.1); // exploded instantly
+
+    useArrivalStore.setState({ phase: "arrived" });
+    latestFrame()(undefined, 0.1); // one tick to reassemble
+    const scratch = new Vector3();
+    upperBox.getWorldPosition(scratch);
+    expect(scratch.y).toBeCloseTo(8, 5);
+    expect(useExplodeOverlayStore.getState().settled).toBe(true);
+  });
+
+  it("does NOT jump when reducedMotion is false (contrast case)", () => {
+    useArrivalStore.setState({ phase: "exploded", reducedMotion: false });
+    const { scene, upperBox } = buildTwoStoreyScene();
+    render(
+      <ExplodedHall scene={scene} placementMatrix={new Matrix4()} nodes={TWO_FLOOR_NODES} />,
+    );
+    latestFrame()(undefined, 0.1);
+    const scratch = new Vector3();
+    upperBox.getWorldPosition(scratch);
+    expect(scratch.y).toBeGreaterThan(8);
+    expect(scratch.y).toBeLessThan(8 + STOREY_SEPARATION_M); // still mid-flight
   });
 });
