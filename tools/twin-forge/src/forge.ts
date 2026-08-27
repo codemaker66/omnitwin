@@ -40,6 +40,9 @@ export interface ForgeBundleOptions {
   readonly name: string;
   readonly tier: TwinManifest["tier"];
   readonly overrides?: NavGraphOptions["overrides"];
+  /** Declare a genuinely disconnected capture (two buildings, an unreachable
+   *  wing). Without it, a walk graph that splits fails the forge. */
+  readonly allowDisconnected?: boolean;
   readonly meshPath?: string;
   readonly generatedAt?: string;
   readonly protectedInputPaths?: readonly string[];
@@ -55,6 +58,8 @@ export interface RefreshManifestOptions {
   readonly outDir: string;
   readonly rawPoses: RawPoses;
   readonly overrides?: NavGraphOptions["overrides"];
+  /** See ForgeBundleOptions.allowDisconnected. */
+  readonly allowDisconnected?: boolean;
   readonly generatedAt?: string;
 }
 
@@ -272,6 +277,9 @@ async function prepareForge(options: ForgeBundleOptions): Promise<PreparedForge>
     tier: options.tier,
     generatedAt,
     nav: { overrides: options.overrides },
+    ...(options.allowDisconnected === undefined
+      ? {}
+      : { allowDisconnected: options.allowDisconnected }),
     imagery,
   });
   const nodeIds = previewManifest.nodes.map(({ id }) => id);
@@ -310,6 +318,9 @@ async function buildStagedBundle(
     tier: options.tier,
     generatedAt: prepared.generatedAt,
     nav: { overrides: options.overrides },
+    ...(options.allowDisconnected === undefined
+      ? {}
+      : { allowDisconnected: options.allowDisconnected }),
     imagery: prepared.imagery,
     ...(meshResult === undefined
       ? {}
@@ -399,6 +410,9 @@ export async function refreshBundleManifest(
       tier: existing.tier,
       generatedAt: options.generatedAt ?? new Date().toISOString(),
       nav: { overrides: options.overrides },
+    ...(options.allowDisconnected === undefined
+      ? {}
+      : { allowDisconnected: options.allowDisconnected }),
       imagery: existing.imagery,
       ...(existing.mesh === undefined ? {} : { mesh: existing.mesh }),
     });

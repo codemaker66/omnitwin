@@ -80,6 +80,12 @@ describe("buildManifest", () => {
         name: "Trades Hall Glasgow",
         tier: "ops-grade-2cm",
         generatedAt: "2026-07-02T12:00:00.000Z",
+        // This fixture is disconnected ON PURPOSE — two scans a storey apart
+        // are exactly what the same-floor rule must refuse to link, and that
+        // rule is this test's subject. Saying so out loud is the point of the
+        // flag: the walkability gate now fails any bundle that splits without
+        // someone declaring it deliberate.
+        allowDisconnected: true,
       },
     );
 

@@ -21,6 +21,11 @@ const CLI_OPTIONS = {
   mesh: { type: "string" },
   "replace-mesh": { type: "string" },
   "refresh-manifest": { type: "boolean", default: false },
+  // Declare that this capture really is disconnected — two buildings, an
+  // unreachable wing. Without it a split walk graph fails the forge, because
+  // a walkthrough whose halves cannot reach one another strands every visitor
+  // who lands on the wrong side and reports nothing.
+  "allow-disconnected": { type: "boolean", default: false },
 } as const;
 
 const CanonicalPoseIndexSchema = z.string().regex(/^(0|[1-9]\d*)$/);
@@ -121,11 +126,13 @@ async function main(args: readonly string[]): Promise<void> {
     values.overrides === undefined
       ? undefined
       : OverridesSchema.parse(await readJson(values.overrides));
+  const allowDisconnected = values["allow-disconnected"];
   if (values["refresh-manifest"]) {
     const result = await refreshBundleManifest({
       rawPoses,
       outDir: req("out", values.out),
       ...(overrides === undefined ? {} : { overrides }),
+      ...(allowDisconnected ? { allowDisconnected } : {}),
     });
     writeSummary(result);
     return;
@@ -141,6 +148,7 @@ async function main(args: readonly string[]): Promise<void> {
     ...(values.equirects === undefined ? {} : { equirectDir: values.equirects }),
     ...(values.mesh === undefined ? {} : { meshPath: values.mesh }),
     ...(overrides === undefined ? {} : { overrides }),
+    ...(allowDisconnected ? { allowDisconnected } : {}),
     protectedInputPaths: [
       posesPath,
       ...(values.overrides === undefined ? [] : [values.overrides]),

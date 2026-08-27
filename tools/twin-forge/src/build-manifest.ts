@@ -6,7 +6,12 @@ import {
   type TwinManifest,
   type TwinScanNode,
 } from "@omnitwin/types";
-import { buildNavGraph, floorOf, type NavGraphOptions } from "./nav-graph.js";
+import {
+  assertNavGraphConnected,
+  buildNavGraph,
+  floorOf,
+  type NavGraphOptions,
+} from "./nav-graph.js";
 
 export type RawPoses = Record<
   string,
@@ -19,6 +24,14 @@ export interface ManifestOptions {
   readonly tier: TwinManifest["tier"];
   readonly generatedAt: string;
   readonly nav?: NavGraphOptions;
+  /**
+   * Record deliberately that this capture really is disconnected — two
+   * buildings, an unreachable wing. Without it a split walk graph fails the
+   * build, because a walkthrough whose viewpoints cannot reach one another
+   * strands every visitor who lands on the wrong side and says nothing about
+   * it (the shipped Trades Hall bundle did exactly that for a year).
+   */
+  readonly allowDisconnected?: boolean;
   /** Dollhouse mesh descriptor from the forge mesh step; omitted → no mesh. */
   readonly mesh?: TwinManifest["mesh"];
   /** Imagery mode; omitted → the original cube-face pipeline. */
@@ -40,6 +53,14 @@ export function buildManifest(raw: RawPoses, opts: ManifestOptions): TwinManifes
     })
     .sort((a, b) => a.index - b.index);
 
+  const edges = buildNavGraph(nodes, opts.nav);
+  // The walkability gate. Runs before the schema parse because a split graph
+  // is schema-VALID and product-broken: every field is well formed and half
+  // the building is unreachable on foot.
+  if (opts.allowDisconnected !== true) {
+    assertNavGraphConnected(nodes, edges);
+  }
+
   const imagery = opts.imagery ?? "cube-faces";
   return TwinManifestSchema.parse({
     schema: "twin/0",
@@ -54,7 +75,7 @@ export function buildManifest(raw: RawPoses, opts: ManifestOptions): TwinManifes
     lods: imagery === "equirect" ? [...TWIN_EQUIRECT_LODS] : [...TWIN_LODS],
     generatedAt: opts.generatedAt,
     nodes,
-    edges: buildNavGraph(nodes, opts.nav),
+    edges,
     // Conditional spread keeps the key absent (not `undefined`) when omitted.
     ...(opts.mesh === undefined ? {} : { mesh: opts.mesh }),
   });
