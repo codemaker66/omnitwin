@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { forwardRef, useEffect, type ReactNode, type Ref } from "react";
 import { useArrivalStore } from "../arrival-store.js";
-import { ARRIVAL_ERROR_TARGET, GOOGLE_MAPS_ATTRIBUTION_LOGO_URL } from "../arrival-config.js";
+import {
+  ARRIVAL_ERROR_TARGET,
+  ARRIVAL_TILES_STALL_MS,
+  GOOGLE_MAPS_ATTRIBUTION_LOGO_URL,
+} from "../arrival-config.js";
 
 // -----------------------------------------------------------------------------
 // GoogleTilesStage — render + event-wiring contract (Arrival Task 4).
@@ -414,6 +418,192 @@ describe("GoogleTilesStage", () => {
     // load-error post-unmount must be a silent no-op, not a late fail("tiles").
     tiles?.dispatch("load-error", ROOT_AUTH_FAILURE);
     expect(useArrivalStore.getState().phase).toBe("loading");
+  });
+
+  // ———————————————————————————————————————————————————————————————————————
+  // THE STALL WATCHDOG (branch review; Task 12b's own "most likely field
+  // report"). Every other tiles failure announces itself through
+  // `load-error`. A HUNG request announces nothing at all: no tiles-load-end
+  // because nothing finished, no load-error because nothing failed. Before
+  // this, the phase machine sat in "loading" forever — no flight, no
+  // fallback, no diagnostic, indefinitely.
+  //
+  // The condition is not mocked away: the fake tiles instance simply never
+  // dispatches anything, which is EXACTLY what a hung request looks like
+  // from this component's side of the library. Only the clock is faked.
+  // ———————————————————————————————————————————————————————————————————————
+  describe("stall watchdog", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Every event the component treats as proof the network moved. */
+    const PROGRESS_EVENTS = [
+      "tiles-load-start",
+      "tile-download-start",
+      "load-tileset",
+      "load-model",
+    ] as const;
+
+    it("falls back when the tileset never answers at all", () => {
+      render(<GoogleTilesStage apiToken="AIza-test" />);
+      expect(useArrivalStore.getState().phase).toBe("loading");
+
+      // One millisecond short of the deadline it is still waiting — a
+      // watchdog that fires early is its own bug.
+      act(() => {
+        vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS - 1);
+      });
+      expect(useArrivalStore.getState().phase).toBe("loading");
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(useArrivalStore.getState().phase).toBe("fallback");
+      expect(useArrivalStore.getState().failReason).toBe("tiles");
+    });
+
+    it("explains the stall, and does not blame the key for it", () => {
+      render(<GoogleTilesStage apiToken="AIza-test" />);
+      act(() => {
+        vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS);
+      });
+
+      const ours = arrivalLogs(consoleError.calls);
+      expect(ours).toHaveLength(1);
+      const [message] = ours[0] as [string];
+      // Says what happened to the page…
+      expect(message).toContain("static hero photo");
+      // …names the request to go look at…
+      expect(message).toContain("tile.googleapis.com");
+      // …and how long it waited, so the number is discoverable without
+      // reading the source.
+      expect(message).toContain(String(Math.round(ARRIVAL_TILES_STALL_MS / 1000)));
+      // A silent request is NOT a rejected key: that path answers
+      // immediately and reports itself through load-error, and sending the
+      // reader to check the key here would be a false lead.
+      expect(message).not.toContain("VITE_GOOGLE_MAPS_TILES_KEY");
+    });
+
+    // THE test that makes the chosen timeout defensible. The watchdog
+    // measures SILENCE, not total load time, so a connection that is merely
+    // slow — one tile starting or finishing just inside every window, for
+    // minutes on end — must never trip it. A fixed total deadline would have
+    // failed this outright, which is exactly why it was rejected.
+    it("never fires on a slow-but-working connection, however long it takes", () => {
+      render(<GoogleTilesStage apiToken="AIza-test" />);
+
+      const WINDOWS = 10;
+      for (let i = 0; i < WINDOWS; i += 1) {
+        act(() => {
+          vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS - 1000);
+        });
+        expect(useArrivalStore.getState().phase).toBe("loading");
+        act(() => {
+          seen.tiles?.dispatch("load-model");
+        });
+      }
+      // Minutes of real elapsed time, all of it progress, none of it a stall.
+      expect(useArrivalStore.getState().phase).toBe("loading");
+      expect(arrivalLogs(consoleError.calls)).toHaveLength(0);
+
+      // …and when the connection finally does die, one window of silence is
+      // still all it takes.
+      act(() => {
+        vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS);
+      });
+      expect(useArrivalStore.getState().phase).toBe("fallback");
+      expect(useArrivalStore.getState().failReason).toBe("tiles");
+    });
+
+    for (const type of PROGRESS_EVENTS) {
+      it(`re-arms on ${type}, because that event proves bytes moved`, () => {
+        render(<GoogleTilesStage apiToken="AIza-test" />);
+        act(() => {
+          vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS - 1);
+        });
+        act(() => {
+          seen.tiles?.dispatch(type);
+        });
+        // The old deadline would have fired one millisecond later.
+        act(() => {
+          vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS - 1);
+        });
+        expect(useArrivalStore.getState().phase).toBe("loading");
+
+        // POSTPONED, not cancelled: one full window measured from the
+        // progress event, and it fires. Without this half, the assertion
+        // above would pass just as well with no watchdog at all.
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(useArrivalStore.getState().phase).toBe("fallback");
+        expect(useArrivalStore.getState().failReason).toBe("tiles");
+      });
+    }
+
+    it("is NOT re-armed by needs-update, which fires from the render loop", () => {
+      // The failure mode that would make this whole mechanism theatre: treat
+      // a frame-driven event as progress and the watchdog can never fire,
+      // because the canvas keeps asking for frames while it waits.
+      render(<GoogleTilesStage apiToken="AIza-test" />);
+      for (let i = 0; i < 20; i += 1) {
+        act(() => {
+          vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS / 20);
+          seen.tiles?.dispatch("needs-update");
+        });
+      }
+      expect(useArrivalStore.getState().phase).toBe("fallback");
+      expect(useArrivalStore.getState().failReason).toBe("tiles");
+    });
+
+    it("is disarmed by readiness — a slow patch mid-flight is not a hang", () => {
+      render(<GoogleTilesStage apiToken="AIza-test" />);
+      act(() => {
+        seen.tiles?.dispatch("tiles-load-end");
+      });
+      expect(useArrivalStore.getState().phase).toBe("flight");
+
+      act(() => {
+        vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS * 3);
+      });
+      // The flight must not be taken away from a visitor already watching it.
+      expect(useArrivalStore.getState().phase).toBe("flight");
+      expect(arrivalLogs(consoleError.calls)).toHaveLength(0);
+    });
+
+    it("is disarmed by load-error — one diagnostic, not two", () => {
+      render(<GoogleTilesStage apiToken="AIza-test" />);
+      act(() => {
+        seen.tiles?.dispatch("load-error", ROOT_AUTH_FAILURE);
+      });
+      act(() => {
+        vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS * 3);
+      });
+
+      const ours = arrivalLogs(consoleError.calls);
+      expect(ours).toHaveLength(1);
+      // The one that survives is the SPECIFIC one, naming the key — not the
+      // stall's "nothing answered", which would be actively misleading here.
+      expect(ours[0]?.[0]).toContain("VITE_GOOGLE_MAPS_TILES_KEY");
+      expect(useArrivalStore.getState().failReason).toBe("tiles");
+    });
+
+    it("is disarmed on unmount — no late fail after the hero is gone", () => {
+      const { unmount } = render(<GoogleTilesStage apiToken="AIza-test" />);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+
+      act(() => {
+        vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS * 3);
+      });
+      expect(useArrivalStore.getState().phase).toBe("loading");
+      expect(arrivalLogs(consoleError.calls)).toHaveLength(0);
+    });
   });
 
   it("does not double-subscribe its tiles event listeners across re-renders", () => {

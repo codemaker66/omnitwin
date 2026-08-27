@@ -55,21 +55,37 @@ const fakeCamera = new PerspectiveCamera(45, 800 / 600, 1, 1000);
 fakeCamera.position.set(-40, 20, 40);
 fakeCamera.lookAt(0, 5, 0);
 fakeCamera.updateMatrixWorld(true);
-const fakeSize = { width: 800, height: 600 };
+interface FakeSize {
+  readonly width: number;
+  readonly height: number;
+}
+const DEFAULT_SIZE: FakeSize = { width: 800, height: 600 };
+/** REPLACED, never mutated, by setViewport below — see that helper. */
+let fakeSize: FakeSize = DEFAULT_SIZE;
+
+/**
+ * What a window resize / phone rotation actually does to R3F state, modelled
+ * honestly: `setSize()` writes a NEW size object into the store, so every
+ * `useThree(s => s.size)` subscriber sees a changed IDENTITY and re-renders.
+ * Mutating one shared object in place would be a different (and false) thing
+ * — no identity change, no re-render, and a component correctly keyed on
+ * `size` would look broken when it is not.
+ */
+function setViewport(width: number, height: number): void {
+  fakeSize = { width, height };
+}
 
 interface FakeThreeState {
   readonly invalidate: () => void;
   readonly camera: PerspectiveCamera;
-  readonly size: { width: number; height: number };
+  readonly size: FakeSize;
 }
-const fakeThreeState: FakeThreeState = {
-  invalidate,
-  camera: fakeCamera,
-  size: fakeSize,
-};
 
 vi.mock("@react-three/fiber", () => ({
-  useThree: (selector: (state: FakeThreeState) => unknown) => selector(fakeThreeState),
+  useThree: (selector: (state: FakeThreeState) => unknown) =>
+    // Read `fakeSize` at CALL time, not at factory time, so setViewport is
+    // visible to the next render.
+    selector({ invalidate, camera: fakeCamera, size: fakeSize }),
   useFrame: (callback: (state: unknown, delta: number) => void): void => {
     frameCallbacks.push(callback);
   },
@@ -98,6 +114,28 @@ function latestFrame(): (state: unknown, delta: number) => void {
     throw new Error("no useFrame callback registered");
   }
   return cb;
+}
+
+/**
+ * A hand-rolled capture rather than vi.spyOn: `console.error`'s
+ * `(...data: any[])` signature collapses spyOn's return type to `any`, which
+ * this repo's strictTypeChecked lint rejects (the same six lines
+ * GoogleTilesStage.test.tsx and ArrivalErrorBoundary.test.tsx use).
+ */
+function captureConsoleError(): { calls: unknown[][]; restore: () => void } {
+  const calls: unknown[][] = [];
+  /* eslint-disable no-console -- capturing the channel IS the assertion here */
+  const original = console.error.bind(console);
+  console.error = (...args: unknown[]): void => {
+    calls.push(args);
+  };
+  return {
+    calls,
+    restore: () => {
+      console.error = original;
+    },
+  };
+  /* eslint-enable no-console */
 }
 
 /** Step the spring comfortably past settling (mirrors HallHandoff.test.tsx's
@@ -151,6 +189,9 @@ beforeEach(() => {
   invalidate.mockClear();
   navigateMock.mockClear();
   frameCallbacks.length = 0;
+  // The viewport is module state, like the camera — a resize in one test must
+  // never leak into the next one's projected pixel values.
+  fakeSize = DEFAULT_SIZE;
 });
 
 afterEach(() => {
@@ -584,6 +625,123 @@ describe("ExplodedHall — component", () => {
 
     unmount();
     expect(useExplodeOverlayStore.getState()).toMatchObject({ settled: true, labels: [] });
+  });
+
+  // ——— labels must track the viewport, not just the spring (branch review) ———
+  //
+  // The resting exploded state is the state a visitor actually READS the
+  // labels in, and it is the one state the frame loop does nothing in: its
+  // first statement is a settled-guard `return`. So before this fix, a window
+  // resize or a phone rotating to landscape left every label frozen at its
+  // old pixel offset, floating away from the storey it names, indefinitely.
+  //
+  // Nothing here mocks the condition away: the spring genuinely settles
+  // first (stepUntilSettled), no frame is driven afterwards, and the
+  // projection that produces the new numbers is the real one, run against a
+  // real THREE.PerspectiveCamera.
+  it("re-projects the labels when the viewport changes while the spring is at rest", () => {
+    useArrivalStore.setState({ phase: "exploded" });
+    const { scene } = buildTwoStoreyScene();
+    const { rerender } = render(
+      <ExplodedHall scene={scene} placementMatrix={new Matrix4()} nodes={TWO_FLOOR_NODES} />,
+    );
+    stepUntilSettled();
+
+    const before = useExplodeOverlayStore.getState().labels;
+    expect(before.length).toBeGreaterThan(0);
+    invalidate.mockClear();
+
+    // The resize. R3F replaces the size object and re-renders its subscribers;
+    // it does NOT run a frame, and even if it did, the settled guard would
+    // return before reaching any projection.
+    setViewport(1600, 900);
+    rerender(
+      <ExplodedHall scene={scene} placementMatrix={new Matrix4()} nodes={TWO_FLOOR_NODES} />,
+    );
+
+    const after = useExplodeOverlayStore.getState().labels;
+    expect(after).toHaveLength(before.length);
+    for (const [index, label] of after.entries()) {
+      const previous = before[index];
+      expect(previous).toBeDefined();
+      expect(label.bucket).toBe(previous?.bucket);
+      // The camera and the storey positions did not move, so NDC is
+      // unchanged and each offset must scale exactly with the new canvas —
+      // 2× the width, 1.5× the height. Stale labels (the bug) would be
+      // byte-identical to `before` instead.
+      expect(label.xPx).toBeCloseTo((previous?.xPx ?? 0) * 2, 6);
+      expect(label.yPx).toBeCloseTo((previous?.yPx ?? 0) * 1.5, 6);
+      expect(label.xPx).not.toBeCloseTo(previous?.xPx ?? 0, 6);
+    }
+    // Re-projection is a DOM concern: it must not claim the spring moved…
+    expect(useExplodeOverlayStore.getState().settled).toBe(true);
+    // …and it must not wake the render loop. Moving a few positioned divs is
+    // not a reason to redraw a WebGL canvas; R3F owns whatever redraw the
+    // resize itself needs.
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("does not invent labels on a resize before anything has exploded", () => {
+    // Same code path, opposite input: progress is 0, so the projection
+    // returns nothing and the store must be left exactly as it was.
+    useArrivalStore.setState({ phase: "arrived" });
+    const { scene } = buildTwoStoreyScene();
+    const { rerender } = render(
+      <ExplodedHall scene={scene} placementMatrix={new Matrix4()} nodes={TWO_FLOOR_NODES} />,
+    );
+    const labelsBefore = useExplodeOverlayStore.getState().labels;
+
+    setViewport(400, 300);
+    rerender(
+      <ExplodedHall scene={scene} placementMatrix={new Matrix4()} nodes={TWO_FLOOR_NODES} />,
+    );
+
+    // The SAME reference: an empty array written over an empty array would
+    // re-render the label layer for nothing.
+    expect(useExplodeOverlayStore.getState().labels).toBe(labelsBefore);
+    expect(labelsBefore).toEqual([]);
+  });
+
+  // ——— a throw in the frame loop must not reach R3F's rAF loop ———
+  it("contains a throw from its own frame loop and falls back to the photo", () => {
+    // The fault is injected into a REAL collaborator the loop actually calls
+    // (the camera it projects through), not into the guard — the throw
+    // travels the real path. Unguarded, this escapes into R3F's loop, which
+    // has no catch: it aborts the frame, starves every later subscriber, and
+    // repeats forever. arrival-frame-guard.test.tsx owns the guard's own
+    // contract; this proves ExplodedHall is actually wired to it.
+    useArrivalStore.setState({ phase: "exploded" });
+    const { scene } = buildTwoStoreyScene();
+    render(
+      <ExplodedHall scene={scene} placementMatrix={new Matrix4()} nodes={TWO_FLOOR_NODES} />,
+    );
+    latestFrame()(undefined, 0.05); // progress climbs past LABEL_APPEAR_PROGRESS
+
+    const consoleError = captureConsoleError();
+    const broken = vi.spyOn(fakeCamera, "updateWorldMatrix").mockImplementation(() => {
+      throw new Error("camera matrix is gone");
+    });
+    try {
+      expect(() => {
+        latestFrame()(undefined, 0.05);
+      }).not.toThrow();
+      // …and the next frame is not a second throw either.
+      expect(() => {
+        latestFrame()(undefined, 0.05);
+      }).not.toThrow();
+    } finally {
+      broken.mockRestore();
+      consoleError.restore();
+    }
+
+    expect(useArrivalStore.getState().phase).toBe("fallback");
+    expect(useArrivalStore.getState().failReason).toBe("crash");
+    // Contained, never silent — exactly one line, naming this loop.
+    const ours = consoleError.calls.filter(
+      (args) => typeof args[0] === "string" && args[0].startsWith("Arrival:"),
+    );
+    expect(ours).toHaveLength(1);
+    expect(ours[0]?.[0]).toContain("ExplodedHall");
   });
 
   it("excludes a storey's label when its anchor is behind the camera (Minor 2)", () => {

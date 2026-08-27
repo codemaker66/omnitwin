@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { useNavigate } from "react-router-dom";
 import { FRESH_TOUR_ENABLED } from "../../fresh/fresh-copy.js";
 import { googleTilesApiKey } from "./arrival-config.js";
 import { arrivalHarnessPhase } from "./arrival-dev-harness.js";
+import { useArrivalFrame } from "./arrival-frame-guard.js";
 import { useArrivalStore, type ArrivalPhase } from "./arrival-store.js";
 import { useArrivalGate } from "./use-arrival-gate.js";
 import { useExplodeOverlayStore } from "./explode-overlay-store.js";
@@ -120,7 +121,9 @@ function FlightCamera(): null {
   const phase = useArrivalStore((s) => s.phase);
   const elapsed = useRef(0);
 
-  useFrame((_, delta) => {
+  // useArrivalFrame, not useFrame: a throw in here would otherwise recur at
+  // frame rate outside every error boundary — see arrival-frame-guard.ts.
+  useArrivalFrame("FlightCamera", (_, delta) => {
     if (phase !== "flight") {
       elapsed.current = 0;
       return;
@@ -374,6 +377,39 @@ export function ArrivalHero(): ReactElement | null {
       preloadDollhouse(meshUrl);
     }
   }, [phase, manifest]);
+
+  // THE STORE IS A MODULE SINGLETON, SO SOMEBODY HAS TO END THE STORY
+  // (branch review, "minor"). useArrivalStore lives for the life of the JS
+  // module, not the life of this component: leave /fresh for /plan and come
+  // back — a client-side navigation, no reload — and the phase machine is
+  // still wherever the last visit abandoned it. "exploded" with no scene
+  // behind it, or "arrived" with the flight already spent, are both
+  // incoherent openings for a story whose whole point is the approach.
+  //
+  // ON UNMOUNT, DELIBERATELY — NOT ON MOUNT. Resetting on mount would undo a
+  // behaviour Task 12/12b specifically built and pinned: a FRESH MOUNT THAT
+  // INHERITS AN ALREADY-FAILED STORE must stay failed and render nothing
+  // (ArrivalHero.test.tsx's "renders null once the store is in fallback
+  // phase, even with a valid key", and the "crash" case of the every-reason
+  // invariant block). That is the shape a re-render of FreshPage produces
+  // after ArrivalErrorBoundary has caught a throw, and re-mounting straight
+  // back into a flight that just crashed is exactly what must not happen.
+  // Unmount-time reset gets the whole benefit without touching that: by the
+  // time the hero is gone, nothing on the page reads the store (FreshPage
+  // never branches on it — see the file header), so the value only matters
+  // again at the NEXT mount, which is precisely the visit that wants a clean
+  // slate.
+  //
+  // reset() is also the ONE sanctioned way out of "fallback" (arrival-store
+  // .ts: fail() is first-reason-wins and permanent for the visit, and no
+  // other action can leave that phase) — so this is the store's own escape
+  // hatch used exactly as designed, not a second one bolted on.
+  useEffect(
+    () => () => {
+      useArrivalStore.getState().reset();
+    },
+    [],
+  );
 
   if (gateBlocked !== null) {
     // Never shown the canvas at all this instance — no-key/poster-tier is

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
-import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { useThree, type ThreeEvent } from "@react-three/fiber";
 import { useNavigate } from "react-router-dom";
-import { Group, Mesh, Vector3, type Matrix4, type Object3D } from "three";
+import { Group, Mesh, Vector3, type Camera, type Matrix4, type Object3D } from "three";
 import type { TwinScanNode } from "@omnitwin/types";
 import {
   isSpringSettled,
@@ -12,6 +12,7 @@ import {
 import { diveClickGuard } from "../../../twin/DollhouseStage.js";
 import { FRESH_TOUR_ENABLED } from "../../fresh/fresh-copy.js";
 import { ROOM_DISPLAY_NAMES } from "../../../twin/shell/twin-rooms.js";
+import { useArrivalFrame } from "./arrival-frame-guard.js";
 import { useArrivalStore, type ArrivalPhase } from "./arrival-store.js";
 import {
   useExplodeOverlayStore,
@@ -343,6 +344,76 @@ function storeySamplesFromNodes(
   });
 }
 
+/** The canvas's CSS-pixel size — the only part of R3F's `Size` this
+ *  projection needs, named so the pure function below does not have to
+ *  depend on the renderer's own state type. */
+interface CanvasSizePx {
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Project each storey's anchor to CSS-pixel offsets from the canvas's
+ * top-left corner — where the DOM label for that storey belongs THIS instant.
+ *
+ * A PURE FUNCTION OF (storey positions, camera, canvas size), extracted so it
+ * can be called from two places that both need exactly this answer and must
+ * never drift apart: the per-frame spring loop, and the re-projection effect
+ * that fires when the camera or the viewport changes while the spring is at
+ * REST. Before the extraction the projection lived only inside the frame
+ * loop, whose first statement is a settled-guard `return` — so in the resting
+ * exploded state (the state a visitor actually reads the labels in) a window
+ * resize or a phone rotating to landscape left every label frozen at its old
+ * screen position, stranded away from the storey it names. Nothing recomputed
+ * it, because nothing was animating.
+ *
+ * Returns an empty array below LABEL_APPEAR_PROGRESS, so "no labels yet" and
+ * "labels here" are one call, not a caller-side condition to reproduce twice.
+ */
+function projectStoreyLabels(
+  buckets: readonly StoreyBucket[],
+  progress: number,
+  camera: Camera,
+  size: CanvasSizePx,
+): StoreyLabelPlacement[] {
+  if (progress <= LABEL_APPEAR_PROGRESS) {
+    return [];
+  }
+  // camera.matrixWorld/.matrixWorldInverse are otherwise only refreshed
+  // inside gl.render(), which runs AFTER every useFrame subscriber this
+  // frame — a real one-render-call lag if the camera moved THIS frame. It
+  // does not, in practice: FlightCamera holds a static pose throughout
+  // arrived/exploded (a useEffect on phase change, never a per-frame write),
+  // so this call is a defensive no-op today, kept explicit rather than
+  // relying on that invariant silently. It is NOT a no-op on the effect
+  // path, where this may run in the same commit that repositioned the camera.
+  // group.localToWorld() below already forces its OWN ancestor chain fresh
+  // internally (Object3D.localToWorld calls updateWorldMatrix(true, false)
+  // itself), so only the camera side needed this.
+  camera.updateWorldMatrix(true, false);
+
+  const labels: StoreyLabelPlacement[] = [];
+  for (const { bucket, group, anchor } of buckets) {
+    const world = group.localToWorld(anchor.clone());
+    // A point behind the camera projects to mirrored/nonsensical NDC — check
+    // view-space Z (three's camera looks down its own -Z) BEFORE projecting,
+    // and simply omit that storey's label rather than place it somewhere on
+    // screen it does not belong.
+    const view = world.clone().applyMatrix4(camera.matrixWorldInverse);
+    if (view.z >= 0) {
+      continue;
+    }
+    const ndc = world.project(camera);
+    labels.push({
+      bucket,
+      label: storeyLabelFor(bucket),
+      xPx: ((ndc.x + 1) / 2) * size.width,
+      yPx: ((1 - ndc.y) / 2) * size.height,
+    });
+  }
+  return labels;
+}
+
 /**
  * What a CLEAN click (post-diveClickGuard) on the hall does, given the
  * current phase — pulled out of the JSX event handler so the decision itself
@@ -453,7 +524,52 @@ export function ExplodedHall({
     [],
   );
 
-  useFrame((_state, delta) => {
+  // TRACKING WHILE NOTHING ANIMATES (branch review, "important"). The frame
+  // loop below returns at its settled-guard, so at rest it recomputes
+  // nothing — which is exactly right for a spring that has stopped, and
+  // exactly wrong for a PROJECTION, whose other two inputs can still change:
+  // the canvas size (a window resize, a phone rotating to landscape, the
+  // browser UI collapsing on scroll) and the camera pose. Left alone, a
+  // resize in the resting exploded state stranded every label at its old
+  // pixel offset, floating away from the storey it names, until something
+  // else happened to start the loop again.
+  //
+  // An effect, not a widened frame loop: this fires ONLY when a real input
+  // changes, so the fix costs nothing per frame and cannot reintroduce the
+  // per-frame store write that review round 1 removed (see the file header —
+  // ArrivalHero subscribes to `settled`, and only the leaf StoreyLabels reads
+  // `labels`; that separation is untouched here, and this effect writes the
+  // same store the frame loop already writes).
+  //   - `size` is R3F's own resize signal: setSize() replaces the state
+  //     object, so the identity changes exactly when the canvas's CSS pixels
+  //     do, and this component re-renders for it (it already reads size).
+  //   - `camera` covers a swapped camera INSTANCE; `phase` covers a MOVED
+  //     one, since FlightCamera repositions the shared camera from a
+  //     phase-keyed effect and never per frame. FlightCamera is the earlier
+  //     sibling in ArrivalHero's Canvas children and sibling effects flush in
+  //     tree order, so the pose read here is the new one. Even if that
+  //     ordering ever changed, a phase transition also unsettles the spring,
+  //     so the frame loop would correct it on the very next frame — this
+  //     effect is the belt, not the only strap.
+  // `settled` is deliberately NOT written here: this re-projects where the
+  // labels are, it does not claim anything about whether the spring moved.
+  useEffect(() => {
+    const split = splitRef.current;
+    if (split === null) {
+      return;
+    }
+    const labels = projectStoreyLabels(split.buckets, progressRef.current.value, camera, size);
+    if (labels.length === 0 && useExplodeOverlayStore.getState().labels.length === 0) {
+      // Nothing on screen before, nothing after — writing an empty array over
+      // an empty array would re-render StoreyLabels for no reason.
+      return;
+    }
+    useExplodeOverlayStore.setState({ labels });
+  }, [camera, size, phase]);
+
+  // useArrivalFrame, not useFrame: a throw in here would otherwise recur at
+  // frame rate outside every error boundary — see arrival-frame-guard.ts.
+  useArrivalFrame("ExplodedHall", (_state, delta) => {
     const split = splitRef.current;
     if (split === null) {
       return;
@@ -492,39 +608,9 @@ export function ExplodedHall({
       group.position.y = explodeOffsetY(bucket, spring.value, STOREY_SEPARATION_M);
     }
 
-    const labels: StoreyLabelPlacement[] = [];
-    if (spring.value > LABEL_APPEAR_PROGRESS) {
-      // camera.matrixWorld/.matrixWorldInverse are otherwise only refreshed
-      // inside gl.render(), which runs AFTER every useFrame subscriber this
-      // frame — a real one-render-call lag if the camera moved THIS frame.
-      // It does not, in practice: FlightCamera holds a static pose
-      // throughout arrived/exploded (a useEffect on phase change, never a
-      // per-frame write), so this call is a defensive no-op today, kept
-      // explicit rather than relying on that invariant silently.
-      // group.localToWorld() below already forces its OWN ancestor chain
-      // fresh internally (Object3D.localToWorld calls
-      // updateWorldMatrix(true, false) itself), so only the camera side
-      // needed this.
-      camera.updateWorldMatrix(true, false);
-      for (const { bucket, group, anchor } of split.buckets) {
-        const world = group.localToWorld(anchor.clone());
-        // A point behind the camera projects to mirrored/nonsensical NDC —
-        // check view-space Z (three's camera looks down its own -Z) BEFORE
-        // projecting, and simply omit that storey's label rather than place
-        // it somewhere on screen it does not belong.
-        const view = world.clone().applyMatrix4(camera.matrixWorldInverse);
-        if (view.z >= 0) {
-          continue;
-        }
-        const ndc = world.project(camera);
-        labels.push({
-          bucket,
-          label: storeyLabelFor(bucket),
-          xPx: ((ndc.x + 1) / 2) * size.width,
-          yPx: ((1 - ndc.y) / 2) * size.height,
-        });
-      }
-    }
+    // The same projection the resize/camera effect above runs — one function,
+    // so a fix to either path is a fix to both (see projectStoreyLabels).
+    const labels = projectStoreyLabels(split.buckets, spring.value, camera, size);
     useExplodeOverlayStore.setState({ settled, labels });
 
     if (!settled) {

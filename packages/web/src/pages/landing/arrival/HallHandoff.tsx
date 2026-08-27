@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, type ReactElement } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useThree } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import type { GLTFLoader } from "three-stdlib";
@@ -14,6 +14,7 @@ import {
 import { applyDollhouseCaps, meshRootWorldMatrix } from "../../../twin/dollhouse-peel.js";
 import { pruneDollhouseShell } from "../../../twin/dollhouse-shell.js";
 import { twinAssetBase, useTwinManifest } from "../../../twin/useTwinManifest.js";
+import { useArrivalFrame } from "./arrival-frame-guard.js";
 import { ExplodedHall } from "./ExplodedHall.js";
 import { TRADES_HALL_TWIN_PLACEMENT, twinPlacementMatrix } from "./twin-placement.js";
 
@@ -210,7 +211,9 @@ function HallHandoffMesh({ meshUrl, nodes }: HallHandoffMeshProps): ReactElement
   const fade = useRef<SpringState>({ value: 0, velocity: 0 });
   const invalidate = useThree((state) => state.invalidate);
 
-  useFrame((_state, delta) => {
+  // useArrivalFrame, not useFrame: a throw in here would otherwise recur at
+  // frame rate outside every error boundary — see arrival-frame-guard.ts.
+  useArrivalFrame("HallHandoffMesh", (_state, delta) => {
     const spring = fade.current;
     if (isSpringSettled(spring, 1)) {
       return;

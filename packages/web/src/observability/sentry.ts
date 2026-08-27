@@ -116,15 +116,20 @@ export async function initBrowserSentry(env: BrowserSentryEnv = import.meta.env)
 }
 
 /**
- * Which React error boundary caught the error. It becomes the `boundary`
+ * Which catcher reported the error. It becomes the `boundary`
  * Sentry tag, so an operator can tell "the whole app fell over"
  * (AppErrorBoundary — the visitor is looking at Something went wrong) apart
  * from "a decorative subtree fell over and the page carried on"
  * (ArrivalErrorBoundary — the homepage hero flight died and the static
  * photograph took over, which no visitor will ever report because nothing
- * looks broken). Same event severity, very different remedies.
+ * looks broken) — and both apart from "the hero's animation loop threw"
+ * (ArrivalFrameLoop — arrival-frame-guard.ts, a throw out of a
+ * requestAnimationFrame callback that NO error boundary can catch, contained
+ * by hand). The first two are React boundaries; the third is not, and merging
+ * it into ArrivalErrorBoundary's issue would hide a different remedy behind a
+ * familiar name. Same event severity, very different remedies.
  */
-export type BoundaryName = "AppErrorBoundary" | "ArrivalErrorBoundary";
+export type BoundaryName = "AppErrorBoundary" | "ArrivalErrorBoundary" | "ArrivalFrameLoop";
 
 export async function captureBoundaryError(
   error: Error,

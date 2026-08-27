@@ -67,6 +67,33 @@ function makeFakeDomElement(): FakeDomElement {
 
 let lastDomElement: FakeDomElement | null = null;
 
+/**
+ * A hand-rolled capture rather than vi.spyOn: `console.error`'s
+ * `(...data: any[])` signature collapses spyOn's return type to `any`, which
+ * this repo's strictTypeChecked lint rejects — the same six lines
+ * GoogleTilesStage.test.tsx and ArrivalErrorBoundary.test.tsx use.
+ */
+function captureConsoleError(): { calls: unknown[][]; restore: () => void } {
+  const calls: unknown[][] = [];
+  /* eslint-disable no-console -- capturing the channel IS the assertion here */
+  const original = console.error.bind(console);
+  console.error = (...args: unknown[]): void => {
+    calls.push(args);
+  };
+  return {
+    calls,
+    restore: () => {
+      console.error = original;
+    },
+  };
+  /* eslint-enable no-console */
+}
+
+/** Only OUR diagnostics, never React's or anything else's on the same channel. */
+function arrivalLogs(calls: readonly unknown[][]): unknown[][] {
+  return calls.filter((args) => typeof args[0] === "string" && args[0].startsWith("Arrival:"));
+}
+
 function webglContextLostListener(): (() => void) | undefined {
   const call = lastDomElement?.addEventListener.mock.calls.find(
     ([type]) => type === "webglcontextlost",
@@ -260,6 +287,57 @@ describe("ArrivalHero — flight controls", () => {
     onFrame?.(undefined, 6);
     expect(useArrivalStore.getState().phase).toBe("arrived");
     expect(invalidate).toHaveBeenCalled();
+  });
+});
+
+describe("ArrivalHero — a throw in the flight camera's frame loop (branch review)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+  });
+
+  // arrival-frame-guard.test.tsx owns the guard's own contract. THIS proves
+  // FlightCamera is actually wired to it — the wiring is a single call-site
+  // word ("useArrivalFrame" vs "useFrame"), invisible in the DOM, and a
+  // refactor could quietly drop it.
+  //
+  // The fault is injected into a real collaborator the loop actually uses
+  // (the camera object it writes the rail pose onto), so the throw travels
+  // the real path. Unguarded it escapes into R3F's rAF loop, which has no
+  // catch anywhere: the frame aborts, every later subscriber and every other
+  // R3F root on the page is starved, and it repeats at frame rate forever
+  // because nothing unsubscribes it. No error boundary can see any of that.
+  it("contains it, falls back to the photo, and says so once", () => {
+    useArrivalStore.setState({ phase: "flight" });
+    render(<ArrivalHero />);
+    const onFrame = frameCallbacks[0];
+    expect(onFrame).toBeDefined();
+
+    const consoleError = captureConsoleError();
+    const broken = vi.spyOn(fakeCamera.position, "copy").mockImplementation(() => {
+      throw new Error("camera position is gone");
+    });
+    try {
+      expect(() => {
+        act(() => {
+          onFrame?.(undefined, 0.016);
+        });
+      }).not.toThrow();
+      // The next frame is not a second throw, and not a second diagnostic.
+      expect(() => {
+        act(() => {
+          onFrame?.(undefined, 0.016);
+        });
+      }).not.toThrow();
+    } finally {
+      broken.mockRestore();
+      consoleError.restore();
+    }
+
+    expect(useArrivalStore.getState().phase).toBe("fallback");
+    expect(useArrivalStore.getState().failReason).toBe("crash");
+    const ours = arrivalLogs(consoleError.calls);
+    expect(ours).toHaveLength(1);
+    expect(ours[0]?.[0]).toContain("FlightCamera");
   });
 });
 
@@ -813,6 +891,83 @@ describe("ArrivalHero — the invariant: any failure ends with nothing rendered 
       expect(screen.queryByTestId("arrival-canvas")).toBeNull();
     });
   }
+});
+
+// -----------------------------------------------------------------------------
+// The store outlives the component (branch review, "minor"). useArrivalStore
+// is a module singleton: without this, leaving /fresh for /plan and coming
+// back — a client-side navigation, no reload — re-mounted the hero into
+// whatever phase the last visit abandoned, e.g. "exploded" with no scene
+// behind it or "arrived" with the flight already spent.
+//
+// The fix is deliberately UNMOUNT-only, and the last case here is the reason:
+// resetting on MOUNT would undo Task 12/12b's specific, tested behaviour that
+// a fresh mount inheriting an already-failed store stays failed.
+// -----------------------------------------------------------------------------
+describe("ArrivalHero — the story ends when the hero unmounts", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+    stubMatchMedia(false);
+  });
+
+  it("resets the phase machine on unmount", () => {
+    useArrivalStore.setState({ phase: "exploded" });
+    const { unmount } = render(<ArrivalHero />);
+    expect(useArrivalStore.getState().phase).toBe("exploded");
+
+    unmount();
+    expect(useArrivalStore.getState().phase).toBe("loading");
+    expect(useArrivalStore.getState().failReason).toBeNull();
+  });
+
+  it("clears a FAILURE too — reset() is the store's only way out of fallback", () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    const { unmount } = render(<ArrivalHero />);
+    act(() => {
+      useArrivalStore.getState().fail("tiles");
+    });
+    expect(useArrivalStore.getState().phase).toBe("fallback");
+
+    unmount();
+    expect(useArrivalStore.getState().phase).toBe("loading");
+    expect(useArrivalStore.getState().failReason).toBeNull();
+  });
+
+  it("gives the next visit the whole story back, from the top", () => {
+    // The actual reported shape, played out: fly, land, navigate away,
+    // navigate back. The second mount must be a beginning, not a resumption.
+    useArrivalStore.setState({ phase: "flight" });
+    const first = render(<ArrivalHero />);
+    const onFrame = frameCallbacks[0];
+    act(() => {
+      onFrame?.(undefined, 6);
+      onFrame?.(undefined, 6);
+    });
+    expect(useArrivalStore.getState().phase).toBe("arrived");
+
+    first.unmount();
+    render(<ArrivalHero />);
+
+    expect(useArrivalStore.getState().phase).toBe("loading");
+    // …and it is a live hero again, not a corpse: the canvas is mounted and
+    // the skip control is absent because the flight has not started yet.
+    expect(screen.getByTestId("arrival-canvas")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: ARRIVAL_SKIP_LABEL })).toBeNull();
+  });
+
+  it("does NOT reset on mount: a fresh mount inheriting a failed store stays failed", () => {
+    // The deliberate behaviour this fix must not undo — the shape a re-render
+    // of FreshPage produces after ArrivalErrorBoundary has caught a throw.
+    // Re-mounting straight back into a flight that just crashed is exactly
+    // what must never happen.
+    useArrivalStore.getState().fail("crash");
+    const { container } = render(<ArrivalHero />);
+
+    expect(useArrivalStore.getState().phase).toBe("fallback");
+    expect(useArrivalStore.getState().failReason).toBe("crash");
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByTestId("arrival-canvas")).toBeNull();
+  });
 });
 
 describe("ArrivalHero — focus handoff on explode/reassemble (Task 12 bundled a11y fix)", () => {

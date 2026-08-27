@@ -83,3 +83,42 @@ export const GOOGLE_MAPS_ATTRIBUTION_LOGO_URL = "/images/brand/google-maps-attri
  * library default rather than leaving an unmeasured 12 in place.
  */
 export const ARRIVAL_ERROR_TARGET = 12;
+
+/**
+ * How long the tiles may go COMPLETELY SILENT before the hero gives up and
+ * falls back to the static photograph (GoogleTilesStage.tsx's stall
+ * watchdog). Milliseconds.
+ *
+ * WHAT IT MEASURES, WHICH IS THE WHOLE REASON THE NUMBER IS DEFENSIBLE. This
+ * is NOT "the tileset must finish within 30 s". It is a dead-man's switch:
+ * the timer is re-armed by every event that PROVES bytes are still moving —
+ * a tileset parsed (`load-tileset`), a tile request actually starting
+ * (`tile-download-start`), a tile finishing (`load-model`), the load queue
+ * going non-empty (`tiles-load-start`). A slow-but-working connection fires
+ * those continuously, so it can never trip this; only genuine silence can.
+ * A fixed total deadline was the obvious alternative and was rejected for
+ * exactly that reason — it cannot tell "hung" from "slow", so any value
+ * generous enough to be safe on poor mobile is too long to be a useful
+ * watchdog, and any value short enough to be useful steals the flight from
+ * the visitors least able to spare it.
+ *
+ * WHY 30 SECONDS OF SILENCE. The gaps this must sit above are real ones on a
+ * bad mobile link: the session-token round trip plus the root tileset fetch
+ * (small JSON, but two serial round trips at 300-600 ms RTT), then per-tile
+ * glTF downloads. Google's photorealistic tiles run to a few hundred KB each
+ * and occasionally past 1 MB; at a Slow-3G-class 400 Kbps a 1 MB tile is
+ * ~20 s wall clock, and downloads run concurrently, so a further
+ * download-start or load-model almost always lands well inside the window.
+ * 30 s clears that with margin while still bounding the failure: the phase
+ * machine can no longer sit in "loading" forever.
+ *
+ * WHAT A FALSE POSITIVE COSTS, so the trade is stated rather than assumed:
+ * the hero fades and the static hero photograph carries the page (spec §6) —
+ * the same graceful outcome as a missing key. Nothing breaks, nobody sees an
+ * error; a visitor on a link so bad that 30 s passes with no tile progress at
+ * all loses a decoration they never asked for. What a MISSED stall costs is
+ * worse and silent: no flight, no diagnostic, no fallback, forever — the
+ * failure Task 12b independently flagged as this hero's most likely real
+ * field report.
+ */
+export const ARRIVAL_TILES_STALL_MS = 30_000;
