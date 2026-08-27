@@ -21,14 +21,82 @@ master lineage — it previously lived only on `feature/diary-p0-slice-3`)._
 **Blake's mandate (verbatim intent): make the viewer a "professional and
 luxurious CAD tool", all tooling and nice-to-haves, polished, no
 half-measures, no time limit.** Claimed surface: `packages/web/src/twin/**`
-and `tools/twin-forge/**`, branch `worktree-twin-cad`. Build order:
-CAD shell (wire ViewpointPlan + measure + HUD restyle to House language) →
-floors UI → zenith fill → residual floor patches → floor atlas
-presentability. Production manifest flips will be staged and done with
-Blake's confirmation only. Adjacent running lane acknowledged: the
-arrival-homepage-intro session (worktree `arrival-hero`) reads
-DollhouseStage/TwinViewer — messaged 2026-08-26, agreed to flag any
-src/twin edits before landing.
+and `tools/twin-forge/**`, branch `worktree-twin-cad`. Production manifest
+flips will be staged and done with Blake's confirmation only. Adjacent
+running lane acknowledged: the arrival-homepage-intro session (worktree
+`arrival-hero`) reads DollhouseStage/TwinViewer — messaged 2026-08-26,
+agreed to flag any src/twin edits before landing.
+
+SHIPPED ON THIS BRANCH (all local; nothing published):
+
+- `f1beaf06` **the cinematic glide.** useTwinGlide replaces the hop machine:
+  one scalar `s` along a route polyline under a velocity spring, segment
+  endpoints DERIVED per frame, so a ride crosses nodes with no settle. Strict
+  superset of useTwinWalk's contract, so every stage renders it unchanged.
+  New `restId` names the last STILL frame — announcements, the dossier and
+  share links speak about where you STAND, not every node swept past at
+  1.2 m/s. The Usher now glides the whole Dijkstra route instead of queueing
+  hops. ⚠️ Per-frame values reach the stages by REF, not React state: the
+  measured cost of publishing them through state was 55 long tasks against a
+  look-drag's one.
+- `7537933f` + `a02b77ed` **plan mode is a real drawing** — orthographic
+  camera, storey switcher, section cut, live scale bar. Review fix: a mode
+  switch mid-dive handed the ortho camera to DiveCamera's walking-height
+  bezier (two writers, one camera); both the switch and DiveCamera are now
+  guarded.
+- `52e32e6f` **the plan names its rooms.** planRoomLabels centres one label
+  per VALIDATED room over its viewpoints' centroid, storey-filtered. Same
+  oracle as the walk's dossier, so it can only name a room a human confirmed.
+- `40fcad6f` + `9cfe1b99` **THE BUILDING IS WALKABLE.** The shipped bundle was
+  TWO DISCONNECTED ISLANDS — 84 viewpoints upstairs, 65 down, no edge between
+  them, so nobody could ever walk between storeys. Nothing complained because
+  the route finder returns "unreachable" and the Usher teleports. Now:
+  `assertNavGraphConnected` fails any split build naming the islands and the
+  joining pair, and `nav-overrides/trades-hall.json` (the file the README's
+  own forge command has always referenced, never written) authors
+  scan_080↔scan_081. ⚠️ Bridge candidates need a stair-shaped run: the first
+  suggestion was 2.97 m apart with 0.04 m horizontal — a floor slab, which
+  would have walked guests through the floor.
+
+## ZENITH (ceiling) FILL — twin-cad session, 2026-08-27
+
+The counterpart of the nadir tripod fill. `zenith_fill.py` +
+`zenith_fill_pilot.py` + `zenith_survey.py` + `zenith_batch.py`, 14/14 tests
+(`tests/test_zenith_geometry.py`), 31.4 dB / 0.961 against synthetic ground
+truth. Read these three findings before touching it:
+
+1. **THE MIRROR RULE.** For the floor the nearest neighbour is the best donor.
+   For the ceiling a neighbour standing almost UNDERNEATH the patch is the
+   WORST — the patch falls inside that donor's own zenith cone, so it is blind
+   there too. `zenith_donor_weight` returns exactly 0 inside the cone. The rule
+   independently rediscovered scan_009 / scan_000 as the Grand Hall's best
+   witnesses, which is exactly what the 2026-07-22 donor test measured.
+2. **A GEOMETRIC MASK IS NOT ENOUGH.** Not every sweep is blind overhead. The
+   first version filled all 1,163,264 cone pixels at scan_126, whose ceiling
+   is already sharp, pasting a visible disc over good plaster and flattening a
+   downlight. The fix is the feasibility's own instrument as a per-pixel
+   EVIDENCE GATE — take donor pixels only where donors show ≥3× the detail the
+   target already has. Self-calibrating, so a plain plaster ceiling scores
+   equal on both sides and is left alone. Pinned as a regression test.
+3. **HEIGHT SEARCH IS RELATIVE TO THE SCANNER, NEVER ABSOLUTE.** E57 world z is
+   not height-above-floor; scan_126 stands at z = −1.38 and its 3.2 m ceiling
+   sits near z = +0.3. An absolute 2..9 m window silently pinned at its own
+   boundary (0.412 agreement); scanner-relative solves it at 0.912.
+
+SURVEYED: only **23 of 149** sweeps are blind at zenith. 126 see their own
+ceilings — a blanket re-fill would degrade 126 to repair 23. Batch runs the
+flagged list only, into its own evidence dir, never the bundle.
+
+MEASURED: scan_058 (Saloon) ceiling solved 5.55 m against the venue's
+published 5.4 m, planar to 0.25 m, detail in the restored region 0.407 → 5.851
+(**×14.4**), 875,368 px correctly declined, 0 synthesized, 0 px changed
+outside the cone.
+
+STILL OPEN: **the Grand Hall dome is REFUSED, not fixed** (3.15 m height spread
+at scan_045) — a dome is not a plane and pasting flat coffers onto a curve
+would be a lie. Needs a spherical-cap model. Also unhandled: specular sources
+(chandeliers, downlights) are view-dependent and should not be reprojected;
+the evidence gate mostly avoids them but does not reject them explicitly.
 
 ## Lane split (agreed division of labour)
 

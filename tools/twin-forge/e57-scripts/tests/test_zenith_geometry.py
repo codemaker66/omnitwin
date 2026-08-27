@@ -81,6 +81,11 @@ def render_ceiling_pano(C, gain=1.0, cone_half_deg=None):
     return (img * gain).astype(np.float32)
 
 
+def T_render(C):
+    """Short alias — the cone-agreement tests build several donors each."""
+    return render_ceiling_pano(C)
+
+
 # --- ray/plane geometry -----------------------------------------------------
 
 def test_upward_ray_hits_the_ceiling():
@@ -183,6 +188,75 @@ def test_a_flat_ceiling_is_accepted_as_planar():
     heights = np.full(64, Z_CEIL) + np.random.default_rng(0).normal(0, 0.01, 64)
     assert zf.ceiling_is_planar(heights, tolerance_m=0.15)
     print("  a flat ceiling passes the planarity test")
+
+
+def test_donors_agree_inside_the_cone_when_the_ceiling_really_is_a_plane():
+    C_t = np.array([0.0, 0.0, EYE])
+    donors = [
+        (T_render(np.array([3.2, 0.4, EYE])), np.array([3.2, 0.4, EYE])),
+        (T_render(np.array([-2.9, 1.1, EYE])), np.array([-2.9, 1.1, EYE])),
+        (T_render(np.array([0.6, -3.4, EYE])), np.array([0.6, -3.4, EYE])),
+    ]
+    score = zf.cone_donor_agreement((H, W), C_t, donors, Z_CEIL, CONE_HALF_DEG)
+    assert score > zf.MIN_CONE_DONOR_AGREEMENT, score
+    print(f"  donors agree at {score:.3f} on a true plane")
+
+
+def test_donors_disagree_when_the_assumed_height_is_wrong():
+    """A wrong plane is the dome's signature: each donor lands on different
+    physical texture, so they stop correlating. This is the gate that catches a
+    curve ringed by flat ceiling, which a surrounding-ring spread cannot see."""
+    C_t = np.array([0.0, 0.0, EYE])
+    donors = [
+        (T_render(np.array([3.2, 0.4, EYE])), np.array([3.2, 0.4, EYE])),
+        (T_render(np.array([-2.9, 1.1, EYE])), np.array([-2.9, 1.1, EYE])),
+        (T_render(np.array([0.6, -3.4, EYE])), np.array([0.6, -3.4, EYE])),
+    ]
+    right = zf.cone_donor_agreement((H, W), C_t, donors, Z_CEIL, CONE_HALF_DEG)
+    wrong = zf.cone_donor_agreement((H, W), C_t, donors, Z_CEIL + 3.0, CONE_HALF_DEG)
+    assert wrong < right, (wrong, right)
+    assert wrong < zf.MIN_CONE_DONOR_AGREEMENT, wrong
+    print(f"  true height {right:.3f} vs wrong height {wrong:.3f}")
+
+
+def test_one_donor_cannot_corroborate_itself():
+    C_t = np.array([0.0, 0.0, EYE])
+    donors = [(T_render(np.array([3.2, 0.4, EYE])), np.array([3.2, 0.4, EYE]))]
+    assert zf.cone_donor_agreement((H, W), C_t, donors, Z_CEIL, CONE_HALF_DEG) == 0.0
+    print("  a lone donor scores zero — agreement needs someone to agree with")
+
+
+def test_the_reported_spread_always_agrees_with_the_verdict():
+    """THE REPORTING BUG, pinned.
+
+    The batch printed a peak-to-peak while the gate judged a 5-95 percentile, so
+    two nodes both showed "spread 0.25" and got opposite verdicts — the report
+    could not be reasoned about. The invariant is not that the percentile is
+    outlier-proof (at eight wedge solves it is barely narrower than the full
+    range); it is that the number a caller REPORTS is the number the decision
+    was made on.
+    """
+    rng = np.random.default_rng(7)
+    cases = [
+        np.full(8, 5.0),
+        np.full(8, 5.0) + rng.normal(0, 0.05, 8),
+        np.array([5.0, 5.1, 5.0, 5.2, 5.0, 5.1, 5.0, 8.0]),
+        np.linspace(5.0, 9.0, 8),
+    ]
+    for heights in cases:
+        spread = zf.ceiling_planarity_spread(heights)
+        for tol in (0.05, 0.25, 1.0, 5.0):
+            assert zf.ceiling_is_planar(heights, tolerance_m=tol) == (spread <= tol), (
+                f"verdict disagreed with the reported spread {spread} at tol {tol}"
+            )
+    print("  every verdict follows from the spread the caller is given")
+
+
+def test_planarity_spread_is_nan_when_there_is_nothing_to_measure():
+    assert not np.isfinite(zf.ceiling_planarity_spread(np.array([])))
+    assert not np.isfinite(zf.ceiling_planarity_spread(np.array([1.0, np.nan])))
+    assert not zf.ceiling_is_planar(np.array([]))
+    print("  an unmeasurable ceiling is refused, never assumed flat")
 
 
 def test_a_dome_is_refused_rather_than_filled_with_a_wrong_plane():

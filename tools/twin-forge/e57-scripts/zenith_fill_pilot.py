@@ -122,9 +122,10 @@ def solve_ceiling_z(
         return float("nan"), 0.0
     stride = max(1, rr.size // 1500)
     rr, cc = rr[::stride], cc[::stride]
-    dirs = np.stack(
-        [nf.equirect_pixel_to_world_dir(float(r), float(c), w, h) for r, c in zip(rr, cc)]
-    )
+    # Vectorized throughout: this is a grid search over ~400 candidate heights
+    # against every donor, so a per-point Python loop here costs millions of
+    # scalar calls and turns a batch into an overnight job.
+    dirs = nf.equirect_grid_dirs(w, h, 0, h)[rr, cc]
     tgt = target[rr, cc].astype(np.float64).mean(axis=1)  # luminance is enough
 
     best_z, best_score = float("nan"), -np.inf
@@ -133,13 +134,10 @@ def solve_ceiling_z(
         if valid.sum() < 32:
             continue
         idx = np.nonzero(valid)[0]
+        Pv = P[idx]
         agree = []
         for donor_img, C_d in donors:
-            d_rows = np.empty(idx.size)
-            d_cols = np.empty(idx.size)
-            for k, i in enumerate(idx):
-                r, c = nf.reproject_point_to_pixel(P[i], C_d, w, h)
-                d_rows[k], d_cols[k] = r, c
+            d_rows, d_cols = nf.dirs_to_pixels(Pv - np.asarray(C_d, dtype=np.float64), w, h)
             vals = nf.sample_equirect(donor_img, d_rows, d_cols).astype(np.float64).mean(axis=1)
             a, b = tgt[idx], vals
             if a.std() < 1e-6 or b.std() < 1e-6:
@@ -247,13 +245,16 @@ def main() -> int:
 
     heights = sample_ceiling_heights(target, C_t, donors, z_ceiling, args.cone_half_deg)
     planar = zf.ceiling_is_planar(heights, tolerance_m=0.25) if heights.size else False
-    spread = float(np.ptp(heights)) if heights.size else float("nan")
+    # The gate judges a 5-95 percentile spread; print THAT, not a peak-to-peak,
+    # or two nodes print the same number and get opposite verdicts.
+    spread = zf.ceiling_planarity_spread(heights) if heights.size else float("nan")
     print(f"planarity: {heights.size} wedge solves, spread {spread:.2f} m -> "
-          f"{'planar' if planar else 'NOT planar (dome?)'}")
+          f"{'planar' if planar else 'NOT one plane (dome, soffit or stair)'}")
     if not planar and not args.force:
-        print("refusing to fill a non-planar ceiling; re-run with --force to override")
-        report = {"scan": target_id, "refused": "non-planar ceiling",
-                  "z_ceiling_m": z_ceiling, "height_spread_m": spread,
+        print("refusing: the ceiling is not one plane; re-run with --force to override")
+        report = {"scan": target_id,
+                  "refused": "ceiling is not one plane (dome, soffit or stair)",
+                  "z_ceiling_m": z_ceiling, "planarity_spread_m": spread,
                   "donors": donor_ids}
         with open(os.path.join(args.out, f"{target_id}-zenith.json"), "w", encoding="utf8") as f:
             json.dump(report, f, indent=2)
@@ -274,7 +275,7 @@ def main() -> int:
         "scan": target_id,
         "z_ceiling_m": z_ceiling,
         "solve_agreement": score,
-        "height_spread_m": spread,
+        "planarity_spread_m": spread,
         "planar": bool(planar),
         "cone_radius_m": rep["cone_radius_m"],
         "donors": donor_ids,

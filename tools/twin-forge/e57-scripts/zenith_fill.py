@@ -49,6 +49,10 @@ __all__ = [
     "donor_in_own_zenith_cone",
     "zenith_donor_weight",
     "ceiling_is_planar",
+    "ceiling_planarity_spread",
+    "cone_donor_agreement",
+    "MIN_SOLVE_AGREEMENT",
+    "MIN_CONE_DONOR_AGREEMENT",
     "zenith_cone_mask",
     "local_detail",
     "fill_zenith_hole",
@@ -151,23 +155,55 @@ def zenith_donor_weight(
     return (overhead ** incidence_power) / (dist ** dist_power)
 
 
+"""Below this donor-agreement the height solve is not worth a verdict.
+
+A planarity spread is only meaningful if the heights it is built from were
+solved confidently. On the batch the refused nodes split cleanly: the ones with
+a genuine geometric reason (the dome, the staircase soffit) solved at 0.55-0.90,
+while scan_089, scan_111, scan_076 and scan_121 solved at 0.145-0.219 — there
+the wedge spread is measuring noise, not a ceiling, and calling it "not planar"
+dresses an instrument failure up as a fact about the building. Every node that
+filled successfully agreed at 0.373 or better.
+"""
+MIN_SOLVE_AGREEMENT = 0.35
+
+
+def ceiling_planarity_spread(heights: np.ndarray) -> float:
+    """The spread the planarity gate actually judges: 5th-to-95th percentile of
+    the sampled ceiling heights, so one wild wedge solve cannot condemn a flat
+    ceiling. NaN when there is nothing usable to measure.
+
+    Exported because a caller must be able to REPORT the number the decision was
+    made on. Reporting a different statistic (a full peak-to-peak, say) next to
+    a percentile-based verdict produces exactly the confusion it did here: two
+    nodes both printed "spread 0.25", one filled and one refused.
+    """
+    h = np.asarray(heights, dtype=np.float64).ravel()
+    if h.size == 0 or not np.all(np.isfinite(h)):
+        return float("nan")
+    return float(np.percentile(h, 95) - np.percentile(h, 5))
+
+
 def ceiling_is_planar(
     heights: np.ndarray, tolerance_m: float = 0.15
 ) -> bool:
     """Is this ceiling flat enough to model as one plane?
 
     `heights` are sampled ceiling heights across the region a fill would cover.
-    A flat ceiling scatters by millimetres; a dome sweeps metres. The gate is
-    deliberately blunt and deliberately conservative: refusing a fill costs a
-    grey blob nobody can fix today, while accepting a dome pastes flat coffers
-    onto a curve and calls it evidence.
+    A flat ceiling scatters by millimetres; a curved or stepped one sweeps
+    metres. The gate is deliberately blunt and deliberately conservative:
+    refusing a fill costs a grey blob nobody can fix today, while accepting a
+    curve pastes flat coffers onto it and calls the result evidence.
+
+    NOTE ON WHAT A FAILURE MEANS. It means "not one plane" and nothing more
+    specific. On this capture the refusals include the Grand Hall's dome, but
+    also the staircase (a soffit that follows the flight) and rooms with beams.
+    Callers must not report a failure as "a dome" — that is a claim about the
+    building, and this function only measured a spread.
     """
-    h = np.asarray(heights, dtype=np.float64).ravel()
-    if h.size == 0:
+    spread = ceiling_planarity_spread(heights)
+    if not np.isfinite(spread):
         return False
-    if not np.all(np.isfinite(h)):
-        return False
-    spread = float(np.percentile(h, 95) - np.percentile(h, 5))
     return spread <= float(tolerance_m)
 
 
@@ -193,6 +229,96 @@ def zenith_cone_mask(
     elev = 90.0 - (rows + 0.5) * (180.0 / h)
     inside = elev >= (90.0 - cone_half_deg - feather_deg)
     return np.repeat(inside[:, None], w, axis=1)
+
+
+"""Cross-donor agreement below which the planar model does not describe what is
+actually overhead, and the fill must decline.
+
+Measured on the capture, not chosen by taste. Every node the ring-spread gate
+had passed, scored by cone_donor_agreement at its own solved height:
+
+    scan_139   0.970   flat plaster            filled well
+    scan_126   0.806   moulded panel           filled well
+    scan_134   0.799   flat                    filled well
+    scan_059   0.646   Saloon coffers          filled well
+    scan_058   0.593   Saloon coffers          filled well
+    scan_103   0.310   stairwell: stepped soffit, beam, void behind — NOT a plane
+    scan_043  -0.123   the Grand Hall DOME — donors actively anti-correlate
+
+0.55 sits in the gap. It keeps every genuine win and refuses both failures,
+including the one a ring-spread gate could never see.
+"""
+MIN_CONE_DONOR_AGREEMENT = 0.55
+
+
+def cone_donor_agreement(
+    shape: tuple[int, int],
+    C_target: np.ndarray,
+    donors: list[tuple[np.ndarray, np.ndarray]],
+    z_ceiling: float,
+    cone_half_deg: float = 25.0,
+    samples: int = 1500,
+) -> float:
+    """Do the donors agree with EACH OTHER about the surface inside the cone?
+
+    THE GATE THAT THE RING-SPREAD ONE SHOULD HAVE BEEN. Sampling ceiling heights
+    on the ring just outside the blind cone measures the wrong surface: at
+    scan_043 that ring lands on the flat coffered ceiling that SURROUNDS the
+    Grand Hall dome, so it reported a planar 6.94 m and the fill smeared 663,539
+    px of reprojected coffer across the dome's oculus. The region being filled
+    must be the region that is judged.
+
+    The target cannot judge it — the target is blind there, which is the whole
+    problem. But the donors are not: reproject the same cone rays into each
+    donor through the candidate plane and compare donors PAIRWISE. If the
+    surface really is a plane at that height, every donor lands on the same
+    physical texture and they correlate. On a dome no single height can make
+    them agree, because they are each seeing a different part of a curve.
+
+    Returns the mean pairwise correlation, 0 when it cannot be measured.
+    """
+    h, w = shape
+    if len(donors) < 2:
+        return 0.0
+    cone = zenith_cone_mask(h, w, cone_half_deg)
+    rr, cc = np.nonzero(cone)
+    if rr.size == 0:
+        return 0.0
+    stride = max(1, rr.size // samples)
+    rr, cc = rr[::stride], cc[::stride]
+    dirs = nf.equirect_grid_dirs(w, h, 0, h)[rr, cc]
+    P, valid = rays_ceiling_intersection(C_target, dirs, float(z_ceiling))
+    if valid.sum() < 64:
+        return 0.0
+    Pv = P[np.nonzero(valid)[0]]
+
+    series: list[np.ndarray] = []
+    for donor_img, C_d in donors:
+        C_d = np.asarray(C_d, dtype=np.float64)
+        rel = Pv - C_d
+        # A donor blind in the same place contributes nothing but its own hole.
+        offs = np.hypot(rel[:, 0], rel[:, 1])
+        radius = zenith_cone_radius_m(z_ceiling, float(C_d[2]), cone_half_deg)
+        keep = (offs >= radius) & (rel[:, 2] > 0.0)
+        if keep.sum() < 64:
+            continue
+        d_rows, d_cols = nf.dirs_to_pixels(rel, w, h)
+        vals = nf.sample_equirect(donor_img, d_rows, d_cols).astype(np.float64).mean(axis=1)
+        vals = np.where(keep, vals, np.nan)
+        series.append(vals)
+
+    scores: list[float] = []
+    for i in range(len(series)):
+        for j in range(i + 1, len(series)):
+            a, b = series[i], series[j]
+            both = np.isfinite(a) & np.isfinite(b)
+            if both.sum() < 64:
+                continue
+            av, bv = a[both], b[both]
+            if av.std() < 1e-6 or bv.std() < 1e-6:
+                continue
+            scores.append(float(np.corrcoef(av, bv)[0, 1]))
+    return float(np.mean(scores)) if scores else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -317,12 +443,10 @@ def fill_zenith_hole(
         return target.copy(), report
 
     rows, cols = np.nonzero(mask)
-    dirs = np.stack(
-        [
-            nf.equirect_pixel_to_world_dir(float(r), float(c), w, h)
-            for r, c in zip(rows, cols)
-        ]
-    )
+    # equirect_grid_dirs is the vectorized twin of equirect_pixel_to_world_dir
+    # (pinned to it by the nadir suite). Building a million directions through
+    # the scalar function costs minutes; this costs milliseconds.
+    dirs = nf.equirect_grid_dirs(w, h, 0, h)[rows, cols]
     P, valid = rays_ceiling_intersection(C_t, dirs, z_ceiling)
 
     cone_radius = report["cone_radius_m"]
@@ -341,14 +465,13 @@ def fill_zenith_hole(
         if not usable.any():
             continue
 
-        # Reproject the usable points into this donor's equirect.
+        # Reproject the usable points into this donor's equirect, in bulk.
+        # Donor equirects are world-oriented, so the reprojection is a pure
+        # translation and dirs_to_pixels is the whole operation.
         d_rows = np.empty(rows.size, dtype=np.float64)
         d_cols = np.empty(rows.size, dtype=np.float64)
         idx = np.nonzero(usable)[0]
-        for i in idx:
-            r, c = nf.reproject_point_to_pixel(P[i], C_d, w, h)
-            d_rows[i] = r
-            d_cols[i] = c
+        d_rows[idx], d_cols[idx] = nf.dirs_to_pixels(P[idx] - C_d, w, h)
 
         if occluder is not None:
             seen = np.array(
@@ -428,19 +551,12 @@ def _ring_gain(
         step = rr.size // max_samples
         rr = rr[::step]
         cc = cc[::step]
-    dirs = np.stack(
-        [nf.equirect_pixel_to_world_dir(float(r), float(c), w, h) for r, c in zip(rr, cc)]
-    )
+    dirs = nf.equirect_grid_dirs(w, h, 0, h)[rr, cc]
     P, valid = rays_ceiling_intersection(C_t, dirs, z_ceiling)
     if not valid.any():
         return np.ones(3, dtype=np.float64)
     idx = np.nonzero(valid)[0]
-    d_rows = np.empty(idx.size, dtype=np.float64)
-    d_cols = np.empty(idx.size, dtype=np.float64)
-    for k, i in enumerate(idx):
-        r, c = nf.reproject_point_to_pixel(P[i], C_d, w, h)
-        d_rows[k] = r
-        d_cols[k] = c
+    d_rows, d_cols = nf.dirs_to_pixels(P[idx] - np.asarray(C_d, dtype=np.float64), w, h)
     donor_vals = nf.sample_equirect(donor, d_rows, d_cols).astype(np.float64)
     target_vals = target[rr[idx], cc[idx]].astype(np.float64)
     ok = (donor_vals > 4.0).all(axis=1) & (target_vals > 4.0).all(axis=1)

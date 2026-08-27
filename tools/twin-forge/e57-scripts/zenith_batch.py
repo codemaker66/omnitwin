@@ -34,6 +34,14 @@ import nadir_fill as nf  # noqa: E402
 import zenith_fill as zf  # noqa: E402
 import zenith_fill_pilot as zp  # noqa: E402
 
+# How like the surrounding ceiling a restored patch must end up to be
+# promotable. Generous — a factor of two either way — because the point is to
+# catch the two failure shapes, not to police texture:
+#   scan_058 0.66x, scan_059 0.64x, scan_126 1.29x  accepted (look right)
+#   scan_134 0.46x  under-recovered
+#   scan_139 1.83x  over-textured, visibly mottled
+LIKENESS_BAND = (0.5, 1.5)
+
 
 def process(
     nid: str,
@@ -73,12 +81,40 @@ def process(
         rec["refused"] = "no ceiling height solved"
         return rec
 
+    # An unconfident solve cannot support a planarity verdict: the wedge spread
+    # would be measuring noise, and refusing it as "not planar" would dress an
+    # instrument failure up as a fact about the building.
+    if float(score) < zf.MIN_SOLVE_AGREEMENT:
+        rec["refused"] = f"height solve too weak to judge (agreement {score:.3f})"
+        return rec
+
+    # THE GATE THAT MATTERS: do the donors agree with each other about the
+    # surface INSIDE the cone — the region actually being filled? The
+    # surrounding-ring spread below is kept as a secondary reading, but it
+    # cannot see a dome ringed by flat coffers, which is exactly what let
+    # scan_043 smear 663,539 px across the Grand Hall's oculus.
+    cone_agree = zf.cone_donor_agreement(
+        target.shape[:2], C, donors, float(z), cone_half_deg
+    )
+    rec["cone_donor_agreement"] = round(float(cone_agree), 3)
+    if cone_agree < zf.MIN_CONE_DONOR_AGREEMENT:
+        rec["refused"] = (
+            f"not one plane inside the cone (donor agreement {cone_agree:.3f})"
+        )
+        return rec
+
     heights = zp.sample_ceiling_heights(target, C, donors, z, cone_half_deg)
+    # Report the SAME statistic the gate judges on, never a different one.
+    spread = zf.ceiling_planarity_spread(heights) if heights.size else float("nan")
     planar = zf.ceiling_is_planar(heights, tolerance_m=0.25) if heights.size else False
-    rec["height_spread_m"] = round(float(np.ptp(heights)), 3) if heights.size else None
+    rec["planarity_spread_m"] = None if not np.isfinite(spread) else round(float(spread), 3)
+    rec["wedge_solves"] = int(heights.size)
     rec["planar"] = bool(planar)
     if not planar:
-        rec["refused"] = "non-planar ceiling (dome)"
+        # "Not one plane" is all that was measured. On this capture that covers
+        # the Grand Hall dome, the staircase soffit and rooms with beams alike;
+        # naming a cause here would be a claim about the building.
+        rec["refused"] = "ceiling around the cone is not one plane"
         return rec
 
     filled, r = zf.fill_zenith_hole(
@@ -101,6 +137,27 @@ def process(
         rec["detail_before"] = round(b, 3)
         rec["detail_after"] = round(a, 3)
         rec["gain"] = round(a / max(b, 1e-9), 2)
+
+        # ACCEPTANCE, and note it is NOT the gain. A detail gain rewards any
+        # added variance, including smear: the Grand Hall dome scored x12.46
+        # while its oculus was being turned to mush. What a restoration must do
+        # is end up LIKE the ceiling it belongs to — so compare the restored
+        # patch against the ring of real ceiling just outside the cone. Far
+        # under it and the donors never recovered the ceiling's character; far
+        # over it and they have added texture the ceiling does not have
+        # (scan_139 landed at 1.83x its ring, and looks visibly mottled).
+        ring_mask = zf.zenith_cone_mask(*target.shape[:2], cone_half_deg, feather_deg=12.0)
+        ring_mask &= ~r["hole_mask_eq"]
+        ring_detail = float(da[ring_mask[:band]].mean()) if ring_mask[:band].any() else 0.0
+        rec["ring_detail"] = round(ring_detail, 3)
+        k = a / ring_detail if ring_detail > 1e-6 else float("inf")
+        rec["restored_vs_ring"] = None if not np.isfinite(k) else round(float(k), 2)
+        if not (LIKENESS_BAND[0] <= k <= LIKENESS_BAND[1]):
+            rec["refused"] = (
+                f"restored patch does not resemble its ceiling "
+                f"({k:.2f}x the surrounding ring)"
+            )
+            return rec
     else:
         rec["gain"] = 1.0
 
