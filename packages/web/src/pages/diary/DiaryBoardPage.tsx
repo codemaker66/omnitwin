@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type {
   CalendarBookingEntry,
   CalendarEntry,
@@ -412,6 +412,11 @@ export function DiaryBoardPage(): ReactElement {
     <main className="diary-page" aria-label={BOARD_COPY.title}>
       <header className="diary-header">
         <div className="diary-heading">
+          {/* Until now this page had no navigation of any kind — no link, no
+              back, no way out but the browser button. */}
+          <Link className="diary-return" to="/dashboard">
+            ← Dashboard
+          </Link>
           <h1 className="diary-title">{BOARD_COPY.title}</h1>
           <p className="diary-subtitle">{BOARD_COPY.subtitle}</p>
         </div>

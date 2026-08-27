@@ -941,6 +941,24 @@
   padding-top: 10px;
 }
 
+/* The way back out. Sits above the title so it reads as a level up, not as
+   another control on the board. */
+.diary-return {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--vv-muted);
+  text-decoration: none;
+  transition: color 160ms ease-out;
+}
+
+.diary-return:hover,
+.diary-return:focus-visible {
+  color: var(--diary-ink, inherit);
+}
+
 /* An anchor styled as a button still needs the button's box: .diary-button
    assumes a control, so a bare <a> would collapse to text metrics. */
 a.diary-button {

@@ -117,6 +117,19 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
             </button>
           );
         })}
+        {/* The Diary is the venue's booking calendar and, until now, was linked
+            from nowhere in the entire app — reachable only by typing the URL.
+            Read roles mirror the ws door: staff, admin, hallkeeper. */}
+        {(user?.platformRole === "admin" || ["admin", "staff", "hallkeeper"].includes(user?.role ?? "")) && (
+          <Link className="dashboard-layout-nav-item dashboard-layout-nav-link" to="/diary">
+            The Diary
+          </Link>
+        )}
+        {(user?.platformRole === "admin" || ["admin", "staff", "planner"].includes(user?.role ?? "")) && (
+          <Link className="dashboard-layout-nav-item dashboard-layout-nav-link" to="/plan">
+            Planner
+          </Link>
+        )}
         {(user?.platformRole === "admin" || ["admin", "staff", "hallkeeper", "planner"].includes(user?.role ?? "")) && (
           <Link className="dashboard-layout-nav-item dashboard-layout-nav-link" to="/event-architect">
             Event Architect
