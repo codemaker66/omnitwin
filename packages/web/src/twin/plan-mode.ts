@@ -182,6 +182,60 @@ export function planFitZoom(
   return Math.min(width / (2 * frame.halfW), height / (2 * frame.halfD));
 }
 
+export interface PlanRoomLabel {
+  readonly slug: string;
+  /** The venue's own name, as twin-rooms renders it. */
+  readonly name: string;
+  /** Three-space position ON the drawing: the centroid of the room's
+   *  validated viewpoints, floated just above the storey's walking floor. */
+  readonly position: readonly [number, number, number];
+}
+
+/** Height above the walking floor a label floats — under any furniture-scale
+ *  geometry, above the floor surface itself. */
+const PLAN_LABEL_FLOAT_M = 0.35;
+
+/**
+ * The room annotations for a storey's drawing: one label per VALIDATED room
+ * (twin-rooms' whole philosophy — nothing inferred), positioned at the
+ * centroid of that room's validated viewpoints. The Grand Hall's two
+ * validated ends therefore centre it; single-viewpoint rooms sit on their
+ * viewpoint.
+ */
+export function planRoomLabels(
+  nodes: readonly TwinScanNode[],
+  storey: PlanStorey,
+): PlanRoomLabel[] {
+  const sums = new Map<string, { x: number; z: number; count: number }>();
+  for (const scanNode of nodes) {
+    if (scanNode.floor !== storey.floor) {
+      continue;
+    }
+    const slug = VERIFIED_ROOM_NODES[scanNode.id];
+    if (slug === undefined) {
+      continue;
+    }
+    const [x, , z] = e57PointToThree(scanNode.pose.t);
+    const sum = sums.get(slug);
+    if (sum === undefined) {
+      sums.set(slug, { x, z, count: 1 });
+    } else {
+      sum.x += x;
+      sum.z += z;
+      sum.count += 1;
+    }
+  }
+  return [...sums.entries()].map(([slug, sum]) => ({
+    slug,
+    name: ROOM_DISPLAY_NAMES[slug as keyof typeof ROOM_DISPLAY_NAMES],
+    position: [
+      sum.x / sum.count,
+      storey.floorY + PLAN_LABEL_FLOAT_M,
+      sum.z / sum.count,
+    ],
+  }));
+}
+
 export interface ScaleBarSpec {
   readonly metres: number;
   readonly px: number;

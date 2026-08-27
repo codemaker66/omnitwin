@@ -5,6 +5,7 @@ import {
   planCutY,
   planFitZoom,
   planFrame,
+  planRoomLabels,
   SCAN_EYE_HEIGHT_M,
   scaleBarSpec,
   storeysFromNodes,
@@ -117,6 +118,56 @@ describe("planFitZoom", () => {
   it("guards degenerate viewports", () => {
     const frame = { centerX: 0, centerZ: 0, halfW: 10, halfD: 5 };
     expect(planFitZoom(0, 600, frame)).toBeGreaterThan(0);
+  });
+});
+
+describe("planRoomLabels", () => {
+  it("annotates only VALIDATED rooms, at the centroid of their viewpoints", () => {
+    // A second validated Grand Hall viewpoint, as the real bundle has
+    // (scan_028 and scan_046 are the hall's opposite ends).
+    const withBothEnds: readonly TwinScanNode[] = [
+      ...twoStoreys,
+      node("scan_046", 0, [10, 0, 1.5]),
+    ];
+    const [upper] = storeysFromNodes(withBothEnds);
+    if (upper === undefined) {
+      throw new Error("fixture storey missing");
+    }
+    const labels = planRoomLabels(withBothEnds, upper);
+    expect(labels).toHaveLength(1);
+    const [hall] = labels;
+    expect(hall?.name).toBe("Grand Hall");
+    // scan_028 at x=0 and scan_046 at x=10 → the label centres the room.
+    expect(hall?.position[0]).toBeCloseTo(5, 6);
+    expect(hall?.position[2]).toBeCloseTo(0, 6);
+  });
+
+  it("floats labels just above the storey's walking floor", () => {
+    const [upper] = storeysFromNodes(twoStoreys);
+    if (upper === undefined) {
+      throw new Error("fixture storey missing");
+    }
+    const [hall] = planRoomLabels(twoStoreys, upper);
+    expect(hall?.position[1]).toBeGreaterThan(upper.floorY);
+    expect(hall?.position[1]).toBeLessThan(upper.floorY + 1);
+  });
+
+  it("never annotates a room from another storey", () => {
+    const [, lower] = storeysFromNodes(twoStoreys);
+    if (lower === undefined) {
+      throw new Error("fixture storey missing");
+    }
+    const labels = planRoomLabels(twoStoreys, lower);
+    expect(labels.map((label) => label.name)).toEqual(["Reception Room"]);
+  });
+
+  it("says nothing when a storey holds no validated room", () => {
+    const unvalidated: readonly TwinScanNode[] = [node("scan_777", 0, [0, 0, 1.5])];
+    const [only] = storeysFromNodes(unvalidated);
+    if (only === undefined) {
+      throw new Error("fixture storey missing");
+    }
+    expect(planRoomLabels(unvalidated, only)).toEqual([]);
   });
 });
 

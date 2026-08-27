@@ -43,9 +43,14 @@ import {
   markFirstLightSeen,
 } from "./first-light.js";
 import { NavMarkers } from "./NavMarkers.js";
+import {
+  PlanAnnotations,
+  PlanLabelProjector,
+  type PlanLabelScreen,
+} from "./PlanAnnotations.js";
 import { PlanHud } from "./PlanHud.js";
 import { PlanRig } from "./PlanRig.js";
-import { planCutY, planFrame, storeysFromNodes } from "./plan-mode.js";
+import { planCutY, planFrame, planRoomLabels, storeysFromNodes } from "./plan-mode.js";
 import {
   NEIGHBOUR_WARM_SLICE_MS,
   NEIGHBOUR_WARM_TIMEOUT_MS,
@@ -1302,6 +1307,16 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
     () => planFrame(manifest.nodes, activePlanStorey?.floor),
     [manifest, activePlanStorey?.floor],
   );
+  const planLabels = useMemo(
+    () =>
+      activePlanStorey === undefined
+        ? []
+        : planRoomLabels(manifest.nodes, activePlanStorey),
+    [manifest, activePlanStorey],
+  );
+  const [planLabelScreens, setPlanLabelScreens] = useState<readonly PlanLabelScreen[]>(
+    [],
+  );
   const dollhouseCutawayMinimumY =
     dollhouseCutawayInsetM === undefined || currentNode === undefined
       ? undefined
@@ -1738,11 +1753,17 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 />
               </Suspense>
               {mode === "plan" && activePlanStorey !== undefined ? (
-                <PlanRig
-                  frame={activePlanFrame}
-                  storeyKey={activePlanStorey.floor}
-                  onScale={setPlanScale}
-                />
+                <>
+                  <PlanRig
+                    frame={activePlanFrame}
+                    storeyKey={activePlanStorey.floor}
+                    onScale={setPlanScale}
+                  />
+                  <PlanLabelProjector
+                    labels={planLabels}
+                    onProject={setPlanLabelScreens}
+                  />
+                </>
               ) : (
                 <MeshOrbitRig extent={extent} enabled={!dive.diving} />
               )}
@@ -1930,12 +1951,18 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         />
       )}
       {mode === "plan" && activePlanStorey !== undefined && (
-        <PlanHud
-          storeys={storeys}
-          activeFloor={activePlanStorey.floor}
-          onSelectFloor={setPlanFloorChoice}
-          pxPerMetre={planScale}
-        />
+        <>
+          {/* The annotation layer sits under the HUD chrome in the stacking
+              order and over the canvas: names belong to the drawing, the
+              pills belong to the tool. */}
+          <PlanAnnotations screens={planLabelScreens} />
+          <PlanHud
+            storeys={storeys}
+            activeFloor={activePlanStorey.floor}
+            onSelectFloor={setPlanFloorChoice}
+            pxPerMetre={planScale}
+          />
+        </>
       )}
       {hasMesh && mode !== "walk" && !measuring && (
         <button

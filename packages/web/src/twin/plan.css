@@ -137,6 +137,39 @@
   white-space: nowrap;
 }
 
+/* — room annotation: names written onto the drawing —
+
+   The layer spans the whole stage and is pointer-transparent to the last
+   pixel: a name sitting over the plan must never eat a pan drag or a
+   viewpoint click. Positions arrive as inline left/top percentages from the
+   projector (component-written only — never set them here, the tags.css
+   rule). Type is the drawing's, not the HUD's: letter-spaced small caps in
+   the brass ink, with a dark halo so a name stays legible over both the
+   black void between wings and a sunlit parquet floor. */
+
+.vv-twin-plan-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.vv-twin-plan-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 0;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink, #fbf2df);
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.85),
+    0 0 12px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+}
+
 /* — small screens: the switcher tightens, the scale bar survives — */
 
 @media (max-width: 480px) {
@@ -152,6 +185,11 @@
 
   .vv-twin-plan-storey-rooms {
     display: none;
+  }
+
+  .vv-twin-plan-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
   }
 }
 
@@ -182,5 +220,10 @@
 
   .vv-twin-plan-scale-label {
     color: CanvasText;
+  }
+
+  .vv-twin-plan-label {
+    color: CanvasText;
+    text-shadow: none;
   }
 }
