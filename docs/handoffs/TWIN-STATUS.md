@@ -92,7 +92,48 @@ published 5.4 m, planar to 0.25 m, detail in the restored region 0.407 → 5.851
 (**×14.4**), 875,368 px correctly declined, 0 synthesized, 0 px changed
 outside the cone.
 
-STILL OPEN: **the Grand Hall dome is REFUSED, not fixed** (3.15 m height spread
+### THE DOME IS NO LONGER UNMODELLABLE — `zenith_depth.py` (bb1ca1ac)
+
+Plane-sweep stereo over the blind cone: march each ray and keep the depth where
+the donors AGREE. No surface model chosen in advance, so it covers domes,
+soffits and stairwells alike — everything the planar gates refuse. 7/7 tests;
+synthetic flat ceiling recovered to 4.1 cm, a synthetic hemisphere to 9.8 cm
+with its cap at z=8.77 where the planar fill assumed 7.0.
+
+ON THE REAL BUILDING (6 donors each, 36×36 sweep grid, 110 depths):
+
+    SALOON scan_058   66% of rays resolved   z = 5.69 / 5.68 / 5.71 / 5.69
+                                             across radii 0-2 m — FLAT to 3 cm,
+                                             and it agrees with the planar
+                                             solve's 5.55 m independently.
+    GRAND HALL scan_043  39% resolved        masonry at z = 8.5-8.8 m, NOT the
+                                             6.94 m plane the planar fill
+                                             assumed and smeared.
+
+So the dome's shape is genuinely recovered. Two honest caveats: the very centre
+(r < 1 m) is erratic — the glazed lantern and its lamps are specular and
+emissive, which photo-consistency cannot match — and only 39% of dome rays
+resolve at all, against 66% on flat coffers. The tool is appropriately less
+sure on the harder surface rather than confidently wrong, which is the whole
+point of `ConeDepth.confident`.
+
+NOT YET WIRED into the pilot or batch: the planar path still produces the four
+accepted fills. Wiring the depth into an actual composite is the next step.
+
+FOUR TRAPS worth knowing before touching it (each cost a debugging cycle, and
+three were the TEST FIXTURE lying rather than the code being wrong):
+  1. Single-pixel matching near-ties everywhere; match a PATCH, normalised.
+  2. Judge patch contrast in GREY LEVELS before normalising — normalising turns
+     float rounding into a unit vector of noise that correlates at random, and
+     claimed 32% of a blank ceiling.
+  3. A relative margin is not confidence; the best of a bad field still wins.
+     Needs an absolute floor AND a leave-one-out cross-check. Halves are worse
+     than useless with four donors (a half is two, the bare minimum).
+  4. Ray/sphere: the NEAR root is the surface that does not exist for a viewer
+     below a dome; an infinite ceiling plane occludes the cap unless you cut
+     the oculus; and ground truth must match the scene it scores.
+
+STILL OPEN: **the Grand Hall dome is REFUSED by the PLANAR fill, not fixed** (3.15 m height spread
 at scan_045) — a dome is not a plane and pasting flat coffers onto a curve
 would be a lie. Needs a spherical-cap model. Also unhandled: specular sources
 (chandeliers, downlights) are view-dependent and should not be reprojected;
