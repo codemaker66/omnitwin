@@ -1,13 +1,15 @@
-import { useEffect, useRef, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useNavigate } from "react-router-dom";
 import { googleTilesApiKey } from "./arrival-config.js";
-import { useArrivalStore } from "./arrival-store.js";
+import { useArrivalStore, type ArrivalPhase } from "./arrival-store.js";
+import { useArrivalGate } from "./use-arrival-gate.js";
 import { useExplodeOverlayStore } from "./explode-overlay-store.js";
 import { GoogleTilesStage } from "./GoogleTilesStage.js";
 import { HallHandoff, TRADES_HALL_TWIN_SLUG, tradesHallMeshUrl } from "./HallHandoff.js";
 import { ARRIVAL_RAIL, FLIGHT_DURATION_S, sampleRail } from "./camera-rail.js";
 import { preloadDollhouse } from "../../../twin/DollhouseStage.js";
+import { prefersReducedMotion } from "../../../twin/reduced-motion.js";
 import { useTwinManifest } from "../../../twin/useTwinManifest.js";
 import "./arrival.css";
 
@@ -58,6 +60,23 @@ import "./arrival.css";
 // SIBLING with nothing under it but plain DOM. StoreyLabels re-rendering at
 // frame rate is genuinely cheap — a handful of positioned divs and buttons —
 // and it structurally cannot cause the Canvas subtree to redo anything.
+//
+// FALLBACK ARMOR (Task 12) replaces the old "apiToken === null" ad hoc check
+// with useArrivalGate() — the single pre-Canvas gate covering BOTH no-key and
+// poster-tier device. Tasks 4/5 already wired fail("tiles") (GoogleTilesStage
+// load-error) and fail("webgl") (onCreated's webglcontextlost listener,
+// below) — those stay untouched; this task only adds the gate itself, plus a
+// fade for the case the plain "return null" always handled badly: a failure
+// arriving WHILE the canvas was already showing something (spec §6 "holds
+// briefly, then fades", not an abrupt cut). The two fallback cases are
+// distinguished by a fact only THIS component instance's own render history
+// can answer — never rendered the canvas at all (no-key/poster-tier decided
+// before <Canvas> ever mounts; also a fresh remount landing directly in an
+// already-"fallback" store) versus was actively rendering it when fail() hit
+// (tiles/webgl, which can only ever fire from callbacks wired INSIDE an
+// already-mounted Canvas) — hence hasShownCanvasRef, a ref flipped by an
+// effect (never during render itself, so a discarded/speculative render can
+// never mark it), not derived from `failReason`'s value.
 // -----------------------------------------------------------------------------
 
 export const ARRIVAL_SKIP_LABEL = "Skip the flight";
@@ -138,6 +157,21 @@ function StoreyLabels(): ReactElement | null {
   const labels = useExplodeOverlayStore((s) => s.labels);
   const phase = useArrivalStore((s) => s.phase);
   const navigate = useNavigate();
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Focus handoff (Task 12 bundled a11y fix): "Open the Hall" (ArrivalHero)
+  // unmounts the instant explode() fires, dropping focus to <body> — without
+  // this, a keyboard/AT visitor would have to Tab in from the top of the
+  // page to reach anything in the newly-exploded view. ArrivalHero's own
+  // effect owns the symmetric reassemble -> "Open the Hall" direction, since
+  // Close only ever exists here. By the time this effect body runs (after
+  // commit), the ref is already attached — Close is unconditional on
+  // `phase === "exploded"`, the same guard this effect uses.
+  useEffect(() => {
+    if (phase === "exploded") {
+      closeRef.current?.focus();
+    }
+  }, [phase]);
 
   if (labels.length === 0 && phase !== "exploded") {
     return null;
@@ -183,6 +217,7 @@ function StoreyLabels(): ReactElement | null {
       )}
       {phase === "exploded" && (
         <button
+          ref={closeRef}
           type="button"
           className="arrival-explode-close"
           onClick={() => {
@@ -198,15 +233,54 @@ function StoreyLabels(): ReactElement | null {
 
 export function ArrivalHero(): ReactElement | null {
   const phase = useArrivalStore((s) => s.phase);
+  const { blocked } = useArrivalGate();
   const apiToken = googleTilesApiKey();
   const manifest = useTwinManifest(TRADES_HALL_TWIN_SLUG);
   const overlaySettled = useExplodeOverlayStore((s) => s.settled);
 
+  // Fallback armor (Task 12). hasShownCanvasRef answers "has THIS component
+  // instance's own render history ever actually shown the canvas" — written
+  // only from an effect below (never during render itself, so a discarded or
+  // speculative render can never mark it falsely true), read synchronously
+  // during render to pick between the two fallback shapes further down.
+  // fadedOut flips once the 300ms opacity transition genuinely completes, or
+  // — under reduced motion, where a 0-duration transition is not guaranteed
+  // to fire transitionend at all — immediately, from the same effect.
+  const hasShownCanvasRef = useRef(false);
+  const [fadedOut, setFadedOut] = useState(false);
+  // The phase as of the PREVIOUS render, so "arrived, having just come FROM
+  // exploded" (a reassemble) can be told apart from "arrived, having just
+  // come from flight/loading" (a normal arrival, or Skip) — only the former
+  // hands focus back to "Open the Hall" (Task 12 bundled a11y fix; the
+  // explode direction is StoreyLabels' own symmetric effect).
+  const previousPhaseRef = useRef<ArrivalPhase>(phase);
+  const openHallRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
-    if (apiToken === null) {
-      useArrivalStore.getState().fail("no-key");
+    if (blocked !== null) {
+      useArrivalStore.getState().fail(blocked);
     }
-  }, [apiToken]);
+  }, [blocked]);
+
+  useEffect(() => {
+    if (phase === "fallback") {
+      if (hasShownCanvasRef.current && prefersReducedMotion()) {
+        setFadedOut(true);
+      }
+    } else {
+      setFadedOut(false);
+      if (blocked === null) {
+        hasShownCanvasRef.current = true;
+      }
+    }
+  }, [phase, blocked]);
+
+  useEffect(() => {
+    if (phase === "arrived" && previousPhaseRef.current === "exploded") {
+      openHallRef.current?.focus();
+    }
+    previousPhaseRef.current = phase;
+  }, [phase]);
 
   // Warm the dollhouse GLB as soon as possible so arrival never pops (Task 7,
   // Step 3; widened post-review — see the file header comment for why
@@ -225,7 +299,25 @@ export function ArrivalHero(): ReactElement | null {
     }
   }, [phase, manifest]);
 
-  if (apiToken === null || phase === "fallback") {
+  if (blocked !== null || apiToken === null) {
+    // Never shown the canvas at all this instance — no-key/poster-tier is
+    // decided before <Canvas> ever mounts (or the fail effect above simply
+    // hasn't committed yet, on this very first render) — so there is nothing
+    // to fade FROM (spec §6). `apiToken === null` can never actually be true
+    // here at runtime without `blocked` already being non-null too — both
+    // read the same googleTilesApiKey() — but stating it lets TypeScript
+    // narrow `apiToken` to string below, rather than asserting the
+    // invariant with a cast.
+    return null;
+  }
+
+  const inFallback = phase === "fallback";
+  if (inFallback && (!hasShownCanvasRef.current || fadedOut)) {
+    // Either this instance landed in fallback without ever having shown a
+    // canvas (a fresh mount/remount that inherits an already-failed store —
+    // the OTHER never-rendered case, distinct from the blocked check above),
+    // or the fade genuinely finished. Either way: fully gone, same as the
+    // pre-Task-12 behaviour.
     return null; // the static hero photo beneath carries the page (spec §6)
   }
 
@@ -237,7 +329,19 @@ export function ArrivalHero(): ReactElement | null {
   // the overlay store — see StoreyLabels for the per-frame `labels` read.
   const animating = phase === "flight" || !overlaySettled;
   return (
-    <div className="arrival-hero" data-arrival-phase={phase}>
+    <div
+      className="arrival-hero"
+      data-arrival-phase={phase}
+      onTransitionEnd={(event) => {
+        // Spec §6's fade completing (the CSS rule lives in arrival.css,
+        // keyed on this same [data-arrival-phase="fallback"]). Gated on the
+        // property name so a future, unrelated transition on this element
+        // could never trigger an early unmount by accident.
+        if (phase === "fallback" && event.propertyName === "opacity") {
+          setFadedOut(true);
+        }
+      }}
+    >
       <Canvas
         className="arrival-canvas"
         frameloop={animating ? "always" : "demand"}
@@ -267,6 +371,7 @@ export function ArrivalHero(): ReactElement | null {
       )}
       {phase === "arrived" && (
         <button
+          ref={openHallRef}
           type="button"
           className="arrival-open-hall"
           onClick={() => {

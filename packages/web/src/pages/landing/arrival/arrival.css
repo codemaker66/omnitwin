@@ -16,6 +16,29 @@
      up outside the frame instead of letting it extend page scroll — .fr-
      hero-frame itself does not clip. */
   overflow: hidden;
+  /* Fallback armor (Task 12, spec §6 "holds briefly, then fades"): this rule
+     is unconditional so the transition is already active BEFORE the opacity
+     value below ever changes — a transition added at the same moment as the
+     value it animates never runs. It only ever fires once, in one direction:
+     [data-arrival-phase="fallback"] is the only selector that touches
+     opacity, and phase only ever LANDS on "fallback" (arrival-store.ts has no
+     transition back out except reset(), which remounts fresh). ArrivalHero's
+     own JS is the thing that actually completes the unmount (its
+     onTransitionEnd handler, or — under reduced motion, since a 0-duration
+     transition is not guaranteed to fire transitionend at all — a direct
+     prefersReducedMotion() check); this CSS only owns the visual. */
+  opacity: 1;
+  transition: opacity 300ms var(--fr-ease);
+}
+
+.arrival-hero[data-arrival-phase="fallback"] {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arrival-hero {
+    transition: none;
+  }
 }
 
 .arrival-canvas {

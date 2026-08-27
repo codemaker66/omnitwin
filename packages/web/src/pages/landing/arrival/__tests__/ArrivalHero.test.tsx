@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
 import { Quaternion, Vector3 } from "three";
 import type { TwinManifest } from "@omnitwin/types";
-import { useArrivalStore } from "../arrival-store.js";
+import { useArrivalStore, type ArrivalFailReason } from "../arrival-store.js";
+import { useDeviceStore } from "../../../../stores/device-store.js";
 import { ARRIVAL_RAIL, sampleRail } from "../camera-rail.js";
 import {
   TWIN_FIXTURE_MANIFEST,
@@ -152,6 +153,11 @@ const { useExplodeOverlayStore } = await import("../explode-overlay-store.js");
 beforeEach(() => {
   useArrivalStore.getState().reset();
   useExplodeOverlayStore.getState().reset();
+  // Task 12's gate reads device tier too — pin a known, non-poster baseline
+  // so a poster-tier test can never leak into an unrelated one (device-store
+  // is a module-level singleton, so state otherwise survives across tests in
+  // this file, per device-store.test.ts's own beforeEach doing the same).
+  useDeviceStore.getState().override("low");
   invalidate.mockClear();
   frameCallbacks.length = 0;
   lastDomElement = null;
@@ -170,6 +176,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("ArrivalHero — self-gating", () => {
@@ -522,5 +529,220 @@ describe("ArrivalHero — explode overlay bridge (Task 10)", () => {
     });
     render(<ArrivalHero />);
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  });
+});
+
+// -----------------------------------------------------------------------------
+// Fallback armor (Task 12). stubMatchMedia mirrors useDive.test.ts's pattern
+// (the codebase's established way of faking prefers-reduced-motion without
+// re-implementing reduced-motion.ts's own matchMedia read) rather than
+// mocking that module away — ArrivalHero -> useArrivalGate's real
+// prefersReducedMotion() call is exactly what these tests exercise.
+// -----------------------------------------------------------------------------
+
+function stubMatchMedia(reduced: boolean): void {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: reduced && query.includes("prefers-reduced-motion"),
+    media: query,
+    addEventListener: (): void => undefined,
+    removeEventListener: (): void => undefined,
+  }));
+}
+
+/** Builds a synthetic transitionend event with a real `propertyName`, since
+ *  happy-dom has no TransitionEvent constructor (createEvent falls back to
+ *  plain Event, whose init dict does not carry arbitrary extra fields) — see
+ *  ArrivalHero.tsx's onTransitionEnd handler, which reads exactly this field. */
+function transitionEndEvent(propertyName: string): Event {
+  const event = new Event("transitionend", { bubbles: true });
+  Object.defineProperty(event, "propertyName", { value: propertyName });
+  return event;
+}
+
+describe("ArrivalHero — poster-tier gate (Task 12)", () => {
+  it('renders nothing and fails the store with reason "poster-tier" on a poster-tier device, even with a valid key', () => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+    useDeviceStore.getState().override("poster");
+    const { container } = render(<ArrivalHero />);
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByTestId("arrival-canvas")).toBeNull();
+    expect(useArrivalStore.getState().phase).toBe("fallback");
+    expect(useArrivalStore.getState().failReason).toBe("poster-tier");
+  });
+
+  it("does not gate on any tier below poster", () => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+    for (const tier of ["low", "medium", "high"] as const) {
+      useDeviceStore.getState().override(tier);
+      useArrivalStore.getState().reset();
+      render(<ArrivalHero />);
+      expect(useArrivalStore.getState().phase).not.toBe("fallback");
+      cleanup();
+    }
+  });
+});
+
+describe("ArrivalHero — fallback fade (Task 12, spec §6 'holds briefly, then fades')", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+    stubMatchMedia(false);
+  });
+
+  it("keeps the canvas mounted, with the fallback attribute, right after a live failure — the fade holds first", () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    render(<ArrivalHero />);
+    expect(screen.getByTestId("arrival-canvas")).not.toBeNull();
+
+    act(() => {
+      useArrivalStore.getState().fail("tiles");
+    });
+
+    const hero = document.querySelector(".arrival-hero");
+    expect(hero).not.toBeNull();
+    expect(hero?.getAttribute("data-arrival-phase")).toBe("fallback");
+    // Holds — the last frame stays up, it does not vanish the instant the
+    // store fails; only the CSS opacity is now animating toward 0.
+    expect(screen.getByTestId("arrival-canvas")).not.toBeNull();
+  });
+
+  it("fully unmounts once the opacity transition ends", () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    const { container } = render(<ArrivalHero />);
+    act(() => {
+      useArrivalStore.getState().fail("tiles");
+    });
+    const hero = document.querySelector(".arrival-hero");
+    expect(hero).not.toBeNull();
+
+    fireEvent(hero as Element, transitionEndEvent("opacity"));
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("ignores a transitionend for an unrelated CSS property — does not unmount early", () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    const { container } = render(<ArrivalHero />);
+    act(() => {
+      useArrivalStore.getState().fail("tiles");
+    });
+    const hero = document.querySelector(".arrival-hero") as Element;
+
+    fireEvent(hero, transitionEndEvent("transform"));
+    expect(container.firstChild).not.toBeNull();
+
+    fireEvent(hero, transitionEndEvent("opacity"));
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("does not wait for a transitionend under reduced motion — unmounts immediately", () => {
+    stubMatchMedia(true);
+    useArrivalStore.setState({ phase: "flight" });
+    const { container } = render(<ArrivalHero />);
+    const onLost = webglContextLostListener();
+    expect(onLost).toBeDefined();
+
+    act(() => {
+      onLost?.();
+    });
+
+    expect(useArrivalStore.getState().failReason).toBe("webgl");
+    expect(container.firstChild).toBeNull();
+  });
+});
+
+describe("ArrivalHero — the invariant: any failure ends with nothing rendered (Task 12)", () => {
+  // The property that actually matters: whatever knocks the flight over,
+  // FreshPage's static hero photo ends up carrying the page exactly as it
+  // did before ArrivalHero existed — this component contributes nothing to
+  // the DOM once each reason has fully played out. no-key/poster-tier get
+  // there on the very first render (never having shown a canvas at all);
+  // tiles/webgl get there via the fade, so a transitionend is simulated for
+  // those two before the final assertion.
+  const CASES: ReadonlyArray<{
+    readonly reason: ArrivalFailReason;
+    readonly trigger: () => void;
+  }> = [
+    {
+      reason: "no-key",
+      trigger: () => {
+        vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", undefined);
+      },
+    },
+    {
+      reason: "poster-tier",
+      trigger: () => {
+        vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+        useDeviceStore.getState().override("poster");
+      },
+    },
+  ];
+
+  for (const { reason, trigger } of CASES) {
+    it(`"${reason}" lands on phase "fallback" with no canvas, no rendered content`, () => {
+      trigger();
+      const { container } = render(<ArrivalHero />);
+      expect(useArrivalStore.getState().phase).toBe("fallback");
+      expect(useArrivalStore.getState().failReason).toBe(reason);
+      expect(container.firstChild).toBeNull();
+      expect(screen.queryByTestId("arrival-canvas")).toBeNull();
+    });
+  }
+
+  for (const reason of ["tiles", "webgl"] as const) {
+    it(`"${reason}" lands on phase "fallback" with no canvas, once the fade completes`, () => {
+      vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+      stubMatchMedia(false);
+      useArrivalStore.setState({ phase: "arrived" });
+      const { container } = render(<ArrivalHero />);
+      expect(screen.getByTestId("arrival-canvas")).not.toBeNull();
+
+      act(() => {
+        useArrivalStore.getState().fail(reason);
+      });
+      expect(useArrivalStore.getState().phase).toBe("fallback");
+      expect(useArrivalStore.getState().failReason).toBe(reason);
+
+      const hero = document.querySelector(".arrival-hero") as Element;
+      fireEvent(hero, transitionEndEvent("opacity"));
+
+      expect(container.firstChild).toBeNull();
+      expect(screen.queryByTestId("arrival-canvas")).toBeNull();
+    });
+  }
+});
+
+describe("ArrivalHero — focus handoff on explode/reassemble (Task 12 bundled a11y fix)", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+  });
+
+  it('moves focus to "Close" the instant the Hall explodes', () => {
+    useArrivalStore.setState({ phase: "arrived" });
+    render(<ArrivalHero />);
+    const openHall = screen.getByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL });
+    fireEvent.click(openHall);
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(document.activeElement).toBe(close);
+  });
+
+  it('moves focus back to "Open the Hall" the instant it reassembles', () => {
+    useArrivalStore.setState({ phase: "exploded" });
+    render(<ArrivalHero />);
+    const close = screen.getByRole("button", { name: "Close" });
+    fireEvent.click(close);
+    const openHall = screen.getByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL });
+    expect(document.activeElement).toBe(openHall);
+  });
+
+  it("does not steal focus onto \"Open the Hall\" on a normal (non-reassemble) arrival", () => {
+    useArrivalStore.setState({ phase: "flight" });
+    render(<ArrivalHero />);
+    const onFrame = frameCallbacks[0];
+    act(() => {
+      onFrame?.(undefined, 6);
+      onFrame?.(undefined, 6);
+    });
+    expect(useArrivalStore.getState().phase).toBe("arrived");
+    const openHall = screen.getByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL });
+    expect(document.activeElement).not.toBe(openHall);
   });
 });
