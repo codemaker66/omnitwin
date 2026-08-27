@@ -10,6 +10,22 @@
 .arrival-hero {
   position: absolute;
   inset: 0;
+  /* THE SEAM THIS LAYER MUST RESPECT. .fr-hero-frame is not the bottom of the
+     hero: fresh.css pulls .fr-hero-panel UP over the frame's bottom edge by
+     --fr-hero-panel-lift, and that panel is OPAQUE (background: var(--fr-paper))
+     and paints ABOVE this whole layer — both it and .arrival-hero are
+     positioned at z-index:auto, so tree order decides, and the panel is the
+     later sibling. Every bottom-anchored control below therefore adds this
+     clearance to its own inset; without it "Open the Hall" was buried at every
+     viewport and "Skip the flight" wherever the panel spanned the full frame
+     width (≈783px and below), which silently defeated both the WCAG 2.2.2
+     pause control and the only keyboard route into the explode.
+     Derived from fresh.css's token rather than restating 72px, so the two
+     files can never drift again — including across the 760px breakpoint,
+     where fresh.css redefines the lift to -48px. Negated because the token is
+     expressed as the panel's negative margin; the fallback matches its
+     computed wide-viewport value. */
+  --arrival-panel-clearance: calc(-1 * var(--fr-hero-panel-lift, -72px));
   /* Belt-and-suspenders for the labels' behind-camera guard (ExplodedHall.tsx
      checks view-space Z before ever placing one): a label position is still
      computed from a live projection, and this clips anything that ever ends
@@ -50,11 +66,13 @@
 /* A quiet pill, bottom-right — the same "paper seen through glass" treatment
    .fr-header uses to stay legible over content scrolling beneath it, since
    this sits over a live, unpredictably-coloured render rather than the flat
-   paper ground most /fresh pills sit on. */
+   paper ground most /fresh pills sit on. It rests on the panel's top edge
+   (see --arrival-panel-clearance) rather than on the frame's bottom edge,
+   which the panel covers. */
 .arrival-skip {
   position: absolute;
   right: clamp(16px, 3vw, 28px);
-  bottom: clamp(16px, 3vw, 28px);
+  bottom: calc(clamp(16px, 3vw, 28px) + var(--arrival-panel-clearance));
   font-family: var(--fr-ui);
   font-size: 13px;
   color: var(--fr-ink);
@@ -106,14 +124,25 @@
 .arrival-storey-name {
   font-family: var(--fr-serif, var(--fr-ui));
   font-size: 15px;
+  /* Stated, not inherited: this class renders as a <button> or a <span>
+     depending on FRESH_TOUR_ENABLED, and UA stylesheets give buttons
+     `line-height: normal` while a <span> would inherit .fr-root's 1.65 —
+     the two pills must be the same height either way. */
+  line-height: normal;
   color: var(--fr-ink);
   background: color-mix(in srgb, var(--fr-paper) 88%, transparent);
   backdrop-filter: blur(10px);
   border: 1px solid var(--fr-rule);
   border-radius: 999px;
   padding: 8px 18px;
-  cursor: pointer;
   white-space: nowrap;
+}
+/* Only the interactive variant gets the affordance. When the walkthrough is
+   unpublished (FRESH_TOUR_ENABLED) ArrivalHero renders this same class as a
+   plain <span>, because a button whose only job is to reach an unreachable
+   /tour is a dead control — see ArrivalHero.tsx's StoreyLabels. */
+button.arrival-storey-name {
+  cursor: pointer;
 }
 
 .arrival-storey-plan {
@@ -164,11 +193,15 @@
    explode(); the 3D canvas click stays as an additional, redundant trigger.
    Bottom-center: distinct from the skip pill (bottom-right) and Close
    (top-right) so all three can never visually compete, even though phase
-   gating means at most one of skip/open-hall/close is ever mounted at once. */
+   gating means at most one of skip/open-hall/close is ever mounted at once.
+   Bottom-CENTER is the worst case for the panel overlap the skip pill only
+   met at narrow widths: the panel is centered too (max-width 720px, margin
+   auto), so this control sat over it at EVERY viewport until
+   --arrival-panel-clearance lifted it clear. */
 .arrival-open-hall {
   position: absolute;
   left: 50%;
-  bottom: clamp(16px, 4vw, 36px);
+  bottom: calc(clamp(16px, 4vw, 36px) + var(--arrival-panel-clearance));
   transform: translateX(-50%);
   font-family: var(--fr-ui);
   font-size: 14px;

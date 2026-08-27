@@ -25,6 +25,20 @@
   --fr-body: "Newsreader", "Georgia", serif;
   --fr-ui: "Geist", system-ui, sans-serif;
   --fr-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  /* How far .fr-hero-panel is pulled UP over .fr-hero-frame's bottom edge.
+     Named because TWO layers depend on it and, until this token existed,
+     neither owned it: the panel's own margin (below), and the Arrival hero's
+     controls (arrival.css), which must clear this band to stay clickable —
+     the panel is opaque and, as a later positioned sibling at z-index:auto,
+     paints ABOVE everything inside the frame. The number used to live only
+     here, and arrival.css independently positioned "Open the Hall" and
+     "Skip the flight" into exactly the band it covers.
+     The value is preserved verbatim, NOT "corrected": written as
+     clamp(min, val, max) over negatives, the min (-72px) is GREATER than the
+     max (-110px), so per CSS Values 4 clamp() returns the min — a constant
+     -72px at every width, which is what the shipped hero is calibrated to.
+     Rewriting it to lift further on wide screens would move the panel. */
+  --fr-hero-panel-lift: clamp(-72px, -8vw, -110px);
   /* Top-light: the faint highlight along a panel's upper edge — paper
      catching the room's light. Dark theme dims it to a breath. */
   --fr-toplight: rgba(255, 252, 244, 0.55);
@@ -279,7 +293,7 @@
 .fr-hero-panel {
   position: relative;
   max-width: 720px;
-  margin: clamp(-72px, -8vw, -110px) auto 0;
+  margin: var(--fr-hero-panel-lift, -72px) auto 0;
   padding: clamp(24px, 4vw, 44px);
   background: var(--fr-paper);
   border: 1px solid var(--fr-rule);
@@ -1281,8 +1295,10 @@
   .fr-header {
     flex-wrap: wrap;
   }
-  .fr-hero-panel {
-    margin-top: -48px;
+  /* Redefined on the token rather than on .fr-hero-panel's own margin, so
+     the Arrival controls' clearance tracks the panel at this breakpoint too. */
+  .fr-root {
+    --fr-hero-panel-lift: -48px;
   }
   .fr-room,
   .fr-room.is-flipped {

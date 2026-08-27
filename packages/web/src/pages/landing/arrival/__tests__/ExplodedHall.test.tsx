@@ -372,6 +372,27 @@ describe("handleHallClick", () => {
     expect(navigateToTour).toHaveBeenCalledTimes(1);
     expect(explode).not.toHaveBeenCalled();
   });
+
+  // The walkthrough is unpublished in production (FRESH_TOUR_ENABLED): /tour
+  // loads its scene from the gitignored public/twin/, so the SPA rewrite
+  // answers its manifest with index.html and a 200. A null action is how the
+  // caller says so, and the click must then be inert — never a navigation to
+  // a route that cannot load.
+  it("does nothing when exploded but the walkthrough is unreachable", () => {
+    const explode = vi.fn();
+    expect(() => {
+      handleHallClick("exploded", { explode, navigateToTour: null });
+    }).not.toThrow();
+    expect(explode).not.toHaveBeenCalled();
+  });
+
+  it("still explodes when not exploded, even with no walkthrough to dive into", () => {
+    // The fly-in and the explode are a complete experience on their own —
+    // losing the tour must not cost the interaction that leads to it.
+    const explode = vi.fn();
+    handleHallClick("arrived", { explode, navigateToTour: null });
+    expect(explode).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("diveClickGuard contract (re-verified for this component's dependency)", () => {

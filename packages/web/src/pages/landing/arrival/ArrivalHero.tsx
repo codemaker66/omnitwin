@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useNavigate } from "react-router-dom";
+import { FRESH_TOUR_ENABLED } from "../../fresh/fresh-copy.js";
 import { googleTilesApiKey } from "./arrival-config.js";
+import { arrivalHarnessPhase } from "./arrival-dev-harness.js";
 import { useArrivalStore, type ArrivalPhase } from "./arrival-store.js";
 import { useArrivalGate } from "./use-arrival-gate.js";
 import { useExplodeOverlayStore } from "./explode-overlay-store.js";
@@ -214,17 +216,33 @@ function StoreyLabels(): ReactElement | null {
                 transform: `translate(${String(entry.xPx)}px, ${String(entry.yPx)}px) translate(-50%, -50%)`,
               }}
             >
-              <button
-                type="button"
-                className="arrival-storey-name"
-                onClick={() => {
-                  // react-router-dom's NavigateFunction can return a Promise
-                  // (view transitions); this click has nothing to await it against.
-                  void navigate("/tour");
-                }}
-              >
-                {entry.label}
-              </button>
+              {/* The room name is a DOOR only when there is something behind
+                  it. /tour loads its scene from public/twin/, which is
+                  gitignored and never in the Vercel build — the SPA rewrite
+                  answers the missing manifest with index.html and a 200, so
+                  the route looks fine and dies on arrival. fresh-copy.ts's
+                  FRESH_TOUR_ENABLED is the page's own recorded answer to
+                  that, and FreshPage already hides both of its /tour CTAs
+                  behind it; this layer was added later and navigated there
+                  ungated, reintroducing on the hero the exact dead door the
+                  flag exists to prevent. With the walkthrough unpublished the
+                  name stays — it still labels the storey — but as inert text,
+                  and "Plan this room" below remains the live control. */}
+              {FRESH_TOUR_ENABLED ? (
+                <button
+                  type="button"
+                  className="arrival-storey-name"
+                  onClick={() => {
+                    // react-router-dom's NavigateFunction can return a Promise
+                    // (view transitions); this click has nothing to await it against.
+                    void navigate("/tour");
+                  }}
+                >
+                  {entry.label}
+                </button>
+              ) : (
+                <span className="arrival-storey-name">{entry.label}</span>
+              )}
               <button
                 type="button"
                 className="arrival-storey-plan"
@@ -280,11 +298,45 @@ export function ArrivalHero(): ReactElement | null {
   const previousPhaseRef = useRef<ArrivalPhase>(phase);
   const openHallRef = useRef<HTMLButtonElement>(null);
 
+  // DEV-ONLY phase pin (see arrival-dev-harness.ts for why this seam exists
+  // and how both guards strip it from production). Read once per mount via a
+  // lazy initializer: the query string cannot change without a navigation,
+  // and re-parsing it every render would be noise. `import.meta.env.DEV` is a
+  // build-time literal, so in a production bundle this collapses to `null`
+  // and the import is tree-shaken away entirely.
+  const [harnessPhase] = useState<ArrivalPhase | null>(() =>
+    import.meta.env.DEV ? arrivalHarnessPhase(window.location.search) : null,
+  );
+
+  // Under the harness the no-key/poster-tier gate is deliberately ignored, so
+  // a keyless machine can still reach "flight"/"arrived" and exercise the
+  // hero's controls. Derived ONCE and used everywhere `blocked` was used, so
+  // the bypass cannot be applied inconsistently across the three call sites.
+  const gateBlocked = harnessPhase === null ? blocked : null;
+
+  /** True only when HallHandoff will actually render a dollhouse — the same
+   *  two conditions it self-gates on (HallHandoff.tsx: manifest ready, and a
+   *  mesh present in it). "Open the Hall" is gated on this because in
+   *  production the manifest CANNOT load: public/twin/ is gitignored, so the
+   *  request hits the SPA rewrite and returns index.html with a 200, which
+   *  fails schema validation. HallHandoff correctly degraded to null, but the
+   *  button that opens it did not — leaving a live control on the homepage
+   *  that swapped in a Close button, stole focus, and revealed nothing. The
+   *  button must not exist unless the thing it opens does. */
+  const dollhouseReady =
+    manifest.state === "ready" && tradesHallMeshUrl(manifest.manifest) !== null;
+
   useEffect(() => {
-    if (blocked !== null) {
-      useArrivalStore.getState().fail(blocked);
+    if (harnessPhase !== null) {
+      useArrivalStore.setState({ phase: harnessPhase });
     }
-  }, [blocked]);
+  }, [harnessPhase]);
+
+  useEffect(() => {
+    if (gateBlocked !== null) {
+      useArrivalStore.getState().fail(gateBlocked);
+    }
+  }, [gateBlocked]);
 
   useEffect(() => {
     if (phase === "fallback") {
@@ -293,11 +345,11 @@ export function ArrivalHero(): ReactElement | null {
       }
     } else {
       setFadedOut(false);
-      if (blocked === null) {
+      if (gateBlocked === null) {
         hasShownCanvasRef.current = true;
       }
     }
-  }, [phase, blocked]);
+  }, [phase, gateBlocked]);
 
   useEffect(() => {
     if (phase === "arrived" && previousPhaseRef.current === "exploded") {
@@ -323,15 +375,18 @@ export function ArrivalHero(): ReactElement | null {
     }
   }, [phase, manifest]);
 
-  if (blocked !== null || apiToken === null) {
+  if (gateBlocked !== null) {
     // Never shown the canvas at all this instance — no-key/poster-tier is
     // decided before <Canvas> ever mounts (or the fail effect above simply
     // hasn't committed yet, on this very first render) — so there is nothing
-    // to fade FROM (spec §6). `apiToken === null` can never actually be true
-    // here at runtime without `blocked` already being non-null too — both
-    // read the same googleTilesApiKey() — but stating it lets TypeScript
-    // narrow `apiToken` to string below, rather than asserting the
-    // invariant with a cast.
+    // to fade FROM (spec §6).
+    //
+    // This used to also test `apiToken === null` purely to narrow apiToken to
+    // string for the GoogleTilesStage prop below. It no longer can: under the
+    // DEV harness the gate is bypassed while the key is still genuinely
+    // absent, so "gate passed" and "there is a key" are now separate facts.
+    // The tiles stage is narrowed at its own use site instead, which is where
+    // the requirement actually lives.
     return null;
   }
 
@@ -378,7 +433,12 @@ export function ArrivalHero(): ReactElement | null {
           });
         }}
       >
-        <GoogleTilesStage apiToken={apiToken} />
+        {/* Narrowed here rather than by the early return above. In normal
+            operation a null key has already blocked the gate, so this is
+            always truthy; under the DEV harness it is the one thing that
+            stays honest — no key means no billable tile requests, and the
+            spec measures the overlay against an empty canvas. */}
+        {apiToken !== null && <GoogleTilesStage apiToken={apiToken} />}
         <FlightCamera />
         {(phase === "arrived" || phase === "exploded") && <HallHandoff />}
       </Canvas>
@@ -393,7 +453,7 @@ export function ArrivalHero(): ReactElement | null {
           {ARRIVAL_SKIP_LABEL}
         </button>
       )}
-      {phase === "arrived" && (
+      {phase === "arrived" && dollhouseReady && (
         <button
           ref={openHallRef}
           type="button"

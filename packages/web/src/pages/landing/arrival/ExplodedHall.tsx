@@ -10,6 +10,7 @@ import {
   type SpringState,
 } from "../../../lib/springs.js";
 import { diveClickGuard } from "../../../twin/DollhouseStage.js";
+import { FRESH_TOUR_ENABLED } from "../../fresh/fresh-copy.js";
 import { ROOM_DISPLAY_NAMES } from "../../../twin/shell/twin-rooms.js";
 import { useArrivalStore, type ArrivalPhase } from "./arrival-store.js";
 import {
@@ -351,10 +352,22 @@ function storeySamplesFromNodes(
  */
 export function handleHallClick(
   phase: ArrivalPhase,
-  actions: { readonly explode: () => void; readonly navigateToTour: () => void },
+  actions: {
+    readonly explode: () => void;
+    /**
+     * null when the walkthrough is not actually reachable — see
+     * FRESH_TOUR_ENABLED (fresh-copy.ts): /tour's scene lives in the
+     * gitignored public/twin/, so in production the SPA rewrite answers its
+     * manifest with index.html and a 200. Modelled as a nullable action
+     * rather than a boolean flag so the unreachable case cannot be smuggled
+     * in as a no-op function that silently swallows the click — a caller
+     * must decide, and this function's own tests pin both directions.
+     */
+    readonly navigateToTour: (() => void) | null;
+  },
 ): void {
   if (phase === "exploded") {
-    actions.navigateToTour();
+    actions.navigateToTour?.();
   } else {
     actions.explode();
   }
@@ -529,11 +542,18 @@ export function ExplodedHall({
         explode: () => {
           useArrivalStore.getState().explode();
         },
-        navigateToTour: () => {
-          // react-router-dom's NavigateFunction can return a Promise (view
-          // transitions); this click has nothing to await it against.
-          void navigate("/tour");
-        },
+        // Gated on the same flag FreshPage gates its own two /tour CTAs on.
+        // Clicking an already-exploded hall used to dive into a walkthrough
+        // that cannot load in production; with the bundle unpublished the
+        // click is simply inert, and the storey labels' "Plan this room"
+        // remains the live route out of the explode.
+        navigateToTour: FRESH_TOUR_ENABLED
+          ? () => {
+              // react-router-dom's NavigateFunction can return a Promise (view
+              // transitions); this click has nothing to await it against.
+              void navigate("/tour");
+            }
+          : null,
       });
     });
   };

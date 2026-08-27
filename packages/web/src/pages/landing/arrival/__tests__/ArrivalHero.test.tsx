@@ -9,6 +9,7 @@ import {
   type ArrivalFailReason,
 } from "../arrival-store.js";
 import { useDeviceStore } from "../../../../stores/device-store.js";
+import { FRESH_TOUR_ENABLED } from "../../../fresh/fresh-copy.js";
 import { ARRIVAL_RAIL, sampleRail } from "../camera-rail.js";
 import {
   TWIN_FIXTURE_MANIFEST,
@@ -400,6 +401,10 @@ describe("ArrivalHero — warms the dollhouse GLB as early as possible (Task 7, 
 describe('ArrivalHero — "Open the Hall" (Task 10 review round 1, Minor 6)', () => {
   beforeEach(() => {
     vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+    // The invitation is now gated on the dollhouse being genuinely loadable,
+    // not on phase alone — so a ready, mesh-bearing manifest is part of the
+    // baseline for every case that expects the button to exist.
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
   });
 
   it("shows the invitation only while arrived, and clicking it explodes the Hall", () => {
@@ -415,6 +420,58 @@ describe('ArrivalHero — "Open the Hall" (Task 10 review round 1, Minor 6)', ()
       useArrivalStore.setState({ phase });
       render(<ArrivalHero />);
       expect(screen.queryByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL })).toBeNull();
+      cleanup();
+    }
+  });
+
+  // ——— the dead-control gate (CRITICAL B) ———
+  //
+  // In production the trades-hall manifest CANNOT load: public/twin/ is
+  // gitignored, so the request hits the SPA rewrite and comes back as
+  // index.html with a 200, which fails schema validation. HallHandoff already
+  // degraded to null for exactly this; the button that opens it did not, so
+  // the live homepage shipped a control that swapped in a Close button, stole
+  // focus, and revealed nothing. Each case below is one way the dollhouse can
+  // fail to exist, and in every one the invitation must not be offered.
+  //
+  // These share the arrived phase with the passing case above, so they fail
+  // if the gate is ever loosened back to `phase === "arrived"` alone.
+  it("is absent while arrived if the manifest has not loaded yet", () => {
+    manifestState = { state: "loading" };
+    useArrivalStore.setState({ phase: "arrived" });
+    render(<ArrivalHero />);
+    expect(screen.queryByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL })).toBeNull();
+  });
+
+  it("is absent while arrived if the manifest failed — production's real case", () => {
+    manifestState = { state: "error", retry: () => undefined };
+    useArrivalStore.setState({ phase: "arrived" });
+    render(<ArrivalHero />);
+    expect(screen.queryByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL })).toBeNull();
+  });
+
+  it("is absent while arrived if a ready manifest carries no mesh", () => {
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST_NO_MESH };
+    useArrivalStore.setState({ phase: "arrived" });
+    render(<ArrivalHero />);
+    expect(screen.queryByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL })).toBeNull();
+  });
+
+  it("offers the invitation exactly when HallHandoff will render something", () => {
+    // The two gates must agree: the button exists iff the thing it opens does.
+    for (const state of [
+      { state: "loading" },
+      { state: "error", retry: () => undefined },
+      { state: "ready", manifest: TWIN_FIXTURE_MANIFEST_NO_MESH },
+      { state: "ready", manifest: TWIN_FIXTURE_MANIFEST },
+    ] satisfies readonly FakeManifestState[]) {
+      manifestState = state;
+      useArrivalStore.setState({ phase: "arrived" });
+      render(<ArrivalHero />);
+      const offered = screen.queryByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL }) !== null;
+      const willRender =
+        state.state === "ready" && tradesHallMeshUrlMock(state.manifest) !== null;
+      expect(offered).toBe(willRender);
       cleanup();
     }
   });
@@ -467,15 +524,33 @@ describe("ArrivalHero — explode overlay bridge (Task 10)", () => {
     expect((upperLabel as HTMLElement).style.transform).toContain("translate(400px, 160px)");
   });
 
-  it('clicking a storey label\'s room name navigates to "/tour"', () => {
+  // This used to assert unconditionally that the room name navigates to
+  // "/tour" — pinning in place a route that cannot load in production, the
+  // exact dead door FRESH_TOUR_ENABLED exists to prevent and that FreshPage
+  // already gates its own two CTAs on. It now asserts the FLAG's contract in
+  // both directions, mirroring fresh.test.tsx's own treatment of the same
+  // flag, so it stays honest whether the twin bundle is published or not.
+  it("offers the room name as a door to the walkthrough only when it is published", () => {
     useArrivalStore.setState({ phase: "exploded" });
     useExplodeOverlayStore.setState({
       settled: true,
       labels: [{ bucket: 1, label: "Grand Hall & Saloon", xPx: 0, yPx: 0 }],
     });
     render(<ArrivalHero />);
-    fireEvent.click(screen.getByRole("button", { name: "Grand Hall & Saloon" }));
-    expect(navigateMock).toHaveBeenCalledExactlyOnceWith("/tour");
+    const asButton = screen.queryByRole("button", { name: "Grand Hall & Saloon" });
+
+    if (FRESH_TOUR_ENABLED) {
+      expect(asButton).not.toBeNull();
+      fireEvent.click(asButton as HTMLElement);
+      expect(navigateMock).toHaveBeenCalledExactlyOnceWith("/tour");
+    } else {
+      // No dead doors: the name still labels the storey, but as inert text —
+      // nothing on this layer may advertise an unreachable tour.
+      expect(asButton).toBeNull();
+      const asText = document.querySelector("span.arrival-storey-name");
+      expect(asText?.textContent).toBe("Grand Hall & Saloon");
+      expect(navigateMock).not.toHaveBeenCalledWith("/tour");
+    }
   });
 
   it('clicking "Plan this room" navigates to "/plan"', () => {
@@ -743,6 +818,9 @@ describe("ArrivalHero — the invariant: any failure ends with nothing rendered 
 describe("ArrivalHero — focus handoff on explode/reassemble (Task 12 bundled a11y fix)", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+    // "Open the Hall" is half of this handoff and is now gated on the
+    // dollhouse being loadable, so the whole cycle needs a ready manifest.
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
   });
 
   it('moves focus to "Close" the instant the Hall explodes', () => {
