@@ -43,6 +43,30 @@ import "./arrival.css";
 // as a backstop for that case (see HallHandoff.tsx), but the real fix is
 // starting the download as early as this component can possibly know to.
 //
+// WHY HallHandoff AND DollhouseStage ARE STATIC IMPORTS, MEASURED (Task 14).
+// A review asked for the reveal stack to be lazy() so "the fly-in does not pay
+// for the dollhouse until landing". The built bundle says it barely pays: in
+// the emitted ArrivalHero chunk (134,495 B), attributing minified bytes back
+// through the sourcemap gives HallHandoff 1,634 B, ExplodedHall 2,537 B,
+// storey-explode 712 B and twin-placement 150 B — 5,033 B, 3.7% of a chunk
+// that is 91% 3d-tiles-renderer (122,347 B). Against the hero's whole marginal
+// download over the FreshPage chunk that hosts it — three 1,005,242 B +
+// ArrivalHero 134,495 B + useTwinManifest 19,313 B + device-store 1,910 B +
+// springs 287 B = 1,161,247 B — the reveal stack is 0.43%.
+// The peel/shell/cutaway stack the review named is not even in this chunk:
+// rollup hoists it into the shared useTwinManifest chunk (19,313 B, shared with
+// TwinPage), and drei's GLTF loader lives in the `three` vendor chunk that
+// <Canvas> requires regardless. Nor would lazy-loading HallHandoff shed that
+// shared chunk, because THIS component reaches it independently through
+// preloadDollhouse — which is the point of the warm-up above, and moving that
+// behind a dynamic import would delay a 7 MB GLB by a round trip to save bytes
+// already measured as noise.
+// What it would cost is real: React.lazy inside <Canvas> resolves against the
+// canvas's single Suspense boundary, so a cold reveal chunk blanks the Google
+// tiles at the exact frame of arrival — the product's signature beat — unless
+// wrapped in its own boundary AND warmed during flight. More machinery, more
+// failure modes, for 0.43%. So both imports stay static, on evidence.
+//
 // THE STOREY LABEL/CTA LAYER (Task 10) IS SPLIT ACROSS TWO SUBSCRIPTIONS ON
 // PURPOSE (review round 1). explode-overlay-store.ts bridges ExplodedHall's
 // per-frame, camera-projected state out of the Canvas; the naive approach —

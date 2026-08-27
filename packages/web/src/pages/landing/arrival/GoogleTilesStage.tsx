@@ -7,7 +7,7 @@ import type { Tile } from "3d-tiles-renderer/core";
 import type { TilesRenderer as TilesRendererImpl } from "3d-tiles-renderer/three";
 import { useArrivalStore } from "./arrival-store.js";
 import { TRADES_HALL_ANCHOR } from "./trades-hall-anchor.js";
-import { GOOGLE_MAPS_ATTRIBUTION_LOGO_URL } from "./arrival-config.js";
+import { ARRIVAL_ERROR_TARGET, GOOGLE_MAPS_ATTRIBUTION_LOGO_URL } from "./arrival-config.js";
 
 // -----------------------------------------------------------------------------
 // GoogleTilesStage — live Photorealistic 3D Tiles, reoriented so the Trades
@@ -73,6 +73,19 @@ import { GOOGLE_MAPS_ATTRIBUTION_LOGO_URL } from "./arrival-config.js";
 // array constructs the plugin identically to passing the object directly for
 // these single-arg constructors (TilesRenderer.jsx:187-196), which is why the
 // tuple form below is the honestly-typed choice, not merely "also works".
+//
+// errorTarget is the tile-density knob (Task 14). It is a plain instance
+// property, not a constructor arg: the r3f <TilesRenderer> collects every prop
+// it does not consume itself into `options` and assigns them onto the tiles
+// instance from a layout effect (`useDeepOptions`, node_modules/
+// 3d-tiles-renderer/src/r3f/components/TilesRenderer.jsx:264,326 →
+// utilities/useOptions.js), and its prop type is `Partial<TilesRendererImpl>`,
+// so `errorTarget` is a first-class typed prop rather than an escape hatch.
+// The args-identity hazard above does NOT apply to it: useDeepOptions keys on
+// useObjectDep(options), which compares the option VALUES one level deep, and
+// ARRIVAL_ERROR_TARGET is a module-scope number — equal to itself on every
+// render, so the assignment effect runs once. See arrival-config.ts for why
+// the seeded value is a flagged placeholder and not a measurement.
 // -----------------------------------------------------------------------------
 
 interface GoogleTilesStageProps {
@@ -200,7 +213,7 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
   }, [tiles, invalidate]);
 
   return (
-    <TilesRenderer ref={setTiles}>
+    <TilesRenderer ref={setTiles} errorTarget={ARRIVAL_ERROR_TARGET}>
       <TilesPlugin plugin={GoogleCloudAuthPlugin} args={authArgs} />
       <TilesPlugin plugin={ReorientationPlugin} args={REORIENTATION_ARGS} />
       <TilesAttributionOverlay />

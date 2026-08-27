@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Tile } from "3d-tiles-renderer/core";
 import { TilesRenderer } from "3d-tiles-renderer/three";
 import { GoogleCloudAuthPlugin } from "3d-tiles-renderer/plugins";
+import { ARRIVAL_ERROR_TARGET } from "../arrival-config.js";
 
 // -----------------------------------------------------------------------------
 // The CONTRACT this feature rests on, pinned against the REAL installed
@@ -231,5 +232,28 @@ describe("3d-tiles-renderer auth-failure contract (real library, stubbed fetch)"
     expect(events).toHaveLength(1);
     expect(events[0]?.tile).toBeNull();
     expect(unhandled).toEqual([]);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// The OTHER library fact the hero now depends on: what errorTarget defaults to.
+// Same file because it needs the same thing — the real installed class, no
+// browser and no network (see loadRoot's comment for why none is needed).
+// -----------------------------------------------------------------------------
+describe("3d-tiles-renderer errorTarget default (real library)", () => {
+  it("defaults to 16, so ARRIVAL_ERROR_TARGET's seed of 12 is FINER and more expensive, not coarser", () => {
+    const tiles = new TilesRenderer();
+    try {
+      // Pinned from the constructor, not from docs: TilesRendererBase.js:546
+      // seeds `this.errorTarget = 16.0`. arrival-config.ts's warning — that the
+      // planned seed sits BELOW the default and therefore asks for more tiles
+      // than passing nothing would — is only true while this holds. A library
+      // bump that moves the default (0.5.x's own history went 6 → 16) must
+      // re-argue the seed here rather than let a stale comment carry it.
+      expect(tiles.errorTarget).toBe(16);
+      expect(ARRIVAL_ERROR_TARGET).toBeLessThan(tiles.errorTarget);
+    } finally {
+      tiles.dispose();
+    }
   });
 });

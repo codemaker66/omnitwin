@@ -54,3 +54,32 @@ export function googleTilesApiKey(): string | null {
  * arrival-google-tiles.md's Deployment checklist.
  */
 export const GOOGLE_MAPS_ATTRIBUTION_LOGO_URL = "/images/brand/google-maps-attribution-logo.png";
+
+/**
+ * Screen-space error target, in pixels, handed to `<TilesRenderer>` (see
+ * GoogleTilesStage.tsx) — the hero's one tile-density lever. Tiles below this
+ * level of screen-space error are not rendered, so HIGHER means coarser tiles,
+ * fewer of them, cheaper to fetch and cheaper to draw; LOWER means finer and
+ * more expensive. The plan names it the first lever to reach for if the flight
+ * or the exploded hold misses its frame budget (Task 14, Step 2).
+ *
+ * WARNING — 12 IS BELOW THE INSTALLED LIBRARY DEFAULT, WHICH IS 16, NOT 6.
+ * `TilesRendererBase`'s constructor seeds `this.errorTarget = 16.0` with the
+ * JSDoc tag `@default 16` (packages/web/node_modules/3d-tiles-renderer/src/
+ * core/renderer/tiles/TilesRendererBase.js:546, version 0.5.2 — the version
+ * this package pins). So this value does not sit still: it asks for a third
+ * MORE tile detail than passing nothing at all would, which means more tile
+ * requests (every one of them billable — docs/operations/
+ * arrival-google-tiles.md) and more GPU work per frame. The plan's seed of 12
+ * reads as if written against the package's older default of 6, where 12 would
+ * indeed have been the coarser, cheaper direction its own note describes.
+ *
+ * It is kept at the planned value rather than silently "corrected" to a number
+ * this agent guessed (Blake Clause) — but it is NOT a neutral seed, and the
+ * knob exists precisely so the live gate can set it on evidence: Task 14 Step
+ * 2's frame-budget pass needs a real Google Maps API key, which does not exist
+ * yet, so no measurement stands behind any number here. If the hero is about
+ * to ship and that gate still has not run, raise this to 16 to match the
+ * library default rather than leaving an unmeasured 12 in place.
+ */
+export const ARRIVAL_ERROR_TARGET = 12;

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { forwardRef, useEffect, type ReactNode, type Ref } from "react";
 import { useArrivalStore } from "../arrival-store.js";
-import { GOOGLE_MAPS_ATTRIBUTION_LOGO_URL } from "../arrival-config.js";
+import { ARRIVAL_ERROR_TARGET, GOOGLE_MAPS_ATTRIBUTION_LOGO_URL } from "../arrival-config.js";
 
 // -----------------------------------------------------------------------------
 // GoogleTilesStage — render + event-wiring contract (Arrival Task 4).
@@ -98,13 +98,19 @@ const ROOT_AUTH_FAILURE = {
 const seen = vi.hoisted(() => ({
   plugins: [] as { plugin: { name: string }; args: unknown }[],
   tiles: null as FakeTilesController | null,
+  // Every non-`children` prop <TilesRenderer> was handed, per render. The real
+  // r3f component collects exactly these into `options` and assigns them onto
+  // the tiles instance (useDeepOptions — see the component's header comment),
+  // so recording them here is recording what the library would apply.
+  rendererOptions: [] as Record<string, unknown>[],
 }));
 
 vi.mock("3d-tiles-renderer/r3f", () => {
   const MockTilesRenderer = forwardRef(function MockTilesRenderer(
-    { children }: { children?: ReactNode },
+    { children, ...options }: { children?: ReactNode } & Record<string, unknown>,
     ref: Ref<FakeTilesController>,
   ) {
+    seen.rendererOptions.push(options);
     useEffect(() => {
       // GoogleTilesStage always passes a callback ref (useState's setter, to
       // key its wiring effect off the resolved instance — see the component's
@@ -190,6 +196,7 @@ describe("GoogleTilesStage", () => {
   beforeEach(() => {
     useArrivalStore.getState().reset();
     seen.plugins.length = 0;
+    seen.rendererOptions.length = 0;
     seen.tiles = null;
     invalidate.mockClear();
     consoleError = captureConsoleError();
@@ -274,6 +281,30 @@ describe("GoogleTilesStage", () => {
     rerender(<GoogleTilesStage apiToken="AIza-test" />);
     expect(lastArgsFor("GoogleCloudAuthPlugin")).toBe(authArgsBefore);
     expect(lastArgsFor("ReorientationPlugin")).toBe(reorientArgsBefore);
+  });
+
+  it("hands the tile-density knob to TilesRenderer as errorTarget", () => {
+    // Task 14's tuning lever. It has to arrive as a PROP, not as a post-hoc
+    // assignment in the wiring effect: the r3f component owns the instance's
+    // option lifecycle (useDeepOptions restores the previous value on cleanup),
+    // so a hand-assignment would be silently reverted whenever any other prop
+    // changed. google-tiles-auth-contract.test.ts pins the library default the
+    // seeded value deviates from.
+    render(<GoogleTilesStage apiToken="AIza-test" />);
+    expect(seen.rendererOptions.at(-1)?.["errorTarget"]).toBe(ARRIVAL_ERROR_TARGET);
+  });
+
+  it("keeps errorTarget referentially stable across re-renders", () => {
+    // Same hazard as the plugin args above, one level up: useDeepOptions keys
+    // its assign/restore effect on useObjectDep(options), a one-level-deep
+    // comparison of the option VALUES. A module-scope number is equal to
+    // itself, so the effect runs once; an inline expression producing a fresh
+    // object here would churn it on every render.
+    const { rerender } = render(<GoogleTilesStage apiToken="AIza-test" />);
+    rerender(<GoogleTilesStage apiToken="AIza-test" />);
+    const values = seen.rendererOptions.map((options) => options["errorTarget"]);
+    expect(values.length).toBeGreaterThan(1);
+    expect(new Set(values).size).toBe(1);
   });
 
   it("announces tilesReady on the first tiles-load-end", () => {
