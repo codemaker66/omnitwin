@@ -1,8 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { Suspense, lazy, type ReactElement } from "react";
+import { Suspense, lazy, type ErrorInfo, type ReactElement } from "react";
 import { useArrivalStore } from "../arrival-store.js";
 import { ArrivalErrorBoundary } from "../ArrivalErrorBoundary.js";
+import { AppErrorBoundary } from "../../../../error-boundary.js";
+
+// The observability layer is mocked, not exercised: it lazily imports
+// @sentry/react and no-ops without a DSN, so calling the real one would prove
+// nothing and load a large chunk. Both boundaries in this file — the arrival
+// one and the app-level control below — report through this same helper, so
+// one mock covers both.
+const captureBoundaryErrorMock = vi.hoisted(() =>
+  vi.fn<(error: Error, info: ErrorInfo, boundary?: string) => Promise<void>>(() =>
+    Promise.resolve(),
+  ),
+);
+
+vi.mock("../../../../observability/sentry.js", () => ({
+  captureBoundaryError: captureBoundaryErrorMock,
+}));
 
 // -----------------------------------------------------------------------------
 // ArrivalErrorBoundary (Task 12b) — the last piece of the spec §6 armor.
@@ -12,10 +28,13 @@ import { ArrivalErrorBoundary } from "../ArrivalErrorBoundary.js";
 // no boundary. What had no armor is a failure that arrives as a THROWN
 // EXCEPTION out of React's render or commit: `<Suspense fallback={null}>` —
 // what FreshPage wraps the lazy ArrivalHero in — is not an error boundary, so
-// such a throw reached the app root, and React 18's createRoot answers an
-// uncaught render error by unmounting the ENTIRE root. FreshPage's static
-// hero photo lives in that same root. The final describe block below proves
-// that unguarded behaviour directly rather than asserting it.
+// such a throw travelled up to the app-level catcher, AppErrorBoundary, which
+// main.tsx:71-73 mounts above the entire router (router.tsx has no
+// errorElement). That boundary replaces its whole subtree — the homepage
+// included, hero photograph and all — with a full-screen "Something went
+// wrong / Reload Page" panel. The final describe block below proves that by
+// mounting the REAL AppErrorBoundary around the same throw, rather than
+// asserting it or measuring a bare React root this app does not have.
 //
 // SCOPE, stated precisely because over-claiming armor is worse than having
 // none. Two throw sites are proven contained here:
@@ -84,6 +103,7 @@ describe("ArrivalErrorBoundary", () => {
 
   beforeEach(() => {
     useArrivalStore.getState().reset();
+    captureBoundaryErrorMock.mockClear();
     consoleError = captureConsoleError();
   });
 
@@ -161,6 +181,39 @@ describe("ArrivalErrorBoundary", () => {
     expect((error as Error).message).toBe("boom during render");
   });
 
+  it("reports the crash to the observability layer, tagged as its own boundary", () => {
+    // The console line is for a developer with devtools open. In production
+    // nobody has. Before this boundary existed, a hero throw reached
+    // AppErrorBoundary and therefore Sentry (error-boundary.tsx:49); catching
+    // it here without reporting would have silently deleted that signal for a
+    // failure no visitor can see, because the photograph carries the page.
+    render(
+      <ArrivalErrorBoundary>
+        <Boom />
+      </ArrivalErrorBoundary>,
+    );
+
+    expect(captureBoundaryErrorMock).toHaveBeenCalledTimes(1);
+    const call = captureBoundaryErrorMock.mock.calls.at(0);
+    if (call === undefined) throw new Error("expected an observability capture call");
+    const [error, info, boundary] = call;
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toBe("boom during render");
+    expect(info.componentStack).toContain("Boom");
+    // Distinct from AppErrorBoundary's own tag: an operator must be able to
+    // tell "the hero died, the homepage is fine" from "the app fell over".
+    expect(boundary).toBe("ArrivalErrorBoundary");
+  });
+
+  it("does not report anything when nothing throws", () => {
+    render(
+      <ArrivalErrorBoundary>
+        <div data-testid="hero" />
+      </ArrivalErrorBoundary>,
+    );
+    expect(captureBoundaryErrorMock).not.toHaveBeenCalled();
+  });
+
   it("stays down after a crash — a parent re-render does not retry the crashing child", () => {
     const { rerender } = render(
       <ArrivalErrorBoundary>
@@ -192,32 +245,66 @@ describe("ArrivalErrorBoundary", () => {
   });
 });
 
-// MUST STAY LAST IN THIS FILE. The render below deliberately lets an error
-// escape React's act() queue, which leaves react-dom's internal executionContext
-// dirty for the remainder of the module — every later render in the same file
-// then fails with "Should not already be working." Hence its own hooks, no
-// @testing-library cleanup(), and last position.
+// The control. Its whole value is that it models THIS app's structure and not
+// React in the abstract: AppErrorBoundary is the real component main.tsx:71-73
+// wraps the router in, imported here rather than re-implemented, so if its
+// behaviour or its copy ever changes this control changes with it.
 describe("ArrivalErrorBoundary — the control: what happens WITHOUT it", () => {
-  it("PROOF the boundary is load-bearing: the same throw unguarded destroys the whole tree", () => {
-    // Not a redundant control. It is the entire justification for this
-    // component: React 18's createRoot unmounts the whole root on an uncaught
-    // render error, so an unguarded ArrivalHero throw blanks FreshPage — the
-    // hero photograph included. If a future React stops doing that, this test
-    // failing is the signal that the justification changed.
-    const spy = captureConsoleError();
-    try {
-      expect(() =>
-        render(
-          <div>
-            <Photo />
+  let consoleError: { calls: unknown[][]; restore: () => void };
+
+  beforeEach(() => {
+    useArrivalStore.getState().reset();
+    consoleError = captureConsoleError();
+  });
+
+  afterEach(() => {
+    cleanup();
+    consoleError.restore();
+  });
+
+  it("PROOF the boundary is load-bearing: unguarded, the same throw takes the WHOLE page to an error screen", () => {
+    // Not a redundant control — it is the entire justification for this
+    // component. Unguarded, a hero throw does not stop at the hero: it
+    // reaches AppErrorBoundary at the app root (nothing sits between — see
+    // the file header), which swaps its entire subtree for the full-screen
+    // error panel. The homepage, and the hero photograph that is supposed to
+    // be the fallback, are inside that subtree.
+    render(
+      <AppErrorBoundary>
+        <div>
+          <Photo />
+          <Boom />
+        </div>
+      </AppErrorBoundary>,
+    );
+
+    // The photograph — the thing spec §6 promises can never break — is gone.
+    expect(screen.queryByTestId("hero-photo")).toBeNull();
+    // And what replaced it is the app's own "everything is broken" screen,
+    // for a failure of a decoration the visitor never asked for.
+    expect(screen.getByTestId("error-boundary-render")).not.toBeNull();
+    expect(screen.getByText("Something went wrong")).not.toBeNull();
+    expect(screen.getByText("Reload Page")).not.toBeNull();
+  });
+
+  it("and with the boundary, the same throw under the same app root leaves the page intact", () => {
+    // The other half of the control: identical tree, identical throw, one
+    // added wrapper. AppErrorBoundary never fires, so the page — and the
+    // photograph — survive. This is the A/B that makes the claim above a
+    // measurement rather than a story.
+    render(
+      <AppErrorBoundary>
+        <div>
+          <Photo />
+          <ArrivalErrorBoundary>
             <Boom />
-          </div>,
-        ),
-      ).toThrow("boom during render");
-      expect(screen.queryByTestId("hero-photo")).toBeNull();
-    } finally {
-      spy.restore();
-      document.body.innerHTML = "";
-    }
+          </ArrivalErrorBoundary>
+        </div>
+      </AppErrorBoundary>,
+    );
+
+    expect(screen.getByTestId("hero-photo")).not.toBeNull();
+    expect(screen.queryByTestId("error-boundary-render")).toBeNull();
+    expect(useArrivalStore.getState().failReason).toBe("crash");
   });
 });

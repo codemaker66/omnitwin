@@ -115,7 +115,22 @@ export async function initBrowserSentry(env: BrowserSentryEnv = import.meta.env)
   await initPromise;
 }
 
-export async function captureBoundaryError(error: Error, info: ErrorInfo): Promise<void> {
+/**
+ * Which React error boundary caught the error. It becomes the `boundary`
+ * Sentry tag, so an operator can tell "the whole app fell over"
+ * (AppErrorBoundary — the visitor is looking at Something went wrong) apart
+ * from "a decorative subtree fell over and the page carried on"
+ * (ArrivalErrorBoundary — the homepage hero flight died and the static
+ * photograph took over, which no visitor will ever report because nothing
+ * looks broken). Same event severity, very different remedies.
+ */
+export type BoundaryName = "AppErrorBoundary" | "ArrivalErrorBoundary";
+
+export async function captureBoundaryError(
+  error: Error,
+  info: ErrorInfo,
+  boundary: BoundaryName = "AppErrorBoundary",
+): Promise<void> {
   if (readBrowserSentryConfig(import.meta.env) === null || disabledAfterError) return;
 
   await initBrowserSentry();
@@ -125,7 +140,7 @@ export async function captureBoundaryError(error: Error, info: ErrorInfo): Promi
   const componentStack = (info.componentStack ?? "").trim().slice(0, 4_000);
 
   Sentry.withScope((scope) => {
-    scope.setTag("boundary", "AppErrorBoundary");
+    scope.setTag("boundary", boundary);
     if (componentStack.length > 0) {
       scope.setContext("react", { componentStack });
     }

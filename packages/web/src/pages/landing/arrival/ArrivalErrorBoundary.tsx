@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { captureBoundaryError } from "../../../observability/sentry.js";
 import { useArrivalStore } from "./arrival-store.js";
 
 // -----------------------------------------------------------------------------
@@ -13,11 +14,20 @@ import { useArrivalStore } from "./arrival-store.js";
 // What DID have no armor is a failure that arrives as a thrown exception out
 // of React's own render or commit. `<Suspense fallback={null}>` — which is
 // what FreshPage wraps the lazy ArrivalHero in — is not an error boundary, so
-// such a throw propagated to the app root, and React 18's createRoot responds
-// to an uncaught render error by unmounting the ENTIRE root. FreshPage's
-// static hero photo lives in that same root, so "the photo never breaks"
-// would have broken with it. ArrivalErrorBoundary.test.tsx proves that
-// unguarded behaviour directly rather than taking it on faith.
+// such a throw propagated up until something caught it. In THIS app the
+// catcher is AppErrorBoundary, which main.tsx:71-73 mounts above the whole
+// router (router.tsx defines no errorElement, so nothing sits between). Its
+// answer to a render error is to replace its entire subtree — every route,
+// the whole page — with a full-screen "Something went wrong / Reload Page"
+// panel. FreshPage's static hero photograph is inside that subtree, so a
+// decorative hero throwing would have taken the homepage down to an error
+// screen: "the photo never breaks" would have broken with it. (React 18's
+// createRoot does unmount the entire root on an error nothing catches, but
+// that is not this app's path and was never what a visitor here would have
+// seen — the outcome is an error screen, not a blank page. Corrected after
+// review; the earlier comment named the wrong mechanism.)
+// ArrivalErrorBoundary.test.tsx's final block proves the real unguarded
+// outcome by mounting the real AppErrorBoundary around the same throw.
 //
 // THIS IS NOT THE INVALID-API-KEY FIX, and must not be mistaken for one. An
 // invalid, revoked, restricted or over-quota key fails ASYNCHRONOUSLY — a
@@ -74,6 +84,21 @@ export class ArrivalErrorBoundary extends Component<
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
+    // Report it where an operator can see it. This is not optional politeness:
+    // before this boundary existed, a throw under the hero reached
+    // AppErrorBoundary, whose componentDidCatch calls this same helper
+    // (error-boundary.tsx:49) — so every such crash produced a Sentry event.
+    // Catching it here and only console.error-ing would have DELETED that
+    // signal in production, where nobody has devtools open, and this failure
+    // is invisible by construction: the photograph carries the page, so no
+    // visitor will ever report it. Tagged with its own boundary name so it
+    // reads as "the hero died, the homepage is fine", not "the app fell
+    // over". void: fire-and-forget, exactly as error-boundary.tsx does — the
+    // helper is internally guarded (no DSN / failed init → it returns without
+    // throwing) and a monitoring hiccup must never become a second crash
+    // inside a crash handler.
+    void captureBoundaryError(error, info, "ArrivalErrorBoundary");
+
     // Say it once, and say it plainly. Swallowing a crash silently would make
     // this boundary indistinguishable from the bug it exists to contain.
     // eslint-disable-next-line no-console

@@ -137,10 +137,15 @@ const FreshWalk = lazy(() => import("./FreshWalk.js"));
  *  "Regardless of whether this chunk loads" was, until Task 12b, not quite
  *  true: `<Suspense>` is not an error boundary, so a REJECTED dynamic import
  *  (the ordinary shape of a deploy that purges the chunk hashes this tab's
- *  index.html still names) threw past it to the app root — and React 18
- *  unmounts the whole root on an uncaught error, hero photograph included.
- *  ArrivalErrorBoundary, imported eagerly precisely so it cannot be inside
- *  the chunk it is guarding, is what makes the sentence true. */
+ *  index.html still names) threw past it — up to AppErrorBoundary, the
+ *  app-level catcher main.tsx:71-73 mounts above the whole router. That one
+ *  answers a render error by replacing its entire subtree, this page and its
+ *  hero photograph included, with the full-screen "Something went wrong"
+ *  panel. A decoration nobody asked for would have taken the homepage to an
+ *  error screen. ArrivalErrorBoundary, imported eagerly precisely so it
+ *  cannot be inside the chunk it is guarding, is what makes the sentence
+ *  true; fresh-arrival-boundary.test.tsx renders THIS page with a rejecting
+ *  hero module and proves it. */
 const ArrivalHero = lazy(() =>
   import("../landing/arrival/ArrivalHero.js").then((m) => ({ default: m.ArrivalHero })),
 );

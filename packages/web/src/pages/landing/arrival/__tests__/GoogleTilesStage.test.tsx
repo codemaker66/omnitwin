@@ -80,6 +80,14 @@ function createFakeTiles(): FakeTilesController {
  * traverseSet, whose first callback dereferences `tile.content` — hence this
  * TypeError, which TilesRendererBase.update()'s own .catch turns into
  * `load-error` with `tile: null`. See task-12b-report.md for the measurements.
+ *
+ * It is a HAND-WRITTEN fixture, so on its own it proves only that our handler
+ * branches correctly on a payload of this shape — never that the library still
+ * produces it. google-tiles-auth-contract.test.ts is what keeps it honest: it
+ * drives the REAL renderer and the REAL auth plugin against Google's real 400
+ * body with only `fetch` stubbed, and asserts exactly this shape comes out. If
+ * a library bump changes the behaviour, that file fails rather than this one
+ * quietly testing a fiction.
  */
 const ROOT_AUTH_FAILURE = {
   tile: null,
