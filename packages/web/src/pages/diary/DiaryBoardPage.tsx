@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import type {
   CalendarBookingEntry,
   CalendarEntry,
@@ -35,6 +35,7 @@ import { BoardGrid } from "./components/BoardGrid.js";
 import { BookingDrawer } from "./components/BookingDrawer.js";
 import { WelcomePanel } from "./components/WelcomePanel.js";
 import { ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
+import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import "./diary-board.css";
 
 // ---------------------------------------------------------------------------
@@ -402,21 +403,22 @@ export function DiaryBoardPage(): ReactElement {
 
   if (user !== null && venueId === null) {
     return (
-      <main className="diary-page" aria-label={BOARD_COPY.title}>
-        <div className="diary-notice">{BOARD_COPY.noVenue}</div>
-      </main>
+      <DashboardLayout>
+        <div className="diary-page" aria-label={BOARD_COPY.title}>
+          <div className="diary-notice">{BOARD_COPY.noVenue}</div>
+        </div>
+      </DashboardLayout>
     );
   }
 
   return (
-    <main className="diary-page" aria-label={BOARD_COPY.title}>
+    <DashboardLayout>
+      {/* The board wears the app shell now, so the nav rail, the account block
+          and sign-out follow you here. This is a <div>, not a <main> — the
+          shell owns the single <main> a page is allowed. */}
+      <div className="diary-page" aria-label={BOARD_COPY.title}>
       <header className="diary-header">
         <div className="diary-heading">
-          {/* Until now this page had no navigation of any kind — no link, no
-              back, no way out but the browser button. */}
-          <Link className="diary-return" to="/dashboard">
-            ← Dashboard
-          </Link>
           <h1 className="diary-title">{BOARD_COPY.title}</h1>
           <p className="diary-subtitle">{BOARD_COPY.subtitle}</p>
         </div>
@@ -590,7 +592,8 @@ export function DiaryBoardPage(): ReactElement {
       <div aria-live="polite" className="vv-sr-only">
         {drag.announcement}
       </div>
-    </main>
+      </div>
+    </DashboardLayout>
   );
 }
 

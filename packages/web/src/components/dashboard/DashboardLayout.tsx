@@ -1,6 +1,6 @@
 import { type ReactNode, useState, useEffect } from "react";
 import { useClerk } from "@clerk/react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
@@ -15,8 +15,13 @@ import "./DashboardLayout.css";
 type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "onboarding" | "admin";
 
 interface DashboardLayoutProps {
-  readonly activeView: DashboardView;
-  readonly onViewChange: (view: DashboardView) => void;
+  /** Present only on /dashboard, which owns the view switch itself. Every
+   *  other surface wears the shell WITHOUT these — the nav then routes to
+   *  /dashboard?view=… instead of calling back. Optional rather than a
+   *  second component so the ten dashboard views, their ?view= URLs and
+   *  every existing selector stay exactly as they are. */
+  readonly activeView?: DashboardView;
+  readonly onViewChange?: (view: DashboardView) => void;
   readonly children: ReactNode;
 }
 
@@ -73,6 +78,29 @@ function LocalSignOutButton(props: { readonly onLocalSignOut: () => void }): Rea
 export function DashboardLayout({ activeView, onViewChange, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const logoutLocal = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Worn by a page that is not /dashboard: the view buttons cannot call back,
+  // so they route instead. Same element, same label, same selector.
+  const selectView = (view: DashboardView): void => {
+    if (onViewChange !== undefined) {
+      onViewChange(view);
+      return;
+    }
+    void navigate(`/dashboard?view=${view}`);
+  };
+
+  /** A cross-route nav link is "current" when its route is the one showing.
+   *  These four links have never had an active state — so on the Diary,
+   *  nothing in the rail told you where you were. */
+  const isRouteActive = (to: string): boolean =>
+    location.pathname === to || location.pathname.startsWith(`${to}/`);
+
+  const routeLinkClass = (to: string): string =>
+    `dashboard-layout-nav-item dashboard-layout-nav-link${
+      isRouteActive(to) ? " dashboard-layout-nav-item--active" : ""
+    }`;
 
   // Fetch venue name dynamically so the header reflects the actual venue,
   // not the hardcoded placeholder (F28). Admin users without a venueId see
@@ -111,7 +139,7 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
               type="button"
               className={`dashboard-layout-nav-item${activeView === item.view ? " dashboard-layout-nav-item--active" : ""}`}
               aria-current={activeView === item.view ? "page" : undefined}
-              onClick={() => { onViewChange(item.view); }}
+              onClick={() => { selectView(item.view); }}
             >
               {item.label}
             </button>
@@ -121,22 +149,38 @@ export function DashboardLayout({ activeView, onViewChange, children }: Dashboar
             from nowhere in the entire app — reachable only by typing the URL.
             Read roles mirror the ws door: staff, admin, hallkeeper. */}
         {(user?.platformRole === "admin" || ["admin", "staff", "hallkeeper"].includes(user?.role ?? "")) && (
-          <Link className="dashboard-layout-nav-item dashboard-layout-nav-link" to="/diary">
+          <Link
+            className={routeLinkClass("/diary")}
+            aria-current={isRouteActive("/diary") ? "page" : undefined}
+            to="/diary"
+          >
             The Diary
           </Link>
         )}
         {(user?.platformRole === "admin" || ["admin", "staff", "planner"].includes(user?.role ?? "")) && (
-          <Link className="dashboard-layout-nav-item dashboard-layout-nav-link" to="/plan">
+          <Link
+            className={routeLinkClass("/plan")}
+            aria-current={isRouteActive("/plan") ? "page" : undefined}
+            to="/plan"
+          >
             Planner
           </Link>
         )}
         {(user?.platformRole === "admin" || ["admin", "staff", "hallkeeper", "planner"].includes(user?.role ?? "")) && (
-          <Link className="dashboard-layout-nav-item dashboard-layout-nav-link" to="/event-architect">
+          <Link
+            className={routeLinkClass("/event-architect")}
+            aria-current={isRouteActive("/event-architect") ? "page" : undefined}
+            to="/event-architect"
+          >
             Event Architect
           </Link>
         )}
         {user?.platformRole === "admin" && (
-          <Link className="dashboard-layout-nav-item dashboard-layout-nav-link" to="/dev/capture-intake">
+          <Link
+            className={routeLinkClass("/dev/capture-intake")}
+            aria-current={isRouteActive("/dev/capture-intake") ? "page" : undefined}
+            to="/dev/capture-intake"
+          >
             Capture Factory
           </Link>
         )}
