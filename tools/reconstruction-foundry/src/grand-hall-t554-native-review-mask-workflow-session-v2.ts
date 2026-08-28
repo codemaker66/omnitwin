@@ -83,6 +83,7 @@ import {
   type GrandHallT554NativeReviewRegistrySource,
 } from "./grand-hall-t554-native-review-registry.js";
 import {
+  createGrandHallT554NativeReviewCoverageCarryStateV2,
   planGrandHallT554NativeReviewNextMaskCoverageEventV2,
   replayGrandHallT554NativeReviewMaskChildV2,
   replayGrandHallT554NativeReviewSourceChildV2,
@@ -159,6 +160,17 @@ type MaskFreezeIntendedEvent = Extract<
   GrandHallT554NativeReviewCoordinatorEventV2,
   { readonly eventType: "mask.freeze-intended.v2" }
 >;
+type CoverageSegmentResumeIntendedEvent = Extract<
+  GrandHallT554NativeReviewCoordinatorEventV2,
+  { readonly eventType: "coverage.segment-resume-intended.v2" }
+>;
+type MaskCoverageSegmentResumeIntendedEvent =
+  CoverageSegmentResumeIntendedEvent & {
+    readonly payload: Extract<
+      CoverageSegmentResumeIntendedEvent["payload"],
+      { readonly kind: "mask" }
+    >;
+  };
 
 const NonceSchema = z
   .string()
@@ -298,6 +310,12 @@ interface MaskWorkflowSessionSeamsV2 {
   readonly beforeMaskCoverageAppend?: () => Promise<void> | void;
   readonly afterMaskTileDeliveryAppendDurable?: () => Promise<void> | void;
   readonly afterMaskCoverageAppendDurable?: () => Promise<void> | void;
+  readonly afterMaskCoverageResumeIntentDurable?: () => Promise<void> | void;
+  readonly afterMaskCoverageResumeChildPublished?: () => Promise<void> | void;
+  readonly afterMaskCoverageResumeDescriptorPublished?: () => Promise<void> | void;
+  readonly afterMaskCoverageResumeChildStartPublishedBeforeRootVerification?: () => Promise<void> | void;
+  readonly afterMaskCoverageResumeCommitDurable?: () => Promise<void> | void;
+  readonly afterMaskCoverageResumeRecoveryAbortDurable?: () => Promise<void> | void;
 }
 
 interface MaskWorkflowSessionDependenciesV2 {
@@ -728,6 +746,13 @@ function maskChildLeaf(
   return `mask-freeze-${String(renderGeneration).padStart(8, "0")}-${coverageSegmentIdSha256.slice(-20)}`;
 }
 
+function maskCoverageResumeChildLeaf(
+  renderGeneration: number,
+  coverageSegmentIdSha256: Sha256,
+): string {
+  return `mask-resume-${String(renderGeneration).padStart(8, "0")}-${coverageSegmentIdSha256.slice(-20)}`;
+}
+
 function laterUtc(left: string, right: string): string {
   return Date.parse(left) >= Date.parse(right) ? left : right;
 }
@@ -775,7 +800,7 @@ function mapMaskRecoveryError(
   }
   return fail(
     "CRASH_RECOVERY_REQUIRED",
-    "Pending mask freeze could not be reconciled to exact durable evidence.",
+    "Pending mask mutation could not be reconciled to exact durable evidence.",
     error,
   );
 }
@@ -1382,6 +1407,17 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
     this.#store = verified;
   }
 
+  async #refreshStoreIncludingRecoveryRequired(): Promise<void> {
+    await this.#assertOwnerIncludingRecoveryRequired();
+    const verified = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot: this.sessionRoot,
+      expectedSessionScope: this.sessionScope,
+      lease: this.lease,
+    });
+    await this.#assertOwnerIncludingRecoveryRequired();
+    this.#store = verified;
+  }
+
   #coordinator() {
     return this.#store.coordinator;
   }
@@ -1499,6 +1535,8 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
       (active.phase === "mask_review" &&
         (runtime.maskChild === null ||
           active.maskJournal === null ||
+          active.maskCoverageSegmentIdSha256 !==
+            runtime.maskChild.scope.coverageSegmentIdSha256 ||
           runtime.maskChild.evidence.checkpoint.leafName !==
             active.maskJournal.leafName ||
           !canonicalEqual(runtime.maskChild.scope, {
@@ -1525,12 +1563,22 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
   ): Promise<GrandHallT554NativeReviewDurableJournalReplayV2> {
     await this.#assertOwner();
     const current = await this.coordinatorJournal.replay();
-    const advanced = await this.coordinatorJournal.append({
-      expectedRevision: current.revision,
-      event: coordinatorEvent,
-    });
-    await this.#assertOwner();
-    return advanced;
+    this.#recoveryRequired = true;
+    try {
+      const advanced = await this.coordinatorJournal.append({
+        expectedRevision: current.revision,
+        event: coordinatorEvent,
+      });
+      await this.#assertOwnerIncludingRecoveryRequired();
+      this.#recoveryRequired = false;
+      return advanced;
+    } catch (error) {
+      throw fail(
+        "CRASH_RECOVERY_REQUIRED",
+        "Coordinator mutation append may be durable and requires exact disk recovery.",
+        error,
+      );
+    }
   }
 
   #snapshotVerified(): GrandHallT554NativeReviewMaskWorkflowSnapshotV2 {
@@ -1663,8 +1711,9 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
             initialMaskState,
           }),
         );
+        this.#recoveryRequired = true;
         await this.dependencies.seam?.afterMaskWorkflowStartedDurable?.();
-        await this.#refreshStore();
+        await this.#refreshStoreIncludingRecoveryRequired();
         this.#runtime = {
           epoch: preparedEpoch.epoch,
           epochBindings: preparedEpoch.bindings,
@@ -1676,6 +1725,7 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
         };
         runtimeTransferred = true;
         result = this.#snapshotVerified();
+        this.#recoveryRequired = false;
       } catch (error) {
         operationError = error;
       }
@@ -1700,6 +1750,13 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
             "RESOURCE_CLEANUP_FAILED",
             "Initial mask runtime cleanup failed after workflow-start error.",
             { operationError, cleanupErrors },
+          );
+        }
+        if (this.#recoveryRequired) {
+          throw fail(
+            "CRASH_RECOVERY_REQUIRED",
+            "Durable mask workflow start requires exact disk recovery.",
+            operationError,
           );
         }
         throw mapMaskStoreError(operationError);
@@ -1819,8 +1876,9 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
             invalidatedMaskJournal: invalidatedMaskEvidence?.checkpoint ?? null,
           }),
         );
+        this.#recoveryRequired = true;
         await this.dependencies.seam?.afterMaskEditDurable?.();
-        await this.#refreshStore();
+        await this.#refreshStoreIncludingRecoveryRequired();
         this.#runtime = {
           ...priorRuntime,
           maskStore: rehydrated.store,
@@ -1829,6 +1887,7 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
         };
         runtimeTransferred = true;
         result = this.#snapshotVerified();
+        this.#recoveryRequired = false;
       } catch (error) {
         operationError = error;
       }
@@ -1852,6 +1911,13 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
             "RESOURCE_CLEANUP_FAILED",
             "Rehydrated mask-store cleanup failed after edit error.",
             { operationError, cleanupErrors },
+          );
+        }
+        if (this.#recoveryRequired) {
+          throw fail(
+            "CRASH_RECOVERY_REQUIRED",
+            "Durable mask edit requires exact disk recovery.",
+            operationError,
           );
         }
         throw mapMaskStoreError(operationError);
@@ -2114,8 +2180,7 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
         });
         await this.#assertOwnerIncludingRecoveryRequired();
         await this.dependencies.seam?.afterMaskFreezeCommitDurable?.();
-        this.#recoveryRequired = false;
-        await this.#refreshStore();
+        await this.#refreshStoreIncludingRecoveryRequired();
         this.#runtime = {
           ...priorRuntime,
           maskStore: rehydrated.store,
@@ -2124,6 +2189,7 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
         };
         runtimeTransferred = true;
         result = this.#snapshotVerified();
+        this.#recoveryRequired = false;
       } catch (error) {
         operationError = error;
       }
@@ -3006,6 +3072,688 @@ async function recoverPendingMaskFreeze(input: {
   }
 }
 
+function exactPendingMaskCoverageResume(
+  replay: GrandHallT554NativeReviewDurableJournalReplayV2,
+  sessionScope: GrandHallT554NativeReviewSessionScopeV2,
+): {
+  readonly coordinator: ReturnType<
+    typeof replayGrandHallT554NativeReviewCoordinatorV2
+  >;
+  readonly intent: MaskCoverageSegmentResumeIntendedEvent;
+} | null {
+  const coordinator = replayGrandHallT554NativeReviewCoordinatorV2({
+    scope: sessionScope,
+    events: coordinatorEvents(replay.events),
+  });
+  if (coordinator.pendingIntent === null) return null;
+  if (coordinator.pendingIntent.kind !== "coverage_resume") {
+    throw fail(
+      "CRASH_RECOVERY_REQUIRED",
+      "Pending mask coverage resume changed to another mutation kind.",
+    );
+  }
+  const found = findExactPendingCoordinatorIntentEventV2(
+    replay,
+    coordinator.pendingIntent,
+  );
+  if (
+    found?.eventType !== "coverage.segment-resume-intended.v2" ||
+    found.payload.kind !== "mask"
+  ) {
+    throw fail(
+      "CRASH_RECOVERY_REQUIRED",
+      "Pending mask coverage resume cannot be resolved to its exact durable mask intent.",
+    );
+  }
+  return {
+    coordinator,
+    intent: found as MaskCoverageSegmentResumeIntendedEvent,
+  };
+}
+
+function maskCoverageResumeScope(input: {
+  readonly sessionScope: GrandHallT554NativeReviewSessionScopeV2;
+  readonly intent: MaskCoverageSegmentResumeIntendedEvent;
+}): GrandHallT554NativeReviewMaskScopeV2 {
+  const payload = input.intent.payload;
+  return maskScope({
+    sessionScope: input.sessionScope,
+    browserEpochNonceSha256: payload.browserEpochNonceSha256,
+    coverageSegmentIdSha256: payload.newCoverageSegmentIdSha256,
+    renderGeneration: payload.allocatedRenderGeneration,
+    sourceCustody: payload.preparedSourceCustody,
+    maskReviewSubjectSha256: payload.maskReviewSubjectSha256,
+    maskStateSha256: payload.maskState.maskStateSha256,
+    frozenBindingSha256: payload.frozenBindingSha256,
+    frozenBinding: payload.frozenBinding,
+  });
+}
+
+function assertPendingMaskCoverageResumeRoot(input: {
+  readonly store: GrandHallT554NativeReviewSessionStoreReplayV2;
+  readonly intent: MaskCoverageSegmentResumeIntendedEvent;
+  readonly expectedMaskJournal: GrandHallT554NativeReviewMaskChildCheckpointV2 | null;
+}): void {
+  const payload = input.intent.payload;
+  const coordinator = input.store.coordinator;
+  const pending = coordinator.pendingIntent;
+  const active = coordinator.activeSource;
+  const obligation = coordinator.childObligations.find(
+    (candidate) => candidate.leafName === payload.childJournalLeafName,
+  );
+  const matchingChildren = input.store.children.filter(
+    (candidate) => candidate.leafName === payload.childJournalLeafName,
+  );
+  const child = matchingChildren[0];
+  if (
+    pending?.kind !== "coverage_resume" ||
+    pending.operationIdSha256 !== payload.operationIdSha256 ||
+    pending.childJournalLeafName !== payload.childJournalLeafName ||
+    pending.allocatedRenderGeneration !== payload.allocatedRenderGeneration ||
+    coordinator.workspaceRevision !== payload.expectedWorkspaceRevision ||
+    coordinator.maximumAllocatedRenderGeneration !==
+      payload.allocatedRenderGeneration ||
+    active === null ||
+    active.phase !== "mask_review" ||
+    active.renderGeneration !== payload.previousVisibleRenderGeneration ||
+    !canonicalEqual(active.sourceCustody, payload.sourceCustodyBefore) ||
+    !canonicalEqual(active.maskState, payload.maskState) ||
+    active.maskReviewSubjectSha256 !== payload.maskReviewSubjectSha256 ||
+    active.frozenBindingSha256 !== payload.frozenBindingSha256 ||
+    !canonicalEqual(active.frozenBinding, payload.frozenBinding) ||
+    !canonicalEqual(active.maskJournal, payload.priorChildJournal) ||
+    obligation?.kind !== "mask" ||
+    obligation.operationIdSha256 !== payload.operationIdSha256 ||
+    obligation.declarationKind !== "coverage_resume" ||
+    obligation.disposition !== "pending"
+  ) {
+    throw fail(
+      "CRASH_RECOVERY_REQUIRED",
+      "Full-root verification found a different pending mask coverage resume.",
+    );
+  }
+  if (input.expectedMaskJournal === null) {
+    if (matchingChildren.length !== 0) {
+      throw fail(
+        "CRASH_RECOVERY_REQUIRED",
+        "Absent mask coverage resume unexpectedly has a published child.",
+      );
+    }
+    return;
+  }
+  if (
+    matchingChildren.length !== 1 ||
+    child?.evidence.kind !== "mask" ||
+    child.evidence.checkpoint.revision !== 1 ||
+    !canonicalEqual(child.evidence.checkpoint, input.expectedMaskJournal)
+  ) {
+    throw fail(
+      "CRASH_RECOVERY_REQUIRED",
+      "Pending mask coverage resume child, descriptor, or revision-one evidence is not exact.",
+    );
+  }
+}
+
+async function verifyPendingMaskCoverageResumeRoot(input: {
+  readonly sessionRoot: string;
+  readonly sessionScope: GrandHallT554NativeReviewSessionScopeV2;
+  readonly lease: GrandHallT554NativeReviewSessionOwnerLeaseV2;
+  readonly intent: MaskCoverageSegmentResumeIntendedEvent;
+  readonly expectedMaskJournal: GrandHallT554NativeReviewMaskChildCheckpointV2;
+}): Promise<GrandHallT554NativeReviewSessionStoreReplayV2> {
+  await assertGrandHallT554NativeReviewSessionOwnerV2({
+    lease: input.lease,
+    sessionRoot: input.sessionRoot,
+    expectedSessionScope: input.sessionScope,
+  });
+  const store = await openGrandHallT554NativeReviewSessionStoreV2({
+    sessionRoot: input.sessionRoot,
+    expectedSessionScope: input.sessionScope,
+    lease: input.lease,
+  });
+  assertPendingMaskCoverageResumeRoot({
+    store,
+    intent: input.intent,
+    expectedMaskJournal: input.expectedMaskJournal,
+  });
+  await assertGrandHallT554NativeReviewSessionOwnerV2({
+    lease: input.lease,
+    sessionRoot: input.sessionRoot,
+    expectedSessionScope: input.sessionScope,
+  });
+  return store;
+}
+
+async function appendMaskCoverageResumeRecoveryAbort(input: {
+  readonly sessionRoot: string;
+  readonly sessionScope: GrandHallT554NativeReviewSessionScopeV2;
+  readonly lease: GrandHallT554NativeReviewSessionOwnerLeaseV2;
+  readonly coordinatorJournal: GrandHallT554NativeReviewDurableJournalV2;
+  readonly intent: MaskCoverageSegmentResumeIntendedEvent;
+  readonly abandonedMaskJournal: GrandHallT554NativeReviewMaskChildCheckpointV2 | null;
+  readonly dependencies: MaskWorkflowSessionDependenciesV2;
+}): Promise<void> {
+  await assertGrandHallT554NativeReviewSessionOwnerV2({
+    lease: input.lease,
+    sessionRoot: input.sessionRoot,
+    expectedSessionScope: input.sessionScope,
+  });
+  const beforeAbort = await input.coordinatorJournal.replay();
+  const pending = exactPendingMaskCoverageResume(
+    beforeAbort,
+    input.sessionScope,
+  );
+  if (
+    pending === null ||
+    pending.intent.payload.operationIdSha256 !==
+      input.intent.payload.operationIdSha256
+  ) {
+    throw fail(
+      "CRASH_RECOVERY_REQUIRED",
+      "Mask coverage resume changed before recovery-abort CAS.",
+    );
+  }
+  const browser = pending.coordinator.browserEpoch;
+  if (browser === null) {
+    throw fail(
+      "CRASH_RECOVERY_REQUIRED",
+      "Pending mask coverage recovery-abort has no browser epoch.",
+    );
+  }
+  const payload = pending.intent.payload;
+  await input.coordinatorJournal.append({
+    expectedRevision: beforeAbort.revision,
+    event: event<
+      Extract<
+        GrandHallT554NativeReviewCoordinatorEventV2,
+        { readonly eventType: "coverage.segment-resume-recovery-aborted.v2" }
+      >
+    >("coverage.segment-resume-recovery-aborted.v2", {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-coverage-segment-resume-recovery-aborted.v2",
+      kind: "mask",
+      operationIdSha256: payload.operationIdSha256,
+      browserEpochNonceSha256: browser.nonceSha256,
+      workspaceRevision: pending.coordinator.workspaceRevision,
+      consumedRenderGeneration: payload.allocatedRenderGeneration,
+      recovery:
+        input.abandonedMaskJournal === null
+          ? { childDisposition: "absent", abandonedChildJournal: null }
+          : {
+              childDisposition: "exact_abandoned",
+              abandonedChildJournal: input.abandonedMaskJournal,
+            },
+    }),
+  });
+  await assertGrandHallT554NativeReviewSessionOwnerV2({
+    lease: input.lease,
+    sessionRoot: input.sessionRoot,
+    expectedSessionScope: input.sessionScope,
+  });
+  await input.dependencies.seam?.afterMaskCoverageResumeRecoveryAbortDurable?.();
+}
+
+async function recoverPendingMaskCoverageResume(input: {
+  readonly sessionRoot: string;
+  readonly sessionScope: GrandHallT554NativeReviewSessionScopeV2;
+  readonly lease: GrandHallT554NativeReviewSessionOwnerLeaseV2;
+  readonly coordinatorJournal: GrandHallT554NativeReviewDurableJournalV2;
+  readonly intent: MaskCoverageSegmentResumeIntendedEvent;
+  readonly dependencies: MaskWorkflowSessionDependenciesV2;
+}): Promise<void> {
+  const scope = maskCoverageResumeScope({
+    sessionScope: input.sessionScope,
+    intent: input.intent,
+  });
+  let reconciled: Awaited<
+    ReturnType<typeof reconcileGrandHallT554NativeReviewMaskChildStartV2>
+  >;
+  try {
+    await assertGrandHallT554NativeReviewSessionOwnerV2({
+      lease: input.lease,
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+    });
+    reconciled = await reconcileGrandHallT554NativeReviewMaskChildStartV2({
+      sessionRoot: input.sessionRoot,
+      scope,
+      leafName: input.intent.payload.childJournalLeafName,
+      descriptorStageIdentitySha256: input.intent.payload.operationIdSha256,
+      afterDescriptorPublished:
+        input.dependencies.seam?.afterMaskCoverageResumeDescriptorPublished,
+    });
+    await assertGrandHallT554NativeReviewSessionOwnerV2({
+      lease: input.lease,
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+    });
+    const verifiedPending = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+      lease: input.lease,
+    });
+    assertPendingMaskCoverageResumeRoot({
+      store: verifiedPending,
+      intent: input.intent,
+      expectedMaskJournal:
+        reconciled.disposition === "exact"
+          ? reconciled.evidence.checkpoint
+          : null,
+    });
+    await appendMaskCoverageResumeRecoveryAbort({
+      sessionRoot: input.sessionRoot,
+      sessionScope: input.sessionScope,
+      lease: input.lease,
+      coordinatorJournal: input.coordinatorJournal,
+      intent: input.intent,
+      abandonedMaskJournal:
+        reconciled.disposition === "exact"
+          ? reconciled.evidence.checkpoint
+          : null,
+      dependencies: input.dependencies,
+    });
+    const recovered = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+      lease: input.lease,
+    });
+    const active = recovered.coordinator.activeSource;
+    const payload = input.intent.payload;
+    if (
+      recovered.coordinator.pendingIntent !== null ||
+      recovered.coordinator.workspaceRevision !==
+        payload.expectedWorkspaceRevision ||
+      recovered.coordinator.maximumAllocatedRenderGeneration !==
+        payload.allocatedRenderGeneration ||
+      active === null ||
+      active.phase !== "mask_review" ||
+      active.renderGeneration !== payload.previousVisibleRenderGeneration ||
+      !canonicalEqual(active.sourceCustody, payload.sourceCustodyBefore) ||
+      !canonicalEqual(active.maskState, payload.maskState) ||
+      active.maskReviewSubjectSha256 !== payload.maskReviewSubjectSha256 ||
+      active.frozenBindingSha256 !== payload.frozenBindingSha256 ||
+      !canonicalEqual(active.frozenBinding, payload.frozenBinding) ||
+      !canonicalEqual(active.maskJournal, payload.priorChildJournal)
+    ) {
+      throw fail(
+        "CRASH_RECOVERY_REQUIRED",
+        "Mask coverage recovery-abort did not preserve the exact frozen review.",
+      );
+    }
+  } catch (error) {
+    throw mapMaskRecoveryError(error);
+  }
+}
+
+async function recoverPendingMaskMutation(input: {
+  readonly sessionRoot: string;
+  readonly preparationDirectory: string;
+  readonly sessionScope: GrandHallT554NativeReviewSessionScopeV2;
+  readonly lease: GrandHallT554NativeReviewSessionOwnerLeaseV2;
+  readonly coordinatorJournal: GrandHallT554NativeReviewDurableJournalV2;
+  readonly dependencies: MaskWorkflowSessionDependenciesV2;
+}): Promise<void> {
+  await assertGrandHallT554NativeReviewSessionOwnerV2({
+    lease: input.lease,
+    sessionRoot: input.sessionRoot,
+    expectedSessionScope: input.sessionScope,
+  });
+  const replay = await input.coordinatorJournal.replay();
+  const coordinator = replayGrandHallT554NativeReviewCoordinatorV2({
+    scope: input.sessionScope,
+    events: coordinatorEvents(replay.events),
+  });
+  if (coordinator.pendingIntent === null) return;
+  const intent = findExactPendingCoordinatorIntentEventV2(
+    replay,
+    coordinator.pendingIntent,
+  );
+  if (intent === null) {
+    throw fail(
+      "CRASH_RECOVERY_REQUIRED",
+      "Pending mask mutation cannot be resolved from its exact durable intent.",
+    );
+  }
+  if (intent.eventType === "mask.freeze-intended.v2") {
+    await recoverPendingMaskFreeze(input);
+    return;
+  }
+  if (
+    intent.eventType === "coverage.segment-resume-intended.v2" &&
+    intent.payload.kind === "mask"
+  ) {
+    await recoverPendingMaskCoverageResume({
+      sessionRoot: input.sessionRoot,
+      sessionScope: input.sessionScope,
+      lease: input.lease,
+      coordinatorJournal: input.coordinatorJournal,
+      intent: intent as MaskCoverageSegmentResumeIntendedEvent,
+      dependencies: input.dependencies,
+    });
+    return;
+  }
+  throw fail(
+    "CRASH_RECOVERY_REQUIRED",
+    "Mask-workflow facade cannot recover a source selection or source coverage intent.",
+  );
+}
+
+async function resumeMaskReviewAfterBrowserRotation(input: {
+  readonly sessionRoot: string;
+  readonly sessionScope: GrandHallT554NativeReviewSessionScopeV2;
+  readonly lease: GrandHallT554NativeReviewSessionOwnerLeaseV2;
+  readonly coordinatorJournal: GrandHallT554NativeReviewDurableJournalV2;
+  readonly store: GrandHallT554NativeReviewSessionStoreReplayV2;
+  readonly preparationDirectory: string;
+  readonly dependencies: MaskWorkflowSessionDependenciesV2;
+}): Promise<{
+  readonly store: GrandHallT554NativeReviewSessionStoreReplayV2;
+  readonly runtime: ActiveMaskWorkflowRuntimeV2;
+}> {
+  const coordinator = input.store.coordinator;
+  const active = coordinator.activeSource;
+  const browser = coordinator.browserEpoch;
+  if (
+    active === null ||
+    active.phase !== "mask_review" ||
+    active.maskState === null ||
+    active.maskReviewSubjectSha256 === null ||
+    active.frozenBindingSha256 === null ||
+    active.frozenBinding === null ||
+    active.maskJournal === null ||
+    browser === null
+  ) {
+    throw fail(
+      "INTERNAL_INVARIANT_FAILED",
+      "Mask coverage resume requires a complete frozen review and rotated browser epoch.",
+    );
+  }
+  if (
+    coordinator.workspaceRevision === Number.MAX_SAFE_INTEGER ||
+    coordinator.maximumAllocatedRenderGeneration === Number.MAX_SAFE_INTEGER
+  ) {
+    throw fail(
+      "RESOURCE_FAILURE",
+      "Mask coverage resume exhausted its durable CAS range.",
+    );
+  }
+  const predecessorEvidence = latestVerifiedActiveMaskEvidenceV2(input.store);
+  if (predecessorEvidence === null) {
+    throw fail(
+      "INTERNAL_INVARIANT_FAILED",
+      "Mask coverage resume lost exact predecessor child evidence.",
+    );
+  }
+  const predecessorCoverage =
+    createGrandHallT554NativeReviewCoverageCarryStateV2(predecessorEvidence);
+  if (predecessorCoverage.kind !== "mask") {
+    throw fail(
+      "INTERNAL_INVARIANT_FAILED",
+      "Mask coverage resume derived a non-mask predecessor carry.",
+    );
+  }
+  const allocatedRenderGeneration =
+    coordinator.maximumAllocatedRenderGeneration + 1;
+  const sourceEpochNonce = parseInput(
+    NonceSchema,
+    input.dependencies.newNonce(),
+  );
+  const preparedEpoch = await prepareMaskResumeEpoch({
+    active,
+    sourceEpochNonce,
+    renderGeneration: allocatedRenderGeneration,
+    dependencies: input.dependencies,
+  });
+  let rehydrated: RehydratedMaskStoreV2 | undefined;
+  let runtimeTransferred = false;
+  let intentDurable = false;
+  try {
+    rehydrated = rehydrateMaskStore({
+      sessionRoot: input.sessionRoot,
+      preparationDirectory: input.preparationDirectory,
+      sessionScope: input.sessionScope,
+      sourceCustody: preparedEpoch.custody,
+      expectedMaskState: active.maskState,
+      events: coordinatorEvents(input.store.coordinatorJournal.events),
+      dependencies: input.dependencies,
+    });
+    if (
+      computeGrandHallT554NativeReviewFrozenMaskBindingV2Sha256(
+        active.frozenBinding,
+      ) !== active.frozenBindingSha256 ||
+      active.frozenBinding.revision !== rehydrated.exactState.revision ||
+      !canonicalEqual(stateEvidence(rehydrated.exactState), active.maskState)
+    ) {
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        "Rehydrated mask state differs from the active frozen-review binding.",
+      );
+    }
+    const operationIdSha256 = nonceSha256(
+      parseInput(NonceSchema, input.dependencies.newNonce()),
+    );
+    const coverageSegmentIdSha256 = nonceSha256(
+      parseInput(NonceSchema, input.dependencies.newNonce()),
+    );
+    const childJournalLeafName = maskCoverageResumeChildLeaf(
+      allocatedRenderGeneration,
+      coverageSegmentIdSha256,
+    );
+    const scope = maskScope({
+      sessionScope: input.sessionScope,
+      browserEpochNonceSha256: browser.nonceSha256,
+      coverageSegmentIdSha256,
+      renderGeneration: allocatedRenderGeneration,
+      sourceCustody: preparedEpoch.custody,
+      maskReviewSubjectSha256: active.maskReviewSubjectSha256,
+      maskStateSha256: active.maskState.maskStateSha256,
+      frozenBindingSha256: active.frozenBindingSha256,
+      frozenBinding: active.frozenBinding,
+    });
+    const resumeIntent = event<
+      Extract<
+        GrandHallT554NativeReviewCoordinatorEventV2,
+        { readonly eventType: "coverage.segment-resume-intended.v2" }
+      >
+    >("coverage.segment-resume-intended.v2", {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-coverage-segment-resume-intended.v2",
+      kind: "mask",
+      operationIdSha256,
+      browserEpochNonceSha256: browser.nonceSha256,
+      expectedWorkspaceRevision: coordinator.workspaceRevision,
+      sourceCustodyBefore: active.sourceCustody,
+      preparedSourceCustody: preparedEpoch.custody,
+      previousVisibleRenderGeneration: active.renderGeneration,
+      previousMaximumAllocatedRenderGeneration:
+        coordinator.maximumAllocatedRenderGeneration,
+      allocatedRenderGeneration,
+      newSourceEpochNonceSha256: preparedEpoch.custody.sourceEpochNonceSha256,
+      newCoverageSegmentIdSha256: coverageSegmentIdSha256,
+      childJournalLeafName,
+      priorChildJournal: predecessorEvidence.checkpoint,
+      predecessorCoverage,
+      maskState: active.maskState,
+      maskReviewSubjectSha256: active.maskReviewSubjectSha256,
+      frozenBindingSha256: active.frozenBindingSha256,
+      frozenBinding: active.frozenBinding,
+    });
+    const beforeIntent = await input.coordinatorJournal.replay();
+    if (
+      beforeIntent.revision !== input.store.coordinatorJournal.revision ||
+      beforeIntent.headEventSha256 !==
+        input.store.coordinatorJournal.headEventSha256
+    ) {
+      throw fail(
+        "CRASH_RECOVERY_REQUIRED",
+        "Coordinator changed after the verified mask-review snapshot.",
+      );
+    }
+    await assertGrandHallT554NativeReviewSessionOwnerV2({
+      lease: input.lease,
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+    });
+    intentDurable = true;
+    const intentReplay = await input.coordinatorJournal.append({
+      expectedRevision: beforeIntent.revision,
+      event: resumeIntent,
+    });
+    await assertGrandHallT554NativeReviewSessionOwnerV2({
+      lease: input.lease,
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+    });
+    await input.dependencies.seam?.afterMaskCoverageResumeIntentDurable?.();
+    await assertGrandHallT554NativeReviewSessionOwnerV2({
+      lease: input.lease,
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+    });
+    const published = await publishGrandHallT554NativeReviewMaskChildStartV2({
+      sessionRoot: input.sessionRoot,
+      scope,
+      leafName: childJournalLeafName,
+      startedAtUtc: laterUtc(
+        laterUtc(
+          input.dependencies.nowUtc(),
+          predecessorEvidence.finalDurableRecordedAtUtc,
+        ),
+        finalRecordedAtUtc(intentReplay),
+      ),
+      predecessorCoverage,
+      predecessorEvidence,
+      stageIdentitySha256: operationIdSha256,
+      afterChildPublished:
+        input.dependencies.seam?.afterMaskCoverageResumeChildPublished,
+      afterDescriptorPublished:
+        input.dependencies.seam?.afterMaskCoverageResumeDescriptorPublished,
+    });
+    await assertGrandHallT554NativeReviewSessionOwnerV2({
+      lease: input.lease,
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+    });
+    await input.dependencies.seam?.afterMaskCoverageResumeChildStartPublishedBeforeRootVerification?.();
+    const verifiedPending = await verifyPendingMaskCoverageResumeRoot({
+      sessionRoot: input.sessionRoot,
+      sessionScope: input.sessionScope,
+      lease: input.lease,
+      intent: resumeIntent as MaskCoverageSegmentResumeIntendedEvent,
+      expectedMaskJournal: published.evidence.checkpoint,
+    });
+    await assertGrandHallT554NativeReviewSessionOwnerV2({
+      lease: input.lease,
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+    });
+    await input.coordinatorJournal.append({
+      expectedRevision: verifiedPending.coordinatorJournal.revision,
+      event: event<
+        Extract<
+          GrandHallT554NativeReviewCoordinatorEventV2,
+          { readonly eventType: "coverage.segment-resume-committed.v2" }
+        >
+      >("coverage.segment-resume-committed.v2", {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-coverage-segment-resume-committed.v2",
+        kind: "mask",
+        operationIdSha256,
+        browserEpochNonceSha256: browser.nonceSha256,
+        previousWorkspaceRevision: coordinator.workspaceRevision,
+        resultingWorkspaceRevision: coordinator.workspaceRevision + 1,
+        renderGeneration: allocatedRenderGeneration,
+        coverageSegmentIdSha256,
+        sourceCustody: preparedEpoch.custody,
+        maskState: active.maskState,
+        maskReviewSubjectSha256: active.maskReviewSubjectSha256,
+        frozenBindingSha256: active.frozenBindingSha256,
+        frozenBinding: active.frozenBinding,
+        maskJournal: published.evidence.checkpoint,
+      }),
+    });
+    await assertGrandHallT554NativeReviewSessionOwnerV2({
+      lease: input.lease,
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+    });
+    await input.dependencies.seam?.afterMaskCoverageResumeCommitDurable?.();
+    const store = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot: input.sessionRoot,
+      expectedSessionScope: input.sessionScope,
+      lease: input.lease,
+    });
+    const resumedActive = store.coordinator.activeSource;
+    const resumedEvidence = latestVerifiedActiveMaskEvidenceV2(store);
+    if (
+      store.coordinator.pendingIntent !== null ||
+      store.coordinator.workspaceRevision !==
+        coordinator.workspaceRevision + 1 ||
+      resumedActive === null ||
+      resumedActive.phase !== "mask_review" ||
+      resumedActive.renderGeneration !== allocatedRenderGeneration ||
+      !canonicalEqual(resumedActive.sourceCustody, preparedEpoch.custody) ||
+      !canonicalEqual(resumedActive.maskState, active.maskState) ||
+      resumedActive.maskReviewSubjectSha256 !==
+        active.maskReviewSubjectSha256 ||
+      resumedActive.frozenBindingSha256 !== active.frozenBindingSha256 ||
+      !canonicalEqual(resumedActive.frozenBinding, active.frozenBinding) ||
+      resumedActive.maskCoverageSegmentIdSha256 !== coverageSegmentIdSha256 ||
+      !canonicalEqual(
+        resumedActive.maskJournal,
+        published.evidence.checkpoint,
+      ) ||
+      resumedEvidence === null ||
+      !canonicalEqual(resumedEvidence.checkpoint, published.evidence.checkpoint)
+    ) {
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        "Committed mask coverage resume did not reopen as the exact frozen review.",
+      );
+    }
+    const runtime: ActiveMaskWorkflowRuntimeV2 = {
+      epoch: preparedEpoch.epoch,
+      epochBindings: preparedEpoch.bindings,
+      epochSnapshot: preparedEpoch.snapshot,
+      sourceEpochNonce,
+      maskStore: rehydrated.store,
+      maskContext: rehydrated.context,
+      maskChild: published,
+    };
+    runtimeTransferred = true;
+    return { store, runtime };
+  } catch (operationError) {
+    const cleanupErrors: unknown[] = [];
+    if (!runtimeTransferred) {
+      try {
+        rehydrated?.store.abandon();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+      try {
+        await preparedEpoch.epoch.abandon();
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    if (cleanupErrors.length !== 0) {
+      throw fail(
+        "RESOURCE_CLEANUP_FAILED",
+        "Mask coverage resume cleanup failed after operation error.",
+        { operationError, cleanupErrors },
+      );
+    }
+    if (intentDurable) {
+      throw fail(
+        "CRASH_RECOVERY_REQUIRED",
+        "Durable mask coverage resume requires exact disk recovery.",
+        operationError,
+      );
+    }
+    throw mapMaskStoreError(operationError);
+  }
+}
+
 async function resumeMaskEditEpochAfterBrowserRotation(input: {
   readonly sessionRoot: string;
   readonly sessionScope: GrandHallT554NativeReviewSessionScopeV2;
@@ -3209,7 +3957,7 @@ async function openInjectedMaskWorkflowSession(
         workspaceRoot: join(sessionRoot, "coordinator"),
         expectedScope: sessionScope,
       });
-    await recoverPendingMaskFreeze({
+    await recoverPendingMaskMutation({
       sessionRoot,
       preparationDirectory,
       sessionScope,
@@ -3246,12 +3994,6 @@ async function openInjectedMaskWorkflowSession(
         "Mask-workflow facade requires source review, mask edit, or mask review.",
       );
     }
-    if (active.phase === "mask_review") {
-      throw fail(
-        "PHASE_INVALID",
-        "Mask review cannot reopen until its durable mask-coverage resume transaction exists.",
-      );
-    }
     store = await rotateGrandHallT554NativeReviewBrowserEpochV2({
       reason: mode,
       sessionRoot,
@@ -3267,6 +4009,18 @@ async function openInjectedMaskWorkflowSession(
     let runtime: ActiveMaskWorkflowRuntimeV2 | null = null;
     if (store.coordinator.activeSource?.phase === "mask_edit") {
       const resumed = await resumeMaskEditEpochAfterBrowserRotation({
+        sessionRoot,
+        sessionScope,
+        lease,
+        coordinatorJournal,
+        store,
+        preparationDirectory,
+        dependencies,
+      });
+      store = resumed.store;
+      runtime = resumed.runtime;
+    } else if (store.coordinator.activeSource?.phase === "mask_review") {
+      const resumed = await resumeMaskReviewAfterBrowserRotation({
         sessionRoot,
         sessionScope,
         lease,

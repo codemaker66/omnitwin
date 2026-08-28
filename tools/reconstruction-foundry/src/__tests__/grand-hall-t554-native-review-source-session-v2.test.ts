@@ -862,6 +862,7 @@ async function createEditedMaskWorkflow(
 
 async function takeOverMaskWorkflowAfterCrash(
   fixture: Harness,
+  overrides: MaskWorkflowDependencyOverrides = {},
 ): Promise<GrandHallT554NativeReviewMaskWorkflowSessionV2> {
   const priorOwnerWitness = await inspectGrandHallT554NativeReviewPriorOwnerV2({
     sessionRoot: fixture.sessionRoot,
@@ -872,22 +873,20 @@ async function takeOverMaskWorkflowAfterCrash(
   }
   return await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.takeOver(
     { sessionRoot: fixture.sessionRoot, priorOwnerWitness },
-    maskWorkflowDependencies(fixture.withoutCrashSeam()),
+    maskWorkflowDependencies(fixture.withoutCrashSeam(), overrides),
   );
 }
 
 async function maskChildLeafNames(sessionRoot: string): Promise<string[]> {
   return (await readdir(join(sessionRoot, "children")))
-    .filter((name) => name.startsWith("mask-freeze-"))
+    .filter(
+      (name) =>
+        name.startsWith("mask-freeze-") || name.startsWith("mask-resume-"),
+    )
     .sort();
 }
 
-async function maskChildEvidence(sessionRoot: string) {
-  const childNames = await maskChildLeafNames(sessionRoot);
-  const childName = childNames[0];
-  if (childName === undefined || childNames.length !== 1) {
-    throw new Error("mask fixture requires exactly one mask child");
-  }
+async function maskChildEvidenceAt(sessionRoot: string, childName: string) {
   const descriptor: unknown = JSON.parse(
     await readFile(
       join(sessionRoot, "child-scopes", `${childName}.json`),
@@ -912,9 +911,30 @@ async function maskChildEvidence(sessionRoot: string) {
   return evidence;
 }
 
+async function maskChildEvidence(sessionRoot: string) {
+  const childNames = await maskChildLeafNames(sessionRoot);
+  const childName = childNames[0];
+  if (childName === undefined || childNames.length !== 1) {
+    throw new Error("mask fixture requires exactly one mask child");
+  }
+  return await maskChildEvidenceAt(sessionRoot, childName);
+}
+
+async function latestMaskChildEvidence(sessionRoot: string) {
+  const childNames = await maskChildLeafNames(sessionRoot);
+  const childName = childNames.at(-1);
+  if (childName === undefined) {
+    throw new Error("mask fixture requires at least one mask child");
+  }
+  return await maskChildEvidenceAt(sessionRoot, childName);
+}
+
 async function maskDescriptorLeafNames(sessionRoot: string): Promise<string[]> {
   return (await readdir(join(sessionRoot, "child-scopes")))
-    .filter((name) => name.startsWith("mask-freeze-"))
+    .filter(
+      (name) =>
+        name.startsWith("mask-freeze-") || name.startsWith("mask-resume-"),
+    )
     .sort();
 }
 
@@ -2021,7 +2041,7 @@ describe("Grand Hall T-554 source-only durable session v2", () => {
 
 describe("Grand Hall T-554 mask-workflow durable session v2", () => {
   it(
-    "re-verifies a fresh editable source epoch, freezes it, and rejects stale mask-review reopen",
+    "re-verifies editable and frozen source epochs and resumes exact partial mask coverage",
     { timeout: 600_000 },
     async () => {
       const fixture = await harness();
@@ -2294,34 +2314,107 @@ describe("Grand Hall T-554 mask-workflow durable session v2", () => {
           "mask.freeze-committed.v2",
         ]),
       );
+      const predecessorTile = await resumedSession.prepareMaskTile({
+        ...maskRenderBinding(frozen),
+        column: 0,
+        row: 0,
+      });
+      const expectedMask8 = Buffer.from(predecessorTile.mask8);
+      const expectedReason8 = Buffer.from(predecessorTile.reason8);
+      await predecessorTile.commitDeliveryAfterSuccessfulSend();
+      await resumedSession.recordMaskCoverage(maskCoverageInput(frozen));
+      fixture.advance(500);
+      await resumedSession.recordMaskCoverage(maskCoverageInput(frozen));
+      const predecessorEvidence = await maskChildEvidence(fixture.sessionRoot);
+      const predecessorCarry =
+        createGrandHallT554NativeReviewCoverageCarryStateV2(
+          predecessorEvidence,
+        );
+      if (predecessorCarry.kind !== "mask") {
+        throw new Error("mask-review fixture emitted a non-mask carry");
+      }
       await resumedSession.close();
       expect(resumedEpoch).toMatchObject({
         abandoned: true,
         finalized: false,
       });
 
-      const eventsBeforeRejectedReviewReopen = await coordinatorEventTypes(
+      const eventsBeforeReviewResume = await coordinatorEventTypes(
         fixture.sessionRoot,
       );
-      await expect(
-        __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+      const reviewSession =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
           { sessionRoot: fixture.sessionRoot },
           maskWorkflowDependencies(fixture.withoutCrashSeam()),
-        ),
-      ).rejects.toMatchObject({ code: "PHASE_INVALID" });
-      expect(await coordinatorEventTypes(fixture.sessionRoot)).toEqual(
-        eventsBeforeRejectedReviewReopen,
-      );
-      const verified = await verifiedCoordinatorState(fixture.sessionRoot);
-      expect(verified.activeSource).toMatchObject({
-        phase: "mask_review",
-        renderGeneration: 5,
-        maskState: frozen.activeSource.maskState,
-        frozenBindingSha256: frozen.activeSource.frozenBindingSha256,
-        maskJournal: {
-          leafName: frozen.activeSource.maskJournalLeafName,
+        );
+      const reviewResumed = await reviewSession.snapshot();
+      expect(reviewResumed).toMatchObject({
+        workspaceRevision: 6,
+        maximumAllocatedRenderGeneration: 6,
+        browserEpochNumber: frozen.browserEpochNumber + 1,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: 6,
+          maskState: frozen.activeSource.maskState,
+          maskReviewSubjectSha256: frozen.activeSource.maskReviewSubjectSha256,
+          frozenBindingSha256: frozen.activeSource.frozenBindingSha256,
+          frozenBinding: frozen.activeSource.frozenBinding,
         },
       });
+      expect(reviewResumed.activeSource.maskJournalLeafName).not.toBe(
+        frozen.activeSource.maskJournalLeafName,
+      );
+      expect(reviewResumed.activeSource.maskJournalLeafName).toMatch(
+        /^mask-resume-00000006-/u,
+      );
+      const coordinatorTypesAfterResume = await coordinatorEventTypes(
+        fixture.sessionRoot,
+      );
+      expect(
+        coordinatorTypesAfterResume.slice(eventsBeforeReviewResume.length),
+      ).toEqual([
+        "session.browser-epoch-started.v2",
+        "coverage.segment-resume-intended.v2",
+        "coverage.segment-resume-committed.v2",
+      ]);
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(2);
+      const resumedEvidence = await latestMaskChildEvidence(
+        fixture.sessionRoot,
+      );
+      expect(resumedEvidence.events[0]).toMatchObject({
+        eventType: "mask.review-started.v2",
+        payload: { predecessorCoverage: predecessorCarry },
+      });
+      const rehydratedTile = await reviewSession.prepareMaskTile({
+        ...maskRenderBinding(reviewResumed),
+        column: 0,
+        row: 0,
+      });
+      expect(rehydratedTile.mask8).toEqual(expectedMask8);
+      expect(rehydratedTile.reason8).toEqual(expectedReason8);
+      await rehydratedTile.discardAfterFailedSend();
+      const firstResumedObservation = await reviewSession.recordMaskCoverage(
+        maskCoverageInput(reviewResumed),
+      );
+      expect(firstResumedObservation).toMatchObject({
+        sequence: 0,
+        deliveredTileCount: 0,
+        completedTileCount: predecessorCarry.completedTileCount,
+      });
+      const firstObservationCarry =
+        createGrandHallT554NativeReviewCoverageCarryStateV2(
+          await latestMaskChildEvidence(fixture.sessionRoot),
+        );
+      expect(firstObservationCarry).toMatchObject({
+        kind: "mask",
+        cappedDwellMsUint16LeBase64url:
+          predecessorCarry.cappedDwellMsUint16LeBase64url,
+        cappedDwellBytesSha256: predecessorCarry.cappedDwellBytesSha256,
+        completedTileBitsetHex: predecessorCarry.completedTileBitsetHex,
+        completedTileCount: predecessorCarry.completedTileCount,
+        cumulativeDwellStateSha256: predecessorCarry.cumulativeDwellStateSha256,
+      });
+      await reviewSession.close();
     },
   );
 
@@ -3037,11 +3130,152 @@ describe("Grand Hall T-554 mask-workflow durable session v2", () => {
       await maskSession.close();
     },
   );
+
+  it(
+    "latches exact recovery across durable mask-workflow-start and mask-edit seams",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const sourceSession = await freshSession(fixture);
+      await selectFirstSource(sourceSession);
+      await seedExactCompletedSourceCoverage(fixture.sessionRoot);
+      await sourceSession.close();
+      let crashWorkflowStart = true;
+      const dependencies = maskWorkflowDependencies(
+        fixture.withoutCrashSeam(),
+        {
+          seam: {
+            afterMaskWorkflowStartedDurable: () => {
+              if (crashWorkflowStart) {
+                throw new Error(
+                  "injected crash after durable mask workflow start",
+                );
+              }
+            },
+            afterMaskEditDurable: () => {
+              throw new Error("injected crash after durable mask edit");
+            },
+          },
+        },
+      );
+      const starting =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          dependencies,
+        );
+      const sourceReview = await starting.snapshot();
+      await expect(
+        starting.beginMaskWorkflow(maskGuard(sourceReview)),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      await expect(starting.snapshot()).rejects.toMatchObject({
+        code: "CRASH_RECOVERY_REQUIRED",
+      });
+      await starting.close();
+
+      crashWorkflowStart = false;
+      const editing =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          dependencies,
+        );
+      const editable = await editing.snapshot();
+      expect(editable).toMatchObject({
+        workspaceRevision: 3,
+        maximumAllocatedRenderGeneration: 3,
+        activeSource: {
+          phase: "mask_edit",
+          renderGeneration: 3,
+          maskState: { revision: 0 },
+        },
+      });
+      await expect(
+        editing.applyMaskEdit({
+          ...maskGuard(editable),
+          edit: {
+            expectedRevision: 0,
+            operation: "include",
+            primitive: {
+              kind: "rectangle",
+              horizontalSeam: "none",
+              leftPx: 0,
+              topPx: 0,
+              rightExclusivePx: 8,
+              bottomExclusivePx: 8,
+            },
+          },
+        }),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      await expect(editing.snapshot()).rejects.toMatchObject({
+        code: "CRASH_RECOVERY_REQUIRED",
+      });
+      await editing.close();
+
+      const recovered =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam()),
+        );
+      expect(await recovered.snapshot()).toMatchObject({
+        workspaceRevision: 5,
+        maximumAllocatedRenderGeneration: 5,
+        activeSource: {
+          phase: "mask_edit",
+          renderGeneration: 5,
+          maskState: { revision: 1, includedPixelCount: 64 },
+        },
+      });
+      const eventTypes = await coordinatorEventTypes(fixture.sessionRoot);
+      expect(
+        eventTypes.filter(
+          (eventType) => eventType === "mask.workflow-started.v2",
+        ),
+      ).toHaveLength(1);
+      expect(
+        eventTypes.filter((eventType) => eventType === "mask.edited.v2"),
+      ).toHaveLength(1);
+      expect(
+        eventTypes.filter(
+          (eventType) => eventType === "mask.edit-epoch-resumed.v2",
+        ),
+      ).toHaveLength(2);
+      await recovered.close();
+    },
+  );
 });
 
 describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
   it(
-    "completes an intent-only freeze and rejects mask review before browser rotation",
+    "fails closed without appending when takeover encounters a pending source mutation",
+    { timeout: 180_000 },
+    async () => {
+      const fixture = await harness({
+        afterSourceSelectionIntentDurable: () => {
+          throw new Error("injected crash after source selection intent");
+        },
+      });
+      const sourceSession = await freshSession(fixture);
+      await expect(selectFirstSource(sourceSession)).rejects.toThrow(
+        "injected crash after source selection intent",
+      );
+      const beforeMaskTakeover = await coordinatorEvents(fixture.sessionRoot);
+      expect(beforeMaskTakeover.at(-1)?.eventType).toBe(
+        "source.selection-intended.v2",
+      );
+
+      await expect(
+        takeOverMaskWorkflowAfterCrash(fixture),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      expect(await coordinatorEvents(fixture.sessionRoot)).toEqual(
+        beforeMaskTakeover,
+      );
+      await expect(sourceSession.close()).rejects.toMatchObject({
+        code: "STALE_LEASE",
+      });
+    },
+  );
+
+  it(
+    "completes an intent-only freeze and immediately resumes its exact mask review",
     { timeout: 600_000 },
     async () => {
       const fixture = await harness();
@@ -3071,18 +3305,14 @@ describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
         "mask.freeze-intended.v2",
       );
 
-      await expect(
-        takeOverMaskWorkflowAfterCrash(fixture),
-      ).rejects.toMatchObject({ code: "PHASE_INVALID" });
-      const recoveredState = await verifiedCoordinatorState(
-        fixture.sessionRoot,
-      );
+      const recovered = await takeOverMaskWorkflowAfterCrash(fixture);
+      const recoveredState = await recovered.snapshot();
       expect(recoveredState).toMatchObject({
-        workspaceRevision: 4,
-        maximumAllocatedRenderGeneration: 4,
+        workspaceRevision: 5,
+        maximumAllocatedRenderGeneration: 5,
         activeSource: {
           phase: "mask_review",
-          renderGeneration: 4,
+          renderGeneration: 5,
           maskState: { revision: 1, includedPixelCount: 64 },
           frozenBinding: {
             revision: 1,
@@ -3094,9 +3324,9 @@ describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
       expect(
         await readdir(join(fixture.sessionRoot, "mask-evidence")),
       ).toHaveLength(2);
-      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(1);
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(2);
       expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toHaveLength(
-        1,
+        2,
       );
       const recoveredTypes = await coordinatorEventTypes(fixture.sessionRoot);
       const intentIndex = recoveredTypes.lastIndexOf("mask.freeze-intended.v2");
@@ -3106,10 +3336,22 @@ describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
       const browserIndex = recoveredTypes.lastIndexOf(
         "session.browser-epoch-started.v2",
       );
+      const resumeIntentIndex = recoveredTypes.lastIndexOf(
+        "coverage.segment-resume-intended.v2",
+      );
+      const resumeCommitIndex = recoveredTypes.lastIndexOf(
+        "coverage.segment-resume-committed.v2",
+      );
       expect(intentIndex).toBeGreaterThanOrEqual(0);
       expect(commitIndex).toBeGreaterThan(intentIndex);
-      expect(browserIndex).toBeLessThan(intentIndex);
+      expect(browserIndex).toBeGreaterThan(commitIndex);
+      expect(resumeIntentIndex).toBeGreaterThan(browserIndex);
+      expect(resumeCommitIndex).toBeGreaterThan(resumeIntentIndex);
       expect(recoveredTypes).not.toContain("mask.freeze-recovery-aborted.v2");
+      await recovered.close();
+      await expect(session.close()).rejects.toMatchObject({
+        code: "RESOURCE_CLEANUP_FAILED",
+      });
     },
   );
 
@@ -3234,18 +3476,14 @@ describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
       expect(await maskChildLeafNames(fixture.sessionRoot)).toEqual([]);
       expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toEqual([]);
 
-      await expect(
-        takeOverMaskWorkflowAfterCrash(fixture),
-      ).rejects.toMatchObject({ code: "PHASE_INVALID" });
-      const recoveredState = await verifiedCoordinatorState(
-        fixture.sessionRoot,
-      );
+      const recovered = await takeOverMaskWorkflowAfterCrash(fixture);
+      const recoveredState = await recovered.snapshot();
       expect(recoveredState).toMatchObject({
-        workspaceRevision: 4,
-        maximumAllocatedRenderGeneration: 4,
+        workspaceRevision: 5,
+        maximumAllocatedRenderGeneration: 5,
         activeSource: {
           phase: "mask_review",
-          renderGeneration: 4,
+          renderGeneration: 5,
           maskState: { revision: 1, includedPixelCount: 64 },
           frozenBinding: { revision: 1, includedPixelCount: 64 },
         },
@@ -3253,9 +3491,9 @@ describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
       expect(
         await readdir(join(fixture.sessionRoot, "mask-evidence")),
       ).toHaveLength(2);
-      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(1);
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(2);
       expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toHaveLength(
-        1,
+        2,
       );
       const recoveredTypes = await coordinatorEventTypes(fixture.sessionRoot);
       expect(
@@ -3264,6 +3502,15 @@ describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
         ),
       ).toHaveLength(1);
       expect(recoveredTypes).not.toContain("mask.freeze-recovery-aborted.v2");
+      expect(
+        recoveredTypes.filter(
+          (eventType) => eventType === "coverage.segment-resume-committed.v2",
+        ),
+      ).toHaveLength(1);
+      await recovered.close();
+      await expect(session.close()).rejects.toMatchObject({
+        code: "RESOURCE_CLEANUP_FAILED",
+      });
     },
   );
 
@@ -3350,28 +3597,30 @@ describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
       }
       expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toEqual([]);
 
-      await expect(
-        takeOverMaskWorkflowAfterCrash(fixture),
-      ).rejects.toMatchObject({ code: "PHASE_INVALID" });
-      const recoveredState = await verifiedCoordinatorState(
-        fixture.sessionRoot,
-      );
+      const recovered = await takeOverMaskWorkflowAfterCrash(fixture);
+      const recoveredState = await recovered.snapshot();
       expect(recoveredState).toMatchObject({
-        workspaceRevision: 4,
-        maximumAllocatedRenderGeneration: 4,
+        workspaceRevision: 5,
+        maximumAllocatedRenderGeneration: 5,
         activeSource: {
           phase: "mask_review",
-          renderGeneration: 4,
+          renderGeneration: 5,
           maskState: { revision: 1, includedPixelCount: 64 },
-          maskJournal: { leafName: childNameBeforeRecovery },
         },
       });
-      expect(await maskChildLeafNames(fixture.sessionRoot)).toEqual(
-        childNamesBeforeRecovery,
+      expect(recoveredState.activeSource.maskJournalLeafName).not.toBe(
+        childNameBeforeRecovery,
       );
-      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toEqual([
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(2);
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toContain(
+        childNameBeforeRecovery,
+      );
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toHaveLength(
+        2,
+      );
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toContain(
         `${childNameBeforeRecovery}.json`,
-      ]);
+      );
       const recoveredTypes = await coordinatorEventTypes(fixture.sessionRoot);
       expect(
         recoveredTypes.filter(
@@ -3379,6 +3628,380 @@ describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
         ),
       ).toHaveLength(1);
       expect(recoveredTypes).not.toContain("mask.freeze-recovery-aborted.v2");
+      expect(
+        recoveredTypes.filter(
+          (eventType) => eventType === "coverage.segment-resume-committed.v2",
+        ),
+      ).toHaveLength(1);
+      await recovered.close();
+      await expect(session.close()).rejects.toMatchObject({
+        code: "RESOURCE_CLEANUP_FAILED",
+      });
+    },
+  );
+
+  it(
+    "recovery-aborts an intent-only mask coverage resume, preserves the frozen workspace, and retries with fresh identities",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const { session, edited } = await createEditedMaskWorkflow(
+        fixture,
+        maskWorkflowDependencies(fixture.withoutCrashSeam()),
+      );
+      const frozen = await session.freezeMask({
+        ...maskGuard(edited),
+        expectedMaskRevision: 1,
+      });
+      const stalePendingTile = await session.prepareMaskTile({
+        ...maskRenderBinding(frozen),
+        column: 0,
+        row: 0,
+      });
+      const expectedMask8 = Buffer.from(stalePendingTile.mask8);
+      const expectedReason8 = Buffer.from(stalePendingTile.reason8);
+
+      await expect(
+        takeOverMaskWorkflowAfterCrash(fixture, {
+          seam: {
+            afterMaskCoverageResumeIntentDurable: () => {
+              throw new Error("injected crash after mask resume intent");
+            },
+          },
+        }),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      const afterCrash = await verifiedCoordinatorState(fixture.sessionRoot);
+      expect(afterCrash).toMatchObject({
+        workspaceRevision: frozen.workspaceRevision,
+        maximumAllocatedRenderGeneration:
+          frozen.maximumAllocatedRenderGeneration + 1,
+        pendingIntent: {
+          kind: "coverage_resume",
+          allocatedRenderGeneration:
+            frozen.maximumAllocatedRenderGeneration + 1,
+        },
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: frozen.activeSource.renderGeneration,
+          maskState: frozen.activeSource.maskState,
+          frozenBindingSha256: frozen.activeSource.frozenBindingSha256,
+        },
+      });
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(1);
+
+      await expect(
+        __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam(), {
+            seam: {
+              afterMaskCoverageResumeRecoveryAbortDurable: () => {
+                throw new Error(
+                  "injected crash after mask resume recovery-abort",
+                );
+              },
+            },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      const afterDurableAbort = await verifiedCoordinatorState(
+        fixture.sessionRoot,
+      );
+      expect(afterDurableAbort).toMatchObject({
+        workspaceRevision: frozen.workspaceRevision,
+        maximumAllocatedRenderGeneration:
+          frozen.maximumAllocatedRenderGeneration + 1,
+        pendingIntent: null,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: frozen.activeSource.renderGeneration,
+          maskState: frozen.activeSource.maskState,
+          frozenBindingSha256: frozen.activeSource.frozenBindingSha256,
+        },
+      });
+
+      const recovered =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam()),
+        );
+      const snapshot = await recovered.snapshot();
+      expect(snapshot).toMatchObject({
+        workspaceRevision: frozen.workspaceRevision + 1,
+        maximumAllocatedRenderGeneration:
+          frozen.maximumAllocatedRenderGeneration + 2,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: frozen.activeSource.renderGeneration + 2,
+          maskState: frozen.activeSource.maskState,
+          maskReviewSubjectSha256: frozen.activeSource.maskReviewSubjectSha256,
+          frozenBindingSha256: frozen.activeSource.frozenBindingSha256,
+          frozenBinding: frozen.activeSource.frozenBinding,
+        },
+      });
+      const events = await coordinatorEvents(fixture.sessionRoot);
+      const intents = events.filter(
+        (candidate) =>
+          candidate.eventType === "coverage.segment-resume-intended.v2" &&
+          candidate.payload.kind === "mask",
+      );
+      const aborts = events.filter(
+        (candidate) =>
+          candidate.eventType ===
+            "coverage.segment-resume-recovery-aborted.v2" &&
+          candidate.payload.kind === "mask",
+      );
+      const commits = events.filter(
+        (candidate) =>
+          candidate.eventType === "coverage.segment-resume-committed.v2" &&
+          candidate.payload.kind === "mask",
+      );
+      expect(intents).toHaveLength(2);
+      expect(aborts).toHaveLength(1);
+      expect(commits).toHaveLength(1);
+      const firstIntent = intents[0];
+      const secondIntent = intents[1];
+      if (
+        firstIntent?.eventType !== "coverage.segment-resume-intended.v2" ||
+        firstIntent.payload.kind !== "mask" ||
+        secondIntent?.eventType !== "coverage.segment-resume-intended.v2" ||
+        secondIntent.payload.kind !== "mask"
+      ) {
+        throw new Error("mask resume retry fixture lost its exact intents");
+      }
+      expect(aborts[0]?.payload).toMatchObject({
+        workspaceRevision: frozen.workspaceRevision,
+        consumedRenderGeneration: frozen.maximumAllocatedRenderGeneration + 1,
+        recovery: {
+          childDisposition: "absent",
+          abandonedChildJournal: null,
+        },
+      });
+      expect(firstIntent.payload.operationIdSha256).not.toBe(
+        secondIntent.payload.operationIdSha256,
+      );
+      expect(firstIntent.payload.newCoverageSegmentIdSha256).not.toBe(
+        secondIntent.payload.newCoverageSegmentIdSha256,
+      );
+      expect(firstIntent.payload.newSourceEpochNonceSha256).not.toBe(
+        secondIntent.payload.newSourceEpochNonceSha256,
+      );
+      const rehydrated = await recovered.prepareMaskTile({
+        ...maskRenderBinding(snapshot),
+        column: 0,
+        row: 0,
+      });
+      expect(rehydrated.mask8).toEqual(expectedMask8);
+      expect(rehydrated.reason8).toEqual(expectedReason8);
+      await rehydrated.discardAfterFailedSend();
+      await recovered.close();
+      await expect(session.close()).rejects.toMatchObject({
+        code: "RESOURCE_CLEANUP_FAILED",
+      });
+      expect(stalePendingTile.sourceRgb8.every((value) => value === 0)).toBe(
+        true,
+      );
+      expect(stalePendingTile.mask8.every((value) => value === 0)).toBe(true);
+      expect(stalePendingTile.reason8.every((value) => value === 0)).toBe(true);
+
+      const reopened =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam()),
+        );
+      await reopened.close();
+      expect(
+        (await coordinatorEvents(fixture.sessionRoot)).filter(
+          (candidate) =>
+            candidate.eventType ===
+              "coverage.segment-resume-recovery-aborted.v2" &&
+            candidate.payload.kind === "mask",
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    {
+      boundary: "child",
+      expectedDescriptorCountAfterCrash: 1,
+    },
+    {
+      boundary: "descriptor",
+      expectedDescriptorCountAfterCrash: 2,
+    },
+    {
+      boundary: "root-verification",
+      expectedDescriptorCountAfterCrash: 2,
+    },
+  ] as const)(
+    "reconciles and recovery-aborts an exact revision-one mask resume stopped at its $boundary boundary",
+    { timeout: 600_000 },
+    async ({ boundary, expectedDescriptorCountAfterCrash }) => {
+      const fixture = await harness();
+      const { session, edited } = await createEditedMaskWorkflow(
+        fixture,
+        maskWorkflowDependencies(fixture.withoutCrashSeam()),
+      );
+      const frozen = await session.freezeMask({
+        ...maskGuard(edited),
+        expectedMaskRevision: 1,
+      });
+      const crash = (): never => {
+        throw new Error(`injected crash after mask resume ${boundary}`);
+      };
+      await expect(
+        takeOverMaskWorkflowAfterCrash(fixture, {
+          seam:
+            boundary === "child"
+              ? { afterMaskCoverageResumeChildPublished: crash }
+              : boundary === "descriptor"
+                ? { afterMaskCoverageResumeDescriptorPublished: crash }
+                : {
+                    afterMaskCoverageResumeChildStartPublishedBeforeRootVerification:
+                      crash,
+                  },
+        }),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(2);
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toHaveLength(
+        expectedDescriptorCountAfterCrash,
+      );
+
+      const recovered =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam()),
+        );
+      const snapshot = await recovered.snapshot();
+      expect(snapshot).toMatchObject({
+        workspaceRevision: frozen.workspaceRevision + 1,
+        maximumAllocatedRenderGeneration:
+          frozen.maximumAllocatedRenderGeneration + 2,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: frozen.activeSource.renderGeneration + 2,
+          maskState: frozen.activeSource.maskState,
+          frozenBindingSha256: frozen.activeSource.frozenBindingSha256,
+        },
+      });
+      const aborts = (await coordinatorEvents(fixture.sessionRoot)).filter(
+        (candidate) =>
+          candidate.eventType ===
+            "coverage.segment-resume-recovery-aborted.v2" &&
+          candidate.payload.kind === "mask",
+      );
+      expect(aborts).toHaveLength(1);
+      expect(aborts[0]?.payload).toMatchObject({
+        workspaceRevision: frozen.workspaceRevision,
+        consumedRenderGeneration: frozen.maximumAllocatedRenderGeneration + 1,
+        recovery: {
+          childDisposition: "exact_abandoned",
+          abandonedChildJournal: { kind: "mask", revision: 1 },
+        },
+      });
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(3);
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toHaveLength(
+        3,
+      );
+      await recovered.close();
+      await expect(session.close()).rejects.toMatchObject({
+        code: "RESOURCE_CLEANUP_FAILED",
+      });
+    },
+  );
+
+  it(
+    "never aborts a commit-durable mask coverage resume and uses that start-only child as the next predecessor",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const { session, edited } = await createEditedMaskWorkflow(
+        fixture,
+        maskWorkflowDependencies(fixture.withoutCrashSeam()),
+      );
+      const frozen = await session.freezeMask({
+        ...maskGuard(edited),
+        expectedMaskRevision: 1,
+      });
+      await expect(
+        takeOverMaskWorkflowAfterCrash(fixture, {
+          seam: {
+            afterMaskCoverageResumeCommitDurable: () => {
+              throw new Error("injected crash after mask resume commit");
+            },
+          },
+        }),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      const committed = await verifiedCoordinatorState(fixture.sessionRoot);
+      expect(committed).toMatchObject({
+        workspaceRevision: frozen.workspaceRevision + 1,
+        maximumAllocatedRenderGeneration:
+          frozen.maximumAllocatedRenderGeneration + 1,
+        pendingIntent: null,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: frozen.activeSource.renderGeneration + 1,
+        },
+      });
+
+      const recovered =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam()),
+        );
+      const snapshot = await recovered.snapshot();
+      expect(snapshot).toMatchObject({
+        workspaceRevision: frozen.workspaceRevision + 2,
+        maximumAllocatedRenderGeneration:
+          frozen.maximumAllocatedRenderGeneration + 2,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: frozen.activeSource.renderGeneration + 2,
+        },
+      });
+      const events = await coordinatorEvents(fixture.sessionRoot);
+      const intents = events.filter(
+        (candidate) =>
+          candidate.eventType === "coverage.segment-resume-intended.v2" &&
+          candidate.payload.kind === "mask",
+      );
+      const commits = events.filter(
+        (candidate) =>
+          candidate.eventType === "coverage.segment-resume-committed.v2" &&
+          candidate.payload.kind === "mask",
+      );
+      const aborts = events.filter(
+        (candidate) =>
+          candidate.eventType ===
+            "coverage.segment-resume-recovery-aborted.v2" &&
+          candidate.payload.kind === "mask",
+      );
+      expect(intents).toHaveLength(2);
+      expect(commits).toHaveLength(2);
+      expect(aborts).toHaveLength(0);
+      const secondIntent = intents[1];
+      const firstCommit = commits[0];
+      if (
+        secondIntent?.eventType !== "coverage.segment-resume-intended.v2" ||
+        secondIntent.payload.kind !== "mask" ||
+        firstCommit?.eventType !== "coverage.segment-resume-committed.v2" ||
+        firstCommit.payload.kind !== "mask"
+      ) {
+        throw new Error(
+          "commit-durable fixture lost its exact mask resume events",
+        );
+      }
+      expect(
+        secondIntent.payload.predecessorCoverage.predecessorJournal,
+      ).toEqual(firstCommit.payload.maskJournal);
+      expect(secondIntent.payload.predecessorCoverage.completedTileCount).toBe(
+        0,
+      );
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(3);
+      await recovered.close();
+      await expect(session.close()).rejects.toMatchObject({
+        code: "RESOURCE_CLEANUP_FAILED",
+      });
     },
   );
 });
