@@ -967,6 +967,7 @@ function expectReplayError(
   sessionScope: unknown,
   events: readonly unknown[],
   code: GrandHallT554NativeReviewCoordinatorReplayV2Error["code"],
+  message?: string,
 ): void {
   try {
     replayGrandHallT554NativeReviewCoordinatorV2({
@@ -979,6 +980,7 @@ function expectReplayError(
     );
     if (error instanceof GrandHallT554NativeReviewCoordinatorReplayV2Error) {
       expect(error.code).toBe(code);
+      if (message !== undefined) expect(error.message).toBe(message);
       return;
     }
   }
@@ -1060,6 +1062,205 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
     expect(Object.isFrozen(replay.recordedSourceDecisions)).toBe(true);
     expect(Object.isFrozen(replay.recordedSourceDecisions[0])).toBe(true);
     expect(Object.isFrozen(replay.recordedHumanAttestations[0])).toBe(true);
+  });
+
+  it("allows a distinct source but rejects a second decision for the same source bytes or review subject", () => {
+    const scenario = validLifecycle();
+    const finalMaskCheckpoint = maskCheckpoint(4);
+    const firstDecision = includeDecision(scenario, finalMaskCheckpoint);
+    const firstAttestation = humanAttestation(
+      scenario,
+      firstDecision.payload.decisionSha256,
+      5,
+    );
+    const firstAbandonment = envelope("source.abandoned.v2", {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-source-abandoned.v2" as const,
+      browserEpochNonceSha256: scenario.browserNonce,
+      previousWorkspaceRevision: 6,
+      resultingWorkspaceRevision: 7,
+      sourceCustody: scenario.custody,
+      finalRenderGeneration: 5,
+      sourceJournal: sourceCheckpoint(4),
+      maskJournal: finalMaskCheckpoint,
+      reason: "source_switch" as const,
+    });
+    const secondCustodies = [
+      {
+        seed: "same-source-and-subject",
+        conflicts: true,
+        custody: sourceCustody(6, "source-epoch-2"),
+      },
+      {
+        seed: "same-source-identity",
+        conflicts: true,
+        custody: {
+          ...sourceCustody(6, "source-epoch-3"),
+          sourceReviewSubjectSha256: digest("different-source-subject"),
+        },
+      },
+      {
+        seed: "same-source-bytes-relabelled",
+        conflicts: true,
+        custody: {
+          ...sourceCustody(6, "source-epoch-relabelled"),
+          source: {
+            ...source(1),
+            sha256: source().sha256,
+            byteLength: source().byteLength,
+          },
+          sourceVerification: {
+            ...sourceVerification(1),
+            sha256: source().sha256,
+            byteLength: source().byteLength,
+          },
+          sourceReviewSubjectSha256: digest("relabelled-source-subject"),
+        },
+      },
+      {
+        seed: "same-review-subject",
+        conflicts: true,
+        custody: {
+          ...sourceCustody(6, "source-epoch-4"),
+          source: source(1),
+          sourceVerification: sourceVerification(1),
+        },
+      },
+      {
+        seed: "distinct-source-and-subject",
+        conflicts: false,
+        custody: {
+          ...sourceCustody(6, "source-epoch-distinct"),
+          source: source(1),
+          sourceVerification: sourceVerification(1),
+          sourceReviewSubjectSha256: digest("distinct-source-subject"),
+        },
+      },
+    ];
+
+    for (const candidate of secondCustodies) {
+      const leafName = `${candidate.seed}-child`;
+      const operationIdSha256 = digest(`${candidate.seed}-selection`);
+      const coverageSegmentIdSha256 = digest(`${candidate.seed}-segment`);
+      const initialCheckpoint = sourceCheckpoint(1, leafName);
+      const completedCheckpoint = sourceCheckpoint(4, leafName);
+      const decisionMaterial = {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+        operationIdSha256: digest(`${candidate.seed}-decision`),
+        browserEpochNonceSha256: scenario.browserNonce,
+        previousWorkspaceRevision: 8,
+        resultingWorkspaceRevision: 9,
+        sessionIdSha256: scenario.scope.sessionIdSha256,
+        registry: scenario.scope.registry,
+        implementationManifest: scenario.scope.implementationManifest,
+        authorityBoundary: scenario.scope.authorityBoundary,
+        sourceCustody: candidate.custody,
+        previousRenderGeneration: 6,
+        resultingRenderGeneration: 7,
+        completedSourceCoverage: {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-completed-source-coverage.v2" as const,
+          sourceReviewSubjectSha256:
+            candidate.custody.sourceReviewSubjectSha256,
+          sourceJournal: completedCheckpoint,
+          completedTileBitsetHex: "ff".repeat(64),
+          completedTileCount: 512 as const,
+          cumulativeDwellStateSha256: digest(
+            `${candidate.seed}-completed-dwell`,
+          ),
+        },
+        note: "A conflicting second decision must require explicit supersession.",
+        decidedAtUtc: NOW,
+        result: "EXCLUDE" as const,
+        classification: "no_observed_grand_hall_pixels" as const,
+        maskState: null,
+        maskReviewSubjectSha256: null,
+        frozenBindingSha256: null,
+        frozenBinding: null,
+        completedMaskCoverage: null,
+      };
+      const secondDecision = envelope("source.decision-recorded.v2", {
+        ...decisionMaterial,
+        decisionSha256:
+          computeGrandHallT554NativeReviewSourceDecisionV2Sha256(
+            decisionMaterial,
+          ),
+      });
+      const reselectedEvents = [
+        ...scenario.events.slice(0, 8),
+        firstDecision,
+        firstAttestation,
+        firstAbandonment,
+        envelope("source.selection-intended.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-source-selection-intended.v2" as const,
+          operationIdSha256,
+          browserEpochNonceSha256: scenario.browserNonce,
+          expectedWorkspaceRevision: 7,
+          source: candidate.custody.source,
+          sourceEpochNonceSha256: candidate.custody.sourceEpochNonceSha256,
+          coverageSegmentIdSha256,
+          previousRenderGeneration: 5,
+          allocatedRenderGeneration: 6,
+          childJournalLeafName: leafName,
+          priorActiveSourceJournal: null,
+        }),
+        envelope("source.selection-committed.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-source-selection-committed.v2" as const,
+          operationIdSha256,
+          browserEpochNonceSha256: scenario.browserNonce,
+          coverageSegmentIdSha256,
+          previousWorkspaceRevision: 7,
+          resultingWorkspaceRevision: 8,
+          renderGeneration: 6,
+          sourceCustody: candidate.custody,
+          sourceJournal: initialCheckpoint,
+        }),
+      ];
+      const reselected = replayGrandHallT554NativeReviewCoordinatorV2({
+        scope: scenario.scope,
+        events: reselectedEvents,
+      });
+      expect(reselected).toMatchObject({
+        workspaceRevision: 8,
+        maximumAllocatedRenderGeneration: 6,
+        activeSource: { phase: "source_review" },
+        recordedSourceDecisions: [
+          {
+            result: "INCLUDE",
+            decisionSha256: firstDecision.payload.decisionSha256,
+          },
+        ],
+        recordedHumanAttestations: [
+          { attestationSha256: firstAttestation.payload.attestationSha256 },
+        ],
+      });
+      if (!candidate.conflicts) {
+        const decided = replayGrandHallT554NativeReviewCoordinatorV2({
+          scope: scenario.scope,
+          events: [...reselectedEvents, secondDecision],
+        });
+        expect(decided.recordedSourceDecisions).toMatchObject([
+          {
+            result: "INCLUDE",
+            decisionSha256: firstDecision.payload.decisionSha256,
+          },
+          {
+            result: "EXCLUDE",
+            decisionSha256: secondDecision.payload.decisionSha256,
+          },
+        ]);
+        continue;
+      }
+      expectReplayError(
+        scenario.scope,
+        [...reselectedEvents, secondDecision],
+        "TRANSITION_INVALID",
+        "A source or source-review subject already has a recorded decision; pre-seal replay forbids another.",
+      );
+    }
   });
 
   it("records an INCLUDE only after exact frozen-mask coverage and preserves both child heads", () => {

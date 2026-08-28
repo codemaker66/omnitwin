@@ -27,6 +27,7 @@ import {
   computeGrandHallT554NativeReviewFrozenMaskBindingV2Sha256,
   computeGrandHallT554NativeReviewFrozenMaskEvidenceV2Sha256,
   computeGrandHallT554NativeReviewMaskSubjectV2Sha256,
+  computeGrandHallT554NativeReviewPreparedMaskBindingV2Sha256,
   computeGrandHallT554NativeReviewPreparedMaskEvidenceV2Sha256,
 } from "../grand-hall-t554-native-review-coordinator-replay-v2.js";
 import {
@@ -38,10 +39,14 @@ import {
 } from "../grand-hall-t554-native-review-durable-journal-v2.js";
 import {
   GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
   GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+  computeGrandHallT554NativeReviewHumanAttestationV2Sha256,
   computeGrandHallT554NativeReviewSourceDecisionV2Sha256,
   type GrandHallT554NativeReviewCoordinatorEventV2,
   type GrandHallT554NativeReviewCoverageObservedPayloadV2,
+  type GrandHallT554NativeReviewFrozenMaskBindingV2,
+  type GrandHallT554NativeReviewMaskChildCheckpointV2,
   type GrandHallT554NativeReviewMaskChildEventV2,
   type GrandHallT554NativeReviewMaskScopeV2,
   type GrandHallT554NativeReviewSessionScopeV2,
@@ -728,6 +733,7 @@ async function fixture(options: {
   readonly disposition?: Disposition;
   readonly forgedCheckpoint?: boolean;
   readonly forgedMaskState?: boolean;
+  readonly completedSource?: boolean;
   readonly completedWorkflow?: boolean;
 } = {}): Promise<Fixture> {
   const disposition = options.disposition ?? "committed";
@@ -853,7 +859,10 @@ async function fixture(options: {
       throw new Error("source fixture produced a non-source checkpoint");
     }
     checkpoint = evidence.checkpoint;
-    if (options.completedWorkflow === true) {
+    if (
+      options.completedSource === true ||
+      options.completedWorkflow === true
+    ) {
       const coverageEvents = completeSourceCoverageEvents(sourceScope);
       await bulkAppendExactChildFixture({
         journalRoot: childRoot,
@@ -981,7 +990,7 @@ async function fixture(options: {
     );
   }
 
-  if (completedCoverage !== null) {
+  if (completedCoverage !== null && options.completedWorkflow === true) {
     if (disposition !== "committed") {
       throw new Error("completed workflow fixture requires a committed source");
     }
@@ -1498,6 +1507,466 @@ async function maskDecisionProofFixture(complete: boolean) {
   };
 }
 
+interface DecisionCompositionFixture {
+  readonly built: Fixture;
+  readonly decisionSha256: Sha256;
+  readonly attestationSha256: Sha256;
+  readonly maskLeafName: string | null;
+}
+
+async function decisionCompositionFixture(
+  result: "INCLUDE" | "EXCLUDE",
+): Promise<DecisionCompositionFixture> {
+  const built = await fixture(
+    result === "INCLUDE"
+      ? { completedWorkflow: true }
+      : { completedSource: true },
+  );
+  const sourceEvidence =
+    await openGrandHallT554NativeReviewVerifiedDurableChildEvidenceV2({
+      workspaceRoot: join(built.root, "children", built.leafName),
+      expectedScope: built.sourceScope,
+    });
+  if (sourceEvidence.kind !== "source") {
+    throw new Error("decision composition fixture produced a non-source child");
+  }
+  const sourceCarry =
+    createGrandHallT554NativeReviewCoverageCarryStateV2(sourceEvidence);
+  if (sourceCarry.kind !== "source") {
+    throw new Error("decision composition fixture produced a non-source carry");
+  }
+  const completedSourceCoverage = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-completed-source-coverage.v2" as const,
+    sourceReviewSubjectSha256:
+      built.sourceScope.sourceCustody.sourceReviewSubjectSha256,
+    sourceJournal: sourceEvidence.checkpoint,
+    completedTileBitsetHex: sourceCarry.completedTileBitsetHex,
+    completedTileCount: sourceCarry.completedTileCount,
+    cumulativeDwellStateSha256: sourceCarry.cumulativeDwellStateSha256,
+  };
+  const coordinator = await openGrandHallT554NativeReviewDurableJournalV2({
+    workspaceRoot: join(built.root, "coordinator"),
+    expectedScope: built.scope,
+  });
+
+  let decisionSha256: Sha256;
+  let coordinatorRevisionAfterDecision: number;
+  let attestationPreviousWorkspaceRevision: number;
+  let finalRenderGeneration: number;
+  let maskCheckpoint: GrandHallT554NativeReviewMaskChildCheckpointV2 | null =
+    null;
+  let maskLeafName: string | null = null;
+
+  if (result === "EXCLUDE") {
+    const decisionMaterial = {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+      operationIdSha256: digest("full-exclude-decision-operation"),
+      browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+      previousWorkspaceRevision: 1,
+      resultingWorkspaceRevision: 2,
+      sessionIdSha256: built.scope.sessionIdSha256,
+      registry: built.scope.registry,
+      implementationManifest: built.scope.implementationManifest,
+      authorityBoundary: built.scope.authorityBoundary,
+      sourceCustody: built.sourceScope.sourceCustody,
+      previousRenderGeneration: 1,
+      resultingRenderGeneration: 2,
+      completedSourceCoverage,
+      note: "Exact native review found no observed Grand Hall pixels.",
+      decidedAtUtc: new Date().toISOString(),
+      result: "EXCLUDE" as const,
+      classification: "no_observed_grand_hall_pixels" as const,
+      maskState: null,
+      maskReviewSubjectSha256: null,
+      frozenBindingSha256: null,
+      frozenBinding: null,
+      completedMaskCoverage: null,
+    };
+    decisionSha256 =
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(
+        decisionMaterial,
+      );
+    await coordinator.append({
+      expectedRevision: 4,
+      event: envelope("source.decision-recorded.v2", {
+        ...decisionMaterial,
+        decisionSha256,
+      }),
+    });
+    coordinatorRevisionAfterDecision = 5;
+    attestationPreviousWorkspaceRevision = 2;
+    finalRenderGeneration = 2;
+  } else {
+    const sourceCustody = built.sourceScope.sourceCustody;
+    const replayContext = {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-mask-replay-context.v2" as const,
+      sessionIdSha256: built.scope.sessionIdSha256,
+      registry: built.scope.registry,
+      implementationManifest: built.scope.implementationManifest,
+      source: sourceCustody.source,
+      sourceVerification: sourceCustody.sourceVerification,
+      sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+    };
+    const maskArtifacts = await (async () => {
+      const maskStore = new GrandHallT554NativeMaskRevisionStore({
+        source: sourceCustody.source,
+        publicationDirectory: join(built.root, "mask-evidence"),
+      });
+      try {
+        const initialExact = maskStore.exactStateV2(replayContext);
+        const edit = {
+          expectedRevision: 0,
+          operation: "include" as const,
+          primitive: {
+            kind: "rectangle" as const,
+            horizontalSeam: "none" as const,
+            leftPx: 0,
+            topPx: 0,
+            rightExclusivePx: 1,
+            bottomExclusivePx: 1,
+          },
+        };
+        maskStore.applyEdit(edit);
+        const resultingExact = maskStore.exactStateV2(replayContext);
+        const frozen = await maskStore.freeze({ expectedRevision: 1 });
+        return { edit, frozen, initialExact, resultingExact };
+      } finally {
+        maskStore.abandon();
+      }
+    })();
+    const initialMaskState = {
+      revision: maskArtifacts.initialExact.revision,
+      maskStateSha256: maskArtifacts.initialExact.maskStateSha256,
+      includedPixelCount: maskArtifacts.initialExact.includedPixelCount,
+      excludedPixelCount: maskArtifacts.initialExact.excludedPixelCount,
+      reasonCounts: mutableReasonCounts(maskArtifacts.initialExact.reasonCounts),
+    };
+    const maskState = {
+      revision: maskArtifacts.resultingExact.revision,
+      maskStateSha256: maskArtifacts.resultingExact.maskStateSha256,
+      includedPixelCount: maskArtifacts.resultingExact.includedPixelCount,
+      excludedPixelCount: maskArtifacts.resultingExact.excludedPixelCount,
+      reasonCounts: mutableReasonCounts(
+        maskArtifacts.resultingExact.reasonCounts,
+      ),
+    };
+    const frozen: GrandHallT554NativeReviewFrozenMaskBindingV2 = {
+      ...maskArtifacts.frozen,
+      permittedPixelValues: [0, 255],
+      reasonCounts: mutableReasonCounts(maskArtifacts.frozen.reasonCounts),
+      reasonMap: {
+        ...maskArtifacts.frozen.reasonMap,
+        permittedPixelValues: [0, 1, 2, 3, 4, 5],
+        reasonSampleCodebook: [
+          { sample: 1, reasonCode: "adjacent_room_pixels" },
+          { sample: 2, reasonCode: "portal_beyond_grand_hall_plane" },
+          { sample: 3, reasonCode: "facade_or_exterior_pixels" },
+          {
+            sample: 4,
+            reasonCode: "capture_artifact_outside_verified_room",
+          },
+          { sample: 5, reasonCode: "unverified_or_unknown_pixels" },
+        ],
+      },
+    };
+    const prepared = {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-mask-prepared-binding.v2" as const,
+      source: frozen.source,
+      revision: frozen.revision,
+      includedPixelCount: frozen.includedPixelCount,
+      excludedPixelCount: frozen.excludedPixelCount,
+      reasonCounts: mutableReasonCounts(frozen.reasonCounts),
+      mask: {
+        fileName: frozen.fileName,
+        sha256: frozen.sha256,
+        byteLength: frozen.byteLength,
+        widthPx: frozen.widthPx,
+        heightPx: frozen.heightPx,
+        bitDepth: frozen.bitDepth,
+        channelCount: frozen.channelCount,
+        permittedPixelValues: frozen.permittedPixelValues,
+        zeroMeaning: frozen.zeroMeaning,
+        twoHundredFiftyFiveMeaning: frozen.twoHundredFiftyFiveMeaning,
+      },
+      reasonMap: frozen.reasonMap,
+    };
+    const preparedBindingSha256 =
+      computeGrandHallT554NativeReviewPreparedMaskEvidenceV2Sha256(prepared);
+    const preparedMaterialSha256 =
+      computeGrandHallT554NativeReviewPreparedMaskBindingV2Sha256(prepared);
+    const maskReviewSubjectSha256 =
+      computeGrandHallT554NativeReviewMaskSubjectV2Sha256({
+        sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+        maskStateSha256: maskState.maskStateSha256,
+        maskEvidenceSha256: preparedBindingSha256,
+        implementationManifest: built.scope.implementationManifest,
+      });
+    const frozenBindingSha256 =
+      computeGrandHallT554NativeReviewFrozenMaskBindingV2Sha256(frozen);
+    const maskCoverageSegmentIdSha256 = digest(
+      "full-include-mask-coverage-segment",
+    );
+    maskLeafName = "mask-child-0001";
+
+    await coordinator.append({
+      expectedRevision: 5,
+      event: envelope("mask.edited.v2", {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-mask-edited.v2" as const,
+        operationIdSha256: digest("full-include-mask-edit-operation"),
+        browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+        previousWorkspaceRevision: 2,
+        resultingWorkspaceRevision: 3,
+        sourceCustody,
+        previousRenderGeneration: 2,
+        resultingRenderGeneration: 3,
+        edit: maskArtifacts.edit,
+        previousMaskState: initialMaskState,
+        resultingMaskState: maskState,
+        invalidatedFrozenBindingSha256: null,
+        invalidatedMaskJournal: null,
+      }),
+    });
+    await coordinator.append({
+      expectedRevision: 6,
+      event: envelope("mask.freeze-intended.v2", {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-mask-freeze-intended.v2" as const,
+        operationIdSha256: digest("full-include-mask-freeze-operation"),
+        browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+        expectedWorkspaceRevision: 3,
+        sourceCustody,
+        previousRenderGeneration: 3,
+        allocatedRenderGeneration: 4,
+        maskState,
+        maskReviewSubjectSha256,
+        coverageSegmentIdSha256: maskCoverageSegmentIdSha256,
+        preparedBindingSha256: preparedMaterialSha256,
+        preparedBinding: prepared,
+        childJournalLeafName: maskLeafName,
+      }),
+    });
+
+    const maskScope: GrandHallT554NativeReviewMaskScopeV2 = {
+      schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+      kind: "mask",
+      sessionIdSha256: built.scope.sessionIdSha256,
+      implementationManifest: built.scope.implementationManifest,
+      registry: built.scope.registry,
+      authorityBoundary: built.scope.authorityBoundary,
+      browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+      coverageSegmentIdSha256: maskCoverageSegmentIdSha256,
+      renderGeneration: 4,
+      sourceCustody,
+      maskReviewSubjectSha256,
+      maskStateSha256: maskState.maskStateSha256,
+      frozenBindingSha256,
+      frozenBinding: frozen,
+    };
+    const maskRoot = join(built.root, "children", maskLeafName);
+    await mkdir(maskRoot);
+    const maskJournal = await createGrandHallT554NativeReviewDurableJournalV2({
+      workspaceRoot: maskRoot,
+      scope: maskScope,
+    });
+    const maskStart = await maskJournal.append({
+      expectedRevision: 0,
+      event: envelope("mask.review-started.v2", {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-mask-review-started.v2" as const,
+        browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+        coverageSegmentIdSha256: maskCoverageSegmentIdSha256,
+        coverageSegmentStartedAtUtc: NOW,
+        firstSampleMustCreditZero: true as const,
+        renderGeneration: 4,
+        sourceCustody,
+        maskReviewSubjectSha256,
+        maskStateSha256: maskState.maskStateSha256,
+        frozenBindingSha256,
+        frozenBinding: frozen,
+        implementationManifest: built.scope.implementationManifest,
+        predecessorCoverage: null,
+        authorityBoundary: built.scope.authorityBoundary,
+      }),
+    });
+    await writeCanonical(
+      join(built.root, "child-scopes", `${maskLeafName}.json`),
+      {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-child-scope-descriptor.v2",
+        leafName: maskLeafName,
+        scope: maskScope,
+      },
+    );
+    const maskStartEvidence =
+      await openGrandHallT554NativeReviewVerifiedDurableChildEvidenceV2({
+        workspaceRoot: maskRoot,
+        expectedScope: maskScope,
+      });
+    if (maskStartEvidence.kind !== "mask") {
+      throw new Error("decision composition fixture produced a non-mask child");
+    }
+    await coordinator.append({
+      expectedRevision: 7,
+      event: envelope("mask.freeze-committed.v2", {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-mask-freeze-committed.v2" as const,
+        operationIdSha256: digest("full-include-mask-freeze-operation"),
+        browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+        previousWorkspaceRevision: 3,
+        resultingWorkspaceRevision: 4,
+        sourceCustody,
+        renderGeneration: 4,
+        maskState,
+        maskReviewSubjectSha256,
+        coverageSegmentIdSha256: maskCoverageSegmentIdSha256,
+        frozenBindingSha256,
+        frozenBinding: frozen,
+        maskJournal: maskStartEvidence.checkpoint,
+      }),
+    });
+    await bulkAppendExactChildFixture({
+      journalRoot: maskRoot,
+      start: maskStart,
+      scope: maskScope,
+      events: completeMaskCoverageEvents(maskScope),
+    });
+    const maskEvidence =
+      await openGrandHallT554NativeReviewVerifiedDurableChildEvidenceV2({
+        workspaceRoot: maskRoot,
+        expectedScope: maskScope,
+      });
+    if (maskEvidence.kind !== "mask") {
+      throw new Error("decision composition fixture produced a non-mask child");
+    }
+    const maskCarry =
+      createGrandHallT554NativeReviewCoverageCarryStateV2(maskEvidence);
+    if (maskCarry.kind !== "mask") {
+      throw new Error("decision composition fixture produced a non-mask carry");
+    }
+    maskCheckpoint = maskEvidence.checkpoint;
+    const completedMaskCoverage = {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-completed-mask-coverage.v2" as const,
+      maskReviewSubjectSha256,
+      maskStateSha256: maskState.maskStateSha256,
+      frozenBindingSha256,
+      maskJournal: maskEvidence.checkpoint,
+      completedTileBitsetHex: maskCarry.completedTileBitsetHex,
+      completedTileCount: maskCarry.completedTileCount,
+      cumulativeDwellStateSha256: maskCarry.cumulativeDwellStateSha256,
+    };
+    const decisionMaterial = {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+      operationIdSha256: digest("full-include-decision-operation"),
+      browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+      previousWorkspaceRevision: 4,
+      resultingWorkspaceRevision: 5,
+      sessionIdSha256: built.scope.sessionIdSha256,
+      registry: built.scope.registry,
+      implementationManifest: built.scope.implementationManifest,
+      authorityBoundary: built.scope.authorityBoundary,
+      sourceCustody,
+      previousRenderGeneration: 4,
+      resultingRenderGeneration: 5,
+      completedSourceCoverage,
+      note: "Exact frozen mask supports observed Grand Hall pixels.",
+      decidedAtUtc: new Date().toISOString(),
+      result: "INCLUDE" as const,
+      classification: "grand_hall_core" as const,
+      maskState,
+      maskReviewSubjectSha256,
+      frozenBindingSha256,
+      frozenBinding: frozen,
+      completedMaskCoverage,
+    };
+    decisionSha256 =
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(
+        decisionMaterial,
+      );
+    await coordinator.append({
+      expectedRevision: 8,
+      event: envelope("source.decision-recorded.v2", {
+        ...decisionMaterial,
+        decisionSha256,
+      }),
+    });
+    coordinatorRevisionAfterDecision = 9;
+    attestationPreviousWorkspaceRevision = 5;
+    finalRenderGeneration = 5;
+  }
+
+  const attestationMaterial = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-human-attestation-recorded.v2" as const,
+    operationIdSha256: digest(
+      `full-${result.toLowerCase()}-human-attestation-operation`,
+    ),
+    browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+    previousWorkspaceRevision: attestationPreviousWorkspaceRevision,
+    resultingWorkspaceRevision: attestationPreviousWorkspaceRevision + 1,
+    sessionIdSha256: built.scope.sessionIdSha256,
+    sourceReviewSubjectSha256:
+      built.sourceScope.sourceCustody.sourceReviewSubjectSha256,
+    decisionSha256,
+    reviewerId: "authorized-reviewer-1",
+    reviewerRole: "venue_owner_or_authorized_domain_reviewer" as const,
+    knowledgeBasis: [
+      "Reviewed the exact native source and all decision-bound evidence.",
+    ],
+    attestedAtUtc: new Date().toISOString(),
+    statement: GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
+    humanPresenceProof: "not_cryptographic" as const,
+    agentDecisionAuthority: "none" as const,
+    authority: "none" as const,
+  };
+  const attestationSha256 =
+    computeGrandHallT554NativeReviewHumanAttestationV2Sha256(
+      attestationMaterial,
+    );
+  await coordinator.append({
+    expectedRevision: coordinatorRevisionAfterDecision,
+    event: envelope("source.human-attestation-recorded.v2", {
+      ...attestationMaterial,
+      attestationSha256,
+    }),
+  });
+  await coordinator.append({
+    expectedRevision: coordinatorRevisionAfterDecision + 1,
+    event: envelope("source.abandoned.v2", {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-source-abandoned.v2" as const,
+      browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+      previousWorkspaceRevision: attestationPreviousWorkspaceRevision + 1,
+      resultingWorkspaceRevision: attestationPreviousWorkspaceRevision + 2,
+      sourceCustody: built.sourceScope.sourceCustody,
+      finalRenderGeneration,
+      sourceJournal: sourceEvidence.checkpoint,
+      maskJournal: maskCheckpoint,
+      reason: "operator_abandon" as const,
+    }),
+  });
+  await coordinator.append({
+    expectedRevision: coordinatorRevisionAfterDecision + 2,
+    event: envelope("session.stopped.v2", {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-session-stopped.v2" as const,
+      browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
+      previousWorkspaceRevision: attestationPreviousWorkspaceRevision + 2,
+      resultingWorkspaceRevision: attestationPreviousWorkspaceRevision + 3,
+      stoppedAtUtc: new Date().toISOString(),
+      activeSourceWasPresent: false,
+      authorityBoundary: built.scope.authorityBoundary,
+    }),
+  });
+  return { built, decisionSha256, attestationSha256, maskLeafName };
+}
+
 function expectStoreError(
   promise: Promise<unknown>,
   code: GrandHallT554NativeReviewSessionStoreV2Error["code"],
@@ -1734,6 +2203,189 @@ describe("Grand Hall T-554 native review session store v2", () => {
       "CHILD_MISMATCH",
     );
   }, 60_000);
+
+  it("reopens a full INCLUDE decision, attestation, and abandoned source-plus-mask chain with a stable final digest", async () => {
+    const composition = await decisionCompositionFixture("INCLUDE");
+    await releaseGrandHallT554NativeReviewSessionOwnerV2({
+      lease: composition.built.lease,
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+    });
+    const firstLease = await acquireGrandHallT554NativeReviewSessionOwnerV2({
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+    });
+    const first = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+      lease: firstLease,
+    });
+    expect(first.coordinator).toMatchObject({
+      lifecycle: "stopped",
+      workspaceRevision: 8,
+      maximumAllocatedRenderGeneration: 5,
+      eventCount: 12,
+      activeSource: null,
+      recordedSourceDecisions: [
+        {
+          result: "INCLUDE",
+          decisionSha256: composition.decisionSha256,
+          completedSourceCoverage: { sourceJournal: { revision: 516 } },
+          completedMaskCoverage: { maskJournal: { revision: 516 } },
+        },
+      ],
+      recordedHumanAttestations: [
+        {
+          decisionSha256: composition.decisionSha256,
+          attestationSha256: composition.attestationSha256,
+          humanPresenceProof: "not_cryptographic",
+          agentDecisionAuthority: "none",
+          authority: "none",
+        },
+      ],
+    });
+    expect(first.maskStateReplayCount).toBe(1);
+    expect(first.children).toHaveLength(2);
+    expect(
+      first.children.map((child) => ({
+        kind: child.evidence.kind,
+        leafName: child.leafName,
+        revision: child.evidence.checkpoint.revision,
+      })),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "source",
+          leafName: composition.built.leafName,
+          revision: 516,
+        },
+        {
+          kind: "mask",
+          leafName: composition.maskLeafName,
+          revision: 516,
+        },
+      ]),
+    );
+    expect(first.rootInventorySha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(first.verificationAttestationSha256).toMatch(
+      /^sha256:[0-9a-f]{64}$/u,
+    );
+
+    await releaseGrandHallT554NativeReviewSessionOwnerV2({
+      lease: firstLease,
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+    });
+    const reopenedLease =
+      await acquireGrandHallT554NativeReviewSessionOwnerV2({
+        sessionRoot: composition.built.root,
+        expectedSessionScope: composition.built.scope,
+      });
+    const reopened = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+      lease: reopenedLease,
+    });
+    expect(reopened.rootInventorySha256).toBe(first.rootInventorySha256);
+    expect(reopened.verificationAttestationSha256).toBe(
+      first.verificationAttestationSha256,
+    );
+    expect(reopened.coordinator.recordedSourceDecisions[0]?.decisionSha256).toBe(
+      composition.decisionSha256,
+    );
+    expect(
+      reopened.coordinator.recordedHumanAttestations[0]?.attestationSha256,
+    ).toBe(composition.attestationSha256);
+    await releaseGrandHallT554NativeReviewSessionOwnerV2({
+      lease: reopenedLease,
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+    });
+  }, 300_000);
+
+  it("reopens a full EXCLUDE decision, authority-none attestation, and no-mask abandonment chain with a stable final digest", async () => {
+    const composition = await decisionCompositionFixture("EXCLUDE");
+    await releaseGrandHallT554NativeReviewSessionOwnerV2({
+      lease: composition.built.lease,
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+    });
+    const firstLease = await acquireGrandHallT554NativeReviewSessionOwnerV2({
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+    });
+    const first = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+      lease: firstLease,
+    });
+    expect(first.coordinator).toMatchObject({
+      lifecycle: "stopped",
+      workspaceRevision: 5,
+      maximumAllocatedRenderGeneration: 2,
+      eventCount: 8,
+      activeSource: null,
+      recordedSourceDecisions: [
+        {
+          result: "EXCLUDE",
+          decisionSha256: composition.decisionSha256,
+          completedSourceCoverage: { sourceJournal: { revision: 516 } },
+          completedMaskCoverage: null,
+        },
+      ],
+      recordedHumanAttestations: [
+        {
+          decisionSha256: composition.decisionSha256,
+          attestationSha256: composition.attestationSha256,
+          humanPresenceProof: "not_cryptographic",
+          agentDecisionAuthority: "none",
+          authority: "none",
+        },
+      ],
+    });
+    expect(first.maskStateReplayCount).toBe(0);
+    expect(first.children).toHaveLength(1);
+    expect(first.children[0]).toMatchObject({
+      leafName: composition.built.leafName,
+      evidence: { kind: "source", checkpoint: { revision: 516 } },
+    });
+    expect(composition.maskLeafName).toBeNull();
+    expect(first.rootInventorySha256).toMatch(/^sha256:[0-9a-f]{64}$/u);
+    expect(first.verificationAttestationSha256).toMatch(
+      /^sha256:[0-9a-f]{64}$/u,
+    );
+
+    await releaseGrandHallT554NativeReviewSessionOwnerV2({
+      lease: firstLease,
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+    });
+    const reopenedLease =
+      await acquireGrandHallT554NativeReviewSessionOwnerV2({
+        sessionRoot: composition.built.root,
+        expectedSessionScope: composition.built.scope,
+      });
+    const reopened = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+      lease: reopenedLease,
+    });
+    expect(reopened.rootInventorySha256).toBe(first.rootInventorySha256);
+    expect(reopened.verificationAttestationSha256).toBe(
+      first.verificationAttestationSha256,
+    );
+    expect(reopened.coordinator.recordedSourceDecisions[0]?.decisionSha256).toBe(
+      composition.decisionSha256,
+    );
+    expect(
+      reopened.coordinator.recordedHumanAttestations[0]?.attestationSha256,
+    ).toBe(composition.attestationSha256);
+    await releaseGrandHallT554NativeReviewSessionOwnerV2({
+      lease: reopenedLease,
+      sessionRoot: composition.built.root,
+      expectedSessionScope: composition.built.scope,
+    });
+  }, 300_000);
 
   it("rejects same-count mask evidence with a different exact spatial layout", () => {
     const source = sourceIdentity();

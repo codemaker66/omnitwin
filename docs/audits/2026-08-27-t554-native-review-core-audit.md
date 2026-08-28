@@ -165,3 +165,52 @@ Two continuation obligations remain explicit:
   authority-none attestation, abandonment, and the final machine-verification
   digest. The individual layers and real child-prefix proofs are covered now;
   this end-to-end composition remains a later hardening gate.
+
+## Post-audit continuation: composition and repeated-decision hardening
+
+Date: 2026-08-28
+
+The two continuation obligations immediately above are now closed at the
+authority-none boundary.
+
+Coordinator replay permits a previously decided source to be reselected and
+inspected again, while preserving the original decision and attestation in
+history. It permits a genuinely distinct source with a fresh recorded JPEG
+digest and review subject to receive its own decision, while rejecting a second
+decision before any mutation when the exact source identity, recorded source
+JPEG SHA-256, or source-review subject matches an earlier decision. A
+schema-valid inventory/filename relabel retaining the same claimed JPEG digest
+therefore cannot bypass the guard. Concrete byte truth remains the
+responsibility of the pinned registry, descriptor, and decoder boundary; the
+coordinator replay does not reopen the JPEG. This prevents a later `INCLUDE` or
+`EXCLUDE` from silently competing with the first record. There is still no
+accepted/current winner, seal, or supersession event; a future correction
+requires a separately designed, digest-bound supersession relation.
+
+Two full session-store composition regressions now cover the complete closed
+paths:
+
+- complete 516-record source child -> `EXCLUDE` -> authority-none human
+  attestation -> abandonment without a mask -> session stop;
+- complete 516-record source child -> exact mask workflow -> real frozen binary
+  mask and reason-map publication -> complete 516-record mask child ->
+  `INCLUDE` -> authority-none human attestation -> abandonment with both child
+  heads -> session stop.
+
+Each session is released and opened twice under separately acquired owner
+leases. Both opens recursively inventory the root, reopen and semantically
+replay every exact durable child record, verify the decision-bound coverage and
+mask evidence, and produce identical root-inventory and semantic
+verification-attestation digests. The test-only canonical bulk writer is used
+to avoid quadratic setup cost for the 515 post-start coverage events; it does
+not bypass either public session-store verification pass and no public writer,
+session factory, browser controller, or acceptance export was introduced.
+
+Focused verification passed the session-store file at 20/20 tests and the
+coordinator-replay file at 27/27 tests. Strict TypeScript, affected-file ESLint,
+the package build, and `git diff --check` also passed.
+
+No real human decision or attestation was recorded. All 148 panorama decisions
+remain pending, T-554 remains blocked, and no browser, provider, credential,
+upload, generation, staging, deployment, publication, or production action
+occurred.

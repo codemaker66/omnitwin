@@ -1815,6 +1815,17 @@ function replaySourceDecisionRecorded(
       computeGrandHallT554NativeReviewSourceDecisionV2Sha256(decisionMaterial),
     "Source decision digest does not bind its exact material.",
   );
+  transition(
+    !state.recordedSourceDecisions.some(
+      (recorded) =>
+        sameSource(recorded.sourceCustody.source, payload.sourceCustody.source) ||
+        recorded.sourceCustody.source.sha256 ===
+          payload.sourceCustody.source.sha256 ||
+        recorded.sourceCustody.sourceReviewSubjectSha256 ===
+          payload.sourceCustody.sourceReviewSubjectSha256,
+    ),
+    "A source or source-review subject already has a recorded decision; pre-seal replay forbids another.",
+  );
   recordOperationId(state, payload.operationIdSha256);
   referenceChildCheckpoint(
     state,
