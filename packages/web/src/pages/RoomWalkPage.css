@@ -1,0 +1,107 @@
+/* One room, walkable. Chrome floats over the scene; the room reaches every
+ * edge. Same House palette as the front door. */
+
+.walk {
+  --ink: #14100c;
+  --stone: #f2ecdf;
+  --stone-dim: #b5aa97;
+  --brass: #d8a64c;
+
+  position: relative;
+  min-height: 100vh;
+  background: var(--ink);
+  color: var(--stone);
+  font-family: var(--fr-body, "Newsreader", Georgia, serif);
+  overflow: hidden;
+}
+
+.walk__stage { position: absolute; inset: 0; }
+.walk__stage canvas { display: block; }
+
+.walk__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1.25rem;
+  padding: 1rem clamp(1rem, 4vw, 2.5rem);
+  background: linear-gradient(to bottom, rgba(20, 16, 12, 0.82), rgba(20, 16, 12, 0));
+  pointer-events: none;
+}
+
+.walk__bar > * { pointer-events: auto; }
+
+.walk__back {
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.82rem;
+  color: var(--stone-dim);
+  text-decoration: none;
+}
+
+.walk__back:hover, .walk__back:focus-visible { color: var(--brass); }
+
+.walk__name {
+  margin: 0;
+  font-family: var(--fr-display, "Fraunces", Georgia, serif);
+  font-size: clamp(1.15rem, 3vw, 1.7rem);
+  font-weight: 400;
+}
+
+.walk__measure {
+  margin: 0;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--stone-dim);
+}
+
+.walk__dot { margin: 0 0.5em; color: var(--brass); }
+
+.walk__loading {
+  position: absolute;
+  left: 50%;
+  bottom: 4.5rem;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid rgba(242, 236, 223, 0.16);
+  border-radius: 999px;
+  background: rgba(20, 16, 12, 0.72);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--stone-dim);
+}
+
+.walk__foot {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 1rem clamp(1rem, 4vw, 2.5rem);
+  background: linear-gradient(to top, rgba(20, 16, 12, 0.86), rgba(20, 16, 12, 0));
+  pointer-events: none;
+}
+
+.walk__note, .walk__failed {
+  margin: 0;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: var(--stone-dim);
+  max-width: 40rem;
+}
+
+.walk__failed { margin-top: 0.35rem; color: #d98b7a; }
+
+.walk--missing {
+  display: grid;
+  place-content: center;
+  gap: 1rem;
+  text-align: center;
+}
+
+.walk__missingText { margin: 0; color: var(--stone-dim); }

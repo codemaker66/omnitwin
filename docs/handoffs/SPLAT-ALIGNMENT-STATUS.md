@@ -129,6 +129,46 @@ the manifest, surfaced as the badge on `/captures`. Nothing needs to be told.
 
 ---
 
+---
+
+## New: the room is clipped to its measured box
+
+`packages/web/src/components/rooms/RoomClipBox.tsx` attaches a Spark
+`SplatEdit` with an inverted `BOX` SDF at `opacity: 0`, so every splat outside
+the room's measured box has its alpha multiplied to zero. Confirmed working
+against the real captures: the cut is clean and hard-edged.
+
+**This raises the stakes on alignment considerably.** The box comes straight
+from `extentM` in the generated manifest, which is your output. So:
+
+- Where the box is right, the camera can leave the room and frame it as an
+  object — a dollhouse view — because the corridor and stair are simply gone.
+  `/room/<slug>?view=dollhouse` renders exactly that.
+- Where the box is wrong, clipping cannot help. North Gallery clips to a wedge
+  because the wedge is what its frame describes. Garbage box in, garbage room
+  out.
+
+So fixing a room's `roomCropM` no longer just improves a number. It unlocks the
+dollhouse view for that room, promotes its badge on the front door from
+"Alignment in progress" to a real measurement, and lets the page print its
+dimensions — all automatically, with no web change. The manifest remains the
+only contract.
+
+### Two capture traps, if you render stills
+
+Both cost hours to find:
+
+1. **`frameloop="demand"` starves the compositor.** Once a room finishes
+   loading nothing invalidates, so `page.screenshot()` never returns — it waits
+   forever for a frame that is not coming. Nudge the canvas (a small drag makes
+   OrbitControls invalidate) or read the canvas back directly. The walk page
+   accepts `?bare=1`, which drops the chrome and turns on
+   `preserveDrawingBuffer` so `canvas.toDataURL()` works. That is the only
+   capture path that has proved reliable.
+2. **"Wait until the loading indicator is gone" is true before it appears.**
+   It returns at t=0 and captures an empty room. Wait on
+   `window.__roomWalk.complete`, which can only be true once.
+
 ## Log
 
 Append here rather than rewriting, newest last.
@@ -137,3 +177,7 @@ Append here rather than rewriting, newest last.
   1,039 MB staged and published. All tiles verified byte-for-byte against their
   sha256 receipts. Reception Room confirmed rendering as a photoreal interior.
   Six rooms left at `review`; handing alignment quality to Codex.
+- **2026-08-28, Claude Code** — Front door rebuilt as a room selector
+  (`/`, poster-first, one room streams at a time). Public walkthrough at
+  `/room/<slug>`. Splat clipping added, which makes a dollhouse view possible
+  for any room whose box is right. Two of eight qualify today.

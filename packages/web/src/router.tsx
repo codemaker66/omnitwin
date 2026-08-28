@@ -89,6 +89,12 @@ const TradesHouseLeafletPage = lazy(() =>
 const TradesHouseCraftQuizPage = lazy(() =>
   import("./pages/TradesHouseCraftQuizPage.js").then((m) => ({ default: m.TradesHouseCraftQuizPage })),
 );
+const RoomsHomePage = lazy(() =>
+  cockpitImport(() => import("./pages/RoomsHomePage.js").then((m) => ({ default: m.RoomsHomePage }))),
+);
+const RoomWalkPage = lazy(() =>
+  cockpitImport(() => import("./pages/RoomWalkPage.js").then((m) => ({ default: m.RoomWalkPage }))),
+);
 const RoomCapturesPage = lazy(() =>
   cockpitImport(() => import("./pages/RoomCapturesPage.js").then((m) => ({ default: m.RoomCapturesPage }))),
 );
@@ -490,6 +496,12 @@ export const router = createBrowserRouter([
       ),
   },
   {
+    // Public room walkthrough — where a poster on the front door leads.
+    // Streams one room; the front door never streams eight at once.
+    path: "/room/:roomSlug",
+    element: withSuspense(<RoomWalkPage />),
+  },
+  {
     // Public walkable twin (Twin Phase 1). Placed above the room showcase
     // route so /venues/:venueSlug/twin can never fall through to the
     // :roomSlug matcher. The R3F viewer is its own lazy chunk behind this
@@ -554,11 +566,11 @@ export const router = createBrowserRouter([
     element: withSuspense(<AccessibilityPage />),
   },
   {
-    // Public marketing homepage — the photography-first page (June shoot,
-    // Trades House artwork). Prior designs remain reachable: spotlight at
+    // Public front door — the eight captured rooms, poster first. Prior
+    // designs stay reachable: the photography page at /fresh, spotlight at
     // /welcome, the Rite at /landing, the Living Hall at /living-hall.
     path: "/",
-    element: withSuspense(<FreshPage />),
+    element: withSuspense(<RoomsHomePage />),
   },
   {
     // Role-aware post-sign-in destination. Used by the in-app Venviewer

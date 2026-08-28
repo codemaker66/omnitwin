@@ -1,0 +1,314 @@
+/* The front door — eight rooms of Trades Hall, measured.
+ *
+ * Palette and type are the House language, not a new identity: sandstone on
+ * warm ink, brass as the only accent, Fraunces for display, Geist Mono for the
+ * numbers. The ground is deliberately warm-black rather than neutral — a
+ * Georgian interior by candlelight, not a streaming app's void. */
+
+.rooms {
+  --ink: #14100c;
+  --ink-raised: #1b1713;
+  --stone: #f2ecdf;
+  --stone-dim: #b5aa97;
+  --brass: #d8a64c;
+  --hairline: rgba(242, 236, 223, 0.12);
+
+  min-height: 100vh;
+  background: var(--ink);
+  color: var(--stone);
+  font-family: var(--fr-body, "Newsreader", Georgia, serif);
+}
+
+/* ── masthead ─────────────────────────────────────────────── */
+
+.rooms__masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem clamp(1rem, 4vw, 3rem);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.rooms__wordmark {
+  font-family: var(--fr-display, "Fraunces", Georgia, serif);
+  font-size: 1.05rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.rooms__venue {
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.78rem;
+  color: var(--stone-dim);
+}
+
+/* ── hero ─────────────────────────────────────────────────── */
+
+.rooms__hero {
+  position: relative;
+  isolation: isolate;
+  min-height: min(72vh, 40rem);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.rooms__heroPoster {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 55%;
+}
+
+/* Ink wash so type stays legible over any room. Not decoration: it is the
+ * only thing standing between sandstone text and a bright ceiling. */
+.rooms__heroInk {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(to top, var(--ink) 2%, rgba(20, 16, 12, 0.72) 34%, rgba(20, 16, 12, 0.12) 72%);
+}
+
+.rooms__heroText {
+  padding: clamp(1.5rem, 5vw, 3.5rem);
+  max-width: 46rem;
+}
+
+.rooms__eyebrow {
+  margin: 0 0 0.5rem;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+.rooms__heroName {
+  margin: 0;
+  font-family: var(--fr-display, "Fraunces", Georgia, serif);
+  font-size: clamp(2.4rem, 7vw, 4.6rem);
+  font-weight: 300;
+  line-height: 1.02;
+  letter-spacing: -0.015em;
+}
+
+/* ── the measured line: this page's signature ─────────────── */
+
+.rooms__measure {
+  display: block;
+  margin: 0.7rem 0 0;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.79rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--stone-dim);
+}
+
+.rooms__measure--hero {
+  font-size: 0.88rem;
+  color: var(--stone);
+}
+
+.rooms__dot { margin: 0 0.5em; color: var(--brass); }
+
+.rooms__enter {
+  display: inline-block;
+  margin-top: 1.4rem;
+  padding: 0.62rem 1.5rem;
+  border: 1px solid var(--brass);
+  border-radius: 999px;
+  color: var(--brass);
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.rooms__enter:hover,
+.rooms__enter:focus-visible { background: var(--brass); color: var(--ink); }
+
+/* ── rail ─────────────────────────────────────────────────── */
+
+.rooms__rail { padding: clamp(1.75rem, 5vw, 3rem) 0 1rem; }
+
+.rooms__railHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  align-items: baseline;
+  padding: 0 clamp(1rem, 4vw, 3rem);
+  margin-bottom: 1.1rem;
+}
+
+.rooms__railTitle {
+  margin: 0;
+  font-family: var(--fr-display, "Fraunces", Georgia, serif);
+  font-size: clamp(1.15rem, 2.5vw, 1.5rem);
+  font-weight: 400;
+}
+
+.rooms__railNote {
+  margin: 0;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--stone-dim);
+}
+
+.rooms__track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(15rem, 19rem);
+  gap: 1rem;
+  padding: 0 clamp(1rem, 4vw, 3rem) 0.5rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline) transparent;
+}
+
+.rooms__card {
+  scroll-snap-align: start;
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.rooms__plate {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--ink-raised);
+}
+
+/* Nothing enters, everything resolves: the poster comes up from soft and dim
+ * to sharp and lit. No scale, no lift, no shadow bloom. */
+.rooms__poster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.82) brightness(0.74) blur(0.4px);
+  transition: filter 320ms ease;
+}
+
+.rooms__card:hover .rooms__poster,
+.rooms__card:focus-visible .rooms__poster {
+  filter: saturate(1) brightness(1) blur(0);
+}
+
+.rooms__card:focus-visible .rooms__plate {
+  outline: 2px solid var(--brass);
+  outline-offset: 3px;
+}
+
+.rooms__cardName {
+  display: block;
+  margin-top: 0.65rem;
+  font-family: var(--fr-display, "Fraunces", Georgia, serif);
+  font-size: 1.02rem;
+  font-weight: 400;
+}
+
+/* ── foot ─────────────────────────────────────────────────── */
+
+.rooms__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 2rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 2.5rem;
+  padding: 1.25rem clamp(1rem, 4vw, 3rem) 2.5rem;
+  border-top: 1px solid var(--hairline);
+}
+
+.rooms__footNote {
+  flex: 1 1 26rem;
+  margin: 0;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--stone-dim);
+}
+
+.rooms__footLinks {
+  display: flex;
+  gap: 1.25rem;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.8rem;
+}
+
+.rooms__footLinks a { color: var(--stone-dim); text-decoration: none; }
+.rooms__footLinks a:hover,
+.rooms__footLinks a:focus-visible { color: var(--brass); }
+
+/* ── resolve-in on load ───────────────────────────────────── */
+
+.rooms__hero,
+.rooms__rail { opacity: 0; transition: opacity 620ms ease; }
+.rooms--resolved .rooms__hero,
+.rooms--resolved .rooms__rail { opacity: 1; }
+.rooms--resolved .rooms__rail { transition-delay: 120ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rooms__hero,
+  .rooms__rail { opacity: 1; transition: none; }
+  .rooms__poster { transition: none; }
+}
+
+@media (max-width: 640px) {
+  .rooms__hero { min-height: 62vh; }
+  .rooms__track { grid-auto-columns: minmax(13rem, 76vw); }
+}
+
+/* ── typographic plate ────────────────────────────────────── */
+/* Stands in where a scan has no usable still. The room's own measurements,
+ * set large — deliberate, not a missing-image apology. */
+
+.rooms__plate--type {
+  display: grid;
+  place-content: center;
+  gap: 0.3rem;
+  padding: 1rem;
+  text-align: center;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(242, 236, 223, 0.03) 0 1px,
+      transparent 1px 9px
+    ),
+    var(--ink-raised);
+}
+
+.rooms__plateType { display: grid; gap: 0.3rem; }
+
+.rooms__plateNumber {
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--stone);
+}
+
+.rooms__plateSplats {
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--stone-dim);
+}
+
+.rooms__state {
+  display: block;
+  margin-top: 0.3rem;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  color: var(--brass);
+  opacity: 0.85;
+}
