@@ -1,7 +1,7 @@
 # =============================================================================
 # OMNITWIN — Continuous Integration
 # =============================================================================
-# Six jobs run in parallel against every push to master or the dedicated
+# Seven jobs run in parallel against every push to master or the dedicated
 # Grand Hall staging branch, and every pull request targeting master:
 #
 #   audit      - pnpm audit at moderate severity and above
@@ -9,6 +9,7 @@
 #   typecheck  — `tsc --noEmit` across all packages, zero errors required
 #   build      — Production build for every package
 #   test       — Vitest across all packages, all tests must pass
+#   grand-hall-python — pinned Windows authority-none replay regressions
 #   e2e        — Playwright E2E against a Vite dev server (Chromium only)
 #
 # Each job is fully isolated and reproducible: pnpm version is pinned to
@@ -188,6 +189,45 @@ jobs:
         # Failures still fail the job (verified: exit code 1 with --no-bail);
         # this only ensures every package reports on the day it breaks.
         run: pnpm -r --no-bail test
+
+  grand-hall-python:
+    name: Grand Hall authority-none Python replay
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup exact Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13.6"
+          architecture: x64
+
+      - name: Install hash-pinned replay test wheels
+        env:
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+          PIP_NO_CACHE_DIR: "1"
+          PYTHONNOUSERSITE: "1"
+        run: >-
+          python -I -B -m pip install
+          --only-binary=:all:
+          --require-hashes
+          --no-deps
+          --requirement tools/reconstruction-foundry/scripts/requirements-grand-hall-authority-none-icp-ci.txt
+
+      - name: Run authority-none replay regressions in isolated mode
+        env:
+          MKL_NUM_THREADS: "1"
+          NUMEXPR_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          PYTHONNOUSERSITE: "1"
+        run: >-
+          python -I -B -m unittest discover
+          -s tools/reconstruction-foundry/scripts/tests
+          -p "test*.py"
+          -v
 
   e2e:
     name: E2E

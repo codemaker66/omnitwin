@@ -1,0 +1,117 @@
+{
+  "authority": "none",
+  "authorityBounds": {
+    "acceptedTransform": false,
+    "architecturalFact": false,
+    "crossFrameRegistration": false,
+    "outputInventoryMask": false,
+    "reconstructionInput": false,
+    "runtimeAdmission": false,
+    "stagingOrDeployment": false
+  },
+  "determinism": {
+    "classification": "same_runtime_same_host_only",
+    "crossHostExactReplayClaimed": false,
+    "crossPlatformExactReplayClaimed": false,
+    "environmentControls": {
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1"
+    },
+    "pythonFlags": [
+      "-I",
+      "-B"
+    ],
+    "sameRuntimeSameHostReplayRequiresIndependentReceiptEquality": true
+  },
+  "purpose": "historical_arf_cvf_registration_nomination_replay_only",
+  "runtime": {
+    "implementation": "CPython",
+    "members": [
+      {
+        "byteLength": 104928,
+        "memberName": "python.exe",
+        "role": "python_executable",
+        "sha256": "91566dc8bb9a336c36c607ee0d5a5135e54ddce2418e2cd7728a49c8f098904a"
+      },
+      {
+        "byteLength": 6124376,
+        "memberName": "python313.dll",
+        "role": "python_core_library",
+        "sha256": "dd05f134a2f8126a8cfe8d797b87fa966537b894dd49f93336566f9e8d21d4bd"
+      },
+      {
+        "byteLength": 120400,
+        "memberName": "vcruntime140.dll",
+        "role": "msvc_runtime",
+        "sha256": "052ad6a20d375957e82aa6a3c441ea548d89be0981516ca7eb306e063d5027f4"
+      },
+      {
+        "byteLength": 49776,
+        "memberName": "vcruntime140_1.dll",
+        "role": "msvc_runtime_1",
+        "sha256": "6a99bc0128e0c7d6cbbf615fcc26909565e17d4ca3451b97f8987f9c6acbc6c8"
+      }
+    ],
+    "verificationScope": "listed_file_bytes_only",
+    "version": "3.13.6"
+  },
+  "schemaVersion": "venviewer.grand-hall-authority-none-icp-replay-environment-lock.v1",
+  "verificationBoundary": {
+    "executesSourceData": false,
+    "hostIdentityPersisted": false,
+    "importsLockedWheels": false,
+    "inspectedLocationsPersisted": false,
+    "launchesListedRuntimeArtifacts": false,
+    "method": "read_only_sha256_and_byte_length",
+    "networkRequired": false,
+    "provesEnvironmentControlsApplied": false,
+    "provesInstalledDependencyTrees": false,
+    "provesInvocationFlagsApplied": false,
+    "provesLoadedNativeClosure": false,
+    "provesOperatingSystemOrCpuIdentity": false
+  },
+  "wheels": [
+    {
+      "abiTag": "none",
+      "byteLength": 2068504,
+      "distribution": "networkx",
+      "memberName": "networkx-3.6.1-py3-none-any.whl",
+      "platformTag": "any",
+      "pythonTag": "py3",
+      "sha256": "d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762",
+      "version": "3.6.1"
+    },
+    {
+      "abiTag": "cp313",
+      "byteLength": 12310848,
+      "distribution": "numpy",
+      "memberName": "numpy-2.4.2-cp313-cp313-win_amd64.whl",
+      "platformTag": "win_amd64",
+      "pythonTag": "cp313",
+      "sha256": "7df2de1e4fba69a51c06c28f5a3de36731eb9639feb8e1cf7e4a7b0daf4cf622",
+      "version": "2.4.2"
+    },
+    {
+      "abiTag": "cp313",
+      "byteLength": 36287211,
+      "distribution": "scipy",
+      "memberName": "scipy-1.17.0-cp313-cp313-win_amd64.whl",
+      "platformTag": "win_amd64",
+      "pythonTag": "cp313",
+      "sha256": "87b411e42b425b84777718cc41516b8a7e0795abfa8e8e1d573bf0ef014f0812",
+      "version": "1.17.0"
+    },
+    {
+      "abiTag": "none",
+      "byteLength": 740328,
+      "distribution": "trimesh",
+      "memberName": "trimesh-4.11.2-py3-none-any.whl",
+      "platformTag": "any",
+      "pythonTag": "py3",
+      "sha256": "25e3ab2620f9eca5c9376168c67aabdd32205dad1c4eea09cd45cd4a3edf775a",
+      "version": "4.11.2"
+    }
+  ]
+}

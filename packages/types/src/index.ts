@@ -2520,6 +2520,8 @@ export * from "./grand-hall-room-scope-artifacts.js";
 export * from "./grand-hall-room-scope-artifacts-v2.js";
 export * from "./grand-hall-room-scope-artifacts-v3.js";
 export * from "./grand-hall-coordinate-pair-intake.js";
+export * from "./grand-hall-registration-seed.js";
+export * from "./grand-hall-processed-big-inventory.js";
 export * from "./grand-hall-room-only-runtime-evidence.js";
 export * from "./omnitwin-foundry-derivative-rights.js";
 export * from "./omnitwin-foundry-derivative-rights-custody.js";

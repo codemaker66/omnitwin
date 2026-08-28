@@ -13,6 +13,17 @@ docs/operations/grand-hall-t554-review-pack/**/*.svg text eol=lf
 docs/operations/grand-hall-t554-acceptance-template/*.json text eol=lf
 docs/operations/grand-hall-t554-panorama-inventory-review/*.json text eol=lf
 docs/operations/grand-hall-e57-image2d-evidence-*.json text eol=lf
+# Grand Hall authority-none replay implementations and persisted receipts are
+# byte-pinned. Windows checkout conversion would invalidate their reviewed
+# implementation and canonical-evidence digests.
+tools/reconstruction-foundry/scripts/grand_hall_authority_none_icp_replay.py text eol=lf
+tools/reconstruction-foundry/scripts/grand_hall_authority_none_icp_child_entry.py text eol=lf
+tools/reconstruction-foundry/scripts/grand_hall_authority_none_icp_two_process_runner.py text eol=lf
+tools/reconstruction-foundry/src/__tests__/fixtures/grand-hall-authority-none-icp-seed-adapter-*.json text eol=lf
+docs/operations/grand-hall-authority-none-icp-*.json text eol=lf
+docs/operations/grand-hall-authority-none-registration-seed-*.json text eol=lf
+docs/operations/grand-hall-authority-none-coordinate-free-nomination-checkpoint-*.json text eol=lf
+docs/operations/grand-hall-processed-big-inventory-*.json text eol=lf
 # Byte-pinned evidence vector document (activation-v1 test suite) — exact
 # bytes, overriding the eol=lf rule above.
 docs/specs/omnitwin-foundry-activation-v1-authenticated-evidence-byte-vectors.json -text

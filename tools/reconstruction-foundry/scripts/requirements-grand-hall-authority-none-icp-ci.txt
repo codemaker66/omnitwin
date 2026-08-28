@@ -1,0 +1,8 @@
+# Windows CPython 3.13 wheels used only for the authority-none replay test gate.
+# Exact wheel hashes are copied from the reviewed environment lock. This CI
+# environment exercises regressions; it is not an execution-proven replay
+# environment and cannot promote a registration candidate.
+networkx==3.6.1 --hash=sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762
+numpy==2.4.2 --hash=sha256:7df2de1e4fba69a51c06c28f5a3de36731eb9639feb8e1cf7e4a7b0daf4cf622
+scipy==1.17.0 --hash=sha256:87b411e42b425b84777718cc41516b8a7e0795abfa8e8e1d573bf0ef014f0812
+trimesh==4.11.2 --hash=sha256:25e3ab2620f9eca5c9376168c67aabdd32205dad1c4eea09cd45cd4a3edf775a
