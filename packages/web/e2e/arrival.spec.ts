@@ -12,7 +12,9 @@ import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
 //      does (the guarantee that outranks every other line in this file);
 //   2. "Open the Hall" really splits the capture into the storeys the
 //      building HAS, and they really separate;
-//   3. with a live Google key, Google's attribution — BOTH credits — ships.
+//   3. Google's attribution — BOTH credits — ships, on every machine and
+//      without a key, because a ToS guard that only runs where somebody has
+//      a paid key and a discrete GPU is not a guard.
 //
 // It is a rebuild. The previous version of this file had five defects an
 // adversarial review found, and the corrections are load-bearing enough to
@@ -21,7 +23,7 @@ import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
 // (A) ITS ONE ALWAYS-RUNS TEST ASSERTED SILENCE OVER A PATH THAT DIFFERS BY
 //     MACHINE. It loaded "/" with nothing stubbed and asserted zero console
 //     errors — but "/" fetches the trades-hall twin manifest
-//     (ArrivalHero.tsx:280's useTwinManifest runs BEFORE the no-key gate
+//     (ArrivalHero's own useTwinManifest call runs BEFORE the no-key gate
 //     returns null, so even a keyless visit makes the request) out of
 //     packages/web/public/twin, which is gitignored (.gitignore:60). A
 //     developer's machine has that bundle and a clean CI checkout does not,
@@ -67,9 +69,13 @@ import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
 //     attribution inside it — so the assertion was true even in the exact
 //     state commit e51b9475 fixed, where `logoUrl` was never passed and
 //     GoogleCloudAuthPlugin.getAttributions() silently skipped the logo
-//     credit (`if ( this.logoUrl )`, GoogleCloudAuthPlugin.js:118-125). The
-//     keyed case below asserts the CONTENTS: a non-empty text/copyright
-//     credit AND an <img> carrying the brand mark's exact URL.
+//     credit (`if ( this.logoUrl )`, GoogleCloudAuthPlugin.js:118-125). Its
+//     replacement asserts the CONTENTS — a non-empty text/copyright credit
+//     AND an <img> carrying the brand mark's exact URL — and, since the
+//     rewrite that first made that assertion real still could not RUN
+//     (double-gated on a key and a non-poster GPU, and headless Chromium is
+//     SwiftShader on every machine), it now runs unconditionally through the
+//     DEV tiles seam. See THE ATTRIBUTION FIXTURE.
 //
 // (D) ITS KEYLESS CASES FAILED ON A KEYED MACHINE. "No .arrival-hero exists"
 //     is only true where no live hero mounts; on a machine with a key the
@@ -86,31 +92,45 @@ import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
 //     the documented way got two silently-skipped tests and a green suite
 //     that had tested nothing. See KEY GATING below.
 //
+// HOW THIS FILE CITES SOURCE — a convention, arrived at the hard way.
+// Citations into packages/web/src name the SYMBOL, never the line. The first
+// version of this file cited ArrivalHero.tsx by line in seven places; one
+// robustness wave later every single one of them pointed at the wrong thing
+// (the file had moved by 1-36 lines), and a comment that confidently names a
+// line it is wrong about is worse than one that names none — it sends the
+// reader to the wrong code and looks authoritative doing it. Symbol names are
+// greppable, survive edits above them, and fail loudly (grep finds nothing)
+// when the thing is actually gone. Line numbers are kept ONLY for
+// node_modules, where the dependency version is pinned in package.json and a
+// bump is exactly when you want the reference re-checked, and for sibling
+// specs and config in this same directory.
+//
 // THE VERIFIED DOM CONTRACT (read from the shipped source, not the plan):
-//   - `.arrival-hero` wrapper carries `data-arrival-phase` — ArrivalHero.tsx
-//     :411-413 (`<div className="arrival-hero" data-arrival-phase={phase}>`),
-//     values from ArrivalPhase (arrival-store.ts:3): loading | flight |
-//     arrived | exploded | fallback.
+//   - `.arrival-hero` wrapper carries `data-arrival-phase` — ArrivalHero.tsx's
+//     `<div className="arrival-hero" data-arrival-phase={phase}>`, values from
+//     ArrivalPhase (arrival-store.ts:3): loading | flight | arrived |
+//     exploded | fallback.
 //   - No API key (or a poster-tier device) → useArrivalGate blocks and
-//     ArrivalHero returns null before ever mounting a canvas
-//     (ArrivalHero.tsx:378-391) — and FreshPage.tsx wraps it in
-//     `<Suspense fallback={null}>` layered over the `<picture>`/
-//     `<img className="fr-hero-photo">`, so the photo alone carries the hero.
-//   - The Skip button, text exactly ARRIVAL_SKIP_LABEL = "Skip the flight"
-//     (ArrivalHero.tsx:108), renders only while phase === "flight"
-//     (ArrivalHero.tsx:445-455).
-//   - "Open the Hall" (ARRIVAL_OPEN_HALL_LABEL, ArrivalHero.tsx:114) renders
-//     only in "arrived" AND only when `dollhouseReady` (:456) — manifest
-//     ready with a mesh in it — and calls explode() (arrival-store.ts:66-68).
+//     ArrivalHero returns null before ever mounting a canvas (its
+//     `if (gateBlocked !== null) return null` early return) — and
+//     FreshPage.tsx wraps it in `<Suspense fallback={null}>` layered over the
+//     `<picture>`/`<img className="fr-hero-photo">`, so the photo alone
+//     carries the hero.
+//   - The Skip button, text exactly ArrivalHero.tsx's ARRIVAL_SKIP_LABEL =
+//     "Skip the flight", renders only while phase === "flight" (its
+//     `{phase === "flight" && …}` block, `button.arrival-skip`).
+//   - "Open the Hall" (ArrivalHero.tsx's ARRIVAL_OPEN_HALL_LABEL) renders only
+//     under `{phase === "arrived" && dollhouseReady && …}` — manifest ready
+//     with a mesh in it — and calls the store's explode().
 //   - Storey labels are `div.arrival-storey-label[data-arrival-storey=
-//     {entry.bucket}]` (ArrivalHero.tsx:210-218), each holding the storey
-//     name and a "Plan this room" button whose aria-label is
-//     `Plan ${entry.label}` (:246-255), plus one "Close" button (:260-271)
-//     that calls reassemble() back to "arrived".
+//     {entry.bucket}]` (ArrivalHero.tsx's StoreyLabels), each holding the
+//     storey name and a `button.arrival-storey-plan` whose aria-label is
+//     `Plan ${entry.label}`, plus one `button.arrival-explode-close` that
+//     calls the store's reassemble() back to "arrived".
 //   - reduced motion short-circuits the phase machine: useArrivalGate
 //     (use-arrival-gate.ts:46-50) flips the store's `reducedMotion` flag
 //     once, on mount, from a live OS/emulated read of prefersReducedMotion();
-//     arrival-store.ts's tilesReady() (:53-59) then goes loading -> arrived
+//     arrival-store.ts's tilesReady() then goes loading -> arrived
 //     DIRECTLY in one synchronous `set()`, never touching "flight". The
 //     keyed case below still proves it by watching phase HISTORY, not the
 //     final value — a browser round trip against a real network is exactly
@@ -149,19 +169,36 @@ import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
 //     mounts) fails loudly rather than passing vacuously if it is wrong.
 //   - A POSTER-TIER GPU. useArrivalGate blocks BEFORE the key is even
 //     consulted when device tier is "poster" (use-arrival-gate.ts:52-54),
-//     which is exactly what a headless CI Chromium on SwiftShader is
+//     which is exactly what a headless Chromium on SwiftShader is
 //     (device-tier.ts:29-31). A keyed run there can never mount a hero, so
 //     the keyed cases below detect that from the live WebGL renderer string
 //     and skip with THAT reason named, instead of failing as if the key were
 //     the problem. Both gates print their reason — a skip in this file
 //     always says which of the two it was.
 //
+//     THE SECOND GATE USED TO SWALLOW THE FIRST, and that is why the ToS
+//     assertion moved out from under both of them. This repo's
+//     playwright.config.ts sets no launchOptions, so the DEFAULT run of this
+//     file was SwiftShader on every machine — including a keyed developer's
+//     workstation with a discrete GPU sitting idle. The keyed cases therefore
+//     skipped everywhere, always, and the gating rework that produced these
+//     two carefully-worded reasons had only changed which sentence got
+//     printed while the suite stayed green having tested neither keyed thing.
+//     Two changes, because one was not enough: `test.use` at the top of this
+//     file now asks for the real GPU (measured — see THE ATTRIBUTION FIXTURE),
+//     which un-skips the keyed cases on a workstation; and the attribution
+//     assertion, which is a ToS guard and cannot be allowed to depend on
+//     anybody's hardware, is no longer one of them.
+//
 // THE PHASE-DEPENDENT CASES DO NOT NEED A KEY. ArrivalHero self-gates to
 // null without one, but arrival-dev-harness.ts's DEV-only `?arrivalPhase=`
 // seam (double-guarded by import.meta.env.DEV, stripped from production
-// builds) drives the store directly and deliberately does NOT mount
-// GoogleTilesStage — no key, no billable tile request, and the storey case
-// below runs everywhere, always. This is the same seam
+// builds) drives the store directly and — on its own — deliberately does NOT
+// mount GoogleTilesStage, so the storey case below runs everywhere with no
+// key and no billable tile request. Its companion `&arrivalTiles=stub`
+// supplies a synthetic token for the ONE case that does need the tiles stage
+// mounted (the attribution case), which answers tile.googleapis.com from its
+// own route stub — see THE ATTRIBUTION FIXTURE. This is the same seam
 // arrival-hero-controls.spec.ts uses, and it carries that file's caveat:
 // under `E2E_WEB_SERVER=preview` the seam is compiled out, so the harness
 // cases are dev-server cases (CI runs the dev server — playwright.config.ts
@@ -169,6 +206,26 @@ import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
 // ---------------------------------------------------------------------------
 
 test.describe.configure({ mode: "serial" });
+
+// The repo's playwright.config.ts passes no launch args, and this repo's other
+// WebGL specs each supply their own (twin-visual.spec.ts:65-76,
+// twin-performance.spec.ts:46-56). This file's are chosen for a different
+// purpose than theirs: those pin SwiftShader for pixel determinism, these ask
+// for the real GPU, because the hero's own gate refuses to fly on a software
+// rasteriser at all (useArrivalGate blocks device tier "poster", and
+// device-tier.ts:29-31 classifies "SwiftShader" as exactly that). MEASURED on
+// this machine, 2026-08-28 — see THE ATTRIBUTION FIXTURE below for the full
+// numbers — these flags move the reported renderer from SwiftShader to
+// "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 … D3D11)", which is what lets the
+// keyed cases at the bottom of this file actually execute on a workstation
+// instead of skipping. They are NOT what makes the attribution guard run: a
+// CI runner has no GPU for them to find, so that guard is driven through the
+// DEV tiles seam instead and does not consult the renderer at all.
+test.use({
+  launchOptions: {
+    args: ["--use-angle=default", "--enable-gpu"],
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Key gating.
@@ -278,7 +335,7 @@ const TWO_STOREY_MANIFEST: TwinManifest = TwinManifestSchema.parse({
 });
 
 /**
- * ExplodedHall.tsx:141-144's ARRIVAL_STOREY_LABELS, restated as literals
+ * ExplodedHall.tsx's ARRIVAL_STOREY_LABELS, restated as literals
  * because this file cannot import that module (it pulls in three, R3F and
  * react-router; the spec runs in Node). Composition from ROOM_DISPLAY_NAMES
  * is pinned by ExplodedHall.test.tsx — what is pinned HERE is the rendered
@@ -498,10 +555,10 @@ const GOOGLE_TILES_ROOT_ROUTE = "https://tile.googleapis.com/v1/3dtiles/root.jso
  *
  * The storey case below drives the phase machine through the DEV harness, so
  * it needs no key — but on a machine that HAS one, ArrivalHero still mounts
- * GoogleTilesStage (ArrivalHero.tsx:441 gates only on apiToken !== null, not
+ * GoogleTilesStage (ArrivalHero.tsx gates that child on apiToken !== null, not
  * on the harness), and a tiles `load-error` calls fail("tiles"), which
  * OVERRIDES the pinned phase and drops the hero into "fallback"
- * (arrival-store.ts:72-76). Measured, not theorised: with a key installed
+ * (arrival-store.ts's fail()). Measured, not theorised: with a key installed
  * that Google rejects, that case went red on `data-arrival-phase="fallback"`
  * before it could click anything.
  *
@@ -531,6 +588,234 @@ async function stubGoogleTilesRootAsEmpty(page: Page): Promise<void> {
         },
       }),
     }),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTION FIXTURE — Google's own tile pipeline, answered locally, so
+// the ToS assertion runs on a machine with no key and no GPU.
+//
+// WHY THIS EXISTS. Everything below the "keyed" heading further down needs a
+// paid Map Tiles key AND a non-poster GPU, and the second of those two gates
+// used to fire on every default run of this file on every machine, so the
+// attribution assertion — the guard on the exact ToS defect commit e51b9475
+// fixed — had never once executed. MEASURED here on 2026-08-28 with this
+// repo's own @playwright/test 1.59.1, on a machine holding an RTX 4090:
+//
+//   chromium.launch()                             -> "ANGLE (Google, Vulkan
+//     no launchOptions                                1.3.0 (SwiftShader
+//                                                     Device (Subzero) …))"
+//   chromium.launch({ args: ["--use-angle=default",
+//                            "--enable-gpu"] })   -> "ANGLE (NVIDIA, NVIDIA
+//                                                     GeForce RTX 4090 …
+//                                                     D3D11)"
+//
+// So the reviewer's suggested flags do work — they are applied at the top of
+// this file — and they are still not the fix, because a CI runner has no
+// discrete GPU for them to find. An assertion that runs only where there is a
+// GPU is an assertion that does not run in CI, which is the one place a ToS
+// guard has to run. Hence this fixture: the DEV `&arrivalTiles=stub` seam
+// (arrival-dev-harness.ts) mounts GoogleTilesStage with a synthetic token at
+// ANY device tier, and the stubs below answer every request it makes. Nothing
+// here reaches Google, and nothing here is billable.
+//
+// WHAT MAKES THE CREDITS APPEAR — the thing worth writing down, because it is
+// not obvious and it is what a future edit will break. GoogleCloudAuthPlugin
+// .getAttributions() returns NOTHING AT ALL unless `this.tiles.visibleTiles
+// .size > 0` (GoogleCloudAuthPlugin.js:110). So a stub that merely answers the
+// root request — like stubGoogleTilesRootAsEmpty above, which is deliberately
+// empty because its case is about storeys, not Google — produces an empty
+// overlay and would make this assertion vacuous in a new way. The tileset
+// below therefore has to get one real tile LOADED and VISIBLE:
+//
+//   - its root carries `content.uri` with a `?session=` parameter, because
+//     that is where GoogleCloudAuth.getSessionToken() digs the session token
+//     out of the first response (GoogleCloudAuth.js:171-197);
+//   - its bounding sphere is centred on the Trades Hall anchor's real ECEF
+//     position, so that after ReorientationPlugin pins that point to the scene
+//     origin the sphere sits around the camera rail and passes the frustum
+//     test rather than being culled on the other side of the planet;
+//   - the content is a real GLB with a real triangle, so the tile genuinely
+//     loads rather than erroring into fail("tiles");
+//   - and that GLB carries `asset.copyright`, because the text credit's value
+//     is read from the GLTF PARSE RESULT — `tile.engineData.metadata?.asset
+//     ?.copyright` (GoogleCloudAuthPlugin.js:99), where `metadata` is the
+//     whole gltf object three's TilesRenderer got back (TilesRenderer.js:
+//     773-782, 869) — NOT from the tileset JSON, which is the natural place to
+//     look and the wrong one.
+// ---------------------------------------------------------------------------
+
+/** Every request the tiles stage can make, whatever the plugin appends. */
+const GOOGLE_TILES_ANY_ROUTE = "https://tile.googleapis.com/**";
+
+/** The seam that mounts GoogleTilesStage without a key — arrival-dev-harness.ts. */
+const HARNESS_TILES_QUERY = "arrivalTiles=stub";
+
+/** WGS84 as 3d-tiles-renderer defines it — core/renderer/constants.js:42,55
+ *  (`WGS84_HEIGHT = a(1 − f)`, f = 1/298.257223563). */
+const WGS84_A = 6378137;
+const WGS84_B = 6356752.314245179;
+
+/** trades-hall-anchor.ts's TRADES_HALL_ANCHOR, restated for the same reason as
+ *  every other literal in this file: that module is imported by Vite modules
+ *  and this spec runs in Node. Its composition is pinned by its own tests. */
+const ANCHOR_LAT_DEG = 55.859;
+const ANCHOR_LON_DEG = -4.2474;
+const ANCHOR_HEIGHT_M = 20;
+
+/**
+ * The anchor in ECEF metres, by the SAME arithmetic the renderer uses, so the
+ * two cannot disagree: Ellipsoid.getCartographicToNormal builds the unit
+ * normal from a Spherical at (φ = π/2 − lat, θ = lon) and swaps the three.js
+ * frame to the geo frame — (x, y, z) = (z₃, x₃, y₃), which is exactly
+ * (cos lat·cos lon, cos lat·sin lon, sin lat) — and
+ * getCartographicToPosition then applies Cesium's radius²/gamma projection
+ * plus height along that normal (Ellipsoid.js:259-276, 309-317; GeoUtils.js
+ * :33-40, 76-80). Reproduced rather than imported because importing
+ * 3d-tiles-renderer/three into this Node process would drag in three.
+ */
+function anchorEcef(): readonly [number, number, number] {
+  const lat = (ANCHOR_LAT_DEG * Math.PI) / 180;
+  const lon = (ANCHOR_LON_DEG * Math.PI) / 180;
+  const normal: readonly [number, number, number] = [
+    Math.cos(lat) * Math.cos(lon),
+    Math.cos(lat) * Math.sin(lon),
+    Math.sin(lat),
+  ];
+  const scaled: readonly [number, number, number] = [
+    normal[0] * WGS84_A ** 2,
+    normal[1] * WGS84_A ** 2,
+    normal[2] * WGS84_B ** 2,
+  ];
+  const gamma = Math.sqrt(
+    normal[0] * scaled[0] + normal[1] * scaled[1] + normal[2] * scaled[2],
+  );
+  return [
+    scaled[0] / gamma + normal[0] * ANCHOR_HEIGHT_M,
+    scaled[1] / gamma + normal[1] * ANCHOR_HEIGHT_M,
+    scaled[2] / gamma + normal[2] * ANCHOR_HEIGHT_M,
+  ];
+}
+
+/**
+ * 2 km around the anchor. The rail's own start pose is 3.7 km out looking at
+ * the origin (camera-rail.ts:81) and its held arrival pose is 75 m out, so a
+ * sphere this size is inside the frustum from the first frame to the last —
+ * the tile is visible for the whole flight, not just part of it.
+ */
+const STUB_TILE_RADIUS_M = 2000;
+
+/** Distinct enough that finding it in the overlay is finding OUR credit. */
+const STUB_TILE_COPYRIGHT = "E2E stub imagery credit";
+
+/** The token GoogleCloudAuth digs out of the root response's content URI. */
+const STUB_SESSION_TOKEN = "E2E-STUB-SESSION";
+
+const STUB_TILE_FILENAME = "e2e-stub-tile.glb";
+
+/**
+ * A real GLB with one triangle and a `copyright` in its glTF asset block —
+ * the field the text credit is actually read from (see the header above).
+ */
+function googleTileGlbBytes(): Buffer {
+  const positions = [-200, -200, 0, 200, -200, 0, 0, 200, 0];
+  const bin = Buffer.alloc(positions.length * 4);
+  positions.forEach((value, i) => {
+    bin.writeFloatLE(value, i * 4);
+  });
+  return glbBytes(
+    {
+      asset: { version: "2.0", copyright: STUB_TILE_COPYRIGHT },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0, name: "e2e-stub-tile" }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: 5126, // FLOAT
+          count: 3,
+          type: "VEC3",
+          min: [-200, -200, 0],
+          max: [200, 200, 0],
+        },
+      ],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: bin.byteLength, target: 34962 }],
+      buffers: [{ byteLength: bin.byteLength }],
+    },
+    bin,
+  );
+}
+
+const STUB_TILE_GLB_BYTES = googleTileGlbBytes();
+
+/** Answers every tile.googleapis.com request with the fixture above. */
+async function stubGoogleTilesAsOneVisibleTile(page: Page): Promise<void> {
+  const [x, y, z] = anchorEcef();
+  const tileset = {
+    asset: { version: "1.1" },
+    geometricError: 100,
+    root: {
+      boundingVolume: { sphere: [x, y, z, STUB_TILE_RADIUS_M] },
+      // Zero, so the root is its own leaf: a screen-space error of 0 is below
+      // any errorTarget, so the traversal displays it instead of asking for
+      // children this fixture deliberately does not have.
+      geometricError: 0,
+      refine: "REPLACE",
+      content: { uri: `${STUB_TILE_FILENAME}?session=${STUB_SESSION_TOKEN}` },
+    },
+  };
+
+  await page.route(GOOGLE_TILES_ANY_ROUTE, async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith("/root.json")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(tileset),
+      });
+      return;
+    }
+    if (pathname.endsWith(`/${STUB_TILE_FILENAME}`)) {
+      await route.fulfill({
+        status: 200,
+        contentType: "model/gltf-binary",
+        body: STUB_TILE_GLB_BYTES,
+      });
+      return;
+    }
+    // Loud rather than silent: an unrecognised Google request means the
+    // fixture has drifted from what the library asks for, and a 404 here
+    // surfaces as a tiles failure the assertions cannot miss.
+    await route.fulfill({ status: 404, contentType: "text/plain", body: pathname });
+  });
+}
+
+/**
+ * A decodable PNG at the brand mark's exact URL.
+ *
+ * arrival-config.ts's GOOGLE_MAPS_ATTRIBUTION_LOGO_URL points at a file that
+ * IS NOT IN THE REPO YET — its own NEEDS_CONTEXT note explains why (Google's
+ * mark ships as a downloadable archive, and choosing the variant is a human
+ * call), and packages/web/public/images/brand/ confirms it. That gap belongs
+ * to Task 16, and it is NOT what the unconditional case is about: that case is
+ * about whether the hero still EMITS the logo credit, which is the thing
+ * e51b9475 fixed and the thing a refactor can silently undo.
+ *
+ * So the route is answered with a real committed PNG — the House coat-of-arms
+ * mark, standing in purely as bytes a browser can decode — and `naturalWidth`
+ * then measures what it is meant to: that the overlay pointed the browser at
+ * the exact URL the hero configured, and that what came back rendered. The
+ * keyed case further down leaves this route UNSTUBBED, so a machine with a
+ * real key still tests the real asset's existence.
+ */
+const LOGO_STAND_IN_FILE = fileURLToPath(
+  new URL("../public/images/brand/coat-of-arms-mark.png", import.meta.url),
+);
+
+async function stubGoogleAttributionLogo(page: Page): Promise<void> {
+  await page.route(`**${GOOGLE_LOGO_URL}`, (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", path: LOGO_STAND_IN_FILE }),
   );
 }
 
@@ -676,8 +961,8 @@ test("keyless: no live Arrival mounts at all, and the hero is silent", async ({ 
   await expectHeroPhotoCarriesThePage(page);
 
   // Closing a "the lazy chunk hasn't downloaded yet" race, not waiting out a
-  // delay the product imposes: once the chunk resolves, ArrivalHero.tsx
-  // :378-391 returns null synchronously.
+  // delay the product imposes: once the chunk resolves, ArrivalHero's
+  // gate-blocked early return fires synchronously.
   await page.waitForTimeout(2_000);
   await expect(page.locator(".arrival-hero")).toHaveCount(0);
 
@@ -723,7 +1008,7 @@ test("Open the Hall splits the capture into its two real storeys, and they separ
   await expect(hero).toHaveAttribute("data-arrival-phase", "arrived", { timeout: 20_000 });
 
   // "Open the Hall" only exists when HallHandoff will really render something
-  // (ArrivalHero.tsx:456's dollhouseReady) — so reaching it at all already
+  // (ArrivalHero.tsx's dollhouseReady) — so reaching it at all already
   // says the stubbed bundle was accepted, not merely requested.
   await page.getByRole("button", { name: OPEN_HALL_LABEL, exact: true }).click();
   await expect(hero).toHaveAttribute("data-arrival-phase", "exploded");
@@ -769,7 +1054,69 @@ test("Open the Hall splits the capture into its two real storeys, and they separ
 });
 
 // ---------------------------------------------------------------------------
-// 4. Keyed — the only two things that genuinely need Google's live service.
+// 4. The Google ToS contract — BOTH required credits, on every machine.
+//
+//    This is the guard on commit e51b9475's defect (logoUrl never passed, so
+//    the brand credit was never emitted at all), and until now it lived only
+//    in the keyed case below, which needs a paid key AND a discrete GPU and
+//    therefore skipped on every default run anywhere. It runs here instead:
+//    real GoogleTilesStage, real GoogleCloudAuthPlugin, real
+//    TilesAttributionOverlay, real browser — with tile.googleapis.com answered
+//    from THE ATTRIBUTION FIXTURE above, so no key, no GPU tier and no network
+//    are involved. The keyed case keeps the two things this cannot cover: the
+//    live service, and whether the real brand-mark file has been committed.
+// ---------------------------------------------------------------------------
+
+test("Google's two required credits both ship — no key, no GPU, no network", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await stubTwinBundleAsProduction(page);
+  await stubGoogleTilesAsOneVisibleTile(page);
+  await stubGoogleAttributionLogo(page);
+
+  // "flight" rather than "arrived": ArrivalHero runs the canvas at
+  // frameloop="always" only while the flight (or an unsettled explode spring)
+  // is running, and the tiles traversal that marks a tile VISIBLE — the
+  // precondition for any attribution at all — happens in that frame loop.
+  await page.goto(`/?arrivalPhase=flight&${HARNESS_TILES_QUERY}`);
+
+  const hero = page.locator(".arrival-hero");
+  await expect(hero).toHaveAttribute("data-arrival-phase", "flight", { timeout: 20_000 });
+
+  const overlay = hero.locator('[id^="class_"]').first();
+  await expect(overlay).toBeAttached();
+
+  // (1) THE BRAND MARK. 3d-tiles-renderer renders an `image` attribution as
+  // <div><img src=…> (TilesAttributionOverlay.jsx:89-112), and
+  // GoogleCloudAuthPlugin pushes that entry ONLY when logoUrl is set
+  // (`if ( this.logoUrl )`, GoogleCloudAuthPlugin.js:118-125). Asserting the
+  // container — which the library renders unconditionally — is what made the
+  // previous version of this assertion unable to fail.
+  const logo = overlay.locator(`img[src="${GOOGLE_LOGO_URL}"]`);
+  await expect(logo).toBeAttached({ timeout: 30_000 });
+
+  // …and it is a mark, not a broken image: a URL that 404s renders as nothing
+  // at all, and the ToS requirement is then as unmet as when no credit was
+  // emitted. See stubGoogleAttributionLogo for what is being measured here and
+  // what is deliberately not.
+  await expect
+    .poll(async () => logo.evaluate((el: HTMLImageElement) => el.naturalWidth), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(0);
+
+  // (2) THE TEXT/COPYRIGHT CREDIT — the other of the two attributions Google's
+  // policies require. Its value comes from the loaded tile's own glTF
+  // asset.copyright, so asserting the fixture's exact string proves the whole
+  // path (tile loaded → visible → copyright collected → rendered), not merely
+  // that some text is present.
+  await expect(overlay).toContainText(STUB_TILE_COPYRIGHT);
+});
+
+// ---------------------------------------------------------------------------
+// 5. Keyed — the only two things that genuinely need Google's live service.
 // ---------------------------------------------------------------------------
 
 test("keyed: the flight starts on real tiles, and BOTH Google credits ship with it", async ({
@@ -784,7 +1131,10 @@ test("keyed: the flight starts on real tiles, and BOTH Google credits ship with 
   test.skip(
     POSTER_RENDERER.test(renderer),
     `poster-tier GPU (${renderer}) — useArrivalGate blocks the hero before the key is ` +
-      "consulted (use-arrival-gate.ts:52-54), so no keyed case can run on this machine",
+      "consulted (use-arrival-gate.ts:52-54), so no keyed case can run on this machine. " +
+      "This file already asks for the real GPU (see test.use at the top), so reaching " +
+      "here means there was none to reach — a CI runner, typically. Google's ToS guard " +
+      "does NOT depend on this: it runs unconditionally, further up.",
   );
 
   const hero = page.locator(".arrival-hero");
@@ -793,14 +1143,12 @@ test("keyed: the flight starts on real tiles, and BOTH Google credits ship with 
   // (trades-hall-visual.spec.ts:219 allows 120_000ms for a real R2 asset).
   await expect(hero).toHaveAttribute("data-arrival-phase", "flight", { timeout: 45_000 });
 
-  // THE GOOGLE ToS CONTRACT (defect C). The overlay container exists whether
-  // or not it holds anything, so the container is not the assertion — its
-  // CONTENTS are. 3d-tiles-renderer renders one <div> per attribution:
-  // type "string" becomes a text div, type "image" becomes <div><img src=…>
-  // (TilesAttributionOverlay.jsx:89-112). GoogleCloudAuthPlugin pushes the
-  // image credit ONLY when logoUrl is set (GoogleCloudAuthPlugin.js:118-125)
-  // — that omission was the shipped bug e51b9475 fixed, and it is invisible
-  // to any assertion that stops at the container.
+  // THE GOOGLE ToS CONTRACT, against the LIVE service. The unconditional case
+  // above already proves the hero emits both credits, on any machine — this
+  // one adds the two things a local stub structurally cannot: that Google's
+  // real tileset drives the same overlay, and that the brand mark is a file
+  // that actually EXISTS in this repo (the logo route is deliberately not
+  // stubbed here, unlike above).
   const overlay = hero.locator('[id^="class_"]').first();
   await expect(overlay).toBeAttached();
 
@@ -808,8 +1156,12 @@ test("keyed: the flight starts on real tiles, and BOTH Google credits ship with 
   await expect(logo).toBeAttached({ timeout: 30_000 });
   // The mark has to be a mark, not a broken image: a 404 renders as nothing
   // at all and the ToS requirement is unmet just as completely as when the
-  // credit was never emitted. arrival-config.ts's own NEEDS_CONTEXT note
-  // (the asset is not committed yet) is exactly what this catches.
+  // credit was never emitted. THIS IS THE LIVE TRIP-WIRE ON THE UNCOMMITTED
+  // ASSET — arrival-config.ts's own NEEDS_CONTEXT note says the file is not
+  // in the repo yet, so whoever first runs this file with a real key is the
+  // person who has to land it before Task 16, and this line is what tells
+  // them. It is deliberately the ONE assertion in this spec that a stub does
+  // not answer for.
   expect(await logo.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
 
   // …and the text/copyright credit beside it, which is the OTHER of the two
@@ -819,7 +1171,7 @@ test("keyed: the flight starts on real tiles, and BOTH Google credits ship with 
   expect((await overlay.innerText()).trim().length).toBeGreaterThan(0);
 
   // Skip is WCAG 2.2.2's pause control for an 11-second automatic animation;
-  // it exists only during flight (ArrivalHero.tsx:445-455).
+  // it exists only during flight (ArrivalHero.tsx's phase === "flight" block).
   await page.getByRole("button", { name: SKIP_LABEL, exact: true }).click();
   await expect(hero).toHaveAttribute("data-arrival-phase", "arrived");
 
@@ -841,7 +1193,10 @@ test("keyed + reduced motion: arrives without ever passing through flight", asyn
   test.skip(
     POSTER_RENDERER.test(renderer),
     `poster-tier GPU (${renderer}) — useArrivalGate blocks the hero before the key is ` +
-      "consulted (use-arrival-gate.ts:52-54), so no keyed case can run on this machine",
+      "consulted (use-arrival-gate.ts:52-54), so no keyed case can run on this machine. " +
+      "This file already asks for the real GPU (see test.use at the top), so reaching " +
+      "here means there was none to reach — a CI runner, typically. Google's ToS guard " +
+      "does NOT depend on this: it runs unconditionally, further up.",
   );
 
   const hero = page.locator(".arrival-hero");

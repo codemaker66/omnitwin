@@ -8,6 +8,7 @@ import {
   useArrivalStore,
   type ArrivalFailReason,
 } from "../arrival-store.js";
+import { ARRIVAL_HARNESS_TILES_TOKEN } from "../arrival-dev-harness.js";
 import { useDeviceStore } from "../../../../stores/device-store.js";
 import { FRESH_TOUR_ENABLED } from "../../../fresh/fresh-copy.js";
 import { ARRIVAL_RAIL, sampleRail } from "../camera-rail.js";
@@ -259,6 +260,54 @@ describe("ArrivalHero — self-gating", () => {
     useArrivalStore.setState({ phase: "fallback", failReason: "tiles" });
     const { container } = render(<ArrivalHero />);
     expect(container.firstChild).toBeNull();
+  });
+});
+
+// -----------------------------------------------------------------------------
+// The DEV tiles seam (arrival-dev-harness.ts's `?arrivalTiles=stub`). Its
+// parsing is pinned in arrival-dev-harness.test.ts and its end-to-end effect —
+// Google's two required attributions rendering with no key and no GPU — in
+// e2e/arrival.spec.ts. What is pinned HERE is the one thing neither of those
+// can see: which of the two tokens ArrivalHero hands to GoogleTilesStage when
+// both exist. A seam that shadowed a real key would silently point a keyed
+// developer's hero at a token Google rejects.
+// -----------------------------------------------------------------------------
+
+describe("ArrivalHero — the DEV tiles seam", () => {
+  const setSearch = (search: string): void => {
+    window.history.replaceState({}, "", `/${search}`);
+  };
+
+  afterEach(() => {
+    setSearch("");
+  });
+
+  it("mounts the tiles stage with the synthetic token when there is no key", () => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", undefined);
+    setSearch("?arrivalPhase=flight&arrivalTiles=stub");
+    render(<ArrivalHero />);
+    expect(screen.getByTestId("google-tiles-stage").getAttribute("data-api-token")).toBe(
+      ARRIVAL_HARNESS_TILES_TOKEN,
+    );
+  });
+
+  it("lets a REAL key win over the seam, so a keyed hero is unchanged", () => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+    setSearch("?arrivalPhase=flight&arrivalTiles=stub");
+    render(<ArrivalHero />);
+    expect(screen.getByTestId("google-tiles-stage").getAttribute("data-api-token")).toBe(
+      "AIza-test",
+    );
+  });
+
+  // The phase seam on its own must stay exactly as cheap as it was: no token,
+  // no tiles stage, no request anybody could be billed for. This is what
+  // e2e/arrival-hero-controls.spec.ts and the storey case rely on.
+  it("mounts NO tiles stage for the phase seam alone", () => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", undefined);
+    setSearch("?arrivalPhase=flight");
+    render(<ArrivalHero />);
+    expect(screen.queryByTestId("google-tiles-stage")).toBeNull();
   });
 });
 

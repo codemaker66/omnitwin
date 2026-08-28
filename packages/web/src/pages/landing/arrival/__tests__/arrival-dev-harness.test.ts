@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ARRIVAL_HARNESS_PARAM, arrivalHarnessPhase } from "../arrival-dev-harness.js";
+import {
+  ARRIVAL_HARNESS_PARAM,
+  ARRIVAL_HARNESS_TILES_PARAM,
+  ARRIVAL_HARNESS_TILES_TOKEN,
+  arrivalHarnessPhase,
+  arrivalHarnessTilesToken,
+} from "../arrival-dev-harness.js";
 import { type ArrivalPhase } from "../arrival-store.js";
 
 // ---------------------------------------------------------------------------
@@ -52,5 +58,57 @@ describe("arrivalHarnessPhase", () => {
     expect(
       arrivalHarnessPhase(`?${ARRIVAL_HARNESS_PARAM}=flight&${ARRIVAL_HARNESS_PARAM}=arrived`),
     ).toBe("flight");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The DEV-only TILES seam. It exists so Google's two required attributions can
+// be asserted in a real browser with no paid key and at any device tier — see
+// e2e/arrival.spec.ts's THE ATTRIBUTION FIXTURE. Its safety properties are
+// what these cases pin: it yields a CONSTANT (never the query value), and it
+// yields nothing at all unless the page asked for it by the exact spelling.
+// ---------------------------------------------------------------------------
+
+const tilesUrl = (value: string): string => `?${ARRIVAL_HARNESS_TILES_PARAM}=${value}`;
+
+describe("arrivalHarnessTilesToken", () => {
+  it("returns null for a search string that does not mention it", () => {
+    expect(arrivalHarnessTilesToken("")).toBeNull();
+    expect(arrivalHarnessTilesToken("?utm_source=x")).toBeNull();
+    expect(arrivalHarnessTilesToken(`?${ARRIVAL_HARNESS_PARAM}=flight`)).toBeNull();
+  });
+
+  it("returns the synthetic token for the one accepted value", () => {
+    expect(arrivalHarnessTilesToken(tilesUrl("stub"))).toBe(ARRIVAL_HARNESS_TILES_TOKEN);
+  });
+
+  // The whole point of the constant. A seam that echoed the query value back
+  // would be a way to put a real, billable Google credential into a link; this
+  // one can only ever produce a string Google rejects, so the value in the URL
+  // must be ignored even when it looks exactly like a key.
+  it("never hands back a token supplied in the URL", () => {
+    const token = arrivalHarnessTilesToken(tilesUrl("AIzaSyLOOKS-LIKE-A-REAL-KEY"));
+    expect(token).toBeNull();
+    expect(ARRIVAL_HARNESS_TILES_TOKEN).not.toContain("AIza");
+  });
+
+  it("rejects near-misses rather than accepting them loosely", () => {
+    for (const value of ["", "STUB", "stubbed", "true", "1", "on"]) {
+      expect(arrivalHarnessTilesToken(tilesUrl(value))).toBeNull();
+    }
+  });
+
+  it("reads the first occurrence when the parameter is repeated", () => {
+    expect(
+      arrivalHarnessTilesToken(
+        `?${ARRIVAL_HARNESS_TILES_PARAM}=nope&${ARRIVAL_HARNESS_TILES_PARAM}=stub`,
+      ),
+    ).toBeNull();
+  });
+
+  it("composes with the phase seam, which is how the E2E uses it", () => {
+    const search = `?${ARRIVAL_HARNESS_PARAM}=flight&${ARRIVAL_HARNESS_TILES_PARAM}=stub`;
+    expect(arrivalHarnessPhase(search)).toBe("flight");
+    expect(arrivalHarnessTilesToken(search)).toBe(ARRIVAL_HARNESS_TILES_TOKEN);
   });
 });

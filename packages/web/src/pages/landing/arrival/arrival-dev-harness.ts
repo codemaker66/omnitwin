@@ -36,6 +36,7 @@ import type { ArrivalPhase } from "./arrival-store.js";
 // homepage. It must be impossible, not merely unlikely.
 //
 // Usage: /?arrivalPhase=flight | arrived | exploded | loading | fallback
+//        /?arrivalPhase=arrived&arrivalTiles=stub  (see THE TILES SEAM below)
 // -----------------------------------------------------------------------------
 
 /** The query parameter the harness reads. */
@@ -75,4 +76,83 @@ export function arrivalHarnessPhase(search: string): ArrivalPhase | null {
     return null;
   }
   return raw;
+}
+
+// -----------------------------------------------------------------------------
+// THE TILES SEAM — the second half of the same problem, added because the
+// first half was not enough to make Google's attribution testable.
+//
+// WHAT WAS BROKEN. Google's Map Tiles API Policies require TWO attributions,
+// and commit e51b9475 fixed a shipped state where one of them (the brand mark)
+// was never emitted at all, because `logoUrl` was not passed to
+// GoogleCloudAuthPlugin. The E2E case written to stop that returning was
+// double-gated: it needed a paid Google key AND a non-poster GPU, because
+// useArrivalGate blocks device tier "poster" before it even looks at the key
+// (use-arrival-gate.ts) and headless Chromium is SwiftShader.
+//
+// MEASURED, 2026-08-28, on a machine with an RTX 4090, `chromium.launch()`
+// straight out of this repo's @playwright/test 1.59.1:
+//
+//   default (no launchOptions)        -> "ANGLE (Google, Vulkan 1.3.0
+//                                        (SwiftShader Device (Subzero) …))"
+//   --use-angle=default --enable-gpu  -> "ANGLE (NVIDIA, NVIDIA GeForce
+//                                        RTX 4090 … D3D11)"
+//
+// So the launch flags DO reach the discrete GPU here — and that is still not a
+// fix, because a CI runner has no discrete GPU to reach. An attribution
+// assertion gated on the reported renderer is an assertion that does not run
+// in CI, which is the one place it has to run.
+//
+// WHAT THIS SEAM DOES. It supplies a FIXED, SYNTHETIC token so
+// GoogleTilesStage — with its real GoogleCloudAuthPlugin, its real
+// TilesAttributionOverlay and its real logoUrl wiring — mounts on any machine,
+// with no key and at any device tier, so the E2E can answer tile.googleapis.com
+// itself and assert what the overlay actually renders. See
+// e2e/arrival.spec.ts's attribution case.
+//
+// THREE THINGS KEEP IT SAFE, and they are deliberate:
+//   1. Same double guard as the phase seam — `import.meta.env.DEV` here AND at
+//      the call site, so the whole module tree-shakes out of a production
+//      build.
+//   2. The token is a CONSTANT, not the query value. A seam that handed back
+//      whatever the URL said would be a way to smuggle a real, billable
+//      credential in through a link; this one can only ever produce a string
+//      Google rejects.
+//   3. It cannot mount anything ON ITS OWN. useArrivalGate reads
+//      googleTilesApiKey() directly, so on a keyless machine `?arrivalTiles`
+//      alone still fails the gate with "no-key" and the hero returns null —
+//      the phase pin above is what bypasses the gate, and the two must be
+//      combined deliberately.
+// -----------------------------------------------------------------------------
+
+/** The query parameter that mounts GoogleTilesStage without a real key. */
+export const ARRIVAL_HARNESS_TILES_PARAM = "arrivalTiles";
+
+/** The only accepted value — spelled out so a typo cannot silently enable it. */
+const ARRIVAL_HARNESS_TILES_VALUE = "stub";
+
+/**
+ * The synthetic token handed to GoogleCloudAuthPlugin under the seam.
+ *
+ * Shaped to be unmistakable in a network log and impossible to confuse with a
+ * credential: a real Google API key is 39 characters beginning "AIza", and
+ * this is neither. Google answers it with HTTP 400 `API_KEY_INVALID` (the body
+ * pinned in google-tiles-auth-contract.test.ts), so a stray page load with
+ * this seam on and no route stub in place degrades down the hero's ordinary
+ * tiles-failure path and bills nobody.
+ */
+export const ARRIVAL_HARNESS_TILES_TOKEN = "E2E-HARNESS-TOKEN-NOT-A-GOOGLE-CREDENTIAL";
+
+/**
+ * The synthetic tiles token when this page load asked for it, else null.
+ *
+ * Returns null unconditionally outside a dev build. `search` is passed in
+ * rather than read from `window` for the same reason as above.
+ */
+export function arrivalHarnessTilesToken(search: string): string | null {
+  if (!import.meta.env.DEV) {
+    return null;
+  }
+  const raw = new URLSearchParams(search).get(ARRIVAL_HARNESS_TILES_PARAM);
+  return raw === ARRIVAL_HARNESS_TILES_VALUE ? ARRIVAL_HARNESS_TILES_TOKEN : null;
 }

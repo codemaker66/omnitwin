@@ -3,7 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { useNavigate } from "react-router-dom";
 import { FRESH_TOUR_ENABLED } from "../../fresh/fresh-copy.js";
 import { googleTilesApiKey } from "./arrival-config.js";
-import { arrivalHarnessPhase } from "./arrival-dev-harness.js";
+import { arrivalHarnessPhase, arrivalHarnessTilesToken } from "./arrival-dev-harness.js";
 import { useArrivalFrame } from "./arrival-frame-guard.js";
 import { useArrivalStore, type ArrivalPhase } from "./arrival-store.js";
 import { useArrivalGate } from "./use-arrival-gate.js";
@@ -279,7 +279,7 @@ function StoreyLabels(): ReactElement | null {
 export function ArrivalHero(): ReactElement | null {
   const phase = useArrivalStore((s) => s.phase);
   const { blocked } = useArrivalGate();
-  const apiToken = googleTilesApiKey();
+  const configuredApiToken = googleTilesApiKey();
   const manifest = useTwinManifest(TRADES_HALL_TWIN_SLUG);
   const overlaySettled = useExplodeOverlayStore((s) => s.settled);
 
@@ -310,6 +310,21 @@ export function ArrivalHero(): ReactElement | null {
   const [harnessPhase] = useState<ArrivalPhase | null>(() =>
     import.meta.env.DEV ? arrivalHarnessPhase(window.location.search) : null,
   );
+
+  // DEV-ONLY tiles pin, read the same way and stripped the same way. It exists
+  // so Google's TWO required attributions can be asserted in a real browser on
+  // a machine with no key and no GPU — see arrival-dev-harness.ts's THE TILES
+  // SEAM, and e2e/arrival.spec.ts's attribution case, which answers
+  // tile.googleapis.com from a route stub so nothing is requested of Google.
+  //
+  // The real key WINS when there is one: this fallback can only ever add a
+  // token where there was none, so a keyed developer's hero is byte-for-byte
+  // the hero they had before, and the tuple GoogleTilesStage memoizes on
+  // [apiToken] still changes for exactly one reason — the key changing.
+  const [harnessTilesToken] = useState<string | null>(() =>
+    import.meta.env.DEV ? arrivalHarnessTilesToken(window.location.search) : null,
+  );
+  const apiToken = configuredApiToken ?? harnessTilesToken;
 
   // Under the harness the no-key/poster-tier gate is deliberately ignored, so
   // a keyless machine can still reach "flight"/"arrived" and exercise the
@@ -450,9 +465,13 @@ export function ArrivalHero(): ReactElement | null {
       >
         {/* Narrowed here rather than by the early return above. In normal
             operation a null key has already blocked the gate, so this is
-            always truthy; under the DEV harness it is the one thing that
-            stays honest — no key means no billable tile requests, and the
-            spec measures the overlay against an empty canvas. */}
+            always truthy. Under the DEV harness there are two cases and they
+            are different on purpose: `?arrivalPhase=` ALONE still leaves this
+            null on a keyless machine, so the controls spec measures its
+            overlay against an empty canvas and requests nothing; adding
+            `&arrivalTiles=stub` puts the synthetic token here so the real
+            tiles stage — and the real attribution overlay — mount, for the
+            one spec that answers tile.googleapis.com itself. */}
         {apiToken !== null && <GoogleTilesStage apiToken={apiToken} />}
         <FlightCamera />
         {(phase === "arrived" || phase === "exploded") && <HallHandoff />}

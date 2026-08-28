@@ -296,13 +296,229 @@ test("no dead doors to the walkthrough anywhere on the arrival layer", async ({ 
   // (fresh.test.tsx pins that). The arrival layer was added later and
   // navigated to /tour ungated, reintroducing on the hero the exact dead door
   // the flag exists to prevent.
+  //
+  // THIS CASE USED TO GUARD NOTHING, and the way it failed is worth keeping,
+  // because it is the failure mode a reader will reproduce next. It asserted
+  // `a[href="/tour"]` had count 0 — while the dead door it was written to stop
+  // was never an anchor at all. Restored from b2c5df48^ (ArrivalHero.tsx's
+  // StoreyLabels), verbatim, this is what it looked like:
+  //
+  //     <button type="button" className="arrival-storey-name"
+  //             onClick={() => { void navigate("/tour"); }}>
+  //       {entry.label}
+  //     </button>
+  //
+  // A <button> calling react-router's navigate() puts no href in the document,
+  // so the old assertion was true before the fix and true after it. Worse, it
+  // ran at phase "arrived", where StoreyLabels renders nothing at all — so
+  // there was no storey name in the DOM for it to be right or wrong about.
+  // MEASURED 2026-08-28 by putting that exact hunk back: the old two lines
+  // still passed with the dead door live, and the assertions below went red.
+  // Both defects are addressed — the phase is now "exploded" (where the labels
+  // exist), and what is asserted is the ELEMENT and the BEHAVIOUR, not an href
+  // the bug never had.
   await page.setViewportSize({ width: 1440, height: 900 });
   await stubDollhouse(page);
-  await openHeroAt(page, "arrived");
+  await openHeroAt(page, "exploded");
 
-  await expect(page.locator('a[href="/tour"]')).toHaveCount(0);
+  // The anti-vacuity control. Everything below is a claim ABOUT the storey
+  // name, so the storey name has to be here for any of it to mean anything —
+  // this is the assertion the old version was missing, and the reason it could
+  // pass over a document containing no labels at all.
+  const names = page.locator(".arrival-storey-name");
+  await expect(names.first()).toBeVisible({ timeout: 15_000 });
+
+  // 1. Inert text, not a control. With the walkthrough unpublished the name
+  //    still LABELS the storey; it just must not offer to open it.
+  await expect(page.locator("button.arrival-storey-name")).toHaveCount(0);
+  // `exact` is load-bearing, not decoration: getByRole's `name` matches by
+  // SUBSTRING by default, and "Plan Reception Room & Robert Adam Room" — the
+  // live control that must survive — contains the storey name. Without it this
+  // assertion would be red for the right-behaving page.
+  await expect(
+    page.getByRole("button", { name: EXPECTED_STOREY_LABEL, exact: true }),
+  ).toHaveCount(0);
+
+  // 2. …and clicking it really goes nowhere. Assertion 1 says the door is not
+  //    in the document; this says the room behind it is not reachable by the
+  //    click either, which is the visitor-facing fact.
+  await names.first().click();
+  await page.waitForTimeout(500);
+  expect(new URL(page.url()).pathname).toBe("/");
+
+  // 3. No anchor form of the same door, now or later — the original assertion,
+  //    kept because a future edit could reasonably reach for <Link to="/tour">
+  //    and this is the only line here that would notice.
   await expect(page.locator('a[href^="/tour"]')).toHaveCount(0);
+
+  // The positive control: the storey label is not inert BECAUSE the overlay is
+  // broken. "Plan this room" is the live route out of the explode and is still
+  // a real button, so assertion 1 is measuring the gate, not an absent
+  // overlay.
+  await expect(
+    page.getByRole("button", { name: `Plan ${EXPECTED_STOREY_LABEL}` }),
+  ).toBeVisible();
 });
+
+// ---------------------------------------------------------------------------
+// THE CLEARANCE TRIP-WIRE — debt, deliberately pinned before it becomes a bug.
+//
+// The storey labels are the third thing arrival.css positions inside
+// .fr-hero-frame, and unlike "Skip the flight" and "Open the Hall" they were
+// never buried: measured across the four viewports below they clear
+// .fr-hero-panel's top edge by a real margin today (the numbers are in the
+// constant's doc comment). So this is NOT a live defect, and it is written as
+// a trip-wire rather than a fix.
+//
+// It exists because of where that margin comes from. The labels are not
+// positioned by CSS at all — each is placed at a PROJECTED 3D anchor,
+// recomputed every frame from its storey bucket's centroid through the
+// placement matrix (ExplodedHall.tsx). Their clearance is therefore an output
+// of twin-placement geometry, not of a stylesheet, and Task 8's twin-placement
+// calibration moves exactly that geometry. Nothing else in this repo would
+// notice if a calibration nudge walked a label down into the opaque panel —
+// the same defect, in the same band, that b2c5df48 just fixed for the two
+// buttons, arriving by a different road.
+// ---------------------------------------------------------------------------
+
+/**
+ * The one storey label this file's fixture produces.
+ *
+ * TWIN_FIXTURE_MANIFEST_EQUIRECT puts all four of its nodes on ONE floor, so
+ * storeyFloors() has a single entry and there is exactly one bucket — bucket
+ * 0 — which takes ARRIVAL_STOREY_LABELS[0] (ExplodedHall.tsx's
+ * storeyLabelFor). The name is therefore the LOWEST storey's copy regardless
+ * of which floor the fixture's nodes claim, which is the component's own
+ * bucket-indexed behaviour and not a fact about this fixture's geometry.
+ * (arrival.spec.ts is where the real building's TWO storeys and their correct
+ * pairing are pinned; this file's subject is the overlay's geometry against
+ * fresh.css, for which one label is enough and a second would only add a
+ * second thing to wait for.)
+ */
+const EXPECTED_STOREY_LABEL = "Reception Room & Robert Adam Room";
+
+/**
+ * The floor, in CSS pixels, under a storey label's clearance above
+ * .fr-hero-panel's top edge.
+ *
+ * MEASURED, not chosen — settled runs of the four cases below, 2026-08-28:
+ *
+ *    390 × 740  (phone)          56.95 px
+ *   1024 × 768  (small laptop)   38.34 px   ← the tightest
+ *   1280 × 800  (laptop)         44.50 px
+ *   1440 × 900  (desktop)        63.74 px
+ *
+ * The margin does NOT shrink monotonically with width, which is the reason
+ * four viewports and not two: the panel's lift token steps at 760px
+ * (fresh.css:1301, −48px instead of −72px) while the projected label height
+ * tracks the canvas, so the worst case is in the middle of the range, not at
+ * either end. Testing only the phone and the desktop would have missed it.
+ *
+ * 24 px sits ~37% below the tightest of those and well above zero. It is not a
+ * design bar for how much air a label should have; it is the line at which
+ * "the label is about to go under the opaque panel" stops being theoretical. A
+ * calibration that shaves the margin is allowed to. One that spends it all is
+ * not, and this is what says so.
+ *
+ * PROVED TO CATCH, 2026-08-28, rather than assumed: with fresh.css's
+ * --fr-hero-panel-lift temporarily set to −220px (a stand-in for the geometry
+ * moving under the label rather than the label moving under the geometry, the
+ * two being indistinguishable from here), the 1280 × 800 case went red on the
+ * topmost probe with `COVERED-BY:span.fr-w` — naming the element inside the
+ * panel that had taken the hit point.
+ */
+const STOREY_LABEL_CLEARANCE_MIN_PX = 24;
+
+/** The four widths the clearance is measured at, narrow to wide. */
+const CLEARANCE_VIEWPORTS = [
+  { name: "390x740 (phone)", width: 390, height: 740 },
+  { name: "1024x768 (small laptop)", width: 1024, height: 768 },
+  { name: "1280x800 (laptop)", width: 1280, height: 800 },
+  { name: "1440x900 (desktop)", width: 1440, height: 900 },
+] as const;
+
+interface StoreyLabelGeometry {
+  /** Gap in CSS px between the label's bottom edge and the panel's top edge. */
+  readonly clearancePx: number;
+  /** topmostAt()'s vocabulary — "SELF" when the label is genuinely on top. */
+  readonly topmost: string;
+}
+
+async function readStoreyLabelGeometry(page: Page): Promise<readonly StoreyLabelGeometry[]> {
+  return page.evaluate(() => {
+    const panel = document.querySelector(".fr-hero-panel");
+    if (panel === null) {
+      throw new Error("hero panel missing");
+    }
+    const panelTop = panel.getBoundingClientRect().top;
+    return [...document.querySelectorAll(".arrival-storey-label")].map((label) => {
+      const rect = label.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      let topmost = "OUTSIDE-VIEWPORT";
+      if (hit !== null) {
+        if (hit === label || label.contains(hit)) {
+          topmost = "SELF";
+        } else {
+          const cls =
+            typeof hit.className === "string" && hit.className !== "" ? `.${hit.className}` : "";
+          topmost = `COVERED-BY:${hit.tagName.toLowerCase()}${cls}`;
+        }
+      }
+      return { clearancePx: panelTop - rect.bottom, topmost };
+    });
+  });
+}
+
+/**
+ * The geometry once the explode spring has stopped moving.
+ *
+ * The labels are repositioned every unsettled frame, so a single sample is a
+ * sample of the animation and not of the layout — and a bare `expect.poll`
+ * would pass on the first frame that happened to clear the bar mid-flight. Two
+ * consecutive agreeing samples is what "settled" means here.
+ */
+async function settledStoreyLabelGeometry(page: Page): Promise<readonly StoreyLabelGeometry[]> {
+  const deadline = Date.now() + 20_000;
+  let previous: readonly StoreyLabelGeometry[] = [];
+  while (Date.now() < deadline) {
+    const current = await readStoreyLabelGeometry(page);
+    const stable =
+      current.length > 0 &&
+      current.length === previous.length &&
+      current.every((entry, i) => {
+        const before = previous[i];
+        return before !== undefined && Math.abs(entry.clearancePx - before.clearancePx) < 0.5;
+      });
+    if (stable) {
+      return current;
+    }
+    previous = current;
+    await page.waitForTimeout(200);
+  }
+  throw new Error("storey labels never settled within 20s");
+}
+
+for (const viewport of CLEARANCE_VIEWPORTS) {
+  test(`storey labels clear the panel at ${viewport.name}`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await stubDollhouse(page);
+    await openHeroAt(page, "exploded");
+    await expect(page.locator(".arrival-storey-label").first()).toBeVisible({ timeout: 15_000 });
+
+    const geometry = await settledStoreyLabelGeometry(page);
+    for (const entry of geometry) {
+      // The direct measurement first, so a regression names the element that
+      // took the hit point — "COVERED-BY:span.fr-w" in the reproduction
+      // recorded above — rather than reading as an anonymous number.
+      expect(entry.topmost).toBe("SELF");
+      expect(entry.clearancePx).toBeGreaterThan(STOREY_LABEL_CLEARANCE_MIN_PX);
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // The invariant that outranks everything above.
