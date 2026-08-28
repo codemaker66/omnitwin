@@ -150,8 +150,64 @@ const ArrivalHero = lazy(() =>
   import("../landing/arrival/ArrivalHero.js").then((m) => ({ default: m.ArrivalHero })),
 );
 
+/**
+ * WHETHER TO MOUNT THE HERO AT ALL — the difference between a lazy chunk and
+ * an unrequested one, MEASURED.
+ *
+ * `lazy()` above defers the download to mount time, and until this gate
+ * existed the mount was unconditional: every homepage visit fetched the chunk
+ * and ran it, and only THEN did ArrivalHero's own useArrivalGate see a null
+ * `googleTilesApiKey()` and return null. The component rendered nothing and
+ * the visit paid for it anyway. Measured on a keyless production build
+ * (2026-08-28, headless Chromium against `vite preview`, gzip = zlib default,
+ * the same measure src/__tests__/twin-chunk-budget.test.ts uses):
+ *
+ *   ArrivalHero-*.js       137,412 B raw /  41,815 B gzip
+ *   ArrivalHero-*.css        3,035 B     /     776 B
+ *   three-*.js           1,005,242 B     / 273,528 B
+ *   useTwinManifest-*.js    19,313 B     /   7,840 B
+ *   device-store-*.js        1,910 B     /     677 B
+ *   springs-*.js               287 B     /     204 B
+ *                        ─────────────────────────────
+ *                        1,167,199 B raw / 324,840 B gzip
+ *
+ * plus a `/twin/trades-hall/manifest.json` round trip. The three vendor chunk
+ * is the bulk of it and this page does not otherwise touch it: FreshPage has
+ * no static `three` import, and its only other route to that chunk is
+ * FreshWalk, which is lazy AND dark behind FRESH_TOUR_ENABLED. So the whole
+ * ~1.1 MB was marginal cost on the LCP-critical marketing homepage, in
+ * exchange for `null`, for every week the key does not exist.
+ *
+ * Gating the MOUNT — not the render inside the chunk — is what makes the
+ * download conditional: React only calls the lazy factory when the element is
+ * actually rendered, so `false` here means the request is never issued and
+ * Vite's `__vitePreload` never warms `three` either.
+ *
+ * WHY `import.meta.env.DEV` IS THE SECOND ARM. The two Playwright specs that
+ * cover this hero (e2e/arrival.spec.ts, e2e/arrival-hero-controls.spec.ts)
+ * reach its phases through the DEV-only `?arrivalPhase=` seam
+ * (arrival-dev-harness.ts), because no machine and no CI runner holds a paid
+ * Map Tiles key. That seam overrides useArrivalGate INSIDE the chunk, so it is
+ * worthless if the chunk is never mounted. CI runs those specs against
+ * `pnpm dev` (playwright.config.ts's default webServer; .github/workflows/
+ * ci.yml:225 sets no E2E_WEB_SERVER), so DEV is true exactly where they run.
+ * Vite replaces the flag with the literal `false` in a production build, so
+ * this arm costs a keyless visitor nothing and cannot be turned on by a URL.
+ *
+ * `ArrivalErrorBoundary` stays eagerly imported and is deliberately NOT gated
+ * out of the module graph: a guard living inside the chunk it guards could not
+ * catch that chunk's own rejected import. Its eager cost is the boundary
+ * component plus arrival-store.ts, whose only dependency is zustand — already
+ * in react-vendor, which this page loads regardless. It reaches neither three,
+ * nor 3d-tiles-renderer, nor the twin manifest.
+ */
+function arrivalHeroCanRun(): boolean {
+  return googleTilesApiKey() !== null || import.meta.env.DEV;
+}
+
 type WalkState = "poster" | "loading" | "live" | "failed";
 import { ArrivalErrorBoundary } from "../landing/arrival/ArrivalErrorBoundary.js";
+import { googleTilesApiKey } from "../landing/arrival/arrival-config.js";
 import {
   ENQUIRY_EVENT_TYPES,
   alsoFitsSentence,
@@ -760,12 +816,17 @@ export function FreshPage(): ReactElement {
                 nothing renders while the chunk downloads.
                 The boundary sits OUTSIDE the Suspense so it also catches a
                 rejected chunk import, which Suspense re-throws rather than
-                handles (Task 12b). */}
-            <ArrivalErrorBoundary>
-              <Suspense fallback={null}>
-                <ArrivalHero />
-              </Suspense>
-            </ArrivalErrorBoundary>
+                handles (Task 12b).
+                arrivalHeroCanRun() gates the MOUNT, so a keyless production
+                visitor never even requests the chunk — see its header for the
+                measured 324,840 B gzip that guard is worth. */}
+            {arrivalHeroCanRun() && (
+              <ArrivalErrorBoundary>
+                <Suspense fallback={null}>
+                  <ArrivalHero />
+                </Suspense>
+              </ArrivalErrorBoundary>
+            )}
             {/* The photo's drawn top edge: flat, then a fanlight over the
                 real dome, then the corner sweep — with a keystone tick. */}
             <svg className="fr-hero-fanlight" aria-hidden ref={aperture.svgRef}>
