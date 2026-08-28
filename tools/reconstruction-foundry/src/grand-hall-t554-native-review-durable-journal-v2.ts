@@ -55,6 +55,7 @@ const MAXIMUM_CHILD_EVENT_COUNT =
   GRAND_HALL_T554_NATIVE_REVIEW_MAXIMUM_TELEMETRY_EVENTS;
 
 type Sha256 = `sha256:${string}`;
+type GrandHallT554NativeReviewReplayModuleV2 = typeof import("./grand-hall-t554-native-review-replay-v2.js");
 
 const DurableScopedEventPayloadV2Schema = z
   .object({
@@ -96,6 +97,11 @@ export interface GrandHallT554NativeReviewDurableJournalV2 {
     readonly event: unknown;
     readonly predecessorEvidence?: GrandHallT554NativeReviewVerifiedDurableChildJournalEvidenceV2;
   }): Promise<GrandHallT554NativeReviewDurableJournalReplayV2>;
+  appendChildWithEvidence(input: {
+    readonly expectedRevision: number;
+    readonly event: unknown;
+    readonly predecessorEvidence?: GrandHallT554NativeReviewVerifiedDurableChildJournalEvidenceV2;
+  }): Promise<GrandHallT554NativeReviewVerifiedDurableChildJournalEvidenceV2>;
 }
 
 interface VerifiedDurableChildJournalEvidenceCommonV2 {
@@ -246,32 +252,16 @@ function declaredCoordinatorEventTime(
   }
 }
 
-async function assertSemanticReplay(
+function assertChildSemanticReplay(
   replay: GrandHallT554NativeReviewDurableJournalReplayV2,
-): Promise<void> {
-  if (replay.events.length === 0) return;
+  replayModule: GrandHallT554NativeReviewReplayModuleV2,
+): void {
   if (replay.scope.kind === "session") {
-    for (const record of replay.records) {
-      const declaredAtUtc = declaredCoordinatorEventTime(record.event);
-      if (
-        declaredAtUtc !== undefined &&
-        Date.parse(record.recordedAtUtc) < Date.parse(declaredAtUtc)
-      ) {
-        throw new GrandHallT554NativeReviewDurableJournalV2Error(
-          "BINDING_MISMATCH",
-          "A durable coordinator record precedes its declared decision or attestation time.",
-        );
-      }
-    }
-    replayGrandHallT554NativeReviewCoordinatorV2({
-      scope: replay.scope,
-      events: replay.events,
-    });
-    return;
+    throw new GrandHallT554NativeReviewDurableJournalV2Error(
+      "SCOPE_INVALID",
+      "Child semantic replay requires a source or mask journal.",
+    );
   }
-  const replayModule = await import(
-    "./grand-hall-t554-native-review-replay-v2.js"
-  );
   const validated =
     replay.scope.kind === "source"
       ? replayModule.validateGrandHallT554NativeReviewSourceChildSequenceV2({
@@ -293,6 +283,35 @@ async function assertSemanticReplay(
       "The final durable child record precedes its latest server-owned event time.",
     );
   }
+}
+
+async function assertSemanticReplay(
+  replay: GrandHallT554NativeReviewDurableJournalReplayV2,
+): Promise<void> {
+  if (replay.events.length === 0) return;
+  if (replay.scope.kind !== "session") {
+    const replayModule = await import(
+      "./grand-hall-t554-native-review-replay-v2.js"
+    );
+    assertChildSemanticReplay(replay, replayModule);
+    return;
+  }
+  for (const record of replay.records) {
+    const declaredAtUtc = declaredCoordinatorEventTime(record.event);
+    if (
+      declaredAtUtc !== undefined &&
+      Date.parse(record.recordedAtUtc) < Date.parse(declaredAtUtc)
+    ) {
+      throw new GrandHallT554NativeReviewDurableJournalV2Error(
+        "BINDING_MISMATCH",
+        "A durable coordinator record precedes its declared decision or attestation time.",
+      );
+    }
+  }
+  replayGrandHallT554NativeReviewCoordinatorV2({
+    scope: replay.scope,
+    events: replay.events,
+  });
 }
 
 function eventLimit(scope: GrandHallT554NativeReviewJournalScopeV2): number {
@@ -454,111 +473,107 @@ class DurableJournalV2 implements GrandHallT554NativeReviewDurableJournalV2 {
         scopedResult.error,
       );
     }
-    const current = await this.replay();
-    if (input.expectedRevision !== current.revision) {
-      throw new GrandHallT554NativeReviewDurableJournalV2Error(
-        "REVISION_CONFLICT",
-        "Durable v2 append expected a different current revision.",
-      );
-    }
-    if (this.scope.kind === "session") {
-      if (input.predecessorEvidence !== undefined) {
-        throw new GrandHallT554NativeReviewDurableJournalV2Error(
-          "ARGUMENT_INVALID",
-          "Coordinator appends cannot carry child-predecessor evidence.",
-        );
-      }
-      replayGrandHallT554NativeReviewCoordinatorV2({
-        scope: this.scope,
-        events: [...current.events, scopedResult.data.event],
-      });
-    } else {
-      const expectedStart =
-        this.scope.kind === "source"
-          ? "source.review-started.v2"
-          : "mask.review-started.v2";
-      if (
-        (current.revision === 0 &&
-          scopedResult.data.event.eventType !== expectedStart) ||
-        (current.revision > 0 &&
-          scopedResult.data.event.eventType === expectedStart)
-      ) {
-        throw new GrandHallT554NativeReviewDurableJournalV2Error(
-          "EVENT_INVALID",
-          "Child journals require exactly one typed start event at revision one.",
-        );
-      }
-      const replayModule =
-        await import("./grand-hall-t554-native-review-replay-v2.js");
-      const candidateEvents = [...current.events, scopedResult.data.event];
-      if (current.revision === 0) {
-        const predecessorCoverage =
-          scopedResult.data.event.eventType === "source.review-started.v2" ||
-          scopedResult.data.event.eventType === "mask.review-started.v2"
-            ? scopedResult.data.event.payload.predecessorCoverage
-            : undefined;
-        if (predecessorCoverage === undefined) {
-          throw new GrandHallT554NativeReviewDurableJournalV2Error(
-            "EVENT_INVALID",
-            "Child start predecessor binding could not be resolved.",
-          );
-        }
-        if (predecessorCoverage === null) {
-          if (input.predecessorEvidence !== undefined) {
-            throw new GrandHallT554NativeReviewDurableJournalV2Error(
-              "BINDING_MISMATCH",
-              "A fresh child start cannot claim unrelated predecessor evidence.",
-            );
-          }
-        } else {
-          const predecessorEvidence = input.predecessorEvidence;
-          if (
-            predecessorEvidence === undefined ||
-            !isGrandHallT554NativeReviewVerifiedDurableChildJournalEvidenceV2(
-              predecessorEvidence,
-            ) ||
-            predecessorEvidence.kind !== this.scope.kind
-          ) {
-            throw new GrandHallT554NativeReviewDurableJournalV2Error(
-              "BINDING_MISMATCH",
-              "A resumed child start requires verified durable predecessor evidence of the same kind.",
-            );
-          }
-          const derivedCarry =
-            replayModule.createGrandHallT554NativeReviewCoverageCarryStateV2(
-              predecessorEvidence,
-            );
-          if (!canonicalEqual(predecessorCoverage, derivedCarry)) {
-            throw new GrandHallT554NativeReviewDurableJournalV2Error(
-              "BINDING_MISMATCH",
-              "Child start carry differs from its exact durable predecessor replay.",
-            );
-          }
-        }
-      } else if (input.predecessorEvidence !== undefined) {
-        throw new GrandHallT554NativeReviewDurableJournalV2Error(
-          "ARGUMENT_INVALID",
-          "Predecessor evidence is accepted only with the first child event.",
-        );
-      }
-      const validated =
-        this.scope.kind === "source"
-          ? replayModule.validateGrandHallT554NativeReviewSourceChildSequenceV2(
-              { scope: this.scope, events: candidateEvents },
-            )
-          : replayModule.validateGrandHallT554NativeReviewMaskChildSequenceV2({
-              scope: this.scope,
-              events: candidateEvents,
-            });
+    if (this.scope.kind !== "session") {
       const payload = toCanonicalJson({
         schemaVersion: DURABLE_SCOPED_EVENT_SCHEMA_VERSION,
         scopedEvent: scopedResult.data,
       });
-      const advanced = await this.journal.append({
+      const replayModule = await import(
+        "./grand-hall-t554-native-review-replay-v2.js"
+      );
+      const advanced = await this.journal.appendValidated({
         expectedRevision: input.expectedRevision,
         eventType: scopedResult.data.event.eventType,
         payload,
-        minimumRecordedAtUtc: validated.latestServerOwnedAtUtc,
+        validateCurrent: (lowLevelCurrent) => {
+          const current = normalizeReplay(
+            this.scope,
+            this.lowLevelScope,
+            this.leafName,
+            lowLevelCurrent,
+          );
+          if (current.events.length > 0) {
+            assertChildSemanticReplay(current, replayModule);
+          }
+          const expectedStart =
+            this.scope.kind === "source"
+              ? "source.review-started.v2"
+              : "mask.review-started.v2";
+          if (
+            (current.revision === 0 &&
+              scopedResult.data.event.eventType !== expectedStart) ||
+            (current.revision > 0 &&
+              scopedResult.data.event.eventType === expectedStart)
+          ) {
+            throw new GrandHallT554NativeReviewDurableJournalV2Error(
+              "EVENT_INVALID",
+              "Child journals require exactly one typed start event at revision one.",
+            );
+          }
+          const candidateEvents = [...current.events, scopedResult.data.event];
+          if (current.revision === 0) {
+            const predecessorCoverage =
+              scopedResult.data.event.eventType ===
+                "source.review-started.v2" ||
+              scopedResult.data.event.eventType === "mask.review-started.v2"
+                ? scopedResult.data.event.payload.predecessorCoverage
+                : undefined;
+            if (predecessorCoverage === undefined) {
+              throw new GrandHallT554NativeReviewDurableJournalV2Error(
+                "EVENT_INVALID",
+                "Child start predecessor binding could not be resolved.",
+              );
+            }
+            if (predecessorCoverage === null) {
+              if (input.predecessorEvidence !== undefined) {
+                throw new GrandHallT554NativeReviewDurableJournalV2Error(
+                  "BINDING_MISMATCH",
+                  "A fresh child start cannot claim unrelated predecessor evidence.",
+                );
+              }
+            } else {
+              const predecessorEvidence = input.predecessorEvidence;
+              if (
+                predecessorEvidence === undefined ||
+                !isGrandHallT554NativeReviewVerifiedDurableChildJournalEvidenceV2(
+                  predecessorEvidence,
+                ) ||
+                predecessorEvidence.kind !== this.scope.kind
+              ) {
+                throw new GrandHallT554NativeReviewDurableJournalV2Error(
+                  "BINDING_MISMATCH",
+                  "A resumed child start requires verified durable predecessor evidence of the same kind.",
+                );
+              }
+              const derivedCarry =
+                replayModule.createGrandHallT554NativeReviewCoverageCarryStateV2(
+                  predecessorEvidence,
+                );
+              if (!canonicalEqual(predecessorCoverage, derivedCarry)) {
+                throw new GrandHallT554NativeReviewDurableJournalV2Error(
+                  "BINDING_MISMATCH",
+                  "Child start carry differs from its exact durable predecessor replay.",
+                );
+              }
+            }
+          } else if (input.predecessorEvidence !== undefined) {
+            throw new GrandHallT554NativeReviewDurableJournalV2Error(
+              "ARGUMENT_INVALID",
+              "Predecessor evidence is accepted only with the first child event.",
+            );
+          }
+          const validated =
+            this.scope.kind === "source"
+              ? replayModule.validateGrandHallT554NativeReviewSourceChildSequenceV2(
+                  { scope: this.scope, events: candidateEvents },
+                )
+              : replayModule.validateGrandHallT554NativeReviewMaskChildSequenceV2(
+                  { scope: this.scope, events: candidateEvents },
+                );
+          return {
+            minimumRecordedAtUtc: validated.latestServerOwnedAtUtc,
+          };
+        },
       });
       return normalizeReplay(
         this.scope,
@@ -567,6 +582,23 @@ class DurableJournalV2 implements GrandHallT554NativeReviewDurableJournalV2 {
         advanced,
       );
     }
+    const current = await this.replay();
+    if (input.expectedRevision !== current.revision) {
+      throw new GrandHallT554NativeReviewDurableJournalV2Error(
+        "REVISION_CONFLICT",
+        "Durable v2 append expected a different current revision.",
+      );
+    }
+    if (input.predecessorEvidence !== undefined) {
+      throw new GrandHallT554NativeReviewDurableJournalV2Error(
+        "ARGUMENT_INVALID",
+        "Coordinator appends cannot carry child-predecessor evidence.",
+      );
+    }
+    replayGrandHallT554NativeReviewCoordinatorV2({
+      scope: this.scope,
+      events: [...current.events, scopedResult.data.event],
+    });
     const payload = toCanonicalJson({
       schemaVersion: DURABLE_SCOPED_EVENT_SCHEMA_VERSION,
       scopedEvent: scopedResult.data,
@@ -588,6 +620,21 @@ class DurableJournalV2 implements GrandHallT554NativeReviewDurableJournalV2 {
       this.leafName,
       advanced,
     );
+  }
+
+  async appendChildWithEvidence(input: {
+    readonly expectedRevision: number;
+    readonly event: unknown;
+    readonly predecessorEvidence?: GrandHallT554NativeReviewVerifiedDurableChildJournalEvidenceV2;
+  }): Promise<GrandHallT554NativeReviewVerifiedDurableChildJournalEvidenceV2> {
+    if (this.scope.kind === "session") {
+      throw new GrandHallT554NativeReviewDurableJournalV2Error(
+        "SCOPE_INVALID",
+        "Coordinator journals cannot issue child evidence after append.",
+      );
+    }
+    const replay = await this.append(input);
+    return evidenceFromReplay(this.leafName, replay);
   }
 }
 

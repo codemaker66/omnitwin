@@ -473,6 +473,8 @@ function coordinatorDecisionSequence(options?: {
         browserEpochNonceSha256,
         previousBrowserEpochNonceSha256: null,
         reason: "session_created" as const,
+        priorActiveSourceJournal: null,
+        priorActiveMaskJournal: null,
         workspaceRevision: 0,
         maximumAllocatedRenderGeneration: 0,
         startedAtUtc: "2000-01-01T00:00:00.000Z",
@@ -488,6 +490,7 @@ function coordinatorDecisionSequence(options?: {
         browserEpochNonceSha256,
         expectedWorkspaceRevision: 0,
         source: sourceCustody.source,
+        preparedSourceCustody: sourceCustody,
         sourceEpochNonceSha256: sourceCustody.sourceEpochNonceSha256,
         coverageSegmentIdSha256,
         previousRenderGeneration: 0,
@@ -688,6 +691,67 @@ describe("Grand Hall T-554 durable journal v2 adapter", () => {
     expect(() => replayGrandHallT554NativeReviewSourceChildV2(cloned)).toThrow(
       expect.objectContaining({ code: "ARGUMENT_INVALID" }),
     );
+  });
+
+  it("returns exact branded child evidence after append and never issues it for a coordinator", async () => {
+    const root = await workspace("source-child-append-evidence");
+    const scope = sourceScope();
+    const journal = await createGrandHallT554NativeReviewDurableJournalV2({
+      workspaceRoot: root,
+      scope,
+    });
+
+    const started = await journal.appendChildWithEvidence({
+      expectedRevision: 0,
+      event: sourceStart(scope),
+    });
+    expect(
+      isGrandHallT554NativeReviewVerifiedDurableChildJournalEvidenceV2(started),
+    ).toBe(true);
+    expect(started).toMatchObject({
+      kind: "source",
+      checkpoint: { leafName: "source-child-append-evidence", revision: 1 },
+      events: [sourceStart(scope)],
+    });
+
+    const delivered = await journal.appendChildWithEvidence({
+      expectedRevision: 1,
+      event: sourceDelivery(scope),
+    });
+    const reopened =
+      await openGrandHallT554NativeReviewVerifiedDurableChildEvidenceV2({
+        workspaceRoot: root,
+        expectedScope: scope,
+      });
+    expect(delivered).toEqual(reopened);
+    expect(delivered.checkpoint.revision).toBe(2);
+
+    const beforeInvalid = await journal.replay();
+    await expect(
+      journal.appendChildWithEvidence({
+        expectedRevision: 2,
+        event: sourceStart(scope),
+      }),
+    ).rejects.toMatchObject({ code: "EVENT_INVALID" });
+    const afterInvalid = await journal.replay();
+    expect(afterInvalid.revision).toBe(beforeInvalid.revision);
+    expect(afterInvalid.journalInventorySha256).toBe(
+      beforeInvalid.journalInventorySha256,
+    );
+
+    const coordinatorRoot = await workspace("coordinator-no-child-evidence");
+    const coordinatorScope = sessionScope();
+    const coordinator = await createGrandHallT554NativeReviewDurableJournalV2({
+      workspaceRoot: coordinatorRoot,
+      scope: coordinatorScope,
+    });
+    await expect(
+      coordinator.appendChildWithEvidence({
+        expectedRevision: 0,
+        event: sourceStart(scope),
+      }),
+    ).rejects.toMatchObject({ code: "SCOPE_INVALID" });
+    expect((await coordinator.replay()).revision).toBe(0);
   });
 
   it("derives branded exact historical-prefix evidence without trusting caller JSON", async () => {

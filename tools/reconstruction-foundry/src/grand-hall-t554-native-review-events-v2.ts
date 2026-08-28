@@ -1223,7 +1223,11 @@ export const GrandHallT554NativeReviewBrowserEpochStartedPayloadV2Schema = z
     browserEpochNonceSha256: GrandHallT554NativeReviewSha256V2Schema,
     previousBrowserEpochNonceSha256:
       GrandHallT554NativeReviewSha256V2Schema.nullable(),
-    reason: z.enum(["session_created", "crash_resume"]),
+    reason: z.enum(["session_created", "clean_resume", "crash_resume"]),
+    priorActiveSourceJournal:
+      GrandHallT554NativeReviewSourceChildCheckpointV2Schema.nullable(),
+    priorActiveMaskJournal:
+      GrandHallT554NativeReviewMaskChildCheckpointV2Schema.nullable(),
     workspaceRevision: WorkspaceRevisionSchema,
     maximumAllocatedRenderGeneration: WorkspaceRevisionSchema,
     startedAtUtc: GrandHallT554NativeReviewCanonicalUtcV2Schema,
@@ -1243,6 +1247,16 @@ export const GrandHallT554NativeReviewBrowserEpochStartedPayloadV2Schema = z
           context,
           ["previousBrowserEpochNonceSha256"],
           "first browser epoch has no predecessor",
+        );
+      }
+      if (
+        event.priorActiveSourceJournal !== null ||
+        event.priorActiveMaskJournal !== null
+      ) {
+        addIssue(
+          context,
+          ["priorActiveSourceJournal"],
+          "first browser epoch cannot acknowledge a prior active child",
         );
       }
     } else if (
@@ -1266,6 +1280,8 @@ export const GrandHallT554NativeReviewSourceSelectionIntendedPayloadV2Schema = z
     browserEpochNonceSha256: GrandHallT554NativeReviewSha256V2Schema,
     expectedWorkspaceRevision: WorkspaceRevisionSchema,
     source: GrandHallPanoramaSourceJpgIdentityV2Schema,
+    preparedSourceCustody:
+      GrandHallT554NativeReviewSourceCustodyBindingV2Schema,
     sourceEpochNonceSha256: GrandHallT554NativeReviewSha256V2Schema,
     coverageSegmentIdSha256: GrandHallT554NativeReviewSha256V2Schema,
     previousRenderGeneration: WorkspaceRevisionSchema,
@@ -1282,6 +1298,19 @@ export const GrandHallT554NativeReviewSourceSelectionIntendedPayloadV2Schema = z
       context,
       ["allocatedRenderGeneration"],
     );
+    if (
+      !sameSourceIdentity(event.source, event.preparedSourceCustody.source) ||
+      event.sourceEpochNonceSha256 !==
+        event.preparedSourceCustody.sourceEpochNonceSha256 ||
+      event.allocatedRenderGeneration !==
+        event.preparedSourceCustody.sourceEpochRenderGeneration
+    ) {
+      addIssue(
+        context,
+        ["preparedSourceCustody"],
+        "selection intent must bind the exact prepared source, epoch, and generation",
+      );
+    }
   });
 
 export const GrandHallT554NativeReviewSourceSelectionCommittedPayloadV2Schema =
@@ -1590,6 +1619,8 @@ const CoverageSegmentResumeIntentCommonShape = {
   browserEpochNonceSha256: GrandHallT554NativeReviewSha256V2Schema,
   expectedWorkspaceRevision: WorkspaceRevisionSchema,
   sourceCustodyBefore: GrandHallT554NativeReviewSourceCustodyBindingV2Schema,
+  preparedSourceCustody:
+    GrandHallT554NativeReviewSourceCustodyBindingV2Schema,
   previousVisibleRenderGeneration: RenderGenerationSchema,
   previousMaximumAllocatedRenderGeneration: RenderGenerationSchema,
   allocatedRenderGeneration: RenderGenerationSchema,
@@ -1601,6 +1632,7 @@ const CoverageSegmentResumeIntentCommonShape = {
 function validateCoverageSegmentResumeIntentCommon(
   event: {
     readonly sourceCustodyBefore: GrandHallT554NativeReviewSourceCustodyBindingV2;
+    readonly preparedSourceCustody: GrandHallT554NativeReviewSourceCustodyBindingV2;
     readonly previousVisibleRenderGeneration: number;
     readonly previousMaximumAllocatedRenderGeneration: number;
     readonly allocatedRenderGeneration: number;
@@ -1643,6 +1675,24 @@ function validateCoverageSegmentResumeIntentCommon(
       context,
       ["newCoverageSegmentIdSha256"],
       "coverage segment identity must not alias the prior source epoch binding",
+    );
+  }
+  if (
+    !sameStableSourceCustody(
+      event.preparedSourceCustody,
+      event.sourceCustodyBefore,
+    ) ||
+    event.preparedSourceCustody.sourceEpochNonceSha256 !==
+      event.newSourceEpochNonceSha256 ||
+    event.preparedSourceCustody.sourceEpochBindingSha256 ===
+      event.sourceCustodyBefore.sourceEpochBindingSha256 ||
+    event.preparedSourceCustody.sourceEpochRenderGeneration !==
+      event.allocatedRenderGeneration
+  ) {
+    addIssue(
+      context,
+      ["preparedSourceCustody"],
+      "coverage resume must bind exact stable custody for its fresh epoch",
     );
   }
 }

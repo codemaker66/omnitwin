@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { CanonicalJsonValueSchema, stableCanonicalJson } from "@omnitwin/types";
+import { z } from "zod";
 
 import {
   GRAND_HALL_T554_MAXIMUM_CREDITED_HEARTBEAT_GAP_MS,
@@ -19,6 +20,8 @@ import {
   type GrandHallT554NativeReviewVerifiedDurableSourceChildJournalEvidenceV2,
 } from "./grand-hall-t554-native-review-durable-journal-v2.js";
 import {
+  GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
+  GrandHallT554NativeReviewCanonicalUtcV2Schema,
   GrandHallT554NativeReviewMaskChildCheckpointV2Schema,
   GrandHallT554NativeReviewMaskChildEventV2Schema,
   GrandHallT554NativeReviewMaskCoverageCarryStateV2Schema,
@@ -27,6 +30,7 @@ import {
   GrandHallT554NativeReviewSourceChildEventV2Schema,
   GrandHallT554NativeReviewSourceCoverageCarryStateV2Schema,
   GrandHallT554NativeReviewSourceScopeV2Schema,
+  GrandHallT554NativeReviewTileBitmapHexV2Schema,
   type GrandHallT554NativeReviewCoverageObservedPayloadV2,
   type GrandHallT554NativeReviewMaskChildEventV2,
   type GrandHallT554NativeReviewMaskCoverageCarryStateV2,
@@ -55,6 +59,9 @@ const COVERAGE_EVENT_DIGEST_DOMAINS = Object.freeze({
 const DWELL_STATE_DIGEST_DOMAIN =
   "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_DWELL_STATE_V2";
 
+export const GRAND_HALL_T554_NATIVE_REVIEW_SOURCE_COVERAGE_OBSERVATION_INPUT_V2 =
+  "venviewer.grand-hall-t554-native-review-source-coverage-observation-input.v2";
+
 type Sha256 = `sha256:${string}`;
 type CoverageDisqualifier =
   GrandHallT554NativeReviewCoverageObservedPayloadV2["derived"]["disqualifier"];
@@ -66,6 +73,79 @@ type MaskStartEvent = Extract<
   GrandHallT554NativeReviewMaskChildEventV2,
   { readonly eventType: "mask.review-started.v2" }
 >;
+type CoverageObservationCore = Pick<
+  GrandHallT554NativeReviewCoverageObservedPayloadV2,
+  "serverObservation" | "telemetry"
+>;
+
+export type GrandHallT554NativeReviewPlannedSourceCoverageEventV2 = Extract<
+  GrandHallT554NativeReviewSourceChildEventV2,
+  { readonly eventType: "source.coverage-observed.v2" }
+>;
+
+const SourceToCssTransformV2Schema = z
+  .object({
+    a: z.number().finite().positive().max(64),
+    b: z.literal(0),
+    c: z.literal(0),
+    d: z.number().finite().positive().max(64),
+    e: z.number().finite().min(-1_000_000).max(1_000_000),
+    f: z.number().finite().min(-1_000_000).max(1_000_000),
+  })
+  .strict()
+  .superRefine((matrix, context) => {
+    if (Math.abs(matrix.a - matrix.d) > 1e-9) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["d"],
+        message: "native review requires one uniform source scale",
+      });
+    }
+  });
+
+export const GrandHallT554NativeReviewSourceCoverageObservationInputV2Schema =
+  z
+    .object({
+      schemaVersion: z.literal(
+        GRAND_HALL_T554_NATIVE_REVIEW_SOURCE_COVERAGE_OBSERVATION_INPUT_V2,
+      ),
+      serverObservation: z
+        .object({
+          receivedAtUtc: GrandHallT554NativeReviewCanonicalUtcV2Schema,
+          monotonicElapsedMs: z
+            .number()
+            .int()
+            .nonnegative()
+            .max(Number.MAX_SAFE_INTEGER),
+        })
+        .strict(),
+      telemetry: z
+        .object({
+          documentVisibilityState: z.enum(["visible", "hidden", "prerender"]),
+          documentFocusState: z.enum(["focused", "blurred"]),
+          viewportCssWidth: z.number().finite().positive().max(16_384),
+          viewportCssHeight: z.number().finite().positive().max(16_384),
+          devicePixelRatio: z.number().finite().min(0.25).max(8),
+          sourceToCssTransform: SourceToCssTransformV2Schema,
+          paintedTileBitsetHex:
+            GrandHallT554NativeReviewTileBitmapHexV2Schema,
+        })
+        .strict(),
+    })
+    .strict();
+
+export type GrandHallT554NativeReviewSourceCoverageObservationInputV2 = z.infer<
+  typeof GrandHallT554NativeReviewSourceCoverageObservationInputV2Schema
+>;
+
+const SourceCoveragePlannerInputV2Schema = z
+  .object({
+    scope: z.unknown(),
+    events: z.array(z.unknown()).min(1).max(MAXIMUM_CHILD_EVENT_COUNT),
+    observation:
+      GrandHallT554NativeReviewSourceCoverageObservationInputV2Schema,
+  })
+  .strict();
 
 export interface GrandHallT554NativeReviewCoverageReplaySnapshotV2 {
   readonly schemaVersion: "venviewer.grand-hall-t554-native-review-coverage-replay-snapshot.v2";
@@ -703,7 +783,7 @@ function replayDelivery(
 }
 
 function fullyVisibleDeliveredTiles(
-  payload: GrandHallT554NativeReviewCoverageObservedPayloadV2,
+  payload: CoverageObservationCore,
   deliveredTiles: ReadonlySet<number>,
 ): ReadonlySet<number> {
   const paintedTiles = indexesFromBitmap(
@@ -742,7 +822,7 @@ function fullyVisibleDeliveredTiles(
 }
 
 function currentEligibilityDisqualifier(
-  payload: GrandHallT554NativeReviewCoverageObservedPayloadV2,
+  payload: CoverageObservationCore,
   visibleCount: number,
 ): PreviousCoverageSample["currentDisqualifier"] {
   if (payload.telemetry.documentVisibilityState !== "visible") {
@@ -779,7 +859,7 @@ function applyCreditedDwell(
 
 function expectedCoverageDerived(
   accumulator: ReplayAccumulator,
-  payload: GrandHallT554NativeReviewCoverageObservedPayloadV2,
+  payload: CoverageObservationCore,
 ): GrandHallT554NativeReviewCoverageObservedPayloadV2["derived"] {
   const visibleTiles = fullyVisibleDeliveredTiles(
     payload,
@@ -956,15 +1036,22 @@ export interface GrandHallT554NativeReviewValidatedMaskChildSequenceV2 {
   readonly latestServerOwnedAtUtc: string;
 }
 
-/**
- * Validates an untrusted in-memory sequence. This conveys no durability or
- * review authority; the durable-journal adapter uses it before reserving a
- * record on disk.
- */
-export function validateGrandHallT554NativeReviewSourceChildSequenceV2(input: {
+interface SourceHistoryReplayV2 {
+  readonly scope: GrandHallT554NativeReviewSourceScopeV2;
+  readonly events: readonly GrandHallT554NativeReviewSourceChildEventV2[];
+  readonly first: SourceStartEvent;
+  readonly accumulator: ReplayAccumulator;
+}
+
+function destroyReplayAccumulator(accumulator: ReplayAccumulator): void {
+  accumulator.dwellBytes.fill(0);
+  accumulator.deliveredTiles.clear();
+}
+
+function replayUntrustedSourceHistory(input: {
   readonly scope: unknown;
   readonly events: readonly unknown[];
-}): GrandHallT554NativeReviewValidatedSourceChildSequenceV2 {
+}): SourceHistoryReplayV2 {
   const scopeResult = GrandHallT554NativeReviewSourceScopeV2Schema.safeParse(
     input.scope,
   );
@@ -976,7 +1063,7 @@ export function validateGrandHallT554NativeReviewSourceChildSequenceV2(input: {
     );
   }
   assertChildEventLimit(input.events.length);
-  const parsed = input.events.map((event, index) => {
+  const events = input.events.map((event, index) => {
     const result =
       GrandHallT554NativeReviewSourceChildEventV2Schema.safeParse(event);
     if (!result.success) {
@@ -988,14 +1075,14 @@ export function validateGrandHallT554NativeReviewSourceChildSequenceV2(input: {
     }
     return result.data;
   });
-  const first = parsed[0];
+  const first = events[0];
   assertTransition(
     first?.eventType === "source.review-started.v2",
     "Source child replay must begin with exactly one source start event.",
   );
   const accumulator = validateSourceStart(scopeResult.data, first.payload);
   try {
-    for (const event of parsed.slice(1)) {
+    for (const event of events.slice(1)) {
       if (event.eventType === "source.review-started.v2") {
         throw new GrandHallT554NativeReviewReplayV2Error(
           "TRANSITION_INVALID",
@@ -1008,20 +1095,141 @@ export function validateGrandHallT554NativeReviewSourceChildSequenceV2(input: {
         replayCoverage(accumulator, event.payload);
       }
     }
+    return { scope: scopeResult.data, events, first, accumulator };
+  } catch (error) {
+    destroyReplayAccumulator(accumulator);
+    throw error;
+  }
+}
+
+/**
+ * Validates an untrusted in-memory sequence. This conveys no durability or
+ * review authority; the durable-journal adapter uses it before reserving a
+ * record on disk.
+ */
+export function validateGrandHallT554NativeReviewSourceChildSequenceV2(input: {
+  readonly scope: unknown;
+  readonly events: readonly unknown[];
+}): GrandHallT554NativeReviewValidatedSourceChildSequenceV2 {
+  const history = replayUntrustedSourceHistory(input);
+  try {
     return Object.freeze({
       replay: Object.freeze({
         kind: "source" as const,
-        scope: frozenClone(scopeResult.data),
-        started: frozenClone(first.payload),
-        coverage: snapshotReplay(accumulator),
+        scope: frozenClone(history.scope),
+        started: frozenClone(history.first.payload),
+        coverage: snapshotReplay(history.accumulator),
       }),
       latestServerOwnedAtUtc: new Date(
-        accumulator.lastServerInstantMs,
+        history.accumulator.lastServerInstantMs,
       ).toISOString(),
     });
   } finally {
-    accumulator.dwellBytes.fill(0);
-    accumulator.deliveredTiles.clear();
+    destroyReplayAccumulator(history.accumulator);
+  }
+}
+
+function nextSourceCoverageMaterial(input: {
+  readonly history: SourceHistoryReplayV2;
+  readonly observation: GrandHallT554NativeReviewSourceCoverageObservationInputV2;
+}): Omit<
+  GrandHallT554NativeReviewCoverageObservedPayloadV2,
+  "coverageEventSha256"
+> {
+  const { accumulator } = input.history;
+  if (
+    accumulator.coverageEventCount >=
+    GRAND_HALL_T554_NATIVE_REVIEW_MAXIMUM_TELEMETRY_EVENTS
+  ) {
+    throw new GrandHallT554NativeReviewReplayV2Error(
+      "EVENT_LIMIT_REACHED",
+      "Native-review telemetry reached its fixed per-segment event limit.",
+    );
+  }
+  advanceServerInstant(
+    accumulator,
+    input.observation.serverObservation.receivedAtUtc,
+    "Coverage observation receipt",
+  );
+  return {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-coverage-observed.v2",
+    browserEpochNonceSha256: accumulator.bindings.browserEpochNonceSha256,
+    sourceEpochNonceSha256: accumulator.bindings.sourceEpochNonceSha256,
+    coverageSegmentIdSha256: accumulator.bindings.coverageSegmentIdSha256,
+    subjectSha256: accumulator.bindings.subjectSha256,
+    renderGeneration: accumulator.bindings.renderGeneration,
+    sequence: accumulator.coverageEventCount,
+    previousCoverageEventSha256: accumulator.lastCoverageEventSha256,
+    serverObservation: input.observation.serverObservation,
+    telemetry: input.observation.telemetry,
+    derived: expectedCoverageDerived(accumulator, input.observation),
+  };
+}
+
+function hydrateSourceCoverageEvent(
+  material: Omit<
+    GrandHallT554NativeReviewCoverageObservedPayloadV2,
+    "coverageEventSha256"
+  >,
+): GrandHallT554NativeReviewPlannedSourceCoverageEventV2 {
+  const result = GrandHallT554NativeReviewSourceChildEventV2Schema.safeParse({
+    schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
+    eventType: "source.coverage-observed.v2",
+    payload: {
+      ...material,
+      coverageEventSha256:
+        computeGrandHallT554NativeReviewCoverageEventV2Sha256(
+          "source",
+          material,
+        ),
+    },
+  });
+  if (!result.success) {
+    throw new GrandHallT554NativeReviewReplayV2Error(
+      "DERIVED_MISMATCH",
+      "The replay-derived source coverage event is not the exact v2 schema.",
+      result.error,
+    );
+  }
+  assertTransition(
+    result.data.eventType === "source.coverage-observed.v2",
+    "The source coverage planner hydrated a different event type.",
+  );
+  return result.data;
+}
+
+/**
+ * Hydrates only server-owned bindings and derived witnesses for the next
+ * authority-none source coverage event. The returned value has no durability
+ * until the caller appends it through the verified child journal.
+ */
+export function planGrandHallT554NativeReviewNextSourceCoverageEventV2(
+  input: unknown,
+): GrandHallT554NativeReviewPlannedSourceCoverageEventV2 {
+  const parsed = SourceCoveragePlannerInputV2Schema.safeParse(input);
+  if (!parsed.success) {
+    throw new GrandHallT554NativeReviewReplayV2Error(
+      "ARGUMENT_INVALID",
+      "The source coverage planner input is not the exact bounded v2 schema.",
+      parsed.error,
+    );
+  }
+  const history = replayUntrustedSourceHistory({
+    scope: parsed.data.scope,
+    events: parsed.data.events,
+  });
+  try {
+    return frozenClone(
+      hydrateSourceCoverageEvent(
+        nextSourceCoverageMaterial({
+          history,
+          observation: parsed.data.observation,
+        }),
+      ),
+    );
+  } finally {
+    destroyReplayAccumulator(history.accumulator);
   }
 }
 
@@ -1172,10 +1380,6 @@ export function createGrandHallT554NativeReviewCoverageCarryStateV2(
       ? replayGrandHallT554NativeReviewSourceChildV2(evidence)
       : replayGrandHallT554NativeReviewMaskChildV2(evidence);
   const coverage = replay.coverage;
-  assertTransition(
-    coverage.coverageEventCount > 0,
-    "Coverage carry requires at least one durably replayed observation.",
-  );
   if (replay.kind === "source") {
     assertTransition(
       evidence.kind === "source",

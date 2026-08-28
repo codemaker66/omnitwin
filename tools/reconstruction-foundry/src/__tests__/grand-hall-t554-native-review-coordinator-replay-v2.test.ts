@@ -462,6 +462,8 @@ function validLifecycle() {
       browserEpochNonceSha256: browserNonce,
       previousBrowserEpochNonceSha256: null,
       reason: "session_created" as const,
+      priorActiveSourceJournal: null,
+      priorActiveMaskJournal: null,
       workspaceRevision: 0,
       maximumAllocatedRenderGeneration: 0,
       startedAtUtc: NOW,
@@ -473,6 +475,7 @@ function validLifecycle() {
       browserEpochNonceSha256: browserNonce,
       expectedWorkspaceRevision: 0,
       source: custody.source,
+      preparedSourceCustody: custody,
       sourceEpochNonceSha256: custody.sourceEpochNonceSha256,
       coverageSegmentIdSha256: sourceCoverageSegmentIdSha256,
       previousRenderGeneration: 0,
@@ -778,6 +781,8 @@ function crashEpoch(input: {
   readonly previousNonceSha256: `sha256:${string}`;
   readonly workspaceRevision: number;
   readonly maximumAllocatedRenderGeneration: number;
+  readonly priorActiveSourceJournal: ReturnType<typeof sourceCheckpoint> | null;
+  readonly priorActiveMaskJournal: ReturnType<typeof maskCheckpoint> | null;
 }) {
   return envelope("session.browser-epoch-started.v2", {
     schemaVersion:
@@ -786,6 +791,8 @@ function crashEpoch(input: {
     browserEpochNonceSha256: input.nonceSha256,
     previousBrowserEpochNonceSha256: input.previousNonceSha256,
     reason: "crash_resume" as const,
+    priorActiveSourceJournal: input.priorActiveSourceJournal,
+    priorActiveMaskJournal: input.priorActiveMaskJournal,
     workspaceRevision: input.workspaceRevision,
     maximumAllocatedRenderGeneration:
       input.maximumAllocatedRenderGeneration,
@@ -804,6 +811,7 @@ function sourceResumeIntent(input: {
   readonly childJournalLeafName: string;
   readonly previousMaximumAllocatedRenderGeneration: number;
   readonly allocatedRenderGeneration: number;
+  readonly preparedSourceCustody: ReturnType<typeof sourceCustody>;
 }) {
   const { scenario } = input;
   return envelope("coverage.segment-resume-intended.v2", {
@@ -814,6 +822,7 @@ function sourceResumeIntent(input: {
     browserEpochNonceSha256: input.browserEpochNonceSha256,
     expectedWorkspaceRevision: 1,
     sourceCustodyBefore: scenario.custody,
+    preparedSourceCustody: input.preparedSourceCustody,
     previousVisibleRenderGeneration: 1,
     previousMaximumAllocatedRenderGeneration:
       input.previousMaximumAllocatedRenderGeneration,
@@ -866,6 +875,7 @@ function maskResumeIntent(input: {
   readonly newSourceEpochNonceSha256: `sha256:${string}`;
   readonly newCoverageSegmentIdSha256: `sha256:${string}`;
   readonly childJournalLeafName: string;
+  readonly preparedSourceCustody: ReturnType<typeof sourceCustody>;
 }) {
   const { scenario } = input;
   return envelope("coverage.segment-resume-intended.v2", {
@@ -876,6 +886,7 @@ function maskResumeIntent(input: {
     browserEpochNonceSha256: input.browserEpochNonceSha256,
     expectedWorkspaceRevision: 4,
     sourceCustodyBefore: scenario.custody,
+    preparedSourceCustody: input.preparedSourceCustody,
     previousVisibleRenderGeneration: 4,
     previousMaximumAllocatedRenderGeneration: 4,
     allocatedRenderGeneration: 5,
@@ -1199,6 +1210,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           browserEpochNonceSha256: scenario.browserNonce,
           expectedWorkspaceRevision: 7,
           source: candidate.custody.source,
+          preparedSourceCustody: candidate.custody,
           sourceEpochNonceSha256: candidate.custody.sourceEpochNonceSha256,
           coverageSegmentIdSha256,
           previousRenderGeneration: 5,
@@ -1435,6 +1447,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       previousNonceSha256: scenario.browserNonce,
       workspaceRevision: 1,
       maximumAllocatedRenderGeneration: 1,
+      priorActiveSourceJournal: sourceCheckpoint(2),
+      priorActiveMaskJournal: null,
     });
     const priorSourceJournal = sourceCheckpoint(2);
     const sourceOperation = digest("source-resume-operation");
@@ -1452,6 +1466,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       childJournalLeafName: "source-child-resume-0002",
       previousMaximumAllocatedRenderGeneration: 1,
       allocatedRenderGeneration: 2,
+      preparedSourceCustody: resumedSourceCustody,
     });
     const resumedSourceJournal = sourceCheckpoint(
       1,
@@ -1505,6 +1520,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       previousNonceSha256: scenario.browserNonce,
       workspaceRevision: 4,
       maximumAllocatedRenderGeneration: 4,
+      priorActiveSourceJournal: sourceCheckpoint(4),
+      priorActiveMaskJournal: maskCheckpoint(2),
     });
     const priorMaskJournal = maskCheckpoint(2);
     const maskOperation = digest("mask-resume-operation");
@@ -1520,6 +1537,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
         resumedMaskCustody.sourceEpochNonceSha256,
       newCoverageSegmentIdSha256: maskSegment,
       childJournalLeafName: "mask-child-resume-0002",
+      preparedSourceCustody: resumedMaskCustody,
     });
     const resumedMaskJournal = maskCheckpoint(1, "mask-child-resume-0002");
     const maskCommit = maskResumeCommit({
@@ -1593,6 +1611,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           previousNonceSha256: scenario.browserNonce,
           workspaceRevision: 3,
           maximumAllocatedRenderGeneration: 3,
+          priorActiveSourceJournal: sourceCheckpoint(4),
+          priorActiveMaskJournal: null,
         }),
         resume,
       ],
@@ -1633,6 +1653,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           previousNonceSha256: scenario.browserNonce,
           workspaceRevision: 3,
           maximumAllocatedRenderGeneration: 3,
+          priorActiveSourceJournal: sourceCheckpoint(4),
+          priorActiveMaskJournal: null,
         }),
         replacePayload([resume], 0, {
           browserEpochNonceSha256: scenario.browserNonce,
@@ -1647,6 +1669,12 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
     const browserTwo = digest("mask-resume-abort-browser-2");
     const browserThree = digest("mask-resume-abort-browser-3");
     const operation = digest("mask-resume-abort-operation");
+    const preparedAbortCustody = {
+      ...scenario.custody,
+      sourceEpochBindingSha256: digest("mask-resume-abort-epoch-binding"),
+      sourceEpochNonceSha256: digest("mask-resume-abort-epoch-nonce"),
+      sourceEpochRenderGeneration: 5,
+    };
     const intent = maskResumeIntent({
       scenario,
       browserEpochNonceSha256: browserTwo,
@@ -1656,6 +1684,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       newSourceEpochNonceSha256: digest("mask-resume-abort-epoch-nonce"),
       newCoverageSegmentIdSha256: digest("mask-resume-abort-segment"),
       childJournalLeafName: "mask-child-resume-aborted",
+      preparedSourceCustody: preparedAbortCustody,
     });
     const abandoned = maskCheckpoint(1, "mask-child-resume-aborted");
     const replay = replayGrandHallT554NativeReviewCoordinatorV2({
@@ -1668,6 +1697,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           previousNonceSha256: scenario.browserNonce,
           workspaceRevision: 4,
           maximumAllocatedRenderGeneration: 4,
+          priorActiveSourceJournal: sourceCheckpoint(4),
+          priorActiveMaskJournal: maskCheckpoint(2),
         }),
         intent,
         crashEpoch({
@@ -1676,6 +1707,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           previousNonceSha256: browserTwo,
           workspaceRevision: 4,
           maximumAllocatedRenderGeneration: 5,
+          priorActiveSourceJournal: sourceCheckpoint(4),
+          priorActiveMaskJournal: maskCheckpoint(2),
         }),
         envelope("coverage.segment-resume-recovery-aborted.v2", {
           schemaVersion:
@@ -1727,6 +1760,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
         previousNonceSha256: scenario.browserNonce,
         workspaceRevision: 1,
         maximumAllocatedRenderGeneration: 1,
+        priorActiveSourceJournal: sourceCheckpoint(2),
+        priorActiveMaskJournal: null,
       }),
     ];
     const prior = sourceCheckpoint(2);
@@ -1742,6 +1777,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       childJournalLeafName: "source-child-resume-adversarial",
       previousMaximumAllocatedRenderGeneration: 1,
       allocatedRenderGeneration: 2,
+      preparedSourceCustody: resumedCustody,
     });
     expectReplayError(
       scenario.scope,
@@ -1769,6 +1805,14 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           previousVisibleRenderGeneration: 2,
           previousMaximumAllocatedRenderGeneration: 2,
           allocatedRenderGeneration: 3,
+          newSourceEpochNonceSha256: sourceCustody(
+            3,
+            "resume-adversarial-advanced-epoch",
+          ).sourceEpochNonceSha256,
+          preparedSourceCustody: sourceCustody(
+            3,
+            "resume-adversarial-advanced-epoch",
+          ),
         })[0],
       ],
       "TRANSITION_INVALID",
@@ -1780,6 +1824,14 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
         replacePayload([intent], 0, {
           previousMaximumAllocatedRenderGeneration: 2,
           allocatedRenderGeneration: 3,
+          newSourceEpochNonceSha256: sourceCustody(
+            3,
+            "resume-adversarial-maximum-epoch",
+          ).sourceEpochNonceSha256,
+          preparedSourceCustody: sourceCustody(
+            3,
+            "resume-adversarial-maximum-epoch",
+          ),
         })[0],
       ],
       "TRANSITION_INVALID",
@@ -1834,6 +1886,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
         previousNonceSha256: scenario.browserNonce,
         workspaceRevision: 1,
         maximumAllocatedRenderGeneration: 1,
+        priorActiveSourceJournal: sourceCheckpoint(2),
+        priorActiveMaskJournal: null,
       }),
     ];
     const prior = sourceCheckpoint(2);
@@ -1849,6 +1903,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       childJournalLeafName: "source-child-resume-identity",
       previousMaximumAllocatedRenderGeneration: 1,
       allocatedRenderGeneration: 2,
+      preparedSourceCustody: resumedCustody,
     });
 
     expectReplayError(
@@ -1939,6 +1994,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
         previousNonceSha256: scenario.browserNonce,
         workspaceRevision: 1,
         maximumAllocatedRenderGeneration: 1,
+        priorActiveSourceJournal: sourceCheckpoint(2),
+        priorActiveMaskJournal: null,
       }),
     ];
     const prior = sourceCheckpoint(2);
@@ -1954,6 +2011,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       childJournalLeafName: "source-child-resume-carry",
       previousMaximumAllocatedRenderGeneration: 1,
       allocatedRenderGeneration: 2,
+      preparedSourceCustody: resumedCustody,
     });
     expectReplayError(
       scenario.scope,
@@ -1999,6 +2057,12 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       ...sourceCheckpoint(1),
       headEventSha256: digest("forged-same-revision-head"),
     };
+    const forgedPreparedCustody = {
+      ...scenario.custody,
+      sourceEpochBindingSha256: digest("resume-forged-checkpoint-binding"),
+      sourceEpochNonceSha256: digest("resume-forged-checkpoint-nonce"),
+      sourceEpochRenderGeneration: 2,
+    };
     const forgedIntent = sourceResumeIntent({
       scenario,
       browserEpochNonceSha256: browserTwo,
@@ -2010,6 +2074,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       childJournalLeafName: "source-child-resume-forged-checkpoint",
       previousMaximumAllocatedRenderGeneration: 1,
       allocatedRenderGeneration: 2,
+      preparedSourceCustody: forgedPreparedCustody,
     });
     expectReplayError(
       scenario.scope,
@@ -2030,6 +2095,12 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           childJournalLeafName: "source-child-on-mask",
           previousMaximumAllocatedRenderGeneration: 4,
           allocatedRenderGeneration: 5,
+          preparedSourceCustody: {
+            ...scenario.custody,
+            sourceEpochBindingSha256: digest("source-on-mask-binding"),
+            sourceEpochNonceSha256: digest("source-on-mask-nonce"),
+            sourceEpochRenderGeneration: 5,
+          },
         }),
       ],
       0,
@@ -2057,6 +2128,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           previousNonceSha256: scenario.browserNonce,
           workspaceRevision: 4,
           maximumAllocatedRenderGeneration: 4,
+          priorActiveSourceJournal: sourceCheckpoint(4),
+          priorActiveMaskJournal: maskCheckpoint(1),
         }),
         sourceOnMask,
       ],
@@ -2074,6 +2147,12 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           newSourceEpochNonceSha256: digest("mask-on-source-nonce"),
           newCoverageSegmentIdSha256: digest("mask-on-source-segment"),
           childJournalLeafName: "mask-child-on-source",
+          preparedSourceCustody: {
+            ...scenario.custody,
+            sourceEpochBindingSha256: digest("mask-on-source-binding"),
+            sourceEpochNonceSha256: digest("mask-on-source-nonce"),
+            sourceEpochRenderGeneration: 2,
+          },
         }),
       ],
       0,
@@ -2091,7 +2170,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
     );
   });
 
-  it("consumes a crashed resume allocation, recovery-aborts it, and retries without wedging", () => {
+  it("consumes a crashed resume allocation and retries against the exact predecessor child epoch", () => {
     const scenario = validLifecycle();
     const browserTwo = digest("resume-abort-browser-2");
     const prior = sourceCheckpoint(2);
@@ -2108,6 +2187,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       childJournalLeafName: "source-child-resume-aborted",
       previousMaximumAllocatedRenderGeneration: 1,
       allocatedRenderGeneration: 2,
+      preparedSourceCustody: firstCustody,
     });
     const browserThree = digest("resume-abort-browser-3");
     const throughSecondCrash = [
@@ -2118,6 +2198,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
         previousNonceSha256: scenario.browserNonce,
         workspaceRevision: 1,
         maximumAllocatedRenderGeneration: 1,
+        priorActiveSourceJournal: sourceCheckpoint(2),
+        priorActiveMaskJournal: null,
       }),
       firstIntent,
       crashEpoch({
@@ -2126,6 +2208,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
         previousNonceSha256: browserTwo,
         workspaceRevision: 1,
         maximumAllocatedRenderGeneration: 2,
+        priorActiveSourceJournal: sourceCheckpoint(2),
+        priorActiveMaskJournal: null,
       }),
     ];
     const abort = envelope("coverage.segment-resume-recovery-aborted.v2", {
@@ -2167,7 +2251,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
     const retryIntent = sourceResumeIntent({
       scenario,
       browserEpochNonceSha256: browserThree,
-      priorBrowserEpochNonceSha256: browserTwo,
+      priorBrowserEpochNonceSha256: scenario.browserNonce,
       priorChildJournal: prior,
       operationIdSha256: retryOperation,
       newSourceEpochNonceSha256: retriedCustody.sourceEpochNonceSha256,
@@ -2175,6 +2259,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       childJournalLeafName: "source-child-resume-retry",
       previousMaximumAllocatedRenderGeneration: 2,
       allocatedRenderGeneration: 3,
+      preparedSourceCustody: retriedCustody,
     });
     const retryJournal = sourceCheckpoint(1, "source-child-resume-retry");
     const retried = replayGrandHallT554NativeReviewCoordinatorV2({
@@ -2300,6 +2385,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       browserEpochNonceSha256: scenario.browserNonce,
       expectedWorkspaceRevision: 6,
       source: newCustody.source,
+      preparedSourceCustody: newCustody,
       sourceEpochNonceSha256: newCustody.sourceEpochNonceSha256,
       coverageSegmentIdSha256: digest("source-segment-2"),
       previousRenderGeneration: 5,
@@ -2317,6 +2403,9 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       ...secondIntent,
       payload: {
         ...secondIntent.payload,
+        preparedSourceCustody: sourceCustody(5, "source-epoch-stale"),
+        sourceEpochNonceSha256:
+          sourceCustody(5, "source-epoch-stale").sourceEpochNonceSha256,
         previousRenderGeneration: 4,
         allocatedRenderGeneration: 5,
         childJournalLeafName: "source-child-0002",
@@ -2350,6 +2439,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       browserEpochNonceSha256: browserTwo,
       previousBrowserEpochNonceSha256: scenario.browserNonce,
       reason: "crash_resume" as const,
+      priorActiveSourceJournal: null,
+      priorActiveMaskJournal: null,
       workspaceRevision: 0,
       maximumAllocatedRenderGeneration: 1,
       startedAtUtc: NOW,
@@ -2392,6 +2483,8 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       browserEpochNonceSha256: browserTwo,
       previousBrowserEpochNonceSha256: scenario.browserNonce,
       reason: "crash_resume" as const,
+      priorActiveSourceJournal: sourceCheckpoint(4),
+      priorActiveMaskJournal: null,
       workspaceRevision: 3,
       maximumAllocatedRenderGeneration: 4,
       startedAtUtc: NOW,

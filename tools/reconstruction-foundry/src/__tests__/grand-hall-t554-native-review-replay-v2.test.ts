@@ -29,7 +29,6 @@ import {
 } from "../grand-hall-t554-native-review-durable-journal-v2.js";
 import * as replayV2Module from "../grand-hall-t554-native-review-replay-v2.js";
 import {
-  GrandHallT554NativeReviewReplayV2Error,
   computeGrandHallT554NativeReviewCoverageEventV2Sha256,
   createGrandHallT554NativeReviewCoverageCarryStateV2,
   emptyGrandHallT554NativeReviewDwellVectorV2,
@@ -936,14 +935,19 @@ describe("Grand Hall T-554 typed native-review replay v2", () => {
     ).toThrowError(expect.objectContaining({ code: "EVENT_LIMIT_REACHED" }));
   });
 
-  it("does not emit carry state from a start-only child", async () => {
+  it("emits exact zero-dwell carry from branded start-only child evidence", async () => {
     const scope = sourceScope();
     const evidence = await sourceEvidence(scope, [sourceStart(scope)]);
     const replay = replayGrandHallT554NativeReviewSourceChildV2(evidence);
     expect(replay.coverage.coverageEventCount).toBe(0);
-    expect(() =>
+    expect(
       createGrandHallT554NativeReviewCoverageCarryStateV2(evidence),
-    ).toThrowError(GrandHallT554NativeReviewReplayV2Error);
+    ).toMatchObject({
+      kind: "source",
+      predecessorJournal: evidence.checkpoint,
+      completedTileCount: 0,
+      completedTileBitsetHex: "0".repeat(128),
+    });
     expect(emptyGrandHallT554NativeReviewDwellVectorV2()).toMatchObject({
       cappedDwellMsUint16LeBase64url: expect.any(String),
       cappedDwellBytesSha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),

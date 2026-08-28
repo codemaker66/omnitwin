@@ -920,6 +920,8 @@ async function fixture(options: {
       browserEpochNonceSha256: browser,
       previousBrowserEpochNonceSha256: null,
       reason: "session_created",
+      priorActiveSourceJournal: null,
+      priorActiveMaskJournal: null,
       workspaceRevision: 0,
       maximumAllocatedRenderGeneration: 0,
       startedAtUtc: NOW,
@@ -931,6 +933,7 @@ async function fixture(options: {
       browserEpochNonceSha256: browser,
       expectedWorkspaceRevision: 0,
       source: sourceCustody.source,
+      preparedSourceCustody: sourceCustody,
       sourceEpochNonceSha256: sourceCustody.sourceEpochNonceSha256,
       coverageSegmentIdSha256: segment,
       previousRenderGeneration: 0,
@@ -2608,11 +2611,19 @@ describe("Grand Hall T-554 native review session store v2", () => {
         browserEpochNonceSha256: browserTwo,
         previousBrowserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
         reason: "crash_resume" as const,
+        priorActiveSourceJournal: priorEvidence.checkpoint,
+        priorActiveMaskJournal: null,
         workspaceRevision: 1,
         maximumAllocatedRenderGeneration: 1,
         startedAtUtc: "2000-01-01T00:00:01.000Z",
       }),
     });
+    const resumedPreparedCustody = {
+      ...built.sourceScope.sourceCustody,
+      sourceEpochBindingSha256: digest("resume-new-source-binding"),
+      sourceEpochNonceSha256: digest("resume-new-source-epoch"),
+      sourceEpochRenderGeneration: 2,
+    };
     await coordinator.append({
       expectedRevision: 5,
       event: envelope("coverage.segment-resume-intended.v2", {
@@ -2623,6 +2634,7 @@ describe("Grand Hall T-554 native review session store v2", () => {
         browserEpochNonceSha256: browserTwo,
         expectedWorkspaceRevision: 1,
         sourceCustodyBefore: built.sourceScope.sourceCustody,
+        preparedSourceCustody: resumedPreparedCustody,
         previousVisibleRenderGeneration: 1,
         previousMaximumAllocatedRenderGeneration: 1,
         allocatedRenderGeneration: 2,
@@ -2644,6 +2656,8 @@ describe("Grand Hall T-554 native review session store v2", () => {
           browserEpochNonceSha256: browserThree,
           previousBrowserEpochNonceSha256: browserTwo,
           reason: "crash_resume" as const,
+          priorActiveSourceJournal: priorEvidence.checkpoint,
+          priorActiveMaskJournal: null,
           workspaceRevision: 1,
           maximumAllocatedRenderGeneration: 2,
           startedAtUtc: "2000-01-01T00:00:02.000Z",

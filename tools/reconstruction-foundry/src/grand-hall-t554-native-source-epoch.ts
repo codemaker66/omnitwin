@@ -166,7 +166,7 @@ function semanticSha256(domain: string, value: unknown): `sha256:${string}` {
   return sha256(Buffer.from(`${domain}\n${stableCanonicalJson(canonical)}`, "utf8"));
 }
 
-function epochBindingSha256(
+export function computeGrandHallT554NativeSourceEpochBindingSha256V1(
   bindings: GrandHallT554NativeSourceEpochBindingsV1,
   sourceVerification: GrandHallT554PinnedSourceJpegVerification,
 ): `sha256:${string}` {
@@ -207,7 +207,11 @@ class GrandHallT554NativeSourceEpochControllerV1 implements GrandHallT554NativeS
     private readonly pinnedSource: GrandHallT554PinnedSourceJpeg,
   ) {
     assertVerificationMatchesSource(bindings.source, pinnedSource.verification);
-    this.bindingSha256 = epochBindingSha256(bindings, pinnedSource.verification);
+    this.bindingSha256 =
+      computeGrandHallT554NativeSourceEpochBindingSha256V1(
+        bindings,
+        pinnedSource.verification,
+      );
     this.sourceEpochNonceSha256 = sha256(
       Buffer.from(bindings.sourceEpochNonce, "utf8"),
     );

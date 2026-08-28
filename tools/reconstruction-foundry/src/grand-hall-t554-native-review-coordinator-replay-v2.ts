@@ -621,10 +621,15 @@ function replayBrowserEpoch(
         payload.previousBrowserEpochNonceSha256 === null,
       "The first browser epoch must be the exact session-created epoch.",
     );
+    transition(
+      payload.priorActiveSourceJournal === null &&
+        payload.priorActiveMaskJournal === null,
+      "The first browser epoch cannot acknowledge prior active children.",
+    );
   } else {
     transition(
-      payload.reason === "crash_resume",
-      "Only crash resume may rotate an existing browser epoch.",
+      payload.reason === "clean_resume" || payload.reason === "crash_resume",
+      "Only a truthful clean or crash resume may rotate an existing browser epoch.",
     );
     transition(
       payload.browserEpochNumber === state.browserEpoch.number + 1,
@@ -635,6 +640,38 @@ function replayBrowserEpoch(
         state.browserEpoch.nonceSha256,
       "Resumed browser epoch does not bind its predecessor.",
     );
+    const active = state.activeSource;
+    if (active === null) {
+      transition(
+        payload.priorActiveSourceJournal === null &&
+          payload.priorActiveMaskJournal === null,
+        "A browser resume without an active source cannot acknowledge child journals.",
+      );
+    } else {
+      const sourceJournal = payload.priorActiveSourceJournal;
+      transition(
+        sourceJournal !== null &&
+          checkpointAdvances(active.sourceJournal, sourceJournal),
+        "Browser resume must acknowledge the exact latest active source child.",
+      );
+      referenceChildCheckpoint(state, sourceJournal);
+      active.sourceJournal = sourceJournal;
+      if (active.maskJournal === null) {
+        transition(
+          payload.priorActiveMaskJournal === null,
+          "Browser resume cannot acknowledge a mask child when none is active.",
+        );
+      } else {
+        const maskJournal = payload.priorActiveMaskJournal;
+        transition(
+          maskJournal !== null &&
+            checkpointAdvances(active.maskJournal, maskJournal),
+          "Browser resume must acknowledge the exact latest active mask child.",
+        );
+        referenceChildCheckpoint(state, maskJournal);
+        active.maskJournal = maskJournal;
+      }
+    }
   }
   state.browserEpochNonceHashes.add(payload.browserEpochNonceSha256);
   state.previousBrowserEpochNonceSha256 =
@@ -746,6 +783,13 @@ function replaySourceCommit(
   binding(
     sameSource(payload.sourceCustody.source, pending.payload.source),
     "Source-selection commit source differs from its intent.",
+  );
+  binding(
+    canonicalEqual(
+      payload.sourceCustody,
+      pending.payload.preparedSourceCustody,
+    ),
+    "Source-selection commit custody differs from its prepared intent.",
   );
   binding(
     payload.sourceCustody.sourceEpochNonceSha256 ===
@@ -1240,11 +1284,14 @@ function assertSourceResumeCarry(
   priorChildJournal: GrandHallT554NativeReviewSourceChildCheckpointV2,
   carry: GrandHallT554NativeReviewSourceCoverageCarryStateV2,
 ): void {
+  const predecessorObligation = state.childObligations.get(
+    priorChildJournal.leafName,
+  );
   binding(
-    state.previousBrowserEpochNonceSha256 !== null &&
+    predecessorObligation !== undefined &&
       carry.priorBrowserEpochNonceSha256 ===
-        state.previousBrowserEpochNonceSha256,
-    "Source resume carry does not bind the immediately preceding browser epoch.",
+        predecessorObligation.browserEpochNonceSha256,
+    "Source resume carry does not bind its durable predecessor child browser epoch.",
   );
   binding(
     canonicalEqual(carry.predecessorJournal, priorChildJournal),
@@ -1294,11 +1341,14 @@ function assertMaskResumeCarry(
       active.frozenBinding !== null,
     "Mask resume carry requires a complete active frozen-review state.",
   );
+  const predecessorObligation = state.childObligations.get(
+    priorChildJournal.leafName,
+  );
   binding(
-    state.previousBrowserEpochNonceSha256 !== null &&
+    predecessorObligation !== undefined &&
       carry.priorBrowserEpochNonceSha256 ===
-        state.previousBrowserEpochNonceSha256,
-    "Mask resume carry does not bind the immediately preceding browser epoch.",
+        predecessorObligation.browserEpochNonceSha256,
+    "Mask resume carry does not bind its durable predecessor child browser epoch.",
   );
   binding(
     canonicalEqual(carry.predecessorJournal, priorChildJournal),
@@ -1490,17 +1540,11 @@ function replayCoverageSegmentResumeCommit(
     pending.payload.sourceCustodyBefore,
   );
   binding(
-    sameStableSourceCustody(
+    canonicalEqual(
       payload.sourceCustody,
-      pending.payload.sourceCustodyBefore,
-    ) &&
-      payload.sourceCustody.sourceEpochNonceSha256 ===
-        pending.payload.newSourceEpochNonceSha256 &&
-      payload.sourceCustody.sourceEpochBindingSha256 !==
-        pending.payload.sourceCustodyBefore.sourceEpochBindingSha256 &&
-      payload.sourceCustody.sourceEpochRenderGeneration ===
-        payload.renderGeneration,
-    "Coverage resume commit must retain stable custody with the exact fresh epoch.",
+      pending.payload.preparedSourceCustody,
+    ),
+    "Coverage resume commit custody differs from its exact prepared intent.",
   );
   recordUniqueIdentity(
     state.sourceEpochBindingHashes,

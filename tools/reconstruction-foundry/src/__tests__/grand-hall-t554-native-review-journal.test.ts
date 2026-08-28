@@ -147,21 +147,37 @@ if (!workspace || !scopeJson || !signalPath || !controlPath || !resultPath || !p
 }
 const scope = JSON.parse(scopeJson);
 let signalled = false;
+const waitForControl = async (path) => {
+  for (;;) {
+    try {
+      await access(path);
+      return;
+    } catch {
+      await delay(10);
+    }
+  }
+};
 const stopHere = async () => {
   if (signalled) return;
   signalled = true;
   await writeFile(signalPath, "ready", { flag: "wx" });
-  if (phase === "race") {
-    for (;;) {
-      try {
-        await access(controlPath);
-        return;
-      } catch {
-        await delay(10);
-      }
-    }
+  if (phase === "race" || phase === "quarantine-race") {
+    await waitForControl(controlPath);
+    return;
   }
   await new Promise(() => undefined);
+};
+const stopAfterPendingWrite = async () => {
+  await writeFile(signalPath + ".pending", "ready", { flag: "wx" });
+  await waitForControl(controlPath + ".claim");
+};
+const stopWinnerAfterClaim = async () => {
+  await writeFile(controlPath + ".winner-ready", writer, { flag: "wx" });
+  await waitForControl(controlPath + ".winner-continue");
+};
+const stopLoserAfterClaimConflict = async () => {
+  await writeFile(controlPath + ".loser-ready", writer, { flag: "wx" });
+  await waitForControl(controlPath + ".loser-continue");
 };
 const journal = await __testOnlyOpenGrandHallT554NativeReviewJournal(
   { workspaceRoot: workspace, expectedScope: scope },
@@ -169,8 +185,24 @@ const journal = await __testOnlyOpenGrandHallT554NativeReviewJournal(
     nowUtc: () => ${JSON.stringify(FIXED_TIME)},
     writeChunkByteLength: phase === "mid-write" ? 11 : undefined,
     afterEventWriteChunk: phase === "mid-write" ? stopHere : undefined,
-    afterClaimDirectorySynced: phase === "after-claim" ? stopHere : undefined,
-    afterReplayBeforeReserve: phase === "race" ? stopHere : undefined,
+    afterEventFileSynced:
+      phase === "quarantine-race" ? stopAfterPendingWrite : undefined,
+    afterClaimDirectorySynced:
+      phase === "after-claim"
+        ? stopHere
+        : phase === "quarantine-race"
+          ? stopWinnerAfterClaim
+          : undefined,
+    afterClaimConflictDetectedBeforeQuarantine:
+      phase === "quarantine-race"
+        ? stopLoserAfterClaimConflict
+        : undefined,
+    afterPendingDirectorySyncedBeforePostReplay:
+      phase === "after-pending-cleanup" ? stopHere : undefined,
+    afterReplayBeforeReserve:
+      phase === "race" || phase === "quarantine-race"
+        ? stopHere
+        : undefined,
     beforeDirectorySync: phase === "during-quarantine-recovery"
       ? async ({ reason }) => {
           if (reason === "quarantine-destination") await stopHere();
@@ -200,7 +232,9 @@ async function spawnJournalChild(
   phase:
     | "mid-write"
     | "after-claim"
+    | "after-pending-cleanup"
     | "race"
+    | "quarantine-race"
     | "during-quarantine-recovery",
   writer: string,
 ): Promise<{
@@ -263,6 +297,26 @@ async function waitForPath(absolutePath: string): Promise<void> {
     }
   }
   throw new Error(`Timed out waiting for subprocess evidence at ${absolutePath}.`);
+}
+
+async function waitForOnePath(
+  absolutePaths: readonly string[],
+): Promise<string> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    for (const absolutePath of absolutePaths) {
+      try {
+        await access(absolutePath);
+        return absolutePath;
+      } catch {
+        // The other candidate may be the first completed subprocess.
+      }
+    }
+    await delay(10);
+  }
+  throw new Error(
+    `Timed out waiting for one subprocess result: ${absolutePaths.join(", ")}.`,
+  );
 }
 
 function expectJournalError(code: GrandHallT554NativeReviewJournalError["code"]): {
@@ -350,6 +404,236 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     expect(second.revision).toBe(2);
     expect(second.events[1]?.previousEventSha256).toBe(second.events[0]?.eventSha256);
     expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
+  });
+
+  it("derives a validated append from the exact replay held inside the serial lane", async () => {
+    let countReads = false;
+    let claimReads = 0;
+    let eventReads = 0;
+    let activeReads = 0;
+    let maximumActiveReads = 0;
+    const fixture = await harness({
+      nowUtc: () => FIXED_TIME,
+      beforeCommittedContentRead: ({ kind }) => {
+        if (!countReads) return;
+        if (kind === "claim") claimReads += 1;
+        else eventReads += 1;
+        activeReads += 1;
+        maximumActiveReads = Math.max(maximumActiveReads, activeReads);
+      },
+      afterCommittedContentRead: () => {
+        if (countReads) activeReads -= 1;
+      },
+    });
+    await fixture.journal.append({
+      expectedRevision: 0,
+      eventType: "coverage.sample",
+      payload: { sequence: 1 },
+    });
+    countReads = true;
+    const observedRevisions: number[] = [];
+
+    const advanced = await fixture.journal.appendValidated({
+      expectedRevision: 1,
+      eventType: "coverage.sample",
+      payload: { sequence: 2 },
+      validateCurrent: (current) => {
+        observedRevisions.push(current.revision);
+        expect(current.events.map((event) => event.payload)).toEqual([
+          { sequence: 1 },
+        ]);
+        expect(Object.isFrozen(current)).toBe(true);
+        expect(Object.isFrozen(current.events)).toBe(true);
+        expect(Object.isFrozen(current.events[0]?.payload)).toBe(true);
+        return {
+          minimumRecordedAtUtc: FIXED_TIME,
+        };
+      },
+    });
+
+    expect(observedRevisions).toEqual([1]);
+    expect(advanced.events.map((event) => event.payload)).toEqual([
+      { sequence: 1 },
+      { sequence: 2 },
+    ]);
+    expect({ claimReads, eventReads, activeReads }).toEqual({
+      claimReads: 0,
+      eventReads: 3,
+      activeReads: 0,
+    });
+    expect(maximumActiveReads).toBeLessThanOrEqual(2);
+    countReads = false;
+
+    let staleValidatorCalled = false;
+    await expect(
+      fixture.journal.appendValidated({
+        expectedRevision: 1,
+        eventType: "coverage.sample",
+        payload: { sequence: 3 },
+        validateCurrent: () => {
+          staleValidatorCalled = true;
+          return {};
+        },
+      }),
+    ).rejects.toMatchObject(expectJournalError("REVISION_CONFLICT"));
+    expect(staleValidatorCalled).toBe(false);
+
+    await expect(
+      fixture.journal.appendValidated({
+        expectedRevision: 2,
+        eventType: "coverage.sample",
+        payload: { sequence: 3 },
+        validateCurrent: () => {
+          throw new Error("semantic validation rejected the candidate");
+        },
+      }),
+    ).rejects.toThrow("semantic validation rejected the candidate");
+    expect((await fixture.journal.replay()).revision).toBe(2);
+    expect(await eventNames(fixture.workspace)).toHaveLength(2);
+  });
+
+  it("drains every started parallel content reader before replay rejects", async () => {
+    let instrument = false;
+    let activeReads = 0;
+    let releaseSecondRead!: () => void;
+    let announceSecondRead!: () => void;
+    let announceFirstFinished!: () => void;
+    const secondReadGate = new Promise<void>((resolve) => {
+      releaseSecondRead = resolve;
+    });
+    const secondReadStarted = new Promise<void>((resolve) => {
+      announceSecondRead = resolve;
+    });
+    const firstReadFinished = new Promise<void>((resolve) => {
+      announceFirstFinished = resolve;
+    });
+    const fixture = await harness({
+      nowUtc: () => FIXED_TIME,
+      beforeCommittedContentRead: async ({ kind, sequence }) => {
+        if (!instrument || kind !== "event") return;
+        activeReads += 1;
+        if (sequence === 2) {
+          announceSecondRead();
+          await secondReadGate;
+        }
+      },
+      afterCommittedContentRead: ({ kind, sequence }) => {
+        if (!instrument || kind !== "event") return;
+        activeReads -= 1;
+        if (sequence === 1) announceFirstFinished();
+      },
+    });
+    await fixture.journal.append({
+      expectedRevision: 0,
+      eventType: "coverage.sample",
+      payload: { sequence: 1 },
+    });
+    await fixture.journal.append({
+      expectedRevision: 1,
+      eventType: "coverage.sample",
+      payload: { sequence: 2 },
+    });
+    const [firstEventName] = await eventNames(fixture.workspace);
+    if (firstEventName === undefined) throw new Error("missing first event");
+    await writeFile(
+      join(fixture.workspace, "events", firstEventName),
+      "{}\n",
+      "utf8",
+    );
+
+    instrument = true;
+    let replaySettled = false;
+    const replayOutcome = fixture.journal.replay().then(
+      () => ({ status: "fulfilled" as const }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    ).finally(() => {
+      replaySettled = true;
+    });
+    await Promise.all([secondReadStarted, firstReadFinished]);
+    await delay(25);
+    expect(replaySettled).toBe(false);
+    expect(activeReads).toBe(1);
+    releaseSecondRead();
+
+    expect(await replayOutcome).toMatchObject({
+      status: "rejected",
+      error: expectJournalError("JOURNAL_INVALID"),
+    });
+    expect(replaySettled).toBe(true);
+    expect(activeReads).toBe(0);
+  });
+
+  it("balances content hooks and drains sibling readers when a before hook rejects", async () => {
+    let instrument = false;
+    let activeReads = 0;
+    const completedReads: number[] = [];
+    let releaseSecondRead!: () => void;
+    let announceSecondRead!: () => void;
+    let announceFirstAfterHook!: () => void;
+    const secondReadGate = new Promise<void>((resolve) => {
+      releaseSecondRead = resolve;
+    });
+    const secondReadStarted = new Promise<void>((resolve) => {
+      announceSecondRead = resolve;
+    });
+    const firstAfterHook = new Promise<void>((resolve) => {
+      announceFirstAfterHook = resolve;
+    });
+    const fixture = await harness({
+      nowUtc: () => FIXED_TIME,
+      beforeCommittedContentRead: async ({ kind, sequence }) => {
+        if (!instrument || kind !== "event") return;
+        activeReads += 1;
+        if (sequence === 2) {
+          announceSecondRead();
+          await secondReadGate;
+          return;
+        }
+        if (sequence === 1) {
+          await secondReadStarted;
+          throw new Error("injected before-content hook rejection");
+        }
+      },
+      afterCommittedContentRead: ({ kind, sequence }) => {
+        if (!instrument || kind !== "event") return;
+        activeReads -= 1;
+        completedReads.push(sequence);
+        if (sequence === 1) announceFirstAfterHook();
+      },
+    });
+    await fixture.journal.append({
+      expectedRevision: 0,
+      eventType: "coverage.sample",
+      payload: { sequence: 1 },
+    });
+    await fixture.journal.append({
+      expectedRevision: 1,
+      eventType: "coverage.sample",
+      payload: { sequence: 2 },
+    });
+
+    instrument = true;
+    let replaySettled = false;
+    const replayOutcome = fixture.journal.replay().then(
+      () => ({ status: "fulfilled" as const }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    ).finally(() => {
+      replaySettled = true;
+    });
+    await firstAfterHook;
+    await delay(25);
+    expect(replaySettled).toBe(false);
+    expect(activeReads).toBe(1);
+    expect(completedReads).toEqual([1]);
+    releaseSecondRead();
+
+    expect(await replayOutcome).toMatchObject({
+      status: "rejected",
+      error: expectJournalError("JOURNAL_INVALID"),
+    });
+    expect(replaySettled).toBe(true);
+    expect(activeReads).toBe(0);
+    expect(completedReads.sort((left, right) => left - right)).toEqual([1, 2]);
   });
 
   it("enforces fixed event-count and cumulative-byte ceilings on append and replay", async () => {
@@ -638,6 +922,32 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
   });
 
+  it("reopens the exact committed revision when acknowledgement is lost after pending cleanup", async () => {
+    const fixture = await harness({
+      nowUtc: () => FIXED_TIME,
+      afterPendingDirectorySyncedBeforePostReplay: () => {
+        throw new Error("injected crash after pending cleanup");
+      },
+    });
+    await expect(appendOne(fixture.journal)).rejects.toMatchObject(
+      expectJournalError("APPEND_AMBIGUOUS"),
+    );
+    expect(await readdir(join(fixture.workspace, "claims"))).toHaveLength(1);
+    expect(await eventNames(fixture.workspace)).toHaveLength(1);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
+
+    const reopened = await openGrandHallT554NativeReviewJournal({
+      workspaceRoot: fixture.workspace,
+      expectedScope: fixture.scope,
+    });
+    const replay = await reopened.replay();
+    expect(replay.revision).toBe(1);
+    expect(replay.events).toHaveLength(1);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
+  });
+
   it("recovers a real subprocess kill during a partial pending write", async () => {
     const fixture = await harness();
     const running = await spawnJournalChild(fixture, "mid-write", "killed-mid-write");
@@ -737,15 +1047,79 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
   }, 20_000);
 
-  it("uses the persistent sequence claim as defensive CAS across two unowned real processes", async () => {
+  it("reopens the exact commit after a real kill following pending cleanup", async () => {
     const fixture = await harness();
-    const first = await spawnJournalChild(fixture, "race", "process-a");
-    const second = await spawnJournalChild(fixture, "race", "process-b");
+    const running = await spawnJournalChild(
+      fixture,
+      "after-pending-cleanup",
+      "killed-after-pending-cleanup",
+    );
+    await waitForPath(running.signalPath);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(running.child.kill("SIGKILL")).toBe(true);
+    const completion = await running.completion;
+    expect(completion.code === 0).toBe(false);
+
+    const reopened = await openGrandHallT554NativeReviewJournal({
+      workspaceRoot: fixture.workspace,
+      expectedScope: fixture.scope,
+    });
+    const replay = await reopened.replay();
+    expect(replay.revision).toBe(1);
+    expect(replay.events[0]?.payload).toEqual({
+      writer: "killed-after-pending-cleanup",
+    });
+    expect(await readdir(join(fixture.workspace, "claims"))).toHaveLength(1);
+    expect(await eventNames(fixture.workspace)).toHaveLength(1);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
+  }, 20_000);
+
+  it("reconciles the exact quarantine receipt when two unowned real processes clean up one losing CAS attempt", async () => {
+    const fixture = await harness();
+    const first = await spawnJournalChild(
+      fixture,
+      "quarantine-race",
+      "process-a",
+    );
+    const second = await spawnJournalChild(
+      fixture,
+      "quarantine-race",
+      "process-b",
+    );
     await Promise.all([
       waitForPath(first.signalPath),
       waitForPath(second.signalPath),
     ]);
     await writeFile(join(fixture.root, "journal-race.go"), "go", { flag: "wx" });
+    await Promise.all([
+      waitForPath(`${first.signalPath}.pending`),
+      waitForPath(`${second.signalPath}.pending`),
+    ]);
+    await writeFile(join(fixture.root, "journal-race.go.claim"), "go", {
+      flag: "wx",
+    });
+    await Promise.all([
+      waitForPath(join(fixture.root, "journal-race.go.winner-ready")),
+      waitForPath(join(fixture.root, "journal-race.go.loser-ready")),
+    ]);
+    await writeFile(
+      join(fixture.root, "journal-race.go.winner-continue"),
+      "go",
+      { flag: "wx" },
+    );
+    await waitForOnePath([first.resultPath, second.resultPath]);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    const movedBeforeLoserCleanup = await readdir(
+      join(fixture.workspace, "quarantine"),
+    );
+    expect(movedBeforeLoserCleanup).toHaveLength(1);
+    expect(movedBeforeLoserCleanup[0]).toMatch(/^moved-/u);
+    await writeFile(
+      join(fixture.root, "journal-race.go.loser-continue"),
+      "go",
+      { flag: "wx" },
+    );
     const [firstCompletion, secondCompletion] = await Promise.all([
       first.completion,
       second.completion,
@@ -778,7 +1152,8 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     expect(await readdir(join(fixture.workspace, "claims"))).toHaveLength(1);
     expect(await eventNames(fixture.workspace)).toHaveLength(1);
     expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
-    expect(await readdir(join(fixture.workspace, "quarantine"))).toHaveLength(1);
+    const quarantine = await readdir(join(fixture.workspace, "quarantine"));
+    expect(quarantine).toEqual(movedBeforeLoserCleanup);
   }, 30_000);
 
   it("writes a durable ambiguity marker when the reserved path cannot be moved", async () => {
@@ -1018,6 +1393,7 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     await expect(quarantineFixture.journal.replay()).rejects.toMatchObject(
       expectJournalError("JOURNAL_INVALID"),
     );
+
   });
 
   it("rejects a same-name event replacement with canonical bytes on a different inode", async () => {
@@ -1028,6 +1404,32 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     await rm(path);
     await writeFile(path, bytes);
     await expect(fixture.journal.replay()).rejects.toMatchObject(
+      expectJournalError("JOURNAL_INVALID"),
+    );
+  });
+
+  it("rejects a same-name claim replacement and an external third hard link", async () => {
+    const replacedClaim = await harness();
+    await appendOne(replacedClaim.journal);
+    const claimPath = join(
+      replacedClaim.workspace,
+      "claims",
+      "0000000000000001.json",
+    );
+    const claimBytes = await readFile(claimPath);
+    await rm(claimPath);
+    await writeFile(claimPath, claimBytes);
+    await expect(replacedClaim.journal.replay()).rejects.toMatchObject(
+      expectJournalError("JOURNAL_INVALID"),
+    );
+
+    const externalAlias = await harness();
+    await appendOne(externalAlias.journal);
+    await link(
+      await onlyEventPath(externalAlias.workspace),
+      join(externalAlias.root, "external-third-link.json"),
+    );
+    await expect(externalAlias.journal.replay()).rejects.toMatchObject(
       expectJournalError("JOURNAL_INVALID"),
     );
   });

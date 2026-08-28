@@ -892,9 +892,11 @@ function validateChildScope(
   if (intent.eventType === "source.selection-intended.v2") {
     if (
       scope.kind !== "source" ||
-      !canonicalEqual(scope.sourceCustody.source, intent.payload.source) ||
-      scope.sourceCustody.sourceEpochNonceSha256 !== intent.payload.sourceEpochNonceSha256
-    ) throw fail("CHILD_MISMATCH", "Selected-source child scope is transplanted or stale.");
+      !canonicalEqual(
+        scope.sourceCustody,
+        intent.payload.preparedSourceCustody,
+      )
+    ) throw fail("CHILD_MISMATCH", "Selected-source child scope differs from its exact prepared custody.");
   } else if (intent.eventType === "mask.freeze-intended.v2") {
     if (
       scope.kind !== "mask" ||
@@ -911,13 +913,12 @@ function validateChildScope(
       })
     ) throw fail("CHILD_MISMATCH", "Frozen-mask child scope differs from its prepared declaration.");
   } else {
-    const before = intent.payload.sourceCustodyBefore;
     if (
-      !stableCustody(scope.sourceCustody, before) ||
-      scope.sourceCustody.sourceEpochNonceSha256 !== intent.payload.newSourceEpochNonceSha256 ||
-      scope.sourceCustody.sourceEpochBindingSha256 === before.sourceEpochBindingSha256 ||
-      scope.sourceCustody.sourceEpochRenderGeneration !== intent.payload.allocatedRenderGeneration
-    ) throw fail("CHILD_MISMATCH", "Resumed child scope does not use its declared fresh stable-source epoch.");
+      !canonicalEqual(
+        scope.sourceCustody,
+        intent.payload.preparedSourceCustody,
+      )
+    ) throw fail("CHILD_MISMATCH", "Resumed child scope differs from its exact prepared custody.");
     if (
       intent.payload.kind === "mask" &&
       (scope.kind !== "mask" ||

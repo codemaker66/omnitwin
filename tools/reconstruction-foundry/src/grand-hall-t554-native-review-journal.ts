@@ -60,6 +60,11 @@ const MAX_QUARANTINE_ENTRY_COUNT =
 const MAX_QUARANTINE_TOTAL_BYTES =
   GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_TOTAL_EVENT_BYTES;
 const MAX_PENDING_ENTRY_COUNT = 256;
+const MAXIMUM_PARALLEL_EVENT_READS = 32;
+// This is a per-directory metadata bound. A stable replay snapshots four
+// directories together, so its documented aggregate ceiling is 128 checks.
+const MAXIMUM_PARALLEL_INVENTORY_ENTRY_CHECKS = 32;
+const MAXIMUM_QUARANTINE_RECONCILIATION_ATTEMPTS = 32;
 const ROOT_INVENTORY = [
   CLAIMS_DIRECTORY_NAME,
   EVENTS_DIRECTORY_NAME,
@@ -161,6 +166,19 @@ export interface GrandHallT554NativeReviewJournalAppendInput {
   readonly minimumRecordedAtUtc?: string;
 }
 
+export interface GrandHallT554NativeReviewJournalAppendValidation {
+  readonly minimumRecordedAtUtc?: string;
+}
+
+export interface GrandHallT554NativeReviewJournalValidatedAppendInput extends Omit<
+  GrandHallT554NativeReviewJournalAppendInput,
+  "minimumRecordedAtUtc"
+> {
+  readonly validateCurrent: (
+    current: Readonly<GrandHallT554NativeReviewJournalReplay>,
+  ) => GrandHallT554NativeReviewJournalAppendValidation;
+}
+
 export interface GrandHallT554NativeReviewJournalEvent {
   readonly schemaVersion: typeof GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_SCHEMA;
   readonly sequence: number;
@@ -207,6 +225,14 @@ export interface GrandHallT554NativeReviewJournal {
   append(
     input: GrandHallT554NativeReviewJournalAppendInput,
   ): Promise<GrandHallT554NativeReviewJournalReplay>;
+  /**
+   * Runs domain validation against the exact replay already held by the
+   * journal's serial append lane. The callback must return the low-level event
+   * only after accepting that replay; rejection publishes nothing.
+   */
+  appendValidated(
+    input: GrandHallT554NativeReviewJournalValidatedAppendInput,
+  ): Promise<GrandHallT554NativeReviewJournalReplay>;
 }
 
 export interface GrandHallT554NativeReviewJournalCreateOptions {
@@ -244,7 +270,26 @@ export interface __GrandHallT554NativeReviewJournalTestSeams {
     readonly absolutePath: string;
     readonly sequence: number;
   }) => Promise<void> | void;
+  readonly afterClaimConflictDetectedBeforeQuarantine?: (context: {
+    readonly pendingAbsolutePath: string;
+    readonly claimAbsolutePath: string;
+    readonly sequence: number;
+  }) => Promise<void> | void;
   readonly afterEventDirectorySynced?: (context: {
+    readonly absolutePath: string;
+    readonly sequence: number;
+  }) => Promise<void> | void;
+  readonly afterPendingDirectorySyncedBeforePostReplay?: (context: {
+    readonly absolutePath: string;
+    readonly sequence: number;
+  }) => Promise<void> | void;
+  readonly beforeCommittedContentRead?: (context: {
+    readonly kind: "claim" | "event";
+    readonly absolutePath: string;
+    readonly sequence: number;
+  }) => Promise<void> | void;
+  readonly afterCommittedContentRead?: (context: {
+    readonly kind: "claim" | "event";
     readonly absolutePath: string;
     readonly sequence: number;
   }) => Promise<void> | void;
@@ -413,6 +458,16 @@ function serializeCanonicalJson(value: unknown): Buffer {
   );
 }
 
+function deepFreezeValue<T>(value: T): Readonly<T> {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const member of Object.values(value)) {
+    deepFreezeValue(member);
+  }
+  return Object.freeze(value);
+}
+
 function canonicalJsonValue(value: unknown, depth = 0): CanonicalJson {
   if (depth > 128)
     throw new Error("Canonical event payload nesting is too deep.");
@@ -526,6 +581,29 @@ async function directNode(
   return { absolutePath, stats: after };
 }
 
+async function directInventoriedFileNode(
+  absolutePath: string,
+  allowEmptyFile = false,
+  allowMultipleFileLinks = false,
+): Promise<NodeWitness> {
+  // This narrower witness is valid only for inventory snapshots and the
+  // post-descriptor state check in readStableFile. Every file whose bytes are
+  // consumed receives a full canonical directNode witness before open.
+  const stats = await lstat(absolutePath, { bigint: true });
+  if (
+    !stats.isFile() ||
+    stats.isSymbolicLink() ||
+    (!allowMultipleFileLinks && stats.nlink !== 1n) ||
+    stats.nlink < 1n ||
+    (!allowEmptyFile && stats.size < 1n)
+  ) {
+    throw new Error(
+      "Inventoried journal child is not one direct file of the required kind.",
+    );
+  }
+  return { absolutePath, stats };
+}
+
 function assertSameNode(
   actual: NodeWitness,
   expected: NodeWitness,
@@ -567,21 +645,22 @@ async function snapshotDirectory(
   });
   const names = dirents.map((entry) => entry.name);
   assertSafeUniqueNames(names, "Journal inventory");
-  const entries = await Promise.all(
-    dirents.map(async (dirent) => {
+  const entries = await mapWithBoundedConcurrency(
+    dirents,
+    MAXIMUM_PARALLEL_INVENTORY_ENTRY_CHECKS,
+    async (dirent) => {
       if (!dirent.isFile() || dirent.isSymbolicLink()) {
         throw new Error(
           "Journal inventory contains an extra directory or link.",
         );
       }
-      const node = await directNode(
-        join(directory.absolutePath, dirent.name),
-        "file",
-        options.allowEmptyFiles ?? true,
-        options.allowMultipleFileLinks ?? false,
+       const node = await directInventoriedFileNode(
+         join(directory.absolutePath, dirent.name),
+         options.allowEmptyFiles ?? true,
+         options.allowMultipleFileLinks ?? false,
       );
       return { name: dirent.name, stats: node.stats };
-    }),
+    },
   );
   const final = await directNode(directory.absolutePath, "directory");
   assertSameNode(final, directory, "Journal directory");
@@ -590,7 +669,7 @@ async function snapshotDirectory(
   }
   return {
     stats: final.stats,
-    entries: entries.sort((a, b) => lexicalOrder(a.name, b.name)),
+    entries: [...entries].sort((a, b) => lexicalOrder(a.name, b.name)),
   };
 }
 
@@ -664,9 +743,8 @@ async function readStableFile(
     }
     const bytes = await readExactly(handle, Number(descriptorBefore.size));
     const descriptorAfter = await handle.stat({ bigint: true });
-    const after = await directNode(
+    const after = await directInventoriedFileNode(
       absolutePath,
-      "file",
       allowEmptyFile,
       allowMultipleFileLinks,
     );
@@ -984,39 +1062,100 @@ function assertInventoryBounds(
   }
 }
 
+async function mapWithBoundedConcurrency<T, R>(
+  items: readonly T[],
+  maximumConcurrency: number,
+  operation: (item: T, index: number) => Promise<R>,
+): Promise<readonly R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  let stopScheduling = false;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      if (stopScheduling) return;
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      const item = items[index];
+      if (item === undefined) {
+        throw new Error("Bounded journal read lost an inventory entry.");
+      }
+      try {
+        results[index] = await operation(item, index);
+      } catch (error) {
+        stopScheduling = true;
+        throw error;
+      }
+    }
+  };
+  const workerCount = Math.min(maximumConcurrency, items.length);
+  const outcomes = await Promise.allSettled(
+    Array.from({ length: workerCount }, async () => {
+      await worker();
+    }),
+  );
+  for (const outcome of outcomes) settledValue(outcome);
+  return results;
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>): T {
+  if (result.status === "rejected") throw result.reason;
+  return result.value;
+}
+
 async function readClaims(
   layout: JournalLayout,
   snapshot: DirectorySnapshot,
   limits: JournalLimits,
+  seams: __GrandHallT554NativeReviewJournalTestSeams,
 ): Promise<readonly GrandHallT554NativeReviewJournalEvent[]> {
   assertInventoryBounds(snapshot, limits, "Journal claim");
-  const events: GrandHallT554NativeReviewJournalEvent[] = [];
+  const events = await mapWithBoundedConcurrency(
+    snapshot.entries,
+    MAXIMUM_PARALLEL_EVENT_READS,
+    async (entry, index) => {
+      const expectedSequence = index + 1;
+      if (parseClaimFileName(entry.name) !== expectedSequence) {
+        throw new Error("Journal claim sequence has a gap or duplicate.");
+      }
+      const absolutePath = join(layout.claims.absolutePath, entry.name);
+      const context = {
+        kind: "claim" as const,
+        absolutePath,
+        sequence: expectedSequence,
+      };
+      try {
+        await seams.beforeCommittedContentRead?.(context);
+        const bytes = await readStableFile(
+          absolutePath,
+          entry.stats,
+          GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES,
+          false,
+          true,
+        );
+        const parsed = PersistedEventSchema.parse(
+          parseCanonicalDocument(bytes, `Journal claim ${entry.name}`),
+        );
+        return parsePersistedEvent(
+          bytes,
+          eventFileName(parsed.sequence, parsed.eventSha256),
+          layout,
+        );
+      } finally {
+        await seams.afterCommittedContentRead?.(context);
+      }
+    },
+  );
   let previous = layout.genesisSha256;
   let previousTimestamp = Number.NEGATIVE_INFINITY;
-  for (const [index, entry] of snapshot.entries.entries()) {
+  for (const [index, event] of events.entries()) {
     const expectedSequence = index + 1;
-    if (parseClaimFileName(entry.name) !== expectedSequence) {
-      throw new Error("Journal claim sequence has a gap or duplicate.");
-    }
-    const bytes = await readStableFile(
-      join(layout.claims.absolutePath, entry.name),
-      entry.stats,
-      GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES,
-      false,
-      true,
-    );
-    const parsed = PersistedEventSchema.parse(
-      parseCanonicalDocument(bytes, `Journal claim ${entry.name}`),
-    );
-    const derivedName = eventFileName(parsed.sequence, parsed.eventSha256);
-    const event = parsePersistedEvent(bytes, derivedName, layout);
     previousTimestamp = validateEventChainEntry(
       event,
       expectedSequence,
       previous,
       previousTimestamp,
     );
-    events.push(event);
     previous = event.eventSha256;
   }
   return events;
@@ -1026,35 +1165,53 @@ async function readEvents(
   layout: JournalLayout,
   snapshot: DirectorySnapshot,
   limits: JournalLimits,
+  seams: __GrandHallT554NativeReviewJournalTestSeams,
 ): Promise<readonly GrandHallT554NativeReviewJournalEvent[]> {
   assertInventoryBounds(snapshot, limits, "Journal event");
-  const events: GrandHallT554NativeReviewJournalEvent[] = [];
+  const events = await mapWithBoundedConcurrency(
+    snapshot.entries,
+    MAXIMUM_PARALLEL_EVENT_READS,
+    async (entry, index) => {
+      const identity = parseEventFileName(entry.name);
+      const expectedSequence = index + 1;
+      if (identity.sequence !== expectedSequence) {
+        throw new Error("Journal sequence has a gap or duplicate.");
+      }
+      const absolutePath = join(layout.events.absolutePath, entry.name);
+      const context = {
+        kind: "event" as const,
+        absolutePath,
+        sequence: expectedSequence,
+      };
+      try {
+        await seams.beforeCommittedContentRead?.(context);
+        const bytes = await readStableFile(
+          absolutePath,
+          entry.stats,
+          GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES,
+          false,
+          true,
+        );
+        const event = parsePersistedEvent(bytes, entry.name, layout);
+        if (event.eventSha256 !== identity.sha256) {
+          throw new Error("Journal hash chain is broken.");
+        }
+        return event;
+      } finally {
+        await seams.afterCommittedContentRead?.(context);
+      }
+    },
+  );
   let previous = layout.genesisSha256;
   let previousTimestamp = Number.NEGATIVE_INFINITY;
-  for (const [index, entry] of snapshot.entries.entries()) {
-    const identity = parseEventFileName(entry.name);
+  for (const [index, event] of events.entries()) {
     const expectedSequence = index + 1;
-    if (identity.sequence !== expectedSequence)
-      throw new Error("Journal sequence has a gap or duplicate.");
-    const bytes = await readStableFile(
-      join(layout.events.absolutePath, entry.name),
-      entry.stats,
-      GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES,
-      false,
-      true,
-    );
-    const event = parsePersistedEvent(bytes, entry.name, layout);
-    if (
-      event.eventSha256 !== identity.sha256
-    )
-      throw new Error("Journal hash chain is broken.");
     previousTimestamp = validateEventChainEntry(
       event,
       expectedSequence,
       previous,
       previousTimestamp,
     );
-    events.push(event);
     previous = event.eventSha256;
   }
   return events;
@@ -1377,7 +1534,26 @@ async function verifyMovedQuarantinePath(
   return moved;
 }
 
-async function quarantinePendingAttempt(
+async function synchronizeCompletedMovedAttempt(
+  attempt: PendingAttempt,
+  layout: JournalLayout,
+  limits: JournalLimits,
+  seams: __GrandHallT554NativeReviewJournalTestSeams,
+): Promise<void> {
+  await completedMovedAttempt(attempt, layout, limits);
+  await syncDirectory(
+    layout.quarantine.absolutePath,
+    "quarantine-destination-recovery",
+    seams,
+  );
+  await syncDirectory(
+    layout.pending.absolutePath,
+    "quarantine-source-recovery",
+    seams,
+  );
+}
+
+async function quarantinePendingAttemptOnce(
   attempt: PendingAttempt,
   layout: JournalLayout,
   limits: JournalLimits,
@@ -1385,17 +1561,7 @@ async function quarantinePendingAttempt(
 ): Promise<void> {
   const source = await directNodeIfPresent(attempt.absolutePath, true, true);
   if (source === undefined) {
-    await completedMovedAttempt(attempt, layout, limits);
-    await syncDirectory(
-      layout.quarantine.absolutePath,
-      "quarantine-destination-recovery",
-      seams,
-    );
-    await syncDirectory(
-      layout.pending.absolutePath,
-      "quarantine-source-recovery",
-      seams,
-    );
+    await synchronizeCompletedMovedAttempt(attempt, layout, limits, seams);
     return;
   }
   if (!grandHallT554V3SameNode(source.stats, attempt.stats)) {
@@ -1476,30 +1642,90 @@ async function quarantinePendingAttempt(
   );
 }
 
+async function quarantinePendingAttempt(
+  attempt: PendingAttempt,
+  layout: JournalLayout,
+  limits: JournalLimits,
+  seams: __GrandHallT554NativeReviewJournalTestSeams,
+): Promise<void> {
+  let lastFailure: unknown = new Error(
+    "Pending attempt quarantine reconciliation did not start.",
+  );
+  for (
+    let reconciliationAttempt = 0;
+    reconciliationAttempt < MAXIMUM_QUARANTINE_RECONCILIATION_ATTEMPTS;
+    reconciliationAttempt += 1
+  ) {
+    try {
+      await quarantinePendingAttemptOnce(attempt, layout, limits, seams);
+      return;
+    } catch (error) {
+      lastFailure = error;
+    }
+
+    const source = await directNodeIfPresent(
+      attempt.absolutePath,
+      true,
+      true,
+    );
+    if (source === undefined) {
+      try {
+        await synchronizeCompletedMovedAttempt(
+          attempt,
+          layout,
+          limits,
+          seams,
+        );
+        return;
+      } catch (error) {
+        // A concurrent, owner-governed recovery may still be between its
+        // no-replace quarantine link and exact pending-name cleanup. Retry
+        // only this same inode/token receipt; never select another path.
+        lastFailure = error;
+      }
+    } else if (!grandHallT554V3SameNode(source.stats, attempt.stats)) {
+      throw new Error(
+        "Pending attempt path was replaced during quarantine reconciliation.",
+        { cause: lastFailure },
+      );
+    }
+
+    if (
+      reconciliationAttempt + 1 <
+      MAXIMUM_QUARANTINE_RECONCILIATION_ATTEMPTS
+    ) {
+      await new Promise<void>((resolveRetry) => {
+        setTimeout(resolveRetry, 1);
+      });
+    }
+  }
+  if (lastFailure instanceof Error) throw lastFailure;
+  throw new Error("Pending attempt quarantine reconciliation failed.", {
+    cause: lastFailure,
+  });
+}
+
 function assertMirroredCommittedPrefix(
   claimsSnapshot: DirectorySnapshot,
   eventsSnapshot: DirectorySnapshot,
-  claims: readonly GrandHallT554NativeReviewJournalEvent[],
   events: readonly GrandHallT554NativeReviewJournalEvent[],
 ): void {
   if (
     claimsSnapshot.entries.length !== eventsSnapshot.entries.length ||
-    claims.length !== events.length
+    claimsSnapshot.entries.length !== events.length
   ) {
     throw new Error("Journal claim and event prefixes differ in length.");
   }
-  for (const [index, claim] of claims.entries()) {
-    const event = events[index];
+  for (const [index, event] of events.entries()) {
     const claimEntry = claimsSnapshot.entries[index];
     const eventEntry = eventsSnapshot.entries[index];
+    const expectedSequence = index + 1;
     if (
-      event === undefined ||
       claimEntry === undefined ||
       eventEntry === undefined ||
-      claim.sequence !== event.sequence ||
-      claim.eventSha256 !== event.eventSha256 ||
-      claim.fileSha256 !== event.fileSha256 ||
-      claim.fileName !== event.fileName ||
+      parseClaimFileName(claimEntry.name) !== expectedSequence ||
+      event.sequence !== expectedSequence ||
+      eventEntry.name !== event.fileName ||
       claimEntry.stats.nlink !== 2n ||
       eventEntry.stats.nlink !== 2n ||
       !grandHallT554V3SameNode(claimEntry.stats, eventEntry.stats) ||
@@ -1515,19 +1741,20 @@ async function recoverPublicationResidues(
   limits: JournalLimits,
   seams: __GrandHallT554NativeReviewJournalTestSeams,
 ): Promise<void> {
+  const pendingSnapshot = await snapshotDirectory(layout.pending, {
+    allowEmptyFiles: true,
+    allowMultipleFileLinks: true,
+  });
+  assertPendingBounds(pendingSnapshot);
+  if (pendingSnapshot.entries.length === 0) return;
   const claimsSnapshot = await snapshotDirectory(layout.claims, {
     allowMultipleFileLinks: true,
   });
   const eventsSnapshot = await snapshotDirectory(layout.events, {
     allowMultipleFileLinks: true,
   });
-  const pendingSnapshot = await snapshotDirectory(layout.pending, {
-    allowEmptyFiles: true,
-    allowMultipleFileLinks: true,
-  });
-  assertPendingBounds(pendingSnapshot);
-  const claims = await readClaims(layout, claimsSnapshot, limits);
-  const events = await readEvents(layout, eventsSnapshot, limits);
+  const claims = await readClaims(layout, claimsSnapshot, limits, seams);
+  const events = await readEvents(layout, eventsSnapshot, limits, seams);
   if (events.length > claims.length) {
     throw new Error("Journal exposes an event without its durable claim.");
   }
@@ -1634,39 +1861,60 @@ async function replayInternal(
   try {
     const layout = await loadLayout(workspaceRoot, expectedScope, priorLayout);
     await recoverPublicationResidues(layout, limits, seams);
-    const claimsBefore = await snapshotDirectory(layout.claims, {
-      allowMultipleFileLinks: true,
-    });
-    const eventsBefore = await snapshotDirectory(layout.events, {
-      allowMultipleFileLinks: true,
-    });
-    const pendingBefore = await snapshotDirectory(layout.pending, {
-      allowEmptyFiles: true,
-      allowMultipleFileLinks: true,
-    });
-    const quarantineBefore = await snapshotDirectory(layout.quarantine);
+    const [
+      claimsBeforeResult,
+      eventsBeforeResult,
+      pendingBeforeResult,
+      quarantineBeforeResult,
+    ] = await Promise.allSettled([
+        snapshotDirectory(layout.claims, {
+          allowMultipleFileLinks: true,
+        }),
+        snapshotDirectory(layout.events, {
+          allowMultipleFileLinks: true,
+        }),
+        snapshotDirectory(layout.pending, {
+          allowEmptyFiles: true,
+          allowMultipleFileLinks: true,
+        }),
+        snapshotDirectory(layout.quarantine),
+      ] as const);
+    const claimsBefore = settledValue(claimsBeforeResult);
+    const eventsBefore = settledValue(eventsBeforeResult);
+    const pendingBefore = settledValue(pendingBeforeResult);
+    const quarantineBefore = settledValue(quarantineBeforeResult);
     if (pendingBefore.entries.length !== 0) {
       throw new Error("Journal pending recovery did not reach a clean state.");
     }
-    const claims = await readClaims(layout, claimsBefore, limits);
-    const events = await readEvents(layout, eventsBefore, limits);
-    assertMirroredCommittedPrefix(claimsBefore, eventsBefore, claims, events);
-    const quarantine = await inspectQuarantine(
-      layout,
-      quarantineBefore,
-      limits,
-    );
-    const claimsAfter = await snapshotDirectory(layout.claims, {
-      allowMultipleFileLinks: true,
-    });
-    const eventsAfter = await snapshotDirectory(layout.events, {
-      allowMultipleFileLinks: true,
-    });
-    const pendingAfter = await snapshotDirectory(layout.pending, {
-      allowEmptyFiles: true,
-      allowMultipleFileLinks: true,
-    });
-    const quarantineAfter = await snapshotDirectory(layout.quarantine);
+    const [eventsResult, quarantineResult] = await Promise.allSettled([
+      readEvents(layout, eventsBefore, limits, seams),
+      inspectQuarantine(layout, quarantineBefore, limits),
+    ] as const);
+    const events = settledValue(eventsResult);
+    const quarantine = settledValue(quarantineResult);
+    assertMirroredCommittedPrefix(claimsBefore, eventsBefore, events);
+    const [
+      claimsAfterResult,
+      eventsAfterResult,
+      pendingAfterResult,
+      quarantineAfterResult,
+    ] = await Promise.allSettled([
+        snapshotDirectory(layout.claims, {
+          allowMultipleFileLinks: true,
+        }),
+        snapshotDirectory(layout.events, {
+          allowMultipleFileLinks: true,
+        }),
+        snapshotDirectory(layout.pending, {
+          allowEmptyFiles: true,
+          allowMultipleFileLinks: true,
+        }),
+        snapshotDirectory(layout.quarantine),
+      ] as const);
+    const claimsAfter = settledValue(claimsAfterResult);
+    const eventsAfter = settledValue(eventsAfterResult);
+    const pendingAfter = settledValue(pendingAfterResult);
+    const quarantineAfter = settledValue(quarantineAfterResult);
     if (
       !snapshotsEqual(claimsBefore, claimsAfter) ||
       !snapshotsEqual(eventsBefore, eventsAfter) ||
@@ -2087,15 +2335,31 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
   append(
     input: GrandHallT554NativeReviewJournalAppendInput,
   ): Promise<GrandHallT554NativeReviewJournalReplay> {
-    return this.lane.run(async () => await this.appendSerialized(input));
+    return this.lane.run(
+      async () => await this.appendSerialized(input),
+    );
+  }
+
+  appendValidated(
+    input: GrandHallT554NativeReviewJournalValidatedAppendInput,
+  ): Promise<GrandHallT554NativeReviewJournalReplay> {
+    const { validateCurrent, ...appendInput } = input;
+    return this.lane.run(
+      async () =>
+        await this.appendSerialized(appendInput, validateCurrent),
+    );
   }
 
   private async appendSerialized(
-    input: GrandHallT554NativeReviewJournalAppendInput,
+    requestedInput: GrandHallT554NativeReviewJournalAppendInput,
+    validateCurrent?: (
+      current: Readonly<GrandHallT554NativeReviewJournalReplay>,
+    ) => GrandHallT554NativeReviewJournalAppendValidation,
   ): Promise<GrandHallT554NativeReviewJournalReplay> {
+    const expectedRevision = requestedInput.expectedRevision;
     if (
-      !Number.isSafeInteger(input.expectedRevision) ||
-      input.expectedRevision < 0
+      !Number.isSafeInteger(expectedRevision) ||
+      expectedRevision < 0
     ) {
       throw new GrandHallT554NativeReviewJournalError(
         "ARGUMENT_INVALID",
@@ -2110,10 +2374,10 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
       this.seams,
     );
     this.layout = current.layout;
-    if (input.expectedRevision !== current.replay.revision) {
+    if (expectedRevision !== current.replay.revision) {
       throw new GrandHallT554NativeReviewJournalError(
         "REVISION_CONFLICT",
-        `Expected revision ${String(input.expectedRevision)} does not match current revision ${String(current.replay.revision)}.`,
+        `Expected revision ${String(expectedRevision)} does not match current revision ${String(current.replay.revision)}.`,
       );
     }
     if (current.replay.revision >= this.limits.maximumEventCount) {
@@ -2122,6 +2386,20 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
         "Native-review journal reached its fixed event-count bound.",
       );
     }
+    const validation = validateCurrent?.(deepFreezeValue(current.replay));
+    const input: GrandHallT554NativeReviewJournalAppendInput = {
+      expectedRevision,
+      eventType: requestedInput.eventType,
+      payload: requestedInput.payload,
+      ...((validation?.minimumRecordedAtUtc ??
+        requestedInput.minimumRecordedAtUtc) === undefined
+        ? {}
+        : {
+            minimumRecordedAtUtc:
+              validation?.minimumRecordedAtUtc ??
+              requestedInput.minimumRecordedAtUtc,
+          }),
+    };
     await this.seams.afterReplayBeforeReserve?.({
       workspaceRoot: this.workspaceRoot,
       revision: current.replay.revision,
@@ -2216,6 +2494,11 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
         await link(attempt.absolutePath, claimPath);
       } catch (error) {
         if (errnoCode(error) === "EEXIST") {
+          await this.seams.afterClaimConflictDetectedBeforeQuarantine?.({
+            pendingAbsolutePath: attempt.absolutePath,
+            claimAbsolutePath: claimPath,
+            sequence: built.event.sequence,
+          });
           throw new GrandHallT554NativeReviewJournalError(
             "REVISION_CONFLICT",
             `Journal sequence ${String(built.event.sequence)} was claimed by another process.`,
@@ -2255,6 +2538,10 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
         "pending-cleanup",
         this.seams,
       );
+      await this.seams.afterPendingDirectorySyncedBeforePostReplay?.({
+        absolutePath: attempt.absolutePath,
+        sequence: built.event.sequence,
+      });
       const advanced = await replayInternal(
         this.workspaceRoot,
         this.scope,
@@ -2264,11 +2551,11 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
       );
       const appended = advanced.replay.events[current.replay.revision];
       if (
-        advanced.replay.revision < current.replay.revision + 1 ||
+        advanced.replay.revision !== current.replay.revision + 1 ||
         appended?.eventSha256 !== built.event.eventSha256
       ) {
         throw new Error(
-          "Post-append replay does not contain the exact claimed event.",
+          "Post-append replay is not the exact one-event advancement that was claimed.",
         );
       }
       this.layout = advanced.layout;
