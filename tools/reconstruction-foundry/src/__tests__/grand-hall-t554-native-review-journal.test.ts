@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
+import { spawn, type ChildProcess } from "node:child_process";
 import {
+  access,
   copyFile,
   link,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -11,8 +14,11 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 
 import {
   domainSeparatedSha256,
@@ -23,6 +29,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_DOMAIN,
+  GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES,
   GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_DOMAIN,
   GrandHallT554NativeReviewJournalError,
   __testOnlyCreateGrandHallT554NativeReviewJournal,
@@ -35,7 +42,15 @@ import {
 } from "../grand-hall-t554-native-review-journal.js";
 
 const roots: string[] = [];
+const activeChildren = new Set<ChildProcess>();
 const FIXED_TIME = "2026-08-26T12:34:56.789Z";
+const TSX_CLI = createRequire(import.meta.url).resolve("tsx/cli");
+const JOURNAL_SOURCE_URL = pathToFileURL(join(
+  process.cwd(),
+  "src",
+  "grand-hall-t554-native-review-journal.ts",
+)).href;
+let childScriptSequence = 0;
 
 function sha256(fill: string): `sha256:${string}` {
   return `sha256:${fill.repeat(64).slice(0, 64)}`;
@@ -109,6 +124,147 @@ async function appendOne(journal: GrandHallT554NativeReviewJournal): Promise<voi
     payload: { renderGeneration: 7, paintedTileCount: 3 } });
 }
 
+interface ChildCompletion {
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+function journalChildSource(): string {
+  return `
+import { access, writeFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
+import {
+  GrandHallT554NativeReviewJournalError,
+  __testOnlyOpenGrandHallT554NativeReviewJournal,
+} from ${JSON.stringify(JOURNAL_SOURCE_URL)};
+
+const [workspace, scopeJson, signalPath, controlPath, resultPath, phase, writer] =
+  process.argv.slice(2);
+if (!workspace || !scopeJson || !signalPath || !controlPath || !resultPath || !phase || !writer) {
+  throw new Error("Child journal test arguments are incomplete.");
+}
+const scope = JSON.parse(scopeJson);
+let signalled = false;
+const stopHere = async () => {
+  if (signalled) return;
+  signalled = true;
+  await writeFile(signalPath, "ready", { flag: "wx" });
+  if (phase === "race") {
+    for (;;) {
+      try {
+        await access(controlPath);
+        return;
+      } catch {
+        await delay(10);
+      }
+    }
+  }
+  await new Promise(() => undefined);
+};
+const journal = await __testOnlyOpenGrandHallT554NativeReviewJournal(
+  { workspaceRoot: workspace, expectedScope: scope },
+  {
+    nowUtc: () => ${JSON.stringify(FIXED_TIME)},
+    writeChunkByteLength: phase === "mid-write" ? 11 : undefined,
+    afterEventWriteChunk: phase === "mid-write" ? stopHere : undefined,
+    afterClaimDirectorySynced: phase === "after-claim" ? stopHere : undefined,
+    afterReplayBeforeReserve: phase === "race" ? stopHere : undefined,
+    beforeDirectorySync: phase === "during-quarantine-recovery"
+      ? async ({ reason }) => {
+          if (reason === "quarantine-destination") await stopHere();
+        }
+      : undefined,
+  },
+);
+try {
+  const replay = await journal.append({
+    expectedRevision: 0,
+    eventType: "coverage.sample",
+    payload: { writer },
+  });
+  await writeFile(resultPath, JSON.stringify({ ok: true, revision: replay.revision }));
+} catch (error) {
+  const code = error instanceof GrandHallT554NativeReviewJournalError
+    ? error.code
+    : "UNKNOWN";
+  const message = error instanceof Error ? error.message : String(error);
+  await writeFile(resultPath, JSON.stringify({ ok: false, code, message }));
+}
+`;
+}
+
+async function spawnJournalChild(
+  fixture: Harness,
+  phase:
+    | "mid-write"
+    | "after-claim"
+    | "race"
+    | "during-quarantine-recovery",
+  writer: string,
+): Promise<{
+  readonly child: ChildProcess;
+  readonly completion: Promise<ChildCompletion>;
+  readonly signalPath: string;
+  readonly resultPath: string;
+}> {
+  childScriptSequence += 1;
+  const scriptPath = join(
+    fixture.root,
+    `journal-child-${String(childScriptSequence)}.mts`,
+  );
+  const signalPath = join(
+    fixture.root,
+    `journal-child-${String(childScriptSequence)}.ready`,
+  );
+  const controlPath = join(fixture.root, "journal-race.go");
+  const resultPath = join(
+    fixture.root,
+    `journal-child-${String(childScriptSequence)}.result.json`,
+  );
+  await writeFile(scriptPath, journalChildSource());
+  const child = spawn(process.execPath, [
+    TSX_CLI,
+    scriptPath,
+    fixture.workspace,
+    JSON.stringify(fixture.scope),
+    signalPath,
+    controlPath,
+    resultPath,
+    phase,
+    writer,
+  ], { stdio: ["ignore", "pipe", "pipe"] });
+  activeChildren.add(child);
+  let stdout = "";
+  let stderr = "";
+  child.stdout?.setEncoding("utf8");
+  child.stderr?.setEncoding("utf8");
+  child.stdout?.on("data", (chunk: string) => { stdout += chunk; });
+  child.stderr?.on("data", (chunk: string) => { stderr += chunk; });
+  const completion = new Promise<ChildCompletion>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      activeChildren.delete(child);
+      resolve({ code, signal, stdout, stderr });
+    });
+  });
+  return { child, completion, signalPath, resultPath };
+}
+
+async function waitForPath(absolutePath: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    try {
+      await access(absolutePath);
+      return;
+    } catch {
+      await delay(10);
+    }
+  }
+  throw new Error(`Timed out waiting for subprocess evidence at ${absolutePath}.`);
+}
+
 function expectJournalError(code: GrandHallT554NativeReviewJournalError["code"]): {
   readonly code: string;
 } {
@@ -136,6 +292,17 @@ async function resealEvent(
 }
 
 afterEach(async () => {
+  const children = [...activeChildren];
+  for (const child of children) child.kill("SIGKILL");
+  await Promise.all(children.map(async (child) => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        child.once("close", () => { resolve(); });
+      }),
+      delay(2_000).then(() => undefined),
+    ]);
+  }));
   await Promise.all(roots.splice(0).map((root) => rm(root, {
     recursive: true,
     force: true,
@@ -146,7 +313,7 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
   it("creates an exact fixed workspace and replays canonical scope-bound events", async () => {
     const fixture = await harness();
     expect((await readdir(fixture.workspace)).sort()).toEqual([
-      "events", "quarantine", "scope.json",
+      "claims", "events", "pending", "quarantine", "scope.json",
     ]);
     expect(await fixture.journal.replay()).toMatchObject({
       revision: 0,
@@ -354,7 +521,9 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     expect(await eventNames(fixture.workspace)).toEqual([]);
     const quarantined = await readdir(join(fixture.workspace, "quarantine"));
     expect(quarantined).toHaveLength(1);
-    expect(quarantined[0]).toMatch(/^moved-0000000000000001-sha256-[0-9a-f]{64}-a{32}\.json$/u);
+    expect(quarantined[0]).toMatch(
+      /^moved-0000000000000001-sha256-[0-9a-f]{64}-bytes-11-sha256-[0-9a-f]{64}-a{32}\.json$/u,
+    );
     expect((await readFile(join(fixture.workspace, "quarantine", quarantined[0] ?? ""))).length)
       .toBe(11);
     expect((await fixture.journal.replay()).revision).toBe(0);
@@ -377,6 +546,241 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     expect((await fixture.journal.replay()).revision).toBe(0);
   });
 
+  it("rejects moved-quarantine bytes that drift from their filename receipt", async () => {
+    const fixture = await harness({
+      nowUtc: () => FIXED_TIME,
+      afterEventFileSynced: () => {
+        throw new Error("injected post-fsync failure");
+      },
+    });
+    await expect(appendOne(fixture.journal)).rejects.toMatchObject(
+      expectJournalError("APPEND_FAILED"),
+    );
+    const names = await readdir(join(fixture.workspace, "quarantine"));
+    const name = names[0];
+    if (name === undefined) throw new Error("Missing moved-quarantine fixture.");
+    const path = join(fixture.workspace, "quarantine", name);
+    const drifted = Buffer.from(await readFile(path));
+    drifted[0] = (drifted[0] ?? 0) ^ 0xff;
+    await writeFile(path, drifted);
+    await expect(fixture.journal.replay()).rejects.toMatchObject(
+      expectJournalError("JOURNAL_INVALID"),
+    );
+  });
+
+  it("reserves quarantine capacity before creating another pending attempt", async () => {
+    const fixture = await harness({
+      nowUtc: () => FIXED_TIME,
+      maximumQuarantineEntryCount: 1,
+      afterEventFileSynced: () => {
+        throw new Error("injected post-fsync failure");
+      },
+    });
+    await expect(appendOne(fixture.journal)).rejects.toMatchObject(
+      expectJournalError("APPEND_FAILED"),
+    );
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toHaveLength(1);
+    await expect(appendOne(fixture.journal)).rejects.toMatchObject(
+      expectJournalError("JOURNAL_LIMIT_REACHED"),
+    );
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toHaveLength(1);
+  });
+
+  it("recovers a claim-publication crash without moving a possibly committed event", async () => {
+    const fixture = await harness({
+      nowUtc: () => FIXED_TIME,
+      quarantineToken: () => "8".repeat(32),
+      afterClaimDirectorySynced: () => {
+        throw new Error("injected crash after durable claim");
+      },
+    });
+    await expect(appendOne(fixture.journal)).rejects.toMatchObject(
+      expectJournalError("APPEND_AMBIGUOUS"),
+    );
+    expect(await readdir(join(fixture.workspace, "claims"))).toHaveLength(1);
+    expect(await readdir(join(fixture.workspace, "pending"))).toHaveLength(1);
+    expect(await eventNames(fixture.workspace)).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
+
+    const reopened = await openGrandHallT554NativeReviewJournal({
+      workspaceRoot: fixture.workspace,
+      expectedScope: fixture.scope,
+    });
+    expect((await reopened.replay()).revision).toBe(1);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(await eventNames(fixture.workspace)).toHaveLength(1);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
+  });
+
+  it("keeps a published event authoritative when acknowledgement fails", async () => {
+    const fixture = await harness({
+      nowUtc: () => FIXED_TIME,
+      quarantineToken: () => "9".repeat(32),
+      afterEventDirectorySynced: () => {
+        throw new Error("injected crash after event publication");
+      },
+    });
+    await expect(appendOne(fixture.journal)).rejects.toMatchObject(
+      expectJournalError("APPEND_AMBIGUOUS"),
+    );
+    expect(await readdir(join(fixture.workspace, "claims"))).toHaveLength(1);
+    expect(await eventNames(fixture.workspace)).toHaveLength(1);
+    expect(await readdir(join(fixture.workspace, "pending"))).toHaveLength(1);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
+
+    const reopened = await openGrandHallT554NativeReviewJournal({
+      workspaceRoot: fixture.workspace,
+      expectedScope: fixture.scope,
+    });
+    expect((await reopened.replay()).revision).toBe(1);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
+  });
+
+  it("recovers a real subprocess kill during a partial pending write", async () => {
+    const fixture = await harness();
+    const running = await spawnJournalChild(fixture, "mid-write", "killed-mid-write");
+    await waitForPath(running.signalPath);
+    expect(running.child.kill("SIGKILL")).toBe(true);
+    const completion = await running.completion;
+    expect(completion.code === 0).toBe(false);
+
+    const reopened = await openGrandHallT554NativeReviewJournal({
+      workspaceRoot: fixture.workspace,
+      expectedScope: fixture.scope,
+    });
+    expect((await reopened.replay()).revision).toBe(0);
+    expect(await eventNames(fixture.workspace)).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "claims"))).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toHaveLength(1);
+  }, 20_000);
+
+  it("finishes an exact pending-to-quarantine hard-link residue after a real recovery kill", async () => {
+    const fixture = await harness();
+    const writer = await spawnJournalChild(
+      fixture,
+      "mid-write",
+      "killed-before-quarantine",
+    );
+    await waitForPath(writer.signalPath);
+    expect(writer.child.kill("SIGKILL")).toBe(true);
+    expect((await writer.completion).code === 0).toBe(false);
+
+    const recovery = await spawnJournalChild(
+      fixture,
+      "during-quarantine-recovery",
+      "killed-during-quarantine",
+    );
+    await waitForPath(recovery.signalPath);
+    const pendingBefore = await readdir(join(fixture.workspace, "pending"));
+    const quarantineBefore = await readdir(
+      join(fixture.workspace, "quarantine"),
+    );
+    expect(pendingBefore).toHaveLength(1);
+    expect(quarantineBefore).toHaveLength(1);
+    const pendingStats = await lstat(
+      join(fixture.workspace, "pending", pendingBefore[0] ?? ""),
+      { bigint: true },
+    );
+    const quarantineStats = await lstat(
+      join(fixture.workspace, "quarantine", quarantineBefore[0] ?? ""),
+      { bigint: true },
+    );
+    expect(pendingStats.nlink).toBe(2n);
+    expect(quarantineStats.nlink).toBe(2n);
+    expect(quarantineStats.dev).toBe(pendingStats.dev);
+    expect(quarantineStats.ino).toBe(pendingStats.ino);
+    expect(recovery.child.kill("SIGKILL")).toBe(true);
+    expect((await recovery.completion).code === 0).toBe(false);
+
+    const reopened = await openGrandHallT554NativeReviewJournal({
+      workspaceRoot: fixture.workspace,
+      expectedScope: fixture.scope,
+    });
+    expect((await reopened.replay()).revision).toBe(0);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    const quarantine = await readdir(join(fixture.workspace, "quarantine"));
+    expect(quarantine).toHaveLength(1);
+    expect(quarantine[0]).toMatch(
+      /^moved-0000000000000001-sha256-[0-9a-f]{64}-bytes-11-sha256-[0-9a-f]{64}-[0-9a-f]{32}\.json$/u,
+    );
+    expect(
+      (
+        await lstat(
+          join(fixture.workspace, "quarantine", quarantine[0] ?? ""),
+          { bigint: true },
+        )
+      ).nlink,
+    ).toBe(1n);
+  }, 30_000);
+
+  it("recovers a real subprocess kill after the no-replace claim commit point", async () => {
+    const fixture = await harness();
+    const running = await spawnJournalChild(fixture, "after-claim", "killed-after-claim");
+    await waitForPath(running.signalPath);
+    expect(running.child.kill("SIGKILL")).toBe(true);
+    const completion = await running.completion;
+    expect(completion.code === 0).toBe(false);
+    expect(await readdir(join(fixture.workspace, "claims"))).toHaveLength(1);
+
+    const reopened = await openGrandHallT554NativeReviewJournal({
+      workspaceRoot: fixture.workspace,
+      expectedScope: fixture.scope,
+    });
+    const replay = await reopened.replay();
+    expect(replay.revision).toBe(1);
+    expect(replay.events[0]?.payload).toEqual({ writer: "killed-after-claim" });
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(await eventNames(fixture.workspace)).toHaveLength(1);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toEqual([]);
+  }, 20_000);
+
+  it("uses the persistent sequence claim as defensive CAS across two unowned real processes", async () => {
+    const fixture = await harness();
+    const first = await spawnJournalChild(fixture, "race", "process-a");
+    const second = await spawnJournalChild(fixture, "race", "process-b");
+    await Promise.all([
+      waitForPath(first.signalPath),
+      waitForPath(second.signalPath),
+    ]);
+    await writeFile(join(fixture.root, "journal-race.go"), "go", { flag: "wx" });
+    const [firstCompletion, secondCompletion] = await Promise.all([
+      first.completion,
+      second.completion,
+    ]);
+    expect(firstCompletion.code).toBe(0);
+    expect(secondCompletion.code).toBe(0);
+    const results = await Promise.all([
+      readFile(first.resultPath, "utf8"),
+      readFile(second.resultPath, "utf8"),
+    ]).then((values) => values.map((value) => JSON.parse(value) as {
+      readonly ok: boolean;
+      readonly code?: string;
+    }));
+    expect(results.filter((result) => result.code === "REVISION_CONFLICT"))
+      .toHaveLength(1);
+    // Cross-process acknowledgement belongs to the external session-root
+    // owner. Without it, the committed winner may correctly fail closed as
+    // APPEND_AMBIGUOUS if the losing process changes quarantine during replay.
+    expect(
+      results.filter(
+        (result) => result.ok || result.code === "APPEND_AMBIGUOUS",
+      ),
+    ).toHaveLength(1);
+
+    const reopened = await openGrandHallT554NativeReviewJournal({
+      workspaceRoot: fixture.workspace,
+      expectedScope: fixture.scope,
+    });
+    expect((await reopened.replay()).revision).toBe(1);
+    expect(await readdir(join(fixture.workspace, "claims"))).toHaveLength(1);
+    expect(await eventNames(fixture.workspace)).toHaveLength(1);
+    expect(await readdir(join(fixture.workspace, "pending"))).toEqual([]);
+    expect(await readdir(join(fixture.workspace, "quarantine"))).toHaveLength(1);
+  }, 30_000);
+
   it("writes a durable ambiguity marker when the reserved path cannot be moved", async () => {
     const fixture = await harness({
       nowUtc: () => FIXED_TIME,
@@ -387,20 +791,18 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
       },
     });
     await expect(appendOne(fixture.journal)).rejects.toMatchObject(
-      expectJournalError("APPEND_FAILED"),
+      expectJournalError("APPEND_AMBIGUOUS"),
     );
     const quarantine = await readdir(join(fixture.workspace, "quarantine"));
     expect(quarantine[0]).toMatch(/^marker-0000000000000001-sha256-[0-9a-f]{64}-c{32}\.json$/u);
-    expect((await fixture.journal.replay()).revision).toBe(0);
-
-    const cleanHandle = await __testOnlyOpenGrandHallT554NativeReviewJournal({
+    await expect(fixture.journal.replay()).rejects.toMatchObject(
+      expectJournalError("JOURNAL_INVALID"),
+    );
+    await expect(__testOnlyOpenGrandHallT554NativeReviewJournal({
       workspaceRoot: fixture.workspace,
       expectedScope: fixture.scope,
-    }, { nowUtc: () => FIXED_TIME, quarantineToken: () => "d".repeat(32) });
-    await expect(appendOne(cleanHandle)).rejects.toMatchObject(
-      expectJournalError("APPEND_FAILED"),
-    );
-    expect((await cleanHandle.replay()).revision).toBe(0);
+    }, { nowUtc: () => FIXED_TIME, quarantineToken: () => "d".repeat(32) }))
+      .rejects.toMatchObject(expectJournalError("JOURNAL_INVALID"));
   });
 
   it("attempts an event-directory durability barrier before acknowledging", async () => {
@@ -495,6 +897,79 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     );
   });
 
+  it("rejects a forged standalone claim that has no exact pending crash witness", async () => {
+    const donor = await harness();
+    await appendOne(donor.journal);
+    const victim = await harness();
+    await copyFile(
+      await onlyEventPath(donor.workspace),
+      join(victim.workspace, "claims", "0000000000000001.json"),
+    );
+    await expect(victim.journal.replay()).rejects.toMatchObject(
+      expectJournalError("JOURNAL_INVALID"),
+    );
+    expect(await eventNames(victim.workspace)).toEqual([]);
+    expect(await readdir(join(victim.workspace, "quarantine"))).toEqual([]);
+  });
+
+  it("rejects more than one unpublished claim even with exact pending witnesses", async () => {
+    const donor = await harness();
+    await appendOne(donor.journal);
+    await donor.journal.append({
+      expectedRevision: 1,
+      eventType: "coverage.sample",
+      payload: { second: true },
+    });
+    const victim = await harness();
+    const donorNames = await eventNames(donor.workspace);
+    for (const [index, donorName] of donorNames.entries()) {
+      const sequence = index + 1;
+      const donorPath = join(donor.workspace, "events", donorName);
+      const document = JSON.parse(await readFile(donorPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      const digest = document.eventSha256;
+      if (typeof digest !== "string" || !/^sha256:[0-9a-f]{64}$/u.test(digest)) {
+        throw new Error("Donor event digest is missing.");
+      }
+      const token = String(sequence).repeat(32);
+      const pendingName = `pending-${String(sequence).padStart(16, "0")}-${digest.replace(":", "-")}-${token}.json`;
+      const pendingPath = join(victim.workspace, "pending", pendingName);
+      await copyFile(donorPath, pendingPath);
+      await link(
+        pendingPath,
+        join(
+          victim.workspace,
+          "claims",
+          `${String(sequence).padStart(16, "0")}.json`,
+        ),
+      );
+    }
+
+    await expect(
+      openGrandHallT554NativeReviewJournal({
+        workspaceRoot: victim.workspace,
+        expectedScope: victim.scope,
+      }),
+    ).rejects.toMatchObject(expectJournalError("JOURNAL_INVALID"));
+    expect(await eventNames(victim.workspace)).toEqual([]);
+    expect(await readdir(join(victim.workspace, "pending"))).toHaveLength(2);
+    expect(await readdir(join(victim.workspace, "quarantine"))).toEqual([]);
+  });
+
+  it("rejects an over-bound quarantine receipt before trusting its inventory", async () => {
+    const fixture = await harness();
+    const bytes = Buffer.alloc(
+      GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES + 1,
+    );
+    const name = `moved-0000000000000001-${sha256("0").replace(":", "-")}-bytes-${String(bytes.length)}-${rawSha256(bytes).replace(":", "-")}-${"a".repeat(32)}.json`;
+    await writeFile(join(fixture.workspace, "quarantine", name), bytes);
+    await expect(fixture.journal.replay()).rejects.toMatchObject(
+      expectJournalError("JOURNAL_INVALID"),
+    );
+  });
+
   it("rejects extra files, extra directories, unsafe case drift, and hard links", async () => {
     const extraFile = await harness();
     await writeFile(join(extraFile.workspace, "events", "extra.json"), "{}\n");
@@ -545,12 +1020,13 @@ describe("Grand Hall T-554 native-review append-only journal", () => {
     );
   });
 
-  it("rejects a replaced event filename even when copied bytes remain canonical", async () => {
+  it("rejects a same-name event replacement with canonical bytes on a different inode", async () => {
     const fixture = await harness();
     await appendOne(fixture.journal);
     const path = await onlyEventPath(fixture.workspace);
-    const wrong = join(fixture.workspace, "events", eventFileName(1, sha256("0")));
-    await copyFile(path, wrong);
+    const bytes = await readFile(path);
+    await rm(path);
+    await writeFile(path, bytes);
     await expect(fixture.journal.replay()).rejects.toMatchObject(
       expectJournalError("JOURNAL_INVALID"),
     );

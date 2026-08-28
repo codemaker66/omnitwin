@@ -1,0 +1,32 @@
+[package]
+name = "grand-hall-t554-runtime-inspector"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi-sys = "=2.4.0"
+windows-sys = { version = "=0.59.0", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_LibraryLoader",
+  "Win32_System_ProcessStatus",
+  "Win32_System_Threading",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = "deny"
+pedantic = "deny"

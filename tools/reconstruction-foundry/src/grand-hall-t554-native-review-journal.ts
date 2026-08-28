@@ -1,12 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { BigIntStats } from "node:fs";
 import {
+  link,
   lstat,
   mkdir,
   open,
   readdir,
   realpath,
-  rename,
+  unlink,
   type FileHandle,
 } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
@@ -40,85 +41,124 @@ export const GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_GENESIS_DOMAIN =
 export const GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_DOMAIN =
   "OMNITWIN_GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_V1";
 export const GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES = 1_048_576;
-export const GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_COUNT = 4_096;
+export const GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_COUNT = 16_384;
 export const GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_TOTAL_EVENT_BYTES =
   64 * 1_024 * 1_024;
 
 const SCOPE_FILE_NAME = "scope.json";
+const CLAIMS_DIRECTORY_NAME = "claims";
 const EVENTS_DIRECTORY_NAME = "events";
+const PENDING_DIRECTORY_NAME = "pending";
 const QUARANTINE_DIRECTORY_NAME = "quarantine";
 const EVENT_SEQUENCE_WIDTH = 16;
 const MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
 const MAX_SCOPE_BYTES = 16_384;
-const MAX_QUARANTINE_BYTES = GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES;
-const ROOT_INVENTORY = [EVENTS_DIRECTORY_NAME, QUARANTINE_DIRECTORY_NAME, SCOPE_FILE_NAME]
-  .sort(lexicalOrder);
+const MAX_QUARANTINE_BYTES =
+  GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES;
+const MAX_QUARANTINE_ENTRY_COUNT =
+  GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_COUNT;
+const MAX_QUARANTINE_TOTAL_BYTES =
+  GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_TOTAL_EVENT_BYTES;
+const MAX_PENDING_ENTRY_COUNT = 256;
+const ROOT_INVENTORY = [
+  CLAIMS_DIRECTORY_NAME,
+  EVENTS_DIRECTORY_NAME,
+  PENDING_DIRECTORY_NAME,
+  QUARANTINE_DIRECTORY_NAME,
+  SCOPE_FILE_NAME,
+].sort(lexicalOrder);
 const PROHIBITED_JSON_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const EVENT_TYPE_PATTERN = /^[a-z][a-z0-9_.-]{0,95}$/u;
 const EVENT_FILE_PATTERN = /^([0-9]{16})-sha256-([0-9a-f]{64})\.json$/u;
-const QUARANTINE_FILE_PATTERN =
-  /^(moved|marker)-([0-9]{16})-sha256-([0-9a-f]{64})-([0-9a-f]{32})\.json$/u;
-const UTC_MILLISECOND_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const CLAIM_FILE_PATTERN = /^([0-9]{16})\.json$/u;
+const PENDING_FILE_PATTERN =
+  /^pending-([0-9]{16})-sha256-([0-9a-f]{64})-([0-9a-f]{32})\.json$/u;
+const MOVED_QUARANTINE_FILE_PATTERN =
+  /^moved-([0-9]{16})-sha256-([0-9a-f]{64})-bytes-(0|[1-9][0-9]{0,6})-sha256-([0-9a-f]{64})-([0-9a-f]{32})\.json$/u;
+const MARKER_QUARANTINE_FILE_PATTERN =
+  /^marker-([0-9]{16})-sha256-([0-9a-f]{64})-([0-9a-f]{32})\.json$/u;
+const UTC_MILLISECOND_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 
 type Sha256 = `sha256:${string}`;
 
-const Sha256Schema = z.string().regex(SHA256_PATTERN)
+const Sha256Schema = z
+  .string()
+  .regex(SHA256_PATTERN)
   .transform((value): Sha256 => value as Sha256);
 const SequenceSchema = z.number().int().min(1).max(MAX_SEQUENCE);
 
-export const GrandHallT554NativeReviewJournalScopeSchema = z.object({
-  sessionNonceSha256: Sha256Schema,
-  sourceEpochSha256: Sha256Schema,
-  subjectSha256: Sha256Schema,
-  kind: z.enum(["source", "mask"]),
-  implementationSha256: Sha256Schema,
-}).strict();
+export const GrandHallT554NativeReviewJournalScopeSchema = z
+  .object({
+    sessionNonceSha256: Sha256Schema,
+    sourceEpochSha256: Sha256Schema,
+    subjectSha256: Sha256Schema,
+    kind: z.enum(["session", "source", "mask"]),
+    implementationSha256: Sha256Schema,
+  })
+  .strict();
 
 export type GrandHallT554NativeReviewJournalScope = z.infer<
   typeof GrandHallT554NativeReviewJournalScopeSchema
 >;
 
-const ScopeFileMaterialSchema = z.object({
-  schemaVersion: z.literal(GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_SCHEMA),
-  scope: GrandHallT554NativeReviewJournalScopeSchema,
-}).strict();
+const ScopeFileMaterialSchema = z
+  .object({
+    schemaVersion: z.literal(
+      GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_SCHEMA,
+    ),
+    scope: GrandHallT554NativeReviewJournalScopeSchema,
+  })
+  .strict();
 
 const ScopeFileSchema = ScopeFileMaterialSchema.extend({
   scopeSha256: Sha256Schema,
 }).strict();
 
-const PersistedEventMaterialSchema = z.object({
-  schemaVersion: z.literal(GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_SCHEMA),
-  sequence: SequenceSchema,
-  previousEventSha256: Sha256Schema,
-  scope: GrandHallT554NativeReviewJournalScopeSchema,
-  scopeSha256: Sha256Schema,
-  scopeFileSha256: Sha256Schema,
-  recordedAtUtc: z.string(),
-  eventType: z.string().regex(EVENT_TYPE_PATTERN),
-  payload: z.unknown(),
-}).strict();
+const PersistedEventMaterialSchema = z
+  .object({
+    schemaVersion: z.literal(
+      GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_SCHEMA,
+    ),
+    sequence: SequenceSchema,
+    previousEventSha256: Sha256Schema,
+    scope: GrandHallT554NativeReviewJournalScopeSchema,
+    scopeSha256: Sha256Schema,
+    scopeFileSha256: Sha256Schema,
+    recordedAtUtc: z.string(),
+    eventType: z.string().regex(EVENT_TYPE_PATTERN),
+    payload: z.unknown(),
+  })
+  .strict();
 
 const PersistedEventSchema = PersistedEventMaterialSchema.extend({
   eventSha256: Sha256Schema,
 }).strict();
 
-const QuarantineMarkerSchema = z.object({
-  schemaVersion: z.literal(
-    GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_QUARANTINE_MARKER_SCHEMA,
-  ),
-  scopeSha256: Sha256Schema,
-  sequence: SequenceSchema,
-  attemptedEventFileName: z.string(),
-  attemptedEventSha256: Sha256Schema,
-  disposition: z.literal("append_ambiguous_no_delete"),
-}).strict();
+const QuarantineMarkerSchema = z
+  .object({
+    schemaVersion: z.literal(
+      GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_QUARANTINE_MARKER_SCHEMA,
+    ),
+    scopeSha256: Sha256Schema,
+    sequence: SequenceSchema,
+    attemptedEventFileName: z.string(),
+    attemptedEventSha256: Sha256Schema,
+    disposition: z.literal("append_ambiguous_no_delete"),
+  })
+  .strict();
 
 export interface GrandHallT554NativeReviewJournalAppendInput {
   readonly expectedRevision: number;
   readonly eventType: string;
   readonly payload: CanonicalJson;
+  /**
+   * Optional server-owned lower bound for the durable record time. The low-level
+   * journal never derives this from payload bytes; typed adapters may supply it
+   * after replaying their domain event.
+   */
+  readonly minimumRecordedAtUtc?: string;
 }
 
 export interface GrandHallT554NativeReviewJournalEvent {
@@ -147,7 +187,19 @@ export interface GrandHallT554NativeReviewJournalReplay {
   readonly events: readonly GrandHallT554NativeReviewJournalEvent[];
 }
 
-/** A durable ordered record only; it conveys no review, acceptance, or truth authority. */
+/**
+ * A process-crash-recoverable ordered record only; it conveys no review,
+ * acceptance, or truth authority. Node cannot issue a directory durability
+ * barrier on every platform, so this API does not claim sudden-power-loss
+ * durability where directory fsync is unsupported (notably Windows).
+ *
+ * Cross-process contract: the sequence hard link is a final defensive CAS,
+ * not an ownership protocol. A caller that can open, replay, recover, or append
+ * this journal MUST hold the session root's explicit exclusive owner for the
+ * whole operation. Stale ownership requires an explicit verified takeover;
+ * PID age or elapsed time alone must never authorize recovery. The in-process
+ * serial lane below does not satisfy this cross-process requirement.
+ */
 export interface GrandHallT554NativeReviewJournal {
   readonly workspaceRoot: string;
   readonly scope: GrandHallT554NativeReviewJournalScope;
@@ -188,6 +240,10 @@ export interface __GrandHallT554NativeReviewJournalTestSeams {
     readonly absolutePath: string;
     readonly sequence: number;
   }) => Promise<void> | void;
+  readonly afterClaimDirectorySynced?: (context: {
+    readonly absolutePath: string;
+    readonly sequence: number;
+  }) => Promise<void> | void;
   readonly afterEventDirectorySynced?: (context: {
     readonly absolutePath: string;
     readonly sequence: number;
@@ -198,6 +254,8 @@ export interface __GrandHallT554NativeReviewJournalTestSeams {
   }) => Promise<void> | void;
   readonly maximumEventCount?: number;
   readonly maximumTotalEventBytes?: number;
+  readonly maximumQuarantineEntryCount?: number;
+  readonly maximumQuarantineTotalBytes?: number;
 }
 
 export class GrandHallT554NativeReviewJournalError extends Error {
@@ -226,12 +284,16 @@ interface NodeWitness {
 interface JournalLimits {
   readonly maximumEventCount: number;
   readonly maximumTotalEventBytes: number;
+  readonly maximumQuarantineEntryCount: number;
+  readonly maximumQuarantineTotalBytes: number;
 }
 
 const PRODUCTION_JOURNAL_LIMITS = Object.freeze({
   maximumEventCount: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_COUNT,
   maximumTotalEventBytes:
     GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_TOTAL_EVENT_BYTES,
+  maximumQuarantineEntryCount: MAX_QUARANTINE_ENTRY_COUNT,
+  maximumQuarantineTotalBytes: MAX_QUARANTINE_TOTAL_BYTES,
 });
 
 function journalLimits(
@@ -243,6 +305,12 @@ function journalLimits(
     maximumTotalEventBytes:
       seams.maximumTotalEventBytes ??
       PRODUCTION_JOURNAL_LIMITS.maximumTotalEventBytes,
+    maximumQuarantineEntryCount:
+      seams.maximumQuarantineEntryCount ??
+      PRODUCTION_JOURNAL_LIMITS.maximumQuarantineEntryCount,
+    maximumQuarantineTotalBytes:
+      seams.maximumQuarantineTotalBytes ??
+      PRODUCTION_JOURNAL_LIMITS.maximumQuarantineTotalBytes,
   };
   if (
     !Number.isSafeInteger(limits.maximumEventCount) ||
@@ -250,8 +318,16 @@ function journalLimits(
     limits.maximumEventCount > PRODUCTION_JOURNAL_LIMITS.maximumEventCount ||
     !Number.isSafeInteger(limits.maximumTotalEventBytes) ||
     limits.maximumTotalEventBytes < 1 ||
-    limits.maximumTotalEventBytes >
-      PRODUCTION_JOURNAL_LIMITS.maximumTotalEventBytes
+      limits.maximumTotalEventBytes >
+      PRODUCTION_JOURNAL_LIMITS.maximumTotalEventBytes ||
+    !Number.isSafeInteger(limits.maximumQuarantineEntryCount) ||
+    limits.maximumQuarantineEntryCount < 1 ||
+    limits.maximumQuarantineEntryCount >
+      PRODUCTION_JOURNAL_LIMITS.maximumQuarantineEntryCount ||
+    !Number.isSafeInteger(limits.maximumQuarantineTotalBytes) ||
+    limits.maximumQuarantineTotalBytes < 1 ||
+    limits.maximumQuarantineTotalBytes >
+      PRODUCTION_JOURNAL_LIMITS.maximumQuarantineTotalBytes
   ) {
     throw new GrandHallT554NativeReviewJournalError(
       "ARGUMENT_INVALID",
@@ -263,7 +339,9 @@ function journalLimits(
 
 interface JournalLayout {
   readonly root: NodeWitness;
+  readonly claims: NodeWitness;
   readonly events: NodeWitness;
+  readonly pending: NodeWitness;
   readonly quarantine: NodeWitness;
   readonly scopeFile: NodeWitness;
   readonly scope: GrandHallT554NativeReviewJournalScope;
@@ -282,17 +360,29 @@ interface DirectorySnapshot {
   readonly entries: readonly DirectoryEntrySnapshot[];
 }
 
-interface EventReservation {
+interface PendingAttempt {
   readonly absolutePath: string;
   readonly fileName: string;
   readonly sequence: number;
   readonly eventSha256: Sha256;
+  readonly token: string;
   readonly stats: BigIntStats;
 }
 
 interface QuarantineInventory {
   readonly snapshot: DirectorySnapshot;
   readonly markerSequences: ReadonlySet<number>;
+  readonly movedAttempts: readonly MovedQuarantineAttempt[];
+}
+
+interface MovedQuarantineAttempt {
+  readonly absolutePath: string;
+  readonly sequence: number;
+  readonly eventSha256: Sha256;
+  readonly token: string;
+  readonly fileByteLength: number;
+  readonly fileSha256: Sha256;
+  readonly stats: BigIntStats;
 }
 
 function lexicalOrder(left: string, right: string): number {
@@ -300,8 +390,10 @@ function lexicalOrder(left: string, right: string): number {
 }
 
 function errnoCode(error: unknown): string | undefined {
-  return typeof error === "object" && error !== null && "code" in error &&
-      typeof error.code === "string"
+  return typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
     ? error.code
     : undefined;
 }
@@ -315,27 +407,37 @@ function semanticSha256(domain: string, value: unknown): Sha256 {
 }
 
 function serializeCanonicalJson(value: unknown): Buffer {
-  return Buffer.from(`${stableCanonicalJson(toCanonicalJson(value))}\n`, "utf8");
+  return Buffer.from(
+    `${stableCanonicalJson(toCanonicalJson(value))}\n`,
+    "utf8",
+  );
 }
 
 function canonicalJsonValue(value: unknown, depth = 0): CanonicalJson {
-  if (depth > 128) throw new Error("Canonical event payload nesting is too deep.");
-  if (value === null || typeof value === "boolean" || typeof value === "string") return value;
+  if (depth > 128)
+    throw new Error("Canonical event payload nesting is too deep.");
+  if (value === null || typeof value === "boolean" || typeof value === "string")
+    return value;
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("Canonical event payload has a non-finite number.");
+    if (!Number.isFinite(value))
+      throw new Error("Canonical event payload has a non-finite number.");
     return Object.is(value, -0) ? 0 : value;
   }
-  if (Array.isArray(value)) return value.map((entry) => canonicalJsonValue(entry, depth + 1));
-  if (typeof value !== "object") throw new Error("Event payload is outside canonical JSON.");
+  if (Array.isArray(value))
+    return value.map((entry) => canonicalJsonValue(entry, depth + 1));
+  if (typeof value !== "object")
+    throw new Error("Event payload is outside canonical JSON.");
   const prototype = Object.getPrototypeOf(value) as object | null;
   if (prototype !== Object.prototype && prototype !== null) {
     throw new Error("Event payload objects must be plain records.");
   }
   const output: Record<string, CanonicalJson> = {};
   for (const key of Object.keys(value).sort(lexicalOrder)) {
-    if (PROHIBITED_JSON_KEYS.has(key)) throw new Error("Event payload has a prohibited key.");
+    if (PROHIBITED_JSON_KEYS.has(key))
+      throw new Error("Event payload has a prohibited key.");
     const member = (value as Record<string, unknown>)[key];
-    if (member === undefined) throw new Error("Event payload has an undefined member.");
+    if (member === undefined)
+      throw new Error("Event payload has an undefined member.");
     output[key] = canonicalJsonValue(member, depth + 1);
   }
   return output;
@@ -343,8 +445,11 @@ function canonicalJsonValue(value: unknown, depth = 0): CanonicalJson {
 
 function canonicalUtcInstant(value: string): string {
   const milliseconds = Date.parse(value);
-  if (!UTC_MILLISECOND_PATTERN.test(value) || !Number.isFinite(milliseconds) ||
-    new Date(milliseconds).toISOString() !== value) {
+  if (
+    !UTC_MILLISECOND_PATTERN.test(value) ||
+    !Number.isFinite(milliseconds) ||
+    new Date(milliseconds).toISOString() !== value
+  ) {
     throw new GrandHallT554NativeReviewJournalError(
       "ARGUMENT_INVALID",
       "Journal time must use canonical UTC millisecond form.",
@@ -355,7 +460,9 @@ function canonicalUtcInstant(value: string): string {
 
 function normalizeScope(value: unknown): GrandHallT554NativeReviewJournalScope {
   try {
-    return Object.freeze(GrandHallT554NativeReviewJournalScopeSchema.parse(value));
+    return Object.freeze(
+      GrandHallT554NativeReviewJournalScopeSchema.parse(value),
+    );
   } catch (error) {
     throw new GrandHallT554NativeReviewJournalError(
       "ARGUMENT_INVALID",
@@ -369,12 +476,20 @@ function scopesEqual(
   left: GrandHallT554NativeReviewJournalScope,
   right: GrandHallT554NativeReviewJournalScope,
 ): boolean {
-  return stableCanonicalJson(toCanonicalJson(left)) === stableCanonicalJson(toCanonicalJson(right));
+  return (
+    stableCanonicalJson(toCanonicalJson(left)) ===
+    stableCanonicalJson(toCanonicalJson(right))
+  );
 }
 
 function resolvedAbsoluteRoot(input: string): string {
-  if (typeof input !== "string" || input.length === 0 || !isAbsolute(input) ||
-    input.includes("\0") || input.normalize("NFC") !== input) {
+  if (
+    typeof input !== "string" ||
+    input.length === 0 ||
+    !isAbsolute(input) ||
+    input.includes("\0") ||
+    input.normalize("NFC") !== input
+  ) {
     throw new GrandHallT554NativeReviewJournalError(
       "ARGUMENT_INVALID",
       "Native-review journal workspace root must be one absolute NFC path.",
@@ -387,24 +502,40 @@ async function directNode(
   absolutePath: string,
   kind: "file" | "directory",
   allowEmptyFile = false,
+  allowMultipleFileLinks = false,
 ): Promise<NodeWitness> {
   const before = await lstat(absolutePath, { bigint: true });
   const canonical = await realpath(absolutePath);
   const after = await lstat(absolutePath, { bigint: true });
   const rightKind = kind === "file" ? before.isFile() : before.isDirectory();
-  if (!rightKind || before.isSymbolicLink() ||
-    grandHallT554V3ComparablePath(canonical) !== grandHallT554V3ComparablePath(absolutePath) ||
+  if (
+    !rightKind ||
+    before.isSymbolicLink() ||
+    grandHallT554V3ComparablePath(canonical) !==
+      grandHallT554V3ComparablePath(absolutePath) ||
     !grandHallT554V3SameFileState(before, after) ||
-    (kind === "file" && (before.nlink !== 1n || (!allowEmptyFile && before.size < 1n)))) {
-    throw new Error("Filesystem node is not one stable direct node of the required kind.");
+    (kind === "file" &&
+      ((!allowMultipleFileLinks && before.nlink !== 1n) ||
+        before.nlink < 1n ||
+        (!allowEmptyFile && before.size < 1n)))
+  ) {
+    throw new Error(
+      "Filesystem node is not one stable direct node of the required kind.",
+    );
   }
   return { absolutePath, stats: after };
 }
 
-function assertSameNode(actual: NodeWitness, expected: NodeWitness, label: string): void {
-  if (grandHallT554V3ComparablePath(actual.absolutePath) !==
+function assertSameNode(
+  actual: NodeWitness,
+  expected: NodeWitness,
+  label: string,
+): void {
+  if (
+    grandHallT554V3ComparablePath(actual.absolutePath) !==
       grandHallT554V3ComparablePath(expected.absolutePath) ||
-    !grandHallT554V3SameNode(actual.stats, expected.stats)) {
+    !grandHallT554V3SameNode(actual.stats, expected.stats)
+  ) {
     throw new Error(`${label} identity changed.`);
   }
 }
@@ -416,53 +547,92 @@ function assertSafeUniqueNames(names: readonly string[], label: string): void {
       throw new Error(`${label} contains an unsafe name.`);
     }
     const key = name.normalize("NFC").toLowerCase();
-    if (folded.has(key)) throw new Error(`${label} contains case-colliding names.`);
+    if (folded.has(key))
+      throw new Error(`${label} contains case-colliding names.`);
     folded.add(key);
   }
 }
 
-async function snapshotDirectory(directory: NodeWitness): Promise<DirectorySnapshot> {
+async function snapshotDirectory(
+  directory: NodeWitness,
+  options: {
+    readonly allowEmptyFiles?: boolean;
+    readonly allowMultipleFileLinks?: boolean;
+  } = {},
+): Promise<DirectorySnapshot> {
   const initial = await directNode(directory.absolutePath, "directory");
   assertSameNode(initial, directory, "Journal directory");
-  const dirents = await readdir(directory.absolutePath, { withFileTypes: true });
+  const dirents = await readdir(directory.absolutePath, {
+    withFileTypes: true,
+  });
   const names = dirents.map((entry) => entry.name);
   assertSafeUniqueNames(names, "Journal inventory");
-  const entries = await Promise.all(dirents.map(async (dirent) => {
-    if (!dirent.isFile() || dirent.isSymbolicLink()) {
-      throw new Error("Journal inventory contains an extra directory or link.");
-    }
-    const node = await directNode(join(directory.absolutePath, dirent.name), "file", true);
-    return { name: dirent.name, stats: node.stats };
-  }));
+  const entries = await Promise.all(
+    dirents.map(async (dirent) => {
+      if (!dirent.isFile() || dirent.isSymbolicLink()) {
+        throw new Error(
+          "Journal inventory contains an extra directory or link.",
+        );
+      }
+      const node = await directNode(
+        join(directory.absolutePath, dirent.name),
+        "file",
+        options.allowEmptyFiles ?? true,
+        options.allowMultipleFileLinks ?? false,
+      );
+      return { name: dirent.name, stats: node.stats };
+    }),
+  );
   const final = await directNode(directory.absolutePath, "directory");
   assertSameNode(final, directory, "Journal directory");
   if (!grandHallT554V3SameFileState(initial.stats, final.stats)) {
     throw new Error("Journal directory changed during its inventory snapshot.");
   }
-  return { stats: final.stats, entries: entries.sort((a, b) => lexicalOrder(a.name, b.name)) };
+  return {
+    stats: final.stats,
+    entries: entries.sort((a, b) => lexicalOrder(a.name, b.name)),
+  };
 }
 
-function snapshotsEqual(left: DirectorySnapshot, right: DirectorySnapshot): boolean {
-  return grandHallT554V3SameFileState(left.stats, right.stats) &&
+function snapshotsEqual(
+  left: DirectorySnapshot,
+  right: DirectorySnapshot,
+): boolean {
+  return (
+    grandHallT554V3SameFileState(left.stats, right.stats) &&
     left.entries.length === right.entries.length &&
     left.entries.every((entry, index) => {
       const candidate = right.entries[index];
-      return candidate !== undefined && entry.name === candidate.name &&
-        grandHallT554V3SameFileState(entry.stats, candidate.stats);
-    });
+      return (
+        candidate !== undefined &&
+        entry.name === candidate.name &&
+        grandHallT554V3SameFileState(entry.stats, candidate.stats)
+      );
+    })
+  );
 }
 
-async function readExactly(handle: FileHandle, byteLength: number): Promise<Buffer> {
+async function readExactly(
+  handle: FileHandle,
+  byteLength: number,
+): Promise<Buffer> {
   const bytes = Buffer.allocUnsafe(byteLength);
   let offset = 0;
   while (offset < bytes.length) {
-    const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset);
-    if (bytesRead < 1) throw new Error("Journal file was truncated during its bounded read.");
+    const { bytesRead } = await handle.read(
+      bytes,
+      offset,
+      bytes.length - offset,
+      offset,
+    );
+    if (bytesRead < 1)
+      throw new Error("Journal file was truncated during its bounded read.");
     offset += bytesRead;
   }
   const trailing = Buffer.allocUnsafe(1);
   const probe = await handle.read(trailing, 0, 1, byteLength);
-  if (probe.bytesRead !== 0) throw new Error("Journal file grew beyond its bounded read.");
+  if (probe.bytesRead !== 0)
+    throw new Error("Journal file grew beyond its bounded read.");
   return bytes;
 }
 
@@ -470,21 +640,40 @@ async function readStableFile(
   absolutePath: string,
   expectedStats: BigIntStats,
   maximumBytes: number,
+  allowEmptyFile = false,
+  allowMultipleFileLinks = false,
 ): Promise<Buffer> {
-  const before = await directNode(absolutePath, "file");
-  if (!grandHallT554V3SameFileState(before.stats, expectedStats) ||
-    before.stats.size > BigInt(maximumBytes)) throw new Error("Journal file snapshot binding failed.");
+  const before = await directNode(
+    absolutePath,
+    "file",
+    allowEmptyFile,
+    allowMultipleFileLinks,
+  );
+  if (
+    !grandHallT554V3SameFileState(before.stats, expectedStats) ||
+    before.stats.size > BigInt(maximumBytes)
+  )
+    throw new Error("Journal file snapshot binding failed.");
   const handle = await open(absolutePath, "r");
   try {
     const descriptorBefore = await handle.stat({ bigint: true });
     if (!grandHallT554V3SameFileState(before.stats, descriptorBefore)) {
-      throw new Error("Journal descriptor does not match its inventoried path.");
+      throw new Error(
+        "Journal descriptor does not match its inventoried path.",
+      );
     }
     const bytes = await readExactly(handle, Number(descriptorBefore.size));
     const descriptorAfter = await handle.stat({ bigint: true });
-    const after = await directNode(absolutePath, "file");
-    if (!grandHallT554V3SameFileState(descriptorBefore, descriptorAfter) ||
-      !grandHallT554V3SameFileState(descriptorAfter, after.stats)) {
+    const after = await directNode(
+      absolutePath,
+      "file",
+      allowEmptyFile,
+      allowMultipleFileLinks,
+    );
+    if (
+      !grandHallT554V3SameFileState(descriptorBefore, descriptorAfter) ||
+      !grandHallT554V3SameFileState(descriptorAfter, after.stats)
+    ) {
       throw new Error("Journal file changed during its descriptor-bound read.");
     }
     return bytes;
@@ -496,7 +685,9 @@ async function readStableFile(
 function parseCanonicalDocument(bytes: Buffer, label: string): unknown {
   const parsed = parseGrandHallT554StrictJson(bytes);
   if (!bytes.equals(serializeCanonicalJson(parsed))) {
-    throw new Error(`${label} is not encoded as exact canonical JSON plus one LF.`);
+    throw new Error(
+      `${label} is not encoded as exact canonical JSON plus one LF.`,
+    );
   }
   return parsed;
 }
@@ -509,18 +700,30 @@ function buildScopeDocument(scope: GrandHallT554NativeReviewJournalScope): {
     schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_SCHEMA,
     scope,
   });
-  const scopeSha256 = semanticSha256(GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_DOMAIN, material);
-  return { bytes: serializeCanonicalJson({ ...material, scopeSha256 }), scopeSha256 };
+  const scopeSha256 = semanticSha256(
+    GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_DOMAIN,
+    material,
+  );
+  return {
+    bytes: serializeCanonicalJson({ ...material, scopeSha256 }),
+    scopeSha256,
+  };
 }
 
 function parseScopeDocument(bytes: Buffer): {
   readonly scope: GrandHallT554NativeReviewJournalScope;
   readonly scopeSha256: Sha256;
 } {
-  const parsed = ScopeFileSchema.parse(parseCanonicalDocument(bytes, "Journal scope"));
+  const parsed = ScopeFileSchema.parse(
+    parseCanonicalDocument(bytes, "Journal scope"),
+  );
   const { scopeSha256, ...material } = parsed;
-  const expected = semanticSha256(GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_DOMAIN, material);
-  if (scopeSha256 !== expected) throw new Error("Journal scope digest drifted.");
+  const expected = semanticSha256(
+    GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_DOMAIN,
+    material,
+  );
+  if (scopeSha256 !== expected)
+    throw new Error("Journal scope digest drifted.");
   return { scope: Object.freeze(parsed.scope), scopeSha256 };
 }
 
@@ -539,11 +742,17 @@ async function inspectRootInventory(root: NodeWitness): Promise<{
   const entries = new Map<string, NodeWitness>();
   for (const dirent of dirents) {
     const expectedKind = dirent.name === SCOPE_FILE_NAME ? "file" : "directory";
-    if ((expectedKind === "file" && !dirent.isFile()) ||
-      (expectedKind === "directory" && !dirent.isDirectory()) || dirent.isSymbolicLink()) {
+    if (
+      (expectedKind === "file" && !dirent.isFile()) ||
+      (expectedKind === "directory" && !dirent.isDirectory()) ||
+      dirent.isSymbolicLink()
+    ) {
       throw new Error("Journal root inventory kind drifted.");
     }
-    entries.set(dirent.name, await directNode(join(root.absolutePath, dirent.name), expectedKind));
+    entries.set(
+      dirent.name,
+      await directNode(join(root.absolutePath, dirent.name), expectedKind),
+    );
   }
   const after = await directNode(root.absolutePath, "directory");
   assertSameNode(after, root, "Journal workspace root");
@@ -560,29 +769,62 @@ async function loadLayout(
 ): Promise<JournalLayout> {
   try {
     const root = await directNode(workspaceRoot, "directory");
-    if (prior !== undefined) assertSameNode(root, prior.root, "Journal workspace root");
+    if (prior !== undefined)
+      assertSameNode(root, prior.root, "Journal workspace root");
     const inventory = await inspectRootInventory(root);
+    const claims = inventory.entries.get(CLAIMS_DIRECTORY_NAME);
     const events = inventory.entries.get(EVENTS_DIRECTORY_NAME);
+    const pending = inventory.entries.get(PENDING_DIRECTORY_NAME);
     const quarantine = inventory.entries.get(QUARANTINE_DIRECTORY_NAME);
     const scopeFile = inventory.entries.get(SCOPE_FILE_NAME);
-    if (events === undefined || quarantine === undefined || scopeFile === undefined) {
+    if (
+      claims === undefined ||
+      events === undefined ||
+      pending === undefined ||
+      quarantine === undefined ||
+      scopeFile === undefined
+    ) {
       throw new Error("Journal fixed inventory is incomplete.");
     }
     if (prior !== undefined) {
+      assertSameNode(claims, prior.claims, "Journal claims directory");
       assertSameNode(events, prior.events, "Journal events directory");
-      assertSameNode(quarantine, prior.quarantine, "Journal quarantine directory");
+      assertSameNode(pending, prior.pending, "Journal pending directory");
+      assertSameNode(
+        quarantine,
+        prior.quarantine,
+        "Journal quarantine directory",
+      );
       assertSameNode(scopeFile, prior.scopeFile, "Journal scope file");
     }
-    const scopeBytes = await readStableFile(scopeFile.absolutePath, scopeFile.stats, MAX_SCOPE_BYTES);
+    const scopeBytes = await readStableFile(
+      scopeFile.absolutePath,
+      scopeFile.stats,
+      MAX_SCOPE_BYTES,
+    );
     const parsed = parseScopeDocument(scopeBytes);
-    if (!scopesEqual(parsed.scope, expectedScope)) throw new Error("Journal scope is not the expected scope.");
+    if (!scopesEqual(parsed.scope, expectedScope))
+      throw new Error("Journal scope is not the expected scope.");
     const scopeFileSha256 = rawFileSha256(scopeBytes);
-    const genesisSha256 = semanticSha256(GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_GENESIS_DOMAIN, {
+    const genesisSha256 = semanticSha256(
+      GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_GENESIS_DOMAIN,
+      {
+        scopeSha256: parsed.scopeSha256,
+        scopeFileSha256,
+      },
+    );
+    return {
+      root: inventory.root,
+      claims,
+      events,
+      pending,
+      quarantine,
+      scopeFile,
+      scope: parsed.scope,
       scopeSha256: parsed.scopeSha256,
       scopeFileSha256,
-    });
-    return { root: inventory.root, events, quarantine, scopeFile,
-      scope: parsed.scope, scopeSha256: parsed.scopeSha256, scopeFileSha256, genesisSha256 };
+      genesisSha256,
+    };
   } catch (error) {
     if (error instanceof GrandHallT554NativeReviewJournalError) throw error;
     throw new GrandHallT554NativeReviewJournalError(
@@ -597,13 +839,75 @@ function eventFileName(sequence: number, eventSha256: Sha256): string {
   return `${String(sequence).padStart(EVENT_SEQUENCE_WIDTH, "0")}-${eventSha256.replace(":", "-")}.json`;
 }
 
-function parseEventFileName(name: string): { readonly sequence: number; readonly sha256: Sha256 } {
+function claimFileName(sequence: number): string {
+  return `${String(sequence).padStart(EVENT_SEQUENCE_WIDTH, "0")}.json`;
+}
+
+function pendingFileName(
+  sequence: number,
+  eventSha256: Sha256,
+  token: string,
+): string {
+  return `pending-${String(sequence).padStart(EVENT_SEQUENCE_WIDTH, "0")}-${eventSha256.replace(":", "-")}-${token}.json`;
+}
+
+function parseSequence(value: string | undefined, label: string): number {
+  const sequence = Number(value);
+  if (
+    !Number.isSafeInteger(sequence) ||
+    sequence < 1 ||
+    sequence > MAX_SEQUENCE
+  ) {
+    throw new Error(`${label} sequence is invalid.`);
+  }
+  return sequence;
+}
+
+function parseClaimFileName(name: string): number {
+  const match = CLAIM_FILE_PATTERN.exec(name);
+  const sequence = parseSequence(match?.[1], "Journal claim");
+  if (match === null || claimFileName(sequence) !== name) {
+    throw new Error("Journal claim filename is not canonical.");
+  }
+  return sequence;
+}
+
+function parsePendingFileName(name: string): {
+  readonly sequence: number;
+  readonly eventSha256: Sha256;
+  readonly token: string;
+} {
+  const match = PENDING_FILE_PATTERN.exec(name);
+  if (match === null) {
+    throw new Error("Journal pending inventory contains an unsafe file.");
+  }
+  const sequence = parseSequence(match[1], "Journal pending attempt");
+  const eventSha256 = Sha256Schema.parse(`sha256:${match[2] ?? ""}`);
+  const token = match[3] ?? "";
+  if (pendingFileName(sequence, eventSha256, token) !== name) {
+    throw new Error("Journal pending filename is not canonical.");
+  }
+  return { sequence, eventSha256, token };
+}
+
+function parseEventFileName(name: string): {
+  readonly sequence: number;
+  readonly sha256: Sha256;
+} {
   const match = EVENT_FILE_PATTERN.exec(name);
-  if (match === null) throw new Error("Journal event inventory contains an extra or unsafe file.");
+  if (match === null)
+    throw new Error(
+      "Journal event inventory contains an extra or unsafe file.",
+    );
   const sequence = Number(match[1]);
   const sha256 = Sha256Schema.parse(`sha256:${match[2] ?? ""}`);
-  if (!Number.isSafeInteger(sequence) || sequence < 1 || sequence > MAX_SEQUENCE ||
-    eventFileName(sequence, sha256) !== name) throw new Error("Journal event filename is not canonical.");
+  if (
+    !Number.isSafeInteger(sequence) ||
+    sequence < 1 ||
+    sequence > MAX_SEQUENCE ||
+    eventFileName(sequence, sha256) !== name
+  )
+    throw new Error("Journal event filename is not canonical.");
   return { sequence, sha256 };
 }
 
@@ -612,19 +916,110 @@ function parsePersistedEvent(
   fileName: string,
   layout: JournalLayout,
 ): GrandHallT554NativeReviewJournalEvent {
-  const parsed = PersistedEventSchema.parse(parseCanonicalDocument(bytes, `Journal event ${fileName}`));
+  const parsed = PersistedEventSchema.parse(
+    parseCanonicalDocument(bytes, `Journal event ${fileName}`),
+  );
   const payload = canonicalJsonValue(parsed.payload);
   canonicalUtcInstant(parsed.recordedAtUtc);
-  if (!scopesEqual(parsed.scope, layout.scope) || parsed.scopeSha256 !== layout.scopeSha256 ||
-    parsed.scopeFileSha256 !== layout.scopeFileSha256) throw new Error("Journal event scope drifted.");
+  if (
+    !scopesEqual(parsed.scope, layout.scope) ||
+    parsed.scopeSha256 !== layout.scopeSha256 ||
+    parsed.scopeFileSha256 !== layout.scopeFileSha256
+  )
+    throw new Error("Journal event scope drifted.");
   const { eventSha256, ...materialInput } = parsed;
   const material = { ...materialInput, scope: layout.scope, payload };
-  const expected = semanticSha256(GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_DOMAIN, material);
-  if (eventSha256 !== expected || eventFileName(parsed.sequence, eventSha256) !== fileName) {
+  const expected = semanticSha256(
+    GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_DOMAIN,
+    material,
+  );
+  if (
+    eventSha256 !== expected ||
+    eventFileName(parsed.sequence, eventSha256) !== fileName
+  ) {
     throw new Error("Journal event digest or filename drifted.");
   }
-  return { ...material, eventSha256, fileName, fileSha256: rawFileSha256(bytes),
-    fileByteLength: bytes.length };
+  return {
+    ...material,
+    eventSha256,
+    fileName,
+    fileSha256: rawFileSha256(bytes),
+    fileByteLength: bytes.length,
+  };
+}
+
+function validateEventChainEntry(
+  event: GrandHallT554NativeReviewJournalEvent,
+  expectedSequence: number,
+  expectedPrevious: Sha256,
+  previousTimestamp: number,
+): number {
+  if (
+    event.sequence !== expectedSequence ||
+    event.previousEventSha256 !== expectedPrevious
+  ) {
+    throw new Error("Journal hash chain is broken.");
+  }
+  const timestamp = Date.parse(event.recordedAtUtc);
+  if (timestamp < previousTimestamp) {
+    throw new Error("Journal wall clock rolled backward.");
+  }
+  return timestamp;
+}
+
+function assertInventoryBounds(
+  snapshot: DirectorySnapshot,
+  limits: JournalLimits,
+  label: string,
+): void {
+  if (snapshot.entries.length > limits.maximumEventCount) {
+    throw new Error(`${label} inventory exceeds its fixed count bound.`);
+  }
+  const inventoryBytes = snapshot.entries.reduce(
+    (total, entry) => total + entry.stats.size,
+    0n,
+  );
+  if (inventoryBytes > BigInt(limits.maximumTotalEventBytes)) {
+    throw new Error(`${label} inventory exceeds its fixed cumulative byte bound.`);
+  }
+}
+
+async function readClaims(
+  layout: JournalLayout,
+  snapshot: DirectorySnapshot,
+  limits: JournalLimits,
+): Promise<readonly GrandHallT554NativeReviewJournalEvent[]> {
+  assertInventoryBounds(snapshot, limits, "Journal claim");
+  const events: GrandHallT554NativeReviewJournalEvent[] = [];
+  let previous = layout.genesisSha256;
+  let previousTimestamp = Number.NEGATIVE_INFINITY;
+  for (const [index, entry] of snapshot.entries.entries()) {
+    const expectedSequence = index + 1;
+    if (parseClaimFileName(entry.name) !== expectedSequence) {
+      throw new Error("Journal claim sequence has a gap or duplicate.");
+    }
+    const bytes = await readStableFile(
+      join(layout.claims.absolutePath, entry.name),
+      entry.stats,
+      GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES,
+      false,
+      true,
+    );
+    const parsed = PersistedEventSchema.parse(
+      parseCanonicalDocument(bytes, `Journal claim ${entry.name}`),
+    );
+    const derivedName = eventFileName(parsed.sequence, parsed.eventSha256);
+    const event = parsePersistedEvent(bytes, derivedName, layout);
+    previousTimestamp = validateEventChainEntry(
+      event,
+      expectedSequence,
+      previous,
+      previousTimestamp,
+    );
+    events.push(event);
+    previous = event.eventSha256;
+  }
+  return events;
 }
 
 async function readEvents(
@@ -632,78 +1027,598 @@ async function readEvents(
   snapshot: DirectorySnapshot,
   limits: JournalLimits,
 ): Promise<readonly GrandHallT554NativeReviewJournalEvent[]> {
-  if (snapshot.entries.length > limits.maximumEventCount) {
-    throw new Error("Journal event inventory exceeds its fixed count bound.");
-  }
-  const inventoryBytes = snapshot.entries.reduce(
-    (total, entry) => total + entry.stats.size,
-    0n,
-  );
-  if (inventoryBytes > BigInt(limits.maximumTotalEventBytes)) {
-    throw new Error("Journal event inventory exceeds its fixed cumulative byte bound.");
-  }
+  assertInventoryBounds(snapshot, limits, "Journal event");
   const events: GrandHallT554NativeReviewJournalEvent[] = [];
   let previous = layout.genesisSha256;
   let previousTimestamp = Number.NEGATIVE_INFINITY;
   for (const [index, entry] of snapshot.entries.entries()) {
     const identity = parseEventFileName(entry.name);
     const expectedSequence = index + 1;
-    if (identity.sequence !== expectedSequence) throw new Error("Journal sequence has a gap or duplicate.");
+    if (identity.sequence !== expectedSequence)
+      throw new Error("Journal sequence has a gap or duplicate.");
     const bytes = await readStableFile(
-      join(layout.events.absolutePath, entry.name), entry.stats,
+      join(layout.events.absolutePath, entry.name),
+      entry.stats,
       GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES,
+      false,
+      true,
     );
     const event = parsePersistedEvent(bytes, entry.name, layout);
-    if (event.sequence !== expectedSequence || event.eventSha256 !== identity.sha256 ||
-      event.previousEventSha256 !== previous) throw new Error("Journal hash chain is broken.");
-    const timestamp = Date.parse(event.recordedAtUtc);
-    if (timestamp < previousTimestamp) throw new Error("Journal wall clock rolled backward.");
+    if (
+      event.eventSha256 !== identity.sha256
+    )
+      throw new Error("Journal hash chain is broken.");
+    previousTimestamp = validateEventChainEntry(
+      event,
+      expectedSequence,
+      previous,
+      previousTimestamp,
+    );
     events.push(event);
     previous = event.eventSha256;
-    previousTimestamp = timestamp;
   }
   return events;
 }
 
-function parseQuarantineName(name: string): {
-  readonly disposition: "moved" | "marker";
-  readonly sequence: number;
-  readonly eventSha256: Sha256;
-} {
-  const match = QUARANTINE_FILE_PATTERN.exec(name);
-  if (match === null) throw new Error("Journal quarantine contains an extra or unsafe entry.");
-  const sequence = Number(match[2]);
-  if (!Number.isSafeInteger(sequence) || sequence < 1 || sequence > MAX_SEQUENCE) {
+type QuarantineEntryIdentity =
+  | {
+      readonly disposition: "moved";
+      readonly sequence: number;
+      readonly eventSha256: Sha256;
+      readonly token: string;
+      readonly fileByteLength: number;
+      readonly fileSha256: Sha256;
+    }
+  | {
+      readonly disposition: "marker";
+      readonly sequence: number;
+      readonly eventSha256: Sha256;
+      readonly token: string;
+    };
+
+function parseQuarantineSequence(value: string | undefined): number {
+  const sequence = Number(value);
+  if (
+    !Number.isSafeInteger(sequence) ||
+    sequence < 1 ||
+    sequence > MAX_SEQUENCE
+  ) {
     throw new Error("Journal quarantine sequence is invalid.");
   }
-  return { disposition: match[1] as "moved" | "marker", sequence,
-    eventSha256: Sha256Schema.parse(`sha256:${match[3] ?? ""}`) };
+  return sequence;
+}
+
+function parseQuarantineName(name: string): QuarantineEntryIdentity {
+  const moved = MOVED_QUARANTINE_FILE_PATTERN.exec(name);
+  if (moved !== null) {
+    const sequence = parseQuarantineSequence(moved[1]);
+    const eventSha256 = Sha256Schema.parse(`sha256:${moved[2] ?? ""}`);
+    const fileByteLength = Number(moved[3]);
+    const fileSha256 = Sha256Schema.parse(`sha256:${moved[4] ?? ""}`);
+    const token = moved[5] ?? "";
+    if (
+      !Number.isSafeInteger(fileByteLength) ||
+      fileByteLength < 0 ||
+      fileByteLength > MAX_QUARANTINE_BYTES ||
+      movedQuarantineFileName(
+        sequence,
+        eventSha256,
+        token,
+        fileByteLength,
+        fileSha256,
+      ) !== name
+    ) {
+      throw new Error("Journal moved-quarantine filename is not canonical.");
+    }
+    return {
+      disposition: "moved",
+      sequence,
+      eventSha256,
+      token,
+      fileByteLength,
+      fileSha256,
+    };
+  }
+  const marker = MARKER_QUARANTINE_FILE_PATTERN.exec(name);
+  if (marker === null) {
+    throw new Error("Journal quarantine contains an extra or unsafe entry.");
+  }
+  const sequence = parseQuarantineSequence(marker[1]);
+  const eventSha256 = Sha256Schema.parse(`sha256:${marker[2] ?? ""}`);
+  const token = marker[3] ?? "";
+  if (markerQuarantineFileName(sequence, eventSha256, token) !== name) {
+    throw new Error("Journal quarantine-marker filename is not canonical.");
+  }
+  return { disposition: "marker", sequence, eventSha256, token };
 }
 
 async function inspectQuarantine(
   layout: JournalLayout,
   snapshot: DirectorySnapshot,
+  limits: JournalLimits,
 ): Promise<QuarantineInventory> {
+  if (snapshot.entries.length > limits.maximumQuarantineEntryCount) {
+    throw new Error("Journal quarantine exceeds its fixed count bound.");
+  }
+  const totalBytes = snapshot.entries.reduce(
+    (total, entry) => total + entry.stats.size,
+    0n,
+  );
+  if (totalBytes > BigInt(limits.maximumQuarantineTotalBytes)) {
+    throw new Error("Journal quarantine exceeds its fixed cumulative byte bound.");
+  }
   const markerSequences = new Set<number>();
+  const movedAttempts: MovedQuarantineAttempt[] = [];
   for (const entry of snapshot.entries) {
     const identity = parseQuarantineName(entry.name);
     if (entry.stats.size > BigInt(MAX_QUARANTINE_BYTES)) {
       throw new Error("Journal quarantine entry is over its byte bound.");
     }
-    if (identity.disposition !== "marker") continue;
     const bytes = await readStableFile(
-      join(layout.quarantine.absolutePath, entry.name), entry.stats, MAX_SCOPE_BYTES,
+      join(layout.quarantine.absolutePath, entry.name),
+      entry.stats,
+      identity.disposition === "marker" ? MAX_SCOPE_BYTES : MAX_QUARANTINE_BYTES,
+      identity.disposition === "moved",
     );
+    if (identity.disposition === "moved") {
+      if (
+        entry.stats.size !== BigInt(identity.fileByteLength) ||
+        rawFileSha256(bytes) !== identity.fileSha256
+      ) {
+        throw new Error("Journal moved-quarantine byte receipt drifted.");
+      }
+      movedAttempts.push({
+        absolutePath: join(layout.quarantine.absolutePath, entry.name),
+        sequence: identity.sequence,
+        eventSha256: identity.eventSha256,
+        token: identity.token,
+        fileByteLength: identity.fileByteLength,
+        fileSha256: identity.fileSha256,
+        stats: entry.stats,
+      });
+      continue;
+    }
     const marker = QuarantineMarkerSchema.parse(
       parseCanonicalDocument(bytes, `Journal quarantine marker ${entry.name}`),
     );
-    if (marker.scopeSha256 !== layout.scopeSha256 || marker.sequence !== identity.sequence ||
+    if (
+      marker.scopeSha256 !== layout.scopeSha256 ||
+      marker.sequence !== identity.sequence ||
       marker.attemptedEventSha256 !== identity.eventSha256 ||
       eventFileName(marker.sequence, marker.attemptedEventSha256) !==
-        marker.attemptedEventFileName) throw new Error("Journal quarantine marker drifted.");
+        marker.attemptedEventFileName
+    )
+      throw new Error("Journal quarantine marker drifted.");
     markerSequences.add(marker.sequence);
   }
-  return { snapshot, markerSequences };
+  return { snapshot, markerSequences, movedAttempts };
+}
+
+function assertPendingBounds(snapshot: DirectorySnapshot): void {
+  if (snapshot.entries.length > MAX_PENDING_ENTRY_COUNT) {
+    throw new Error("Journal pending inventory exceeds its fixed count bound.");
+  }
+  const totalBytes = snapshot.entries.reduce(
+    (total, entry) => total + entry.stats.size,
+    0n,
+  );
+  if (totalBytes > BigInt(MAX_QUARANTINE_TOTAL_BYTES)) {
+    throw new Error("Journal pending inventory exceeds its fixed byte bound.");
+  }
+}
+
+function pendingAttemptFromEntry(
+  layout: JournalLayout,
+  entry: DirectoryEntrySnapshot,
+): PendingAttempt {
+  const identity = parsePendingFileName(entry.name);
+  return {
+    absolutePath: join(layout.pending.absolutePath, entry.name),
+    fileName: eventFileName(identity.sequence, identity.eventSha256),
+    sequence: identity.sequence,
+    eventSha256: identity.eventSha256,
+    token: identity.token,
+    stats: entry.stats,
+  };
+}
+
+async function directNodeIfPresent(
+  absolutePath: string,
+  allowEmptyFile: boolean,
+  allowMultipleFileLinks: boolean,
+): Promise<NodeWitness | undefined> {
+  try {
+    return await directNode(
+      absolutePath,
+      "file",
+      allowEmptyFile,
+      allowMultipleFileLinks,
+    );
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+async function publishHardLinkNoReplace(
+  sourcePath: string,
+  destinationPath: string,
+  expectedNode: BigIntStats,
+): Promise<void> {
+  try {
+    await link(sourcePath, destinationPath);
+  } catch (error) {
+    if (errnoCode(error) !== "EEXIST") throw error;
+  }
+  const destination = await directNode(destinationPath, "file", false, true);
+  if (!grandHallT554V3SameNode(destination.stats, expectedNode)) {
+    throw new Error("No-replace publication collided with another filesystem node.");
+  }
+}
+
+async function unlinkExactNode(
+  absolutePath: string,
+  expectedNode: BigIntStats,
+): Promise<boolean> {
+  const current = await directNodeIfPresent(absolutePath, true, true);
+  if (current === undefined) return false;
+  if (!grandHallT554V3SameNode(current.stats, expectedNode)) {
+    throw new Error("Journal cleanup path was replaced before unlink.");
+  }
+  try {
+    await unlink(absolutePath);
+  } catch (error) {
+    // Another owner-governed recovery may have completed the same idempotent
+    // cleanup after our identity check. A missing path is not permission to
+    // delete or rewrite anything else.
+    if (errnoCode(error) === "ENOENT") return false;
+    throw error;
+  }
+  const residual = await directNodeIfPresent(absolutePath, true, true);
+  if (residual !== undefined) {
+    throw new Error("Journal cleanup path was recreated during unlink.");
+  }
+  return true;
+}
+
+async function assertQuarantineCanAccept(
+  layout: JournalLayout,
+  prospectiveByteLength: number,
+  limits: JournalLimits,
+): Promise<void> {
+  if (
+    !Number.isSafeInteger(prospectiveByteLength) ||
+    prospectiveByteLength < 0 ||
+    prospectiveByteLength > MAX_QUARANTINE_BYTES
+  ) {
+    throw new GrandHallT554NativeReviewJournalError(
+      "JOURNAL_LIMIT_REACHED",
+      "Native-review journal quarantine reservation has an invalid byte length.",
+    );
+  }
+  const snapshot = await snapshotDirectory(layout.quarantine);
+  const inventory = await inspectQuarantine(layout, snapshot, limits);
+  if (inventory.markerSequences.size > 0) {
+    throw new Error(
+      "Journal cannot reserve quarantine capacity while an ambiguity marker is unresolved.",
+    );
+  }
+  const currentBytes = snapshot.entries.reduce(
+    (total, entry) => total + entry.stats.size,
+    0n,
+  );
+  if (
+    snapshot.entries.length + 1 > limits.maximumQuarantineEntryCount ||
+    currentBytes + BigInt(prospectiveByteLength) >
+      BigInt(limits.maximumQuarantineTotalBytes)
+  ) {
+    throw new GrandHallT554NativeReviewJournalError(
+      "JOURNAL_LIMIT_REACHED",
+      "Native-review journal lacks reserved quarantine capacity for another append attempt.",
+    );
+  }
+}
+
+async function completedMovedAttempt(
+  attempt: PendingAttempt,
+  layout: JournalLayout,
+  limits: JournalLimits,
+): Promise<MovedQuarantineAttempt> {
+  const snapshot = await snapshotDirectory(layout.quarantine);
+  const inventory = await inspectQuarantine(layout, snapshot, limits);
+  const matches = inventory.movedAttempts.filter(
+    (entry) =>
+      entry.sequence === attempt.sequence &&
+      entry.eventSha256 === attempt.eventSha256 &&
+      entry.token === attempt.token,
+  );
+  const moved = matches[0];
+  if (
+    matches.length !== 1 ||
+    moved === undefined ||
+    !grandHallT554V3SameNode(moved.stats, attempt.stats) ||
+    moved.stats.nlink !== 1n
+  ) {
+    throw new Error(
+      "Pending attempt disappeared without one exact completed quarantine receipt.",
+    );
+  }
+  return moved;
+}
+
+async function verifyMovedQuarantinePath(
+  absolutePath: string,
+  expectedNode: BigIntStats,
+  expectedByteLength: number,
+  expectedFileSha256: Sha256,
+  expectedLinkCount: bigint,
+): Promise<NodeWitness> {
+  const moved = await directNode(absolutePath, "file", true, true);
+  if (
+    !grandHallT554V3SameNode(moved.stats, expectedNode) ||
+    moved.stats.nlink !== expectedLinkCount ||
+    moved.stats.size !== BigInt(expectedByteLength)
+  ) {
+    throw new Error("Quarantined pending attempt identity or link state drifted.");
+  }
+  const bytes = await readStableFile(
+    absolutePath,
+    moved.stats,
+    MAX_QUARANTINE_BYTES,
+    true,
+    true,
+  );
+  if (
+    bytes.length !== expectedByteLength ||
+    rawFileSha256(bytes) !== expectedFileSha256
+  ) {
+    throw new Error("Quarantined pending attempt byte receipt drifted.");
+  }
+  return moved;
+}
+
+async function quarantinePendingAttempt(
+  attempt: PendingAttempt,
+  layout: JournalLayout,
+  limits: JournalLimits,
+  seams: __GrandHallT554NativeReviewJournalTestSeams,
+): Promise<void> {
+  const source = await directNodeIfPresent(attempt.absolutePath, true, true);
+  if (source === undefined) {
+    await completedMovedAttempt(attempt, layout, limits);
+    await syncDirectory(
+      layout.quarantine.absolutePath,
+      "quarantine-destination-recovery",
+      seams,
+    );
+    await syncDirectory(
+      layout.pending.absolutePath,
+      "quarantine-source-recovery",
+      seams,
+    );
+    return;
+  }
+  if (!grandHallT554V3SameNode(source.stats, attempt.stats)) {
+    throw new Error("Uncommitted pending attempt has an unsafe link state.");
+  }
+  const sourceBytes = await readStableFile(
+    attempt.absolutePath,
+    source.stats,
+    MAX_QUARANTINE_BYTES,
+    true,
+    true,
+  );
+  const sourceFileSha256 = rawFileSha256(sourceBytes);
+  const destinationName = movedQuarantineFileName(
+    attempt.sequence,
+    attempt.eventSha256,
+    attempt.token,
+    sourceBytes.length,
+    sourceFileSha256,
+  );
+  const destinationPath = join(layout.quarantine.absolutePath, destinationName);
+  const existingDestination = await directNodeIfPresent(
+    destinationPath,
+    true,
+    true,
+  );
+  if (existingDestination === undefined) {
+    if (source.stats.nlink !== 1n) {
+      throw new Error(
+        "Uncommitted pending attempt has an unexplained hard-link alias.",
+      );
+    }
+    await assertQuarantineCanAccept(layout, sourceBytes.length, limits);
+    await publishHardLinkNoReplace(
+      attempt.absolutePath,
+      destinationPath,
+      attempt.stats,
+    );
+  } else if (
+    !grandHallT554V3SameNode(existingDestination.stats, attempt.stats)
+  ) {
+    throw new Error(
+      "Pending attempt quarantine destination belongs to another filesystem node.",
+    );
+  }
+  const linkedSource = await directNode(attempt.absolutePath, "file", true, true);
+  const linkedDestination = await verifyMovedQuarantinePath(
+    destinationPath,
+    attempt.stats,
+    sourceBytes.length,
+    sourceFileSha256,
+    2n,
+  );
+  if (
+    linkedSource.stats.nlink !== 2n ||
+    !grandHallT554V3SameFileState(
+      linkedSource.stats,
+      linkedDestination.stats,
+    )
+  ) {
+    throw new Error(
+      "Pending and quarantine names are not one exact two-link crash residue.",
+    );
+  }
+  await syncDirectory(
+    layout.quarantine.absolutePath,
+    "quarantine-destination",
+    seams,
+  );
+  await unlinkExactNode(attempt.absolutePath, attempt.stats);
+  await syncDirectory(layout.pending.absolutePath, "quarantine-source", seams);
+  await verifyMovedQuarantinePath(
+    destinationPath,
+    attempt.stats,
+    sourceBytes.length,
+    sourceFileSha256,
+    1n,
+  );
+}
+
+function assertMirroredCommittedPrefix(
+  claimsSnapshot: DirectorySnapshot,
+  eventsSnapshot: DirectorySnapshot,
+  claims: readonly GrandHallT554NativeReviewJournalEvent[],
+  events: readonly GrandHallT554NativeReviewJournalEvent[],
+): void {
+  if (
+    claimsSnapshot.entries.length !== eventsSnapshot.entries.length ||
+    claims.length !== events.length
+  ) {
+    throw new Error("Journal claim and event prefixes differ in length.");
+  }
+  for (const [index, claim] of claims.entries()) {
+    const event = events[index];
+    const claimEntry = claimsSnapshot.entries[index];
+    const eventEntry = eventsSnapshot.entries[index];
+    if (
+      event === undefined ||
+      claimEntry === undefined ||
+      eventEntry === undefined ||
+      claim.sequence !== event.sequence ||
+      claim.eventSha256 !== event.eventSha256 ||
+      claim.fileSha256 !== event.fileSha256 ||
+      claim.fileName !== event.fileName ||
+      claimEntry.stats.nlink !== 2n ||
+      eventEntry.stats.nlink !== 2n ||
+      !grandHallT554V3SameNode(claimEntry.stats, eventEntry.stats) ||
+      !grandHallT554V3SameFileState(claimEntry.stats, eventEntry.stats)
+    ) {
+      throw new Error("Journal claim and event files are not one exact hard-linked prefix.");
+    }
+  }
+}
+
+async function recoverPublicationResidues(
+  layout: JournalLayout,
+  limits: JournalLimits,
+  seams: __GrandHallT554NativeReviewJournalTestSeams,
+): Promise<void> {
+  const claimsSnapshot = await snapshotDirectory(layout.claims, {
+    allowMultipleFileLinks: true,
+  });
+  const eventsSnapshot = await snapshotDirectory(layout.events, {
+    allowMultipleFileLinks: true,
+  });
+  const pendingSnapshot = await snapshotDirectory(layout.pending, {
+    allowEmptyFiles: true,
+    allowMultipleFileLinks: true,
+  });
+  assertPendingBounds(pendingSnapshot);
+  const claims = await readClaims(layout, claimsSnapshot, limits);
+  const events = await readEvents(layout, eventsSnapshot, limits);
+  if (events.length > claims.length) {
+    throw new Error("Journal exposes an event without its durable claim.");
+  }
+  if (claims.length - events.length > 1) {
+    throw new Error(
+      "Journal has more than one unpublished claim, a state no valid writer can produce.",
+    );
+  }
+
+  for (const [index, event] of events.entries()) {
+    const claim = claims[index];
+    const claimEntry = claimsSnapshot.entries[index];
+    const eventEntry = eventsSnapshot.entries[index];
+    if (
+      claim === undefined ||
+      claimEntry === undefined ||
+      eventEntry === undefined ||
+      claim.eventSha256 !== event.eventSha256 ||
+      !grandHallT554V3SameNode(claimEntry.stats, eventEntry.stats)
+    ) {
+      throw new Error("Published event does not match its durable claim.");
+    }
+  }
+
+  const committedPending = new Map<number, PendingAttempt[]>();
+  const uncommittedPending: PendingAttempt[] = [];
+  for (const entry of pendingSnapshot.entries) {
+    const attempt = pendingAttemptFromEntry(layout, entry);
+    const claimEntry = claimsSnapshot.entries[attempt.sequence - 1];
+    if (
+      claimEntry !== undefined &&
+      parseClaimFileName(claimEntry.name) === attempt.sequence &&
+      grandHallT554V3SameNode(claimEntry.stats, attempt.stats)
+    ) {
+      const claim = claims[attempt.sequence - 1];
+      if (claim?.eventSha256 !== attempt.eventSha256) {
+        throw new Error("Committed pending attempt filename drifted from its claim.");
+      }
+      const matches = committedPending.get(attempt.sequence) ?? [];
+      matches.push(attempt);
+      committedPending.set(attempt.sequence, matches);
+    } else {
+      uncommittedPending.push(attempt);
+    }
+  }
+
+  let publishedEvent = false;
+  for (const [index, claim] of claims.entries()) {
+    const claimEntry = claimsSnapshot.entries[index];
+    if (claimEntry === undefined) throw new Error("Journal claim snapshot is incomplete.");
+    const matchingPending = committedPending.get(claim.sequence) ?? [];
+    if (matchingPending.length > 1) {
+      throw new Error("Journal claim has multiple pending publication links.");
+    }
+    const eventEntry = eventsSnapshot.entries[index];
+    const expectedLinkCount = 1n +
+      (eventEntry === undefined ? 0n : 1n) +
+      BigInt(matchingPending.length);
+    if (claimEntry.stats.nlink !== expectedLinkCount) {
+      throw new Error("Journal claim has an unexplained hard-link count.");
+    }
+    if (eventEntry === undefined) {
+      if (matchingPending.length !== 1) {
+        throw new Error("Unpublished claim lacks its exact pending crash witness.");
+      }
+      await publishHardLinkNoReplace(
+        join(layout.claims.absolutePath, claimFileName(claim.sequence)),
+        join(layout.events.absolutePath, claim.fileName),
+        claimEntry.stats,
+      );
+      publishedEvent = true;
+    }
+  }
+  if (publishedEvent) {
+    await syncDirectory(layout.events.absolutePath, "event-recovery", seams);
+  }
+
+  let observedCommittedPending = false;
+  for (const attempts of committedPending.values()) {
+    const attempt = attempts[0];
+    if (attempt !== undefined) {
+      observedCommittedPending = true;
+      await unlinkExactNode(attempt.absolutePath, attempt.stats);
+    }
+  }
+  if (observedCommittedPending) {
+    await syncDirectory(layout.pending.absolutePath, "pending-recovery", seams);
+  }
+  for (const attempt of uncommittedPending) {
+    await quarantinePendingAttempt(attempt, layout, limits, seams);
+  }
 }
 
 async function replayInternal(
@@ -711,36 +1626,81 @@ async function replayInternal(
   expectedScope: GrandHallT554NativeReviewJournalScope,
   priorLayout: JournalLayout,
   limits: JournalLimits = PRODUCTION_JOURNAL_LIMITS,
-): Promise<{ readonly layout: JournalLayout; readonly replay: GrandHallT554NativeReviewJournalReplay }> {
+  seams: __GrandHallT554NativeReviewJournalTestSeams = {},
+): Promise<{
+  readonly layout: JournalLayout;
+  readonly replay: GrandHallT554NativeReviewJournalReplay;
+}> {
   try {
     const layout = await loadLayout(workspaceRoot, expectedScope, priorLayout);
-    const eventsBefore = await snapshotDirectory(layout.events);
+    await recoverPublicationResidues(layout, limits, seams);
+    const claimsBefore = await snapshotDirectory(layout.claims, {
+      allowMultipleFileLinks: true,
+    });
+    const eventsBefore = await snapshotDirectory(layout.events, {
+      allowMultipleFileLinks: true,
+    });
+    const pendingBefore = await snapshotDirectory(layout.pending, {
+      allowEmptyFiles: true,
+      allowMultipleFileLinks: true,
+    });
     const quarantineBefore = await snapshotDirectory(layout.quarantine);
+    if (pendingBefore.entries.length !== 0) {
+      throw new Error("Journal pending recovery did not reach a clean state.");
+    }
+    const claims = await readClaims(layout, claimsBefore, limits);
     const events = await readEvents(layout, eventsBefore, limits);
-    const quarantine = await inspectQuarantine(layout, quarantineBefore);
-    const eventsAfter = await snapshotDirectory(layout.events);
+    assertMirroredCommittedPrefix(claimsBefore, eventsBefore, claims, events);
+    const quarantine = await inspectQuarantine(
+      layout,
+      quarantineBefore,
+      limits,
+    );
+    const claimsAfter = await snapshotDirectory(layout.claims, {
+      allowMultipleFileLinks: true,
+    });
+    const eventsAfter = await snapshotDirectory(layout.events, {
+      allowMultipleFileLinks: true,
+    });
+    const pendingAfter = await snapshotDirectory(layout.pending, {
+      allowEmptyFiles: true,
+      allowMultipleFileLinks: true,
+    });
     const quarantineAfter = await snapshotDirectory(layout.quarantine);
-    if (!snapshotsEqual(eventsBefore, eventsAfter) ||
-      !snapshotsEqual(quarantine.snapshot, quarantineAfter)) {
+    if (
+      !snapshotsEqual(claimsBefore, claimsAfter) ||
+      !snapshotsEqual(eventsBefore, eventsAfter) ||
+      !snapshotsEqual(pendingBefore, pendingAfter) ||
+      !snapshotsEqual(quarantine.snapshot, quarantineAfter)
+    ) {
       throw new Error("Journal inventory changed during replay.");
     }
     const finalLayout = await loadLayout(workspaceRoot, expectedScope, layout);
     const revision = events.length;
-    if ([...quarantine.markerSequences].some((sequence) => sequence <= revision)) {
-      throw new Error("An ambiguous failed append overlaps the replayed revision.");
+    if (quarantine.markerSequences.size > 0) {
+      throw new Error(
+        "Journal contains an unresolved ambiguous-append marker.",
+      );
     }
-    return { layout: finalLayout, replay: {
-      scope: finalLayout.scope,
-      scopeSha256: finalLayout.scopeSha256,
-      scopeFileSha256: finalLayout.scopeFileSha256,
-      genesisSha256: finalLayout.genesisSha256,
-      revision,
-      headEventSha256: events.at(-1)?.eventSha256 ?? finalLayout.genesisSha256,
-      events,
-    } };
+    return {
+      layout: finalLayout,
+      replay: {
+        scope: finalLayout.scope,
+        scopeSha256: finalLayout.scopeSha256,
+        scopeFileSha256: finalLayout.scopeFileSha256,
+        genesisSha256: finalLayout.genesisSha256,
+        revision,
+        headEventSha256:
+          events.at(-1)?.eventSha256 ?? finalLayout.genesisSha256,
+        events,
+      },
+    };
   } catch (error) {
-    if (error instanceof GrandHallT554NativeReviewJournalError &&
-      error.code === "WORKSPACE_UNSAFE") throw error;
+    if (
+      error instanceof GrandHallT554NativeReviewJournalError &&
+      error.code === "WORKSPACE_UNSAFE"
+    )
+      throw error;
     throw new GrandHallT554NativeReviewJournalError(
       "JOURNAL_INVALID",
       "Native-review journal replay rejected the persisted inventory.",
@@ -749,7 +1709,9 @@ async function replayInternal(
   }
 }
 
-async function assertEmptyFixedRoot(workspaceRoot: string): Promise<NodeWitness> {
+async function assertEmptyFixedRoot(
+  workspaceRoot: string,
+): Promise<NodeWitness> {
   try {
     const root = await directNode(workspaceRoot, "directory");
     const before = await readdir(workspaceRoot, { withFileTypes: true });
@@ -771,9 +1733,14 @@ async function assertEmptyFixedRoot(workspaceRoot: string): Promise<NodeWitness>
 function directorySyncUnsupported(error: unknown): boolean {
   const code = errnoCode(error);
   if (code === "ENOTSUP") return true;
-  return process.platform === "win32" &&
-    (code === "EACCES" || code === "EBADF" || code === "EINVAL" ||
-      code === "EISDIR" || code === "EPERM");
+  return (
+    process.platform === "win32" &&
+    (code === "EACCES" ||
+      code === "EBADF" ||
+      code === "EINVAL" ||
+      code === "EISDIR" ||
+      code === "EPERM")
+  );
 }
 
 async function syncDirectory(
@@ -787,6 +1754,9 @@ async function syncDirectory(
     handle = await open(absolutePath, "r");
     await handle.sync();
   } catch (error) {
+    // Node 22 returns EPERM for directory fsync on Windows. The append protocol
+    // remains exact under process termination, but callers must not upgrade this
+    // best-effort barrier into a sudden-power-loss durability claim.
     if (!directorySyncUnsupported(error)) throw error;
   } finally {
     await handle?.close();
@@ -810,78 +1780,114 @@ async function writeAll(
   while (offset < bytes.length) {
     const length = Math.min(configured, bytes.length - offset);
     const { bytesWritten } = await handle.write(bytes, offset, length, offset);
-    if (bytesWritten < 1 || bytesWritten > length) throw new Error("Journal append made no progress.");
+    if (bytesWritten < 1 || bytesWritten > length)
+      throw new Error("Journal append made no progress.");
     offset += bytesWritten;
-    await seams.afterEventWriteChunk?.({ absolutePath, writtenByteLength: offset,
-      totalByteLength: bytes.length });
+    await seams.afterEventWriteChunk?.({
+      absolutePath,
+      writtenByteLength: offset,
+      totalByteLength: bytes.length,
+    });
   }
 }
 
-async function assertReservedPath(
-  reservation: EventReservation,
+async function assertPendingPath(
+  attempt: PendingAttempt,
   handle: FileHandle,
   layout: JournalLayout,
 ): Promise<void> {
-  const events = await directNode(layout.events.absolutePath, "directory");
+  const pending = await directNode(layout.pending.absolutePath, "directory");
   const root = await directNode(layout.root.absolutePath, "directory");
-  assertSameNode(events, layout.events, "Journal events directory");
+  assertSameNode(pending, layout.pending, "Journal pending directory");
   assertSameNode(root, layout.root, "Journal workspace root");
   const descriptor = await handle.stat({ bigint: true });
-  const path = await directNode(reservation.absolutePath, "file", true);
-  if (!grandHallT554V3SameNode(descriptor, reservation.stats) || descriptor.nlink !== 1n ||
-    !grandHallT554V3SameFileState(descriptor, path.stats)) {
-    throw new Error("Reserved journal descriptor lost its direct path binding.");
+  const path = await directNode(attempt.absolutePath, "file", true);
+  if (
+    !grandHallT554V3SameNode(descriptor, attempt.stats) ||
+    descriptor.nlink !== 1n ||
+    !grandHallT554V3SameFileState(descriptor, path.stats)
+  ) {
+    throw new Error(
+      "Pending journal descriptor lost its direct path binding.",
+    );
   }
 }
 
-async function reserveAndWriteEvent(
-  absolutePath: string,
-  fileName: string,
+async function reserveAndWritePending(
   eventSha256: Sha256,
   sequence: number,
   bytes: Buffer,
   layout: JournalLayout,
   seams: __GrandHallT554NativeReviewJournalTestSeams,
-  onReserved: (reservation: EventReservation) => void,
+  onReserved: (attempt: PendingAttempt) => void,
 ): Promise<void> {
+  const token = newQuarantineToken(seams);
+  const pendingName = pendingFileName(sequence, eventSha256, token);
+  const absolutePath = join(layout.pending.absolutePath, pendingName);
   const handle = await open(absolutePath, "wx", 0o600);
   try {
     const stats = await handle.stat({ bigint: true });
     if (!stats.isFile() || stats.nlink !== 1n || stats.size !== 0n) {
-      throw new Error("Reserved journal event is not one empty single-link file.");
+      throw new Error(
+        "Reserved journal pending file is not one empty single-link file.",
+      );
     }
-    const reservation = { absolutePath, fileName, sequence, eventSha256, stats };
-    onReserved(reservation);
-    await assertReservedPath(reservation, handle, layout);
+    const attempt: PendingAttempt = {
+      absolutePath,
+      fileName: eventFileName(sequence, eventSha256),
+      sequence,
+      eventSha256,
+      token,
+      stats,
+    };
+    onReserved(attempt);
+    await assertPendingPath(attempt, handle, layout);
     await seams.afterEventFileReserved?.({ absolutePath, sequence });
-    await assertReservedPath(reservation, handle, layout);
+    await assertPendingPath(attempt, handle, layout);
     await writeAll(handle, bytes, absolutePath, seams);
     await handle.sync();
     await seams.afterEventFileSynced?.({ absolutePath, sequence });
-    await assertReservedPath(reservation, handle, layout);
+    await assertPendingPath(attempt, handle, layout);
     const final = await handle.stat({ bigint: true });
-    if (!grandHallT554V3SameNode(final, stats) || final.size !== BigInt(bytes.length)) {
-      throw new Error("Journal event descriptor length or identity drifted.");
+    if (
+      !grandHallT554V3SameNode(final, stats) ||
+      final.size !== BigInt(bytes.length)
+    ) {
+      throw new Error("Journal pending descriptor length or identity drifted.");
     }
   } finally {
     await handle.close();
   }
 }
 
-function newQuarantineToken(seams: __GrandHallT554NativeReviewJournalTestSeams): string {
+function newQuarantineToken(
+  seams: __GrandHallT554NativeReviewJournalTestSeams,
+): string {
   const token = seams.quarantineToken?.() ?? randomBytes(16).toString("hex");
   if (!/^[0-9a-f]{32}$/u.test(token)) {
-    throw new Error("Quarantine token must be exactly 128 lowercase hexadecimal bits.");
+    throw new Error(
+      "Quarantine token must be exactly 128 lowercase hexadecimal bits.",
+    );
   }
   return token;
 }
 
-function quarantineFileName(
-  disposition: "moved" | "marker",
-  reservation: EventReservation,
+function movedQuarantineFileName(
+  sequence: number,
+  eventSha256: Sha256,
+  token: string,
+  fileByteLength: number,
+  fileSha256: Sha256,
+): string {
+  return `moved-${String(sequence).padStart(EVENT_SEQUENCE_WIDTH, "0")}-${eventSha256.replace(":", "-")}-bytes-${String(fileByteLength)}-${fileSha256.replace(":", "-")}-${token}.json`;
+}
+
+function markerQuarantineFileName(
+  sequence: number,
+  eventSha256: Sha256,
   token: string,
 ): string {
-  return `${disposition}-${String(reservation.sequence).padStart(EVENT_SEQUENCE_WIDTH, "0")}-${reservation.eventSha256.replace(":", "-")}-${token}.json`;
+  return `marker-${String(sequence).padStart(EVENT_SEQUENCE_WIDTH, "0")}-${eventSha256.replace(":", "-")}-${token}.json`;
 }
 
 async function writeExclusiveSynced(
@@ -904,78 +1910,83 @@ async function writeExclusiveSynced(
   }
 }
 
-async function moveReservationToQuarantine(
-  reservation: EventReservation,
-  layout: JournalLayout,
-  seams: __GrandHallT554NativeReviewJournalTestSeams,
-): Promise<boolean> {
-  try {
-    const current = await directNode(reservation.absolutePath, "file", true);
-    if (!grandHallT554V3SameNode(current.stats, reservation.stats)) return false;
-    const name = quarantineFileName("moved", reservation, newQuarantineToken(seams));
-    const destination = join(layout.quarantine.absolutePath, name);
-    try {
-      await lstat(destination);
-      return false;
-    } catch (error) {
-      if (errnoCode(error) !== "ENOENT") throw error;
-    }
-    await rename(reservation.absolutePath, destination);
-    const moved = await directNode(destination, "file", true);
-    if (!grandHallT554V3SameNode(moved.stats, reservation.stats)) {
-      throw new Error("Quarantined journal event identity drifted.");
-    }
-    await syncDirectory(layout.events.absolutePath, "quarantine-source", seams);
-    await syncDirectory(layout.quarantine.absolutePath, "quarantine-destination", seams);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function writeQuarantineMarker(
-  reservation: EventReservation,
+  attempt: PendingAttempt,
   layout: JournalLayout,
+  limits: JournalLimits,
   seams: __GrandHallT554NativeReviewJournalTestSeams,
 ): Promise<void> {
-  const name = quarantineFileName("marker", reservation, newQuarantineToken(seams));
+  const name = markerQuarantineFileName(
+    attempt.sequence,
+    attempt.eventSha256,
+    newQuarantineToken(seams),
+  );
   const absolutePath = join(layout.quarantine.absolutePath, name);
-  const bytes = serializeCanonicalJson(QuarantineMarkerSchema.parse({
-    schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_QUARANTINE_MARKER_SCHEMA,
-    scopeSha256: layout.scopeSha256,
-    sequence: reservation.sequence,
-    attemptedEventFileName: reservation.fileName,
-    attemptedEventSha256: reservation.eventSha256,
-    disposition: "append_ambiguous_no_delete",
-  }));
+  const bytes = serializeCanonicalJson(
+    QuarantineMarkerSchema.parse({
+      schemaVersion:
+        GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_QUARANTINE_MARKER_SCHEMA,
+      scopeSha256: layout.scopeSha256,
+      sequence: attempt.sequence,
+      attemptedEventFileName: attempt.fileName,
+      attemptedEventSha256: attempt.eventSha256,
+      disposition: "append_ambiguous_no_delete",
+    }),
+  );
+  await assertQuarantineCanAccept(layout, bytes.length, limits);
   await writeExclusiveSynced(absolutePath, bytes, async (handle, initial) => {
-    const directory = await directNode(layout.quarantine.absolutePath, "directory");
-    assertSameNode(directory, layout.quarantine, "Journal quarantine directory");
+    const directory = await directNode(
+      layout.quarantine.absolutePath,
+      "directory",
+    );
+    assertSameNode(
+      directory,
+      layout.quarantine,
+      "Journal quarantine directory",
+    );
     const path = await directNode(absolutePath, "file", true);
     const descriptor = await handle.stat({ bigint: true });
-    if (!grandHallT554V3SameNode(initial, descriptor) ||
-      !grandHallT554V3SameFileState(descriptor, path.stats)) {
+    if (
+      !grandHallT554V3SameNode(initial, descriptor) ||
+      !grandHallT554V3SameFileState(descriptor, path.stats)
+    ) {
       throw new Error("Journal quarantine marker lost its path binding.");
     }
   });
-  await syncDirectory(layout.quarantine.absolutePath, "quarantine-marker", seams);
+  await syncDirectory(
+    layout.quarantine.absolutePath,
+    "quarantine-marker",
+    seams,
+  );
 }
 
 async function quarantineFailedAppend(
-  reservation: EventReservation,
+  attempt: PendingAttempt,
   layout: JournalLayout,
+  limits: JournalLimits,
   seams: __GrandHallT554NativeReviewJournalTestSeams,
-): Promise<void> {
-  if (await moveReservationToQuarantine(reservation, layout, seams)) return;
-  await writeQuarantineMarker(reservation, layout, seams);
+): Promise<"moved" | "marker"> {
+  try {
+    await quarantinePendingAttempt(attempt, layout, limits, seams);
+    return "moved";
+  } catch {
+    await writeQuarantineMarker(attempt, layout, limits, seams);
+    return "marker";
+  }
 }
 
 function buildEventUnchecked(
   replay: GrandHallT554NativeReviewJournalReplay,
   input: GrandHallT554NativeReviewJournalAppendInput,
   recordedAtUtc: string,
-): { readonly event: Omit<GrandHallT554NativeReviewJournalEvent,
-  "fileName" | "fileSha256" | "fileByteLength">; readonly bytes: Buffer; readonly fileName: string } {
+): {
+  readonly event: Omit<
+    GrandHallT554NativeReviewJournalEvent,
+    "fileName" | "fileSha256" | "fileByteLength"
+  >;
+  readonly bytes: Buffer;
+  readonly fileName: string;
+} {
   const payload = canonicalJsonValue(input.payload);
   const material = PersistedEventMaterialSchema.parse({
     schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_SCHEMA,
@@ -988,8 +1999,10 @@ function buildEventUnchecked(
     eventType: input.eventType,
     payload,
   });
-  const eventSha256 = semanticSha256(GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_DOMAIN,
-    material);
+  const eventSha256 = semanticSha256(
+    GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_EVENT_DOMAIN,
+    material,
+  );
   const event = { ...material, payload, eventSha256 };
   const bytes = serializeCanonicalJson(event);
   if (bytes.length > GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_MAX_EVENT_BYTES) {
@@ -1023,7 +2036,10 @@ class SerialLane {
 
   run<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.tail.then(operation, operation);
-    this.tail = result.then(() => undefined, () => undefined);
+    this.tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
 }
@@ -1061,6 +2077,7 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
         this.scope,
         this.layout,
         this.limits,
+        this.seams,
       );
       this.layout = result.layout;
       return result.replay;
@@ -1076,9 +2093,13 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
   private async appendSerialized(
     input: GrandHallT554NativeReviewJournalAppendInput,
   ): Promise<GrandHallT554NativeReviewJournalReplay> {
-    if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0) {
+    if (
+      !Number.isSafeInteger(input.expectedRevision) ||
+      input.expectedRevision < 0
+    ) {
       throw new GrandHallT554NativeReviewJournalError(
-        "ARGUMENT_INVALID", "Expected journal revision must be a non-negative safe integer.",
+        "ARGUMENT_INVALID",
+        "Expected journal revision must be a non-negative safe integer.",
       );
     }
     const current = await replayInternal(
@@ -1086,6 +2107,7 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
       this.scope,
       this.layout,
       this.limits,
+      this.seams,
     );
     this.layout = current.layout;
     if (input.expectedRevision !== current.replay.revision) {
@@ -1100,13 +2122,43 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
         "Native-review journal reached its fixed event-count bound.",
       );
     }
-    await this.seams.afterReplayBeforeReserve?.({ workspaceRoot: this.workspaceRoot,
-      revision: current.replay.revision });
-    const now = canonicalUtcInstant(this.seams.nowUtc?.() ?? new Date().toISOString());
-    const previousTime = current.replay.events.at(-1)?.recordedAtUtc;
-    if (previousTime !== undefined && Date.parse(now) < Date.parse(previousTime)) {
+    await this.seams.afterReplayBeforeReserve?.({
+      workspaceRoot: this.workspaceRoot,
+      revision: current.replay.revision,
+    });
+    const now = canonicalUtcInstant(
+      this.seams.nowUtc?.() ?? new Date().toISOString(),
+    );
+    let minimumRecordedAtUtc: string | undefined;
+    try {
+      minimumRecordedAtUtc =
+        input.minimumRecordedAtUtc === undefined
+          ? undefined
+          : canonicalUtcInstant(input.minimumRecordedAtUtc);
+    } catch (error) {
       throw new GrandHallT554NativeReviewJournalError(
-        "JOURNAL_INVALID", "Journal wall clock moved backward before append.",
+        "ARGUMENT_INVALID",
+        "Minimum durable record time must be one canonical UTC millisecond instant.",
+        error,
+      );
+    }
+    const previousTime = current.replay.events.at(-1)?.recordedAtUtc;
+    if (
+      previousTime !== undefined &&
+      Date.parse(now) < Date.parse(previousTime)
+    ) {
+      throw new GrandHallT554NativeReviewJournalError(
+        "JOURNAL_INVALID",
+        "Journal wall clock moved backward before append.",
+      );
+    }
+    if (
+      minimumRecordedAtUtc !== undefined &&
+      Date.parse(now) < Date.parse(minimumRecordedAtUtc)
+    ) {
+      throw new GrandHallT554NativeReviewJournalError(
+        "JOURNAL_INVALID",
+        "Journal wall clock precedes the typed event's server-owned instant.",
       );
     }
     const built = buildEvent(current.replay, input, now);
@@ -1123,45 +2175,147 @@ class NativeReviewJournal implements GrandHallT554NativeReviewJournal {
         "Native-review journal reached its fixed cumulative byte bound.",
       );
     }
-    let reservation: EventReservation | undefined;
+    // The session-root exclusive owner makes this preflight a reservation for
+    // the full attempt. Without that owner, no count/byte preflight can be an
+    // atomic cross-process capacity reservation.
+    await assertQuarantineCanAccept(
+      this.layout,
+      built.bytes.length,
+      this.limits,
+    );
+    let attempt: PendingAttempt | undefined;
+    let claimMayBeCommitted = false;
     try {
-      await reserveAndWriteEvent(
-        join(this.layout.events.absolutePath, built.fileName), built.fileName,
-        built.event.eventSha256, built.event.sequence, built.bytes, this.layout, this.seams,
-        (value) => { reservation = value; },
+      await reserveAndWritePending(
+        built.event.eventSha256,
+        built.event.sequence,
+        built.bytes,
+        this.layout,
+        this.seams,
+        (value) => {
+          attempt = value;
+        },
       );
-      await syncDirectory(this.layout.events.absolutePath, "event-publication", this.seams);
-      await this.seams.afterEventDirectorySynced?.({
-        absolutePath: join(this.layout.events.absolutePath, built.fileName),
+      if (attempt === undefined) {
+        throw new Error("Journal pending reservation was not captured.");
+      }
+      await syncDirectory(
+        this.layout.pending.absolutePath,
+        "pending-publication",
+        this.seams,
+      );
+      const pendingNode = await directNode(attempt.absolutePath, "file");
+      if (!grandHallT554V3SameNode(pendingNode.stats, attempt.stats)) {
+        throw new Error("Journal pending attempt changed before claim.");
+      }
+      const claimPath = join(
+        this.layout.claims.absolutePath,
+        claimFileName(built.event.sequence),
+      );
+      try {
+        await link(attempt.absolutePath, claimPath);
+      } catch (error) {
+        if (errnoCode(error) === "EEXIST") {
+          throw new GrandHallT554NativeReviewJournalError(
+            "REVISION_CONFLICT",
+            `Journal sequence ${String(built.event.sequence)} was claimed by another process.`,
+            error,
+          );
+        }
+        throw error;
+      }
+      claimMayBeCommitted = true;
+      const claimNode = await directNode(claimPath, "file", false, true);
+      if (!grandHallT554V3SameNode(claimNode.stats, attempt.stats)) {
+        throw new Error("Journal claim does not bind the pending attempt.");
+      }
+      await syncDirectory(
+        this.layout.claims.absolutePath,
+        "claim-publication",
+        this.seams,
+      );
+      await this.seams.afterClaimDirectorySynced?.({
+        absolutePath: claimPath,
         sequence: built.event.sequence,
       });
+      const eventPath = join(this.layout.events.absolutePath, built.fileName);
+      await publishHardLinkNoReplace(claimPath, eventPath, attempt.stats);
+      await syncDirectory(
+        this.layout.events.absolutePath,
+        "event-publication",
+        this.seams,
+      );
+      await this.seams.afterEventDirectorySynced?.({
+        absolutePath: eventPath,
+        sequence: built.event.sequence,
+      });
+      await unlinkExactNode(attempt.absolutePath, attempt.stats);
+      await syncDirectory(
+        this.layout.pending.absolutePath,
+        "pending-cleanup",
+        this.seams,
+      );
       const advanced = await replayInternal(
         this.workspaceRoot,
         this.scope,
         this.layout,
         this.limits,
+        this.seams,
       );
-      if (advanced.replay.revision !== current.replay.revision + 1 ||
-        advanced.replay.headEventSha256 !== built.event.eventSha256) {
-        throw new Error("Post-append replay did not advance by the exact event.");
+      const appended = advanced.replay.events[current.replay.revision];
+      if (
+        advanced.replay.revision < current.replay.revision + 1 ||
+        appended?.eventSha256 !== built.event.eventSha256
+      ) {
+        throw new Error(
+          "Post-append replay does not contain the exact claimed event.",
+        );
       }
       this.layout = advanced.layout;
       return advanced.replay;
     } catch (error) {
-      if (reservation === undefined) {
-        if (error instanceof GrandHallT554NativeReviewJournalError) throw error;
+      if (claimMayBeCommitted) {
         throw new GrandHallT554NativeReviewJournalError(
-          "APPEND_FAILED", "Native-review journal append failed before reservation.", error,
+          "APPEND_AMBIGUOUS",
+          "Native-review journal append failed after its no-replace claim may have committed; replay is required.",
+          error,
         );
       }
+      if (attempt === undefined) {
+        if (error instanceof GrandHallT554NativeReviewJournalError) throw error;
+        throw new GrandHallT554NativeReviewJournalError(
+          "APPEND_FAILED",
+          "Native-review journal append failed before reservation.",
+          error,
+        );
+      }
+      let quarantineDisposition: "moved" | "marker";
       try {
-        await quarantineFailedAppend(reservation, this.layout, this.seams);
+        quarantineDisposition = await quarantineFailedAppend(
+          attempt,
+          this.layout,
+          this.limits,
+          this.seams,
+        );
       } catch (quarantineError) {
         throw new GrandHallT554NativeReviewJournalError(
           "APPEND_AMBIGUOUS",
           "Native-review journal append failed and its ambiguity could not be quarantined.",
           { appendError: error, quarantineError },
         );
+      }
+      if (quarantineDisposition === "marker") {
+        throw new GrandHallT554NativeReviewJournalError(
+          "APPEND_AMBIGUOUS",
+          "Native-review journal append failed and required an unresolved ambiguity marker.",
+          error,
+        );
+      }
+      if (
+        error instanceof GrandHallT554NativeReviewJournalError &&
+        error.code === "REVISION_CONFLICT"
+      ) {
+        throw error;
       }
       throw new GrandHallT554NativeReviewJournalError(
         "APPEND_FAILED",
@@ -1183,24 +2337,41 @@ async function createJournal(
   return await lane.run(async () => {
     const root = await assertEmptyFixedRoot(workspaceRoot);
     try {
+      await mkdir(join(workspaceRoot, CLAIMS_DIRECTORY_NAME));
       await mkdir(join(workspaceRoot, EVENTS_DIRECTORY_NAME));
+      await mkdir(join(workspaceRoot, PENDING_DIRECTORY_NAME));
       await mkdir(join(workspaceRoot, QUARANTINE_DIRECTORY_NAME));
       await syncDirectory(workspaceRoot, "layout-directories", seams);
       const scopeDocument = buildScopeDocument(scope);
-      await writeExclusiveSynced(join(workspaceRoot, SCOPE_FILE_NAME), scopeDocument.bytes,
+      await writeExclusiveSynced(
+        join(workspaceRoot, SCOPE_FILE_NAME),
+        scopeDocument.bytes,
         async (handle, initial) => {
           const actualRoot = await directNode(workspaceRoot, "directory");
           assertSameNode(actualRoot, root, "Journal workspace root");
           const descriptor = await handle.stat({ bigint: true });
-          const path = await directNode(join(workspaceRoot, SCOPE_FILE_NAME), "file", true);
-          if (!grandHallT554V3SameNode(initial, descriptor) ||
-            !grandHallT554V3SameFileState(descriptor, path.stats)) {
+          const path = await directNode(
+            join(workspaceRoot, SCOPE_FILE_NAME),
+            "file",
+            true,
+          );
+          if (
+            !grandHallT554V3SameNode(initial, descriptor) ||
+            !grandHallT554V3SameFileState(descriptor, path.stats)
+          ) {
             throw new Error("Journal scope descriptor lost its path binding.");
           }
-        });
+        },
+      );
       await syncDirectory(workspaceRoot, "scope-publication", seams);
       const layout = await loadLayout(workspaceRoot, scope);
-      const replayed = await replayInternal(workspaceRoot, scope, layout, limits);
+      const replayed = await replayInternal(
+        workspaceRoot,
+        scope,
+        layout,
+        limits,
+        seams,
+      );
       return new NativeReviewJournal(
         workspaceRoot,
         scope,
@@ -1230,7 +2401,13 @@ async function openJournal(
   const lane = laneFor(workspaceRoot);
   return await lane.run(async () => {
     const layout = await loadLayout(workspaceRoot, scope);
-    const replayed = await replayInternal(workspaceRoot, scope, layout, limits);
+    const replayed = await replayInternal(
+      workspaceRoot,
+      scope,
+      layout,
+      limits,
+      seams,
+    );
     return new NativeReviewJournal(
       workspaceRoot,
       scope,

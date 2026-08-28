@@ -17,8 +17,10 @@ import {
 } from "../grand-hall-t554-review-pack-v3-contract.js";
 import {
   __testOnlyGrandHallT554NativeReviewRegistry,
+  assertGrandHallT554NativeReviewRegistry,
+  isGrandHallT554NativeReviewRegistry,
   loadGrandHallT554NativeReviewRegistry,
-  type __GrandHallT554NativeReviewRegistryTestAnchor,
+  type __GrandHallT554NativeReviewRegistryCandidateAnchor,
 } from "../grand-hall-t554-native-review-registry.js";
 import {
   createGrandHallT554V3Fixture,
@@ -37,7 +39,7 @@ afterEach(async () => {
 
 interface PublishedFixture {
   readonly fixture: GrandHallT554V3FixtureHarness;
-  readonly anchor: __GrandHallT554NativeReviewRegistryTestAnchor;
+  readonly anchor: __GrandHallT554NativeReviewRegistryCandidateAnchor;
 }
 
 async function publishProductionFixture(): Promise<PublishedFixture> {
@@ -102,7 +104,7 @@ async function publishProductionFixture(): Promise<PublishedFixture> {
 }
 
 function loadPublishedFixture(published: PublishedFixture) {
-  return __testOnlyGrandHallT554NativeReviewRegistry.loadRegistry(
+  return __testOnlyGrandHallT554NativeReviewRegistry.verifyCandidateRegistry(
     {
       reviewPackDirectory: published.fixture.options.outputDirectory,
       panoramaSourceRoot: published.fixture.options.panoramaSourceRoot,
@@ -134,6 +136,28 @@ describe("Grand Hall T-554 native-review v3 registry", () => {
       fileName: registry.sourceAt(0).source.fileName,
       expectedSha256: registry.sourceAt(0).source.sha256,
     });
+    expect(Object.isFrozen(registry)).toBe(true);
+    expect(Object.isFrozen(registry.reviewPack)).toBe(true);
+    expect(Object.isFrozen(registry.sources)).toBe(true);
+    expect(Object.isFrozen(registry.summary)).toBe(true);
+    expect(Object.isFrozen(registry.mediaInputAt(0))).toBe(true);
+    expect(isGrandHallT554NativeReviewRegistry(registry)).toBe(false);
+    expect(() => {
+      assertGrandHallT554NativeReviewRegistry(registry);
+    }).toThrow(/not returned by the exact reviewed v3 loader/u);
+    const clonedData = structuredClone({
+      reviewPack: registry.reviewPack,
+      summary: registry.summary,
+      sources: registry.sources,
+    });
+    expect(isGrandHallT554NativeReviewRegistry(clonedData)).toBe(false);
+    const forged = { ...registry };
+    expect(isGrandHallT554NativeReviewRegistry(forged)).toBe(false);
+    expect(() => {
+      assertGrandHallT554NativeReviewRegistry(forged);
+    }).toThrow(
+      /not returned by the exact reviewed v3 loader/u,
+    );
   });
 
   it("rejects out-of-range source access", async () => {
@@ -226,7 +250,7 @@ describe("Grand Hall T-554 native-review v3 registry", () => {
       writeFile(receiptPath, nextReceiptBytes),
     ]);
     await expect(
-      __testOnlyGrandHallT554NativeReviewRegistry.loadRegistry(
+      __testOnlyGrandHallT554NativeReviewRegistry.verifyCandidateRegistry(
         {
           reviewPackDirectory: directory,
           panoramaSourceRoot: published.fixture.options.panoramaSourceRoot,

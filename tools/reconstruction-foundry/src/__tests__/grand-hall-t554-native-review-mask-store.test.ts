@@ -21,7 +21,12 @@ import {
 } from "../grand-hall-t554-native-media-kernel.js";
 import {
   __testOnlyGrandHallT554NativeMaskRevisionStore,
+  GRAND_HALL_T554_NATIVE_MASK_MAX_CHANGED_TILE_SEALS,
+  GRAND_HALL_T554_NATIVE_MASK_MAX_OWNED_BUFFER_BYTES,
   GRAND_HALL_T554_NATIVE_MASK_MAX_POLYGON_VERTEX_COUNT,
+  GRAND_HALL_T554_NATIVE_MASK_MAX_REVISION,
+  GRAND_HALL_T554_NATIVE_MASK_TILE_HEIGHT_PX,
+  GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX,
   GrandHallT554NativeMaskRevisionStore,
   GrandHallT554NativeMaskStoreError,
   type GrandHallT554NativeMaskFrozenBinding,
@@ -176,6 +181,165 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
     });
   });
 
+  it("commits the exact row-major mask pixels, reasons, and review context", () => {
+    const context = {
+      sessionIdSha256: `sha256:${"a".repeat(64)}`,
+      sourceReviewSubjectSha256: `sha256:${"b".repeat(64)}`,
+      registrySemanticSha256: `sha256:${"c".repeat(64)}`,
+      implementationSemanticSha256: `sha256:${"d".repeat(64)}`,
+    };
+    const firstStore = createStore();
+    firstStore.applyEdit(includeRectangle(0, 10, 10, 13, 12));
+    const first = firstStore.exactStateV2(context);
+
+    const secondStore = createStore();
+    secondStore.applyEdit(includeRectangle(0, 10, 10, 13, 12));
+    const second = secondStore.exactStateV2(context);
+    const transplantedContext = secondStore.exactStateV2({
+      ...context,
+      sessionIdSha256: `sha256:${"e".repeat(64)}`,
+    });
+
+    expect(first).toEqual(second);
+    expect(first).toMatchObject({
+      revision: 1,
+      includedPixelCount: 6,
+      excludedPixelCount: PIXEL_COUNT - 6,
+      pixelTileInventorySha256: expect.stringMatching(
+        /^sha256:[a-f0-9]{64}$/u,
+      ),
+      maskStateSha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+    });
+    expect(transplantedContext.pixelTileInventorySha256).toBe(
+      first.pixelTileInventorySha256,
+    );
+    expect(transplantedContext.maskStateSha256).not.toBe(
+      first.maskStateSha256,
+    );
+  });
+
+  it("commits same-count pixel and reason permutations without exposing tile buffers", () => {
+    const context = {
+      sessionIdSha256: `sha256:${"a".repeat(64)}`,
+      sourceReviewSubjectSha256: `sha256:${"b".repeat(64)}`,
+      registrySemanticSha256: `sha256:${"c".repeat(64)}`,
+      implementationSemanticSha256: `sha256:${"d".repeat(64)}`,
+    };
+    const firstStore = createStore();
+    firstStore.applyEdit(includeRectangle(0, 10, 10, 13, 12));
+    const first = firstStore.exactStateV2(context);
+    const movedStore = createStore();
+    movedStore.applyEdit(includeRectangle(0, 20, 20, 23, 22));
+    const moved = movedStore.exactStateV2(context);
+
+    expect(moved.includedPixelCount).toBe(first.includedPixelCount);
+    expect(moved.excludedPixelCount).toBe(first.excludedPixelCount);
+    expect(moved.reasonCounts).toEqual(first.reasonCounts);
+    expect(moved.pixelTileInventorySha256).not.toBe(
+      first.pixelTileInventorySha256,
+    );
+    expect(moved.maskStateSha256).not.toBe(first.maskStateSha256);
+
+    const firstReasons = createStore();
+    firstReasons.applyEdit(includeRectangle(0, 10, 10, 12, 11));
+    firstReasons.applyEdit(excludeRectangle(
+      1, "adjacent_room_pixels", 10, 10, 11, 11,
+    ));
+    firstReasons.applyEdit(excludeRectangle(
+      2, "facade_or_exterior_pixels", 11, 10, 12, 11,
+    ));
+    const firstReasonState = firstReasons.exactStateV2(context);
+
+    const swappedReasons = createStore();
+    swappedReasons.applyEdit(includeRectangle(0, 10, 10, 12, 11));
+    swappedReasons.applyEdit(excludeRectangle(
+      1, "facade_or_exterior_pixels", 10, 10, 11, 11,
+    ));
+    swappedReasons.applyEdit(excludeRectangle(
+      2, "adjacent_room_pixels", 11, 10, 12, 11,
+    ));
+    const swappedReasonState = swappedReasons.exactStateV2(context);
+
+    expect(swappedReasonState.includedPixelCount).toBe(firstReasonState.includedPixelCount);
+    expect(swappedReasonState.excludedPixelCount).toBe(firstReasonState.excludedPixelCount);
+    expect(swappedReasonState.reasonCounts).toEqual(firstReasonState.reasonCounts);
+    expect(swappedReasonState.pixelTileInventorySha256).not.toBe(
+      firstReasonState.pixelTileInventorySha256,
+    );
+    expect(swappedReasonState.maskStateSha256).not.toBe(firstReasonState.maskStateSha256);
+
+    const prototype = Object.getPrototypeOf(firstStore) as object;
+    for (const oldRuntimePrivateName of [
+      "publicationDirectory",
+      "revisions",
+      "currentRevisionNumber",
+      "activeFrozenBinding",
+      "abandoned",
+      "operationBusy",
+      "ownedBufferBytes",
+      "changedTileSealCount",
+      "assertUsable",
+      "currentRevision",
+      "assertExpectedRevision",
+    ]) {
+      expect(Reflect.get(firstStore, oldRuntimePrivateName)).toBeUndefined();
+      expect(Reflect.get(prototype, oldRuntimePrivateName)).toBeUndefined();
+    }
+  });
+
+  it("rejects non-plain or non-JSON exact-state contexts within fixed traversal bounds", async () => {
+    const store = createStore();
+    let accessorRead = false;
+    const accessor = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(accessor, "value", {
+      enumerable: true,
+      get: () => {
+        accessorRead = true;
+        return 1;
+      },
+    });
+    const sparse: unknown[] = [];
+    sparse.length = 1;
+    const cyclic: { self?: unknown } = {};
+    cyclic.self = cyclic;
+    const symbolKeyed: Record<string, unknown> = {};
+    Object.defineProperty(symbolKeyed, Symbol("hidden"), {
+      enumerable: true,
+      value: 1,
+    });
+    const hidden: Record<string, unknown> = {};
+    Object.defineProperty(hidden, "value", { enumerable: false, value: 1 });
+    const deep: Record<string, unknown> = {};
+    let cursor = deep;
+    for (let depth = 0; depth < 34; depth += 1) {
+      const child: Record<string, unknown> = {};
+      cursor.child = child;
+      cursor = child;
+    }
+
+    const attacks: unknown[] = [
+      new Map([["value", 1]]),
+      new Date(0),
+      { value: undefined },
+      { value: Number.NaN },
+      { value: Number.POSITIVE_INFINITY },
+      { value: Symbol("value") },
+      accessor,
+      sparse,
+      cyclic,
+      symbolKeyed,
+      hidden,
+      deep,
+      Array.from({ length: 8_192 }, () => null),
+      "x".repeat(1_048_577),
+    ];
+    for (const attack of attacks) {
+      await expectStoreCode(() => store.exactStateV2(attack), "ARGUMENT_INVALID");
+    }
+    expect(accessorRead).toBe(false);
+    expect(store.snapshot().revision).toBe(0);
+  });
+
   it("rasterizes rectangles, ordinary polygons, and explicit seam-wrapped shapes at pixel centres", () => {
     const store = createStore();
     store.applyEdit(includeRectangle(0, 10, 10, 13, 12));
@@ -234,6 +398,47 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
       expect(() => store.applyEdit(noOp)).toThrow(/did not change any source-grid pixel/u);
     }
     expect(store.snapshot().revision).toBe(0);
+  });
+
+  it("keeps the maximum revision reachable while bounding cumulative tile-seal work and memory", async () => {
+    expect(GRAND_HALL_T554_NATIVE_MASK_MAX_CHANGED_TILE_SEALS).toBe(
+      GRAND_HALL_T554_NATIVE_MASK_MAX_REVISION,
+    );
+    expect(
+      (GRAND_HALL_T554_NATIVE_MASK_MAX_CHANGED_TILE_SEALS + 1) *
+        GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX *
+        GRAND_HALL_T554_NATIVE_MASK_TILE_HEIGHT_PX * 2,
+    ).toBe(GRAND_HALL_T554_NATIVE_MASK_MAX_OWNED_BUFFER_BYTES);
+
+    const store = createStore();
+    __testOnlyGrandHallT554NativeMaskRevisionStore.setMaximumChangedTileSeals(store, 1);
+    store.applyEdit(includeRectangle(0, 1, 1, 2, 2));
+    await expectStoreCode(
+      () => store.applyEdit(includeRectangle(1, 300, 1, 301, 2)),
+      "RASTER_WORK_LIMIT_REACHED",
+    );
+    expect(store.snapshot()).toMatchObject({ revision: 1, includedPixelCount: 1 });
+    expect(store.pixelForServerRender(1, 1).value).toBe(0);
+    expect(store.pixelForServerRender(300, 1).value).toBe(255);
+  });
+
+  it("constructs path-independent replay-only stores that cannot freeze or publish", async () => {
+    const store = GrandHallT554NativeMaskRevisionStore.createReplayOnly(sourceIdentity());
+    stores.push(store);
+    store.applyEdit(includeRectangle(0, 1, 1, 2, 2));
+
+    expect(store.snapshot()).toMatchObject({ revision: 1, includedPixelCount: 1 });
+    await expectStoreCode(store.freeze({ expectedRevision: 1 }), "PUBLICATION_DISABLED");
+    expect(Reflect.get(store, "publicationDirectory")).toBeUndefined();
+    const invalidReplayConfig = {
+      source: sourceIdentity(),
+      mode: "replay-only" as const,
+      publicationDirectory,
+    };
+    await expectStoreCode(
+      () => new GrandHallT554NativeMaskRevisionStore(invalidReplayConfig),
+      "ARGUMENT_INVALID",
+    );
   });
 
   it("enforces compare-and-swap revision ordering for two writers", async () => {
@@ -346,6 +551,9 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
   it("publishes canonical mask and reason-map PNGs and derives their exact paired facts", async () => {
     const store = createStore();
     store.applyEdit(includeRectangle(0, 0, 0, 2, 2));
+    const exactState = store.exactStateV2({
+      purpose: "frozen-evidence-spatial-binding-regression",
+    });
     const frozen = await store.freeze({ expectedRevision: 1 });
     if (frozen.schemaVersion !== "venviewer.grand-hall-t554-native-mask-frozen-binding.v2") {
       throw new Error("real native mask store did not emit v2 evidence");
@@ -376,7 +584,7 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
     });
     expect(legacyVerified).toMatchObject({ kind: "frozen_binary_mask", includedPixelCount: 4 });
     await legacyVerified.destroy();
-    await expect(verifyGrandHallT554NativeMaskEvidence({
+    const pairedEvidence = await verifyGrandHallT554NativeMaskEvidence({
       sourceRoot: publicationDirectory,
       fileName: frozen.fileName,
       expectedSha256: frozen.sha256,
@@ -386,11 +594,15 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
       fileName: frozen.reasonMap.fileName,
       expectedSha256: frozen.reasonMap.sha256,
       expectedByteLength: frozen.reasonMap.byteLength,
-    })).resolves.toMatchObject({
+    });
+    expect(pairedEvidence).toMatchObject({
       includedPixelCount: 4,
       excludedPixelCount: PIXEL_COUNT - 4,
       reasonSampleCounts: [4, 0, 0, 0, 0, PIXEL_COUNT - 4],
     });
+    expect(pairedEvidence.pixelTileInventorySha256).toBe(
+      exactState.pixelTileInventorySha256,
+    );
   }, 30_000);
 
   it("reopens both cached evidence files and rejects deletion or tampering", async () => {
@@ -475,22 +687,44 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
     expect(second.source.inventoryIndex).toBe(1);
   }, 30_000);
 
-  it("zeroes every unique owned revision buffer before abandoning it", async () => {
+  it("zeroes every unique owned revision buffer before abandoning it without exposing buffers", async () => {
     const store = createStore();
     store.applyEdit(includeRectangle(0, 1, 1, 2, 2));
     store.applyEdit(excludeRectangle(1, "adjacent_room_pixels", 300, 300, 301, 301));
-    const destroyed: Buffer[] = [];
+    const destroyed: Array<{ readonly byteLength: number; readonly allZero: true }> = [];
     __testOnlyGrandHallT554NativeMaskRevisionStore.observeBufferZeroing(
       store,
-      (buffer) => { destroyed.push(buffer); },
+      (facts) => { destroyed.push(facts); },
     );
 
     store.abandon();
 
     expect(destroyed.length).toBeGreaterThanOrEqual(6);
-    expect(new Set(destroyed).size).toBe(destroyed.length);
-    expect(destroyed.every((buffer) => buffer.every((sample) => sample === 0))).toBe(true);
+    expect(destroyed.every((facts) => facts.allZero)).toBe(true);
+    expect(destroyed.every((facts) => facts.byteLength ===
+      GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX *
+      GRAND_HALL_T554_NATIVE_MASK_TILE_HEIGHT_PX)).toBe(true);
+    expect(destroyed.every((facts) => !Buffer.isBuffer(facts))).toBe(true);
     await expectStoreCode(() => store.snapshot(), "STORE_ABANDONED");
+  });
+
+  it("makes abandon terminal and completes cleanup when a cleanup observer throws", async () => {
+    const store = createStore();
+    store.applyEdit(includeRectangle(0, 1, 1, 2, 2));
+    store.applyEdit(includeRectangle(1, 300, 300, 301, 301));
+    let cleanupCount = 0;
+    __testOnlyGrandHallT554NativeMaskRevisionStore.observeBufferZeroing(
+      store,
+      () => {
+        cleanupCount += 1;
+        if (cleanupCount === 1) throw new Error("injected cleanup observer failure");
+      },
+    );
+
+    await expectStoreCode(() => { store.abandon(); }, "INTERNAL_INVARIANT_FAILED");
+    expect(cleanupCount).toBeGreaterThanOrEqual(6);
+    await expectStoreCode(() => store.snapshot(), "STORE_ABANDONED");
+    await expectStoreCode(() => { store.abandon(); }, "STORE_ABANDONED");
   });
 
   it("rejects invalid source/index bindings and browser-controlled publication paths", async () => {

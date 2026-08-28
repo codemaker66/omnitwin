@@ -1,0 +1,6 @@
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+  "-C", "target-feature=+crt-static",
+  "-C", "link-arg=/Brepro",
+  "-C", "link-arg=/PDBALTPATH:grand_hall_t554_runtime_inspector.pdb",
+]

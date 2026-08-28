@@ -907,6 +907,7 @@ async function verifyMaskEvidence(
       includedPixelCount: facts.includedPixelCount,
       excludedPixelCount: facts.excludedPixelCount,
       reasonSampleCounts: facts.reasonSampleCounts,
+      pixelTileInventorySha256: facts.pixelTileInventorySha256,
     });
   } catch (error) {
     operationError = error;
@@ -973,7 +974,7 @@ export function openGrandHallT554PinnedNativeSourceJpeg(
   return openPinnedSourceJpeg(input, {});
 }
 
-export const __testOnlyGrandHallT554NativeMediaKernel = Object.freeze({
+export const __testOnlyGrandHallT554NativeMediaKernel = /* @__PURE__ */ Object.freeze({
   verifySourceJpeg,
   verifyMaskPng,
   verifyMaskEvidence,

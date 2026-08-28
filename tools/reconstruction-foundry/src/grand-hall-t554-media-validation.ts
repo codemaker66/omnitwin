@@ -4,6 +4,8 @@ import {
 } from "@omnitwin/types";
 import sharp from "sharp";
 
+import { deriveGrandHallT554NativeMaskSpatialFactsV2 } from "./grand-hall-t554-native-mask-spatial-digest-v2.js";
+
 export const GRAND_HALL_T554_MASK_PNG_MAX_BYTES = 64 * 1024 * 1024;
 export const GRAND_HALL_T554_SOURCE_JPEG_MAX_BYTES = 256 * 1024 * 1024;
 
@@ -43,7 +45,10 @@ export interface GrandHallT554MaskReasonMapCounts {
 
 export interface GrandHallT554MaskEvidencePixelCounts extends
   GrandHallT554MaskPixelCounts,
-  GrandHallT554MaskReasonMapCounts {}
+  GrandHallT554MaskReasonMapCounts {
+  /** Exact v2 spatial commitment; comparable with mask-store exactStateV2(). */
+  readonly pixelTileInventorySha256: `sha256:${string}`;
+}
 
 interface GrandHallT554MaskValidationTestSeam {
   readonly afterDecodedBuffersDestroyed?: (facts: {
@@ -306,29 +311,7 @@ async function validateMaskEvidencePngBytes(
   try {
     maskPixels = await decodeStrictGrayscalePng(maskBytes);
     reasonPixels = await decodeStrictGrayscalePng(reasonMapBytes);
-    const reasonSampleCounts = [0, 0, 0, 0, 0, 0];
-    let includedPixelCount = 0;
-    let excludedPixelCount = 0;
-    for (let offset = 0; offset < PANORAMA_PIXEL_COUNT; offset += 1) {
-      const mask = maskPixels[offset];
-      const reason = reasonPixels[offset];
-      if (mask === 0 && reason === 0) {
-        includedPixelCount += 1;
-        reasonSampleCounts[0] = (reasonSampleCounts[0] ?? 0) + 1;
-      } else if (mask === 255 && reason !== undefined && reason >= 1 && reason <= 5) {
-        excludedPixelCount += 1;
-        reasonSampleCounts[reason] = (reasonSampleCounts[reason] ?? 0) + 1;
-      } else {
-        throw new Error(
-          `binary mask and reason map disagree at source-grid offset ${String(offset)}`,
-        );
-      }
-    }
-    return {
-      includedPixelCount,
-      excludedPixelCount,
-      reasonSampleCounts: reasonSampleCountTuple(reasonSampleCounts),
-    };
+    return deriveGrandHallT554NativeMaskSpatialFactsV2(maskPixels, reasonPixels);
   } finally {
     maskPixels?.fill(0);
     reasonPixels?.fill(0);
@@ -347,6 +330,6 @@ export function validateGrandHallT554MaskEvidencePngBytes(
   return validateMaskEvidencePngBytes(maskBytes, reasonMapBytes, {});
 }
 
-export const __testOnlyGrandHallT554MediaValidation = Object.freeze({
+export const __testOnlyGrandHallT554MediaValidation = /* @__PURE__ */ Object.freeze({
   validateMaskEvidencePngBytes,
 });

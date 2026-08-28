@@ -19,15 +19,27 @@ import {
   validateGrandHallT554MaskPngBytes,
   validateGrandHallT554MaskReasonMapPngBytes,
 } from "./grand-hall-t554-media-validation.js";
+import {
+  computeGrandHallT554NativeMaskPixelTileInventorySha256V2,
+  computeGrandHallT554NativeMaskTileDigestPairV2,
+  GRAND_HALL_T554_NATIVE_MASK_TILE_HEIGHT_PX,
+  GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX,
+} from "./grand-hall-t554-native-mask-spatial-digest-v2.js";
 import { verifyGrandHallT554NativeMaskEvidence } from "./grand-hall-t554-native-media-kernel.js";
+
+export {
+  GRAND_HALL_T554_NATIVE_MASK_TILE_HEIGHT_PX,
+  GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX,
+} from "./grand-hall-t554-native-mask-spatial-digest-v2.js";
 
 export const GRAND_HALL_T554_NATIVE_MASK_STORE_V1 =
   "venviewer.grand-hall-t554-native-mask-store.v1";
-export const GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX = 256;
-export const GRAND_HALL_T554_NATIVE_MASK_TILE_HEIGHT_PX = 256;
+export const GRAND_HALL_T554_NATIVE_MASK_RASTERIZER_V2 =
+  "venviewer.grand-hall-t554-native-mask-rasterizer.integer-pixel-centres.v2";
 export const GRAND_HALL_T554_NATIVE_MASK_MAX_POLYGON_VERTEX_COUNT = 512;
-export const GRAND_HALL_T554_NATIVE_MASK_MAX_REVISION = 4_096;
+export const GRAND_HALL_T554_NATIVE_MASK_MAX_REVISION = 4_095;
 export const GRAND_HALL_T554_NATIVE_MASK_MAX_OWNED_BUFFER_BYTES = 512 * 1_024 * 1_024;
+export const GRAND_HALL_T554_NATIVE_MASK_MAX_CHANGED_TILE_SEALS = 4_095;
 
 export const GRAND_HALL_T554_NATIVE_MASK_REASON_CODES = [
   "adjacent_room_pixels",
@@ -47,8 +59,10 @@ export type GrandHallT554NativeMaskStoreErrorCode =
   | "NO_CHANGE"
   | "REVISION_LIMIT_REACHED"
   | "REVISION_STORAGE_LIMIT_REACHED"
+  | "RASTER_WORK_LIMIT_REACHED"
   | "OPERATION_BUSY"
   | "STORE_ABANDONED"
+  | "PUBLICATION_DISABLED"
   | "PUBLICATION_EXISTS"
   | "PUBLICATION_INVALID"
   | "ENCODING_INVALID"
@@ -68,10 +82,19 @@ export class GrandHallT554NativeMaskStoreError extends Error {
   }
 }
 
-export interface GrandHallT554NativeMaskStoreConfig {
+export interface GrandHallT554NativeMaskPublishingStoreConfig {
   readonly source: GrandHallPanoramaSourceJpgIdentityV2;
   readonly publicationDirectory: string;
 }
+
+export interface GrandHallT554NativeMaskReplayOnlyStoreConfig {
+  readonly source: GrandHallPanoramaSourceJpgIdentityV2;
+  readonly mode: "replay-only";
+}
+
+export type GrandHallT554NativeMaskStoreConfig =
+  | GrandHallT554NativeMaskPublishingStoreConfig
+  | GrandHallT554NativeMaskReplayOnlyStoreConfig;
 
 export interface GrandHallT554NativeMaskReasonCount {
   readonly reasonCode: GrandHallT554NativeMaskReasonCode;
@@ -140,6 +163,19 @@ export interface GrandHallT554NativeMaskStoreSnapshot {
   readonly activeFrozenBinding: GrandHallT554NativeMaskFrozenBinding | null;
 }
 
+export interface GrandHallT554NativeMaskExactStateV2 {
+  readonly schemaVersion: "venviewer.grand-hall-t554-native-mask-exact-state.v2";
+  readonly rasterizerVersion: typeof GRAND_HALL_T554_NATIVE_MASK_RASTERIZER_V2;
+  readonly revision: number;
+  readonly widthPx: typeof GRAND_HALL_PANORAMA_WIDTH_PX;
+  readonly heightPx: typeof GRAND_HALL_PANORAMA_HEIGHT_PX;
+  readonly includedPixelCount: number;
+  readonly excludedPixelCount: number;
+  readonly reasonCounts: readonly GrandHallT554NativeMaskReasonCount[];
+  readonly pixelTileInventorySha256: `sha256:${string}`;
+  readonly maskStateSha256: `sha256:${string}`;
+}
+
 export interface GrandHallT554NativeMaskPixel {
   readonly value: 0 | 255;
   readonly reasonCode: GrandHallT554NativeMaskReasonCode | null;
@@ -155,6 +191,11 @@ const TILE_PIXEL_COUNT =
   GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX *
   GRAND_HALL_T554_NATIVE_MASK_TILE_HEIGHT_PX;
 const UNKNOWN_REASON_SAMPLE = GRAND_HALL_T554_NATIVE_MASK_REASON_CODES.length;
+const MASK_EXACT_STATE_DIGEST_DOMAIN =
+  "VENVIEWER_GRAND_HALL_T554_NATIVE_MASK_EXACT_STATE_V2";
+const EXACT_CONTEXT_MAX_DEPTH = 32;
+const EXACT_CONTEXT_MAX_NODE_COUNT = 8_192;
+const EXACT_CONTEXT_MAX_UTF8_BYTES = 1_048_576;
 const CANONICAL_OUTPUT_BASENAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,254}$/u;
 const WINDOWS_DRIVE_ROOT_PATTERN = /^[A-Za-z]:[\\/](?![\\/])/u;
 const REASON_SAMPLE_CODEBOOK = Object.freeze([
@@ -248,7 +289,21 @@ interface Point {
   readonly y: number;
 }
 
+interface ExactTileFactsV2 {
+  readonly includedPixelCount: number;
+  readonly excludedPixelCount: number;
+  readonly reasonCounts: readonly number[];
+  readonly maskSha256: `sha256:${string}`;
+  readonly reasonSha256: `sha256:${string}`;
+}
+
 interface TileState {
+  readonly mask: Buffer;
+  readonly reasons: Buffer;
+  readonly exactFacts: ExactTileFactsV2;
+}
+
+interface MutableTileState {
   readonly mask: Buffer;
   readonly reasons: Buffer;
 }
@@ -262,8 +317,8 @@ interface MaskRevision {
 }
 
 interface MutableRevision {
-  readonly tiles: TileState[];
-  readonly clonedTileIndexes: Set<number>;
+  readonly tiles: Array<TileState | MutableTileState>;
+  readonly clonedTiles: Map<number, MutableTileState>;
   includedPixelCount: number;
   excludedPixelCount: number;
   readonly reasonCounts: number[];
@@ -281,7 +336,10 @@ interface Intersection {
 }
 
 interface GrandHallT554NativeMaskStoreTestSeam {
-  readonly afterBufferZeroed?: (buffer: Buffer) => void;
+  readonly afterBufferZeroed?: (facts: {
+    readonly byteLength: number;
+    readonly allZero: true;
+  }) => void;
   readonly beforePublicationDirectorySync?: (
     publicationDirectory: string,
   ) => Promise<void> | void;
@@ -289,12 +347,30 @@ interface GrandHallT554NativeMaskStoreTestSeam {
     readonly publicationDirectory: string;
     readonly mode: GrandHallT554NativeMaskPublicationDurability;
   }) => Promise<void> | void;
+  readonly maximumChangedTileSeals?: number;
 }
 
 const TEST_SEAMS = new WeakMap<
   GrandHallT554NativeMaskRevisionStore,
   GrandHallT554NativeMaskStoreTestSeam
 >();
+
+interface CanonicalJsonObject {
+  readonly [key: string]: CanonicalJsonValue;
+}
+
+type CanonicalJsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly CanonicalJsonValue[]
+  | CanonicalJsonObject;
+
+interface CanonicalTraversalBudget {
+  nodeCount: number;
+  utf8Bytes: number;
+}
 
 function fail(
   code: GrandHallT554NativeMaskStoreErrorCode,
@@ -310,16 +386,168 @@ function cloneSource(
   return structuredClone(source);
 }
 
-function parseConfig(
-  config: unknown,
-): { readonly source: GrandHallPanoramaSourceJpgIdentityV2; readonly publicationDirectory: string } {
-  if (
-    typeof config !== "object" || config === null ||
-    !("source" in config) || !("publicationDirectory" in config)
-  ) {
-    throw fail("ARGUMENT_INVALID", "native mask store configuration must be an object");
+function canonicalFailure(message: string): GrandHallT554NativeMaskStoreError {
+  return fail("ARGUMENT_INVALID", `native mask exact-state context ${message}`);
+}
+
+function consumeCanonicalBudget(
+  budget: CanonicalTraversalBudget,
+  utf8Bytes: number,
+): void {
+  budget.nodeCount += 1;
+  budget.utf8Bytes += utf8Bytes;
+  if (budget.nodeCount > EXACT_CONTEXT_MAX_NODE_COUNT) {
+    throw canonicalFailure("exceeds the bounded node count");
   }
-  const parsed = GrandHallPanoramaSourceJpgIdentityV2Schema.safeParse(config.source);
+  if (budget.utf8Bytes > EXACT_CONTEXT_MAX_UTF8_BYTES) {
+    throw canonicalFailure("exceeds the bounded UTF-8 byte count");
+  }
+}
+
+function canonicalizePlainJson(
+  value: unknown,
+  budget: CanonicalTraversalBudget,
+  ancestors: Set<object>,
+  depth: number,
+): CanonicalJsonValue {
+  if (depth > EXACT_CONTEXT_MAX_DEPTH) {
+    throw canonicalFailure("exceeds the bounded nesting depth");
+  }
+  if (value === null) {
+    consumeCanonicalBudget(budget, 0);
+    return null;
+  }
+  if (typeof value === "boolean") {
+    consumeCanonicalBudget(budget, 0);
+    return value;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw canonicalFailure("contains a non-finite number");
+    }
+    consumeCanonicalBudget(budget, 0);
+    return Object.is(value, -0) ? 0 : value;
+  }
+  if (typeof value === "string") {
+    consumeCanonicalBudget(budget, Buffer.byteLength(value, "utf8"));
+    return value;
+  }
+  if (typeof value !== "object") {
+    throw canonicalFailure(`contains unsupported ${typeof value} data`);
+  }
+  if (ancestors.has(value)) {
+    throw canonicalFailure("contains a cycle");
+  }
+  const prototype = Reflect.getPrototypeOf(value);
+  const isArray = Array.isArray(value);
+  if (
+    (!isArray && prototype !== Object.prototype && prototype !== null) ||
+    (isArray && prototype !== Array.prototype)
+  ) {
+    throw canonicalFailure("must contain only arrays and plain objects");
+  }
+  if (Object.getOwnPropertySymbols(value).length !== 0) {
+    throw canonicalFailure("contains symbol-keyed data");
+  }
+  ancestors.add(value);
+  try {
+    if (isArray) {
+      if (value.length > EXACT_CONTEXT_MAX_NODE_COUNT) {
+        throw canonicalFailure("contains an oversized array");
+      }
+      const names = Object.getOwnPropertyNames(value);
+      if (names.length !== value.length + 1 || !names.includes("length")) {
+        throw canonicalFailure("contains a sparse or decorated array");
+      }
+      consumeCanonicalBudget(budget, 0);
+      const output: CanonicalJsonValue[] = [];
+      for (let index = 0; index < value.length; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (
+          descriptor === undefined ||
+          !("value" in descriptor) ||
+          descriptor.enumerable !== true
+        ) {
+          throw canonicalFailure("contains a sparse or accessor-backed array");
+        }
+        output.push(
+          canonicalizePlainJson(
+            descriptor.value,
+            budget,
+            ancestors,
+            depth + 1,
+          ),
+        );
+      }
+      return output;
+    }
+
+    const names = Object.getOwnPropertyNames(value);
+    consumeCanonicalBudget(
+      budget,
+      names.reduce((sum, key) => sum + Buffer.byteLength(key, "utf8"), 0),
+    );
+    const output = Object.create(null) as Record<string, CanonicalJsonValue>;
+    for (const key of names) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (
+        descriptor === undefined ||
+        !("value" in descriptor) ||
+        descriptor.enumerable !== true
+      ) {
+        throw canonicalFailure("contains non-enumerable or accessor-backed data");
+      }
+      Object.defineProperty(output, key, {
+        configurable: false,
+        enumerable: true,
+        writable: false,
+        value: canonicalizePlainJson(
+          descriptor.value,
+          budget,
+          ancestors,
+          depth + 1,
+        ),
+      });
+    }
+    return output;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function toBoundedCanonicalJson(value: unknown): CanonicalJsonValue {
+  try {
+    return canonicalizePlainJson(
+      value,
+      { nodeCount: 0, utf8Bytes: 0 },
+      new Set<object>(),
+      0,
+    );
+  } catch (error) {
+    if (error instanceof GrandHallT554NativeMaskStoreError) throw error;
+    throw canonicalFailure("could not be inspected as bounded canonical JSON");
+  }
+}
+
+function stableBoundedCanonicalJson(value: CanonicalJsonValue): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean" || typeof value === "number" ||
+    typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableBoundedCanonicalJson).join(",")}]`;
+  }
+  const object = value as CanonicalJsonObject;
+  return `{${Object.keys(object).sort().map((key) =>
+    `${JSON.stringify(key)}:${stableBoundedCanonicalJson(object[key] ?? null)}`
+  ).join(",")}}`;
+}
+
+function parseSource(
+  input: unknown,
+): GrandHallPanoramaSourceJpgIdentityV2 {
+  const parsed = GrandHallPanoramaSourceJpgIdentityV2Schema.safeParse(input);
   if (!parsed.success) {
     throw fail("SOURCE_BINDING_INVALID", parsed.error.issues.map((issue) => issue.message).join("; "));
   }
@@ -332,6 +560,41 @@ function parseConfig(
   ) {
     throw fail("SOURCE_BINDING_INVALID", "mask store source does not bind one exact supplied panorama row");
   }
+  return Object.freeze(cloneSource(source));
+}
+
+function parseConfig(
+  config: unknown,
+): {
+  readonly source: GrandHallPanoramaSourceJpgIdentityV2;
+  readonly publicationDirectory: string | null;
+  readonly replayOnly: boolean;
+} {
+  if (
+    typeof config !== "object" || config === null ||
+    !("source" in config)
+  ) {
+    throw fail("ARGUMENT_INVALID", "native mask store configuration must be an object");
+  }
+  const keys = Object.keys(config).sort();
+  if ("mode" in config) {
+    if (
+      config.mode !== "replay-only" ||
+      keys.length !== 2 || keys[0] !== "mode" || keys[1] !== "source"
+    ) {
+      throw fail("ARGUMENT_INVALID", "replay-only mask configuration must contain only source and mode");
+    }
+    return {
+      source: parseSource(config.source),
+      publicationDirectory: null,
+      replayOnly: true,
+    };
+  }
+  if (!("publicationDirectory" in config) ||
+    keys.length !== 2 || keys[0] !== "publicationDirectory" || keys[1] !== "source") {
+    throw fail("ARGUMENT_INVALID", "publishing mask configuration must contain only source and publicationDirectory");
+  }
+  const source = parseSource(config.source);
   if (
     typeof config.publicationDirectory !== "string" ||
     !isAbsolute(config.publicationDirectory) ||
@@ -345,8 +608,8 @@ function parseConfig(
       "mask publication directory must be one absolute local-drive server path",
     );
   }
-  return { source: Object.freeze(cloneSource(source)),
-    publicationDirectory: resolve(config.publicationDirectory) };
+  return { source,
+    publicationDirectory: resolve(config.publicationDirectory), replayOnly: false };
 }
 
 function parseEdit(input: unknown): MaskEditRequest {
@@ -389,7 +652,7 @@ function reasonCountObjects(counts: readonly number[]): readonly GrandHallT554Na
 function initialRevision(): MaskRevision {
   const mask = Buffer.alloc(TILE_PIXEL_COUNT, 255);
   const reasons = Buffer.alloc(TILE_PIXEL_COUNT, UNKNOWN_REASON_SAMPLE);
-  const shared = Object.freeze({ mask, reasons });
+  const shared = sealTileState(mask, reasons);
   const reasonCounts = Array.from(
     { length: GRAND_HALL_T554_NATIVE_MASK_REASON_CODES.length + 1 },
     (_, index) => index === UNKNOWN_REASON_SAMPLE ? PIXEL_COUNT : 0,
@@ -401,7 +664,7 @@ function initialRevision(): MaskRevision {
 }
 
 function mutableRevision(revision: MaskRevision): MutableRevision {
-  return { tiles: [...revision.tiles], clonedTileIndexes: new Set<number>(),
+  return { tiles: [...revision.tiles], clonedTiles: new Map<number, MutableTileState>(),
     includedPixelCount: revision.includedPixelCount,
     excludedPixelCount: revision.excludedPixelCount,
     reasonCounts: [...revision.reasonCounts] };
@@ -416,19 +679,20 @@ function tileIndexAndOffset(x: number, y: number): { readonly tileIndex: number;
     offset: localY * GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX + localX };
 }
 
-function writableTile(revision: MutableRevision, tileIndex: number): TileState {
+function writableTile(revision: MutableRevision, tileIndex: number): MutableTileState {
   const current = revision.tiles[tileIndex];
   if (current === undefined) throw fail("INTERNAL_INVARIANT_FAILED", "mask tile is absent");
-  if (revision.clonedTileIndexes.has(tileIndex)) return current;
-  const cloned = Object.freeze({ mask: Buffer.from(current.mask), reasons: Buffer.from(current.reasons) });
+  const existing = revision.clonedTiles.get(tileIndex);
+  if (existing !== undefined) return existing;
+  const cloned = { mask: Buffer.from(current.mask), reasons: Buffer.from(current.reasons) };
   revision.tiles[tileIndex] = cloned;
-  revision.clonedTileIndexes.add(tileIndex);
+  revision.clonedTiles.set(tileIndex, cloned);
   return cloned;
 }
 
 function applyPixel(
   revision: MutableRevision,
-  tile: TileState,
+  tile: MutableTileState,
   offset: number,
   operation: "include" | "exclude",
   excludedReasonSample: number,
@@ -491,7 +755,7 @@ function applyTileRun(
   if (current === undefined) throw fail("INTERNAL_INVARIANT_FAILED", "mask tile is absent");
   const newMask = operation === "include" ? 0 : 255;
   const newReason = operation === "include" ? 0 : excludedReasonSample;
-  let changeRequired = revision.clonedTileIndexes.has(tileIndex);
+  let changeRequired = revision.clonedTiles.has(tileIndex);
   for (let offset = startOffset; !changeRequired && offset < endOffset; offset += 1) {
     changeRequired = current.mask[offset] !== newMask || current.reasons[offset] !== newReason;
   }
@@ -503,10 +767,9 @@ function applyTileRun(
 }
 
 function zeroClonedRevisionBuffers(revision: MutableRevision): void {
-  revision.clonedTileIndexes.forEach((tileIndex) => {
-    const tile = revision.tiles[tileIndex];
-    tile?.mask.fill(0);
-    tile?.reasons.fill(0);
+  revision.clonedTiles.forEach((tile) => {
+    tile.mask.fill(0);
+    tile.reasons.fill(0);
   });
 }
 
@@ -748,42 +1011,66 @@ function applyPrimitive(
 }
 
 function sealRevision(revision: MutableRevision, revisionNumber: number): MaskRevision {
+  const tiles = revision.tiles.map((tile, tileIndex) => {
+    const mutable = revision.clonedTiles.get(tileIndex);
+    if (mutable !== undefined) return sealTileState(mutable.mask, mutable.reasons);
+    if (!("exactFacts" in tile)) {
+      throw fail("INTERNAL_INVARIANT_FAILED", "unchanged mask tile is not sealed");
+    }
+    return tile;
+  });
+  const derived = deriveRevisionFactsFromTileCommitments(tiles);
+  if (
+    derived.includedPixelCount !== revision.includedPixelCount ||
+    derived.excludedPixelCount !== revision.excludedPixelCount ||
+    derived.reasonCounts.some((count, index) =>
+      count !== (revision.reasonCounts[index] ?? 0))
+  ) {
+    tiles.forEach((tile, tileIndex) => {
+      if (revision.clonedTiles.has(tileIndex)) {
+        tile.mask.fill(0);
+        tile.reasons.fill(0);
+      }
+    });
+    throw fail("INTERNAL_INVARIANT_FAILED", "sealed mask tile facts disagree with the edited revision");
+  }
   return Object.freeze({ revision: revisionNumber,
-    tiles: Object.freeze([...revision.tiles]),
+    tiles: Object.freeze(tiles),
     includedPixelCount: revision.includedPixelCount,
     excludedPixelCount: revision.excludedPixelCount,
     reasonCounts: Object.freeze([...revision.reasonCounts]) });
 }
 
-function deriveRevisionFacts(revision: MaskRevision): DerivedRevisionFacts {
+function deriveRevisionFactsFromTileCommitments(
+  tiles: readonly TileState[],
+): DerivedRevisionFacts {
   let includedPixelCount = 0;
   let excludedPixelCount = 0;
   const reasonCounts = Array.from(
     { length: GRAND_HALL_T554_NATIVE_MASK_REASON_CODES.length + 1 },
     () => 0,
   );
-  revision.tiles.forEach((tile) => {
-    for (let offset = 0; offset < TILE_PIXEL_COUNT; offset += 1) {
-      const mask = tile.mask[offset];
-      const reason = tile.reasons[offset];
-      if (mask === 0 && reason === 0) includedPixelCount += 1;
-      else if (mask === 255 && reason !== undefined && reason > 0 && reason <= UNKNOWN_REASON_SAMPLE) {
-        excludedPixelCount += 1;
-        reasonCounts[reason] = (reasonCounts[reason] ?? 0) + 1;
-      } else {
-        throw fail("INTERNAL_INVARIANT_FAILED", "mask and exclusion-reason planes disagree");
-      }
-    }
+  tiles.forEach((tile) => {
+    includedPixelCount += tile.exactFacts.includedPixelCount;
+    excludedPixelCount += tile.exactFacts.excludedPixelCount;
+    tile.exactFacts.reasonCounts.forEach((count, index) => {
+      reasonCounts[index] = (reasonCounts[index] ?? 0) + count;
+    });
   });
+  return { includedPixelCount, excludedPixelCount,
+    reasonCounts: Object.freeze(reasonCounts) };
+}
+
+function deriveRevisionFacts(revision: MaskRevision): DerivedRevisionFacts {
+  const derived = deriveRevisionFactsFromTileCommitments(revision.tiles);
   if (
-    includedPixelCount !== revision.includedPixelCount ||
-    excludedPixelCount !== revision.excludedPixelCount ||
-    reasonCounts.some((count, index) => count !== (revision.reasonCounts[index] ?? 0))
+    derived.includedPixelCount !== revision.includedPixelCount ||
+    derived.excludedPixelCount !== revision.excludedPixelCount ||
+    derived.reasonCounts.some((count, index) => count !== (revision.reasonCounts[index] ?? 0))
   ) {
     throw fail("INTERNAL_INVARIANT_FAILED", "stored mask revision counts drifted from exact pixels");
   }
-  return { includedPixelCount, excludedPixelCount,
-    reasonCounts: Object.freeze(reasonCounts) };
+  return derived;
 }
 
 function flattenPlane(revision: MaskRevision, plane: "mask" | "reasons"): Buffer {
@@ -881,6 +1168,67 @@ function encodeCanonicalReasonMap(reasons: Buffer): Promise<Buffer> {
 
 function sha256(bytes: Buffer): `sha256:${string}` {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function domainDigest(
+  domain: string,
+  value: unknown,
+): `sha256:${string}` {
+  const canonical = toBoundedCanonicalJson(value);
+  return `sha256:${createHash("sha256")
+    .update(
+      `${domain}\n${stableBoundedCanonicalJson(canonical)}`,
+      "utf8",
+    )
+    .digest("hex")}`;
+}
+
+function sealTileState(mask: Buffer, reasons: Buffer): TileState {
+  if (mask.length !== TILE_PIXEL_COUNT || reasons.length !== TILE_PIXEL_COUNT) {
+    throw fail("INTERNAL_INVARIANT_FAILED", "mask tile byte length is not exact");
+  }
+  let includedPixelCount = 0;
+  let excludedPixelCount = 0;
+  const reasonCounts = Array.from(
+    { length: GRAND_HALL_T554_NATIVE_MASK_REASON_CODES.length + 1 },
+    () => 0,
+  );
+  for (let offset = 0; offset < TILE_PIXEL_COUNT; offset += 1) {
+    const maskSample = mask[offset];
+    const reasonSampleValue = reasons[offset];
+    if (maskSample === 0 && reasonSampleValue === 0) {
+      includedPixelCount += 1;
+    } else if (
+      maskSample === 255 && reasonSampleValue !== undefined &&
+      reasonSampleValue > 0 && reasonSampleValue <= UNKNOWN_REASON_SAMPLE
+    ) {
+      excludedPixelCount += 1;
+      reasonCounts[reasonSampleValue] =
+        (reasonCounts[reasonSampleValue] ?? 0) + 1;
+    } else {
+      throw fail("INTERNAL_INVARIANT_FAILED", "mask and exclusion-reason tile bytes disagree");
+    }
+  }
+  const tileDigestPair = computeGrandHallT554NativeMaskTileDigestPairV2(mask, reasons);
+  const exactFacts: ExactTileFactsV2 = Object.freeze({
+    includedPixelCount,
+    excludedPixelCount,
+    reasonCounts: Object.freeze(reasonCounts),
+    maskSha256: tileDigestPair.maskSha256,
+    reasonSha256: tileDigestPair.reasonSha256,
+  });
+  return Object.freeze({ mask, reasons, exactFacts });
+}
+
+function computePixelTileInventorySha256(
+  revision: MaskRevision,
+): `sha256:${string}` {
+  return computeGrandHallT554NativeMaskPixelTileInventorySha256V2(
+    revision.tiles.map((tile) => ({
+      maskSha256: tile.exactFacts.maskSha256,
+      reasonSha256: tile.exactFacts.reasonSha256,
+    })),
+  );
 }
 
 function comparablePath(path: string): string {
@@ -1148,55 +1496,103 @@ function assertPixelCoordinate(x: number, y: number): void {
 
 export class GrandHallT554NativeMaskRevisionStore {
   readonly source: GrandHallPanoramaSourceJpgIdentityV2;
-  readonly publicationDirectory: string;
-  private readonly revisions = new Map<number, MaskRevision>();
-  private currentRevisionNumber = 0;
-  private activeFrozenBinding: GrandHallT554NativeMaskFrozenBindingV2 | null = null;
-  private abandoned = false;
-  private operationBusy = false;
-  private ownedBufferBytes = TILE_PIXEL_COUNT * 2;
+  readonly #publicationDirectory: string | null;
+  readonly #replayOnly: boolean;
+  readonly #revisions = new Map<number, MaskRevision>();
+  #currentRevisionNumber = 0;
+  #activeFrozenBinding: GrandHallT554NativeMaskFrozenBindingV2 | null = null;
+  #abandoned = false;
+  #operationBusy = false;
+  #ownedBufferBytes = TILE_PIXEL_COUNT * 2;
+  #changedTileSealCount = 0;
 
   constructor(config: GrandHallT554NativeMaskStoreConfig) {
     const parsed = parseConfig(config);
     this.source = parsed.source;
-    this.publicationDirectory = parsed.publicationDirectory;
-    this.revisions.set(0, initialRevision());
+    this.#publicationDirectory = parsed.publicationDirectory;
+    this.#replayOnly = parsed.replayOnly;
+    this.#revisions.set(0, initialRevision());
   }
 
-  private assertUsable(): void {
-    if (this.abandoned) throw fail("STORE_ABANDONED", "native mask store was abandoned");
+  static createReplayOnly(
+    source: GrandHallPanoramaSourceJpgIdentityV2,
+  ): GrandHallT554NativeMaskRevisionStore {
+    return new GrandHallT554NativeMaskRevisionStore({ source, mode: "replay-only" });
   }
 
-  private currentRevision(): MaskRevision {
-    this.assertUsable();
-    const revision = this.revisions.get(this.currentRevisionNumber);
+  #assertUsable(): void {
+    if (this.#abandoned) throw fail("STORE_ABANDONED", "native mask store was abandoned");
+  }
+
+  #currentRevision(): MaskRevision {
+    this.#assertUsable();
+    const revision = this.#revisions.get(this.#currentRevisionNumber);
     if (revision === undefined) {
       throw fail("INTERNAL_INVARIANT_FAILED", "current native mask revision is absent");
     }
     return revision;
   }
 
-  private assertExpectedRevision(expectedRevision: number): void {
-    if (expectedRevision !== this.currentRevisionNumber) {
+  #assertExpectedRevision(expectedRevision: number): void {
+    if (expectedRevision !== this.#currentRevisionNumber) {
       throw fail("REVISION_CONFLICT", "native mask compare-and-swap revision is stale");
     }
   }
 
   snapshot(): GrandHallT554NativeMaskStoreSnapshot {
-    const revision = this.currentRevision();
+    const revision = this.#currentRevision();
     return { schemaVersion: GRAND_HALL_T554_NATIVE_MASK_STORE_V1,
       source: cloneSource(this.source), revision: revision.revision,
       includedPixelCount: revision.includedPixelCount,
       excludedPixelCount: revision.excludedPixelCount,
       reasonCounts: reasonCountObjects(revision.reasonCounts),
-      activeFrozenBinding: this.activeFrozenBinding === null
-        ? null : cloneFrozenBinding(this.activeFrozenBinding) };
+      activeFrozenBinding: this.#activeFrozenBinding === null
+        ? null : cloneFrozenBinding(this.#activeFrozenBinding) };
+  }
+
+  exactStateV2(context: unknown): GrandHallT554NativeMaskExactStateV2 {
+    const canonicalContext = toBoundedCanonicalJson(context);
+    const revision = this.#currentRevision();
+    const facts = deriveRevisionFacts(revision);
+    const reasonCounts = reasonCountObjects(facts.reasonCounts);
+    const pixelTileInventorySha256 =
+      computePixelTileInventorySha256(revision);
+    const header = {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-mask-exact-state-header.v2",
+      rasterizerVersion: GRAND_HALL_T554_NATIVE_MASK_RASTERIZER_V2,
+      context: canonicalContext,
+      source: this.source,
+      widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+      heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
+      tileWidthPx: GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX,
+      tileHeightPx: GRAND_HALL_T554_NATIVE_MASK_TILE_HEIGHT_PX,
+      tileOrder: "row-major-tiles-and-row-major-pixels.v1",
+      revision: revision.revision,
+      includedPixelCount: facts.includedPixelCount,
+      excludedPixelCount: facts.excludedPixelCount,
+      reasonCounts,
+      pixelTileInventorySha256,
+    };
+    return Object.freeze({
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-mask-exact-state.v2" as const,
+      rasterizerVersion: GRAND_HALL_T554_NATIVE_MASK_RASTERIZER_V2,
+      revision: revision.revision,
+      widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+      heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
+      includedPixelCount: facts.includedPixelCount,
+      excludedPixelCount: facts.excludedPixelCount,
+      reasonCounts,
+      pixelTileInventorySha256,
+      maskStateSha256: domainDigest(MASK_EXACT_STATE_DIGEST_DOMAIN, header),
+    });
   }
 
   pixelForServerRender(x: number, y: number): GrandHallT554NativeMaskPixel {
-    this.assertUsable();
+    this.#assertUsable();
     assertPixelCoordinate(x, y);
-    const revision = this.currentRevision();
+    const revision = this.#currentRevision();
     const located = tileIndexAndOffset(x, y);
     const tile = revision.tiles[located.tileIndex];
     const value = tile?.mask[located.offset];
@@ -1208,14 +1604,14 @@ export class GrandHallT554NativeMaskRevisionStore {
   }
 
   applyEdit(input: unknown): GrandHallT554NativeMaskStoreSnapshot {
-    this.assertUsable();
-    if (this.operationBusy) throw fail("OPERATION_BUSY", "a native mask freeze is in progress");
+    this.#assertUsable();
+    if (this.#operationBusy) throw fail("OPERATION_BUSY", "a native mask freeze is in progress");
     const edit = parseEdit(input);
-    this.assertExpectedRevision(edit.expectedRevision);
-    if (this.currentRevisionNumber >= GRAND_HALL_T554_NATIVE_MASK_MAX_REVISION) {
+    this.#assertExpectedRevision(edit.expectedRevision);
+    if (this.#currentRevisionNumber >= GRAND_HALL_T554_NATIVE_MASK_MAX_REVISION) {
       throw fail("REVISION_LIMIT_REACHED", "native mask revision bound was reached");
     }
-    const mutable = mutableRevision(this.currentRevision());
+    const mutable = mutableRevision(this.#currentRevision());
     const excludedReasonSample = edit.operation === "exclude"
       ? reasonSample(edit.reasonCode)
       : 0;
@@ -1225,11 +1621,21 @@ export class GrandHallT554NativeMaskRevisionStore {
       zeroClonedRevisionBuffers(mutable);
       throw error;
     }
-    if (mutable.clonedTileIndexes.size === 0) {
+    if (mutable.clonedTiles.size === 0) {
       throw fail("NO_CHANGE", "native mask edit did not change any source-grid pixel");
     }
-    const addedBufferBytes = mutable.clonedTileIndexes.size * TILE_PIXEL_COUNT * 2;
-    if (this.ownedBufferBytes + addedBufferBytes >
+    const seam = TEST_SEAMS.get(this);
+    const maximumChangedTileSeals = seam?.maximumChangedTileSeals ??
+      GRAND_HALL_T554_NATIVE_MASK_MAX_CHANGED_TILE_SEALS;
+    if (this.#changedTileSealCount + mutable.clonedTiles.size > maximumChangedTileSeals) {
+      zeroClonedRevisionBuffers(mutable);
+      throw fail(
+        "RASTER_WORK_LIMIT_REACHED",
+        "native mask cumulative changed-tile seal budget was reached",
+      );
+    }
+    const addedBufferBytes = mutable.clonedTiles.size * TILE_PIXEL_COUNT * 2;
+    if (this.#ownedBufferBytes + addedBufferBytes >
       GRAND_HALL_T554_NATIVE_MASK_MAX_OWNED_BUFFER_BYTES) {
       zeroClonedRevisionBuffers(mutable);
       throw fail(
@@ -1237,31 +1643,46 @@ export class GrandHallT554NativeMaskRevisionStore {
         "native mask immutable-revision buffer budget was reached",
       );
     }
-    const nextNumber = this.currentRevisionNumber + 1;
-    this.revisions.set(nextNumber, sealRevision(mutable, nextNumber));
-    this.currentRevisionNumber = nextNumber;
-    this.ownedBufferBytes += addedBufferBytes;
-    this.activeFrozenBinding = null;
+    const nextNumber = this.#currentRevisionNumber + 1;
+    let sealed: MaskRevision;
+    try {
+      sealed = sealRevision(mutable, nextNumber);
+    } catch (error) {
+      zeroClonedRevisionBuffers(mutable);
+      throw error;
+    }
+    this.#revisions.set(nextNumber, sealed);
+    this.#currentRevisionNumber = nextNumber;
+    this.#ownedBufferBytes += addedBufferBytes;
+    this.#changedTileSealCount += mutable.clonedTiles.size;
+    this.#activeFrozenBinding = null;
     return this.snapshot();
   }
 
   async freeze(input: unknown): Promise<GrandHallT554NativeMaskFrozenBindingV2> {
-    this.assertUsable();
+    this.#assertUsable();
+    if (this.#replayOnly || this.#publicationDirectory === null) {
+      throw fail(
+        "PUBLICATION_DISABLED",
+        "replay-only native mask stores cannot freeze or publish evidence",
+      );
+    }
+    const publicationDirectory = this.#publicationDirectory;
     const expectedRevision = parseExpectedRevision(input);
-    this.assertExpectedRevision(expectedRevision);
-    if (this.operationBusy) throw fail("OPERATION_BUSY", "a native mask mutation is in progress");
-    this.operationBusy = true;
+    this.#assertExpectedRevision(expectedRevision);
+    if (this.#operationBusy) throw fail("OPERATION_BUSY", "a native mask mutation is in progress");
+    this.#operationBusy = true;
     let rawMask: Buffer | undefined;
     let rawReasonMap: Buffer | undefined;
     let encodedMask: Buffer | undefined;
     let encodedReasonMap: Buffer | undefined;
     try {
       const seam = TEST_SEAMS.get(this) ?? {};
-      if (this.activeFrozenBinding?.revision === expectedRevision) {
-        const binding = this.activeFrozenBinding;
+      if (this.#activeFrozenBinding?.revision === expectedRevision) {
+        const binding = this.#activeFrozenBinding;
         try {
           const reopened = await reopenPublishedEvidence(
-            this.publicationDirectory,
+            publicationDirectory,
             { fileName: binding.fileName, digest: binding.sha256,
               byteLength: binding.byteLength },
             { fileName: binding.reasonMap.fileName, digest: binding.reasonMap.sha256,
@@ -1275,11 +1696,11 @@ export class GrandHallT554NativeMaskRevisionStore {
           }
           return cloneFrozenBinding(binding);
         } catch (error) {
-          this.activeFrozenBinding = null;
+          this.#activeFrozenBinding = null;
           throw error;
         }
       }
-      const revision = this.currentRevision();
+      const revision = this.#currentRevision();
       const facts = deriveRevisionFacts(revision);
       rawMask = flattenPlane(revision, "mask");
       rawReasonMap = flattenPlane(revision, "reasons");
@@ -1295,13 +1716,13 @@ export class GrandHallT554NativeMaskRevisionStore {
         reasonMapDigest,
       );
       const publicationDurability = await publishNoReplace(
-        this.publicationDirectory,
+        publicationDirectory,
         fileName,
         encodedMask,
         seam,
       );
       const reasonMapPublicationDurability = await publishNoReplace(
-        this.publicationDirectory,
+        publicationDirectory,
         reasonMapFileName,
         encodedReasonMap,
         seam,
@@ -1313,7 +1734,7 @@ export class GrandHallT554NativeMaskRevisionStore {
         );
       }
       const verified = await reopenPublishedEvidence(
-        this.publicationDirectory,
+        publicationDirectory,
         { fileName, digest, byteLength: encodedMask.length },
         { fileName: reasonMapFileName, digest: reasonMapDigest,
           byteLength: encodedReasonMap.length },
@@ -1353,46 +1774,83 @@ export class GrandHallT554NativeMaskRevisionStore {
         reasonMap,
         immutableFrozen: true as const,
       });
-      this.activeFrozenBinding = binding;
+      this.#activeFrozenBinding = binding;
       return cloneFrozenBinding(binding);
     } finally {
       rawMask?.fill(0);
       rawReasonMap?.fill(0);
       encodedMask?.fill(0);
       encodedReasonMap?.fill(0);
-      this.operationBusy = false;
+      this.#operationBusy = false;
     }
   }
 
   abandon(): void {
-    this.assertUsable();
-    if (this.operationBusy) throw fail("OPERATION_BUSY", "cannot abandon while a native mask freeze is active");
+    this.#assertUsable();
+    if (this.#operationBusy) throw fail("OPERATION_BUSY", "cannot abandon while a native mask freeze is active");
     const buffers = new Set<Buffer>();
-    this.revisions.forEach((revision) => {
+    this.#revisions.forEach((revision) => {
       revision.tiles.forEach((tile) => {
         buffers.add(tile.mask);
         buffers.add(tile.reasons);
       });
     });
     const seam = TEST_SEAMS.get(this);
-    buffers.forEach((buffer) => {
-      buffer.fill(0);
-      seam?.afterBufferZeroed?.(buffer);
-    });
-    this.revisions.clear();
-    this.ownedBufferBytes = 0;
-    this.activeFrozenBinding = null;
-    this.abandoned = true;
-    TEST_SEAMS.delete(this);
+    const cleanupFailures: unknown[] = [];
+
+    // Abandonment becomes terminal before untrusted test hooks run. Cleanup is
+    // best-effort across every owned buffer even if one hook throws.
+    this.#abandoned = true;
+    try {
+      buffers.forEach((buffer) => {
+        try {
+          buffer.fill(0);
+          seam?.afterBufferZeroed?.({ byteLength: buffer.length, allZero: true });
+        } catch (error) {
+          cleanupFailures.push(error);
+        }
+      });
+    } finally {
+      this.#revisions.clear();
+      this.#ownedBufferBytes = 0;
+      this.#changedTileSealCount = 0;
+      this.#activeFrozenBinding = null;
+      TEST_SEAMS.delete(this);
+    }
+    if (cleanupFailures.length !== 0) {
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        `native mask abandonment cleanup failed ${String(cleanupFailures.length)} time(s)`,
+        cleanupFailures[0],
+      );
+    }
   }
 }
 
-export const __testOnlyGrandHallT554NativeMaskRevisionStore = Object.freeze({
+export const __testOnlyGrandHallT554NativeMaskRevisionStore = /* @__PURE__ */ Object.freeze({
   observeBufferZeroing(
     store: GrandHallT554NativeMaskRevisionStore,
-    afterBufferZeroed: (buffer: Buffer) => void,
+    afterBufferZeroed: (facts: {
+      readonly byteLength: number;
+      readonly allZero: true;
+    }) => void,
   ): void {
     TEST_SEAMS.set(store, { ...TEST_SEAMS.get(store), afterBufferZeroed });
+  },
+  setMaximumChangedTileSeals(
+    store: GrandHallT554NativeMaskRevisionStore,
+    maximumChangedTileSeals: number,
+  ): void {
+    if (!Number.isInteger(maximumChangedTileSeals) || maximumChangedTileSeals < 0) {
+      throw fail(
+        "ARGUMENT_INVALID",
+        "test maximum changed-tile seals must be a non-negative integer",
+      );
+    }
+    TEST_SEAMS.set(store, {
+      ...TEST_SEAMS.get(store),
+      maximumChangedTileSeals,
+    });
   },
   observePublicationDirectorySync(
     store: GrandHallT554NativeMaskRevisionStore,

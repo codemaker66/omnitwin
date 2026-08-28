@@ -33,7 +33,9 @@ const EXACT_V3_FILES = Object.freeze([
   GRAND_HALL_T554_V3_REVIEW_PACK_FILENAME,
 ]);
 
-export interface __GrandHallT554NativeReviewRegistryTestAnchor {
+const VERIFIED_REGISTRY_IDENTITIES = new WeakSet();
+
+export interface __GrandHallT554NativeReviewRegistryCandidateAnchor {
   readonly reviewPackSha256: string;
   readonly reviewPackFileSha256: string;
   readonly reviewPackFileByteLength: number;
@@ -53,7 +55,7 @@ const GRAND_HALL_T554_NATIVE_REVIEW_REGISTRY_ANCHOR = Object.freeze({
   publicationReceiptFileSha256:
     "sha256:fa03a33401b6589e3e2d6fa2d1e393cdbf0573776de5666f0c0c422d0763dfe5",
   publicationReceiptFileByteLength: 3_590,
-} satisfies __GrandHallT554NativeReviewRegistryTestAnchor);
+} satisfies __GrandHallT554NativeReviewRegistryCandidateAnchor);
 
 export interface GrandHallT554NativeReviewRegistryOptions {
   readonly reviewPackDirectory: string;
@@ -104,6 +106,32 @@ export class GrandHallT554NativeReviewRegistryError extends Error {
   constructor(message: string, cause?: unknown) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = "GrandHallT554NativeReviewRegistryError";
+  }
+}
+
+/**
+ * Returns true only for the exact in-process object returned by this module's
+ * completed registry loader. Structural copies and look-alike objects are not
+ * evidence that the reviewed v3 anchors or source roots were verified.
+ */
+export function isGrandHallT554NativeReviewRegistry(
+  value: unknown,
+): value is GrandHallT554NativeReviewRegistry {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    VERIFIED_REGISTRY_IDENTITIES.has(value)
+  );
+}
+
+/** Fails closed unless `value` is an identity-branded loaded registry. */
+export function assertGrandHallT554NativeReviewRegistry(
+  value: unknown,
+): asserts value is GrandHallT554NativeReviewRegistry {
+  if (!isGrandHallT554NativeReviewRegistry(value)) {
+    throw new GrandHallT554NativeReviewRegistryError(
+      "Native-review registry handle was not returned by the exact reviewed v3 loader.",
+    );
   }
 }
 
@@ -195,7 +223,7 @@ function assertPendingLifecycle(
 }
 
 function assertExpectedAnchor(
-  anchor: __GrandHallT554NativeReviewRegistryTestAnchor,
+  anchor: __GrandHallT554NativeReviewRegistryCandidateAnchor,
   reviewPack: GrandHallScopeReviewPackV3,
   reviewPackFile: NonNullable<
     ReturnType<
@@ -223,9 +251,9 @@ function assertExpectedAnchor(
   }
 }
 
-async function loadRegistry(
+async function verifyCandidateRegistry(
   options: GrandHallT554NativeReviewRegistryOptions,
-  anchor: __GrandHallT554NativeReviewRegistryTestAnchor,
+  anchor: __GrandHallT554NativeReviewRegistryCandidateAnchor,
 ): Promise<GrandHallT554NativeReviewRegistry> {
   const reviewPackDirectory = requireAbsoluteDirectoryArgument(
     options.reviewPackDirectory,
@@ -336,7 +364,7 @@ async function loadRegistry(
       runtimeAuthorized: false,
       generatedContentAuthorized: false,
     });
-    return Object.freeze({
+    const registry = Object.freeze({
       reviewPack: frozenReviewPack,
       pendingHumanDecisions: frozenHumanDecisions,
       pendingClosedVolumeReview: frozenClosedVolumeReview,
@@ -346,14 +374,15 @@ async function loadRegistry(
       sourceAt,
       mediaInputAt: (inventoryIndex: number) => {
         const row = sourceAt(inventoryIndex).source;
-        return {
+        return Object.freeze({
           sourceRoot: panoramaSourceRoot,
           fileName: row.fileName,
           expectedSha256: row.sha256,
           expectedByteLength: row.byteLength,
-        };
+        });
       },
     });
+    return registry;
   } catch (error) {
     if (error instanceof GrandHallT554NativeReviewRegistryError) throw error;
     throw new GrandHallT554NativeReviewRegistryError(
@@ -363,12 +392,16 @@ async function loadRegistry(
   }
 }
 
-export function loadGrandHallT554NativeReviewRegistry(
+export async function loadGrandHallT554NativeReviewRegistry(
   options: GrandHallT554NativeReviewRegistryOptions,
 ): Promise<GrandHallT554NativeReviewRegistry> {
-  return loadRegistry(options, GRAND_HALL_T554_NATIVE_REVIEW_REGISTRY_ANCHOR);
+  const registry = await verifyCandidateRegistry(
+    options,
+    GRAND_HALL_T554_NATIVE_REVIEW_REGISTRY_ANCHOR,
+  );
+  VERIFIED_REGISTRY_IDENTITIES.add(registry);
+  return registry;
 }
 
-export const __testOnlyGrandHallT554NativeReviewRegistry = Object.freeze({
-  loadRegistry,
-});
+export const __testOnlyGrandHallT554NativeReviewRegistry =
+  /* @__PURE__ */ Object.freeze({ verifyCandidateRegistry });

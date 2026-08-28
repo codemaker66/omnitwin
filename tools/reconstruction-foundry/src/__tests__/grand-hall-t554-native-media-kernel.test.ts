@@ -248,6 +248,7 @@ describe("Grand Hall T-554 native same-descriptor media kernel", () => {
       includedPixelCount: PIXEL_COUNT - 1,
       excludedPixelCount: 1,
       reasonSampleCounts: [PIXEL_COUNT - 1, 0, 0, 0, 0, 1],
+      pixelTileInventorySha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
     });
     expect(rawBuffersDestroyed).toBe(true);
   }, 30_000);
@@ -302,7 +303,10 @@ describe("Grand Hall T-554 native same-descriptor media kernel", () => {
       maskPng,
       reasonMapPng,
       { afterDecodedBuffersDestroyed: (facts) => { destroyed.push(facts); } },
-    )).resolves.toMatchObject({ includedPixelCount: PIXEL_COUNT - 1 });
+    )).resolves.toMatchObject({
+      includedPixelCount: PIXEL_COUNT - 1,
+      pixelTileInventorySha256: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
+    });
     await expect(__testOnlyGrandHallT554MediaValidation.validateMaskEvidencePngBytes(
       maskPng,
       mismatchedReasonMapPng,
