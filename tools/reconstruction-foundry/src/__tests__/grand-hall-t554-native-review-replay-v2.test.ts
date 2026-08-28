@@ -8,7 +8,7 @@ import {
   GRAND_HALL_PANORAMA_WIDTH_PX,
   type GrandHallPanoramaSourceJpgIdentityV2,
 } from "@omnitwin/types";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   type GrandHallT554NativeReviewAuthorityBoundaryV2,
@@ -33,6 +33,8 @@ import {
   createGrandHallT554NativeReviewCoverageCarryStateV2,
   emptyGrandHallT554NativeReviewDwellVectorV2,
   emptyGrandHallT554NativeReviewTileBitmapV2,
+  GrandHallT554NativeReviewMaskCoverageObservationInputV2Schema,
+  planGrandHallT554NativeReviewNextMaskCoverageEventV2,
   replayGrandHallT554NativeReviewMaskChildV2,
   replayGrandHallT554NativeReviewSourceChildV2,
   validateGrandHallT554NativeReviewMaskChildSequenceV2,
@@ -376,6 +378,39 @@ function firstCoverage(
     dwellMsForTileZero,
     paintedBitmap: visibleBitmap,
   });
+}
+
+function maskCoverageObservation(
+  options: {
+    readonly receivedAtUtc?: string;
+    readonly monotonicElapsedMs?: number;
+    readonly paintedTileBitsetHex?: string;
+  } = {},
+) {
+  return {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-mask-coverage-observation-input.v2" as const,
+    serverObservation: {
+      receivedAtUtc: options.receivedAtUtc ?? "2026-08-27T00:00:00.002Z",
+      monotonicElapsedMs: options.monotonicElapsedMs ?? 0,
+    },
+    telemetry: {
+      documentVisibilityState: "visible" as const,
+      documentFocusState: "focused" as const,
+      viewportCssWidth: GRAND_HALL_PANORAMA_WIDTH_PX,
+      viewportCssHeight: GRAND_HALL_PANORAMA_HEIGHT_PX,
+      devicePixelRatio: 1,
+      sourceToCssTransform: {
+        a: 1,
+        b: 0 as const,
+        c: 0 as const,
+        d: 1,
+        e: 0,
+        f: 0,
+      },
+      paintedTileBitsetHex: options.paintedTileBitsetHex ?? tileBitmap(0),
+    },
+  };
 }
 
 function frozenBinding(): GrandHallT554NativeReviewMaskScopeV2["frozenBinding"] {
@@ -866,15 +901,11 @@ describe("Grand Hall T-554 typed native-review replay v2", () => {
     );
     const resumedEvidence = await sourceEvidence(
       resumedScope,
-      [
-        sourceStart(resumedScope, carry, resumedStartedAtUtc),
-        resumedFirst,
-      ],
+      [sourceStart(resumedScope, carry, resumedStartedAtUtc), resumedFirst],
       priorEvidence,
     );
-    const resumed = replayGrandHallT554NativeReviewSourceChildV2(
-      resumedEvidence,
-    );
+    const resumed =
+      replayGrandHallT554NativeReviewSourceChildV2(resumedEvidence);
     expect(resumed.coverage).toMatchObject({
       uniqueDeliveredTileCount: 0,
       completedTileCount: 1,
@@ -897,9 +928,187 @@ describe("Grand Hall T-554 typed native-review replay v2", () => {
     });
     const driftedStart = maskStart(scope);
     driftedStart.payload.frozenBindingSha256 = digest("wrong-frozen");
+    expect(() => replayMaskSequence(scope, [driftedStart])).toThrowError(
+      expect.objectContaining({ code: "BINDING_MISMATCH" }),
+    );
+  });
+
+  it("plans an exact authority-none mask coverage event in the mask digest domain", () => {
+    const scope = maskScope();
+    const events = [maskStart(scope), delivery(scope, "mask")];
+    const planned = planGrandHallT554NativeReviewNextMaskCoverageEventV2({
+      scope,
+      events,
+      observation: maskCoverageObservation(),
+    });
+
+    expect(
+      GrandHallT554NativeReviewMaskCoverageObservationInputV2Schema.safeParse(
+        maskCoverageObservation(),
+      ).success,
+    ).toBe(true);
+    expect(planned).toMatchObject({
+      eventType: "mask.coverage-observed.v2",
+      payload: {
+        subjectSha256: scope.maskReviewSubjectSha256,
+        browserEpochNonceSha256: scope.browserEpochNonceSha256,
+        sourceEpochNonceSha256: scope.sourceCustody.sourceEpochNonceSha256,
+        coverageSegmentIdSha256: scope.coverageSegmentIdSha256,
+        renderGeneration: scope.renderGeneration,
+        sequence: 0,
+        previousCoverageEventSha256: null,
+        derived: {
+          deliveredTileBitsetHex: tileBitmap(0),
+          fullyVisibleDeliveredTileBitsetHex: tileBitmap(0),
+          creditedTileBitsetHex: EMPTY_BITMAP,
+          creditedDurationMs: 0,
+          disqualifier: "first_sample",
+        },
+      },
+    });
+    expect(Object.isFrozen(planned)).toBe(true);
+    expect(Object.isFrozen(planned.payload.derived)).toBe(true);
+    const { coverageEventSha256, ...material } = planned.payload;
+    expect(
+      computeGrandHallT554NativeReviewCoverageEventV2Sha256("mask", material),
+    ).toBe(coverageEventSha256);
+    expect(
+      computeGrandHallT554NativeReviewCoverageEventV2Sha256("source", material),
+    ).not.toBe(coverageEventSha256);
+    expect(
+      replayMaskSequence(scope, [...events, planned]).coverage,
+    ).toMatchObject({
+      kind: "mask",
+      childEventCount: 3,
+      coverageEventCount: 1,
+      lastCoverageEventSha256: coverageEventSha256,
+    });
+  });
+
+  it("replays exact mask history before deriving the next chained dwell sample", () => {
+    const scope = maskScope();
+    const events = [maskStart(scope), delivery(scope, "mask")];
+    const first = planGrandHallT554NativeReviewNextMaskCoverageEventV2({
+      scope,
+      events,
+      observation: maskCoverageObservation(),
+    });
+    const second = planGrandHallT554NativeReviewNextMaskCoverageEventV2({
+      scope,
+      events: [...events, first],
+      observation: maskCoverageObservation({
+        receivedAtUtc: "2026-08-27T00:00:00.502Z",
+        monotonicElapsedMs: 500,
+      }),
+    });
+
+    expect(second.payload).toMatchObject({
+      sequence: 1,
+      previousCoverageEventSha256: first.payload.coverageEventSha256,
+      derived: {
+        serverMonotonicDeltaMs: 500,
+        creditedTileBitsetHex: tileBitmap(0),
+        creditedDurationMs: 500,
+        disqualifier: null,
+        completedTileCount: 0,
+      },
+    });
+    expect(
+      replayMaskSequence(scope, [...events, first, second]).coverage,
+    ).toMatchObject({
+      coverageEventCount: 2,
+      lastCoverageEventSha256: second.payload.coverageEventSha256,
+    });
+  });
+
+  it("rejects non-mask history and non-exact observation input", () => {
+    const scope = maskScope();
+    const events = [maskStart(scope), delivery(scope, "mask")];
+    const exactObservation = maskCoverageObservation();
+
     expect(() =>
-      replayMaskSequence(scope, [driftedStart]),
-    ).toThrowError(expect.objectContaining({ code: "BINDING_MISMATCH" }));
+      planGrandHallT554NativeReviewNextMaskCoverageEventV2({
+        scope,
+        events,
+        observation: { ...exactObservation, subjectSha256: digest("injected") },
+      }),
+    ).toThrowError(expect.objectContaining({ code: "ARGUMENT_INVALID" }));
+    expect(() =>
+      planGrandHallT554NativeReviewNextMaskCoverageEventV2({
+        scope,
+        events: [sourceStart(sourceScope())],
+        observation: exactObservation,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "EVENT_INVALID" }));
+    expect(() =>
+      planGrandHallT554NativeReviewNextMaskCoverageEventV2({
+        scope: { ...scope, generatedContentAuthorized: true },
+        events,
+        observation: exactObservation,
+      }),
+    ).toThrowError(expect.objectContaining({ code: "ARGUMENT_INVALID" }));
+  });
+
+  it("fails closed on replay forgery and wipes its dwell accumulator on success and failure", () => {
+    const scope = maskScope();
+    const events = [maskStart(scope), delivery(scope, "mask")];
+    const validFirst = firstCoverage(scope, "mask");
+    const forgedMaterial: CoverageMaterial = {
+      ...validFirst.payload,
+      derived: {
+        ...validFirst.payload.derived,
+        cumulativeDwellStateSha256: digest("forged-mask-dwell-state"),
+      },
+    };
+    const forgedFirst = {
+      ...validFirst,
+      payload: {
+        ...forgedMaterial,
+        coverageEventSha256:
+          computeGrandHallT554NativeReviewCoverageEventV2Sha256(
+            "mask",
+            forgedMaterial,
+          ),
+      },
+    };
+    const fillSpy = vi.spyOn(Buffer.prototype, "fill");
+    try {
+      planGrandHallT554NativeReviewNextMaskCoverageEventV2({
+        scope,
+        events,
+        observation: maskCoverageObservation(),
+      });
+      expect(
+        fillSpy.mock.contexts.some(
+          (context, index) =>
+            Buffer.isBuffer(context) &&
+            context.length === 1_024 &&
+            fillSpy.mock.calls[index]?.[0] === 0,
+        ),
+      ).toBe(true);
+
+      fillSpy.mockClear();
+      expect(() =>
+        planGrandHallT554NativeReviewNextMaskCoverageEventV2({
+          scope,
+          events: [...events, forgedFirst],
+          observation: maskCoverageObservation({
+            receivedAtUtc: "2026-08-27T00:00:00.502Z",
+            monotonicElapsedMs: 500,
+          }),
+        }),
+      ).toThrowError(expect.objectContaining({ code: "DERIVED_MISMATCH" }));
+      expect(
+        fillSpy.mock.contexts.some(
+          (context, index) =>
+            Buffer.isBuffer(context) &&
+            context.length === 1_024 &&
+            fillSpy.mock.calls[index]?.[0] === 0,
+        ),
+      ).toBe(true);
+    } finally {
+      fillSpy.mockRestore();
+    }
   });
 
   it("rejects wall-clock rollback inside a child journal", () => {
@@ -1100,10 +1309,7 @@ describe("Grand Hall T-554 typed native-review replay v2", () => {
         label: "wall clock",
         scope: freshScope,
         carry,
-        startedAtUtc: offsetUtc(
-          carry.predecessorFinalDurableRecordedAtUtc,
-          -1,
-        ),
+        startedAtUtc: offsetUtc(carry.predecessorFinalDurableRecordedAtUtc, -1),
         code: "TRANSITION_INVALID",
       },
     ];
@@ -1243,10 +1449,7 @@ describe("Grand Hall T-554 typed native-review replay v2", () => {
         label: "wall clock",
         scope: freshScope,
         carry,
-        startedAtUtc: offsetUtc(
-          carry.predecessorFinalDurableRecordedAtUtc,
-          -1,
-        ),
+        startedAtUtc: offsetUtc(carry.predecessorFinalDurableRecordedAtUtc, -1),
         code: "TRANSITION_INVALID",
       },
     ];

@@ -200,6 +200,75 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
     });
   });
 
+  it("copies exact current-revision mask tiles without exposing retained storage", async () => {
+    const store = createStore();
+    store.applyEdit(includeRectangle(0, 254, 254, 258, 258));
+
+    const topLeft = store.copyMaskTileForServerRender(0, 0);
+    const topLeftReasons = store.copyReasonTileForServerRender(0, 0);
+    const topRight = store.copyMaskTileForServerRender(1, 0);
+    const bottomLeft = store.copyMaskTileForServerRender(0, 1);
+    const bottomRight = store.copyMaskTileForServerRender(1, 1);
+    const tileWidth = GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX;
+    const at = (tile: Buffer, x: number, y: number): number | undefined =>
+      tile[y * tileWidth + x];
+
+    expect(topLeft).toHaveLength(
+      GRAND_HALL_T554_NATIVE_MASK_TILE_WIDTH_PX *
+        GRAND_HALL_T554_NATIVE_MASK_TILE_HEIGHT_PX,
+    );
+    expect(at(topLeft, 253, 253)).toBe(255);
+    expect(at(topLeft, 254, 254)).toBe(0);
+    expect(at(topLeftReasons, 253, 253)).toBe(5);
+    expect(at(topLeftReasons, 254, 254)).toBe(0);
+    expect(at(topRight, 0, 254)).toBe(0);
+    expect(at(bottomLeft, 254, 0)).toBe(0);
+    expect(at(bottomRight, 0, 0)).toBe(0);
+    expect(at(bottomRight, 2, 2)).toBe(255);
+
+    topLeft.fill(17);
+    topLeftReasons.fill(17);
+    const fresh = store.copyMaskTileForServerRender(0, 0);
+    const freshReasons = store.copyReasonTileForServerRender(0, 0);
+    expect(fresh).not.toBe(topLeft);
+    expect(freshReasons).not.toBe(topLeftReasons);
+    expect(at(fresh, 253, 253)).toBe(255);
+    expect(at(fresh, 254, 254)).toBe(0);
+    expect(at(freshReasons, 253, 253)).toBe(5);
+    expect(at(freshReasons, 254, 254)).toBe(0);
+
+    await expectStoreCode(
+      () => store.copyMaskTileForServerRender(-1, 0),
+      "ARGUMENT_INVALID",
+    );
+    await expectStoreCode(
+      () => store.copyMaskTileForServerRender(32, 0),
+      "ARGUMENT_INVALID",
+    );
+    await expectStoreCode(
+      () => store.copyMaskTileForServerRender(0, 16),
+      "ARGUMENT_INVALID",
+    );
+    await expectStoreCode(
+      () => store.copyMaskTileForServerRender(0.5, 0),
+      "ARGUMENT_INVALID",
+    );
+    await expectStoreCode(
+      () => store.copyReasonTileForServerRender(0, -1),
+      "ARGUMENT_INVALID",
+    );
+
+    store.abandon();
+    await expectStoreCode(
+      () => store.copyMaskTileForServerRender(0, 0),
+      "STORE_ABANDONED",
+    );
+    await expectStoreCode(
+      () => store.copyReasonTileForServerRender(0, 0),
+      "STORE_ABANDONED",
+    );
+  });
+
   it("commits the exact row-major mask pixels, reasons, and review context", () => {
     const context = {
       sessionIdSha256: `sha256:${"a".repeat(64)}`,

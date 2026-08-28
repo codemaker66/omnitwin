@@ -61,6 +61,8 @@ const DWELL_STATE_DIGEST_DOMAIN =
 
 export const GRAND_HALL_T554_NATIVE_REVIEW_SOURCE_COVERAGE_OBSERVATION_INPUT_V2 =
   "venviewer.grand-hall-t554-native-review-source-coverage-observation-input.v2";
+export const GRAND_HALL_T554_NATIVE_REVIEW_MASK_COVERAGE_OBSERVATION_INPUT_V2 =
+  "venviewer.grand-hall-t554-native-review-mask-coverage-observation-input.v2";
 
 type Sha256 = `sha256:${string}`;
 type CoverageDisqualifier =
@@ -81,6 +83,10 @@ type CoverageObservationCore = Pick<
 export type GrandHallT554NativeReviewPlannedSourceCoverageEventV2 = Extract<
   GrandHallT554NativeReviewSourceChildEventV2,
   { readonly eventType: "source.coverage-observed.v2" }
+>;
+export type GrandHallT554NativeReviewPlannedMaskCoverageEventV2 = Extract<
+  GrandHallT554NativeReviewMaskChildEventV2,
+  { readonly eventType: "mask.coverage-observed.v2" }
 >;
 
 const SourceToCssTransformV2Schema = z
@@ -103,39 +109,70 @@ const SourceToCssTransformV2Schema = z
     }
   });
 
-export const GrandHallT554NativeReviewSourceCoverageObservationInputV2Schema =
-  z
-    .object({
-      schemaVersion: z.literal(
-        GRAND_HALL_T554_NATIVE_REVIEW_SOURCE_COVERAGE_OBSERVATION_INPUT_V2,
-      ),
-      serverObservation: z
-        .object({
-          receivedAtUtc: GrandHallT554NativeReviewCanonicalUtcV2Schema,
-          monotonicElapsedMs: z
-            .number()
-            .int()
-            .nonnegative()
-            .max(Number.MAX_SAFE_INTEGER),
-        })
-        .strict(),
-      telemetry: z
-        .object({
-          documentVisibilityState: z.enum(["visible", "hidden", "prerender"]),
-          documentFocusState: z.enum(["focused", "blurred"]),
-          viewportCssWidth: z.number().finite().positive().max(16_384),
-          viewportCssHeight: z.number().finite().positive().max(16_384),
-          devicePixelRatio: z.number().finite().min(0.25).max(8),
-          sourceToCssTransform: SourceToCssTransformV2Schema,
-          paintedTileBitsetHex:
-            GrandHallT554NativeReviewTileBitmapHexV2Schema,
-        })
-        .strict(),
-    })
-    .strict();
+export const GrandHallT554NativeReviewSourceCoverageObservationInputV2Schema = z
+  .object({
+    schemaVersion: z.literal(
+      GRAND_HALL_T554_NATIVE_REVIEW_SOURCE_COVERAGE_OBSERVATION_INPUT_V2,
+    ),
+    serverObservation: z
+      .object({
+        receivedAtUtc: GrandHallT554NativeReviewCanonicalUtcV2Schema,
+        monotonicElapsedMs: z
+          .number()
+          .int()
+          .nonnegative()
+          .max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict(),
+    telemetry: z
+      .object({
+        documentVisibilityState: z.enum(["visible", "hidden", "prerender"]),
+        documentFocusState: z.enum(["focused", "blurred"]),
+        viewportCssWidth: z.number().finite().positive().max(16_384),
+        viewportCssHeight: z.number().finite().positive().max(16_384),
+        devicePixelRatio: z.number().finite().min(0.25).max(8),
+        sourceToCssTransform: SourceToCssTransformV2Schema,
+        paintedTileBitsetHex: GrandHallT554NativeReviewTileBitmapHexV2Schema,
+      })
+      .strict(),
+  })
+  .strict();
 
 export type GrandHallT554NativeReviewSourceCoverageObservationInputV2 = z.infer<
   typeof GrandHallT554NativeReviewSourceCoverageObservationInputV2Schema
+>;
+
+export const GrandHallT554NativeReviewMaskCoverageObservationInputV2Schema = z
+  .object({
+    schemaVersion: z.literal(
+      GRAND_HALL_T554_NATIVE_REVIEW_MASK_COVERAGE_OBSERVATION_INPUT_V2,
+    ),
+    serverObservation: z
+      .object({
+        receivedAtUtc: GrandHallT554NativeReviewCanonicalUtcV2Schema,
+        monotonicElapsedMs: z
+          .number()
+          .int()
+          .nonnegative()
+          .max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict(),
+    telemetry: z
+      .object({
+        documentVisibilityState: z.enum(["visible", "hidden", "prerender"]),
+        documentFocusState: z.enum(["focused", "blurred"]),
+        viewportCssWidth: z.number().finite().positive().max(16_384),
+        viewportCssHeight: z.number().finite().positive().max(16_384),
+        devicePixelRatio: z.number().finite().min(0.25).max(8),
+        sourceToCssTransform: SourceToCssTransformV2Schema,
+        paintedTileBitsetHex: GrandHallT554NativeReviewTileBitmapHexV2Schema,
+      })
+      .strict(),
+  })
+  .strict();
+
+export type GrandHallT554NativeReviewMaskCoverageObservationInputV2 = z.infer<
+  typeof GrandHallT554NativeReviewMaskCoverageObservationInputV2Schema
 >;
 
 const SourceCoveragePlannerInputV2Schema = z
@@ -144,6 +181,14 @@ const SourceCoveragePlannerInputV2Schema = z
     events: z.array(z.unknown()).min(1).max(MAXIMUM_CHILD_EVENT_COUNT),
     observation:
       GrandHallT554NativeReviewSourceCoverageObservationInputV2Schema,
+  })
+  .strict();
+
+const MaskCoveragePlannerInputV2Schema = z
+  .object({
+    scope: z.unknown(),
+    events: z.array(z.unknown()).min(1).max(MAXIMUM_CHILD_EVENT_COUNT),
+    observation: GrandHallT554NativeReviewMaskCoverageObservationInputV2Schema,
   })
   .strict();
 
@@ -1043,6 +1088,13 @@ interface SourceHistoryReplayV2 {
   readonly accumulator: ReplayAccumulator;
 }
 
+interface MaskHistoryReplayV2 {
+  readonly scope: GrandHallT554NativeReviewMaskScopeV2;
+  readonly events: readonly GrandHallT554NativeReviewMaskChildEventV2[];
+  readonly first: MaskStartEvent;
+  readonly accumulator: ReplayAccumulator;
+}
+
 function destroyReplayAccumulator(accumulator: ReplayAccumulator): void {
   accumulator.dwellBytes.fill(0);
   accumulator.deliveredTiles.clear();
@@ -1102,6 +1154,60 @@ function replayUntrustedSourceHistory(input: {
   }
 }
 
+function replayUntrustedMaskHistory(input: {
+  readonly scope: unknown;
+  readonly events: readonly unknown[];
+}): MaskHistoryReplayV2 {
+  const scopeResult = GrandHallT554NativeReviewMaskScopeV2Schema.safeParse(
+    input.scope,
+  );
+  if (!scopeResult.success) {
+    throw new GrandHallT554NativeReviewReplayV2Error(
+      "ARGUMENT_INVALID",
+      "The mask child scope is not the exact v2 schema.",
+      scopeResult.error,
+    );
+  }
+  assertChildEventLimit(input.events.length);
+  const events = input.events.map((event, index) => {
+    const result =
+      GrandHallT554NativeReviewMaskChildEventV2Schema.safeParse(event);
+    if (!result.success) {
+      throw new GrandHallT554NativeReviewReplayV2Error(
+        "EVENT_INVALID",
+        `Mask child event ${String(index + 1)} is not an exact typed v2 event.`,
+        result.error,
+      );
+    }
+    return result.data;
+  });
+  const first = events[0];
+  assertTransition(
+    first?.eventType === "mask.review-started.v2",
+    "Mask child replay must begin with exactly one mask start event.",
+  );
+  const accumulator = validateMaskStart(scopeResult.data, first.payload);
+  try {
+    for (const event of events.slice(1)) {
+      if (event.eventType === "mask.review-started.v2") {
+        throw new GrandHallT554NativeReviewReplayV2Error(
+          "TRANSITION_INVALID",
+          "Mask child replay contains a second start event.",
+        );
+      }
+      if (event.eventType === "mask.tile-delivered.v2") {
+        replayDelivery(accumulator, event.payload);
+      } else {
+        replayCoverage(accumulator, event.payload);
+      }
+    }
+    return { scope: scopeResult.data, events, first, accumulator };
+  } catch (error) {
+    destroyReplayAccumulator(accumulator);
+    throw error;
+  }
+}
+
 /**
  * Validates an untrusted in-memory sequence. This conveys no durability or
  * review authority; the durable-journal adapter uses it before reserving a
@@ -1129,14 +1235,14 @@ export function validateGrandHallT554NativeReviewSourceChildSequenceV2(input: {
   }
 }
 
-function nextSourceCoverageMaterial(input: {
-  readonly history: SourceHistoryReplayV2;
-  readonly observation: GrandHallT554NativeReviewSourceCoverageObservationInputV2;
+function nextCoverageMaterial(input: {
+  readonly accumulator: ReplayAccumulator;
+  readonly observation: CoverageObservationCore;
 }): Omit<
   GrandHallT554NativeReviewCoverageObservedPayloadV2,
   "coverageEventSha256"
 > {
-  const { accumulator } = input.history;
+  const { accumulator } = input;
   if (
     accumulator.coverageEventCount >=
     GRAND_HALL_T554_NATIVE_REVIEW_MAXIMUM_TELEMETRY_EVENTS
@@ -1222,8 +1328,71 @@ export function planGrandHallT554NativeReviewNextSourceCoverageEventV2(
   try {
     return frozenClone(
       hydrateSourceCoverageEvent(
-        nextSourceCoverageMaterial({
-          history,
+        nextCoverageMaterial({
+          accumulator: history.accumulator,
+          observation: parsed.data.observation,
+        }),
+      ),
+    );
+  } finally {
+    destroyReplayAccumulator(history.accumulator);
+  }
+}
+
+function hydrateMaskCoverageEvent(
+  material: Omit<
+    GrandHallT554NativeReviewCoverageObservedPayloadV2,
+    "coverageEventSha256"
+  >,
+): GrandHallT554NativeReviewPlannedMaskCoverageEventV2 {
+  const result = GrandHallT554NativeReviewMaskChildEventV2Schema.safeParse({
+    schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
+    eventType: "mask.coverage-observed.v2",
+    payload: {
+      ...material,
+      coverageEventSha256:
+        computeGrandHallT554NativeReviewCoverageEventV2Sha256("mask", material),
+    },
+  });
+  if (!result.success) {
+    throw new GrandHallT554NativeReviewReplayV2Error(
+      "DERIVED_MISMATCH",
+      "The replay-derived mask coverage event is not the exact v2 schema.",
+      result.error,
+    );
+  }
+  assertTransition(
+    result.data.eventType === "mask.coverage-observed.v2",
+    "The mask coverage planner hydrated a different event type.",
+  );
+  return result.data;
+}
+
+/**
+ * Hydrates only server-owned bindings and derived witnesses for the next
+ * authority-none mask coverage event. The returned value has no durability
+ * until the caller appends it through the verified child journal.
+ */
+export function planGrandHallT554NativeReviewNextMaskCoverageEventV2(
+  input: unknown,
+): GrandHallT554NativeReviewPlannedMaskCoverageEventV2 {
+  const parsed = MaskCoveragePlannerInputV2Schema.safeParse(input);
+  if (!parsed.success) {
+    throw new GrandHallT554NativeReviewReplayV2Error(
+      "ARGUMENT_INVALID",
+      "The mask coverage planner input is not the exact bounded v2 schema.",
+      parsed.error,
+    );
+  }
+  const history = replayUntrustedMaskHistory({
+    scope: parsed.data.scope,
+    events: parsed.data.events,
+  });
+  try {
+    return frozenClone(
+      hydrateMaskCoverageEvent(
+        nextCoverageMaterial({
+          accumulator: history.accumulator,
           observation: parsed.data.observation,
         }),
       ),
@@ -1242,63 +1411,21 @@ export function validateGrandHallT554NativeReviewMaskChildSequenceV2(input: {
   readonly scope: unknown;
   readonly events: readonly unknown[];
 }): GrandHallT554NativeReviewValidatedMaskChildSequenceV2 {
-  const scopeResult = GrandHallT554NativeReviewMaskScopeV2Schema.safeParse(
-    input.scope,
-  );
-  if (!scopeResult.success) {
-    throw new GrandHallT554NativeReviewReplayV2Error(
-      "ARGUMENT_INVALID",
-      "The mask child scope is not the exact v2 schema.",
-      scopeResult.error,
-    );
-  }
-  assertChildEventLimit(input.events.length);
-  const parsed = input.events.map((event, index) => {
-    const result =
-      GrandHallT554NativeReviewMaskChildEventV2Schema.safeParse(event);
-    if (!result.success) {
-      throw new GrandHallT554NativeReviewReplayV2Error(
-        "EVENT_INVALID",
-        `Mask child event ${String(index + 1)} is not an exact typed v2 event.`,
-        result.error,
-      );
-    }
-    return result.data;
-  });
-  const first = parsed[0];
-  assertTransition(
-    first?.eventType === "mask.review-started.v2",
-    "Mask child replay must begin with exactly one mask start event.",
-  );
-  const accumulator = validateMaskStart(scopeResult.data, first.payload);
+  const history = replayUntrustedMaskHistory(input);
   try {
-    for (const event of parsed.slice(1)) {
-      if (event.eventType === "mask.review-started.v2") {
-        throw new GrandHallT554NativeReviewReplayV2Error(
-          "TRANSITION_INVALID",
-          "Mask child replay contains a second start event.",
-        );
-      }
-      if (event.eventType === "mask.tile-delivered.v2") {
-        replayDelivery(accumulator, event.payload);
-      } else {
-        replayCoverage(accumulator, event.payload);
-      }
-    }
     return Object.freeze({
       replay: Object.freeze({
         kind: "mask" as const,
-        scope: frozenClone(scopeResult.data),
-        started: frozenClone(first.payload),
-        coverage: snapshotReplay(accumulator),
+        scope: frozenClone(history.scope),
+        started: frozenClone(history.first.payload),
+        coverage: snapshotReplay(history.accumulator),
       }),
       latestServerOwnedAtUtc: new Date(
-        accumulator.lastServerInstantMs,
+        history.accumulator.lastServerInstantMs,
       ).toISOString(),
     });
   } finally {
-    accumulator.dwellBytes.fill(0);
-    accumulator.deliveredTiles.clear();
+    destroyReplayAccumulator(history.accumulator);
   }
 }
 
@@ -1453,7 +1580,6 @@ export function createGrandHallT554NativeReviewCoverageCarryStateV2(
     }),
   );
 }
-
 
 export function emptyGrandHallT554NativeReviewTileBitmapV2(): string {
   return EMPTY_TILE_BITMAP_HEX;

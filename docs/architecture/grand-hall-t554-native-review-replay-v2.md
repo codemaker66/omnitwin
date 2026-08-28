@@ -155,6 +155,12 @@ module-private production pack or loaded-runtime authority is configured.
 The compiled core exports no listener, browser launcher, acceptance path,
 reconstruction path, or production factory.
 
+The required implementation order and network/browser invariants for the
+later private operator surface are specified separately in
+`grand-hall-t554-native-review-loopback-v2.md`. That surface remains blocked
+until exact mask tile delivery, durable mask-review coverage/resume, and a
+unified process-owned v2 facade exist.
+
 ## Authority boundary
 
 All v2 state remains `authority: none`, `reviewState: human_pending`, and

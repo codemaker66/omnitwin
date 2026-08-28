@@ -2654,6 +2654,22 @@ function assertPixelCoordinate(x: number, y: number): void {
   }
 }
 
+function assertTileCoordinate(column: number, row: number): void {
+  if (
+    !Number.isInteger(column) ||
+    !Number.isInteger(row) ||
+    column < 0 ||
+    column >= TILE_COLUMN_COUNT ||
+    row < 0 ||
+    row >= TILE_ROW_COUNT
+  ) {
+    throw fail(
+      "ARGUMENT_INVALID",
+      "mask tile coordinate is outside the exact source grid",
+    );
+  }
+}
+
 export class GrandHallT554NativeMaskRevisionStore {
   readonly source: GrandHallPanoramaSourceJpgIdentityV2;
   readonly #publicationDirectory: string | null;
@@ -2764,6 +2780,42 @@ export class GrandHallT554NativeMaskRevisionStore {
       throw fail("INTERNAL_INVARIANT_FAILED", "native mask pixel is unavailable");
     }
     return { value, reasonCode: reason === 0 ? null : reasonCode(reason) };
+  }
+
+  /**
+   * Returns one fresh row-major 256 x 256 mask plane for trusted server
+   * rendering. The copy cannot mutate or retain an alias to revision storage.
+   */
+  copyMaskTileForServerRender(column: number, row: number): Buffer {
+    this.#assertUsable();
+    assertTileCoordinate(column, row);
+    const revision = this.#currentRevision();
+    const tile = revision.tiles[row * TILE_COLUMN_COUNT + column];
+    if (tile === undefined || tile.mask.length !== TILE_PIXEL_COUNT) {
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        "native mask tile is unavailable",
+      );
+    }
+    return Buffer.from(tile.mask);
+  }
+
+  /**
+   * Returns the matching fresh row-major exclusion-reason plane. Sample zero
+   * means included; nonzero samples use the frozen reason-map codebook.
+   */
+  copyReasonTileForServerRender(column: number, row: number): Buffer {
+    this.#assertUsable();
+    assertTileCoordinate(column, row);
+    const revision = this.#currentRevision();
+    const tile = revision.tiles[row * TILE_COLUMN_COUNT + column];
+    if (tile === undefined || tile.reasons.length !== TILE_PIXEL_COUNT) {
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        "native mask reason tile is unavailable",
+      );
+    }
+    return Buffer.from(tile.reasons);
   }
 
   applyEdit(input: unknown): GrandHallT554NativeMaskStoreSnapshot {
