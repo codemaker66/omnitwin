@@ -154,6 +154,25 @@ dollhouse view for that room, promotes its badge on the front door from
 dimensions — all automatically, with no web change. The manifest remains the
 only contract.
 
+### Open: the dollhouse does not yet read as a room
+
+Clipping is proven — beyond the box is black, and the cut is hard-edged. What is
+NOT working is the view from outside. Two things stand in the way:
+
+1. **The lid cut has no visible effect.** `keepHeightFraction` trims the box's
+   top, and reception at 0.72 renders identically to 1.0. The most likely cause
+   is that `SplatEditSdf` BOX does not take `scale` as half-extents the way this
+   code assumes; it may want full extents, or the `radius` field. Verify against
+   Spark's editor example before trusting any vertical crop.
+2. **From outside you see the backs of surfaces.** A scanner only ever saw the
+   inside of a room, so the outward face of every wall and ceiling is noise.
+   Even with a correct lid cut, a dollhouse needs the near walls dropped too,
+   not just the ceiling.
+
+None of this affects what ships: `?view=dollhouse` is opt-in, and both the front
+door and the default walkthrough put the camera inside the room, which works.
+
+
 ### Two capture traps, if you render stills
 
 Both cost hours to find:
