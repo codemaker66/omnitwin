@@ -46,21 +46,20 @@ const SUPPLIED_STILLS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Rooms with a still rendered from the scan itself.
+ * Otherwise, the still rendered from the room's own scan.
  *
- * Shot from inside the room, because a capture only ever saw a room's interior
- * — from outside you get the back of a ceiling, which is noise. These are the
- * truest posters available: the picture is the thing you get when you click it.
+ * Shot from inside, because a capture only ever saw a room's interior — from
+ * outside you get the back of a ceiling, which is noise. These are the truest
+ * posters available: the picture is the thing you get when you click it, and
+ * they cover rooms the venue has no photograph of at all.
  *
- * A room in neither map falls through to a typographic plate, which is why
- * there is no placeholder image anywhere and no room is ever shown a broken one.
+ * No list is kept of which rooms have one. The card requests the file and falls
+ * back to a typographic plate if it is not there, so a newly rendered poster
+ * appears on the front door without a code change — and a room with neither is
+ * never shown a broken image.
  */
-const RENDERED_STILLS: readonly string[] = ["reception-room"];
-
-function posterUrl(slug: string): string | null {
-  const supplied = SUPPLIED_STILLS[slug];
-  if (supplied !== undefined) return supplied;
-  return RENDERED_STILLS.includes(slug) ? `/images/rooms/${slug}.jpg` : null;
+function posterUrl(slug: string): string {
+  return SUPPLIED_STILLS[slug] ?? `/images/rooms/${slug}.jpg`;
 }
 
 /** Floor dimensions, to one decimal, in the order a person would say them. */
@@ -107,7 +106,7 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
   const still = posterUrl(slug);
   const [posterFailed, setPosterFailed] = useState(false);
   const onPosterError = useCallback(() => { setPosterFailed(true); }, []);
-  const showType = still === null || posterFailed;
+  const showType = posterFailed;
   const underReview = bundle.alignmentConfidence !== "confident";
 
   return (
@@ -178,7 +177,7 @@ export function RoomsHomePage(): ReactElement {
         <section className="rooms__hero" aria-labelledby="rooms-hero-name">
           <img
             className="rooms__heroPoster"
-            src={posterUrl(HERO_ROOM) ?? ""}
+            src={posterUrl(HERO_ROOM)}
             alt={displayName(HERO_ROOM)}
             width={1280}
             height={720}
