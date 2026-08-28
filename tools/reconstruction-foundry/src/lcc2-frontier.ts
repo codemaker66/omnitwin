@@ -166,6 +166,7 @@ export interface InspectLcc2HighestDetailFrontierOptionsV0 {
   readonly manifestPath: string;
   readonly environmentPolicy: Lcc2EnvironmentPolicy;
   readonly signal?: AbortSignal;
+  readonly maximumSogImagePixels?: number;
   /** @internal Deterministic mutation hooks for focused tests. Production callers omit this. */
   readonly testHooks?: {
     readonly beforeHash?: (relativePath: string) => void | PromiseLike<void>;
@@ -894,6 +895,12 @@ export async function inspectLcc2HighestDetailFrontier(
   options: InspectLcc2HighestDetailFrontierOptionsV0,
 ): Promise<Lcc2HighestDetailFrontierReceiptV0> {
   const environmentPolicy = normalizeEnvironmentPolicy(options.environmentPolicy);
+  if (
+    options.maximumSogImagePixels !== undefined &&
+    (!Number.isSafeInteger(options.maximumSogImagePixels) || options.maximumSogImagePixels < 1)
+  ) {
+    return fail("LCC2_ARGUMENT_INVALID", "maximumSogImagePixels must be a positive safe integer when supplied.");
+  }
   assertNotCancelled(options.signal);
   const manifestFile = await locateManifest(options.manifestPath);
   const manifestBytes = await readStableManifest(manifestFile, options.signal);
@@ -925,6 +932,7 @@ export async function inspectLcc2HighestDetailFrontier(
         expectedIdentity: file.identity,
         expectedGaussianCount,
         splatType: plan.source.splatType,
+        maximumSogImagePixels: options.maximumSogImagePixels,
         signal: options.signal,
       });
     } catch (error: unknown) {

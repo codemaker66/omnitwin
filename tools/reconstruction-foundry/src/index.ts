@@ -63,6 +63,8 @@ export * from "./grand-hall-t561-panorama-visual-observation-cli.js";
 export * from "./grand-hall-t561-real-observation-input.js";
 export * from "./lcc2-frontier-cli.js";
 export * from "./lcc2-frontier.js";
+export * from "./lcc2-ordered-gaussian-inventory-cli.js";
+export * from "./lcc2-ordered-gaussian-inventory.js";
 export * from "./local-app.js";
 export * from "./local-offline-normalization-preview.js";
 export * from "./signing.js";

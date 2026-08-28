@@ -1,10 +1,14 @@
+import { createHash } from "node:crypto";
 import { createGunzip, inflateRawSync } from "node:zlib";
 import type { Stats } from "node:fs";
-import { lstat, open, type FileHandle } from "node:fs/promises";
+import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
 import { Readable } from "node:stream";
+import sharp, { type OutputInfo } from "sharp";
 import {
   FOUNDRY_WEBP_MAX_BYTES,
   inspectWebpBytes,
+  parseWebpDimensions,
   type ExpectedRegularFileIdentity,
   type WebpDimensions,
 } from "@omnitwin/reconstruction-foundry";
@@ -16,10 +20,16 @@ const ZIP_MAX_TAIL_BYTES = 65_557;
 const MAX_SOG_ENTRIES = 64;
 const MAX_SOG_CENTRAL_BYTES = 4 * 1024 * 1024;
 const MAX_SOG_META_BYTES = 1024 * 1024;
+const MAX_SOG_JSON_DEPTH = 64;
 const MAX_SPZ_UNCOMPRESSED_BYTES = 64 * 1024 * 1024 * 1024;
 const SPZ_MAGIC = 0x5053474e;
 const SPZ_HEADER_BYTES = 16;
 const SPZ_ALLOWED_FLAGS = 0x81;
+export const LCC2_ORDERED_SOG_MAX_GAUSSIANS_PER_MEMBER = 8_000_000;
+export const LCC2_ORDERED_SOG_MAX_IMAGE_PIXELS = 8_388_608;
+export const LCC2_ORDERED_SOG_MAX_RETAINED_DECODED_BYTES = 256 * 1024 * 1024;
+export const LCC2_ORDERED_SOG_MAX_SNAPSHOT_BYTES = 384 * 1024 * 1024;
+const ORDERED_RECORD_CHUNK_GAUSSIANS = 65_536;
 
 export type Lcc2ContainerValidationErrorCode =
   | "cancelled"
@@ -44,7 +54,79 @@ export interface ValidateLcc2ContainerOptions {
   readonly expectedIdentity: ExpectedRegularFileIdentity;
   readonly expectedGaussianCount: number;
   readonly splatType: ".sog" | ".spz";
+  readonly maximumSogImagePixels?: number;
   readonly signal?: AbortSignal;
+}
+
+export type OrderedSogPlaneRoleV1 =
+  | "means_lower_bytes"
+  | "means_upper_bytes"
+  | "scale_codebook_indices"
+  | "quaternion_smallest_three"
+  | "sh0_codebook_indices_and_opacity"
+  | "shN_palette_labels"
+  | "shN_centroids";
+
+export interface OrderedSogPlaneDigestV1 {
+  readonly role: OrderedSogPlaneRoleV1;
+  readonly fileName: string;
+  readonly kind: "per_gaussian" | "palette";
+  readonly width: number;
+  readonly height: number;
+  readonly semanticChannels: 2 | 3 | 4;
+  readonly semanticPixelCount: number;
+  readonly encodedSizeBytes: number;
+  readonly encodedSha256: string;
+  readonly decodedSemanticSha256: string;
+  readonly encoding: "lossless_webp_vp8l";
+}
+
+export interface OrderedSogMemberInventoryV1 {
+  readonly relativePath: string;
+  readonly sizeBytes: number;
+  readonly sha256: string;
+  readonly metaJsonSha256: string;
+  readonly gaussianCount: number;
+  readonly imageWidth: number;
+  readonly imageHeight: number;
+  readonly pixelCapacity: number;
+  readonly ignoredTrailingPixelCount: number;
+  readonly packedRecordBytes: 17 | 19;
+  readonly quantizedPositionRecordLayout:
+    "x_low,x_high,y_low,y_high,z_low,z_high";
+  readonly packedRecordLayout:
+    | "x_low,x_high,y_low,y_high,z_low,z_high,scale_x,scale_y,scale_z,quat_r,quat_g,quat_b,quat_mode,sh0_r,sh0_g,sh0_b,opacity"
+    | "x_low,x_high,y_low,y_high,z_low,z_high,scale_x,scale_y,scale_z,quat_r,quat_g,quat_b,quat_mode,sh0_r,sh0_g,sh0_b,opacity,shN_label_low,shN_label_high";
+  readonly quantizedPositionSha256: string;
+  readonly packedRecordSha256: string;
+  readonly planes: readonly OrderedSogPlaneDigestV1[];
+  readonly proof: {
+    readonly ordinalPolicy: "row_major_top_left_meta_count_v1";
+    readonly trailingPixelsIgnored: true;
+    readonly everyPropertyPlaneUsesLosslessVp8lCodec: true;
+    readonly everyQuaternionModeValid: true;
+    readonly everyShNLabelInPaletteRange: true;
+    readonly decodedCoordinates: false;
+    readonly roomMembershipEstablished: false;
+    readonly immutableSha256BoundSnapshotUsed: true;
+    readonly sourceWrites: "none";
+    readonly applicationNetworkRequests: "none";
+    readonly storageTransportAssessment: "not_established";
+  };
+}
+
+export interface InspectOrderedSogMemberOptionsV1 {
+  readonly absolutePath: string;
+  readonly relativePath: string;
+  readonly expectedSizeBytes: number;
+  readonly expectedSha256: string;
+  readonly expectedGaussianCount: number;
+  readonly signal?: AbortSignal;
+  /** @internal Deterministic mutation hook for focused race tests. */
+  readonly testHooks?: {
+    readonly afterSnapshot?: () => void | PromiseLike<void>;
+    readonly beforeFinalIdentityCheck?: () => void | PromiseLike<void>;
+  };
 }
 
 interface ZipMember {
@@ -95,6 +177,15 @@ function sameIdentity(
   );
 }
 
+interface ExactByteReader {
+  readonly readExact: (length: number, position: number, label: string) => Buffer | Promise<Buffer>;
+}
+
+function comparablePath(path: string): string {
+  const normalized = resolve(path).replace(/^\\\\\?\\/u, "");
+  return process.platform === "win32" ? normalized.toLocaleLowerCase("en-US") : normalized;
+}
+
 async function readExact(
   handle: FileHandle,
   length: number,
@@ -112,6 +203,31 @@ async function readExact(
     offset += bytesRead;
   }
   return output;
+}
+
+function fileHandleReader(handle: FileHandle): ExactByteReader {
+  return {
+    readExact: (length, position, label) => readExact(handle, length, position, label),
+  };
+}
+
+function immutableBufferReader(snapshot: Buffer): ExactByteReader {
+  return {
+    readExact: (length, position, label) => {
+      if (
+        !Number.isSafeInteger(length) ||
+        length < 0 ||
+        !Number.isSafeInteger(position) ||
+        position < 0 ||
+        position + length > snapshot.length
+      ) {
+        return fail("invalid", `${label} is truncated or has an unsafe byte range.`);
+      }
+      // Callers may clear temporary buffers after decoding; never expose the
+      // immutable verified snapshot's backing memory.
+      return Buffer.from(snapshot.subarray(position, position + length));
+    },
+  };
 }
 
 async function* readHandleChunks(
@@ -174,14 +290,14 @@ function safeZipName(bytes: Buffer): string {
 }
 
 async function parseZipMembers(
-  handle: FileHandle,
+  reader: ExactByteReader,
   fileSize: number,
 ): Promise<readonly ZipMember[]> {
   if (!Number.isSafeInteger(fileSize) || fileSize < 22) {
     return fail("invalid", "SOG must be a non-empty ZIP archive.");
   }
   const tailLength = Math.min(fileSize, ZIP_MAX_TAIL_BYTES);
-  const tail = await readExact(handle, tailLength, fileSize - tailLength, "SOG ZIP trailer");
+  const tail = await reader.readExact(tailLength, fileSize - tailLength, "SOG ZIP trailer");
   let endOffset = -1;
   for (let offset = tail.length - 22; offset >= 0; offset -= 1) {
     if (tail.readUInt32LE(offset) !== ZIP_END_SIGNATURE) continue;
@@ -216,7 +332,7 @@ async function parseZipMembers(
   if (centralOffset + centralSize !== absoluteEndOffset) {
     return fail("invalid", "SOG ZIP central directory does not end at its end record.");
   }
-  const central = await readExact(handle, centralSize, centralOffset, "SOG ZIP central directory");
+  const central = await reader.readExact(centralSize, centralOffset, "SOG ZIP central directory");
   const provisional: Array<Omit<ZipMember, "dataOffset">> = [];
   const names = new Set<string>();
   let cursor = 0;
@@ -268,7 +384,7 @@ async function parseZipMembers(
     if (member.localHeaderOffset + 30 > centralOffset) {
       return fail("invalid", `SOG member ${member.name} has an invalid local header offset.`);
     }
-    const local = await readExact(handle, 30, member.localHeaderOffset, `SOG member ${member.name}`);
+    const local = await reader.readExact(30, member.localHeaderOffset, `SOG member ${member.name}`);
     if (local.readUInt32LE(0) !== ZIP_LOCAL_SIGNATURE) {
       return fail("invalid", `SOG member ${member.name} has no local ZIP header.`);
     }
@@ -279,8 +395,7 @@ async function parseZipMembers(
     const localUncompressedSize = local.readUInt32LE(22);
     const localNameLength = local.readUInt16LE(26);
     const localExtraLength = local.readUInt16LE(28);
-    const localName = safeZipName(await readExact(
-      handle,
+    const localName = safeZipName(await reader.readExact(
       localNameLength,
       member.localHeaderOffset + 30,
       `SOG member ${member.name} name`,
@@ -318,7 +433,7 @@ async function parseZipMembers(
   return members;
 }
 
-async function readSogMeta(handle: FileHandle, member: ZipMember): Promise<Buffer> {
+async function readSogMeta(reader: ExactByteReader, member: ZipMember): Promise<Buffer> {
   if (
     member.compressedSize > MAX_SOG_META_BYTES ||
     member.uncompressedSize > MAX_SOG_META_BYTES ||
@@ -326,7 +441,7 @@ async function readSogMeta(handle: FileHandle, member: ZipMember): Promise<Buffe
   ) {
     return fail("invalid", "SOG meta.json is empty or too large.");
   }
-  const compressed = await readExact(handle, member.compressedSize, member.dataOffset, "SOG meta.json");
+  const compressed = await reader.readExact(member.compressedSize, member.dataOffset, "SOG meta.json");
   let bytes: Buffer;
   try {
     bytes = member.method === 0
@@ -345,9 +460,148 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function decodeStrictSogJson(bytes: Buffer): string {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return fail("invalid", "SOG meta.json must not contain a UTF-8 byte-order mark.");
+  }
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (error: unknown) {
+    return fail("invalid", "SOG meta.json must be valid UTF-8.", error);
+  }
+  let index = 0;
+  const whitespace = (character: string | undefined): boolean =>
+    character === " " || character === "\t" || character === "\n" || character === "\r";
+  const skipWhitespace = (): void => {
+    while (index < text.length && whitespace(text[index])) index += 1;
+  };
+  const lexicalFail = (message: string): never =>
+    fail("invalid", `SOG meta.json ${message} at character ${String(index)}.`);
+  const parseString = (): string => {
+    if (text[index] !== '"') return lexicalFail("contains an invalid JSON string token");
+    const start = index;
+    index += 1;
+    while (index < text.length) {
+      const character = text[index];
+      if (character === '"') {
+        index += 1;
+        try {
+          const parsed: unknown = JSON.parse(text.slice(start, index));
+          return typeof parsed === "string" ? parsed : lexicalFail("contains an invalid JSON string value");
+        } catch (error: unknown) {
+          if (error instanceof Lcc2ContainerValidationError) throw error;
+          return lexicalFail("contains an invalid escaped JSON string");
+        }
+      }
+      if (character === "\\") {
+        index += 1;
+        const escape = text[index];
+        if (escape === "u") {
+          if (!/^[a-fA-F0-9]{4}$/u.test(text.slice(index + 1, index + 5))) {
+            return lexicalFail("contains an invalid JSON unicode escape");
+          }
+          index += 5;
+          continue;
+        }
+        if (escape === undefined || !/^["\\/bfnrt]$/u.test(escape)) {
+          return lexicalFail("contains an invalid JSON escape");
+        }
+        index += 1;
+        continue;
+      }
+      if (character === undefined || character.charCodeAt(0) < 0x20) {
+        return lexicalFail("contains an unescaped JSON control character");
+      }
+      index += 1;
+    }
+    return lexicalFail("contains an unterminated JSON string");
+  };
+  const parseNumber = (): void => {
+    const match = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/u.exec(text.slice(index));
+    if (match === null) return lexicalFail("contains an invalid JSON number");
+    index += match[0].length;
+  };
+  const prohibitedKeys = new Set(["__proto__", "constructor", "prototype"]);
+  const parseValue = (depth: number): void => {
+    if (depth > MAX_SOG_JSON_DEPTH) return lexicalFail("nesting is too deep");
+    skipWhitespace();
+    const character = text[index];
+    if (character === "{") {
+      index += 1;
+      skipWhitespace();
+      const keys = new Set<string>();
+      if (text[index] === "}") {
+        index += 1;
+        return;
+      }
+      for (;;) {
+        skipWhitespace();
+        const key = parseString();
+        if (keys.has(key)) return lexicalFail(`contains duplicate object key ${JSON.stringify(key)}`);
+        if (prohibitedKeys.has(key)) return lexicalFail(`contains prohibited object key ${JSON.stringify(key)}`);
+        keys.add(key);
+        skipWhitespace();
+        if (text[index] !== ":") return lexicalFail("is missing a colon after an object key");
+        index += 1;
+        parseValue(depth + 1);
+        skipWhitespace();
+        if (text[index] === "}") {
+          index += 1;
+          return;
+        }
+        if (text[index] !== ",") return lexicalFail("is missing a comma between object members");
+        index += 1;
+      }
+    }
+    if (character === "[") {
+      index += 1;
+      skipWhitespace();
+      if (text[index] === "]") {
+        index += 1;
+        return;
+      }
+      for (;;) {
+        parseValue(depth + 1);
+        skipWhitespace();
+        if (text[index] === "]") {
+          index += 1;
+          return;
+        }
+        if (text[index] !== ",") return lexicalFail("is missing a comma between array elements");
+        index += 1;
+      }
+    }
+    if (character === '"') {
+      parseString();
+      return;
+    }
+    if (character === "-" || (character !== undefined && /^[0-9]$/u.test(character))) {
+      parseNumber();
+      return;
+    }
+    for (const literal of ["true", "false", "null"] as const) {
+      if (text.startsWith(literal, index)) {
+        index += literal.length;
+        return;
+      }
+    }
+    return lexicalFail("contains an invalid JSON value");
+  };
+  parseValue(0);
+  skipWhitespace();
+  if (index !== text.length) return lexicalFail("contains trailing JSON data");
+  return text;
+}
+
 interface SogImagePlan {
   readonly referencedFiles: readonly string[];
   readonly perGaussianFiles: readonly string[];
+  readonly perGaussianPlanes: readonly {
+    readonly role: Exclude<OrderedSogPlaneRoleV1, "shN_centroids">;
+    readonly file: string;
+    readonly semanticChannels: 2 | 3 | 4;
+  }[];
   readonly shNCentroids?: {
     readonly file: string;
     readonly paletteCount: number;
@@ -410,7 +664,28 @@ function sogImagePlan(meta: Record<string, unknown>): SogImagePlan {
   const scalesFiles = sogFileSlots(scales, "scales", 1);
   const quatFiles = sogFileSlots(quats, "quats", 1);
   const sh0Files = sogFileSlots(sh0, "sh0", 1);
-  const perGaussianFiles = [...meansFiles, ...scalesFiles, ...quatFiles, ...sh0Files];
+  const meansLowerFile = meansFiles[0];
+  const meansUpperFile = meansFiles[1];
+  const scalesFile = scalesFiles[0];
+  const quatsFile = quatFiles[0];
+  const sh0File = sh0Files[0];
+  if (
+    meansLowerFile === undefined ||
+    meansUpperFile === undefined ||
+    scalesFile === undefined ||
+    quatsFile === undefined ||
+    sh0File === undefined
+  ) {
+    return fail("invalid", "SOG meta.json required property files are incomplete.");
+  }
+  const perGaussianPlanes: Array<SogImagePlan["perGaussianPlanes"][number]> = [
+    { role: "means_lower_bytes", file: meansLowerFile, semanticChannels: 3 },
+    { role: "means_upper_bytes", file: meansUpperFile, semanticChannels: 3 },
+    { role: "scale_codebook_indices", file: scalesFile, semanticChannels: 3 },
+    { role: "quaternion_smallest_three", file: quatsFile, semanticChannels: 4 },
+    { role: "sh0_codebook_indices_and_opacity", file: sh0File, semanticChannels: 4 },
+  ];
+  const perGaussianFiles = perGaussianPlanes.map((plane) => plane.file);
   let shNCentroids: SogImagePlan["shNCentroids"];
   if (meta.shN !== undefined) {
     if (!isRecord(meta.shN)) {
@@ -433,6 +708,11 @@ function sogImagePlan(meta: Record<string, unknown>): SogImagePlan {
     }
     shNCentroids = { file: centroidFile, paletteCount, bands };
     perGaussianFiles.push(labelFile);
+    perGaussianPlanes.push({
+      role: "shN_palette_labels",
+      file: labelFile,
+      semanticChannels: 2,
+    });
   }
 
   const referencedFiles = [
@@ -442,23 +722,24 @@ function sogImagePlan(meta: Record<string, unknown>): SogImagePlan {
   if (new Set(referencedFiles).size !== referencedFiles.length) {
     return fail("invalid", "SOG meta.json references a WebP member more than once.");
   }
-  return { referencedFiles, perGaussianFiles, shNCentroids };
+  return { referencedFiles, perGaussianFiles, perGaussianPlanes, shNCentroids };
 }
 
 async function validateSog(
-  handle: FileHandle,
+  reader: ExactByteReader,
   fileSize: number,
   expectedCount: number,
   signal: AbortSignal | undefined,
+  maximumImagePixelCapacity?: number,
 ): Promise<void> {
-  const members = await parseZipMembers(handle, fileSize);
+  const members = await parseZipMembers(reader, fileSize);
   const byName = new Map(members.map((member) => [member.name, member] as const));
   const metaMember = byName.get("meta.json");
   if (metaMember === undefined) return fail("invalid", "SOG ZIP must contain exactly one meta.json member.");
   let meta: unknown;
   try {
-    const bytes = await readSogMeta(handle, metaMember);
-    meta = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown;
+    const bytes = await readSogMeta(reader, metaMember);
+    meta = JSON.parse(decodeStrictSogJson(bytes)) as unknown;
   } catch (error: unknown) {
     if (error instanceof Lcc2ContainerValidationError) throw error;
     return fail("invalid", "SOG meta.json must be valid UTF-8 JSON.", error);
@@ -489,14 +770,26 @@ async function validateSog(
     ) {
       return fail("unsupported", `SOG WebP member ${name} must use the observed stored-WebP layout.`);
     }
-    const bytes = await readExact(handle, member.uncompressedSize, member.dataOffset, `SOG WebP member ${name}`);
+    const bytes = await reader.readExact(member.uncompressedSize, member.dataOffset, `SOG WebP member ${name}`);
     assertNotCancelled(signal);
     if (crc32(bytes) !== member.crc32) {
       return fail("invalid", `SOG member ${name} fails its ZIP CRC check.`);
     }
     try {
+      const headerDimensions = parseWebpDimensions(bytes, member.uncompressedSize);
+      const headerPixelCapacity = headerDimensions.width * headerDimensions.height;
+      if (
+        maximumImagePixelCapacity !== undefined &&
+        (!Number.isSafeInteger(headerPixelCapacity) || headerPixelCapacity > maximumImagePixelCapacity)
+      ) {
+        return fail(
+          "unsupported",
+          `SOG WebP member ${name} exceeds the ordered-inspection pixel-capacity limit.`,
+        );
+      }
       dimensionsByName.set(name, await inspectWebpBytes(bytes, member.uncompressedSize));
     } catch (error: unknown) {
+      if (error instanceof Lcc2ContainerValidationError) throw error;
       return fail("invalid", `SOG member ${name} is not a completely decodable WebP image.`, error);
     }
     assertNotCancelled(signal);
@@ -542,6 +835,458 @@ async function validateSog(
         `SOG shN centroid image must be ${String(expectedWidth)}x${String(expectedHeight)} pixels.`,
       );
     }
+  }
+}
+
+interface DecodedOrderedSogPlane {
+  readonly role: OrderedSogPlaneRoleV1;
+  readonly fileName: string;
+  readonly kind: "per_gaussian" | "palette";
+  readonly semanticChannels: 2 | 3 | 4;
+  readonly semanticPixelCount: number;
+  readonly width: number;
+  readonly height: number;
+  readonly rawRgba: Buffer;
+  readonly receipt: OrderedSogPlaneDigestV1;
+}
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function sha256Handle(
+  handle: FileHandle,
+  fileSize: number,
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of readHandleChunks(handle, fileSize, signal)) {
+    hash.update(chunk);
+  }
+  return hash.digest("hex");
+}
+
+function semanticPlaneSha256(
+  rawRgba: Buffer,
+  pixelCount: number,
+  semanticChannels: 2 | 3 | 4,
+  signal: AbortSignal | undefined,
+): string {
+  const hash = createHash("sha256");
+  const chunkPixels = Math.min(ORDERED_RECORD_CHUNK_GAUSSIANS, pixelCount);
+  const chunk = Buffer.allocUnsafe(Math.max(1, chunkPixels * semanticChannels));
+  try {
+    for (let start = 0; start < pixelCount; start += ORDERED_RECORD_CHUNK_GAUSSIANS) {
+      assertNotCancelled(signal);
+      const count = Math.min(ORDERED_RECORD_CHUNK_GAUSSIANS, pixelCount - start);
+      for (let localIndex = 0; localIndex < count; localIndex += 1) {
+        const inputOffset = (start + localIndex) * 4;
+        const outputOffset = localIndex * semanticChannels;
+        for (let channel = 0; channel < semanticChannels; channel += 1) {
+          chunk[outputOffset + channel] = rawRgba[inputOffset + channel] ?? 0;
+        }
+      }
+      hash.update(chunk.subarray(0, count * semanticChannels));
+    }
+    return hash.digest("hex");
+  } finally {
+    chunk.fill(0);
+  }
+}
+
+async function decodeOrderedSogPlane(
+  reader: ExactByteReader,
+  member: ZipMember,
+  role: OrderedSogPlaneRoleV1,
+  kind: "per_gaussian" | "palette",
+  semanticChannels: 2 | 3 | 4,
+  semanticPixelCount: number,
+  maximumDecodedBytes: number,
+  signal: AbortSignal | undefined,
+): Promise<DecodedOrderedSogPlane> {
+  if (
+    member.method !== 0 ||
+    member.compressedSize !== member.uncompressedSize ||
+    member.uncompressedSize < 12 ||
+    member.uncompressedSize > FOUNDRY_WEBP_MAX_BYTES
+  ) {
+    return fail("unsupported", `Ordered SOG plane ${member.name} must use the observed stored-WebP layout.`);
+  }
+  const bytes = await reader.readExact(member.uncompressedSize, member.dataOffset, `Ordered SOG plane ${member.name}`);
+  try {
+    assertNotCancelled(signal);
+    if (crc32(bytes) !== member.crc32) {
+      return fail("invalid", `Ordered SOG plane ${member.name} fails its ZIP CRC check.`);
+    }
+    const dimensions = parseWebpDimensions(bytes, bytes.length);
+    if (dimensions.encoding !== "VP8L") {
+      return fail(
+        "unsupported",
+        `Ordered SOG plane ${member.name} must be a simple lossless VP8L WebP so quantized bytes remain exact.`,
+      );
+    }
+    const pixelCapacity = dimensions.width * dimensions.height;
+    const decodedBytes = pixelCapacity * 4;
+    if (!Number.isSafeInteger(pixelCapacity) || semanticPixelCount > pixelCapacity) {
+      return fail("invalid", `Ordered SOG plane ${member.name} has insufficient pixel capacity.`);
+    }
+    if (
+      pixelCapacity > LCC2_ORDERED_SOG_MAX_IMAGE_PIXELS ||
+      !Number.isSafeInteger(decodedBytes) ||
+      decodedBytes > maximumDecodedBytes
+    ) {
+      return fail("unsupported", `Ordered SOG plane ${member.name} exceeds the bounded decoded-memory budget.`);
+    }
+    let decoded: Buffer;
+    let info: OutputInfo;
+    try {
+      const result = await sharp(bytes, {
+        failOn: "error",
+        limitInputPixels: 70_000_000,
+        sequentialRead: true,
+      }).ensureAlpha().raw({ depth: "uchar" }).toBuffer({ resolveWithObject: true });
+      decoded = result.data;
+      info = result.info;
+    } catch (error: unknown) {
+      return fail("invalid", `Ordered SOG plane ${member.name} could not be decoded exactly.`, error);
+    }
+    const rawRgba = decoded;
+    if (
+      info.width !== dimensions.width ||
+      info.height !== dimensions.height ||
+      info.channels !== 4 ||
+      info.size !== decodedBytes ||
+      rawRgba.length !== decodedBytes
+    ) {
+      rawRgba.fill(0);
+      return fail("invalid", `Ordered SOG plane ${member.name} did not decode to the required RGBA byte grid.`);
+    }
+    const encodedSha = sha256(bytes);
+    const decodedSemanticSha = semanticPlaneSha256(
+      rawRgba,
+      semanticPixelCount,
+      semanticChannels,
+      signal,
+    );
+    return {
+      role,
+      fileName: member.name,
+      kind,
+      semanticChannels,
+      semanticPixelCount,
+      width: dimensions.width,
+      height: dimensions.height,
+      rawRgba,
+      receipt: {
+        role,
+        fileName: member.name,
+        kind,
+        width: dimensions.width,
+        height: dimensions.height,
+        semanticChannels,
+        semanticPixelCount,
+        encodedSizeBytes: bytes.length,
+        encodedSha256: `sha256:${encodedSha}`,
+        decodedSemanticSha256: `sha256:${decodedSemanticSha}`,
+        encoding: "lossless_webp_vp8l",
+      },
+    };
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+function requiredPlane(
+  planes: ReadonlyMap<OrderedSogPlaneRoleV1, DecodedOrderedSogPlane>,
+  role: OrderedSogPlaneRoleV1,
+): DecodedOrderedSogPlane {
+  const plane = planes.get(role);
+  if (plane === undefined) return fail("invalid", `Ordered SOG plane ${role} is missing.`);
+  return plane;
+}
+
+function buildOrderedRecordDigests(
+  planes: ReadonlyMap<OrderedSogPlaneRoleV1, DecodedOrderedSogPlane>,
+  gaussianCount: number,
+  shNPaletteCount: number | undefined,
+  signal: AbortSignal | undefined,
+): {
+  readonly packedRecordBytes: 17 | 19;
+  readonly quantizedPositionSha256: string;
+  readonly packedRecordSha256: string;
+} {
+  const meansLower = requiredPlane(planes, "means_lower_bytes").rawRgba;
+  const meansUpper = requiredPlane(planes, "means_upper_bytes").rawRgba;
+  const scales = requiredPlane(planes, "scale_codebook_indices").rawRgba;
+  const quaternions = requiredPlane(planes, "quaternion_smallest_three").rawRgba;
+  const sh0 = requiredPlane(planes, "sh0_codebook_indices_and_opacity").rawRgba;
+  const labels = shNPaletteCount === undefined
+    ? undefined
+    : requiredPlane(planes, "shN_palette_labels").rawRgba;
+  const packedRecordBytes: 17 | 19 = labels === undefined ? 17 : 19;
+  const positionHash = createHash("sha256");
+  const packedHash = createHash("sha256");
+  const maximumChunkGaussians = Math.min(ORDERED_RECORD_CHUNK_GAUSSIANS, gaussianCount);
+  const positions = Buffer.allocUnsafe(Math.max(1, maximumChunkGaussians * 6));
+  const packed = Buffer.allocUnsafe(Math.max(1, maximumChunkGaussians * packedRecordBytes));
+  try {
+    for (let start = 0; start < gaussianCount; start += ORDERED_RECORD_CHUNK_GAUSSIANS) {
+      assertNotCancelled(signal);
+      const count = Math.min(ORDERED_RECORD_CHUNK_GAUSSIANS, gaussianCount - start);
+      for (let localIndex = 0; localIndex < count; localIndex += 1) {
+        const sourceOffset = (start + localIndex) * 4;
+        const positionOffset = localIndex * 6;
+        positions[positionOffset] = meansLower[sourceOffset] ?? 0;
+        positions[positionOffset + 1] = meansUpper[sourceOffset] ?? 0;
+        positions[positionOffset + 2] = meansLower[sourceOffset + 1] ?? 0;
+        positions[positionOffset + 3] = meansUpper[sourceOffset + 1] ?? 0;
+        positions[positionOffset + 4] = meansLower[sourceOffset + 2] ?? 0;
+        positions[positionOffset + 5] = meansUpper[sourceOffset + 2] ?? 0;
+
+        const packedOffset = localIndex * packedRecordBytes;
+        positions.copy(packed, packedOffset, positionOffset, positionOffset + 6);
+        packed[packedOffset + 6] = scales[sourceOffset] ?? 0;
+        packed[packedOffset + 7] = scales[sourceOffset + 1] ?? 0;
+        packed[packedOffset + 8] = scales[sourceOffset + 2] ?? 0;
+        packed[packedOffset + 9] = quaternions[sourceOffset] ?? 0;
+        packed[packedOffset + 10] = quaternions[sourceOffset + 1] ?? 0;
+        packed[packedOffset + 11] = quaternions[sourceOffset + 2] ?? 0;
+        const quaternionMode = quaternions[sourceOffset + 3] ?? 0;
+        if (quaternionMode < 252 || quaternionMode > 255) {
+          return fail("invalid", "Ordered SOG contains a reserved quaternion mode outside 252 through 255.");
+        }
+        packed[packedOffset + 12] = quaternionMode;
+        packed[packedOffset + 13] = sh0[sourceOffset] ?? 0;
+        packed[packedOffset + 14] = sh0[sourceOffset + 1] ?? 0;
+        packed[packedOffset + 15] = sh0[sourceOffset + 2] ?? 0;
+        packed[packedOffset + 16] = sh0[sourceOffset + 3] ?? 0;
+        if (labels !== undefined && shNPaletteCount !== undefined) {
+          const low = labels[sourceOffset] ?? 0;
+          const high = labels[sourceOffset + 1] ?? 0;
+          const label = low + (high << 8);
+          if (label >= shNPaletteCount) {
+            return fail("invalid", "Ordered SOG contains an shN label outside its declared palette.");
+          }
+          packed[packedOffset + 17] = low;
+          packed[packedOffset + 18] = high;
+        }
+      }
+      positionHash.update(positions.subarray(0, count * 6));
+      packedHash.update(packed.subarray(0, count * packedRecordBytes));
+    }
+    return {
+      packedRecordBytes,
+      quantizedPositionSha256: positionHash.digest("hex"),
+      packedRecordSha256: packedHash.digest("hex"),
+    };
+  } finally {
+    positions.fill(0);
+    packed.fill(0);
+  }
+}
+
+/**
+ * Reads one already-declared SOG member without writing it, then freezes the
+ * exact row-major quantized-record order used by the SOG v2 format. This does
+ * not dequantize coordinates or infer a room boundary.
+ */
+export async function inspectOrderedSogMember(
+  options: InspectOrderedSogMemberOptionsV1,
+): Promise<OrderedSogMemberInventoryV1> {
+  if (
+    !Number.isSafeInteger(options.expectedSizeBytes) ||
+    options.expectedSizeBytes < 1 ||
+    options.expectedSizeBytes > LCC2_ORDERED_SOG_MAX_SNAPSHOT_BYTES ||
+    !Number.isSafeInteger(options.expectedGaussianCount) ||
+    options.expectedGaussianCount < 1 ||
+    options.expectedGaussianCount > LCC2_ORDERED_SOG_MAX_GAUSSIANS_PER_MEMBER ||
+    typeof options.absolutePath !== "string" ||
+    !isAbsolute(options.absolutePath) ||
+    !/^sha256:[a-f0-9]{64}$/u.test(options.expectedSha256)
+  ) {
+    return fail("unsupported", "Ordered SOG inspection requires bounded exact size, count, and SHA-256 inputs.");
+  }
+  assertNotCancelled(options.signal);
+  let handle: FileHandle;
+  try {
+    handle = await open(options.absolutePath, "r");
+  } catch (error: unknown) {
+    return fail("source_changed", `Cannot open ordered SOG member ${options.relativePath}.`, error);
+  }
+  const decodedPlanes: DecodedOrderedSogPlane[] = [];
+  let snapshot: Buffer | undefined;
+  try {
+    const requestedPath = resolve(options.absolutePath);
+    const canonicalBefore = await realpath(requestedPath);
+    if (comparablePath(canonicalBefore) !== comparablePath(requestedPath)) {
+      return fail("source_changed", `Ordered SOG member path is indirect: ${options.relativePath}.`);
+    }
+    const before = await handle.stat();
+    const pathBefore = await lstat(options.absolutePath);
+    if (
+      !before.isFile() ||
+      !pathBefore.isFile() ||
+      pathBefore.isSymbolicLink() ||
+      before.nlink !== 1 ||
+      pathBefore.nlink !== 1 ||
+      before.size !== options.expectedSizeBytes ||
+      !sameIdentity(identityFromStats(before), identityFromStats(pathBefore))
+    ) {
+      return fail("source_changed", `Ordered SOG member is indirect, linked, or changed: ${options.relativePath}.`);
+    }
+    const expectedRawSha = options.expectedSha256.slice("sha256:".length);
+    snapshot = await readExact(handle, before.size, 0, `Ordered SOG snapshot ${options.relativePath}`);
+    if (sha256(snapshot) !== expectedRawSha) {
+      return fail("source_changed", `Ordered SOG member SHA-256 changed: ${options.relativePath}.`);
+    }
+    const snapshotReader = immutableBufferReader(snapshot);
+    await options.testHooks?.afterSnapshot?.();
+
+    // Every parse and decode below consumes only this exact immutable SHA-bound
+    // snapshot, so an in-place source mutation cannot alter derived records.
+    await validateSog(
+      snapshotReader,
+      before.size,
+      options.expectedGaussianCount,
+      options.signal,
+      LCC2_ORDERED_SOG_MAX_IMAGE_PIXELS,
+    );
+    const members = await parseZipMembers(snapshotReader, before.size);
+    const byName = new Map(members.map((member) => [member.name, member] as const));
+    const metaMember = byName.get("meta.json");
+    if (metaMember === undefined) return fail("invalid", "SOG ZIP must contain meta.json.");
+    const metaBytes = await readSogMeta(snapshotReader, metaMember);
+    let meta: unknown;
+    try {
+      meta = JSON.parse(decodeStrictSogJson(metaBytes)) as unknown;
+    } catch (error: unknown) {
+      return fail("invalid", "SOG meta.json must be valid UTF-8 JSON.", error);
+    }
+    if (
+      !isRecord(meta) ||
+      meta.version !== 2 ||
+      meta.count !== options.expectedGaussianCount
+    ) {
+      return fail("count_mismatch", "Ordered SOG metadata no longer matches its declared Gaussian count.");
+    }
+    const imagePlan = sogImagePlan(meta);
+    const firstPlane = imagePlan.perGaussianPlanes[0];
+    if (firstPlane === undefined) return fail("invalid", "Ordered SOG has no per-Gaussian planes.");
+    let retainedDecodedBytes = 0;
+    for (const planePlan of imagePlan.perGaussianPlanes) {
+      assertNotCancelled(options.signal);
+      const member = byName.get(planePlan.file);
+      if (member === undefined) return fail("invalid", `Ordered SOG plane ${planePlan.file} is missing.`);
+      const decodedPlane = await decodeOrderedSogPlane(
+        snapshotReader,
+        member,
+        planePlan.role,
+        "per_gaussian",
+        planePlan.semanticChannels,
+        options.expectedGaussianCount,
+        LCC2_ORDERED_SOG_MAX_RETAINED_DECODED_BYTES - retainedDecodedBytes,
+        options.signal,
+      );
+      decodedPlanes.push(decodedPlane);
+      retainedDecodedBytes += decodedPlane.rawRgba.length;
+    }
+    if (imagePlan.shNCentroids !== undefined) {
+      const member = byName.get(imagePlan.shNCentroids.file);
+      const coefficientCount = [3, 8, 15][imagePlan.shNCentroids.bands - 1];
+      if (member === undefined || coefficientCount === undefined) {
+        return fail("invalid", "Ordered SOG shN centroid plane is missing or invalid.");
+      }
+      const decodedPlane = await decodeOrderedSogPlane(
+        snapshotReader,
+        member,
+        "shN_centroids",
+        "palette",
+        3,
+        imagePlan.shNCentroids.paletteCount * coefficientCount,
+        LCC2_ORDERED_SOG_MAX_RETAINED_DECODED_BYTES - retainedDecodedBytes,
+        options.signal,
+      );
+      decodedPlanes.push(decodedPlane);
+      retainedDecodedBytes += decodedPlane.rawRgba.length;
+    }
+    const dimensions = decodedPlanes[0];
+    if (dimensions === undefined) return fail("invalid", "Ordered SOG decoded no property planes.");
+    for (const plane of decodedPlanes.filter((candidate) => candidate.kind === "per_gaussian")) {
+      if (plane.width !== dimensions.width || plane.height !== dimensions.height) {
+        return fail("invalid", "Ordered SOG per-Gaussian planes do not share one pixel grid.");
+      }
+    }
+    const pixelCapacity = dimensions.width * dimensions.height;
+    const planeMap = new Map(decodedPlanes.map((plane) => [plane.role, plane] as const));
+    const shNPaletteCount = imagePlan.shNCentroids?.paletteCount;
+    const recordDigests = buildOrderedRecordDigests(
+      planeMap,
+      options.expectedGaussianCount,
+      shNPaletteCount,
+      options.signal,
+    );
+
+    await options.testHooks?.beforeFinalIdentityCheck?.();
+    assertNotCancelled(options.signal);
+    if (await sha256Handle(handle, before.size, options.signal) !== expectedRawSha) {
+      return fail("source_changed", `Ordered SOG member changed during decoding: ${options.relativePath}.`);
+    }
+    const after = await handle.stat();
+    const pathAfter = await lstat(options.absolutePath);
+    const canonicalAfter = await realpath(requestedPath);
+    if (
+      !after.isFile() ||
+      !pathAfter.isFile() ||
+      pathAfter.isSymbolicLink() ||
+      after.nlink !== 1 ||
+      pathAfter.nlink !== 1 ||
+      comparablePath(canonicalAfter) !== comparablePath(requestedPath) ||
+      !sameIdentity(identityFromStats(before), identityFromStats(after)) ||
+      !sameIdentity(identityFromStats(after), identityFromStats(pathAfter))
+    ) {
+      return fail("source_changed", `Ordered SOG member changed during inspection: ${options.relativePath}.`);
+    }
+
+    const hasShN = shNPaletteCount !== undefined;
+    return Object.freeze({
+      relativePath: options.relativePath,
+      sizeBytes: options.expectedSizeBytes,
+      sha256: options.expectedSha256,
+      metaJsonSha256: `sha256:${sha256(metaBytes)}`,
+      gaussianCount: options.expectedGaussianCount,
+      imageWidth: dimensions.width,
+      imageHeight: dimensions.height,
+      pixelCapacity,
+      ignoredTrailingPixelCount: pixelCapacity - options.expectedGaussianCount,
+      packedRecordBytes: recordDigests.packedRecordBytes,
+      quantizedPositionRecordLayout: "x_low,x_high,y_low,y_high,z_low,z_high",
+      packedRecordLayout: hasShN
+        ? "x_low,x_high,y_low,y_high,z_low,z_high,scale_x,scale_y,scale_z,quat_r,quat_g,quat_b,quat_mode,sh0_r,sh0_g,sh0_b,opacity,shN_label_low,shN_label_high"
+        : "x_low,x_high,y_low,y_high,z_low,z_high,scale_x,scale_y,scale_z,quat_r,quat_g,quat_b,quat_mode,sh0_r,sh0_g,sh0_b,opacity",
+      quantizedPositionSha256: `sha256:${recordDigests.quantizedPositionSha256}`,
+      packedRecordSha256: `sha256:${recordDigests.packedRecordSha256}`,
+      planes: Object.freeze(decodedPlanes.map((plane) => Object.freeze(plane.receipt))),
+      proof: Object.freeze({
+        ordinalPolicy: "row_major_top_left_meta_count_v1" as const,
+        trailingPixelsIgnored: true as const,
+        everyPropertyPlaneUsesLosslessVp8lCodec: true as const,
+        everyQuaternionModeValid: true as const,
+        everyShNLabelInPaletteRange: true as const,
+        decodedCoordinates: false as const,
+        roomMembershipEstablished: false as const,
+        immutableSha256BoundSnapshotUsed: true as const,
+        sourceWrites: "none" as const,
+        applicationNetworkRequests: "none" as const,
+        storageTransportAssessment: "not_established" as const,
+      }),
+    });
+  } catch (error: unknown) {
+    if (error instanceof Lcc2ContainerValidationError) throw error;
+    return fail("source_changed", `Ordered SOG member became unavailable: ${options.relativePath}.`, error);
+  } finally {
+    for (const plane of decodedPlanes) plane.rawRgba.fill(0);
+    snapshot?.fill(0);
+    await handle.close();
   }
 }
 
@@ -638,6 +1383,12 @@ async function validateSpz(
 
 export async function validateLcc2Container(options: ValidateLcc2ContainerOptions): Promise<void> {
   assertNotCancelled(options.signal);
+  if (
+    options.maximumSogImagePixels !== undefined &&
+    (!Number.isSafeInteger(options.maximumSogImagePixels) || options.maximumSogImagePixels < 1)
+  ) {
+    return fail("unsupported", "SOG image pixel capacity limit must be a positive safe integer.");
+  }
   let handle: FileHandle;
   try {
     handle = await open(options.absolutePath, "r");
@@ -654,7 +1405,13 @@ export async function validateLcc2Container(options: ValidateLcc2ContainerOption
       return fail("source_changed", `Declared LCC2 member changed before validation: ${options.relativePath}.`);
     }
     if (options.splatType === ".sog") {
-      await validateSog(handle, before.size, options.expectedGaussianCount, options.signal);
+      await validateSog(
+        fileHandleReader(handle),
+        before.size,
+        options.expectedGaussianCount,
+        options.signal,
+        options.maximumSogImagePixels,
+      );
     } else {
       await validateSpz(
         handle,
