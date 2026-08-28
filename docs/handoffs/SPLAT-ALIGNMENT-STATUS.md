@@ -187,6 +187,67 @@ Both cost hours to find:
    It returns at t=0 and captures an empty room. Wait on
    `window.__roomWalk.complete`, which can only be true once.
 
+## The scanner's walk is the best thing in the bundle
+
+Every capture ships `lcc2-result/info/poses.json` — where the operator stood,
+pose by pose, 1,704 to 21,417 of them, in the same coordinate frame as the
+splats. It went unused for the first week of this work and it should not have.
+
+A person carrying a scanner stays inside the room, at eye height, in the free
+space. So the walk answers three questions the geometry could not:
+
+- **Where to put the viewer.** Standing where the scanner stood cannot be
+  outside the room, and has data in every direction.
+- **Where the room ends.** Outside the walked region a capture has only the
+  backs of surfaces, so there is nothing there worth showing whatever the mesh
+  bounds claim.
+- **How tall a person is here**, which is the eye height to use.
+
+Measured against the venue's published sizes it is markedly the better
+instrument:
+
+| Room | From the mesh | From the walk |
+| --- | --- | --- |
+| grand-hall | 85% off | **5% off** |
+| saloon | 41% off | **7% off** |
+| reception-room | 14% off | 14% off |
+| robert-adam-room | 563% off | 221% off |
+
+The pipeline now uses **both**, each where it is strong: the floor height comes
+from the mesh, which can see the floor, and everything horizontal comes from the
+walk, which cannot. Eye height falls out of the difference.
+
+Robert Adam is the honest exception. Its operator walked a whole floor, so no
+per-axis measurement of either instrument can isolate one room from it. That is
+what `roomCropM` is for.
+
+## The camera stands in the room and cannot leave it
+
+`OrbitControls` was structurally wrong and has been removed. An orbit rotates
+the camera *around a target point*, so looking left swings the viewer bodily
+through the wall — which is why the room could be escaped at all. The
+replacement (`components/rooms/InteriorCamera.tsx`) turns the head and never the
+body: rotation does not write position, so containment only has to hold
+translation.
+
+Three properties worth not breaking:
+
+1. **Rotation never writes position.** This is what makes leaving the room
+   impossible rather than merely discouraged.
+2. **Damping is `1 - exp(-dt / tau)`, not a per-frame lerp.** A per-frame lerp is
+   a different filter at 30 fps than at 144; that inconsistency is what reads as
+   "laggy" even when the frame rate is fine.
+3. **Invalidation has two halves.** Under `frameloop="demand"` input handlers
+   WAKE the loop and `useFrame` SUSTAINS it. `useFrame` does not run while the
+   loop is idle, so it can never restart itself — build only that half and the
+   camera appears frozen.
+
+`window.__roomCamera` publishes the live position and a `contained` flag, so
+containment is measured rather than hoped for. A headless probe spins the view a
+full turn and shoves forward 200 wheel-notches; all rooms tested stay inside.
+
+There is no exterior view and there should not be one — see below.
+
 ## Log
 
 Append here rather than rewriting, newest last.

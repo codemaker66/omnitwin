@@ -106,6 +106,18 @@ export interface RoomManifestEntry {
   };
   /** Scene-space width, height, depth in metres. */
   readonly extentM: readonly [number, number, number];
+  /** Where the viewer starts: a pose the scanner actually occupied. */
+  readonly spawn: {
+    readonly position: readonly [number, number, number];
+    readonly yaw: number;
+  } | null;
+  /** The box the viewer may move within, in scene metres. */
+  readonly bounds: {
+    readonly min: readonly [number, number, number];
+    readonly max: readonly [number, number, number];
+  } | null;
+  /** How high the scanner was carried above the floor, in metres. */
+  readonly eyeHeightM: number | null;
   readonly alignmentConfidence: "confident" | "review";
   readonly alignmentNote: string;
 }
@@ -156,6 +168,29 @@ export function writeRoomManifest(outPath: string, entries: readonly RoomManifes
     "  };",
     "  /** Scene-space width, height, depth in metres. */",
     "  readonly extentM: readonly [number, number, number];",
+    "  /**",
+    "   * Where the viewer starts, from the scanner's own walk.",
+    "   *",
+    "   * A pose the operator actually occupied, so it cannot be outside the room",
+    "   * and is guaranteed to have captured surface in every direction. Null when",
+    "   * the capture shipped no usable trajectory.",
+    "   */",
+    "  readonly spawn: {",
+    "    readonly position: readonly [number, number, number];",
+    "    readonly yaw: number;",
+    "  } | null;",
+    "  /**",
+    "   * The box the viewer may move within, in scene metres.",
+    "   *",
+    "   * The region the operator walked. Outside it a capture has no data at all —",
+    "   * only the backs of surfaces — so there is nothing there worth showing.",
+    "   */",
+    "  readonly bounds: {",
+    "    readonly min: readonly [number, number, number];",
+    "    readonly max: readonly [number, number, number];",
+    "  } | null;",
+    "  /** How high the scanner was carried above the floor, in metres. */",
+    "  readonly eyeHeightM: number | null;",
     "  /**",
     "   * Whether the derived alignment can be trusted without human review.",
     "   * `review` means the capture is probably a whole-floor scan in which this",

@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { checkAgainstPublished, sceneExtentForRoomFrame, sceneTransformForRoomFrame } from "./align.js";
+import {
+  checkAgainstPublished,
+  sceneExtentForRoomFrame,
+  sceneTransformForRoomFrame,
+  walkAlignedFrame,
+  walkAlignedTransform,
+} from "./align.js";
+import { decimateWalk, denseWalkRegion, medoidPose, parseWalkPoses, walkEyeHeight } from "./walk-path.js";
 import { TRADES_HALL_CAPTURE_SOURCES, type CaptureSource } from "./capture-sources.js";
 import { parseObjVertices, roomFrameFromVertices } from "./obj-bounds.js";
 import { parseLcc2Manifest } from "./lcc2-manifest.js";
@@ -56,6 +63,7 @@ interface MeasuredRoom {
   readonly failure: string | null;
   readonly manifestPath: string;
   readonly objPath: string;
+  readonly posesPath: string;
 }
 
 function resolveRoom(source: CaptureSource, args: Args): MeasuredRoom | null {
@@ -68,6 +76,7 @@ function resolveRoom(source: CaptureSource, args: Args): MeasuredRoom | null {
     failure: null,
     manifestPath: join(captureRoot, "lcc2-result", `${source.assetBaseName}.lcc2`),
     objPath: join(captureRoot, "mesh-files", `${source.assetBaseName}.obj`),
+    posesPath: join(captureRoot, "lcc2-result", "info", "poses.json"),
   };
 }
 
@@ -243,6 +252,28 @@ function stage(args: Args): number {
       continue;
     }
 
+    // The scanner's own walk, where the capture recorded one. It defines the
+    // room better than the geometry does — the operator stayed inside it.
+    let walkFrame: ReturnType<typeof walkAlignedFrame> | null = null;
+    try {
+      const walk = parseWalkPoses(readFileSync(resolved.posesPath, "utf8"));
+      const region = denseWalkRegion(walk);
+      const medoid = medoidPose(walk);
+      const medianZ = walkEyeHeight(walk);
+      if (region !== null && medoid !== null && medianZ !== null) {
+        // Face along the room's longer axis from where the scanner stood.
+        const spanX = region.max[0] - region.min[0];
+        const spanY = region.max[1] - region.min[1];
+        const yaw = spanY >= spanX ? 0 : Math.PI / 2;
+        walkFrame = walkAlignedFrame(
+          frame, region.min, region.max, medianZ, medoid.position, yaw,
+        );
+        void decimateWalk(walk, 120);
+      }
+    } catch {
+      walkFrame = null;
+    }
+
     const check = checkAgainstPublished(frame, source.publishedExtentM);
     const confidence = alignmentConfidence(frame.retainedFraction, check.verdict);
 
@@ -254,12 +285,19 @@ function stage(args: Args): number {
       totalLevels: bundle.totalLevels,
       tiles: staged.tiles,
       totalBytes: staged.totalBytes,
-      transform: sceneTransformForRoomFrame(frame),
-      extentM: sceneExtentForRoomFrame(frame),
+      transform: walkFrame === null
+        ? sceneTransformForRoomFrame(frame)
+        : walkAlignedTransform(frame, walkFrame.centre),
+      extentM: walkFrame === null ? sceneExtentForRoomFrame(frame) : walkFrame.extentM,
+      spawn: walkFrame?.spawn ?? null,
+      bounds: walkFrame?.bounds ?? null,
+      eyeHeightM: walkFrame?.eyeHeightM ?? null,
       alignmentConfidence: confidence,
-      alignmentNote:
-        `Derived from ${source.captureDir}; ${(frame.retainedFraction * 100).toFixed(0)}% of the capture ` +
-        `sits inside the frame. ${check.detail}`,
+      alignmentNote: walkFrame === null
+        ? `Derived from ${source.captureDir} geometry alone, with no recorded walk; ` +
+          `${(frame.retainedFraction * 100).toFixed(0)}% of the capture sits inside the frame. ${check.detail}`
+        : `Derived from ${source.captureDir}: floor from the room mesh, room from the ` +
+          `scanner's own walk. ${check.detail}`,
     });
 
     process.stdout.write(

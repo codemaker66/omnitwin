@@ -262,6 +262,11 @@ matches what you're about to do.
   scene that reaches its "loaded" state but renders a blank canvas
   (especially when it works on localhost and fails deployed).
 
+- `.claude/gotchas/splat-camera-and-capture.md`
+  Read this when: building or tuning a camera over a Gaussian splat,
+  capturing stills of a splat scene offline, or deciding where to put a
+  viewer inside a captured room.
+
 - `.claude/gotchas/spark-render-target-effects.md`
   Read this when: adding any effect that renders the scene to an
   off-screen target (drei `ContactShadows`, `Environment` probes,

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
 import {
   SparkSplatLayer,
   type SparkSplatErrorEvent,
@@ -8,6 +7,7 @@ import {
 } from "../scene/SparkSplatLayer.js";
 import { roomSplatBundle, roomSplatTileUrls } from "../../data/room-splat-bundles.js";
 import { RoomClipBox } from "./RoomClipBox.js";
+import { InteriorCamera } from "./InteriorCamera.js";
 import {
   runtimeAssetCameraViewForRoom,
   runtimeAssetViewTransformForRoom,
@@ -41,7 +41,6 @@ export interface RoomSplatSceneProps {
    * without that, pulling back shows the corridor and stair the operator walked
    * through on the way in.
    */
-  readonly dollhouse?: boolean;
   /**
    * Keep the drawing buffer after present so the canvas can be read back with
    * toDataURL. Off by default: it costs memory and blocks some driver fast
@@ -64,7 +63,6 @@ export interface RoomSplatSceneProps {
 export function RoomSplatScene({
   room,
   onProgress,
-  dollhouse = false,
   captureReadback = false,
 }: RoomSplatSceneProps): ReactElement {
   const urls = useMemo(
@@ -75,17 +73,24 @@ export function RoomSplatScene({
   const camera = runtimeAssetCameraViewForRoom(room, "staged");
   const extentM = roomSplatBundle(room)?.extentM ?? null;
 
-  // Standing inside frames the room at eye height. The dollhouse view steps
-  // outside and looks down at the whole room — which only reads as a room
-  // because RoomClipBox has removed the building around it.
-  const [width, height, depth] = extentM ?? [0, 0, 0];
-  const outside = Math.max(width, depth) * 1.15 + 4;
-  const startPosition: [number, number, number] = dollhouse
-    ? [outside * 0.62, Math.max(height * 1.5, outside * 0.55), outside * 0.62]
-    : [...camera.position] as [number, number, number];
-  const startTarget: [number, number, number] = dollhouse
-    ? [0, height * 0.45, 0]
-    : [...camera.target] as [number, number, number];
+  // Where the scanner actually stood, and how far they went. The walk is the
+  // only honest answer to both: a person carrying the scanner stayed inside the
+  // room, at eye height, in the free space — so standing there cannot be
+  // outside, and going no further than they did cannot reach the uncaptured
+  // exterior. Rooms whose capture shipped no trajectory fall back to the frame
+  // derived from geometry.
+  const bundle = roomSplatBundle(room);
+  const spawn = bundle?.spawn ?? null;
+  const walkBounds = bundle?.bounds ?? null;
+  const startPosition: [number, number, number] = spawn === null
+    ? [...camera.position] as [number, number, number]
+    : [...spawn.position] as [number, number, number];
+
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== "undefined"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    [],
+  );
 
   const loadedRef = useRef<Map<string, number>>(new Map());
   const failedRef = useRef<Set<string>>(new Set());
@@ -142,11 +147,7 @@ export function RoomSplatScene({
     >
       <ambientLight intensity={1} />
       {extentM !== null && (
-        <RoomClipBox
-          extentM={extentM}
-          // Looking in from outside, keep the walls but take the lid off.
-          keepHeightFraction={dollhouse ? 0.72 : 1}
-        />
+        <RoomClipBox extentM={extentM} keepHeightFraction={1} />
       )}
       {urls.map((url) => (
         <SparkSplatLayer
@@ -159,21 +160,17 @@ export function RoomSplatScene({
           onError={handleError}
         />
       ))}
-      <OrbitControls
-        makeDefault
-        enableDamping
-        dampingFactor={camera.dampingFactor}
-        target={startTarget}
-        minDistance={camera.minDistance}
-        // Everything beyond the walls is clipped, so pulling back is safe:
-        // the far limit is the room's own size, not the capture's.
-        maxDistance={dollhouse ? outside * 2.2 : Math.max(camera.maxDistance, outside * 1.6)}
-        panSpeed={camera.panSpeed}
-        rotateSpeed={camera.rotateSpeed}
-        zoomSpeed={camera.zoomSpeed}
-        minPolarAngle={camera.minPolarAngle}
-        maxPolarAngle={camera.maxPolarAngle}
-      />
+      {spawn !== null && walkBounds !== null && (
+        <InteriorCamera
+          spawn={{ position: [...spawn.position] as [number, number, number], yaw: spawn.yaw }}
+          bounds={{
+            min: [...walkBounds.min] as [number, number, number],
+            max: [...walkBounds.max] as [number, number, number],
+          }}
+          roomHeightM={extentM?.[1]}
+          reducedMotion={prefersReducedMotion}
+        />
+      )}
     </Canvas>
   );
 }

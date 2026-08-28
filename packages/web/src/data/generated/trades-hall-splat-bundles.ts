@@ -36,6 +36,29 @@ export interface GeneratedRoomSplatBundle {
   /** Scene-space width, height, depth in metres. */
   readonly extentM: readonly [number, number, number];
   /**
+   * Where the viewer starts, from the scanner's own walk.
+   *
+   * A pose the operator actually occupied, so it cannot be outside the room
+   * and is guaranteed to have captured surface in every direction. Null when
+   * the capture shipped no usable trajectory.
+   */
+  readonly spawn: {
+    readonly position: readonly [number, number, number];
+    readonly yaw: number;
+  } | null;
+  /**
+   * The box the viewer may move within, in scene metres.
+   *
+   * The region the operator walked. Outside it a capture has no data at all —
+   * only the backs of surfaces — so there is nothing there worth showing.
+   */
+  readonly bounds: {
+    readonly min: readonly [number, number, number];
+    readonly max: readonly [number, number, number];
+  } | null;
+  /** How high the scanner was carried above the floor, in metres. */
+  readonly eyeHeightM: number | null;
+  /**
    * Whether the derived alignment can be trusted without human review.
    * `review` means the capture is probably a whole-floor scan in which this
    * room is only a part - see the tool's roomCropM.
@@ -227,9 +250,9 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "totalBytes": 209794464,
       "transform": {
         "position": [
-          5.281836046874998,
+          4.911651,
           6.327585,
-          -8.624159203125
+          -8.571432999999999
         ],
         "rotation": [
           -1.5707963267948966,
@@ -239,12 +262,33 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         "scale": 1
       },
       "extentM": [
-        13.753180968750005,
+        10.087102,
         12.921247197916665,
-        22.333778906250004
+        19.867694
       ],
+      "spawn": {
+        "position": [
+          0.4139999999999997,
+          3,
+          -1.0642519999999989
+        ],
+        "yaw": 0
+      },
+      "bounds": {
+        "min": [
+          -5.043551,
+          2.4,
+          -9.933846999999998
+        ],
+        "max": [
+          5.043551,
+          3.6,
+          9.933847
+        ]
+      },
+      "eyeHeightM": 3,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scans_BIG_MODEL_TH_GH_2; 73% of the capture sits inside the frame. Derived 13.8x22.3x12.9 m disagrees with published 21x10x7 m (worst axis 85%). Check the capture-to-room mapping before wiring this room."
+      "alignmentNote": "Derived from scans_BIG_MODEL_TH_GH_2: floor from the room mesh, room from the scanner's own walk. Derived 13.8x22.3x12.9 m disagrees with published 21.0x10.0x7.0 m (worst axis 85%). Check the capture-to-room mapping before wiring this room."
     },
     {
       "roomSlug": "reception-room",
@@ -320,9 +364,9 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "totalBytes": 72069973,
       "transform": {
         "position": [
-          1.3136850937500006,
+          1.2141755000000003,
           1.9456600000000002,
-          -5.500639380208333
+          -5.645894
         ],
         "rotation": [
           -1.5707963267948966,
@@ -332,12 +376,33 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         "scale": 1
       },
       "extentM": [
-        11.2354821875,
+        9.661757,
         3.6612683333333336,
-        14.723165239583333
+        12.410764
       ],
+      "spawn": {
+        "position": [
+          -0.3882574999999997,
+          1.873571,
+          -0.42241700000000026
+        ],
+        "yaw": 0
+      },
+      "bounds": {
+        "min": [
+          -4.8308785,
+          1.273571,
+          -6.205382
+        ],
+        "max": [
+          4.8308785,
+          2.473571,
+          6.205382
+        ]
+      },
+      "eyeHeightM": 1.873571,
       "alignmentConfidence": "confident",
-      "alignmentNote": "Derived from scan_output_1_reception; 96% of the capture sits inside the frame. Derived 11.2x14.7x3.7 m agrees with published 13.4x11.2x3.2 m (worst axis 14%)."
+      "alignmentNote": "Derived from scan_output_1_reception: floor from the room mesh, room from the scanner's own walk. Derived 11.2x14.7x3.7 m agrees with published 13.4x11.2x3.2 m (worst axis 14%)."
     },
     {
       "roomSlug": "saloon",
@@ -518,9 +583,9 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "totalBytes": 219806901,
       "transform": {
         "position": [
-          1.4660470208333338,
+          1.280121,
           1.5,
-          -5.86941
+          -5.831064
         ],
         "rotation": [
           -1.5707963267948966,
@@ -530,12 +595,33 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         "scale": 1
       },
       "extentM": [
-        9.896188041666667,
+        7.480898,
         5.883291614583333,
-        13.536182
+        11.15992
       ],
+      "spawn": {
+        "position": [
+          0.795637,
+          1.619101,
+          0.2028150000000002
+        ],
+        "yaw": 0
+      },
+      "bounds": {
+        "min": [
+          -3.740449,
+          1.019101,
+          -5.57996
+        ],
+        "max": [
+          3.740449,
+          2.2191009999999998,
+          5.57996
+        ]
+      },
+      "eyeHeightM": 1.619101,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scan_output_1_saloon; 97% of the capture sits inside the frame. Derived 9.9x13.5x5.9 m disagrees with published 12x7x5.4 m (worst axis 41%). Check the capture-to-room mapping before wiring this room."
+      "alignmentNote": "Derived from scan_output_1_saloon: floor from the room mesh, room from the scanner's own walk. Derived 9.9x13.5x5.9 m disagrees with published 12.0x7.0x5.4 m (worst axis 41%). Check the capture-to-room mapping before wiring this room."
     },
     {
       "roomSlug": "robert-adam-room",
@@ -674,9 +760,9 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "totalBytes": 162820268,
       "transform": {
         "position": [
-          0.9013981249999965,
+          6.3165155,
           1.475265,
-          -29.20762421875
+          -2.2251945
         ],
         "rotation": [
           -1.5707963267948966,
@@ -686,12 +772,33 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         "scale": 1
       },
       "extentM": [
-        33.585501750000006,
+        19.365833000000002,
         14.4535075625,
-        17.08058633333333
+        17.978921
       ],
+      "spawn": {
+        "position": [
+          1.9611145000000008,
+          1.6083640000000001,
+          1.5553494999999997
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "bounds": {
+        "min": [
+          -9.682916500000001,
+          1.0083640000000003,
+          -8.9894605
+        ],
+        "max": [
+          9.682916500000001,
+          2.208364,
+          8.9894605
+        ]
+      },
+      "eyeHeightM": 1.6083640000000001,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scan_output_1_robertadam; 49% of the capture sits inside the frame. Derived 33.6x17.1x14.5 m disagrees with published 9.7x5.6x2.18 m (worst axis 563%). Check the capture-to-room mapping before wiring this room."
+      "alignmentNote": "Derived from scan_output_1_robertadam: floor from the room mesh, room from the scanner's own walk. Derived 33.6x17.1x14.5 m disagrees with published 9.7x5.6x2.2 m (worst axis 563%). Check the capture-to-room mapping before wiring this room."
     },
     {
       "roomSlug": "lady-convenors-room",
@@ -774,9 +881,9 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "totalBytes": 82350427,
       "transform": {
         "position": [
-          -0.9095135000000001,
+          0.85182,
           1.384441,
-          -1.4300765000000006
+          -1.9216425
         ],
         "rotation": [
           -1.5707963267948966,
@@ -786,12 +893,33 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         "scale": 1
       },
       "extentM": [
-        8.873151,
+        3.97504,
         4.781301,
-        6.057129000000001
+        3.865063
       ],
+      "spawn": {
+        "position": [
+          -0.18703000000000003,
+          1.420404,
+          -0.3152554999999999
+        ],
+        "yaw": 1.5707963267948966
+      },
+      "bounds": {
+        "min": [
+          -1.98752,
+          0.820404,
+          -1.9325314999999998
+        ],
+        "max": [
+          1.98752,
+          2.020404,
+          1.9325315
+        ]
+      },
+      "eyeHeightM": 1.420404,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scan_output_1_lady; 70% of the capture sits inside the frame. No published dimensions for this room; derived extent stands unchecked."
+      "alignmentNote": "Derived from scan_output_1_lady: floor from the room mesh, room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
     },
     {
       "roomSlug": "north-gallery",
@@ -895,9 +1023,9 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "totalBytes": 98728996,
       "transform": {
         "position": [
-          1.4885612239583335,
+          2.3850154999999997,
           2.0359374999999997,
-          -7.1068055
+          -4.801727
         ],
         "rotation": [
           -1.5707963267948966,
@@ -907,12 +1035,33 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         "scale": 1
       },
       "extentM": [
-        12.896169010416667,
+        8.997021,
         3.4765625,
-        15.576583
+        9.60558
       ],
+      "spawn": {
+        "position": [
+          0.05008649999999992,
+          1.9172004999999996,
+          0.1720940000000004
+        ],
+        "yaw": 0
+      },
+      "bounds": {
+        "min": [
+          -4.4985105,
+          1.3172004999999998,
+          -4.80279
+        ],
+        "max": [
+          4.4985105,
+          2.5172004999999995,
+          4.80279
+        ]
+      },
+      "eyeHeightM": 1.9172004999999996,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scan_output_1_north; 87% of the capture sits inside the frame. No published dimensions for this room; derived extent stands unchecked."
+      "alignmentNote": "Derived from scan_output_1_north: floor from the room mesh, room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
     },
     {
       "roomSlug": "south-gallery",
@@ -1009,9 +1158,9 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "totalBytes": 95417534,
       "transform": {
         "position": [
-          2.13360978125,
+          1.2855400000000001,
           1.882192,
-          -5.225662562499999
+          -5.021098500000001
         ],
         "rotation": [
           -1.5707963267948966,
@@ -1021,12 +1170,33 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         "scale": 1
       },
       "extentM": [
-        7.3744278125,
+        5.059118,
         3.4910959999999998,
-        12.795286875
+        10.427301
       ],
+      "spawn": {
+        "position": [
+          0.6730700000000002,
+          1.836213,
+          -1.196351500000001
+        ],
+        "yaw": 0
+      },
+      "bounds": {
+        "min": [
+          -2.529559,
+          1.2362130000000002,
+          -5.213650500000001
+        ],
+        "max": [
+          2.529559,
+          2.436213,
+          5.2136505
+        ]
+      },
+      "eyeHeightM": 1.836213,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scan_output_1_south; 68% of the capture sits inside the frame. No published dimensions for this room; derived extent stands unchecked."
+      "alignmentNote": "Derived from scan_output_1_south: floor from the room mesh, room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
     },
     {
       "roomSlug": "deacon-conveners-room",
@@ -1158,9 +1328,9 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "totalBytes": 147683201,
       "transform": {
         "position": [
-          0.8482636874999998,
+          0.4372404999999999,
           1.4861708229166664,
-          -3.188942302083333
+          -2.973467
         ],
         "rotation": [
           -1.5707963267948966,
@@ -1170,11 +1340,32 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         "scale": 1
       },
       "extentM": [
-        7.354346625000001,
+        5.3077950000000005,
         4.796947822916666,
-        8.1227498125
+        6.2467999999999995
       ],
+      "spawn": {
+        "position": [
+          0.3492844999999999,
+          1.4407078229166663,
+          -0.06135399999999969
+        ],
+        "yaw": 0
+      },
+      "bounds": {
+        "min": [
+          -2.6538975000000002,
+          0.8407078229166663,
+          -3.1233999999999997
+        ],
+        "max": [
+          2.6538975000000002,
+          2.040707822916666,
+          3.1233999999999997
+        ]
+      },
+      "eyeHeightM": 1.4407078229166663,
       "alignmentConfidence": "confident",
-      "alignmentNote": "Derived from scan_output_1_DC; 99% of the capture sits inside the frame. No published dimensions for this room; derived extent stands unchecked."
+      "alignmentNote": "Derived from scan_output_1_DC: floor from the room mesh, room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
     }
   ] as const;

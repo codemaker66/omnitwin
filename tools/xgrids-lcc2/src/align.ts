@@ -117,3 +117,112 @@ export function checkAgainstPublished(
       `(worst axis ${(worst * 100).toFixed(0)}%). Check the capture-to-room mapping before wiring this room.`,
   };
 }
+
+
+// ---------------------------------------------------------------------------
+// Where the viewer stands, and how far they may go.
+// ---------------------------------------------------------------------------
+
+/**
+ * A room frame built from BOTH instruments, each used where it is strong.
+ *
+ * The mesh sees the floor and the walk does not — the operator carried the
+ * scanner at eye level, so no pose is ever on the ground. The walk sees the
+ * room and the mesh does not — a capture's geometry runs on down the corridor,
+ * while a person stays in the room they are scanning.
+ *
+ * Measured against the venue's published sizes, the walk is the better plan:
+ * the Grand Hall goes from 85% out to 5%, the Saloon from 41% to 7%. So the
+ * floor comes from the mesh and everything horizontal comes from the walk.
+ */
+export interface WalkAlignedFrame {
+  /** Room centre and extent in scene metres, floor at y = 0. */
+  readonly centre: readonly [number, number];
+  readonly extentM: Vec3;
+  /** Where to put the viewer: a pose the scanner actually occupied. */
+  readonly spawn: { readonly position: Vec3; readonly yaw: number };
+  /** The box the viewer may move within, in scene metres. */
+  readonly bounds: { readonly min: Vec3; readonly max: Vec3 };
+  /** How high the scanner was carried, in metres above the mesh floor. */
+  readonly eyeHeightM: number;
+}
+
+/** Rooms are not taller than this; a walk implying more has left the room. */
+const MAX_WALK_HEIGHT_M = 16;
+
+/**
+ * Combines the mesh floor with the walked region.
+ *
+ * `spawnSource` and the walk region arrive in XGRIDS Z-up metres; everything
+ * returned is scene Y-up metres with the floor at zero, matching the transform
+ * the runtime applies. Under the Z-up to Y-up rotation source (x, y, z) becomes
+ * scene (x, z, -y), which is why depth flips sign here.
+ */
+export function walkAlignedFrame(
+  meshFrame: RoomFrame,
+  walkMin: Vec3,
+  walkMax: Vec3,
+  walkMedianZ: number,
+  spawnSource: Vec3,
+  spawnYaw: number,
+): WalkAlignedFrame {
+  const floorZ = meshFrame.floorZ;
+  const eyeHeightM = Math.min(Math.max(walkMedianZ - floorZ, 0.8), 3);
+
+  // Horizontal centre from the walk; the mesh's centre includes the corridor.
+  const centreX = (walkMin[0] + walkMax[0]) / 2;
+  const centreY = (walkMin[1] + walkMax[1]) / 2;
+
+  const toScene = (source: Vec3): Vec3 => [
+    source[0] - centreX,
+    source[2] - floorZ,
+    -(source[1] - centreY),
+  ];
+
+  const a = toScene(walkMin);
+  const b = toScene(walkMax);
+  const min: Vec3 = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.min(a[2], b[2])];
+  const max: Vec3 = [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[2], b[2])];
+
+  // Ceiling from the mesh, which can see it; the walk only knows head height.
+  const ceiling = Math.min(meshFrame.ceilingZ - floorZ, MAX_WALK_HEIGHT_M);
+
+  // Stand at eye height, not at the raw offset from a floor the mesh may have
+  // misjudged. The Grand Hall's capture spans more than one level, so its mesh
+  // floor sits far below the room and the unclamped offset put the viewer 6.8 m
+  // up, floating near the ceiling. Eye height is already clamped to something a
+  // person could be, so the spawn uses it and stays consistent with it.
+  const spawnScene = toScene(spawnSource);
+  const spawn: WalkAlignedFrame["spawn"] = {
+    position: [spawnScene[0], eyeHeightM, spawnScene[2]],
+    yaw: spawnYaw,
+  };
+
+  return {
+    centre: [centreX, centreY],
+    extentM: [max[0] - min[0], Math.max(ceiling, eyeHeightM + 0.5), max[2] - min[2]],
+    spawn,
+    bounds: {
+      // The viewer moves horizontally at head height; the vertical band is the
+      // headroom a person has, not the walk's own jitter.
+      min: [min[0], Math.max(0.4, eyeHeightM - 0.6), min[2]],
+      max: [max[0], eyeHeightM + 0.6, max[2]],
+    },
+    eyeHeightM,
+  };
+}
+
+/**
+ * The transform that places a capture so the walked room is centred and its
+ * floor rests on zero. Still never a scale.
+ */
+export function walkAlignedTransform(
+  meshFrame: RoomFrame,
+  centre: readonly [number, number],
+): SceneTransform {
+  return {
+    position: [-centre[0], -meshFrame.floorZ, centre[1]],
+    rotation: [Z_UP_TO_Y_UP_ROTATION_X, 0, 0],
+    scale: 1,
+  };
+}

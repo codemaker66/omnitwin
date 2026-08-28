@@ -54,7 +54,6 @@ export function RoomWalkPage(): ReactElement {
   const bare = search.get("bare") === "1";
   // Frame the room from outside. Only honest because the scene clips the
   // capture to the room's measured box first.
-  const dollhouse = search.get("view") === "dollhouse";
   const [progress, setProgress] = useState<RoomSplatProgress>({
     settled: 0, total: 0, splats: 0, failed: 0, complete: false,
   });
@@ -88,7 +87,7 @@ export function RoomWalkPage(): ReactElement {
   return (
     <main className="walk" data-testid="room-walk">
       <div className="walk__stage">
-        <RoomSplatScene key={`${room}:${String(dollhouse)}`} room={room} onProgress={onProgress} dollhouse={dollhouse} captureReadback={bare} />
+        <RoomSplatScene key={room} room={room} onProgress={onProgress} captureReadback={bare} />
       </div>
 
       {!bare && <header className="walk__bar">

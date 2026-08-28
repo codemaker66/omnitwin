@@ -341,10 +341,16 @@ describe("runtimeAssetViewTransformForRoom", () => {
     }
   });
 
-  it("states where each transform came from instead of presenting it as settled", () => {
+  it("names the capture a transform came from, and what measured it", () => {
+    // Provenance, not reassurance: which scan, and which instrument produced
+    // each part of the frame. The floor can only come from the room mesh and
+    // the room can only come from the walk, so a note that cannot say which is
+    // a note that cannot be checked.
     const note = runtimeAssetViewTransformForRoom("reception-room", "staged").note;
     expect(note).toMatch(/derived from/i);
-    expect(note).toMatch(/capture/i);
+    expect(note).toMatch(/scan_output_1_reception/);
+    expect(note).toMatch(/mesh/i);
+    expect(note).toMatch(/walk/i);
   });
 
   it("does not claim a reviewed alignment for a whole-floor capture", () => {
