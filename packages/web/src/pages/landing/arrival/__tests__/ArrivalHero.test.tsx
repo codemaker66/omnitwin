@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useEffect, useRef, type ReactElement, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Quaternion, Vector3 } from "three";
 import type { TwinManifest } from "@omnitwin/types";
 import {
@@ -8,6 +8,7 @@ import {
   useArrivalStore,
   type ArrivalFailReason,
 } from "../arrival-store.js";
+import { ARRIVAL_NO_TWIN_HOLD_MS } from "../arrival-config.js";
 import { ARRIVAL_HARNESS_TILES_TOKEN } from "../arrival-dev-harness.js";
 import { useDeviceStore } from "../../../../stores/device-store.js";
 import { FRESH_TOUR_ENABLED } from "../../../fresh/fresh-copy.js";
@@ -56,17 +57,26 @@ const invalidate = vi.fn();
 const frameCallbacks: ((state: unknown, delta: number) => void)[] = [];
 const fakeCamera = { position: new Vector3(), quaternion: new Quaternion() };
 
-type AddEventListenerFn = (type: string, cb: () => void) => void;
+/**
+ * THE CANVAS ELEMENT IS REAL, and that is the whole point of this fixture.
+ *
+ * The old mock handed the component a `{ addEventListener: vi.fn() }` stub and
+ * the webgl tests then reached into `mock.calls` for the callback and invoked
+ * it by hand. That shape can prove a listener was ADDED and can never prove
+ * one was REMOVED — which is exactly the defect the edge review found (see
+ * WebglContextLossGuard in ArrivalHero.tsx). A real `<canvas>` from the
+ * document has real add/removeEventListener, so "is anything still listening"
+ * becomes a question the test can actually ask: dispatch the event and see.
+ */
+let lastDomElement: HTMLCanvasElement | null = null;
 
-interface FakeDomElement {
-  readonly addEventListener: ReturnType<typeof vi.fn<AddEventListenerFn>>;
+/** The event three's `WebGLRenderer.forceContextLoss()` ultimately causes —
+ *  dispatched on the canvas element, which is what a real browser does even
+ *  when the element has already been detached from the document (measured in
+ *  Chromium; see WebglContextLossGuard's comment). */
+function dispatchWebglContextLost(): void {
+  lastDomElement?.dispatchEvent(new Event("webglcontextlost"));
 }
-
-function makeFakeDomElement(): FakeDomElement {
-  return { addEventListener: vi.fn<AddEventListenerFn>() };
-}
-
-let lastDomElement: FakeDomElement | null = null;
 
 /**
  * A hand-rolled capture rather than vi.spyOn: `console.error`'s
@@ -90,24 +100,52 @@ function captureConsoleError(): { calls: unknown[][]; restore: () => void } {
   /* eslint-enable no-console */
 }
 
+/** The same six lines for the OTHER channel — the no-twin dissolve is a
+ *  deployment gap, not a code failure, so it warns rather than errors. */
+function captureConsoleWarn(): { calls: unknown[][]; restore: () => void } {
+  const calls: unknown[][] = [];
+  /* eslint-disable no-console -- capturing the channel IS the assertion here */
+  const original = console.warn.bind(console);
+  console.warn = (...args: unknown[]): void => {
+    calls.push(args);
+  };
+  return {
+    calls,
+    restore: () => {
+      console.warn = original;
+    },
+  };
+  /* eslint-enable no-console */
+}
+
 /** Only OUR diagnostics, never React's or anything else's on the same channel. */
 function arrivalLogs(calls: readonly unknown[][]): unknown[][] {
   return calls.filter((args) => typeof args[0] === "string" && args[0].startsWith("Arrival:"));
-}
-
-function webglContextLostListener(): (() => void) | undefined {
-  const call = lastDomElement?.addEventListener.mock.calls.find(
-    ([type]) => type === "webglcontextlost",
-  );
-  return call?.[1];
 }
 
 interface CanvasMockProps {
   readonly children?: ReactNode;
   readonly className?: string;
   readonly frameloop?: string;
-  readonly onCreated?: (state: { gl: { domElement: FakeDomElement } }) => void;
+  readonly onCreated?: (state: { gl: { domElement: HTMLCanvasElement } }) => void;
 }
+
+/**
+ * R3F 8.18.0's REAL TEARDOWN DELAY, transcribed rather than invented.
+ *
+ * `unmountComponentAtNode` (node_modules/@react-three/fiber/dist/
+ * events-d0566a2e.cjs.dev.js:2109-2133) unmounts the R3F children and then,
+ * from the reconciler's completion callback, schedules a `setTimeout(…, 500)`
+ * whose body calls `state.gl.forceContextLoss()` — three 0.180's
+ * `WEBGL_lose_context.loseContext()` (three.cjs:74162-74167), which dispatches
+ * `webglcontextlost` on the canvas element even after it has been detached.
+ *
+ * The mock reproduces that constant and that causal chain so the tests below
+ * run against the timing R3F actually imposes; `vi.useFakeTimers()` then
+ * advances exactly this far, so a test asserting "the store is still clean"
+ * cannot pass merely by looking too early.
+ */
+const R3F_TEARDOWN_DELAY_MS = 500;
 
 function Canvas({ children, className, frameloop, onCreated }: CanvasMockProps): ReactElement {
   // Always the latest callback (matches real R3F re-configuring on every
@@ -115,11 +153,22 @@ function Canvas({ children, className, frameloop, onCreated }: CanvasMockProps):
   // exactly once per mount — see the file header comment.
   const onCreatedRef = useRef(onCreated);
   onCreatedRef.current = onCreated;
+  // Created during render, before any child renders, because in real R3F the
+  // canvas element and the `gl` in the store both exist before a single Canvas
+  // child mounts — a child asking useThree for `gl` must never see null.
+  const [domElement] = useState<HTMLCanvasElement>(() => document.createElement("canvas"));
+  lastDomElement = domElement;
   useEffect(() => {
-    const domElement = makeFakeDomElement();
-    lastDomElement = domElement;
     onCreatedRef.current?.({ gl: { domElement } });
-  }, []);
+    return () => {
+      // The R3F teardown, in the same order and on the same clock the real one
+      // uses: React has already unmounted this Canvas's children by the time
+      // this cleanup runs, and only THEN does the delayed context loss land.
+      setTimeout(() => {
+        domElement.dispatchEvent(new Event("webglcontextlost"));
+      }, R3F_TEARDOWN_DELAY_MS);
+    };
+  }, [domElement]);
   return (
     <div className={className} data-testid="arrival-canvas" data-frameloop={frameloop}>
       {children}
@@ -127,9 +176,22 @@ function Canvas({ children, className, frameloop, onCreated }: CanvasMockProps):
   );
 }
 
+interface FakeThreeState {
+  readonly invalidate: () => void;
+  readonly camera: typeof fakeCamera;
+  readonly gl: { readonly domElement: HTMLCanvasElement };
+}
+
 vi.mock("@react-three/fiber", () => ({
-  useThree: (selector: (state: { invalidate: () => void; camera: typeof fakeCamera }) => unknown) =>
-    selector({ invalidate, camera: fakeCamera }),
+  useThree: (selector: (state: FakeThreeState) => unknown) =>
+    selector({
+      invalidate,
+      camera: fakeCamera,
+      // The same element the Canvas mock created, so a component reading `gl`
+      // through useThree and the Canvas's own teardown are talking about one
+      // canvas — exactly as they are in R3F, where both come off one store.
+      gl: { domElement: lastDomElement ?? document.createElement("canvas") },
+    }),
   useFrame: (callback: (state: unknown, delta: number) => void): void => {
     frameCallbacks.push(callback);
   },
@@ -452,20 +514,263 @@ describe("ArrivalHero — webgl context loss", () => {
   });
 
   it("attaches the webglcontextlost handler exactly once per canvas creation", () => {
-    render(<ArrivalHero />);
-    expect(lastDomElement?.addEventListener).toHaveBeenCalledTimes(1);
-    // A store-driven re-render (still mounted, same Canvas) must not re-attach.
-    useArrivalStore.getState().flightDone();
-    expect(lastDomElement?.addEventListener).toHaveBeenCalledTimes(1);
+    // Counted by BEHAVIOUR rather than by inspecting a stubbed
+    // addEventListener: one dispatch reaching fail() twice is what a
+    // double-attach actually costs, and it is measurable on a real element,
+    // where the old `{ addEventListener: vi.fn() }` stub could only ever count
+    // registrations and never removals. (Same fail-spy technique as the
+    // "no-key exactly once" case above.)
+    const originalFail = useArrivalStore.getState().fail;
+    const spy = vi.fn(originalFail);
+    useArrivalStore.setState({ fail: spy });
+    try {
+      render(<ArrivalHero />);
+      // A store-driven re-render (still mounted, same Canvas) must not
+      // re-subscribe — the guard's effect is keyed on `gl`, which does not
+      // change.
+      act(() => {
+        useArrivalStore.getState().flightDone();
+      });
+      act(() => {
+        dispatchWebglContextLost();
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      useArrivalStore.setState({ fail: originalFail });
+    }
   });
 
   it('fails the store with reason "webgl" when the GL context is lost', () => {
     render(<ArrivalHero />);
-    const onLost = webglContextLostListener();
-    expect(onLost).toBeDefined();
-    onLost?.();
+    act(() => {
+      dispatchWebglContextLost();
+    });
     expect(useArrivalStore.getState().phase).toBe("fallback");
     expect(useArrivalStore.getState().failReason).toBe("webgl");
+  });
+});
+
+// -----------------------------------------------------------------------------
+// R3F'S OWN TEARDOWN MUST NOT RE-FAIL THE STORE AFTER THE BOUNDARY RESET IT
+// (edge review, CRITICAL).
+//
+// The reset that ends the story lives in ArrivalErrorBoundary's
+// componentWillUnmount, which runs in the commit phase. @react-three/fiber
+// 8.18.0 then keeps working for another half-second: unmountComponentAtNode
+// schedules `setTimeout(… state.gl.forceContextLoss() …, 500)`
+// (events-d0566a2e.cjs.dev.js:2109-2133), and three 0.180's forceContextLoss
+// is `WEBGL_lose_context.loseContext()` (three.cjs:74162-74167), which really
+// does dispatch `webglcontextlost` on a canvas that has already left the
+// document — measured in Chromium, not assumed.
+//
+// So the whole point of these cases is the ORDER and the DELAY: reset first,
+// context loss 500 ms later. Against the previous implementation — where the
+// listener was attached in `<Canvas onCreated>` and therefore never removed —
+// they fail exactly as production did: phase "fallback", failReason "webgl",
+// and a visitor who navigates back to the homepage never sees the arrival
+// again for the life of the tab.
+// -----------------------------------------------------------------------------
+describe("ArrivalHero — R3F's delayed teardown, against the real 500ms", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("leaves the store clean after a genuine navigation away", () => {
+    useArrivalStore.setState({ phase: "flight" });
+    const { unmount } = render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
+    expect(screen.getByTestId("arrival-canvas")).not.toBeNull();
+
+    unmount();
+    // The boundary's reset has already run at this point — that much was
+    // always true, and is what made the defect invisible.
+    expect(useArrivalStore.getState().phase).toBe("loading");
+    expect(useArrivalStore.getState().failReason).toBeNull();
+
+    // …and now R3F's teardown timer fires and the context is lost.
+    act(() => {
+      vi.advanceTimersByTime(R3F_TEARDOWN_DELAY_MS);
+    });
+
+    expect(useArrivalStore.getState().phase).toBe("loading");
+    expect(useArrivalStore.getState().failReason).toBeNull();
+  });
+
+  it("gives the next visit a live hero, not a corpse the teardown poisoned", () => {
+    // The visitor-facing shape of the same defect: leave /fresh, wait, come
+    // back — a client-side navigation with no reload, so the module-singleton
+    // store is the same one. The second mount must be a beginning.
+    useArrivalStore.setState({ phase: "arrived" });
+    const first = render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
+    first.unmount();
+    act(() => {
+      vi.advanceTimersByTime(R3F_TEARDOWN_DELAY_MS * 4);
+    });
+
+    render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
+    expect(useArrivalStore.getState().phase).toBe("loading");
+    expect(screen.getByTestId("arrival-canvas")).not.toBeNull();
+  });
+
+  it("still hears a REAL context loss while the hero is mounted", () => {
+    // The other half: the fix must not buy its silence by deafening the guard.
+    useArrivalStore.setState({ phase: "flight" });
+    const { unmount } = render(<ArrivalHero />);
+    act(() => {
+      dispatchWebglContextLost();
+    });
+    expect(useArrivalStore.getState().failReason).toBe("webgl");
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(R3F_TEARDOWN_DELAY_MS);
+    });
+  });
+});
+
+// -----------------------------------------------------------------------------
+// NOBODY IS LEFT UNDER GOOGLE'S ROOF (edge review).
+//
+// A keyed build whose twin bundle is not hosted — production, today — used to
+// end the fly-in and simply stop: an opaque canvas of Google photogrammetry
+// over `img.fr-hero-photo`, no dollhouse, no "Open the Hall" (rightly gated on
+// the same fact), no Skip (flight-only), no Close (exploded-only). Not one
+// control, and the venue photograph the page is built around hidden behind a
+// melty approximation of the same building.
+//
+// The arrival now RESOLVES: it holds the landing for a beat and then takes the
+// ordinary spec §6 exit. See ARRIVAL_NO_TWIN_HOLD_MS (arrival-config.ts) for
+// the alternatives that were weighed.
+// -----------------------------------------------------------------------------
+describe("ArrivalHero — no twin to reveal: the arrival resolves, it does not strand", () => {
+  let consoleWarn: { calls: unknown[][]; restore: () => void };
+
+  beforeEach(() => {
+    vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+    stubMatchMedia(false);
+    vi.useFakeTimers();
+    consoleWarn = captureConsoleWarn();
+  });
+
+  afterEach(() => {
+    consoleWarn.restore();
+    vi.useRealTimers();
+  });
+
+  /** Production's actual shape: the manifest request is answered by the SPA
+   *  rewrite with index.html, so it fails validation and lands in "error". */
+  function arriveWithNoTwin(): ReturnType<typeof render> {
+    manifestState = { state: "error", retry: () => undefined };
+    useArrivalStore.setState({ phase: "arrived" });
+    return render(<ArrivalHero />);
+  }
+
+  it("holds the landed pose first — it does not cut out the instant it arrives", () => {
+    arriveWithNoTwin();
+    act(() => {
+      vi.advanceTimersByTime(ARRIVAL_NO_TWIN_HOLD_MS - 1);
+    });
+    expect(useArrivalStore.getState().phase).toBe("arrived");
+    expect(screen.getByTestId("arrival-canvas")).not.toBeNull();
+  });
+
+  it("then dissolves, and the photograph is carrying the page again", () => {
+    const { container } = arriveWithNoTwin();
+    // The dead end, stated as an assertion: there is nothing on screen to
+    // click, so without the dissolve there is no way back to the page at all.
+    expect(screen.queryByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL })).toBeNull();
+    expect(screen.queryByRole("button", { name: ARRIVAL_SKIP_LABEL })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(ARRIVAL_NO_TWIN_HOLD_MS);
+    });
+    expect(useArrivalStore.getState().phase).toBe("fallback");
+    expect(useArrivalStore.getState().failReason).toBe("no-twin");
+
+    const hero = document.querySelector(".arrival-hero") as Element;
+    fireEvent(hero, transitionEndEvent("opacity"));
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByTestId("arrival-canvas")).toBeNull();
+  });
+
+  it("says why, in English, exactly once", () => {
+    arriveWithNoTwin();
+    act(() => {
+      vi.advanceTimersByTime(ARRIVAL_NO_TWIN_HOLD_MS * 4);
+    });
+    const logs = arrivalLogs(consoleWarn.calls);
+    expect(logs).toHaveLength(1);
+    expect(String(logs[0]?.[0])).toContain("public/twin");
+  });
+
+  it("waits for a manifest that is still in flight — a late reveal is not a dead end", () => {
+    manifestState = { state: "loading" };
+    useArrivalStore.setState({ phase: "arrived" });
+    const { rerender } = render(<ArrivalHero />);
+    act(() => {
+      vi.advanceTimersByTime(ARRIVAL_NO_TWIN_HOLD_MS * 4);
+    });
+    // Still "loading" is NOT "there is no twin" — dissolving here would throw
+    // away a reveal that was about to work.
+    expect(useArrivalStore.getState().phase).toBe("arrived");
+
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
+    rerender(<ArrivalHero />);
+    act(() => {
+      vi.advanceTimersByTime(ARRIVAL_NO_TWIN_HOLD_MS * 4);
+    });
+    expect(useArrivalStore.getState().phase).toBe("arrived");
+    expect(screen.getByRole("button", { name: ARRIVAL_OPEN_HALL_LABEL })).not.toBeNull();
+  });
+
+  it("never fires when there IS a dollhouse — the arrival ends where it should", () => {
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST };
+    useArrivalStore.setState({ phase: "arrived" });
+    render(<ArrivalHero />);
+    act(() => {
+      vi.advanceTimersByTime(ARRIVAL_NO_TWIN_HOLD_MS * 10);
+    });
+    expect(useArrivalStore.getState().phase).toBe("arrived");
+    expect(screen.getByTestId("arrival-canvas")).not.toBeNull();
+  });
+
+  it("a manifest with no mesh in it is also nothing to reveal", () => {
+    // The other half of dollhouseReady: the manifest parsed fine, it just
+    // carries no mesh (an older bundle). HallHandoff renders null for it too.
+    manifestState = { state: "ready", manifest: TWIN_FIXTURE_MANIFEST_NO_MESH };
+    useArrivalStore.setState({ phase: "arrived" });
+    render(<ArrivalHero />);
+    act(() => {
+      vi.advanceTimersByTime(ARRIVAL_NO_TWIN_HOLD_MS);
+    });
+    expect(useArrivalStore.getState().failReason).toBe("no-twin");
+  });
+
+  it("leaves the flight alone — the dissolve belongs to the landing, not the approach", () => {
+    manifestState = { state: "error", retry: () => undefined };
+    useArrivalStore.setState({ phase: "flight" });
+    render(<ArrivalHero />);
+    act(() => {
+      vi.advanceTimersByTime(ARRIVAL_NO_TWIN_HOLD_MS * 4);
+    });
+    expect(useArrivalStore.getState().phase).toBe("flight");
+    expect(screen.getByRole("button", { name: ARRIVAL_SKIP_LABEL })).not.toBeNull();
   });
 });
 
@@ -866,11 +1171,9 @@ describe("ArrivalHero — fallback fade (Task 12, spec §6 'holds briefly, then 
     stubMatchMedia(true);
     useArrivalStore.setState({ phase: "flight" });
     const { container } = render(<ArrivalHero />);
-    const onLost = webglContextLostListener();
-    expect(onLost).toBeDefined();
 
     act(() => {
-      onLost?.();
+      dispatchWebglContextLost();
     });
 
     expect(useArrivalStore.getState().failReason).toBe("webgl");
@@ -931,7 +1234,11 @@ describe("ArrivalHero — the invariant: any failure ends with nothing rendered 
     },
   ];
 
-  const FADING: ReadonlyArray<ArrivalFailReason> = ["tiles", "webgl"];
+  // Reasons that can only ever arrive while the canvas is already on screen,
+  // so they leave through the fade rather than never rendering at all.
+  // "no-twin" belongs here for the same reason as the other two: it is raised
+  // from "arrived", which by definition means the hero has been flying.
+  const FADING: ReadonlyArray<ArrivalFailReason> = ["tiles", "webgl", "no-twin"];
 
   it("covers every ArrivalFailReason — no reason may be added without a case here", () => {
     // The whole point of this describe block is EXHAUSTIVENESS, and two

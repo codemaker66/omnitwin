@@ -207,23 +207,59 @@ import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
 
 test.describe.configure({ mode: "serial" });
 
+// ONE LAUNCH FLAG, AND THE OTHER ONE WOULD HAVE TAKEN THIS FILE DOWN IN CI.
+//
 // The repo's playwright.config.ts passes no launch args, and this repo's other
 // WebGL specs each supply their own (twin-visual.spec.ts:65-76,
-// twin-performance.spec.ts:46-56). This file's are chosen for a different
-// purpose than theirs: those pin SwiftShader for pixel determinism, these ask
-// for the real GPU, because the hero's own gate refuses to fly on a software
-// rasteriser at all (useArrivalGate blocks device tier "poster", and
-// device-tier.ts:29-31 classifies "SwiftShader" as exactly that). MEASURED on
-// this machine, 2026-08-28 — see THE ATTRIBUTION FIXTURE below for the full
-// numbers — these flags move the reported renderer from SwiftShader to
-// "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 … D3D11)", which is what lets the
-// keyed cases at the bottom of this file actually execute on a workstation
-// instead of skipping. They are NOT what makes the attribution guard run: a
-// CI runner has no GPU for them to find, so that guard is driven through the
-// DEV tiles seam instead and does not consult the renderer at all.
+// twin-performance.spec.ts:46-56). This file's is chosen for a different
+// purpose than theirs: those pin SwiftShader for pixel determinism, this one
+// asks for the real GPU, because the hero's own gate refuses to fly on a
+// software rasteriser at all (useArrivalGate blocks device tier "poster", and
+// device-tier.ts:29-31 classifies "SwiftShader" as exactly that) — which is
+// what lets the keyed cases at the bottom of this file execute on a
+// workstation instead of skipping.
+//
+// A previous wave passed TWO flags here, `--use-angle=default --enable-gpu`,
+// measured only on a Windows workstation with a discrete card. ci.yml's `e2e`
+// job is `runs-on: ubuntu-latest` — no GPU, no display server — so that pair
+// had never once executed in the environment it was about to ship to.
+//
+// MEASURED, 2026-08-28, both platforms, Playwright 1.59.1's own Chromium
+// 147.0.7727.15 (full transcript in the wave report). GPU-less Linux is
+// Ubuntu 24.04 with no /dev/dri, standing in for a GitHub-hosted runner:
+//
+//   flags                              Windows + RTX 4090     GPU-less Linux
+//   ─────────────────────────────────  ─────────────────────  ──────────────
+//   (none — every other spec's launch) SwiftShader            SwiftShader
+//   --enable-gpu                       RTX 4090, D3D11        SwiftShader
+//   --use-angle=default                RTX 4090, D3D11        *** NO WEBGL ***
+//   --use-angle=default --enable-gpu   RTX 4090, D3D11        *** NO WEBGL ***
+//
+// `--use-angle=default` is the whole problem, and it does not merely fail to
+// help: on a GPU-less Linux box `canvas.getContext("webgl2")` and `("webgl")`
+// BOTH return null. Playwright passes no `--use-angle` of its own (it relies
+// on `--enable-unsafe-swiftshader`, chromium.js:286), so Chromium's own
+// fallback normally lands on ANGLE/Vulkan/SwiftShader; asking ANGLE for the
+// platform "default" backend instead selects a hardware GL path that cannot
+// initialise there, and nothing falls back from it. In CI that would have
+// taken this file's ToS attribution guard — a real Google Maps Platform
+// compliance check, which mounts a live <Canvas> and a real TilesRenderer —
+// from passing to failing, and made rendererString() answer "NO-WEBGL",
+// which POSTER_RENDERER does not match, so the keyed cases would stop
+// skipping for the right reason too. Repeatability was controlled for: the
+// no-flags launch was measured twice on each platform, either side of the
+// flagged ones, and gave the same renderer both times.
+//
+// `--enable-gpu` alone reaches the discrete GPU on the workstation — the same
+// renderer string, byte for byte, that the pair produced — and is harmless
+// where there is no GPU, because it lifts headless Chromium's GPU disable
+// without forcing a backend, leaving the SwiftShader fallback intact. So it
+// is safe on both and needs no CI conditional: one launch configuration
+// everywhere, which is one fewer thing that can differ between the machine a
+// test passes on and the machine it has to pass on.
 test.use({
   launchOptions: {
-    args: ["--use-angle=default", "--enable-gpu"],
+    args: ["--enable-gpu"],
   },
 });
 
@@ -605,14 +641,16 @@ async function stubGoogleTilesRootAsEmpty(page: Page): Promise<void> {
 //   chromium.launch()                             -> "ANGLE (Google, Vulkan
 //     no launchOptions                                1.3.0 (SwiftShader
 //                                                     Device (Subzero) …))"
-//   chromium.launch({ args: ["--use-angle=default",
-//                            "--enable-gpu"] })   -> "ANGLE (NVIDIA, NVIDIA
+//   chromium.launch({ args: ["--enable-gpu"] })  -> "ANGLE (NVIDIA, NVIDIA
 //                                                     GeForce RTX 4090 …
 //                                                     D3D11)"
 //
-// So the reviewer's suggested flags do work — they are applied at the top of
-// this file — and they are still not the fix, because a CI runner has no
-// discrete GPU for them to find. An assertion that runs only where there is a
+// So asking for the GPU does work — that flag is applied at the top of this
+// file — and it is still not the fix, because a CI runner has no discrete GPU
+// for it to find (re-measured 2026-08-28 on GPU-less Linux, where it changes
+// nothing and the renderer stays SwiftShader; the `--use-angle=default` that
+// used to sit beside it did far worse than nothing there — see the test.use
+// block above). An assertion that runs only where there is a
 // GPU is an assertion that does not run in CI, which is the one place a ToS
 // guard has to run. Hence this fixture: the DEV `&arrivalTiles=stub` seam
 // (arrival-dev-harness.ts) mounts GoogleTilesStage with a synthetic token at
@@ -1072,7 +1110,15 @@ test("Google's two required credits both ship — no key, no GPU, no network", a
 }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await stubTwinBundleAsProduction(page);
+  // A WORKING twin bundle, deliberately, even though this case is about
+  // Google's overlay and not about the reveal. The 11-second flight completes
+  // while these assertions are still running, and an arrival with nothing to
+  // reveal now dissolves the hero back to the photograph on purpose
+  // (ARRIVAL_NO_TWIN_HOLD_MS) — which would pull the overlay out from under
+  // the very assertions this case exists for, intermittently, depending on how
+  // fast the runner is. The dissolve has its own coverage in
+  // arrival-hero-controls.spec.ts; here it is simply kept out of the way.
+  await stubTwinBundle(page, TWO_STOREY_MANIFEST, EMPTY_MESH_BYTES);
   await stubGoogleTilesAsOneVisibleTile(page);
   await stubGoogleAttributionLogo(page);
 
@@ -1132,9 +1178,9 @@ test("keyed: the flight starts on real tiles, and BOTH Google credits ship with 
     POSTER_RENDERER.test(renderer),
     `poster-tier GPU (${renderer}) — useArrivalGate blocks the hero before the key is ` +
       "consulted (use-arrival-gate.ts:52-54), so no keyed case can run on this machine. " +
-      "This file already asks for the real GPU (see test.use at the top), so reaching " +
-      "here means there was none to reach — a CI runner, typically. Google's ToS guard " +
-      "does NOT depend on this: it runs unconditionally, further up.",
+      "This file already asks for the real GPU (--enable-gpu, see test.use at the top), so " +
+      "reaching here means there was none to reach — a CI runner, typically. Google's ToS " +
+      "guard does NOT depend on this: it runs unconditionally, further up.",
   );
 
   const hero = page.locator(".arrival-hero");
@@ -1194,9 +1240,9 @@ test("keyed + reduced motion: arrives without ever passing through flight", asyn
     POSTER_RENDERER.test(renderer),
     `poster-tier GPU (${renderer}) — useArrivalGate blocks the hero before the key is ` +
       "consulted (use-arrival-gate.ts:52-54), so no keyed case can run on this machine. " +
-      "This file already asks for the real GPU (see test.use at the top), so reaching " +
-      "here means there was none to reach — a CI runner, typically. Google's ToS guard " +
-      "does NOT depend on this: it runs unconditionally, further up.",
+      "This file already asks for the real GPU (--enable-gpu, see test.use at the top), so " +
+      "reaching here means there was none to reach — a CI runner, typically. Google's ToS " +
+      "guard does NOT depend on this: it runs unconditionally, further up.",
   );
 
   const hero = page.locator(".arrival-hero");

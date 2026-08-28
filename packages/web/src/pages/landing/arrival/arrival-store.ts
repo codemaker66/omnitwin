@@ -6,9 +6,21 @@ export type ArrivalPhase = "loading" | "flight" | "arrived" | "exploded" | "fall
  * ONLY record of which one happened once the photograph has taken over — one
  * reason per distinct DIAGNOSIS, never one per outcome.
  *
- * The first four arrive as DATA — a gate result, a tiles `load-error` or the
- * tiles stall watchdog, a `webglcontextlost` event — and are turned into
- * fail(reason) by whoever observes them.
+ * The first five arrive as DATA — a gate result, a tiles `load-error` or the
+ * tiles stall watchdog, a `webglcontextlost` event, an absent twin bundle —
+ * and are turned into fail(reason) by whoever observes them.
+ *
+ * "no-twin" is the odd one out and is deliberately still a fail(): nothing
+ * malfunctioned, but the hero has arrived somewhere it cannot finish. Its
+ * whole purpose is the handoff from Google's photogrammetry to OUR capture,
+ * and with the twin bundle unhosted (packages/web/public/twin is gitignored,
+ * so production answers the manifest with index.html) there is nothing to
+ * hand off to. Leaving the canvas up would strand the visitor under a melty
+ * approximation of the building with no dollhouse, no "Open the Hall" and no
+ * route back to the venue photograph the page is built around — so the hero
+ * takes the same exit every other failure takes, and the photograph returns.
+ * It is a distinct REASON rather than a reuse of "tiles" because the remedy
+ * is completely different: host the twin bundle, not fix Google.
  *
  * The last two both arrive as a THROWN EXCEPTION, and they are deliberately
  * NOT the same reason, because the two throws come out of different machinery
@@ -32,6 +44,7 @@ export type ArrivalFailReason =
   | "webgl"
   | "tiles"
   | "poster-tier"
+  | "no-twin"
   | "crash"
   | "frame-crash";
 
@@ -45,6 +58,7 @@ const FAIL_REASON_KEYS = {
   webgl: true,
   tiles: true,
   "poster-tier": true,
+  "no-twin": true,
   crash: true,
   "frame-crash": true,
 } as const satisfies Record<ArrivalFailReason, true>;

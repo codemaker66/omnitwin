@@ -226,3 +226,44 @@ export const ARRIVAL_TILES_FIRST_CONTACT_MS = 120_000;
  * watchdog fix would be exactly the unmeasured knob that comment warns about.
  */
 export const ARRIVAL_TILES_STALL_MS = 900_000;
+
+/**
+ * THE BEAT BETWEEN LANDING AND LEAVING, when there is nothing to hand off to.
+ * Milliseconds; consumed by ArrivalHero.
+ *
+ * ═══ The dead end this closes
+ *
+ * With a Google key configured but the twin bundle unhosted — TODAY'S
+ * PRODUCTION SHAPE, since packages/web/public/twin is gitignored and Vercel's
+ * SPA rewrite answers the missing manifest with index.html — the fly-in used
+ * to end and simply STAY there. HallHandoff self-gates to null (no manifest,
+ * no mesh), so no dollhouse ever appeared; "Open the Hall" is gated on the
+ * same fact, so no invitation appeared either; "Skip the flight" exists only
+ * during flight, and "Close" only while exploded. The result was a canvas of
+ * Google photogrammetry parked permanently over `img.fr-hero-photo` with not
+ * one control on it — the visitor left looking at a melty approximation of
+ * the building instead of the venue photograph the whole page is built
+ * around, and no way back to it short of reloading.
+ *
+ * ═══ What happens instead, and why this shape
+ *
+ * The flight still runs (it is good, and it works on Google's tiles alone),
+ * the camera holds its landed pose for this long, and then the hero dissolves
+ * through the ordinary spec §6 fade back to the photograph — fail("no-twin"),
+ * the same exit every other arrival failure takes. Nobody has to find a
+ * control, which means it works identically for keyboard, AT and pointer
+ * visitors, and there is no new button to be buried under .fr-hero-panel (see
+ * arrival.css's --arrival-panel-clearance for how that goes).
+ *
+ * 2_000 is a beat, not a wait: long enough for the landing to read as an
+ * arrival that RESOLVED rather than a canvas that glitched out, short enough
+ * that nobody sits studying Google's roof. The 300 ms opacity fade in
+ * arrival.css runs after it, so the whole tail is ~2.3 s. It is not derived
+ * from a measurement — there is nothing here to measure — it is a
+ * presentation choice, stated as one.
+ *
+ * The moment the twin bundle IS hosted this constant stops being reachable:
+ * `dollhouseReady` goes true, the reveal happens, and the arrival ends where
+ * it was always meant to.
+ */
+export const ARRIVAL_NO_TWIN_HOLD_MS = 2_000;

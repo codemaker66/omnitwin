@@ -7,6 +7,7 @@ import type { Tile } from "3d-tiles-renderer/core";
 import type { TilesRenderer as TilesRendererImpl } from "3d-tiles-renderer/three";
 import { useArrivalStore } from "./arrival-store.js";
 import { useArrivalFrame } from "./arrival-frame-guard.js";
+import { startVisibleTimeout, type VisibleTimeout } from "./arrival-visible-timeout.js";
 import { TRADES_HALL_ANCHOR } from "./trades-hall-anchor.js";
 import {
   ARRIVAL_ERROR_TARGET,
@@ -31,7 +32,10 @@ import {
 // ARRIVAL_TILES_FIRST_CONTACT_MS in arrival-config.ts for the arithmetic
 // (25 concurrent downloads per origin sharing a Slow-3G link go 524 s between
 // completions) that makes the difference between the two kinds of event the
-// whole ballgame.
+// whole ballgame. Its clock counts VISIBLE time only (arrival-visible-timeout
+// .ts): the evidence that re-arms it is rAF-gated and browsers do not run rAF
+// in a background tab, so a wall-clock budget was measuring one thing against
+// another and killing working fly-ins in tabs nobody had looked at yet.
 //
 // THE LIBRARY'S OWN FRAME LOOP RUNS UNDER OUR GUARD, NOT BESIDE IT.
 // <TilesRenderer> normally registers its own useFrame — `camera
@@ -291,6 +295,22 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
     // tiny, so ARRIVAL_TILES_FIRST_CONTACT_MS can be short enough to be a real
     // instrument. After a completion, the 25-concurrent-downloads arithmetic
     // governs and ARRIVAL_TILES_STALL_MS has to be long.
+    //
+    // AND IT COUNTS VISIBLE TIME, NOT WALL-CLOCK TIME (edge review). The two
+    // halves of this instrument used to run off different clocks. The evidence
+    // is rAF-GATED — `load-tileset`/`load-model` can only ever follow a
+    // `tiles.update()`, which runs from useArrivalFrame, which runs from R3F's
+    // requestAnimationFrame loop — while the timer was plain wall-clock
+    // setTimeout. Browsers do not service rAF in a background tab at all, but
+    // they do keep firing setTimeout there (merely clamped). So a visitor who
+    // middle-clicked the homepage into a background tab had a watchdog running
+    // against evidence that structurally could not be produced, and came back
+    // after two minutes to a permanently failed hero on a perfectly good
+    // connection. startVisibleTimeout (arrival-visible-timeout.ts) spends the
+    // budget only while document.visibilityState is "visible", so a tab opened
+    // in the background begins with its clock stopped. Everything else about
+    // the switch — what re-arms it, the two window sizes, terminality — is
+    // unchanged; only the clock it reads is.
     let sawCompletion = false;
     // TERMINAL: this watch is over for good — the store has failed, or the
     // component is unmounting. Nothing may arm a timer past that point (branch
@@ -298,15 +318,15 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
     // already fired, leaving a live timer running past the failure it was
     // watching for, and firing again into an already-failed store).
     let terminal = false;
-    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    let stallClock: VisibleTimeout | null = null;
     const disarmStall = (): void => {
-      if (stallTimer !== null) {
-        clearTimeout(stallTimer);
-        stallTimer = null;
+      if (stallClock !== null) {
+        stallClock.cancel();
+        stallClock = null;
       }
     };
     const onStall = (): void => {
-      stallTimer = null;
+      stallClock = null;
       terminal = true;
       if (!loggedFailure.current) {
         loggedFailure.current = true;
@@ -327,9 +347,9 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
       if (announced || terminal) {
         return;
       }
-      stallTimer = setTimeout(
-        onStall,
+      stallClock = startVisibleTimeout(
         sawCompletion ? ARRIVAL_TILES_STALL_MS : ARRIVAL_TILES_FIRST_CONTACT_MS,
+        onStall,
       );
     };
     const onCompletion = (): void => {

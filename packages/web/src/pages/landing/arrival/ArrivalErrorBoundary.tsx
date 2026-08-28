@@ -124,6 +124,18 @@ export class ArrivalErrorBoundary extends Component<
    * the store's own escape hatch used as designed, not a second one bolted on.
    * Mount-time reset stays rejected for the reason Task 12/12b pinned: a fresh
    * mount inheriting an already-failed store must stay failed.
+   *
+   * BEING FIRST IS NOT THE SAME AS BEING LAST — a second ordering fact, found
+   * by the edge review, that this reset depended on and did not have. React is
+   * finished by the time this returns; @react-three/fiber is not.
+   * `unmountComponentAtNode` schedules a 500 ms timer that calls
+   * `state.gl.forceContextLoss()` (events-d0566a2e.cjs.dev.js:2109-2133), which
+   * dispatches `webglcontextlost` on the canvas element — measured in Chromium,
+   * even after the element has left the document — so a listener attached in
+   * `<Canvas onCreated>`, which has no cleanup hook, re-failed the store half a
+   * second after this ran. The reset was correct and was simply overwritten.
+   * The listener now lives in ArrivalHero's WebglContextLossGuard, whose own
+   * teardown removes it; see that component for the full trace.
    */
   override componentWillUnmount(): void {
     useArrivalStore.getState().reset();

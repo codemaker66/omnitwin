@@ -216,6 +216,27 @@ function arrivalLogs(calls: readonly unknown[][]): unknown[][] {
   return calls.filter((args) => typeof args[0] === "string" && args[0].startsWith("Arrival:"));
 }
 
+/**
+ * The Page Visibility API, driven the way a browser drives it when the visitor
+ * switches tabs: the state changes, THEN `visibilitychange` fires on the
+ * document. happy-dom implements `visibilityState` as a prototype getter that
+ * always answers "visible", so the state is shadowed as an own property of the
+ * document and removed again afterwards — no global stubbing, and the real
+ * event path is what the component under test sees.
+ */
+function setPageVisibility(state: "visible" | "hidden"): void {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => state,
+  });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+/** Drops the own-property shadow so happy-dom's own getter is visible again. */
+function restorePageVisibility(): void {
+  Reflect.deleteProperty(document, "visibilityState");
+}
+
 describe("GoogleTilesStage", () => {
   // The component now writes a diagnostic on load-error (see the "explains
   // itself" tests below). Captured rather than printed: the calls are the
@@ -829,6 +850,113 @@ describe("GoogleTilesStage", () => {
       });
       expect(useArrivalStore.getState().phase).toBe("loading");
       expect(arrivalLogs(consoleError.calls)).toHaveLength(0);
+    });
+
+    // ═══ THE BACKGROUND TAB (edge review).
+    //
+    // The watchdog's evidence is rAF-gated and its clock was not. `load-tileset`
+    // and `load-model` can only follow a `tiles.update()`, which runs from
+    // useArrivalFrame, which runs from R3F's requestAnimationFrame loop — and
+    // browsers do not service rAF in a hidden tab at all, while they DO keep
+    // firing setTimeout there. So a visitor who middle-clicked the homepage into
+    // a background tab (or ⌘/Ctrl-clicked, or chose "open in new tab") had a
+    // dead-man's switch counting down against evidence that structurally could
+    // not be produced, and came back to a permanently failed hero on a perfectly
+    // good connection.
+    //
+    // These cases drive the real Page Visibility API — the same
+    // `visibilitychange` event and `document.visibilityState` a browser uses —
+    // rather than asserting anything about the timer's internals.
+    describe("a tab opened in the background", () => {
+      afterEach(() => {
+        restorePageVisibility();
+      });
+
+      it("does not spend one millisecond of the budget while the page is hidden", () => {
+        setPageVisibility("hidden");
+        render(<GoogleTilesStage apiToken="AIza-test" />);
+
+        act(() => {
+          vi.advanceTimersByTime(ARRIVAL_TILES_FIRST_CONTACT_MS * 5);
+        });
+
+        expect(useArrivalStore.getState().phase).toBe("loading");
+        expect(arrivalLogs(consoleError.calls)).toHaveLength(0);
+      });
+
+      it("starts the budget when the visitor finally switches to the tab", () => {
+        setPageVisibility("hidden");
+        render(<GoogleTilesStage apiToken="AIza-test" />);
+        act(() => {
+          vi.advanceTimersByTime(ARRIVAL_TILES_FIRST_CONTACT_MS * 5);
+        });
+
+        act(() => {
+          setPageVisibility("visible");
+        });
+        act(() => {
+          vi.advanceTimersByTime(ARRIVAL_TILES_FIRST_CONTACT_MS - 1);
+        });
+        // The full window, counted from the moment the tab was actually looked
+        // at — not a residue of the time it spent hidden.
+        expect(useArrivalStore.getState().phase).toBe("loading");
+
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(useArrivalStore.getState().phase).toBe("fallback");
+        expect(useArrivalStore.getState().failReason).toBe("tiles");
+      });
+
+      it("banks the visible time already spent and resumes from there", () => {
+        // Watched for half the window, backgrounded for an hour, watched again:
+        // the second half of the window is what remains, no more and no less.
+        const half = ARRIVAL_TILES_FIRST_CONTACT_MS / 2;
+        render(<GoogleTilesStage apiToken="AIza-test" />);
+        act(() => {
+          vi.advanceTimersByTime(half);
+        });
+
+        act(() => {
+          setPageVisibility("hidden");
+        });
+        act(() => {
+          vi.advanceTimersByTime(60 * 60 * 1000);
+        });
+        expect(useArrivalStore.getState().phase).toBe("loading");
+
+        act(() => {
+          setPageVisibility("visible");
+        });
+        act(() => {
+          vi.advanceTimersByTime(half - 1);
+        });
+        expect(useArrivalStore.getState().phase).toBe("loading");
+
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(useArrivalStore.getState().phase).toBe("fallback");
+      });
+
+      it("leaves no visibility listener behind on unmount", () => {
+        // The stall clock subscribes to the document, which outlives the hero.
+        // A leaked listener would re-arm a timer for a component that is gone —
+        // the same class of defect as the R3F teardown re-failing the store.
+        setPageVisibility("hidden");
+        const { unmount } = render(<GoogleTilesStage apiToken="AIza-test" />);
+        unmount();
+
+        act(() => {
+          setPageVisibility("visible");
+        });
+        expect(vi.getTimerCount()).toBe(0);
+        act(() => {
+          vi.advanceTimersByTime(ARRIVAL_TILES_STALL_MS * 3);
+        });
+        expect(useArrivalStore.getState().phase).toBe("loading");
+        expect(arrivalLogs(consoleError.calls)).toHaveLength(0);
+      });
     });
   });
 

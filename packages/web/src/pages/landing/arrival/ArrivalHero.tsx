@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactElement } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { useNavigate } from "react-router-dom";
 import { FRESH_TOUR_ENABLED } from "../../fresh/fresh-copy.js";
-import { googleTilesApiKey } from "./arrival-config.js";
+import { ARRIVAL_NO_TWIN_HOLD_MS, googleTilesApiKey } from "./arrival-config.js";
 import { arrivalHarnessPhase, arrivalHarnessTilesToken } from "./arrival-dev-harness.js";
 import { useArrivalFrame } from "./arrival-frame-guard.js";
 import { useArrivalStore, type ArrivalPhase } from "./arrival-store.js";
@@ -91,8 +91,8 @@ import "./arrival.css";
 // FALLBACK ARMOR (Task 12) replaces the old "apiToken === null" ad hoc check
 // with useArrivalGate() — the single pre-Canvas gate covering BOTH no-key and
 // poster-tier device. Tasks 4/5 already wired fail("tiles") (GoogleTilesStage
-// load-error) and fail("webgl") (onCreated's webglcontextlost listener,
-// below) — those stay untouched; this task only adds the gate itself, plus a
+// load-error) and fail("webgl") (WebglContextLossGuard's webglcontextlost
+// listener, below) — those stay untouched; this task only adds the gate itself, plus a
 // fade for the case the plain "return null" always handled badly: a failure
 // arriving WHILE the canvas was already showing something (spec §6 "holds
 // briefly, then fades", not an abrupt cut). The two fallback cases are
@@ -104,6 +104,15 @@ import "./arrival.css";
 // already-mounted Canvas) — hence hasShownCanvasRef, a ref flipped by an
 // effect (never during render itself, so a discarded/speculative render can
 // never mark it), not derived from `failReason`'s value.
+//
+// A SIXTH WAY OUT, ADDED BY THE EDGE REVIEW: fail("no-twin"). Every reason
+// above is something going WRONG. This one is the hero arriving somewhere it
+// cannot finish — a keyed build whose twin bundle is not hosted, which is
+// today's production shape. The flight lands, there is no dollhouse and no
+// invitation to open one, and the old behaviour was to sit there forever with
+// Google's photogrammetry covering the venue photograph and not one control on
+// screen. It now takes the same exit as everything else, after a beat. See the
+// dissolve effect below and ARRIVAL_NO_TWIN_HOLD_MS in arrival-config.ts.
 // -----------------------------------------------------------------------------
 
 export const ARRIVAL_SKIP_LABEL = "Skip the flight";
@@ -113,6 +122,64 @@ export const ARRIVAL_SKIP_LABEL = "Skip the flight";
  *  reach it too. The 3D click (ExplodedHall's handleChunkClick) stays as an
  *  additional, redundant path — this does not replace it. */
 export const ARRIVAL_OPEN_HALL_LABEL = "Open the Hall";
+
+/**
+ * A LOST WEBGL CONTEXT IS fail("webgl") — BUT ONLY WHILE THERE IS A HERO TO
+ * LOSE IT (edge review, CRITICAL).
+ *
+ * This listener used to live in `<Canvas onCreated>`, which has no cleanup
+ * hook, so it stayed bound to the canvas element for as long as the element
+ * existed — which is LONGER THAN THE HERO. @react-three/fiber 8.18.0 tears a
+ * root down on a delay: Canvas's own effect cleanup calls
+ * `unmountComponentAtNode(canvas)`, which unmounts the R3F children and then,
+ * from the reconciler's completion callback, schedules
+ *
+ *     setTimeout(() => { …; state.gl.forceContextLoss(); dispose(state); … }, 500)
+ *
+ * (node_modules/@react-three/fiber/dist/events-d0566a2e.cjs.dev.js:2109-2133;
+ * `forceContextLoss` is three 0.180's `WEBGL_lose_context.loseContext()` —
+ * three.cjs:74162-74167). MEASURED in Chromium via Playwright: calling
+ * loseContext() on a canvas that has already been REMOVED from the document
+ * still dispatches `webglcontextlost` on it, asynchronously — 0 listeners
+ * fired synchronously, 1 fired on the next tick, gl.isContextLost() true.
+ *
+ * So on a genuine client-side navigation away from /fresh the sequence was:
+ *
+ *     reset()          ← ArrivalErrorBoundary.componentWillUnmount, commit
+ *     fail("webgl")    ← R3F's teardown timer, ~500 ms later
+ *
+ * and the reset the boundary exists to perform was undone half a second after
+ * it ran. Coming back to the homepage — no reload — found the store parked in
+ * "fallback"/"webgl", so the hero returned null and the visitor never saw the
+ * arrival again for the life of the tab. Invisible to every test that unmounts
+ * synchronously and then asserts, because at that instant the store IS clean.
+ *
+ * The fix is to own the listener's lifetime instead of the canvas's. This
+ * subscribes from a component INSIDE the Canvas, so React unsubscribes it as
+ * part of the same teardown — and from useLayoutEffect rather than useEffect
+ * on purpose: a deleted fiber's layout cleanup runs in the MUTATION phase of
+ * the R3F reconciler's own commit, which is inside `updateContainer(null, …)`
+ * and therefore strictly before the completion callback that schedules the
+ * 500 ms timer. That is an ordering guarantee, not a 500 ms head start.
+ *
+ * A real context loss — a GPU reset, a driver crash, the browser reclaiming
+ * contexts from a background tab — still lands on fail("webgl") exactly as
+ * before, because that can only happen while this component is mounted.
+ */
+function WebglContextLossGuard(): null {
+  const gl = useThree((s) => s.gl);
+  useLayoutEffect(() => {
+    const canvas = gl.domElement;
+    const onContextLost = (): void => {
+      useArrivalStore.getState().fail("webgl");
+    };
+    canvas.addEventListener("webglcontextlost", onContextLost);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", onContextLost);
+    };
+  }, [gl]);
+  return null;
+}
 
 /** Drives the camera along the rail while phase === "flight". */
 function FlightCamera(): null {
@@ -393,6 +460,53 @@ export function ArrivalHero(): ReactElement | null {
     }
   }, [phase, manifest]);
 
+  // NOBODY MAY BE LEFT UNDER GOOGLE'S ROOF WITH NO WAY BACK (edge review).
+  //
+  // The flight ends at "arrived", where the reveal is supposed to take over.
+  // When there is no reveal — `dollhouseReady` false, which is TODAY'S
+  // PRODUCTION SHAPE on a keyed build, since public/twin is gitignored and the
+  // SPA rewrite answers the manifest with index.html — the hero used to just
+  // stop there and stay: an opaque canvas of Google photogrammetry parked over
+  // `img.fr-hero-photo`, with no dollhouse, no "Open the Hall" (correctly
+  // gated on the same fact), no Skip (flight-only) and no Close (exploded-
+  // only). Not one control, and the venue photograph the page is built around
+  // hidden behind a melty approximation of the same building until the visitor
+  // thought to reload.
+  //
+  // So the arrival RESOLVES instead of stalling: hold the landed pose for a
+  // beat, then take the ordinary spec §6 exit — fail("no-twin"), fade, and the
+  // photograph is back. See ARRIVAL_NO_TWIN_HOLD_MS (arrival-config.ts) for
+  // the alternatives weighed and why this one; arrival-store.ts's
+  // ArrivalFailReason for why it is its own reason and not a reused "tiles".
+  //
+  // `manifest.state === "loading"` is NOT this case and must not start the
+  // clock — the fetch may simply still be in flight when a fast arrival lands,
+  // and dissolving then would throw away a reveal that was about to work. The
+  // effect re-runs when the manifest resolves either way.
+  const noTwinLoggedRef = useRef(false);
+  useEffect(() => {
+    if (phase !== "arrived" || dollhouseReady || manifest.state === "loading") {
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (!noTwinLoggedRef.current) {
+        noTwinLoggedRef.current = true;
+        // eslint-disable-next-line no-console -- once-only diagnostic; this is a deployment gap, not a code failure.
+        console.warn(
+          "Arrival: the fly-in landed but there is no captured twin to reveal — the trades-hall " +
+            "manifest or its mesh is unavailable, which is what an unhosted packages/web/public/" +
+            "twin bundle looks like from here. Rather than leave Google's photogrammetry covering " +
+            "the hero photograph with no way back, the hero has dissolved and the static photo is " +
+            "carrying the page. Publish the twin bundle to restore the reveal.",
+        );
+      }
+      useArrivalStore.getState().fail("no-twin");
+    }, ARRIVAL_NO_TWIN_HOLD_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [phase, dollhouseReady, manifest.state]);
+
   // THE STORE IS A MODULE SINGLETON AND SOMEBODY HAS TO END THE STORY — BUT
   // NOT THIS COMPONENT, AND THE REASON IS A REACT ORDERING FACT (branch review
   // round 2, CRITICAL). The reset lives in ArrivalErrorBoundary's
@@ -457,12 +571,11 @@ export function ArrivalHero(): ReactElement | null {
         dpr={[1, 2]}
         gl={{ powerPreference: "high-performance" }}
         camera={{ fov: 45, near: 1, far: 60000 }}
-        onCreated={({ gl }) => {
-          gl.domElement.addEventListener("webglcontextlost", () => {
-            useArrivalStore.getState().fail("webgl");
-          });
-        }}
       >
+        {/* The webglcontextlost subscription, owned by a component so React
+            unsubscribes it — see WebglContextLossGuard for the R3F teardown
+            trace that makes an onCreated listener actively harmful here. */}
+        <WebglContextLossGuard />
         {/* Narrowed here rather than by the early return above. In normal
             operation a null key has already blocked the gate, so this is
             always truthy. Under the DEV harness there are two cases and they

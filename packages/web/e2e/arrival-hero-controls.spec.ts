@@ -262,10 +262,11 @@ test("the controls stay clear of the panel across a viewport resize", async ({ p
 });
 
 // ---------------------------------------------------------------------------
-// CRITICAL B — no control for a reveal that cannot load.
+// CRITICAL B — no control for a reveal that cannot load, and no dead end
+// where the reveal would have been.
 // ---------------------------------------------------------------------------
 
-test("production's broken manifest: the invitation is never offered", async ({ page }) => {
+test("production's broken manifest: no invitation, and no dead end", async ({ page }) => {
   // THE REAL PRODUCTION SHAPE. packages/web/public/twin is gitignored, so the
   // manifest request hits the SPA rewrite and comes back as index.html with a
   // 200 — the fetch "succeeds" and only fails when parsed as JSON. That is the
@@ -284,11 +285,29 @@ test("production's broken manifest: the invitation is never offered", async ({ p
 
   await openHeroAt(page, "arrived");
 
-  // The hero itself is fine — the fly-in without the dollhouse is a complete,
-  // valid experience, and the arrival layer must still be there carrying it.
-  await expect(page.locator(".arrival-hero")).toBeVisible();
-  // But nothing may offer to open what cannot open.
+  // Nothing may offer to open what cannot open.
   await expect(page.getByRole("button", { name: OPEN_HALL_LABEL })).toHaveCount(0);
+
+  // …AND NOBODY MAY BE LEFT THERE (edge review). The previous version of this
+  // case asserted the opposite of the line below — "the arrival layer must
+  // still be there carrying it" — on the reasoning that a fly-in without the
+  // dollhouse is a complete experience. It is not, and this is the shape that
+  // proves it: an opaque canvas of Google photogrammetry parked over
+  // img.fr-hero-photo, with no dollhouse behind it, no invitation to open one,
+  // no Skip (flight-only) and no Close (exploded-only) — not one control on
+  // screen, and the venue photograph the page is built around hidden behind a
+  // melty approximation of the same building until the visitor reloads.
+  //
+  // So the arrival RESOLVES: it holds the landing for a beat
+  // (ARRIVAL_NO_TWIN_HOLD_MS, arrival-config.ts) and then dissolves through
+  // the ordinary spec §6 fade. The hero really leaves the DOM, and what is
+  // underneath it is the photograph — which is the whole guarantee.
+  await expect(page.locator(".arrival-hero")).toHaveCount(0, { timeout: 15_000 });
+
+  const photo = page.locator("img.fr-hero-photo");
+  await expect(photo).toBeVisible();
+  // A decoded photograph, not a broken image with alt text and a box.
+  expect(await photo.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
 });
 
 test("no dead doors to the walkthrough anywhere on the arrival layer", async ({ page }) => {

@@ -95,13 +95,17 @@ export function arrivalHarnessPhase(search: string): ArrivalPhase | null {
 //
 //   default (no launchOptions)        -> "ANGLE (Google, Vulkan 1.3.0
 //                                        (SwiftShader Device (Subzero) …))"
-//   --use-angle=default --enable-gpu  -> "ANGLE (NVIDIA, NVIDIA GeForce
+//   --enable-gpu                      -> "ANGLE (NVIDIA, NVIDIA GeForce
 //                                        RTX 4090 … D3D11)"
 //
-// So the launch flags DO reach the discrete GPU here — and that is still not a
+// So the launch flag DOES reach the discrete GPU here — and that is still not a
 // fix, because a CI runner has no discrete GPU to reach. An attribution
 // assertion gated on the reported renderer is an assertion that does not run
-// in CI, which is the one place it has to run.
+// in CI, which is the one place it has to run. (The `--use-angle=default` that
+// once accompanied that flag was removed on 2026-08-28: re-measured on GPU-less
+// Linux it leaves the browser with NO WebGL context at all, which would have
+// taken the ToS guard below down in CI. e2e/arrival.spec.ts's test.use block
+// carries the full two-platform table.)
 //
 // WHAT THIS SEAM DOES. It supplies a FIXED, SYNTHETIC token so
 // GoogleTilesStage — with its real GoogleCloudAuthPlugin, its real
