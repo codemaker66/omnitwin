@@ -40,8 +40,13 @@ function displayName(slug: string): string {
  * to `images/rooms/`, these live in `images/rooms/supplied/`.
  */
 const SUPPLIED_STILLS: Readonly<Record<string, string>> = {
+  "grand-hall": "/images/rooms/supplied/grand-hall.jpeg",
+  "reception-room": "/images/rooms/supplied/reception-room.jpeg",
   "robert-adam-room": "/images/rooms/supplied/robert-adam-room.jpg",
-  "grand-hall": "/images/venue/grand-hall-room.jpg",
+  "lady-convenors-room": "/images/rooms/supplied/lady-convenors-room.png",
+  "deacon-conveners-room": "/images/rooms/supplied/deacon-conveners-room.png",
+  "north-gallery": "/images/rooms/supplied/north-gallery.png",
+  "south-gallery": "/images/rooms/supplied/south-gallery.png",
   saloon: "/images/venue/saloon-room.jpg",
 };
 
