@@ -4,6 +4,11 @@
 // Rendering them from the real captures means the poster IS the room, covers
 // rooms with no photography, and cannot drift from what the viewer shows.
 //
+// Always shot from INSIDE the room. A capture only ever saw a room's interior,
+// so from outside you are looking at the back of a ceiling — noise, not a
+// picture of anything. Clipping makes an exterior view possible; it does not
+// make it worth looking at.
+//
 // Two traps this works around, both learned the hard way:
 //
 //  1. The scene uses frameloop="demand". Once a room finishes loading nothing
@@ -17,7 +22,7 @@
 // Needs the dev server running with SPLAT_STAGING_ROOT set.
 //   node scripts/render-room-posters.mjs [baseUrl] [outDir]
 import { chromium } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const BASE = process.argv[2] ?? "http://localhost:5192";
@@ -76,9 +81,21 @@ for (const room of ROOMS) {
   await page.mouse.up();
   await page.waitForTimeout(1200);
 
+  // Read the canvas back rather than screenshotting it. A loaded splat canvas
+  // draws on demand, so the compositor never hands Playwright a frame and
+  // page.screenshot() waits forever. ?bare=1 turns on preserveDrawingBuffer,
+  // which makes toDataURL the one capture path that actually returns.
   let poster = "ok";
   try {
-    await page.screenshot({ path: join(OUT, `${room}.jpg`), type: "jpeg", quality: 84, timeout: 60000 });
+    const data = await page.evaluate(() => {
+      const canvas = document.querySelector("canvas");
+      return canvas === null ? null : canvas.toDataURL("image/jpeg", 0.86);
+    });
+    if (data === null) {
+      poster = "no canvas";
+    } else {
+      writeFileSync(join(OUT, `${room}.jpg`), Buffer.from(data.split(",")[1], "base64"));
+    }
   } catch (error) {
     poster = `failed: ${error.message.slice(0, 34)}`;
   }

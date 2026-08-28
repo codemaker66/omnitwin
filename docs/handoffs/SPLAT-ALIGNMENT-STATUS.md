@@ -154,24 +154,23 @@ dollhouse view for that room, promotes its badge on the front door from
 dimensions — all automatically, with no web change. The manifest remains the
 only contract.
 
-### Open: the dollhouse does not yet read as a room
+### Settled: look at these rooms from inside, not outside
 
-Clipping is proven — beyond the box is black, and the cut is hard-edged. What is
-NOT working is the view from outside. Two things stand in the way:
+The exterior view was a wrong turn and is not worth further work. A capture only
+ever saw a room's interior, so from outside you are looking at the back of a
+ceiling and the back of a wall — surfaces the scanner never observed. That
+renders as a closed box of noise no matter how cleanly it is clipped, and no
+lid cut or wall drop rescues it, because there is nothing behind those splats to
+reveal.
 
-1. **The lid cut has no visible effect.** `keepHeightFraction` trims the box's
-   top, and reception at 0.72 renders identically to 1.0. The most likely cause
-   is that `SplatEditSdf` BOX does not take `scale` as half-extents the way this
-   code assumes; it may want full extents, or the `radius` field. Verify against
-   Spark's editor example before trusting any vertical crop.
-2. **From outside you see the backs of surfaces.** A scanner only ever saw the
-   inside of a room, so the outward face of every wall and ceiling is noise.
-   Even with a correct lid cut, a dollhouse needs the near walls dropped too,
-   not just the ceiling.
+So every view of a room puts the camera inside it: the walkthrough, and the
+stills the front door uses. `deriveRoomCamera` enforces this by clamping the
+standoff to the room's own half-depth.
 
-None of this affects what ships: `?view=dollhouse` is opt-in, and both the front
-door and the default walkthrough put the camera inside the room, which works.
-
+Clipping stays, and earns its place for the interior view: without it you see
+through doorways into the corridor the operator walked in from. It is also what
+would make an exterior view possible later, if the surfaces ever existed to
+support one.
 
 ### Two capture traps, if you render stills
 

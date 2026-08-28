@@ -33,25 +33,34 @@ function displayName(slug: string): string {
 }
 
 /**
- * The still that stands for a room on the front door.
+ * Pictures supplied for the front door, which win over anything generated.
  *
- * These are the venue's own photographs. Rendering stills from the scans was
- * tried and abandoned: a loaded splat canvas draws on demand, so a still of one
- * either stalls the capture or catches an empty frame, and the rooms whose
- * alignment is still being worked out photograph as smears in any case.
- *
- * Rooms absent from this map fall through to a typographic plate, which is why
- * there is no placeholder image here and no room is ever shown a broken one.
+ * A photograph chosen for a room beats a frame grabbed from its scan, so these
+ * take precedence and are never overwritten by the poster renderer — it writes
+ * to `images/rooms/`, these live in `images/rooms/supplied/`.
  */
-const ROOM_STILLS: Readonly<Record<string, string>> = {
+const SUPPLIED_STILLS: Readonly<Record<string, string>> = {
+  "robert-adam-room": "/images/rooms/supplied/robert-adam-room.jpg",
   "grand-hall": "/images/venue/grand-hall-room.jpg",
-  "reception-room": "/images/venue/reception-room.jpg",
-  "robert-adam-room": "/images/venue/robert-adam-room.jpg",
-  "saloon": "/images/venue/saloon-room.jpg",
+  saloon: "/images/venue/saloon-room.jpg",
 };
 
+/**
+ * Rooms with a still rendered from the scan itself.
+ *
+ * Shot from inside the room, because a capture only ever saw a room's interior
+ * — from outside you get the back of a ceiling, which is noise. These are the
+ * truest posters available: the picture is the thing you get when you click it.
+ *
+ * A room in neither map falls through to a typographic plate, which is why
+ * there is no placeholder image anywhere and no room is ever shown a broken one.
+ */
+const RENDERED_STILLS: readonly string[] = ["reception-room"];
+
 function posterUrl(slug: string): string | null {
-  return ROOM_STILLS[slug] ?? null;
+  const supplied = SUPPLIED_STILLS[slug];
+  if (supplied !== undefined) return supplied;
+  return RENDERED_STILLS.includes(slug) ? `/images/rooms/${slug}.jpg` : null;
 }
 
 /** Floor dimensions, to one decimal, in the order a person would say them. */
