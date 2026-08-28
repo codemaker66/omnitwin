@@ -206,7 +206,7 @@ respondents 4.6–9.2% (was 1.3–15.9%); pure and world-pure respondents 14/14.
 **Constraint update:** the old rule "no craft nouns" (L8) is now precisely "no
 Craft *name*". Its world — iron, seed, bread, razor — may and must be shown.
 
-## The Deliberation, the town remembering, Your Year, and the record (added 2026-08-22)
+## The Deliberation, the town remembering, Your Year, and the record (added 2026-08-18)
 
 Format research (`docs/trades-house/quiz-authoring/FORMAT-RESEARCH-2026-08-16.md`)
 kept the answering format and added four things. All shipped and reviewed by
@@ -249,7 +249,7 @@ text/plain with `keepalive` (a CORS-simple request that survives a closing
 tab). Route: `bodyLimit` 4096, `logLevel: "warn"` (no access line carrying the
 address), 300/hour per source (a room on one NAT). Consumers must recompute
 result/runnerUp/margin/hung from `answers` — the stored columns are the
-client's claim. `trustProxy: true` was measured (2026-08-22) not to be
+client's claim. `trustProxy: true` was measured (2026-08-18) not to be
 forgeable through Railway's edge.
 
 **Voice rules, sharpened by the editor's pass:** no tautology-epigrams ("Feet
