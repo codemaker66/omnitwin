@@ -85,40 +85,144 @@ export const GOOGLE_MAPS_ATTRIBUTION_LOGO_URL = "/images/brand/google-maps-attri
 export const ARRIVAL_ERROR_TARGET = 12;
 
 /**
- * How long the tiles may go COMPLETELY SILENT before the hero gives up and
- * falls back to the static photograph (GoogleTilesStage.tsx's stall
- * watchdog). Milliseconds.
+ * THE TILES WATCHDOG, AND WHY ITS FIRST VERSION WOULD HAVE KILLED WORKING
+ * FLY-INS ON SLOW MOBILE. Both windows below are in milliseconds and are
+ * consumed by GoogleTilesStage.tsx.
  *
- * WHAT IT MEASURES, WHICH IS THE WHOLE REASON THE NUMBER IS DEFENSIBLE. This
- * is NOT "the tileset must finish within 30 s". It is a dead-man's switch:
- * the timer is re-armed by every event that PROVES bytes are still moving —
- * a tileset parsed (`load-tileset`), a tile request actually starting
- * (`tile-download-start`), a tile finishing (`load-model`), the load queue
- * going non-empty (`tiles-load-start`). A slow-but-working connection fires
- * those continuously, so it can never trip this; only genuine silence can.
- * A fixed total deadline was the obvious alternative and was rejected for
- * exactly that reason — it cannot tell "hung" from "slow", so any value
- * generous enough to be safe on poor mobile is too long to be a useful
- * watchdog, and any value short enough to be useful steals the flight from
- * the visitors least able to spare it.
+ * ═══ The mistake, stated plainly, because the fix is only legible against it
  *
- * WHY 30 SECONDS OF SILENCE. The gaps this must sit above are real ones on a
- * bad mobile link: the session-token round trip plus the root tileset fetch
- * (small JSON, but two serial round trips at 300-600 ms RTT), then per-tile
- * glTF downloads. Google's photorealistic tiles run to a few hundred KB each
- * and occasionally past 1 MB; at a Slow-3G-class 400 Kbps a 1 MB tile is
- * ~20 s wall clock, and downloads run concurrently, so a further
- * download-start or load-model almost always lands well inside the window.
- * 30 s clears that with margin while still bounding the failure: the phase
- * machine can no longer sit in "loading" forever.
+ * The first version re-armed on FOUR events and called all four "proof that
+ * bytes moved": `load-tileset`, `load-model`, `tiles-load-start` and
+ * `tile-download-start`. The last two are not that. Checked against the
+ * installed 0.5.2 source rather than against their names:
  *
- * WHAT A FALSE POSITIVE COSTS, so the trade is stated rather than assumed:
- * the hero fades and the static hero photograph carries the page (spec §6) —
- * the same graceful outcome as a missing key. Nothing breaks, nobody sees an
- * error; a visitor on a link so bad that 30 s passes with no tile progress at
- * all loses a decoration they never asked for. What a MISSED stall costs is
- * worse and silent: no flight, no diagnostic, no fallback, forever — the
- * failure Task 12b independently flagged as this hero's most likely real
- * field report.
+ *   `tiles-load-start`     — "Fired when tile downloads BEGIN after a period
+ *                            of inactivity" (TilesRendererBase.js:269-271,
+ *                            dispatched at :1628 the moment the load queue
+ *                            goes non-empty). A queue becoming non-empty is
+ *                            scheduling. Zero bytes have crossed the wire.
+ *   `tile-download-start`  — "Fired when a tile content download BEGINS"
+ *                            (:279-284, dispatched at :1654 immediately after
+ *                            `fetchData` is INVOKED). Request issued. Again
+ *                            zero bytes; the fetch has not even resolved its
+ *                            headers.
+ *   `load-tileset`         — "Fired when any tileset JSON FINISHES loading"
+ *                            (:256-260). A completion.
+ *   `load-model`           — "Fired when a tile's renderable content
+ *                            (model/scene) IS CREATED" (:286-291). A
+ *                            completion.
+ *
+ * Only the last two are evidence. And the first two are not merely useless —
+ * they are actively misleading, because of the concurrency limit:
+ * `DEFAULT_DOWNLOAD_QUEUE.maxJobsPerOrigin = 25` (TilesRendererBase.js:334).
+ * Every Google tile comes from one origin, so the queue dequeues up to 25 jobs
+ * in a single pass and fires 25 `tile-download-start` events within
+ * milliseconds of each other — a BURST at t≈0 — and then NOTHING until the
+ * first of those 25 downloads actually completes. The old watchdog therefore
+ * measured a quantity that is silent for exactly as long as the real thing is,
+ * while its comment claimed it "cannot fire on a slow-but-working connection".
+ *
+ * ═══ The arithmetic, on the same Slow-3G figure the first version cited
+ *
+ * Slow 3G, as Lighthouse and Puppeteer define it (`PredefinedNetworkConditions
+ * ['Slow 3G']`): 500 Kbps nominal × 0.8 = 400 Kbps ⇒ 50,000 B/s aggregate,
+ * 2,000 ms RTT.
+ *
+ *   fair-share throughput per request = 50,000 B/s ÷ 25 concurrent
+ *                                     = 2,000 B/s
+ *
+ * Google photorealistic tiles are "a few hundred KB each and occasionally past
+ * 1 MB" — the first version's own words. So the gap between the burst and the
+ * first completion is:
+ *
+ *   400 kB tile:  400,000 B ÷ 2,000 B/s =   200 s
+ *   1 MB tile:  1,048,576 B ÷ 2,000 B/s =   524 s   (8 min 44 s)
+ *
+ * Against the old 30 s window that is 6.7× too early on the median tile and
+ * 17.5× too early on the large one. Concurrency does not help here; it is the
+ * whole problem. Twenty-five requests sharing one narrow pipe finish LATER
+ * than one request would, so the more the library parallelises, the longer the
+ * event trace stays silent — the opposite of the first version's assumption
+ * that "downloads run concurrently, so a further download-start or load-model
+ * almost always lands well inside the window". On a link that is working
+ * perfectly and will deliver the hero, the visitor loses it at 30 s. The
+ * people the watchdog existed to protect were precisely the people it robbed.
+ *
+ * ═══ Why a dead-man's switch is still the right instrument
+ *
+ * Re-armed on completions ONLY, silence-since-last-completion is strictly
+ * safer than a fixed total budget of the same magnitude: a link that is
+ * genuinely delivering tiles every ~200 s keeps postponing the former forever,
+ * while the latter fires on schedule and takes the hero away from a visitor
+ * mid-load. The alternative "just remove it" was weighed too — see the last
+ * section — and rejected because the bound is what stops the phase machine
+ * sitting in "loading" for the life of the tab with no diagnostic anywhere.
+ *
+ * ═══ Why TWO windows and not one
+ *
+ * The worst case is not the same before and after the first completion, so one
+ * number would have to be the looser of the two everywhere:
+ *
+ *   BEFORE any completion, the only things outstanding are the session-token
+ *   round trip and the root tileset JSON — one or two small SERIAL requests,
+ *   not 25 concurrent multi-megabyte ones. On Slow 3G: DNS+TCP+TLS ≈ 3 RTT =
+ *   6 s, session token ≈ 1 RTT = 2 s, root tileset ≈ 1 RTT + a few kB ≈ 2-3 s
+ *   ⇒ ~11 s, call it 30 s once retransmits and a cold DNS cache are allowed
+ *   for. This is also the window that catches the failures the diagnostic was
+ *   actually written for — a captive portal, a proxy or an extension
+ *   swallowing tile.googleapis.com, a CSP block — every one of which produces
+ *   ZERO completions, forever.
+ *
+ *   AFTER the first completion the 524 s figure above governs.
+ *
+ * Hence ARRIVAL_TILES_FIRST_CONTACT_MS (below) and ARRIVAL_TILES_STALL_MS.
+ * They are one timer with two window sizes, not two mechanisms.
+ *
+ * ═══ What each failure costs, so the asymmetry is stated rather than assumed
+ *
+ * A FALSE POSITIVE costs the product: the hero fades and the photograph
+ * carries the page (spec §6). The visitor loses the fly-in — the thing this
+ * whole feature exists to give them.
+ *
+ * A MISSED stall costs only telemetry. During "loading" the R3F canvas is
+ * transparent (no scene background is set), so the photograph is already
+ * carrying the page and the visitor sees exactly what they would have seen
+ * anyway; what is lost is the one console line telling a developer which
+ * failure it was.
+ *
+ * The costs are NOT symmetric, so the windows are sized generously and the
+ * evidence bar is set high. That is also why removal was not chosen: at these
+ * windows the watchdog cannot plausibly rob anyone, and it still converts
+ * "loading forever, silently" into "one diagnostic, then the same photograph".
+ *
+ * 120_000 is the ~30 s worst case above with 4× margin.
  */
-export const ARRIVAL_TILES_STALL_MS = 30_000;
+export const ARRIVAL_TILES_FIRST_CONTACT_MS = 120_000;
+
+/**
+ * Silence BETWEEN completions, once the tiles have proved they can deliver
+ * something. Milliseconds. See ARRIVAL_TILES_FIRST_CONTACT_MS above for the
+ * full derivation; the short version is that 25 concurrent downloads sharing a
+ * 50,000 B/s link deliver their first 1 MB tile after 524 s, so any window
+ * below ~9 minutes fires on a connection that is working.
+ *
+ * 900_000 is that 524 s worst case with 1.7× margin — headroom for HTTP/2
+ * flow-control that shares less evenly than fair-share arithmetic assumes, and
+ * for a tile at the top of Google's size range arriving while the link is at
+ * the bottom of its. Fifteen minutes is a long time to call a "watchdog", and
+ * that is the honest length: the value of the bound here is the diagnostic and
+ * the terminated phase machine, not a snappy recovery, because there is no
+ * recovery to be snappy about — the photograph was carrying the page the whole
+ * time.
+ *
+ * Rejected on the way here: raising the evidence rate by lowering
+ * `downloadQueue.maxJobsPerOrigin` (fewer concurrent downloads ⇒ each finishes
+ * sooner ⇒ completions arrive more often ⇒ a tighter window would be safe).
+ * It would work, and it is a real option if this window ever becomes a
+ * problem, but `DEFAULT_DOWNLOAD_QUEUE` is a module-level singleton shared by
+ * every TilesRenderer instance, and changing tile-load concurrency is a
+ * performance decision that needs measuring against a live key (the same gate
+ * ARRIVAL_ERROR_TARGET above is waiting on). Making it as a side effect of a
+ * watchdog fix would be exactly the unmeasured knob that comment warns about.
+ */
+export const ARRIVAL_TILES_STALL_MS = 900_000;

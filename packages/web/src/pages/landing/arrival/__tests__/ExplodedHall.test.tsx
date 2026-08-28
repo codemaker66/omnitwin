@@ -735,7 +735,9 @@ describe("ExplodedHall — component", () => {
     }
 
     expect(useArrivalStore.getState().phase).toBe("fallback");
-    expect(useArrivalStore.getState().failReason).toBe("crash");
+    // The frame guard's own reason — see arrival-store.ts for why a rAF-loop
+    // throw and a render throw are no longer the same one.
+    expect(useArrivalStore.getState().failReason).toBe("frame-crash");
     // Contained, never silent — exactly one line, naming this loop.
     const ours = consoleError.calls.filter(
       (args) => typeof args[0] === "string" && args[0].startsWith("Arrival:"),

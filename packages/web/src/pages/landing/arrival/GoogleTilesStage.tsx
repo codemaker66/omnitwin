@@ -6,9 +6,11 @@ import { GoogleCloudAuthPlugin, ReorientationPlugin } from "3d-tiles-renderer/pl
 import type { Tile } from "3d-tiles-renderer/core";
 import type { TilesRenderer as TilesRendererImpl } from "3d-tiles-renderer/three";
 import { useArrivalStore } from "./arrival-store.js";
+import { useArrivalFrame } from "./arrival-frame-guard.js";
 import { TRADES_HALL_ANCHOR } from "./trades-hall-anchor.js";
 import {
   ARRIVAL_ERROR_TARGET,
+  ARRIVAL_TILES_FIRST_CONTACT_MS,
   ARRIVAL_TILES_STALL_MS,
   GOOGLE_MAPS_ATTRIBUTION_LOGO_URL,
 } from "./arrival-config.js";
@@ -23,9 +25,27 @@ import {
 //                                      may begin)
 //   needs-update    → invalidate()    (demand-frameloop discipline)
 // Plus the ONE failure with no event of its own — a request that simply never
-// answers — caught by a silence watchdog re-armed on every proof of network
-// progress (see the wiring effect, and ARRIVAL_TILES_STALL_MS in
-// arrival-config.ts for why it measures silence rather than total time).
+// answers — caught by a silence watchdog re-armed ONLY by events that mean
+// bytes actually ARRIVED (`load-tileset`, `load-model`), never by ones that
+// only mean a request was scheduled. See the wiring effect below, and
+// ARRIVAL_TILES_FIRST_CONTACT_MS in arrival-config.ts for the arithmetic
+// (25 concurrent downloads per origin sharing a Slow-3G link go 524 s between
+// completions) that makes the difference between the two kinds of event the
+// whole ballgame.
+//
+// THE LIBRARY'S OWN FRAME LOOP RUNS UNDER OUR GUARD, NOT BESIDE IT.
+// <TilesRenderer> normally registers its own useFrame — `camera
+// .updateMatrixWorld(); tiles.setResolutionFromRenderer(camera, gl);
+// tiles.update()` (node_modules/3d-tiles-renderer/src/r3f/components/
+// TilesRenderer.jsx:290-303) — and a throw there lands in R3F's rAF loop where
+// nothing catches it, exactly the hazard arrival-frame-guard.ts exists for. Of
+// the four per-frame callbacks inside this Canvas it is the likeliest to
+// throw: the only one walking a live tileset built from network-loaded bytes,
+// in vendored code this repo does not own. `enabled={false}` (a first-class
+// prop — same file, line 263) turns the library's loop off and those same
+// three lines are re-driven from useArrivalFrame below. Not a fork of the
+// library's behaviour: the identical three calls, in the identical order, in a
+// callback that also happens to be contained.
 // The attribution overlay is a Google ToS requirement — it ships in every
 // phase and no prop may hide it. It renders whatever tiles.getAttributions()
 // returns, which is only as complete as what the plugins below feed it:
@@ -177,20 +197,47 @@ const REORIENTATION_ARGS: ConstructorParameters<typeof ReorientationPlugin> = [
  * homepage where the flight was never enabled. So the watchdog says which one
  * it is, names where to look, and rules out the wrong suspect: a rejected key
  * is the loud, well-documented failure here, and it does NOT look like this.
+ *
+ * Two shapes, because the two windows diagnose different things and sending a
+ * reader after the wrong one wastes the only clue they get. Nothing at all
+ * arrived ⇒ suspect the connection to tile.googleapis.com itself. Tiles were
+ * arriving and then stopped ⇒ the route works and the block, if any, is
+ * further in.
  */
-const STALLED_TILESET_DIAGNOSTIC =
-  "Arrival: Google Photorealistic 3D Tiles went silent for " +
-  `${String(Math.round(ARRIVAL_TILES_STALL_MS / 1000))}s — no tileset, no tile download, no ` +
-  "error — so the hero flight was abandoned and the static hero photo is carrying the page; " +
-  "the homepage is fine. Nothing failed and nothing finished: the request is still " +
-  "outstanding, which is what a hung connection, a captive-portal/proxy that swallows " +
-  "tile.googleapis.com, or a request blocked by an extension or CSP looks like from here. " +
-  "Check the Network panel for a pending request to tile.googleapis.com. (A wrong or " +
-  "over-quota key does NOT look like this — that answers immediately and reports itself " +
-  "through load-error.)";
+function describeStalledTileset(sawCompletion: boolean): string {
+  const seconds = String(
+    Math.round((sawCompletion ? ARRIVAL_TILES_STALL_MS : ARRIVAL_TILES_FIRST_CONTACT_MS) / 1000),
+  );
+  if (!sawCompletion) {
+    return (
+      "Arrival: Google Photorealistic 3D Tiles never answered — not one tileset, not one tile, " +
+      `not one error — in ${seconds}s, so the hero flight was abandoned and the static hero ` +
+      "photo is carrying the page; the homepage is fine. Nothing failed and nothing finished: " +
+      "the very first request is still outstanding, which is what a hung connection, a " +
+      "captive-portal/proxy that swallows tile.googleapis.com, or a request blocked by an " +
+      "extension or CSP looks like from here. Check the Network panel for a pending request to " +
+      "tile.googleapis.com. (A wrong or over-quota key does NOT look like this — that answers " +
+      "immediately and reports itself through load-error.)"
+    );
+  }
+  return (
+    "Arrival: Google Photorealistic 3D Tiles delivered some content and then went silent for " +
+    `${seconds}s — no further tileset or tile completed, and no error was reported — so the ` +
+    "hero flight was abandoned and the static hero photo is carrying the page; the homepage is " +
+    "fine. The route to tile.googleapis.com demonstrably works, so this is not a block or a " +
+    "captive portal: look for requests to tile.googleapis.com left pending in the Network " +
+    "panel, and for a link too slow to finish a tile in that time. (A wrong or over-quota key " +
+    "does NOT look like this — that answers immediately and reports itself through load-error.)"
+  );
+}
 
 export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElement {
   const invalidate = useThree((s) => s.invalidate);
+  // camera and gl exist here only to feed the guarded re-drive of the
+  // library's own frame loop below — the same two values <TilesRenderer> reads
+  // for its own useFrame (TilesRenderer.jsx:265).
+  const camera = useThree((s) => s.camera);
+  const gl = useThree((s) => s.gl);
   const [tiles, setTiles] = useState<TilesRendererImpl | null>(null);
   // Once per MOUNT, not once per subscription: the wiring effect below
   // re-runs whenever the tiles instance changes, and a collapsing tileset can
@@ -225,12 +272,32 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
     // is written anywhere. This is the only failure class with no event of
     // its own, so it is the only one that needs a clock.
     //
-    // A DEAD-MAN'S SWITCH, NOT A DEADLINE: re-armed by every event that
-    // proves bytes are moving (see PROGRESS EVENTS below), so it measures
-    // SILENCE. That is what makes ARRIVAL_TILES_STALL_MS safe to pick — a
-    // slow-but-working connection re-arms it constantly and can never trip
-    // it; see arrival-config.ts for the full justification of the number and
-    // of the rejected fixed-deadline alternative.
+    // A DEAD-MAN'S SWITCH, RE-ARMED ONLY BY COMPLETIONS. The first version of
+    // this also re-armed on `tiles-load-start` and `tile-download-start` and
+    // called them "proof bytes moved". They are not: both fire when a request
+    // is SCHEDULED, and because the library runs 25 downloads per origin
+    // (DEFAULT_DOWNLOAD_QUEUE.maxJobsPerOrigin = 25), 25 of them arrive in one
+    // burst at t≈0 and then nothing until the first download COMPLETES —
+    // ~524 s later on Slow 3G, where fair-share gives each of 25 concurrent
+    // requests 2,000 B/s. The old 30 s window therefore fired ~17× early on a
+    // link that was working perfectly, killing the fly-in for exactly the
+    // visitors it was written to protect. arrival-config.ts carries the full
+    // arithmetic and the sizing of both windows below; the code's share of it
+    // is this: only `load-tileset` and `load-model` re-arm this timer,
+    // because only those two mean bytes actually arrived.
+    //
+    // TWO WINDOWS, ONE TIMER. Before anything has completed, the only work
+    // outstanding is a session token plus a small root tileset — serial and
+    // tiny, so ARRIVAL_TILES_FIRST_CONTACT_MS can be short enough to be a real
+    // instrument. After a completion, the 25-concurrent-downloads arithmetic
+    // governs and ARRIVAL_TILES_STALL_MS has to be long.
+    let sawCompletion = false;
+    // TERMINAL: this watch is over for good — the store has failed, or the
+    // component is unmounting. Nothing may arm a timer past that point (branch
+    // review round 2: the old onProgress could re-arm AFTER onStall had
+    // already fired, leaving a live timer running past the failure it was
+    // watching for, and firing again into an already-failed store).
+    let terminal = false;
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
     const disarmStall = (): void => {
       if (stallTimer !== null) {
@@ -240,10 +307,11 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
     };
     const onStall = (): void => {
       stallTimer = null;
+      terminal = true;
       if (!loggedFailure.current) {
         loggedFailure.current = true;
         // eslint-disable-next-line no-console
-        console.error(STALLED_TILESET_DIAGNOSTIC);
+        console.error(describeStalledTileset(sawCompletion));
       }
       // The same single fallback every other tiles failure takes (spec §6) —
       // a stall is not a new reason, it is the "tiles" reason arriving by
@@ -252,16 +320,21 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
     };
     const armStall = (): void => {
       disarmStall();
-      stallTimer = setTimeout(onStall, ARRIVAL_TILES_STALL_MS);
-    };
-    const onProgress = (): void => {
-      // Only while the readiness signal is still outstanding: once
-      // tilesReady() has fired the phase machine has moved on, and a later
-      // slow patch mid-flight is not a hang — failing then would take the
-      // hero away from a visitor who is already watching it work.
-      if (!announced) {
-        armStall();
+      // `announced`: once tilesReady() has fired the phase machine has moved
+      // on, and a later slow patch mid-flight is not a hang — failing then
+      // would take the hero away from a visitor who is already watching it
+      // work. `terminal`: no timer may outlive the failure or the unmount.
+      if (announced || terminal) {
+        return;
       }
+      stallTimer = setTimeout(
+        onStall,
+        sawCompletion ? ARRIVAL_TILES_STALL_MS : ARRIVAL_TILES_FIRST_CONTACT_MS,
+      );
+    };
+    const onCompletion = (): void => {
+      sawCompletion = true;
+      armStall();
     };
 
     const onLoadEnd = (): void => {
@@ -273,6 +346,7 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
       invalidate();
     };
     const onError = (event: TilesLoadErrorEvent): void => {
+      terminal = true;
       disarmStall();
       if (!loggedFailure.current) {
         loggedFailure.current = true;
@@ -287,35 +361,53 @@ export function GoogleTilesStage({ apiToken }: GoogleTilesStageProps): ReactElem
     tiles.addEventListener("tiles-load-end", onLoadEnd);
     tiles.addEventListener("load-error", onError);
     tiles.addEventListener("needs-update", onNeedsUpdate);
-    // PROGRESS EVENTS — the four the installed 0.5.2 dispatches that can only
-    // mean the network moved (node_modules/3d-tiles-renderer/src/core/
-    // renderer/tiles/TilesRendererBase.js: 1628 tiles-load-start when the
-    // queue goes non-empty, 1654 tile-download-start when a fetch actually
-    // begins, 811 load-tileset when a tileset JSON has parsed, 1775
-    // load-model when a tile has finished). Deliberately NOT `needs-update`,
-    // `update-before`/`update-after` or `tile-visibility-change`: those fire
-    // from the render loop and from camera movement, so treating them as
-    // progress would re-arm the watchdog every frame and make it incapable of
-    // ever firing — a watchdog that cannot bark.
-    tiles.addEventListener("tiles-load-start", onProgress);
-    tiles.addEventListener("tile-download-start", onProgress);
-    tiles.addEventListener("load-tileset", onProgress);
-    tiles.addEventListener("load-model", onProgress);
+    // COMPLETION EVENTS — the only two the installed 0.5.2 dispatches that
+    // mean bytes ARRIVED, quoting its own JSDoc (node_modules/
+    // 3d-tiles-renderer/src/core/renderer/tiles/TilesRendererBase.js):
+    //   load-tileset  ":256" — "Fired when any tileset JSON FINISHES loading"
+    //   load-model    ":286" — "Fired when a tile's renderable content
+    //                          (model/scene) IS CREATED"
+    // Deliberately NOT `tiles-load-start` (":269" — the queue went non-empty)
+    // or `tile-download-start` (":279" — a fetch was issued): those are
+    // scheduling, and treating them as evidence is what made the first version
+    // of this watchdog fire on working connections. Also deliberately NOT
+    // `needs-update`, `update-before`/`update-after` or
+    // `tile-visibility-change`: those fire from the render loop and from
+    // camera movement, so treating them as progress would re-arm the watchdog
+    // every frame and make it incapable of ever firing — a watchdog that
+    // cannot bark.
+    tiles.addEventListener("load-tileset", onCompletion);
+    tiles.addEventListener("load-model", onCompletion);
     armStall();
     return () => {
+      // terminal BEFORE disarm, so nothing this cleanup runs past can put a
+      // timer back: after the component is gone there is no hero to fail.
+      terminal = true;
       disarmStall();
       tiles.removeEventListener("tiles-load-end", onLoadEnd);
       tiles.removeEventListener("load-error", onError);
       tiles.removeEventListener("needs-update", onNeedsUpdate);
-      tiles.removeEventListener("tiles-load-start", onProgress);
-      tiles.removeEventListener("tile-download-start", onProgress);
-      tiles.removeEventListener("load-tileset", onProgress);
-      tiles.removeEventListener("load-model", onProgress);
+      tiles.removeEventListener("load-tileset", onCompletion);
+      tiles.removeEventListener("load-model", onCompletion);
     };
   }, [tiles, invalidate]);
 
+  // The library's own per-frame update, moved inside the arrival frame guard —
+  // see the file header for why, and arrival-frame-guard.ts's
+  // "GoogleTilesUpdate" label for what it contains. The body is a transcription
+  // of TilesRenderer.jsx:290-303, including its null guard; `enabled={false}`
+  // below is what stops the library running the same three lines unguarded.
+  useArrivalFrame("GoogleTilesUpdate", () => {
+    if (tiles === null) {
+      return;
+    }
+    camera.updateMatrixWorld();
+    tiles.setResolutionFromRenderer(camera, gl);
+    tiles.update();
+  });
+
   return (
-    <TilesRenderer ref={setTiles} errorTarget={ARRIVAL_ERROR_TARGET}>
+    <TilesRenderer ref={setTiles} enabled={false} errorTarget={ARRIVAL_ERROR_TARGET}>
       <TilesPlugin plugin={GoogleCloudAuthPlugin} args={authArgs} />
       <TilesPlugin plugin={ReorientationPlugin} args={REORIENTATION_ARGS} />
       <TilesAttributionOverlay />

@@ -138,7 +138,20 @@ describe("useArrivalFrame", () => {
     render(<ThrowingLoop thrown={new Error("boom in the frame loop")} />);
     latestFrame()(undefined, 0.016);
     expect(useArrivalStore.getState().phase).toBe("fallback");
-    expect(useArrivalStore.getState().failReason).toBe("crash");
+    expect(useArrivalStore.getState().failReason).toBe("frame-crash");
+  });
+
+  it("names its OWN reason, distinct from the render boundary's", () => {
+    // Branch review round 2, "important": both this guard and
+    // ArrivalErrorBoundary used to call fail("crash"), so once the photograph
+    // had taken over, failReason could no longer say WHICH machine died —
+    // R3F's rAF loop or React's render — even though the two have different
+    // remedies. The Sentry tags were already distinct ("ArrivalFrameLoop" vs
+    // "ArrivalErrorBoundary"); the store now agrees with them.
+    render(<ThrowingLoop thrown={new Error("boom in the frame loop")} />);
+    latestFrame()(undefined, 0.016);
+    expect(useArrivalStore.getState().failReason).not.toBe("crash");
+    expect(useArrivalStore.getState().failReason).toBe("frame-crash");
   });
 
   it("stops running the loop after the first throw, rather than throwing every frame", () => {
@@ -196,7 +209,7 @@ describe("useArrivalFrame", () => {
     render(<ThrowingLoop thrown="a bare string, thrown" />);
     latestFrame()(undefined, 0.016);
 
-    expect(useArrivalStore.getState().failReason).toBe("crash");
+    expect(useArrivalStore.getState().failReason).toBe("frame-crash");
     const reported = captureBoundaryErrorMock.mock.calls[0]?.[0];
     expect(reported).toBeInstanceOf(Error);
     expect(reported?.message).toBe("a bare string, thrown");

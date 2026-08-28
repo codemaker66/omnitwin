@@ -150,8 +150,22 @@ vi.mock("../GoogleTilesStage.js", () => ({
 const tradesHallMeshUrlMock = vi.fn((manifest: TwinManifest): string | null =>
   manifest.mesh === undefined ? null : `/twin/trades-hall/${manifest.mesh.path}`,
 );
+/**
+ * A switch for making the reveal throw DURING RENDER, on demand. It is here
+ * rather than in a bespoke component because the crash has to happen to a hero
+ * that is already mounted: the ordering defect it proves only exists when
+ * React DELETES a live ArrivalHero, which only happens when something under an
+ * already-mounted hero throws. HallHandoff mounts at "arrived", so flipping
+ * this and then moving the phase produces exactly that.
+ */
+const hallHandoffCrash = { now: false };
 vi.mock("../HallHandoff.js", () => ({
-  HallHandoff: () => <div data-testid="hall-handoff" />,
+  HallHandoff: () => {
+    if (hallHandoffCrash.now) {
+      throw new Error("the reveal blew up during render");
+    }
+    return <div data-testid="hall-handoff" />;
+  },
   tradesHallMeshUrl: tradesHallMeshUrlMock,
   TRADES_HALL_TWIN_SLUG: "trades-hall",
 }));
@@ -181,6 +195,10 @@ const { ArrivalHero, ARRIVAL_OPEN_HALL_LABEL, ARRIVAL_SKIP_LABEL } = await impor
   "../ArrivalHero.js"
 );
 const { useExplodeOverlayStore } = await import("../explode-overlay-store.js");
+// The REAL boundary, not a stand-in. It is what owns the store reset now (see
+// the lifecycle block at the bottom of this file), and the ordering defect it
+// fixes is only observable when the real one does the real unmount.
+const { ArrivalErrorBoundary } = await import("../ArrivalErrorBoundary.js");
 
 beforeEach(() => {
   useArrivalStore.getState().reset();
@@ -203,6 +221,7 @@ beforeEach(() => {
   preloadDollhouseMock.mockClear();
   tradesHallMeshUrlMock.mockClear();
   navigateMock.mockClear();
+  hallHandoffCrash.now = false;
 });
 
 afterEach(() => {
@@ -334,7 +353,11 @@ describe("ArrivalHero — a throw in the flight camera's frame loop (branch revi
     }
 
     expect(useArrivalStore.getState().phase).toBe("fallback");
-    expect(useArrivalStore.getState().failReason).toBe("crash");
+    // "frame-crash", not "crash": a throw out of the rAF loop and a throw out
+    // of React's render are different machines with different remedies, and
+    // failReason is the only thing that says which one died once the
+    // photograph has taken over (arrival-store.ts).
+    expect(useArrivalStore.getState().failReason).toBe("frame-crash");
     const ours = arrivalLogs(consoleError.calls);
     expect(ours).toHaveLength(1);
     expect(ours[0]?.[0]).toContain("FlightCamera");
@@ -844,6 +867,19 @@ describe("ArrivalHero — the invariant: any failure ends with nothing rendered 
         useArrivalStore.getState().fail("crash");
       },
     },
+    {
+      // The frame guard's own reason (branch review round 2). Same shape as
+      // "crash" above and deliberately a SEPARATE case rather than a second
+      // label on the same one: they are produced by different machinery —
+      // ArrivalErrorBoundary catching React, versus useArrivalFrame catching
+      // R3F's rAF loop — and the exhaustiveness gate below is what forces a
+      // new reason to be thought about here rather than quietly inherited.
+      reason: "frame-crash",
+      trigger: () => {
+        vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
+        useArrivalStore.getState().fail("frame-crash");
+      },
+    },
   ];
 
   const FADING: ReadonlyArray<ArrivalFailReason> = ["tiles", "webgl"];
@@ -894,25 +930,44 @@ describe("ArrivalHero — the invariant: any failure ends with nothing rendered 
 });
 
 // -----------------------------------------------------------------------------
-// The store outlives the component (branch review, "minor"). useArrivalStore
-// is a module singleton: without this, leaving /fresh for /plan and coming
-// back — a client-side navigation, no reload — re-mounted the hero into
-// whatever phase the last visit abandoned, e.g. "exploded" with no scene
-// behind it or "arrived" with the flight already spent.
+// THE STORY ENDS WHEN THE HERO REGION LEAVES THE PAGE — and "the hero region"
+// is ArrivalErrorBoundary, not ArrivalHero (branch review round 2, CRITICAL).
 //
-// The fix is deliberately UNMOUNT-only, and the last case here is the reason:
-// resetting on MOUNT would undo Task 12/12b's specific, tested behaviour that
-// a fresh mount inheriting an already-failed store stays failed.
+// useArrivalStore is a module singleton: without a reset, leaving /fresh for
+// /plan and coming back — a client-side navigation, no reload — re-mounted the
+// hero into whatever phase the last visit abandoned ("exploded" with no scene
+// behind it, "arrived" with the flight already spent).
+//
+// The first fix put that reset in ArrivalHero's own unmount cleanup, which is
+// wrong for a reason a test that never unmounts under a crash cannot see: the
+// boundary catching a throw ALSO unmounts ArrivalHero, and React 18 runs
+// componentDidCatch in the layout phase but a deleted subtree's useEffect
+// cleanups in the later passive phase — so the reset ran strictly after
+// fail("crash") and erased it. Every test below therefore renders through the
+// REAL ArrivalErrorBoundary, and the crash case drives a REAL throw through a
+// REAL unmount rather than simulating one.
 // -----------------------------------------------------------------------------
-describe("ArrivalHero — the story ends when the hero unmounts", () => {
+describe("ArrivalHero — the story ends when the hero region leaves the page", () => {
+  let consoleError: { calls: unknown[][]; restore: () => void };
+
   beforeEach(() => {
     vi.stubEnv("VITE_GOOGLE_MAPS_TILES_KEY", "AIza-test");
     stubMatchMedia(false);
+    hallHandoffCrash.now = false;
+    consoleError = captureConsoleError();
   });
 
-  it("resets the phase machine on unmount", () => {
+  afterEach(() => {
+    consoleError.restore();
+  });
+
+  it("resets the phase machine when the boundary unmounts", () => {
     useArrivalStore.setState({ phase: "exploded" });
-    const { unmount } = render(<ArrivalHero />);
+    const { unmount } = render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
     expect(useArrivalStore.getState().phase).toBe("exploded");
 
     unmount();
@@ -922,7 +977,11 @@ describe("ArrivalHero — the story ends when the hero unmounts", () => {
 
   it("clears a FAILURE too — reset() is the store's only way out of fallback", () => {
     useArrivalStore.setState({ phase: "arrived" });
-    const { unmount } = render(<ArrivalHero />);
+    const { unmount } = render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
     act(() => {
       useArrivalStore.getState().fail("tiles");
     });
@@ -937,7 +996,11 @@ describe("ArrivalHero — the story ends when the hero unmounts", () => {
     // The actual reported shape, played out: fly, land, navigate away,
     // navigate back. The second mount must be a beginning, not a resumption.
     useArrivalStore.setState({ phase: "flight" });
-    const first = render(<ArrivalHero />);
+    const first = render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
     const onFrame = frameCallbacks[0];
     act(() => {
       onFrame?.(undefined, 6);
@@ -946,7 +1009,11 @@ describe("ArrivalHero — the story ends when the hero unmounts", () => {
     expect(useArrivalStore.getState().phase).toBe("arrived");
 
     first.unmount();
-    render(<ArrivalHero />);
+    render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
 
     expect(useArrivalStore.getState().phase).toBe("loading");
     // …and it is a live hero again, not a corpse: the canvas is mounted and
@@ -961,12 +1028,79 @@ describe("ArrivalHero — the story ends when the hero unmounts", () => {
     // Re-mounting straight back into a flight that just crashed is exactly
     // what must never happen.
     useArrivalStore.getState().fail("crash");
-    const { container } = render(<ArrivalHero />);
+    const { container } = render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
 
     expect(useArrivalStore.getState().phase).toBe("fallback");
     expect(useArrivalStore.getState().failReason).toBe("crash");
     expect(container.firstChild).toBeNull();
     expect(screen.queryByTestId("arrival-canvas")).toBeNull();
+  });
+
+  // ═══ THE regression test for the ordering defect.
+  //
+  // Everything about it is real: a real ArrivalErrorBoundary, a real throw out
+  // of a real child's render, and a real React unmount of ArrivalHero as the
+  // boundary swaps its subtree for null. No simulated unmount, because a
+  // simulated one is precisely what let this ship — the previous test for the
+  // reset called `unmount()` by hand on a hero that had never crashed, so the
+  // two writes never raced.
+  //
+  // Against the previous implementation this FAILS: fail("crash") lands in the
+  // commit layout phase and ArrivalHero's own unmount cleanup then ran in the
+  // passive phase and called reset(), so the assertions below saw phase
+  // "loading" and failReason null — the hero's terminal failure erased by its
+  // own teardown, on every crash, in production.
+  it("a crash stays a crash: the unmount it causes must not wipe the failure", () => {
+    useArrivalStore.setState({ phase: "flight" });
+    render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
+    // Mounted and alive first — the defect needs a hero that really is
+    // mounted, so that deleting it really does run a cleanup.
+    expect(screen.getByTestId("arrival-canvas")).not.toBeNull();
+
+    // HallHandoff mounts at "arrived", and now throws while rendering. This
+    // is the shape the boundary exists for: a throw out of React's own render
+    // under the hero.
+    hallHandoffCrash.now = true;
+    act(() => {
+      useArrivalStore.setState({ phase: "arrived" });
+    });
+
+    expect(useArrivalStore.getState().phase).toBe("fallback");
+    expect(useArrivalStore.getState().failReason).toBe("crash");
+    // And the hero really is gone — this was a genuine unmount, not a
+    // re-render that happened to hide things.
+    expect(screen.queryByTestId("arrival-canvas")).toBeNull();
+    // The boundary said so exactly once.
+    expect(arrivalLogs(consoleError.calls)).toHaveLength(1);
+  });
+
+  it("still ends the story after a crash, once the page itself goes away", () => {
+    // The other half: making the crash terminal must not cost the thing the
+    // reset was for. Navigate away after a crash and the NEXT visit still
+    // starts from the top.
+    useArrivalStore.setState({ phase: "flight" });
+    const { unmount } = render(
+      <ArrivalErrorBoundary>
+        <ArrivalHero />
+      </ArrivalErrorBoundary>,
+    );
+    hallHandoffCrash.now = true;
+    act(() => {
+      useArrivalStore.setState({ phase: "arrived" });
+    });
+    expect(useArrivalStore.getState().failReason).toBe("crash");
+
+    unmount();
+    expect(useArrivalStore.getState().phase).toBe("loading");
+    expect(useArrivalStore.getState().failReason).toBeNull();
   });
 });
 

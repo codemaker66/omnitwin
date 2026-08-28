@@ -49,7 +49,24 @@ import { useArrivalStore } from "./arrival-store.js";
  * per-frame driver to the arrival forces a member here, and the Sentry tag
  * values stay a closed, greppable set.
  */
-export type ArrivalFrameLabel = "FlightCamera" | "ExplodedHall" | "HallHandoffMesh";
+export type ArrivalFrameLabel =
+  | "FlightCamera"
+  | "ExplodedHall"
+  | "HallHandoffMesh"
+  /**
+   * NOT one of ours — 3d-tiles-renderer's own. Its r3f `<TilesRenderer>`
+   * registers a useFrame that calls `camera.updateMatrixWorld()`,
+   * `tiles.setResolutionFromRenderer(camera, gl)` and `tiles.update()` every
+   * frame (node_modules/3d-tiles-renderer/src/r3f/components/
+   * TilesRenderer.jsx:290-303). That third-party loop sat OUTSIDE this guard
+   * while all three of ours sat inside it — and it is the one most likely to
+   * throw, since it is the only one that walks a live tileset, touches
+   * network-loaded data and runs vendored code this repo does not own.
+   * GoogleTilesStage therefore turns the library's loop off (`enabled={false}`,
+   * a first-class prop — same file, line 263) and re-drives those exact three
+   * lines from inside useArrivalFrame under this label.
+   */
+  | "GoogleTilesUpdate";
 
 /** The arrival's own frame-callback shape. Deliberately narrower than R3F's
  *  RenderCallback (no XRFrame third argument): no arrival loop uses it, and
@@ -110,7 +127,12 @@ export function useArrivalFrame(label: ArrivalFrameLabel, callback: ArrivalFrame
     } catch (thrown) {
       crashed.current = true;
       reportFrameCrash(label, thrown);
-      useArrivalStore.getState().fail("crash");
+      // "frame-crash", NOT "crash". Both are throws and both end at the
+      // photograph, but they come out of different machinery and are fixed
+      // differently — see arrival-store.ts's ArrivalFailReason for why the
+      // store now distinguishes them instead of collapsing the two sources of
+      // a thrown failure into one indistinguishable reason.
+      useArrivalStore.getState().fail("frame-crash");
     }
   });
 }

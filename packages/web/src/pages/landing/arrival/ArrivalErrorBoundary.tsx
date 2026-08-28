@@ -83,6 +83,52 @@ export class ArrivalErrorBoundary extends Component<
     return { crashed: true };
   }
 
+  /**
+   * ENDING THE STORY — and the reason it is THIS component's job and not
+   * ArrivalHero's (branch review round 2, CRITICAL).
+   *
+   * useArrivalStore is a module singleton: it lives as long as the JS module,
+   * not as long as the hero. Leave /fresh for /plan and come back — a
+   * client-side navigation, no reload — and without a reset the phase machine
+   * is still wherever the last visit abandoned it: "exploded" with no scene
+   * behind it, or "arrived" with the flight already spent. Both are incoherent
+   * openings for a story whose whole point is the approach. So something has
+   * to reset it when the hero region leaves the page.
+   *
+   * That was first written as an unmount cleanup inside ArrivalHero, and it
+   * was wrong in a way no test that avoids unmounting can see. ArrivalHero's
+   * unmount is not "the hero left the page": THIS BOUNDARY CATCHING A CRASH
+   * ALSO UNMOUNTS IT, because render() returns null and React deletes the
+   * subtree. And the two things then run in a fixed, unhelpful order —
+   * react-dom 18.3.1 invokes componentDidCatch from the COMMIT LAYOUT phase
+   * (commitLayoutEffectOnFiber → the class update queue's callback), while a
+   * deleted subtree's useEffect destroy functions run later, in the PASSIVE
+   * phase (commitPassiveUnmountEffects). So the sequence on every crash was:
+   *
+   *     fail("crash")        ← layout phase, this boundary
+   *     reset()              ← passive phase, the hero being deleted
+   *
+   * The reset always won. failReason went back to null, phase went back to
+   * "loading", and the store's central promise — fail() is first-reason-wins
+   * and permanent for the visit — was false on the one path that most needed
+   * it. It survived review because the test for it never unmounted anything.
+   *
+   * componentWillUnmount HERE is the honest signal, and it is honest by
+   * construction rather than by luck: this boundary does not unmount when it
+   * catches (it stays mounted and renders null — see render()), so the only
+   * thing that unmounts it is FreshPage itself going away. That is exactly the
+   * event the reset was written for, and nothing else.
+   *
+   * reset() is also the ONE sanctioned way out of "fallback" (arrival-store.ts
+   * — fail() is permanent and no other action leaves that phase), so this is
+   * the store's own escape hatch used as designed, not a second one bolted on.
+   * Mount-time reset stays rejected for the reason Task 12/12b pinned: a fresh
+   * mount inheriting an already-failed store must stay failed.
+   */
+  override componentWillUnmount(): void {
+    useArrivalStore.getState().reset();
+  }
+
   override componentDidCatch(error: Error, info: ErrorInfo): void {
     // Report it where an operator can see it. This is not optional politeness:
     // before this boundary existed, a throw under the hero reached
