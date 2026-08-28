@@ -903,7 +903,7 @@ function replayMaskWorkflowStarted(
     payload.browserEpochNonceSha256 === browser.nonceSha256,
     "Mask workflow start uses a stale browser epoch.",
   );
-  const active = requireCurrentSource(state, payload.sourceCustody);
+  const active = requireCurrentSource(state, payload.sourceCustodyBefore);
   transition(
     active.phase === "source_review",
     "Mask workflow can begin only from source review.",
@@ -923,6 +923,40 @@ function replayMaskWorkflowStarted(
     "Mask workflow must allocate the next global generation.",
   );
   binding(
+    payload.sourceCustodyBefore.sourceEpochRenderGeneration ===
+      payload.previousRenderGeneration,
+    "Mask workflow predecessor custody belongs to a different generation.",
+  );
+  binding(
+    payload.sourceCustody.sourceEpochRenderGeneration ===
+      payload.resultingRenderGeneration,
+    "Mask workflow fresh custody belongs to a different generation.",
+  );
+  binding(
+    sameStableSourceCustody(active.sourceCustody, payload.sourceCustody),
+    "Mask workflow fresh custody changes the verified source.",
+  );
+  binding(
+    payload.sourceCustody.sourceEpochNonceSha256 !==
+      active.sourceCustody.sourceEpochNonceSha256,
+    "Mask workflow fresh custody reuses the active source epoch nonce.",
+  );
+  binding(
+    payload.sourceCustody.sourceEpochBindingSha256 !==
+      active.sourceCustody.sourceEpochBindingSha256,
+    "Mask workflow fresh custody reuses the active source epoch binding.",
+  );
+  recordUniqueIdentity(
+    state.sourceEpochNonceHashes,
+    payload.sourceCustody.sourceEpochNonceSha256,
+    "Source epoch nonce",
+  );
+  recordUniqueIdentity(
+    state.sourceEpochBindingHashes,
+    payload.sourceCustody.sourceEpochBindingSha256,
+    "Source epoch binding",
+  );
+  binding(
     payload.completedSourceCoverage.sourceReviewSubjectSha256 ===
       active.sourceCustody.sourceReviewSubjectSha256,
     "Mask workflow completion proof belongs to a different source subject.",
@@ -940,6 +974,7 @@ function replayMaskWorkflowStarted(
   );
   active.sourceJournal = payload.completedSourceCoverage.sourceJournal;
   active.completedSourceCoverage = frozenClone(payload.completedSourceCoverage);
+  active.sourceCustody = payload.sourceCustody;
   active.phase = "mask_edit";
   active.renderGeneration = payload.resultingRenderGeneration;
   active.maskState = payload.initialMaskState;

@@ -158,6 +158,14 @@ function sourceCustody(inventoryIndex = 0, generation = 1) {
   };
 }
 
+function freshMaskSourceCustody() {
+  return {
+    ...sourceCustody(0, 2),
+    sourceEpochBindingSha256: digest("mask-workflow-source-epoch-binding"),
+    sourceEpochNonceSha256: digest("mask-workflow-source-epoch-nonce"),
+  };
+}
+
 function sourceCheckpoint() {
   return {
     schemaVersion:
@@ -775,7 +783,8 @@ function validEvents(): readonly unknown[] {
       browserEpochNonceSha256: digest(RAW_SESSION_NONCE),
       previousWorkspaceRevision: 1,
       resultingWorkspaceRevision: 2,
-      sourceCustody: sourceCustody(),
+      sourceCustodyBefore: sourceCustody(),
+      sourceCustody: freshMaskSourceCustody(),
       previousRenderGeneration: 1,
       resultingRenderGeneration: 2,
       completedSourceCoverage: completedSourceCoverage(),
@@ -1269,6 +1278,58 @@ describe("Grand Hall T-554 native-review v2 event schemas", () => {
     if (workflow.eventType !== "mask.workflow-started.v2") {
       throw new Error("mask workflow fixture drifted");
     }
+    expect(workflow.payload.sourceCustodyBefore).toEqual(sourceCustody());
+    expect(workflow.payload.sourceCustody).toEqual(freshMaskSourceCustody());
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("mask.workflow-started.v2", {
+          ...workflow.payload,
+          sourceCustody: {
+            ...workflow.payload.sourceCustody,
+            sourceEpochNonceSha256:
+              workflow.payload.sourceCustodyBefore.sourceEpochNonceSha256,
+          },
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("mask.workflow-started.v2", {
+          ...workflow.payload,
+          sourceCustody: {
+            ...workflow.payload.sourceCustody,
+            sourceEpochBindingSha256:
+              workflow.payload.sourceCustodyBefore.sourceEpochBindingSha256,
+          },
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("mask.workflow-started.v2", {
+          ...workflow.payload,
+          sourceCustody: {
+            ...workflow.payload.sourceCustody,
+            sourceEpochRenderGeneration:
+              workflow.payload.resultingRenderGeneration + 1,
+          },
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("mask.workflow-started.v2", {
+          ...workflow.payload,
+          sourceCustody: {
+            ...workflow.payload.sourceCustody,
+            sourceVerification: {
+              ...workflow.payload.sourceCustody.sourceVerification,
+              decodedPixelSha256: digest("drifted-mask-workflow-source"),
+            },
+          },
+        }),
+      ).success,
+    ).toBe(false);
     expect(
       GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
         event("mask.workflow-started.v2", {

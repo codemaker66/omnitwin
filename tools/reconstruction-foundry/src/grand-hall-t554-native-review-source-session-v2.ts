@@ -69,6 +69,11 @@ import {
   type GrandHallT554NativeReviewSessionOwnerLeaseV2,
 } from "./grand-hall-t554-native-review-session-owner-v2.js";
 import {
+  findExactPendingCoordinatorIntentEventV2,
+  latestVerifiedActiveSourceEvidenceV2,
+  rotateGrandHallT554NativeReviewBrowserEpochV2,
+} from "./grand-hall-t554-native-review-session-orchestration-v2.js";
+import {
   GRAND_HALL_T554_NATIVE_REVIEW_SESSION_ROOT_DESCRIPTOR_V2,
   openGrandHallT554NativeReviewSessionStoreV2,
   type GrandHallT554NativeReviewSessionStoreReplayV2,
@@ -2040,30 +2045,6 @@ async function createInjectedSourceSession(
   );
 }
 
-function pendingIntentEvent(
-  replay: GrandHallT554NativeReviewDurableJournalReplayV2,
-):
-  | Extract<
-      GrandHallT554NativeReviewCoordinatorEventV2,
-      { readonly eventType: "source.selection-intended.v2" }
-    >
-  | Extract<
-      GrandHallT554NativeReviewCoordinatorEventV2,
-      { readonly eventType: "coverage.segment-resume-intended.v2" }
-    >
-  | null {
-  for (let index = replay.events.length - 1; index >= 0; index -= 1) {
-    const candidate = replay.events[index];
-    if (
-      candidate?.eventType === "source.selection-intended.v2" ||
-      candidate?.eventType === "coverage.segment-resume-intended.v2"
-    ) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
 async function recoverPendingSourceMutation(input: {
   readonly sessionRoot: string;
   readonly sessionScope: GrandHallT554NativeReviewSessionScopeV2;
@@ -2082,11 +2063,20 @@ async function recoverPendingSourceMutation(input: {
     events: replay.events,
   });
   if (coordinator.pendingIntent === null) return;
-  const intent = pendingIntentEvent(replay);
+  const intent = findExactPendingCoordinatorIntentEventV2(
+    replay,
+    coordinator.pendingIntent,
+  );
   if (intent === null) {
     throw fail(
       "CRASH_RECOVERY_REQUIRED",
       "Pending coordinator intent cannot be resolved from its durable event.",
+    );
+  }
+  if (intent.eventType === "mask.freeze-intended.v2") {
+    throw fail(
+      "CRASH_RECOVERY_REQUIRED",
+      "Source-only kernel cannot recover a pending mask freeze.",
     );
   }
   if (
@@ -2215,65 +2205,15 @@ async function recoverPendingSourceMutation(input: {
 function latestActiveSourceEvidence(
   store: GrandHallT554NativeReviewSessionStoreReplayV2,
 ): GrandHallT554NativeReviewVerifiedDurableSourceChildJournalEvidenceV2 | null {
-  const active = store.coordinator.activeSource;
-  if (active === null) return null;
-  const child = store.children.find(
-    (candidate) => candidate.leafName === active.sourceJournal.leafName,
-  );
-  if (child?.evidence.kind !== "source") {
+  try {
+    return latestVerifiedActiveSourceEvidenceV2(store);
+  } catch (error) {
     throw fail(
       "INTERNAL_INVARIANT_FAILED",
       "Active source does not have exact durable child evidence.",
+      error,
     );
   }
-  return child.evidence;
-}
-
-async function rotateBrowserEpoch(input: {
-  readonly reason: "clean_resume" | "crash_resume";
-  readonly sessionRoot: string;
-  readonly sessionScope: GrandHallT554NativeReviewSessionScopeV2;
-  readonly lease: GrandHallT554NativeReviewSessionOwnerLeaseV2;
-  readonly coordinatorJournal: GrandHallT554NativeReviewDurableJournalV2;
-  readonly dependencies: SourceSessionDependencies;
-  readonly store: GrandHallT554NativeReviewSessionStoreReplayV2;
-}): Promise<GrandHallT554NativeReviewSessionStoreReplayV2> {
-  const coordinator = input.store.coordinator;
-  const browser = coordinator.browserEpoch;
-  if (browser === null) {
-    throw fail("INTERNAL_INVARIANT_FAILED", "Browser resume has no predecessor epoch.");
-  }
-  const activeEvidence = latestActiveSourceEvidence(input.store);
-  const nextBrowserNonceSha256 = nonceSha256(
-    parseInput(NonceSchema, input.dependencies.newNonce()),
-  );
-  const replay = await input.coordinatorJournal.replay();
-  await input.coordinatorJournal.append({
-    expectedRevision: replay.revision,
-    event: event<Extract<
-      GrandHallT554NativeReviewCoordinatorEventV2,
-      { readonly eventType: "session.browser-epoch-started.v2" }
-    >>("session.browser-epoch-started.v2", {
-      schemaVersion:
-        "venviewer.grand-hall-t554-native-review-browser-epoch-started.v2",
-      browserEpochNumber: browser.number + 1,
-      browserEpochNonceSha256: nextBrowserNonceSha256,
-      previousBrowserEpochNonceSha256: browser.nonceSha256,
-      reason: input.reason,
-      priorActiveSourceJournal: activeEvidence?.checkpoint ?? null,
-      priorActiveMaskJournal: null,
-      workspaceRevision: coordinator.workspaceRevision,
-      maximumAllocatedRenderGeneration:
-        coordinator.maximumAllocatedRenderGeneration,
-      startedAtUtc: input.dependencies.nowUtc(),
-    }),
-  });
-  await input.dependencies.seam?.afterBrowserEpochStartedDurable?.();
-  return await openGrandHallT554NativeReviewSessionStoreV2({
-    sessionRoot: input.sessionRoot,
-    expectedSessionScope: input.sessionScope,
-    lease: input.lease,
-  });
 }
 
 async function resumeActiveSource(input: {
@@ -2548,14 +2488,18 @@ async function openInjectedSourceSession(
       "Source-only kernel cannot reopen an INCLUDE or mask-workflow phase.",
     );
   }
-  store = await rotateBrowserEpoch({
+  store = await rotateGrandHallT554NativeReviewBrowserEpochV2({
     reason: mode,
     sessionRoot,
     sessionScope,
     lease,
     coordinatorJournal,
-    dependencies,
     store,
+    newBrowserEpochNonceSha256: nonceSha256(
+      parseInput(NonceSchema, dependencies.newNonce()),
+    ),
+    startedAtUtc: dependencies.nowUtc(),
+    afterDurable: dependencies.seam?.afterBrowserEpochStartedDurable,
   });
   let runtime: ActiveRuntime | null = null;
   if (store.coordinator.activeSource?.phase === "source_review") {

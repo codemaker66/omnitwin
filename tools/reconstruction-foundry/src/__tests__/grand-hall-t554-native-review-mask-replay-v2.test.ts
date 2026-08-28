@@ -14,11 +14,13 @@ import {
   type GrandHallT554NativeReviewMaskEditV2,
   type GrandHallT554NativeReviewMaskStateEvidenceV2,
   type GrandHallT554NativeReviewRegistryBindingV2,
+  type GrandHallT554NativeReviewSessionScopeV2,
   type GrandHallT554NativeReviewSourceCustodyBindingV2,
 } from "../grand-hall-t554-native-review-events-v2.js";
 import {
   GRAND_HALL_T554_NATIVE_MASK_REPLAY_CONTEXT_V2,
   GrandHallT554NativeMaskReplayV2Error,
+  buildGrandHallT554NativeMaskReplayContextV2,
   verifyGrandHallT554NativeMaskStateReplayV2,
   type GrandHallT554NativeMaskReplayContextV2,
 } from "../grand-hall-t554-native-review-mask-replay-v2.js";
@@ -106,6 +108,31 @@ const implementation: GrandHallT554NativeReviewImplementationManifestBindingV2 =
     fileSha256: digest("implementation-file"),
     byteLength: 12_345,
   };
+
+const authorityBoundary = {
+  schemaVersion:
+    "venviewer.grand-hall-t554-native-review-authority-boundary.v2" as const,
+  authority: "none" as const,
+  reviewState: "human_pending" as const,
+  finalDecision: "PENDING" as const,
+  acceptanceAuthorized: false as const,
+  reconstructionAuthorized: false as const,
+  runtimeAuthorized: false as const,
+  exportAuthorized: false as const,
+  generatedContentAuthorized: false as const,
+};
+
+function sessionScope(): GrandHallT554NativeReviewSessionScopeV2 {
+  return {
+    schemaVersion: "venviewer.grand-hall-t554-native-review-journal-scope.v2",
+    kind: "session",
+    sessionIdSha256: digest("session"),
+    subjectSha256: digest("session-subject"),
+    registry,
+    implementationManifest: implementation,
+    authorityBoundary,
+  };
+}
 
 function sourceCustody(
   source = sourceIdentity(),
@@ -315,6 +342,49 @@ function verify(input: {
 }
 
 describe("Grand Hall T-554 exact native mask-state replay v2", () => {
+  it("canonically derives a frozen replay context from strict session scope and source custody", () => {
+    const session = sessionScope();
+    const custody = sourceCustody();
+    const context = buildGrandHallT554NativeMaskReplayContextV2(
+      session,
+      custody,
+    );
+
+    expect(context).toEqual(replayContext(custody));
+    expect(Object.isFrozen(context)).toBe(true);
+    expect(Object.isFrozen(context.registry)).toBe(true);
+    expect(context.registry).not.toBe(session.registry);
+    expect(context.source).not.toBe(custody.source);
+  });
+
+  it("rejects non-strict session scope and internally inconsistent custody", () => {
+    const sessionWithUnknownKey = {
+      ...sessionScope(),
+      browserControlledPath: "C:\\untrusted",
+    };
+    expect(() =>
+      buildGrandHallT554NativeMaskReplayContextV2(
+        sessionWithUnknownKey,
+        sourceCustody(),
+      ),
+    ).toThrowError(expect.objectContaining({ code: "INPUT_INVALID" }));
+
+    const validCustody = sourceCustody();
+    const inconsistentCustody = {
+      ...validCustody,
+      sourceVerification: {
+        ...validCustody.sourceVerification,
+        sha256: digest("different-source-bytes"),
+      },
+    };
+    expect(() =>
+      buildGrandHallT554NativeMaskReplayContextV2(
+        sessionScope(),
+        inconsistentCustody,
+      ),
+    ).toThrowError(expect.objectContaining({ code: "INPUT_INVALID" }));
+  });
+
   it("replays valid ordered edits through the deterministic rasterizer", () => {
     const context = replayContext();
     const claims = validClaims(context);

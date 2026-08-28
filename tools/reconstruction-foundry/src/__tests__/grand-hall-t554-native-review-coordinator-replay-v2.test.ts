@@ -414,7 +414,8 @@ function scope() {
 
 function validLifecycle() {
   const sessionScope = scope();
-  const custody = sourceCustody();
+  const sourceCustodyBefore = sourceCustody();
+  const custody = sourceCustody(2, "mask-workflow-source-epoch");
   const initial = initialMaskState();
   const included = includedMaskState();
   const invalidated = invalidatedMaskState();
@@ -474,9 +475,9 @@ function validLifecycle() {
       operationIdSha256: sourceOperation,
       browserEpochNonceSha256: browserNonce,
       expectedWorkspaceRevision: 0,
-      source: custody.source,
-      preparedSourceCustody: custody,
-      sourceEpochNonceSha256: custody.sourceEpochNonceSha256,
+      source: sourceCustodyBefore.source,
+      preparedSourceCustody: sourceCustodyBefore,
+      sourceEpochNonceSha256: sourceCustodyBefore.sourceEpochNonceSha256,
       coverageSegmentIdSha256: sourceCoverageSegmentIdSha256,
       previousRenderGeneration: 0,
       allocatedRenderGeneration: 1,
@@ -492,7 +493,7 @@ function validLifecycle() {
       previousWorkspaceRevision: 0,
       resultingWorkspaceRevision: 1,
       renderGeneration: 1,
-      sourceCustody: custody,
+      sourceCustody: sourceCustodyBefore,
       sourceJournal: firstSourceCheckpoint,
     }),
     envelope("mask.workflow-started.v2", {
@@ -501,6 +502,7 @@ function validLifecycle() {
       browserEpochNonceSha256: browserNonce,
       previousWorkspaceRevision: 1,
       resultingWorkspaceRevision: 2,
+      sourceCustodyBefore,
       sourceCustody: custody,
       previousRenderGeneration: 1,
       resultingRenderGeneration: 2,
@@ -630,6 +632,7 @@ function validLifecycle() {
     scope: sessionScope,
     events,
     browserNonce,
+    sourceCustodyBefore,
     custody,
     prepared,
     frozen,
@@ -683,7 +686,7 @@ function excludeDecision(scenario: ReturnType<typeof validLifecycle>) {
     registry: scenario.scope.registry,
     implementationManifest: scenario.scope.implementationManifest,
     authorityBoundary: scenario.scope.authorityBoundary,
-    sourceCustody: scenario.custody,
+    sourceCustody: scenario.sourceCustodyBefore,
     previousRenderGeneration: 1,
     resultingRenderGeneration: 2,
     completedSourceCoverage: completedSourceClaim(scenario),
@@ -707,6 +710,7 @@ function excludeDecision(scenario: ReturnType<typeof validLifecycle>) {
 function includeDecision(
   scenario: ReturnType<typeof validLifecycle>,
   checkpoint = maskCheckpoint(4),
+  sourceCustody = scenario.custody,
 ) {
   const material = {
     schemaVersion:
@@ -719,7 +723,7 @@ function includeDecision(
     registry: scenario.scope.registry,
     implementationManifest: scenario.scope.implementationManifest,
     authorityBoundary: scenario.scope.authorityBoundary,
-    sourceCustody: scenario.custody,
+    sourceCustody,
     previousRenderGeneration: 4,
     resultingRenderGeneration: 5,
     completedSourceCoverage: completedSourceClaim(scenario),
@@ -821,7 +825,7 @@ function sourceResumeIntent(input: {
     operationIdSha256: input.operationIdSha256,
     browserEpochNonceSha256: input.browserEpochNonceSha256,
     expectedWorkspaceRevision: 1,
-    sourceCustodyBefore: scenario.custody,
+    sourceCustodyBefore: scenario.sourceCustodyBefore,
     preparedSourceCustody: input.preparedSourceCustody,
     previousVisibleRenderGeneration: 1,
     previousMaximumAllocatedRenderGeneration:
@@ -833,7 +837,7 @@ function sourceResumeIntent(input: {
     priorChildJournal: input.priorChildJournal,
     predecessorCoverage: sourceResumeCarry({
       sessionScope: scenario.scope,
-      custody: scenario.custody,
+      custody: scenario.sourceCustodyBefore,
       predecessorJournal: input.priorChildJournal,
       priorBrowserEpochNonceSha256: input.priorBrowserEpochNonceSha256,
       priorCoverageSegmentIdSha256:
@@ -1017,6 +1021,30 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
     expect(Object.isFrozen(replay.declaredChildLeafNames)).toBe(true);
   });
 
+  it("atomically replaces source-review custody with a fresh mask-workflow epoch", () => {
+    const scenario = validLifecycle();
+    const replay = replayGrandHallT554NativeReviewCoordinatorV2({
+      scope: scenario.scope,
+      events: scenario.events.slice(0, 5),
+    });
+
+    expect(replay.activeSource).toMatchObject({
+      phase: "mask_edit",
+      renderGeneration: 2,
+      sourceCustody: scenario.custody,
+    });
+    expect(replay.activeSource?.sourceCustody).not.toEqual(
+      scenario.sourceCustodyBefore,
+    );
+    expectReplayError(
+      scenario.scope,
+      replacePayload(scenario.events.slice(0, 5), 4, {
+        sourceCustodyBefore: scenario.custody,
+      }),
+      "EVENT_INVALID",
+    );
+  });
+
   it("retains an authority-none EXCLUDE decision and human attestation after abandon and stop", () => {
     const scenario = validLifecycle();
     const decision = excludeDecision(scenario);
@@ -1037,7 +1065,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
           browserEpochNonceSha256: scenario.browserNonce,
           previousWorkspaceRevision: 3,
           resultingWorkspaceRevision: 4,
-          sourceCustody: scenario.custody,
+          sourceCustody: scenario.sourceCustodyBefore,
           finalRenderGeneration: 2,
           sourceJournal: sourceCheckpoint(4),
           maskJournal: null,
@@ -1336,9 +1364,14 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
   it("rejects wrong decision phases, stale barriers, pre-decision attestations, and post-decision edits", () => {
     const scenario = validLifecycle();
     const include = includeDecision(scenario);
+    const includeFromSourceReview = includeDecision(
+      scenario,
+      maskCheckpoint(4),
+      scenario.sourceCustodyBefore,
+    );
     expectReplayError(
       scenario.scope,
-      [...scenario.events.slice(0, 4), include],
+      [...scenario.events.slice(0, 4), includeFromSourceReview],
       "TRANSITION_INVALID",
     );
 
@@ -1347,6 +1380,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       exclude.payload;
     const excludeFromMaskMaterial = {
       ...excludeMaterial,
+      sourceCustody: scenario.custody,
       previousWorkspaceRevision: 4,
       resultingWorkspaceRevision: 5,
       previousRenderGeneration: 4,
@@ -1922,7 +1956,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
         ...prefix,
         replacePayload([intent], 0, {
           newSourceEpochNonceSha256:
-            scenario.custody.sourceEpochNonceSha256,
+            scenario.sourceCustodyBefore.sourceEpochNonceSha256,
         })[0],
       ],
       "EVENT_INVALID",
@@ -1960,7 +1994,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
     const reusedBindingCustody = {
       ...resumedCustody,
       sourceEpochBindingSha256:
-        scenario.custody.sourceEpochBindingSha256,
+        scenario.sourceCustodyBefore.sourceEpochBindingSha256,
     };
     expectReplayError(
       scenario.scope,
@@ -2106,6 +2140,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       0,
       {
         expectedWorkspaceRevision: 4,
+        sourceCustodyBefore: scenario.custody,
         previousVisibleRenderGeneration: 4,
         predecessorCoverage: sourceResumeCarry({
           sessionScope: scenario.scope,
@@ -2158,6 +2193,7 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
       0,
       {
         expectedWorkspaceRevision: 1,
+        sourceCustodyBefore: scenario.sourceCustodyBefore,
         previousVisibleRenderGeneration: 1,
         previousMaximumAllocatedRenderGeneration: 1,
         allocatedRenderGeneration: 2,

@@ -94,6 +94,27 @@ pair is classified by a recovery-abort event and cannot become frozen evidence.
 A later edit durably invalidates the frozen binding and its coverage without
 deleting historical bytes.
 
+Mask-child publication uses one deterministic, operation-bound sibling stage.
+Crash recovery accepts only enumerated writer states: an exact creation prefix
+(including the empty reserved directory and strict-prefix file writes) may be
+removed node by node and recreated until the staged journal commits revision
+one. A committed revision-one stage rolls forward by repairing its descriptor;
+it is never discarded. An exact cleanup suffix may be finished only after the
+published revision-one child and descriptor have both been reverified, and the
+published pair is reopened again after cleanup before success is returned.
+Cleanup suffixes must follow the writer's actual unlink/rmdir order and preserve
+the expected hard-link transitions. Unknown nodes, changed bytes, external
+links, a different operation binding, or an impossible prefix or suffix block
+recovery; no recursive or replacement cleanup is permitted.
+
+This local review workspace is a trusted, private, same-user operator boundary,
+not a hostile-user filesystem sandbox. The run must have exclusive ownership
+of its private parent and forbids concurrent or untrusted filesystem writers.
+Pinned identities, exact no-replace writes, before/after checks, and the final
+published-pair reopen detect drift within that boundary; they do not claim to
+provide descriptor-relative `openat`/`unlinkat` isolation against a malicious
+same-account process racing individual operating-system path syscalls.
+
 ## Root ownership and recovery
 
 The v2 session store owns a fixed root layout containing a preserved verified

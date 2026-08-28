@@ -220,7 +220,10 @@ function sourceIdentity() {
   };
 }
 
-function custody(epochSeed = "epoch-1"): GrandHallT554NativeReviewSourceCustodyBindingV2 {
+function custody(
+  epochSeed = "epoch-1",
+  renderGeneration = 1,
+): GrandHallT554NativeReviewSourceCustodyBindingV2 {
   const source = sourceIdentity();
   return {
     source,
@@ -250,7 +253,7 @@ function custody(epochSeed = "epoch-1"): GrandHallT554NativeReviewSourceCustodyB
     sourceReviewSubjectSha256: digest("source-subject"),
     sourceEpochBindingSha256: digest(`${epochSeed}-binding`),
     sourceEpochNonceSha256: digest(`${epochSeed}-nonce`),
-    sourceEpochRenderGeneration: 1,
+    sourceEpochRenderGeneration: renderGeneration,
   };
 }
 
@@ -794,6 +797,7 @@ async function fixture(options: {
   const browser = digest("browser-1");
   const segment = digest("source-segment-1");
   const sourceCustody = custody();
+  const maskSourceCustody = custody("mask-workflow-epoch", 2);
   const sourceScope: GrandHallT554NativeReviewSourceScopeV2 = {
     schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
     kind: "source",
@@ -1003,12 +1007,14 @@ async function fixture(options: {
       sessionIdSha256: scope.sessionIdSha256,
       registry,
       implementationManifest: implementation,
-      source: sourceCustody.source,
-      sourceVerification: sourceCustody.sourceVerification,
-      sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+      source: maskSourceCustody.source,
+      sourceVerification: maskSourceCustody.sourceVerification,
+      sourceReviewSubjectSha256: maskSourceCustody.sourceReviewSubjectSha256,
     };
     const maskStore =
-      GrandHallT554NativeMaskRevisionStore.createReplayOnly(sourceCustody.source);
+      GrandHallT554NativeMaskRevisionStore.createReplayOnly(
+        maskSourceCustody.source,
+      );
     const initialExact = maskStore.exactStateV2(stableContext);
     maskStore.abandon();
     events.push(
@@ -1018,14 +1024,15 @@ async function fixture(options: {
         browserEpochNonceSha256: browser,
         previousWorkspaceRevision: 1,
         resultingWorkspaceRevision: 2,
-        sourceCustody,
+        sourceCustodyBefore: sourceCustody,
+        sourceCustody: maskSourceCustody,
         previousRenderGeneration: 1,
         resultingRenderGeneration: 2,
         completedSourceCoverage: {
           schemaVersion:
             "venviewer.grand-hall-t554-native-review-completed-source-coverage.v2",
           sourceReviewSubjectSha256:
-            sourceCustody.sourceReviewSubjectSha256,
+            maskSourceCustody.sourceReviewSubjectSha256,
           ...completedCoverage,
         },
         initialMaskState: {
@@ -1049,11 +1056,11 @@ async function fixture(options: {
       sessionIdSha256: scope.sessionIdSha256,
       registry,
       implementationManifest: implementation,
-      sourceCustody,
-      sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+      sourceCustody: maskSourceCustody,
+      sourceReviewSubjectSha256: maskSourceCustody.sourceReviewSubjectSha256,
     };
     const store = new GrandHallT554NativeMaskRevisionStore({
-      source: sourceCustody.source,
+      source: maskSourceCustody.source,
       publicationDirectory: join(root, "mask-evidence", ".unused"),
     });
     const initialExact = store.exactStateV2(context);
@@ -1086,14 +1093,15 @@ async function fixture(options: {
         browserEpochNonceSha256: browser,
         previousWorkspaceRevision: 1,
         resultingWorkspaceRevision: 2,
-        sourceCustody,
+        sourceCustodyBefore: sourceCustody,
+        sourceCustody: maskSourceCustody,
         previousRenderGeneration: 1,
         resultingRenderGeneration: 2,
         completedSourceCoverage: {
           schemaVersion:
             "venviewer.grand-hall-t554-native-review-completed-source-coverage.v2",
           sourceReviewSubjectSha256:
-            sourceCustody.sourceReviewSubjectSha256,
+            maskSourceCustody.sourceReviewSubjectSha256,
           sourceJournal: checkpoint,
           completedTileBitsetHex: "ff".repeat(64),
           completedTileCount: 512,
@@ -1108,7 +1116,7 @@ async function fixture(options: {
         browserEpochNonceSha256: browser,
         previousWorkspaceRevision: 2,
         resultingWorkspaceRevision: 3,
-        sourceCustody,
+        sourceCustody: maskSourceCustody,
         previousRenderGeneration: 2,
         resultingRenderGeneration: 3,
         edit,
@@ -1560,6 +1568,7 @@ async function decisionCompositionFixture(
   let maskCheckpoint: GrandHallT554NativeReviewMaskChildCheckpointV2 | null =
     null;
   let maskLeafName: string | null = null;
+  let finalSourceCustody = built.sourceScope.sourceCustody;
 
   if (result === "EXCLUDE") {
     const decisionMaterial = {
@@ -1602,7 +1611,14 @@ async function decisionCompositionFixture(
     attestationPreviousWorkspaceRevision = 2;
     finalRenderGeneration = 2;
   } else {
-    const sourceCustody = built.sourceScope.sourceCustody;
+    const workflowStart = (await coordinator.replay()).events.find(
+      (event) => event.eventType === "mask.workflow-started.v2",
+    );
+    if (workflowStart?.eventType !== "mask.workflow-started.v2") {
+      throw new Error("full INCLUDE fixture has no mask workflow start");
+    }
+    const sourceCustody = workflowStart.payload.sourceCustody;
+    finalSourceCustody = sourceCustody;
     const replayContext = {
       schemaVersion:
         "venviewer.grand-hall-t554-native-mask-replay-context.v2" as const,
@@ -1947,7 +1963,7 @@ async function decisionCompositionFixture(
       browserEpochNonceSha256: built.sourceScope.browserEpochNonceSha256,
       previousWorkspaceRevision: attestationPreviousWorkspaceRevision + 1,
       resultingWorkspaceRevision: attestationPreviousWorkspaceRevision + 2,
-      sourceCustody: built.sourceScope.sourceCustody,
+      sourceCustody: finalSourceCustody,
       finalRenderGeneration,
       sourceJournal: sourceEvidence.checkpoint,
       maskJournal: maskCheckpoint,

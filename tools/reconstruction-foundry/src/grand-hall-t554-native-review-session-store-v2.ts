@@ -51,6 +51,7 @@ import {
   type GrandHallT554VerifiedMaskEvidence,
 } from "./grand-hall-t554-native-media-kernel.js";
 import {
+  buildGrandHallT554NativeMaskReplayContextV2,
   verifyGrandHallT554NativeMaskStateReplayV2,
   type GrandHallT554NativeMaskReplayV2,
 } from "./grand-hall-t554-native-review-mask-replay-v2.js";
@@ -1437,21 +1438,6 @@ interface MaskStateVerification {
   readonly exactFreezeStateByOperation: ReadonlyMap<Sha256, GrandHallT554NativeMaskExactStateV2>;
 }
 
-function stableMaskContext(
-  session: GrandHallT554NativeReviewSessionScopeV2,
-  custody: GrandHallT554NativeReviewSourceCustodyBindingV2,
-) {
-  return {
-    schemaVersion: "venviewer.grand-hall-t554-native-mask-replay-context.v2" as const,
-    sessionIdSha256: session.sessionIdSha256,
-    registry: session.registry,
-    implementationManifest: session.implementationManifest,
-    source: custody.source,
-    sourceVerification: custody.sourceVerification,
-    sourceReviewSubjectSha256: custody.sourceReviewSubjectSha256,
-  };
-}
-
 function verifyMaskState(
   session: GrandHallT554NativeReviewSessionScopeV2,
   events: readonly GrandHallT554NativeReviewCoordinatorEventV2[],
@@ -1514,7 +1500,10 @@ function verifyMaskState(
   const exactFreezeStateByOperation = new Map<Sha256, GrandHallT554NativeMaskExactStateV2>();
   for (const current of groups) {
     const replay = verifyGrandHallT554NativeMaskStateReplayV2({
-      context: stableMaskContext(session, current.initial.payload.sourceCustody),
+      context: buildGrandHallT554NativeMaskReplayContextV2(
+        session,
+        current.initial.payload.sourceCustody,
+      ),
       initialMaskState: current.initial.payload.initialMaskState,
       events: current.edits,
     });

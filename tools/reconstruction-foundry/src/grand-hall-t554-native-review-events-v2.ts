@@ -1382,6 +1382,8 @@ export const GrandHallT554NativeReviewMaskWorkflowStartedPayloadV2Schema = z
     ),
     browserEpochNonceSha256: GrandHallT554NativeReviewSha256V2Schema,
     ...WorkspaceAdvanceShape,
+    sourceCustodyBefore:
+      GrandHallT554NativeReviewSourceCustodyBindingV2Schema,
     ...SourceBindingPayloadShape,
     previousRenderGeneration: RenderGenerationSchema,
     resultingRenderGeneration: RenderGenerationSchema,
@@ -1397,6 +1399,53 @@ export const GrandHallT554NativeReviewMaskWorkflowStartedPayloadV2Schema = z
       event.resultingRenderGeneration,
       context,
     );
+    if (
+      event.sourceCustodyBefore.sourceEpochRenderGeneration !==
+      event.previousRenderGeneration
+    ) {
+      addIssue(
+        context,
+        ["sourceCustodyBefore", "sourceEpochRenderGeneration"],
+        "mask workflow predecessor custody must belong to the previous render generation",
+      );
+    }
+    if (
+      event.sourceCustody.sourceEpochRenderGeneration !==
+      event.resultingRenderGeneration
+    ) {
+      addIssue(
+        context,
+        ["sourceCustody", "sourceEpochRenderGeneration"],
+        "mask workflow fresh custody must belong to the resulting render generation",
+      );
+    }
+    if (!sameStableSourceCustody(event.sourceCustodyBefore, event.sourceCustody)) {
+      addIssue(
+        context,
+        ["sourceCustody"],
+        "mask workflow fresh custody must preserve the exact verified source",
+      );
+    }
+    if (
+      event.sourceCustodyBefore.sourceEpochNonceSha256 ===
+      event.sourceCustody.sourceEpochNonceSha256
+    ) {
+      addIssue(
+        context,
+        ["sourceCustody", "sourceEpochNonceSha256"],
+        "mask workflow fresh custody must use a new source epoch nonce",
+      );
+    }
+    if (
+      event.sourceCustodyBefore.sourceEpochBindingSha256 ===
+      event.sourceCustody.sourceEpochBindingSha256
+    ) {
+      addIssue(
+        context,
+        ["sourceCustody", "sourceEpochBindingSha256"],
+        "mask workflow fresh custody must use a new source epoch binding",
+      );
+    }
     if (
       event.completedSourceCoverage.sourceReviewSubjectSha256 !==
       event.sourceCustody.sourceReviewSubjectSha256

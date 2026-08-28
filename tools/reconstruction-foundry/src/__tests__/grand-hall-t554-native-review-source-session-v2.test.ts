@@ -35,12 +35,29 @@ import {
 import {
   createGrandHallT554NativeReviewCoverageCarryStateV2,
 } from "../grand-hall-t554-native-review-replay-v2.js";
+import {
+  __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2,
+  type GrandHallT554NativeReviewMaskWorkflowSessionV2,
+} from "../grand-hall-t554-native-review-mask-workflow-session-v2.js";
+import {
+  bulkAppendExactChildFixture,
+  completeSourceCoverageEvents,
+} from "./grand-hall-t554-native-review-exact-child-fixture-v2.js";
+import {
+  __testOnlyGrandHallT554NativeMaskRevisionStore,
+  type GrandHallT554NativeMaskRevisionStore,
+} from "../grand-hall-t554-native-review-mask-store.js";
 import type { GrandHallT554NativeReviewRegistrySource } from
   "../grand-hall-t554-native-review-registry.js";
 import {
+  acquireGrandHallT554NativeReviewSessionOwnerV2,
   deriveGrandHallT554NativeReviewSessionOwnerControlDirectoryV2,
   inspectGrandHallT554NativeReviewPriorOwnerV2,
+  releaseGrandHallT554NativeReviewSessionOwnerV2,
 } from "../grand-hall-t554-native-review-session-owner-v2.js";
+import {
+  openGrandHallT554NativeReviewSessionStoreV2,
+} from "../grand-hall-t554-native-review-session-store-v2.js";
 import {
   __testOnlyGrandHallT554NativeReviewSourceSessionV2,
   createGrandHallT554NativeReviewSourceSessionV2,
@@ -195,6 +212,7 @@ class FakeSourceEpoch {
   readonly #verification:
     GrandHallT554NativeSourceEpochSnapshotV1["sourceVerification"];
   abandoned = false;
+  finalized = false;
 
   constructor(
     bindings: GrandHallT554NativeSourceEpochBindingsV1,
@@ -207,8 +225,12 @@ class FakeSourceEpoch {
   snapshot(): GrandHallT554NativeSourceEpochSnapshotV1 {
     const snapshot: GrandHallT554NativeSourceEpochSnapshotV1 = {
       schemaVersion: "venviewer.grand-hall-t554-native-source-epoch.v1",
-      lifecycle: this.abandoned ? "closed" : "active",
-      closedDisposition: this.abandoned ? "abandoned" : null,
+      lifecycle: this.abandoned || this.finalized ? "closed" : "active",
+      closedDisposition: this.abandoned
+        ? "abandoned"
+        : this.finalized
+          ? "finalized_stable"
+          : null,
       sourceEpochNonce: this.#bindings.sourceEpochNonce,
       sourceEpochNonceSha256: digest(this.#bindings.sourceEpochNonce),
       renderGeneration: this.#bindings.renderGeneration,
@@ -239,6 +261,7 @@ class FakeSourceEpoch {
   copyTile(input: GrandHallT554NativeSourceTileRequestV1): Buffer {
     if (
       this.abandoned ||
+      this.finalized ||
       input.sourceEpochNonce !== this.#bindings.sourceEpochNonce ||
       input.renderGeneration !== this.#bindings.renderGeneration
     ) {
@@ -250,7 +273,29 @@ class FakeSourceEpoch {
     );
   }
 
+  finalize() {
+    if (this.abandoned || this.finalized) {
+      throw new Error("fake source epoch was already closed");
+    }
+    this.finalized = true;
+    return Promise.resolve({
+      schemaVersion:
+        "venviewer.grand-hall-t554-finalized-native-source-epoch.v1" as const,
+      sourceEpochNonceSha256: digest(this.#bindings.sourceEpochNonce),
+      renderGeneration: this.#bindings.renderGeneration,
+      epochBindingSha256: epochBindingSha256(
+        this.#bindings,
+        this.#verification,
+      ),
+      sourceVerification: this.#verification,
+      disposition: "finalized_stable" as const,
+    });
+  }
+
   abandon(): Promise<void> {
+    if (this.abandoned || this.finalized) {
+      throw new Error("fake source epoch was already closed");
+    }
     this.abandoned = true;
     return Promise.resolve();
   }
@@ -524,6 +569,29 @@ async function coordinatorEvents(sessionRoot: string) {
   return replay.events;
 }
 
+async function verifiedCoordinatorState(sessionRoot: string) {
+  const expectedScope = await expectedSessionScope(sessionRoot);
+  const lease = await acquireGrandHallT554NativeReviewSessionOwnerV2({
+    sessionRoot,
+    expectedSessionScope: expectedScope,
+  });
+  try {
+    return (
+      await openGrandHallT554NativeReviewSessionStoreV2({
+        sessionRoot,
+        expectedSessionScope: expectedScope,
+        lease,
+      })
+    ).coordinator;
+  } finally {
+    await releaseGrandHallT554NativeReviewSessionOwnerV2({
+      lease,
+      sessionRoot,
+      expectedSessionScope: expectedScope,
+    });
+  }
+}
+
 async function sourceChildEventTypes(sessionRoot: string): Promise<string[]> {
   const childNames = await readdir(join(sessionRoot, "children"));
   if (childNames.length !== 1) {
@@ -581,6 +649,43 @@ async function sourceChildEvidence(
   return evidence;
 }
 
+async function seedExactCompletedSourceCoverage(
+  sessionRoot: string,
+) {
+  const childNames = await readdir(join(sessionRoot, "children"));
+  if (childNames.length !== 1 || childNames[0] === undefined) {
+    throw new Error("bulk source-coverage fixture requires one source child");
+  }
+  const childName = childNames[0];
+  const evidence = await sourceChildEvidence(sessionRoot, childName);
+  if (evidence.checkpoint.revision !== 1) {
+    throw new Error("bulk source-coverage fixture requires a start-only child");
+  }
+  const journalRoot = join(sessionRoot, "children", childName);
+  const journal = await openGrandHallT554NativeReviewDurableJournalV2({
+    workspaceRoot: journalRoot,
+    expectedScope: evidence.scope,
+  });
+  const start = await journal.replay();
+  await bulkAppendExactChildFixture({
+    journalRoot,
+    start,
+    scope: evidence.scope,
+    events: completeSourceCoverageEvents(evidence.scope),
+  });
+  const completed = await sourceChildEvidence(sessionRoot, childName);
+  const carry =
+    createGrandHallT554NativeReviewCoverageCarryStateV2(completed);
+  if (
+    carry.kind !== "source" ||
+    carry.completedTileCount !== 512 ||
+    carry.completedTileBitsetHex !== FULL_TILE_BITMAP
+  ) {
+    throw new Error("bulk source-coverage fixture did not verify as complete");
+  }
+  return carry;
+}
+
 async function selectFirstSource(session: Kernel): Promise<Snapshot> {
   const before = await session.snapshot();
   return await session.selectSource({
@@ -618,6 +723,127 @@ async function completeSourceCoverage(
   fixture.advance(250);
   await session.recordSourceCoverage(coverageInput(selected));
   return await session.snapshot();
+}
+
+type MaskWorkflowDependencies = Parameters<
+  typeof __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open
+>[1];
+
+interface MaskWorkflowDependencyOverrides {
+  readonly configureMaskStore?: (
+    store: GrandHallT554NativeMaskRevisionStore,
+  ) => void;
+  readonly openSourceEpoch?: MaskWorkflowDependencies["openSourceEpoch"];
+  readonly seam?: MaskWorkflowDependencies["seam"];
+}
+
+function maskWorkflowDependencies(
+  sourceDependencies: ReturnType<typeof createDependencies>,
+  overrides: MaskWorkflowDependencyOverrides = {},
+): MaskWorkflowDependencies {
+  return {
+    registry: sourceDependencies.registry,
+    implementationManifestBinding:
+      sourceDependencies.implementationManifestBinding,
+    copyExactManifestBytes: sourceDependencies.copyExactManifestBytes,
+    openSourceEpoch: sourceDependencies.openSourceEpoch,
+    newNonce: sourceDependencies.newNonce,
+    nowUtc: sourceDependencies.nowUtc,
+    ...overrides,
+  };
+}
+
+function maskGuard(
+  snapshot: Awaited<
+    ReturnType<GrandHallT554NativeReviewMaskWorkflowSessionV2["snapshot"]>
+  >,
+) {
+  return {
+    expectedBrowserEpochNonceSha256: snapshot.browserEpochNonceSha256,
+    expectedWorkspaceRevision: snapshot.workspaceRevision,
+    expectedRenderGeneration: snapshot.activeSource.renderGeneration,
+    sourceReviewSubjectSha256:
+      snapshot.activeSource.sourceReviewSubjectSha256,
+  };
+}
+
+type MaskWorkflowSnapshot = Awaited<
+  ReturnType<GrandHallT554NativeReviewMaskWorkflowSessionV2["snapshot"]>
+>;
+
+async function createEditedMaskWorkflow(
+  fixture: Harness,
+  dependencies: MaskWorkflowDependencies,
+): Promise<{
+  readonly session: GrandHallT554NativeReviewMaskWorkflowSessionV2;
+  readonly edited: MaskWorkflowSnapshot;
+}> {
+  const sourceSession = await freshSession(fixture);
+  await selectFirstSource(sourceSession);
+  const completedCoverage = await seedExactCompletedSourceCoverage(
+    fixture.sessionRoot,
+  );
+  expect(completedCoverage).toMatchObject({
+    kind: "source",
+    completedTileCount: 512,
+    completedTileBitsetHex: FULL_TILE_BITMAP,
+  });
+  await sourceSession.close();
+
+  const session =
+    await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+      { sessionRoot: fixture.sessionRoot },
+      dependencies,
+    );
+  const opened = await session.snapshot();
+  const begun = await session.beginMaskWorkflow(maskGuard(opened));
+  const edited = await session.applyMaskEdit({
+    ...maskGuard(begun),
+    edit: {
+      expectedRevision: 0,
+      operation: "include",
+      primitive: {
+        kind: "rectangle",
+        horizontalSeam: "none",
+        leftPx: 0,
+        topPx: 0,
+        rightExclusivePx: 8,
+        bottomExclusivePx: 8,
+      },
+    },
+  });
+  return { session, edited };
+}
+
+async function takeOverMaskWorkflowAfterCrash(
+  fixture: Harness,
+): Promise<GrandHallT554NativeReviewMaskWorkflowSessionV2> {
+  const priorOwnerWitness =
+    await inspectGrandHallT554NativeReviewPriorOwnerV2({
+      sessionRoot: fixture.sessionRoot,
+      expectedSessionScope: await expectedSessionScope(fixture.sessionRoot),
+    });
+  if (priorOwnerWitness === null) {
+    throw new Error("mask crash fixture unexpectedly had no prior owner");
+  }
+  return await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.takeOver(
+    { sessionRoot: fixture.sessionRoot, priorOwnerWitness },
+    maskWorkflowDependencies(fixture.withoutCrashSeam()),
+  );
+}
+
+async function maskChildLeafNames(sessionRoot: string): Promise<string[]> {
+  return (await readdir(join(sessionRoot, "children")))
+    .filter((name) => name.startsWith("mask-freeze-"))
+    .sort();
+}
+
+async function maskDescriptorLeafNames(
+  sessionRoot: string,
+): Promise<string[]> {
+  return (await readdir(join(sessionRoot, "child-scopes")))
+    .filter((name) => name.startsWith("mask-freeze-"))
+    .sort();
 }
 
 describe("Grand Hall T-554 source-only durable session v2", () => {
@@ -1679,6 +1905,720 @@ describe("Grand Hall T-554 source-only durable session v2", () => {
         inventoryIndex: 2,
       })).rejects.toMatchObject({ code: "STALE_LEASE" });
       await recovered.close();
+    },
+  );
+});
+
+describe("Grand Hall T-554 mask-workflow durable session v2", () => {
+  it(
+    "re-verifies a fresh editable source epoch, freezes it, and rejects stale mask-review reopen",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const sourceSession = await freshSession(fixture);
+      await selectFirstSource(sourceSession);
+      const completedCoverage = await seedExactCompletedSourceCoverage(
+        fixture.sessionRoot,
+      );
+      expect(completedCoverage).toMatchObject({
+        kind: "source",
+        completedTileCount: 512,
+        completedTileBitsetHex: FULL_TILE_BITMAP,
+      });
+      await sourceSession.close();
+
+      const maskSession =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam()),
+        );
+      const opened = await maskSession.snapshot();
+      expect(opened).toMatchObject({
+        lifecycle: "active",
+        workspaceRevision: 1,
+        maximumAllocatedRenderGeneration: 1,
+        activeSource: {
+          phase: "source_review",
+          renderGeneration: 1,
+          completedSourceCoverage: null,
+          maskState: null,
+        },
+        authority: "none",
+        finalDecision: "PENDING",
+        generatedContentAuthorized: false,
+      });
+
+      const eventsBeforeBegin = await coordinatorEvents(fixture.sessionRoot);
+      const selectionCommit = [...eventsBeforeBegin].reverse().find(
+        (candidate) => candidate.eventType === "source.selection-committed.v2",
+      );
+      if (selectionCommit?.eventType !== "source.selection-committed.v2") {
+        throw new Error("mask-workflow fixture has no source selection commit");
+      }
+      const epochCountBeforeBegin = fixture.epochs.length;
+      const begun = await maskSession.beginMaskWorkflow(maskGuard(opened));
+      expect(begun).toMatchObject({
+        workspaceRevision: 2,
+        maximumAllocatedRenderGeneration: 2,
+        activeSource: {
+          phase: "mask_edit",
+          renderGeneration: 2,
+          completedSourceCoverage: {
+            completedTileCount: 512,
+            completedTileBitsetHex: FULL_TILE_BITMAP,
+          },
+          maskState: {
+            revision: 0,
+            includedPixelCount: 0,
+            excludedPixelCount:
+              GRAND_HALL_PANORAMA_WIDTH_PX *
+              GRAND_HALL_PANORAMA_HEIGHT_PX,
+            reasonCounts: [
+              {
+                reasonCode: "unverified_or_unknown_pixels",
+                pixelCount:
+                  GRAND_HALL_PANORAMA_WIDTH_PX *
+                  GRAND_HALL_PANORAMA_HEIGHT_PX,
+              },
+            ],
+          },
+        },
+      });
+      expect(fixture.epochs).toHaveLength(epochCountBeforeBegin + 1);
+      expect(fixture.epochs.at(-1)).toMatchObject({
+        abandoned: false,
+        finalized: true,
+      });
+      const workflowEvents = await coordinatorEvents(fixture.sessionRoot);
+      const workflowStart = [...workflowEvents].reverse().find(
+        (candidate) => candidate.eventType === "mask.workflow-started.v2",
+      );
+      if (workflowStart?.eventType !== "mask.workflow-started.v2") {
+        throw new Error("mask workflow start was not durable");
+      }
+      expect(workflowStart.payload.sourceCustodyBefore).toEqual(
+        selectionCommit.payload.sourceCustody,
+      );
+      expect(workflowStart.payload.sourceCustody.source).toEqual(
+        workflowStart.payload.sourceCustodyBefore.source,
+      );
+      expect(workflowStart.payload.sourceCustody.sourceVerification).toEqual(
+        workflowStart.payload.sourceCustodyBefore.sourceVerification,
+      );
+      expect(
+        workflowStart.payload.sourceCustody.sourceReviewSubjectSha256,
+      ).toBe(
+        workflowStart.payload.sourceCustodyBefore.sourceReviewSubjectSha256,
+      );
+      expect(
+        workflowStart.payload.sourceCustody.sourceEpochNonceSha256,
+      ).not.toBe(
+        workflowStart.payload.sourceCustodyBefore.sourceEpochNonceSha256,
+      );
+      expect(
+        workflowStart.payload.sourceCustody.sourceEpochBindingSha256,
+      ).not.toBe(
+        workflowStart.payload.sourceCustodyBefore.sourceEpochBindingSha256,
+      );
+      expect(
+        workflowStart.payload.sourceCustodyBefore.sourceEpochRenderGeneration,
+      ).toBe(workflowStart.payload.previousRenderGeneration);
+      expect(
+        workflowStart.payload.sourceCustody.sourceEpochRenderGeneration,
+      ).toBe(workflowStart.payload.resultingRenderGeneration);
+
+      const edited = await maskSession.applyMaskEdit({
+        ...maskGuard(begun),
+        edit: {
+          expectedRevision: 0,
+          operation: "include",
+          primitive: {
+            kind: "rectangle",
+            horizontalSeam: "none",
+            leftPx: 0,
+            topPx: 0,
+            rightExclusivePx: 8,
+            bottomExclusivePx: 8,
+          },
+        },
+      });
+      expect(edited).toMatchObject({
+        workspaceRevision: 3,
+        maximumAllocatedRenderGeneration: 3,
+        activeSource: {
+          phase: "mask_edit",
+          renderGeneration: 3,
+          maskState: {
+            revision: 1,
+            includedPixelCount: 64,
+            excludedPixelCount:
+              GRAND_HALL_PANORAMA_WIDTH_PX *
+                GRAND_HALL_PANORAMA_HEIGHT_PX -
+              64,
+          },
+        },
+      });
+
+      await maskSession.close();
+      const invalidSourceDependencies = fixture.withoutCrashSeam();
+      const epochCountBeforeInvalidResume = fixture.epochs.length;
+      await expect(
+        __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(invalidSourceDependencies, {
+            openSourceEpoch: (input) => {
+              const epoch = new FakeSourceEpoch(input.bindings, (snapshot) => {
+                Object.assign(snapshot, {
+                  epochBindingSha256: digest("forged-mask-resume-binding"),
+                });
+              });
+              fixture.epochs.push(epoch);
+              return Promise.resolve(epoch);
+            },
+          }),
+        ),
+      ).rejects.toMatchObject({ code: "RESOURCE_FAILURE" });
+      expect(fixture.epochs).toHaveLength(epochCountBeforeInvalidResume + 1);
+      expect(fixture.epochs.at(-1)).toMatchObject({
+        abandoned: true,
+        finalized: false,
+      });
+      expect(await coordinatorEventTypes(fixture.sessionRoot)).not.toContain(
+        "mask.edit-epoch-resumed.v2",
+      );
+
+      const resumedSession =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam()),
+        );
+      const resumed = await resumedSession.snapshot();
+      expect(resumed).toMatchObject({
+        workspaceRevision: 4,
+        maximumAllocatedRenderGeneration: 4,
+        browserEpochNumber: edited.browserEpochNumber + 2,
+        activeSource: {
+          phase: "mask_edit",
+          renderGeneration: 4,
+          maskState: edited.activeSource.maskState,
+          frozenBinding: null,
+          maskJournalLeafName: null,
+        },
+      });
+      const resumedEpoch = fixture.epochs.at(-1);
+      expect(resumedEpoch).toMatchObject({
+        abandoned: false,
+        finalized: true,
+      });
+      const resumeEvents = await coordinatorEvents(fixture.sessionRoot);
+      const resumeEvent = resumeEvents.find(
+        (candidate) => candidate.eventType === "mask.edit-epoch-resumed.v2",
+      );
+      if (resumeEvent?.eventType !== "mask.edit-epoch-resumed.v2") {
+        throw new Error("mask-edit resume event was not durable");
+      }
+      expect(resumeEvent.payload).toMatchObject({
+        previousWorkspaceRevision: 3,
+        resultingWorkspaceRevision: 4,
+        previousVisibleRenderGeneration: 3,
+        previousMaximumAllocatedRenderGeneration: 3,
+        resultingRenderGeneration: 4,
+        browserEpochNonceSha256: resumed.browserEpochNonceSha256,
+      });
+      expect(resumeEvent.payload.sourceCustody.source).toEqual(
+        resumeEvent.payload.sourceCustodyBefore.source,
+      );
+      expect(resumeEvent.payload.sourceCustody.sourceVerification).toEqual(
+        resumeEvent.payload.sourceCustodyBefore.sourceVerification,
+      );
+      expect(
+        resumeEvent.payload.sourceCustody.sourceReviewSubjectSha256,
+      ).toBe(
+        resumeEvent.payload.sourceCustodyBefore.sourceReviewSubjectSha256,
+      );
+      expect(
+        resumeEvent.payload.sourceCustody.sourceEpochNonceSha256,
+      ).not.toBe(
+        resumeEvent.payload.sourceCustodyBefore.sourceEpochNonceSha256,
+      );
+      expect(
+        resumeEvent.payload.sourceCustody.sourceEpochBindingSha256,
+      ).not.toBe(
+        resumeEvent.payload.sourceCustodyBefore.sourceEpochBindingSha256,
+      );
+      expect(
+        resumeEvent.payload.sourceCustody.sourceEpochBindingSha256,
+      ).toBe(resumedEpoch?.snapshot().epochBindingSha256);
+
+      const frozen = await resumedSession.freezeMask({
+        ...maskGuard(resumed),
+        expectedMaskRevision: 1,
+      });
+      expect(frozen).toMatchObject({
+        workspaceRevision: 5,
+        maximumAllocatedRenderGeneration: 5,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: 5,
+          maskState: { revision: 1, includedPixelCount: 64 },
+          frozenBinding: {
+            revision: 1,
+            includedPixelCount: 64,
+            immutableFrozen: true,
+          },
+        },
+      });
+      expect(frozen.activeSource.maskJournalLeafName).toMatch(
+        /^mask-freeze-00000005-/u,
+      );
+      expect(
+        (await readdir(join(fixture.sessionRoot, "mask-evidence"))).sort(),
+      ).toHaveLength(2);
+      expect(await coordinatorEventTypes(fixture.sessionRoot)).toEqual(
+        expect.arrayContaining([
+          "mask.workflow-started.v2",
+          "mask.edited.v2",
+          "mask.edit-epoch-resumed.v2",
+          "mask.freeze-intended.v2",
+          "mask.freeze-committed.v2",
+        ]),
+      );
+      await resumedSession.close();
+
+      const eventsBeforeRejectedReviewReopen = await coordinatorEventTypes(
+        fixture.sessionRoot,
+      );
+      await expect(
+        __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam()),
+        ),
+      ).rejects.toMatchObject({ code: "PHASE_INVALID" });
+      expect(await coordinatorEventTypes(fixture.sessionRoot)).toEqual(
+        eventsBeforeRejectedReviewReopen,
+      );
+      const verified = await verifiedCoordinatorState(fixture.sessionRoot);
+      expect(verified.activeSource).toMatchObject({
+        phase: "mask_review",
+        renderGeneration: 5,
+        maskState: frozen.activeSource.maskState,
+        frozenBindingSha256: frozen.activeSource.frozenBindingSha256,
+        maskJournal: {
+          leafName: frozen.activeSource.maskJournalLeafName,
+        },
+      });
+    },
+  );
+
+  it(
+    "abandons a drifted fresh source epoch without durably starting mask edit",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const sourceSession = await freshSession(fixture);
+      await selectFirstSource(sourceSession);
+      await seedExactCompletedSourceCoverage(fixture.sessionRoot);
+      await sourceSession.close();
+
+      const maskSession =
+        await __testOnlyGrandHallT554NativeReviewMaskWorkflowSessionV2.open(
+          { sessionRoot: fixture.sessionRoot },
+          maskWorkflowDependencies(fixture.withoutCrashSeam(), {
+            openSourceEpoch: (input) => {
+              const epoch = new FakeSourceEpoch(
+                input.bindings,
+                (snapshot) => {
+                  const driftedVerification = {
+                    ...snapshot.sourceVerification,
+                    decodedPixelSha256: digest(
+                      "drifted-mask-workflow-decoded-source",
+                    ),
+                  };
+                  Object.assign(snapshot, {
+                    sourceVerification: driftedVerification,
+                    epochBindingSha256: epochBindingSha256(
+                      input.bindings,
+                      driftedVerification,
+                    ),
+                  });
+                },
+              );
+              fixture.epochs.push(epoch);
+              return Promise.resolve(epoch);
+            },
+          }),
+        );
+      const opened = await maskSession.snapshot();
+      const eventsBeforeBegin = await coordinatorEvents(fixture.sessionRoot);
+      const epochCountBeforeBegin = fixture.epochs.length;
+
+      await expect(
+        maskSession.beginMaskWorkflow(maskGuard(opened)),
+      ).rejects.toMatchObject({ code: "RESOURCE_FAILURE" });
+
+      expect(await coordinatorEvents(fixture.sessionRoot)).toEqual(
+        eventsBeforeBegin,
+      );
+      expect(fixture.epochs).toHaveLength(epochCountBeforeBegin + 1);
+      expect(fixture.epochs.at(-1)).toMatchObject({
+        abandoned: true,
+        finalized: false,
+      });
+      expect(await maskSession.snapshot()).toMatchObject({
+        workspaceRevision: opened.workspaceRevision,
+        maximumAllocatedRenderGeneration:
+          opened.maximumAllocatedRenderGeneration,
+        activeSource: {
+          phase: "source_review",
+          renderGeneration: opened.activeSource.renderGeneration,
+          maskState: null,
+        },
+      });
+      await maskSession.close();
+    },
+  );
+});
+
+describe("Grand Hall T-554 mask-workflow crash recovery v2", () => {
+  it(
+    "completes an intent-only freeze and rejects mask review before browser rotation",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const { session, edited } = await createEditedMaskWorkflow(
+        fixture,
+        maskWorkflowDependencies(fixture.withoutCrashSeam(), {
+          seam: {
+            afterMaskFreezeIntentDurable: () => {
+              throw new Error("injected crash after mask freeze intent");
+            },
+          },
+        }),
+      );
+
+      await expect(
+        session.freezeMask({
+          ...maskGuard(edited),
+          expectedMaskRevision: 1,
+        }),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      expect(await readdir(join(fixture.sessionRoot, "mask-evidence"))).toEqual(
+        [],
+      );
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toEqual([]);
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toEqual([]);
+      expect((await coordinatorEventTypes(fixture.sessionRoot)).at(-1)).toBe(
+        "mask.freeze-intended.v2",
+      );
+
+      await expect(
+        takeOverMaskWorkflowAfterCrash(fixture),
+      ).rejects.toMatchObject({ code: "PHASE_INVALID" });
+      const recoveredState = await verifiedCoordinatorState(
+        fixture.sessionRoot,
+      );
+      expect(recoveredState).toMatchObject({
+        workspaceRevision: 4,
+        maximumAllocatedRenderGeneration: 4,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: 4,
+          maskState: { revision: 1, includedPixelCount: 64 },
+          frozenBinding: {
+            revision: 1,
+            includedPixelCount: 64,
+            immutableFrozen: true,
+          },
+        },
+      });
+      expect(await readdir(join(fixture.sessionRoot, "mask-evidence"))).toHaveLength(
+        2,
+      );
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(1);
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toHaveLength(1);
+      const recoveredTypes = await coordinatorEventTypes(fixture.sessionRoot);
+      const intentIndex = recoveredTypes.lastIndexOf("mask.freeze-intended.v2");
+      const commitIndex = recoveredTypes.lastIndexOf("mask.freeze-committed.v2");
+      const browserIndex = recoveredTypes.lastIndexOf(
+        "session.browser-epoch-started.v2",
+      );
+      expect(intentIndex).toBeGreaterThanOrEqual(0);
+      expect(commitIndex).toBeGreaterThan(intentIndex);
+      expect(browserIndex).toBeLessThan(intentIndex);
+      expect(recoveredTypes).not.toContain(
+        "mask.freeze-recovery-aborted.v2",
+      );
+    },
+  );
+
+  it(
+    "recovery-aborts an exact first-final-link partial publication without creating a mask child",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const { session, edited } = await createEditedMaskWorkflow(
+        fixture,
+        maskWorkflowDependencies(fixture.withoutCrashSeam(), {
+          configureMaskStore: (store) => {
+            __testOnlyGrandHallT554NativeMaskRevisionStore.observePreparedPublication(
+              store,
+              {
+                afterPreparedFinalLinked: ({ plane }) => {
+                  if (plane === "mask") {
+                    throw new Error(
+                      "injected crash after exact mask final link",
+                    );
+                  }
+                },
+              },
+            );
+          },
+        }),
+      );
+
+      await expect(
+        session.freezeMask({
+          ...maskGuard(edited),
+          expectedMaskRevision: 1,
+        }),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      const beforeRecoveryEvents = await coordinatorEvents(
+        fixture.sessionRoot,
+      );
+      const intent = beforeRecoveryEvents.find(
+        (candidate) => candidate.eventType === "mask.freeze-intended.v2",
+      );
+      if (intent?.eventType !== "mask.freeze-intended.v2") {
+        throw new Error("partial-publication fixture has no freeze intent");
+      }
+      expect(await readdir(join(fixture.sessionRoot, "mask-evidence"))).toEqual([
+        intent.payload.preparedBinding.mask.fileName,
+      ]);
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toEqual([]);
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toEqual([]);
+
+      const recovered = await takeOverMaskWorkflowAfterCrash(fixture);
+      const recoveredSnapshot = await recovered.snapshot();
+      expect(recoveredSnapshot).toMatchObject({
+        workspaceRevision: 4,
+        maximumAllocatedRenderGeneration: 5,
+        activeSource: {
+          phase: "mask_edit",
+          renderGeneration: 5,
+          maskState: { revision: 1, includedPixelCount: 64 },
+          frozenBinding: null,
+          maskJournalLeafName: null,
+        },
+      });
+      expect(await readdir(join(fixture.sessionRoot, "mask-evidence"))).toEqual([
+        intent.payload.preparedBinding.mask.fileName,
+      ]);
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toEqual([]);
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toEqual([]);
+      const recoveredTypes = await coordinatorEventTypes(fixture.sessionRoot);
+      expect(
+        recoveredTypes.filter(
+          (eventType) => eventType === "mask.freeze-recovery-aborted.v2",
+        ),
+      ).toHaveLength(1);
+      expect(recoveredTypes).not.toContain("mask.freeze-committed.v2");
+      const abortIndex = recoveredTypes.lastIndexOf(
+        "mask.freeze-recovery-aborted.v2",
+      );
+      const browserIndex = recoveredTypes.lastIndexOf(
+        "session.browser-epoch-started.v2",
+      );
+      const resumeIndex = recoveredTypes.lastIndexOf(
+        "mask.edit-epoch-resumed.v2",
+      );
+      expect(browserIndex).toBeGreaterThan(abortIndex);
+      expect(resumeIndex).toBeGreaterThan(browserIndex);
+      await expect(
+        recovered.freezeMask({
+          ...maskGuard(recoveredSnapshot),
+          expectedMaskRevision: 1,
+        }),
+      ).rejects.toMatchObject({ code: "MASK_REVISION_TAINTED" });
+      expect(await coordinatorEventTypes(fixture.sessionRoot)).toEqual(
+        recoveredTypes,
+      );
+      await recovered.close();
+    },
+  );
+
+  it(
+    "adopts a complete exact publication pair and creates one child after a pre-child crash",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const { session, edited } = await createEditedMaskWorkflow(
+        fixture,
+        maskWorkflowDependencies(fixture.withoutCrashSeam(), {
+          seam: {
+            afterMaskPairPublished: () => {
+              throw new Error("injected crash after exact mask pair");
+            },
+          },
+        }),
+      );
+
+      await expect(
+        session.freezeMask({
+          ...maskGuard(edited),
+          expectedMaskRevision: 1,
+        }),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      expect(await readdir(join(fixture.sessionRoot, "mask-evidence"))).toHaveLength(
+        2,
+      );
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toEqual([]);
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toEqual([]);
+
+      await expect(
+        takeOverMaskWorkflowAfterCrash(fixture),
+      ).rejects.toMatchObject({ code: "PHASE_INVALID" });
+      const recoveredState = await verifiedCoordinatorState(
+        fixture.sessionRoot,
+      );
+      expect(recoveredState).toMatchObject({
+        workspaceRevision: 4,
+        maximumAllocatedRenderGeneration: 4,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: 4,
+          maskState: { revision: 1, includedPixelCount: 64 },
+          frozenBinding: { revision: 1, includedPixelCount: 64 },
+        },
+      });
+      expect(await readdir(join(fixture.sessionRoot, "mask-evidence"))).toHaveLength(
+        2,
+      );
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(1);
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toHaveLength(1);
+      const recoveredTypes = await coordinatorEventTypes(fixture.sessionRoot);
+      expect(
+        recoveredTypes.filter(
+          (eventType) => eventType === "mask.freeze-committed.v2",
+        ),
+      ).toHaveLength(1);
+      expect(recoveredTypes).not.toContain(
+        "mask.freeze-recovery-aborted.v2",
+      );
+    },
+  );
+
+  it(
+    "refuses to commit when the published descriptor is corrupted before full-root verification",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const { session, edited } = await createEditedMaskWorkflow(
+        fixture,
+        maskWorkflowDependencies(fixture.withoutCrashSeam(), {
+          seam: {
+            afterMaskChildStartPublishedBeforeRootVerification: async () => {
+              const descriptors = await maskDescriptorLeafNames(
+                fixture.sessionRoot,
+              );
+              const descriptor = descriptors[0];
+              if (descriptor === undefined || descriptors.length !== 1) {
+                throw new Error(
+                  "descriptor-corruption fixture expected one mask descriptor",
+                );
+              }
+              await writeFile(
+                join(fixture.sessionRoot, "child-scopes", descriptor),
+                "{\"corrupt\":true}\n",
+                "utf8",
+              );
+            },
+          },
+        }),
+      );
+
+      await expect(
+        session.freezeMask({
+          ...maskGuard(edited),
+          expectedMaskRevision: 1,
+        }),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      const eventTypes = await coordinatorEventTypes(fixture.sessionRoot);
+      expect(eventTypes.at(-1)).toBe("mask.freeze-intended.v2");
+      expect(eventTypes).not.toContain("mask.freeze-committed.v2");
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toHaveLength(1);
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toHaveLength(1);
+      await expect(
+        takeOverMaskWorkflowAfterCrash(fixture),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      expect(await coordinatorEventTypes(fixture.sessionRoot)).toEqual(
+        eventTypes,
+      );
+    },
+  );
+
+  it(
+    "reconciles an exact child created before its descriptor and commits it once",
+    { timeout: 600_000 },
+    async () => {
+      const fixture = await harness();
+      const { session, edited } = await createEditedMaskWorkflow(
+        fixture,
+        maskWorkflowDependencies(fixture.withoutCrashSeam(), {
+          seam: {
+            afterMaskChildPublished: () => {
+              throw new Error("injected crash after exact mask child");
+            },
+          },
+        }),
+      );
+
+      await expect(
+        session.freezeMask({
+          ...maskGuard(edited),
+          expectedMaskRevision: 1,
+        }),
+      ).rejects.toMatchObject({ code: "CRASH_RECOVERY_REQUIRED" });
+      const childNamesBeforeRecovery = await maskChildLeafNames(
+        fixture.sessionRoot,
+      );
+      expect(childNamesBeforeRecovery).toHaveLength(1);
+      const childNameBeforeRecovery = childNamesBeforeRecovery[0];
+      if (childNameBeforeRecovery === undefined) {
+        throw new Error("Expected one published mask child before recovery.");
+      }
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toEqual([]);
+
+      await expect(
+        takeOverMaskWorkflowAfterCrash(fixture),
+      ).rejects.toMatchObject({ code: "PHASE_INVALID" });
+      const recoveredState = await verifiedCoordinatorState(
+        fixture.sessionRoot,
+      );
+      expect(recoveredState).toMatchObject({
+        workspaceRevision: 4,
+        maximumAllocatedRenderGeneration: 4,
+        activeSource: {
+          phase: "mask_review",
+          renderGeneration: 4,
+          maskState: { revision: 1, includedPixelCount: 64 },
+          maskJournal: { leafName: childNameBeforeRecovery },
+        },
+      });
+      expect(await maskChildLeafNames(fixture.sessionRoot)).toEqual(
+        childNamesBeforeRecovery,
+      );
+      expect(await maskDescriptorLeafNames(fixture.sessionRoot)).toEqual([
+        `${childNameBeforeRecovery}.json`,
+      ]);
+      const recoveredTypes = await coordinatorEventTypes(fixture.sessionRoot);
+      expect(
+        recoveredTypes.filter(
+          (eventType) => eventType === "mask.freeze-committed.v2",
+        ),
+      ).toHaveLength(1);
+      expect(recoveredTypes).not.toContain(
+        "mask.freeze-recovery-aborted.v2",
+      );
     },
   );
 });

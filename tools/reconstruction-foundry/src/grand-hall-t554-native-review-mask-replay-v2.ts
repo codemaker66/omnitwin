@@ -10,10 +10,14 @@ import {
   GrandHallT554NativeReviewMaskEditedEventV2Schema,
   GrandHallT554NativeReviewMaskStateEvidenceV2Schema,
   GrandHallT554NativeReviewRegistryBindingV2Schema,
+  GrandHallT554NativeReviewSessionScopeV2Schema,
   GrandHallT554NativeReviewSha256V2Schema,
+  GrandHallT554NativeReviewSourceCustodyBindingV2Schema,
   GrandHallT554NativeReviewSourceVerificationV2Schema,
   type GrandHallT554NativeReviewCoordinatorEventV2,
   type GrandHallT554NativeReviewMaskStateEvidenceV2,
+  type GrandHallT554NativeReviewSessionScopeV2,
+  type GrandHallT554NativeReviewSourceCustodyBindingV2,
 } from "./grand-hall-t554-native-review-events-v2.js";
 import {
   GRAND_HALL_T554_NATIVE_MASK_MAX_REVISION,
@@ -78,6 +82,55 @@ export const GrandHallT554NativeMaskReplayContextV2Schema = z
 export type GrandHallT554NativeMaskReplayContextV2 = z.infer<
   typeof GrandHallT554NativeMaskReplayContextV2Schema
 >;
+
+/**
+ * Derives the sole canonical mask-replay context from coordinator-verified
+ * session scope and stable source custody. Runtime validation is deliberate:
+ * callers must not be able to bypass the authority-none scope or smuggle an
+ * internally inconsistent custody binding through structurally typed input.
+ */
+export function buildGrandHallT554NativeMaskReplayContextV2(
+  session: GrandHallT554NativeReviewSessionScopeV2,
+  custody: GrandHallT554NativeReviewSourceCustodyBindingV2,
+): GrandHallT554NativeMaskReplayContextV2 {
+  const parsedSession = GrandHallT554NativeReviewSessionScopeV2Schema.safeParse(
+    session,
+  );
+  if (!parsedSession.success) {
+    throw fail(
+      "INPUT_INVALID",
+      "Mask replay session scope is not the exact strict v2 schema.",
+      parsedSession.error,
+    );
+  }
+  const parsedCustody =
+    GrandHallT554NativeReviewSourceCustodyBindingV2Schema.safeParse(custody);
+  if (!parsedCustody.success) {
+    throw fail(
+      "INPUT_INVALID",
+      "Mask replay source custody is not the exact strict v2 schema.",
+      parsedCustody.error,
+    );
+  }
+  const context = GrandHallT554NativeMaskReplayContextV2Schema.safeParse({
+    schemaVersion: GRAND_HALL_T554_NATIVE_MASK_REPLAY_CONTEXT_V2,
+    sessionIdSha256: parsedSession.data.sessionIdSha256,
+    registry: parsedSession.data.registry,
+    implementationManifest: parsedSession.data.implementationManifest,
+    source: parsedCustody.data.source,
+    sourceVerification: parsedCustody.data.sourceVerification,
+    sourceReviewSubjectSha256:
+      parsedCustody.data.sourceReviewSubjectSha256,
+  });
+  if (!context.success) {
+    throw fail(
+      "INPUT_INVALID",
+      "Derived mask replay context is not the exact strict v2 schema.",
+      context.error,
+    );
+  }
+  return frozenClone(context.data);
+}
 
 type MaskEditedEventV2 = Extract<
   GrandHallT554NativeReviewCoordinatorEventV2,
