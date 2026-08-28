@@ -49,10 +49,15 @@ export default defineConfig(({ mode }) => {
   // by packages/api/src/scripts/publish-splat-tiles.ts. It is a public bucket
   // URL, not a secret, and a real VITE_SPLAT_BASE_URL always wins so the
   // bucket can be moved without a code change.
-  const publishedSplatBaseUrl = "https://pub-2bf1ea54c4c642d3b19067b97c55dc5d.r2.dev/splats";
-  const splatBaseUrl = (env["VITE_SPLAT_BASE_URL"] ?? "").trim().length > 0
-    ? (env["VITE_SPLAT_BASE_URL"] ?? "")
-    : (mode === "production" ? publishedSplatBaseUrl : "");
+  // Left empty so the app requests tiles from its OWN origin, "/splats".
+  //
+  // In development that path is served from SPLAT_STAGING_ROOT by the plugin
+  // above. In production vercel.json rewrites it to the R2 bucket, which keeps
+  // the request same-origin — R2 public buckets send no CORS headers, and a
+  // splat is fetched as an ArrayBuffer, so a cross-origin fetch is refused by
+  // the browser after the bytes have already been paid for. Setting
+  // VITE_SPLAT_BASE_URL to a CORS-enabled origin bypasses the proxy.
+  const splatBaseUrl = env["VITE_SPLAT_BASE_URL"] ?? "";
 
   if (sentrySourceMapUpload !== null) {
     plugins.push(...sentryVitePlugin({
