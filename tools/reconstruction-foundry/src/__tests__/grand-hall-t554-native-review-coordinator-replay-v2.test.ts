@@ -17,8 +17,11 @@ import {
   replayGrandHallT554NativeReviewCoordinatorV2,
 } from "../grand-hall-t554-native-review-coordinator-replay-v2.js";
 import {
+  GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
   GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
   GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+  computeGrandHallT554NativeReviewHumanAttestationV2Sha256,
+  computeGrandHallT554NativeReviewSourceDecisionV2Sha256,
   type GrandHallT554NativeReviewFrozenMaskBindingV2,
   type GrandHallT554NativeReviewPreparedMaskBindingV2,
 } from "../grand-hall-t554-native-review-events-v2.js";
@@ -636,6 +639,139 @@ function validLifecycle() {
   };
 }
 
+function completedSourceClaim(scenario: ReturnType<typeof validLifecycle>) {
+  return {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-completed-source-coverage.v2" as const,
+    sourceReviewSubjectSha256: scenario.custody.sourceReviewSubjectSha256,
+    sourceJournal: sourceCheckpoint(4),
+    completedTileBitsetHex: "ff".repeat(64),
+    completedTileCount: 512 as const,
+    cumulativeDwellStateSha256: digest("source-completed-dwell"),
+  };
+}
+
+function completedMaskClaim(
+  scenario: ReturnType<typeof validLifecycle>,
+  checkpoint = maskCheckpoint(4),
+) {
+  return {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-completed-mask-coverage.v2" as const,
+    maskReviewSubjectSha256: scenario.maskReviewSubjectSha256,
+    maskStateSha256: includedMaskState().maskStateSha256,
+    frozenBindingSha256: scenario.frozenBindingSha256,
+    maskJournal: checkpoint,
+    completedTileBitsetHex: "ff".repeat(64),
+    completedTileCount: 512 as const,
+    cumulativeDwellStateSha256: digest("mask-completed-dwell"),
+  };
+}
+
+function excludeDecision(scenario: ReturnType<typeof validLifecycle>) {
+  const material = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+    operationIdSha256: digest("exclude-decision-operation"),
+    browserEpochNonceSha256: scenario.browserNonce,
+    previousWorkspaceRevision: 1,
+    resultingWorkspaceRevision: 2,
+    sessionIdSha256: scenario.scope.sessionIdSha256,
+    registry: scenario.scope.registry,
+    implementationManifest: scenario.scope.implementationManifest,
+    authorityBoundary: scenario.scope.authorityBoundary,
+    sourceCustody: scenario.custody,
+    previousRenderGeneration: 1,
+    resultingRenderGeneration: 2,
+    completedSourceCoverage: completedSourceClaim(scenario),
+    note: "No Grand Hall pixels were observed during exact native review.",
+    decidedAtUtc: NOW,
+    result: "EXCLUDE" as const,
+    classification: "no_observed_grand_hall_pixels" as const,
+    maskState: null,
+    maskReviewSubjectSha256: null,
+    frozenBindingSha256: null,
+    frozenBinding: null,
+    completedMaskCoverage: null,
+  };
+  return envelope("source.decision-recorded.v2", {
+    ...material,
+    decisionSha256:
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(material),
+  });
+}
+
+function includeDecision(
+  scenario: ReturnType<typeof validLifecycle>,
+  checkpoint = maskCheckpoint(4),
+) {
+  const material = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+    operationIdSha256: digest("include-decision-operation"),
+    browserEpochNonceSha256: scenario.browserNonce,
+    previousWorkspaceRevision: 4,
+    resultingWorkspaceRevision: 5,
+    sessionIdSha256: scenario.scope.sessionIdSha256,
+    registry: scenario.scope.registry,
+    implementationManifest: scenario.scope.implementationManifest,
+    authorityBoundary: scenario.scope.authorityBoundary,
+    sourceCustody: scenario.custody,
+    previousRenderGeneration: 4,
+    resultingRenderGeneration: 5,
+    completedSourceCoverage: completedSourceClaim(scenario),
+    note: "Grand Hall pixels are supported inside the exact frozen mask.",
+    decidedAtUtc: NOW,
+    result: "INCLUDE" as const,
+    classification: "grand_hall_core" as const,
+    maskState: includedMaskState(),
+    maskReviewSubjectSha256: scenario.maskReviewSubjectSha256,
+    frozenBindingSha256: scenario.frozenBindingSha256,
+    frozenBinding: scenario.frozen,
+    completedMaskCoverage: completedMaskClaim(scenario, checkpoint),
+  };
+  return envelope("source.decision-recorded.v2", {
+    ...material,
+    decisionSha256:
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(material),
+  });
+}
+
+function humanAttestation(
+  scenario: ReturnType<typeof validLifecycle>,
+  decisionSha256: `sha256:${string}`,
+  previousWorkspaceRevision: number,
+) {
+  const material = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-human-attestation-recorded.v2" as const,
+    operationIdSha256: digest(
+      `human-attestation-operation-${String(previousWorkspaceRevision)}`,
+    ),
+    browserEpochNonceSha256: scenario.browserNonce,
+    previousWorkspaceRevision,
+    resultingWorkspaceRevision: previousWorkspaceRevision + 1,
+    sessionIdSha256: scenario.scope.sessionIdSha256,
+    sourceReviewSubjectSha256: scenario.custody.sourceReviewSubjectSha256,
+    decisionSha256,
+    reviewerId: "authorized-reviewer-1",
+    reviewerRole: "venue_owner_or_authorized_domain_reviewer" as const,
+    knowledgeBasis: [
+      "Reviewed the exact native source and applicable frozen mask evidence.",
+    ],
+    attestedAtUtc: NOW,
+    statement: GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
+    humanPresenceProof: "not_cryptographic" as const,
+    agentDecisionAuthority: "none" as const,
+    authority: "none" as const,
+  };
+  return envelope("source.human-attestation-recorded.v2", {
+    ...material,
+    attestationSha256:
+      computeGrandHallT554NativeReviewHumanAttestationV2Sha256(material),
+  });
+}
+
 function crashEpoch(input: {
   readonly number: number;
   readonly nonceSha256: `sha256:${string}`;
@@ -866,6 +1002,209 @@ describe("Grand Hall T-554 native review coordinator replay v2", () => {
     expect(Object.isFrozen(replay)).toBe(true);
     expect(Object.isFrozen(replay.registry)).toBe(true);
     expect(Object.isFrozen(replay.declaredChildLeafNames)).toBe(true);
+  });
+
+  it("retains an authority-none EXCLUDE decision and human attestation after abandon and stop", () => {
+    const scenario = validLifecycle();
+    const decision = excludeDecision(scenario);
+    const attestation = humanAttestation(
+      scenario,
+      decision.payload.decisionSha256,
+      2,
+    );
+    const replay = replayGrandHallT554NativeReviewCoordinatorV2({
+      scope: scenario.scope,
+      events: [
+        ...scenario.events.slice(0, 4),
+        decision,
+        attestation,
+        envelope("source.abandoned.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-source-abandoned.v2" as const,
+          browserEpochNonceSha256: scenario.browserNonce,
+          previousWorkspaceRevision: 3,
+          resultingWorkspaceRevision: 4,
+          sourceCustody: scenario.custody,
+          finalRenderGeneration: 2,
+          sourceJournal: sourceCheckpoint(4),
+          maskJournal: null,
+          reason: "session_stop" as const,
+        }),
+        envelope("session.stopped.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-session-stopped.v2" as const,
+          browserEpochNonceSha256: scenario.browserNonce,
+          previousWorkspaceRevision: 4,
+          resultingWorkspaceRevision: 5,
+          stoppedAtUtc: NOW,
+          activeSourceWasPresent: false,
+          authorityBoundary: scenario.scope.authorityBoundary,
+        }),
+      ],
+    });
+    expect(replay).toMatchObject({
+      lifecycle: "stopped",
+      workspaceRevision: 5,
+      maximumAllocatedRenderGeneration: 2,
+      activeSource: null,
+      recordedSourceDecisions: [
+        { result: "EXCLUDE", decisionSha256: decision.payload.decisionSha256 },
+      ],
+      recordedHumanAttestations: [
+        {
+          authority: "none",
+          attestationSha256: attestation.payload.attestationSha256,
+        },
+      ],
+    });
+    expect(Object.isFrozen(replay.recordedSourceDecisions)).toBe(true);
+    expect(Object.isFrozen(replay.recordedSourceDecisions[0])).toBe(true);
+    expect(Object.isFrozen(replay.recordedHumanAttestations[0])).toBe(true);
+  });
+
+  it("records an INCLUDE only after exact frozen-mask coverage and preserves both child heads", () => {
+    const scenario = validLifecycle();
+    const finalMaskCheckpoint = maskCheckpoint(4);
+    const decision = includeDecision(scenario, finalMaskCheckpoint);
+    const attestation = humanAttestation(
+      scenario,
+      decision.payload.decisionSha256,
+      5,
+    );
+    const replay = replayGrandHallT554NativeReviewCoordinatorV2({
+      scope: scenario.scope,
+      events: [
+        ...scenario.events.slice(0, 8),
+        decision,
+        attestation,
+        envelope("source.abandoned.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-source-abandoned.v2" as const,
+          browserEpochNonceSha256: scenario.browserNonce,
+          previousWorkspaceRevision: 6,
+          resultingWorkspaceRevision: 7,
+          sourceCustody: scenario.custody,
+          finalRenderGeneration: 5,
+          sourceJournal: sourceCheckpoint(4),
+          maskJournal: finalMaskCheckpoint,
+          reason: "session_stop" as const,
+        }),
+        envelope("session.stopped.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-session-stopped.v2" as const,
+          browserEpochNonceSha256: scenario.browserNonce,
+          previousWorkspaceRevision: 7,
+          resultingWorkspaceRevision: 8,
+          stoppedAtUtc: NOW,
+          activeSourceWasPresent: false,
+          authorityBoundary: scenario.scope.authorityBoundary,
+        }),
+      ],
+    });
+    expect(replay).toMatchObject({
+      lifecycle: "stopped",
+      workspaceRevision: 8,
+      maximumAllocatedRenderGeneration: 5,
+      recordedSourceDecisions: [
+        { result: "INCLUDE", decisionSha256: decision.payload.decisionSha256 },
+      ],
+      recordedHumanAttestations: [
+        { decisionSha256: decision.payload.decisionSha256 },
+      ],
+    });
+    const maskObligation = replay.childObligations.find(
+      (obligation) => obligation.kind === "mask",
+    );
+    expect(maskObligation?.checkpointReferences.at(-1)).toEqual(
+      finalMaskCheckpoint,
+    );
+  });
+
+  it("rejects wrong decision phases, stale barriers, pre-decision attestations, and post-decision edits", () => {
+    const scenario = validLifecycle();
+    const include = includeDecision(scenario);
+    expectReplayError(
+      scenario.scope,
+      [...scenario.events.slice(0, 4), include],
+      "TRANSITION_INVALID",
+    );
+
+    const exclude = excludeDecision(scenario);
+    const { decisionSha256: _excludeDigest, ...excludeMaterial } =
+      exclude.payload;
+    const excludeFromMaskMaterial = {
+      ...excludeMaterial,
+      previousWorkspaceRevision: 4,
+      resultingWorkspaceRevision: 5,
+      previousRenderGeneration: 4,
+      resultingRenderGeneration: 5,
+    };
+    const excludeFromMask = envelope("source.decision-recorded.v2", {
+      ...excludeFromMaskMaterial,
+      decisionSha256: computeGrandHallT554NativeReviewSourceDecisionV2Sha256(
+        excludeFromMaskMaterial,
+      ),
+    });
+    expectReplayError(
+      scenario.scope,
+      [...scenario.events.slice(0, 8), excludeFromMask],
+      "TRANSITION_INVALID",
+    );
+
+    const { decisionSha256: _includeDigest, ...includeMaterial } =
+      include.payload;
+    const staleBarrierMaterial = {
+      ...includeMaterial,
+      resultingRenderGeneration: 6,
+    };
+    expectReplayError(
+      scenario.scope,
+      [
+        ...scenario.events.slice(0, 8),
+        envelope("source.decision-recorded.v2", {
+          ...staleBarrierMaterial,
+          decisionSha256:
+            computeGrandHallT554NativeReviewSourceDecisionV2Sha256(
+              staleBarrierMaterial,
+            ),
+        }),
+      ],
+      "TRANSITION_INVALID",
+    );
+
+    expectReplayError(
+      scenario.scope,
+      [
+        ...scenario.events.slice(0, 4),
+        humanAttestation(scenario, exclude.payload.decisionSha256, 1),
+      ],
+      "TRANSITION_INVALID",
+    );
+    expectReplayError(
+      scenario.scope,
+      [...scenario.events.slice(0, 8), include, scenario.events[8]],
+      "TRANSITION_INVALID",
+    );
+    expectReplayError(
+      scenario.scope,
+      [
+        ...scenario.events.slice(0, 8),
+        include,
+        envelope("source.abandoned.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-source-abandoned.v2" as const,
+          browserEpochNonceSha256: scenario.browserNonce,
+          previousWorkspaceRevision: 5,
+          resultingWorkspaceRevision: 6,
+          sourceCustody: scenario.custody,
+          finalRenderGeneration: 5,
+          sourceJournal: sourceCheckpoint(4),
+          maskJournal: null,
+          reason: "operator_abandon" as const,
+        }),
+      ],
+      "TRANSITION_INVALID",
+    );
   });
 
   it("uses one stable mask-evidence digest across prepare and durable publication", () => {

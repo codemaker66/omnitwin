@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 
 import {
+  CanonicalJsonValueSchema,
   GRAND_HALL_PANORAMA_HEIGHT_PX,
   GRAND_HALL_PANORAMA_WIDTH_PX,
   GrandHallPanoramaSourceJpgIdentityV2Schema,
+  stableCanonicalJson,
   type GrandHallPanoramaSourceJpgIdentityV2,
 } from "@omnitwin/types";
 import { z } from "zod";
@@ -41,6 +43,12 @@ export const GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2 =
   "venviewer.grand-hall-t554-native-review-domain-event.v2";
 export const GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2 =
   "venviewer.grand-hall-t554-native-review-journal-scope.v2";
+const GRAND_HALL_T554_NATIVE_REVIEW_SOURCE_DECISION_DIGEST_DOMAIN_V2 =
+  "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_SOURCE_DECISION_V2";
+const GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_DIGEST_DOMAIN_V2 =
+  "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_V2";
+export const GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2 =
+  "I reviewed the exact bound source at native scale and recorded only what I could support from supplied evidence.";
 
 export const GrandHallT554NativeReviewSha256V2Schema = z
   .string()
@@ -110,6 +118,13 @@ const FULL_TILE_BITMAP_HEX = "ff".repeat(TILE_BITMAP_HEX_LENGTH / 2);
 
 function sha256(bytes: Buffer): `sha256:${string}` {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function canonicalDigest(domain: string, value: unknown): `sha256:${string}` {
+  const canonical = CanonicalJsonValueSchema.parse(value);
+  return sha256(
+    Buffer.from(`${domain}\n${stableCanonicalJson(canonical)}`, "utf8"),
+  );
 }
 
 function dwellStateSha256(bytes: Buffer): `sha256:${string}` {
@@ -672,6 +687,25 @@ export const GrandHallT554NativeReviewCompletedSourceCoverageV2Schema = z
 
 export type GrandHallT554NativeReviewCompletedSourceCoverageV2 = z.infer<
   typeof GrandHallT554NativeReviewCompletedSourceCoverageV2Schema
+>;
+
+export const GrandHallT554NativeReviewCompletedMaskCoverageV2Schema = z
+  .object({
+    schemaVersion: z.literal(
+      "venviewer.grand-hall-t554-native-review-completed-mask-coverage.v2",
+    ),
+    maskReviewSubjectSha256: GrandHallT554NativeReviewSha256V2Schema,
+    maskStateSha256: GrandHallT554NativeReviewSha256V2Schema,
+    frozenBindingSha256: GrandHallT554NativeReviewSha256V2Schema,
+    maskJournal: GrandHallT554NativeReviewMaskChildCheckpointV2Schema,
+    completedTileBitsetHex: z.literal(FULL_TILE_BITMAP_HEX),
+    completedTileCount: z.literal(GRAND_HALL_T554_NATIVE_TILE_COUNT),
+    cumulativeDwellStateSha256: GrandHallT554NativeReviewSha256V2Schema,
+  })
+  .strict();
+
+export type GrandHallT554NativeReviewCompletedMaskCoverageV2 = z.infer<
+  typeof GrandHallT554NativeReviewCompletedMaskCoverageV2Schema
 >;
 
 const DwellVectorBase64urlSchema = z
@@ -1907,6 +1941,318 @@ export const GrandHallT554NativeReviewMaskEditEpochResumedPayloadV2Schema = z
     }
   });
 
+const SourceDecisionCommonMaterialShape = {
+  schemaVersion: z.literal(
+    "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2",
+  ),
+  operationIdSha256: GrandHallT554NativeReviewSha256V2Schema,
+  browserEpochNonceSha256: GrandHallT554NativeReviewSha256V2Schema,
+  ...WorkspaceAdvanceShape,
+  sessionIdSha256: GrandHallT554NativeReviewSha256V2Schema,
+  registry: GrandHallT554NativeReviewRegistryBindingV2Schema,
+  implementationManifest:
+    GrandHallT554NativeReviewImplementationManifestBindingV2Schema,
+  authorityBoundary: GrandHallT554NativeReviewAuthorityBoundaryV2Schema,
+  ...SourceBindingPayloadShape,
+  previousRenderGeneration: RenderGenerationSchema,
+  resultingRenderGeneration: RenderGenerationSchema,
+  completedSourceCoverage:
+    GrandHallT554NativeReviewCompletedSourceCoverageV2Schema,
+  note: z.string().trim().min(1).max(1_000),
+  decidedAtUtc: GrandHallT554NativeReviewCanonicalUtcV2Schema,
+};
+
+const SourceExcludeDecisionMaterialV2Schema = z
+  .object({
+    ...SourceDecisionCommonMaterialShape,
+    result: z.literal("EXCLUDE"),
+    classification: z.literal("no_observed_grand_hall_pixels"),
+    maskState: z.null(),
+    maskReviewSubjectSha256: z.null(),
+    frozenBindingSha256: z.null(),
+    frozenBinding: z.null(),
+    completedMaskCoverage: z.null(),
+  })
+  .strict();
+
+const SourceIncludeDecisionMaterialV2Schema = z
+  .object({
+    ...SourceDecisionCommonMaterialShape,
+    result: z.literal("INCLUDE"),
+    classification: z.enum(["grand_hall_core", "grand_hall_portal_threshold"]),
+    maskState: GrandHallT554NativeReviewMaskStateEvidenceV2Schema,
+    maskReviewSubjectSha256: GrandHallT554NativeReviewSha256V2Schema,
+    frozenBindingSha256: GrandHallT554NativeReviewSha256V2Schema,
+    frozenBinding: GrandHallT554NativeReviewFrozenMaskBindingV2Schema,
+    completedMaskCoverage:
+      GrandHallT554NativeReviewCompletedMaskCoverageV2Schema,
+  })
+  .strict();
+
+const SourceDecisionRecordedMaterialBaseV2Schema = z.discriminatedUnion(
+  "result",
+  [
+    SourceExcludeDecisionMaterialV2Schema,
+    SourceIncludeDecisionMaterialV2Schema,
+  ],
+);
+
+type SourceDecisionRecordedMaterialCandidateV2 = z.infer<
+  typeof SourceDecisionRecordedMaterialBaseV2Schema
+>;
+
+function sameReasonCounts(
+  left: GrandHallT554NativeReviewMaskStateEvidenceV2["reasonCounts"],
+  right: GrandHallT554NativeReviewFrozenMaskBindingV2["reasonCounts"],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => {
+      const peer = right[index];
+      return (
+        peer !== undefined &&
+        entry.reasonCode === peer.reasonCode &&
+        entry.pixelCount === peer.pixelCount
+      );
+    })
+  );
+}
+
+function validateSourceDecisionMaterial(
+  decision: SourceDecisionRecordedMaterialCandidateV2,
+  context: z.RefinementCtx,
+): void {
+  validateWorkspaceAdvance(decision, context);
+  validateGenerationAdvance(
+    decision.previousRenderGeneration,
+    decision.resultingRenderGeneration,
+    context,
+  );
+  if (
+    decision.completedSourceCoverage.sourceReviewSubjectSha256 !==
+    decision.sourceCustody.sourceReviewSubjectSha256
+  ) {
+    addIssue(
+      context,
+      ["completedSourceCoverage", "sourceReviewSubjectSha256"],
+      "decision source coverage must bind the exact source-review subject",
+    );
+  }
+  if (decision.result === "EXCLUDE") return;
+  if (
+    !sameSourceIdentity(
+      decision.sourceCustody.source,
+      decision.frozenBinding.source,
+    )
+  ) {
+    addIssue(
+      context,
+      ["frozenBinding", "source"],
+      "included decision frozen evidence must bind the exact source",
+    );
+  }
+  if (
+    decision.maskState.revision !== decision.frozenBinding.revision ||
+    decision.maskState.includedPixelCount !==
+      decision.frozenBinding.includedPixelCount ||
+    decision.maskState.excludedPixelCount !==
+      decision.frozenBinding.excludedPixelCount ||
+    !sameReasonCounts(
+      decision.maskState.reasonCounts,
+      decision.frozenBinding.reasonCounts,
+    )
+  ) {
+    addIssue(
+      context,
+      ["frozenBinding"],
+      "included decision mask state and frozen evidence must match exactly",
+    );
+  }
+  if (
+    decision.maskState.revision === 0 ||
+    decision.maskState.includedPixelCount === 0
+  ) {
+    addIssue(
+      context,
+      ["maskState"],
+      "included decision requires a reviewed nonempty mask revision",
+    );
+  }
+  if (
+    decision.completedMaskCoverage.maskReviewSubjectSha256 !==
+      decision.maskReviewSubjectSha256 ||
+    decision.completedMaskCoverage.maskStateSha256 !==
+      decision.maskState.maskStateSha256 ||
+    decision.completedMaskCoverage.frozenBindingSha256 !==
+      decision.frozenBindingSha256
+  ) {
+    addIssue(
+      context,
+      ["completedMaskCoverage"],
+      "completed mask coverage must bind the exact reviewed mask subject, state, and frozen evidence",
+    );
+  }
+}
+
+export const GrandHallT554NativeReviewSourceDecisionRecordedMaterialV2Schema =
+  SourceDecisionRecordedMaterialBaseV2Schema.superRefine(
+    validateSourceDecisionMaterial,
+  );
+
+export type GrandHallT554NativeReviewSourceDecisionRecordedMaterialV2 = z.infer<
+  typeof GrandHallT554NativeReviewSourceDecisionRecordedMaterialV2Schema
+>;
+
+export function computeGrandHallT554NativeReviewSourceDecisionV2Sha256(
+  material: unknown,
+): `sha256:${string}` {
+  const parsed =
+    GrandHallT554NativeReviewSourceDecisionRecordedMaterialV2Schema.parse(
+      material,
+    );
+  return canonicalDigest(
+    GRAND_HALL_T554_NATIVE_REVIEW_SOURCE_DECISION_DIGEST_DOMAIN_V2,
+    parsed,
+  );
+}
+
+const SourceDecisionRecordedPayloadBaseV2Schema = z.discriminatedUnion(
+  "result",
+  [
+    SourceExcludeDecisionMaterialV2Schema.extend({
+      decisionSha256: GrandHallT554NativeReviewSha256V2Schema,
+    }).strict(),
+    SourceIncludeDecisionMaterialV2Schema.extend({
+      decisionSha256: GrandHallT554NativeReviewSha256V2Schema,
+    }).strict(),
+  ],
+);
+
+export const GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2Schema =
+  SourceDecisionRecordedPayloadBaseV2Schema.superRefine((decision, context) => {
+    validateSourceDecisionMaterial(decision, context);
+    const { decisionSha256, ...material } = decision;
+    const materialResult =
+      GrandHallT554NativeReviewSourceDecisionRecordedMaterialV2Schema.safeParse(
+        material,
+      );
+    if (!materialResult.success) return;
+    if (
+      decisionSha256 !==
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(
+        materialResult.data,
+      )
+    ) {
+      addIssue(
+        context,
+        ["decisionSha256"],
+        "decision digest must bind every exact decision material field",
+      );
+    }
+  });
+
+export type GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2 = z.infer<
+  typeof GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2Schema
+>;
+
+const HumanAttestationRecordedMaterialV2Schema = z
+  .object({
+    schemaVersion: z.literal(
+      "venviewer.grand-hall-t554-native-review-source-human-attestation-recorded.v2",
+    ),
+    operationIdSha256: GrandHallT554NativeReviewSha256V2Schema,
+    browserEpochNonceSha256: GrandHallT554NativeReviewSha256V2Schema,
+    ...WorkspaceAdvanceShape,
+    sessionIdSha256: GrandHallT554NativeReviewSha256V2Schema,
+    sourceReviewSubjectSha256: GrandHallT554NativeReviewSha256V2Schema,
+    decisionSha256: GrandHallT554NativeReviewSha256V2Schema,
+    reviewerId: z.string().trim().min(1).max(160),
+    reviewerRole: z.literal("venue_owner_or_authorized_domain_reviewer"),
+    knowledgeBasis: z.array(z.string().trim().min(1).max(240)).min(1).max(32),
+    attestedAtUtc: GrandHallT554NativeReviewCanonicalUtcV2Schema,
+    statement: z.literal(
+      GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
+    ),
+    humanPresenceProof: z.literal("not_cryptographic"),
+    agentDecisionAuthority: z.literal("none"),
+    authority: z.literal("none"),
+  })
+  .strict()
+  .superRefine(validateWorkspaceAdvance);
+
+export const GrandHallT554NativeReviewHumanAttestationRecordedMaterialV2Schema =
+  HumanAttestationRecordedMaterialV2Schema;
+
+export type GrandHallT554NativeReviewHumanAttestationRecordedMaterialV2 =
+  z.infer<
+    typeof GrandHallT554NativeReviewHumanAttestationRecordedMaterialV2Schema
+  >;
+
+export function computeGrandHallT554NativeReviewHumanAttestationV2Sha256(
+  material: unknown,
+): `sha256:${string}` {
+  const parsed =
+    GrandHallT554NativeReviewHumanAttestationRecordedMaterialV2Schema.parse(
+      material,
+    );
+  return canonicalDigest(
+    GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_DIGEST_DOMAIN_V2,
+    parsed,
+  );
+}
+
+export const GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2Schema =
+  z
+    .object({
+      schemaVersion: z.literal(
+        "venviewer.grand-hall-t554-native-review-source-human-attestation-recorded.v2",
+      ),
+      operationIdSha256: GrandHallT554NativeReviewSha256V2Schema,
+      browserEpochNonceSha256: GrandHallT554NativeReviewSha256V2Schema,
+      ...WorkspaceAdvanceShape,
+      sessionIdSha256: GrandHallT554NativeReviewSha256V2Schema,
+      sourceReviewSubjectSha256: GrandHallT554NativeReviewSha256V2Schema,
+      decisionSha256: GrandHallT554NativeReviewSha256V2Schema,
+      reviewerId: z.string().trim().min(1).max(160),
+      reviewerRole: z.literal("venue_owner_or_authorized_domain_reviewer"),
+      knowledgeBasis: z.array(z.string().trim().min(1).max(240)).min(1).max(32),
+      attestedAtUtc: GrandHallT554NativeReviewCanonicalUtcV2Schema,
+      statement: z.literal(
+        GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
+      ),
+      humanPresenceProof: z.literal("not_cryptographic"),
+      agentDecisionAuthority: z.literal("none"),
+      authority: z.literal("none"),
+      attestationSha256: GrandHallT554NativeReviewSha256V2Schema,
+    })
+    .strict()
+    .superRefine((attestation, context) => {
+      validateWorkspaceAdvance(attestation, context);
+      const { attestationSha256, ...material } = attestation;
+      const materialResult =
+        GrandHallT554NativeReviewHumanAttestationRecordedMaterialV2Schema.safeParse(
+          material,
+        );
+      if (!materialResult.success) return;
+      if (
+        attestationSha256 !==
+        computeGrandHallT554NativeReviewHumanAttestationV2Sha256(
+          materialResult.data,
+        )
+      ) {
+        addIssue(
+          context,
+          ["attestationSha256"],
+          "attestation digest must bind every exact attestation material field",
+        );
+      }
+    });
+
+export type GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2 =
+  z.infer<
+    typeof GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2Schema
+  >;
+
 export const GrandHallT554NativeReviewSourceAbandonedPayloadV2Schema = z
   .object({
     schemaVersion: z.literal(
@@ -2465,6 +2811,16 @@ export const GrandHallT554NativeReviewMaskEditEpochResumedEventV2Schema =
     "mask.edit-epoch-resumed.v2",
     GrandHallT554NativeReviewMaskEditEpochResumedPayloadV2Schema,
   );
+export const GrandHallT554NativeReviewSourceDecisionRecordedEventV2Schema =
+  eventEnvelope(
+    "source.decision-recorded.v2",
+    GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2Schema,
+  );
+export const GrandHallT554NativeReviewHumanAttestationRecordedEventV2Schema =
+  eventEnvelope(
+    "source.human-attestation-recorded.v2",
+    GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2Schema,
+  );
 export const GrandHallT554NativeReviewSourceAbandonedEventV2Schema =
   eventEnvelope(
     "source.abandoned.v2",
@@ -2527,6 +2883,8 @@ export const GrandHallT554NativeReviewCoordinatorEventV2Schema =
     GrandHallT554NativeReviewCoverageSegmentResumeCommittedEventV2Schema,
     GrandHallT554NativeReviewCoverageSegmentResumeRecoveryAbortedEventV2Schema,
     GrandHallT554NativeReviewMaskEditEpochResumedEventV2Schema,
+    GrandHallT554NativeReviewSourceDecisionRecordedEventV2Schema,
+    GrandHallT554NativeReviewHumanAttestationRecordedEventV2Schema,
     GrandHallT554NativeReviewSourceAbandonedEventV2Schema,
     GrandHallT554NativeReviewSessionStoppedEventV2Schema,
     GrandHallT554NativeReviewSessionPoisonedEventV2Schema,
@@ -2574,6 +2932,8 @@ export const GrandHallT554NativeReviewDomainEventV2Schema =
     GrandHallT554NativeReviewCoverageSegmentResumeCommittedEventV2Schema,
     GrandHallT554NativeReviewCoverageSegmentResumeRecoveryAbortedEventV2Schema,
     GrandHallT554NativeReviewMaskEditEpochResumedEventV2Schema,
+    GrandHallT554NativeReviewSourceDecisionRecordedEventV2Schema,
+    GrandHallT554NativeReviewHumanAttestationRecordedEventV2Schema,
     GrandHallT554NativeReviewSourceAbandonedEventV2Schema,
     GrandHallT554NativeReviewSessionStoppedEventV2Schema,
     GrandHallT554NativeReviewSessionPoisonedEventV2Schema,
@@ -2606,43 +2966,89 @@ const GrandHallT554NativeReviewScopedEventV2BaseSchema = z.union([
     .strict(),
 ]);
 
-export const GrandHallT554NativeReviewScopedEventV2Schema =
-  GrandHallT554NativeReviewScopedEventV2BaseSchema.superRefine(
-    (record, context) => {
-      const { event, scope } = record;
-      if (scope.kind === "session") {
-        if (event.eventType === "session.created.v2") {
-          if (event.payload.sessionIdSha256 !== scope.sessionIdSha256) {
-            addIssue(
-              context,
-              ["event", "payload", "sessionIdSha256"],
-              "created session must match the journal session identity",
-            );
-          }
-          if (
-            !sameImplementationBinding(
-              event.payload.implementationManifest,
-              scope.implementationManifest,
-            )
-          ) {
-            addIssue(
-              context,
-              ["event", "payload", "implementationManifest"],
-              "created session must match the scoped implementation manifest",
-            );
-          }
-          if (!sameRegistryBinding(event.payload.registry, scope.registry)) {
-            addIssue(
-              context,
-              ["event", "payload", "registry"],
-              "created session must match the scoped registry",
-            );
-          }
-        }
-        return;
-      }
+type GrandHallT554NativeReviewScopedEventV2Base = z.infer<
+  typeof GrandHallT554NativeReviewScopedEventV2BaseSchema
+>;
+type GrandHallT554NativeReviewScopedEventV2BaseInput = z.input<
+  typeof GrandHallT554NativeReviewScopedEventV2BaseSchema
+>;
 
-      if (scope.kind === "source") {
+export const GrandHallT554NativeReviewScopedEventV2Schema: z.ZodType<
+  GrandHallT554NativeReviewScopedEventV2Base,
+  z.ZodTypeDef,
+  GrandHallT554NativeReviewScopedEventV2BaseInput
+> = GrandHallT554NativeReviewScopedEventV2BaseSchema.superRefine(
+  (record, context) => {
+    const { event, scope } = record;
+    if (scope.kind === "session") {
+      if (event.eventType === "session.created.v2") {
+        if (event.payload.sessionIdSha256 !== scope.sessionIdSha256) {
+          addIssue(
+            context,
+            ["event", "payload", "sessionIdSha256"],
+            "created session must match the journal session identity",
+          );
+        }
+        if (
+          !sameImplementationBinding(
+            event.payload.implementationManifest,
+            scope.implementationManifest,
+          )
+        ) {
+          addIssue(
+            context,
+            ["event", "payload", "implementationManifest"],
+            "created session must match the scoped implementation manifest",
+          );
+        }
+        if (!sameRegistryBinding(event.payload.registry, scope.registry)) {
+          addIssue(
+            context,
+            ["event", "payload", "registry"],
+            "created session must match the scoped registry",
+          );
+        }
+      } else if (event.eventType === "source.decision-recorded.v2") {
+        if (event.payload.sessionIdSha256 !== scope.sessionIdSha256) {
+          addIssue(
+            context,
+            ["event", "payload", "sessionIdSha256"],
+            "source decision must match the journal session identity",
+          );
+        }
+        if (!sameRegistryBinding(event.payload.registry, scope.registry)) {
+          addIssue(
+            context,
+            ["event", "payload", "registry"],
+            "source decision must match the scoped registry",
+          );
+        }
+        if (
+          !sameImplementationBinding(
+            event.payload.implementationManifest,
+            scope.implementationManifest,
+          )
+        ) {
+          addIssue(
+            context,
+            ["event", "payload", "implementationManifest"],
+            "source decision must match the scoped implementation manifest",
+          );
+        }
+      } else if (
+        event.eventType === "source.human-attestation-recorded.v2" &&
+        event.payload.sessionIdSha256 !== scope.sessionIdSha256
+      ) {
+        addIssue(
+          context,
+          ["event", "payload", "sessionIdSha256"],
+          "human attestation must match the journal session identity",
+        );
+      }
+      return;
+    }
+
+    if (scope.kind === "source") {
         if (event.eventType === "source.review-started.v2") {
           if (
             event.payload.browserEpochNonceSha256 !==

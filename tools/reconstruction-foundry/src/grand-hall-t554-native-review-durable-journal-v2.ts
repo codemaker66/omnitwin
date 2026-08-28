@@ -233,11 +233,36 @@ function leafNameFor(workspaceRoot: string): string {
   return leafName;
 }
 
+function declaredCoordinatorEventTime(
+  event: GrandHallT554NativeReviewDomainEventV2,
+): string | undefined {
+  switch (event.eventType) {
+    case "source.decision-recorded.v2":
+      return event.payload.decidedAtUtc;
+    case "source.human-attestation-recorded.v2":
+      return event.payload.attestedAtUtc;
+    default:
+      return undefined;
+  }
+}
+
 async function assertSemanticReplay(
   replay: GrandHallT554NativeReviewDurableJournalReplayV2,
 ): Promise<void> {
   if (replay.events.length === 0) return;
   if (replay.scope.kind === "session") {
+    for (const record of replay.records) {
+      const declaredAtUtc = declaredCoordinatorEventTime(record.event);
+      if (
+        declaredAtUtc !== undefined &&
+        Date.parse(record.recordedAtUtc) < Date.parse(declaredAtUtc)
+      ) {
+        throw new GrandHallT554NativeReviewDurableJournalV2Error(
+          "BINDING_MISMATCH",
+          "A durable coordinator record precedes its declared decision or attestation time.",
+        );
+      }
+    }
     replayGrandHallT554NativeReviewCoordinatorV2({
       scope: replay.scope,
       events: replay.events,
@@ -546,10 +571,16 @@ class DurableJournalV2 implements GrandHallT554NativeReviewDurableJournalV2 {
       schemaVersion: DURABLE_SCOPED_EVENT_SCHEMA_VERSION,
       scopedEvent: scopedResult.data,
     });
+    const minimumRecordedAtUtc = declaredCoordinatorEventTime(
+      scopedResult.data.event,
+    );
     const advanced = await this.journal.append({
       expectedRevision: input.expectedRevision,
       eventType: scopedResult.data.event.eventType,
       payload,
+      ...(minimumRecordedAtUtc === undefined
+        ? {}
+        : { minimumRecordedAtUtc }),
     });
     return normalizeReplay(
       this.scope,

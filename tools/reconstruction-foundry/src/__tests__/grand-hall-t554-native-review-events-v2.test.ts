@@ -7,8 +7,11 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+  GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
   GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
   GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+  computeGrandHallT554NativeReviewHumanAttestationV2Sha256,
+  computeGrandHallT554NativeReviewSourceDecisionV2Sha256,
   GrandHallT554NativeReviewCoverageCarryStateV2Schema,
   GrandHallT554NativeReviewCoverageObservedPayloadV2Schema,
   GrandHallT554NativeReviewDomainEventV2Schema,
@@ -345,6 +348,115 @@ function completedSourceCoverage() {
     completedTileBitsetHex: "ff".repeat(64),
     completedTileCount: 512 as const,
     cumulativeDwellStateSha256: digest("completed-source-dwell"),
+  };
+}
+
+function completedMaskCoverage() {
+  return {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-completed-mask-coverage.v2" as const,
+    maskReviewSubjectSha256: digest("mask-review-subject"),
+    maskStateSha256: editedMaskState().maskStateSha256,
+    frozenBindingSha256: digest("frozen-binding"),
+    maskJournal: maskCheckpoint(),
+    completedTileBitsetHex: "ff".repeat(64),
+    completedTileCount: 512 as const,
+    cumulativeDwellStateSha256: digest("completed-mask-dwell"),
+  };
+}
+
+function excludeDecisionPayload() {
+  const material = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+    operationIdSha256: digest("exclude-decision-operation"),
+    browserEpochNonceSha256: digest("browser-epoch"),
+    previousWorkspaceRevision: 1,
+    resultingWorkspaceRevision: 2,
+    sessionIdSha256: digest("session-id"),
+    registry: registry(),
+    implementationManifest: implementation(),
+    authorityBoundary: authority(),
+    sourceCustody: sourceCustody(),
+    previousRenderGeneration: 1,
+    resultingRenderGeneration: 2,
+    completedSourceCoverage: completedSourceCoverage(),
+    note: "Native review found no observed Grand Hall pixels.",
+    decidedAtUtc: CANONICAL_TIME,
+    result: "EXCLUDE" as const,
+    classification: "no_observed_grand_hall_pixels" as const,
+    maskState: null,
+    maskReviewSubjectSha256: null,
+    frozenBindingSha256: null,
+    frozenBinding: null,
+    completedMaskCoverage: null,
+  };
+  return {
+    ...material,
+    decisionSha256:
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(material),
+  };
+}
+
+function includeDecisionPayload() {
+  const material = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+    operationIdSha256: digest("include-decision-operation"),
+    browserEpochNonceSha256: digest("browser-epoch"),
+    previousWorkspaceRevision: 4,
+    resultingWorkspaceRevision: 5,
+    sessionIdSha256: digest("session-id"),
+    registry: registry(),
+    implementationManifest: implementation(),
+    authorityBoundary: authority(),
+    sourceCustody: sourceCustody(),
+    previousRenderGeneration: 4,
+    resultingRenderGeneration: 5,
+    completedSourceCoverage: completedSourceCoverage(),
+    note: "Native review supports Grand Hall pixels within the bound mask.",
+    decidedAtUtc: CANONICAL_TIME,
+    result: "INCLUDE" as const,
+    classification: "grand_hall_core" as const,
+    maskState: editedMaskState(),
+    maskReviewSubjectSha256: digest("mask-review-subject"),
+    frozenBindingSha256: digest("frozen-binding"),
+    frozenBinding: frozenBinding(),
+    completedMaskCoverage: completedMaskCoverage(),
+  };
+  return {
+    ...material,
+    decisionSha256:
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(material),
+  };
+}
+
+function humanAttestationPayload(decisionSha256: `sha256:${string}`) {
+  const material = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-human-attestation-recorded.v2" as const,
+    operationIdSha256: digest("human-attestation-operation"),
+    browserEpochNonceSha256: digest("browser-epoch"),
+    previousWorkspaceRevision: 5,
+    resultingWorkspaceRevision: 6,
+    sessionIdSha256: digest("session-id"),
+    sourceReviewSubjectSha256: sourceCustody().sourceReviewSubjectSha256,
+    decisionSha256,
+    reviewerId: "authorized-reviewer-1",
+    reviewerRole: "venue_owner_or_authorized_domain_reviewer" as const,
+    knowledgeBasis: [
+      "Reviewed the exact native source and its exact frozen mask.",
+    ],
+    attestedAtUtc: CANONICAL_TIME,
+    statement: GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
+    humanPresenceProof: "not_cryptographic" as const,
+    agentDecisionAuthority: "none" as const,
+    authority: "none" as const,
+  };
+  return {
+    ...material,
+    attestationSha256:
+      computeGrandHallT554NativeReviewHumanAttestationV2Sha256(material),
   };
 }
 
@@ -730,8 +842,7 @@ function validEvents(): readonly unknown[] {
       previousVisibleRenderGeneration: 1,
       previousMaximumAllocatedRenderGeneration: 1,
       allocatedRenderGeneration: 2,
-      newSourceEpochNonceSha256:
-        resumedSourceCustody.sourceEpochNonceSha256,
+      newSourceEpochNonceSha256: resumedSourceCustody.sourceEpochNonceSha256,
       newCoverageSegmentIdSha256: digest("source-segment-2"),
       childJournalLeafName: "source-child-0002",
       priorChildJournal: sourceCheckpoint(),
@@ -1456,8 +1567,7 @@ describe("Grand Hall T-554 native-review v2 event schemas", () => {
           sourceCustody: {
             ...editResume.payload.sourceCustody,
             sourceEpochBindingSha256:
-              editResume.payload.sourceCustodyBefore
-                .sourceEpochBindingSha256,
+              editResume.payload.sourceCustodyBefore.sourceEpochBindingSha256,
           },
         }),
       ).success,
@@ -1543,6 +1653,142 @@ describe("Grand Hall T-554 native-review v2 event schemas", () => {
             "venviewer.grand-hall-t554-native-review-mask-edited.v2",
           includedPixelCount: 1,
           maskSha256: digest("browser-claim"),
+        }),
+      ).success,
+    ).toBe(false);
+  });
+
+  it("accepts only exact authority-none INCLUDE, EXCLUDE, and human-attestation records", () => {
+    const exclude = event(
+      "source.decision-recorded.v2",
+      excludeDecisionPayload(),
+    );
+    const include = event(
+      "source.decision-recorded.v2",
+      includeDecisionPayload(),
+    );
+    const attestation = event(
+      "source.human-attestation-recorded.v2",
+      humanAttestationPayload(includeDecisionPayload().decisionSha256),
+    );
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(exclude).success,
+    ).toBe(true);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(include).success,
+    ).toBe(true);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(attestation)
+        .success,
+    ).toBe(true);
+
+    const sessionScope = validScopes()[0];
+    const sourceScope = validScopes()[1];
+    expect(
+      GrandHallT554NativeReviewScopedEventV2Schema.safeParse({
+        scope: sessionScope,
+        event: include,
+      }).success,
+    ).toBe(true);
+    expect(
+      GrandHallT554NativeReviewScopedEventV2Schema.safeParse({
+        scope: sourceScope,
+        event: include,
+      }).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewScopedEventV2Schema.safeParse({
+        scope: sessionScope,
+        event: attestation,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects mixed decision shapes, forged completion, digest drift, and authority escalation", () => {
+    const exclude = excludeDecisionPayload();
+    const include = includeDecisionPayload();
+    const attestation = humanAttestationPayload(include.decisionSha256);
+
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.decision-recorded.v2", {
+          ...exclude,
+          result: "UNSURE",
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.decision-recorded.v2", {
+          ...exclude,
+          maskState: editedMaskState(),
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.decision-recorded.v2", {
+          ...include,
+          completedMaskCoverage: {
+            ...include.completedMaskCoverage,
+            completedTileBitsetHex: EMPTY_BITMAP,
+          },
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.decision-recorded.v2", {
+          ...include,
+          note: "Changed after digesting.",
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.decision-recorded.v2", {
+          ...include,
+          resultingRenderGeneration: include.previousRenderGeneration,
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.human-attestation-recorded.v2", {
+          ...attestation,
+          reviewerRole: "agent",
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.human-attestation-recorded.v2", {
+          ...attestation,
+          knowledgeBasis: [],
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.human-attestation-recorded.v2", {
+          ...attestation,
+          humanPresenceProof: "cryptographically_verified",
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.human-attestation-recorded.v2", {
+          ...attestation,
+          agentDecisionAuthority: "accepted",
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("source.human-attestation-recorded.v2", {
+          ...attestation,
+          localSourcePath: "F:/private/source.jpg",
         }),
       ).success,
     ).toBe(false);

@@ -105,3 +105,63 @@ runtime admission.
 
 No branch was pushed, no provider was configured, no data was uploaded, no
 deployment was made, and no generated architectural content was used.
+
+## Post-audit continuation: decision and attestation evidence
+
+Date: 2026-08-28
+
+Subsequent v2 slices delivered the deterministic crash replay and compiled-pack
+verification gates described above. This continuation adds the next local,
+authority-none evidence boundary; it does not revise the 2026-08-27 audit's
+historical claims about the code at that earlier checkpoint.
+
+The coordinator journal now accepts two strict events:
+
+- `source.decision-recorded.v2`, limited to `INCLUDE` or `EXCLUDE` and bound to
+  the exact session, registry, implementation, source custody, workspace CAS,
+  next global render-generation barrier, canonical timestamp, and a
+  domain-separated self-digest;
+- `source.human-attestation-recorded.v2`, bound to that exact decision and
+  source, with a fixed statement, canonical timestamp, domain-separated
+  self-digest, `humanPresenceProof: not_cryptographic`,
+  `agentDecisionAuthority: none`, and `authority: none`.
+
+An `EXCLUDE` decision requires a fully completed exact native-source child
+prefix. An `INCLUDE` decision additionally requires a fully completed exact
+native-mask child prefix bound to the current immutable frozen mask. The session
+store derives those historical durable prefixes, strictly replays their actual
+events, verifies full 512-tile coverage and cumulative dwell state, and compares
+the resulting proof to the coordinator claim. Therefore a literal full bitmap,
+count, or self-consistent digest cannot substitute for the underlying durable
+review history. Decision and attestation records remain in immutable replay
+history after permitted source abandonment; no seal or accepted artifact is
+implied.
+
+The durable journal now also requires each decision/attestation record time to
+be at or after the event's declared time, both on append and reopen. A declared
+reviewer identifier remains an assertion only: this slice contains no browser
+controller, authenticated reviewer boundary, cryptographic human-presence
+proof, signature, accepted-chain seal, or production factory.
+
+Focused verification passed 4 files and 76 tests, including real 516-record
+source and mask child prefixes, incomplete-prefix attacks, impossible state
+transitions, stale barriers, digest drift, future-time append rejection, and a
+low-level future-time injection rejected on reopen. Strict TypeScript,
+affected-file ESLint, the package build, and `git diff --check` also passed.
+
+No real decision or attestation was recorded. All 148 panorama decisions remain
+pending, T-554 remains blocked, and no branch push, provider operation,
+credential use, upload, generation, staging, deployment, publication, or
+production change occurred.
+
+Two continuation obligations remain explicit:
+
+- before any accepted-chain or sealing layer exists, it must either reject
+  multiple decisions for the same source subject or require an explicit,
+  digest-bound supersession relation; the current authority-none history may
+  retain repeated reviews after abandonment but cannot choose between them;
+- add full disk-reopen composition cases for both INCLUDE and EXCLUDE paths,
+  joining a coordinator journal, real complete source/mask children, decision,
+  authority-none attestation, abandonment, and the final machine-verification
+  digest. The individual layers and real child-prefix proofs are covered now;
+  this end-to-end composition remains a later hardening gate.

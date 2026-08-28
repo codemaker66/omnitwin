@@ -30,6 +30,7 @@ import {
   GrandHallT554NativeReviewSessionScopeV2Schema,
   type GrandHallT554NativeReviewCoordinatorEventV2,
   type GrandHallT554NativeReviewFrozenMaskBindingV2,
+  type GrandHallT554NativeReviewMaskChildCheckpointV2,
   type GrandHallT554NativeReviewMaskScopeV2,
   type GrandHallT554NativeReviewPreparedMaskBindingV2,
   type GrandHallT554NativeReviewSessionScopeV2,
@@ -1190,23 +1191,34 @@ async function verifyCompletedSourceCoverageReferences(
   );
   const verified: CompletedSourceCoverageVerification[] = [];
   for (const [coordinatorEventIndex, event] of events.entries()) {
-    if (event.eventType !== "mask.workflow-started.v2") continue;
+    if (
+      event.eventType !== "mask.workflow-started.v2" &&
+      event.eventType !== "source.decision-recorded.v2"
+    ) {
+      continue;
+    }
     const claim = event.payload.completedSourceCoverage;
     const evidence = evidenceByLeaf.get(claim.sourceJournal.leafName);
     if (evidence === undefined || evidence.kind !== "source") {
       throw fail(
         "CHILD_MISMATCH",
-        "Mask workflow completion references a missing or non-source child.",
+        "Completed-source claim references a missing or non-source child.",
       );
     }
-    const prefix = await deriveGrandHallT554NativeReviewVerifiedDurableChildPrefixEvidenceV2({
-      evidence,
-      revision: claim.sourceJournal.revision,
-    });
-    if (prefix.kind !== "source" || !canonicalEqual(prefix.checkpoint, claim.sourceJournal)) {
+    const prefix =
+      await deriveGrandHallT554NativeReviewVerifiedDurableChildPrefixEvidenceV2(
+        {
+          evidence,
+          revision: claim.sourceJournal.revision,
+        },
+      );
+    if (
+      prefix.kind !== "source" ||
+      !canonicalEqual(prefix.checkpoint, claim.sourceJournal)
+    ) {
       throw fail(
         "CHILD_MISMATCH",
-        "Mask workflow completion checkpoint is not the exact source-child prefix.",
+        "Completed-source checkpoint is not the exact source-child prefix.",
       );
     }
     const replay = replayGrandHallT554NativeReviewSourceChildV2(prefix);
@@ -1220,16 +1232,24 @@ async function verifyCompletedSourceCoverageReferences(
       completedTileCount: coverage.completedTileCount,
       cumulativeDwellStateSha256: coverage.cumulativeDwellStateSha256,
     };
-    const carry = createGrandHallT554NativeReviewCoverageCarryStateV2(prefix);
     if (
       !coverage.complete ||
-      coverage.completedTileCount !== GRAND_HALL_T554_NATIVE_TILE_COUNT ||
+      coverage.completedTileCount !== GRAND_HALL_T554_NATIVE_TILE_COUNT
+    ) {
+      throw fail(
+        "CHILD_MISMATCH",
+        "Completed-source claim references a child prefix without full native coverage.",
+      );
+    }
+    const carry = createGrandHallT554NativeReviewCoverageCarryStateV2(prefix);
+    if (
       !canonicalEqual(actualClaim, claim) ||
       carry.kind !== "source" ||
       carry.cappedDwellMsUint16LeBase64url !==
         coverage.cappedDwellMsUint16LeBase64url ||
       carry.cappedDwellBytesSha256 !== coverage.cappedDwellBytesSha256 ||
-      carry.cumulativeDwellStateSha256 !== coverage.cumulativeDwellStateSha256 ||
+      carry.cumulativeDwellStateSha256 !==
+        coverage.cumulativeDwellStateSha256 ||
       !stableCustody(replay.scope.sourceCustody, event.payload.sourceCustody) ||
       replay.scope.sessionIdSha256 !== session.sessionIdSha256 ||
       !canonicalEqual(replay.scope.registry, session.registry) ||
@@ -1238,11 +1258,14 @@ async function verifyCompletedSourceCoverageReferences(
         session.implementationManifest,
       ) ||
       replay.scope.sourceCustody.sourceReviewSubjectSha256 !==
-        claim.sourceReviewSubjectSha256
+        claim.sourceReviewSubjectSha256 ||
+      (event.eventType === "source.decision-recorded.v2" &&
+        Date.parse(event.payload.decidedAtUtc) <
+          Date.parse(prefix.finalDurableRecordedAtUtc))
     ) {
       throw fail(
         "CHILD_MISMATCH",
-        "Mask workflow completed-source proof differs from exact child coverage replay.",
+        "Completed-source proof differs from exact durable child coverage replay.",
       );
     }
     verified.push({
@@ -1257,6 +1280,136 @@ async function verifyCompletedSourceCoverageReferences(
             sourceVerification: replay.scope.sourceCustody.sourceVerification,
             sourceReviewSubjectSha256:
               replay.scope.sourceCustody.sourceReviewSubjectSha256,
+          },
+          registry: replay.scope.registry,
+          implementationManifest: replay.scope.implementationManifest,
+        },
+      ),
+    });
+  }
+  return deepFreeze(verified);
+}
+
+interface CompletedMaskCoverageVerification {
+  readonly coordinatorEventIndex: number;
+  readonly maskJournal: GrandHallT554NativeReviewMaskChildCheckpointV2;
+  readonly coverageReplaySha256: Sha256;
+}
+
+async function verifyCompletedMaskCoverageReferences(
+  session: GrandHallT554NativeReviewSessionScopeV2,
+  events: readonly GrandHallT554NativeReviewCoordinatorEventV2[],
+  children: readonly GrandHallT554NativeReviewSessionStoreChildV2[],
+): Promise<readonly CompletedMaskCoverageVerification[]> {
+  const evidenceByLeaf = new Map(
+    children.map((child) => [child.leafName, child.evidence]),
+  );
+  const verified: CompletedMaskCoverageVerification[] = [];
+  for (const [coordinatorEventIndex, event] of events.entries()) {
+    if (
+      event.eventType !== "source.decision-recorded.v2" ||
+      event.payload.result !== "INCLUDE"
+    ) {
+      continue;
+    }
+    const claim = event.payload.completedMaskCoverage;
+    const evidence = evidenceByLeaf.get(claim.maskJournal.leafName);
+    if (evidence === undefined || evidence.kind !== "mask") {
+      throw fail(
+        "CHILD_MISMATCH",
+        "Completed-mask claim references a missing or non-mask child.",
+      );
+    }
+    const prefix =
+      await deriveGrandHallT554NativeReviewVerifiedDurableChildPrefixEvidenceV2(
+        {
+          evidence,
+          revision: claim.maskJournal.revision,
+        },
+      );
+    if (
+      prefix.kind !== "mask" ||
+      !canonicalEqual(prefix.checkpoint, claim.maskJournal)
+    ) {
+      throw fail(
+        "CHILD_MISMATCH",
+        "Completed-mask checkpoint is not the exact mask-child prefix.",
+      );
+    }
+    const replay = replayGrandHallT554NativeReviewMaskChildV2(prefix);
+    const coverage = replay.coverage;
+    const actualClaim = {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-completed-mask-coverage.v2" as const,
+      maskReviewSubjectSha256: replay.scope.maskReviewSubjectSha256,
+      maskStateSha256: replay.scope.maskStateSha256,
+      frozenBindingSha256: replay.scope.frozenBindingSha256,
+      maskJournal: prefix.checkpoint,
+      completedTileBitsetHex: coverage.completedTileBitsetHex,
+      completedTileCount: coverage.completedTileCount,
+      cumulativeDwellStateSha256: coverage.cumulativeDwellStateSha256,
+    };
+    if (
+      !coverage.complete ||
+      coverage.completedTileCount !== GRAND_HALL_T554_NATIVE_TILE_COUNT
+    ) {
+      throw fail(
+        "CHILD_MISMATCH",
+        "Completed-mask claim references a child prefix without full native coverage.",
+      );
+    }
+    const carry = createGrandHallT554NativeReviewCoverageCarryStateV2(prefix);
+    if (
+      !canonicalEqual(actualClaim, claim) ||
+      carry.kind !== "mask" ||
+      carry.cappedDwellMsUint16LeBase64url !==
+        coverage.cappedDwellMsUint16LeBase64url ||
+      carry.cappedDwellBytesSha256 !== coverage.cappedDwellBytesSha256 ||
+      carry.cumulativeDwellStateSha256 !==
+        coverage.cumulativeDwellStateSha256 ||
+      !canonicalEqual(
+        replay.scope.sourceCustody,
+        event.payload.sourceCustody,
+      ) ||
+      replay.scope.sessionIdSha256 !== session.sessionIdSha256 ||
+      !canonicalEqual(replay.scope.registry, session.registry) ||
+      !canonicalEqual(
+        replay.scope.implementationManifest,
+        session.implementationManifest,
+      ) ||
+      replay.scope.maskReviewSubjectSha256 !==
+        event.payload.maskReviewSubjectSha256 ||
+      replay.scope.maskStateSha256 !==
+        event.payload.maskState.maskStateSha256 ||
+      replay.scope.frozenBindingSha256 !== event.payload.frozenBindingSha256 ||
+      !canonicalEqual(
+        replay.scope.frozenBinding,
+        event.payload.frozenBinding,
+      ) ||
+      Date.parse(event.payload.decidedAtUtc) <
+        Date.parse(prefix.finalDurableRecordedAtUtc)
+    ) {
+      throw fail(
+        "CHILD_MISMATCH",
+        "Completed-mask proof differs from exact durable child coverage replay.",
+      );
+    }
+    verified.push({
+      coordinatorEventIndex,
+      maskJournal: prefix.checkpoint,
+      coverageReplaySha256: canonicalDigest(
+        "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_COMPLETED_MASK_COVERAGE_REPLAY_V2",
+        {
+          coverage,
+          stableMask: {
+            source: replay.scope.sourceCustody.source,
+            sourceVerification: replay.scope.sourceCustody.sourceVerification,
+            sourceReviewSubjectSha256:
+              replay.scope.sourceCustody.sourceReviewSubjectSha256,
+            maskReviewSubjectSha256: replay.scope.maskReviewSubjectSha256,
+            maskStateSha256: replay.scope.maskStateSha256,
+            frozenBindingSha256: replay.scope.frozenBindingSha256,
+            frozenBinding: replay.scope.frozenBinding,
           },
           registry: replay.scope.registry,
           implementationManifest: replay.scope.implementationManifest,
@@ -1647,6 +1800,7 @@ function verificationAttestationSha256(input: {
   readonly coordinator: GrandHallT554NativeReviewCoordinatorReplayV2;
   readonly children: readonly GrandHallT554NativeReviewSessionStoreChildV2[];
   readonly completedSourceCoverage: readonly CompletedSourceCoverageVerification[];
+  readonly completedMaskCoverage: readonly CompletedMaskCoverageVerification[];
   readonly maskState: MaskStateVerification;
   readonly maskEvidence: readonly MaskEvidenceVerification[];
 }): Sha256 {
@@ -1665,6 +1819,7 @@ function verificationAttestationSha256(input: {
       replay: replayChildForAttestation(child),
     })),
     completedSourceCoverage: input.completedSourceCoverage,
+    completedMaskCoverage: input.completedMaskCoverage,
     maskWorkflows: input.maskState.workflows.map((workflow) => ({
       workflowEventIndex: workflow.workflowEventIndex,
       sourceReviewSubjectSha256: workflow.sourceReviewSubjectSha256,
@@ -1745,10 +1900,29 @@ async function openSessionStore(input: {
         children,
       );
     } catch (error) {
-      if (error instanceof GrandHallT554NativeReviewSessionStoreV2Error) throw error;
+      if (error instanceof GrandHallT554NativeReviewSessionStoreV2Error)
+        throw error;
       throw fail(
         "CHILD_MISMATCH",
-        "Mask workflow source completion failed exact historical child replay.",
+        "Completed source coverage failed exact historical child replay.",
+        error,
+      );
+    }
+    await assertOwner();
+    let completedMaskCoverage: readonly CompletedMaskCoverageVerification[];
+    try {
+      completedMaskCoverage = await verifyCompletedMaskCoverageReferences(
+        descriptor.sessionScope,
+        events,
+        children,
+      );
+    } catch (error) {
+      if (error instanceof GrandHallT554NativeReviewSessionStoreV2Error) {
+        throw error;
+      }
+      throw fail(
+        "CHILD_MISMATCH",
+        "Completed mask coverage failed exact historical child replay.",
         error,
       );
     }
@@ -1757,8 +1931,13 @@ async function openSessionStore(input: {
     try {
       maskState = verifyMaskState(descriptor.sessionScope, events);
     } catch (error) {
-      if (error instanceof GrandHallT554NativeReviewSessionStoreV2Error) throw error;
-      throw fail("MASK_STATE_MISMATCH", "Coordinator mask state differs from exact deterministic raster replay.", error);
+      if (error instanceof GrandHallT554NativeReviewSessionStoreV2Error)
+        throw error;
+      throw fail(
+        "MASK_STATE_MISMATCH",
+        "Coordinator mask state differs from exact deterministic raster replay.",
+        error,
+      );
     }
     await assertOwner();
     const maskEvidence = await verifyMaskEvidenceNamespace(
@@ -1800,6 +1979,7 @@ async function openSessionStore(input: {
       coordinator,
       children,
       completedSourceCoverage,
+      completedMaskCoverage,
       maskState,
       maskEvidence,
     });
@@ -1838,6 +2018,8 @@ export const __testOnlyGrandHallT554NativeReviewSessionStoreV2 = /* @__PURE__ */
   assertMaskPublicationNames,
   assertBoundedRelativePath,
   buildMaskPublicationPlan,
+  verifyCompletedMaskCoverageReferences,
+  verifyCompletedSourceCoverageReferences,
   safeChildLeaf,
   rootCapacityInvariant: () => Object.freeze({
     reviewSourceCount: REVIEW_SOURCE_COUNT,

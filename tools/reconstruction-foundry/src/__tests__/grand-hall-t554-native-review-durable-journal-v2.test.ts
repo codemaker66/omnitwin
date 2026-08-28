@@ -22,8 +22,11 @@ import {
   openGrandHallT554NativeReviewVerifiedDurableChildEvidenceV2,
 } from "../grand-hall-t554-native-review-durable-journal-v2.js";
 import {
+  GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
   GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
   GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+  computeGrandHallT554NativeReviewHumanAttestationV2Sha256,
+  computeGrandHallT554NativeReviewSourceDecisionV2Sha256,
   type GrandHallT554NativeReviewCoverageObservedPayloadV2,
   type GrandHallT554NativeReviewFrozenMaskBindingV2,
   type GrandHallT554NativeReviewMaskScopeV2,
@@ -429,6 +432,166 @@ function sessionCreated(scope: GrandHallT554NativeReviewSessionScopeV2) {
   };
 }
 
+function coordinatorSourceCheckpoint(revision: number) {
+  return {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-child-checkpoint.v2" as const,
+    kind: "source" as const,
+    leafName: "source-child-0001",
+    scopeSha256: digest("coordinator-source-scope"),
+    scopeFileSha256: digest("coordinator-source-scope-file"),
+    revision,
+    headEventSha256: digest(`coordinator-source-head-${String(revision)}`),
+    journalInventorySha256: digest(
+      `coordinator-source-inventory-${String(revision)}`,
+    ),
+  };
+}
+
+function coordinatorDecisionSequence(options?: {
+  readonly decidedAtUtc?: string;
+  readonly attestedAtUtc?: string;
+}) {
+  const scope = sessionScope();
+  const sourceCustody = custody();
+  const browserEpochNonceSha256 = digest("coordinator-browser");
+  const coverageSegmentIdSha256 = digest("coordinator-source-segment");
+  const operationIdSha256 = digest("coordinator-source-operation");
+  const initialSourceJournal = coordinatorSourceCheckpoint(1);
+  const completedSourceJournal = coordinatorSourceCheckpoint(4);
+  const decidedAtUtc = options?.decidedAtUtc ?? "2000-01-01T00:00:00.100Z";
+  const attestedAtUtc = options?.attestedAtUtc ?? "2000-01-01T00:00:00.101Z";
+  const prefix = [
+    sessionCreated(scope),
+    {
+      schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
+      eventType: "session.browser-epoch-started.v2" as const,
+      payload: {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-browser-epoch-started.v2" as const,
+        browserEpochNumber: 1,
+        browserEpochNonceSha256,
+        previousBrowserEpochNonceSha256: null,
+        reason: "session_created" as const,
+        workspaceRevision: 0,
+        maximumAllocatedRenderGeneration: 0,
+        startedAtUtc: "2000-01-01T00:00:00.000Z",
+      },
+    },
+    {
+      schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
+      eventType: "source.selection-intended.v2" as const,
+      payload: {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-source-selection-intended.v2" as const,
+        operationIdSha256,
+        browserEpochNonceSha256,
+        expectedWorkspaceRevision: 0,
+        source: sourceCustody.source,
+        sourceEpochNonceSha256: sourceCustody.sourceEpochNonceSha256,
+        coverageSegmentIdSha256,
+        previousRenderGeneration: 0,
+        allocatedRenderGeneration: 1,
+        childJournalLeafName: initialSourceJournal.leafName,
+        priorActiveSourceJournal: null,
+      },
+    },
+    {
+      schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
+      eventType: "source.selection-committed.v2" as const,
+      payload: {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-source-selection-committed.v2" as const,
+        operationIdSha256,
+        browserEpochNonceSha256,
+        coverageSegmentIdSha256,
+        previousWorkspaceRevision: 0,
+        resultingWorkspaceRevision: 1,
+        renderGeneration: 1,
+        sourceCustody,
+        sourceJournal: initialSourceJournal,
+      },
+    },
+  ];
+  const decisionMaterial = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+    operationIdSha256: digest("coordinator-decision-operation"),
+    browserEpochNonceSha256,
+    previousWorkspaceRevision: 1,
+    resultingWorkspaceRevision: 2,
+    sessionIdSha256: scope.sessionIdSha256,
+    registry: scope.registry,
+    implementationManifest: scope.implementationManifest,
+    authorityBoundary: scope.authorityBoundary,
+    sourceCustody,
+    previousRenderGeneration: 1,
+    resultingRenderGeneration: 2,
+    completedSourceCoverage: {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-completed-source-coverage.v2" as const,
+      sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+      sourceJournal: completedSourceJournal,
+      completedTileBitsetHex: "ff".repeat(64),
+      completedTileCount: 512 as const,
+      cumulativeDwellStateSha256: digest("coordinator-completed-dwell"),
+    },
+    note: "No observed Grand Hall pixels were found in this exact source.",
+    decidedAtUtc,
+    result: "EXCLUDE" as const,
+    classification: "no_observed_grand_hall_pixels" as const,
+    maskState: null,
+    maskReviewSubjectSha256: null,
+    frozenBindingSha256: null,
+    frozenBinding: null,
+    completedMaskCoverage: null,
+  };
+  const decision = {
+    schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
+    eventType: "source.decision-recorded.v2" as const,
+    payload: {
+      ...decisionMaterial,
+      decisionSha256:
+        computeGrandHallT554NativeReviewSourceDecisionV2Sha256(
+          decisionMaterial,
+        ),
+    },
+  };
+  const attestationMaterial = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-human-attestation-recorded.v2" as const,
+    operationIdSha256: digest("coordinator-attestation-operation"),
+    browserEpochNonceSha256,
+    previousWorkspaceRevision: 2,
+    resultingWorkspaceRevision: 3,
+    sessionIdSha256: scope.sessionIdSha256,
+    sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+    decisionSha256: decision.payload.decisionSha256,
+    reviewerId: "authorized-reviewer-1",
+    reviewerRole: "venue_owner_or_authorized_domain_reviewer" as const,
+    knowledgeBasis: [
+      "Reviewed the exact native source at the bound durable checkpoint.",
+    ],
+    attestedAtUtc,
+    statement: GRAND_HALL_T554_NATIVE_REVIEW_HUMAN_ATTESTATION_STATEMENT_V2,
+    humanPresenceProof: "not_cryptographic" as const,
+    agentDecisionAuthority: "none" as const,
+    authority: "none" as const,
+  };
+  const attestation = {
+    schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
+    eventType: "source.human-attestation-recorded.v2" as const,
+    payload: {
+      ...attestationMaterial,
+      attestationSha256:
+        computeGrandHallT554NativeReviewHumanAttestationV2Sha256(
+          attestationMaterial,
+        ),
+    },
+  };
+  return { scope, prefix, decision, attestation };
+}
+
 async function workspace(leafName: string): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), "venviewer-t554-v2-journal-"));
   temporaryParents.push(parent);
@@ -766,6 +929,157 @@ describe("Grand Hall T-554 durable journal v2 adapter", () => {
       journal.append({ expectedRevision: 1, event: sessionCreated(scope) }),
     ).rejects.toMatchObject({ code: "TRANSITION_INVALID" });
     expect((await journal.replay()).revision).toBe(1);
+  });
+
+  it("persists and reopens decision and authority-none attestation records with journal-clock bounds", async () => {
+    const root = await workspace("coordinator-decision-attestation");
+    const sequence = coordinatorDecisionSequence();
+    const journal = await createGrandHallT554NativeReviewDurableJournalV2({
+      workspaceRoot: root,
+      scope: sequence.scope,
+    });
+    let revision = 0;
+    for (const event of sequence.prefix) {
+      revision = (await journal.append({ expectedRevision: revision, event }))
+        .revision;
+    }
+    revision = (
+      await journal.append({
+        expectedRevision: revision,
+        event: sequence.decision,
+      })
+    ).revision;
+    revision = (
+      await journal.append({
+        expectedRevision: revision,
+        event: sequence.attestation,
+      })
+    ).revision;
+
+    const reopened = await openGrandHallT554NativeReviewDurableJournalV2({
+      workspaceRoot: root,
+      expectedScope: sequence.scope,
+    });
+    const replay = await reopened.replay();
+    expect(replay.revision).toBe(revision);
+    expect(replay.events.at(-2)).toEqual(sequence.decision);
+    expect(replay.events.at(-1)).toEqual(sequence.attestation);
+    expect(
+      Date.parse(replay.records.at(-2)?.recordedAtUtc ?? ""),
+    ).toBeGreaterThanOrEqual(
+      Date.parse(sequence.decision.payload.decidedAtUtc),
+    );
+    expect(
+      Date.parse(replay.records.at(-1)?.recordedAtUtc ?? ""),
+    ).toBeGreaterThanOrEqual(
+      Date.parse(sequence.attestation.payload.attestedAtUtc),
+    );
+  });
+
+  it("rejects future decision and attestation declarations before reserving durable bytes", async () => {
+    const futureDecisionRoot = await workspace("coordinator-future-decision");
+    const futureDecisionSequence = coordinatorDecisionSequence({
+      decidedAtUtc: "2999-01-01T00:00:00.000Z",
+      attestedAtUtc: "2999-01-01T00:00:00.001Z",
+    });
+    const futureDecisionJournal =
+      await createGrandHallT554NativeReviewDurableJournalV2({
+        workspaceRoot: futureDecisionRoot,
+        scope: futureDecisionSequence.scope,
+      });
+    let decisionRevision = 0;
+    for (const event of futureDecisionSequence.prefix) {
+      decisionRevision = (
+        await futureDecisionJournal.append({
+          expectedRevision: decisionRevision,
+          event,
+        })
+      ).revision;
+    }
+    await expect(
+      futureDecisionJournal.append({
+        expectedRevision: decisionRevision,
+        event: futureDecisionSequence.decision,
+      }),
+    ).rejects.toMatchObject({ code: "JOURNAL_INVALID" });
+    expect((await futureDecisionJournal.replay()).revision).toBe(
+      decisionRevision,
+    );
+
+    const futureAttestationRoot = await workspace(
+      "coordinator-future-attestation",
+    );
+    const futureAttestationSequence = coordinatorDecisionSequence({
+      attestedAtUtc: "2999-01-01T00:00:00.000Z",
+    });
+    const futureAttestationJournal =
+      await createGrandHallT554NativeReviewDurableJournalV2({
+        workspaceRoot: futureAttestationRoot,
+        scope: futureAttestationSequence.scope,
+      });
+    let attestationRevision = 0;
+    for (const event of [
+      ...futureAttestationSequence.prefix,
+      futureAttestationSequence.decision,
+    ]) {
+      attestationRevision = (
+        await futureAttestationJournal.append({
+          expectedRevision: attestationRevision,
+          event,
+        })
+      ).revision;
+    }
+    await expect(
+      futureAttestationJournal.append({
+        expectedRevision: attestationRevision,
+        event: futureAttestationSequence.attestation,
+      }),
+    ).rejects.toMatchObject({ code: "JOURNAL_INVALID" });
+    expect((await futureAttestationJournal.replay()).revision).toBe(
+      attestationRevision,
+    );
+  });
+
+  it("rejects a future decision injected through the low-level journal when reopening", async () => {
+    const root = await workspace("coordinator-low-level-future-decision");
+    const sequence = coordinatorDecisionSequence({
+      decidedAtUtc: "2999-01-01T00:00:00.000Z",
+      attestedAtUtc: "2999-01-01T00:00:00.001Z",
+    });
+    const journal = await createGrandHallT554NativeReviewDurableJournalV2({
+      workspaceRoot: root,
+      scope: sequence.scope,
+    });
+    let revision = 0;
+    for (const event of sequence.prefix) {
+      revision = (await journal.append({ expectedRevision: revision, event }))
+        .revision;
+    }
+    const lowLevel = await openGrandHallT554NativeReviewJournal({
+      workspaceRoot: root,
+      expectedScope: deriveGrandHallT554NativeReviewLowLevelScopeV2(
+        sequence.scope,
+      ),
+    });
+    await lowLevel.append({
+      expectedRevision: revision,
+      eventType: sequence.decision.eventType,
+      payload: toCanonicalJson({
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-durable-scoped-event.v2",
+        scopedEvent: { scope: sequence.scope, event: sequence.decision },
+      }),
+    });
+
+    await expect(journal.replay()).rejects.toMatchObject({
+      code: "BINDING_MISMATCH",
+    });
+    await expect(
+      openGrandHallT554NativeReviewDurableJournalV2({
+        workspaceRoot: root,
+        expectedScope: sequence.scope,
+      }),
+    ).rejects.toMatchObject({ code: "BINDING_MISMATCH" });
   });
 
   it("rejects replay-invalid child bytes written through the low-level journal API", async () => {

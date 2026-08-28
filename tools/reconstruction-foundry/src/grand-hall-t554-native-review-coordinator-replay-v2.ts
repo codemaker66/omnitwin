@@ -7,12 +7,16 @@ import {
 } from "@omnitwin/types";
 
 import {
+  computeGrandHallT554NativeReviewHumanAttestationV2Sha256,
+  computeGrandHallT554NativeReviewSourceDecisionV2Sha256,
   GrandHallT554NativeReviewCoordinatorEventV2Schema,
   GrandHallT554NativeReviewSessionScopeV2Schema,
   type GrandHallT554NativeReviewAuthorityBoundaryV2,
   type GrandHallT554NativeReviewChildCheckpointV2,
+  type GrandHallT554NativeReviewCompletedSourceCoverageV2,
   type GrandHallT554NativeReviewCoordinatorEventV2,
   type GrandHallT554NativeReviewFrozenMaskBindingV2,
+  type GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2,
   type GrandHallT554NativeReviewImplementationManifestBindingV2,
   type GrandHallT554NativeReviewMaskChildCheckpointV2,
   type GrandHallT554NativeReviewMaskCoverageCarryStateV2,
@@ -23,6 +27,7 @@ import {
   type GrandHallT554NativeReviewSourceChildCheckpointV2,
   type GrandHallT554NativeReviewSourceCoverageCarryStateV2,
   type GrandHallT554NativeReviewSourceCustodyBindingV2,
+  type GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2,
 } from "./grand-hall-t554-native-review-events-v2.js";
 
 const MAXIMUM_COORDINATOR_EVENT_COUNT = 16_384;
@@ -48,6 +53,14 @@ type CoverageSegmentResumeIntendedEvent = Extract<
   GrandHallT554NativeReviewCoordinatorEventV2,
   { readonly eventType: "coverage.segment-resume-intended.v2" }
 >;
+type SourceDecisionRecordedEvent = Extract<
+  GrandHallT554NativeReviewCoordinatorEventV2,
+  { readonly eventType: "source.decision-recorded.v2" }
+>;
+type HumanAttestationRecordedEvent = Extract<
+  GrandHallT554NativeReviewCoordinatorEventV2,
+  { readonly eventType: "source.human-attestation-recorded.v2" }
+>;
 
 export interface GrandHallT554NativeReviewCoordinatorChildObligationV2 {
   readonly kind: "source" | "mask";
@@ -72,14 +85,22 @@ export interface GrandHallT554NativeReviewCoordinatorActiveSourceV2 {
   readonly sourceCustody: GrandHallT554NativeReviewSourceCustodyBindingV2;
   readonly sourceJournal: GrandHallT554NativeReviewSourceChildCheckpointV2;
   readonly sourceCoverageSegmentIdSha256: Sha256;
-  readonly phase: "source_review" | "mask_edit" | "mask_review";
+  readonly phase:
+    | "source_review"
+    | "mask_edit"
+    | "mask_review"
+    | "decision_recorded"
+    | "human_attested";
   readonly renderGeneration: number;
+  readonly completedSourceCoverage: GrandHallT554NativeReviewCompletedSourceCoverageV2 | null;
   readonly maskState: GrandHallT554NativeReviewMaskStateEvidenceV2 | null;
   readonly maskReviewSubjectSha256: Sha256 | null;
   readonly frozenBindingSha256: Sha256 | null;
   readonly frozenBinding: GrandHallT554NativeReviewFrozenMaskBindingV2 | null;
   readonly maskJournal: GrandHallT554NativeReviewMaskChildCheckpointV2 | null;
   readonly maskCoverageSegmentIdSha256: Sha256 | null;
+  readonly decision: GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2 | null;
+  readonly humanAttestation: GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2 | null;
 }
 
 export interface GrandHallT554NativeReviewCoordinatorReplayV2 {
@@ -105,6 +126,8 @@ export interface GrandHallT554NativeReviewCoordinatorReplayV2 {
   } | null;
   readonly declaredChildLeafNames: readonly string[];
   readonly childObligations: readonly GrandHallT554NativeReviewCoordinatorChildObligationV2[];
+  readonly recordedSourceDecisions: readonly GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2[];
+  readonly recordedHumanAttestations: readonly GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2[];
 }
 
 export class GrandHallT554NativeReviewCoordinatorReplayV2Error extends Error {
@@ -128,14 +151,22 @@ interface ActiveSourceState {
   sourceCustody: GrandHallT554NativeReviewSourceCustodyBindingV2;
   sourceJournal: GrandHallT554NativeReviewSourceChildCheckpointV2;
   sourceCoverageSegmentIdSha256: Sha256;
-  phase: "source_review" | "mask_edit" | "mask_review";
+  phase:
+    | "source_review"
+    | "mask_edit"
+    | "mask_review"
+    | "decision_recorded"
+    | "human_attested";
   renderGeneration: number;
+  completedSourceCoverage: GrandHallT554NativeReviewCompletedSourceCoverageV2 | null;
   maskState: GrandHallT554NativeReviewMaskStateEvidenceV2 | null;
   maskReviewSubjectSha256: Sha256 | null;
   frozenBindingSha256: Sha256 | null;
   frozenBinding: GrandHallT554NativeReviewFrozenMaskBindingV2 | null;
   maskJournal: GrandHallT554NativeReviewMaskChildCheckpointV2 | null;
   maskCoverageSegmentIdSha256: Sha256 | null;
+  decision: GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2 | null;
+  humanAttestation: GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2 | null;
 }
 
 type PendingIntent =
@@ -188,6 +219,8 @@ interface CoordinatorState {
   readonly sourceEpochBindingHashes: Set<Sha256>;
   readonly coverageSegmentIds: Set<Sha256>;
   readonly childObligations: Map<string, MutableChildObligation>;
+  readonly recordedSourceDecisions: GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2[];
+  readonly recordedHumanAttestations: GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2[];
 }
 
 function sha256(bytes: Buffer): Sha256 {
@@ -554,6 +587,8 @@ function replaySessionCreated(
     sourceEpochBindingHashes: new Set<Sha256>(),
     coverageSegmentIds: new Set<Sha256>(),
     childObligations: new Map<string, MutableChildObligation>(),
+    recordedSourceDecisions: [],
+    recordedHumanAttestations: [],
   };
 }
 
@@ -743,12 +778,15 @@ function replaySourceCommit(
     sourceCoverageSegmentIdSha256: payload.coverageSegmentIdSha256,
     phase: "source_review",
     renderGeneration: payload.renderGeneration,
+    completedSourceCoverage: null,
     maskState: null,
     maskReviewSubjectSha256: null,
     frozenBindingSha256: null,
     frozenBinding: null,
     maskJournal: null,
     maskCoverageSegmentIdSha256: null,
+    decision: null,
+    humanAttestation: null,
   };
   state.pendingIntent = null;
   state.workspaceRevision = payload.resultingWorkspaceRevision;
@@ -857,6 +895,7 @@ function replayMaskWorkflowStarted(
     payload.completedSourceCoverage.sourceJournal,
   );
   active.sourceJournal = payload.completedSourceCoverage.sourceJournal;
+  active.completedSourceCoverage = frozenClone(payload.completedSourceCoverage);
   active.phase = "mask_edit";
   active.renderGeneration = payload.resultingRenderGeneration;
   active.maskState = payload.initialMaskState;
@@ -1643,6 +1682,212 @@ function replayMaskEditEpochResumed(
   state.eventCount += 1;
 }
 
+function replaySourceDecisionRecorded(
+  state: CoordinatorState,
+  event: SourceDecisionRecordedEvent,
+): void {
+  requireActive(state);
+  requireNoPendingIntent(state);
+  const browser = requireBrowserEpoch(state);
+  const payload = event.payload;
+  binding(
+    payload.browserEpochNonceSha256 === browser.nonceSha256,
+    "Source decision uses a stale browser epoch.",
+  );
+  const active = requireCurrentSource(state, payload.sourceCustody);
+  binding(
+    payload.sessionIdSha256 === state.scope.sessionIdSha256 &&
+      canonicalEqual(payload.registry, state.scope.registry) &&
+      canonicalEqual(
+        payload.implementationManifest,
+        state.scope.implementationManifest,
+      ) &&
+      canonicalEqual(payload.authorityBoundary, state.scope.authorityBoundary),
+    "Source decision differs from the exact session trust boundary.",
+  );
+  requireWorkspace(
+    state,
+    payload.previousWorkspaceRevision,
+    payload.resultingWorkspaceRevision,
+  );
+  transition(
+    payload.previousRenderGeneration === active.renderGeneration,
+    "Source decision render predecessor differs from the active phase.",
+  );
+  transition(
+    payload.resultingRenderGeneration ===
+      state.maximumAllocatedRenderGeneration + 1,
+    "Source decision must allocate the next global render barrier.",
+  );
+  binding(
+    payload.completedSourceCoverage.sourceReviewSubjectSha256 ===
+      active.sourceCustody.sourceReviewSubjectSha256,
+    "Source decision completion proof belongs to another source subject.",
+  );
+  binding(
+    checkpointAdvances(
+      active.sourceJournal,
+      payload.completedSourceCoverage.sourceJournal,
+    ),
+    "Source decision checkpoint does not advance the active source child.",
+  );
+
+  if (payload.result === "EXCLUDE") {
+    transition(
+      active.phase === "source_review" &&
+        active.completedSourceCoverage === null &&
+        active.maskState === null &&
+        active.maskReviewSubjectSha256 === null &&
+        active.frozenBindingSha256 === null &&
+        active.frozenBinding === null &&
+        active.maskJournal === null &&
+        active.maskCoverageSegmentIdSha256 === null,
+      "EXCLUDE decision is valid only from unmixed source review.",
+    );
+  } else {
+    transition(
+      active.phase === "mask_review" &&
+        active.completedSourceCoverage !== null &&
+        active.maskState !== null &&
+        active.maskReviewSubjectSha256 !== null &&
+        active.frozenBindingSha256 !== null &&
+        active.frozenBinding !== null &&
+        active.maskJournal !== null,
+      "INCLUDE decision requires completed source and frozen-mask review.",
+    );
+    binding(
+      canonicalEqual(
+        payload.completedSourceCoverage,
+        active.completedSourceCoverage,
+      ),
+      "INCLUDE decision changed the completed source proof.",
+    );
+    binding(
+      canonicalEqual(payload.maskState, active.maskState) &&
+        payload.maskReviewSubjectSha256 === active.maskReviewSubjectSha256 &&
+        payload.frozenBindingSha256 === active.frozenBindingSha256 &&
+        canonicalEqual(payload.frozenBinding, active.frozenBinding),
+      "INCLUDE decision differs from the active frozen-mask evidence.",
+    );
+    derived(
+      payload.frozenBindingSha256 ===
+        computeGrandHallT554NativeReviewFrozenMaskBindingV2Sha256(
+          payload.frozenBinding,
+        ),
+      "INCLUDE decision frozen-binding digest is not derived from its bytes.",
+    );
+    const expectedMaskSubject =
+      computeGrandHallT554NativeReviewMaskSubjectV2Sha256({
+        sourceReviewSubjectSha256:
+          active.sourceCustody.sourceReviewSubjectSha256,
+        maskStateSha256: payload.maskState.maskStateSha256,
+        maskEvidenceSha256:
+          computeGrandHallT554NativeReviewFrozenMaskEvidenceV2Sha256(
+            payload.frozenBinding,
+          ),
+        implementationManifest: state.scope.implementationManifest,
+      });
+    derived(
+      payload.maskReviewSubjectSha256 === expectedMaskSubject,
+      "INCLUDE decision mask subject is not derived from the exact frozen evidence.",
+    );
+    binding(
+      payload.completedMaskCoverage.maskReviewSubjectSha256 ===
+        active.maskReviewSubjectSha256 &&
+        payload.completedMaskCoverage.maskStateSha256 ===
+          active.maskState.maskStateSha256 &&
+        payload.completedMaskCoverage.frozenBindingSha256 ===
+          active.frozenBindingSha256,
+      "INCLUDE decision completion proof differs from the active mask subject.",
+    );
+    binding(
+      checkpointAdvances(
+        active.maskJournal,
+        payload.completedMaskCoverage.maskJournal,
+      ),
+      "INCLUDE decision checkpoint does not advance the active mask child.",
+    );
+  }
+
+  const { decisionSha256, ...decisionMaterial } = payload;
+  derived(
+    decisionSha256 ===
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(decisionMaterial),
+    "Source decision digest does not bind its exact material.",
+  );
+  recordOperationId(state, payload.operationIdSha256);
+  referenceChildCheckpoint(
+    state,
+    payload.completedSourceCoverage.sourceJournal,
+  );
+  active.sourceJournal = payload.completedSourceCoverage.sourceJournal;
+  active.completedSourceCoverage = frozenClone(payload.completedSourceCoverage);
+  if (payload.result === "INCLUDE") {
+    referenceChildCheckpoint(state, payload.completedMaskCoverage.maskJournal);
+    active.maskJournal = payload.completedMaskCoverage.maskJournal;
+  }
+  active.phase = "decision_recorded";
+  active.renderGeneration = payload.resultingRenderGeneration;
+  active.decision = frozenClone(payload);
+  active.humanAttestation = null;
+  state.maximumAllocatedRenderGeneration = payload.resultingRenderGeneration;
+  state.workspaceRevision = payload.resultingWorkspaceRevision;
+  state.recordedSourceDecisions.push(frozenClone(payload));
+  state.eventCount += 1;
+}
+
+function replayHumanAttestationRecorded(
+  state: CoordinatorState,
+  event: HumanAttestationRecordedEvent,
+): void {
+  requireActive(state);
+  requireNoPendingIntent(state);
+  const browser = requireBrowserEpoch(state);
+  const payload = event.payload;
+  binding(
+    payload.browserEpochNonceSha256 === browser.nonceSha256,
+    "Human attestation uses a stale browser epoch.",
+  );
+  const active = state.activeSource;
+  transition(
+    active !== null &&
+      active.phase === "decision_recorded" &&
+      active.decision !== null,
+    "Human attestation requires exactly one active recorded decision.",
+  );
+  requireWorkspace(
+    state,
+    payload.previousWorkspaceRevision,
+    payload.resultingWorkspaceRevision,
+  );
+  binding(
+    payload.sessionIdSha256 === state.scope.sessionIdSha256 &&
+      payload.sourceReviewSubjectSha256 ===
+        active.sourceCustody.sourceReviewSubjectSha256 &&
+      payload.decisionSha256 === active.decision.decisionSha256,
+    "Human attestation does not bind the active source decision.",
+  );
+  transition(
+    Date.parse(payload.attestedAtUtc) >=
+      Date.parse(active.decision.decidedAtUtc),
+    "Human attestation cannot precede its recorded decision.",
+  );
+  const { attestationSha256, ...attestationMaterial } = payload;
+  derived(
+    attestationSha256 ===
+      computeGrandHallT554NativeReviewHumanAttestationV2Sha256(
+        attestationMaterial,
+      ),
+    "Human attestation digest does not bind its exact material.",
+  );
+  recordOperationId(state, payload.operationIdSha256);
+  active.phase = "human_attested";
+  active.humanAttestation = frozenClone(payload);
+  state.workspaceRevision = payload.resultingWorkspaceRevision;
+  state.recordedHumanAttestations.push(frozenClone(payload));
+  state.eventCount += 1;
+}
+
 function replaySourceAbandoned(
   state: CoordinatorState,
   event: Extract<
@@ -1673,10 +1918,10 @@ function replaySourceAbandoned(
     "Abandoned source checkpoint differs from its active child.",
   );
   referenceChildCheckpoint(state, payload.sourceJournal);
-  if (active.phase === "mask_review") {
+  if (active.maskJournal !== null) {
     transition(
-      active.maskJournal !== null && payload.maskJournal !== null,
-      "Abandoning mask review must bind its active mask child.",
+      payload.maskJournal !== null,
+      "Abandoning a source with mask evidence must bind its active mask child.",
     );
     binding(
       checkpointAdvances(active.maskJournal, payload.maskJournal),
@@ -1686,7 +1931,7 @@ function replaySourceAbandoned(
   } else {
     transition(
       payload.maskJournal === null,
-      "Abandoning a non-review mask phase cannot name a mask child.",
+      "Abandoning a source without mask evidence cannot name a mask child.",
     );
   }
   state.activeSource = null;
@@ -1807,6 +2052,12 @@ function replayEvent(
     case "mask.edit-epoch-resumed.v2":
       replayMaskEditEpochResumed(state, event);
       return;
+    case "source.decision-recorded.v2":
+      replaySourceDecisionRecorded(state, event);
+      return;
+    case "source.human-attestation-recorded.v2":
+      replayHumanAttestationRecorded(state, event);
+      return;
     case "source.abandoned.v2":
       replaySourceAbandoned(state, event);
       return;
@@ -1816,6 +2067,13 @@ function replayEvent(
     case "session.poisoned.v2":
       replayPoisoned(state, event);
       return;
+    default: {
+      const exhaustiveEvent: never = event;
+      throw new GrandHallT554NativeReviewCoordinatorReplayV2Error(
+        "EVENT_INVALID",
+        `Coordinator replay has no reducer for ${String(exhaustiveEvent)}.`,
+      );
+    }
   }
 }
 
@@ -1862,6 +2120,8 @@ function publicReplay(
         ...obligation,
         checkpointReferences: [...obligation.checkpointReferences],
       })),
+    recordedSourceDecisions: [...state.recordedSourceDecisions],
+    recordedHumanAttestations: [...state.recordedHumanAttestations],
   });
 }
 

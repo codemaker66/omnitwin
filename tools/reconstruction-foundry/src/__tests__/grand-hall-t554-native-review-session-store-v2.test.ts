@@ -24,6 +24,12 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  computeGrandHallT554NativeReviewFrozenMaskBindingV2Sha256,
+  computeGrandHallT554NativeReviewFrozenMaskEvidenceV2Sha256,
+  computeGrandHallT554NativeReviewMaskSubjectV2Sha256,
+  computeGrandHallT554NativeReviewPreparedMaskEvidenceV2Sha256,
+} from "../grand-hall-t554-native-review-coordinator-replay-v2.js";
+import {
   createGrandHallT554NativeReviewDurableJournalV2,
   isGrandHallT554NativeReviewVerifiedDurableChildJournalEvidenceV2,
   openGrandHallT554NativeReviewDurableJournalV2,
@@ -33,8 +39,11 @@ import {
 import {
   GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
   GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+  computeGrandHallT554NativeReviewSourceDecisionV2Sha256,
   type GrandHallT554NativeReviewCoordinatorEventV2,
   type GrandHallT554NativeReviewCoverageObservedPayloadV2,
+  type GrandHallT554NativeReviewMaskChildEventV2,
+  type GrandHallT554NativeReviewMaskScopeV2,
   type GrandHallT554NativeReviewSessionScopeV2,
   type GrandHallT554NativeReviewSourceChildCheckpointV2,
   type GrandHallT554NativeReviewSourceChildEventV2,
@@ -605,11 +614,60 @@ function completeSourceCoverageEvents(
   ];
 }
 
+function completeMaskCoverageEvents(
+  scope: GrandHallT554NativeReviewMaskScopeV2,
+): readonly GrandHallT554NativeReviewMaskChildEventV2[] {
+  const sourceLikeScope: GrandHallT554NativeReviewSourceScopeV2 = {
+    schemaVersion: scope.schemaVersion,
+    kind: "source",
+    sessionIdSha256: scope.sessionIdSha256,
+    implementationManifest: scope.implementationManifest,
+    registry: scope.registry,
+    authorityBoundary: scope.authorityBoundary,
+    browserEpochNonceSha256: scope.browserEpochNonceSha256,
+    coverageSegmentIdSha256: scope.coverageSegmentIdSha256,
+    renderGeneration: scope.renderGeneration,
+    sourceCustody: {
+      ...scope.sourceCustody,
+      sourceReviewSubjectSha256: scope.maskReviewSubjectSha256,
+    },
+  };
+  let previousCoverageEventSha256: Sha256 | null = null;
+  return completeSourceCoverageEvents(sourceLikeScope).map((event) => {
+    if (event.eventType === "source.tile-delivered.v2") {
+      return envelope("mask.tile-delivered.v2", event.payload);
+    }
+    if (event.eventType !== "source.coverage-observed.v2") {
+      throw new Error(
+        "complete source fixture emitted an unexpected start event",
+      );
+    }
+    const { coverageEventSha256: _sourceDigest, ...sourceMaterial } =
+      event.payload;
+    const material = {
+      ...sourceMaterial,
+      previousCoverageEventSha256,
+    };
+    const coverageEventSha256 =
+      computeGrandHallT554NativeReviewCoverageEventV2Sha256("mask", material);
+    previousCoverageEventSha256 = coverageEventSha256;
+    return envelope("mask.coverage-observed.v2", {
+      ...material,
+      coverageEventSha256,
+    });
+  });
+}
+
 async function bulkAppendExactChildFixture(input: {
   readonly journalRoot: string;
   readonly start: GrandHallT554NativeReviewDurableJournalReplayV2;
-  readonly scope: GrandHallT554NativeReviewSourceScopeV2;
-  readonly events: readonly GrandHallT554NativeReviewSourceChildEventV2[];
+  readonly scope:
+    | GrandHallT554NativeReviewSourceScopeV2
+    | GrandHallT554NativeReviewMaskScopeV2;
+  readonly events: readonly (
+    | GrandHallT554NativeReviewSourceChildEventV2
+    | GrandHallT554NativeReviewMaskChildEventV2
+  )[];
 }): Promise<void> {
   const recordedAtUtc = input.start.records.at(-1)?.recordedAtUtc;
   if (recordedAtUtc === undefined) {
@@ -1067,6 +1125,379 @@ async function fixture(options: {
   return { root, scope, leafName, sourceScope, lease };
 }
 
+async function sourceDecisionProofFixture(complete: boolean) {
+  const root = await mkdtemp(join(tmpdir(), "t554-source-proof-v2-"));
+  roots.push(root);
+  const implementation = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-implementation-manifest-binding.v2" as const,
+    implementationId: "grand-hall-t554-native-review-workbench-v1" as const,
+    semanticSha256: digest("source-proof-implementation-semantic"),
+    fileSha256: digest("source-proof-implementation-file"),
+    byteLength: 8_192,
+  };
+  const sessionScope: GrandHallT554NativeReviewSessionScopeV2 = {
+    schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+    kind: "session",
+    sessionIdSha256: digest("source-proof-session"),
+    subjectSha256: digest("source-proof-session-subject"),
+    implementationManifest: implementation,
+    registry,
+    authorityBoundary: authority,
+  };
+  const sourceCustody = custody("source-proof-epoch");
+  const browserEpochNonceSha256 = digest("source-proof-browser");
+  const coverageSegmentIdSha256 = digest("source-proof-segment");
+  const sourceScope: GrandHallT554NativeReviewSourceScopeV2 = {
+    schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+    kind: "source",
+    sessionIdSha256: sessionScope.sessionIdSha256,
+    implementationManifest: implementation,
+    registry,
+    authorityBoundary: authority,
+    browserEpochNonceSha256,
+    coverageSegmentIdSha256,
+    renderGeneration: 1,
+    sourceCustody,
+  };
+  const leafName = "source-proof-child";
+  const journalRoot = join(root, leafName);
+  await mkdir(journalRoot);
+  const journal = await createGrandHallT554NativeReviewDurableJournalV2({
+    workspaceRoot: journalRoot,
+    scope: sourceScope,
+  });
+  const start = await journal.append({
+    expectedRevision: 0,
+    event: envelope("source.review-started.v2", {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-source-review-started.v2" as const,
+      browserEpochNonceSha256,
+      coverageSegmentIdSha256,
+      coverageSegmentStartedAtUtc: NOW,
+      firstSampleMustCreditZero: true as const,
+      renderGeneration: 1,
+      sourceCustody,
+      registry,
+      implementationManifest: implementation,
+      tileGrid: {
+        widthPx: 256 as const,
+        heightPx: 256 as const,
+        columnCount: 32 as const,
+        rowCount: 16 as const,
+        channelCount: 3 as const,
+        bytesPerTile: 196_608 as const,
+        resampling: "none" as const,
+      },
+      predecessorCoverage: null,
+      authorityBoundary: authority,
+    }),
+  });
+  if (complete) {
+    await bulkAppendExactChildFixture({
+      journalRoot,
+      start,
+      scope: sourceScope,
+      events: completeSourceCoverageEvents(sourceScope),
+    });
+  }
+  const evidence =
+    await openGrandHallT554NativeReviewVerifiedDurableChildEvidenceV2({
+      workspaceRoot: journalRoot,
+      expectedScope: sourceScope,
+    });
+  if (evidence.kind !== "source") {
+    throw new Error("source proof fixture produced a non-source child");
+  }
+  const sourceCoverage = complete
+    ? createGrandHallT554NativeReviewCoverageCarryStateV2(evidence)
+    : null;
+  if (sourceCoverage !== null && sourceCoverage.kind !== "source") {
+    throw new Error("source proof fixture produced a non-source carry");
+  }
+  const material = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+    operationIdSha256: digest("source-proof-decision-operation"),
+    browserEpochNonceSha256,
+    previousWorkspaceRevision: 1,
+    resultingWorkspaceRevision: 2,
+    sessionIdSha256: sessionScope.sessionIdSha256,
+    registry,
+    implementationManifest: implementation,
+    authorityBoundary: authority,
+    sourceCustody,
+    previousRenderGeneration: 1,
+    resultingRenderGeneration: 2,
+    completedSourceCoverage: {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-completed-source-coverage.v2" as const,
+      sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+      sourceJournal: evidence.checkpoint,
+      completedTileBitsetHex: "ff".repeat(64),
+      completedTileCount: 512 as const,
+      cumulativeDwellStateSha256:
+        sourceCoverage?.cumulativeDwellStateSha256 ??
+        digest("forged-source-completed-dwell"),
+    },
+    note: "Native review found no observed Grand Hall pixels.",
+    decidedAtUtc: new Date().toISOString(),
+    result: "EXCLUDE" as const,
+    classification: "no_observed_grand_hall_pixels" as const,
+    maskState: null,
+    maskReviewSubjectSha256: null,
+    frozenBindingSha256: null,
+    frozenBinding: null,
+    completedMaskCoverage: null,
+  };
+  const decision = envelope("source.decision-recorded.v2", {
+    ...material,
+    decisionSha256:
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(material),
+  });
+  return {
+    sessionScope,
+    sourceScope,
+    evidence,
+    decision,
+    leafName,
+  };
+}
+
+async function maskDecisionProofFixture(complete: boolean) {
+  const root = await mkdtemp(join(tmpdir(), "t554-mask-proof-v2-"));
+  roots.push(root);
+  const implementation = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-implementation-manifest-binding.v2" as const,
+    implementationId: "grand-hall-t554-native-review-workbench-v1" as const,
+    semanticSha256: digest("mask-proof-implementation-semantic"),
+    fileSha256: digest("mask-proof-implementation-file"),
+    byteLength: 8_192,
+  };
+  const sessionScope: GrandHallT554NativeReviewSessionScopeV2 = {
+    schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+    kind: "session",
+    sessionIdSha256: digest("mask-proof-session"),
+    subjectSha256: digest("mask-proof-session-subject"),
+    implementationManifest: implementation,
+    registry,
+    authorityBoundary: authority,
+  };
+  const sourceCustody = custody("mask-proof-epoch");
+  const replayContext = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-mask-replay-context.v2" as const,
+    sessionIdSha256: sessionScope.sessionIdSha256,
+    registry,
+    implementationManifest: implementation,
+    source: sourceCustody.source,
+    sourceVerification: sourceCustody.sourceVerification,
+    sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+  };
+  const maskStore = GrandHallT554NativeMaskRevisionStore.createReplayOnly(
+    sourceCustody.source,
+  );
+  maskStore.applyEdit({
+    expectedRevision: 0,
+    operation: "include",
+    primitive: {
+      kind: "rectangle",
+      horizontalSeam: "none",
+      leftPx: 0,
+      topPx: 0,
+      rightExclusivePx: 1,
+      bottomExclusivePx: 1,
+    },
+  });
+  const exactMaskState = maskStore.exactStateV2(replayContext);
+  maskStore.abandon();
+  const maskState = {
+    revision: exactMaskState.revision,
+    maskStateSha256: exactMaskState.maskStateSha256,
+    includedPixelCount: exactMaskState.includedPixelCount,
+    excludedPixelCount: exactMaskState.excludedPixelCount,
+    reasonCounts: mutableReasonCounts(exactMaskState.reasonCounts),
+  };
+  const prepared = preparedMaskBinding(
+    "mask-proof.png",
+    "mask-proof-reasons.png",
+  );
+  const maskReviewSubjectSha256 =
+    computeGrandHallT554NativeReviewMaskSubjectV2Sha256({
+      sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+      maskStateSha256: maskState.maskStateSha256,
+      maskEvidenceSha256:
+        computeGrandHallT554NativeReviewPreparedMaskEvidenceV2Sha256(prepared),
+      implementationManifest: implementation,
+    });
+  const frozen = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-mask-frozen-binding.v2" as const,
+    source: prepared.source,
+    revision: prepared.revision,
+    fileName: prepared.mask.fileName,
+    sha256: prepared.mask.sha256,
+    byteLength: prepared.mask.byteLength,
+    widthPx: prepared.mask.widthPx,
+    heightPx: prepared.mask.heightPx,
+    bitDepth: prepared.mask.bitDepth,
+    channelCount: prepared.mask.channelCount,
+    permittedPixelValues: prepared.mask.permittedPixelValues,
+    zeroMeaning: prepared.mask.zeroMeaning,
+    twoHundredFiftyFiveMeaning: prepared.mask.twoHundredFiftyFiveMeaning,
+    includedPixelCount: prepared.includedPixelCount,
+    excludedPixelCount: prepared.excludedPixelCount,
+    reasonCounts: prepared.reasonCounts,
+    publicationDurability: "directory_fsync" as const,
+    immutableFrozen: true as const,
+    reasonMap: prepared.reasonMap,
+  };
+  const frozenBindingSha256 =
+    computeGrandHallT554NativeReviewFrozenMaskBindingV2Sha256(frozen);
+  expect(
+    computeGrandHallT554NativeReviewFrozenMaskEvidenceV2Sha256(frozen),
+  ).toBe(
+    computeGrandHallT554NativeReviewPreparedMaskEvidenceV2Sha256(prepared),
+  );
+  const browserEpochNonceSha256 = digest("mask-proof-browser");
+  const coverageSegmentIdSha256 = digest("mask-proof-segment");
+  const maskScope: GrandHallT554NativeReviewMaskScopeV2 = {
+    schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+    kind: "mask",
+    sessionIdSha256: sessionScope.sessionIdSha256,
+    implementationManifest: implementation,
+    registry,
+    authorityBoundary: authority,
+    browserEpochNonceSha256,
+    coverageSegmentIdSha256,
+    renderGeneration: 4,
+    sourceCustody,
+    maskReviewSubjectSha256,
+    maskStateSha256: maskState.maskStateSha256,
+    frozenBindingSha256,
+    frozenBinding: frozen,
+  };
+  const leafName = "mask-proof-child";
+  const journalRoot = join(root, leafName);
+  await mkdir(journalRoot);
+  const journal = await createGrandHallT554NativeReviewDurableJournalV2({
+    workspaceRoot: journalRoot,
+    scope: maskScope,
+  });
+  const start = await journal.append({
+    expectedRevision: 0,
+    event: envelope("mask.review-started.v2", {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-mask-review-started.v2" as const,
+      browserEpochNonceSha256,
+      coverageSegmentIdSha256,
+      coverageSegmentStartedAtUtc: NOW,
+      firstSampleMustCreditZero: true as const,
+      renderGeneration: 4,
+      sourceCustody,
+      maskReviewSubjectSha256,
+      maskStateSha256: maskState.maskStateSha256,
+      frozenBindingSha256,
+      frozenBinding: frozen,
+      implementationManifest: implementation,
+      predecessorCoverage: null,
+      authorityBoundary: authority,
+    }),
+  });
+  if (complete) {
+    await bulkAppendExactChildFixture({
+      journalRoot,
+      start,
+      scope: maskScope,
+      events: completeMaskCoverageEvents(maskScope),
+    });
+  }
+  const evidence =
+    await openGrandHallT554NativeReviewVerifiedDurableChildEvidenceV2({
+      workspaceRoot: journalRoot,
+      expectedScope: maskScope,
+    });
+  if (evidence.kind !== "mask") {
+    throw new Error("mask proof fixture produced a non-mask child");
+  }
+  const maskCoverage = complete
+    ? createGrandHallT554NativeReviewCoverageCarryStateV2(evidence)
+    : null;
+  if (maskCoverage !== null && maskCoverage.kind !== "mask") {
+    throw new Error("mask proof fixture produced a non-mask carry");
+  }
+  const completedMaskCoverage = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-completed-mask-coverage.v2" as const,
+    maskReviewSubjectSha256,
+    maskStateSha256: maskState.maskStateSha256,
+    frozenBindingSha256,
+    maskJournal: evidence.checkpoint,
+    completedTileBitsetHex: "ff".repeat(64),
+    completedTileCount: 512 as const,
+    cumulativeDwellStateSha256:
+      maskCoverage?.cumulativeDwellStateSha256 ??
+      digest("forged-mask-completed-dwell"),
+  };
+  const sourceJournal = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-child-checkpoint.v2" as const,
+    kind: "source" as const,
+    leafName: "source-proof-child",
+    scopeSha256: digest("source-proof-scope"),
+    scopeFileSha256: digest("source-proof-scope-file"),
+    revision: 1,
+    headEventSha256: digest("source-proof-head"),
+    journalInventorySha256: digest("source-proof-inventory"),
+  };
+  const material = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+    operationIdSha256: digest("mask-proof-decision-operation"),
+    browserEpochNonceSha256,
+    previousWorkspaceRevision: 4,
+    resultingWorkspaceRevision: 5,
+    sessionIdSha256: sessionScope.sessionIdSha256,
+    registry,
+    implementationManifest: implementation,
+    authorityBoundary: authority,
+    sourceCustody,
+    previousRenderGeneration: 4,
+    resultingRenderGeneration: 5,
+    completedSourceCoverage: {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-completed-source-coverage.v2" as const,
+      sourceReviewSubjectSha256: sourceCustody.sourceReviewSubjectSha256,
+      sourceJournal,
+      completedTileBitsetHex: "ff".repeat(64),
+      completedTileCount: 512 as const,
+      cumulativeDwellStateSha256: digest("source-proof-completed-dwell"),
+    },
+    note: "Exact frozen mask supports Grand Hall pixels.",
+    decidedAtUtc: new Date().toISOString(),
+    result: "INCLUDE" as const,
+    classification: "grand_hall_core" as const,
+    maskState,
+    maskReviewSubjectSha256,
+    frozenBindingSha256,
+    frozenBinding: frozen,
+    completedMaskCoverage,
+  };
+  const decision = envelope("source.decision-recorded.v2", {
+    ...material,
+    decisionSha256:
+      computeGrandHallT554NativeReviewSourceDecisionV2Sha256(material),
+  });
+  return {
+    sessionScope,
+    maskScope,
+    evidence,
+    decision,
+    leafName,
+  };
+}
+
 function expectStoreError(
   promise: Promise<unknown>,
   code: GrandHallT554NativeReviewSessionStoreV2Error["code"],
@@ -1211,14 +1642,98 @@ describe("Grand Hall T-554 native review session store v2", () => {
       expect(replay.maskStateReplayCount).toBe(1);
       expect(replay.coordinator.activeSource).toMatchObject({
         phase: "mask_edit",
-        sourceJournal: { revision: 516 },
-      });
-      expect(replay.verificationAttestationSha256).toMatch(
-        /^sha256:[0-9a-f]{64}$/u,
+      sourceJournal: { revision: 516 },
+    });
+    expect(replay.verificationAttestationSha256).toMatch(
+      /^sha256:[0-9a-f]{64}$/u,
+    );
+  }, 60_000);
+
+  it("accepts an EXCLUDE decision only when its exact durable source prefix is complete", async () => {
+    const built = await sourceDecisionProofFixture(true);
+    const verified =
+      await __testOnlyGrandHallT554NativeReviewSessionStoreV2.verifyCompletedSourceCoverageReferences(
+        built.sessionScope,
+        [built.decision],
+        [
+          {
+            leafName: built.leafName,
+            disposition: "committed",
+            scope: built.sourceScope,
+            evidence: built.evidence,
+          },
+        ],
       );
-    },
-    60_000,
-  );
+    expect(verified).toMatchObject([
+      {
+        sourceJournal: { revision: 516 },
+        coverageReplaySha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+      },
+    ]);
+    expect(Object.isFrozen(verified)).toBe(true);
+  }, 300_000);
+
+  it("rejects a source rev1 checkpoint relabelled complete by an EXCLUDE decision", async () => {
+    const built = await sourceDecisionProofFixture(false);
+    await expectStoreError(
+      __testOnlyGrandHallT554NativeReviewSessionStoreV2.verifyCompletedSourceCoverageReferences(
+        built.sessionScope,
+        [built.decision],
+        [
+          {
+            leafName: built.leafName,
+            disposition: "committed",
+            scope: built.sourceScope,
+            evidence: built.evidence,
+          },
+        ],
+      ),
+      "CHILD_MISMATCH",
+    );
+  }, 60_000);
+
+  it("accepts an INCLUDE decision only when its exact durable mask prefix is complete", async () => {
+    const built = await maskDecisionProofFixture(true);
+    const verified =
+      await __testOnlyGrandHallT554NativeReviewSessionStoreV2.verifyCompletedMaskCoverageReferences(
+        built.sessionScope,
+        [built.decision],
+        [
+          {
+            leafName: built.leafName,
+            disposition: "committed",
+            scope: built.maskScope,
+            evidence: built.evidence,
+          },
+        ],
+      );
+    expect(verified).toMatchObject([
+      {
+        maskJournal: { revision: 516 },
+        coverageReplaySha256: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
+      },
+    ]);
+    expect(Object.isFrozen(verified)).toBe(true);
+  }, 300_000);
+
+  it("rejects a mask rev1 checkpoint relabelled complete by an INCLUDE decision", async () => {
+    const built = await maskDecisionProofFixture(false);
+    await expectStoreError(
+      __testOnlyGrandHallT554NativeReviewSessionStoreV2.verifyCompletedMaskCoverageReferences(
+        built.sessionScope,
+        [built.decision],
+        [
+          {
+            leafName: built.leafName,
+            disposition: "committed",
+            scope: built.maskScope,
+            evidence: built.evidence,
+          },
+        ],
+      ),
+      "CHILD_MISMATCH",
+    );
+  }, 60_000);
 
   it("rejects same-count mask evidence with a different exact spatial layout", () => {
     const source = sourceIdentity();
