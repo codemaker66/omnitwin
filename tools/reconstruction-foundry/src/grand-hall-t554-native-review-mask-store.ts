@@ -1,7 +1,17 @@
 import type { BigIntStats } from "node:fs";
 import { createHash } from "node:crypto";
-import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import {
+  link,
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  realpath,
+  rmdir,
+  unlink,
+  type FileHandle,
+} from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import {
   GRAND_HALL_ALL_SOURCE_PANORAMA_COUNT,
@@ -64,7 +74,9 @@ export type GrandHallT554NativeMaskStoreErrorCode =
   | "STORE_ABANDONED"
   | "PUBLICATION_DISABLED"
   | "PUBLICATION_EXISTS"
+  | "PUBLICATION_PARTIAL"
   | "PUBLICATION_INVALID"
+  | "PREPARED_FREEZE_CONSUMED"
   | "ENCODING_INVALID"
   | "INTERNAL_INVARIANT_FAILED";
 
@@ -85,6 +97,12 @@ export class GrandHallT554NativeMaskStoreError extends Error {
 export interface GrandHallT554NativeMaskPublishingStoreConfig {
   readonly source: GrandHallPanoramaSourceJpgIdentityV2;
   readonly publicationDirectory: string;
+  /**
+   * A trusted, same-volume directory outside the verified session root. It is
+   * required by prepareFreeze() so final evidence names are created atomically
+   * with no-replace hard links rather than written in place.
+   */
+  readonly preparationDirectory?: string;
 }
 
 export interface GrandHallT554NativeMaskReplayOnlyStoreConfig {
@@ -174,6 +192,66 @@ export interface GrandHallT554NativeMaskExactStateV2 {
   readonly reasonCounts: readonly GrandHallT554NativeMaskReasonCount[];
   readonly pixelTileInventorySha256: `sha256:${string}`;
   readonly maskStateSha256: `sha256:${string}`;
+}
+
+export type GrandHallT554NativeMaskPublicationDisposition =
+  | "none"
+  | "mask_only"
+  | "reason_map_only"
+  | "mask_and_reason_map";
+
+export interface GrandHallT554NativeMaskPreparedFileBindingV2 {
+  readonly fileName: string;
+  readonly sha256: `sha256:${string}`;
+  readonly byteLength: number;
+  readonly widthPx: typeof GRAND_HALL_PANORAMA_WIDTH_PX;
+  readonly heightPx: typeof GRAND_HALL_PANORAMA_HEIGHT_PX;
+  readonly bitDepth: 8;
+  readonly channelCount: 1;
+  readonly permittedPixelValues: [0, 255];
+  readonly zeroMeaning: "grand_hall_included";
+  readonly twoHundredFiftyFiveMeaning: "excluded_or_unknown";
+}
+
+export interface GrandHallT554NativeMaskPreparedReasonMapBindingV2 {
+  readonly fileName: string;
+  readonly sha256: `sha256:${string}`;
+  readonly byteLength: number;
+  readonly widthPx: typeof GRAND_HALL_PANORAMA_WIDTH_PX;
+  readonly heightPx: typeof GRAND_HALL_PANORAMA_HEIGHT_PX;
+  readonly bitDepth: 8;
+  readonly channelCount: 1;
+  readonly permittedPixelValues: [0, 1, 2, 3, 4, 5];
+  readonly zeroMeaning: "grand_hall_included";
+  readonly reasonSampleCodebook: [
+    { readonly sample: 1; readonly reasonCode: "adjacent_room_pixels" },
+    { readonly sample: 2; readonly reasonCode: "portal_beyond_grand_hall_plane" },
+    { readonly sample: 3; readonly reasonCode: "facade_or_exterior_pixels" },
+    { readonly sample: 4; readonly reasonCode: "capture_artifact_outside_verified_room" },
+    { readonly sample: 5; readonly reasonCode: "unverified_or_unknown_pixels" },
+  ];
+}
+
+export interface GrandHallT554NativeMaskPreparedBindingV2 {
+  readonly schemaVersion: "venviewer.grand-hall-t554-native-mask-prepared-binding.v2";
+  readonly source: GrandHallPanoramaSourceJpgIdentityV2;
+  readonly revision: number;
+  readonly includedPixelCount: number;
+  readonly excludedPixelCount: number;
+  readonly reasonCounts: GrandHallT554NativeMaskReasonCount[];
+  readonly mask: GrandHallT554NativeMaskPreparedFileBindingV2;
+  readonly reasonMap: GrandHallT554NativeMaskPreparedReasonMapBindingV2;
+}
+
+/**
+ * Process-local, one-use authority to publish exactly the bytes represented by
+ * binding. No raster or encoded byte buffer is exposed to the caller.
+ */
+export interface GrandHallT554NativeMaskPreparedFreezeV2 {
+  readonly binding: GrandHallT554NativeMaskPreparedBindingV2;
+  inspectPublication(): Promise<GrandHallT554NativeMaskPublicationDisposition>;
+  publishOrVerifyExact(): Promise<GrandHallT554NativeMaskFrozenBindingV2>;
+  discard(): void;
 }
 
 export interface GrandHallT554NativeMaskPixel {
@@ -280,6 +358,11 @@ const FreezeRequestSchema = z.object({
   expectedRevision: ExpectedRevisionSchema,
 }).strict();
 
+const PrepareFreezeRequestSchema = z.object({
+  expectedRevision: ExpectedRevisionSchema,
+  operationIdSha256: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+}).strict();
+
 type MaskEditRequest = z.infer<typeof EditRequestSchema>;
 type MaskPrimitive = z.infer<typeof MaskPrimitiveSchema>;
 type PolygonPrimitive = z.infer<typeof PolygonPrimitiveSchema>;
@@ -347,6 +430,11 @@ interface GrandHallT554NativeMaskStoreTestSeam {
     readonly publicationDirectory: string;
     readonly mode: GrandHallT554NativeMaskPublicationDurability;
   }) => Promise<void> | void;
+  readonly afterPreparedFinalLinked?: (facts: {
+    readonly plane: "mask" | "reason_map";
+  }) => Promise<void> | void;
+  readonly afterPreparedPairVerified?: () => Promise<void> | void;
+  readonly beforePreparedPublicationRootsValidated?: () => Promise<void> | void;
   readonly maximumChangedTileSeals?: number;
 }
 
@@ -568,6 +656,7 @@ function parseConfig(
 ): {
   readonly source: GrandHallPanoramaSourceJpgIdentityV2;
   readonly publicationDirectory: string | null;
+  readonly preparationDirectory: string | null;
   readonly replayOnly: boolean;
 } {
   if (
@@ -587,12 +676,21 @@ function parseConfig(
     return {
       source: parseSource(config.source),
       publicationDirectory: null,
+      preparationDirectory: null,
       replayOnly: true,
     };
   }
   if (!("publicationDirectory" in config) ||
-    keys.length !== 2 || keys[0] !== "publicationDirectory" || keys[1] !== "source") {
-    throw fail("ARGUMENT_INVALID", "publishing mask configuration must contain only source and publicationDirectory");
+    (keys.length !== 2 && keys.length !== 3) ||
+    (keys.length === 2 && keys[0] !== "publicationDirectory") ||
+    (keys.length === 3 &&
+      (keys[0] !== "preparationDirectory" || keys[1] !== "publicationDirectory")) ||
+    keys[keys.length - 1] !== "source" ||
+    (keys.length === 3 && !("preparationDirectory" in config))) {
+    throw fail(
+      "ARGUMENT_INVALID",
+      "publishing mask configuration may contain only source, publicationDirectory, and preparationDirectory",
+    );
   }
   const source = parseSource(config.source);
   if (
@@ -608,8 +706,42 @@ function parseConfig(
       "mask publication directory must be one absolute local-drive server path",
     );
   }
-  return { source,
-    publicationDirectory: resolve(config.publicationDirectory), replayOnly: false };
+  let preparationDirectory: string | null = null;
+  if ("preparationDirectory" in config) {
+    if (
+      typeof config.preparationDirectory !== "string" ||
+      !isAbsolute(config.preparationDirectory) ||
+      config.preparationDirectory.startsWith("//") ||
+      config.preparationDirectory.startsWith("\\\\") ||
+      (process.platform === "win32" &&
+        !WINDOWS_DRIVE_ROOT_PATTERN.test(config.preparationDirectory))
+    ) {
+      throw fail(
+        "ARGUMENT_INVALID",
+        "mask preparation directory must be one absolute local-drive server path",
+      );
+    }
+    preparationDirectory = resolve(config.preparationDirectory);
+    const publication = comparablePath(resolve(config.publicationDirectory));
+    const preparation = comparablePath(preparationDirectory);
+    const separator = process.platform === "win32" ? "\\" : "/";
+    if (
+      publication === preparation ||
+      preparation.startsWith(`${publication}${separator}`) ||
+      publication.startsWith(`${preparation}${separator}`)
+    ) {
+      throw fail(
+        "ARGUMENT_INVALID",
+        "mask preparation and publication directories must be disjoint siblings",
+      );
+    }
+  }
+  return {
+    source,
+    publicationDirectory: resolve(config.publicationDirectory),
+    preparationDirectory,
+    replayOnly: false,
+  };
 }
 
 function parseEdit(input: unknown): MaskEditRequest {
@@ -626,6 +758,14 @@ function parseExpectedRevision(input: unknown): number {
     throw fail("ARGUMENT_INVALID", parsed.error.issues.map((issue) => issue.message).join("; "));
   }
   return parsed.data.expectedRevision;
+}
+
+function parsePrepareFreezeRequest(input: unknown): z.infer<typeof PrepareFreezeRequestSchema> {
+  const parsed = PrepareFreezeRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    throw fail("ARGUMENT_INVALID", parsed.error.issues.map((issue) => issue.message).join("; "));
+  }
+  return parsed.data;
 }
 
 function reasonSample(reasonCode: GrandHallT554NativeMaskReasonCode): number {
@@ -1360,6 +1500,46 @@ async function syncPublicationDirectory(
   return mode;
 }
 
+async function syncDirectoryMetadata(directory: string): Promise<void> {
+  const expected = await inspectPublicationDirectory(directory);
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(directory, "r");
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isDirectory() || !sameObjectIdentity(expected, opened)) {
+      throw fail("PUBLICATION_INVALID", "directory changed before metadata durability barrier");
+    }
+    try {
+      await handle.sync();
+    } catch (error) {
+      const code = errnoCode(error);
+      if (
+        process.platform !== "win32" ||
+        (code !== "EACCES" && code !== "EBADF" && code !== "EINVAL" &&
+          code !== "EISDIR" && code !== "EPERM")
+      ) {
+        throw error;
+      }
+    }
+    const after = await handle.stat({ bigint: true });
+    if (!after.isDirectory() || !sameObjectIdentity(opened, after)) {
+      throw fail("PUBLICATION_INVALID", "directory changed during metadata durability barrier");
+    }
+    const resolvedAfter = await inspectPublicationDirectory(directory);
+    if (!sameObjectIdentity(expected, resolvedAfter)) {
+      throw fail(
+        "PUBLICATION_INVALID",
+        "directory path changed during metadata durability barrier",
+      );
+    }
+  } catch (error) {
+    if (error instanceof GrandHallT554NativeMaskStoreError) throw error;
+    throw fail("PUBLICATION_INVALID", "directory metadata durability barrier failed", error);
+  } finally {
+    await handle?.close();
+  }
+}
+
 async function writeAll(handle: FileHandle, bytes: Buffer): Promise<void> {
   let offset = 0;
   while (offset < bytes.length) {
@@ -1420,6 +1600,732 @@ async function publishNoReplace(
     throw fail("PUBLICATION_INVALID", "frozen mask no-replace publication failed", error);
   } finally {
     await handle?.close();
+  }
+}
+
+interface PreparedPlaneBytes {
+  readonly fileName: string;
+  readonly digest: `sha256:${string}`;
+  readonly bytes: Buffer;
+}
+
+interface ExactPathWitness {
+  readonly absolutePath: string;
+  readonly state: BigIntStats;
+}
+
+interface PreparedPublicationRoots {
+  readonly publication: BigIntStats;
+  readonly preparation: BigIntStats;
+}
+
+function isMissing(error: unknown): boolean {
+  return errnoCode(error) === "ENOENT";
+}
+
+async function readAndCompareExactFile(
+  directory: string,
+  plane: PreparedPlaneBytes,
+  allowedLinkCounts: readonly bigint[],
+): Promise<ExactPathWitness | null> {
+  const absolutePath = join(directory, plane.fileName);
+  let before: BigIntStats;
+  try {
+    before = await lstat(absolutePath, { bigint: true });
+  } catch (error) {
+    if (isMissing(error)) return null;
+    throw error;
+  }
+  let handle: FileHandle | undefined;
+  const scratch = Buffer.allocUnsafe(Math.min(64 * 1_024, Math.max(1, plane.bytes.length)));
+  try {
+    if (
+      !before.isFile() || before.isSymbolicLink() ||
+      !allowedLinkCounts.includes(before.nlink) ||
+      before.size !== BigInt(plane.bytes.length) ||
+      comparablePath(await realpath(absolutePath)) !== comparablePath(absolutePath)
+    ) {
+      throw fail("PUBLICATION_INVALID", "prepared mask path is not one exact direct file");
+    }
+    handle = await open(absolutePath, "r");
+    const opened = await handle.stat({ bigint: true });
+    if (!sameFileState(before, opened)) {
+      throw fail("PUBLICATION_INVALID", "prepared mask path changed before exact read");
+    }
+    let offset = 0;
+    while (offset < plane.bytes.length) {
+      const requested = Math.min(scratch.length, plane.bytes.length - offset);
+      const read = await handle.read(scratch, 0, requested, offset);
+      if (read.bytesRead !== requested ||
+        !scratch.subarray(0, requested).equals(plane.bytes.subarray(offset, offset + requested))) {
+        throw fail("PUBLICATION_INVALID", "prepared mask path bytes differ from the intended bytes");
+      }
+      offset += requested;
+    }
+    const eof = await handle.read(scratch, 0, 1, plane.bytes.length);
+    if (eof.bytesRead !== 0 || sha256(plane.bytes) !== plane.digest) {
+      throw fail("PUBLICATION_INVALID", "prepared mask path length or digest differs from intent");
+    }
+    const afterHandle = await handle.stat({ bigint: true });
+    const afterPath = await lstat(absolutePath, { bigint: true });
+    if (
+      !sameFileState(opened, afterHandle) ||
+      !sameFileState(afterHandle, afterPath) ||
+      comparablePath(await realpath(absolutePath)) !== comparablePath(absolutePath)
+    ) {
+      throw fail("PUBLICATION_INVALID", "prepared mask path changed during exact read");
+    }
+    return { absolutePath, state: afterPath };
+  } catch (error) {
+    if (error instanceof GrandHallT554NativeMaskStoreError) throw error;
+    throw fail("PUBLICATION_INVALID", "prepared mask path could not be read exactly", error);
+  } finally {
+    scratch.fill(0);
+    await handle?.close();
+  }
+}
+
+function dispositionFromPresence(mask: boolean, reasonMap: boolean):
+  GrandHallT554NativeMaskPublicationDisposition {
+  if (mask && reasonMap) return "mask_and_reason_map";
+  if (mask) return "mask_only";
+  if (reasonMap) return "reason_map_only";
+  return "none";
+}
+
+async function unlinkKnownDirectPreparationFile(
+  absolutePath: string,
+  operationDirectory: string,
+): Promise<void> {
+  const before = await lstat(absolutePath, { bigint: true });
+  if (
+    !before.isFile() || before.isSymbolicLink() || before.nlink !== 1n ||
+    comparablePath(await realpath(absolutePath)) !== comparablePath(absolutePath)
+  ) {
+    throw fail("PUBLICATION_INVALID", "known preparation residue is not one direct file");
+  }
+  const immediatelyBeforeUnlink = await lstat(absolutePath, { bigint: true });
+  if (!sameFileState(before, immediatelyBeforeUnlink)) {
+    throw fail("PUBLICATION_INVALID", "known preparation residue changed before unlink");
+  }
+  await unlink(absolutePath);
+  await syncDirectoryMetadata(operationDirectory);
+}
+
+async function inspectExactPreparedPublication(
+  publicationDirectory: string,
+  preparationDirectory: string,
+  expectedRoots: PreparedPublicationRoots,
+  operationIdSha256: string,
+  mask: PreparedPlaneBytes,
+  reasonMap: PreparedPlaneBytes,
+): Promise<GrandHallT554NativeMaskPublicationDisposition> {
+  const rootBefore = await inspectPublicationDirectory(publicationDirectory);
+  const preparationRootBefore = await inspectPublicationDirectory(preparationDirectory);
+  if (
+    !sameObjectIdentity(rootBefore, expectedRoots.publication) ||
+    !sameObjectIdentity(preparationRootBefore, expectedRoots.preparation)
+  ) {
+    throw fail(
+      "PUBLICATION_INVALID",
+      "prepared mask publication roots changed after pre-intent validation",
+    );
+  }
+  const operationDirectory = join(
+    preparationDirectory,
+    `freeze-${operationIdSha256.slice("sha256:".length)}`,
+  );
+  let operationDirectoryExists = false;
+  try {
+    const operationState = await inspectPublicationDirectory(operationDirectory);
+    if (operationState.dev !== expectedRoots.preparation.dev) {
+      throw fail(
+        "PUBLICATION_INVALID",
+        "mask operation stage is on a different filesystem from its pinned preparation root",
+      );
+    }
+    operationDirectoryExists = true;
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+  }
+  const maskWitness = await readAndCompareExactFile(
+    publicationDirectory,
+    mask,
+    [1n, 2n, 3n],
+  );
+  const reasonWitness = await readAndCompareExactFile(
+    publicationDirectory,
+    reasonMap,
+    [1n, 2n, 3n],
+  );
+  const reconcileLinkedPreparationAliases = async (
+    final: ExactPathWitness | null,
+    stageLeafName: "mask.stage" | "reason-map.stage",
+    pendingLeafName: "mask.pending" | "reason-map.pending",
+    plane: PreparedPlaneBytes,
+  ): Promise<void> => {
+    if (final === null || final.state.nlink === 1n) return;
+    if (!operationDirectoryExists) {
+      throw fail(
+        "PUBLICATION_INVALID",
+        "multi-link final mask has no exact operation-stage witness",
+      );
+    }
+    const stage = await readAndCompareExactFile(
+      operationDirectory,
+      { ...plane, fileName: stageLeafName },
+      [1n, 2n, 3n],
+    );
+    let pending: ExactPathWitness | null = null;
+    try {
+      pending = await readAndCompareExactFile(
+        operationDirectory,
+        { ...plane, fileName: pendingLeafName },
+        [1n, 2n, 3n],
+      );
+    } catch {
+      // A non-exact direct pending write is handled by the known-residue loop.
+    }
+    const matchingAliases = [pending, stage].filter(
+      (alias): alias is ExactPathWitness =>
+        alias !== null && sameObjectIdentity(alias.state, final.state),
+    );
+    if (final.state.nlink !== BigInt(matchingAliases.length + 1)) {
+      throw fail(
+        "PUBLICATION_INVALID",
+        "multi-link final mask has an unexplained external hard link",
+      );
+    }
+    for (const alias of matchingAliases) {
+      await unlinkExactStagePlane(alias, operationDirectory, plane);
+      await syncDirectoryMetadata(operationDirectory);
+    }
+  };
+  await reconcileLinkedPreparationAliases(
+    maskWitness,
+    "mask.stage",
+    "mask.pending",
+    mask,
+  );
+  await reconcileLinkedPreparationAliases(
+    reasonWitness,
+    "reason-map.stage",
+    "reason-map.pending",
+    reasonMap,
+  );
+  if (operationDirectoryExists) {
+    const expectedStageEntries = [
+      { leafName: "mask.pending", plane: mask },
+      { leafName: "mask.stage", plane: mask },
+      { leafName: "reason-map.pending", plane: reasonMap },
+      { leafName: "reason-map.stage", plane: reasonMap },
+    ] as const;
+    const actualNames = (await readdir(operationDirectory)).sort();
+    if (actualNames.some((name) =>
+      !expectedStageEntries.some((expected) => expected.leafName === name))) {
+      throw fail("PUBLICATION_INVALID", "mask operation stage contains an unexplained entry");
+    }
+    for (const pair of [
+      { pending: "mask.pending", stage: "mask.stage", plane: mask },
+      { pending: "reason-map.pending", stage: "reason-map.stage", plane: reasonMap },
+    ] as const) {
+      let pendingAlias: ExactPathWitness | null = null;
+      try {
+        pendingAlias = await readAndCompareExactFile(
+          operationDirectory,
+          { ...pair.plane, fileName: pair.pending },
+          [2n],
+        );
+      } catch {
+        // A partial direct pending file is handled by the exact-known cleanup
+        // loop below. A two-link mismatch remains fail-closed there.
+      }
+      if (pendingAlias === null) continue;
+      const stageAlias = await readAndCompareExactFile(
+        operationDirectory,
+        { ...pair.plane, fileName: pair.stage },
+        [2n],
+      );
+      if (
+        stageAlias === null ||
+        !sameObjectIdentity(pendingAlias.state, stageAlias.state)
+      ) {
+        throw fail("PUBLICATION_INVALID", "pending mask hard link has no exact stage peer");
+      }
+      await unlinkExactStagePlane(
+        pendingAlias,
+        operationDirectory,
+        pair.plane,
+      );
+      await syncDirectoryMetadata(operationDirectory);
+    }
+    for (const expected of expectedStageEntries) {
+      const absolutePath = join(operationDirectory, expected.leafName);
+      let witness: ExactPathWitness | null;
+      try {
+        witness = await readAndCompareExactFile(
+          operationDirectory,
+          { ...expected.plane, fileName: expected.leafName },
+          [1n, 2n],
+        );
+      } catch (error) {
+        if (!expected.leafName.endsWith(".pending")) throw error;
+        try {
+          await unlinkKnownDirectPreparationFile(absolutePath, operationDirectory);
+          continue;
+        } catch {
+          throw error;
+        }
+      }
+      if (witness === null) continue;
+      if (witness.state.nlink !== 1n) {
+        throw fail(
+          "PUBLICATION_INVALID",
+          "mask operation stage retains an unexplained external hard link",
+        );
+      }
+      await unlinkExactStagePlane(
+        witness,
+        operationDirectory,
+        expected.plane,
+      );
+      await syncDirectoryMetadata(operationDirectory);
+    }
+  }
+  const canonicalMask = await readAndCompareExactFile(
+    publicationDirectory,
+    mask,
+    [1n],
+  );
+  const canonicalReason = await readAndCompareExactFile(
+    publicationDirectory,
+    reasonMap,
+    [1n],
+  );
+  if (
+    (maskWitness === null) !== (canonicalMask === null) ||
+    (reasonWitness === null) !== (canonicalReason === null)
+  ) {
+    throw fail("PUBLICATION_INVALID", "mask publication presence changed during normalization");
+  }
+  const rootAfter = await inspectPublicationDirectory(publicationDirectory);
+  const preparationRootAfter = await inspectPublicationDirectory(preparationDirectory);
+  if (
+    !sameFileState(rootBefore, rootAfter) ||
+    !sameObjectIdentity(rootAfter, expectedRoots.publication) ||
+    !sameObjectIdentity(preparationRootAfter, expectedRoots.preparation)
+  ) {
+    throw fail("PUBLICATION_INVALID", "mask publication directory changed during inspection");
+  }
+  if (operationDirectoryExists) {
+    await removeEmptyStageDirectory(
+      operationDirectory,
+      preparationDirectory,
+      expectedRoots.preparation,
+    );
+  }
+  if (canonicalMask !== null) await syncExactFile(canonicalMask);
+  if (canonicalReason !== null) await syncExactFile(canonicalReason);
+  if (canonicalMask !== null || canonicalReason !== null) {
+    const durableRoot = await inspectPublicationDirectory(publicationDirectory);
+    if (!sameObjectIdentity(durableRoot, expectedRoots.publication)) {
+      throw fail(
+        "PUBLICATION_INVALID",
+        "prepared mask publication root changed before recovery durability barrier",
+      );
+    }
+    if (canonicalMask !== null) {
+      await syncPublicationDirectory(
+        publicationDirectory,
+        durableRoot,
+        canonicalMask,
+        {},
+      );
+    }
+    if (canonicalReason !== null) {
+      await syncPublicationDirectory(
+        publicationDirectory,
+        durableRoot,
+        canonicalReason,
+        {},
+      );
+    }
+    const finalRoot = await inspectPublicationDirectory(publicationDirectory);
+    if (!sameObjectIdentity(finalRoot, expectedRoots.publication)) {
+      throw fail(
+        "PUBLICATION_INVALID",
+        "prepared mask publication root changed after recovery durability barrier",
+      );
+    }
+  }
+  const finalPublicationRoot = await inspectPublicationDirectory(publicationDirectory);
+  const finalPreparationRoot = await inspectPublicationDirectory(preparationDirectory);
+  if (
+    !sameObjectIdentity(finalPublicationRoot, expectedRoots.publication) ||
+    !sameObjectIdentity(finalPreparationRoot, expectedRoots.preparation)
+  ) {
+    throw fail(
+      "PUBLICATION_INVALID",
+      "prepared mask publication roots changed before recovery classification",
+    );
+  }
+  return dispositionFromPresence(canonicalMask !== null, canonicalReason !== null);
+}
+
+async function createOrOpenStageDirectory(
+  preparationDirectory: string,
+  operationIdSha256: string,
+  publicationDirectory: string,
+  expectedRoots: PreparedPublicationRoots,
+): Promise<string> {
+  const preparationRoot = await inspectPublicationDirectory(preparationDirectory);
+  const publicationRoot = await inspectPublicationDirectory(publicationDirectory);
+  if (
+    preparationRoot.dev !== publicationRoot.dev ||
+    !sameObjectIdentity(preparationRoot, expectedRoots.preparation) ||
+    !sameObjectIdentity(publicationRoot, expectedRoots.publication)
+  ) {
+    throw fail(
+      "PUBLICATION_INVALID",
+      "mask preparation and publication directories must be on the same filesystem",
+    );
+  }
+  const operationDirectory = join(
+    preparationDirectory,
+    `freeze-${operationIdSha256.slice("sha256:".length)}`,
+  );
+  try {
+    await mkdir(operationDirectory, { mode: 0o700 });
+  } catch (error) {
+    if (errnoCode(error) !== "EEXIST") {
+      throw fail("PUBLICATION_INVALID", "mask operation stage could not be created", error);
+    }
+  }
+  const operationState = await inspectPublicationDirectory(operationDirectory);
+  if (operationState.dev !== publicationRoot.dev ||
+    comparablePath(dirname(operationDirectory)) !== comparablePath(preparationDirectory)) {
+    throw fail("PUBLICATION_INVALID", "mask operation stage is aliased or cross-volume");
+  }
+  const names = (await readdir(operationDirectory)).sort();
+  if (names.some((name) =>
+    name !== "mask.pending" &&
+    name !== "mask.stage" &&
+    name !== "reason-map.pending" &&
+    name !== "reason-map.stage")) {
+    throw fail("PUBLICATION_INVALID", "mask operation stage contains an unexplained entry");
+  }
+  await syncDirectoryMetadata(preparationDirectory);
+  const preparationAfterSync = await inspectPublicationDirectory(preparationDirectory);
+  const operationAfterSync = await inspectPublicationDirectory(operationDirectory);
+  if (
+    !sameObjectIdentity(preparationAfterSync, expectedRoots.preparation) ||
+    !sameObjectIdentity(operationAfterSync, operationState)
+  ) {
+    throw fail(
+      "PUBLICATION_INVALID",
+      "mask operation-stage custody changed during its parent durability barrier",
+    );
+  }
+  return operationDirectory;
+}
+
+async function assertPreparedPublicationRoots(
+  publicationDirectory: string,
+  preparationDirectory: string,
+): Promise<PreparedPublicationRoots> {
+  const publication = await inspectPublicationDirectory(publicationDirectory);
+  const preparation = await inspectPublicationDirectory(preparationDirectory);
+  if (publication.dev !== preparation.dev) {
+    throw fail(
+      "PUBLICATION_INVALID",
+      "mask preparation and publication directories must be stable and same-volume before intent",
+    );
+  }
+  return Object.freeze({ publication, preparation });
+}
+
+async function writeOrVerifyStagePlane(
+  operationDirectory: string,
+  stageLeafName: "mask.stage" | "reason-map.stage",
+  plane: PreparedPlaneBytes,
+): Promise<ExactPathWitness> {
+  const pendingLeafName = stageLeafName === "mask.stage"
+    ? "mask.pending" as const
+    : "reason-map.pending" as const;
+  const stagePlane = { ...plane, fileName: stageLeafName };
+  const pendingPlane = { ...plane, fileName: pendingLeafName };
+  let existing = await readAndCompareExactFile(
+    operationDirectory,
+    stagePlane,
+    [1n, 2n],
+  );
+  let pending: ExactPathWitness | null = null;
+  try {
+    pending = await readAndCompareExactFile(
+      operationDirectory,
+      pendingPlane,
+      [1n, 2n],
+    );
+  } catch (error) {
+    const pendingPath = join(operationDirectory, pendingLeafName);
+    let incomplete: BigIntStats;
+    try {
+      incomplete = await lstat(pendingPath, { bigint: true });
+    } catch (statError) {
+      if (isMissing(statError)) throw error;
+      throw statError;
+    }
+    if (
+      !incomplete.isFile() || incomplete.isSymbolicLink() || incomplete.nlink !== 1n ||
+      comparablePath(await realpath(pendingPath)) !== comparablePath(pendingPath)
+    ) {
+      throw error;
+    }
+    const immediatelyBeforeUnlink = await lstat(pendingPath, { bigint: true });
+    if (!sameFileState(incomplete, immediatelyBeforeUnlink)) throw error;
+    await unlink(pendingPath);
+    await syncDirectoryMetadata(operationDirectory);
+  }
+  if (existing !== null) {
+    if (pending !== null) {
+      if (
+        existing.state.nlink !== 2n || pending.state.nlink !== 2n ||
+        !sameObjectIdentity(existing.state, pending.state)
+      ) {
+        throw fail("PUBLICATION_INVALID", "mask stage and pending aliases disagree");
+      }
+      await unlinkExactStagePlane(pending, operationDirectory, plane);
+      await syncDirectoryMetadata(operationDirectory);
+      existing = await readAndCompareExactFile(operationDirectory, stagePlane, [1n, 2n]);
+      if (existing === null) {
+        throw fail("PUBLICATION_INVALID", "mask stage vanished during pending reconciliation");
+      }
+    }
+    return existing;
+  }
+  const absolutePendingPath = join(operationDirectory, pendingLeafName);
+  let handle: FileHandle | undefined;
+  try {
+    if (pending === null) {
+      handle = await open(absolutePendingPath, "wx", 0o600);
+    }
+    if (handle !== undefined) {
+      const empty = await handle.stat({ bigint: true });
+      if (!empty.isFile() || empty.isSymbolicLink() || empty.nlink !== 1n || empty.size !== 0n) {
+        throw fail("PUBLICATION_INVALID", "mask stage descriptor is not a fresh direct file");
+      }
+      await writeAll(handle, plane.bytes);
+      await handle.sync();
+      const written = await handle.stat({ bigint: true });
+      if (
+        !sameObjectIdentity(empty, written) || written.nlink !== 1n ||
+        written.size !== BigInt(plane.bytes.length)
+      ) {
+        throw fail("PUBLICATION_INVALID", "mask stage descriptor changed while writing");
+      }
+      await handle.close();
+      handle = undefined;
+      pending = await readAndCompareExactFile(operationDirectory, pendingPlane, [1n]);
+      if (pending === null) {
+        throw fail("PUBLICATION_INVALID", "mask pending file vanished after its durable write");
+      }
+    }
+    if (pending === null) {
+      throw fail("PUBLICATION_INVALID", "mask pending file is absent before stage promotion");
+    }
+    await syncExactFile(pending);
+    await syncDirectoryMetadata(operationDirectory);
+    try {
+      await link(absolutePendingPath, join(operationDirectory, stageLeafName));
+    } catch (error) {
+      if (errnoCode(error) !== "EEXIST") throw error;
+      const racedStage = await readAndCompareExactFile(
+        operationDirectory,
+        stagePlane,
+        [2n],
+      );
+      if (racedStage === null || !sameObjectIdentity(racedStage.state, pending.state)) {
+        throw fail("PUBLICATION_INVALID", "mask stage promotion collided with a different node");
+      }
+    }
+    await syncDirectoryMetadata(operationDirectory);
+    pending = await readAndCompareExactFile(operationDirectory, pendingPlane, [2n]);
+    const promoted = await readAndCompareExactFile(operationDirectory, stagePlane, [2n]);
+    if (
+      pending === null || promoted === null ||
+      !sameObjectIdentity(pending.state, promoted.state)
+    ) {
+      throw fail("PUBLICATION_INVALID", "mask stage promotion did not create one exact hard-link pair");
+    }
+    await unlinkExactStagePlane(pending, operationDirectory, plane);
+    await syncDirectoryMetadata(operationDirectory);
+    const witnessed = await readAndCompareExactFile(operationDirectory, stagePlane, [1n]);
+    if (witnessed === null) {
+      throw fail("PUBLICATION_INVALID", "mask stage vanished after pending cleanup");
+    }
+    return witnessed;
+  } catch (error) {
+    if (error instanceof GrandHallT554NativeMaskStoreError) throw error;
+    throw fail("PUBLICATION_INVALID", "mask stage write failed", error);
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function assertExistingStageTopology(
+  stage: ExactPathWitness,
+  publicationDirectory: string,
+  plane: PreparedPlaneBytes,
+): Promise<void> {
+  if (stage.state.nlink === 1n) return;
+  const final = await readAndCompareExactFile(publicationDirectory, plane, [2n]);
+  if (final === null || !sameObjectIdentity(stage.state, final.state)) {
+    throw fail(
+      "PUBLICATION_INVALID",
+      "two-link mask stage is not paired only with its exact intended final name",
+    );
+  }
+}
+
+async function linkNoReplaceOrVerifyExact(
+  stage: ExactPathWitness,
+  publicationDirectory: string,
+  plane: PreparedPlaneBytes,
+  expectedPublicationRoot: BigIntStats,
+  disposition: "must_create" | "must_exist",
+): Promise<void> {
+  const outputPath = join(publicationDirectory, plane.fileName);
+  const rootBefore = await inspectPublicationDirectory(publicationDirectory);
+  if (!sameObjectIdentity(rootBefore, expectedPublicationRoot)) {
+    throw fail("PUBLICATION_INVALID", "prepared mask publication root changed before linking");
+  }
+  if (disposition === "must_exist") {
+    const existing = await readAndCompareExactFile(publicationDirectory, plane, [1n]);
+    const rootAfter = await inspectPublicationDirectory(publicationDirectory);
+    if (
+      existing === null ||
+      !sameObjectIdentity(rootAfter, expectedPublicationRoot) ||
+      !sameObjectIdentity(rootBefore, rootAfter)
+    ) {
+      throw fail(
+        "PUBLICATION_INVALID",
+        "complete prepared evidence changed before exact adoption",
+      );
+    }
+    return;
+  }
+  try {
+    await link(stage.absolutePath, outputPath);
+  } catch (error) {
+    if (errnoCode(error) === "EEXIST") {
+      throw fail(
+        "PUBLICATION_INVALID",
+        "prepared mask destination appeared after an empty pre-publication disposition",
+        error,
+      );
+    }
+    throw fail("PUBLICATION_INVALID", "prepared mask hard-link publication failed", error);
+  }
+  const stagedAfter = await lstat(stage.absolutePath, { bigint: true });
+  const linked = await lstat(outputPath, { bigint: true });
+  const rootAfter = await inspectPublicationDirectory(publicationDirectory);
+  if (
+    !sameObjectIdentity(stage.state, stagedAfter) ||
+    !sameObjectIdentity(stagedAfter, linked) ||
+    stagedAfter.nlink !== 2n || linked.nlink !== 2n ||
+    linked.size !== BigInt(plane.bytes.length) ||
+    comparablePath(await realpath(outputPath)) !== comparablePath(outputPath) ||
+    !sameObjectIdentity(rootAfter, expectedPublicationRoot) ||
+    !sameObjectIdentity(rootBefore, rootAfter)
+  ) {
+    throw fail("PUBLICATION_INVALID", "prepared mask hard link has unexpected identity or topology");
+  }
+}
+
+async function unlinkExactStagePlane(
+  stage: ExactPathWitness,
+  operationDirectory: string,
+  plane: PreparedPlaneBytes,
+): Promise<void> {
+  const stageLeafName = basename(stage.absolutePath);
+  const witnessed = await readAndCompareExactFile(
+    operationDirectory,
+    { ...plane, fileName: stageLeafName },
+    [1n, 2n, 3n],
+  );
+  if (witnessed === null) {
+    throw fail("PUBLICATION_INVALID", "mask stage vanished before exact unlink");
+  }
+  const before = witnessed.state;
+  if (
+    !before.isFile() || before.isSymbolicLink() ||
+    !sameObjectIdentity(before, stage.state) ||
+    before.size !== BigInt(plane.bytes.length)
+  ) {
+    throw fail("PUBLICATION_INVALID", "mask stage changed before exact unlink");
+  }
+  await unlink(stage.absolutePath);
+  try {
+    await lstat(stage.absolutePath, { bigint: true });
+    throw fail("PUBLICATION_INVALID", "mask stage still exists after exact unlink");
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+  }
+  await inspectPublicationDirectory(operationDirectory);
+}
+
+async function syncExactFile(witness: ExactPathWitness): Promise<void> {
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(witness.absolutePath, "r+");
+    const opened = await handle.stat({ bigint: true });
+    if (
+      !opened.isFile() || opened.isSymbolicLink() || opened.nlink !== 1n ||
+      !sameFileState(opened, witness.state)
+    ) {
+      throw fail("PUBLICATION_INVALID", "exact final changed before file durability barrier");
+    }
+    await handle.sync();
+    const after = await handle.stat({ bigint: true });
+    if (!sameFileState(opened, after)) {
+      throw fail("PUBLICATION_INVALID", "exact final changed during file durability barrier");
+    }
+  } catch (error) {
+    if (error instanceof GrandHallT554NativeMaskStoreError) throw error;
+    throw fail("PUBLICATION_INVALID", "exact final file durability barrier failed", error);
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function removeEmptyStageDirectory(
+  operationDirectory: string,
+  preparationDirectory: string,
+  expectedPreparationRoot: BigIntStats,
+): Promise<void> {
+  const names = await readdir(operationDirectory);
+  if (names.length !== 0) {
+    throw fail("PUBLICATION_INVALID", "mask operation stage was not empty after publication");
+  }
+  const before = await inspectPublicationDirectory(operationDirectory);
+  await rmdir(operationDirectory);
+  try {
+    await lstat(operationDirectory, { bigint: true });
+    throw fail("PUBLICATION_INVALID", "mask operation stage still exists after removal");
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+  }
+  const preparationState = await inspectPublicationDirectory(preparationDirectory);
+  if (
+    preparationState.dev !== before.dev ||
+    !sameObjectIdentity(preparationState, expectedPreparationRoot)
+  ) {
+    throw fail("PUBLICATION_INVALID", "mask preparation directory changed during cleanup");
+  }
+  await syncDirectoryMetadata(preparationDirectory);
+  const preparationAfterSync = await inspectPublicationDirectory(preparationDirectory);
+  if (!sameObjectIdentity(preparationAfterSync, expectedPreparationRoot)) {
+    throw fail("PUBLICATION_INVALID", "mask preparation directory changed after cleanup");
   }
 }
 
@@ -1484,6 +2390,260 @@ function factsFromBinding(binding: GrandHallT554NativeMaskFrozenBindingV2): Deri
     reasonCounts: Object.freeze(reasonCounts) };
 }
 
+function clonePreparedBinding(
+  binding: GrandHallT554NativeMaskPreparedBindingV2,
+): GrandHallT554NativeMaskPreparedBindingV2 {
+  const clone = structuredClone(binding);
+  Object.freeze(clone.source);
+  clone.reasonCounts.forEach(Object.freeze);
+  Object.freeze(clone.reasonCounts);
+  Object.freeze(clone.mask.permittedPixelValues);
+  Object.freeze(clone.mask);
+  clone.reasonMap.reasonSampleCodebook.forEach(Object.freeze);
+  Object.freeze(clone.reasonMap.reasonSampleCodebook);
+  Object.freeze(clone.reasonMap.permittedPixelValues);
+  Object.freeze(clone.reasonMap);
+  return Object.freeze(clone);
+}
+
+function preparedBindingFromEncoded(
+  source: GrandHallPanoramaSourceJpgIdentityV2,
+  revision: MaskRevision,
+  facts: DerivedRevisionFacts,
+  encodedMask: Buffer,
+  encodedReasonMap: Buffer,
+): GrandHallT554NativeMaskPreparedBindingV2 {
+  const maskDigest = sha256(encodedMask);
+  const reasonMapDigest = sha256(encodedReasonMap);
+  const maskFileName = outputFileName("mask", source, revision.revision, maskDigest);
+  const reasonMapFileName = outputFileName(
+    "reason-map",
+    source,
+    revision.revision,
+    reasonMapDigest,
+  );
+  const binding: GrandHallT554NativeMaskPreparedBindingV2 = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-native-mask-prepared-binding.v2" as const,
+    source: cloneSource(source),
+    revision: revision.revision,
+    includedPixelCount: facts.includedPixelCount,
+    excludedPixelCount: facts.excludedPixelCount,
+    reasonCounts: [...reasonCountObjects(facts.reasonCounts)],
+    mask: {
+      fileName: maskFileName,
+      sha256: maskDigest,
+      byteLength: encodedMask.length,
+      widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+      heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
+      bitDepth: 8 as const,
+      channelCount: 1 as const,
+      permittedPixelValues: [0, 255],
+      zeroMeaning: "grand_hall_included" as const,
+      twoHundredFiftyFiveMeaning: "excluded_or_unknown" as const,
+    },
+    reasonMap: {
+      fileName: reasonMapFileName,
+      sha256: reasonMapDigest,
+      byteLength: encodedReasonMap.length,
+      widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+      heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX,
+      bitDepth: 8 as const,
+      channelCount: 1 as const,
+      permittedPixelValues: [0, 1, 2, 3, 4, 5],
+      zeroMeaning: "grand_hall_included" as const,
+      reasonSampleCodebook: REASON_SAMPLE_CODEBOOK.map((entry) => ({ ...entry })) as
+        GrandHallT554NativeMaskPreparedReasonMapBindingV2["reasonSampleCodebook"],
+    },
+  };
+  return clonePreparedBinding(binding);
+}
+
+async function publishPreparedPair(
+  publicationDirectory: string,
+  preparationDirectory: string,
+  expectedRoots: PreparedPublicationRoots,
+  operationIdSha256: string,
+  initialDisposition: "none" | "mask_and_reason_map",
+  prepared: GrandHallT554NativeMaskPreparedBindingV2,
+  encodedMask: Buffer,
+  encodedReasonMap: Buffer,
+  facts: DerivedRevisionFacts,
+  seam: GrandHallT554NativeMaskStoreTestSeam,
+): Promise<GrandHallT554NativeMaskFrozenBindingV2> {
+  const mask: PreparedPlaneBytes = {
+    fileName: prepared.mask.fileName,
+    digest: prepared.mask.sha256,
+    bytes: encodedMask,
+  };
+  const reasonMap: PreparedPlaneBytes = {
+    fileName: prepared.reasonMap.fileName,
+    digest: prepared.reasonMap.sha256,
+    bytes: encodedReasonMap,
+  };
+  const operationDirectory = await createOrOpenStageDirectory(
+    preparationDirectory,
+    operationIdSha256,
+    publicationDirectory,
+    expectedRoots,
+  );
+  const maskStage = await writeOrVerifyStagePlane(
+    operationDirectory,
+    "mask.stage",
+    mask,
+  );
+  const reasonStage = await writeOrVerifyStagePlane(
+    operationDirectory,
+    "reason-map.stage",
+    reasonMap,
+  );
+  await assertExistingStageTopology(maskStage, publicationDirectory, mask);
+  await assertExistingStageTopology(reasonStage, publicationDirectory, reasonMap);
+  const linkDisposition = initialDisposition === "none" ? "must_create" : "must_exist";
+  await linkNoReplaceOrVerifyExact(
+    maskStage,
+    publicationDirectory,
+    mask,
+    expectedRoots.publication,
+    linkDisposition,
+  );
+  await seam.afterPreparedFinalLinked?.({ plane: "mask" });
+  await linkNoReplaceOrVerifyExact(
+    reasonStage,
+    publicationDirectory,
+    reasonMap,
+    expectedRoots.publication,
+    linkDisposition,
+  );
+  await seam.afterPreparedFinalLinked?.({ plane: "reason_map" });
+
+  if (process.platform !== "win32") {
+    const publicationRoot = await inspectPublicationDirectory(publicationDirectory);
+    if (!sameObjectIdentity(publicationRoot, expectedRoots.publication)) {
+      throw fail("PUBLICATION_INVALID", "prepared mask publication root changed before fsync");
+    }
+    const maskLinked = await readAndCompareExactFile(
+      publicationDirectory,
+      mask,
+      [1n, 2n],
+    );
+    const reasonLinked = await readAndCompareExactFile(
+      publicationDirectory,
+      reasonMap,
+      [1n, 2n],
+    );
+    if (maskLinked === null || reasonLinked === null) {
+      throw fail("PUBLICATION_INVALID", "prepared mask pair vanished before durability barrier");
+    }
+    const maskMode = await syncPublicationDirectory(
+      publicationDirectory,
+      publicationRoot,
+      maskLinked,
+      {},
+    );
+    const reasonMode = await syncPublicationDirectory(
+      publicationDirectory,
+      publicationRoot,
+      reasonLinked,
+      {},
+    );
+    if (maskMode !== reasonMode) {
+      throw fail("PUBLICATION_INVALID", "prepared mask pair used inconsistent durability barriers");
+    }
+  }
+
+  await unlinkExactStagePlane(maskStage, operationDirectory, mask);
+  await syncDirectoryMetadata(operationDirectory);
+  await unlinkExactStagePlane(reasonStage, operationDirectory, reasonMap);
+  await syncDirectoryMetadata(operationDirectory);
+
+  const publicationRoot = await inspectPublicationDirectory(publicationDirectory);
+  if (!sameObjectIdentity(publicationRoot, expectedRoots.publication)) {
+    throw fail("PUBLICATION_INVALID", "prepared mask publication root changed before final flush");
+  }
+  const maskFinal = await readAndCompareExactFile(publicationDirectory, mask, [1n]);
+  const reasonFinal = await readAndCompareExactFile(publicationDirectory, reasonMap, [1n]);
+  if (maskFinal === null || reasonFinal === null) {
+    throw fail("PUBLICATION_INVALID", "prepared mask pair vanished before final flush");
+  }
+  await syncExactFile(maskFinal);
+  await syncExactFile(reasonFinal);
+  const maskMode = await syncPublicationDirectory(
+    publicationDirectory,
+    publicationRoot,
+    maskFinal,
+    seam,
+  );
+  const reasonMode = await syncPublicationDirectory(
+    publicationDirectory,
+    publicationRoot,
+    reasonFinal,
+    seam,
+  );
+  if (maskMode !== reasonMode) {
+    throw fail("PUBLICATION_INVALID", "prepared mask pair used inconsistent final barriers");
+  }
+  const publicationDurability = maskMode;
+
+  const verified = await reopenPublishedEvidence(
+    publicationDirectory,
+    {
+      fileName: prepared.mask.fileName,
+      digest: prepared.mask.sha256,
+      byteLength: prepared.mask.byteLength,
+    },
+    {
+      fileName: prepared.reasonMap.fileName,
+      digest: prepared.reasonMap.sha256,
+      byteLength: prepared.reasonMap.byteLength,
+    },
+  );
+  if (!sameDerivedFacts(verified, facts)) {
+    throw fail(
+      "PUBLICATION_INVALID",
+      "reopened prepared PNG evidence differs from the immutable mask revision",
+    );
+  }
+  await seam.afterPreparedPairVerified?.();
+  await removeEmptyStageDirectory(
+    operationDirectory,
+    preparationDirectory,
+    expectedRoots.preparation,
+  );
+  const finalPublicationRoot = await inspectPublicationDirectory(publicationDirectory);
+  const finalPreparationRoot = await inspectPublicationDirectory(preparationDirectory);
+  if (
+    !sameObjectIdentity(finalPublicationRoot, expectedRoots.publication) ||
+    !sameObjectIdentity(finalPreparationRoot, expectedRoots.preparation)
+  ) {
+    throw fail(
+      "PUBLICATION_INVALID",
+      "prepared mask publication roots changed before verified return",
+    );
+  }
+  return Object.freeze({
+    schemaVersion: "venviewer.grand-hall-t554-native-mask-frozen-binding.v2" as const,
+    source: Object.freeze(cloneSource(prepared.source)),
+    revision: prepared.revision,
+    fileName: prepared.mask.fileName,
+    sha256: prepared.mask.sha256,
+    byteLength: prepared.mask.byteLength,
+    widthPx: prepared.mask.widthPx,
+    heightPx: prepared.mask.heightPx,
+    bitDepth: prepared.mask.bitDepth,
+    channelCount: prepared.mask.channelCount,
+    permittedPixelValues: prepared.mask.permittedPixelValues,
+    zeroMeaning: prepared.mask.zeroMeaning,
+    twoHundredFiftyFiveMeaning: prepared.mask.twoHundredFiftyFiveMeaning,
+    includedPixelCount: verified.includedPixelCount,
+    excludedPixelCount: verified.excludedPixelCount,
+    reasonCounts: Object.freeze(reasonCountObjects(verified.reasonCounts)),
+    publicationDurability,
+    reasonMap: Object.freeze(structuredClone(prepared.reasonMap)),
+    immutableFrozen: true as const,
+  });
+}
+
 function assertPixelCoordinate(x: number, y: number): void {
   if (
     !Number.isInteger(x) || !Number.isInteger(y) ||
@@ -1497,12 +2657,14 @@ function assertPixelCoordinate(x: number, y: number): void {
 export class GrandHallT554NativeMaskRevisionStore {
   readonly source: GrandHallPanoramaSourceJpgIdentityV2;
   readonly #publicationDirectory: string | null;
+  readonly #preparationDirectory: string | null;
   readonly #replayOnly: boolean;
   readonly #revisions = new Map<number, MaskRevision>();
   #currentRevisionNumber = 0;
   #activeFrozenBinding: GrandHallT554NativeMaskFrozenBindingV2 | null = null;
   #abandoned = false;
   #operationBusy = false;
+  #activePreparationToken: object | null = null;
   #ownedBufferBytes = TILE_PIXEL_COUNT * 2;
   #changedTileSealCount = 0;
 
@@ -1510,6 +2672,7 @@ export class GrandHallT554NativeMaskRevisionStore {
     const parsed = parseConfig(config);
     this.source = parsed.source;
     this.#publicationDirectory = parsed.publicationDirectory;
+    this.#preparationDirectory = parsed.preparationDirectory;
     this.#replayOnly = parsed.replayOnly;
     this.#revisions.set(0, initialRevision());
   }
@@ -1659,6 +2822,219 @@ export class GrandHallT554NativeMaskRevisionStore {
     return this.snapshot();
   }
 
+  async prepareFreeze(input: unknown): Promise<GrandHallT554NativeMaskPreparedFreezeV2> {
+    this.#assertUsable();
+    if (
+      this.#replayOnly ||
+      this.#publicationDirectory === null ||
+      this.#preparationDirectory === null
+    ) {
+      throw fail(
+        "PUBLICATION_DISABLED",
+        "prepared mask publication requires explicit evidence and same-volume preparation directories",
+      );
+    }
+    const request = parsePrepareFreezeRequest(input);
+    const publicationDirectory = this.#publicationDirectory;
+    const preparationDirectory = this.#preparationDirectory;
+    this.#assertExpectedRevision(request.expectedRevision);
+    if (this.#operationBusy) {
+      throw fail("OPERATION_BUSY", "a native mask mutation or preparation is in progress");
+    }
+    this.#operationBusy = true;
+    let rawMask: Buffer | undefined;
+    let rawReasonMap: Buffer | undefined;
+    let encodedMask: Buffer | undefined;
+    let encodedReasonMap: Buffer | undefined;
+    let expectedRoots: PreparedPublicationRoots;
+    let handedOff = false;
+    try {
+      try {
+        await (TEST_SEAMS.get(this) ?? {}).beforePreparedPublicationRootsValidated?.();
+        expectedRoots = await assertPreparedPublicationRoots(
+          publicationDirectory,
+          preparationDirectory,
+        );
+      } catch (error) {
+        this.#activeFrozenBinding = null;
+        if (error instanceof GrandHallT554NativeMaskStoreError) throw error;
+        throw fail(
+          "PUBLICATION_INVALID",
+          "prepared mask publication roots could not be validated",
+          error,
+        );
+      }
+      this.#assertUsable();
+      this.#assertExpectedRevision(request.expectedRevision);
+      const revision = this.#currentRevision();
+      const facts = deriveRevisionFacts(revision);
+      rawMask = flattenPlane(revision, "mask");
+      rawReasonMap = flattenPlane(revision, "reasons");
+      encodedMask = await encodeCanonicalMask(rawMask);
+      encodedReasonMap = await encodeCanonicalReasonMap(rawReasonMap);
+      const prepared = preparedBindingFromEncoded(
+        this.source,
+        revision,
+        facts,
+        encodedMask,
+        encodedReasonMap,
+      );
+      const maskBytes = encodedMask;
+      const reasonBytes = encodedReasonMap;
+      const preparedRoots = expectedRoots;
+      const token = Object.freeze({});
+      this.#activePreparationToken = token;
+      let consumed = false;
+      let capabilityBusy = false;
+      const assertLive = (): void => {
+        if (
+          consumed ||
+          this.#activePreparationToken !== token ||
+          !this.#operationBusy ||
+          this.#abandoned
+        ) {
+          throw fail(
+            "PREPARED_FREEZE_CONSUMED",
+            "prepared mask capability is no longer live",
+          );
+        }
+      };
+      const release = (): void => {
+        maskBytes.fill(0);
+        reasonBytes.fill(0);
+        if (this.#activePreparationToken === token) {
+          this.#activePreparationToken = null;
+          this.#operationBusy = false;
+        }
+      };
+      const publicBinding = clonePreparedBinding(prepared);
+      const capability: GrandHallT554NativeMaskPreparedFreezeV2 = {
+        binding: publicBinding,
+        inspectPublication: async () => {
+          assertLive();
+          if (capabilityBusy) {
+            throw fail("OPERATION_BUSY", "prepared mask capability is already resolving");
+          }
+          capabilityBusy = true;
+          try {
+            try {
+              const disposition = await inspectExactPreparedPublication(
+                publicationDirectory,
+                preparationDirectory,
+                preparedRoots,
+                request.operationIdSha256,
+                {
+                  fileName: prepared.mask.fileName,
+                  digest: prepared.mask.sha256,
+                  bytes: maskBytes,
+                },
+                {
+                  fileName: prepared.reasonMap.fileName,
+                  digest: prepared.reasonMap.sha256,
+                  bytes: reasonBytes,
+                },
+              );
+              if (disposition !== "mask_and_reason_map") {
+                this.#activeFrozenBinding = null;
+              }
+              return disposition;
+            } catch (error) {
+              this.#activeFrozenBinding = null;
+              if (error instanceof GrandHallT554NativeMaskStoreError) throw error;
+              throw fail(
+                "PUBLICATION_INVALID",
+                "prepared mask publication inspection failed closed",
+                error,
+              );
+            }
+          } finally {
+            capabilityBusy = false;
+          }
+        },
+        publishOrVerifyExact: async () => {
+          assertLive();
+          if (capabilityBusy) {
+            throw fail("OPERATION_BUSY", "prepared mask capability is already resolving");
+          }
+          capabilityBusy = true;
+          consumed = true;
+          try {
+            try {
+              const initialDisposition = await inspectExactPreparedPublication(
+                publicationDirectory,
+                preparationDirectory,
+                preparedRoots,
+                request.operationIdSha256,
+                {
+                  fileName: prepared.mask.fileName,
+                  digest: prepared.mask.sha256,
+                  bytes: maskBytes,
+                },
+                {
+                  fileName: prepared.reasonMap.fileName,
+                  digest: prepared.reasonMap.sha256,
+                  bytes: reasonBytes,
+                },
+              );
+              if (
+                initialDisposition === "mask_only" ||
+                initialDisposition === "reason_map_only"
+              ) {
+                this.#activeFrozenBinding = null;
+                throw fail(
+                  "PUBLICATION_PARTIAL",
+                  "a partial exact crash publication cannot become frozen evidence",
+                );
+              }
+              const frozen = await publishPreparedPair(
+                publicationDirectory,
+                preparationDirectory,
+                preparedRoots,
+                request.operationIdSha256,
+                initialDisposition,
+                prepared,
+                maskBytes,
+                reasonBytes,
+                facts,
+                TEST_SEAMS.get(this) ?? {},
+              );
+              return cloneFrozenBinding(frozen);
+            } catch (error) {
+              this.#activeFrozenBinding = null;
+              if (error instanceof GrandHallT554NativeMaskStoreError) throw error;
+              throw fail(
+                "PUBLICATION_INVALID",
+                "prepared mask publication failed closed",
+                error,
+              );
+            }
+          } finally {
+            release();
+          }
+        },
+        discard: () => {
+          assertLive();
+          if (capabilityBusy) {
+            throw fail("OPERATION_BUSY", "prepared mask capability is already resolving");
+          }
+          consumed = true;
+          release();
+        },
+      };
+      handedOff = true;
+      return Object.freeze(capability);
+    } finally {
+      rawMask?.fill(0);
+      rawReasonMap?.fill(0);
+      if (!handedOff) {
+        encodedMask?.fill(0);
+        encodedReasonMap?.fill(0);
+        this.#activePreparationToken = null;
+        this.#operationBusy = false;
+      }
+    }
+  }
+
   async freeze(input: unknown): Promise<GrandHallT554NativeMaskFrozenBindingV2> {
     this.#assertUsable();
     if (this.#replayOnly || this.#publicationDirectory === null) {
@@ -1670,6 +3046,52 @@ export class GrandHallT554NativeMaskRevisionStore {
     const publicationDirectory = this.#publicationDirectory;
     const expectedRevision = parseExpectedRevision(input);
     this.#assertExpectedRevision(expectedRevision);
+    if (this.#preparationDirectory !== null) {
+      const revision = this.#currentRevision();
+      const operationIdSha256 = domainDigest(
+        "VENVIEWER_GRAND_HALL_T554_NATIVE_MASK_LEGACY_FREEZE_OPERATION_V2",
+        {
+          source: this.source,
+          revision: revision.revision,
+          pixelTileInventorySha256: computePixelTileInventorySha256(revision),
+        },
+      );
+      const prepared = await this.prepareFreeze({
+        expectedRevision,
+        operationIdSha256,
+      });
+      try {
+        const disposition = await prepared.inspectPublication();
+        if (disposition === "mask_only" || disposition === "reason_map_only") {
+          this.#activeFrozenBinding = null;
+          prepared.discard();
+          throw fail(
+            "PUBLICATION_PARTIAL",
+            "legacy freeze refuses to complete a partial exact crash publication without a durable recovery decision",
+          );
+        }
+        const frozen = await prepared.publishOrVerifyExact();
+        this.#activeFrozenBinding = frozen;
+        return cloneFrozenBinding(frozen);
+      } catch (error) {
+        this.#activeFrozenBinding = null;
+        try {
+          prepared.discard();
+        } catch (cleanupError) {
+          if (
+            !(cleanupError instanceof GrandHallT554NativeMaskStoreError) ||
+            cleanupError.code !== "PREPARED_FREEZE_CONSUMED"
+          ) {
+            throw fail(
+              "INTERNAL_INVARIANT_FAILED",
+              "legacy freeze preparation cleanup failed",
+              { operationError: error, cleanupError },
+            );
+          }
+        }
+        throw error;
+      }
+    }
     if (this.#operationBusy) throw fail("OPERATION_BUSY", "a native mask mutation is in progress");
     this.#operationBusy = true;
     let rawMask: Buffer | undefined;
@@ -1857,6 +3279,17 @@ export const __testOnlyGrandHallT554NativeMaskRevisionStore = /* @__PURE__ */ Ob
     callbacks: Pick<
       GrandHallT554NativeMaskStoreTestSeam,
       "beforePublicationDirectorySync" | "afterPublicationDurabilityBarrier"
+    >,
+  ): void {
+    TEST_SEAMS.set(store, { ...TEST_SEAMS.get(store), ...callbacks });
+  },
+  observePreparedPublication(
+    store: GrandHallT554NativeMaskRevisionStore,
+    callbacks: Pick<
+      GrandHallT554NativeMaskStoreTestSeam,
+      | "afterPreparedFinalLinked"
+      | "afterPreparedPairVerified"
+      | "beforePreparedPublicationRootsValidated"
     >,
   ): void {
     TEST_SEAMS.set(store, { ...TEST_SEAMS.get(store), ...callbacks });

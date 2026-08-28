@@ -1375,6 +1375,43 @@ describe("Grand Hall T-554 native-review v2 event schemas", () => {
     ).toBe(false);
   });
 
+  it("permits only a start-only abandoned mask child after a complete published pair", () => {
+    const common = {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-mask-freeze-recovery-aborted.v2" as const,
+      operationIdSha256: digest("aborted-freeze-with-child"),
+      browserEpochNonceSha256: digest(RAW_SESSION_NONCE),
+      workspaceRevision: 3,
+      consumedRenderGeneration: 4,
+      publicationDisposition: "mask_and_reason_map" as const,
+      abandonedMaskJournal: {
+        ...maskCheckpoint(),
+        revision: 1,
+      },
+    };
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("mask.freeze-recovery-aborted.v2", common),
+      ).success,
+    ).toBe(true);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("mask.freeze-recovery-aborted.v2", {
+          ...common,
+          publicationDisposition: "mask_only",
+        }),
+      ).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewDomainEventV2Schema.safeParse(
+        event("mask.freeze-recovery-aborted.v2", {
+          ...common,
+          abandonedMaskJournal: maskCheckpoint(),
+        }),
+      ).success,
+    ).toBe(false);
+  });
+
   it("forces every process-segment first sample to zero credit while allowing carried completion", () => {
     const resumedFirst = firstCoverage(bitmap([1]), 1);
     expect(resumedFirst.derived.deliveredTileBitsetHex).toBe(EMPTY_BITMAP);

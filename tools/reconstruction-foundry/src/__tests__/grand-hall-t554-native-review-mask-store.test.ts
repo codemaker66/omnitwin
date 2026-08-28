@@ -1,5 +1,16 @@
 import { createHash } from "node:crypto";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,6 +31,10 @@ import {
   verifyGrandHallT554NativeMaskPng,
 } from "../grand-hall-t554-native-media-kernel.js";
 import {
+  GrandHallT554NativeReviewPreparedMaskBindingV2Schema,
+  type GrandHallT554NativeReviewPreparedMaskBindingV2,
+} from "../grand-hall-t554-native-review-events-v2.js";
+import {
   __testOnlyGrandHallT554NativeMaskRevisionStore,
   GRAND_HALL_T554_NATIVE_MASK_MAX_CHANGED_TILE_SEALS,
   GRAND_HALL_T554_NATIVE_MASK_MAX_OWNED_BUFFER_BYTES,
@@ -37,6 +52,7 @@ const PIXEL_COUNT = GRAND_HALL_PANORAMA_WIDTH_PX * GRAND_HALL_PANORAMA_HEIGHT_PX
 const temporaryPaths: string[] = [];
 const stores: GrandHallT554NativeMaskRevisionStore[] = [];
 let publicationDirectory: string;
+let preparationDirectory: string;
 
 function sourceIdentity(inventoryIndex = 0): GrandHallPanoramaSourceJpgIdentityV2 {
   const sweepNumber = GRAND_HALL_SUPPLIED_PANORAMA_SWEEP_NUMBERS[inventoryIndex];
@@ -57,6 +73,7 @@ function createStore(inventoryIndex = 0): GrandHallT554NativeMaskRevisionStore {
   const store = new GrandHallT554NativeMaskRevisionStore({
     source: sourceIdentity(inventoryIndex),
     publicationDirectory,
+    preparationDirectory,
   });
   stores.push(store);
   return store;
@@ -124,7 +141,9 @@ async function expectStoreCode(
 
 beforeEach(async () => {
   publicationDirectory = await mkdtemp(join(tmpdir(), "grand-hall-native-mask-"));
+  preparationDirectory = await mkdtemp(join(tmpdir(), "grand-hall-native-mask-stage-"));
   temporaryPaths.push(publicationDirectory);
+  temporaryPaths.push(preparationDirectory);
 });
 
 afterEach(async () => {
@@ -515,6 +534,395 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
     await access(join(publicationDirectory, first.fileName));
   }, 30_000);
 
+  it("prepares exact evidence without publishing and exposes only a one-use metadata capability", async () => {
+    const store = createStore();
+    store.applyEdit(includeRectangle(0, 40, 40, 42, 42));
+    const prepared = await store.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-one-use", "utf8")),
+    });
+    const intendedMaskName = prepared.binding.mask.fileName;
+    const intendedReasonName = prepared.binding.reasonMap.fileName;
+
+    expect(prepared.binding).toMatchObject({
+      schemaVersion: "venviewer.grand-hall-t554-native-mask-prepared-binding.v2",
+      revision: 1,
+      includedPixelCount: 4,
+      excludedPixelCount: PIXEL_COUNT - 4,
+      mask: { widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+        heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX },
+      reasonMap: { widthPx: GRAND_HALL_PANORAMA_WIDTH_PX,
+        heightPx: GRAND_HALL_PANORAMA_HEIGHT_PX },
+    });
+    expect(() => GrandHallT554NativeReviewPreparedMaskBindingV2Schema.parse(
+      prepared.binding,
+    )).not.toThrow();
+    const coordinatorBinding: GrandHallT554NativeReviewPreparedMaskBindingV2 =
+      prepared.binding;
+    expect(coordinatorBinding.mask.fileName).toBe(intendedMaskName);
+    expect(await readdir(publicationDirectory)).toEqual([]);
+    expect(await readdir(preparationDirectory)).toEqual([]);
+    await expectStoreCode(
+      () => store.applyEdit(includeRectangle(1, 50, 50, 51, 51)),
+      "OPERATION_BUSY",
+    );
+    expect(await prepared.inspectPublication()).toBe("none");
+
+    expect(Object.isFrozen(prepared.binding)).toBe(true);
+    expect(Object.isFrozen(prepared.binding.mask)).toBe(true);
+    expect(Object.isFrozen(prepared.binding.reasonCounts)).toBe(true);
+    expect(Reflect.set(prepared.binding.mask, "fileName", "browser-mask.png")).toBe(false);
+    const frozen = await prepared.publishOrVerifyExact();
+    expect(frozen.fileName).toBe(intendedMaskName);
+    expect(frozen.reasonMap.fileName).toBe(intendedReasonName);
+    expect(frozen.fileName).toBe(prepared.binding.mask.fileName);
+    expect(store.snapshot().activeFrozenBinding).toBeNull();
+    expect(await readdir(preparationDirectory)).toEqual([]);
+    await expectStoreCode(prepared.inspectPublication(), "PREPARED_FREEZE_CONSUMED");
+    await expectStoreCode(prepared.publishOrVerifyExact(), "PREPARED_FREEZE_CONSUMED");
+    await expectStoreCode(() => { prepared.discard(); }, "PREPARED_FREEZE_CONSUMED");
+  }, 60_000);
+
+  it("owns the mutation lane before asynchronous root validation and releases it on failure", async () => {
+    const store = createStore();
+    store.applyEdit(includeRectangle(0, 45, 45, 47, 47));
+    let enterPreflight: (() => void) | undefined;
+    let releasePreflight: (() => void) | undefined;
+    const preflightEntered = new Promise<void>((resolve) => {
+      enterPreflight = resolve;
+    });
+    const preflightGate = new Promise<void>((resolve) => {
+      releasePreflight = resolve;
+    });
+    __testOnlyGrandHallT554NativeMaskRevisionStore.observePreparedPublication(
+      store,
+      {
+        beforePreparedPublicationRootsValidated: async () => {
+          enterPreflight?.();
+          await preflightGate;
+        },
+      },
+    );
+    const preparing = store.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-preflight-race", "utf8")),
+    });
+    await preflightEntered;
+
+    await expectStoreCode(() => { store.abandon(); }, "OPERATION_BUSY");
+    await expectStoreCode(
+      store.prepareFreeze({
+        expectedRevision: 1,
+        operationIdSha256: digest(Buffer.from("prepared-competing-preflight", "utf8")),
+      }),
+      "OPERATION_BUSY",
+    );
+    releasePreflight?.();
+    const prepared = await preparing;
+    prepared.discard();
+
+    await rm(preparationDirectory, { recursive: true });
+    await expectStoreCode(
+      store.prepareFreeze({
+        expectedRevision: 1,
+        operationIdSha256: digest(Buffer.from("prepared-missing-root", "utf8")),
+      }),
+      "PUBLICATION_INVALID",
+    );
+    expect(store.snapshot().revision).toBe(1);
+    await mkdir(preparationDirectory);
+    const recovered = await store.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-root-restored", "utf8")),
+    });
+    recovered.discard();
+  }, 60_000);
+
+  it("classifies exact crash subsets and adopts an exact pre-existing pair without replacement", async () => {
+    const firstStore = createStore();
+    firstStore.applyEdit(includeRectangle(0, 60, 60, 62, 62));
+    const firstPrepared = await firstStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-first", "utf8")),
+    });
+    const firstFrozen = await firstPrepared.publishOrVerifyExact();
+    const originalMaskState = await lstat(
+      join(publicationDirectory, firstFrozen.fileName),
+      { bigint: true },
+    );
+    const originalReasonState = await lstat(
+      join(publicationDirectory, firstFrozen.reasonMap.fileName),
+      { bigint: true },
+    );
+    const originalMask = await readFile(join(publicationDirectory, firstFrozen.fileName));
+    const originalReason = await readFile(
+      join(publicationDirectory, firstFrozen.reasonMap.fileName),
+    );
+
+    const adoptingStore = createStore();
+    adoptingStore.applyEdit(includeRectangle(0, 60, 60, 62, 62));
+    const adoptingPrepared = await adoptingStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-adoption", "utf8")),
+    });
+    expect(await adoptingPrepared.inspectPublication()).toBe("mask_and_reason_map");
+    const adopted = await adoptingPrepared.publishOrVerifyExact();
+    expect(adopted).toMatchObject({
+      fileName: firstFrozen.fileName,
+      sha256: firstFrozen.sha256,
+      reasonMap: {
+        fileName: firstFrozen.reasonMap.fileName,
+        sha256: firstFrozen.reasonMap.sha256,
+      },
+    });
+    expect((await readFile(join(publicationDirectory, adopted.fileName))).equals(originalMask))
+      .toBe(true);
+    expect((await readFile(join(publicationDirectory, adopted.reasonMap.fileName)))
+      .equals(originalReason)).toBe(true);
+    const adoptedMaskState = await lstat(
+      join(publicationDirectory, adopted.fileName),
+      { bigint: true },
+    );
+    const adoptedReasonState = await lstat(
+      join(publicationDirectory, adopted.reasonMap.fileName),
+      { bigint: true },
+    );
+    expect({ dev: adoptedMaskState.dev, ino: adoptedMaskState.ino })
+      .toEqual({ dev: originalMaskState.dev, ino: originalMaskState.ino });
+    expect({ dev: adoptedReasonState.dev, ino: adoptedReasonState.ino })
+      .toEqual({ dev: originalReasonState.dev, ino: originalReasonState.ino });
+
+    await rm(join(publicationDirectory, adopted.reasonMap.fileName));
+    const classifyingStore = createStore();
+    classifyingStore.applyEdit(includeRectangle(0, 60, 60, 62, 62));
+    const classifyingPrepared = await classifyingStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-partial", "utf8")),
+    });
+    expect(await classifyingPrepared.inspectPublication()).toBe("mask_only");
+    await expectStoreCode(
+      classifyingPrepared.publishOrVerifyExact(),
+      "PUBLICATION_PARTIAL",
+    );
+    await expect(access(join(publicationDirectory, adopted.reasonMap.fileName)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(preparationDirectory)).toEqual([]);
+
+    await writeFile(
+      join(publicationDirectory, adopted.reasonMap.fileName),
+      originalReason,
+    );
+    await rm(join(publicationDirectory, adopted.fileName));
+    const inverseClassifyingStore = createStore();
+    inverseClassifyingStore.applyEdit(includeRectangle(0, 60, 60, 62, 62));
+    const inverseClassifyingPrepared = await inverseClassifyingStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-inverse-partial", "utf8")),
+    });
+    expect(await inverseClassifyingPrepared.inspectPublication()).toBe("reason_map_only");
+    await expectStoreCode(
+      inverseClassifyingPrepared.publishOrVerifyExact(),
+      "PUBLICATION_PARTIAL",
+    );
+    await expect(access(join(publicationDirectory, adopted.fileName)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  }, 120_000);
+
+  it("binds a prepared capability to the exact pre-intent directory identities", async () => {
+    const store = createStore();
+    store.applyEdit(includeRectangle(0, 70, 70, 72, 72));
+    const prepared = await store.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-root-identity", "utf8")),
+    });
+    const originalPublicationDirectory = `${publicationDirectory}-pre-intent-root`;
+    await rename(publicationDirectory, originalPublicationDirectory);
+    temporaryPaths.push(originalPublicationDirectory);
+    await mkdir(publicationDirectory);
+
+    await expectStoreCode(
+      prepared.publishOrVerifyExact(),
+      "PUBLICATION_INVALID",
+    );
+    expect(await readdir(publicationDirectory)).toEqual([]);
+    expect(store.snapshot().activeFrozenBinding).toBeNull();
+
+    const preparationStore = createStore(1);
+    preparationStore.applyEdit(includeRectangle(0, 75, 75, 77, 77));
+    const preparationPrepared = await preparationStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-preparation-root-identity", "utf8")),
+    });
+    const originalPreparationDirectory = `${preparationDirectory}-pre-intent-root`;
+    await rename(preparationDirectory, originalPreparationDirectory);
+    temporaryPaths.push(originalPreparationDirectory);
+    await mkdir(preparationDirectory);
+    await expectStoreCode(
+      preparationPrepared.publishOrVerifyExact(),
+      "PUBLICATION_INVALID",
+    );
+    expect(await readdir(publicationDirectory)).toEqual([]);
+    expect(await readdir(preparationDirectory)).toEqual([]);
+  }, 60_000);
+
+  it("normalizes its exact first-link crash topology before returning a durable subset", async () => {
+    const operationIdSha256 = digest(Buffer.from("prepared-first-link-crash", "utf8"));
+    const crashingStore = createStore();
+    crashingStore.applyEdit(includeRectangle(0, 80, 80, 82, 82));
+    __testOnlyGrandHallT554NativeMaskRevisionStore.observePreparedPublication(
+      crashingStore,
+      {
+        afterPreparedFinalLinked: ({ plane }) => {
+          if (plane === "mask") throw new Error("injected crash after exact mask link");
+        },
+      },
+    );
+    const crashingPrepared = await crashingStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256,
+    });
+    const maskName = crashingPrepared.binding.mask.fileName;
+    await expectStoreCode(
+      crashingPrepared.publishOrVerifyExact(),
+      "PUBLICATION_INVALID",
+    );
+    expect((await lstat(join(publicationDirectory, maskName), { bigint: true })).nlink)
+      .toBe(2n);
+
+    const recoveringStore = createStore();
+    recoveringStore.applyEdit(includeRectangle(0, 80, 80, 82, 82));
+    const recoveringPrepared = await recoveringStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256,
+    });
+    expect(await recoveringPrepared.inspectPublication()).toBe("mask_only");
+    expect((await lstat(join(publicationDirectory, maskName), { bigint: true })).nlink)
+      .toBe(1n);
+    expect(await readdir(preparationDirectory)).toEqual([]);
+    recoveringPrepared.discard();
+  }, 120_000);
+
+  it("removes a known partial pending write before classifying or publishing", async () => {
+    const operationIdSha256 = digest(Buffer.from("prepared-partial-pending", "utf8"));
+    const store = createStore();
+    store.applyEdit(includeRectangle(0, 90, 90, 92, 92));
+    const prepared = await store.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256,
+    });
+    const operationDirectory = join(
+      preparationDirectory,
+      `freeze-${operationIdSha256.slice("sha256:".length)}`,
+    );
+    await mkdir(operationDirectory);
+    await writeFile(join(operationDirectory, "mask.pending"), Buffer.from("partial"));
+
+    expect(await prepared.inspectPublication()).toBe("none");
+    expect(await readdir(preparationDirectory)).toEqual([]);
+    const frozen = await prepared.publishOrVerifyExact();
+    expect(frozen).toMatchObject({
+      revision: 1,
+      fileName: prepared.binding.mask.fileName,
+      reasonMap: { fileName: prepared.binding.reasonMap.fileName },
+    });
+    expect(await readdir(preparationDirectory)).toEqual([]);
+  }, 60_000);
+
+  it("recovers an exact pair after both final links exist or verification already finished", async () => {
+    for (const crashPoint of ["reason_map_linked", "pair_verified"] as const) {
+      const inventoryIndex = crashPoint === "reason_map_linked" ? 2 : 3;
+      const operationIdSha256 = digest(Buffer.from(`prepared-${crashPoint}-crash`, "utf8"));
+      const crashingStore = createStore(inventoryIndex);
+      crashingStore.applyEdit(includeRectangle(0, 95, 95, 97, 97));
+      __testOnlyGrandHallT554NativeMaskRevisionStore.observePreparedPublication(
+        crashingStore,
+        crashPoint === "reason_map_linked"
+          ? {
+              afterPreparedFinalLinked: ({ plane }) => {
+                if (plane === "reason_map") {
+                  throw new Error("injected crash after exact reason-map link");
+                }
+              },
+            }
+          : {
+              afterPreparedPairVerified: () => {
+                throw new Error("injected crash after exact pair verification");
+              },
+            },
+      );
+      const crashingPrepared = await crashingStore.prepareFreeze({
+        expectedRevision: 1,
+        operationIdSha256,
+      });
+      const maskFileName = crashingPrepared.binding.mask.fileName;
+      const reasonMapFileName = crashingPrepared.binding.reasonMap.fileName;
+      await expectStoreCode(
+        crashingPrepared.publishOrVerifyExact(),
+        "PUBLICATION_INVALID",
+      );
+      if (crashPoint === "reason_map_linked") {
+        const operationDirectory = join(
+          preparationDirectory,
+          `freeze-${operationIdSha256.slice("sha256:".length)}`,
+        );
+        await rm(join(operationDirectory, "mask.stage"));
+        await link(
+          join(publicationDirectory, maskFileName),
+          join(operationDirectory, "mask.pending"),
+        );
+        await link(
+          join(publicationDirectory, reasonMapFileName),
+          join(operationDirectory, "reason-map.pending"),
+        );
+        expect((await lstat(join(publicationDirectory, maskFileName), { bigint: true })).nlink)
+          .toBe(2n);
+        expect((await lstat(join(publicationDirectory, reasonMapFileName), { bigint: true })).nlink)
+          .toBe(3n);
+      }
+
+      const recoveringStore = createStore(inventoryIndex);
+      recoveringStore.applyEdit(includeRectangle(0, 95, 95, 97, 97));
+      const recoveringPrepared = await recoveringStore.prepareFreeze({
+        expectedRevision: 1,
+        operationIdSha256,
+      });
+      expect(await recoveringPrepared.inspectPublication()).toBe("mask_and_reason_map");
+      expect(await readdir(preparationDirectory)).toEqual([]);
+      const recovered = await recoveringPrepared.publishOrVerifyExact();
+      expect(recovered).toMatchObject({
+        revision: 1,
+        fileName: recoveringPrepared.binding.mask.fileName,
+        reasonMap: { fileName: recoveringPrepared.binding.reasonMap.fileName },
+      });
+    }
+  }, 120_000);
+
+  it("rejects a prepared final that has an unrelated external hard link", async () => {
+    const firstStore = createStore(4);
+    firstStore.applyEdit(includeRectangle(0, 105, 105, 107, 107));
+    const firstPrepared = await firstStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-external-link-first", "utf8")),
+    });
+    const frozen = await firstPrepared.publishOrVerifyExact();
+    await link(
+      join(publicationDirectory, frozen.fileName),
+      join(preparationDirectory, "unrelated-mask-link.png"),
+    );
+
+    const inspectingStore = createStore(4);
+    inspectingStore.applyEdit(includeRectangle(0, 105, 105, 107, 107));
+    const inspectingPrepared = await inspectingStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-external-link-second", "utf8")),
+    });
+    await expectStoreCode(
+      inspectingPrepared.inspectPublication(),
+      "PUBLICATION_INVALID",
+    );
+    inspectingPrepared.discard();
+  }, 60_000);
+
   it("derives exact PNG pixel and exclusion-reason counts from immutable server state", async () => {
     const store = createStore();
     store.applyEdit(includeRectangle(0, 10, 10, 20, 12));
@@ -616,7 +1024,7 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
     await rm(join(publicationDirectory, deletedReason.reasonMap.fileName));
     await expectStoreCode(
       deletedReasonStore.freeze({ expectedRevision: 1 }),
-      "PUBLICATION_INVALID",
+      "PUBLICATION_PARTIAL",
     );
 
     const tamperedMaskStore = createStore(1);
@@ -629,6 +1037,39 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
     );
     expect(deletedReasonStore.snapshot().activeFrozenBinding).toBeNull();
     expect(tamperedMaskStore.snapshot().activeFrozenBinding).toBeNull();
+
+    const preparedInspectionStore = createStore(2);
+    preparedInspectionStore.applyEdit(includeRectangle(0, 12, 12, 13, 13));
+    const preparedInspectionFrozen = await preparedInspectionStore.freeze({ expectedRevision: 1 });
+    expect(preparedInspectionStore.snapshot().activeFrozenBinding).not.toBeNull();
+    await rm(join(
+      publicationDirectory,
+      preparedInspectionFrozen.reasonMap.fileName,
+    ));
+    const preparedInspection = await preparedInspectionStore.prepareFreeze({
+      expectedRevision: 1,
+      operationIdSha256: digest(Buffer.from("prepared-stale-binding", "utf8")),
+    });
+    expect(await preparedInspection.inspectPublication()).toBe("mask_only");
+    expect(preparedInspectionStore.snapshot().activeFrozenBinding).toBeNull();
+    preparedInspection.discard();
+
+    const rootLossStore = createStore(3);
+    rootLossStore.applyEdit(includeRectangle(0, 14, 14, 15, 15));
+    await rootLossStore.freeze({ expectedRevision: 1 });
+    expect(rootLossStore.snapshot().activeFrozenBinding).not.toBeNull();
+    const unavailablePublicationDirectory = `${publicationDirectory}-unavailable`;
+    await rename(publicationDirectory, unavailablePublicationDirectory);
+    temporaryPaths.push(unavailablePublicationDirectory);
+    await expectStoreCode(
+      rootLossStore.prepareFreeze({
+        expectedRevision: 1,
+        operationIdSha256: digest(Buffer.from("prepared-unavailable-root", "utf8")),
+      }),
+      "PUBLICATION_INVALID",
+    );
+    expect(rootLossStore.snapshot().activeFrozenBinding).toBeNull();
+    await mkdir(publicationDirectory);
   }, 60_000);
 
   it("records the completed directory or Windows file-flush durability barrier before ack", async () => {
@@ -657,7 +1098,7 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
     expect(failingStore.snapshot().activeFrozenBinding).toBeNull();
   }, 60_000);
 
-  it("never replaces a pre-existing derived frozen-mask path", async () => {
+  it("adopts but never replaces an exact pre-existing derived frozen-mask pair", async () => {
     const firstStore = createStore();
     firstStore.applyEdit(includeRectangle(0, 30, 30, 32, 32));
     const first = await firstStore.freeze({ expectedRevision: 1 });
@@ -665,13 +1106,44 @@ describe("Grand Hall T-554 fail-closed native mask revision store", () => {
 
     const competingStore = createStore();
     competingStore.applyEdit(includeRectangle(0, 30, 30, 32, 32));
-    await expectStoreCode(
-      competingStore.freeze({ expectedRevision: 1 }),
-      "PUBLICATION_EXISTS",
-    );
+    const adopted = await competingStore.freeze({ expectedRevision: 1 });
+    expect(adopted).toMatchObject({
+      fileName: first.fileName,
+      sha256: first.sha256,
+      reasonMap: {
+        fileName: first.reasonMap.fileName,
+        sha256: first.reasonMap.sha256,
+      },
+    });
     const after = await readFile(join(publicationDirectory, first.fileName));
     expect(after.equals(before)).toBe(true);
   }, 30_000);
+
+  it("keeps the explicitly supported no-preparation compatibility path no-replace", async () => {
+    const createCompatibilityStore = (): GrandHallT554NativeMaskRevisionStore => {
+      const store = new GrandHallT554NativeMaskRevisionStore({
+        source: sourceIdentity(5),
+        publicationDirectory,
+      });
+      stores.push(store);
+      return store;
+    };
+    const firstStore = createCompatibilityStore();
+    firstStore.applyEdit(includeRectangle(0, 115, 115, 117, 117));
+    const first = await firstStore.freeze({ expectedRevision: 1 });
+    const exactMask = await readFile(join(publicationDirectory, first.fileName));
+    const cached = await firstStore.freeze({ expectedRevision: 1 });
+    expect(cached.sha256).toBe(first.sha256);
+
+    const refusingStore = createCompatibilityStore();
+    refusingStore.applyEdit(includeRectangle(0, 115, 115, 117, 117));
+    await expectStoreCode(
+      refusingStore.freeze({ expectedRevision: 1 }),
+      "PUBLICATION_EXISTS",
+    );
+    expect((await readFile(join(publicationDirectory, first.fileName))).equals(exactMask))
+      .toBe(true);
+  }, 60_000);
 
   it("accepts byte-identical masks for different sources while keeping paths source-unique", async () => {
     const first = await createStore(0).freeze({ expectedRevision: 0 });

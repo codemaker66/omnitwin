@@ -1609,7 +1609,29 @@ export const GrandHallT554NativeReviewMaskFreezeRecoveryAbortedPayloadV2Schema =
       abandonedMaskJournal:
         GrandHallT554NativeReviewMaskChildCheckpointV2Schema.nullable(),
     })
-    .strict();
+    .strict()
+    .superRefine((event, context) => {
+      if (
+        event.abandonedMaskJournal !== null &&
+        event.publicationDisposition !== "mask_and_reason_map"
+      ) {
+        addIssue(
+          context,
+          ["abandonedMaskJournal"],
+          "an abandoned mask child requires the complete exact published pair",
+        );
+      }
+      if (
+        event.abandonedMaskJournal !== null &&
+        event.abandonedMaskJournal.revision !== 1
+      ) {
+        addIssue(
+          context,
+          ["abandonedMaskJournal", "revision"],
+          "an uncommitted abandoned mask child must contain only its start event",
+        );
+      }
+    });
 
 const CoverageSegmentResumeIntentCommonShape = {
   schemaVersion: z.literal(

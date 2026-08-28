@@ -1265,6 +1265,11 @@ function replayMaskFreezeRecoveryAbort(
         pending.payload.childJournalLeafName,
       "Mask recovery-abort child differs from its declared journal.",
     );
+    transition(
+      payload.publicationDisposition === "mask_and_reason_map" &&
+        payload.abandonedMaskJournal.revision === 1,
+      "Mask recovery-abort may retain only a start-only child for a complete exact pair.",
+    );
   }
   resolveChildObligation(
     state,
