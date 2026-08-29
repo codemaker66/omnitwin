@@ -185,6 +185,9 @@ const TileInputSchema = z
     row: TileRowSchema,
   })
   .strict();
+const MaskTileInputSchema = TileInputSchema.extend({
+  expectedMaskPhase: z.enum(["mask_edit", "mask_review"]).optional(),
+}).strict();
 const CoverageInputSchema = z.object(CoverageInputShape).strict();
 const ExpectedRevisionAndGenerationSchema = z
   .object({
@@ -392,6 +395,9 @@ export type GrandHallT554NativeReviewOperatorSelectSourceInputV2 = z.infer<
 export type GrandHallT554NativeReviewOperatorTileInputV2 = z.infer<
   typeof TileInputSchema
 >;
+export type GrandHallT554NativeReviewOperatorMaskTileInputV2 = z.infer<
+  typeof MaskTileInputSchema
+>;
 export type GrandHallT554NativeReviewOperatorCoverageInputV2 = z.infer<
   typeof CoverageInputSchema
 >;
@@ -443,7 +449,7 @@ export interface GrandHallT554NativeReviewOperatorSessionV2 {
     input: GrandHallT554NativeReviewOperatorFreezeMaskInputV2,
   ): Promise<GrandHallT554NativeReviewOperatorSessionSnapshotV2>;
   prepareMaskTile(
-    input: GrandHallT554NativeReviewOperatorTileInputV2,
+    input: GrandHallT554NativeReviewOperatorMaskTileInputV2,
   ): Promise<GrandHallT554NativeReviewOperatorMaskTileV2>;
   recordMaskCoverage(
     input: GrandHallT554NativeReviewOperatorCoverageInputV2,
@@ -1617,16 +1623,25 @@ class GrandHallT554NativeReviewOperatorSessionControllerV2 implements GrandHallT
   }
 
   prepareMaskTile(
-    input: GrandHallT554NativeReviewOperatorTileInputV2,
+    input: GrandHallT554NativeReviewOperatorMaskTileInputV2,
   ): Promise<GrandHallT554NativeReviewOperatorMaskTileV2> {
     return this.#lane.run(async () => {
-      const request = parseInput(TileInputSchema, input);
+      const request = parseInput(MaskTileInputSchema, input);
       const delegate = this.#assertOpen();
       if (delegate.kind !== "mask") {
         throw fail("PHASE_INVALID", "Mask tile requires mask workflow.");
       }
       const snapshot = await delegate.session.snapshot();
       const active = this.#maskActive(snapshot);
+      if (
+        request.expectedMaskPhase !== undefined &&
+        active.phase !== request.expectedMaskPhase
+      ) {
+        throw fail(
+          "PHASE_INVALID",
+          "Mask tile route does not match the active mask workflow phase.",
+        );
+      }
       assertBrowserEpochNumber(
         snapshot.browserEpochNumber,
         request.expectedBrowserEpochNumber,

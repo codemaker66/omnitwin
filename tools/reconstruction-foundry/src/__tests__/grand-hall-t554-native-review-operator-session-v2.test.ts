@@ -1144,11 +1144,21 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
       activeSource: { phase: "mask_edit", renderGeneration: 5 },
     });
 
+    await expect(
+      operator.prepareMaskTile({
+        expectedBrowserEpochNumber: 3,
+        renderGeneration: 5,
+        column: 1,
+        row: 2,
+        expectedMaskPhase: "mask_review",
+      }),
+    ).rejects.toMatchObject({ code: "PHASE_INVALID" });
     const maskTile = await operator.prepareMaskTile({
       expectedBrowserEpochNumber: 3,
       renderGeneration: 5,
       column: 1,
       row: 2,
+      expectedMaskPhase: "mask_edit",
     });
     await operator.close();
     expect(mask.rawDiscardCount).toBe(1);
