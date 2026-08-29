@@ -22,9 +22,12 @@ import {
   type GrandHallT554NativeReviewDurableJournalV2,
 } from "./grand-hall-t554-native-review-durable-journal-v2.js";
 import {
+  computeGrandHallT554NativeReviewHumanAttestationV2Sha256,
+  computeGrandHallT554NativeReviewSourceDecisionV2Sha256,
   GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
   GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
   GrandHallT554NativeReviewAuthorityBoundaryV2Schema,
+  GrandHallT554NativeReviewCompletedMaskCoverageV2Schema,
   GrandHallT554NativeReviewCompletedSourceCoverageV2Schema,
   GrandHallT554NativeReviewCoordinatorEventV2Schema,
   GrandHallT554NativeReviewFrozenMaskBindingV2Schema,
@@ -43,8 +46,10 @@ import {
   type GrandHallT554NativeReviewMaskChildCheckpointV2,
   type GrandHallT554NativeReviewMaskScopeV2,
   type GrandHallT554NativeReviewMaskStateEvidenceV2,
+  type GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2,
   type GrandHallT554NativeReviewRegistryBindingV2,
   type GrandHallT554NativeReviewSessionScopeV2,
+  type GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2,
   type GrandHallT554NativeReviewSourceCustodyBindingV2,
 } from "./grand-hall-t554-native-review-events-v2.js";
 import {
@@ -113,6 +118,7 @@ import {
 } from "./grand-hall-t554-native-source-epoch.js";
 import {
   GRAND_HALL_T554_NATIVE_TILE_COLUMN_COUNT,
+  GRAND_HALL_T554_NATIVE_TILE_COUNT,
   GRAND_HALL_T554_NATIVE_TILE_HEIGHT_PX,
   GRAND_HALL_T554_NATIVE_TILE_ROW_COUNT,
   GRAND_HALL_T554_NATIVE_TILE_WIDTH_PX,
@@ -144,7 +150,16 @@ const SESSION_SUBJECT_AUTHORITY =
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{43}$/u;
 
 type Sha256 = `sha256:${string}`;
-type MaskWorkflowPhase = "source_review" | "mask_edit" | "mask_review";
+type MaskWorkflowPhase =
+  | "source_review"
+  | "mask_edit"
+  | "mask_review"
+  | "decision_recorded"
+  | "human_attested";
+type MaskWorkflowIncludeDecision = Extract<
+  GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2,
+  { readonly result: "INCLUDE" }
+>;
 type ActiveCoordinatorSource = NonNullable<
   GrandHallT554NativeReviewSessionStoreReplayV2["coordinator"]["activeSource"]
 >;
@@ -280,6 +295,33 @@ const MaskCoverageInputSchema = z
   })
   .strict();
 
+const IncludeDecisionInputSchema = z
+  .object({
+    ...MutationGuardShape,
+    classification: z.enum(["grand_hall_core", "grand_hall_portal_threshold"]),
+    note: z.string().trim().min(1).max(1_000),
+  })
+  .strict();
+
+const HumanAttestationInputSchema = z
+  .object({
+    ...MutationGuardShape,
+    reviewerId: z.string().trim().min(1).max(160),
+    knowledgeBasis: z.array(z.string().trim().min(1).max(240)).min(1).max(32),
+  })
+  .strict();
+
+const AbandonInputSchema = z
+  .object({
+    ...MutationGuardShape,
+    reason: z.enum(["operator_abandon", "source_switch", "session_stop"]),
+  })
+  .strict();
+
+const StopInputSchema = z
+  .object({ expectedWorkspaceRevision: WorkspaceRevisionSchema })
+  .strict();
+
 const RootDescriptorSchema = z
   .object({
     schemaVersion: z.literal(
@@ -316,6 +358,10 @@ interface MaskWorkflowSessionSeamsV2 {
   readonly afterMaskCoverageResumeChildStartPublishedBeforeRootVerification?: () => Promise<void> | void;
   readonly afterMaskCoverageResumeCommitDurable?: () => Promise<void> | void;
   readonly afterMaskCoverageResumeRecoveryAbortDurable?: () => Promise<void> | void;
+  readonly afterIncludeDecisionDurable?: () => Promise<void> | void;
+  readonly afterHumanAttestationDurable?: () => Promise<void> | void;
+  readonly afterSourceAbandonDurable?: () => Promise<void> | void;
+  readonly afterSessionStopDurable?: () => Promise<void> | void;
 }
 
 interface MaskWorkflowSessionDependenciesV2 {
@@ -372,7 +418,9 @@ export interface GrandHallT554NativeReviewMaskWorkflowSnapshotV2 {
     readonly frozenBindingSha256: Sha256 | null;
     readonly frozenBinding: GrandHallT554NativeReviewFrozenMaskBindingV2 | null;
     readonly maskJournalLeafName: string | null;
-  };
+    readonly decision: MaskWorkflowIncludeDecision | null;
+    readonly humanAttestation: GrandHallT554NativeReviewHumanAttestationRecordedPayloadV2 | null;
+  } | null;
   readonly authority: "none";
   readonly reviewState: "human_pending";
   readonly finalDecision: "PENDING";
@@ -458,6 +506,28 @@ export interface GrandHallT554NativeReviewMaskWorkflowSessionV2 {
       readonly paintedTileBitsetHex: string;
     },
   ): Promise<GrandHallT554NativeReviewMaskCoverageAcknowledgementV2>;
+  recordIncludeDecision(
+    input: MaskMutationGuardV2 & {
+      readonly classification:
+        | "grand_hall_core"
+        | "grand_hall_portal_threshold";
+      readonly note: string;
+    },
+  ): Promise<GrandHallT554NativeReviewMaskWorkflowSnapshotV2>;
+  recordHumanAttestation(
+    input: MaskMutationGuardV2 & {
+      readonly reviewerId: string;
+      readonly knowledgeBasis: readonly string[];
+    },
+  ): Promise<GrandHallT554NativeReviewMaskWorkflowSnapshotV2>;
+  abandonActiveSource(
+    input: MaskMutationGuardV2 & {
+      readonly reason: "operator_abandon" | "source_switch" | "session_stop";
+    },
+  ): Promise<GrandHallT554NativeReviewMaskWorkflowSnapshotV2>;
+  stop(input: {
+    readonly expectedWorkspaceRevision: number;
+  }): Promise<GrandHallT554NativeReviewMaskWorkflowSnapshotV2>;
   close(): Promise<void>;
 }
 
@@ -471,6 +541,7 @@ export type GrandHallT554NativeReviewMaskWorkflowSessionV2ErrorCode =
   | "BINDING_STALE"
   | "PHASE_INVALID"
   | "SOURCE_COVERAGE_INCOMPLETE"
+  | "MASK_COVERAGE_INCOMPLETE"
   | "MASK_REVISION_CONFLICT"
   | "MASK_REVISION_TAINTED"
   | "DELIVERY_ALREADY_RESOLVED"
@@ -1241,6 +1312,69 @@ function completedSourceCoverage(
   };
 }
 
+function completedMaskCoverage(
+  store: GrandHallT554NativeReviewSessionStoreReplayV2,
+): {
+  readonly proof: ReturnType<
+    typeof GrandHallT554NativeReviewCompletedMaskCoverageV2Schema.parse
+  >;
+  readonly finalDurableRecordedAtUtc: string;
+} {
+  const active = store.coordinator.activeSource;
+  const evidence = latestVerifiedActiveMaskEvidenceV2(store);
+  if (
+    active === null ||
+    active.phase !== "mask_review" ||
+    active.maskState === null ||
+    active.maskReviewSubjectSha256 === null ||
+    active.frozenBindingSha256 === null ||
+    active.frozenBinding === null ||
+    evidence === null
+  ) {
+    throw fail(
+      "INTERNAL_INVARIANT_FAILED",
+      "INCLUDE requires exact active frozen mask-child evidence.",
+    );
+  }
+  const replay = replayGrandHallT554NativeReviewMaskChildV2(evidence);
+  const coverage = replay.coverage;
+  if (
+    !coverage.complete ||
+    coverage.completedTileCount !== GRAND_HALL_T554_NATIVE_TILE_COUNT
+  ) {
+    throw fail(
+      "MASK_COVERAGE_INCOMPLETE",
+      "INCLUDE requires complete native-grid frozen-mask coverage.",
+    );
+  }
+  if (
+    !canonicalEqual(replay.scope.sourceCustody, active.sourceCustody) ||
+    replay.scope.maskReviewSubjectSha256 !== active.maskReviewSubjectSha256 ||
+    replay.scope.maskStateSha256 !== active.maskState.maskStateSha256 ||
+    replay.scope.frozenBindingSha256 !== active.frozenBindingSha256 ||
+    !canonicalEqual(replay.scope.frozenBinding, active.frozenBinding)
+  ) {
+    throw fail(
+      "INTERNAL_INVARIANT_FAILED",
+      "Completed mask coverage differs from the active frozen review binding.",
+    );
+  }
+  return {
+    proof: GrandHallT554NativeReviewCompletedMaskCoverageV2Schema.parse({
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-completed-mask-coverage.v2",
+      maskReviewSubjectSha256: active.maskReviewSubjectSha256,
+      maskStateSha256: active.maskState.maskStateSha256,
+      frozenBindingSha256: active.frozenBindingSha256,
+      maskJournal: evidence.checkpoint,
+      completedTileBitsetHex: coverage.completedTileBitsetHex,
+      completedTileCount: coverage.completedTileCount,
+      cumulativeDwellStateSha256: coverage.cumulativeDwellStateSha256,
+    }),
+    finalDurableRecordedAtUtc: evidence.finalDurableRecordedAtUtc,
+  };
+}
+
 function assertPreparedMatchesState(
   prepared: GrandHallT554NativeMaskPreparedFreezeV2["binding"],
   sourceCustody: GrandHallT554NativeReviewSourceCustodyBindingV2,
@@ -1585,32 +1719,36 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
     const coordinator = this.#coordinator();
     const browser = coordinator.browserEpoch;
     const active = coordinator.activeSource;
-    if (browser === null || active === null) {
+    if (browser === null) {
       throw fail(
-        "PHASE_INVALID",
-        "Mask-workflow snapshot requires one active source and browser epoch.",
+        "INTERNAL_INVARIANT_FAILED",
+        "Mask-workflow snapshot requires one browser epoch.",
       );
     }
-    if (
-      active.phase !== "source_review" &&
-      active.phase !== "mask_edit" &&
-      active.phase !== "mask_review"
-    ) {
-      throw fail(
-        "PHASE_INVALID",
-        "Mask-workflow facade cannot expose a decision or terminal source phase.",
-      );
-    }
-    return Object.freeze({
-      schemaVersion: MASK_WORKFLOW_SNAPSHOT_SCHEMA,
-      lifecycle: coordinator.lifecycle,
-      sessionIdSha256: coordinator.sessionIdSha256,
-      workspaceRevision: coordinator.workspaceRevision,
-      maximumAllocatedRenderGeneration:
-        coordinator.maximumAllocatedRenderGeneration,
-      browserEpochNumber: browser.number,
-      browserEpochNonceSha256: browser.nonceSha256,
-      activeSource: {
+    let activeSource: GrandHallT554NativeReviewMaskWorkflowSnapshotV2["activeSource"] =
+      null;
+    if (active !== null) {
+      const decision = active.decision;
+      if (
+        (active.phase === "decision_recorded" ||
+          active.phase === "human_attested") &&
+        (decision === null || decision.result !== "INCLUDE")
+      ) {
+        throw fail(
+          "PHASE_INVALID",
+          "Mask-workflow terminal phase requires one exact INCLUDE decision.",
+        );
+      }
+      if (
+        active.phase === "human_attested" &&
+        active.humanAttestation === null
+      ) {
+        throw fail(
+          "INTERNAL_INVARIANT_FAILED",
+          "Human-attested phase has no exact attestation.",
+        );
+      }
+      activeSource = {
         inventoryIndex: active.sourceCustody.source.inventoryIndex,
         sweepNumber: active.sourceCustody.source.sweepNumber,
         renderGeneration: active.renderGeneration,
@@ -1623,7 +1761,25 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
         frozenBindingSha256: active.frozenBindingSha256,
         frozenBinding: active.frozenBinding,
         maskJournalLeafName: active.maskJournal?.leafName ?? null,
-      },
+        decision: decision?.result === "INCLUDE" ? decision : null,
+        humanAttestation: active.humanAttestation,
+      };
+    } else if (this.#runtime !== null) {
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        "Mask-workflow runtime survived active-source abandonment.",
+      );
+    }
+    return Object.freeze({
+      schemaVersion: MASK_WORKFLOW_SNAPSHOT_SCHEMA,
+      lifecycle: coordinator.lifecycle,
+      sessionIdSha256: coordinator.sessionIdSha256,
+      workspaceRevision: coordinator.workspaceRevision,
+      maximumAllocatedRenderGeneration:
+        coordinator.maximumAllocatedRenderGeneration,
+      browserEpochNumber: browser.number,
+      browserEpochNonceSha256: browser.nonceSha256,
+      activeSource,
       authority: "none",
       reviewState: "human_pending",
       finalDecision: "PENDING",
@@ -2516,6 +2672,396 @@ class GrandHallT554NativeReviewMaskWorkflowSessionControllerV2 implements GrandH
         completedTileCount: coverage.completedTileCount,
         complete: coverage.complete,
       });
+    });
+  }
+
+  recordIncludeDecision(
+    input: MaskMutationGuardV2 & {
+      readonly classification:
+        | "grand_hall_core"
+        | "grand_hall_portal_threshold";
+      readonly note: string;
+    },
+  ): Promise<GrandHallT554NativeReviewMaskWorkflowSnapshotV2> {
+    return this.#lane.run(async () => {
+      const request = parseInput(IncludeDecisionInputSchema, input);
+      await this.#refreshStore();
+      this.#assertMutableLifecycle();
+      const active = this.#assertGuard(request);
+      if (
+        active.phase !== "mask_review" ||
+        active.maskState === null ||
+        active.maskReviewSubjectSha256 === null ||
+        active.frozenBindingSha256 === null ||
+        active.frozenBinding === null
+      ) {
+        throw fail(
+          "PHASE_INVALID",
+          "INCLUDE requires one exact frozen mask review.",
+        );
+      }
+      if (active.maskState.includedPixelCount === 0) {
+        throw fail(
+          "PHASE_INVALID",
+          "INCLUDE requires a frozen mask containing observed source pixels.",
+        );
+      }
+      this.#assertNoPendingTiles("INCLUDE decision");
+      this.#assertRenderBinding({
+        expectedBrowserEpochNonceSha256:
+          request.expectedBrowserEpochNonceSha256,
+        expectedRenderGeneration: request.expectedRenderGeneration,
+        sourceReviewSubjectSha256: request.sourceReviewSubjectSha256,
+        maskStateSha256: active.maskState.maskStateSha256,
+        maskReviewSubjectSha256: active.maskReviewSubjectSha256,
+      });
+      const sourceCoverage = completedSourceCoverage(this.#store);
+      const maskCoverage = completedMaskCoverage(this.#store);
+      const coordinator = this.#coordinator();
+      if (
+        coordinator.workspaceRevision === Number.MAX_SAFE_INTEGER ||
+        coordinator.maximumAllocatedRenderGeneration === Number.MAX_SAFE_INTEGER
+      ) {
+        throw fail(
+          "RESOURCE_FAILURE",
+          "INCLUDE exhausted its durable workspace or render-generation range.",
+        );
+      }
+      const material = {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-source-decision-recorded.v2" as const,
+        operationIdSha256: nonceSha256(
+          parseInput(NonceSchema, this.dependencies.newNonce()),
+        ),
+        browserEpochNonceSha256:
+          coordinator.browserEpoch?.nonceSha256 ??
+          (() => {
+            throw fail(
+              "INTERNAL_INVARIANT_FAILED",
+              "INCLUDE decision has no browser epoch.",
+            );
+          })(),
+        previousWorkspaceRevision: request.expectedWorkspaceRevision,
+        resultingWorkspaceRevision: request.expectedWorkspaceRevision + 1,
+        sessionIdSha256: this.sessionScope.sessionIdSha256,
+        registry: this.sessionScope.registry,
+        implementationManifest: this.sessionScope.implementationManifest,
+        authorityBoundary: this.sessionScope.authorityBoundary,
+        sourceCustody: active.sourceCustody,
+        previousRenderGeneration: active.renderGeneration,
+        resultingRenderGeneration:
+          coordinator.maximumAllocatedRenderGeneration + 1,
+        completedSourceCoverage: sourceCoverage.proof,
+        note: request.note,
+        decidedAtUtc: laterUtc(
+          laterUtc(
+            this.dependencies.nowUtc(),
+            sourceCoverage.finalDurableRecordedAtUtc,
+          ),
+          maskCoverage.finalDurableRecordedAtUtc,
+        ),
+        result: "INCLUDE" as const,
+        classification: request.classification,
+        maskState: active.maskState,
+        maskReviewSubjectSha256: active.maskReviewSubjectSha256,
+        frozenBindingSha256: active.frozenBindingSha256,
+        frozenBinding: active.frozenBinding,
+        completedMaskCoverage: maskCoverage.proof,
+      };
+      const payload = {
+        ...material,
+        decisionSha256:
+          computeGrandHallT554NativeReviewSourceDecisionV2Sha256(material),
+      };
+      await this.#appendCoordinator(
+        event<
+          Extract<
+            GrandHallT554NativeReviewCoordinatorEventV2,
+            { readonly eventType: "source.decision-recorded.v2" }
+          >
+        >("source.decision-recorded.v2", payload),
+      );
+      this.#recoveryRequired = true;
+      try {
+        await this.dependencies.seam?.afterIncludeDecisionDurable?.();
+        await this.#refreshStoreIncludingRecoveryRequired();
+        const result = this.#snapshotVerified();
+        this.#recoveryRequired = false;
+        return result;
+      } catch (error) {
+        throw fail(
+          "CRASH_RECOVERY_REQUIRED",
+          "Durable INCLUDE decision requires exact disk recovery.",
+          error,
+        );
+      }
+    });
+  }
+
+  recordHumanAttestation(
+    input: MaskMutationGuardV2 & {
+      readonly reviewerId: string;
+      readonly knowledgeBasis: readonly string[];
+    },
+  ): Promise<GrandHallT554NativeReviewMaskWorkflowSnapshotV2> {
+    return this.#lane.run(async () => {
+      const request = parseInput(HumanAttestationInputSchema, input);
+      await this.#refreshStore();
+      this.#assertMutableLifecycle();
+      const active = this.#assertGuard(request);
+      if (
+        active.phase !== "decision_recorded" ||
+        active.decision?.result !== "INCLUDE"
+      ) {
+        throw fail(
+          "PHASE_INVALID",
+          "Human attestation requires one exact INCLUDE decision.",
+        );
+      }
+      this.#assertNoPendingTiles("Human attestation");
+      const coordinator = this.#coordinator();
+      if (coordinator.workspaceRevision === Number.MAX_SAFE_INTEGER) {
+        throw fail(
+          "RESOURCE_FAILURE",
+          "Human attestation exhausted its durable workspace range.",
+        );
+      }
+      const material = {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-source-human-attestation-recorded.v2" as const,
+        operationIdSha256: nonceSha256(
+          parseInput(NonceSchema, this.dependencies.newNonce()),
+        ),
+        browserEpochNonceSha256:
+          coordinator.browserEpoch?.nonceSha256 ??
+          (() => {
+            throw fail(
+              "INTERNAL_INVARIANT_FAILED",
+              "Human attestation has no browser epoch.",
+            );
+          })(),
+        previousWorkspaceRevision: request.expectedWorkspaceRevision,
+        resultingWorkspaceRevision: request.expectedWorkspaceRevision + 1,
+        sessionIdSha256: this.sessionScope.sessionIdSha256,
+        sourceReviewSubjectSha256:
+          active.sourceCustody.sourceReviewSubjectSha256,
+        decisionSha256: active.decision.decisionSha256,
+        reviewerId: request.reviewerId,
+        reviewerRole: "venue_owner_or_authorized_domain_reviewer" as const,
+        knowledgeBasis: request.knowledgeBasis,
+        attestedAtUtc: laterUtc(
+          this.dependencies.nowUtc(),
+          active.decision.decidedAtUtc,
+        ),
+        statement:
+          "I reviewed the exact bound source at native scale and recorded only what I could support from supplied evidence." as const,
+        humanPresenceProof: "not_cryptographic" as const,
+        agentDecisionAuthority: "none" as const,
+        authority: "none" as const,
+      };
+      const payload = {
+        ...material,
+        attestationSha256:
+          computeGrandHallT554NativeReviewHumanAttestationV2Sha256(material),
+      };
+      await this.#appendCoordinator(
+        event<
+          Extract<
+            GrandHallT554NativeReviewCoordinatorEventV2,
+            { readonly eventType: "source.human-attestation-recorded.v2" }
+          >
+        >("source.human-attestation-recorded.v2", payload),
+      );
+      this.#recoveryRequired = true;
+      try {
+        await this.dependencies.seam?.afterHumanAttestationDurable?.();
+        await this.#refreshStoreIncludingRecoveryRequired();
+        const result = this.#snapshotVerified();
+        this.#recoveryRequired = false;
+        return result;
+      } catch (error) {
+        throw fail(
+          "CRASH_RECOVERY_REQUIRED",
+          "Durable human attestation requires exact disk recovery.",
+          error,
+        );
+      }
+    });
+  }
+
+  abandonActiveSource(
+    input: MaskMutationGuardV2 & {
+      readonly reason: "operator_abandon" | "source_switch" | "session_stop";
+    },
+  ): Promise<GrandHallT554NativeReviewMaskWorkflowSnapshotV2> {
+    return this.#lane.run(async () => {
+      const request = parseInput(AbandonInputSchema, input);
+      await this.#refreshStore();
+      this.#assertMutableLifecycle();
+      const active = this.#assertGuard(request);
+      const sourceEvidence = latestVerifiedActiveSourceEvidenceV2(this.#store);
+      const maskEvidence = latestVerifiedActiveMaskEvidenceV2(this.#store);
+      if (sourceEvidence === null) {
+        throw fail(
+          "INTERNAL_INVARIANT_FAILED",
+          "Source abandonment has no exact source-child evidence.",
+        );
+      }
+      if (
+        (active.maskJournal === null && maskEvidence !== null) ||
+        (active.maskJournal !== null && maskEvidence === null)
+      ) {
+        throw fail(
+          "INTERNAL_INVARIANT_FAILED",
+          "Source abandonment mask evidence differs from the active pointer.",
+        );
+      }
+      for (const pending of this.#pendingTiles) {
+        zeroPendingMaskTile(pending);
+      }
+      this.#pendingTiles.clear();
+      const coordinator = this.#coordinator();
+      if (coordinator.workspaceRevision === Number.MAX_SAFE_INTEGER) {
+        throw fail(
+          "RESOURCE_FAILURE",
+          "Source abandonment exhausted its durable workspace range.",
+        );
+      }
+      await this.#appendCoordinator(
+        event<
+          Extract<
+            GrandHallT554NativeReviewCoordinatorEventV2,
+            { readonly eventType: "source.abandoned.v2" }
+          >
+        >("source.abandoned.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-source-abandoned.v2",
+          browserEpochNonceSha256:
+            coordinator.browserEpoch?.nonceSha256 ??
+            (() => {
+              throw fail(
+                "INTERNAL_INVARIANT_FAILED",
+                "Source abandonment has no browser epoch.",
+              );
+            })(),
+          previousWorkspaceRevision: request.expectedWorkspaceRevision,
+          resultingWorkspaceRevision: request.expectedWorkspaceRevision + 1,
+          sourceCustody: active.sourceCustody,
+          finalRenderGeneration: active.renderGeneration,
+          sourceJournal: sourceEvidence.checkpoint,
+          maskJournal: maskEvidence?.checkpoint ?? null,
+          reason: request.reason,
+        }),
+      );
+      this.#recoveryRequired = true;
+      try {
+        await this.dependencies.seam?.afterSourceAbandonDurable?.();
+        await this.#refreshStoreIncludingRecoveryRequired();
+        if (this.#coordinator().activeSource !== null) {
+          throw fail(
+            "INTERNAL_INVARIANT_FAILED",
+            "Durable source abandonment retained an active source.",
+          );
+        }
+      } catch (error) {
+        throw fail(
+          "CRASH_RECOVERY_REQUIRED",
+          "Durable source abandonment requires exact disk recovery.",
+          error,
+        );
+      }
+      const runtime = this.#runtime;
+      this.#runtime = null;
+      const cleanupErrors: unknown[] = [];
+      if (runtime !== null) {
+        try {
+          runtime.maskStore.abandon();
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+        try {
+          await runtime.epoch.abandon();
+        } catch (error) {
+          cleanupErrors.push(error);
+        }
+      }
+      if (cleanupErrors.length !== 0) {
+        throw fail(
+          "RESOURCE_CLEANUP_FAILED",
+          "Durable source abandonment could not retire every process-local resource.",
+          cleanupErrors,
+        );
+      }
+      const result = this.#snapshotVerified();
+      this.#recoveryRequired = false;
+      return result;
+    });
+  }
+
+  stop(input: {
+    readonly expectedWorkspaceRevision: number;
+  }): Promise<GrandHallT554NativeReviewMaskWorkflowSnapshotV2> {
+    return this.#lane.run(async () => {
+      const request = parseInput(StopInputSchema, input);
+      await this.#refreshStore();
+      this.#assertMutableLifecycle();
+      const coordinator = this.#coordinator();
+      if (request.expectedWorkspaceRevision !== coordinator.workspaceRevision) {
+        throw fail(
+          "WORKSPACE_REVISION_CONFLICT",
+          "Mask-workflow workspace revision CAS is stale.",
+        );
+      }
+      if (coordinator.activeSource !== null || this.#runtime !== null) {
+        throw fail(
+          "PHASE_INVALID",
+          "Session stop requires an explicit active-source abandon first.",
+        );
+      }
+      if (coordinator.workspaceRevision === Number.MAX_SAFE_INTEGER) {
+        throw fail(
+          "RESOURCE_FAILURE",
+          "Session stop exhausted its durable workspace range.",
+        );
+      }
+      await this.#appendCoordinator(
+        event<
+          Extract<
+            GrandHallT554NativeReviewCoordinatorEventV2,
+            { readonly eventType: "session.stopped.v2" }
+          >
+        >("session.stopped.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-session-stopped.v2",
+          browserEpochNonceSha256:
+            coordinator.browserEpoch?.nonceSha256 ??
+            (() => {
+              throw fail(
+                "INTERNAL_INVARIANT_FAILED",
+                "Session stop has no browser epoch.",
+              );
+            })(),
+          previousWorkspaceRevision: request.expectedWorkspaceRevision,
+          resultingWorkspaceRevision: request.expectedWorkspaceRevision + 1,
+          stoppedAtUtc: this.dependencies.nowUtc(),
+          activeSourceWasPresent: false,
+          authorityBoundary: this.sessionScope.authorityBoundary,
+        }),
+      );
+      this.#recoveryRequired = true;
+      try {
+        await this.dependencies.seam?.afterSessionStopDurable?.();
+        await this.#refreshStoreIncludingRecoveryRequired();
+        const result = this.#snapshotVerified();
+        this.#recoveryRequired = false;
+        return result;
+      } catch (error) {
+        throw fail(
+          "CRASH_RECOVERY_REQUIRED",
+          "Durable session stop requires exact disk recovery.",
+          error,
+        );
+      }
     });
   }
 
@@ -3945,18 +4491,25 @@ async function openInjectedMaskWorkflowSession(
               })(),
           },
         );
-  let handedOff = false;
+  let coordinatorJournal: GrandHallT554NativeReviewDurableJournalV2 | null =
+    null;
+  let safeCoordinatorRevision: number | null = null;
+  let safeCoordinatorHeadEventSha256: Sha256 | null = null;
+  let durableMutationMayHaveBeenAttempted = false;
   try {
     const preparationDirectory = preparationDirectoryFor(
       sessionRoot,
       sessionScope.sessionIdSha256,
     );
     await ensurePreparationDirectory(preparationDirectory);
-    const coordinatorJournal =
-      await openGrandHallT554NativeReviewDurableJournalV2({
-        workspaceRoot: join(sessionRoot, "coordinator"),
-        expectedScope: sessionScope,
-      });
+    coordinatorJournal = await openGrandHallT554NativeReviewDurableJournalV2({
+      workspaceRoot: join(sessionRoot, "coordinator"),
+      expectedScope: sessionScope,
+    });
+    const initialCoordinator = await coordinatorJournal.replay();
+    safeCoordinatorRevision = initialCoordinator.revision;
+    safeCoordinatorHeadEventSha256 = initialCoordinator.headEventSha256;
+    durableMutationMayHaveBeenAttempted = true;
     await recoverPendingMaskMutation({
       sessionRoot,
       preparationDirectory,
@@ -3970,11 +4523,22 @@ async function openInjectedMaskWorkflowSession(
       expectedSessionScope: sessionScope,
       lease,
     });
+    safeCoordinatorRevision = store.coordinatorJournal.revision;
+    safeCoordinatorHeadEventSha256 = store.coordinatorJournal.headEventSha256;
+    durableMutationMayHaveBeenAttempted = false;
     if (store.coordinator.lifecycle === "stopped") {
-      throw fail(
-        "SESSION_STOPPED",
-        "Stopped native-review session cannot enter mask workflow.",
-      );
+      const controller =
+        new GrandHallT554NativeReviewMaskWorkflowSessionControllerV2(
+          sessionRoot,
+          preparationDirectory,
+          sessionScope,
+          dependencies,
+          lease,
+          coordinatorJournal,
+          store,
+          null,
+        );
+      return controller;
     }
     if (store.coordinator.lifecycle !== "active") {
       throw fail(
@@ -3984,16 +4548,17 @@ async function openInjectedMaskWorkflowSession(
     }
     const active = store.coordinator.activeSource;
     if (
-      active === null ||
-      (active.phase !== "source_review" &&
-        active.phase !== "mask_edit" &&
-        active.phase !== "mask_review")
+      active !== null &&
+      (active.phase === "decision_recorded" ||
+        active.phase === "human_attested") &&
+      active.decision?.result !== "INCLUDE"
     ) {
       throw fail(
         "PHASE_INVALID",
-        "Mask-workflow facade requires source review, mask edit, or mask review.",
+        "Mask-workflow facade requires source review, mask workflow, or an INCLUDE terminal phase.",
       );
     }
+    durableMutationMayHaveBeenAttempted = true;
     store = await rotateGrandHallT554NativeReviewBrowserEpochV2({
       reason: mode,
       sessionRoot,
@@ -4006,8 +4571,12 @@ async function openInjectedMaskWorkflowSession(
       ),
       startedAtUtc: dependencies.nowUtc(),
     });
+    safeCoordinatorRevision = store.coordinatorJournal.revision;
+    safeCoordinatorHeadEventSha256 = store.coordinatorJournal.headEventSha256;
+    durableMutationMayHaveBeenAttempted = false;
     let runtime: ActiveMaskWorkflowRuntimeV2 | null = null;
     if (store.coordinator.activeSource?.phase === "mask_edit") {
+      durableMutationMayHaveBeenAttempted = true;
       const resumed = await resumeMaskEditEpochAfterBrowserRotation({
         sessionRoot,
         sessionScope,
@@ -4019,7 +4588,11 @@ async function openInjectedMaskWorkflowSession(
       });
       store = resumed.store;
       runtime = resumed.runtime;
+      safeCoordinatorRevision = store.coordinatorJournal.revision;
+      safeCoordinatorHeadEventSha256 = store.coordinatorJournal.headEventSha256;
+      durableMutationMayHaveBeenAttempted = false;
     } else if (store.coordinator.activeSource?.phase === "mask_review") {
+      durableMutationMayHaveBeenAttempted = true;
       const resumed = await resumeMaskReviewAfterBrowserRotation({
         sessionRoot,
         sessionScope,
@@ -4031,6 +4604,9 @@ async function openInjectedMaskWorkflowSession(
       });
       store = resumed.store;
       runtime = resumed.runtime;
+      safeCoordinatorRevision = store.coordinatorJournal.revision;
+      safeCoordinatorHeadEventSha256 = store.coordinatorJournal.headEventSha256;
+      durableMutationMayHaveBeenAttempted = false;
     }
     const controller =
       new GrandHallT554NativeReviewMaskWorkflowSessionControllerV2(
@@ -4043,16 +4619,43 @@ async function openInjectedMaskWorkflowSession(
         store,
         runtime,
       );
-    handedOff = true;
     return controller;
-  } finally {
-    if (!handedOff) {
+  } catch (operationError) {
+    let retainOwnerForRecovery =
+      operationError instanceof
+        GrandHallT554NativeReviewMaskWorkflowSessionV2Error &&
+      operationError.code === "CRASH_RECOVERY_REQUIRED";
+    if (
+      !retainOwnerForRecovery &&
+      durableMutationMayHaveBeenAttempted &&
+      coordinatorJournal !== null &&
+      safeCoordinatorRevision !== null
+    ) {
+      try {
+        const observedCoordinator = await coordinatorJournal.replay();
+        retainOwnerForRecovery =
+          observedCoordinator.revision !== safeCoordinatorRevision ||
+          observedCoordinator.headEventSha256 !==
+            safeCoordinatorHeadEventSha256;
+      } catch {
+        retainOwnerForRecovery = true;
+      }
+    }
+    if (retainOwnerForRecovery) throw operationError;
+    try {
       await releaseGrandHallT554NativeReviewSessionOwnerV2({
         lease,
         sessionRoot,
         expectedSessionScope: sessionScope,
       });
+    } catch (cleanupError) {
+      throw fail(
+        "RESOURCE_CLEANUP_FAILED",
+        "Mask-workflow reopen failed and its exact owner lease could not be released.",
+        { operationError, cleanupError },
+      );
     }
+    throw operationError;
   }
 }
 

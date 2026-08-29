@@ -12,9 +12,7 @@ import {
   GRAND_HALL_PANORAMA_WIDTH_PX,
 } from "@omnitwin/types";
 
-import type {
-  GrandHallT554NativeReviewDurableJournalReplayV2,
-} from "../grand-hall-t554-native-review-durable-journal-v2.js";
+import type { GrandHallT554NativeReviewDurableJournalReplayV2 } from "../grand-hall-t554-native-review-durable-journal-v2.js";
 import {
   GRAND_HALL_T554_NATIVE_REVIEW_DOMAIN_EVENT_V2,
   type GrandHallT554NativeReviewCoverageObservedPayloadV2,
@@ -40,7 +38,10 @@ function digest(seed: string | Buffer): Sha256 {
 }
 
 function canonicalBytes(value: unknown): Buffer {
-  return Buffer.from(`${stableCanonicalJson(toCanonicalJson(value))}\n`, "utf8");
+  return Buffer.from(
+    `${stableCanonicalJson(toCanonicalJson(value))}\n`,
+    "utf8",
+  );
 }
 
 function envelope<const EventType extends string, const Payload>(
@@ -139,11 +140,10 @@ export function completeSourceCoverageEvents(
   };
   const firstPayload: GrandHallT554NativeReviewCoverageObservedPayloadV2 = {
     ...firstMaterial,
-    coverageEventSha256:
-      computeGrandHallT554NativeReviewCoverageEventV2Sha256(
-        "source",
-        firstMaterial,
-      ),
+    coverageEventSha256: computeGrandHallT554NativeReviewCoverageEventV2Sha256(
+      "source",
+      firstMaterial,
+    ),
   };
   const partialMaterial: Omit<
     GrandHallT554NativeReviewCoverageObservedPayloadV2,
@@ -171,11 +171,10 @@ export function completeSourceCoverageEvents(
   };
   const partialPayload: GrandHallT554NativeReviewCoverageObservedPayloadV2 = {
     ...partialMaterial,
-    coverageEventSha256:
-      computeGrandHallT554NativeReviewCoverageEventV2Sha256(
-        "source",
-        partialMaterial,
-      ),
+    coverageEventSha256: computeGrandHallT554NativeReviewCoverageEventV2Sha256(
+      "source",
+      partialMaterial,
+    ),
   };
   const finalMaterial: Omit<
     GrandHallT554NativeReviewCoverageObservedPayloadV2,
@@ -219,6 +218,127 @@ export function completeSourceCoverageEvents(
   ];
 }
 
+export function completeMaskCoverageEvents(
+  scope: GrandHallT554NativeReviewMaskScopeV2,
+  previousServerInstantUtc: string,
+): readonly GrandHallT554NativeReviewMaskChildEventV2[] {
+  const previousServerInstantMs = Date.parse(previousServerInstantUtc);
+  if (!Number.isFinite(previousServerInstantMs)) {
+    throw new Error("complete mask fixture requires one valid prior instant");
+  }
+  const serverInstantUtc = (offsetMs: number): string =>
+    new Date(previousServerInstantMs + offsetMs).toISOString();
+  const sourceScope: GrandHallT554NativeReviewSourceScopeV2 = {
+    schemaVersion: scope.schemaVersion,
+    kind: "source",
+    sessionIdSha256: scope.sessionIdSha256,
+    implementationManifest: scope.implementationManifest,
+    registry: scope.registry,
+    authorityBoundary: scope.authorityBoundary,
+    browserEpochNonceSha256: scope.browserEpochNonceSha256,
+    coverageSegmentIdSha256: scope.coverageSegmentIdSha256,
+    renderGeneration: scope.renderGeneration,
+    sourceCustody: scope.sourceCustody,
+  };
+  const events: GrandHallT554NativeReviewMaskChildEventV2[] = [];
+  for (const sourceEvent of completeSourceCoverageEvents(sourceScope)) {
+    if (sourceEvent.eventType === "source.tile-delivered.v2") {
+      events.push(
+        envelope("mask.tile-delivered.v2", {
+          ...sourceEvent.payload,
+          subjectSha256: scope.maskReviewSubjectSha256,
+          responseFinishedAtUtc: serverInstantUtc(1),
+        }),
+      );
+      continue;
+    }
+    if (sourceEvent.eventType !== "source.coverage-observed.v2") {
+      throw new Error("complete source fixture emitted an unexpected event");
+    }
+    const sourcePayload = sourceEvent.payload;
+    const previousEvent = events.at(-1);
+    const material: Omit<
+      GrandHallT554NativeReviewCoverageObservedPayloadV2,
+      "coverageEventSha256"
+    > = {
+      schemaVersion: sourcePayload.schemaVersion,
+      browserEpochNonceSha256: sourcePayload.browserEpochNonceSha256,
+      sourceEpochNonceSha256: sourcePayload.sourceEpochNonceSha256,
+      coverageSegmentIdSha256: sourcePayload.coverageSegmentIdSha256,
+      subjectSha256: scope.maskReviewSubjectSha256,
+      renderGeneration: sourcePayload.renderGeneration,
+      sequence: sourcePayload.sequence,
+      previousCoverageEventSha256:
+        previousEvent?.eventType === "mask.coverage-observed.v2"
+          ? previousEvent.payload.coverageEventSha256
+          : null,
+      serverObservation: {
+        ...sourcePayload.serverObservation,
+        receivedAtUtc: serverInstantUtc(
+          sourcePayload.sequence === 0
+            ? 2
+            : sourcePayload.sequence === 1
+              ? 502
+              : 752,
+        ),
+      },
+      telemetry: sourcePayload.telemetry,
+      derived: sourcePayload.derived,
+    };
+    events.push(
+      envelope("mask.coverage-observed.v2", {
+        ...material,
+        coverageEventSha256:
+          computeGrandHallT554NativeReviewCoverageEventV2Sha256(
+            "mask",
+            material,
+          ),
+      }),
+    );
+  }
+  return events;
+}
+
+function childServerOwnedAtUtc(
+  event:
+    | GrandHallT554NativeReviewSourceChildEventV2
+    | GrandHallT554NativeReviewMaskChildEventV2,
+): string {
+  switch (event.eventType) {
+    case "source.review-started.v2":
+    case "mask.review-started.v2":
+      return event.payload.coverageSegmentStartedAtUtc;
+    case "source.tile-delivered.v2":
+    case "mask.tile-delivered.v2":
+      return event.payload.responseFinishedAtUtc;
+    case "source.coverage-observed.v2":
+    case "mask.coverage-observed.v2":
+      return event.payload.serverObservation.receivedAtUtc;
+  }
+}
+
+function assertBulkFixtureRecordTimeCoversServerEvents(
+  recordedAtUtc: string,
+  events: readonly (
+    | GrandHallT554NativeReviewSourceChildEventV2
+    | GrandHallT554NativeReviewMaskChildEventV2
+  )[],
+): void {
+  const recordedAtMs = Date.parse(recordedAtUtc);
+  if (!Number.isFinite(recordedAtMs)) {
+    throw new Error("bulk fixture derived an invalid durable record instant");
+  }
+  for (const event of events) {
+    const serverOwnedAtUtc = childServerOwnedAtUtc(event);
+    const serverOwnedAtMs = Date.parse(serverOwnedAtUtc);
+    if (!Number.isFinite(serverOwnedAtMs) || serverOwnedAtMs > recordedAtMs) {
+      throw new Error(
+        `bulk fixture durable record precedes ${event.eventType} server time`,
+      );
+    }
+  }
+}
+
 export async function bulkAppendExactChildFixture(input: {
   readonly journalRoot: string;
   readonly start: GrandHallT554NativeReviewDurableJournalReplayV2;
@@ -230,10 +350,22 @@ export async function bulkAppendExactChildFixture(input: {
     | GrandHallT554NativeReviewMaskChildEventV2
   )[];
 }): Promise<void> {
-  const recordedAtUtc = input.start.records.at(-1)?.recordedAtUtc;
-  if (recordedAtUtc === undefined) {
+  const startRecordedAtUtc = input.start.records.at(-1)?.recordedAtUtc;
+  if (startRecordedAtUtc === undefined) {
     throw new Error("bulk fixture requires one durable start record");
   }
+  const serverOwnedTimesMs = input.events.map((event) =>
+    Date.parse(childServerOwnedAtUtc(event)),
+  );
+  if (
+    serverOwnedTimesMs.some((milliseconds) => !Number.isFinite(milliseconds))
+  ) {
+    throw new Error("bulk fixture event has an invalid server-owned instant");
+  }
+  const recordedAtUtc = new Date(
+    Math.max(Date.parse(startRecordedAtUtc), ...serverOwnedTimesMs),
+  ).toISOString();
+  assertBulkFixtureRecordTimeCoversServerEvents(recordedAtUtc, input.events);
   let previousEventSha256 = input.start.headEventSha256;
   const files = input.events.map((event, offset) => {
     const sequence = input.start.revision + offset + 1;

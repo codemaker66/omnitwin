@@ -2432,111 +2432,157 @@ async function openInjectedSourceSession(
               );
             })(),
         });
-  const coordinatorJournal =
-    await openGrandHallT554NativeReviewDurableJournalV2({
+  let coordinatorJournal: GrandHallT554NativeReviewDurableJournalV2 | null =
+    null;
+  let safeCoordinatorRevision: number | null = null;
+  let safeCoordinatorHeadEventSha256: Sha256 | null = null;
+  let durableMutationMayHaveBeenAttempted = false;
+  try {
+    coordinatorJournal = await openGrandHallT554NativeReviewDurableJournalV2({
       workspaceRoot: join(sessionRoot, "coordinator"),
       expectedScope: sessionScope,
     });
-  await recoverPendingSourceMutation({
-    sessionRoot,
-    sessionScope,
-    lease,
-    coordinatorJournal,
-    dependencies,
-  });
-  let store = await openGrandHallT554NativeReviewSessionStoreV2({
-    sessionRoot,
-    expectedSessionScope: sessionScope,
-    lease,
-  });
-  if (store.coordinator.lifecycle === "stopped") {
-    return new GrandHallT554NativeReviewSourceSessionControllerV2(
+    const initialCoordinator = await coordinatorJournal.replay();
+    safeCoordinatorRevision = initialCoordinator.revision;
+    safeCoordinatorHeadEventSha256 = initialCoordinator.headEventSha256;
+    durableMutationMayHaveBeenAttempted = true;
+    await recoverPendingSourceMutation({
+      sessionRoot,
+      sessionScope,
+      lease,
+      coordinatorJournal,
+      dependencies,
+    });
+    let store = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot,
+      expectedSessionScope: sessionScope,
+      lease,
+    });
+    safeCoordinatorRevision = store.coordinatorJournal.revision;
+    safeCoordinatorHeadEventSha256 = store.coordinatorJournal.headEventSha256;
+    durableMutationMayHaveBeenAttempted = false;
+    if (store.coordinator.lifecycle === "stopped") {
+      const controller = new GrandHallT554NativeReviewSourceSessionControllerV2(
+        sessionRoot,
+        sessionScope,
+        dependencies,
+        lease,
+        coordinatorJournal,
+        store,
+        null,
+      );
+      return controller;
+    }
+    if (store.coordinator.lifecycle !== "active") {
+      throw fail(
+        "SESSION_POISONED",
+        "Poisoned source-review session cannot reopen.",
+      );
+    }
+    const activeBeforeRotation = store.coordinator.activeSource;
+    if (
+      activeBeforeRotation !== null &&
+      activeBeforeRotation.phase !== "source_review" &&
+      !(
+        (activeBeforeRotation.phase === "decision_recorded" ||
+          activeBeforeRotation.phase === "human_attested") &&
+        activeBeforeRotation.decision?.result === "EXCLUDE"
+      )
+    ) {
+      throw fail(
+        "PHASE_INVALID",
+        "Source-only kernel cannot reopen an INCLUDE or mask-workflow phase.",
+      );
+    }
+    durableMutationMayHaveBeenAttempted = true;
+    store = await rotateGrandHallT554NativeReviewBrowserEpochV2({
+      reason: mode,
+      sessionRoot,
+      sessionScope,
+      lease,
+      coordinatorJournal,
+      store,
+      newBrowserEpochNonceSha256: nonceSha256(
+        parseInput(NonceSchema, dependencies.newNonce()),
+      ),
+      startedAtUtc: dependencies.nowUtc(),
+      afterDurable: dependencies.seam?.afterBrowserEpochStartedDurable,
+    });
+    safeCoordinatorRevision = store.coordinatorJournal.revision;
+    safeCoordinatorHeadEventSha256 = store.coordinatorJournal.headEventSha256;
+    durableMutationMayHaveBeenAttempted = false;
+    let runtime: ActiveRuntime | null = null;
+    if (store.coordinator.activeSource?.phase === "source_review") {
+      durableMutationMayHaveBeenAttempted = true;
+      const resumed = await resumeActiveSource({
+        sessionRoot,
+        sessionScope,
+        lease,
+        coordinatorJournal,
+        dependencies,
+        store,
+      });
+      store = resumed.store;
+      runtime = resumed.runtime;
+      safeCoordinatorRevision = store.coordinatorJournal.revision;
+      safeCoordinatorHeadEventSha256 = store.coordinatorJournal.headEventSha256;
+      durableMutationMayHaveBeenAttempted = false;
+    } else if (
+      store.coordinator.activeSource !== null &&
+      store.coordinator.activeSource.phase !== "decision_recorded" &&
+      store.coordinator.activeSource.phase !== "human_attested"
+    ) {
+      throw fail(
+        "PHASE_INVALID",
+        "Source-only kernel cannot reopen a mask-workflow phase.",
+      );
+    }
+    const controller = new GrandHallT554NativeReviewSourceSessionControllerV2(
       sessionRoot,
       sessionScope,
       dependencies,
       lease,
       coordinatorJournal,
       store,
-      null,
+      runtime,
     );
+    return controller;
+  } catch (operationError) {
+    let retainOwnerForRecovery =
+      operationError instanceof GrandHallT554NativeReviewSourceSessionV2Error &&
+      operationError.code === "CRASH_RECOVERY_REQUIRED";
+    if (
+      !retainOwnerForRecovery &&
+      durableMutationMayHaveBeenAttempted &&
+      coordinatorJournal !== null &&
+      safeCoordinatorRevision !== null
+    ) {
+      try {
+        const observedCoordinator = await coordinatorJournal.replay();
+        retainOwnerForRecovery =
+          observedCoordinator.revision !== safeCoordinatorRevision ||
+          observedCoordinator.headEventSha256 !==
+            safeCoordinatorHeadEventSha256;
+      } catch {
+        retainOwnerForRecovery = true;
+      }
+    }
+    if (retainOwnerForRecovery) throw operationError;
+    try {
+      await releaseGrandHallT554NativeReviewSessionOwnerV2({
+        lease,
+        sessionRoot,
+        expectedSessionScope: sessionScope,
+      });
+    } catch (cleanupError) {
+      throw fail(
+        "RESOURCE_CLEANUP_FAILED",
+        "Source-session reopen failed and its exact owner lease could not be released.",
+        { operationError, cleanupError },
+      );
+    }
+    throw operationError;
   }
-  if (store.coordinator.lifecycle !== "active") {
-    await releaseGrandHallT554NativeReviewSessionOwnerV2({
-      lease,
-      sessionRoot,
-      expectedSessionScope: sessionScope,
-    });
-    throw fail("SESSION_POISONED", "Poisoned source-review session cannot reopen.");
-  }
-  const activeBeforeRotation = store.coordinator.activeSource;
-  if (
-    activeBeforeRotation !== null &&
-    activeBeforeRotation.phase !== "source_review" &&
-    !(
-      (activeBeforeRotation.phase === "decision_recorded" ||
-        activeBeforeRotation.phase === "human_attested") &&
-      activeBeforeRotation.decision?.result === "EXCLUDE"
-    )
-  ) {
-    await releaseGrandHallT554NativeReviewSessionOwnerV2({
-      lease,
-      sessionRoot,
-      expectedSessionScope: sessionScope,
-    });
-    throw fail(
-      "PHASE_INVALID",
-      "Source-only kernel cannot reopen an INCLUDE or mask-workflow phase.",
-    );
-  }
-  store = await rotateGrandHallT554NativeReviewBrowserEpochV2({
-    reason: mode,
-    sessionRoot,
-    sessionScope,
-    lease,
-    coordinatorJournal,
-    store,
-    newBrowserEpochNonceSha256: nonceSha256(
-      parseInput(NonceSchema, dependencies.newNonce()),
-    ),
-    startedAtUtc: dependencies.nowUtc(),
-    afterDurable: dependencies.seam?.afterBrowserEpochStartedDurable,
-  });
-  let runtime: ActiveRuntime | null = null;
-  if (store.coordinator.activeSource?.phase === "source_review") {
-    const resumed = await resumeActiveSource({
-      sessionRoot,
-      sessionScope,
-      lease,
-      coordinatorJournal,
-      dependencies,
-      store,
-    });
-    store = resumed.store;
-    runtime = resumed.runtime;
-  } else if (
-    store.coordinator.activeSource !== null &&
-    store.coordinator.activeSource.phase !== "decision_recorded" &&
-    store.coordinator.activeSource.phase !== "human_attested"
-  ) {
-    await releaseGrandHallT554NativeReviewSessionOwnerV2({
-      lease,
-      sessionRoot,
-      expectedSessionScope: sessionScope,
-    });
-    throw fail(
-      "PHASE_INVALID",
-      "Source-only kernel cannot reopen a mask-workflow phase.",
-    );
-  }
-  return new GrandHallT554NativeReviewSourceSessionControllerV2(
-    sessionRoot,
-    sessionScope,
-    dependencies,
-    lease,
-    coordinatorJournal,
-    store,
-    runtime,
-  );
 }
 
 export interface GrandHallT554NativeReviewSourceSessionProductionOptionsV2 {
