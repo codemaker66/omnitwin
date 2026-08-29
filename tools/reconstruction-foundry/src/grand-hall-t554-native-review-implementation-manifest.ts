@@ -313,6 +313,58 @@ export interface __GrandHallT554NativeReviewBootstrapExecutionIdentity {
   readonly nodePath: string | null;
 }
 
+export interface __GrandHallT554NativeReviewExactImplementationMember {
+  readonly relativePath: string;
+  readonly sha256: GrandHallT554ImplementationSha256;
+  readonly byteLength: number;
+}
+
+export interface __GrandHallT554NativeReviewExactImplementationManifest<
+  TMember extends __GrandHallT554NativeReviewExactImplementationMember,
+> {
+  readonly semanticSha256: GrandHallT554ImplementationSha256;
+  readonly memberCount: number;
+  readonly totalMemberBytes: number;
+  readonly members: readonly TMember[];
+}
+
+export interface __GrandHallT554NativeReviewExactPackVerificationFacts<
+  TManifest,
+> {
+  readonly manifest: TManifest;
+  readonly manifestBinding: {
+    readonly semanticSha256: GrandHallT554ImplementationSha256;
+    readonly fileSha256: GrandHallT554ImplementationSha256;
+    readonly byteLength: number;
+  };
+  readonly memberInventorySha256: GrandHallT554ImplementationSha256;
+  readonly memberCount: number;
+  readonly totalMemberBytes: number;
+  /** Returns a fresh copy of the exact verified manifest bytes. */
+  readonly copyExactManifestBytes: () => Buffer;
+}
+
+export interface __GrandHallT554NativeReviewExactPackVerificationInput<
+  TMember extends __GrandHallT554NativeReviewExactImplementationMember,
+  TManifest extends
+    __GrandHallT554NativeReviewExactImplementationManifest<TMember>,
+> {
+  readonly implementationPackRoot: string;
+  readonly reviewedAnchor: __GrandHallT554NativeReviewImplementationReviewedAnchor;
+  readonly manifestFilename: string;
+  readonly parseCanonicalManifestBytes: (bytes: Buffer) => TManifest;
+  readonly assertRuntime: (manifest: TManifest) => void;
+  readonly assertMemberContentPolicy: (
+    member: TMember,
+    bytes: Buffer,
+    manifest: TManifest,
+  ) => void;
+  readonly computeMemberInventorySha256: (
+    members: readonly TMember[],
+  ) => GrandHallT554ImplementationSha256;
+  readonly seam?: __GrandHallT554NativeReviewImplementationVerificationSeam;
+}
+
 export type GrandHallT554NativeReviewImplementationManifestErrorCode =
   | "REVIEWED_PACK_NOT_CONFIGURED"
   | "ARGUMENT_INVALID"
@@ -1067,7 +1119,7 @@ function assertDecoderMemberClosure(
 }
 
 function assertMemberOrderingAndCollisions(
-  members: readonly GrandHallT554NativeReviewImplementationMemberV1[],
+  members: readonly __GrandHallT554NativeReviewExactImplementationMember[],
 ): void {
   const folded = new Set<string>();
   for (let index = 0; index < members.length; index += 1) {
@@ -1097,6 +1149,43 @@ function assertMemberOrderingAndCollisions(
     }
     folded.add(key);
   }
+}
+
+function assertExactVerificationMembers(
+  manifest: __GrandHallT554NativeReviewExactImplementationManifest<__GrandHallT554NativeReviewExactImplementationMember>,
+): void {
+  if (
+    manifest.members.length < 1 ||
+    manifest.members.length > MAXIMUM_MEMBER_COUNT ||
+    manifest.memberCount !== manifest.members.length
+  ) {
+    throw fail(
+      "MANIFEST_INVALID",
+      "Implementation member count is outside its fixed bound or inconsistent with its exact inventory.",
+    );
+  }
+  let totalMemberBytes = 0;
+  for (const member of manifest.members) {
+    assertSafeRelativePath(member.relativePath, "Implementation member path");
+    requireSha256(member.sha256, "Implementation member SHA-256");
+    requireBoundedInteger(
+      member.byteLength,
+      1,
+      MAXIMUM_MEMBER_BYTES,
+      "Implementation member byte length",
+    );
+    totalMemberBytes += member.byteLength;
+  }
+  if (
+    totalMemberBytes > MAXIMUM_TOTAL_MEMBER_BYTES ||
+    manifest.totalMemberBytes !== totalMemberBytes
+  ) {
+    throw fail(
+      "MANIFEST_INVALID",
+      "Implementation total member bytes are excessive or inconsistent with the exact inventory.",
+    );
+  }
+  assertMemberOrderingAndCollisions(manifest.members);
 }
 
 function parseManifest(
@@ -1289,6 +1378,16 @@ function currentBootstrapExecutionIdentity(): __GrandHallT554NativeReviewBootstr
     nodeOptions: process.env.NODE_OPTIONS ?? null,
     nodePath: process.env.NODE_PATH ?? null,
   });
+}
+
+/** Internal runtime observation for closed manifest-specific assertions. */
+export function __internalObserveGrandHallT554NativeReviewRuntimeIdentity(): GrandHallT554NativeReviewImplementationRuntimeV1 {
+  return currentRuntimeIdentity();
+}
+
+/** Internal bootstrap observation for closed manifest-specific assertions. */
+export function __internalObserveGrandHallT554NativeReviewBootstrapExecutionIdentity(): __GrandHallT554NativeReviewBootstrapExecutionIdentity {
+  return currentBootstrapExecutionIdentity();
 }
 
 function assertBootstrapExecutionIdentity(
@@ -1699,7 +1798,7 @@ async function readStableFile(
 }
 
 function expectedDirectoryPaths(
-  members: readonly GrandHallT554NativeReviewImplementationMemberV1[],
+  members: readonly __GrandHallT554NativeReviewExactImplementationMember[],
 ): readonly string[] {
   const paths = new Set<string>();
   for (const member of members) {
@@ -1713,10 +1812,11 @@ function expectedDirectoryPaths(
 
 function assertExactInventory(
   snapshot: TreeSnapshot,
-  members: readonly GrandHallT554NativeReviewImplementationMemberV1[],
+  manifestFilename: string,
+  members: readonly __GrandHallT554NativeReviewExactImplementationMember[],
 ): void {
   const expectedFiles = [
-    GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME,
+    manifestFilename,
     ...members.map((member) => member.relativePath),
   ].sort(lexicalOrder);
   const actualFiles = snapshot.files.map((entry) => entry.relativePath);
@@ -1893,29 +1993,40 @@ function assertMemberContentPolicy(
   }
 }
 
-async function verifyImplementationPackCandidateWithObservations(
-  input: __GrandHallT554NativeReviewImplementationVerificationInput,
-): Promise<GrandHallT554VerifiedNativeReviewImplementationPackCandidateV1> {
+/**
+ * Internal reusable byte verifier for a closed implementation pack. It grants
+ * no candidate, production, runtime, or root-bound authority: callers must
+ * apply their own module-private branding only after interpreting these facts.
+ */
+export async function __internalVerifyGrandHallT554NativeReviewExactImplementationPack<
+  TMember extends __GrandHallT554NativeReviewExactImplementationMember,
+  TManifest extends
+    __GrandHallT554NativeReviewExactImplementationManifest<TMember>,
+>(
+  input: __GrandHallT554NativeReviewExactPackVerificationInput<
+    TMember,
+    TManifest
+  >,
+): Promise<__GrandHallT554NativeReviewExactPackVerificationFacts<TManifest>> {
   const root = requireAbsoluteLocalRoot(input.implementationPackRoot);
   const anchor = parseReviewedAnchor(input.reviewedAnchor);
   const seam = input.seam ?? {};
+  assertSafeSegment(input.manifestFilename, "Implementation manifest filename");
   let manifestBytes: Buffer | undefined;
   try {
     const initial = await snapshotTree(root);
     await seam.afterInitialInventory?.();
     const manifestRead = await readStableFile(
       root,
-      GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME,
-      requiredSnapshotFile(
-        initial,
-        GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME,
-      ),
+      input.manifestFilename,
+      requiredSnapshotFile(initial, input.manifestFilename),
       MAXIMUM_MANIFEST_BYTES,
       seam,
     );
     manifestBytes = manifestRead.bytes;
     const manifestFileSha256 = sha256(manifestBytes);
-    const manifest = parseCanonicalManifestBytes(manifestBytes);
+    const manifest = input.parseCanonicalManifestBytes(manifestBytes);
+    assertExactVerificationMembers(manifest);
     if (
       manifest.semanticSha256 !== anchor.manifestSemanticSha256 ||
       manifestFileSha256 !== anchor.manifestFileSha256 ||
@@ -1926,14 +2037,8 @@ async function verifyImplementationPackCandidateWithObservations(
         "Implementation manifest does not match its caller-supplied candidate semantic and raw-byte anchors.",
       );
     }
-    assertRuntimeIdentity(
-      manifest,
-      input.runtimeIdentity ?? currentRuntimeIdentity(),
-    );
-    assertBootstrapExecutionIdentity(
-      input.bootstrapExecutionIdentity ?? currentBootstrapExecutionIdentity(),
-    );
-    assertExactInventory(initial, manifest.members);
+    input.assertRuntime(manifest);
+    assertExactInventory(initial, input.manifestFilename, manifest.members);
     for (const member of manifest.members) {
       const read = await readStableFile(
         root,
@@ -1952,52 +2057,37 @@ async function verifyImplementationPackCandidateWithObservations(
             `Implementation member ${member.relativePath} does not match its manifest hash and length.`,
           );
         }
-        assertMemberContentPolicy(member, read.bytes, manifest.decoder);
+        input.assertMemberContentPolicy(member, read.bytes, manifest);
       } finally {
         read.bytes.fill(0);
       }
     }
     await seam.afterMemberReads?.();
     const final = await snapshotTree(root);
-    assertExactInventory(final, manifest.members);
+    assertExactInventory(final, input.manifestFilename, manifest.members);
     assertSnapshotsEqual(initial, final);
-    const retainedManifestBytes = Buffer.from(manifestBytes);
-    const verifiedCandidate: GrandHallT554VerifiedNativeReviewImplementationPackCandidateV1 = {
-      schemaVersion:
-        "venviewer.grand-hall-t554-verified-native-review-implementation-pack-candidate.v1",
-      manifest: structuredClone(manifest),
-      manifestBinding: {
-        schemaVersion:
-          "venviewer.grand-hall-t554-native-review-implementation-manifest-binding.v2" as const,
-        implementationId: IMPLEMENTATION_ID as typeof IMPLEMENTATION_ID,
-        semanticSha256: manifest.semanticSha256,
-        fileSha256: manifestFileSha256,
-        byteLength: manifestBytes.length,
-      },
-      memberInventorySha256: computeMemberInventorySha256(manifest.members),
-      memberCount: manifest.memberCount,
-      totalMemberBytes: manifest.totalMemberBytes,
-      copyExactManifestBytes: () => Buffer.from(retainedManifestBytes),
-      concreteBytesVerified: true as const,
-      runtimeIdentityVerified: true as const,
-      reviewedDecoderClosureBytesVerified: true as const,
-      decoderDependencyGraphVerified: false as const,
-      decoderRuntimeLoaded: false as const,
-      safeEntrypointImportAvailable: false as const,
-      platformAliasAuditComplete: false as const,
-      releaseReady: false as const,
-      executionPolicyManifestVerified: true as const,
-      exactRootInventoryVerified: true as const,
-      authority: "none" as const,
-      productionFactoryAvailable: false as const,
-    };
-    const frozenCandidate = deepFreeze(verifiedCandidate);
-    VERIFIED_IMPLEMENTATION_PACK_CANDIDATE_IDENTITIES.add(frozenCandidate);
-    VERIFIED_IMPLEMENTATION_PACK_CANDIDATE_ROOTS.set(
-      frozenCandidate,
-      comparablePath(root),
+    const clonedManifest = structuredClone(manifest);
+    const memberInventorySha256 = input.computeMemberInventorySha256(
+      manifest.members,
     );
-    return frozenCandidate;
+    const retainedManifestBytes = Buffer.from(manifestBytes);
+    try {
+      return deepFreeze({
+        manifest: clonedManifest,
+        manifestBinding: {
+          semanticSha256: manifest.semanticSha256,
+          fileSha256: manifestFileSha256,
+          byteLength: manifestBytes.length,
+        },
+        memberInventorySha256,
+        memberCount: manifest.memberCount,
+        totalMemberBytes: manifest.totalMemberBytes,
+        copyExactManifestBytes: () => Buffer.from(retainedManifestBytes),
+      });
+    } catch (error) {
+      retainedManifestBytes.fill(0);
+      throw error;
+    }
   } catch (error) {
     if (error instanceof GrandHallT554NativeReviewImplementationManifestError) {
       throw error;
@@ -2010,6 +2100,69 @@ async function verifyImplementationPackCandidateWithObservations(
   } finally {
     manifestBytes?.fill(0);
   }
+}
+
+async function verifyImplementationPackCandidateWithObservations(
+  input: __GrandHallT554NativeReviewImplementationVerificationInput,
+): Promise<GrandHallT554VerifiedNativeReviewImplementationPackCandidateV1> {
+  const root = requireAbsoluteLocalRoot(input.implementationPackRoot);
+  const exact =
+    await __internalVerifyGrandHallT554NativeReviewExactImplementationPack({
+      implementationPackRoot: root,
+      reviewedAnchor: input.reviewedAnchor,
+      manifestFilename:
+        GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME,
+      parseCanonicalManifestBytes,
+      assertRuntime: (manifest) => {
+        assertRuntimeIdentity(
+          manifest,
+          input.runtimeIdentity ?? currentRuntimeIdentity(),
+        );
+        assertBootstrapExecutionIdentity(
+          input.bootstrapExecutionIdentity ??
+            currentBootstrapExecutionIdentity(),
+        );
+      },
+      assertMemberContentPolicy: (member, bytes, manifest) => {
+        assertMemberContentPolicy(member, bytes, manifest.decoder);
+      },
+      computeMemberInventorySha256,
+      seam: input.seam,
+    });
+  const verifiedCandidate: GrandHallT554VerifiedNativeReviewImplementationPackCandidateV1 = {
+    schemaVersion:
+      "venviewer.grand-hall-t554-verified-native-review-implementation-pack-candidate.v1",
+    manifest: exact.manifest,
+    manifestBinding: {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-implementation-manifest-binding.v2",
+      implementationId: IMPLEMENTATION_ID,
+      ...exact.manifestBinding,
+    },
+    memberInventorySha256: exact.memberInventorySha256,
+    memberCount: exact.memberCount,
+    totalMemberBytes: exact.totalMemberBytes,
+    copyExactManifestBytes: exact.copyExactManifestBytes,
+    concreteBytesVerified: true,
+    runtimeIdentityVerified: true,
+    reviewedDecoderClosureBytesVerified: true,
+    decoderDependencyGraphVerified: false,
+    decoderRuntimeLoaded: false,
+    safeEntrypointImportAvailable: false,
+    platformAliasAuditComplete: false,
+    releaseReady: false,
+    executionPolicyManifestVerified: true,
+    exactRootInventoryVerified: true,
+    authority: "none",
+    productionFactoryAvailable: false,
+  };
+  const frozenCandidate = deepFreeze(verifiedCandidate);
+  VERIFIED_IMPLEMENTATION_PACK_CANDIDATE_IDENTITIES.add(frozenCandidate);
+  VERIFIED_IMPLEMENTATION_PACK_CANDIDATE_ROOTS.set(
+    frozenCandidate,
+    comparablePath(root),
+  );
+  return frozenCandidate;
 }
 
 function verifyCallerAnchoredImplementationPackCandidate(

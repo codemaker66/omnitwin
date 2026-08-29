@@ -23,6 +23,7 @@ import {
   GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_INSPECTOR_MEMBER,
   GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_PROBE_BASE64,
   GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_PROBE_MEMBER,
+  __internalVerifyGrandHallT554NativeReviewExactImplementationPack,
   __testOnlyGrandHallT554NativeReviewImplementationManifest,
   assertGrandHallT554VerifiedNativeReviewImplementationPackCandidateRootV1,
   assertGrandHallT554VerifiedNativeReviewImplementationPackV1,
@@ -472,6 +473,47 @@ describe("Grand Hall T-554 native-review implementation manifest", () => {
         candidate,
       ),
     ).toBe(false);
+  });
+
+  it("keeps generic exact-pack facts unbranded and without root authority", async () => {
+    const fixture = await createFixture();
+    const expectedManifestBytes = await readFile(fixture.manifestPath);
+    const facts =
+      await __internalVerifyGrandHallT554NativeReviewExactImplementationPack({
+        implementationPackRoot: fixture.root,
+        reviewedAnchor: fixture.anchor,
+        manifestFilename:
+          GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME,
+          parseCanonicalManifestBytes: (bytes) => {
+            if (!bytes.equals(expectedManifestBytes)) {
+              throw new Error(
+                "Generic verifier observed unexpected manifest bytes.",
+              );
+            }
+            return structuredClone(fixture.manifest);
+          },
+        assertRuntime: () => undefined,
+        assertMemberContentPolicy: () => undefined,
+        computeMemberInventorySha256:
+          __testOnlyGrandHallT554NativeReviewImplementationManifest.computeMemberInventorySha256,
+      });
+
+    expect(Object.isFrozen(facts)).toBe(true);
+    expect(Object.isFrozen(facts.manifest)).toBe(true);
+    expect(facts.copyExactManifestBytes()).toEqual(expectedManifestBytes);
+    expect(JSON.stringify(facts)).not.toContain(fixture.root);
+    expect(
+      isGrandHallT554VerifiedNativeReviewImplementationPackCandidateV1(facts),
+    ).toBe(false);
+    expect(isGrandHallT554VerifiedNativeReviewImplementationPackV1(facts)).toBe(
+      false,
+    );
+    expect(() => {
+      assertGrandHallT554VerifiedNativeReviewImplementationPackCandidateRootV1(
+        facts,
+        fixture.root,
+      );
+    }).toThrow(/not an exact same-instance verified handle/u);
   });
 
   it.each([
