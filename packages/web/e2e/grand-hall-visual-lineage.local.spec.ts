@@ -8,6 +8,7 @@ import {
   type VisualLineageActualCameraV0,
   type VisualLineageActualRendererV0,
   type VisualLineageFixtureSettingsV0,
+  type VisualLineagePlyMeshRuntimeStateV0,
   type VisualLineageSparkRuntimeStateV0,
   type VisualLineageSourceMemberV0,
 } from "@omnitwin/types";
@@ -16,9 +17,15 @@ import {
   GRAND_HALL_CAPTURED_SOURCE,
 } from "../src/lib/grand-hall-captured-source.js";
 import {
+  classifyWebGlRenderer,
+  GRAND_HALL_CAPTURED_SPZ_MEMBERS,
   GRAND_HALL_LINEAGE_CAMERA,
   GRAND_HALL_LINEAGE_INITIAL_BENCHMARK,
+  GRAND_HALL_PLY_RENDERER_SETTINGS,
+  GRAND_HALL_PLY_SOURCE_MEMBER,
+  grandHallLineageCameraMatches,
   grandHallLineageFixturePath,
+  grandHallPlyLineageFixturePath,
 } from "../src/lib/grand-hall-visual-lineage.js";
 
 const SOURCE_ROOT = process.env["GRAND_HALL_LINEAGE_ROOT"];
@@ -74,6 +81,7 @@ interface FixtureBridgeSnapshot {
   readonly actualRenderer?: VisualLineageActualRendererV0;
   readonly renderedFrameCount: number;
   readonly sparkRuntimeState?: VisualLineageSparkRuntimeStateV0;
+  readonly plyMeshRuntimeState?: VisualLineagePlyMeshRuntimeStateV0;
 }
 
 interface FrameSummary {
@@ -129,6 +137,16 @@ async function fixtureBridge(
         }, evaluationTimeoutMs);
       }),
     ]);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      /Execution context was destroyed|most likely because of a navigation|Cannot find context/i.test(
+        message,
+      )
+    ) {
+      return null;
+    }
+    throw error;
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
   }
@@ -202,6 +220,7 @@ async function waitForStableVisibleFixture(
       && renderer.activeSplats > 0
       && !renderer.sorting
       && !renderer.sortDirty
+      && !renderer.dirty
     ) {
       return bridge;
     }
@@ -269,31 +288,77 @@ interface BoundSourceMember {
   readonly expectedSplatCount?: number;
 }
 
+interface BoundPlySource {
+  readonly receipt: VisualLineageSourceMemberV0;
+  readonly url: string;
+  readonly requestCount: () => number;
+}
+
+async function bindPlySource(page: Page, sourceRoot: string): Promise<BoundPlySource> {
+  const absolutePath = path.join(sourceRoot, GRAND_HALL_PLY_SOURCE_MEMBER.relativePath);
+  const bytes = await readFile(absolutePath);
+  const sha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  if (
+    bytes.byteLength !== GRAND_HALL_PLY_SOURCE_MEMBER.sizeBytes
+    || sha256 !== GRAND_HALL_PLY_SOURCE_MEMBER.sha256
+  ) {
+    throw new Error("Pinned Grand Hall PLY source receipt mismatch.");
+  }
+  const normalizedRelativePath = GRAND_HALL_PLY_SOURCE_MEMBER.relativePath.replaceAll("\\", "/");
+  const url = new URL(normalizedRelativePath, BOUND_SOURCE_BASE_URL).toString();
+  let requests = 0;
+  await page.route(`${BOUND_SOURCE_BASE_URL}**`, async (route) => {
+    if (route.request().url() !== url) {
+      await route.abort("blockedbyclient");
+      return;
+    }
+    requests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/octet-stream",
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "no-store",
+      },
+      body: bytes,
+    });
+  });
+  return {
+    receipt: {
+      relativePath: normalizedRelativePath,
+      sizeBytes: bytes.byteLength,
+      sha256,
+    },
+    url,
+    requestCount: () => requests,
+  };
+}
+
 async function bindSourceMembers(
   page: Page,
   sourceRoot: string,
   format: "sog" | "spz",
 ): Promise<readonly BoundSourceMember[]> {
   const variant = sourceVariant(format);
+  const expectedMembers = format === "sog"
+    ? GRAND_HALL_CAPTURED_SOG_MEMBERS
+    : GRAND_HALL_CAPTURED_SPZ_MEMBERS;
   const boundMembers: BoundSourceMember[] = [];
-  for (const member of GRAND_HALL_CAPTURED_SOG_MEMBERS) {
-    const fileName = format === "sog" ? member.fileName : member.fileName.replace(/\.sog$/u, ".spz");
+  for (const member of expectedMembers) {
+    const fileName = member.fileName;
     const relativePath = path.join(variant, "lcc2-result", "data", "3dgs", fileName);
     const normalizedRelativePath = relativePath.replaceAll("\\", "/");
     const absolutePath = path.join(sourceRoot, relativePath);
     const bytes = await readFile(absolutePath);
     const sha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (
-      format === "sog"
-      && (bytes.byteLength !== member.sizeBytes || sha256 !== `sha256:${member.sha256}`)
-    ) {
-      throw new Error(`Pinned SOG member receipt mismatch: ${member.fileName}`);
+    if (bytes.byteLength !== member.sizeBytes || sha256 !== `sha256:${member.sha256}`) {
+      throw new Error(`Pinned ${format.toUpperCase()} member receipt mismatch: ${member.fileName}`);
     }
     boundMembers.push({
       receipt: { relativePath: normalizedRelativePath, sizeBytes: bytes.byteLength, sha256 },
       bytes,
       url: new URL(normalizedRelativePath, BOUND_SOURCE_BASE_URL).toString(),
-      ...(format === "sog" ? { expectedSplatCount: member.gaussianCount } : {}),
+      expectedSplatCount: member.gaussianCount,
     });
   }
 
@@ -453,25 +518,21 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
         boundMembers.map((member) => member.url).sort(),
       );
       const resultsByUrl = new Map(bridge.results.map((result) => [result.url, result]));
-      if (format === "sog") {
-        for (const member of boundMembers) {
-          expect(resultsByUrl.get(member.url)?.splatCount).toBe(member.expectedSplatCount);
-        }
+      for (const member of boundMembers) {
+        expect(resultsByUrl.get(member.url)?.splatCount).toBe(member.expectedSplatCount);
       }
       const decodedSplatCount = bridge.results.reduce(
         (sum, entry) => sum + (entry.splatCount ?? 0),
         0,
       );
-      if (format === "sog") expect(decodedSplatCount).toBe(GRAND_HALL_CAPTURED_SOURCE.gaussianCount);
-      expect(bridge.actualCamera.position).toHaveLength(GRAND_HALL_LINEAGE_CAMERA.position.length);
-      GRAND_HALL_LINEAGE_CAMERA.position.forEach((coordinate, index) => {
-        expect(bridge.actualCamera?.position[index]).toBeCloseTo(coordinate, 6);
-      });
-      expect(bridge.actualCamera.quaternion[0]).toBeCloseTo(GRAND_HALL_LINEAGE_CAMERA.quaternion[0], 6);
-      expect(bridge.actualCamera.quaternion[3]).toBeCloseTo(GRAND_HALL_LINEAGE_CAMERA.quaternion[3], 6);
+      expect(decodedSplatCount).toBe(GRAND_HALL_CAPTURED_SOURCE.gaussianCount);
+      if (!grandHallLineageCameraMatches(bridge.actualCamera)) {
+        throw new Error(`Grand Hall fixture camera deviated from its complete fixed-camera contract: ${JSON.stringify(bridge.actualCamera)}`);
+      }
 
       bridge = await waitForStableVisibleFixture(page);
       expect(bridge.sparkRuntimeState?.sortRadial).toBe(false);
+      expect(bridge.sparkRuntimeState?.activeSplats).toBe(GRAND_HALL_CAPTURED_SOURCE.gaussianCount);
       const stableAtMs = Date.now() - startedAt;
       await renderFixtureFrames(page, WARMUP_FRAME_COUNT);
       const frames = summarizeFrames(await renderFixtureFrames(page, FRAME_SAMPLE_COUNT));
@@ -503,7 +564,19 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
         };
       });
       expect(environment.contextAntialias).toBe(false);
-      expect(environment.devicePixelRatio).toBe(1);
+      expect(environment.devicePixelRatio).toBeCloseTo(1, 6);
+      expect(environment.contextLost).toBe(false);
+      expect(environment.canvasWidth).toBe(1600);
+      expect(environment.canvasHeight).toBe(900);
+      const rendererClass = classifyWebGlRenderer(
+        environment.webglVendor,
+        environment.webglRenderer,
+      );
+      if (rendererClass !== "hardware") {
+        throw new Error(
+          `Grand Hall lineage requires explicit hardware WebGL evidence; classified ${rendererClass}: ${environment.webglVendor} / ${environment.webglRenderer}`,
+        );
+      }
 
       await page.locator("canvas").screenshot({ path: screenshotTempPath });
       const screenshotStat = await stat(screenshotTempPath);
@@ -547,7 +620,7 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
           format,
           lineage: format === "sog"
             ? "Grand_Hall.lcc2 exact non-environment fine frontier"
-            : "Grand Hall XGRIDS SPZ candidate selected by matching frontier names; export lineage not independently proven",
+            : "Grand_Hall.lcc2 hash-pinned non-environment SPZ fine frontier from the matching XGRIDS hierarchy",
           status: "diagnostic",
           visualAssessment: "not_reviewed",
           cameraRegistration: "inspection_only",
@@ -561,7 +634,7 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
             "Frame percentiles are demand-render request-to-observed-frame wall times, not GPU timer-query measurements.",
             "The non-background pixel gate proves render presence only; it does not establish completeness, fidelity, room identity, or visual acceptance.",
             ...(format === "spz"
-              ? ["SPZ members are selected by matching frontier names and runtime receipts; their export lineage is not independently proven."]
+              ? ["SOG and SPZ positions agree within the audited tolerance, but full attribute-level representation equivalence has not been established."]
               : []),
             ...(WARMUP_FRAME_COUNT < 120 || FRAME_SAMPLE_COUNT < 600
               ? [`Diagnostic ${String(WARMUP_FRAME_COUNT)}-warm-up/${String(FRAME_SAMPLE_COUNT)}-timed-frame sample; below the controlled 120-warm-up/600-timed-frame profile.`]
@@ -626,4 +699,234 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       await rename(recordTempPath, recordPath);
     });
   }
+
+  test("supplied PLY at the source-pose interior camera is structural evidence only", async ({ page }) => {
+    test.setTimeout(TEST_TIMEOUT_MS);
+    if (SOURCE_ROOT === undefined || EVIDENCE_DIR === undefined) return;
+    await mkdir(EVIDENCE_DIR, { recursive: true });
+    const sampleLabel = WARMUP_FRAME_COUNT >= 120 && FRAME_SAMPLE_COUNT >= 600
+      ? `structural-diagnostic-controlled-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`
+      : `structural-diagnostic-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`;
+    const artifactStem = `grand-hall-ply-${GRAND_HALL_LINEAGE_CAMERA.id}-${sampleLabel}`;
+    const screenshotPath = path.join(EVIDENCE_DIR, `${artifactStem}.png`);
+    const recordPath = path.join(EVIDENCE_DIR, `${artifactStem}.json`);
+    const screenshotTempPath = path.join(EVIDENCE_DIR, `.tmp-${String(process.pid)}-${artifactStem}.png`);
+    const recordTempPath = path.join(EVIDENCE_DIR, `.tmp-${String(process.pid)}-${artifactStem}.json`);
+    await Promise.all([
+      rm(screenshotPath, { force: true }),
+      rm(recordPath, { force: true }),
+      rm(screenshotTempPath, { force: true }),
+      rm(recordTempPath, { force: true }),
+    ]);
+
+    const gitAtStart = await gitIdentity();
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const boundSource = await bindPlySource(page, SOURCE_ROOT);
+    const fixturePath = grandHallPlyLineageFixturePath(BOUND_SOURCE_BASE_URL);
+    const startedAt = Date.now();
+    const runStartedAt = new Date(startedAt).toISOString();
+    await page.goto(fixturePath, { waitUntil: "domcontentloaded" });
+    let bridge = await waitForLoadedFixture(page);
+    if (
+      bridge.actualCamera === undefined
+      || bridge.actualRenderer === undefined
+      || bridge.settings === undefined
+      || bridge.plyMeshRuntimeState === undefined
+    ) {
+      throw new Error("Loaded PLY fixture did not expose complete camera, renderer, settings, and geometry evidence.");
+    }
+    expect(bridge.results).toHaveLength(1);
+    expect(bridge.results[0]).toMatchObject({ url: boundSource.url, ok: true });
+    expect(boundSource.requestCount()).toBe(1);
+    expect(bridge.sparkRuntimeState).toBeUndefined();
+    if (!grandHallLineageCameraMatches(bridge.actualCamera)) {
+      throw new Error(`Grand Hall PLY camera deviated from its complete fixed-camera contract: ${JSON.stringify(bridge.actualCamera)}`);
+    }
+
+    const runtime = bridge.plyMeshRuntimeState;
+    expect(runtime.sourceSizeBytes).toBe(GRAND_HALL_PLY_SOURCE_MEMBER.sizeBytes);
+    expect(runtime.sourceSha256).toBe(GRAND_HALL_PLY_SOURCE_MEMBER.sha256);
+    expect(runtime.header).toMatchObject({ vertexCount: 34_040, faceCount: 59_763 });
+    expect(runtime.geometry).toMatchObject({
+      indexed: true,
+      positionCount: 34_040,
+      positionItemSize: 3,
+      positionArrayType: "Float32Array",
+      indexCount: 179_289,
+      indexArrayType: "Uint16Array",
+      triangleCount: 59_763,
+      degenerateTriangleCount: 174,
+      nonFinitePositionScalarCount: 0,
+      outOfRangeIndexCount: 0,
+      sourceAttributes: ["position"],
+      derivedAttributes: ["normal"],
+      localBounds: {
+        min: [-31.858928680419922, -23.6622371673584, -6.327584743499756],
+        max: [3.825000047683716, 4.925000190734863, 8.617471694946289],
+      },
+    });
+    expect(runtime.material).toEqual({
+      type: "MeshNormalMaterial",
+      side: "FrontSide",
+      flatShading: true,
+      transparent: false,
+      depthTest: true,
+      depthWrite: true,
+      toneMapped: false,
+    });
+    expect(runtime.provenance).toEqual({
+      truthClass: "RECONSTRUCTED",
+      byteTreatment: "source_bytes_unchanged",
+      geometryRole: "structural_evidence_only",
+      appearanceRole: "deterministic_debug_visualization_not_source_appearance",
+      registrationAuthority: "inspection_only",
+    });
+
+    const stableAtMs = Date.now() - startedAt;
+    await renderFixtureFrames(page, WARMUP_FRAME_COUNT);
+    const frames = summarizeFrames(await renderFixtureFrames(page, FRAME_SAMPLE_COUNT));
+    bridge = await fixtureBridge(page) ?? bridge;
+    if (
+      bridge.status !== "loaded"
+      || bridge.actualCamera === undefined
+      || bridge.actualRenderer === undefined
+      || bridge.settings === undefined
+      || bridge.plyMeshRuntimeState === undefined
+    ) {
+      throw new Error("Final PLY lineage frame did not expose complete post-render evidence.");
+    }
+
+    const environment = await page.locator("canvas").evaluate((canvas) => {
+      if (!(canvas instanceof HTMLCanvasElement)) throw new Error("Lineage target is not a canvas.");
+      const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
+      if (gl === null) throw new Error("WebGL context unavailable after PLY lineage render.");
+      const debug = gl.getExtension("WEBGL_debug_renderer_info");
+      return {
+        browser: navigator.userAgent,
+        operatingSystem: navigator.userAgent,
+        webglVendor: debug === null ? String(gl.getParameter(gl.VENDOR)) : String(gl.getParameter(debug.UNMASKED_VENDOR_WEBGL)),
+        webglRenderer: debug === null ? String(gl.getParameter(gl.RENDERER)) : String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)),
+        webglVersion: String(gl.getParameter(gl.VERSION)),
+        contextLost: gl.isContextLost(),
+        contextAntialias: gl.getContextAttributes()?.antialias ?? null,
+        devicePixelRatio: window.devicePixelRatio,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+      };
+    });
+    expect(environment.contextAntialias).toBe(false);
+    expect(environment.devicePixelRatio).toBeCloseTo(1, 6);
+    expect(environment.contextLost).toBe(false);
+    expect(environment.canvasWidth).toBe(1600);
+    expect(environment.canvasHeight).toBe(900);
+    const rendererClass = classifyWebGlRenderer(environment.webglVendor, environment.webglRenderer);
+    if (rendererClass !== "hardware") {
+      throw new Error(
+        `Grand Hall PLY lineage requires explicit hardware WebGL evidence; classified ${rendererClass}: ${environment.webglVendor} / ${environment.webglRenderer}`,
+      );
+    }
+
+    await page.locator("canvas").screenshot({ path: screenshotTempPath });
+    const screenshotStat = await stat(screenshotTempPath);
+    const screenshotBytes = await readFile(screenshotTempPath);
+    const screenshotDimensions = pngDimensions(screenshotBytes);
+    if (
+      screenshotDimensions.width !== environment.canvasWidth
+      || screenshotDimensions.height !== environment.canvasHeight
+    ) {
+      await rm(screenshotTempPath, { force: true });
+      throw new Error("PLY lineage PNG dimensions do not match the rendered canvas backing buffer.");
+    }
+    const pixelCoverage = await analyzePngPixels(page, screenshotBytes);
+    if (pixelCoverage.nonBackgroundPixelRatio <= 0.001) {
+      await rm(screenshotTempPath, { force: true });
+      throw new Error("PLY lineage PNG contains no material structural coverage above background.");
+    }
+    const screenshotSha256 = await hashFile(screenshotTempPath);
+    const gitAtEnd = await gitIdentity();
+    if (
+      gitAtEnd.sha !== gitAtStart.sha
+      || gitAtEnd.dirty !== gitAtStart.dirty
+      || gitAtEnd.sourceStateSha256 !== gitAtStart.sourceStateSha256
+    ) {
+      await rm(screenshotTempPath, { force: true });
+      throw new Error("Worktree source state changed during the PLY lineage run; discarded its screenshot.");
+    }
+
+    const result = {
+      ...GRAND_HALL_LINEAGE_INITIAL_BENCHMARK,
+      benchmarkId: `grand-hall-ply-source-pose-local-${sampleLabel}-v1`,
+      rendererSettings: GRAND_HALL_PLY_RENDERER_SETTINGS,
+      representations: [{
+        id: "supplied-ply-mesh",
+        format: "ply_mesh",
+        lineage: "Exact supplied reconstructed triangle PLY with deterministic computed-normal debug shading",
+        status: "diagnostic",
+        visualAssessment: "not_reviewed",
+        cameraRegistration: "inspection_only",
+        rendererProfile: "controlled_explicit",
+        sourceRefs: [boundSource.receipt.sha256],
+        limitations: [
+          "Structural evidence only; this row is excluded from captured-radiance beauty ranking.",
+          "The source contains positions and triangle indices only; displayed normal colours are deterministic derived debug appearance.",
+          "The supplied mesh is rendered byte-complete and uncropped; its broad extent includes geometry outside the current Grand Hall visual frontier.",
+          "Grand Hall boundary membership and room-interface decisions have not yet been human accepted for this mesh.",
+          "The camera is the shared inspection camera, not a recovered optical camera.",
+          ...(WARMUP_FRAME_COUNT < 120 || FRAME_SAMPLE_COUNT < 600
+            ? [`Diagnostic ${String(WARMUP_FRAME_COUNT)}-warm-up/${String(FRAME_SAMPLE_COUNT)}-timed-frame sample; below the controlled 120-warm-up/600-timed-frame profile.`]
+            : []),
+        ],
+        screenshot: {
+          path: screenshotPath,
+          sha256: screenshotSha256,
+          sizeBytes: screenshotStat.size,
+          width: screenshotDimensions.width,
+          height: screenshotDimensions.height,
+          backgroundRgb: pixelCoverage.backgroundRgb,
+          nonBackgroundPixelCount: pixelCoverage.nonBackgroundPixelCount,
+          nonBackgroundPixelRatio: pixelCoverage.nonBackgroundPixelRatio,
+        },
+        timings: {
+          loadMs: bridge.results[0]?.elapsedMs ?? 0,
+          stableMs: stableAtMs,
+          frameP50Ms: frames.p50Ms,
+          frameP95Ms: frames.p95Ms,
+          frameP99Ms: frames.p99Ms,
+        },
+        environment: {
+          browser: environment.browser,
+          operatingSystem: environment.operatingSystem,
+          webglVendor: environment.webglVendor,
+          webglRenderer: environment.webglRenderer,
+          webglVersion: environment.webglVersion,
+          contextLost: environment.contextLost,
+        },
+        sourceMembers: [boundSource.receipt],
+        warmupFrameCount: WARMUP_FRAME_COUNT,
+        frameSampleCount: FRAME_SAMPLE_COUNT,
+        frameMaxMs: frames.maxMs,
+        fixtureSettings: bridge.settings,
+        plyMeshRuntimeState: bridge.plyMeshRuntimeState,
+        actualCamera: bridge.actualCamera,
+        actualRenderer: bridge.actualRenderer,
+      }],
+    };
+    let validatedResult;
+    try {
+      validatedResult = VisualLineageBenchmarkV0Schema.parse({
+        ...result,
+        gitSha: gitAtStart.sha,
+        worktreeDirty: gitAtStart.dirty,
+        worktreeSourceStateSha256: gitAtStart.sourceStateSha256,
+        runStartedAt,
+        runCompletedAt: new Date().toISOString(),
+      });
+    } catch (error: unknown) {
+      await rm(screenshotTempPath, { force: true });
+      throw error;
+    }
+    await writeFile(recordTempPath, `${JSON.stringify(validatedResult, null, 2)}\n`, "utf8");
+    await rename(screenshotTempPath, screenshotPath);
+    await rename(recordTempPath, recordPath);
+  });
 });

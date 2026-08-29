@@ -3,7 +3,11 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Color, FrontSide, NoToneMapping, PerspectiveCamera } from "three";
 import { textSplats } from "@sparkjsdev/spark";
-import type { VisualLineageSparkRuntimeStateV0 } from "@omnitwin/types";
+import type {
+  VisualLineageFixtureSettingsV0,
+  VisualLineagePlyMeshRuntimeStateV0,
+  VisualLineageSparkRuntimeStateV0,
+} from "@omnitwin/types";
 import { useSearchParams } from "react-router-dom";
 import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
 import {
@@ -12,6 +16,11 @@ import {
   type SparkSplatLoadEvent,
   type SparkRendererRuntimeState,
 } from "../components/scene/SparkSplatLayer.js";
+import {
+  PlyStructuralEvidenceLayer,
+  type PlyStructuralEvidenceErrorEvent,
+  type PlyStructuralEvidenceLoadEvent,
+} from "../components/scene/PlyStructuralEvidenceLayer.js";
 import {
   buildProceduralTruthSummary,
   isTruthModeUiEnabled,
@@ -30,26 +39,7 @@ interface SplatFixtureBridge {
     error?: string;
     elapsedMs: number;
   }[];
-  settings?: {
-    readonly camera: {
-      readonly position: readonly [number, number, number];
-      readonly target: readonly [number, number, number];
-      readonly fov: number;
-      readonly near: number;
-      readonly far: number;
-    };
-    readonly group: {
-      readonly zUp: boolean;
-      readonly offset: readonly [number, number, number];
-    };
-    readonly renderer: {
-      readonly dpr: number;
-      readonly antialias: boolean;
-      readonly fixedCamera: boolean;
-      readonly transparent: true;
-      readonly depthWrite: false;
-    };
-  };
+  settings?: VisualLineageFixtureSettingsV0;
   actualCamera?: {
     readonly position: readonly [number, number, number];
     readonly quaternion: readonly [number, number, number, number];
@@ -64,6 +54,7 @@ interface SplatFixtureBridge {
   };
   renderedFrameCount: number;
   sparkRuntimeState?: VisualLineageSparkRuntimeStateV0;
+  plyMeshRuntimeState?: VisualLineagePlyMeshRuntimeStateV0;
 }
 
 declare global {
@@ -237,6 +228,44 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
   );
 }
 
+function PlyStructuralScene({ url }: { readonly url: string }): React.ReactElement {
+  const onLoad = useCallback((event: PlyStructuralEvidenceLoadEvent) => {
+    const bridge = fixtureBridge();
+    bridge.results.push({
+      url: event.url,
+      ok: true,
+      elapsedMs: performance.now() - bridge.startedAtMs,
+    });
+    bridge.plyMeshRuntimeState = event.runtimeState;
+    bridge.status = "loaded";
+  }, []);
+  const onError = useCallback((event: PlyStructuralEvidenceErrorEvent) => {
+    const bridge = fixtureBridge();
+    bridge.results.push({
+      url: event.url,
+      ok: false,
+      error: event.error.message,
+      elapsedMs: performance.now() - bridge.startedAtMs,
+    });
+    bridge.status = "error";
+  }, []);
+  return <PlyStructuralEvidenceLayer url={url} onLoad={onLoad} onError={onError} />;
+}
+
+function FixtureConfigurationError({ message }: { readonly message: string }): null {
+  useEffect(() => {
+    const bridge = fixtureBridge();
+    bridge.results.push({
+      url: "fixture:configuration",
+      ok: false,
+      error: message,
+      elapsedMs: performance.now() - bridge.startedAtMs,
+    });
+    bridge.status = "error";
+  }, [message]);
+  return null;
+}
+
 export function SplatFixturePage(): React.ReactElement {
   const [searchParams] = useSearchParams();
   const truthModeEnabled = isTruthModeUiEnabled(searchParams, import.meta.env.DEV);
@@ -245,6 +274,13 @@ export function SplatFixturePage(): React.ReactElement {
     if (raw === null || raw.trim() === "") return null;
     return raw.split(",").map((u) => u.trim()).filter((u) => u !== "");
   }, [searchParams]);
+  const meshUrl = useMemo(() => {
+    const raw = searchParams.get("meshUrl")?.trim() ?? "";
+    return raw === "" ? null : raw;
+  }, [searchParams]);
+  const sourceConflict = splatUrls !== null && meshUrl !== null;
+  const hasSource = splatUrls !== null || meshUrl !== null;
+  const meshMode = meshUrl !== null && !sourceConflict;
   // Content axis + framing controls for real-capture probes (P1). LCC exports
   // are Z-up; zUp=1 rotates the splat group into three.js Y-up. cam/look are
   // world-space (post-rotation) tuples; fov defaults tighter for interiors.
@@ -252,14 +288,14 @@ export function SplatFixturePage(): React.ReactElement {
   const cam = useMemo(() => parseVec3(searchParams.get("cam")), [searchParams]);
   const look = useMemo(() => parseVec3(searchParams.get("look")), [searchParams]);
   const offset = useMemo(() => parseVec3(searchParams.get("offset")), [searchParams]);
-  const fov = Number.parseFloat(searchParams.get("fov") ?? "") || (splatUrls ? 60 : 48);
+  const fov = Number.parseFloat(searchParams.get("fov") ?? "") || (hasSource ? 60 : 48);
   const near = parsePositiveNumber(searchParams.get("near"), 0.1);
   const far = parsePositiveNumber(searchParams.get("far"), 120);
   const dpr = parsePositiveNumber(searchParams.get("dpr"), 1);
   const antialias = searchParams.get("antialias") !== "0";
   const fixedCamera = searchParams.get("fixed") === "1";
   const cameraPosition = cam ?? [0, 0.6, 3.4] as const;
-  const cameraTarget = look ?? (splatUrls === null ? [0, -0.1, -2.8] as const : [0, 0, 0] as const);
+  const cameraTarget = look ?? (hasSource ? [0, 0, 0] as const : [0, -0.1, -2.8] as const);
   const groupOffset = offset ?? [0, 0, 0] as const;
   const truthSummary = useMemo(
     () => buildProceduralTruthSummary({
@@ -272,17 +308,23 @@ export function SplatFixturePage(): React.ReactElement {
 
   useEffect(() => {
     fixtureBridge().settings = {
-      camera: { position: cameraPosition, target: cameraTarget, fov, near, far },
-      group: { zUp, offset: groupOffset },
+      camera: {
+        position: [...cameraPosition],
+        target: [...cameraTarget],
+        fov,
+        near,
+        far,
+      },
+      group: { zUp, offset: [...groupOffset] },
       renderer: {
         dpr,
         antialias,
         fixedCamera,
-        transparent: true,
-        depthWrite: false,
+        transparent: !meshMode,
+        depthWrite: meshMode,
       },
     };
-  }, [antialias, cameraPosition, cameraTarget, dpr, far, fixedCamera, fov, groupOffset, near, zUp]);
+  }, [antialias, cameraPosition, cameraTarget, dpr, far, fixedCamera, fov, groupOffset, meshMode, near, zUp]);
 
   return (
     <main style={{
@@ -307,9 +349,11 @@ export function SplatFixturePage(): React.ReactElement {
         <color attach="background" args={["#101217"]} />
         {fixedCamera ? <FixedFixtureCamera position={cameraPosition} target={cameraTarget} /> : null}
         <FixtureCameraProbe />
-        <hemisphereLight args={["#fff4d8", "#30243a", 1.8]} />
-        <directionalLight position={[2, 4, 3]} intensity={1.1} />
-        {splatUrls === null ? (
+        {meshMode ? null : <hemisphereLight args={["#fff4d8", "#30243a", 1.8]} />}
+        {meshMode ? null : <directionalLight position={[2, 4, 3]} intensity={1.1} />}
+        {sourceConflict ? (
+          <FixtureConfigurationError message="PLY structural fixture received both splatUrl and meshUrl." />
+        ) : !hasSource ? (
           <>
             <SparkTextSplat />
             <mesh position={[0, -0.85, -2.9]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -322,14 +366,16 @@ export function SplatFixturePage(): React.ReactElement {
             rotation={zUp ? [-Math.PI / 2, 0, 0] : [0, 0, 0]}
             position={groupOffset}
           >
-            <UrlSplatScene urls={splatUrls} />
+            {meshUrl === null
+              ? <UrlSplatScene urls={splatUrls ?? []} />
+              : <PlyStructuralScene url={meshUrl} />}
           </group>
         )}
         {fixedCamera ? null : (
           <OrbitControls
-            enablePan={splatUrls !== null}
-            minDistance={splatUrls === null ? 2.4 : 0.2}
-            maxDistance={splatUrls === null ? 5.2 : 40}
+            enablePan={hasSource}
+            minDistance={hasSource ? 0.2 : 2.4}
+            maxDistance={hasSource ? 40 : 5.2}
             target={cameraTarget}
           />
         )}

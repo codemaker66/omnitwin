@@ -24,6 +24,17 @@ function hasUnitQuaternion(quaternion: readonly number[]): boolean {
   return Number.isFinite(magnitude) && Math.abs(magnitude - 1) <= 1e-6;
 }
 
+function hasEquivalentQuaternion(
+  left: readonly number[],
+  right: readonly number[],
+  tolerance = 1e-6,
+): boolean {
+  return left.length === right.length && (
+    left.every((value, index) => approximatelyEqual(value, right[index], tolerance))
+    || left.every((value, index) => approximatelyEqual(value, -(right[index] ?? Number.NaN), tolerance))
+  );
+}
+
 export const VisualLineageCameraV0Schema = z
   .object({
     id: RuntimeManifestKeySchema,
@@ -271,6 +282,83 @@ export const VisualLineageSparkRuntimeStateV0Schema = z
   })
   .strict();
 
+export const VisualLineagePlyMeshRuntimeStateV0Schema = z
+  .object({
+    sourceSizeBytes: z.number().int().positive(),
+    sourceSha256: RuntimeSha256Schema,
+    header: z
+      .object({
+        encoding: z.literal("binary_little_endian"),
+        version: z.literal("1.0"),
+        vertexCount: z.number().int().positive(),
+        faceCount: z.number().int().positive(),
+        vertexProperties: z.tuple([
+          z.literal("float x"),
+          z.literal("float y"),
+          z.literal("float z"),
+        ]),
+        faceList: z
+          .object({
+            countType: z.literal("uchar"),
+            itemType: z.literal("uint"),
+            name: z.literal("vertex_indices"),
+          })
+          .strict(),
+      })
+      .strict(),
+    loader: z
+      .object({
+        implementation: z.literal("three/addons/loaders/PLYLoader.js"),
+        version: z.literal("0.180.0"),
+      })
+      .strict(),
+    geometry: z
+      .object({
+        indexed: z.literal(true),
+        positionCount: z.number().int().positive(),
+        positionItemSize: z.literal(3),
+        positionArrayType: z.literal("Float32Array"),
+        indexCount: z.number().int().positive(),
+        indexArrayType: z.enum(["Uint16Array", "Uint32Array"]),
+        triangleCount: z.number().int().positive(),
+        degenerateTriangleCount: z.number().int().nonnegative(),
+        degenerateTriangleCriterion: z.literal("exact_cross_product_squared_equals_zero"),
+        nonFinitePositionScalarCount: z.number().int().nonnegative(),
+        outOfRangeIndexCount: z.number().int().nonnegative(),
+        sourceAttributes: z.tuple([z.literal("position")]),
+        derivedAttributes: z.tuple([z.literal("normal")]),
+        localBounds: z
+          .object({
+            min: RuntimeVec3Schema,
+            max: RuntimeVec3Schema,
+          })
+          .strict(),
+      })
+      .strict(),
+    material: z
+      .object({
+        type: z.literal("MeshNormalMaterial"),
+        side: z.literal("FrontSide"),
+        flatShading: z.literal(true),
+        transparent: z.literal(false),
+        depthTest: z.literal(true),
+        depthWrite: z.literal(true),
+        toneMapped: z.literal(false),
+      })
+      .strict(),
+    frustumCulled: z.boolean(),
+    provenance: z
+      .object({
+        truthClass: z.literal("RECONSTRUCTED"),
+        byteTreatment: z.literal("source_bytes_unchanged"),
+        geometryRole: z.literal("structural_evidence_only"),
+        appearanceRole: z.literal("deterministic_debug_visualization_not_source_appearance"),
+        registrationAuthority: z.literal("inspection_only"),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const VisualLineageRepresentationV0Schema = z
   .object({
     id: RuntimeManifestKeySchema,
@@ -297,6 +385,7 @@ export const VisualLineageRepresentationV0Schema = z
     frameMaxMs: z.number().finite().nonnegative().optional(),
     fixtureSettings: VisualLineageFixtureSettingsV0Schema.optional(),
     sparkRuntimeState: VisualLineageSparkRuntimeStateV0Schema.optional(),
+    plyMeshRuntimeState: VisualLineagePlyMeshRuntimeStateV0Schema.optional(),
     actualCamera: VisualLineageActualCameraV0Schema.optional(),
     actualRenderer: VisualLineageActualRendererV0Schema.optional(),
   })
@@ -371,6 +460,95 @@ export const VisualLineageRepresentationV0Schema = z
         code: z.ZodIssueCode.custom,
         path: ["sparkRuntimeState"],
         message: "Completed splat evidence requires visible active splats and a fully settled Spark state.",
+      });
+    }
+    if (
+      completed
+      && representation.format === "ply_mesh"
+      && (
+        representation.sourceMembers?.length !== 1
+        || representation.plyMeshRuntimeState === undefined
+        || representation.fixtureSettings === undefined
+        || representation.warmupFrameCount === undefined
+        || representation.frameSampleCount === undefined
+        || representation.frameMaxMs === undefined
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Completed PLY mesh lineage requires exactly one source-member receipt, PLY runtime state, fixture settings, and a frame profile.",
+      });
+    }
+    if (representation.format === "ply_mesh" && representation.plyMeshRuntimeState !== undefined) {
+      const runtime = representation.plyMeshRuntimeState;
+      const member = representation.sourceMembers?.[0];
+      if (
+        member === undefined
+        || representation.sourceMembers?.length !== 1
+        || runtime.sourceSha256 !== member.sha256
+        || runtime.sourceSizeBytes !== member.sizeBytes
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["plyMeshRuntimeState"],
+          message: "PLY runtime source receipt must exactly match its representation source member.",
+        });
+      }
+      const geometry = runtime.geometry;
+      if (
+        runtime.header.vertexCount !== geometry.positionCount
+        || runtime.header.faceCount !== geometry.triangleCount
+        || geometry.indexCount !== geometry.triangleCount * 3
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["plyMeshRuntimeState", "geometry"],
+          message: "PLY header counts must match decoded indexed-triangle geometry.",
+        });
+      }
+      if (
+        geometry.degenerateTriangleCount > geometry.triangleCount
+        || geometry.nonFinitePositionScalarCount !== 0
+        || geometry.outOfRangeIndexCount !== 0
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["plyMeshRuntimeState", "geometry"],
+          message: "Completed PLY structural evidence must contain finite positions and in-range triangle indices.",
+        });
+      }
+      if (geometry.localBounds.min.some((value, index) => value > (geometry.localBounds.max[index] ?? value))) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["plyMeshRuntimeState", "geometry", "localBounds"],
+          message: "PLY local bounds must be ordered min-to-max on every axis.",
+        });
+      }
+      const fixtureRenderer = representation.fixtureSettings?.renderer;
+      if (
+        fixtureRenderer !== undefined
+        && (
+          runtime.material.transparent !== fixtureRenderer.transparent
+          || runtime.material.depthWrite !== fixtureRenderer.depthWrite
+        )
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["plyMeshRuntimeState", "material"],
+          message: "PLY runtime material transparency and depth-write state must match its fixture renderer contract.",
+        });
+      }
+    }
+    if (
+      (representation.format === "ply_mesh" && (
+        representation.sparkRuntimeState !== undefined
+        || representation.decodedSplatCount !== undefined
+      ))
+      || (representation.format !== "ply_mesh" && representation.plyMeshRuntimeState !== undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "PLY and Spark runtime state are mutually exclusive.",
       });
     }
     if (completed && representation.sourceRefs.some((sourceRef) => !SHA256_PATTERN.test(sourceRef))) {
@@ -514,7 +692,7 @@ export const VisualLineageBenchmarkV0Schema = z
         actual !== undefined
         && (
           actual.position.some((value, component) => !approximatelyEqual(value, benchmark.camera.position[component]))
-          || actual.quaternion.some((value, component) => !approximatelyEqual(value, benchmark.camera.quaternion[component]))
+          || !hasEquivalentQuaternion(actual.quaternion, benchmark.camera.quaternion)
           || actual.projectionMatrix.some((value, component) => !approximatelyEqual(value, benchmark.camera.projectionMatrix[component]))
           || actual.fov === null
           || !approximatelyEqual(actual.fov, benchmark.camera.fov)
@@ -557,9 +735,25 @@ export const VisualLineageBenchmarkV0Schema = z
           message: "Recorded renderer colour state must match the benchmark renderer contract.",
         });
       }
+      const plyMaterial = representation.plyMeshRuntimeState?.material;
+      if (
+        plyMaterial !== undefined
+        && (
+          plyMaterial.transparent !== benchmark.rendererSettings.transparent
+          || plyMaterial.depthWrite !== benchmark.rendererSettings.depthWrite
+        )
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["representations", index, "plyMeshRuntimeState", "material"],
+          message: "PLY runtime material transparency and depth-write state must match the benchmark renderer contract.",
+        });
+      }
     }
     if (
-      benchmark.representations.some((representation) => representation.status === "passed")
+      benchmark.representations.some((representation) =>
+        representation.status === "passed"
+        && (representation.format === "sog" || representation.format === "spz" || representation.format === "venviewer"))
       && [
         benchmark.rendererSettings.maxSplats,
         benchmark.rendererSettings.maxStdDev,
@@ -614,6 +808,7 @@ export type VisualLineageActualCameraV0 = z.infer<typeof VisualLineageActualCame
 export type VisualLineageActualRendererV0 = z.infer<typeof VisualLineageActualRendererV0Schema>;
 export type VisualLineageFixtureSettingsV0 = z.infer<typeof VisualLineageFixtureSettingsV0Schema>;
 export type VisualLineageSparkRuntimeStateV0 = z.infer<typeof VisualLineageSparkRuntimeStateV0Schema>;
+export type VisualLineagePlyMeshRuntimeStateV0 = z.infer<typeof VisualLineagePlyMeshRuntimeStateV0Schema>;
 export type VisualLineageRepresentationV0 = z.infer<typeof VisualLineageRepresentationV0Schema>;
 export type VisualLineageBenchmarkV0Input = z.input<typeof VisualLineageBenchmarkV0Schema>;
 export type VisualLineageBenchmarkV0 = z.infer<typeof VisualLineageBenchmarkV0Schema>;
