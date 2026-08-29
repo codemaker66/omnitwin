@@ -30,6 +30,7 @@ import {
   GrandHallT554NativeReviewSessionScopeV2Schema,
   type GrandHallT554NativeReviewCoordinatorEventV2,
   type GrandHallT554NativeReviewFrozenMaskBindingV2,
+  type GrandHallT554NativeReviewImplementationManifestBindingV2,
   type GrandHallT554NativeReviewMaskChildCheckpointV2,
   type GrandHallT554NativeReviewMaskScopeV2,
   type GrandHallT554NativeReviewPreparedMaskBindingV2,
@@ -44,7 +45,6 @@ import {
 } from "./grand-hall-t554-native-review-coverage.js";
 import {
   GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME,
-  GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_SCHEMA,
 } from "./grand-hall-t554-native-review-implementation-manifest.js";
 import {
   verifyGrandHallT554NativeMaskEvidence,
@@ -97,8 +97,34 @@ const ROOT_INVENTORY_DOMAIN =
   "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_SESSION_ROOT_INVENTORY_V2";
 const VERIFICATION_ATTESTATION_DOMAIN =
   "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_SESSION_VERIFICATION_ATTESTATION_V2";
-const IMPLEMENTATION_MANIFEST_DOMAIN =
-  "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_V1";
+type ImplementationId =
+  GrandHallT554NativeReviewImplementationManifestBindingV2["implementationId"];
+const IMPLEMENTATION_MANIFEST_POLICY_BY_ID: Readonly<
+  Record<
+    ImplementationId,
+    Readonly<{
+      manifestSchemaVersion:
+        | "venviewer.grand-hall-t554-native-review-implementation-manifest.v1"
+        | "venviewer.grand-hall-t554-native-review-implementation-manifest.v2";
+      semanticDigestDomain:
+        | "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_V1"
+        | "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_V2";
+    }>
+  >
+> = Object.freeze({
+  "grand-hall-t554-native-review-workbench-v1": Object.freeze({
+    manifestSchemaVersion:
+      "venviewer.grand-hall-t554-native-review-implementation-manifest.v1",
+    semanticDigestDomain:
+      "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_V1",
+  }),
+  "grand-hall-t554-native-review-workbench-v2": Object.freeze({
+    manifestSchemaVersion:
+      "venviewer.grand-hall-t554-native-review-implementation-manifest.v2",
+    semanticDigestDomain:
+      "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_V2",
+  }),
+});
 const REVIEW_SOURCE_COUNT = 148;
 const MAXIMUM_REVIEW_CHILDREN_PER_SOURCE = 2;
 const MAXIMUM_CHILD_EVENT_COUNT =
@@ -785,11 +811,13 @@ async function verifyManifestBytes(
   }
   const record = parsed as Readonly<Record<string, unknown>>;
   const { semanticSha256: claimedSemantic, ...semanticMaterial } = record;
+  const policy = IMPLEMENTATION_MANIFEST_POLICY_BY_ID[binding.implementationId];
   if (
-    record.schemaVersion !== GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_SCHEMA ||
+    record.schemaVersion !== policy.manifestSchemaVersion ||
     record.implementationId !== binding.implementationId ||
     claimedSemantic !== binding.semanticSha256 ||
-    canonicalDigest(IMPLEMENTATION_MANIFEST_DOMAIN, semanticMaterial) !== binding.semanticSha256
+    canonicalDigest(policy.semanticDigestDomain, semanticMaterial) !==
+      binding.semanticSha256
   ) {
     throw fail("IMPLEMENTATION_MISMATCH", "Implementation manifest semantic binding is invalid.");
   }

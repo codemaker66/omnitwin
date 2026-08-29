@@ -208,21 +208,60 @@ export type GrandHallT554NativeReviewArtifactBindingV2 = z.infer<
   typeof GrandHallT554NativeReviewArtifactBindingV2Schema
 >;
 
-export const GrandHallT554NativeReviewImplementationManifestBindingV2Schema = z
-  .object({
-    schemaVersion: z.literal(
-      "venviewer.grand-hall-t554-native-review-implementation-manifest-binding.v2",
-    ),
-    implementationId: z.literal("grand-hall-t554-native-review-workbench-v1"),
-    semanticSha256: GrandHallT554NativeReviewSha256V2Schema,
-    fileSha256: GrandHallT554NativeReviewSha256V2Schema,
-    byteLength: ArtifactByteLengthSchema,
-  })
-  .strict();
+const ImplementationManifestBindingSchemaVersionSchema = z.literal(
+  "venviewer.grand-hall-t554-native-review-implementation-manifest-binding.v2",
+);
+const ImplementationManifestBindingDigestShape = {
+  semanticSha256: GrandHallT554NativeReviewSha256V2Schema,
+  fileSha256: GrandHallT554NativeReviewSha256V2Schema,
+  byteLength: ArtifactByteLengthSchema,
+};
 
-export type GrandHallT554NativeReviewImplementationManifestBindingV2 = z.infer<
-  typeof GrandHallT554NativeReviewImplementationManifestBindingV2Schema
->;
+const GrandHallT554NativeReviewImplementationManifestBindingWorkbenchV1Schema =
+  z
+    .object({
+      schemaVersion: ImplementationManifestBindingSchemaVersionSchema,
+      implementationId: z.literal(
+        "grand-hall-t554-native-review-workbench-v1",
+      ),
+      ...ImplementationManifestBindingDigestShape,
+    })
+    .strict();
+
+const GrandHallT554NativeReviewImplementationManifestBindingWorkbenchV2Schema =
+  z
+    .object({
+      schemaVersion: ImplementationManifestBindingSchemaVersionSchema,
+      implementationId: z.literal(
+        "grand-hall-t554-native-review-workbench-v2",
+      ),
+      ...ImplementationManifestBindingDigestShape,
+    })
+    .strict();
+
+export type GrandHallT554NativeReviewImplementationManifestBindingV2 =
+  | z.infer<
+      typeof GrandHallT554NativeReviewImplementationManifestBindingWorkbenchV1Schema
+    >
+  | z.infer<
+      typeof GrandHallT554NativeReviewImplementationManifestBindingWorkbenchV2Schema
+    >;
+type GrandHallT554NativeReviewImplementationManifestBindingV2Input =
+  | z.input<
+      typeof GrandHallT554NativeReviewImplementationManifestBindingWorkbenchV1Schema
+    >
+  | z.input<
+      typeof GrandHallT554NativeReviewImplementationManifestBindingWorkbenchV2Schema
+    >;
+
+export const GrandHallT554NativeReviewImplementationManifestBindingV2Schema: z.ZodType<
+  GrandHallT554NativeReviewImplementationManifestBindingV2,
+  z.ZodTypeDef,
+  GrandHallT554NativeReviewImplementationManifestBindingV2Input
+> = z.discriminatedUnion("implementationId", [
+  GrandHallT554NativeReviewImplementationManifestBindingWorkbenchV1Schema,
+  GrandHallT554NativeReviewImplementationManifestBindingWorkbenchV2Schema,
+]);
 
 export const GrandHallT554NativeReviewRegistryBindingV2Schema = z
   .object({
@@ -1086,7 +1125,11 @@ function sameImplementationBinding(
   left: GrandHallT554NativeReviewImplementationManifestBindingV2,
   right: GrandHallT554NativeReviewImplementationManifestBindingV2,
 ): boolean {
+  const leftSchemaVersion: string = left.schemaVersion;
+  const rightSchemaVersion: string = right.schemaVersion;
   return (
+    leftSchemaVersion === rightSchemaVersion &&
+    left.implementationId === right.implementationId &&
     left.semanticSha256 === right.semanticSha256 &&
     left.fileSha256 === right.fileSha256 &&
     left.byteLength === right.byteLength

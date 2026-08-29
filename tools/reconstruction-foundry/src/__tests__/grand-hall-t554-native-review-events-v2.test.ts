@@ -16,6 +16,7 @@ import {
   GrandHallT554NativeReviewCoverageObservedPayloadV2Schema,
   GrandHallT554NativeReviewDomainEventV2Schema,
   GrandHallT554NativeReviewFrozenMaskBindingV2Schema,
+  GrandHallT554NativeReviewImplementationManifestBindingV2Schema,
   GrandHallT554NativeReviewJournalScopeV2Schema,
   GrandHallT554NativeReviewMaskEditedPayloadV2Schema,
   GrandHallT554NativeReviewMaskReviewStartedPayloadV2Schema,
@@ -61,6 +62,14 @@ function implementation() {
     semanticSha256: digest("implementation-semantic"),
     fileSha256: digest("implementation-file"),
     byteLength: 8_192,
+  };
+}
+
+function implementationV2() {
+  return {
+    ...implementation(),
+    implementationId:
+      "grand-hall-t554-native-review-workbench-v2" as const,
   };
 }
 
@@ -1002,6 +1011,32 @@ function validEvents(): readonly unknown[] {
 }
 
 describe("Grand Hall T-554 native-review v2 event schemas", () => {
+  it("accepts exactly the legacy and fixed-admission implementation bindings", () => {
+    expect(
+      GrandHallT554NativeReviewImplementationManifestBindingV2Schema.safeParse(
+        implementation(),
+      ).success,
+    ).toBe(true);
+    expect(
+      GrandHallT554NativeReviewImplementationManifestBindingV2Schema.safeParse(
+        implementationV2(),
+      ).success,
+    ).toBe(true);
+    expect(
+      GrandHallT554NativeReviewImplementationManifestBindingV2Schema.safeParse({
+        ...implementation(),
+        implementationId: "grand-hall-t554-native-review-workbench-v3",
+      }).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewImplementationManifestBindingV2Schema.safeParse({
+        ...implementationV2(),
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-implementation-manifest-binding.v3",
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts exactly the session, source, and mask scope variants", () => {
     for (const scope of validScopes()) {
       expect(
@@ -1090,6 +1125,22 @@ describe("Grand Hall T-554 native-review v2 event schemas", () => {
           maximumAllocatedRenderGeneration: 0,
           registry: registry(),
           implementationManifest: implementation(),
+          authorityBoundary: authority(),
+        }),
+      }).success,
+    ).toBe(false);
+
+    expect(
+      GrandHallT554NativeReviewScopedEventV2Schema.safeParse({
+        scope: validScopes()[0],
+        event: event("session.created.v2", {
+          schemaVersion:
+            "venviewer.grand-hall-t554-native-review-session-created.v2",
+          sessionIdSha256: digest("session-id"),
+          workspaceRevision: 0,
+          maximumAllocatedRenderGeneration: 0,
+          registry: registry(),
+          implementationManifest: implementationV2(),
           authorityBoundary: authority(),
         }),
       }).success,
@@ -1692,6 +1743,15 @@ describe("Grand Hall T-554 native-review v2 event schemas", () => {
             ...implementation(),
             fileSha256: digest("other-implementation"),
           },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      GrandHallT554NativeReviewSourceReviewStartedPayloadV2Schema.safeParse({
+        ...sourceStarted(sourceCarry()),
+        predecessorCoverage: {
+          ...sourceCarry(),
+          implementationManifest: implementationV2(),
         },
       }).success,
     ).toBe(false);

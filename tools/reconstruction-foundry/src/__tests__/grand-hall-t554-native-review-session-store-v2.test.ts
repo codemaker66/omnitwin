@@ -198,14 +198,36 @@ const registry = {
   generatedContentAuthorized: false as const,
 };
 
-function implementationMaterial() {
-  return {
-    schemaVersion:
-      "venviewer.grand-hall-t554-native-review-implementation-manifest.v1" as const,
-    implementationId:
-      "grand-hall-t554-native-review-workbench-v1" as const,
-    fixture: "session-store-read-only-verifier",
-  };
+type ImplementationFixtureVersion = "v1" | "v2";
+
+function implementationId(version: ImplementationFixtureVersion) {
+  return version === "v1"
+    ? ("grand-hall-t554-native-review-workbench-v1" as const)
+    : ("grand-hall-t554-native-review-workbench-v2" as const);
+}
+
+function implementationSemanticDomain(version: ImplementationFixtureVersion) {
+  return version === "v1"
+    ? ("VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_V1" as const)
+    : ("VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_V2" as const);
+}
+
+function implementationMaterial(version: ImplementationFixtureVersion = "v1") {
+  return version === "v1"
+    ? {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-implementation-manifest.v1" as const,
+        implementationId:
+          "grand-hall-t554-native-review-workbench-v1" as const,
+        fixture: "session-store-read-only-verifier",
+      }
+    : {
+        schemaVersion:
+          "venviewer.grand-hall-t554-native-review-implementation-manifest.v2" as const,
+        implementationId:
+          "grand-hall-t554-native-review-workbench-v2" as const,
+        fixture: "session-store-read-only-verifier",
+      };
 }
 
 function sourceIdentity() {
@@ -738,6 +760,9 @@ async function fixture(options: {
   readonly forgedMaskState?: boolean;
   readonly completedSource?: boolean;
   readonly completedWorkflow?: boolean;
+  readonly implementationManifestVersion?: ImplementationFixtureVersion;
+  readonly implementationBindingVersion?: ImplementationFixtureVersion;
+  readonly implementationSemanticDomainVersion?: ImplementationFixtureVersion;
 } = {}): Promise<Fixture> {
   const disposition = options.disposition ?? "committed";
   const root = await mkdtemp(join(tmpdir(), "t554-session-store-v2-"));
@@ -753,9 +778,13 @@ async function fixture(options: {
     mkdir(maskEvidenceRoot),
   ]);
 
-  const manifestMaterial = implementationMaterial();
+  const manifestVersion = options.implementationManifestVersion ?? "v1";
+  const bindingVersion = options.implementationBindingVersion ?? manifestVersion;
+  const semanticDomainVersion =
+    options.implementationSemanticDomainVersion ?? manifestVersion;
+  const manifestMaterial = implementationMaterial(manifestVersion);
   const semanticSha256 = `sha256:${domainSeparatedSha256(
-    "VENVIEWER_GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_V1",
+    implementationSemanticDomain(semanticDomainVersion),
     toCanonicalJson(manifestMaterial),
   )}` as const;
   const manifest = { ...manifestMaterial, semanticSha256 };
@@ -763,8 +792,7 @@ async function fixture(options: {
   const implementation = {
     schemaVersion:
       "venviewer.grand-hall-t554-native-review-implementation-manifest-binding.v2" as const,
-    implementationId:
-      "grand-hall-t554-native-review-workbench-v1" as const,
+    implementationId: implementationId(bindingVersion),
     semanticSha256,
     fileSha256: digest(manifestBytes),
     byteLength: manifestBytes.length,
@@ -2052,6 +2080,68 @@ describe("Grand Hall T-554 native review session store v2", () => {
         replay.children[0]?.evidence,
       ),
     ).toBe(true);
+  });
+
+  it("opens a fresh workbench-v2 root without changing the session or journal protocol", async () => {
+    const built = await fixture({ implementationManifestVersion: "v2" });
+    const replay = await openGrandHallT554NativeReviewSessionStoreV2({
+      sessionRoot: built.root,
+      expectedSessionScope: built.scope,
+      lease: built.lease,
+    });
+    expect(replay.sessionScope.schemaVersion).toBe(
+      GRAND_HALL_T554_NATIVE_REVIEW_JOURNAL_SCOPE_V2,
+    );
+    expect(replay.sessionScope.implementationManifest.implementationId).toBe(
+      "grand-hall-t554-native-review-workbench-v2",
+    );
+    expect(
+      replay.coordinator.implementationManifest.implementationId,
+    ).toBe("grand-hall-t554-native-review-workbench-v2");
+    expect(
+      replay.children[0]?.scope.implementationManifest.implementationId,
+    ).toBe("grand-hall-t554-native-review-workbench-v2");
+  });
+
+  it("rejects every manifest identity or semantic-domain cross-label", async () => {
+    const legacyManifestWithV2Binding = await fixture({
+      implementationManifestVersion: "v1",
+      implementationBindingVersion: "v2",
+    });
+    await expectStoreError(
+      openGrandHallT554NativeReviewSessionStoreV2({
+        sessionRoot: legacyManifestWithV2Binding.root,
+        expectedSessionScope: legacyManifestWithV2Binding.scope,
+        lease: legacyManifestWithV2Binding.lease,
+      }),
+      "IMPLEMENTATION_MISMATCH",
+    );
+
+    const v2ManifestWithLegacyBinding = await fixture({
+      implementationManifestVersion: "v2",
+      implementationBindingVersion: "v1",
+    });
+    await expectStoreError(
+      openGrandHallT554NativeReviewSessionStoreV2({
+        sessionRoot: v2ManifestWithLegacyBinding.root,
+        expectedSessionScope: v2ManifestWithLegacyBinding.scope,
+        lease: v2ManifestWithLegacyBinding.lease,
+      }),
+      "IMPLEMENTATION_MISMATCH",
+    );
+
+    const v2ManifestWithLegacyDomain = await fixture({
+      implementationManifestVersion: "v2",
+      implementationSemanticDomainVersion: "v1",
+    });
+    await expectStoreError(
+      openGrandHallT554NativeReviewSessionStoreV2({
+        sessionRoot: v2ManifestWithLegacyDomain.root,
+        expectedSessionScope: v2ManifestWithLegacyDomain.scope,
+        lease: v2ManifestWithLegacyDomain.lease,
+      }),
+      "IMPLEMENTATION_MISMATCH",
+    );
   });
 
   it("rejects extra, missing, and swapped child members", async () => {
