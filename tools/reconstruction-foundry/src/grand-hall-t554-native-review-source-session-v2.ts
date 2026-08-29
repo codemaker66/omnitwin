@@ -54,13 +54,11 @@ import {
   type GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2,
   type GrandHallT554NativeReviewSourceScopeV2,
 } from "./grand-hall-t554-native-review-events-v2.js";
+import { GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME } from "./grand-hall-t554-native-review-implementation-manifest.js";
 import {
-  GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME,
-  assertGrandHallT554LoadedNativeReviewImplementationRuntimeAuthorityV1,
-  assertGrandHallT554VerifiedNativeReviewImplementationPackV1,
-  type GrandHallT554LoadedNativeReviewImplementationRuntimeAuthorityV1,
-  type GrandHallT554VerifiedNativeReviewImplementationPackV1,
-} from "./grand-hall-t554-native-review-implementation-manifest.js";
+  assertGrandHallT554NativeReviewProductionAuthorityPairV2,
+  type GrandHallT554NativeReviewProductionAuthorityPairV2,
+} from "./grand-hall-t554-native-review-production-authority-v2.js";
 import {
   computeGrandHallT554NativeReviewSourceReviewSubjectV2Sha256,
   planGrandHallT554NativeReviewNextSourceCoverageEventV2,
@@ -956,17 +954,9 @@ function registryBindingFromRegistry(
 
 function productionDependencies(input: {
   readonly registry: GrandHallT554NativeReviewRegistry;
-  readonly implementationPack: GrandHallT554VerifiedNativeReviewImplementationPackV1;
-  readonly runtimeAuthority: GrandHallT554LoadedNativeReviewImplementationRuntimeAuthorityV1;
-}): SourceSessionDependencies {
+} & GrandHallT554NativeReviewProductionAuthorityPairV2): SourceSessionDependencies {
   assertGrandHallT554NativeReviewRegistry(input.registry);
-  assertGrandHallT554VerifiedNativeReviewImplementationPackV1(
-    input.implementationPack,
-  );
-  assertGrandHallT554LoadedNativeReviewImplementationRuntimeAuthorityV1(
-    input.runtimeAuthority,
-    input.implementationPack,
-  );
+  assertGrandHallT554NativeReviewProductionAuthorityPairV2(input);
   return {
     registry: {
       binding: registryBindingFromRegistry(input.registry),
@@ -2625,17 +2615,19 @@ async function openInjectedSourceSession(
   }
 }
 
-export interface GrandHallT554NativeReviewSourceSessionProductionOptionsV2 {
+interface GrandHallT554NativeReviewSourceSessionProductionBaseOptionsV2 {
   readonly sessionRoot: string;
   readonly registry: GrandHallT554NativeReviewRegistry;
-  readonly implementationPack: GrandHallT554VerifiedNativeReviewImplementationPackV1;
-  readonly runtimeAuthority: GrandHallT554LoadedNativeReviewImplementationRuntimeAuthorityV1;
 }
 
-export interface GrandHallT554NativeReviewSourceSessionTakeoverOptionsV2
-  extends GrandHallT554NativeReviewSourceSessionProductionOptionsV2 {
-  readonly priorOwnerWitness: GrandHallT554NativeReviewPriorOwnerWitnessV2;
-}
+export type GrandHallT554NativeReviewSourceSessionProductionOptionsV2 =
+  GrandHallT554NativeReviewSourceSessionProductionBaseOptionsV2 &
+    GrandHallT554NativeReviewProductionAuthorityPairV2;
+
+export type GrandHallT554NativeReviewSourceSessionTakeoverOptionsV2 =
+  GrandHallT554NativeReviewSourceSessionProductionOptionsV2 & {
+    readonly priorOwnerWitness: GrandHallT554NativeReviewPriorOwnerWitnessV2;
+  };
 
 export async function createGrandHallT554NativeReviewSourceSessionV2(
   options: GrandHallT554NativeReviewSourceSessionProductionOptionsV2,

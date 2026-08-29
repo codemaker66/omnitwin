@@ -113,7 +113,7 @@ mixedSourceDistResolutionAuthorized: false
 ambientExternalRuntimeModuleResolutionAuthorized: false
 fixedAdmissionCapsuleExternalImportRequired: true
 entryImportPolicy:
-  fixed-admission-capsule-verifies-entire-pack-before-import.v2
+  fixed-admission-capsule-verifies-entire-pack-before-gate-import.v2
 ```
 
 Stage 1 MUST build twice from the same reviewed source and dependency closure.
@@ -192,8 +192,8 @@ Node ESM modules are cached by resolved URL. The capsule therefore serves two
 roles in one exact module instance:
 
 1. it is the process main module and private admission orchestrator;
-2. it supplies the assertion functions imported by the payload through the
-   exact fixed capsule URL.
+2. it supplies the two assertion functions and one inert frozen ABI witness
+   imported by the payload through the exact fixed capsule URL.
 
 The capsule MUST complete its ESM evaluation before importing the payload. Its
 top-level evaluation performs only bounded synchronous definition and guard
@@ -201,7 +201,13 @@ work:
 
 - assert that `import.meta.url` is byte-for-byte the fixed capsule URL;
 - initialize the module-private `WeakSet` and `WeakMap` identity stores;
-- define and export the narrow assertion-only surface;
+- define and export the exact narrow three-binding surface: the pack assertion,
+  the pack-bound runtime assertion, and the inert frozen authority-none ABI
+  witness used to prove that the gate and core resolved this same capsule
+  module instance, named exactly
+  `assertGrandHallT554NativeReviewFixedPackV2`,
+  `assertGrandHallT554NativeReviewFixedRuntimeAuthorityV2`, and
+  `GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_ABI_WITNESS_V2`;
 - determine whether this exact module instance is the process main module;
 - when it is main, schedule the private main routine with `setImmediate` or an
   equivalently explicit post-evaluation turn.
@@ -401,8 +407,9 @@ and reviewed in order.
 - The capsule is one self-contained ESM whose only static runtime dependencies
   are exact Node builtins; repository, package, config, and helper resolution
   are absent.
-- The capsule namespace exports assertion functions only; verifier, minters,
-  fixed constants, private main, identity stores, and admitted module are not
+- The capsule namespace exports exactly the two assertion functions and the
+  one inert frozen authority-none ABI witness; verifier, minters, reviewed
+  anchors and roots, private main, identity stores, and admitted module are not
   exported.
 - Running the capsule at the exact fixed URL creates one ESM module instance.
   The payload's fixed external import resolves to that same instance.

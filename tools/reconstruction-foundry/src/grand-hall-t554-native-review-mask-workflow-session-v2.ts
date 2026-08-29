@@ -57,11 +57,10 @@ import {
   type GrandHallT554NativeReviewSourceDecisionRecordedPayloadV2,
   type GrandHallT554NativeReviewSourceCustodyBindingV2,
 } from "./grand-hall-t554-native-review-events-v2.js";
+import { GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME } from "./grand-hall-t554-native-review-implementation-manifest.js";
 import {
-  GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME,
-  assertGrandHallT554LoadedNativeReviewImplementationRuntimeAuthorityV1,
-  assertGrandHallT554VerifiedNativeReviewImplementationPackV1,
-} from "./grand-hall-t554-native-review-implementation-manifest.js";
+  assertGrandHallT554NativeReviewProductionAuthorityPairV2,
+} from "./grand-hall-t554-native-review-production-authority-v2.js";
 import {
   GrandHallT554NativeMaskRevisionStore,
   GrandHallT554NativeMaskStoreError,
@@ -918,13 +917,7 @@ function productionDependencies(
   options: GrandHallT554NativeReviewSourceSessionProductionOptionsV2,
 ): MaskWorkflowSessionDependenciesV2 {
   assertGrandHallT554NativeReviewRegistry(options.registry);
-  assertGrandHallT554VerifiedNativeReviewImplementationPackV1(
-    options.implementationPack,
-  );
-  assertGrandHallT554LoadedNativeReviewImplementationRuntimeAuthorityV1(
-    options.runtimeAuthority,
-    options.implementationPack,
-  );
+  assertGrandHallT554NativeReviewProductionAuthorityPairV2(options);
   return {
     registry: {
       binding: registryBindingFromRegistry(options.registry),
