@@ -22,6 +22,10 @@ import {
   type GrandHallT554NativeReviewSourceSessionSnapshotV2,
   type GrandHallT554NativeReviewSourceTileV2,
 } from "../grand-hall-t554-native-review-source-session-v2.js";
+import type {
+  GrandHallT554NativeReviewAuthorityNoneRecordV2,
+  GrandHallT554NativeReviewDurableSourceHistoryEntryV2,
+} from "../grand-hall-t554-native-review-durable-source-history-v2.js";
 
 type Sha256 = `sha256:${string}`;
 type SourceActive = NonNullable<
@@ -70,6 +74,58 @@ function digest(character: string): Sha256 {
   return `sha256:${character.repeat(64)}`;
 }
 
+function durableSourceHistory(input?: {
+  readonly inventoryIndex?: number;
+  readonly decision?: "EXCLUDE" | "INCLUDE";
+  readonly attested?: boolean;
+}): readonly GrandHallT554NativeReviewDurableSourceHistoryEntryV2[] {
+  return Array.from({ length: 148 }, (_, inventoryIndex) => {
+    let authorityNoneRecord: GrandHallT554NativeReviewAuthorityNoneRecordV2 = {
+      state: "no_recorded_decision",
+    };
+    if (inventoryIndex === (input?.inventoryIndex ?? 11) && input?.decision) {
+      const decision =
+        input.decision === "EXCLUDE"
+          ? ({
+              result: "EXCLUDE",
+              classification: "no_observed_grand_hall_pixels",
+            } as const)
+          : ({
+              result: "INCLUDE",
+              classification: "grand_hall_core",
+            } as const);
+      authorityNoneRecord = input.attested === true
+        ? {
+            state: "authority_none_attestation_recorded",
+            decision,
+            attestation: "not_cryptographic",
+          }
+        : {
+            state: "decision_recorded",
+            decision,
+            attestation: "not_recorded",
+          };
+    }
+    return {
+      inventoryIndex,
+      sweepNumber: inventoryIndex + 1,
+      authorityNoneRecord,
+    };
+  });
+}
+
+function withHistoryRecord(
+  history: readonly GrandHallT554NativeReviewDurableSourceHistoryEntryV2[],
+  inventoryIndex: number,
+  authorityNoneRecord: GrandHallT554NativeReviewAuthorityNoneRecordV2,
+): readonly GrandHallT554NativeReviewDurableSourceHistoryEntryV2[] {
+  return history.map((entry) =>
+    entry.inventoryIndex === inventoryIndex
+      ? { ...entry, authorityNoneRecord }
+      : entry,
+  );
+}
+
 function sourceSnapshot(input?: {
   readonly browserEpochNumber?: number;
   readonly workspaceRevision?: number;
@@ -77,9 +133,11 @@ function sourceSnapshot(input?: {
   readonly complete?: boolean;
   readonly active?: boolean;
   readonly phase?: SourceActive["phase"];
+  readonly durableSourceHistory?: readonly GrandHallT554NativeReviewDurableSourceHistoryEntryV2[];
 }): GrandHallT554NativeReviewSourceSessionSnapshotV2 {
   const renderGeneration = input?.renderGeneration ?? 4;
   const complete = input?.complete ?? true;
+  const phase = input?.phase ?? "source_review";
   return {
     schemaVersion: "venviewer.grand-hall-t554-native-review-source-session.v2",
     lifecycle: "active",
@@ -88,6 +146,15 @@ function sourceSnapshot(input?: {
     maximumAllocatedRenderGeneration: renderGeneration,
     browserEpochNumber: input?.browserEpochNumber ?? 2,
     browserEpochNonceSha256: BROWSER_SOURCE_SHA,
+    durableSourceHistory:
+      input?.durableSourceHistory ??
+      durableSourceHistory({
+        decision:
+          phase === "source_decided" || phase === "human_attested"
+            ? "EXCLUDE"
+            : undefined,
+        attested: phase === "human_attested",
+      }),
     activeSource:
       input?.active === false
         ? null
@@ -96,7 +163,7 @@ function sourceSnapshot(input?: {
             sweepNumber: 12,
             sourceEpochNonce: SOURCE_NONCE,
             renderGeneration,
-            phase: input?.phase ?? "source_review",
+            phase,
             sourceReviewSubjectSha256: SOURCE_SUBJECT_SHA,
             tileGrid: {
               widthPx: 256,
@@ -196,6 +263,7 @@ function maskSnapshot(input?: {
   readonly renderGeneration?: number;
   readonly phase?: MaskActive["phase"];
   readonly active?: boolean;
+  readonly durableSourceHistory?: readonly GrandHallT554NativeReviewDurableSourceHistoryEntryV2[];
 }): GrandHallT554NativeReviewMaskWorkflowSnapshotV2 {
   const phase = input?.phase ?? "source_review";
   const hasMask = phase !== "source_review";
@@ -209,6 +277,15 @@ function maskSnapshot(input?: {
     maximumAllocatedRenderGeneration: renderGeneration,
     browserEpochNumber: input?.browserEpochNumber ?? 3,
     browserEpochNonceSha256: BROWSER_MASK_SHA,
+    durableSourceHistory:
+      input?.durableSourceHistory ??
+      durableSourceHistory({
+        decision:
+          phase === "decision_recorded" || phase === "human_attested"
+            ? "INCLUDE"
+            : undefined,
+        attested: phase === "human_attested",
+      }),
     activeSource:
       input?.active === false
         ? null
@@ -280,6 +357,7 @@ class SourceSessionHarness implements GrandHallT554NativeReviewSourceSessionV2 {
   commitError: Error | null = null;
   excludeError: Error | null = null;
   snapshotError: Error | null = null;
+  corruptHistoryAfterExclude = false;
   closeAttempts = 0;
   closeFailuresRemaining = 0;
 
@@ -354,6 +432,15 @@ class SourceSessionHarness implements GrandHallT554NativeReviewSourceSessionV2 {
       ...this.snapshotValue,
       workspaceRevision: this.snapshotValue.workspaceRevision + 1,
       maximumAllocatedRenderGeneration: active.renderGeneration + 1,
+      durableSourceHistory: withHistoryRecord(
+        this.snapshotValue.durableSourceHistory,
+        active.inventoryIndex,
+        {
+          state: "decision_recorded",
+          decision: excludeDecision(),
+          attestation: "not_recorded",
+        },
+      ),
       activeSource: {
         ...active,
         phase: "source_decided",
@@ -361,6 +448,17 @@ class SourceSessionHarness implements GrandHallT554NativeReviewSourceSessionV2 {
         decision: excludeDecision(),
       },
     };
+    if (this.corruptHistoryAfterExclude) {
+      this.snapshotValue = {
+        ...this.snapshotValue,
+        durableSourceHistory: this.snapshotValue.durableSourceHistory.map(
+          (entry) =>
+            entry.inventoryIndex === active.inventoryIndex
+              ? { ...entry, sweepNumber: entry.sweepNumber + 1 }
+              : entry,
+        ),
+      };
+    }
     return this.snapshotValue;
   }
 
@@ -374,6 +472,15 @@ class SourceSessionHarness implements GrandHallT554NativeReviewSourceSessionV2 {
     this.snapshotValue = {
       ...this.snapshotValue,
       workspaceRevision: this.snapshotValue.workspaceRevision + 1,
+      durableSourceHistory: withHistoryRecord(
+        this.snapshotValue.durableSourceHistory,
+        active.inventoryIndex,
+        {
+          state: "authority_none_attestation_recorded",
+          decision: excludeDecision(),
+          attestation: "not_cryptographic",
+        },
+      ),
       activeSource: {
         ...active,
         phase: "human_attested",
@@ -559,6 +666,15 @@ class MaskSessionHarness implements GrandHallT554NativeReviewMaskWorkflowSession
       ...this.snapshotValue,
       workspaceRevision: this.snapshotValue.workspaceRevision + 1,
       maximumAllocatedRenderGeneration: active.renderGeneration + 1,
+      durableSourceHistory: withHistoryRecord(
+        this.snapshotValue.durableSourceHistory,
+        active.inventoryIndex,
+        {
+          state: "decision_recorded",
+          decision: includeDecision(),
+          attestation: "not_recorded",
+        },
+      ),
       activeSource: {
         ...active,
         phase: "decision_recorded",
@@ -579,6 +695,15 @@ class MaskSessionHarness implements GrandHallT554NativeReviewMaskWorkflowSession
     this.snapshotValue = {
       ...this.snapshotValue,
       workspaceRevision: this.snapshotValue.workspaceRevision + 1,
+      durableSourceHistory: withHistoryRecord(
+        this.snapshotValue.durableSourceHistory,
+        active.inventoryIndex,
+        {
+          state: "authority_none_attestation_recorded",
+          decision: includeDecision(),
+          attestation: "not_cryptographic",
+        },
+      ),
       activeSource: {
         ...active,
         phase: "human_attested",
@@ -768,6 +893,7 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
         proposedDisposition: "include_with_binary_pixel_mask",
         maskAuthoringState: "required_not_authored",
       },
+      authorityNoneRecord: { state: "no_recorded_decision" },
     });
     expect(sourceView.sources[147]).toEqual({
       inventoryIndex: 147,
@@ -777,6 +903,7 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
         proposedDisposition: "exclude_whole_frame",
         maskAuthoringState: "not_required_if_human_confirms_exclusion",
       },
+      authorityNoneRecord: { state: "no_recorded_decision" },
     });
     expectDeepFrozen(sourceView);
     const sourceCoverageAck = await sourceOperator.recordSourceCoverage({
@@ -815,6 +942,7 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
         maskFactories,
       );
     const maskView = await maskOperator.snapshot();
+    expect(maskView.sources).toEqual(sourceView.sources);
     expect(maskView.activeSource).toMatchObject({
       phase: "mask_review",
       sourceCoverage: { completedTileCount: 512, complete: true },
@@ -889,6 +1017,72 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
       }),
     ).rejects.toMatchObject({ code: "ARGUMENT_INVALID" });
     expect(invalidCatalogCreateCalls).toBe(0);
+    await sourceOperator.close();
+    await maskOperator.close();
+  });
+
+  it("preserves the same attested history across source and mask reinspection without overriding agent observation", async () => {
+    const priorHistory = durableSourceHistory({
+      inventoryIndex: 11,
+      decision: "INCLUDE",
+      attested: true,
+    });
+    const source = new SourceSessionHarness(
+      sourceSnapshot({ durableSourceHistory: priorHistory }),
+    );
+    const mask = new MaskSessionHarness(
+      maskSnapshot({ durableSourceHistory: priorHistory }),
+    );
+    const factories = delegateFactories({ source, mask });
+    const sourceOperator =
+      await __testOnlyGrandHallT554NativeReviewOperatorSessionV2.create(
+        factories,
+      );
+    const sourceView = await sourceOperator.snapshot();
+    const maskOperator =
+      await __testOnlyGrandHallT554NativeReviewOperatorSessionV2.open({
+        ...factories,
+        openSource: async () => {
+          throw new GrandHallT554NativeReviewSourceSessionV2Error(
+            "PHASE_INVALID",
+            "mask phase",
+          );
+        },
+      });
+    const maskView = await maskOperator.snapshot();
+
+    expect(sourceView.activeSource).toMatchObject({
+      inventoryIndex: 11,
+      phase: "source_review",
+      decision: null,
+      humanAttested: false,
+    });
+    expect(maskView.activeSource).toMatchObject({
+      inventoryIndex: 11,
+      phase: "source_review",
+      decision: null,
+      humanAttested: false,
+    });
+    expect(sourceView.sources).toEqual(maskView.sources);
+    expect(sourceView.sources[11]).toEqual({
+      inventoryIndex: 11,
+      sweepNumber: 12,
+      agentObservation: {
+        state: "no_grand_hall_pixels_observed_human_pending",
+        proposedDisposition: "exclude_whole_frame",
+        maskAuthoringState: "not_required_if_human_confirms_exclusion",
+      },
+      authorityNoneRecord: {
+        state: "authority_none_attestation_recorded",
+        decision: {
+          result: "INCLUDE",
+          classification: "grand_hall_core",
+        },
+        attestation: "not_cryptographic",
+      },
+    });
+    expectDeepFrozen(sourceView.sources);
+    expectNoSensitiveProjection(sourceView);
     await sourceOperator.close();
     await maskOperator.close();
   });
@@ -1299,6 +1493,14 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
       classification: "no_observed_grand_hall_pixels",
     });
     expect(excludedView.activeSource?.humanAttested).toBe(false);
+    expect(excludedView.sources[11]?.authorityNoneRecord).toEqual({
+      state: "decision_recorded",
+      decision: {
+        result: "EXCLUDE",
+        classification: "no_observed_grand_hall_pixels",
+      },
+      attestation: "not_recorded",
+    });
     const attestedExcludedView = await excludedOperator.recordHumanAttestation({
       expectedBrowserEpochNumber: 2,
       expectedWorkspaceRevision: 8,
@@ -1313,6 +1515,14 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
         classification: "no_observed_grand_hall_pixels",
       },
       humanAttested: true,
+    });
+    expect(attestedExcludedView.sources[11]?.authorityNoneRecord).toEqual({
+      state: "authority_none_attestation_recorded",
+      decision: {
+        result: "EXCLUDE",
+        classification: "no_observed_grand_hall_pixels",
+      },
+      attestation: "not_cryptographic",
     });
     expectDeepFrozen(attestedExcludedView);
     expectNoSensitiveProjection(attestedExcludedView);
@@ -1391,6 +1601,14 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
         excludedPixelCount: PIXEL_COUNT - 1,
       },
     });
+    expect(includedView.sources[11]?.authorityNoneRecord).toEqual({
+      state: "decision_recorded",
+      decision: {
+        result: "INCLUDE",
+        classification: "grand_hall_core",
+      },
+      attestation: "not_recorded",
+    });
 
     const attestedView = await operator.recordHumanAttestation({
       expectedBrowserEpochNumber: 6,
@@ -1413,10 +1631,18 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
       },
       humanAttested: true,
     });
+    expect(attestedView.sources[11]?.authorityNoneRecord).toEqual({
+      state: "authority_none_attestation_recorded",
+      decision: {
+        result: "INCLUDE",
+        classification: "grand_hall_core",
+      },
+      attestation: "not_cryptographic",
+    });
     expectDeepFrozen(attestedView);
     expectNoSensitiveProjection(attestedView);
 
-    await operator.abandonActiveSource({
+    const abandonedView = await operator.abandonActiveSource({
       expectedBrowserEpochNumber: 6,
       expectedWorkspaceRevision: 12,
       renderGeneration: 10,
@@ -1426,6 +1652,9 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
       expectedBrowserEpochNonceSha256: BROWSER_MASK_SHA,
       reason: "session_stop",
     });
+    expect(abandonedView.sources[11]?.authorityNoneRecord).toEqual(
+      attestedView.sources[11]?.authorityNoneRecord,
+    );
     const stopped = await operator.stop({
       expectedBrowserEpochNumber: 6,
       expectedWorkspaceRevision: 13,
@@ -1433,6 +1662,33 @@ describe("Grand Hall T-554 native-review operator session v2", () => {
     expect(mask.stopCount).toBe(1);
     expect(mask.stopInputs).toEqual([{ expectedWorkspaceRevision: 13 }]);
     expect(stopped.lifecycle).toBe("stopped");
+    expect(stopped.sources[11]?.authorityNoneRecord).toEqual(
+      attestedView.sources[11]?.authorityNoneRecord,
+    );
+    await operator.close();
+  });
+
+  it("latches recovery when a successful delegate mutation returns malformed durable history", async () => {
+    const source = new SourceSessionHarness();
+    source.corruptHistoryAfterExclude = true;
+    const operator =
+      await __testOnlyGrandHallT554NativeReviewOperatorSessionV2.create(
+        delegateFactories({ source, mask: new MaskSessionHarness() }),
+      );
+
+    await expect(
+      operator.recordExcludeDecision({
+        expectedBrowserEpochNumber: 2,
+        expectedWorkspaceRevision: 7,
+        renderGeneration: 4,
+        note: "Durable mutation succeeds before malformed projection.",
+      }),
+    ).rejects.toMatchObject({ code: "INTERNAL_INVARIANT_FAILED" });
+    expect(source.excludeInputs).toHaveLength(1);
+    expect(source.snapshotValue.workspaceRevision).toBe(8);
+    await expect(operator.snapshot()).rejects.toMatchObject({
+      code: "RECOVERY_REQUIRED",
+    });
     await operator.close();
   });
 

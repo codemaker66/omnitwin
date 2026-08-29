@@ -2,6 +2,12 @@ import { z } from "zod";
 
 import { GrandHallT554NativeReviewMaskEditV2Schema } from "./grand-hall-t554-native-review-events-v2.js";
 import {
+  assertGrandHallT554NativeReviewActiveHistoryConsistencyV2,
+  type GrandHallT554NativeReviewAuthorityNoneRecordV2,
+  type GrandHallT554NativeReviewAuthorityNoneRecordedDecisionV2,
+  type GrandHallT554NativeReviewDurableSourceHistoryEntryV2,
+} from "./grand-hall-t554-native-review-durable-source-history-v2.js";
+import {
   GrandHallT554NativeReviewMaskWorkflowSessionV2Error,
   openGrandHallT554NativeReviewMaskWorkflowSessionV2,
   takeOverGrandHallT554NativeReviewMaskWorkflowSessionAfterCrashV2,
@@ -256,7 +262,8 @@ export type GrandHallT554NativeReviewOperatorSessionV2ErrorCode =
   | "DELIVERY_ALREADY_RESOLVED"
   | "RECOVERY_REQUIRED"
   | "TRANSITION_FAILED"
-  | "RESOURCE_CLEANUP_FAILED";
+  | "RESOURCE_CLEANUP_FAILED"
+  | "INTERNAL_INVARIANT_FAILED";
 
 export class GrandHallT554NativeReviewOperatorSessionV2Error extends Error {
   constructor(
@@ -269,7 +276,7 @@ export class GrandHallT554NativeReviewOperatorSessionV2Error extends Error {
   }
 }
 
-export interface GrandHallT554NativeReviewOperatorSourceCatalogEntryV2 {
+export interface GrandHallT554NativeReviewOperatorSourceCatalogIdentityV2 {
   readonly inventoryIndex: number;
   readonly sweepNumber: number;
   readonly agentObservation:
@@ -283,6 +290,11 @@ export interface GrandHallT554NativeReviewOperatorSourceCatalogEntryV2 {
         readonly proposedDisposition: "exclude_whole_frame";
         readonly maskAuthoringState: "not_required_if_human_confirms_exclusion";
       };
+}
+
+export interface GrandHallT554NativeReviewOperatorSourceCatalogEntryV2
+  extends GrandHallT554NativeReviewOperatorSourceCatalogIdentityV2 {
+  readonly authorityNoneRecord: GrandHallT554NativeReviewAuthorityNoneRecordV2;
 }
 
 export interface GrandHallT554NativeReviewOperatorSessionSnapshotV2 {
@@ -455,7 +467,7 @@ export interface GrandHallT554NativeReviewOperatorSessionV2 {
 }
 
 export interface __GrandHallT554NativeReviewOperatorDelegateFactoriesV2 {
-  readonly sourceCatalog: readonly GrandHallT554NativeReviewOperatorSourceCatalogEntryV2[];
+  readonly sourceCatalog: readonly GrandHallT554NativeReviewOperatorSourceCatalogIdentityV2[];
   readonly createSource: () => Promise<GrandHallT554NativeReviewSourceSessionV2>;
   readonly openSource: () => Promise<GrandHallT554NativeReviewSourceSessionV2>;
   readonly openMask: () => Promise<GrandHallT554NativeReviewMaskWorkflowSessionV2>;
@@ -529,8 +541,8 @@ function deepFreeze<T>(value: T): T {
 }
 
 function parseSourceCatalog(
-  value: readonly GrandHallT554NativeReviewOperatorSourceCatalogEntryV2[],
-): readonly GrandHallT554NativeReviewOperatorSourceCatalogEntryV2[] {
+  value: readonly GrandHallT554NativeReviewOperatorSourceCatalogIdentityV2[],
+): readonly GrandHallT554NativeReviewOperatorSourceCatalogIdentityV2[] {
   const result = SourceCatalogSchema.safeParse(value);
   if (!result.success) {
     throw fail(
@@ -550,6 +562,132 @@ function parseSourceCatalog(
       agentObservation: { ...source.agentObservation },
     })),
   );
+}
+
+function copyRecordedDecision(
+  decision: {
+    readonly result: string;
+    readonly classification: string;
+  },
+): GrandHallT554NativeReviewAuthorityNoneRecordedDecisionV2 {
+  if (
+    decision.result === "EXCLUDE" &&
+    decision.classification === "no_observed_grand_hall_pixels"
+  ) {
+    return {
+      result: "EXCLUDE",
+      classification: "no_observed_grand_hall_pixels",
+    };
+  }
+  if (
+    decision.result === "INCLUDE" &&
+    (decision.classification === "grand_hall_core" ||
+      decision.classification === "grand_hall_portal_threshold")
+  ) {
+    return {
+      result: "INCLUDE",
+      classification: decision.classification,
+    };
+  }
+  throw fail(
+    "INTERNAL_INVARIANT_FAILED",
+    "Durable source history contains an invalid decision pairing.",
+  );
+}
+
+function copyAuthorityNoneRecord(
+  record: {
+    readonly state: string;
+    readonly decision?: {
+      readonly result: string;
+      readonly classification: string;
+    };
+    readonly attestation?: string;
+  },
+): GrandHallT554NativeReviewAuthorityNoneRecordV2 {
+  if (record.state === "no_recorded_decision") {
+    return { state: "no_recorded_decision" };
+  }
+  if (
+    record.state === "decision_recorded" &&
+    record.decision !== undefined &&
+    record.attestation === "not_recorded"
+  ) {
+    return {
+      state: "decision_recorded",
+      decision: copyRecordedDecision(record.decision),
+      attestation: "not_recorded",
+    };
+  }
+  if (
+    record.state === "authority_none_attestation_recorded" &&
+    record.decision !== undefined &&
+    record.attestation === "not_cryptographic"
+  ) {
+    return {
+      state: "authority_none_attestation_recorded",
+      decision: copyRecordedDecision(record.decision),
+      attestation: "not_cryptographic",
+    };
+  }
+  throw fail(
+    "INTERNAL_INVARIANT_FAILED",
+    "Durable source history contains an invalid authority-none record.",
+  );
+}
+
+function mergeSourceCatalogWithHistory(
+  sources: readonly GrandHallT554NativeReviewOperatorSourceCatalogIdentityV2[],
+  history: readonly GrandHallT554NativeReviewDurableSourceHistoryEntryV2[],
+  activeSource: Parameters<
+    typeof assertGrandHallT554NativeReviewActiveHistoryConsistencyV2
+  >[1],
+): readonly GrandHallT554NativeReviewOperatorSourceCatalogEntryV2[] {
+  if (sources.length !== SOURCE_COUNT || history.length !== SOURCE_COUNT) {
+    throw fail(
+      "INTERNAL_INVARIANT_FAILED",
+      "Operator source catalog and durable history must each contain exactly 148 rows.",
+    );
+  }
+  const seen = new Set<string>();
+  const merged = sources.map((source, index) => {
+    const historyEntry = history[index];
+    const identityKey = `${String(source.inventoryIndex)}:${String(source.sweepNumber)}`;
+    if (
+      source.inventoryIndex !== index ||
+      historyEntry === undefined ||
+      historyEntry.inventoryIndex !== source.inventoryIndex ||
+      historyEntry.sweepNumber !== source.sweepNumber ||
+      seen.has(identityKey)
+    ) {
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        "Operator source catalog does not exactly join its durable history.",
+      );
+    }
+    seen.add(identityKey);
+    return {
+      inventoryIndex: source.inventoryIndex,
+      sweepNumber: source.sweepNumber,
+      agentObservation: { ...source.agentObservation },
+      authorityNoneRecord: copyAuthorityNoneRecord(
+        historyEntry.authorityNoneRecord,
+      ),
+    };
+  });
+  try {
+    assertGrandHallT554NativeReviewActiveHistoryConsistencyV2(
+      history,
+      activeSource,
+    );
+  } catch (error) {
+    throw fail(
+      "INTERNAL_INVARIANT_FAILED",
+      "Operator active source does not match its durable authority-none history.",
+      error,
+    );
+  }
+  return deepFreeze(merged);
 }
 
 function paintedTileBitsetHex(
@@ -611,15 +749,32 @@ function assertRenderGeneration(actual: number, expected: number): void {
 
 function projectSourceSnapshot(
   snapshot: GrandHallT554NativeReviewSourceSessionSnapshotV2,
-  sources: readonly GrandHallT554NativeReviewOperatorSourceCatalogEntryV2[],
+  sources: readonly GrandHallT554NativeReviewOperatorSourceCatalogIdentityV2[],
 ): GrandHallT554NativeReviewOperatorSessionSnapshotV2 {
+  const mergedSources = mergeSourceCatalogWithHistory(
+    sources,
+    snapshot.durableSourceHistory,
+    snapshot.activeSource === null
+      ? null
+      : {
+          inventoryIndex: snapshot.activeSource.inventoryIndex,
+          sweepNumber: snapshot.activeSource.sweepNumber,
+          phase:
+            snapshot.activeSource.phase === "source_decided"
+              ? "decision_recorded"
+              : snapshot.activeSource.phase,
+          decision: snapshot.activeSource.decision,
+          humanAttestationRecorded:
+            snapshot.activeSource.humanAttestation !== null,
+        },
+  );
   return deepFreeze({
     schemaVersion: OPERATOR_SNAPSHOT_SCHEMA,
     lifecycle: snapshot.lifecycle,
     browserEpochNumber: snapshot.browserEpochNumber,
     workspaceRevision: snapshot.workspaceRevision,
     maximumAllocatedRenderGeneration: snapshot.maximumAllocatedRenderGeneration,
-    sources,
+    sources: mergedSources,
     activeSource:
       snapshot.activeSource === null
         ? null
@@ -661,15 +816,29 @@ function projectSourceSnapshot(
 
 function projectMaskSnapshot(
   snapshot: GrandHallT554NativeReviewMaskWorkflowSnapshotV2,
-  sources: readonly GrandHallT554NativeReviewOperatorSourceCatalogEntryV2[],
+  sources: readonly GrandHallT554NativeReviewOperatorSourceCatalogIdentityV2[],
 ): GrandHallT554NativeReviewOperatorSessionSnapshotV2 {
+  const mergedSources = mergeSourceCatalogWithHistory(
+    sources,
+    snapshot.durableSourceHistory,
+    snapshot.activeSource === null
+      ? null
+      : {
+          inventoryIndex: snapshot.activeSource.inventoryIndex,
+          sweepNumber: snapshot.activeSource.sweepNumber,
+          phase: snapshot.activeSource.phase,
+          decision: snapshot.activeSource.decision,
+          humanAttestationRecorded:
+            snapshot.activeSource.humanAttestation !== null,
+        },
+  );
   return deepFreeze({
     schemaVersion: OPERATOR_SNAPSHOT_SCHEMA,
     lifecycle: snapshot.lifecycle,
     browserEpochNumber: snapshot.browserEpochNumber,
     workspaceRevision: snapshot.workspaceRevision,
     maximumAllocatedRenderGeneration: snapshot.maximumAllocatedRenderGeneration,
-    sources,
+    sources: mergedSources,
     activeSource:
       snapshot.activeSource === null
         ? null
@@ -782,7 +951,7 @@ class GrandHallT554NativeReviewOperatorSessionControllerV2 implements GrandHallT
   constructor(
     delegate: Delegate,
     private readonly factories: __GrandHallT554NativeReviewOperatorDelegateFactoriesV2,
-    private readonly sourceCatalog: readonly GrandHallT554NativeReviewOperatorSourceCatalogEntryV2[],
+    private readonly sourceCatalog: readonly GrandHallT554NativeReviewOperatorSourceCatalogIdentityV2[],
   ) {
     this.#delegate = delegate;
   }
@@ -895,13 +1064,31 @@ class GrandHallT554NativeReviewOperatorSessionControllerV2 implements GrandHallT
   #projectSource(
     snapshot: GrandHallT554NativeReviewSourceSessionSnapshotV2,
   ): GrandHallT554NativeReviewOperatorSessionSnapshotV2 {
-    return projectSourceSnapshot(snapshot, this.sourceCatalog);
+    try {
+      return projectSourceSnapshot(snapshot, this.sourceCatalog);
+    } catch (error) {
+      this.#recoveryRequired = true;
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        "Operator source projection failed closed.",
+        error,
+      );
+    }
   }
 
   #projectMask(
     snapshot: GrandHallT554NativeReviewMaskWorkflowSnapshotV2,
   ): GrandHallT554NativeReviewOperatorSessionSnapshotV2 {
-    return projectMaskSnapshot(snapshot, this.sourceCatalog);
+    try {
+      return projectMaskSnapshot(snapshot, this.sourceCatalog);
+    } catch (error) {
+      this.#recoveryRequired = true;
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        "Operator mask projection failed closed.",
+        error,
+      );
+    }
   }
 
   #sourceActive(

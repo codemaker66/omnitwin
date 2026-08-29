@@ -1279,6 +1279,21 @@ describe("Grand Hall T-554 source-only durable session v2", () => {
           classification: "no_observed_grand_hall_pixels",
         },
       });
+      const decidedHistory = decided.durableSourceHistory[0];
+      expect(decidedHistory).toEqual({
+        inventoryIndex: 0,
+        sweepNumber: 1,
+        authorityNoneRecord: {
+          state: "decision_recorded",
+          decision: {
+            result: "EXCLUDE",
+            classification: "no_observed_grand_hall_pixels",
+          },
+          attestation: "not_recorded",
+        },
+      });
+      expect(Object.isFrozen(decided.durableSourceHistory)).toBe(true);
+      expect(Object.isFrozen(decidedHistory?.authorityNoneRecord)).toBe(true);
 
       const decision = activeSource(decided).decision;
       if (decision === null)
@@ -1399,6 +1414,15 @@ describe("Grand Hall T-554 source-only durable session v2", () => {
         agentDecisionAuthority: "none",
         authority: "none",
       });
+      const attestedHistory = attested.durableSourceHistory;
+      expect(attestedHistory[0]?.authorityNoneRecord).toEqual({
+        state: "authority_none_attestation_recorded",
+        decision: {
+          result: "EXCLUDE",
+          classification: "no_observed_grand_hall_pixels",
+        },
+        attestation: "not_cryptographic",
+      });
 
       const attestedBrowserEpoch = attested.browserEpochNonceSha256;
       const scope = await expectedSessionScope(fixture.sessionRoot);
@@ -1471,6 +1495,7 @@ describe("Grand Hall T-554 source-only durable session v2", () => {
         reason: "session_stop",
       });
       expect(abandoned.activeSource).toBeNull();
+      expect(abandoned.durableSourceHistory).toEqual(attestedHistory);
       const stopped = await cleanAttestedSession.stop({
         expectedWorkspaceRevision: abandoned.workspaceRevision,
       });
@@ -1480,6 +1505,7 @@ describe("Grand Hall T-554 source-only durable session v2", () => {
         authority: "none",
         finalDecision: "PENDING",
       });
+      expect(stopped.durableSourceHistory).toEqual(attestedHistory);
       const stableDigests = {
         rootInventorySha256: stopped.rootInventorySha256,
         verificationAttestationSha256: stopped.verificationAttestationSha256,
@@ -1491,10 +1517,12 @@ describe("Grand Hall T-554 source-only durable session v2", () => {
           { sessionRoot: fixture.sessionRoot },
           fixture.withoutCrashSeam(),
         );
-      expect(await reopened.snapshot()).toMatchObject({
+      const reopenedStopped = await reopened.snapshot();
+      expect(reopenedStopped).toMatchObject({
         lifecycle: "stopped",
         ...stableDigests,
       });
+      expect(reopenedStopped.durableSourceHistory).toEqual(attestedHistory);
       const durableCoordinatorEvents = await coordinatorEvents(
         fixture.sessionRoot,
       );
@@ -3421,6 +3449,17 @@ describe("Grand Hall T-554 mask-workflow durable session v2", () => {
         },
       });
       expect(includedActive.decision).not.toBeNull();
+      const includedHistory = included.durableSourceHistory;
+      expect(
+        includedHistory[includedActive.inventoryIndex]?.authorityNoneRecord,
+      ).toEqual({
+        state: "decision_recorded",
+        decision: {
+          result: "INCLUDE",
+          classification: "grand_hall_core",
+        },
+        attestation: "not_recorded",
+      });
 
       const decisionEvents = (
         await coordinatorEvents(fixture.sessionRoot)
@@ -3508,12 +3547,25 @@ describe("Grand Hall T-554 mask-workflow durable session v2", () => {
           },
         },
       });
+      const attestedIncludeHistory = attested.durableSourceHistory;
+      expect(
+        attestedIncludeHistory[includedActive.inventoryIndex]
+          ?.authorityNoneRecord,
+      ).toEqual({
+        state: "authority_none_attestation_recorded",
+        decision: {
+          result: "INCLUDE",
+          classification: "grand_hall_core",
+        },
+        attestation: "not_cryptographic",
+      });
 
       const abandoned = await clean.abandonActiveSource({
         ...maskGuard(attested),
         reason: "operator_abandon",
       });
       expect(abandoned.activeSource).toBeNull();
+      expect(abandoned.durableSourceHistory).toEqual(attestedIncludeHistory);
       const abandonEvent = [...(await coordinatorEvents(fixture.sessionRoot))]
         .reverse()
         .find((candidate) => candidate.eventType === "source.abandoned.v2");
@@ -3542,6 +3594,7 @@ describe("Grand Hall T-554 mask-workflow durable session v2", () => {
         exportAuthorized: false,
         generatedContentAuthorized: false,
       });
+      expect(stopped.durableSourceHistory).toEqual(attestedIncludeHistory);
       await clean.close();
 
       const reopenedStopped =
@@ -3549,13 +3602,17 @@ describe("Grand Hall T-554 mask-workflow durable session v2", () => {
           { sessionRoot: fixture.sessionRoot },
           maskWorkflowDependencies(fixture.withoutCrashSeam()),
         );
-      expect(await reopenedStopped.snapshot()).toMatchObject({
+      const reopenedStoppedSnapshot = await reopenedStopped.snapshot();
+      expect(reopenedStoppedSnapshot).toMatchObject({
         lifecycle: "stopped",
         activeSource: null,
         authority: "none",
         reviewState: "human_pending",
         finalDecision: "PENDING",
       });
+      expect(reopenedStoppedSnapshot.durableSourceHistory).toEqual(
+        attestedIncludeHistory,
+      );
       await reopenedStopped.close();
     },
   );

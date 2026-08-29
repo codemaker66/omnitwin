@@ -20,6 +20,11 @@ import {
   replayGrandHallT554NativeReviewCoordinatorV2,
 } from "./grand-hall-t554-native-review-coordinator-replay-v2.js";
 import {
+  assertGrandHallT554NativeReviewActiveHistoryConsistencyV2,
+  projectGrandHallT554NativeReviewDurableSourceHistoryV2,
+  type GrandHallT554NativeReviewDurableSourceHistoryEntryV2,
+} from "./grand-hall-t554-native-review-durable-source-history-v2.js";
+import {
   createGrandHallT554NativeReviewDurableJournalV2,
   openGrandHallT554NativeReviewDurableJournalV2,
   openGrandHallT554NativeReviewVerifiedDurableChildEvidenceV2,
@@ -325,6 +330,8 @@ export interface GrandHallT554NativeReviewSourceSessionSnapshotV2 {
   readonly maximumAllocatedRenderGeneration: number;
   readonly browserEpochNumber: number;
   readonly browserEpochNonceSha256: Sha256;
+  readonly durableSourceHistory:
+    readonly GrandHallT554NativeReviewDurableSourceHistoryEntryV2[];
   readonly activeSource: {
     readonly inventoryIndex: number;
     readonly sweepNumber: number;
@@ -1292,6 +1299,38 @@ class GrandHallT554NativeReviewSourceSessionControllerV2
         humanAttestation: coordinator.activeSource.humanAttestation,
       };
     }
+    let durableSourceHistory:
+      readonly GrandHallT554NativeReviewDurableSourceHistoryEntryV2[];
+    try {
+      durableSourceHistory =
+        projectGrandHallT554NativeReviewDurableSourceHistoryV2({
+          sourceAt: (inventoryIndex) =>
+            this.dependencies.registry.sourceAt(inventoryIndex).source,
+          recordedSourceDecisions: coordinator.recordedSourceDecisions,
+          recordedHumanAttestations: coordinator.recordedHumanAttestations,
+        });
+      assertGrandHallT554NativeReviewActiveHistoryConsistencyV2(
+        durableSourceHistory,
+        coordinator.activeSource === null
+          ? null
+          : {
+              inventoryIndex:
+                coordinator.activeSource.sourceCustody.source.inventoryIndex,
+              sweepNumber:
+                coordinator.activeSource.sourceCustody.source.sweepNumber,
+              phase: coordinator.activeSource.phase,
+              decision: coordinator.activeSource.decision,
+              humanAttestationRecorded:
+                coordinator.activeSource.humanAttestation !== null,
+            },
+      );
+    } catch (error) {
+      throw fail(
+        "INTERNAL_INVARIANT_FAILED",
+        "Verified coordinator history could not be projected safely.",
+        error,
+      );
+    }
     return Object.freeze({
       schemaVersion: SESSION_SNAPSHOT_SCHEMA,
       lifecycle: coordinator.lifecycle,
@@ -1301,6 +1340,7 @@ class GrandHallT554NativeReviewSourceSessionControllerV2
         coordinator.maximumAllocatedRenderGeneration,
       browserEpochNumber: browser.number,
       browserEpochNonceSha256: browser.nonceSha256,
+      durableSourceHistory,
       activeSource,
       authority: "none",
       reviewState: "human_pending",
