@@ -44,6 +44,41 @@ import {
   type GrandHallT554VerifiedNativeReviewImplementationPackCandidateV1,
 } from "./grand-hall-t554-native-review-implementation-manifest.js";
 import {
+  GRAND_HALL_T554_NATIVE_REVIEW_CORE_HTTP_ADAPTER_IMPORT_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_DECODER_METADATA_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_ABI_SCHEMA_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_GATE_CORE_IMPORT_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_ADAPTER_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_ID_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_SCHEMA_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_CPP_DLL_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_DLL_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_PACKAGE_METADATA_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_BOOTSTRAP_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_INSPECTOR_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_PROBE_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_SERVER_SHARP_LOADER_IMPORT_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_SHARP_LOADER_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_SHARP_NATIVE_ADDON_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_STATIC_APPLICATION_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_STATIC_DOCUMENT_MEMBER_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_STATIC_STYLESHEET_MEMBER_V2,
+  __testOnlyGrandHallT554NativeReviewImplementationManifestV2,
+  type GrandHallT554NativeReviewImplementationDecoderClosureV2,
+  type GrandHallT554NativeReviewImplementationManifestV2,
+  type GrandHallT554NativeReviewImplementationMemberV2,
+  type GrandHallT554VerifiedNativeReviewImplementationPackCandidateV2,
+} from "./grand-hall-t554-native-review-implementation-manifest-v2.js";
+import {
+  GRAND_HALL_T554_NATIVE_REVIEW_BROWSER_JAVASCRIPT_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2,
+  GRAND_HALL_T554_NATIVE_REVIEW_STYLESHEET_V2,
+} from "./grand-hall-t554-native-review-assets-v2.js";
+import {
   attestGrandHallT554NativeReviewRuntimeCandidateV1,
   GrandHallT554NativeReviewRuntimeAttestationError,
   type GrandHallT554NativeReviewRuntimeAttestationCandidateV1,
@@ -52,8 +87,12 @@ import { parseGrandHallT554StrictJson } from "./grand-hall-t554-strict-json.js";
 
 export const GRAND_HALL_T554_NATIVE_REVIEW_COMPILED_PACK_BUILDER_V1 =
   "venviewer.grand-hall-t554-native-review-compiled-pack-builder.v1";
+export const GRAND_HALL_T554_NATIVE_REVIEW_COMPILED_PACK_BUILDER_V2 =
+  "venviewer.grand-hall-t554-native-review-compiled-pack-builder.v2";
 
 const SHARP_VERSION = "0.35.3";
+const COLOUR_VERSION = "1.1.0";
+const ZOD_VERSION = "3.24.2";
 const LIBVIPS_VERSION = "8.18.3";
 const ESBUILD_VERSION = "0.25.0";
 const CORE_ENTRY_RELATIVE_PATH =
@@ -66,6 +105,12 @@ const RUNTIME_BOOTSTRAP_ENTRY_RELATIVE_PATH =
   "tools/reconstruction-foundry/src/grand-hall-t554-native-review-runtime-bootstrap.ts";
 const RUNTIME_INSPECTOR_SOURCE_RELATIVE_PATH =
   "tools/reconstruction-foundry/native/grand-hall-t554-runtime-inspector/grand_hall_t554_runtime_inspector.node";
+const PAYLOAD_GATE_ENTRY_RELATIVE_PATH_V2 =
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-payload-gate-v2.ts";
+const PAYLOAD_CORE_ENTRY_RELATIVE_PATH_V2 =
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-payload-core-v2.ts";
+const HTTP_ADAPTER_ENTRY_RELATIVE_PATH_V2 =
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-http-response-adapter-v2.ts";
 const SERVER_BUNDLE_MEMBER = "server/native-review-server-bundle.js";
 const HTTP_ADAPTER_MEMBER = "server/review-http-adapter.js";
 const SHARP_LOADER_MEMBER = "vendor/sharp/loader.js";
@@ -76,6 +121,97 @@ const LIBVIPS_CPP_DLL_MEMBER = "vendor/libvips/libvips-cpp-8.18.3.dll";
 const RUNTIME_PROBE_SHA256 =
   "sha256:3d1e13e141be146ebaeac81e114e0609dfa6cfdc8516fe0adc039c4584c54078";
 const SHARP_LOADER_IMPORT_FROM_SERVER = "../vendor/sharp/loader.js";
+const FIXED_ADMISSION_ABI_SOURCE_IMPORT_V2 =
+  "./grand-hall-t554-native-review-fixed-admission-abi-v2.js";
+const LEGACY_IMPLEMENTATION_MANIFEST_SOURCE_IMPORT =
+  "./grand-hall-t554-native-review-implementation-manifest.js";
+const ZOD_ENTRY_RELATIVE_PATH_V2 =
+  "tools/reconstruction-foundry/node_modules/zod/lib/index.mjs";
+const CORE_REAL_INPUT_RELATIVE_PATHS_V2 = Object.freeze([
+  "packages/reconstruction-foundry/src/canonical-json.ts",
+  "packages/reconstruction-foundry/src/errors.ts",
+  "packages/reconstruction-foundry/src/hash.ts",
+  "packages/types/src/artifact-manifest.ts",
+  "packages/types/src/artifact-type.ts",
+  "packages/types/src/canonical-layout-snapshot.ts",
+  "packages/types/src/configuration.ts",
+  "packages/types/src/coordinate-frame.ts",
+  "packages/types/src/exposure-metadata.ts",
+  "packages/types/src/furniture.ts",
+  "packages/types/src/grand-hall-room-scope-artifacts-v2.ts",
+  "packages/types/src/grand-hall-room-scope-artifacts-v3.ts",
+  "packages/types/src/grand-hall-room-scope-artifacts.ts",
+  "packages/types/src/layout-proof-object.ts",
+  "packages/types/src/omnitwin-foundry-grand-hall-room-membership.ts",
+  "packages/types/src/runtime-venue-manifest.ts",
+  "packages/types/src/space.ts",
+  "packages/types/src/user.ts",
+  "packages/types/src/venue.ts",
+  ZOD_ENTRY_RELATIVE_PATH_V2,
+  "tools/reconstruction-foundry/src/grand-hall-pilot-inspection.ts",
+  "tools/reconstruction-foundry/src/grand-hall-room9-boundary.ts",
+  "tools/reconstruction-foundry/src/grand-hall-room9-source-receipt.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-boundary-review.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-cleanup-marker-evidence.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-interface-atlas.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-media-validation.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-mask-spatial-digest-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-media-kernel.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-coordinator-replay-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-coverage.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-durable-journal-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-durable-source-history-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-events-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-http-contract-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-journal.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-replay-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-store.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-workflow-session-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-operator-session-v2.ts",
+  PAYLOAD_CORE_ENTRY_RELATIVE_PATH_V2,
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-production-authority-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-registry.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-replay-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-router-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-session-orchestration-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-session-owner-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-session-store-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-source-kernel-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-review-source-session-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-native-source-epoch.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-panorama-review.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-path-safety.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v2.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v3-contract.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v3-files.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v3.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-review-pack.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-strict-json.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t554-svg-safety.ts",
+  "tools/reconstruction-foundry/src/grand-hall-t561-panorama-visual-observation.ts",
+  "tools/reconstruction-foundry/src/local-session-http.ts",
+]);
+const CORE_VIRTUAL_INPUTS_V2 = Object.freeze([
+  "t554-v2-fixed-admission-abi-proxy:fixed-admission-abi-proxy.js",
+  "t554-v2-foundry-utc-instant-bridge:foundry-utc-instant-bridge.js",
+  "t554-v2-reviewed-foundry-bridge:reviewed-foundry-bridge.js",
+  "t554-v2-reviewed-types-bridge:reviewed-types-bridge.js",
+  "t554-v2-sharp-proxy:sharp-proxy.js",
+  "t554-v2-unavailable-legacy-implementation-manifest:legacy-implementation-manifest.js",
+]);
+const SHARP_DIST_INPUT_FILENAMES_V2 = Object.freeze([
+  "channel.mjs",
+  "colour.mjs",
+  "composite.mjs",
+  "constructor.mjs",
+  "index.mjs",
+  "input.mjs",
+  "is.mjs",
+  "operation.mjs",
+  "output.mjs",
+  "resize.mjs",
+  "utility.mjs",
+]);
 const NODE_BUILTIN_SPECIFIERS = new Set(
   builtinModules.flatMap((specifier) => [specifier, `node:${specifier}`]),
 );
@@ -85,6 +221,13 @@ const MODULE_METADATA = Object.freeze({
   private: true,
   type: "module",
   version: "1.0.0",
+});
+
+const MODULE_METADATA_V2 = Object.freeze({
+  name: "@venviewer/grand-hall-t554-native-review-implementation-pack",
+  private: true,
+  type: "module",
+  version: "2.0.0",
 });
 
 const STATIC_INDEX_HTML = `<!doctype html>
@@ -183,7 +326,7 @@ interface EsbuildResolveResult {
 
 interface EsbuildLoadResult {
   readonly contents: string;
-  readonly loader: "js";
+  readonly loader: "js" | "ts";
   readonly resolveDir?: string;
 }
 
@@ -213,8 +356,15 @@ interface EsbuildMetafileImport {
   readonly external?: boolean;
 }
 
+export interface GrandHallT554NativeReviewCompiledModuleImportV2 {
+  readonly path: string;
+  readonly kind: string;
+  readonly external: boolean;
+}
+
 interface EsbuildMetafileOutput {
   readonly bytes: number;
+  readonly exports: readonly string[];
   readonly imports: readonly EsbuildMetafileImport[];
 }
 
@@ -237,7 +387,7 @@ interface EsbuildBuildOptions {
   readonly legalComments: "none";
   readonly logLevel: "silent";
   readonly metafile: true;
-  readonly minifyIdentifiers: false;
+  readonly minifyIdentifiers: boolean;
   readonly minifySyntax: true;
   readonly minifyWhitespace: true;
   readonly outfile: string;
@@ -275,10 +425,41 @@ export interface GrandHallT554NativeReviewCompiledPackBuildResultV1 {
   readonly sharpLoaderExternalImports: readonly string[];
 }
 
+export interface GrandHallT554NativeReviewCompiledPackBuildResultV2 {
+  readonly schemaVersion: typeof GRAND_HALL_T554_NATIVE_REVIEW_COMPILED_PACK_BUILDER_V2;
+  readonly packRoot: string;
+  readonly manifestPath: string;
+  readonly manifest: GrandHallT554NativeReviewImplementationManifestV2;
+  readonly reviewedAnchorCandidate: __GrandHallT554NativeReviewImplementationReviewedAnchor;
+  readonly verifiedCandidate: GrandHallT554VerifiedNativeReviewImplementationPackCandidateV2;
+  readonly gateExternalImports: readonly string[];
+  readonly coreExternalImports: readonly string[];
+  readonly httpAdapterExternalImports: readonly string[];
+  readonly runtimeBootstrapExternalImports: readonly string[];
+  readonly sharpLoaderExternalImports: readonly string[];
+  readonly gateOutputImports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[];
+  readonly coreOutputImports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[];
+  readonly httpAdapterOutputImports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[];
+  readonly runtimeBootstrapOutputImports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[];
+  readonly sharpLoaderOutputImports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[];
+  readonly gateExports: readonly string[];
+  readonly coreExports: readonly string[];
+  readonly httpAdapterExports: readonly string[];
+  readonly runtimeBootstrapExports: readonly string[];
+  readonly sharpLoaderExports: readonly string[];
+}
+
 export interface __GrandHallT554NativeReviewCompiledPackBuildSeamV1 {
   readonly afterStagingRootCreated?: (stagingRoot: string) => Promise<void> | void;
   readonly beforeAtomicPublish?: (facts: {
     readonly stagingRoot: string;
+    readonly outputRoot: string;
+  }) => Promise<void> | void;
+}
+
+export interface __GrandHallT554NativeReviewCompiledPackBuildSeamV2
+  extends __GrandHallT554NativeReviewCompiledPackBuildSeamV1 {
+  readonly afterAtomicPublish?: (facts: {
     readonly outputRoot: string;
   }) => Promise<void> | void;
 }
@@ -583,6 +764,74 @@ async function installedSharpClosure(workspaceRoot: string): Promise<{
   return { sharpRoot, versions, nativeAddon, libvipsDll, libvipsCppDll };
 }
 
+async function installedSharpClosureV2(workspaceRoot: string): Promise<
+  Awaited<ReturnType<typeof installedSharpClosure>> & {
+    readonly colourRoot: string;
+  }
+> {
+  const sharp = await installedSharpClosure(workspaceRoot);
+  const colourPackageDirectory = await uniquePnpmPackageDirectory(
+    workspaceRoot,
+    `@img+colour@${COLOUR_VERSION}`,
+    `@img+colour@${COLOUR_VERSION}_`,
+  );
+  const colourRoot = await realpath(
+    resolve(colourPackageDirectory, "node_modules", "@img", "colour"),
+  );
+  const colourPackageJson = parseGrandHallT554StrictJson(
+    await readFile(resolve(colourRoot, "package.json")),
+  );
+  if (
+    !isRecord(colourPackageJson) ||
+    colourPackageJson.version !== COLOUR_VERSION
+  ) {
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `The installed @img/colour package is not exactly ${COLOUR_VERSION}.`,
+    );
+  }
+  await Promise.all([
+    requireDirectRegularFile(
+      resolve(colourRoot, "index.cjs"),
+      "Pinned V2 @img/colour entry",
+    ),
+    requireDirectRegularFile(
+      resolve(colourRoot, "color.cjs"),
+      "Pinned V2 @img/colour implementation",
+    ),
+    ...SHARP_DIST_INPUT_FILENAMES_V2.map((filename) =>
+      requireDirectRegularFile(
+        resolve(sharp.sharpRoot, "dist", filename),
+        `Pinned V2 Sharp source ${filename}`,
+      ),
+    ),
+  ]);
+  return { ...sharp, colourRoot };
+}
+
+async function pinnedZodEntryV2(workspaceRoot: string): Promise<string> {
+  const zodRoot = resolve(
+    workspaceRoot,
+    "tools/reconstruction-foundry/node_modules/zod",
+  );
+  const zodEntry = resolve(workspaceRoot, ZOD_ENTRY_RELATIVE_PATH_V2);
+  await requireDirectRegularFile(zodEntry, "Pinned V2 zod entry");
+  const packageJson = parseGrandHallT554StrictJson(
+    await readFile(resolve(zodRoot, "package.json")),
+  );
+  if (
+    !isRecord(packageJson) ||
+    packageJson.name !== "zod" ||
+    packageJson.version !== ZOD_VERSION
+  ) {
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `The pinned V2 zod package is not exactly ${ZOD_VERSION}.`,
+    );
+  }
+  return zodEntry;
+}
+
 function replaceExactlyOnce(
   source: string,
   pattern: string | RegExp,
@@ -654,6 +903,562 @@ function coreSharpClosurePlugin(): EsbuildPlugin {
   };
 }
 
+function hasExactFileImporterV2(
+  args: EsbuildResolveArgs,
+  expectedImporters: ReadonlySet<string>,
+): boolean {
+  return (
+    args.namespace === "file" &&
+    expectedImporters.has(comparablePath(args.importer))
+  );
+}
+
+function exactFileImporterSetV2(
+  workspaceRoot: string,
+  relativePaths: readonly string[],
+): ReadonlySet<string> {
+  return new Set(
+    relativePaths.map((relativePath) =>
+      comparablePath(resolve(workspaceRoot, relativePath)),
+    ),
+  );
+}
+
+function payloadGateDependencyPluginV2(gateEntry: string): EsbuildPlugin {
+  const exactGateImporter = new Set([comparablePath(gateEntry)]);
+  return {
+    name: "t554-v2-fixed-admission-gate-dependencies",
+    setup(build) {
+      build.onResolve(
+        {
+          filter:
+            /^\.\/grand-hall-t554-native-review-fixed-admission-abi-v2\.js$/u,
+        },
+        (args) => {
+          if (
+            args.path !== FIXED_ADMISSION_ABI_SOURCE_IMPORT_V2 ||
+            !hasExactFileImporterV2(args, exactGateImporter)
+          ) {
+            throw fail(
+              "DEPENDENCY_CLOSURE_INVALID",
+              "The V2 gate fixed-admission ABI substitution has an unexpected importer.",
+            );
+          }
+          return {
+            namespace: "t554-v2-fixed-admission-abi-proxy",
+            path: "fixed-admission-abi-proxy.js",
+          };
+        },
+      );
+      build.onResolve({ filter: /^file:\/\/\//u }, (args) => {
+        if (
+          args.namespace !== "t554-v2-fixed-admission-abi-proxy" ||
+          args.importer !== "fixed-admission-abi-proxy.js" ||
+          args.path !==
+            GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2
+        ) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 gate capsule URL substitution changed importer or target.",
+          );
+        }
+        return { external: true, path: args.path };
+      });
+      build.onLoad(
+        {
+          filter: /^fixed-admission-abi-proxy\.js$/u,
+          namespace: "t554-v2-fixed-admission-abi-proxy",
+        },
+        () => ({ contents: fixedAdmissionAbiProxyModuleV2(), loader: "js" }),
+      );
+      build.onResolve(
+        {
+          filter: /^\.\/grand-hall-t554-native-review-payload-core-v2\.js$/u,
+        },
+        (args) => {
+          if (
+            args.path !== GRAND_HALL_T554_NATIVE_REVIEW_GATE_CORE_IMPORT_V2 ||
+            !hasExactFileImporterV2(args, exactGateImporter)
+          ) {
+            throw fail(
+              "DEPENDENCY_CLOSURE_INVALID",
+              "The V2 gate-to-core substitution has an unexpected importer.",
+            );
+          }
+          return {
+            external: true,
+            path: GRAND_HALL_T554_NATIVE_REVIEW_GATE_CORE_IMPORT_V2,
+          };
+        },
+      );
+    },
+  };
+}
+
+function fixedAdmissionAbiProxyModuleV2(): string {
+  return `export {
+  GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_ABI_WITNESS_V2,
+  assertGrandHallT554NativeReviewFixedPackV2,
+  assertGrandHallT554NativeReviewFixedRuntimeAuthorityV2
+} from ${JSON.stringify(GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2)};
+`;
+}
+
+function unavailableLegacyImplementationManifestModuleV2(): string {
+  return `export const GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME = ${JSON.stringify(GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME_V2)};
+export const GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_SCHEMA = "venviewer.grand-hall-t554-native-review-implementation-manifest.v1";
+export function isGrandHallT554VerifiedNativeReviewImplementationPackV1() { return false; }
+export function assertGrandHallT554VerifiedNativeReviewImplementationPackV1() { throw new Error("V1 implementation-pack authority is unavailable inside the fixed-admission V2 payload."); }
+export function assertGrandHallT554LoadedNativeReviewImplementationRuntimeAuthorityV1() { throw new Error("V1 implementation runtime authority is unavailable inside the fixed-admission V2 payload."); }
+`;
+}
+
+function payloadCoreDependencyPluginV2(
+  workspaceRoot: string,
+  exactZodEntry: string,
+): EsbuildPlugin {
+  const routerSourcePath = resolve(
+    workspaceRoot,
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-router-v2.ts",
+  );
+  const exactTypesSources: Readonly<Record<string, string>> = Object.freeze({
+    "t554-v2-types-canonical": resolve(
+      workspaceRoot,
+      "packages/types/src/canonical-layout-snapshot.ts",
+    ),
+    "t554-v2-types-grand-hall-base": resolve(
+      workspaceRoot,
+      "packages/types/src/grand-hall-room-scope-artifacts.ts",
+    ),
+    "t554-v2-types-grand-hall-v2": resolve(
+      workspaceRoot,
+      "packages/types/src/grand-hall-room-scope-artifacts-v2.ts",
+    ),
+    "t554-v2-types-grand-hall-v3": resolve(
+      workspaceRoot,
+      "packages/types/src/grand-hall-room-scope-artifacts-v3.ts",
+    ),
+    "t554-v2-types-grand-hall-membership": resolve(
+      workspaceRoot,
+      "packages/types/src/omnitwin-foundry-grand-hall-room-membership.ts",
+    ),
+  });
+  const exactFoundrySources: Readonly<Record<string, string>> = Object.freeze({
+    "t554-v2-foundry-canonical": resolve(
+      workspaceRoot,
+      "packages/reconstruction-foundry/src/canonical-json.ts",
+    ),
+    "t554-v2-foundry-errors": resolve(
+      workspaceRoot,
+      "packages/reconstruction-foundry/src/errors.ts",
+    ),
+    "t554-v2-foundry-hash": resolve(
+      workspaceRoot,
+      "packages/reconstruction-foundry/src/hash.ts",
+    ),
+  });
+  const exactAbiImporters = exactFileImporterSetV2(workspaceRoot, [
+    PAYLOAD_CORE_ENTRY_RELATIVE_PATH_V2,
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-production-authority-v2.ts",
+  ]);
+  const exactFoundryImporters = exactFileImporterSetV2(workspaceRoot, [
+    "tools/reconstruction-foundry/src/grand-hall-t554-cleanup-marker-evidence.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-durable-journal-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-journal.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-replay-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-workflow-session-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-session-orchestration-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-session-owner-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-session-store-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-source-session-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-panorama-review.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v3-contract.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v3.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t561-panorama-visual-observation.ts",
+  ]);
+  const exactTypesImporters = exactFileImporterSetV2(workspaceRoot, [
+    "tools/reconstruction-foundry/src/grand-hall-t554-media-validation.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-mask-spatial-digest-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-coordinator-replay-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-coverage.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-events-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-replay-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-store.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-registry.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-replay-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-source-kernel-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-source-epoch.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-panorama-review.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v3.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-review-pack.ts",
+  ]);
+  const exactZodImporters = exactFileImporterSetV2(workspaceRoot, [
+    "packages/types/src/artifact-manifest.ts",
+    "packages/types/src/artifact-type.ts",
+    "packages/types/src/canonical-layout-snapshot.ts",
+    "packages/types/src/configuration.ts",
+    "packages/types/src/exposure-metadata.ts",
+    "packages/types/src/furniture.ts",
+    "packages/types/src/grand-hall-room-scope-artifacts-v2.ts",
+    "packages/types/src/grand-hall-room-scope-artifacts-v3.ts",
+    "packages/types/src/grand-hall-room-scope-artifacts.ts",
+    "packages/types/src/layout-proof-object.ts",
+    "packages/types/src/omnitwin-foundry-grand-hall-room-membership.ts",
+    "packages/types/src/runtime-venue-manifest.ts",
+    "packages/types/src/space.ts",
+    "packages/types/src/user.ts",
+    "packages/types/src/venue.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-cleanup-marker-evidence.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-coverage.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-durable-journal-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-events-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-http-contract-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-journal.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-replay-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-store.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-workflow-session-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-operator-session-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-replay-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-session-owner-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-session-store-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-source-kernel-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-source-session-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-source-epoch.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-review-pack-v3-contract.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t561-panorama-visual-observation.ts",
+  ]);
+  const exactSharpImporters = exactFileImporterSetV2(workspaceRoot, [
+    "tools/reconstruction-foundry/src/grand-hall-t554-media-validation.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-store.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-panorama-review.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t561-panorama-visual-observation.ts",
+  ]);
+  const exactLegacyManifestImporters = exactFileImporterSetV2(workspaceRoot, [
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-mask-workflow-session-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-production-authority-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-session-store-v2.ts",
+    "tools/reconstruction-foundry/src/grand-hall-t554-native-review-source-session-v2.ts",
+  ]);
+  const exactMembershipImporter = exactFileImporterSetV2(workspaceRoot, [
+    "packages/types/src/omnitwin-foundry-grand-hall-room-membership.ts",
+  ]);
+  const exactRouterImporter = new Set([comparablePath(routerSourcePath)]);
+  return {
+    name: "t554-v2-fixed-admission-core-dependencies",
+    setup(build) {
+      build.onLoad(
+        { filter: /grand-hall-t554-native-review-router-v2\.ts$/u },
+        async (args) => {
+          if (
+            resolve(args.path).toLowerCase() !== routerSourcePath.toLowerCase()
+          ) {
+            throw fail(
+              "DEPENDENCY_CLOSURE_INVALID",
+              "The V2 router source patch matched an unexpected file.",
+            );
+          }
+          const source = await readFile(args.path, "utf8");
+          const indirectLoopbackOrigin =
+            "`http://${LOOPBACK_HOST}:${String(localPort)}`";
+          if (source.split(indirectLoopbackOrigin).length - 1 !== 1) {
+            throw fail(
+              "DEPENDENCY_CLOSURE_INVALID",
+              "The V2 router no longer contains its one reviewed indirect loopback-origin expression.",
+            );
+          }
+          return {
+            contents: source.replace(
+              indirectLoopbackOrigin,
+              "`http://127.0.0.1:${String(localPort)}`",
+            ),
+            loader: "ts",
+            resolveDir: dirname(args.path),
+          };
+        },
+      );
+      build.onResolve(
+        {
+          filter:
+            /^\.\/grand-hall-t554-native-review-fixed-admission-abi-v2\.js$/u,
+        },
+        (args) => {
+          if (
+            args.path !== FIXED_ADMISSION_ABI_SOURCE_IMPORT_V2 ||
+            !hasExactFileImporterV2(args, exactAbiImporters)
+          ) {
+            throw fail(
+              "DEPENDENCY_CLOSURE_INVALID",
+              "The V2 core fixed-admission ABI substitution has an unexpected importer.",
+            );
+          }
+          return {
+            namespace: "t554-v2-fixed-admission-abi-proxy",
+            path: "fixed-admission-abi-proxy.js",
+          };
+        },
+      );
+      build.onResolve({ filter: /^file:\/\/\//u }, (args) => {
+        if (
+          args.namespace !== "t554-v2-fixed-admission-abi-proxy" ||
+          args.importer !== "fixed-admission-abi-proxy.js" ||
+          args.path !==
+            GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2
+        ) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 core capsule URL substitution changed importer or target.",
+          );
+        }
+        return { external: true, path: args.path };
+      });
+      build.onLoad(
+        {
+          filter: /^fixed-admission-abi-proxy\.js$/u,
+          namespace: "t554-v2-fixed-admission-abi-proxy",
+        },
+        () => ({ contents: fixedAdmissionAbiProxyModuleV2(), loader: "js" }),
+      );
+      build.onResolve(
+        { filter: /^@omnitwin\/reconstruction-foundry$/u },
+        (args) => {
+          if (!hasExactFileImporterV2(args, exactFoundryImporters)) {
+            throw fail(
+              "DEPENDENCY_CLOSURE_INVALID",
+              "The V2 reviewed foundry bridge has an unexpected importer.",
+            );
+          }
+          return {
+            namespace: "t554-v2-reviewed-foundry-bridge",
+            path: "reviewed-foundry-bridge.js",
+          };
+        },
+      );
+      build.onResolve({ filter: /^t554-v2-foundry-/u }, (args) => {
+        if (
+          args.namespace !== "t554-v2-reviewed-foundry-bridge" ||
+          args.importer !== "reviewed-foundry-bridge.js"
+        ) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 reviewed foundry bridge changed importer or namespace.",
+          );
+        }
+        const path = exactFoundrySources[args.path];
+        if (path === undefined) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 reviewed foundry bridge requested an unreviewed source.",
+          );
+        }
+        return { namespace: "file", path };
+      });
+      build.onLoad(
+        {
+          filter: /^reviewed-foundry-bridge\.js$/u,
+          namespace: "t554-v2-reviewed-foundry-bridge",
+        },
+        () => ({
+          contents: `export * from "t554-v2-foundry-canonical";
+export * from "t554-v2-foundry-errors";
+export * from "t554-v2-foundry-hash";
+`,
+          loader: "js",
+        }),
+      );
+      build.onResolve({ filter: /^@omnitwin\/types$/u }, (args) => {
+        if (!hasExactFileImporterV2(args, exactTypesImporters)) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 reviewed types bridge has an unexpected importer.",
+          );
+        }
+        return {
+          namespace: "t554-v2-reviewed-types-bridge",
+          path: "reviewed-types-bridge.js",
+        };
+      });
+      build.onResolve({ filter: /^t554-v2-types-/u }, (args) => {
+        if (
+          args.namespace !== "t554-v2-reviewed-types-bridge" ||
+          args.importer !== "reviewed-types-bridge.js"
+        ) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 reviewed types bridge changed importer or namespace.",
+          );
+        }
+        const path = exactTypesSources[args.path];
+        if (path === undefined) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 reviewed types bridge requested an unreviewed source.",
+          );
+        }
+        return { namespace: "file", path };
+      });
+      build.onLoad(
+        {
+          filter: /^reviewed-types-bridge\.js$/u,
+          namespace: "t554-v2-reviewed-types-bridge",
+        },
+        () => ({
+          contents: `export * from "t554-v2-types-canonical";
+export * from "t554-v2-types-grand-hall-base";
+export * from "t554-v2-types-grand-hall-v2";
+export * from "t554-v2-types-grand-hall-v3";
+export * from "t554-v2-types-grand-hall-membership";
+`,
+          loader: "js",
+        }),
+      );
+      build.onResolve({ filter: /^zod$/u }, (args) => {
+        const fromUtcBridge =
+          args.namespace === "t554-v2-foundry-utc-instant-bridge" &&
+          args.importer === "foundry-utc-instant-bridge.js";
+        if (
+          !fromUtcBridge &&
+          !hasExactFileImporterV2(args, exactZodImporters)
+        ) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 pinned zod entry has an unexpected importer.",
+          );
+        }
+        return {
+          namespace: "file",
+          path: exactZodEntry,
+        };
+      });
+      build.onResolve({ filter: /^\.\/omnitwin-foundry\.js$/u }, (args) => {
+        if (
+          args.path !== "./omnitwin-foundry.js" ||
+          !hasExactFileImporterV2(args, exactMembershipImporter)
+        ) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 foundry UTC-instant bridge has an unexpected importer.",
+          );
+        }
+        return {
+          namespace: "t554-v2-foundry-utc-instant-bridge",
+          path: "foundry-utc-instant-bridge.js",
+        };
+      });
+      build.onLoad(
+        {
+          filter: /^foundry-utc-instant-bridge\.js$/u,
+          namespace: "t554-v2-foundry-utc-instant-bridge",
+        },
+        () => ({
+          contents: `import { z } from "zod";
+const EXACT_UTC_MILLISECOND_INSTANT = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$/u;
+export const FoundryUtcInstantSchema = z.string()
+  .regex(EXACT_UTC_MILLISECOND_INSTANT, "timestamp must use exact YYYY-MM-DDTHH:mm:ss.sssZ form")
+  .refine((value) => !value.startsWith("0000-"), "timestamp year must be between 0001 and 9999")
+  .refine((value) => { const parsed = Date.parse(value); return Number.isFinite(parsed) && new Date(parsed).toISOString() === value; }, "timestamp must be a canonical real UTC millisecond instant");
+`,
+          loader: "js",
+        }),
+      );
+      build.onResolve(
+        {
+          filter:
+            /^\.\/grand-hall-t554-native-review-http-response-adapter-v2\.js$/u,
+        },
+        (args) => {
+          if (
+            args.path !==
+              GRAND_HALL_T554_NATIVE_REVIEW_CORE_HTTP_ADAPTER_IMPORT_V2 ||
+            !hasExactFileImporterV2(args, exactRouterImporter)
+          ) {
+            throw fail(
+              "DEPENDENCY_CLOSURE_INVALID",
+              "The V2 trusted HTTP adapter substitution has an unexpected importer.",
+            );
+          }
+          return {
+            external: true,
+            path: GRAND_HALL_T554_NATIVE_REVIEW_CORE_HTTP_ADAPTER_IMPORT_V2,
+          };
+        },
+      );
+      build.onResolve({ filter: /^sharp$/u }, (args) => {
+        if (!hasExactFileImporterV2(args, exactSharpImporters)) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The V2 Sharp proxy has an unexpected importer.",
+          );
+        }
+        return {
+          namespace: "t554-v2-sharp-proxy",
+          path: "sharp-proxy.js",
+        };
+      });
+      build.onResolve(
+        { filter: /^\.\.\/vendor\/sharp\/loader\.js$/u },
+        (args) => {
+          if (
+            args.namespace !== "t554-v2-sharp-proxy" ||
+            args.importer !== "sharp-proxy.js" ||
+            args.path !==
+              GRAND_HALL_T554_NATIVE_REVIEW_SERVER_SHARP_LOADER_IMPORT_V2
+          ) {
+            throw fail(
+              "DEPENDENCY_CLOSURE_INVALID",
+              "The V2 Sharp proxy changed importer or target.",
+            );
+          }
+          return { external: true, path: args.path };
+        },
+      );
+      build.onLoad(
+        {
+          filter: /^sharp-proxy\.js$/u,
+          namespace: "t554-v2-sharp-proxy",
+        },
+        () => ({
+          contents: `export { default } from ${JSON.stringify(GRAND_HALL_T554_NATIVE_REVIEW_SERVER_SHARP_LOADER_IMPORT_V2)};\n`,
+          loader: "js",
+        }),
+      );
+      build.onResolve(
+        {
+          filter:
+            /^\.\/grand-hall-t554-native-review-implementation-manifest\.js$/u,
+        },
+        (args) => {
+          if (
+            args.path !== LEGACY_IMPLEMENTATION_MANIFEST_SOURCE_IMPORT ||
+            !hasExactFileImporterV2(args, exactLegacyManifestImporters)
+          ) {
+            throw fail(
+              "DEPENDENCY_CLOSURE_INVALID",
+              "The V2 unavailable legacy-manifest substitution has an unexpected importer.",
+            );
+          }
+          return {
+            namespace: "t554-v2-unavailable-legacy-implementation-manifest",
+            path: "legacy-implementation-manifest.js",
+          };
+        },
+      );
+      build.onLoad(
+        {
+          filter: /^legacy-implementation-manifest\.js$/u,
+          namespace: "t554-v2-unavailable-legacy-implementation-manifest",
+        },
+        () => ({
+          contents: unavailableLegacyImplementationManifestModuleV2(),
+          loader: "js",
+        }),
+      );
+    },
+  };
+}
+
 function sharpLoaderPlugin(
   sharpRoot: string,
   versions: Readonly<Record<string, string>>,
@@ -688,6 +1493,73 @@ function sharpLoaderPlugin(
   };
 }
 
+function sharpLoaderPluginV2(
+  sharpRoot: string,
+  colourRoot: string,
+  versions: Readonly<Record<string, string>>,
+): EsbuildPlugin {
+  const sharpDist = resolve(sharpRoot, "dist");
+  const utilityPath = resolve(sharpDist, "utility.mjs").toLowerCase();
+  const sharpNativeImporters = new Set(
+    ["constructor.mjs", "input.mjs", "output.mjs", "utility.mjs"].map(
+      (filename) => comparablePath(resolve(sharpDist, filename)),
+    ),
+  );
+  const exactColourImporter = new Set([
+    comparablePath(resolve(sharpDist, "colour.mjs")),
+  ]);
+  return {
+    name: "t554-v2-win32-x64-sharp-closure",
+    setup(build) {
+      build.onResolve({ filter: /(?:^|[\\/])sharp\.mjs$/u }, (args) => {
+        if (
+          resolve(args.resolveDir, args.path).toLowerCase() !==
+            resolve(sharpDist, "sharp.mjs").toLowerCase() ||
+          !hasExactFileImporterV2(args, sharpNativeImporters)
+        ) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The vendored Sharp native substitution has an unexpected importer.",
+          );
+        }
+        return { namespace: "t554-sharp-native", path: "sharp.mjs" };
+      });
+      build.onResolve({ filter: /^@img\/colour$/u }, (args) => {
+        if (!hasExactFileImporterV2(args, exactColourImporter)) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The vendored Sharp colour dependency has an unexpected importer.",
+          );
+        }
+        return {
+          namespace: "file",
+          path: resolve(colourRoot, "index.cjs"),
+        };
+      });
+      build.onLoad(
+        { filter: /^sharp\.mjs$/u, namespace: "t554-sharp-native" },
+        () => ({ contents: sharpNativeBindingModule(), loader: "js" }),
+      );
+      build.onLoad({ filter: /utility\.mjs$/u }, async (args) => {
+        if (resolve(args.path).toLowerCase() !== utilityPath) {
+          throw fail(
+            "DEPENDENCY_CLOSURE_INVALID",
+            "The vendored V2 Sharp utility patch matched an unexpected file.",
+          );
+        }
+        return {
+          contents: patchSharpUtilityModule(
+            await readFile(args.path, "utf8"),
+            versions,
+          ),
+          loader: "js",
+          resolveDir: sharpDist,
+        };
+      });
+    },
+  };
+}
+
 function externalImports(result: EsbuildBuildResult): readonly string[] {
   if (result.metafile === undefined) {
     throw fail("BUILD_FAILED", "esbuild did not return its required metafile.");
@@ -697,6 +1569,173 @@ function externalImports(result: EsbuildBuildResult): readonly string[] {
     .filter((entry) => entry.external === true)
     .map((entry) => entry.path)
     .sort();
+}
+
+function exactMetafile(result: EsbuildBuildResult, label: string): EsbuildMetafile {
+  if (result.metafile === undefined) {
+    throw fail("BUILD_FAILED", `${label} did not return its required metafile.`);
+  }
+  return result.metafile;
+}
+
+function normalizedMetafileInput(input: string): string {
+  return input.replaceAll("\\", "/");
+}
+
+function assertExactMetafileInputClosureV2(
+  result: EsbuildBuildResult,
+  expectedInputs: readonly string[],
+  label: string,
+): void {
+  assertExactMetafileInputKeysV2(
+    Object.keys(exactMetafile(result, label).inputs),
+    expectedInputs,
+    label,
+  );
+}
+
+function assertExactMetafileInputKeysV2(
+  actualInputs: readonly string[],
+  expectedInputs: readonly string[],
+  label: string,
+): void {
+  const actual = actualInputs.map(normalizedMetafileInput).sort();
+  const expected = expectedInputs.map(normalizedMetafileInput).sort();
+  if (
+    actual.length !== expected.length ||
+    actual.some((input, index) => input !== expected[index])
+  ) {
+    const expectedSet = new Set(expected);
+    const actualSet = new Set(actual);
+    const unexpected = actual.filter((input) => !expectedSet.has(input));
+    const missing = expected.filter((input) => !actualSet.has(input));
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `${label} metafile input closure changed (unexpected: ${unexpected.join(", ") || "none"}; missing: ${missing.join(", ") || "none"}).`,
+    );
+  }
+}
+
+export const __testOnlyGrandHallT554NativeReviewCompiledPackBuilderV2 =
+  Object.freeze({
+    reviewedCoreMetafileInputKeys(): readonly string[] {
+      return Object.freeze([
+        ...CORE_REAL_INPUT_RELATIVE_PATHS_V2,
+        ...CORE_VIRTUAL_INPUTS_V2,
+      ]);
+    },
+    assertExactCoreMetafileInputClosure(inputKeys: readonly string[]): void {
+      assertExactMetafileInputKeysV2(
+        inputKeys,
+        [
+          ...CORE_REAL_INPUT_RELATIVE_PATHS_V2,
+          ...CORE_VIRTUAL_INPUTS_V2,
+        ],
+        "Synthetic V2 payload core",
+      );
+    },
+  });
+
+function moduleOutputFactsV2(
+  result: EsbuildBuildResult,
+  label: string,
+): {
+  readonly imports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[];
+  readonly exports: readonly string[];
+} {
+  const outputs = Object.values(exactMetafile(result, label).outputs);
+  if (outputs.length !== 1) {
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `${label} must emit exactly one metafile output; found ${String(outputs.length)}.`,
+    );
+  }
+  const output = outputs[0];
+  if (output === undefined) {
+    throw fail("DEPENDENCY_CLOSURE_INVALID", `${label} output disappeared.`);
+  }
+  return Object.freeze({
+    imports: Object.freeze(
+      output.imports.map((entry) =>
+        Object.freeze({
+          path: entry.path,
+          kind: entry.kind,
+          external: entry.external === true,
+        }),
+      ),
+    ),
+    exports: Object.freeze([...output.exports]),
+  });
+}
+
+function importTupleKeyV2(
+  entry: GrandHallT554NativeReviewCompiledModuleImportV2,
+): string {
+  return `${entry.path}\u0000${entry.kind}\u0000${String(entry.external)}`;
+}
+
+function assertExactModuleOutputFactsV2(
+  facts: {
+    readonly imports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[];
+    readonly exports: readonly string[];
+  },
+  expectedImports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[],
+  expectedExports: readonly string[],
+  label: string,
+): void {
+  const actualImports = facts.imports.map(importTupleKeyV2).sort();
+  const exactImports = expectedImports.map(importTupleKeyV2).sort();
+  const actualExports = [...facts.exports].sort();
+  const exactExports = [...expectedExports].sort();
+  if (
+    actualImports.length !== exactImports.length ||
+    actualImports.some((entry, index) => entry !== exactImports[index])
+  ) {
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `${label} metafile import tuples or multiplicities changed.`,
+    );
+  }
+  if (
+    actualExports.length !== exactExports.length ||
+    actualExports.some((entry, index) => entry !== exactExports[index])
+  ) {
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `${label} emitted export vocabulary changed.`,
+    );
+  }
+}
+
+function repeatedStaticExternalImportV2(
+  path: string,
+  count = 1,
+): readonly GrandHallT554NativeReviewCompiledModuleImportV2[] {
+  return Array.from({ length: count }, () => ({
+    path,
+    kind: "import-statement",
+    external: true,
+  }));
+}
+
+function assertMetafileExcludesInput(
+  result: EsbuildBuildResult,
+  forbiddenInputSuffix: string,
+  label: string,
+): void {
+  if (result.metafile === undefined) {
+    throw fail("BUILD_FAILED", "esbuild did not return its required metafile.");
+  }
+  const normalizedSuffix = forbiddenInputSuffix.replaceAll("\\", "/");
+  const matches = Object.keys(result.metafile.inputs).filter((input) =>
+    input.replaceAll("\\", "/").endsWith(normalizedSuffix),
+  );
+  if (matches.length > 0) {
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `${label} retained forbidden source input ${forbiddenInputSuffix}.`,
+    );
+  }
 }
 
 function assertClosedExternalImports(
@@ -726,6 +1765,29 @@ function assertClosedExternalImports(
   }
 }
 
+function assertExactNonBuiltinExternalImportsV2(
+  imports: readonly string[],
+  expected: readonly string[],
+  label: string,
+): void {
+  assertClosedExternalImports(imports, expected, label);
+  const actualNonBuiltin = imports
+    .filter((specifier) => !NODE_BUILTIN_SPECIFIERS.has(specifier))
+    .sort();
+  const exactExpected = expected.slice().sort();
+  if (
+    actualNonBuiltin.length !== exactExpected.length ||
+    actualNonBuiltin.some(
+      (specifier, index) => specifier !== exactExpected[index],
+    )
+  ) {
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `${label} does not retain the exact non-builtin external import multiplicity; expected ${exactExpected.join(", ") || "none"}, received ${actualNonBuiltin.join(", ") || "none"}.`,
+    );
+  }
+}
+
 function assertNoLiteralPackageResolution(
   source: string,
   allowedRelativeImports: readonly string[],
@@ -749,6 +1811,138 @@ function assertNoLiteralPackageResolution(
       "DEPENDENCY_CLOSURE_INVALID",
       `${label} contains forbidden literal module resolution: ${forbidden.join(", ")}.`,
     );
+  }
+}
+
+function literalModuleSpecifiers(source: string): readonly string[] {
+  const staticSpecifiers = Array.from(
+    source.matchAll(
+      /\b(?:import|export)(?:\s+|(?=\{)|(?=\*))[^;()]*?\bfrom\s*["']([^"']+)["']/gu,
+    ),
+  ).flatMap((match) => (match[1] === undefined ? [] : [match[1]]));
+  const calledSpecifiers = Array.from(
+    source.matchAll(
+      /(?:\bimport\s*\(|\brequire\s*\(|\b__require(?:\d+)?\s*\()\s*["']([^"']+)["']/gu,
+    ),
+  ).flatMap((match) => (match[1] === undefined ? [] : [match[1]]));
+  return Object.freeze([...staticSpecifiers, ...calledSpecifiers].sort());
+}
+
+function assertExactLiteralModuleResolutionV2(
+  source: string,
+  exactPackOrCapsuleImports: readonly string[],
+  label: string,
+): void {
+  const specifiers = literalModuleSpecifiers(source);
+  const allowed = new Set(exactPackOrCapsuleImports);
+  const forbidden = specifiers.filter(
+    (specifier) =>
+      !NODE_BUILTIN_SPECIFIERS.has(specifier) && !allowed.has(specifier),
+  );
+  if (forbidden.length > 0) {
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `${label} contains forbidden literal module resolution: ${forbidden.join(", ")}.`,
+    );
+  }
+  for (const required of exactPackOrCapsuleImports) {
+    if (!specifiers.includes(required)) {
+      throw fail(
+        "DEPENDENCY_CLOSURE_INVALID",
+        `${label} does not retain its exact required ${required} literal import.`,
+      );
+    }
+  }
+  const dynamicOrRequireCallCount = Array.from(
+    source.matchAll(
+      /(?:\bimport\s*\(|\brequire\s*\(|\b__require(?:\d+)?\s*\()/gu,
+    ),
+  ).length;
+  const literalDynamicOrRequireCount = Array.from(
+    source.matchAll(
+      /(?:\bimport\s*\(|\brequire\s*\(|\b__require(?:\d+)?\s*\()\s*["'][^"']+["']/gu,
+    ),
+  ).length;
+  if (dynamicOrRequireCallCount !== literalDynamicOrRequireCount) {
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `${label} contains non-literal dynamic or CommonJS module resolution.`,
+    );
+  }
+}
+
+function assertNoForbiddenV2PayloadCapabilitySurface(
+  source: string,
+  label: string,
+): void {
+  const withoutCapsule = source.replaceAll(
+    GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+    "",
+  );
+  const withoutFixedLoopbackOrigin = withoutCapsule.replaceAll(
+    "http://127.0.0.1:",
+    "",
+  );
+  const externalTarget = /\b(?:file|https?):\/\//iu.exec(
+    withoutFixedLoopbackOrigin,
+  );
+  if (externalTarget !== null) {
+    const contextStart = Math.max(0, externalTarget.index - 80);
+    const contextEnd = Math.min(
+      withoutFixedLoopbackOrigin.length,
+      externalTarget.index + externalTarget[0].length + 80,
+    );
+    throw fail(
+      "DEPENDENCY_CLOSURE_INVALID",
+      `${label} retained a nonfixed file or HTTP(S) target near ${JSON.stringify(withoutFixedLoopbackOrigin.slice(contextStart, contextEnd))}.`,
+    );
+  }
+  const forbidden = [
+    ["source-map URL", /\bsourceMappingURL\b/u],
+    ["embedded source content", /\bsourcesContent\b/u],
+    [
+      "test-only surface",
+      /\b(?:vitest|jest|__testOnly|testOnly|verificationSeam)\b/iu,
+    ],
+    ["HTTP server creation", /\bcreateServer\s*\(/u],
+    ["listener creation", /\.\s*listen\s*\(/u],
+    ["browser launcher", /\b(?:launch|open|start)(?:Default)?Browser\s*\(/iu],
+    ["push/event client", /\b(?:WebSocket|EventSource)\s*\(/u],
+    [
+      "caller-selected verifier input",
+      /\b(?:reviewedAnchor|implementationPackRoot|manifestFileSha256|manifestFileByteLength|fixedProductionReviewedPack)\b/u,
+    ],
+    ["import-meta resolution", /\bimport\.meta\.resolve\b/u],
+    ["CommonJS resolution", /\brequire\.resolve\b/u],
+    ["package-store resolution", /\bnode_modules\b/iu],
+    ["Node resolution environment", /\bNODE_(?:OPTIONS|PATH)\b/u],
+    [
+      "source-tree traversal",
+      /(?:^|[^A-Za-z0-9_])(?:\.\.\/)+(?:src|source)(?:\/|["'])/u,
+    ],
+    ["TypeScript runtime target", /["'][^"']+\.tsx?(?:[?#][^"']*)?["']/iu],
+    [
+      "fixed payload-path literal",
+      /PrivateReleases\/trades-hall-grand-hall-t554-workbench-v2\/payload/iu,
+    ],
+    ["runtime createRequire", /\bcreateRequire\b/u],
+    ["runtime CommonJS require", /\b(?:require|__require\d*)\s*\(/u],
+    ["network fetch", /\bfetch\s*\(/u],
+  ] as const;
+  for (const [description, pattern] of forbidden) {
+    const match = pattern.exec(source);
+    if (match !== null) {
+      const contextStart = Math.max(0, match.index - 80);
+      const contextEnd = Math.min(
+        source.length,
+        match.index + match[0].length + 80,
+      );
+      const context = JSON.stringify(source.slice(contextStart, contextEnd));
+      throw fail(
+        "DEPENDENCY_CLOSURE_INVALID",
+        `${label} retained forbidden ${description} near ${context}.`,
+      );
+    }
   }
 }
 
@@ -804,6 +1998,88 @@ async function memberFor(
   return {
     relativePath,
     kind: kindForMember(relativePath),
+    sha256: sha256(bytes),
+    byteLength: bytes.length,
+  };
+}
+
+function kindForMemberV2(
+  relativePath: string,
+): GrandHallT554NativeReviewImplementationMemberV2["kind"] {
+  if (
+    relativePath === GRAND_HALL_T554_NATIVE_REVIEW_PACKAGE_METADATA_MEMBER_V2
+  ) {
+    return "module-metadata";
+  }
+  if (relativePath === GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_MEMBER_V2) {
+    return "payload-admission-gate";
+  }
+  if (relativePath === GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_MEMBER_V2) {
+    return "payload-core";
+  }
+  if (
+    relativePath ===
+    GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_ADAPTER_MEMBER_V2
+  ) {
+    return "trusted-http-adapter";
+  }
+  if (
+    relativePath === GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_BOOTSTRAP_MEMBER_V2
+  ) {
+    return "runtime-bootstrap";
+  }
+  if (
+    relativePath === GRAND_HALL_T554_NATIVE_REVIEW_STATIC_DOCUMENT_MEMBER_V2 ||
+    relativePath ===
+      GRAND_HALL_T554_NATIVE_REVIEW_STATIC_STYLESHEET_MEMBER_V2 ||
+    relativePath === GRAND_HALL_T554_NATIVE_REVIEW_STATIC_APPLICATION_MEMBER_V2
+  ) {
+    return "static-asset";
+  }
+  if (
+    relativePath === GRAND_HALL_T554_NATIVE_REVIEW_DECODER_METADATA_MEMBER_V2
+  ) {
+    return "decoder-closure-metadata";
+  }
+  if (relativePath === GRAND_HALL_T554_NATIVE_REVIEW_SHARP_LOADER_MEMBER_V2) {
+    return "sharp-runtime";
+  }
+  if (
+    relativePath === GRAND_HALL_T554_NATIVE_REVIEW_SHARP_NATIVE_ADDON_MEMBER_V2
+  ) {
+    return "sharp-native-addon";
+  }
+  if (
+    relativePath === GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_DLL_MEMBER_V2 ||
+    relativePath === GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_CPP_DLL_MEMBER_V2
+  ) {
+    return "libvips-native-dependency";
+  }
+  if (
+    relativePath === GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_INSPECTOR_MEMBER_V2
+  ) {
+    return "runtime-inspector-addon";
+  }
+  if (relativePath === GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_PROBE_MEMBER_V2) {
+    return "runtime-attestation-probe";
+  }
+  throw fail(
+    "OUTPUT_INVALID",
+    `No closed v2 implementation-member kind exists for ${relativePath}.`,
+  );
+}
+
+async function memberForV2(
+  packRoot: string,
+  relativePath: string,
+): Promise<GrandHallT554NativeReviewImplementationMemberV2> {
+  const bytes = await readFile(resolve(packRoot, ...relativePath.split("/")));
+  if (bytes.length < 1) {
+    throw fail("OUTPUT_INVALID", `${relativePath} must not be empty.`);
+  }
+  return {
+    relativePath,
+    kind: kindForMemberV2(relativePath),
     sha256: sha256(bytes),
     byteLength: bytes.length,
   };
@@ -1383,5 +2659,915 @@ export async function buildGrandHallT554NativeReviewCompiledPackV1(input: {
       throw error;
     }
     throw fail("BUILD_FAILED", "The compiled implementation pack build failed.", error);
+  }
+}
+
+/**
+ * Builds one deterministic, authority-none v2 payload candidate. The output
+ * deliberately excludes the fixed admission capsule and every listener or
+ * runtime-authority minter; only a separately reviewed fixed capsule can admit
+ * these bytes later.
+ */
+export async function buildGrandHallT554NativeReviewCompiledPackV2(input: {
+  readonly workspaceRoot: string;
+  readonly outputRoot: string;
+  readonly __testOnlySeam?: __GrandHallT554NativeReviewCompiledPackBuildSeamV2;
+}): Promise<GrandHallT554NativeReviewCompiledPackBuildResultV2> {
+  if (process.platform !== "win32" || process.arch !== "x64") {
+    throw fail(
+      "PLATFORM_UNSUPPORTED",
+      "The current v2 payload closure is intentionally pinned to Windows x64.",
+    );
+  }
+  const workspaceRootInput = requireAbsoluteLocalPath(
+    input.workspaceRoot,
+    "Workspace root",
+  );
+  const outputRoot = requireAbsoluteLocalPath(input.outputRoot, "Output root");
+  const workspaceRootWitness = await captureDirectDirectory(
+    workspaceRootInput,
+    "Workspace root",
+    "ARGUMENT_INVALID",
+  );
+  const canonicalWorkspaceRoot = workspaceRootWitness.canonicalPath;
+  const outputParent = dirname(outputRoot);
+  const outputLeaf = relative(outputParent, outputRoot);
+  if (
+    outputLeaf.length === 0 ||
+    outputLeaf === "." ||
+    outputLeaf === ".." ||
+    outputLeaf.includes(sep)
+  ) {
+    throw fail(
+      "ARGUMENT_INVALID",
+      "Output root must have one concrete leaf name.",
+    );
+  }
+  await requirePathAbsent(outputRoot, "Output root");
+  const outputParentWitness = await captureDirectDirectory(
+    outputParent,
+    "Output parent",
+  );
+  const canonicalOutputRoot = resolve(
+    outputParentWitness.canonicalPath,
+    outputLeaf,
+  );
+  const workspaceToOutput = relative(
+    canonicalWorkspaceRoot,
+    canonicalOutputRoot,
+  );
+  if (
+    workspaceToOutput === "" ||
+    (!workspaceToOutput.startsWith(`..${sep}`) &&
+      workspaceToOutput !== ".." &&
+      !isAbsolute(workspaceToOutput))
+  ) {
+    throw fail(
+      "ARGUMENT_INVALID",
+      "The v2 implementation payload output must remain outside the git workspace.",
+    );
+  }
+
+  const esbuild = await loadEsbuild(canonicalWorkspaceRoot);
+  const sharp = await installedSharpClosureV2(canonicalWorkspaceRoot);
+  const exactZodEntry = await pinnedZodEntryV2(canonicalWorkspaceRoot);
+  const gateEntry = resolve(
+    canonicalWorkspaceRoot,
+    PAYLOAD_GATE_ENTRY_RELATIVE_PATH_V2,
+  );
+  const coreEntry = resolve(
+    canonicalWorkspaceRoot,
+    PAYLOAD_CORE_ENTRY_RELATIVE_PATH_V2,
+  );
+  const adapterEntry = resolve(
+    canonicalWorkspaceRoot,
+    HTTP_ADAPTER_ENTRY_RELATIVE_PATH_V2,
+  );
+  const runtimeBootstrapEntry = resolve(
+    canonicalWorkspaceRoot,
+    RUNTIME_BOOTSTRAP_ENTRY_RELATIVE_PATH,
+  );
+  const runtimeInspectorSource = resolve(
+    canonicalWorkspaceRoot,
+    RUNTIME_INSPECTOR_SOURCE_RELATIVE_PATH,
+  );
+  await Promise.all([
+    requireDirectRegularFile(gateEntry, "V2 payload admission gate entry"),
+    requireDirectRegularFile(coreEntry, "V2 payload core entry"),
+    requireDirectRegularFile(adapterEntry, "V2 trusted HTTP adapter entry"),
+    requireDirectRegularFile(runtimeBootstrapEntry, "Runtime bootstrap entry"),
+    requireDirectRegularFile(
+      runtimeInspectorSource,
+      "Runtime inspector release addon",
+    ),
+    ...CORE_REAL_INPUT_RELATIVE_PATHS_V2.map((relativePath) =>
+      requireDirectRegularFile(
+        resolve(canonicalWorkspaceRoot, relativePath),
+        `Reviewed V2 core input ${relativePath}`,
+      ),
+    ),
+  ]);
+
+  let stagingRoot: string | undefined;
+  let stagingWitness: DirectoryWitness | undefined;
+  let published = false;
+  try {
+    await assertDirectoryWitness(
+      outputParent,
+      outputParentWitness,
+      "Output parent",
+    );
+    stagingRoot = await mkdtemp(
+      resolve(outputParent, `.${outputLeaf}.building-`),
+    );
+    stagingWitness = await captureDirectDirectory(
+      stagingRoot,
+      "Owned staging root",
+    );
+    if (stagingWitness.stats.dev !== outputParentWitness.stats.dev) {
+      throw fail(
+        "OUTPUT_INVALID",
+        "The staging root and output parent are not on the same filesystem.",
+      );
+    }
+    await input.__testOnlySeam?.afterStagingRootCreated?.(stagingRoot);
+    const assertOwnedStaging = async (): Promise<void> => {
+      if (stagingRoot === undefined || stagingWitness === undefined) {
+        throw fail("OUTPUT_INVALID", "The owned staging root is unavailable.");
+      }
+      await assertDirectoryWitness(
+        outputParent,
+        outputParentWitness,
+        "Output parent",
+      );
+      await assertDirectoryWitness(
+        stagingRoot,
+        stagingWitness,
+        "Owned staging root",
+      );
+    };
+    await assertOwnedStaging();
+    const packRoot = stagingRoot;
+    await Promise.all([
+      writeExclusive(
+        resolve(
+          packRoot,
+          ...GRAND_HALL_T554_NATIVE_REVIEW_PACKAGE_METADATA_MEMBER_V2.split(
+            "/",
+          ),
+        ),
+        canonicalBytes(MODULE_METADATA_V2),
+      ),
+      writeExclusive(
+        resolve(
+          packRoot,
+          ...GRAND_HALL_T554_NATIVE_REVIEW_STATIC_DOCUMENT_MEMBER_V2.split("/"),
+        ),
+        GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2,
+      ),
+      writeExclusive(
+        resolve(
+          packRoot,
+          ...GRAND_HALL_T554_NATIVE_REVIEW_STATIC_STYLESHEET_MEMBER_V2.split(
+            "/",
+          ),
+        ),
+        GRAND_HALL_T554_NATIVE_REVIEW_STYLESHEET_V2,
+      ),
+      writeExclusive(
+        resolve(
+          packRoot,
+          ...GRAND_HALL_T554_NATIVE_REVIEW_STATIC_APPLICATION_MEMBER_V2.split(
+            "/",
+          ),
+        ),
+        GRAND_HALL_T554_NATIVE_REVIEW_BROWSER_JAVASCRIPT_V2,
+      ),
+    ]);
+    await assertOwnedStaging();
+
+    const baseBuildOptions = {
+      absWorkingDir: canonicalWorkspaceRoot,
+      bundle: true,
+      charset: "utf8",
+      conditions: ["import", "node"],
+      format: "esm",
+      legalComments: "none",
+      logLevel: "silent",
+      metafile: true,
+      minifyIdentifiers: true,
+      minifySyntax: true,
+      minifyWhitespace: true,
+      platform: "node",
+      sourcemap: false,
+      target: ["node22"],
+      treeShaking: true,
+      write: true,
+    } as const;
+
+    await mkdir(resolve(packRoot, "server"), { recursive: true });
+    const gateBuild = await esbuild.build({
+      ...baseBuildOptions,
+      entryPoints: [gateEntry],
+      outfile: resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_MEMBER_V2.split("/"),
+      ),
+      plugins: [payloadGateDependencyPluginV2(gateEntry)],
+    });
+    const coreBuild = await esbuild.build({
+      ...baseBuildOptions,
+      entryPoints: [coreEntry],
+      outfile: resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_MEMBER_V2.split("/"),
+      ),
+      plugins: [
+        payloadCoreDependencyPluginV2(canonicalWorkspaceRoot, exactZodEntry),
+      ],
+    });
+    const adapterBuild = await esbuild.build({
+      ...baseBuildOptions,
+      entryPoints: [adapterEntry],
+      outfile: resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_ADAPTER_MEMBER_V2.split(
+          "/",
+        ),
+      ),
+    });
+    const runtimeBootstrapBuild = await esbuild.build({
+      ...baseBuildOptions,
+      entryPoints: [runtimeBootstrapEntry],
+      outfile: resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_BOOTSTRAP_MEMBER_V2.split("/"),
+      ),
+    });
+    await assertOwnedStaging();
+
+    await mkdir(resolve(packRoot, "vendor", "sharp"), { recursive: true });
+    const sharpBuild = await esbuild.build({
+      ...baseBuildOptions,
+      entryPoints: [resolve(sharp.sharpRoot, "dist", "index.mjs")],
+      outfile: resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_SHARP_LOADER_MEMBER_V2.split("/"),
+      ),
+      plugins: [
+        sharpLoaderPluginV2(
+          sharp.sharpRoot,
+          sharp.colourRoot,
+          sharp.versions,
+        ),
+      ],
+    });
+
+    const gateExpectedInputs = [
+      "t554-v2-fixed-admission-abi-proxy:fixed-admission-abi-proxy.js",
+      PAYLOAD_GATE_ENTRY_RELATIVE_PATH_V2,
+    ];
+    const coreExpectedInputs = [
+      ...CORE_REAL_INPUT_RELATIVE_PATHS_V2,
+      ...CORE_VIRTUAL_INPUTS_V2,
+    ];
+    const sharpExpectedInputs = [
+      ...SHARP_DIST_INPUT_FILENAMES_V2.map((filename) =>
+        normalizedMetafileInput(
+          relative(
+            canonicalWorkspaceRoot,
+            resolve(sharp.sharpRoot, "dist", filename),
+          ),
+        ),
+      ),
+      normalizedMetafileInput(
+        relative(
+          canonicalWorkspaceRoot,
+          resolve(sharp.colourRoot, "index.cjs"),
+        ),
+      ),
+      normalizedMetafileInput(
+        relative(
+          canonicalWorkspaceRoot,
+          resolve(sharp.colourRoot, "color.cjs"),
+        ),
+      ),
+      "t554-sharp-native:sharp.mjs",
+    ];
+    assertExactMetafileInputClosureV2(
+      gateBuild,
+      gateExpectedInputs,
+      "V2 payload admission gate",
+    );
+    assertExactMetafileInputClosureV2(
+      coreBuild,
+      coreExpectedInputs,
+      "V2 payload core",
+    );
+    assertExactMetafileInputClosureV2(
+      adapterBuild,
+      [HTTP_ADAPTER_ENTRY_RELATIVE_PATH_V2],
+      "V2 trusted HTTP adapter",
+    );
+    assertExactMetafileInputClosureV2(
+      runtimeBootstrapBuild,
+      [RUNTIME_BOOTSTRAP_ENTRY_RELATIVE_PATH],
+      "V2 runtime bootstrap",
+    );
+    assertExactMetafileInputClosureV2(
+      sharpBuild,
+      sharpExpectedInputs,
+      "V2 vendored Sharp loader",
+    );
+
+    const gateOutputFacts = moduleOutputFactsV2(
+      gateBuild,
+      "V2 payload admission gate",
+    );
+    const coreOutputFacts = moduleOutputFactsV2(
+      coreBuild,
+      "V2 payload core",
+    );
+    const httpAdapterOutputFacts = moduleOutputFactsV2(
+      adapterBuild,
+      "V2 trusted HTTP adapter",
+    );
+    const runtimeBootstrapOutputFacts = moduleOutputFactsV2(
+      runtimeBootstrapBuild,
+      "V2 runtime bootstrap",
+    );
+    const sharpLoaderOutputFacts = moduleOutputFactsV2(
+      sharpBuild,
+      "V2 vendored Sharp loader",
+    );
+    assertExactModuleOutputFactsV2(
+      gateOutputFacts,
+      [
+        ...repeatedStaticExternalImportV2(
+          GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+        ),
+        {
+          path: GRAND_HALL_T554_NATIVE_REVIEW_GATE_CORE_IMPORT_V2,
+          kind: "dynamic-import",
+          external: true,
+        },
+      ],
+      [
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_ABI_WITNESS_V2",
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_V2",
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_POLICY_V2",
+        "loadGrandHallT554NativeReviewPayloadCoreV2",
+      ],
+      "V2 payload admission gate",
+    );
+    assertExactModuleOutputFactsV2(
+      coreOutputFacts,
+      [
+        ...repeatedStaticExternalImportV2(
+          GRAND_HALL_T554_NATIVE_REVIEW_SERVER_SHARP_LOADER_IMPORT_V2,
+        ),
+        ...repeatedStaticExternalImportV2("node:crypto", 17),
+        ...repeatedStaticExternalImportV2("node:fs/promises", 9),
+        ...repeatedStaticExternalImportV2("node:path", 11),
+        ...repeatedStaticExternalImportV2("node:perf_hooks"),
+        ...repeatedStaticExternalImportV2("node:util"),
+        ...repeatedStaticExternalImportV2(
+          GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+        ),
+        ...repeatedStaticExternalImportV2(
+          GRAND_HALL_T554_NATIVE_REVIEW_CORE_HTTP_ADAPTER_IMPORT_V2,
+        ),
+      ],
+      [
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_ABI_WITNESS_V2",
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_POLICY_V2",
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_V2",
+        "createGrandHallT554NativeReviewPayloadWorkbenchV2",
+      ],
+      "V2 payload core",
+    );
+    assertExactModuleOutputFactsV2(
+      httpAdapterOutputFacts,
+      [],
+      [
+        "GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_ADAPTER_V2",
+        "GrandHallT554NativeReviewHttpResponseAdapterErrorV2",
+        "bindGrandHallT554NativeReviewTileToHttpResponseV2",
+      ],
+      "V2 trusted HTTP adapter",
+    );
+    assertExactModuleOutputFactsV2(
+      runtimeBootstrapOutputFacts,
+      [
+        ...repeatedStaticExternalImportV2("node:crypto"),
+        ...repeatedStaticExternalImportV2("node:fs/promises"),
+        ...repeatedStaticExternalImportV2("node:module"),
+        ...repeatedStaticExternalImportV2("node:path"),
+        ...repeatedStaticExternalImportV2("node:url"),
+      ],
+      ["runGrandHallT554NativeReviewRuntimeBootstrap"],
+      "V2 runtime bootstrap",
+    );
+    assertExactModuleOutputFactsV2(
+      sharpLoaderOutputFacts,
+      [
+        ...repeatedStaticExternalImportV2("node:events"),
+        ...repeatedStaticExternalImportV2("node:module"),
+        ...repeatedStaticExternalImportV2("node:path", 2),
+        ...repeatedStaticExternalImportV2("node:stream"),
+        ...repeatedStaticExternalImportV2("node:url"),
+        ...repeatedStaticExternalImportV2("node:util"),
+      ],
+      ["default"],
+      "V2 vendored Sharp loader",
+    );
+
+    const gateExternalImports = externalImports(gateBuild);
+    const coreExternalImports = externalImports(coreBuild);
+    const httpAdapterExternalImports = externalImports(adapterBuild);
+    const runtimeBootstrapExternalImports = externalImports(
+      runtimeBootstrapBuild,
+    );
+    const sharpLoaderExternalImports = externalImports(sharpBuild);
+    assertExactNonBuiltinExternalImportsV2(
+      gateExternalImports,
+      [
+        GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+        GRAND_HALL_T554_NATIVE_REVIEW_GATE_CORE_IMPORT_V2,
+      ],
+      "V2 payload admission gate",
+    );
+    assertExactNonBuiltinExternalImportsV2(
+      coreExternalImports,
+      [
+        GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+        GRAND_HALL_T554_NATIVE_REVIEW_CORE_HTTP_ADAPTER_IMPORT_V2,
+        GRAND_HALL_T554_NATIVE_REVIEW_SERVER_SHARP_LOADER_IMPORT_V2,
+      ],
+      "V2 payload core",
+    );
+    assertExactNonBuiltinExternalImportsV2(
+      httpAdapterExternalImports,
+      [],
+      "V2 trusted HTTP adapter",
+    );
+    assertExactNonBuiltinExternalImportsV2(
+      runtimeBootstrapExternalImports,
+      [],
+      "V2 runtime bootstrap",
+    );
+    assertExactNonBuiltinExternalImportsV2(
+      sharpLoaderExternalImports,
+      [],
+      "V2 vendored Sharp loader",
+    );
+    assertMetafileExcludesInput(
+      coreBuild,
+      "tools/reconstruction-foundry/src/grand-hall-t554-native-review-implementation-manifest.ts",
+      "V2 payload core",
+    );
+    assertMetafileExcludesInput(
+      coreBuild,
+      "tools/reconstruction-foundry/src/grand-hall-t554-native-review-fixed-admission-abi-v2.ts",
+      "V2 payload core",
+    );
+    assertMetafileExcludesInput(
+      gateBuild,
+      "tools/reconstruction-foundry/src/grand-hall-t554-native-review-fixed-admission-abi-v2.ts",
+      "V2 payload admission gate",
+    );
+
+    const gateSource = await readFile(
+      resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_MEMBER_V2.split("/"),
+      ),
+      "utf8",
+    );
+    const coreSource = await readFile(
+      resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_MEMBER_V2.split("/"),
+      ),
+      "utf8",
+    );
+    const adapterSource = await readFile(
+      resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_ADAPTER_MEMBER_V2.split(
+          "/",
+        ),
+      ),
+      "utf8",
+    );
+    assertExactLiteralModuleResolutionV2(
+      gateSource,
+      [
+        GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+        GRAND_HALL_T554_NATIVE_REVIEW_GATE_CORE_IMPORT_V2,
+      ],
+      "V2 payload admission gate",
+    );
+    assertExactLiteralModuleResolutionV2(
+      coreSource,
+      [
+        GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+        GRAND_HALL_T554_NATIVE_REVIEW_CORE_HTTP_ADAPTER_IMPORT_V2,
+        GRAND_HALL_T554_NATIVE_REVIEW_SERVER_SHARP_LOADER_IMPORT_V2,
+      ],
+      "V2 payload core",
+    );
+    assertExactLiteralModuleResolutionV2(
+      adapterSource,
+      [],
+      "V2 trusted HTTP adapter",
+    );
+    assertNoForbiddenV2PayloadCapabilitySurface(
+      gateSource,
+      "V2 payload admission gate",
+    );
+    assertNoForbiddenV2PayloadCapabilitySurface(coreSource, "V2 payload core");
+    assertNoForbiddenV2PayloadCapabilitySurface(
+      adapterSource,
+      "V2 trusted HTTP adapter",
+    );
+    for (const forbidden of [
+      "VERIFIED_IMPLEMENTATION_PACK_IDENTITIES",
+      "VERIFIED_IMPLEMENTATION_PACK_CANDIDATE_IDENTITIES",
+      "LOADED_IMPLEMENTATION_RUNTIME_AUTHORITY_IDENTITIES",
+      "LOADED_IMPLEMENTATION_RUNTIME_AUTHORITY_PACKS",
+      "fixedProductionReviewedPack",
+      "verifyGrandHallT554NativeReviewImplementationPack",
+      "verifyCallerAnchoredImplementationPackCandidate",
+      "__testOnlyGrandHallT554NativeReviewImplementationManifest",
+    ]) {
+      if (coreSource.includes(forbidden) || gateSource.includes(forbidden)) {
+        throw fail(
+          "DEPENDENCY_CLOSURE_INVALID",
+          `V2 payload retained forbidden V1 verifier or authority symbol ${forbidden}.`,
+        );
+      }
+    }
+
+    const runtimeBootstrapSource = await readFile(
+      resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_BOOTSTRAP_MEMBER_V2.split("/"),
+      ),
+      "utf8",
+    );
+    assertNoLiteralPackageResolution(
+      runtimeBootstrapSource,
+      [],
+      "V2 runtime bootstrap",
+    );
+    const sharpLoaderSource = await readFile(
+      resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_SHARP_LOADER_MEMBER_V2.split("/"),
+      ),
+      "utf8",
+    );
+    assertNoLiteralPackageResolution(
+      sharpLoaderSource,
+      [],
+      "V2 vendored Sharp loader",
+    );
+    if (
+      !sharpLoaderSource.includes("sharp-win32-x64-0.35.3.node") ||
+      !sharpLoaderSource.includes("libvips") ||
+      /process\.env(?:\[\s*["']PATH["']\s*\]|\.PATH)\s*=/u.test(
+        sharpLoaderSource,
+      )
+    ) {
+      throw fail(
+        "DEPENDENCY_CLOSURE_INVALID",
+        "The v2 vendored Sharp loader does not bind the exact native addon/libvips closure without a PATH fallback.",
+      );
+    }
+
+    await assertOwnedStaging();
+    await mkdir(resolve(packRoot, "vendor", "libvips"), {
+      recursive: true,
+    });
+    await Promise.all([
+      copyFile(
+        sharp.nativeAddon,
+        resolve(
+          packRoot,
+          ...GRAND_HALL_T554_NATIVE_REVIEW_SHARP_NATIVE_ADDON_MEMBER_V2.split(
+            "/",
+          ),
+        ),
+        fileSystemConstants.COPYFILE_EXCL,
+      ),
+      copyFile(
+        sharp.libvipsDll,
+        resolve(
+          packRoot,
+          ...GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_DLL_MEMBER_V2.split("/"),
+        ),
+        fileSystemConstants.COPYFILE_EXCL,
+      ),
+      copyFile(
+        sharp.libvipsCppDll,
+        resolve(
+          packRoot,
+          ...GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_CPP_DLL_MEMBER_V2.split("/"),
+        ),
+        fileSystemConstants.COPYFILE_EXCL,
+      ),
+    ]);
+    await Promise.all([
+      mkdir(resolve(packRoot, "vendor", "runtime-inspector"), {
+        recursive: true,
+      }),
+      mkdir(resolve(packRoot, "vendor", "runtime-attestation"), {
+        recursive: true,
+      }),
+    ]);
+    await copyFile(
+      runtimeInspectorSource,
+      resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_INSPECTOR_MEMBER_V2.split("/"),
+      ),
+      fileSystemConstants.COPYFILE_EXCL,
+    );
+    const runtimeProbeBytes = Buffer.from(
+      GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_PROBE_BASE64,
+      "base64",
+    );
+    try {
+      if (
+        runtimeProbeBytes.length !== 879 ||
+        sha256(runtimeProbeBytes) !== RUNTIME_PROBE_SHA256
+      ) {
+        throw fail(
+          "DEPENDENCY_CLOSURE_INVALID",
+          "The fixed runtime-attestation JPEG probe bytes are invalid.",
+        );
+      }
+      await writeExclusive(
+        resolve(
+          packRoot,
+          ...GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_PROBE_MEMBER_V2.split("/"),
+        ),
+        runtimeProbeBytes,
+      );
+    } finally {
+      runtimeProbeBytes.fill(0);
+    }
+    await assertOwnedStaging();
+
+    const decoder: GrandHallT554NativeReviewImplementationDecoderClosureV2 = {
+      schemaVersion:
+        "venviewer.grand-hall-t554-native-review-decoder-closure.v1",
+      library: "sharp",
+      sharpVersion: SHARP_VERSION,
+      libvipsVersion: LIBVIPS_VERSION,
+      platform: process.platform,
+      architecture: process.arch,
+      sourceJpegDecoderPipeline: "captured-jpeg-buffer-to-unrotated-rgb8.v1",
+      strictMaskPngDecoderPipeline:
+        "canonical-grayscale8-source-grid-mask-and-reason-map.v2",
+      metadataMember: GRAND_HALL_T554_NATIVE_REVIEW_DECODER_METADATA_MEMBER_V2,
+      sharpRuntimeMembers: [
+        GRAND_HALL_T554_NATIVE_REVIEW_SHARP_LOADER_MEMBER_V2,
+      ],
+      sharpNativeAddonMember:
+        GRAND_HALL_T554_NATIVE_REVIEW_SHARP_NATIVE_ADDON_MEMBER_V2,
+      libvipsNativeDependencyMembers: [
+        GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_DLL_MEMBER_V2,
+        GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_CPP_DLL_MEMBER_V2,
+      ],
+    };
+    await writeExclusive(
+      resolve(
+        packRoot,
+        ...GRAND_HALL_T554_NATIVE_REVIEW_DECODER_METADATA_MEMBER_V2.split("/"),
+      ),
+      canonicalBytes(decoder),
+    );
+
+    const relativeMembers = [
+      GRAND_HALL_T554_NATIVE_REVIEW_PACKAGE_METADATA_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_ADAPTER_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_BOOTSTRAP_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_STATIC_DOCUMENT_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_STATIC_STYLESHEET_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_STATIC_APPLICATION_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_DECODER_METADATA_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_SHARP_LOADER_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_SHARP_NATIVE_ADDON_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_DLL_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_LIBVIPS_CPP_DLL_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_INSPECTOR_MEMBER_V2,
+      GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_PROBE_MEMBER_V2,
+    ].sort();
+    const members = await Promise.all(
+      relativeMembers.map((relativePath) =>
+        memberForV2(packRoot, relativePath),
+      ),
+    );
+    const material: Omit<
+      GrandHallT554NativeReviewImplementationManifestV2,
+      "semanticSha256"
+    > = {
+      schemaVersion:
+        GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_SCHEMA_V2,
+      implementationId: GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_ID_V2,
+      venueSlug: "trades-hall",
+      roomSlug: "grand-hall",
+      sourceCount: 148,
+      authority: "none",
+      runtime:
+        __testOnlyGrandHallT554NativeReviewImplementationManifest.currentRuntimeIdentity(),
+      decoder,
+      execution: {
+        mode: "compiled-esm-fixed-admission-gated-private-local-review-payload.v2",
+        moduleFormat: "esm",
+        bindAddress: "127.0.0.1",
+        browserTrust: "untrusted-display-and-input",
+        dependencyClosure:
+          "reviewed-pack-members-node-builtins-and-fixed-admission-capsule.v2",
+        entryImportPolicy:
+          "fixed-admission-capsule-verifies-entire-pack-before-gate-import.v2",
+        standaloneProductionFactoryIncluded: false,
+        fixedAdmissionGatedFactoryIncluded: true,
+        httpLaunchIncluded: false,
+        sourceMapsIncluded: false,
+        tsxExecutionAuthorized: false,
+        mixedSourceDistResolutionAuthorized: false,
+        ambientExternalRuntimeModuleResolutionAuthorized: false,
+        fixedAdmissionCapsuleExternalImportRequired: true,
+        browserControlledTruthAuthorized: false,
+        externalNetworkAuthorized: false,
+        acceptanceAuthorized: false,
+        reconstructionAuthorized: false,
+        runtimeAdmissionAuthorized: false,
+        exportAuthorized: false,
+        generatedContentAuthorized: false,
+      },
+      admission: {
+        gateModule: GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_MEMBER_V2,
+        coreModule: GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_MEMBER_V2,
+        trustedHttpAdapterModule:
+          GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_ADAPTER_MEMBER_V2,
+        runtimeBootstrapModule:
+          GRAND_HALL_T554_NATIVE_REVIEW_RUNTIME_BOOTSTRAP_MEMBER_V2,
+        documentHtmlMember:
+          GRAND_HALL_T554_NATIVE_REVIEW_STATIC_DOCUMENT_MEMBER_V2,
+        stylesheetCssMember:
+          GRAND_HALL_T554_NATIVE_REVIEW_STATIC_STYLESHEET_MEMBER_V2,
+        applicationJavascriptMember:
+          GRAND_HALL_T554_NATIVE_REVIEW_STATIC_APPLICATION_MEMBER_V2,
+        fixedAdmissionAbiSchemaVersion:
+          GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_ABI_SCHEMA_V2,
+        fixedAdmissionCapsuleUrl:
+          GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+      },
+      memberCount: members.length,
+      totalMemberBytes: members.reduce(
+        (total, member) => total + member.byteLength,
+        0,
+      ),
+      members,
+    };
+    const manifest: GrandHallT554NativeReviewImplementationManifestV2 = {
+      ...material,
+      semanticSha256:
+        __testOnlyGrandHallT554NativeReviewImplementationManifestV2.computeManifestSemanticSha256(
+          material as GrandHallT554NativeReviewImplementationManifestV2,
+        ),
+    };
+    const manifestBytes = canonicalBytes(manifest);
+    const manifestPath = resolve(
+      packRoot,
+      GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME_V2,
+    );
+    await writeExclusive(manifestPath, manifestBytes);
+    const reviewedAnchorCandidate = {
+      manifestSemanticSha256: manifest.semanticSha256,
+      manifestFileSha256: sha256(manifestBytes),
+      manifestFileByteLength: manifestBytes.length,
+    };
+    const stagingVerifiedCandidate =
+      await __testOnlyGrandHallT554NativeReviewImplementationManifestV2.verifyCandidateWithObservations(
+        {
+          implementationPackRoot: packRoot,
+          reviewedAnchor: reviewedAnchorCandidate,
+          runtimeIdentity: manifest.runtime,
+          bootstrapExecutionIdentity: {
+            compiledJavascriptModule: true,
+            execArgv: [],
+            nodeOptions: null,
+            nodePath: null,
+          },
+        },
+      );
+    await assertOwnedStaging();
+    await input.__testOnlySeam?.beforeAtomicPublish?.({
+      stagingRoot: packRoot,
+      outputRoot,
+    });
+    await assertOwnedStaging();
+    await requirePathAbsent(outputRoot, "Output root");
+    await rename(packRoot, outputRoot);
+    published = true;
+    await assertDirectoryWitness(
+      outputRoot,
+      stagingWitness,
+      "Published implementation-payload root",
+    );
+    await assertDirectoryWitness(
+      outputParent,
+      outputParentWitness,
+      "Output parent",
+    );
+    await input.__testOnlySeam?.afterAtomicPublish?.({ outputRoot });
+    await assertDirectoryWitness(
+      outputRoot,
+      stagingWitness,
+      "Published implementation-payload root",
+    );
+    const publishedVerifiedCandidate =
+      await __testOnlyGrandHallT554NativeReviewImplementationManifestV2.verifyCandidateWithObservations(
+        {
+          implementationPackRoot: outputRoot,
+          reviewedAnchor: reviewedAnchorCandidate,
+          runtimeIdentity: manifest.runtime,
+          bootstrapExecutionIdentity: {
+            compiledJavascriptModule: true,
+            execArgv: [],
+            nodeOptions: null,
+            nodePath: null,
+          },
+        },
+      );
+    void stagingVerifiedCandidate;
+    return Object.freeze({
+      schemaVersion: GRAND_HALL_T554_NATIVE_REVIEW_COMPILED_PACK_BUILDER_V2,
+      packRoot: outputRoot,
+      manifestPath: resolve(
+        outputRoot,
+        GRAND_HALL_T554_NATIVE_REVIEW_IMPLEMENTATION_MANIFEST_FILENAME_V2,
+      ),
+      manifest,
+      reviewedAnchorCandidate,
+      verifiedCandidate: publishedVerifiedCandidate,
+      gateExternalImports,
+      coreExternalImports,
+      httpAdapterExternalImports,
+      runtimeBootstrapExternalImports,
+      sharpLoaderExternalImports,
+      gateOutputImports: gateOutputFacts.imports,
+      coreOutputImports: coreOutputFacts.imports,
+      httpAdapterOutputImports: httpAdapterOutputFacts.imports,
+      runtimeBootstrapOutputImports: runtimeBootstrapOutputFacts.imports,
+      sharpLoaderOutputImports: sharpLoaderOutputFacts.imports,
+      gateExports: gateOutputFacts.exports,
+      coreExports: coreOutputFacts.exports,
+      httpAdapterExports: httpAdapterOutputFacts.exports,
+      runtimeBootstrapExports: runtimeBootstrapOutputFacts.exports,
+      sharpLoaderExports: sharpLoaderOutputFacts.exports,
+    });
+  } catch (error) {
+    let cleanupFailure: unknown;
+    if (stagingWitness !== undefined) {
+      const cleanupPath = published ? outputRoot : stagingRoot;
+      if (cleanupPath !== undefined) {
+        try {
+          const cleaned = await cleanupOwnedDirectory(
+            cleanupPath,
+            stagingWitness,
+          );
+          if (!cleaned) {
+            cleanupFailure = new Error(
+              "Owned v2 implementation-payload bytes could not be removed because the cleanup path changed identity.",
+            );
+          }
+        } catch (cleanupError) {
+          cleanupFailure = cleanupError;
+        }
+      }
+    }
+    if (cleanupFailure !== undefined) {
+      throw fail(
+        "CLEANUP_INCOMPLETE",
+        "The v2 implementation-payload build failed and its owned bytes could not be proved removed.",
+        Object.freeze({ buildFailure: error, cleanupFailure }),
+      );
+    }
+    if (error instanceof GrandHallT554NativeReviewCompiledPackBuilderError) {
+      throw error;
+    }
+    throw fail(
+      "BUILD_FAILED",
+      "The compiled v2 implementation payload build failed.",
+      error,
+    );
   }
 }
