@@ -327,5 +327,6 @@ export * from "./preparation.js";
 export * from "./provider-recommendation.js";
 export * from "./qa.js";
 export * from "./release.js";
+export * from "./restoration-experiment.js";
 export * from "./s3-candidate-store.js";
 export * from "./webp.js";
