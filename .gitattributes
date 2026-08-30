@@ -13,6 +13,10 @@ docs/operations/grand-hall-t554-review-pack/**/*.svg text eol=lf
 docs/operations/grand-hall-t554-acceptance-template/*.json text eol=lf
 docs/operations/grand-hall-t554-panorama-inventory-review/*.json text eol=lf
 docs/operations/grand-hall-e57-image2d-evidence-*.json text eol=lf
+# Visual-lineage JSON and bundle sums are byte-addressed evidence. Keep the
+# harness-emitted bytes unchanged on add and checkout on every platform.
+docs/evidence/grand-hall-lineage/**/*.json -text
+docs/evidence/grand-hall-lineage/**/SHA256SUMS -text
 # Grand Hall authority-none replay implementations and persisted receipts are
 # byte-pinned. Windows checkout conversion would invalidate their reviewed
 # implementation and canonical-evidence digests.

@@ -1,0 +1,293 @@
+{
+  "schemaVersion": "visual-lineage-benchmark/v0",
+  "benchmarkId": "grand-hall-spz-source-pose-local-diagnostic-controlled-120w-600f-v1",
+  "roomRef": "trades-hall/grand-hall",
+  "gitSha": "a940a2811f2ebaa3fc700cfc76a2c3e338ebfd68",
+  "worktreeDirty": false,
+  "worktreeSourceStateSha256": "sha256:2acbac4f8a4ecaafe366cb0d389b0723600e4822ffef2ee63a8bcb44e530b745",
+  "runStartedAt": "2026-08-29T23:58:44.907Z",
+  "runCompletedAt": "2026-08-29T23:59:13.060Z",
+  "camera": {
+    "id": "source-pose-19890-interior-v1",
+    "revision": 1,
+    "sourceFrame": "THREE_CAMERA",
+    "position": [
+      -0.03426186932373998,
+      2.15606153541565,
+      8.015104841842623
+    ],
+    "quaternion": [
+      0,
+      -0.01170873415725777,
+      0,
+      0.999931450422695
+    ],
+    "projection": "perspective",
+    "fov": 60,
+    "near": 0.05,
+    "far": 80,
+    "aspect": 1.7777777777777777,
+    "projectionMatrix": [
+      0.9742785792574936,
+      0,
+      0,
+      0,
+      0,
+      1.7320508075688774,
+      0,
+      0,
+      0,
+      0,
+      -1.0012507817385865,
+      -1,
+      0,
+      0,
+      -0.10006253908692933,
+      0
+    ]
+  },
+  "viewport": {
+    "width": 1600,
+    "height": 900,
+    "devicePixelRatio": 1
+  },
+  "rendererSettings": {
+    "renderer": "Three.js 0.180 / Spark 2.0",
+    "antialias": false,
+    "transparent": true,
+    "depthWrite": false,
+    "maxSplats": "asset_count_plus_one_exact_runtime; library_default_fixture",
+    "maxStdDev": "library_default",
+    "minAlpha": "library_default",
+    "preBlurAmount": "library_default",
+    "blurAmount": "library_default",
+    "focalAdjustment": "library_default",
+    "toneMapping": "NoToneMapping",
+    "outputColorSpace": "srgb"
+  },
+  "representations": [
+    {
+      "id": "name-matched-spz-candidate",
+      "format": "spz",
+      "lineage": "Grand_Hall.lcc2 hash-pinned non-environment SPZ fine frontier from the matching XGRIDS hierarchy",
+      "status": "diagnostic",
+      "visualAssessment": "not_reviewed",
+      "cameraRegistration": "inspection_only",
+      "rendererProfile": "diagnostic_resolved_defaults",
+      "sourceRefs": [
+        "sha256:1af334081d1ac617910878864bd6616a0207da10d887394036fe87480b5eaf0e",
+        "sha256:b9a324d468c53372c6df62a12a07ef5c2da1ec1c9090f778b0540ecfab72b523",
+        "sha256:b09eb2eb9b26208dbb2bb225d08d9903a396b769a3fa0ef9c8608cecd5adc1b6",
+        "sha256:8e2d1423fb0194dc94a4b42156c761769bc8432195e51a45e0c416ebb09074c6",
+        "sha256:642035d5f6ffb451e8247481030ab361316132f2f29ac89b6dde0cf93fdbee9a",
+        "sha256:7571bd14ff3fef79457cce730bec5e1edc63d33799d36214d91d3e5ea12ba651",
+        "sha256:6bcb6f5caccc9b0a7fe71c93d2365220c1ecc1251ea2a2ea99346041315d39c4",
+        "sha256:9147dbc655a3a1ca6005623c129871d519471dad6a84cd7fd4fc09e40f1c6445",
+        "sha256:e79fad848eb440838fac7dd8bf2c413fbfc6b7b6d9bb97bb2c1d0197990d9f72",
+        "sha256:20d84bac9bc1db357f34c4c8fc5b8fd479832ce2caacdb6e477508c39c8d7d9f",
+        "sha256:e45de1ac0d18831524dfa1255bec6c91d737fccbffb67c0de6024cc4bffedf66"
+      ],
+      "limitations": [
+        "Local dev fixture run; not the authenticated package transport.",
+        "The camera position is transformed from source pose 19890, but its horizontal look direction and FOV remain inspection-only and have not been matched to a source optical camera.",
+        "The supplied LCC2 depth-sort convention is explicitly applied; the remaining Spark numeric values are inherited resolved defaults.",
+        "The fixture records resolved Spark runtime values, but those inherited defaults were not supplied as a controlled explicit profile.",
+        "Frame percentiles are demand-render request-to-observed-frame wall times, not GPU timer-query measurements.",
+        "The non-background pixel gate proves render presence only; it does not establish completeness, fidelity, room identity, or visual acceptance.",
+        "SOG and SPZ positions agree within the audited tolerance, but full attribute-level representation equivalence has not been established."
+      ],
+      "screenshot": {
+        "path": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-30\\grand-hall-spz-source-pose-19890-interior-v1-diagnostic-controlled-120w-600f.png",
+        "sha256": "sha256:02740825e322d119fd3484bda8d2b90fd2acd4352c5891cb9d51fca9b9613d20",
+        "sizeBytes": 2227653,
+        "width": 1600,
+        "height": 900,
+        "backgroundRgb": [
+          16,
+          18,
+          23
+        ],
+        "nonBackgroundPixelCount": 1439579,
+        "nonBackgroundPixelRatio": 0.9997076388888889
+      },
+      "timings": {
+        "loadMs": 2930,
+        "stableMs": 4351,
+        "frameP50Ms": 7,
+        "frameP95Ms": 73,
+        "frameP99Ms": 76
+      },
+      "environment": {
+        "browser": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.15 Safari/537.36",
+        "operatingSystem": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7727.15 Safari/537.36",
+        "webglVendor": "Google Inc. (NVIDIA)",
+        "webglRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "webglVersion": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+        "contextLost": false
+      },
+      "sourceMembers": [
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_0_0_1_0_1.spz",
+          "sizeBytes": 15460568,
+          "sha256": "sha256:1af334081d1ac617910878864bd6616a0207da10d887394036fe87480b5eaf0e"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_1_0_1_0_0.spz",
+          "sizeBytes": 15191273,
+          "sha256": "sha256:b9a324d468c53372c6df62a12a07ef5c2da1ec1c9090f778b0540ecfab72b523"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_2_0_0_1_1.spz",
+          "sizeBytes": 19065405,
+          "sha256": "sha256:b09eb2eb9b26208dbb2bb225d08d9903a396b769a3fa0ef9c8608cecd5adc1b6"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_3_0_0_0_0.spz",
+          "sizeBytes": 18594343,
+          "sha256": "sha256:8e2d1423fb0194dc94a4b42156c761769bc8432195e51a45e0c416ebb09074c6"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_3_0_1_0_1.spz",
+          "sizeBytes": 16823801,
+          "sha256": "sha256:642035d5f6ffb451e8247481030ab361316132f2f29ac89b6dde0cf93fdbee9a"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_4_0_1_0_0.spz",
+          "sizeBytes": 14952500,
+          "sha256": "sha256:7571bd14ff3fef79457cce730bec5e1edc63d33799d36214d91d3e5ea12ba651"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_5_0_0_0_1.spz",
+          "sizeBytes": 16237001,
+          "sha256": "sha256:6bcb6f5caccc9b0a7fe71c93d2365220c1ecc1251ea2a2ea99346041315d39c4"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_5_0_1_0_1.spz",
+          "sizeBytes": 17006992,
+          "sha256": "sha256:9147dbc655a3a1ca6005623c129871d519471dad6a84cd7fd4fc09e40f1c6445"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_6_0_0_0_1.spz",
+          "sizeBytes": 17383543,
+          "sha256": "sha256:e79fad848eb440838fac7dd8bf2c413fbfc6b7b6d9bb97bb2c1d0197990d9f72"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_7_0_0_0_0.spz",
+          "sizeBytes": 15120618,
+          "sha256": "sha256:20d84bac9bc1db357f34c4c8fc5b8fd479832ce2caacdb6e477508c39c8d7d9f"
+        },
+        {
+          "relativePath": "scans_BIG_MODEL_TH_GH_4/lcc2-result/data/3dgs/0_7_0_0_0_1.spz",
+          "sizeBytes": 12579316,
+          "sha256": "sha256:e45de1ac0d18831524dfa1255bec6c91d737fccbffb67c0de6024cc4bffedf66"
+        }
+      ],
+      "decodedSplatCount": 6019684,
+      "warmupFrameCount": 120,
+      "frameSampleCount": 600,
+      "frameMaxMs": 78,
+      "fixtureSettings": {
+        "camera": {
+          "position": [
+            -0.03426186932373998,
+            2.15606153541565,
+            8.015104841842623
+          ],
+          "target": [
+            0.15796363067625974,
+            2.15606153541565,
+            -0.19184415815737577
+          ],
+          "fov": 60,
+          "near": 0.05,
+          "far": 80
+        },
+        "group": {
+          "zUp": true,
+          "offset": [
+            4.74065113067626,
+            2.84312653541565,
+            -8.584035158157375
+          ]
+        },
+        "renderer": {
+          "dpr": 1,
+          "antialias": false,
+          "fixedCamera": true,
+          "transparent": true,
+          "depthWrite": false
+        }
+      },
+      "sparkRuntimeState": {
+        "activeSplats": 6019684,
+        "maxSplats": 8388608,
+        "sorting": false,
+        "sortDirty": false,
+        "dirty": false,
+        "maxStdDev": 2.8284271247461903,
+        "minPixelRadius": 0,
+        "maxPixelRadius": 512,
+        "minAlpha": 0.00196078431372549,
+        "enable2DGS": false,
+        "preBlurAmount": 0,
+        "blurAmount": 0.3,
+        "focalDistance": 0,
+        "apertureAngle": 0,
+        "falloff": 1,
+        "clipXY": 1.4,
+        "focalAdjustment": 1,
+        "encodeLinear": false,
+        "sortRadial": false,
+        "minSortIntervalMs": 0,
+        "enableLod": true,
+        "enableDriveLod": true,
+        "enableLodFetching": true,
+        "lodSplatCount": null,
+        "lodSplatScale": 1,
+        "lodRenderScale": 1,
+        "lodInflate": false,
+        "pagedExtSplats": false,
+        "maxPagedSplats": 16777216,
+        "numLodFetchers": 3
+      },
+      "actualCamera": {
+        "position": [
+          -0.03426186932373998,
+          2.15606153541565,
+          8.015104841842623
+        ],
+        "quaternion": [
+          0,
+          -0.01170873415725777,
+          0,
+          0.999931450422695
+        ],
+        "projectionMatrix": [
+          0.9742785792574936,
+          0,
+          0,
+          0,
+          0,
+          1.7320508075688774,
+          0,
+          0,
+          0,
+          0,
+          -1.0012507817385865,
+          -1,
+          0,
+          0,
+          -0.10006253908692933,
+          0
+        ],
+        "fov": 60,
+        "near": 0.05,
+        "far": 80
+      },
+      "actualRenderer": {
+        "toneMapping": "NoToneMapping",
+        "outputColorSpace": "srgb"
+      }
+    }
+  ]
+}

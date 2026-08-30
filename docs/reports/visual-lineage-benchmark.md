@@ -1,17 +1,18 @@
 # Grand Hall visual-lineage benchmark
 
-**Status:** local render-presence diagnostics executed; no accepted visual-lineage benchmark
-**Source audit date:** 2026-08-23
-**Audit reference:** `codex/grand-hall-exact-runtime` at `4c7a34bd`
+**Status:** clean-commit hardware diagnostics executed for SOG, SPZ, and supplied PLY; native LCC adapter in progress; human acceptance pending
+**Source audit date:** 2026-08-23; visible evidence refreshed 2026-08-30
+**Audit reference:** `codex/grand-hall-exact-runtime` at `a940a281`
 **Source root:** `C:\GRAND_HALL_BIG_MODEL_VARIATIONS`
 **Target:** Trades Hall Glasgow / Grand Hall only
 
-This report freezes the evidence and the contract for the first deterministic
-visual-lineage comparison and records local source-bound diagnostic attempts.
-Those attempts are not a completed controlled comparison: the camera is
-inspection-only, the worktree is dirty, the renderer profile uses resolved
-inherited defaults, the frame sample is reduced, and no native-LCC matched
-reference exists. Authenticated staging/package browser-WebGL QA has not run.
+This report freezes the evidence and contract for the first deterministic
+visual-lineage comparison. The current SOG, SPZ, and structural PLY records
+come from a clean commit, an RTX 4090 hardware renderer, and a 120-warm-up /
+600-timed-frame profile. They are still diagnostics: the camera is
+inspection-only, SOG/SPZ retain resolved inherited Spark defaults, human review
+is pending, and no native-LCC frame exists yet. Authenticated staging/package
+browser-WebGL QA has not run and is not required for this local milestone.
 
 The source files were supplied by the project owner with authority to use them
 for this project. Rights to use an asset do not change its truth class. Truth is
@@ -426,7 +427,54 @@ the controlled numeric profile matches the observed Spark state. An inspection
 camera, inherited library defaults, a dirty tree, a reduced sample, or absent
 human acceptance is `diagnostic` at best.
 
-## 5. Current benchmark status
+## 5. Current benchmark status — 2026-08-30
+
+The visible comparison is
+[`grand-hall-visual-lineage-comparison-2026-08-30.md`](grand-hall-visual-lineage-comparison-2026-08-30.md).
+Its six PNG/JSON evidence files were written directly into the dated evidence
+folder after commit `a940a281`, with the evidence path excluded from the source
+dirty-state calculation but not from the final bundle receipt. All three runs
+record `worktreeDirty: false`, Chrome 147 / ANGLE D3D11 / NVIDIA GeForce RTX
+4090, 1600 × 900 at DPR 1, 120 warm-up and 600 timed frames, and no context
+loss.
+
+| Candidate | Exact decoded source | Visible evidence | Current disposition |
+| --- | --- | --- | --- |
+| Exact SOG fine frontier | 11 members; 106,479,738 bytes; 6,019,684 decoded and active Gaussians | PNG `sha256:72f4c376d2742128daac0fb1a8ec68c178fd0e373bf47c1ce9e808cd077d3aae` | **DIAGNOSTIC / HUMAN REVIEW PENDING** — captured-radiance review pool |
+| Name-matched SPZ fine frontier | 11 members; 178,415,360 bytes; 6,019,684 decoded and active Gaussians | PNG `sha256:02740825e322d119fd3484bda8d2b90fd2acd4352c5891cb9d51fca9b9613d20` | **DIAGNOSTIC / HUMAN REVIEW PENDING** — captured-radiance review pool; export lineage still distinct from SOG |
+| Supplied triangle PLY | 1,185,642 source bytes; 34,040 XYZ vertices; 59,763 triangles | PNG `sha256:1678e63618c828ceac130d72dc1e9ac0c7de496814fb9944cff266190b338f60` | **STRUCTURAL DIAGNOSTIC ONLY** — deterministic normal-debug colours; excluded from radiance ranking and room admission |
+| Native `_9` LCC | Manifest `sha256:ce2a539483c7c2a271ca2555f6390e16425bb911851a8a56c2f16b17c248cac1`; 6,127,396 finest-level splats | No frame yet | **IN PROGRESS / NOT A LOSER** — genuine installed-viewer module path identified; another decoder will not stand in for native |
+| Current Venviewer runtime | Exact SOG code path exists | No authenticated product frame in this bundle | **NOT RUN** — local fixture evidence does not claim package activation or staging QA |
+
+SOG and SPZ visibly show a coherent Grand Hall in this camera, including an
+uninterrupted timber floor. That is an observation, not formal acceptance or a
+whole-room accuracy claim. The supplied PLY is independently proven to be a
+byte-complete triangle body with no unsupported properties or trailing bytes;
+its reconstructed geometry remains broader than an accepted Grand Hall-only
+boundary.
+
+The six frozen evidence files are bound by
+[`SHA256SUMS`](../evidence/grand-hall-lineage/2026-08-30/SHA256SUMS).
+
+### Immediate continuation
+
+1. Complete the first-party LCC Editor module, derive native coordinates
+   through the live vendor scene transform, require converged repeated native
+   captures, and add the genuine native row.
+2. Ask a human reviewer to accept or reject the exact SOG/SPZ/native hashes for
+   room identity and the prohibited-artifact checklist. PLY is reviewed only
+   for structural scope, never radiance beauty.
+3. Recover optical rotation/FOV or explicitly freeze an inspection-only suite,
+   then add a difficult oblique view before selecting any captured baseline.
+4. Continue camera recovery, metric registration, and Grand Hall-only boundary
+   review locally. Staging remains outside this milestone and still requires
+   separate authorization.
+
+## Appendix A — superseded 2026-08-23 benchmark status
+
+The following section is retained as immutable diagnostic history. Its
+SwiftShader timings and dirty-worktree hashes are superseded by the 2026-08-30
+hardware records above and must not be accepted as the current comparison.
 
 | Candidate | Source identity | App/runtime readiness | Fixed matched camera | Screenshot | Timing/performance | Status |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -467,7 +515,11 @@ formal human review remains pending. The evidence does establish that the old
 compact mass was a bad external camera presentation rather than collapsed
 frontier placement, missing per-tile transforms, or invented room geometry.
 
-## 6. Concrete next-run protocol
+## Appendix B — superseded staging-oriented protocol
+
+This historical protocol predates the local visible-first continuation above.
+Its staging-first order is superseded. It remains useful as a record of later
+deployment controls only; do not execute it without separate staging authority.
 
 The following is the reproducible protocol for a later controlled comparison.
 The local diagnostic harness exists, but staging authority, a reviewed matched
