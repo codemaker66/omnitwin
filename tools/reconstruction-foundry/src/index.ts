@@ -34,6 +34,8 @@ export {
 export * from "./grand-hall-t554-cleanup-marker-evidence-cli.js";
 export * from "./grand-hall-t554-interface-atlas.js";
 export * from "./grand-hall-t554-interface-atlas-cli.js";
+export * from "./grand-hall-matterport-boundary-contact-sheet.js";
+export * from "./grand-hall-matterport-boundary-contact-sheet-cli.js";
 export * from "./grand-hall-t554-panorama-inventory-review.js";
 export * from "./grand-hall-t554-panorama-inventory-review-cli.js";
 export * from "./grand-hall-t554-panorama-review.js";

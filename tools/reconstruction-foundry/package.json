@@ -17,6 +17,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "foundry": "tsx src/entry.ts",
+    "grand-hall-matterport-boundary-contact-sheet": "tsx src/grand-hall-matterport-boundary-contact-sheet-entry.ts",
     "grand-hall-lcc-preflight": "tsx src/grand-hall-xgrids-lcc-preflight-entry.ts",
     "grand-hall-t554-acceptance": "tsx src/grand-hall-t554-acceptance-entry.ts",
     "grand-hall-t554-boundary-review": "tsx src/grand-hall-t554-boundary-review-entry.mts",
