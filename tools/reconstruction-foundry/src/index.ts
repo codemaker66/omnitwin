@@ -5,6 +5,20 @@ export * from "./grand-hall-xgrids-lcc-windows.js";
 export * from "./grand-hall-authority-none-icp-seed-adapter.js";
 export * from "./grand-hall-processed-big-inventory.js";
 export * from "./grand-hall-coordinate-free-nomination-checkpoint.js";
+export * from "./grand-hall-camera-metric-subset-contract.js";
+export {
+  GRAND_HALL_CAMERA_METRIC_EXPECTED_MAPPINGS,
+  GRAND_HALL_CAMERA_METRIC_EXPECTED_SOURCE_IDENTITIES,
+  GRAND_HALL_CAMERA_METRIC_SUBSET_USAGE,
+  buildGrandHallCameraMetricSubsetFromFiles,
+  checkGrandHallCameraMetricSubset,
+  parseGrandHallCameraMetricSubset,
+  parseGrandHallCameraMetricSubsetArguments,
+  writeGrandHallCameraMetricSubset,
+  type GrandHallCameraMetricSubsetArguments,
+  type GrandHallCameraMetricSubsetFileOptions,
+  type GrandHallCameraMetricSubsetWriteOptions,
+} from "./grand-hall-camera-metric-subset.js";
 export * from "./grand-hall-accepted-scope-bundle-verifier.js";
 export * from "./grand-hall-t554-acceptance-cli.js";
 export * from "./grand-hall-t554-boundary-review.js";
