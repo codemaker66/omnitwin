@@ -5,6 +5,8 @@ export * from "./grand-hall-xgrids-lcc-windows.js";
 export * from "./grand-hall-authority-none-icp-seed-adapter.js";
 export * from "./grand-hall-processed-big-inventory.js";
 export * from "./grand-hall-coordinate-free-nomination-checkpoint.js";
+export * from "./grand-hall-difix-no-reference-input-pack-contract.js";
+export * from "./grand-hall-difix-no-reference-input-pack.js";
 export * from "./grand-hall-camera-metric-subset-contract.js";
 export {
   GRAND_HALL_CAMERA_METRIC_EXPECTED_MAPPINGS,

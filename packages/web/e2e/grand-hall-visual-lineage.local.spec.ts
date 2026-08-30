@@ -1,6 +1,17 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  constants as fileSystemConstants,
+  copyFile,
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import {
@@ -27,11 +38,22 @@ import {
   grandHallLineageFixturePath,
   grandHallPlyLineageFixturePath,
 } from "../src/lib/grand-hall-visual-lineage.js";
+import {
+  GRAND_HALL_DIFIX_CAPTURE_MODE,
+  deriveGrandHallLineageCaptureProfile,
+  grandHallCaptureEvidenceLimitation,
+  requireDifixCapturePaths,
+} from "./grand-hall-visual-lineage-capture-mode.js";
+import {
+  GRAND_HALL_LINEAGE_SOURCE_PATHSPEC,
+  grandHallLineageSourceStateSha256,
+} from "./grand-hall-visual-lineage-source-state.js";
 
 const SOURCE_ROOT = process.env["GRAND_HALL_LINEAGE_ROOT"];
 const EVIDENCE_DIR = process.env["GRAND_HALL_LINEAGE_EVIDENCE_DIR"];
 const ENABLED = SOURCE_ROOT !== undefined && EVIDENCE_DIR !== undefined;
 const BOUND_SOURCE_BASE_URL = "http://grand-hall-lineage.local/";
+const REQUESTED_CAPTURE_MODE = process.env["GRAND_HALL_LINEAGE_CAPTURE_MODE"];
 
 function boundedFrameCount(
   raw: string | undefined,
@@ -50,16 +72,23 @@ function boundedTimeoutMs(raw: string | undefined): number {
     : 7_200_000;
 }
 
-const WARMUP_FRAME_COUNT = boundedFrameCount(
-  process.env["GRAND_HALL_LINEAGE_WARMUP_FRAMES"],
-  120,
-  true,
+const REQUESTED_DIFIX_MODE = REQUESTED_CAPTURE_MODE === GRAND_HALL_DIFIX_CAPTURE_MODE;
+const DEFAULT_WARMUP_FRAME_COUNT = REQUESTED_DIFIX_MODE
+  ? 120
+  : boundedFrameCount(process.env["GRAND_HALL_LINEAGE_WARMUP_FRAMES"], 120, true);
+const DEFAULT_FRAME_SAMPLE_COUNT = REQUESTED_DIFIX_MODE
+  ? 600
+  : boundedFrameCount(process.env["GRAND_HALL_LINEAGE_FRAME_SAMPLES"], 600, false);
+const CAPTURE_PROFILE = deriveGrandHallLineageCaptureProfile(
+  REQUESTED_CAPTURE_MODE,
+  DEFAULT_WARMUP_FRAME_COUNT,
+  DEFAULT_FRAME_SAMPLE_COUNT,
 );
-const FRAME_SAMPLE_COUNT = boundedFrameCount(
-  process.env["GRAND_HALL_LINEAGE_FRAME_SAMPLES"],
-  600,
-  false,
-);
+requireDifixCapturePaths(CAPTURE_PROFILE, SOURCE_ROOT, EVIDENCE_DIR);
+const DIFIX_NO_REFERENCE_CAPTURE_ENABLED = CAPTURE_PROFILE.difixNoReference;
+const CAPTURE_VIEWPORT = CAPTURE_PROFILE.viewport;
+const WARMUP_FRAME_COUNT = CAPTURE_PROFILE.warmupFrameCount;
+const FRAME_SAMPLE_COUNT = CAPTURE_PROFILE.frameSampleCount;
 const TEST_TIMEOUT_MS = boundedTimeoutMs(process.env["GRAND_HALL_LINEAGE_TEST_TIMEOUT_MS"]);
 
 interface FixtureBridgeSnapshot {
@@ -95,6 +124,21 @@ async function hashFile(filePath: string): Promise<string> {
   const hash = createHash("sha256");
   hash.update(await readFile(filePath));
   return `sha256:${hash.digest("hex")}`;
+}
+
+async function assertPathAbsent(filePath: string): Promise<void> {
+  try {
+    await lstat(filePath);
+  } catch (error: unknown) {
+    if (
+      typeof error === "object"
+      && error !== null
+      && "code" in error
+      && error.code === "ENOENT"
+    ) return;
+    throw error;
+  }
+  throw new Error(`Difix capture output already exists and will not be replaced: ${filePath}`);
 }
 
 function percentile(sorted: readonly number[], fraction: number): number {
@@ -411,16 +455,7 @@ async function gitIdentity(): Promise<GitIdentity> {
     ":(exclude)packages/web/test-results/**",
     ":(exclude)packages/web/playwright-report/**",
   ];
-  const sourcePathspec = [
-    "--",
-    "pnpm-lock.yaml",
-    "packages/types/package.json",
-    "packages/types/src",
-    "packages/web/package.json",
-    "packages/web/vite.config.ts",
-    "packages/web/src",
-    "packages/web/e2e/grand-hall-visual-lineage.local.spec.ts",
-  ];
+  const sourcePathspec = GRAND_HALL_LINEAGE_SOURCE_PATHSPEC;
   const gitOptions = { cwd: repoRoot, encoding: "utf8" } as const;
   const sha = execFileSync("git", ["rev-parse", "HEAD"], gitOptions).trim();
   const status = execFileSync("git", ["--no-optional-locks", "status", "--porcelain=v1", ...statusPathspec], {
@@ -445,30 +480,27 @@ async function gitIdentity(): Promise<GitIdentity> {
     { ...gitOptions, maxBuffer: 16 * 1024 * 1024 },
   );
   const untrackedFiles = untrackedOutput.split("\0").filter((entry) => entry !== "").sort();
-  const stateHash = createHash("sha256");
-  stateHash.update("tracked-diff\0");
-  stateHash.update(trackedDiff);
-  for (const relativePath of untrackedFiles) {
-    stateHash.update("untracked-file\0");
-    stateHash.update(relativePath.replaceAll("\\", "/"));
-    stateHash.update("\0");
-    stateHash.update(await readFile(path.resolve(repoRoot, relativePath)));
-  }
+  const untrackedStateFiles = await Promise.all(untrackedFiles.map(async (relativePath) => ({
+    relativePath,
+    bytes: await readFile(path.resolve(repoRoot, relativePath)),
+  })));
   const typesRuntimeRoot = path.resolve(repoRoot, "packages/types/dist");
   const typesRuntimeFiles = await filesBelow(typesRuntimeRoot);
   if (typesRuntimeFiles.length === 0) {
     throw new Error("Grand Hall lineage requires a built @omnitwin/types runtime.");
   }
-  for (const relativePath of typesRuntimeFiles) {
-    stateHash.update("runtime-file\0");
-    stateHash.update(`packages/types/dist/${relativePath.replaceAll("\\", "/")}`);
-    stateHash.update("\0");
-    stateHash.update(await readFile(path.join(typesRuntimeRoot, relativePath)));
-  }
+  const runtimeStateFiles = await Promise.all(typesRuntimeFiles.map(async (relativePath) => ({
+    relativePath: `packages/types/dist/${relativePath.replaceAll("\\", "/")}`,
+    bytes: await readFile(path.join(typesRuntimeRoot, relativePath)),
+  })));
   return {
     sha,
     dirty: status.trim().length > 0,
-    sourceStateSha256: `sha256:${stateHash.digest("hex")}`,
+    sourceStateSha256: grandHallLineageSourceStateSha256({
+      trackedDiff,
+      untrackedFiles: untrackedStateFiles,
+      runtimeFiles: runtimeStateFiles,
+    }),
   };
 }
 
@@ -478,31 +510,49 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
 
   for (const format of ["sog", "spz"] as const) {
     test(`${format.toUpperCase()} exact-frontier names at the source-pose interior camera`, async ({ page }) => {
+      test.skip(
+        DIFIX_NO_REFERENCE_CAPTURE_ENABLED && format !== "sog",
+        "The explicit Difix no-reference input capture is SOG-only.",
+      );
       test.setTimeout(TEST_TIMEOUT_MS);
       if (SOURCE_ROOT === undefined || EVIDENCE_DIR === undefined) return;
       await mkdir(EVIDENCE_DIR, { recursive: true });
-      const sampleLabel = WARMUP_FRAME_COUNT >= 120 && FRAME_SAMPLE_COUNT >= 600
-        ? `diagnostic-controlled-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`
-        : `diagnostic-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`;
+      const sampleLabel = DIFIX_NO_REFERENCE_CAPTURE_ENABLED
+        ? GRAND_HALL_DIFIX_CAPTURE_MODE
+        : WARMUP_FRAME_COUNT >= 120 && FRAME_SAMPLE_COUNT >= 600
+          ? `diagnostic-controlled-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`
+          : `diagnostic-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`;
       const artifactStem = `grand-hall-${format}-${GRAND_HALL_LINEAGE_CAMERA.id}-${sampleLabel}`;
       const screenshotPath = path.join(EVIDENCE_DIR, `${artifactStem}.png`);
       const recordPath = path.join(EVIDENCE_DIR, `${artifactStem}.json`);
+      const temporaryNonce = DIFIX_NO_REFERENCE_CAPTURE_ENABLED
+        ? randomUUID()
+        : String(process.pid);
       const screenshotTempPath = path.join(
         EVIDENCE_DIR,
-        `.tmp-${String(process.pid)}-grand-hall-${format}-${sampleLabel}.png`,
+        `.tmp-${temporaryNonce}-grand-hall-${format}-${sampleLabel}.png`,
       );
       const recordTempPath = path.join(
         EVIDENCE_DIR,
-        `.tmp-${String(process.pid)}-grand-hall-${format}-${sampleLabel}.json`,
+        `.tmp-${temporaryNonce}-grand-hall-${format}-${sampleLabel}.json`,
       );
-      await Promise.all([
-        rm(screenshotPath, { force: true }),
-        rm(recordPath, { force: true }),
-        rm(screenshotTempPath, { force: true }),
-        rm(recordTempPath, { force: true }),
-      ]);
+      if (CAPTURE_PROFILE.publication === "create_exclusive") {
+        await Promise.all([
+          assertPathAbsent(screenshotPath),
+          assertPathAbsent(recordPath),
+          assertPathAbsent(screenshotTempPath),
+          assertPathAbsent(recordTempPath),
+        ]);
+      } else {
+        await Promise.all([
+          rm(screenshotPath, { force: true }),
+          rm(recordPath, { force: true }),
+          rm(screenshotTempPath, { force: true }),
+          rm(recordTempPath, { force: true }),
+        ]);
+      }
       const gitAtStart = await gitIdentity();
-      await page.setViewportSize({ width: 1600, height: 900 });
+      await page.setViewportSize(CAPTURE_VIEWPORT);
       const boundMembers = await bindSourceMembers(page, SOURCE_ROOT, format);
       const fixturePath = grandHallLineageFixturePath(format, BOUND_SOURCE_BASE_URL);
       const startedAt = Date.now();
@@ -566,8 +616,8 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       expect(environment.contextAntialias).toBe(false);
       expect(environment.devicePixelRatio).toBeCloseTo(1, 6);
       expect(environment.contextLost).toBe(false);
-      expect(environment.canvasWidth).toBe(1600);
-      expect(environment.canvasHeight).toBe(900);
+      expect(environment.canvasWidth).toBe(CAPTURE_VIEWPORT.width);
+      expect(environment.canvasHeight).toBe(CAPTURE_VIEWPORT.height);
       const rendererClass = classifyWebGlRenderer(
         environment.webglVendor,
         environment.webglRenderer,
@@ -614,7 +664,16 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
 
       const result = {
         ...GRAND_HALL_LINEAGE_INITIAL_BENCHMARK,
-        benchmarkId: `grand-hall-${format}-source-pose-local-${sampleLabel}-v1`,
+        benchmarkId: DIFIX_NO_REFERENCE_CAPTURE_ENABLED
+          ? "grand-hall-sog-source-pose-19890-difix-input-1024x576-v1"
+          : `grand-hall-${format}-source-pose-local-${sampleLabel}-v1`,
+        viewport: {
+          width: CAPTURE_VIEWPORT.width,
+          height: CAPTURE_VIEWPORT.height,
+          devicePixelRatio: DIFIX_NO_REFERENCE_CAPTURE_ENABLED
+            ? environment.devicePixelRatio
+            : 1,
+        },
         representations: [{
           id: format === "sog" ? "exact-sog-frontier" : "name-matched-spz-candidate",
           format,
@@ -638,6 +697,12 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
               : []),
             ...(WARMUP_FRAME_COUNT < 120 || FRAME_SAMPLE_COUNT < 600
               ? [`Diagnostic ${String(WARMUP_FRAME_COUNT)}-warm-up/${String(FRAME_SAMPLE_COUNT)}-timed-frame sample; below the controlled 120-warm-up/600-timed-frame profile.`]
+              : []),
+            ...(DIFIX_NO_REFERENCE_CAPTURE_ENABLED
+              ? [
+                  "Direct 1024x576 canvas capture for a non-reference Difix diagnostic input; no resize, provider execution, truth replacement, runtime authority, or promotion is granted.",
+                  grandHallCaptureEvidenceLimitation(environment),
+                ]
               : []),
           ],
           screenshot: {
@@ -693,14 +758,29 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       await writeFile(
         recordTempPath,
         `${JSON.stringify(validatedResult, null, 2)}\n`,
-        "utf8",
+        CAPTURE_PROFILE.publication === "create_exclusive"
+          ? { encoding: "utf8", flag: "wx" }
+          : { encoding: "utf8" },
       );
-      await rename(screenshotTempPath, screenshotPath);
-      await rename(recordTempPath, recordPath);
+      if (CAPTURE_PROFILE.publication === "create_exclusive") {
+        await copyFile(screenshotTempPath, screenshotPath, fileSystemConstants.COPYFILE_EXCL);
+        await copyFile(recordTempPath, recordPath, fileSystemConstants.COPYFILE_EXCL);
+        await Promise.all([
+          rm(screenshotTempPath, { force: true }),
+          rm(recordTempPath, { force: true }),
+        ]);
+      } else {
+        await rename(screenshotTempPath, screenshotPath);
+        await rename(recordTempPath, recordPath);
+      }
     });
   }
 
   test("supplied PLY at the source-pose interior camera is structural evidence only", async ({ page }) => {
+    test.skip(
+      DIFIX_NO_REFERENCE_CAPTURE_ENABLED,
+      "The explicit Difix no-reference input capture is SOG-only.",
+    );
     test.setTimeout(TEST_TIMEOUT_MS);
     if (SOURCE_ROOT === undefined || EVIDENCE_DIR === undefined) return;
     await mkdir(EVIDENCE_DIR, { recursive: true });
