@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "venviewer.grand-hall.lcc-native-vendor-lock.v2",
+  "xgridsInstallVersion": "0.15.0.7",
+  "unityVersion": "6000.0.60f1",
+  "lccSdkAssemblyVersion": "2.1.21.0",
+  "licenseBoundary": "Reference and run the user's installed XGRIDS binaries locally. Do not copy vendor binaries into the repository, redistribute them, patch CodeMeter/licensing, or represent this first-party module as an XGRIDS-supported integration.",
+  "runtimeClosurePolicy": "build.ps1 additionally hashes every regular file beneath the installed editor root, including all Unity data, native plugins, runtime files, and enabled stock module files; runtime verification applies that generated lock to the exact approved disposable copy.",
+  "compiler": {
+    "absolutePath": "C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/Roslyn/csc.exe",
+    "byteLength": 59672,
+    "fileVersion": "4.1400.26.36408",
+    "sha256": "F895C265B8FA8ED9601F6D8EC87D1E2079F5E851C70D0719A90007564AE8F6AB",
+    "role": "offline_first_party_compiler"
+  },
+  "files": [
+    {
+      "relativePath": "LCCEditor.exe",
+      "byteLength": 682968,
+      "sha256": "5207BDF9A8C51B5CD653DFEDDBCF5ADEC1BB2E973F0990668BF4696F5AD850A9",
+      "role": "runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/LCCWorld.dll",
+      "byteLength": 3712000,
+      "sha256": "4A73BEFBB6517B15A0BE23B3F32D4F60EFAA593A414CE6CC3B3EA921BE0F084D",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/LCCSDK.dll",
+      "byteLength": 1375232,
+      "sha256": "C02359FA2A7695C59B6A295E00C4383E0C576B8BC74585E68C05ECDF02A20BAE",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/LCCWorld.Common.dll",
+      "byteLength": 189440,
+      "sha256": "CC166D8396D462A1EE27C308855DDADF7010E58FD185276D78645490A747EFC2",
+      "role": "runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/UnityEngine.dll",
+      "byteLength": 170416,
+      "sha256": "8E0825F89A43C81E3501A4CDA9B4EAEDEFFC166E449E526884C33411A7A6825A",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/UnityEngine.CoreModule.dll",
+      "byteLength": 1797040,
+      "sha256": "4FB767E950977C4600E85CB4358F399DC283DB4262A8342A966C73E2EF9AE811",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/UniTask.dll",
+      "byteLength": 566272,
+      "sha256": "0DCC2A27BFEF118AE85AB448F4BDFCDA2906894EFB90A951FB2EC06A6FCC07B8",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/Cinemachine.dll",
+      "byteLength": 311808,
+      "sha256": "BAA429BD83B01FA9D02DF058B5921D87D98536E28F73ACF0089946016ED7EC5B",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/Newtonsoft.Json.dll",
+      "byteLength": 691712,
+      "sha256": "A56146202232958F46BD6A28B5A7DA166AEA123EE0D646735A46E5C341DFBF1F",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/netstandard.dll",
+      "byteLength": 90112,
+      "sha256": "6AE62E082DC494A2433984177F60CA4DB5FAE69B1F360A8B33754172B310B8C5",
+      "role": "compile_and_runtime"
+    }
+  ],
+  "externalFiles": [
+    {
+      "absolutePath": "F:/LccStudio/build/version.json",
+      "byteLength": 30,
+      "sha256": "2319924F84A2391D3DCC83CB453D74C7549F2C2FE6C17E0E825971FDF9A92FE9",
+      "role": "installed_version_identity"
+    }
+  ]
+}

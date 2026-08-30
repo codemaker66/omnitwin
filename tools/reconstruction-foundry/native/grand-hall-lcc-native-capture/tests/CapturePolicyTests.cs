@@ -1,0 +1,272 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Venviewer.NativeCapture;
+
+internal static class CapturePolicyTests
+{
+    private static int Main(string[] args)
+    {
+        try
+        {
+            TestCanonicalPathGate();
+            TestRawCoordinateTransform();
+            TestShaGate();
+            TestOutputPathGate();
+            TestSandboxAndReadinessPolicy();
+            TestPngDimensionGate();
+            TestSnapshotChangeGate();
+
+            if (args.Any(value => String.Equals(value, "--live", StringComparison.Ordinal)))
+            {
+                TestLiveCanonicalPackageReceipt();
+            }
+
+            Console.WriteLine("PASS: capture policy tests");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine("FAIL: " + exception);
+            return 1;
+        }
+    }
+
+    private static void TestSandboxAndReadinessPolicy()
+    {
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireApprovedSandboxEditorRoot(
+                @"F:\LccStudio\lcceditor",
+                @"F:\LccStudio\lcceditor");
+        });
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireApprovedSandboxEditorRoot(
+                @"C:\arbitrary-editor",
+                CapturePolicy.ApprovedSandboxEditorPath);
+        });
+
+        if (CapturePolicy.MinimumReadinessFrames < 300 ||
+            CapturePolicy.MinimumReadinessSeconds < 15.0 ||
+            CapturePolicy.SceneLoadTimeoutSeconds <= 0.0 ||
+            CapturePolicy.PerCaptureTimeoutSeconds <= 0.0)
+        {
+            throw new InvalidOperationException("The conservative readiness/watchdog contract regressed.");
+        }
+
+        CapturePolicy.RequirePathWithoutReparsePoints(Path.GetTempPath(), "test temp root");
+    }
+
+    private static void TestCanonicalPathGate()
+    {
+        CapturePolicy.RequireCanonicalScenePath(CapturePolicy.CanonicalScenePath);
+        CapturePolicy.RequireCanonicalScenePath(CapturePolicy.CanonicalScenePath.ToLowerInvariant());
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireCanonicalScenePath(
+                @"C:\GRAND_HALL_BIG_MODEL_VARIATIONS\scans_BIG_MODEL_TH_GH_8\lcc-result\Grand_Hall.lcc");
+        });
+    }
+
+    private static void TestRawCoordinateTransform()
+    {
+        Vec3d position = CapturePolicy.RawLccSourceToUnity(CapturePolicy.SourcePosition);
+        Vec3d target = CapturePolicy.RawLccSourceToUnity(CapturePolicy.SourceTarget);
+        Vec3d upEnd = CapturePolicy.RawLccSourceToUnity(
+            CapturePolicy.SourcePosition + CapturePolicy.SourceUp);
+        Vec3d up = new Vec3d(
+            upEnd.X - position.X,
+            upEnd.Y - position.Y,
+            upEnd.Z - position.Z);
+
+        CapturePolicy.RequireApproximatelyEqual(
+            "position",
+            position,
+            CapturePolicy.ExpectedNativePosition,
+            0.000000001);
+        CapturePolicy.RequireApproximatelyEqual(
+            "target",
+            target,
+            CapturePolicy.ExpectedNativeTarget,
+            0.000000001);
+        CapturePolicy.RequireApproximatelyEqual(
+            "up",
+            up,
+            CapturePolicy.ExpectedNativeUp,
+            0.000000001);
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireApproximatelyEqual(
+                "wrong position",
+                new Vec3d(position.X + 0.1, position.Y, position.Z),
+                CapturePolicy.ExpectedNativePosition,
+                CapturePolicy.NativeCoordinateTolerance);
+        });
+    }
+
+    private static void TestShaGate()
+    {
+        const string sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        AssertEqual(sha.ToUpperInvariant(), CapturePolicy.RequireSha256(sha, "test"), "normalized SHA");
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireSha256("not-a-sha", "test");
+        });
+    }
+
+    private static void TestOutputPathGate()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "venviewer-native-capture-policy-" + Guid.NewGuid().ToString("N"));
+        string editor = Path.Combine(root, "editor");
+        string output = Path.Combine(root, "output");
+        string insideEditor = Path.Combine(editor, "evidence");
+        Directory.CreateDirectory(editor);
+        Directory.CreateDirectory(output);
+        Directory.CreateDirectory(insideEditor);
+
+        try
+        {
+            AssertEqual(
+                CapturePolicy.NormalizePath(output),
+                CapturePolicy.RequireEmptySafeOutputDirectory(output, editor),
+                "safe output path");
+            CapturePolicy.RequireTreeWithoutReparsePoints(root, "owned test tree");
+            ExpectThrows<InvalidOperationException>(delegate
+            {
+                CapturePolicy.RequireEmptySafeOutputDirectory(insideEditor, editor);
+            });
+            File.WriteAllText(Path.Combine(output, "existing.txt"), "evidence");
+            ExpectThrows<InvalidOperationException>(delegate
+            {
+                CapturePolicy.RequireEmptySafeOutputDirectory(output, editor);
+            });
+            ExpectThrows<DirectoryNotFoundException>(delegate
+            {
+                CapturePolicy.RequireEmptySafeOutputDirectory(Path.Combine(root, "missing"), editor);
+            });
+        }
+        finally
+        {
+            DeleteOwnedTempTree(root, "venviewer-native-capture-policy-");
+        }
+    }
+
+    private static void TestPngDimensionGate()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "venviewer-native-png-policy-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        string validPath = Path.Combine(root, "valid.png");
+        string invalidPath = Path.Combine(root, "invalid.png");
+
+        try
+        {
+            File.WriteAllBytes(validPath, CreatePngHeader(1600, 900));
+            File.WriteAllBytes(invalidPath, CreatePngHeader(800, 600));
+            CapturePolicy.RequirePngDimensions(validPath, 1600, 900);
+            ExpectThrows<InvalidDataException>(delegate
+            {
+                CapturePolicy.RequirePngDimensions(invalidPath, 1600, 900);
+            });
+        }
+        finally
+        {
+            DeleteOwnedTempTree(root, "venviewer-native-png-policy-");
+        }
+    }
+
+    private static void TestSnapshotChangeGate()
+    {
+        var firstMembers = new List<FileReceipt>
+        {
+            new FileReceipt("Grand_Hall.lcc", "C:\\fixture\\Grand_Hall.lcc", 1, "AA", 10)
+        };
+        var unchangedMembers = new List<FileReceipt>
+        {
+            new FileReceipt("Grand_Hall.lcc", "C:\\fixture\\Grand_Hall.lcc", 1, "AA", 10)
+        };
+        var touchedMembers = new List<FileReceipt>
+        {
+            new FileReceipt("Grand_Hall.lcc", "C:\\fixture\\Grand_Hall.lcc", 1, "AA", 11)
+        };
+        var before = new PackageSnapshot("C:\\fixture\\Grand_Hall.lcc", firstMembers, "BB");
+        var unchanged = new PackageSnapshot("C:\\fixture\\Grand_Hall.lcc", unchangedMembers, "BB");
+        var touched = new PackageSnapshot("C:\\fixture\\Grand_Hall.lcc", touchedMembers, "BB");
+        CapturePolicy.RequireUnchanged(before, unchanged);
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireUnchanged(before, touched);
+        });
+    }
+
+    private static void TestLiveCanonicalPackageReceipt()
+    {
+        PackageSnapshot before = CapturePolicy.SnapshotCanonicalPackage(CapturePolicy.CanonicalScenePath);
+        AssertEqual(11, before.Members.Count, "canonical member count");
+        FileReceipt manifest = before.Members.Single(member => member.RelativePath == "Grand_Hall.lcc");
+        AssertEqual(CapturePolicy.CanonicalManifestSha256, manifest.Sha256, "canonical manifest SHA");
+        PackageSnapshot after = CapturePolicy.SnapshotCanonicalPackage(CapturePolicy.CanonicalScenePath);
+        CapturePolicy.RequireUnchanged(before, after);
+        Console.WriteLine("PASS: live canonical package " + before.InventorySha256);
+    }
+
+    private static byte[] CreatePngHeader(int width, int height)
+    {
+        var bytes = new byte[25];
+        byte[] signature = { 137, 80, 78, 71, 13, 10, 26, 10 };
+        Array.Copy(signature, bytes, signature.Length);
+        bytes[12] = (byte)'I';
+        bytes[13] = (byte)'H';
+        bytes[14] = (byte)'D';
+        bytes[15] = (byte)'R';
+        WriteBigEndian(bytes, 16, width);
+        WriteBigEndian(bytes, 20, height);
+        return bytes;
+    }
+
+    private static void WriteBigEndian(byte[] bytes, int offset, int value)
+    {
+        bytes[offset] = (byte)((value >> 24) & 0xff);
+        bytes[offset + 1] = (byte)((value >> 16) & 0xff);
+        bytes[offset + 2] = (byte)((value >> 8) & 0xff);
+        bytes[offset + 3] = (byte)(value & 0xff);
+    }
+
+    private static void AssertEqual<T>(T expected, T actual, string label)
+    {
+        if (!EqualityComparer<T>.Default.Equals(expected, actual))
+        {
+            throw new InvalidOperationException(
+                label + " mismatch. Expected '" + expected + "' but received '" + actual + "'.");
+        }
+    }
+
+    private static void ExpectThrows<TException>(Action action)
+        where TException : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (TException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException("Expected exception " + typeof(TException).FullName + ".");
+    }
+
+    private static void DeleteOwnedTempTree(string path, string requiredPrefix)
+    {
+        string normalizedPath = Path.GetFullPath(path);
+        string normalizedTemp = Path.GetFullPath(Path.GetTempPath());
+        if (!normalizedPath.StartsWith(normalizedTemp, StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFileName(normalizedPath).StartsWith(requiredPrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Refusing to delete an unowned test path: " + normalizedPath);
+        }
+
+        Directory.Delete(normalizedPath, true);
+    }
+}
