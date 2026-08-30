@@ -816,7 +816,7 @@ async function verifyWslHostMappings(
   }
 }
 
-function offlineEnvArguments(
+export function grandHallDifixOfflineEnvArguments(
   lock: GrandHallDifixExecutionLock,
   home: string,
   caches: { readonly hfModulesCacheWsl: string; readonly torchHomeWsl: string } = {
@@ -834,7 +834,6 @@ function offlineEnvArguments(
     HF_HOME: `${home}/.cache/huggingface`,
     HF_MODULES_CACHE: caches.hfModulesCacheWsl,
     TORCH_HOME: caches.torchHomeWsl,
-    PATH: "/usr/local/cuda/bin:/usr/bin:/bin",
   }).sort(([left], [right]) => left.localeCompare(right));
   return ["env", "-i", ...pairs.map(([key, value]) => `${key}=${value}`)];
 }
@@ -905,7 +904,7 @@ async function runNamespacedCheck(
 ): Promise<void> {
   const args = [
     ...wslNamespacePrefix(lock),
-    ...offlineEnvArguments(lock, "/tmp"),
+    ...grandHallDifixOfflineEnvArguments(lock, "/tmp"),
     ...commandArgs,
   ];
   const result = await spawnCaptured("wsl.exe", args).catch((error: unknown) => (
@@ -1087,7 +1086,7 @@ const PreflightSchema = z.object({
 async function preflightExactNamespace(lock: GrandHallDifixExecutionLock): Promise<void> {
   const result = await spawnCaptured("wsl.exe", [
     ...wslNamespacePrefix(lock),
-    ...offlineEnvArguments(lock, "/tmp"),
+    ...grandHallDifixOfflineEnvArguments(lock, "/tmp"),
     ...grandHallDifixStablePythonScriptArguments({
       pythonWsl: lock.paths.venvPythonWsl,
       scriptWsl: lock.paths.adapter.wslPath,
@@ -1505,7 +1504,7 @@ export async function runGrandHallDifixOneShot(
   try {
     exitCode = await spawnToLogs("wsl.exe", [
       ...wslNamespacePrefix(lock),
-      ...offlineEnvArguments(lock, lock.paths.attemptDirectoryWsl, {
+      ...grandHallDifixOfflineEnvArguments(lock, lock.paths.attemptDirectoryWsl, {
         hfModulesCacheWsl: lock.paths.hfModulesCacheWsl,
         torchHomeWsl: lock.paths.torchHomeWsl,
       }),

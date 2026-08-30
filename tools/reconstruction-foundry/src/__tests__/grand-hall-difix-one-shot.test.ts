@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   GRAND_HALL_DIFIX_ADAPTER_ID,
   GRAND_HALL_DIFIX_EXACT_CONFIGURATION,
+  GRAND_HALL_DIFIX_OFFLINE_PATH,
   GrandHallDifixExecutionLockSchema,
   assertGrandHallDifixAuthorizationCurrent,
   assertGrandHallDifixExperimentBindingProjectionMatches,
@@ -30,6 +31,7 @@ import {
   checkGrandHallDifixExecutionLock,
   claimGrandHallDifixAuthorizationCreateOnly,
   completeGrandHallDifixConsumedPrelaunch,
+  grandHallDifixOfflineEnvArguments,
 } from "../grand-hall-difix-one-shot.js";
 
 const createdDirectories: string[] = [];
@@ -180,6 +182,7 @@ function executionLock(root: string): GrandHallDifixExecutionLock {
       wslDistribution: "Ubuntu",
       namespaceArgvPrefix: ["unshare", "--user", "--map-root-user", "--net"] as const,
       offlineEnvironment: {
+        PATH: GRAND_HALL_DIFIX_OFFLINE_PATH,
         HF_HUB_OFFLINE: "1",
         TRANSFORMERS_OFFLINE: "1",
         DIFFUSERS_OFFLINE: "1",
@@ -425,6 +428,38 @@ describe("Grand Hall Difix one-shot authorization overlay", () => {
 });
 
 describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
+  it("binds the WSL NVIDIA utility directory into the exact offline execution environment", async () => {
+    const { lock } = await harness();
+    expect(lock.launch.offlineEnvironment.PATH).toBe(
+      "/usr/local/cuda/bin:/usr/lib/wsl/lib:/usr/bin:/bin",
+    );
+
+    const { executionLockSha256: _digest, ...payload } = lock;
+    const tamperedPayload = {
+      ...payload,
+      launch: {
+        ...payload.launch,
+        offlineEnvironment: {
+          ...payload.launch.offlineEnvironment,
+          PATH: "/usr/local/cuda/bin:/usr/bin:/bin",
+        },
+      },
+    };
+    expect(() => GrandHallDifixExecutionLockSchema.parse({
+      ...tamperedPayload,
+      executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
+    })).toThrow();
+  });
+
+  it("passes exactly the lock-bound PATH through an empty process environment", async () => {
+    const { lock } = await harness();
+    const argv = grandHallDifixOfflineEnvArguments(lock, "/tmp");
+    expect(argv.slice(0, 2)).toEqual(["env", "-i"]);
+    expect(argv.filter((argument) => argument.startsWith("PATH="))).toEqual([
+      `PATH=${lock.launch.offlineEnvironment.PATH}`,
+    ]);
+  });
+
   it("rejects a self-hash-tampered execution lock", async () => {
     const { lock } = await harness();
     expect(() => GrandHallDifixExecutionLockSchema.parse({ ...lock, sourceImageSha256: sha("tampered") }))

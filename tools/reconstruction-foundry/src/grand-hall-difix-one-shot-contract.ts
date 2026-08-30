@@ -51,6 +51,8 @@ export const GRAND_HALL_DIFIX_ADAPTER_ID =
   "venviewer-grand-hall-difix-no-reference-local-one-shot-v1";
 export const GRAND_HALL_DIFIX_EXPLICIT_RUN_OPT_IN =
   "I AUTHORIZE ONE LOCAL ZERO-COST NO-NETWORK DIFIX DIAGNOSTIC ATTEMPT; CONSUME THIS AUTHORIZATION EVEN IF IT FAILS.";
+export const GRAND_HALL_DIFIX_OFFLINE_PATH =
+  "/usr/local/cuda/bin:/usr/lib/wsl/lib:/usr/bin:/bin";
 
 export const GRAND_HALL_DIFIX_MODEL_LOAD_CLOSURE = Object.freeze([
   Object.freeze({ relativePath: "model_index.json", sizeBytes: 586, sha256: "sha256:0b4316574ae102b3855c4508a13becc81b353f6455dafa6186ac37d82c8292b9" }),
@@ -676,6 +678,7 @@ const ExecutionLockPayloadSchema = z.object({
       z.literal("--net"),
     ]),
     offlineEnvironment: z.object({
+      PATH: z.literal(GRAND_HALL_DIFIX_OFFLINE_PATH),
       HF_HUB_OFFLINE: z.literal("1"),
       TRANSFORMERS_OFFLINE: z.literal("1"),
       DIFFUSERS_OFFLINE: z.literal("1"),
@@ -1495,6 +1498,7 @@ export function compileGrandHallDifixExecutionLock(
       wslDistribution: input.wslDistribution,
       namespaceArgvPrefix: ["unshare", "--user", "--map-root-user", "--net"],
       offlineEnvironment: {
+        PATH: GRAND_HALL_DIFIX_OFFLINE_PATH,
         HF_HUB_OFFLINE: "1",
         TRANSFORMERS_OFFLINE: "1",
         DIFFUSERS_OFFLINE: "1",

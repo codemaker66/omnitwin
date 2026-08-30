@@ -92,8 +92,11 @@ All Python processes receive an empty environment plus an explicit offline
 allowlist and run under Python `-I -B`. The inference process binds fresh,
 previously absent `HF_MODULES_CACHE` and `TORCH_HOME` directories directly
 beneath the exact create-only attempt directory. The reviewed adapter and seal
-tool are stable-read, size/hash checked, compiled, and executed from the
-verified in-memory bytes rather than reopened by pathname. Implicit Hugging
+tool are stable-read, size/hash checked, compiled, and executed from verified
+in-memory bytes rather than reopened by pathname. The execution lock also binds
+the exact sanitized `PATH`, including WSL's `/usr/lib/wsl/lib` NVIDIA utility
+directory so the no-network CUDA preflight can invoke the host-projected
+`nvidia-smi` without inheriting the operator environment. Implicit Hugging
 Face tokens and telemetry are disabled. No Hugging Face token, API key,
 provider credential, or other secret is accepted or required.
 
