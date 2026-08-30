@@ -84,17 +84,36 @@ reject `ply_mesh` from radiance ranking.
 
 ## Native LCC lane
 
-**NO FRAME YET · ADAPTER IN PROGRESS · NOT TREATED AS A LOSING CANDIDATE**
+**GENUINE VENDOR-EDITOR UI FRAME EXISTS · DIAGNOSTIC ONLY · NOT RANKING-ELIGIBLE**
+
+The installed vendor editor has now loaded and visibly rendered an exact
+scratch-only LCC2 conversion of the native `_9` package. The resulting
+1600×900 active-window PNG is genuine native-viewer evidence, not another
+decoder standing in for the vendor renderer:
+
+- [Visible-UI evidence report](grand-hall-native-lcc-ui-evidence-2026-08-30.md)
+- PNG SHA-256:
+  `2e4dfe18a951a5764c09a7d3fcdbb2d0f32085b8d5eb46df9c7a11f53c89e12f`
+- Machine receipt SHA-256:
+  `3cd6d5d788a38f4a9c8483ef2107a8082782a0242ce1e57f0fa7379f51e6eb63`
+
+This frame visibly depicts the supplied Grand Hall with a continuous timber
+floor and no facade or neighbouring room. It remains outside the
+captured-radiance ranking because it has vendor UI chrome and no deterministic
+camera, projection, residency, convergence, or native-capture receipt. Human
+acceptance is also pending. It therefore proves that the native package can be
+viewed, but it is neither a winner nor a loser in the fixed-camera comparison.
 
 The native `_9` LCC manifest is 1,983 bytes with SHA-256
 `ce2a539483c7c2a271ca2555f6390e16425bb911851a8a56c2f16b17c248cac1`.
 Its finest level reports 6,127,396 splats, so it is not primitive-parity with
 the SOG/SPZ rows. Read-only vendor-API inspection has established a genuine
 fixed-camera route through the installed LCC Editor's public managed-module,
-camera, coordinate-conversion, scene-ready, and lossless-capture services. A
-first-party fail-closed adapter and converged native frame are still required
-before this row becomes visible evidence; another decoder will not be used as
-a native proxy.
+camera, coordinate-conversion, scene-ready, and lossless-capture services. The
+first unattended adapter attempt did not load because the custom module ID was
+absent from the vendor feature-toggle allowlist; it timed out safely and
+produced no native PNG or in-process receipt. A first-party fail-closed adapter
+frame is still required before this row can join the matched-camera benchmark.
 
 The shared source-space inspection contract is position
 `[-4.774913,-16.59914,-0.687065]`, target

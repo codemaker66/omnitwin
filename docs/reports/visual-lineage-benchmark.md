@@ -1,6 +1,6 @@
 # Grand Hall visual-lineage benchmark
 
-**Status:** clean-commit hardware diagnostics executed for SOG, SPZ, and supplied PLY; native LCC adapter in progress; human acceptance pending
+**Status:** clean-commit hardware diagnostics executed for SOG, SPZ, and supplied PLY; genuine native LCC vendor-UI diagnostic captured; matched native adapter frame and human acceptance pending
 **Source audit date:** 2026-08-23; visible evidence refreshed 2026-08-30
 **Audit reference:** `codex/grand-hall-exact-runtime` at `a940a281`
 **Source root:** `C:\GRAND_HALL_BIG_MODEL_VARIATIONS`
@@ -10,9 +10,12 @@ This report freezes the evidence and contract for the first deterministic
 visual-lineage comparison. The current SOG, SPZ, and structural PLY records
 come from a clean commit, an RTX 4090 hardware renderer, and a 120-warm-up /
 600-timed-frame profile. They are still diagnostics: the camera is
-inspection-only, SOG/SPZ retain resolved inherited Spark defaults, human review
-is pending, and no native-LCC frame exists yet. Authenticated staging/package
-browser-WebGL QA has not run and is not required for this local milestone.
+inspection-only, SOG/SPZ retain resolved inherited Spark defaults, and human
+review is pending. A separate genuine vendor-editor native-LCC UI frame now
+exists, but it has UI chrome and no deterministic camera, projection,
+residency, convergence, or native-capture receipt, so it is not admitted to the
+matched-camera ranking. Authenticated staging/package browser-WebGL QA has not
+run and is not required for this local milestone.
 
 The source files were supplied by the project owner with authority to use them
 for this project. Rights to use an asset do not change its truth class. Truth is
@@ -443,7 +446,7 @@ loss.
 | Exact SOG fine frontier | 11 members; 106,479,738 bytes; 6,019,684 decoded and active Gaussians | PNG `sha256:72f4c376d2742128daac0fb1a8ec68c178fd0e373bf47c1ce9e808cd077d3aae` | **DIAGNOSTIC / HUMAN REVIEW PENDING** — captured-radiance review pool |
 | Name-matched SPZ fine frontier | 11 members; 178,415,360 bytes; 6,019,684 decoded and active Gaussians | PNG `sha256:02740825e322d119fd3484bda8d2b90fd2acd4352c5891cb9d51fca9b9613d20` | **DIAGNOSTIC / HUMAN REVIEW PENDING** — captured-radiance review pool; export lineage still distinct from SOG |
 | Supplied triangle PLY | 1,185,642 source bytes; 34,040 XYZ vertices; 59,763 triangles | PNG `sha256:1678e63618c828ceac130d72dc1e9ac0c7de496814fb9944cff266190b338f60` | **STRUCTURAL DIAGNOSTIC ONLY** — deterministic normal-debug colours; excluded from radiance ranking and room admission |
-| Native `_9` LCC | Manifest `sha256:ce2a539483c7c2a271ca2555f6390e16425bb911851a8a56c2f16b17c248cac1`; 6,127,396 finest-level splats | No frame yet | **IN PROGRESS / NOT A LOSER** — genuine installed-viewer module path identified; another decoder will not stand in for native |
+| Native `_9` LCC | Manifest `sha256:ce2a539483c7c2a271ca2555f6390e16425bb911851a8a56c2f16b17c248cac1`; 6,127,396 finest-level splats | Genuine 1600×900 vendor-editor UI PNG `sha256:2e4dfe18a951a5764c09a7d3fcdbb2d0f32085b8d5eb46df9c7a11f53c89e12f` | **DIAGNOSTIC / NOT RANKING-ELIGIBLE / NOT A LOSER** — native package visibly loads; frame lacks the receipt-bound matched camera required for comparison |
 | Current Venviewer runtime | Exact SOG code path exists | No authenticated product frame in this bundle | **NOT RUN** — local fixture evidence does not claim package activation or staging QA |
 
 SOG and SPZ visibly show a coherent Grand Hall in this camera, including an
@@ -458,9 +461,10 @@ The six frozen evidence files are bound by
 
 ### Immediate continuation
 
-1. Complete the first-party LCC Editor module, derive native coordinates
-   through the live vendor scene transform, require converged repeated native
-   captures, and add the genuine native row.
+1. Complete the first-party LCC Editor module in an isolated profile, derive
+   native coordinates through the live vendor scene transform, require
+   converged repeated camera-only captures, and replace the UI diagnostic with
+   a ranking-eligible matched native row.
 2. Ask a human reviewer to accept or reject the exact SOG/SPZ/native hashes for
    room identity and the prohibited-artifact checklist. PLY is reviewed only
    for structural scope, never radiance beauty.

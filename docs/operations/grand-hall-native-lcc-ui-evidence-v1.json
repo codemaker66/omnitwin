@@ -1,0 +1,300 @@
+{
+  "schemaVersion": "venviewer.grand-hall.native-lcc-ui-evidence.v1",
+  "receiptId": "grand-hall-native-lcc-ui-evidence-2026-08-30-v1",
+  "createdAtUtc": "2026-08-30T01:47:13.883Z",
+  "authority": {
+    "state": "none",
+    "diagnosticOnly": true,
+    "humanAcceptance": "pending",
+    "trainingAuthority": false,
+    "runtimeAuthority": false,
+    "stagingAuthority": false,
+    "deploymentAuthority": false,
+    "publicationAuthority": false,
+    "architecturalTruthAuthority": false
+  },
+  "subject": {
+    "venueId": "trades-hall",
+    "roomId": "grand-hall",
+    "sourceLineage": "processed-xgrids-big-native-lcc-gh9",
+    "evidenceKind": "visible-vendor-editor-ui-diagnostic"
+  },
+  "repositoryContext": {
+    "worktree": "C:/Users/blake/omnitwin2-grand-hall-exact-runtime",
+    "headGitSha": "ddffb18d9125c3401ee6ca142e1cf5c9887eeaaa",
+    "branch": "codex/grand-hall-exact-runtime",
+    "captureArtifactTrackedByGit": false
+  },
+  "canonicalSourcePackage": {
+    "root": "C:/GRAND_HALL_BIG_MODEL_VARIATIONS/scans_BIG_MODEL_TH_GH_9/lcc-result",
+    "scene": "C:/GRAND_HALL_BIG_MODEL_VARIATIONS/scans_BIG_MODEL_TH_GH_9/lcc-result/Grand_Hall.lcc",
+    "sceneManifestSha256": "sha256:ce2a539483c7c2a271ca2555f6390e16425bb911851a8a56c2f16b17c248cac1",
+    "memberCount": 11,
+    "totalByteLength": 1127138769,
+    "canonicalPackageInventorySha256": "sha256:d4f98368b737857038cab3fe2ac439057484b304ef0215abb649a6bc606f16a3",
+    "canonicalPackageDigestMethod": "Sort the locked member receipts by relative Windows path using ordinal comparison; append RELATIVE_PATH|BYTE_LENGTH|UPPERCASE_SHA256 plus one LF for each member; SHA-256 the resulting UTF-8 bytes. This is CapturePolicy.InventorySha256.",
+    "lockedMembers": [
+      {
+        "relativePath": "Grand_Hall.lcc",
+        "byteLength": 1983,
+        "sha256": "sha256:ce2a539483c7c2a271ca2555f6390e16425bb911851a8a56c2f16b17c248cac1"
+      },
+      {
+        "relativePath": "assets/poses.json",
+        "byteLength": 2561254,
+        "sha256": "sha256:7a020e5f1cc00029ce773d1f448804fa1b7f16355412b023320975122556418d"
+      },
+      {
+        "relativePath": "attrs.lcp",
+        "byteLength": 572,
+        "sha256": "sha256:2de67e07ad085ab28855f79b67f5b6e5c6bd8485203e05c69e002d371cf7d54b"
+      },
+      {
+        "relativePath": "collision.lci",
+        "byteLength": 1521440,
+        "sha256": "sha256:ba410f1e6fa7f93b1c4ae7dd2dbb0aef211329dde40e8e3d75d29204f45b5248"
+      },
+      {
+        "relativePath": "data.bin",
+        "byteLength": 373926848,
+        "sha256": "sha256:18627958fca65242c0b1702d26d772ec4b254f35c51b0c834db53f926e308206"
+      },
+      {
+        "relativePath": "environment.bin",
+        "byteLength": 1084416,
+        "sha256": "sha256:6fee62eed083810490f370d2f6f9826c580036ab27ae49c863e9f5f05864c2d1"
+      },
+      {
+        "relativePath": "index.bin",
+        "byteLength": 672,
+        "sha256": "sha256:60605faf37657f1fe426ccfaf5fc748e7ddedef00011f9a95fb4cd50f82e1c8c"
+      },
+      {
+        "relativePath": "log.txt",
+        "byteLength": 2338,
+        "sha256": "sha256:a369b6316ce602c2488c692588e18a8b18a6a25dd41f243d6c3253a5fac24094"
+      },
+      {
+        "relativePath": "report.json",
+        "byteLength": 607,
+        "sha256": "sha256:4ebe53c9de2c59a34d5748157f3581acc929d59f75680f6b1cb15aa2944165cb"
+      },
+      {
+        "relativePath": "shcoef.bin",
+        "byteLength": 747853696,
+        "sha256": "sha256:77b8d974244d3634f3ae1943fa139f2c5ecf1ec58cbff5b69d86a7ef1bf5565b"
+      },
+      {
+        "relativePath": "thumb.jpg",
+        "byteLength": 184943,
+        "sha256": "sha256:0c1b8d9a17dfa58e0c09f5e50df10d989213bad0ce510b07f96cc2a57589ab87"
+      }
+    ],
+    "postVisibleRunVerification": {
+      "buildReceipt": "tools/reconstruction-foundry/native/grand-hall-lcc-native-capture/out/build-receipt.json",
+      "buildReceiptSha256": "sha256:1f1ddba519fded0d0078e5a32d02c46f788b18c145b52cc2afc51c2cb82b7548",
+      "builtAtUtc": "2026-08-30T01:42:20.7306059Z",
+      "liveCanonicalPackageVerified": true,
+      "runtimeClosureVerified": true,
+      "testsPassed": true
+    }
+  },
+  "scratchClone": {
+    "root": "C:/Users/blake/AppData/Local/Venviewer/lcc-native-conversion-sandbox/gh9-lcc-result-20260830T0121Z",
+    "originalMemberSelection": "All recursive files beneath the scratch root except the converted-lcc2 subtree.",
+    "memberCount": 11,
+    "totalByteLength": 1127138769,
+    "windowsOperatorInventorySha256": "sha256:9575bcadea5bcf8989bd96a27e2006390c32d9017076435c322f00ea13365f2f",
+    "sourceWindowsOperatorInventorySha256": "sha256:9575bcadea5bcf8989bd96a27e2006390c32d9017076435c322f00ea13365f2f",
+    "sourceAndScratchMemberRecordsByteExact": true,
+    "inventoryDigestMethod": "On this Windows host, recursively form records with properties RelativePath, Bytes, Sha256; keep Path.GetRelativePath platform-native backslashes; keep uppercase file SHA-256; Sort-Object RelativePath; ConvertTo-Json -Compress -Depth 4; SHA-256 the UTF-8 JSON bytes.",
+    "inventoryDigestPortability": "windows-specific-operator-check-not-cross-platform-canonical",
+    "reparsePointCountAtCloneCheck": 0
+  },
+  "vendorConversion": {
+    "operation": "The vendor editor reported the legacy LCC as unsupported and upgraded only the exact scratch clone to LCC2 through its visible UI.",
+    "inputScene": "C:/Users/blake/AppData/Local/Venviewer/lcc-native-conversion-sandbox/gh9-lcc-result-20260830T0121Z/Grand_Hall.lcc",
+    "outputRoot": "C:/Users/blake/AppData/Local/Venviewer/lcc-native-conversion-sandbox/gh9-lcc-result-20260830T0121Z/converted-lcc2/Grand_Hall",
+    "outputScene": {
+      "path": "C:/Users/blake/AppData/Local/Venviewer/lcc-native-conversion-sandbox/gh9-lcc-result-20260830T0121Z/converted-lcc2/Grand_Hall/Grand_Hall.lcc2",
+      "byteLength": 124070,
+      "sha256": "sha256:2c5165bc6b1531027284706ea7945086c65e7a886b8cb01d2b97a6c82c0b3a11"
+    },
+    "memberCount": 60,
+    "totalByteLength": 214350601,
+    "windowsOperatorInventorySha256": "sha256:08cfb58808f73f878b6b817de2fdc3ddf1bf0af7963b99dd8addeaf40d1ffca8",
+    "inventoryDigestMethod": "The same Windows-specific compact-JSON operator method declared for scratchClone.",
+    "typeBreakdown": [
+      {
+        "extension": ".sog",
+        "memberCount": 24,
+        "totalByteLength": 209794464
+      },
+      {
+        "extension": ".ply",
+        "memberCount": 16,
+        "totalByteLength": 1413391
+      },
+      {
+        "extension": ".btree",
+        "memberCount": 16,
+        "totalByteLength": 271872
+      },
+      {
+        "extension": ".lcc2",
+        "memberCount": 1,
+        "totalByteLength": 124070
+      },
+      {
+        "extension": ".jpg",
+        "memberCount": 1,
+        "totalByteLength": 184943
+      },
+      {
+        "extension": ".json",
+        "memberCount": 2,
+        "totalByteLength": 2561861
+      }
+    ]
+  },
+  "visibleUiEvidence": {
+    "application": {
+      "executable": "C:/Users/blake/AppData/Local/Venviewer/lcc-native-capture-sandbox/lcceditor-0.15.0.7/LCCEditor.exe",
+      "executableByteLength": 682968,
+      "executableSha256": "sha256:5207bdf9a8c51b5cd653dfeddbcf5adec1bb2e973f0990668bf4696f5ad850a9",
+      "vendorLockInstallVersion": "0.15.0.7",
+      "visibleBrandLabel": "Lixel Cyber Color",
+      "visibleEditorVersionLabel": "Editor v2.0.0 (INT)"
+    },
+    "loadedScene": "C:/Users/blake/AppData/Local/Venviewer/lcc-native-conversion-sandbox/gh9-lcc-result-20260830T0121Z/converted-lcc2/Grand_Hall/Grand_Hall.lcc2",
+    "artifact": {
+      "repositoryRelativePath": "artifacts/grand-hall-native-lcc-ui-evidence/grand-hall-native-lcc-ui-full-1600x900.png",
+      "absolutePath": "C:/Users/blake/omnitwin2-grand-hall-exact-runtime/artifacts/grand-hall-native-lcc-ui-evidence/grand-hall-native-lcc-ui-full-1600x900.png",
+      "byteLength": 1824870,
+      "sha256": "sha256:2e4dfe18a951a5764c09a7d3fcdbb2d0f32085b8d5eb46df9c7a11f53c89e12f",
+      "lastWriteTimeUtc": "2026-08-30T01:39:27.7827726Z",
+      "mediaType": "image/png",
+      "pngSignatureVerified": true,
+      "widthPixels": 1600,
+      "heightPixels": 900,
+      "decodedPixelFormat": "Format32bppArgb",
+      "decoderUsedForDimensionCheck": "System.Drawing.Image"
+    },
+    "rendererSettingsUiObservation": {
+      "qualityLabel": "Ultra Quality",
+      "graphicsApiLabel": "Direct12",
+      "frameLockLabel": "On",
+      "observationMode": "operator-observed-in-settings-ui-before-capture",
+      "programmaticallyAttested": false,
+      "visibleInFinalPng": false
+    },
+    "captureMethod": {
+      "kind": "windows-active-window-ui-screenshot",
+      "steps": [
+        "Activate the one selected vendor-editor window.",
+        "Use Alt+PrintScreen to copy the 1600x900 active-window raster.",
+        "Paste into Microsoft Paint.",
+        "Crop away only the unused Paint canvas outside the selected 1600x900 raster.",
+        "Save losslessly as PNG."
+      ],
+      "vendorCaptureServiceUsed": false,
+      "firstPartyNativeCaptureModuleLoaded": false,
+      "postCaptureRasterResamplingApplied": false,
+      "colourAdjustmentApplied": false,
+      "generativeImageOperationUsed": false,
+      "uiChromeIncluded": true
+    },
+    "singleFrameObservation": {
+      "state": "agent-diagnostic-not-human-accepted",
+      "observed": [
+        "The frame visibly depicts the supplied Grand Hall interior with a continuous timber floor, timber wall panelling, ornate ceiling, chandeliers, fireplace, portraits, and tall windows.",
+        "No facade or neighbouring room is visible in this frame.",
+        "No large dark central floor patch is visible in this frame."
+      ],
+      "notEstablished": [
+        "architectural accuracy outside the visible frame",
+        "absence of artifacts across the complete scene",
+        "camera calibration or recovered source-camera pose",
+        "full Gaussian residency or convergence",
+        "source-truth acceptance"
+      ]
+    }
+  },
+  "nativeAdapter": {
+    "sourceRoot": "tools/reconstruction-foundry/native/grand-hall-lcc-native-capture",
+    "currentPostRunBuildReceiptSha256": "sha256:1f1ddba519fded0d0078e5a32d02c46f788b18c145b52cc2afc51c2cb82b7548",
+    "module": {
+      "byteLength": 76288,
+      "sha256": "sha256:3465b1c62a1ffae305f373cf873557d04e33ee374cfa668f6511939d0f1d946d"
+    },
+    "pluginManifest": {
+      "byteLength": 436,
+      "sha256": "sha256:59df0cc71d9c8ccae6365f2e144bc62281b5cfdcedb53278b1cdc8aef174ec89"
+    },
+    "operatorWrapperSha256": "sha256:892d7ed0c0fe9e8352c07fbda443d85922672f9d5c0402a8280bf2b89897569e",
+    "compilerSha256": "sha256:f895c265b8fa8ed9601f6d8ec87d1e2079f5e851c70d0719a90007564ae8f6ab",
+    "runtimeClosure": {
+      "schemaVersion": "venviewer.grand-hall.lcc-native-runtime-closure-lock.v1",
+      "memberCount": 890,
+      "totalByteLength": 1402172819,
+      "lockFileSha256": "sha256:f3ced55c3bd215fbc8bba49be453829d67d689a6a42d2f3a338eff2a0d95cec5",
+      "inventorySha256": "sha256:e76dae03144f07e47c1600582ac6a15b19a21812c5648e0c864f86b61f328cf8"
+    }
+  },
+  "priorUnattendedAttempt": {
+    "operatorReceipt": "C:/Users/blake/AppData/Local/Venviewer/native-captures/grand-hall-gh9-20260830T010436Z-b2716689/grand-hall-native-capture-operator-receipt.json",
+    "operatorReceiptByteLength": 2341,
+    "operatorReceiptSha256": "sha256:64ebad704c7c48133ee3402583f11261b7acc5cc4a7e777acda6cfe2a0581f24",
+    "status": "timeout",
+    "startedAtUtc": "2026-08-30T01:04:36.9088667Z",
+    "completedAtUtc": "2026-08-30T01:19:37.7544186Z",
+    "hardWallClockTimeoutSeconds": 900,
+    "timedOut": true,
+    "processTreeTerminationAttempted": true,
+    "processTreeTerminationSucceeded": true,
+    "outputDirectoryMemberCount": 1,
+    "nativeReceiptProduced": false,
+    "nativePngProduced": false,
+    "attemptBuildReceiptSha256": "sha256:300cff031c223ca62b05c75835a147eb84a3d9b1116dec8bb05e2ef3bd81a029",
+    "readOnlyRootCauseDiagnosis": {
+      "attestationState": "diagnostic-not-native-receipt",
+      "finding": "The editor scanned module manifests, then called FeatureToggleService.IsEnabled(manifest.Id). The custom ID com.venviewer.native_capture was absent from the ten stock IDs, so the editor rejected it before Assembly.Load; the positional .lcc argument was also ignored and the editor remained on its home page.",
+      "activeToggleFile": "C:/Users/blake/AppData/LocalLow/XGrids/LCCEditor/feature_toggles/module_toggles.dat",
+      "bundledToggleFile": "C:/Users/blake/AppData/Local/Venviewer/lcc-native-capture-sandbox/lcceditor-0.15.0.7/LCCEditor_Data/StreamingAssets/feature_toggles/module_toggles.dat",
+      "toggleFileByteLength": 2696,
+      "activeAndBundledToggleSha256": "sha256:8ff16cac30f3f49a71be9a06d486b1bb9b682e0ccf1c5c35869a251d98313531",
+      "activeAndBundledBytesExact": true,
+      "editorPatched": false,
+      "stockModuleImpersonationUsed": false,
+      "licensingBypassAttempted": false
+    }
+  },
+  "mutationBoundary": {
+    "canonicalSourceEditedByConversion": false,
+    "canonicalSourceMatchesLockedElevenMemberInventoryAfterVisibleRun": true,
+    "scratchOriginalMembersRemainByteExactWithCanonicalSource": true,
+    "vendorConversionOutputConfinedToScratchConvertedLcc2Subtree": true,
+    "captureOutputConfinedToRepositoryIgnoredArtifactDirectory": true,
+    "productionModified": false,
+    "providerOperationPerformed": false,
+    "uploadPerformed": false,
+    "generatedArchitecturalContentUsed": false
+  },
+  "networkClaims": {
+    "firstPartyPostRunBuildReceiptReportsNetworkUsed": false,
+    "vendorEditorPacketCapturePerformed": false,
+    "vendorEditorNetworkSilenceClaimed": false,
+    "note": "The visible run used the vendor editor and no packet capture was retained. This receipt therefore makes no claim that the vendor process was network-silent."
+  },
+  "limitations": [
+    "This is diagnostic UI evidence only; it is not an accepted source-truth artifact.",
+    "The visible frame has no deterministic camera receipt, recovered camera pose, projection receipt, or convergence receipt.",
+    "The PNG is a Windows active-window screenshot with vendor UI chrome, not an ICaptureManager camera-only raster.",
+    "Ultra Quality, Direct12, and frame lock On were observed in the visible settings UI but are not programmatically attested or visible in the final PNG.",
+    "The first-party unattended adapter did not load and produced neither its native receipt nor its native PNG.",
+    "A single visible frame cannot prove complete-room scope, absence of artifacts elsewhere, full Gaussian residency, geometry accuracy, or architectural truth.",
+    "No training, runtime, staging, deployment, publication, measurement, collision, export, or production-trust authority is granted.",
+    "The compact-JSON source/scratch/conversion inventory digests are Windows-specific operator checks, not cross-platform canonical digests.",
+    "No claim is made that the vendor editor was network-silent."
+  ]
+}
