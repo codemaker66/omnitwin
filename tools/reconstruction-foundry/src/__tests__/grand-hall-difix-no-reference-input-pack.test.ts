@@ -25,9 +25,11 @@ import {
   GRAND_HALL_DIFIX_INPUT_HEIGHT,
   GRAND_HALL_DIFIX_INPUT_WIDTH,
   GRAND_HALL_DIFIX_MANIFEST_FILENAME,
+  GRAND_HALL_DIFIX_NOMINAL_DPR_ONE_ABSOLUTE_TOLERANCE,
   GRAND_HALL_DIFIX_PROTECTED_MASK_FILENAME,
   GRAND_HALL_DIFIX_PUBLICATION_RECEIPT_FILENAME,
   GRAND_HALL_DIFIX_SOURCE_RENDER_FILENAME,
+  isGrandHallDifixNominalDprOne,
 } from "../grand-hall-difix-no-reference-input-pack-contract.js";
 import {
   GrandHallDifixInputPackError,
@@ -38,6 +40,7 @@ import {
 
 const temporaryRoots: string[] = [];
 const INPUT_PACK_DIGEST_DOMAIN = "VENVIEWER_GRAND_HALL_DIFIX_INPUT_PACK_V1";
+const OBSERVED_CHROME_NOMINAL_DPR_ONE = 1.0000000298023224;
 
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, {
@@ -112,6 +115,7 @@ function actualCamera(): Record<string, unknown> {
 function browserRecord(
   capturePath: string,
   captureBytes: Buffer,
+  observedDevicePixelRatio = 1,
 ): Record<string, unknown> {
   const captureSha = `sha256:${createSha256(captureBytes)}`;
   const pixelCount = GRAND_HALL_DIFIX_INPUT_WIDTH * GRAND_HALL_DIFIX_INPUT_HEIGHT;
@@ -128,7 +132,7 @@ function browserRecord(
     viewport: {
       width: GRAND_HALL_DIFIX_INPUT_WIDTH,
       height: GRAND_HALL_DIFIX_INPUT_HEIGHT,
-      devicePixelRatio: 1,
+      devicePixelRatio: observedDevicePixelRatio,
     },
     rendererSettings: rendererSettings(),
     representations: [{
@@ -146,7 +150,7 @@ function browserRecord(
           method: GRAND_HALL_DIFIX_CAPTURE_METHOD,
           canvasWidth: GRAND_HALL_DIFIX_INPUT_WIDTH,
           canvasHeight: GRAND_HALL_DIFIX_INPUT_HEIGHT,
-          devicePixelRatio: 1,
+          devicePixelRatio: observedDevicePixelRatio,
           contextAntialias: false,
           resizeApplied: false,
         })}`,
@@ -224,13 +228,16 @@ interface Harness {
   readonly record: Record<string, unknown>;
 }
 
-async function makeHarnessFromCapture(captureBytes: Buffer): Promise<Harness> {
+async function makeHarnessFromCapture(
+  captureBytes: Buffer,
+  observedDevicePixelRatio = 1,
+): Promise<Harness> {
   const root = await mkdtemp(join(tmpdir(), "grand-hall-difix-input-pack-"));
   temporaryRoots.push(root);
   const capturePath = join(root, "capture.png");
   const recordPath = join(root, "capture.json");
   const outputDirectory = join(root, "pack");
-  const record = browserRecord(capturePath, captureBytes);
+  const record = browserRecord(capturePath, captureBytes, observedDevicePixelRatio);
   await writeFile(capturePath, captureBytes, { flag: "wx" });
   await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`, { flag: "wx" });
   return { root, capturePath, recordPath, outputDirectory, captureBytes, record };
@@ -239,6 +246,7 @@ async function makeHarnessFromCapture(captureBytes: Buffer): Promise<Harness> {
 async function makeHarness(
   width: number = GRAND_HALL_DIFIX_INPUT_WIDTH,
   height: number = GRAND_HALL_DIFIX_INPUT_HEIGHT,
+  observedDevicePixelRatio = 1,
 ): Promise<Harness> {
   const captureBytes = await sharp({
     create: {
@@ -248,7 +256,7 @@ async function makeHarness(
       background: { r: 80, g: 100, b: 120 },
     },
   }).png().toBuffer();
-  return makeHarnessFromCapture(captureBytes);
+  return makeHarnessFromCapture(captureBytes, observedDevicePixelRatio);
 }
 
 function crc32(bytes: Buffer): number {
@@ -635,6 +643,91 @@ describe("Grand Hall Difix no-reference input pack", () => {
       .toEqual(result);
   });
 
+  it("preserves and accepts the real Chrome nominal-DPR-one observation", async () => {
+    const harness = await makeHarness(
+      GRAND_HALL_DIFIX_INPUT_WIDTH,
+      GRAND_HALL_DIFIX_INPUT_HEIGHT,
+      OBSERVED_CHROME_NOMINAL_DPR_ONE,
+    );
+    const result = await writeGrandHallDifixNoReferenceInputPack({
+      capturePngPath: harness.capturePath,
+      browserRecordPath: harness.recordPath,
+      outputDirectory: harness.outputDirectory,
+    });
+    const rendererArtifact = await readJsonRecord(join(
+      harness.outputDirectory,
+      result.manifest.rendererArtifact.fileName,
+    ));
+    expect(asRecord(rendererArtifact["viewport"], "viewport")["devicePixelRatio"])
+      .toBe(OBSERVED_CHROME_NOMINAL_DPR_ONE);
+    expect(asRecord(rendererArtifact["observedCapture"], "observedCapture")["devicePixelRatio"])
+      .toBe(OBSERVED_CHROME_NOMINAL_DPR_ONE);
+    expect(await readFile(join(harness.outputDirectory, GRAND_HALL_DIFIX_BROWSER_RECORD_FILENAME)))
+      .toEqual(await readFile(harness.recordPath));
+    await expect(checkGrandHallDifixNoReferenceInputPack(harness.outputDirectory))
+      .resolves.toEqual(result);
+  });
+
+  it("uses the exclusive nominal-DPR-one tolerance and rejects invalid values", async () => {
+    expect(isGrandHallDifixNominalDprOne(OBSERVED_CHROME_NOMINAL_DPR_ONE)).toBe(true);
+    expect(isGrandHallDifixNominalDprOne(
+      1 + GRAND_HALL_DIFIX_NOMINAL_DPR_ONE_ABSOLUTE_TOLERANCE * 0.999,
+    )).toBe(true);
+    expect(isGrandHallDifixNominalDprOne(
+      1 + GRAND_HALL_DIFIX_NOMINAL_DPR_ONE_ABSOLUTE_TOLERANCE * 1.001,
+    )).toBe(false);
+    for (const invalid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(isGrandHallDifixNominalDprOne(invalid)).toBe(false);
+    }
+
+    const outsideTolerance = await makeHarness(
+      GRAND_HALL_DIFIX_INPUT_WIDTH,
+      GRAND_HALL_DIFIX_INPUT_HEIGHT,
+      1 + GRAND_HALL_DIFIX_NOMINAL_DPR_ONE_ABSOLUTE_TOLERANCE * 1.001,
+    );
+    await expectPackError(writeGrandHallDifixNoReferenceInputPack({
+      capturePngPath: outsideTolerance.capturePath,
+      browserRecordPath: outsideTolerance.recordPath,
+      outputDirectory: outsideTolerance.outputDirectory,
+    }), "RECORD_MISMATCH");
+
+    const nonPositive = await makeHarness(
+      GRAND_HALL_DIFIX_INPUT_WIDTH,
+      GRAND_HALL_DIFIX_INPUT_HEIGHT,
+      0,
+    );
+    await expectPackError(writeGrandHallDifixNoReferenceInputPack({
+      capturePngPath: nonPositive.capturePath,
+      browserRecordPath: nonPositive.recordPath,
+      outputDirectory: nonPositive.outputDirectory,
+    }), "INPUT_INVALID");
+  });
+
+  it("requires exact structured-marker cross-binding inside the nominal DPR tolerance", async () => {
+    const harness = await makeHarness(
+      GRAND_HALL_DIFIX_INPUT_WIDTH,
+      GRAND_HALL_DIFIX_INPUT_HEIGHT,
+      OBSERVED_CHROME_NOMINAL_DPR_ONE,
+    );
+    await rewriteRecord(harness, (record) => {
+      const rep = representation(record);
+      const limitations = rep["limitations"] as string[];
+      const index = limitations.findIndex((entry) => (
+        entry.startsWith(GRAND_HALL_DIFIX_CAPTURE_EVIDENCE_PREFIX)
+      ));
+      const captureEvidence = asRecord(JSON.parse(
+        limitations[index]?.slice(GRAND_HALL_DIFIX_CAPTURE_EVIDENCE_PREFIX.length) ?? "{}",
+      ), "captureEvidence");
+      captureEvidence["devicePixelRatio"] = 1;
+      limitations[index] = `${GRAND_HALL_DIFIX_CAPTURE_EVIDENCE_PREFIX}${JSON.stringify(captureEvidence)}`;
+    });
+    await expectPackError(writeGrandHallDifixNoReferenceInputPack({
+      capturePngPath: harness.capturePath,
+      browserRecordPath: harness.recordPath,
+      outputDirectory: harness.outputDirectory,
+    }), "RECORD_MISMATCH");
+  });
+
   it("allows exactly one of two concurrent create-only writers to claim the pack", async () => {
     const harness = await makeHarness();
     const outcomes = await Promise.allSettled([1, 2].map(async () => (
@@ -779,6 +872,29 @@ describe("Grand Hall Difix no-reference input pack", () => {
       mutateCamera: (camera) => {
         const observed = asRecord(camera["observedCamera"], "observedCamera");
         observed["position"] = [1, 2, 3];
+      },
+    });
+    await expectPackError(
+      checkGrandHallDifixNoReferenceInputPack(harness.outputDirectory),
+      "RECORD_MISMATCH",
+    );
+  });
+
+  it("rejects a fully rehashed renderer artifact whose nominal DPR is not exact", async () => {
+    const harness = await makeHarness(
+      GRAND_HALL_DIFIX_INPUT_WIDTH,
+      GRAND_HALL_DIFIX_INPUT_HEIGHT,
+      OBSERVED_CHROME_NOMINAL_DPR_ONE,
+    );
+    await writeGrandHallDifixNoReferenceInputPack({
+      capturePngPath: harness.capturePath,
+      browserRecordPath: harness.recordPath,
+      outputDirectory: harness.outputDirectory,
+    });
+    await resealCompletedPack(harness, {
+      mutateRenderer: (renderer) => {
+        asRecord(renderer["viewport"], "viewport")["devicePixelRatio"] = 1;
+        asRecord(renderer["observedCapture"], "observedCapture")["devicePixelRatio"] = 1;
       },
     });
     await expectPackError(

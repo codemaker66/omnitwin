@@ -32,6 +32,11 @@ export const GRAND_HALL_DIFIX_PUBLICATION_RECEIPT_SCHEMA =
 
 export const GRAND_HALL_DIFIX_INPUT_WIDTH = 1_024;
 export const GRAND_HALL_DIFIX_INPUT_HEIGHT = 576;
+// Playwright's `toBeCloseTo(1, 6)` uses an exclusive half-unit tolerance at
+// the sixth decimal place. Chrome may expose a nominal DPR of one with this
+// small IEEE-754/OS-scale drift, so retain the observation and classify only
+// the capture intent with the same bound.
+export const GRAND_HALL_DIFIX_NOMINAL_DPR_ONE_ABSOLUTE_TOLERANCE = 5e-7;
 export const GRAND_HALL_DIFIX_SOURCE_RENDER_FILENAME = "source-render.png";
 export const GRAND_HALL_DIFIX_BROWSER_RECORD_FILENAME = "browser-capture-record.json";
 export const GRAND_HALL_DIFIX_PROTECTED_MASK_FILENAME = "protected-mask.png";
@@ -80,6 +85,14 @@ export const GRAND_HALL_DIFIX_EXPECTED_GAUSSIAN_COUNT = 6_019_684;
 
 const Sha256Schema = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
 const FileNameSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,179}$/u);
+const PreservedDevicePixelRatioSchema = z.number().finite().positive();
+
+export function isGrandHallDifixNominalDprOne(value: unknown): value is number {
+  return typeof value === "number"
+    && Number.isFinite(value)
+    && value > 0
+    && Math.abs(value - 1) < GRAND_HALL_DIFIX_NOMINAL_DPR_ONE_ABSOLUTE_TOLERANCE;
+}
 
 export const GrandHallDifixFileReceiptSchema = z.object({
   fileName: FileNameSchema,
@@ -99,7 +112,7 @@ export const GrandHallDifixObservedCaptureSchema = z.object({
   method: z.literal(GRAND_HALL_DIFIX_CAPTURE_METHOD),
   canvasWidth: z.literal(GRAND_HALL_DIFIX_INPUT_WIDTH),
   canvasHeight: z.literal(GRAND_HALL_DIFIX_INPUT_HEIGHT),
-  devicePixelRatio: z.literal(1),
+  devicePixelRatio: PreservedDevicePixelRatioSchema,
   contextAntialias: z.literal(false),
   resizeApplied: z.literal(false),
 }).strict();
@@ -139,7 +152,7 @@ export const GrandHallDifixRendererArtifactSchema = z.object({
   viewport: z.object({
     width: z.literal(GRAND_HALL_DIFIX_INPUT_WIDTH),
     height: z.literal(GRAND_HALL_DIFIX_INPUT_HEIGHT),
-    devicePixelRatio: z.literal(1),
+    devicePixelRatio: PreservedDevicePixelRatioSchema,
   }).strict(),
   observedCapture: GrandHallDifixObservedCaptureSchema,
   directCanvasCapture: z.literal(true),

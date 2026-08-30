@@ -48,7 +48,9 @@ pnpm --filter @omnitwin/web exec playwright test e2e/grand-hall-visual-lineage.l
 The explicit mode:
 
 - declares only the SOG test runnable; SPZ and PLY are skipped;
-- fixes the viewport/backing canvas to 1024×576 at DPR 1;
+- fixes the viewport/backing canvas to 1024×576 at nominal DPR 1; Chrome's
+  observed positive finite DPR is preserved byte-for-byte and may carry less
+  than 5×10⁻⁷ absolute floating-point drift from one;
 - captures the canvas element with Playwright's element-screenshot operation,
   records the exact method as `playwright_canvas_element_screenshot`, and does
   not claim raw-framebuffer readback or apply a resize;
@@ -131,6 +133,9 @@ Stop without provider execution if any of the following occurs:
 - browser record screenshot hash, size, dimensions, camera, renderer, source
   member, splat count, runtime stability, git/source state, or run window does
   not match;
+- the observed DPR is not positive, finite, nominally one within the exclusive
+  5×10⁻⁷ absolute capture tolerance, or is not exactly cross-bound between the
+  viewport, structured capture marker, and renderer artifact;
 - WebGL renderer is software or unknown;
 - any mask is not the exact constant-value image; or
 - pack inventory, digest address, canonical JSON, or authority guard fails.

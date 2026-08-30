@@ -50,6 +50,7 @@ import {
   GrandHallDifixReconstructionArtifactSchema,
   GrandHallDifixRendererArtifactSchema,
   GrandHallDifixRenderGenerationReceiptSchema,
+  isGrandHallDifixNominalDprOne,
   type GrandHallDifixArtifactReference,
   type GrandHallDifixCameraArtifact,
   type GrandHallDifixFileReceipt,
@@ -431,7 +432,7 @@ function requireBenchmarkHeader(benchmark: VisualLineageBenchmarkV0): void {
     || benchmark.roomRef !== "trades-hall/grand-hall"
     || benchmark.viewport.width !== GRAND_HALL_DIFIX_INPUT_WIDTH
     || benchmark.viewport.height !== GRAND_HALL_DIFIX_INPUT_HEIGHT
-    || benchmark.viewport.devicePixelRatio !== 1
+    || !isGrandHallDifixNominalDprOne(benchmark.viewport.devicePixelRatio)
   ) {
     fail("RECORD_MISMATCH", "Browser record is not the explicit 1024x576 Grand Hall Difix capture mode.");
   }
