@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
+
 import {
+  FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_MEDIA_TYPE,
   FoundryRestorationExperimentV0Schema,
   domainSeparatedSha256,
   stableCanonicalJson,
@@ -8,8 +11,19 @@ import {
 import { z } from "zod";
 
 import {
+  GRAND_HALL_DIFIX_EXPECTED_SOURCE_MEMBERS,
   GRAND_HALL_DIFIX_INPUT_HEIGHT,
   GRAND_HALL_DIFIX_INPUT_WIDTH,
+  GrandHallDifixCameraArtifactSchema,
+  GrandHallDifixInputPackManifestSchema,
+  GrandHallDifixReconstructionArtifactSchema,
+  GrandHallDifixRendererArtifactSchema,
+  GrandHallDifixRenderGenerationReceiptSchema,
+  type GrandHallDifixCameraArtifact,
+  type GrandHallDifixInputPackManifest,
+  type GrandHallDifixReconstructionArtifact,
+  type GrandHallDifixRendererArtifact,
+  type GrandHallDifixRenderGenerationReceipt,
 } from "./grand-hall-difix-no-reference-input-pack-contract.js";
 
 export const GRAND_HALL_DIFIX_EXECUTION_LOCK_SCHEMA =
@@ -24,6 +38,8 @@ export const GRAND_HALL_DIFIX_ATTEMPT_RECEIPT_SCHEMA =
   "venviewer.grand-hall.difix-no-reference-attempt-receipt.v1";
 export const GRAND_HALL_DIFIX_CLAIM_SCHEMA =
   "venviewer.grand-hall.difix-no-reference-authorization-claim.v1";
+export const GRAND_HALL_DIFIX_RUNTIME_ENVIRONMENT_ARTIFACT_SCHEMA =
+  "venviewer.grand-hall.difix-no-reference-runtime-environment-artifact.v1";
 
 export const GRAND_HALL_DIFIX_PROVIDER_REPOSITORY_ID = "nv-tlabs/Difix3D";
 export const GRAND_HALL_DIFIX_PROVIDER_REVISION =
@@ -91,6 +107,25 @@ function canonicalEqual(left: unknown, right: unknown): boolean {
   return stableCanonicalJson(toCanonicalJson(left)) === stableCanonicalJson(toCanonicalJson(right));
 }
 
+function canonicalJsonFileBytes(value: unknown): Buffer {
+  return Buffer.from(`${stableCanonicalJson(toCanonicalJson(value))}\n`, "utf8");
+}
+
+function rawSha256(bytes: Uint8Array): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function localExperimentMaterialSetSha256(
+  materials: readonly GrandHallDifixExperimentMaterialFile[],
+): string {
+  return digest("VENVIEWER_GRAND_HALL_DIFIX_LOCAL_EXPERIMENT_MATERIAL_SET_V1", materials.map((material) => ({
+    relativePath: material.relativePath,
+    artifactIds: material.artifactIds,
+    sizeBytes: material.file.sizeBytes,
+    sha256: material.file.sha256,
+  })));
+}
+
 function uniqueSorted(values: readonly string[]): boolean {
   return values.length === new Set(values).size
     && values.every((value, index) => index === 0 || (values[index - 1] ?? "") < value);
@@ -108,6 +143,15 @@ function portableBasename(path: string): string {
   return path.split(/[\\/]/u).at(-1) ?? "";
 }
 
+function portableParent(path: string): string {
+  const index = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return index <= 0 ? path.slice(0, Math.max(1, index + 1)) : path.slice(0, index);
+}
+
+function normalizedPortableHost(path: string): string {
+  return path.replaceAll("\\", "/").replace(/\/+$/u, "").toLowerCase();
+}
+
 export const GrandHallDifixBoundFileSchema = z.object({
   hostPath: AbsoluteHostPathSchema,
   wslPath: AbsoluteWslPathSchema,
@@ -115,6 +159,51 @@ export const GrandHallDifixBoundFileSchema = z.object({
   sha256: Sha256Schema,
 }).strict();
 export type GrandHallDifixBoundFile = z.infer<typeof GrandHallDifixBoundFileSchema>;
+
+export const GrandHallDifixRuntimeEnvironmentArtifactSchema = z.object({
+  schemaVersion: z.literal(GRAND_HALL_DIFIX_RUNTIME_ENVIRONMENT_ARTIFACT_SCHEMA),
+  authority: z.literal("none"),
+  runtimeSealArtifact: z.object({
+    sourcePath: AbsoluteHostPathSchema,
+    sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    sha256: Sha256Schema,
+  }).strict(),
+  runtimeSealSha256: Sha256Schema,
+  runtimeId: SafeIdSchema,
+  providerRepositoryId: z.literal(GRAND_HALL_DIFIX_PROVIDER_REPOSITORY_ID),
+  providerRevision: z.literal(GRAND_HALL_DIFIX_PROVIDER_REVISION),
+  sourceArchive: z.object({
+    sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    sha256: Sha256Schema,
+  }).strict(),
+  sealedForOfflineExecution: z.literal(true),
+}).strict();
+export type GrandHallDifixRuntimeEnvironmentArtifact = z.infer<
+  typeof GrandHallDifixRuntimeEnvironmentArtifactSchema
+>;
+
+const SafeRelativePosixPathSchema = z.string().min(1).max(4_096).refine(
+  (value) => !value.startsWith("/")
+    && !value.includes("\\")
+    && value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== ".."),
+  "path must be a normalized traversal-free relative POSIX path",
+);
+
+export const GrandHallDifixExperimentMaterialFileSchema = z.object({
+  relativePath: SafeRelativePosixPathSchema.refine(
+    (value) => !value.includes("/"),
+    "experiment material must be one direct material-directory file",
+  ),
+  artifactIds: z.array(SafeIdSchema).min(1).max(128),
+  file: GrandHallDifixBoundFileSchema,
+}).strict().superRefine((value, ctx) => {
+  if (!uniqueSorted(value.artifactIds)) {
+    ctx.addIssue({ code: "custom", path: ["artifactIds"], message: "artifact IDs must be unique and ordinal-sorted" });
+  }
+});
+export type GrandHallDifixExperimentMaterialFile = z.infer<
+  typeof GrandHallDifixExperimentMaterialFileSchema
+>;
 
 export const GrandHallDifixInventoryEntrySchema = z.object({
   relativePath: z.string().min(1).max(4_096).refine(
@@ -396,15 +485,75 @@ const ExactConfigurationSchema = z.object({
   localFilesOnly: z.literal(true),
 }).strict();
 
+const GrandHallDifixWeightBindingSchema = z.object({
+  relativePath: SafeRelativePosixPathSchema,
+  sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  sha256: Sha256Schema,
+}).strict();
+
+const GrandHallDifixExperimentBindingsSchema = z.object({
+  provider: z.object({
+    repositorySourceArchiveSha256: Sha256Schema,
+    modelRepositoryManifestSha256: Sha256Schema,
+    modelWeights: z.array(GrandHallDifixWeightBindingSchema).min(1).max(10_000),
+  }).strict(),
+  plannedExecution: z.object({
+    providerAdapterId: z.literal(GRAND_HALL_DIFIX_ADAPTER_ID),
+    providerAdapterImplementationSha256: Sha256Schema,
+    parameterConfigurationArtifactSha256: Sha256Schema,
+    runtimeEnvironmentArtifactSha256: Sha256Schema,
+  }).strict(),
+  inputPack: z.object({
+    bundleMaterialSha256: Sha256Schema,
+    sourceRenderSha256: Sha256Schema,
+    browserCaptureRecordSha256: Sha256Schema,
+    cameraArtifactSha256: Sha256Schema,
+    rendererArtifactSha256: Sha256Schema,
+    reconstructionArtifactSha256: Sha256Schema,
+    reconstructionMemberClosureSha256: Sha256Schema,
+    renderGenerationReceiptSha256: Sha256Schema,
+    protectedMaskSha256: Sha256Schema,
+    generatedRegionMaskSha256: Sha256Schema,
+  }).strict(),
+  fixedCamera: z.object({
+    cameraSha256: Sha256Schema,
+    protectedMaskAnalysisReceiptSha256: Sha256Schema,
+    generatedMaskAnalysisReceiptSha256: Sha256Schema,
+  }).strict(),
+  localExperimentMaterialSetSha256: Sha256Schema,
+}).strict();
+export type GrandHallDifixExperimentBindings = z.infer<
+  typeof GrandHallDifixExperimentBindingsSchema
+>;
+
+export function assertGrandHallDifixExperimentBindingProjectionMatches(
+  compiledBindingInput: unknown,
+  observedBindingInput: unknown,
+): void {
+  const compiledBinding = GrandHallDifixExperimentBindingsSchema.parse(compiledBindingInput);
+  const observedBinding = GrandHallDifixExperimentBindingsSchema.parse(observedBindingInput);
+  if (!canonicalEqual(compiledBinding, observedBinding)) {
+    throw new Error("Observed experiment-to-material cross-bindings must exactly equal the compiled binding projection.");
+  }
+}
+
 const ExecutionPathsSchema = z.object({
   executionLockHost: AbsoluteHostPathSchema,
   executionLockWsl: AbsoluteWslPathSchema,
   experiment: GrandHallDifixBoundFileSchema,
+  experimentMaterials: z.array(GrandHallDifixExperimentMaterialFileSchema).max(1_024),
   inputPackDirectoryHost: AbsoluteHostPathSchema,
   inputPackDirectoryWsl: AbsoluteWslPathSchema,
   inputPackManifest: GrandHallDifixBoundFileSchema,
   inputPackPublicationReceipt: GrandHallDifixBoundFileSchema,
   sourceImage: GrandHallDifixBoundFileSchema,
+  browserCaptureRecord: GrandHallDifixBoundFileSchema,
+  cameraArtifact: GrandHallDifixBoundFileSchema,
+  rendererArtifact: GrandHallDifixBoundFileSchema,
+  reconstructionArtifact: GrandHallDifixBoundFileSchema,
+  renderGenerationReceipt: GrandHallDifixBoundFileSchema,
+  protectedMask: GrandHallDifixBoundFileSchema,
+  generatedRegionMask: GrandHallDifixBoundFileSchema,
   runtimeSeal: GrandHallDifixBoundFileSchema,
   modelSeal: GrandHallDifixBoundFileSchema,
   adapter: GrandHallDifixBoundFileSchema,
@@ -439,6 +588,19 @@ const ExecutionPathsSchema = z.object({
   terminalReceiptHost: AbsoluteHostPathSchema,
   terminalReceiptWsl: AbsoluteWslPathSchema,
 }).strict().superRefine((value, ctx) => {
+  if (!uniqueSorted(value.experimentMaterials.map((material) => material.relativePath))) {
+    ctx.addIssue({ code: "custom", path: ["experimentMaterials"], message: "experiment materials must be unique and ordinal-sorted by relative path" });
+  }
+  const experimentHostParent = normalizedPortableHost(portableParent(value.experiment.hostPath));
+  const experimentWslParent = portableParent(value.experiment.wslPath);
+  for (const [index, material] of value.experimentMaterials.entries()) {
+    if (
+      normalizedPortableHost(material.file.hostPath) !== `${experimentHostParent}/${material.relativePath.toLowerCase()}`
+      || material.file.wslPath !== `${experimentWslParent}/${material.relativePath}`
+    ) {
+      ctx.addIssue({ code: "custom", path: ["experimentMaterials", index], message: "experiment material must be the exact direct sibling of the immutable experiment" });
+    }
+  }
   if (value.sourceImageWsl !== value.sourceImage.wslPath) {
     ctx.addIssue({ code: "custom", path: ["sourceImageWsl"], message: "sourceImageWsl must equal the exact bound source-image WSL path" });
   }
@@ -495,6 +657,7 @@ const ExecutionLockPayloadSchema = z.object({
   providerAdapterId: z.literal(GRAND_HALL_DIFIX_ADAPTER_ID),
   configuration: ExactConfigurationSchema,
   configurationSha256: Sha256Schema,
+  experimentBindings: GrandHallDifixExperimentBindingsSchema,
   runtimeSealSha256: Sha256Schema,
   modelSealSha256: Sha256Schema,
   inputPackManifestSha256: Sha256Schema,
@@ -550,6 +713,40 @@ export const GrandHallDifixExecutionLockSchema = ExecutionLockPayloadSchema.exte
   }
   if (value.configurationSha256 !== digest("VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1", value.configuration)) {
     ctx.addIssue({ code: "custom", path: ["configurationSha256"], message: "configuration digest mismatch" });
+  }
+  if (
+    value.experimentBindings.plannedExecution.parameterConfigurationArtifactSha256
+    !== rawSha256(canonicalJsonFileBytes(value.configuration))
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["experimentBindings", "plannedExecution", "parameterConfigurationArtifactSha256"],
+      message: "parameter configuration artifact must contain the exact canonical one-shot configuration bytes",
+    });
+  }
+  if (
+    value.experimentBindings.plannedExecution.providerAdapterImplementationSha256 !== value.adapterSha256
+    || value.experimentBindings.inputPack.bundleMaterialSha256 !== value.inputPackBundleMaterialSha256
+    || value.experimentBindings.inputPack.sourceRenderSha256 !== value.sourceImageSha256
+  ) {
+    ctx.addIssue({ code: "custom", path: ["experimentBindings"], message: "experiment bindings must agree with the one-shot lock" });
+  }
+  if (
+    value.experimentBindings.inputPack.browserCaptureRecordSha256 !== value.paths.browserCaptureRecord.sha256
+    || value.experimentBindings.inputPack.cameraArtifactSha256 !== value.paths.cameraArtifact.sha256
+    || value.experimentBindings.inputPack.rendererArtifactSha256 !== value.paths.rendererArtifact.sha256
+    || value.experimentBindings.inputPack.reconstructionArtifactSha256 !== value.paths.reconstructionArtifact.sha256
+    || value.experimentBindings.inputPack.renderGenerationReceiptSha256 !== value.paths.renderGenerationReceipt.sha256
+    || value.experimentBindings.inputPack.protectedMaskSha256 !== value.paths.protectedMask.sha256
+    || value.experimentBindings.inputPack.generatedRegionMaskSha256 !== value.paths.generatedRegionMask.sha256
+  ) {
+    ctx.addIssue({ code: "custom", path: ["experimentBindings", "inputPack"], message: "input-pack experiment bindings must equal every exact bound file" });
+  }
+  if (
+    value.experimentBindings.localExperimentMaterialSetSha256
+    !== localExperimentMaterialSetSha256(value.paths.experimentMaterials)
+  ) {
+    ctx.addIssue({ code: "custom", path: ["experimentBindings", "localExperimentMaterialSetSha256"], message: "local experiment-material set digest mismatch" });
   }
   for (const [field, actual, bound] of [
     ["inputPackManifestSha256", value.inputPackManifestSha256, value.paths.inputPackManifest.sha256],
@@ -790,6 +987,425 @@ export const GrandHallDifixAttemptReceiptSchema = AttemptReceiptPayloadObjectSch
 });
 export type GrandHallDifixAttemptReceipt = z.infer<typeof GrandHallDifixAttemptReceiptSchema>;
 
+interface GrandHallDifixDigestAddressedArtifact {
+  readonly artifactId: string;
+  readonly relativePath: string;
+  readonly mediaType: string;
+  readonly sizeBytes: number;
+  readonly sha256: string;
+  readonly canonicalization: "byte_exact" | "rfc8785_json";
+  readonly immutable: true;
+  readonly accessMode: "read_only";
+  readonly authority: "none";
+}
+
+export interface GrandHallDifixVerifiedInputPackEvidence {
+  readonly manifest: GrandHallDifixInputPackManifest;
+  readonly artifacts: {
+    readonly camera: GrandHallDifixCameraArtifact;
+    readonly renderer: GrandHallDifixRendererArtifact;
+    readonly reconstruction: GrandHallDifixReconstructionArtifact;
+    readonly renderGeneration: GrandHallDifixRenderGenerationReceipt;
+  };
+}
+
+export interface GrandHallDifixExperimentMaterialExpectation {
+  readonly artifactIds: readonly string[];
+  readonly relativePath: string;
+  readonly sizeBytes: number;
+  readonly sha256: string;
+}
+
+function expectedViewMatrixColumnMajor(
+  camera: GrandHallDifixCameraArtifact["fixedCamera"],
+): readonly number[] {
+  const [x, y, z, w] = camera.quaternion;
+  const [px, py, pz] = camera.position;
+  const x2 = x + x;
+  const y2 = y + y;
+  const z2 = z + z;
+  const xx = x * x2;
+  const xy = x * y2;
+  const xz = x * z2;
+  const yy = y * y2;
+  const yz = y * z2;
+  const zz = z * z2;
+  const wx = w * x2;
+  const wy = w * y2;
+  const wz = w * z2;
+  const world00 = 1 - (yy + zz);
+  const world01 = xy - wz;
+  const world02 = xz + wy;
+  const world10 = xy + wz;
+  const world11 = 1 - (xx + zz);
+  const world12 = yz - wx;
+  const world20 = xz - wy;
+  const world21 = yz + wx;
+  const world22 = 1 - (xx + yy);
+  return [
+    world00, world01, world02, 0,
+    world10, world11, world12, 0,
+    world20, world21, world22, 0,
+    -(world00 * px + world10 * py + world20 * pz),
+    -(world01 * px + world11 * py + world21 * pz),
+    -(world02 * px + world12 * py + world22 * pz),
+    1,
+  ];
+}
+
+export function grandHallDifixExpectedViewMatrixColumnMajor(
+  camera: GrandHallDifixCameraArtifact["fixedCamera"],
+): readonly number[] {
+  return expectedViewMatrixColumnMajor(camera);
+}
+
+function requireArtifactMatchesBoundFile(
+  label: string,
+  artifact: GrandHallDifixDigestAddressedArtifact,
+  bound: GrandHallDifixBoundFile,
+  expectedRelativePath: string,
+  expectedMediaType: string,
+): void {
+  if (
+    artifact.relativePath !== expectedRelativePath
+    || artifact.mediaType !== expectedMediaType
+    || artifact.sizeBytes !== bound.sizeBytes
+    || artifact.sha256 !== bound.sha256
+  ) {
+    throw new Error(`${label} must bind the exact selected material bytes and media identity.`);
+  }
+}
+
+function requireCanonicalArtifactDocumentMatchesReceipt(
+  label: string,
+  document: unknown,
+  receipt: { readonly sizeBytes: number; readonly sha256: string },
+): void {
+  const bytes = canonicalJsonFileBytes(document);
+  if (bytes.byteLength !== receipt.sizeBytes || rawSha256(bytes) !== receipt.sha256) {
+    throw new Error(`${label} document must be the exact canonical input-pack artifact bytes.`);
+  }
+}
+
+function localExperimentMaterialArtifacts(
+  experiment: FoundryRestorationExperimentV0,
+): readonly GrandHallDifixDigestAddressedArtifact[] {
+  const planned = experiment.plannedExecutionLock;
+  const artifacts: GrandHallDifixDigestAddressedArtifact[] = [
+    planned.providerAdapterImplementationArtifact,
+    planned.parameterConfigurationArtifact,
+    planned.runtimeEnvironmentArtifact,
+  ];
+  for (const closure of planned.fixedCameraClosures) {
+    artifacts.push(
+      closure.renderDerivationReceipt.rendererImplementationArtifact,
+      closure.renderDerivationReceipt.rendererRuntimeArtifact,
+      closure.protectedRegionMask.analysis.analyzerImplementationArtifact,
+      closure.protectedRegionMask.analysis.analyzerConfigurationArtifact,
+      closure.protectedRegionMask.analysis.analyzerRuntimeArtifact,
+      closure.protectedRegionMask.analysis.analyzerProcessReceiptArtifact,
+      closure.generatedRegionMask.analysis.analyzerImplementationArtifact,
+      closure.generatedRegionMask.analysis.analyzerConfigurationArtifact,
+      closure.generatedRegionMask.analysis.analyzerRuntimeArtifact,
+      closure.generatedRegionMask.analysis.analyzerProcessReceiptArtifact,
+      closure.protectedRegionEvaluator.implementationArtifact,
+      closure.protectedRegionEvaluator.configurationArtifact,
+      closure.protectedRegionEvaluator.runtimeEnvironmentArtifact,
+      closure.forbiddenSemanticEvaluator.implementationArtifact,
+      closure.forbiddenSemanticEvaluator.configurationArtifact,
+      closure.forbiddenSemanticEvaluator.runtimeEnvironmentArtifact,
+    );
+  }
+  return artifacts;
+}
+
+export function grandHallDifixExpectedLocalExperimentMaterials(
+  experimentInput: FoundryRestorationExperimentV0,
+): readonly GrandHallDifixExperimentMaterialExpectation[] {
+  const experiment = FoundryRestorationExperimentV0Schema.parse(experimentInput);
+  const byRelativePath = new Map<string, {
+    readonly relativePath: string;
+    readonly sizeBytes: number;
+    readonly sha256: string;
+    readonly artifactIds: Set<string>;
+  }>();
+  for (const artifact of localExperimentMaterialArtifacts(experiment)) {
+    const existing = byRelativePath.get(artifact.relativePath);
+    if (
+      existing !== undefined
+      && (existing.sizeBytes !== artifact.sizeBytes || existing.sha256 !== artifact.sha256)
+    ) {
+      throw new Error(`Local experiment material ${artifact.relativePath} has conflicting byte identities.`);
+    }
+    if (existing === undefined) {
+      byRelativePath.set(artifact.relativePath, {
+        relativePath: artifact.relativePath,
+        sizeBytes: artifact.sizeBytes,
+        sha256: artifact.sha256,
+        artifactIds: new Set([artifact.artifactId]),
+      });
+    } else {
+      existing.artifactIds.add(artifact.artifactId);
+    }
+  }
+  return [...byRelativePath.values()].map((material) => ({
+    ...material,
+    artifactIds: [...material.artifactIds].sort(),
+  })).sort((left, right) => (
+    left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0
+  ));
+}
+
+function assertLocalExperimentMaterials(
+  experiment: FoundryRestorationExperimentV0,
+  materialsInput: readonly GrandHallDifixExperimentMaterialFile[],
+): readonly GrandHallDifixExperimentMaterialFile[] {
+  const materials = materialsInput.map((material) => GrandHallDifixExperimentMaterialFileSchema.parse(material));
+  const expectedArtifacts = localExperimentMaterialArtifacts(experiment);
+  const expectedByPath = new Map<string, GrandHallDifixDigestAddressedArtifact[]>();
+  for (const artifact of expectedArtifacts) {
+    const existing = expectedByPath.get(artifact.relativePath) ?? [];
+    const conflict = existing.find((candidate) => (
+      candidate.sizeBytes !== artifact.sizeBytes || candidate.sha256 !== artifact.sha256
+    ));
+    if (conflict !== undefined) {
+      throw new Error(`Local experiment material ${artifact.relativePath} has conflicting byte identities.`);
+    }
+    existing.push(artifact);
+    expectedByPath.set(artifact.relativePath, existing);
+  }
+  if (!canonicalEqual(
+    materials.map((material) => material.relativePath),
+    [...expectedByPath.keys()].sort(),
+  )) {
+    throw new Error("Bound local experiment materials must exactly cover every planned material file.");
+  }
+  for (const material of materials) {
+    const expected = expectedByPath.get(material.relativePath);
+    if (expected === undefined) throw new Error("Unexpected local experiment material binding.");
+    const expectedArtifactIds = [...new Set(expected.map((artifact) => artifact.artifactId))].sort();
+    if (
+      material.file.sizeBytes !== expected[0]?.sizeBytes
+      || material.file.sha256 !== expected[0]?.sha256
+      || !canonicalEqual(material.artifactIds, expectedArtifactIds)
+    ) {
+      throw new Error(`Local experiment material ${material.relativePath} disagrees with its exact planned bytes.`);
+    }
+  }
+  return materials;
+}
+
+export interface AssertGrandHallDifixExperimentBindingsInput {
+  readonly experiment: FoundryRestorationExperimentV0;
+  readonly runtimeSeal: GrandHallDifixRuntimeSeal;
+  readonly modelSeal: GrandHallDifixModelSeal;
+  readonly inputPack: GrandHallDifixVerifiedInputPackEvidence;
+  readonly paths: z.input<typeof ExecutionPathsSchema>;
+}
+
+export function assertGrandHallDifixExperimentMatchesMaterials(
+  input: AssertGrandHallDifixExperimentBindingsInput,
+): GrandHallDifixExperimentBindings {
+  const experiment = FoundryRestorationExperimentV0Schema.parse(input.experiment);
+  const runtimeSeal = GrandHallDifixRuntimeSealSchema.parse(input.runtimeSeal);
+  const modelSeal = GrandHallDifixModelSealSchema.parse(input.modelSeal);
+  const paths = ExecutionPathsSchema.parse(input.paths);
+  const manifest = GrandHallDifixInputPackManifestSchema.parse(input.inputPack.manifest);
+  const artifacts = {
+    camera: GrandHallDifixCameraArtifactSchema.parse(input.inputPack.artifacts.camera),
+    renderer: GrandHallDifixRendererArtifactSchema.parse(input.inputPack.artifacts.renderer),
+    reconstruction: GrandHallDifixReconstructionArtifactSchema.parse(input.inputPack.artifacts.reconstruction),
+    renderGeneration: GrandHallDifixRenderGenerationReceiptSchema.parse(input.inputPack.artifacts.renderGeneration),
+  };
+  requireCanonicalArtifactDocumentMatchesReceipt("Camera", artifacts.camera, manifest.cameraArtifact);
+  requireCanonicalArtifactDocumentMatchesReceipt("Renderer", artifacts.renderer, manifest.rendererArtifact);
+  requireCanonicalArtifactDocumentMatchesReceipt("Reconstruction", artifacts.reconstruction, manifest.reconstructionArtifact);
+  requireCanonicalArtifactDocumentMatchesReceipt(
+    "Render-generation receipt",
+    artifacts.renderGeneration,
+    manifest.renderGenerationReceipt,
+  );
+  const planned = experiment.plannedExecutionLock;
+  if (planned.providerAdapterId !== GRAND_HALL_DIFIX_ADAPTER_ID) {
+    throw new Error("The restoration experiment must select the exact bounded Difix adapter identity.");
+  }
+  requireArtifactMatchesBoundFile(
+    "Provider adapter implementation",
+    planned.providerAdapterImplementationArtifact,
+    paths.adapter,
+    planned.providerAdapterImplementationArtifact.relativePath,
+    "text/x-python",
+  );
+  const configurationBytes = canonicalJsonFileBytes(GRAND_HALL_DIFIX_EXACT_CONFIGURATION);
+  if (
+    planned.parameterConfigurationArtifact.sha256 !== rawSha256(configurationBytes)
+    || planned.parameterConfigurationArtifact.sizeBytes !== configurationBytes.byteLength
+  ) {
+    throw new Error("The restoration experiment parameter artifact must contain the exact one-shot configuration bytes.");
+  }
+  const runtimeEnvironment = GrandHallDifixRuntimeEnvironmentArtifactSchema.parse({
+    schemaVersion: GRAND_HALL_DIFIX_RUNTIME_ENVIRONMENT_ARTIFACT_SCHEMA,
+    authority: "none",
+    runtimeSealArtifact: {
+      sourcePath: paths.runtimeSeal.hostPath,
+      sizeBytes: paths.runtimeSeal.sizeBytes,
+      sha256: paths.runtimeSeal.sha256,
+    },
+    runtimeSealSha256: runtimeSeal.runtimeSealSha256,
+    runtimeId: runtimeSeal.runtimeId,
+    providerRepositoryId: runtimeSeal.providerRepositoryId,
+    providerRevision: runtimeSeal.providerRevision,
+    sourceArchive: {
+      sizeBytes: runtimeSeal.sourceArchive.sizeBytes,
+      sha256: runtimeSeal.sourceArchive.sha256,
+    },
+    sealedForOfflineExecution: runtimeSeal.sealedForOfflineExecution,
+  });
+  const runtimeEnvironmentBytes = canonicalJsonFileBytes(runtimeEnvironment);
+  if (
+    planned.runtimeEnvironmentArtifact.sizeBytes !== runtimeEnvironmentBytes.byteLength
+    || planned.runtimeEnvironmentArtifact.sha256 !== rawSha256(runtimeEnvironmentBytes)
+  ) {
+    throw new Error("The restoration experiment runtime artifact must bind the exact outer and inner runtime seal closure.");
+  }
+  const repository = experiment.providerLock.repositories.find((candidate) => candidate.role === "difix3d_source");
+  if (repository?.sourceArchiveSha256 !== runtimeSeal.sourceArchive.sha256) {
+    throw new Error("The restoration experiment provider source archive must match the exact runtime-sealed archive.");
+  }
+  const model = experiment.providerLock.models.find((candidate) => candidate.role === "difix_checkpoint");
+  if (
+    model === undefined
+    || model.repositoryManifestSha256 !== modelSeal.auditedSnapshotManifestSha256
+    || !canonicalEqual(model.weights, modelSeal.expectedWeightFiles)
+  ) {
+    throw new Error("The restoration experiment model manifest and weights must match the exact model seal.");
+  }
+  const sourceRender = experiment.inputs.find((candidate) => candidate.role === "source_fixed_camera_render");
+  const sourceReconstruction = experiment.inputs.find((candidate) => candidate.role === "source_reconstruction");
+  if (
+    sourceRender === undefined
+    || sourceRender.relativePath !== manifest.sourceRender.fileName
+    || sourceRender.mediaType !== "image/png"
+    || sourceRender.width !== GRAND_HALL_DIFIX_INPUT_WIDTH
+    || sourceRender.height !== GRAND_HALL_DIFIX_INPUT_HEIGHT
+    || sourceRender.sizeBytes !== manifest.sourceRender.sizeBytes
+    || sourceRender.sha256 !== manifest.sourceRender.sha256
+  ) {
+    throw new Error("The restoration experiment source render must match the exact selected input-pack PNG.");
+  }
+  const expectedMembers = artifacts.reconstruction.sourceMembers.map((member) => ({ ...member }));
+  const descriptorClosure = sourceReconstruction?.reconstructionDescriptorClosure ?? null;
+  if (
+    sourceReconstruction === undefined
+    || sourceReconstruction.relativePath !== manifest.reconstructionArtifact.fileName
+    || sourceReconstruction.mediaType !== FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_MEDIA_TYPE
+    || sourceReconstruction.canonicalization !== "rfc8785_json"
+    || sourceReconstruction.sizeBytes !== manifest.reconstructionArtifact.sizeBytes
+    || sourceReconstruction.sha256 !== manifest.reconstructionArtifact.sha256
+    || descriptorClosure === null
+    || descriptorClosure.descriptorSchemaVersion !== artifacts.reconstruction.schemaVersion
+    || descriptorClosure.descriptorSizeBytes !== manifest.reconstructionArtifact.sizeBytes
+    || descriptorClosure.descriptorSha256 !== manifest.reconstructionArtifact.sha256
+    || descriptorClosure.format !== artifacts.reconstruction.format
+    || descriptorClosure.representationId !== artifacts.reconstruction.representationId
+    || descriptorClosure.sourceVariant !== artifacts.reconstruction.sourceVariant
+    || descriptorClosure.decodedElementCount !== artifacts.reconstruction.decodedSplatCount
+    || descriptorClosure.memberCount !== expectedMembers.length
+    || descriptorClosure.totalMemberBytes !== expectedMembers.reduce((sum, member) => sum + member.sizeBytes, 0)
+    || !canonicalEqual(descriptorClosure.members, expectedMembers)
+    || !canonicalEqual(expectedMembers, GRAND_HALL_DIFIX_EXPECTED_SOURCE_MEMBERS)
+  ) {
+    throw new Error("The restoration experiment reconstruction descriptor must match the exact SOG bundle member closure.");
+  }
+  const fixedCamera = experiment.fixedCameras[0];
+  const cameraClosure = planned.fixedCameraClosures[0];
+  if (
+    experiment.fixedCameras.length !== 1
+    || planned.fixedCameraClosures.length !== 1
+    || fixedCamera === undefined
+    || cameraClosure === undefined
+    || fixedCamera.cameraId !== artifacts.camera.fixedCamera.id
+    || fixedCamera.coordinateFrameId !== "three_world"
+    || !canonicalEqual(fixedCamera.viewMatrixColumnMajor, expectedViewMatrixColumnMajor(artifacts.camera.fixedCamera))
+    || !canonicalEqual(fixedCamera.projectionMatrixColumnMajor, artifacts.camera.fixedCamera.projectionMatrix)
+    || fixedCamera.width !== GRAND_HALL_DIFIX_INPUT_WIDTH
+    || fixedCamera.height !== GRAND_HALL_DIFIX_INPUT_HEIGHT
+    || fixedCamera.rendererProfileSha256 !== manifest.rendererArtifact.sha256
+  ) {
+    throw new Error("The restoration experiment fixed camera must match the exact selected camera and renderer evidence.");
+  }
+  requireArtifactMatchesBoundFile(
+    "Renderer profile",
+    cameraClosure.renderDerivationReceipt.rendererProfileArtifact,
+    paths.rendererArtifact,
+    manifest.rendererArtifact.fileName,
+    "application/json",
+  );
+  requireArtifactMatchesBoundFile(
+    "Render-derivation source image",
+    cameraClosure.renderDerivationReceipt.sourceRenderArtifact,
+    paths.sourceImage,
+    manifest.sourceRender.fileName,
+    "image/png",
+  );
+  requireArtifactMatchesBoundFile(
+    "Render-derivation reconstruction descriptor",
+    cameraClosure.renderDerivationReceipt.sourceReconstructionArtifact,
+    paths.reconstructionArtifact,
+    manifest.reconstructionArtifact.fileName,
+    FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_MEDIA_TYPE,
+  );
+  requireArtifactMatchesBoundFile(
+    "Protected-region mask",
+    cameraClosure.protectedRegionMask.artifact,
+    paths.protectedMask,
+    manifest.protectedMask.fileName,
+    "image/png",
+  );
+  requireArtifactMatchesBoundFile(
+    "Generated-region mask",
+    cameraClosure.generatedRegionMask.artifact,
+    paths.generatedRegionMask,
+    manifest.generatedRegionMask.fileName,
+    "image/png",
+  );
+  const localMaterials = assertLocalExperimentMaterials(experiment, paths.experimentMaterials);
+  return GrandHallDifixExperimentBindingsSchema.parse({
+    provider: {
+      repositorySourceArchiveSha256: runtimeSeal.sourceArchive.sha256,
+      modelRepositoryManifestSha256: modelSeal.auditedSnapshotManifestSha256,
+      modelWeights: modelSeal.expectedWeightFiles,
+    },
+    plannedExecution: {
+      providerAdapterId: planned.providerAdapterId,
+      providerAdapterImplementationSha256: planned.providerAdapterImplementationArtifact.sha256,
+      parameterConfigurationArtifactSha256: planned.parameterConfigurationArtifact.sha256,
+      runtimeEnvironmentArtifactSha256: planned.runtimeEnvironmentArtifact.sha256,
+    },
+    inputPack: {
+      bundleMaterialSha256: manifest.bundleMaterialSha256,
+      sourceRenderSha256: manifest.sourceRender.sha256,
+      browserCaptureRecordSha256: manifest.browserCaptureRecord.sha256,
+      cameraArtifactSha256: manifest.cameraArtifact.sha256,
+      rendererArtifactSha256: manifest.rendererArtifact.sha256,
+      reconstructionArtifactSha256: manifest.reconstructionArtifact.sha256,
+      reconstructionMemberClosureSha256: digest(
+        "VENVIEWER_GRAND_HALL_DIFIX_RECONSTRUCTION_MEMBER_CLOSURE_V1",
+        expectedMembers,
+      ),
+      renderGenerationReceiptSha256: manifest.renderGenerationReceipt.sha256,
+      protectedMaskSha256: manifest.protectedMask.sha256,
+      generatedRegionMaskSha256: manifest.generatedRegionMask.sha256,
+    },
+    fixedCamera: {
+      cameraSha256: fixedCamera.cameraSha256,
+      protectedMaskAnalysisReceiptSha256: cameraClosure.protectedRegionMask.analysis.maskAnalysisReceiptSha256,
+      generatedMaskAnalysisReceiptSha256: cameraClosure.generatedRegionMask.analysis.maskAnalysisReceiptSha256,
+    },
+    localExperimentMaterialSetSha256: localExperimentMaterialSetSha256(localMaterials),
+  });
+}
+
 export interface CompileGrandHallDifixExecutionLockInput {
   readonly lockId: string;
   readonly compiledAt: string;
@@ -797,6 +1413,7 @@ export interface CompileGrandHallDifixExecutionLockInput {
   readonly experiment: FoundryRestorationExperimentV0;
   readonly runtimeSeal: GrandHallDifixRuntimeSeal;
   readonly modelSeal: GrandHallDifixModelSeal;
+  readonly inputPack: GrandHallDifixVerifiedInputPackEvidence;
   readonly inputPackManifestSha256: string;
   readonly inputPackPublicationReceiptSha256: string;
   readonly inputPackBundleMaterialSha256: string;
@@ -816,6 +1433,26 @@ export function compileGrandHallDifixExecutionLock(
   }
   const configuration = ExactConfigurationSchema.parse(GRAND_HALL_DIFIX_EXACT_CONFIGURATION);
   const paths = ExecutionPathsSchema.parse(input.paths);
+  if (
+    input.inputPack.manifest.bundleMaterialSha256 !== input.inputPackBundleMaterialSha256
+    || paths.sourceImage.sha256 !== input.inputPack.manifest.sourceRender.sha256
+    || paths.browserCaptureRecord.sha256 !== input.inputPack.manifest.browserCaptureRecord.sha256
+    || paths.cameraArtifact.sha256 !== input.inputPack.manifest.cameraArtifact.sha256
+    || paths.rendererArtifact.sha256 !== input.inputPack.manifest.rendererArtifact.sha256
+    || paths.reconstructionArtifact.sha256 !== input.inputPack.manifest.reconstructionArtifact.sha256
+    || paths.renderGenerationReceipt.sha256 !== input.inputPack.manifest.renderGenerationReceipt.sha256
+    || paths.protectedMask.sha256 !== input.inputPack.manifest.protectedMask.sha256
+    || paths.generatedRegionMask.sha256 !== input.inputPack.manifest.generatedRegionMask.sha256
+  ) {
+    throw new Error("The one-shot paths must bind every exact selected input-pack material.");
+  }
+  const experimentBindings = assertGrandHallDifixExperimentMatchesMaterials({
+    experiment,
+    runtimeSeal,
+    modelSeal,
+    inputPack: input.inputPack,
+    paths,
+  });
   if (paths.providerSourceRootWsl !== runtimeSeal.providerSourceTree.wslRoot) {
     throw new Error("Provider source root must be the exact runtime-sealed source tree.");
   }
@@ -844,6 +1481,7 @@ export function compileGrandHallDifixExecutionLock(
     providerAdapterId: GRAND_HALL_DIFIX_ADAPTER_ID,
     configuration,
     configurationSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1", configuration),
+    experimentBindings,
     runtimeSealSha256: runtimeSeal.runtimeSealSha256,
     modelSealSha256: modelSeal.modelSealSha256,
     inputPackManifestSha256: input.inputPackManifestSha256,

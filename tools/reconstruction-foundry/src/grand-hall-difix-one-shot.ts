@@ -13,6 +13,7 @@ import {
   dirname,
   isAbsolute,
   normalize,
+  posix,
   resolve,
 } from "node:path";
 
@@ -26,9 +27,12 @@ import sharp from "sharp";
 import { z } from "zod";
 
 import {
+  GRAND_HALL_DIFIX_BROWSER_RECORD_FILENAME,
+  GRAND_HALL_DIFIX_GENERATED_MASK_FILENAME,
   GRAND_HALL_DIFIX_INPUT_HEIGHT,
   GRAND_HALL_DIFIX_INPUT_WIDTH,
   GRAND_HALL_DIFIX_MANIFEST_FILENAME,
+  GRAND_HALL_DIFIX_PROTECTED_MASK_FILENAME,
   GRAND_HALL_DIFIX_PUBLICATION_RECEIPT_FILENAME,
   GRAND_HALL_DIFIX_SOURCE_RENDER_FILENAME,
 } from "./grand-hall-difix-no-reference-input-pack-contract.js";
@@ -42,12 +46,15 @@ import {
   GrandHallDifixModelSealSchema,
   GrandHallDifixRuntimeSealSchema,
   assertGrandHallDifixBaseExperimentNotAuthorized,
+  assertGrandHallDifixExperimentBindingProjectionMatches,
+  assertGrandHallDifixExperimentMatchesMaterials,
   assertGrandHallDifixAuthorizationCurrent,
   assertGrandHallDifixAuthorizationMatchesLock,
   compileGrandHallDifixExecutionAuthorization,
   compileGrandHallDifixExecutionLock,
   createGrandHallDifixAttemptReceipt,
   createGrandHallDifixAuthorizationClaim,
+  grandHallDifixExpectedLocalExperimentMaterials,
   type GrandHallDifixAttemptReceipt,
   type GrandHallDifixBoundFile,
   type GrandHallDifixExecutionAuthorization,
@@ -127,6 +134,42 @@ export class GrandHallDifixOneShotError extends Error {
   ) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = "GrandHallDifixOneShotError";
+  }
+}
+
+export class GrandHallDifixClaimPublicationError extends GrandHallDifixOneShotError {
+  constructor(
+    readonly plannedClaimSha256: string,
+    cause: unknown,
+  ) {
+    super(
+      "PROCESS_FAILED",
+      "The authorization claim path was atomically consumed, but its receipt could not be completed.",
+      cause,
+    );
+    this.name = "GrandHallDifixClaimPublicationError";
+  }
+}
+
+export async function completeGrandHallDifixConsumedPrelaunch<T>(input: {
+  readonly plannedClaimSha256: string;
+  readonly consumeAuthorization: () => Promise<string>;
+  readonly runExhaustivePrelaunch: () => Promise<T>;
+  readonly publishConsumedFailure: (error: unknown) => Promise<void>;
+}): Promise<{ readonly claimSha256: string; readonly value: T }> {
+  let claimPublished = false;
+  try {
+    const claimSha256 = await input.consumeAuthorization();
+    claimPublished = true;
+    if (claimSha256 !== input.plannedClaimSha256) {
+      fail("INPUT_RACE", "Published authorization claim digest differs from its planned bytes.");
+    }
+    const value = await input.runExhaustivePrelaunch();
+    return { claimSha256, value };
+  } catch (error) {
+    const pathWasConsumed = claimPublished || error instanceof GrandHallDifixClaimPublicationError;
+    if (pathWasConsumed) await input.publishConsumedFailure(error);
+    throw error;
   }
 }
 
@@ -497,6 +540,38 @@ export async function compileGrandHallDifixExecutionLockFromSpec(
   const publicationHost = resolve(paths.inputPackDirectoryHost, GRAND_HALL_DIFIX_PUBLICATION_RECEIPT_FILENAME);
   const sourceHost = resolve(paths.inputPackDirectoryHost, GRAND_HALL_DIFIX_SOURCE_RENDER_FILENAME);
   const sourceWsl = `${paths.inputPackDirectoryWsl}/${GRAND_HALL_DIFIX_SOURCE_RENDER_FILENAME}`;
+  const packFile = async (
+    fileName: string,
+    label: string,
+    maximumBytes = MAX_JSON_BYTES,
+  ): Promise<GrandHallDifixBoundFile> => await boundFile(
+    resolve(paths.inputPackDirectoryHost, fileName),
+    `${paths.inputPackDirectoryWsl}/${fileName}`,
+    label,
+    maximumBytes,
+  );
+  const experimentMaterialRootHost = dirname(experimentResult.stable.absolutePath);
+  const experimentMaterialRootWsl = posix.dirname(paths.experimentWsl);
+  const experimentMaterials = await Promise.all(
+    grandHallDifixExpectedLocalExperimentMaterials(experimentResult.value).map(async (expected) => {
+      if (expected.relativePath.includes("/")) {
+        fail("INPUT_INVALID", "Every generated experiment material must be one direct material-directory file.");
+      }
+      const material = await boundFile(
+        resolve(experimentMaterialRootHost, expected.relativePath),
+        `${experimentMaterialRootWsl}/${expected.relativePath}`,
+        `experiment material ${expected.relativePath}`,
+      );
+      if (material.sizeBytes !== expected.sizeBytes || material.sha256 !== expected.sha256) {
+        fail("MATERIAL_MISMATCH", `Experiment material ${expected.relativePath} disagrees with its planned bytes.`);
+      }
+      return {
+        relativePath: expected.relativePath,
+        artifactIds: [...expected.artifactIds],
+        file: material,
+      };
+    }),
+  );
   const executionPaths = {
     executionLockHost: canonicalHostPath(paths.executionLockHost, "execution lock"),
     executionLockWsl: paths.executionLockWsl,
@@ -506,11 +581,19 @@ export async function compileGrandHallDifixExecutionLockFromSpec(
       sizeBytes: experimentResult.stable.sizeBytes,
       sha256: experimentResult.stable.sha256,
     },
+    experimentMaterials,
     inputPackDirectoryHost: canonicalHostPath(paths.inputPackDirectoryHost, "input pack directory"),
     inputPackDirectoryWsl: paths.inputPackDirectoryWsl,
     inputPackManifest: await boundFile(manifestHost, `${paths.inputPackDirectoryWsl}/${GRAND_HALL_DIFIX_MANIFEST_FILENAME}`, "input pack manifest"),
     inputPackPublicationReceipt: await boundFile(publicationHost, `${paths.inputPackDirectoryWsl}/${GRAND_HALL_DIFIX_PUBLICATION_RECEIPT_FILENAME}`, "input pack publication receipt"),
     sourceImage: await boundFile(sourceHost, sourceWsl, "source image", MAX_IMAGE_BYTES),
+    browserCaptureRecord: await packFile(GRAND_HALL_DIFIX_BROWSER_RECORD_FILENAME, "browser capture record"),
+    cameraArtifact: await packFile(pack.manifest.cameraArtifact.fileName, "camera artifact"),
+    rendererArtifact: await packFile(pack.manifest.rendererArtifact.fileName, "renderer artifact"),
+    reconstructionArtifact: await packFile(pack.manifest.reconstructionArtifact.fileName, "reconstruction artifact"),
+    renderGenerationReceipt: await packFile(pack.manifest.renderGenerationReceipt.fileName, "render-generation receipt"),
+    protectedMask: await packFile(GRAND_HALL_DIFIX_PROTECTED_MASK_FILENAME, "protected mask", MAX_IMAGE_BYTES),
+    generatedRegionMask: await packFile(GRAND_HALL_DIFIX_GENERATED_MASK_FILENAME, "generated-region mask", MAX_IMAGE_BYTES),
     runtimeSeal: {
       hostPath: runtimeResult.stable.absolutePath,
       wslPath: paths.runtimeSealWsl,
@@ -565,6 +648,7 @@ export async function compileGrandHallDifixExecutionLockFromSpec(
     experiment: experimentResult.value,
     runtimeSeal: runtimeResult.value,
     modelSeal: modelResult.value,
+    inputPack: pack,
     inputPackManifestSha256: executionPaths.inputPackManifest.sha256,
     inputPackPublicationReceiptSha256: executionPaths.inputPackPublicationReceipt.sha256,
     inputPackBundleMaterialSha256: pack.manifest.bundleMaterialSha256,
@@ -675,10 +759,21 @@ async function verifyWslHostMappings(
   const pairs = [
     [lock.paths.executionLockHost, lock.paths.executionLockWsl],
     [lock.paths.experiment.hostPath, lock.paths.experiment.wslPath],
+    ...lock.paths.experimentMaterials.map((material) => [
+      material.file.hostPath,
+      material.file.wslPath,
+    ] as const),
     [lock.paths.inputPackDirectoryHost, lock.paths.inputPackDirectoryWsl],
     [lock.paths.inputPackManifest.hostPath, lock.paths.inputPackManifest.wslPath],
     [lock.paths.inputPackPublicationReceipt.hostPath, lock.paths.inputPackPublicationReceipt.wslPath],
     [lock.paths.sourceImage.hostPath, lock.paths.sourceImage.wslPath],
+    [lock.paths.browserCaptureRecord.hostPath, lock.paths.browserCaptureRecord.wslPath],
+    [lock.paths.cameraArtifact.hostPath, lock.paths.cameraArtifact.wslPath],
+    [lock.paths.rendererArtifact.hostPath, lock.paths.rendererArtifact.wslPath],
+    [lock.paths.reconstructionArtifact.hostPath, lock.paths.reconstructionArtifact.wslPath],
+    [lock.paths.renderGenerationReceipt.hostPath, lock.paths.renderGenerationReceipt.wslPath],
+    [lock.paths.protectedMask.hostPath, lock.paths.protectedMask.wslPath],
+    [lock.paths.generatedRegionMask.hostPath, lock.paths.generatedRegionMask.wslPath],
     [lock.paths.runtimeSeal.hostPath, lock.paths.runtimeSeal.wslPath],
     [lock.paths.modelSeal.hostPath, lock.paths.modelSeal.wslPath],
     [lock.paths.adapter.hostPath, lock.paths.adapter.wslPath],
@@ -852,9 +947,20 @@ async function checkExactMaterials(
   }
   const adapter = await assertBoundFile(lock.paths.adapter, "Python adapter", MAX_ADAPTER_BYTES);
   const sealTool = await assertBoundFile(lock.paths.runtimeSealTool, "runtime seal tool", MAX_ADAPTER_BYTES);
+  const localExperimentMaterials = await Promise.all(lock.paths.experimentMaterials.map(async (material) => ({
+    material,
+    stable: await assertBoundFile(material.file, `experiment material ${material.relativePath}`),
+  })));
   const manifest = await assertBoundFile(lock.paths.inputPackManifest, "input pack manifest");
   const publication = await assertBoundFile(lock.paths.inputPackPublicationReceipt, "input pack publication receipt");
   const source = await assertBoundFile(lock.paths.sourceImage, "source image", MAX_IMAGE_BYTES);
+  const browserCaptureRecord = await assertBoundFile(lock.paths.browserCaptureRecord, "browser capture record");
+  const cameraArtifact = await assertBoundFile(lock.paths.cameraArtifact, "camera artifact");
+  const rendererArtifact = await assertBoundFile(lock.paths.rendererArtifact, "renderer artifact");
+  const reconstructionArtifact = await assertBoundFile(lock.paths.reconstructionArtifact, "reconstruction artifact");
+  const renderGenerationReceipt = await assertBoundFile(lock.paths.renderGenerationReceipt, "render-generation receipt");
+  const protectedMask = await assertBoundFile(lock.paths.protectedMask, "protected mask", MAX_IMAGE_BYTES);
+  const generatedRegionMask = await assertBoundFile(lock.paths.generatedRegionMask, "generated-region mask", MAX_IMAGE_BYTES);
   const pack = await checkGrandHallDifixNoReferenceInputPack(lock.paths.inputPackDirectoryHost);
   if (
     manifest.sha256 !== lock.inputPackManifestSha256
@@ -862,7 +968,38 @@ async function checkExactMaterials(
     || source.sha256 !== lock.sourceImageSha256
     || pack.manifest.bundleMaterialSha256 !== lock.inputPackBundleMaterialSha256
     || pack.publicationReceiptSha256 !== lock.inputPackPublicationReceiptSha256
+    || browserCaptureRecord.sha256 !== pack.manifest.browserCaptureRecord.sha256
+    || cameraArtifact.sha256 !== pack.manifest.cameraArtifact.sha256
+    || rendererArtifact.sha256 !== pack.manifest.rendererArtifact.sha256
+    || reconstructionArtifact.sha256 !== pack.manifest.reconstructionArtifact.sha256
+    || renderGenerationReceipt.sha256 !== pack.manifest.renderGenerationReceipt.sha256
+    || protectedMask.sha256 !== pack.manifest.protectedMask.sha256
+    || generatedRegionMask.sha256 !== pack.manifest.generatedRegionMask.sha256
   ) fail("MATERIAL_MISMATCH", "Input pack or source image disagrees with the execution lock.");
+  const experimentBindings = assertGrandHallDifixExperimentMatchesMaterials({
+    experiment,
+    runtimeSeal: runtime,
+    modelSeal: model,
+    inputPack: pack,
+    paths: {
+      ...lock.paths,
+      experimentMaterials: localExperimentMaterials.map(({ material, stable }) => ({
+        relativePath: material.relativePath,
+        artifactIds: material.artifactIds,
+        file: {
+          hostPath: stable.absolutePath,
+          wslPath: material.file.wslPath,
+          sizeBytes: stable.sizeBytes,
+          sha256: stable.sha256,
+        },
+      })),
+    },
+  });
+  try {
+    assertGrandHallDifixExperimentBindingProjectionMatches(lock.experimentBindings, experimentBindings);
+  } catch (error: unknown) {
+    fail("MATERIAL_MISMATCH", "Experiment-to-material cross-bindings disagree with the execution lock.", error);
+  }
   if (includeExhaustiveDirectoryCheck) {
     await runNamespacedCheck(lock, runtimeSealCheckArguments(lock, runtime), "runtime_checked");
     await runNamespacedCheck(lock, modelSealCheckArguments(lock, model), "model_checked");
@@ -875,10 +1012,22 @@ async function checkExactMaterials(
     modelInventory: model.modelSealSha256,
     adapter: adapter.sha256,
     runtimeSealTool: sealTool.sha256,
+    localExperimentMaterials: localExperimentMaterials.map(({ material, stable }) => ({
+      relativePath: material.relativePath,
+      artifactIds: material.artifactIds,
+      sha256: stable.sha256,
+    })),
     inputPackManifest: manifest.sha256,
     inputPackPublicationReceipt: publication.sha256,
     inputPackBundleMaterial: pack.manifest.bundleMaterialSha256,
     sourceImage: source.sha256,
+    browserCaptureRecord: browserCaptureRecord.sha256,
+    cameraArtifact: cameraArtifact.sha256,
+    rendererArtifact: rendererArtifact.sha256,
+    reconstructionArtifact: reconstructionArtifact.sha256,
+    renderGenerationReceipt: renderGenerationReceipt.sha256,
+    protectedMask: protectedMask.sha256,
+    generatedRegionMask: generatedRegionMask.sha256,
   });
   return { lock, runtime, model, materialSetSha256 };
 }
@@ -911,10 +1060,14 @@ export async function claimGrandHallDifixAuthorizationCreateOnly(input: {
     throw error;
   });
   try {
-    await handle.writeFile(bytes);
-    await handle.sync();
-  } finally {
-    await handle.close();
+    try {
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    throw new GrandHallDifixClaimPublicationError(claim.claimSha256, error);
   }
   return claim.claimSha256;
 }
@@ -1224,7 +1377,7 @@ export async function runGrandHallDifixOneShot(
   ] as const) await requireAbsent(path, label);
 
   await verifyWslHostMappings(lock, authorization);
-  const before = await checkExactMaterials(lock, true);
+  const before = await checkExactMaterials(lock, false);
   await preflightExactNamespace(lock);
   const lockAgain = await stableRead(options.lockHostPath, "execution lock post-preflight", MAX_JSON_BYTES);
   const authAgain = await stableRead(options.authorizationHostPath, "authorization post-preflight", MAX_JSON_BYTES);
@@ -1235,13 +1388,20 @@ export async function runGrandHallDifixOneShot(
   const claimInstant = now();
   assertGrandHallDifixAuthorizationCurrent(authorization, claimInstant);
   const claimedAt = claimInstant.toISOString();
-  const claimSha256 = await claimGrandHallDifixAuthorizationCreateOnly({ authorization, lock, claimedAt });
-  const startedAt = now().toISOString();
-  try {
-  try {
-    await mkdir(lock.paths.attemptDirectoryHost, { recursive: false, mode: 0o700 });
-  } catch (error) {
-    const terminal = createGrandHallDifixAttemptReceipt({
+  const plannedClaim = createGrandHallDifixAuthorizationClaim({
+    authorization,
+    executionLock: lock,
+    claimedAt,
+  });
+  const claimSha256 = plannedClaim.claimSha256;
+  const startedAt = claimedAt;
+  const publishEmergencyTerminalIfAbsent = async (): Promise<void> => {
+    const terminalExists = await lstat(lock.paths.terminalReceiptHost).then(
+      () => true,
+      () => false,
+    );
+    if (terminalExists) return;
+    const emergencyTerminal = createGrandHallDifixAttemptReceipt({
       schemaVersion: "venviewer.grand-hall.difix-no-reference-attempt-receipt.v1",
       phase: "failed",
       authorizationSha256: authorization.authorizationSha256,
@@ -1258,33 +1418,87 @@ export async function runGrandHallDifixOneShot(
       outputImage: null,
       adapterReceipt: null,
       actualExecution: null,
-      failure: { code: "process_failed", message: "Attempt directory could not be claimed create-only after authorization consumption." },
+      failure: {
+        code: "process_failed",
+        message: "The consumed one-shot attempt stopped at a control-plane boundary; retry is prohibited.",
+      },
       authority: { captured: "none", structural: "none", runtime: "none", resultClass: "generated_cinematic_diagnostic" },
     });
-    await createOnlyJson(lock.paths.terminalReceiptHost, terminal);
-    throw new GrandHallDifixOneShotError("OUTPUT_EXISTS", "Authorization was consumed, but the create-only attempt directory could not be created.", error);
-  }
-  const startedReceipt = createGrandHallDifixAttemptReceipt({
-    schemaVersion: "venviewer.grand-hall.difix-no-reference-attempt-receipt.v1",
-    phase: "started",
-    authorizationSha256: authorization.authorizationSha256,
-    executionLockSha256: lock.executionLockSha256,
-    claimSha256,
-    startedAt,
-    completedAt: null,
-    exitCode: null,
-    noRetryPermitted: true,
-    beforeMaterialSetSha256: before.materialSetSha256,
-    afterMaterialSetSha256: null,
-    stdout: null,
-    stderr: null,
-    outputImage: null,
-    adapterReceipt: null,
-    actualExecution: null,
-    failure: null,
-    authority: { captured: "none", structural: "none", runtime: "none", resultClass: "generated_cinematic_diagnostic" },
+    await createOnlyJson(lock.paths.terminalReceiptHost, emergencyTerminal);
+  };
+  await completeGrandHallDifixConsumedPrelaunch({
+    plannedClaimSha256: claimSha256,
+    consumeAuthorization: async () => await claimGrandHallDifixAuthorizationCreateOnly({ authorization, lock, claimedAt }),
+    runExhaustivePrelaunch: async () => {
+      try {
+        await mkdir(lock.paths.attemptDirectoryHost, { recursive: false, mode: 0o700 });
+      } catch (error) {
+        const terminal = createGrandHallDifixAttemptReceipt({
+          schemaVersion: "venviewer.grand-hall.difix-no-reference-attempt-receipt.v1",
+          phase: "failed",
+          authorizationSha256: authorization.authorizationSha256,
+          executionLockSha256: lock.executionLockSha256,
+          claimSha256,
+          startedAt,
+          completedAt: now().toISOString(),
+          exitCode: null,
+          noRetryPermitted: true,
+          beforeMaterialSetSha256: before.materialSetSha256,
+          afterMaterialSetSha256: null,
+          stdout: null,
+          stderr: null,
+          outputImage: null,
+          adapterReceipt: null,
+          actualExecution: null,
+          failure: { code: "process_failed", message: "Attempt directory could not be claimed create-only after authorization consumption." },
+          authority: { captured: "none", structural: "none", runtime: "none", resultClass: "generated_cinematic_diagnostic" },
+        });
+        await createOnlyJson(lock.paths.terminalReceiptHost, terminal);
+        throw new GrandHallDifixOneShotError("OUTPUT_EXISTS", "Authorization was consumed, but the create-only attempt directory could not be created.", error);
+      }
+      const startedReceipt = createGrandHallDifixAttemptReceipt({
+        schemaVersion: "venviewer.grand-hall.difix-no-reference-attempt-receipt.v1",
+        phase: "started",
+        authorizationSha256: authorization.authorizationSha256,
+        executionLockSha256: lock.executionLockSha256,
+        claimSha256,
+        startedAt,
+        completedAt: null,
+        exitCode: null,
+        noRetryPermitted: true,
+        beforeMaterialSetSha256: before.materialSetSha256,
+        afterMaterialSetSha256: null,
+        stdout: null,
+        stderr: null,
+        outputImage: null,
+        adapterReceipt: null,
+        actualExecution: null,
+        failure: null,
+        authority: { captured: "none", structural: "none", runtime: "none", resultClass: "generated_cinematic_diagnostic" },
+      });
+      await createOnlyJson(lock.paths.startedReceiptHost, startedReceipt);
+      const exhaustiveBefore = await checkExactMaterials(lock, true);
+      if (exhaustiveBefore.materialSetSha256 !== before.materialSetSha256) {
+        fail("INPUT_RACE", "Bound materials changed between quick and exhaustive preflight.");
+      }
+      const lockAfterExhaustive = await stableRead(options.lockHostPath, "execution lock post-exhaustive-preflight", MAX_JSON_BYTES);
+      const authorizationAfterExhaustive = await stableRead(
+        options.authorizationHostPath,
+        "authorization post-exhaustive-preflight",
+        MAX_JSON_BYTES,
+      );
+      if (
+        lockAfterExhaustive.sha256 !== lockStable.sha256
+        || authorizationAfterExhaustive.sha256 !== authorizationStable.sha256
+      ) fail("INPUT_RACE", "Execution lock or authorization changed during exhaustive preflight.");
+      await assertBoundFile(
+        authorization.authorizationBasis.objectiveArtifact,
+        "authorization objective artifact post-exhaustive-preflight",
+      );
+    },
+    publishConsumedFailure: publishEmergencyTerminalIfAbsent,
   });
-  await createOnlyJson(lock.paths.startedReceiptHost, startedReceipt);
+  try {
   const stdoutHandle = await openCreateOnlyLog(lock.paths.stdoutHost, "stdout");
   const stderrHandle = await openCreateOnlyLog(lock.paths.stderrHost, "stderr");
   let exitCode = 1;
@@ -1469,36 +1683,7 @@ export async function runGrandHallDifixOneShot(
   await createOnlyJson(lock.paths.terminalReceiptHost, terminal);
   return terminal;
   } catch (error) {
-    const terminalExists = await lstat(lock.paths.terminalReceiptHost).then(
-      () => true,
-      () => false,
-    );
-    if (!terminalExists) {
-      const emergencyTerminal = createGrandHallDifixAttemptReceipt({
-        schemaVersion: "venviewer.grand-hall.difix-no-reference-attempt-receipt.v1",
-        phase: "failed",
-        authorizationSha256: authorization.authorizationSha256,
-        executionLockSha256: lock.executionLockSha256,
-        claimSha256,
-        startedAt,
-        completedAt: now().toISOString(),
-        exitCode: null,
-        noRetryPermitted: true,
-        beforeMaterialSetSha256: before.materialSetSha256,
-        afterMaterialSetSha256: null,
-        stdout: null,
-        stderr: null,
-        outputImage: null,
-        adapterReceipt: null,
-        actualExecution: null,
-        failure: {
-          code: "process_failed",
-          message: "The consumed one-shot attempt stopped at a control-plane boundary; retry is prohibited.",
-        },
-        authority: { captured: "none", structural: "none", runtime: "none", resultClass: "generated_cinematic_diagnostic" },
-      });
-      await createOnlyJson(lock.paths.terminalReceiptHost, emergencyTerminal);
-    }
+    await publishEmergencyTerminalIfAbsent();
     throw error;
   }
 }

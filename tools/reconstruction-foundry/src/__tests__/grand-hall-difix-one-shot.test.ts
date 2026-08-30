@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   domainSeparatedSha256,
+  stableCanonicalJson,
   toCanonicalJson,
 } from "@omnitwin/reconstruction-foundry";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,15 +16,20 @@ import {
   GRAND_HALL_DIFIX_EXACT_CONFIGURATION,
   GrandHallDifixExecutionLockSchema,
   assertGrandHallDifixAuthorizationCurrent,
+  assertGrandHallDifixExperimentBindingProjectionMatches,
   compileGrandHallDifixExecutionAuthorization,
+  createGrandHallDifixAuthorizationClaim,
   type GrandHallDifixBoundFile,
   type GrandHallDifixExecutionAuthorization,
+  type GrandHallDifixExperimentBindings,
   type GrandHallDifixExecutionLock,
 } from "../grand-hall-difix-one-shot-contract.js";
 import {
+  GrandHallDifixClaimPublicationError,
   GrandHallDifixOneShotError,
   checkGrandHallDifixExecutionLock,
   claimGrandHallDifixAuthorizationCreateOnly,
+  completeGrandHallDifixConsumedPrelaunch,
 } from "../grand-hall-difix-one-shot.js";
 
 const createdDirectories: string[] = [];
@@ -37,6 +43,10 @@ function sha(seed: string): `sha256:${string}` {
 
 function digest(domain: string, value: unknown): string {
   return `sha256:${domainSeparatedSha256(domain, toCanonicalJson(value))}`;
+}
+
+function canonicalFileSha(value: unknown): `sha256:${string}` {
+  return sha(`${stableCanonicalJson(toCanonicalJson(value))}\n`);
 }
 
 function wsl(name: string): string {
@@ -73,6 +83,40 @@ function executionLock(root: string): GrandHallDifixExecutionLock {
     providerAdapterId: GRAND_HALL_DIFIX_ADAPTER_ID,
     configuration,
     configurationSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1", configuration),
+    experimentBindings: {
+      provider: {
+        repositorySourceArchiveSha256: sha("provider-source-archive"),
+        modelRepositoryManifestSha256: sha("model-repository-manifest"),
+        modelWeights: [{ relativePath: "model.safetensors", sizeBytes: 1, sha256: sha("model-weight") }],
+      },
+      plannedExecution: {
+        providerAdapterId: GRAND_HALL_DIFIX_ADAPTER_ID,
+        providerAdapterImplementationSha256: sha("adapter"),
+        parameterConfigurationArtifactSha256: canonicalFileSha(configuration),
+        runtimeEnvironmentArtifactSha256: sha("runtime-environment-artifact"),
+      },
+      inputPack: {
+        bundleMaterialSha256: sha("input-pack-material"),
+        sourceRenderSha256: sha("source-image"),
+        browserCaptureRecordSha256: sha("browser-capture-record"),
+        cameraArtifactSha256: sha("camera-artifact"),
+        rendererArtifactSha256: sha("renderer-artifact"),
+        reconstructionArtifactSha256: sha("reconstruction-artifact"),
+        reconstructionMemberClosureSha256: sha("reconstruction-member-closure"),
+        renderGenerationReceiptSha256: sha("render-generation-receipt"),
+        protectedMaskSha256: sha("protected-mask"),
+        generatedRegionMaskSha256: sha("generated-region-mask"),
+      },
+      fixedCamera: {
+        cameraSha256: sha("fixed-camera"),
+        protectedMaskAnalysisReceiptSha256: sha("protected-mask-analysis"),
+        generatedMaskAnalysisReceiptSha256: sha("generated-mask-analysis"),
+      },
+      localExperimentMaterialSetSha256: digest(
+        "VENVIEWER_GRAND_HALL_DIFIX_LOCAL_EXPERIMENT_MATERIAL_SET_V1",
+        [],
+      ),
+    },
     runtimeSealSha256: sha("runtime-inner-self-digest"),
     modelSealSha256: sha("model-inner-self-digest"),
     inputPackManifestSha256: sha("input-pack/manifest.authority-none.json"),
@@ -85,11 +129,19 @@ function executionLock(root: string): GrandHallDifixExecutionLock {
       executionLockHost: resolve(control, "execution-lock.json"),
       executionLockWsl: wsl("control/execution-lock.json"),
       experiment: file(resolve(root, "experiment.json"), "experiment.json"),
+      experimentMaterials: [],
       inputPackDirectoryHost: resolve(root, "input-pack"),
       inputPackDirectoryWsl: wsl("input-pack"),
       inputPackManifest: file(resolve(root, "input-pack/manifest.authority-none.json"), "input-pack/manifest.authority-none.json"),
       inputPackPublicationReceipt: file(resolve(root, "input-pack/publication-receipt.json"), "input-pack/publication-receipt.json"),
       sourceImage: { ...file(resolve(root, "input-pack/source-render.png"), "input-pack/source-render.png"), sha256: sha("source-image") },
+      browserCaptureRecord: { ...file(resolve(root, "input-pack/browser-capture-record.json"), "input-pack/browser-capture-record.json"), sha256: sha("browser-capture-record") },
+      cameraArtifact: { ...file(resolve(root, "input-pack/camera.json"), "input-pack/camera.json"), sha256: sha("camera-artifact") },
+      rendererArtifact: { ...file(resolve(root, "input-pack/renderer.json"), "input-pack/renderer.json"), sha256: sha("renderer-artifact") },
+      reconstructionArtifact: { ...file(resolve(root, "input-pack/reconstruction.json"), "input-pack/reconstruction.json"), sha256: sha("reconstruction-artifact") },
+      renderGenerationReceipt: { ...file(resolve(root, "input-pack/render-generation.json"), "input-pack/render-generation.json"), sha256: sha("render-generation-receipt") },
+      protectedMask: { ...file(resolve(root, "input-pack/protected-mask.png"), "input-pack/protected-mask.png"), sha256: sha("protected-mask") },
+      generatedRegionMask: { ...file(resolve(root, "input-pack/generated-region-mask.png"), "input-pack/generated-region-mask.png"), sha256: sha("generated-region-mask") },
       runtimeSeal: file(resolve(root, "runtime-seal.json"), "runtime-seal.json"),
       modelSeal: file(resolve(root, "model-seal.json"), "model-seal.json"),
       adapter: { ...file(resolve(root, "adapter.py"), "adapter.py"), sha256: sha("adapter") },
@@ -292,6 +344,84 @@ describe("Grand Hall Difix one-shot authorization overlay", () => {
       claimedAt: EXPIRES_AT,
     })).rejects.toThrow("outside the active authorization window");
   });
+
+  it("keeps a valid early claim consumed when later work crosses authorization expiry", async () => {
+    const { lock } = await harness();
+    const value = authorization(lock);
+    const claimedAt = "2026-08-30T04:19:59.999Z";
+    const plannedClaimSha256 = createGrandHallDifixAuthorizationClaim({
+      authorization: value,
+      executionLock: lock,
+      claimedAt,
+    }).claimSha256;
+    const planned = await completeGrandHallDifixConsumedPrelaunch({
+      plannedClaimSha256,
+      consumeAuthorization: async () => await claimGrandHallDifixAuthorizationCreateOnly({
+        authorization: value,
+        lock,
+        claimedAt,
+      }),
+      runExhaustivePrelaunch: () => {
+        expect(() => { assertGrandHallDifixAuthorizationCurrent(value, new Date(EXPIRES_AT)); })
+          .toThrow("expired");
+        return Promise.resolve("exhaustive-complete");
+      },
+      publishConsumedFailure: () => Promise.reject(
+        new Error("successful exhaustive work must not publish a failure receipt"),
+      ),
+    });
+
+    expect(planned.value).toBe("exhaustive-complete");
+    await expect(readFile(lock.paths.claimHost, "utf8").then((bytes) => JSON.parse(bytes) as unknown))
+      .resolves.toMatchObject({
+        authorizationSha256: value.authorizationSha256,
+        claimedAt,
+        authorizationConsumed: true,
+        consumedEvenOnFailure: true,
+      });
+  });
+
+  it("writes terminal no-retry evidence and never reaches provider launch after exhaustive failure", async () => {
+    const { root } = await harness();
+    const terminalPath = resolve(root, "control", "behavioral-terminal.json");
+    const plannedClaimSha256 = sha("behavioral-claim");
+    let providerLaunchCount = 0;
+    const run = async (): Promise<void> => {
+      await completeGrandHallDifixConsumedPrelaunch({
+        plannedClaimSha256,
+        consumeAuthorization: () => Promise.resolve(plannedClaimSha256),
+        runExhaustivePrelaunch: () => Promise.reject(new Error("synthetic exhaustive failure")),
+        publishConsumedFailure: async () => {
+          await writeFile(terminalPath, JSON.stringify({ phase: "failed", noRetryPermitted: true }), "utf8");
+        },
+      });
+      providerLaunchCount += 1;
+    };
+
+    await expect(run()).rejects.toThrow("synthetic exhaustive failure");
+    expect(providerLaunchCount).toBe(0);
+    await expect(readFile(terminalPath, "utf8").then((bytes) => JSON.parse(bytes) as unknown))
+      .resolves.toEqual({ phase: "failed", noRetryPermitted: true });
+  });
+
+  it("treats a post-create claim publication failure as consumed", async () => {
+    const plannedClaimSha256 = sha("partial-claim");
+    let failurePublicationCount = 0;
+    await expect(completeGrandHallDifixConsumedPrelaunch({
+      plannedClaimSha256,
+      consumeAuthorization: () => Promise.reject(
+        new GrandHallDifixClaimPublicationError(plannedClaimSha256, new Error("synthetic fsync failure")),
+      ),
+      runExhaustivePrelaunch: () => Promise.reject(
+        new Error("exhaustive work must not run after claim publication failure"),
+      ),
+      publishConsumedFailure: () => {
+        failurePublicationCount += 1;
+        return Promise.resolve();
+      },
+    })).rejects.toThrow("claim path was atomically consumed");
+    expect(failurePublicationCount).toBe(1);
+  });
 });
 
 describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
@@ -312,6 +442,188 @@ describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
       ...tamperedPayload,
       executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
     })).toThrow(`${field} must equal its exact bound-file digest`);
+  });
+
+  it("rejects a recomputed lock whose parameter artifact is not the exact canonical one-shot configuration", async () => {
+    const { lock } = await harness();
+    const { executionLockSha256: _digest, ...payload } = lock;
+    const tamperedPayload = {
+      ...payload,
+      experimentBindings: {
+        ...payload.experimentBindings,
+        plannedExecution: {
+          ...payload.experimentBindings.plannedExecution,
+          parameterConfigurationArtifactSha256: sha("noncanonical-or-different-configuration-bytes"),
+        },
+      },
+    };
+    expect(() => GrandHallDifixExecutionLockSchema.parse({
+      ...tamperedPayload,
+      executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
+    })).toThrow("exact canonical one-shot configuration bytes");
+  });
+
+  it.each([
+    {
+      boundary: "provider adapter identity",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        plannedExecution: { ...value.plannedExecution, providerAdapterId: "different-adapter" },
+      }),
+    },
+    {
+      boundary: "provider adapter bytes",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        plannedExecution: { ...value.plannedExecution, providerAdapterImplementationSha256: sha("different-adapter-bytes") },
+      }),
+    },
+    {
+      boundary: "exact configuration artifact",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        plannedExecution: { ...value.plannedExecution, parameterConfigurationArtifactSha256: sha("different-configuration") },
+      }),
+    },
+    {
+      boundary: "runtime-seal environment closure",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        plannedExecution: { ...value.plannedExecution, runtimeEnvironmentArtifactSha256: sha("different-runtime-environment") },
+      }),
+    },
+    {
+      boundary: "provider source archive",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        provider: { ...value.provider, repositorySourceArchiveSha256: sha("different-source-archive") },
+      }),
+    },
+    {
+      boundary: "model manifest",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        provider: { ...value.provider, modelRepositoryManifestSha256: sha("different-model-manifest") },
+      }),
+    },
+    {
+      boundary: "model weight closure",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        provider: {
+          ...value.provider,
+          modelWeights: value.provider.modelWeights.map((weight, index) => (
+            index === 0 ? { ...weight, sha256: sha("different-model-weight") } : weight
+          )),
+        },
+      }),
+    },
+    {
+      boundary: "input-pack bundle",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, bundleMaterialSha256: sha("different-input-pack-bundle") },
+      }),
+    },
+    {
+      boundary: "source render",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, sourceRenderSha256: sha("different-source-render") },
+      }),
+    },
+    {
+      boundary: "browser capture record substitution",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, browserCaptureRecordSha256: sha("substituted-browser-capture-record") },
+      }),
+    },
+    {
+      boundary: "camera artifact",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, cameraArtifactSha256: sha("different-camera-artifact") },
+      }),
+    },
+    {
+      boundary: "fixed-camera digest",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        fixedCamera: { ...value.fixedCamera, cameraSha256: sha("different-fixed-camera") },
+      }),
+    },
+    {
+      boundary: "renderer artifact",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, rendererArtifactSha256: sha("different-renderer") },
+      }),
+    },
+    {
+      boundary: "render-generation receipt substitution",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, renderGenerationReceiptSha256: sha("substituted-render-generation-receipt") },
+      }),
+    },
+    {
+      boundary: "protected mask",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, protectedMaskSha256: sha("different-protected-mask") },
+      }),
+    },
+    {
+      boundary: "generated-region mask",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, generatedRegionMaskSha256: sha("different-generated-mask") },
+      }),
+    },
+    {
+      boundary: "protected-mask analysis",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        fixedCamera: { ...value.fixedCamera, protectedMaskAnalysisReceiptSha256: sha("different-protected-analysis") },
+      }),
+    },
+    {
+      boundary: "generated-mask analysis",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        fixedCamera: { ...value.fixedCamera, generatedMaskAnalysisReceiptSha256: sha("different-generated-analysis") },
+      }),
+    },
+    {
+      boundary: "reconstruction descriptor",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, reconstructionArtifactSha256: sha("different-reconstruction-descriptor") },
+      }),
+    },
+    {
+      boundary: "reconstruction member closure",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        inputPack: { ...value.inputPack, reconstructionMemberClosureSha256: sha("different-reconstruction-closure") },
+      }),
+    },
+    {
+      boundary: "local experiment material set",
+      mutate: (value: GrandHallDifixExperimentBindings) => ({
+        ...value,
+        localExperimentMaterialSetSha256: sha("different-local-material-set"),
+      }),
+    },
+  ])("rejects an adversarial $boundary projection mismatch", async ({ mutate }) => {
+    const { lock } = await harness();
+    expect(() => {
+      assertGrandHallDifixExperimentBindingProjectionMatches(
+        lock.experimentBindings,
+        mutate(lock.experimentBindings),
+      );
+    }).toThrow();
   });
 
   it("rejects WSL traversal even when the outer digest is recomputed", async () => {
@@ -461,17 +773,25 @@ describe("pinned Python adapter and OS sandbox", () => {
     expect(adapter).toContain("network_after_load = require_network_unreachable()");
   });
 
-  it("pins an OS-level no-network namespace and preflights ENETUNREACH plus CUDA before claim", async () => {
+  it("claims after bounded no-network CUDA checks, then exhaustively seals before provider launch", async () => {
     const runner = await readFile(fileURLToPath(new URL("../grand-hall-difix-one-shot.ts", import.meta.url)), "utf8");
     const contract = await readFile(fileURLToPath(new URL("../grand-hall-difix-one-shot-contract.ts", import.meta.url)), "utf8");
     const adapter = await readFile(fileURLToPath(new URL("../../python/grand_hall_difix_no_reference_adapter.py", import.meta.url)), "utf8");
+    const mappingIndex = runner.indexOf("await verifyWslHostMappings(lock, authorization)");
+    const quickCheckIndex = runner.indexOf("const before = await checkExactMaterials(lock, false)");
+    const namespaceIndex = runner.indexOf("await preflightExactNamespace(lock)");
+    const claimIndex = runner.indexOf("await claimGrandHallDifixAuthorizationCreateOnly");
+    const exhaustiveIndex = runner.indexOf("const exhaustiveBefore = await checkExactMaterials(lock, true)");
+    const launchIndex = runner.indexOf('exitCode = await spawnToLogs("wsl.exe"');
     expect(contract).toContain('["unshare", "--user", "--map-root-user", "--net"]');
-    expect(runner.indexOf("await preflightExactNamespace(lock)")).toBeLessThan(
-      runner.indexOf("await claimGrandHallDifixAuthorizationCreateOnly"),
-    );
-    expect(runner.indexOf("await verifyWslHostMappings(lock, authorization)")).toBeLessThan(
-      runner.indexOf("await checkExactMaterials(lock, true)"),
-    );
+    expect(mappingIndex).toBeGreaterThan(-1);
+    expect(mappingIndex).toBeLessThan(quickCheckIndex);
+    expect(quickCheckIndex).toBeLessThan(namespaceIndex);
+    expect(namespaceIndex).toBeLessThan(claimIndex);
+    expect(claimIndex).toBeLessThan(exhaustiveIndex);
+    expect(exhaustiveIndex).toBeLessThan(launchIndex);
+    expect(runner).toContain("Bound materials changed between quick and exhaustive preflight.");
+    expect(runner).toContain("authorization objective artifact post-exhaustive-preflight");
     expect(runner).toContain('"--model-execution-snapshot", lock.paths.modelExecutionSnapshotWsl');
     expect(adapter).toContain("result != errno.ENETUNREACH");
     expect(adapter).toContain("torch.cuda.is_available()");

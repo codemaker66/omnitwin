@@ -99,6 +99,14 @@ export interface VerifiedGrandHallDifixInputPack {
   readonly manifest: GrandHallDifixInputPackManifest;
   readonly publicationReceipt: GrandHallDifixPublicationReceipt;
   readonly publicationReceiptSha256: string;
+  readonly artifacts: GrandHallDifixVerifiedArtifactDocuments;
+}
+
+export interface GrandHallDifixVerifiedArtifactDocuments {
+  readonly camera: GrandHallDifixCameraArtifact;
+  readonly renderer: GrandHallDifixRendererArtifact;
+  readonly reconstruction: GrandHallDifixReconstructionArtifact;
+  readonly renderGeneration: GrandHallDifixRenderGenerationReceipt;
 }
 
 interface StableFile {
@@ -1083,12 +1091,7 @@ interface PackArtifactFiles {
   readonly renderGeneration: StableFile;
 }
 
-interface PackArtifactDocuments {
-  readonly camera: GrandHallDifixCameraArtifact;
-  readonly renderer: GrandHallDifixRendererArtifact;
-  readonly reconstruction: GrandHallDifixReconstructionArtifact;
-  readonly renderGeneration: GrandHallDifixRenderGenerationReceipt;
-}
+type PackArtifactDocuments = GrandHallDifixVerifiedArtifactDocuments;
 
 async function openPackDirectory(outputDirectory: string): Promise<OutputClaim> {
   const directoryStats = await lstat(outputDirectory, { bigint: true }).catch((error: unknown) => (
@@ -1450,6 +1453,7 @@ export async function checkGrandHallDifixNoReferenceInputPack(
     manifest: pack.manifest,
     publicationReceipt: pack.publicationReceipt,
     publicationReceiptSha256: pack.receiptStable.sha256,
+    artifacts: artifactDocuments,
   };
 }
 

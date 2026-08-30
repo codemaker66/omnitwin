@@ -267,21 +267,34 @@ overlay after compilation.
 
 ## 5. Run exactly once
 
-Before the atomic claim is created, the runner:
+Before the atomic claim is created, the runner performs only bounded checks that
+can complete within the 30-minute authorization window:
 
 1. verifies paired host/WSL paths;
 2. verifies the immutable experiment is still `not_authorized`;
-3. validates the objective and authorization time window;
-4. exhaustively rehashes source, input pack, provider, runtime, wheels, model,
-   adapter, and seal tool;
-5. enters the exact OS no-network namespace;
-6. requires socket `connect_ex` to return Linux `ENETUNREACH` (101); and
-7. allocates and synchronizes a CUDA tensor on the visible GPU.
+3. binds the quick material projection and validates the objective and
+   authorization time window;
+4. enters the exact OS no-network namespace;
+5. requires socket `connect_ex` to return Linux `ENETUNREACH` (101); and
+6. allocates and synchronizes a CUDA tensor on the visible GPU.
 
 Only then does it atomically create the claim. The claim consumes the
-authorization even if attempt-directory creation, model loading, inference,
-postflight verification, or receipt writing fails. Never delete the claim to
-retry.
+authorization even if attempt-directory creation, exhaustive material
+verification, model loading, inference, postflight verification, or receipt
+writing fails. Never delete the claim to retry.
+
+If the claim path is created but writing, syncing, or closing its JSON receipt
+fails, the path still counts as consumed. The runner records a terminal
+failed/no-retry control-plane receipt and does not continue to provider launch.
+
+Inside the consumed attempt, but still before any provider launch, the runner
+exhaustively rehashes source, input pack, provider, runtime, wheels, model,
+adapter, and seal tool. It requires the exhaustive material projection to equal
+the quick projection, then re-reads the exact execution lock, authorization, and
+objective artifact. Any mismatch or exhaustive-check failure writes a terminal
+failed/no-retry receipt and does not launch Difix. Authorization expiry after the
+valid atomic claim does not invalidate the already-consumed long-running
+attempt.
 
 Inside the consumed attempt, the actual inference process checks network
 unreachability again before importing the model, stream-hashes the complete

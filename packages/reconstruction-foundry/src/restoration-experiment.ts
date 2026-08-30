@@ -35,6 +35,10 @@ export const FOUNDRY_RESTORATION_EVIDENCE_V0 =
   "omnitwin.foundry.restoration-evidence.v0";
 export const FOUNDRY_RESTORATION_PROMOTION_V0 =
   "omnitwin.foundry.restoration-promotion.v0";
+export const FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_CLOSURE_V0 =
+  "omnitwin.foundry.restoration-reconstruction-descriptor-closure.v0";
+export const FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_MEDIA_TYPE =
+  "application/vnd.venviewer.grand-hall.reconstruction+json";
 
 export const FOUNDRY_RESTORATION_OPT_IN_STATEMENT =
   "I explicitly opt in to compile this isolated internal-R&D restoration experiment. I understand that compilation does not authorize execution, distribution, publication, runtime registration, or replacement of captured source truth.";
@@ -439,7 +443,7 @@ const PROFILE_BY_LANE: Readonly<Record<FoundryRestorationLane, FoundryRestoratio
     requiredInputs: [
       { role: "captured_reference_image", truthLayer: "CAPTURED_TRUTH", artifactClass: "captured_observation", mediaType: "image/png", requiresImageDimensions: true, variants: ["difix_ref"] },
       { role: "source_fixed_camera_render", truthLayer: "SOURCE_DERIVED_TRUTH", artifactClass: "source_derived_reconstruction_render", mediaType: "image/png", requiresImageDimensions: true, variants: ["difix", "difix_ref"] },
-      { role: "source_reconstruction", truthLayer: "SOURCE_DERIVED_TRUTH", artifactClass: "source_derived_reconstruction", mediaType: "application/octet-stream", requiresImageDimensions: false, variants: ["difix", "difix_ref"] },
+      { role: "source_reconstruction", truthLayer: "SOURCE_DERIVED_TRUTH", artifactClass: "source_derived_reconstruction", mediaType: FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_MEDIA_TYPE, requiresImageDimensions: false, variants: ["difix", "difix_ref"] },
     ],
     candidateArtifactClass: "restoration_candidate",
     allowedCandidateMediaTypes: ["image/png"],
@@ -696,6 +700,51 @@ export function createFoundryRestorationImagePreparationReceiptV0(
   });
 }
 
+const FoundryRestorationReconstructionDescriptorMemberV0Schema = z
+  .object({
+    relativePath: SafeRelativePathSchema,
+    sizeBytes: z.number().int().positive().max(MAX_ARTIFACT_BYTES),
+    sha256: RuntimeSha256Schema,
+  })
+  .strict();
+
+export const FoundryRestorationReconstructionDescriptorClosureV0Schema = z
+  .object({
+    schemaVersion: z.literal(FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_CLOSURE_V0),
+    descriptorSchemaVersion: RuntimeManifestKeySchema,
+    descriptorSizeBytes: z.number().int().positive().max(MAX_ARTIFACT_BYTES),
+    descriptorSha256: RuntimeSha256Schema,
+    format: RuntimeManifestKeySchema,
+    representationId: RuntimeManifestKeySchema,
+    sourceVariant: z.string().min(1).max(160).regex(/^[A-Za-z0-9._-]+$/u),
+    decodedElementCount: z.number().int().positive().max(MAX_ARTIFACT_BYTES),
+    memberCount: z.number().int().positive().max(100_000),
+    totalMemberBytes: z.number().int().positive().max(MAX_ARTIFACT_BYTES),
+    members: z
+      .array(FoundryRestorationReconstructionDescriptorMemberV0Schema)
+      .min(1)
+      .max(100_000),
+  })
+  .strict()
+  .superRefine((closure, ctx) => {
+    const paths = closure.members.map((member) => member.relativePath);
+    if (!uniqueSorted(paths)) {
+      addIssue(ctx, ["members"], "reconstruction descriptor members must be unique and ordinal-sorted");
+    }
+    if (closure.memberCount !== closure.members.length) {
+      addIssue(ctx, ["memberCount"], "reconstruction descriptor member count must match its exact member closure");
+    }
+    if (
+      closure.totalMemberBytes !==
+      closure.members.reduce((total, member) => total + member.sizeBytes, 0)
+    ) {
+      addIssue(ctx, ["totalMemberBytes"], "reconstruction descriptor byte total must match its exact member closure");
+    }
+  });
+export type FoundryRestorationReconstructionDescriptorClosureV0 = z.infer<
+  typeof FoundryRestorationReconstructionDescriptorClosureV0Schema
+>;
+
 export const FoundryRestorationInputCandidateV0Schema = z
   .object({
     role: RuntimeManifestKeySchema,
@@ -713,6 +762,8 @@ export const FoundryRestorationInputCandidateV0Schema = z
     truthLayer: FoundryRestorationTruthLayerSchema,
     artifactClass: FoundryRestorationInputArtifactClassSchema,
     preparationLineage: FoundryRestorationImagePreparationReceiptV0Schema.nullable(),
+    reconstructionDescriptorClosure:
+      FoundryRestorationReconstructionDescriptorClosureV0Schema.nullable().optional(),
     authority: z.literal("none"),
   })
   .strict();
@@ -738,7 +789,9 @@ const DigestAddressedArtifactObjectV0Schema = z
 
 const DigestAddressedArtifactV0Schema = DigestAddressedArtifactObjectV0Schema.superRefine(
   (artifact, ctx) => {
-    const expected = artifact.mediaType === "application/json" ? "rfc8785_json" : "byte_exact";
+    const expected = artifact.mediaType === "application/json" || artifact.mediaType.endsWith("+json")
+      ? "rfc8785_json"
+      : "byte_exact";
     if (artifact.canonicalization !== expected) {
       addIssue(ctx, ["canonicalization"], `canonicalization must be ${expected} for ${artifact.mediaType}`);
     }
@@ -1231,6 +1284,32 @@ function validateExperimentPayload(
     }
   }
   for (const input of experiment.inputs) {
+    const descriptorClosure = input.reconstructionDescriptorClosure ?? null;
+    const isReconstructionDescriptor =
+      input.mediaType === FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_MEDIA_TYPE;
+    if (descriptorClosure !== null && !isReconstructionDescriptor) {
+      addIssue(
+        ctx,
+        ["inputs"],
+        `input ${input.role} cannot carry a reconstruction descriptor closure for media type ${input.mediaType}`,
+      );
+    }
+    if (
+      isReconstructionDescriptor &&
+      (
+        input.artifactClass !== "source_derived_reconstruction" ||
+        input.canonicalization !== "rfc8785_json" ||
+        descriptorClosure === null ||
+        descriptorClosure.descriptorSha256 !== input.sha256 ||
+        descriptorClosure.descriptorSizeBytes !== input.sizeBytes
+      )
+    ) {
+      addIssue(
+        ctx,
+        ["inputs"],
+        `input ${input.role} must bind a complete canonical reconstruction descriptor member closure`,
+      );
+    }
     const prepared = input.artifactClass === "source_derived_capture_observation";
     if (prepared !== (input.preparationLineage !== null)) {
       addIssue(ctx, ["inputs"], `input ${input.role} must bind parent raw-image manifest and preparation receipt exactly when provider-prepared`);
@@ -1320,8 +1399,13 @@ function validateExperimentPayload(
   }
   if (experiment.lane === "difix3d_plus") {
     const sourceRender = experiment.inputs.find((input) => input.role === "source_fixed_camera_render");
+    const sourceReconstruction = experiment.inputs.find((input) => input.role === "source_reconstruction");
     if (
       sourceRender === undefined ||
+      sourceReconstruction === undefined ||
+      sourceReconstruction.mediaType !== FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_MEDIA_TYPE ||
+      sourceReconstruction.reconstructionDescriptorClosure === null ||
+      sourceReconstruction.reconstructionDescriptorClosure === undefined ||
       closures.some((closure) =>
         !canonicalEqual({
           artifactId: closure.renderDerivationReceipt.sourceRenderArtifact.artifactId,
@@ -1564,7 +1648,7 @@ export function createFoundryRestorationSemanticResultV0(
 
 const ProtectedMetricResultPayloadV0Schema = z.object({
   protectedRegionSsim: z.number().min(0).max(1),
-  protectedRegionLpips: z.number().min(0).max(1),
+  protectedRegionLpips: z.number().finite().nonnegative(),
   protectedRegionMeanAbsoluteError: z.number().min(0).max(1),
   maximumProtectedEdgeDisplacementPixels: z.number().nonnegative().max(1_000_000),
   evaluatorReceiptArtifact: DigestAddressedJsonArtifactV0Schema,

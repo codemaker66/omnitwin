@@ -3,6 +3,7 @@ import {
   FOUNDRY_RESTORATION_LANES,
   FOUNDRY_RESTORATION_OPT_IN_STATEMENT,
   FOUNDRY_RESTORATION_PROMOTION_STATEMENT,
+  FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_CLOSURE_V0,
   FoundryRestorationEvidenceObservationV0Schema,
   FoundryRestorationEvidenceV0Schema,
   FoundryRestorationExperimentV0Schema,
@@ -28,6 +29,7 @@ import {
   type FoundryRestorationEvidenceObservationV0,
   type FoundryRestorationLane,
   type FoundryRestorationProviderLockPayloadV0,
+  type FoundryRestorationReconstructionDescriptorClosureV0,
 } from "../restoration-experiment.js";
 
 const CREATED_AT = "2026-08-30T01:15:00.000Z";
@@ -283,6 +285,23 @@ function experimentInput(
     (requirement) => requirement.artifactClass === "source_derived_reconstruction",
   )?.role;
   if (reconstructionRole === undefined) throw new Error("Missing fixture reconstruction input");
+  const reconstructionRecord = inputRecord(reconstructionRole);
+  const reconstructionDescriptorClosure: FoundryRestorationReconstructionDescriptorClosureV0 | null = lane === "difix3d_plus" ? {
+    schemaVersion: FOUNDRY_RESTORATION_RECONSTRUCTION_DESCRIPTOR_CLOSURE_V0,
+    descriptorSchemaVersion: "venviewer.grand-hall.difix-reconstruction-fixture.v1",
+    descriptorSizeBytes: reconstructionRecord.sizeBytes,
+    descriptorSha256: reconstructionRecord.sha256,
+    format: "sog",
+    representationId: "exact-sog-frontier",
+    sourceVariant: "fixture-grand-hall",
+    decodedElementCount: 6_019_684,
+    memberCount: 2,
+    totalMemberBytes: 7_168,
+    members: [
+      { relativePath: "capture/0_0.sog", sizeBytes: 3_072, sha256: sha256("sog-member-0") },
+      { relativePath: "capture/0_1.sog", sizeBytes: 4_096, sha256: sha256("sog-member-1") },
+    ],
+  } : null;
   return {
     experimentId: `grand-hall-${lane}-001`,
     projectId: "trades-hall-grand-hall",
@@ -310,7 +329,8 @@ function experimentInput(
         renderDerivationReceipt: createFoundryRestorationRenderDerivationReceiptV0({
           sourceReconstructionArtifact: {
             ...digestAddressedArtifact(`${lane}-source-reconstruction`, `${lane}-source-reconstruction`),
-            ...inputRecord(reconstructionRole),
+            ...reconstructionRecord,
+            canonicalization: lane === "difix3d_plus" ? "rfc8785_json" as const : "byte_exact" as const,
           },
           cameraId: camera.cameraId,
           cameraSha256: camera.cameraSha256,
@@ -382,7 +402,10 @@ function experimentInput(
         height: requirement.requiresImageDimensions ? camera.height : null,
         sizeBytes: 4_096 + index,
         sha256: sha256(`${lane}-input-${requirement.role}`),
-        canonicalization: requirement.mediaType === "application/json" ? "rfc8785_json" as const : "byte_exact" as const,
+        canonicalization:
+          requirement.mediaType === "application/json" || requirement.mediaType.endsWith("+json")
+            ? "rfc8785_json" as const
+            : "byte_exact" as const,
         immutable: true as const, accessMode: "read_only" as const, authority: "none" as const,
       };
       const toolArtifact = (id: string, mediaType: "application/json" | "application/octet-stream") => ({
@@ -408,6 +431,10 @@ function experimentInput(
           toolProcessReceiptArtifact: toolArtifact(`${lane}-${requirement.role}-prep-process`, "application/json"),
           startedAt: "2026-08-30T01:13:00.000Z", completedAt: "2026-08-30T01:13:30.000Z",
         }) : null,
+      reconstructionDescriptorClosure:
+        requirement.artifactClass === "source_derived_reconstruction"
+          ? reconstructionDescriptorClosure
+          : null,
       authority: "none",
     }; }),
     fixedCameras: [camera],
@@ -880,6 +907,46 @@ describe("Foundry restoration experiment compiler", () => {
       "source_fixed_camera_render",
       "source_reconstruction",
     ]);
+    expect(difix.inputs.find((input) => input.role === "source_reconstruction")).toMatchObject({
+      mediaType: "application/vnd.venviewer.grand-hall.reconstruction+json",
+      canonicalization: "rfc8785_json",
+      reconstructionDescriptorClosure: {
+        memberCount: 2,
+        totalMemberBytes: 7_168,
+      },
+    });
+  });
+
+  it("rejects a Difix reconstruction descriptor without its exact member closure", () => {
+    const bareDescriptor = experimentInput("difix3d_plus", "difix");
+    const bareIndex = bareDescriptor.inputs.findIndex((input) => input.role === "source_reconstruction");
+    const bareInput = bareDescriptor.inputs[bareIndex];
+    if (bareInput === undefined) throw new Error("The Difix reconstruction descriptor fixture is required.");
+    bareDescriptor.inputs[bareIndex] = {
+      ...bareInput,
+      reconstructionDescriptorClosure: null,
+    };
+    expect(() => compileFoundryRestorationExperimentV0(bareDescriptor)).toThrow(
+      /complete canonical reconstruction descriptor member closure/u,
+    );
+
+    const incompleteClosure = experimentInput("difix3d_plus", "difix");
+    const closureIndex = incompleteClosure.inputs.findIndex((input) => input.role === "source_reconstruction");
+    const closureInput = incompleteClosure.inputs[closureIndex];
+    const closure = closureInput?.reconstructionDescriptorClosure;
+    if (closureInput === undefined || closure === null || closure === undefined) {
+      throw new Error("The Difix reconstruction member closure fixture is required.");
+    }
+    incompleteClosure.inputs[closureIndex] = {
+      ...closureInput,
+      reconstructionDescriptorClosure: {
+        ...closure,
+        memberCount: closure.memberCount + 1,
+      },
+    };
+    expect(() => compileFoundryRestorationExperimentV0(incompleteClosure)).toThrow(
+      /member count must match/u,
+    );
   });
 
   it("binds reconstruction lineage exactly and marks prepared image sets as source-derived", () => {
@@ -1381,7 +1448,7 @@ describe("Foundry restoration evidence and promotion", () => {
           ...comparison.metrics,
           protectedRegion: createFoundryRestorationProtectedMetricResultV0({
             protectedRegionSsim: 0.8,
-            protectedRegionLpips: comparison.metrics.protectedRegion.protectedRegionLpips,
+            protectedRegionLpips: 1.25,
             protectedRegionMeanAbsoluteError: comparison.metrics.protectedRegion.protectedRegionMeanAbsoluteError,
             maximumProtectedEdgeDisplacementPixels: comparison.metrics.protectedRegion.maximumProtectedEdgeDisplacementPixels,
             evaluatorReceiptArtifact: comparison.metrics.protectedRegion.evaluatorReceiptArtifact,
@@ -1404,6 +1471,7 @@ describe("Foundry restoration evidence and promotion", () => {
       experiment,
       observation: failedObservation,
     });
+    expect(failedObservation.cameraComparisons[0]?.metrics.protectedRegion.protectedRegionLpips).toBe(1.25);
     expect(evidence.automaticGates).toMatchObject({
       protectedRegionFidelityPassed: false,
       forbiddenSemanticDetectionsPassed: false,
