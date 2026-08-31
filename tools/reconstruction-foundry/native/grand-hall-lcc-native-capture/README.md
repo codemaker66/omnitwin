@@ -58,8 +58,10 @@ with that application:
 
 - `IModule` and `IContainer.Resolve<T>()` for plugin loading;
 - `IEventBus`, the exact global `modules.loaded` lifecycle event, and
-  `lccscene.loaded`, plus
-  `ILCCSceneManager.LoadScene(path, callback)`, for load initiation/completion;
+  `lccscene.loaded`, for lifecycle completion;
+- `IProjectManager.CreateTemporaryLCCProject(path)` and
+  `ISceneManager.LoadDefaultScene()` for the vendor's high-level project and
+  scene-load workflow;
 - `ILCCSceneManager.LCCObjectToWorldSpace`, `SetMainCamera`, `SetFOV`,
   `SetRecordMode`, `SetLockFPS`, and `ForceRerenderer`;
 - `ICameraService.SetTransform` for the numeric pose;
@@ -135,16 +137,19 @@ directory. It refuses output inside either the source package or disposable
 editor. It auto-quits the disposable editor with code `0` on success or `2` on
 failure.
 
-An armed run also requires a fresh editor process with no scene already loaded.
-It hashes the canonical source package and complete disposable-editor closure,
-subscribes to `lccscene.loaded`, then calls the public
-`ILCCSceneManager.LoadScene(canonicalPath, callback)`. LCCEditor ignores the
-positional scene argument previously passed by the wrapper, so no positional
-scene argument is used. Capture begins only after a non-null returned handler,
-the handler's canonical `Path`, the canonical event path, the callback, and
-`IsSceneLoaded(canonicalPath)` all agree. A null handler, wrong event/handler
-path, missing callback/event, or preloaded scene fails closed. Source and
-runtime-closure identities are rechecked after loading and after capture.
+An armed run also requires a fresh editor process with no project, current
+scene data, or loaded LCC. It hashes the canonical source package and complete
+disposable-editor closure, subscribes to `lccscene.loaded`, and asks the public
+project manager to create a temporary project from the exact canonical GH_1
+path. The module requires successful creation, initialized/temporary state,
+non-null current scene data, and an LCC asset whose final resolved path is the
+same canonical path. It then calls the public `ISceneManager.LoadDefaultScene()`.
+No positional scene argument is used. After the exact event, capture begins
+only when `GetRendererHandlerByPath(canonicalPath)` returns a handler with the
+same exact path and `IsSceneLoaded(canonicalPath)` succeeds. Any stale project,
+wrong generated asset/event/handler path, null handler, rejected default load,
+or missing event fails closed. Source and runtime-closure identities are
+rechecked after loading and after capture.
 
 ## 1. Build and verify offline
 

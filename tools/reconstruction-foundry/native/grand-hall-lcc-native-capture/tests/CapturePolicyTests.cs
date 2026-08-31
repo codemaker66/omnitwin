@@ -32,6 +32,7 @@ internal static class CapturePolicyTests
             TestOutputPathGate();
             TestSandboxAndReadinessPolicy();
             TestNativeCaptureLifecycleState();
+            TestSceneLoadReceiptContract();
             TestPngDimensionGate();
             TestSnapshotChangeGate();
 
@@ -47,6 +48,50 @@ internal static class CapturePolicyTests
         {
             Console.Error.WriteLine("FAIL: " + exception);
             return 1;
+        }
+    }
+
+    private static void TestSceneLoadReceiptContract()
+    {
+        var fields = new HashSet<string>(typeof(SceneLoadReceipt).GetFields(
+            BindingFlags.Instance | BindingFlags.Public).Select(field => field.Name),
+            StringComparer.Ordinal);
+        foreach (string expected in new[]
+        {
+            "freshProjectStateVerified",
+            "temporaryProjectCreationSucceeded",
+            "projectInitializedVerified",
+            "temporaryProjectVerified",
+            "currentSceneDataNonNull",
+            "generatedLccAssetPresent",
+            "generatedLccAssetPath",
+            "generatedLccAssetResolvedPath",
+            "generatedLccAssetPathVerified",
+            "defaultSceneLoadAccepted",
+            "rendererHandlerNonNull",
+            "rendererHandlerPath",
+            "rendererHandlerPathVerified",
+            "canonicalSceneLoadedVerified"
+        })
+        {
+            if (!fields.Contains(expected))
+            {
+                throw new InvalidOperationException("Scene-load receipt field is missing: " + expected);
+            }
+        }
+        foreach (string forbidden in new[]
+        {
+            "callbackObserved",
+            "callbackLoadedCanonicalSceneVerified",
+            "returnedHandlerNonNull",
+            "returnedHandlerPath",
+            "returnedHandlerPathVerified"
+        })
+        {
+            if (fields.Contains(forbidden))
+            {
+                throw new InvalidOperationException("Obsolete direct-load receipt field remains: " + forbidden);
+            }
         }
     }
 

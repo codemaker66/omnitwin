@@ -62,6 +62,15 @@ import {
   GRAND_HALL_LINEAGE_SOURCE_PATHSPEC,
   grandHallLineageSourceStateSha256,
 } from "./grand-hall-visual-lineage-source-state.js";
+import {
+  GRAND_HALL_HARDWARE_BROWSER_PROFILE_ENV,
+  assertGrandHallBrowserVersionMatchesProfile,
+  assertGrandHallHardwareEvidenceMatchesProfile,
+  grandHallHardwarePreflightEvidenceMarker,
+  parseGrandHallHardwareBrowserProfile,
+  readGrandHallWebGlEvidence,
+  type GrandHallHardwareBrowserProfileV1,
+} from "./grand-hall-browser-hardware.js";
 
 const SOURCE_ROOT = process.env["GRAND_HALL_LINEAGE_ROOT"];
 const EVIDENCE_DIR = process.env["GRAND_HALL_LINEAGE_EVIDENCE_DIR"];
@@ -74,6 +83,14 @@ const SELECTED_REPRESENTATION = parseGrandHallVisibleFirstRepresentation(
 const EXPECTED_GIT_SHA = process.env["GRAND_HALL_LINEAGE_EXPECTED_GIT_SHA"];
 const EXPECTED_CAMERA_PROFILE_SHA256 =
   process.env["GRAND_HALL_LINEAGE_EXPECTED_CAMERA_PROFILE_SHA256"];
+const HARDWARE_BROWSER_PROFILE_RAW =
+  process.env[GRAND_HALL_HARDWARE_BROWSER_PROFILE_ENV];
+const HARDWARE_BROWSER_PROFILE = HARDWARE_BROWSER_PROFILE_RAW === undefined
+  ? undefined
+  : parseGrandHallHardwareBrowserProfile(HARDWARE_BROWSER_PROFILE_RAW);
+const HARDWARE_BROWSER_PROFILE_SHA256 = HARDWARE_BROWSER_PROFILE_RAW === undefined
+  ? undefined
+  : `sha256:${createHash("sha256").update(HARDWARE_BROWSER_PROFILE_RAW, "utf8").digest("hex")}`;
 
 if (ORCHESTRATED_VISIBLE_FIRST && SELECTED_REPRESENTATION === undefined) {
   throw new Error(
@@ -97,6 +114,12 @@ if (
   )
 ) {
   throw new Error("The visible-first orchestrator requires an expected shared-camera SHA-256.");
+}
+if (
+  ORCHESTRATED_VISIBLE_FIRST
+  && (HARDWARE_BROWSER_PROFILE === undefined || HARDWARE_BROWSER_PROFILE_SHA256 === undefined)
+) {
+  throw new Error("The visible-first orchestrator requires a validated hardware browser profile.");
 }
 
 function boundedFrameCount(
@@ -159,6 +182,32 @@ interface FixtureBridgeSnapshot {
   readonly renderedFrameCount: number;
   readonly sparkRuntimeState?: VisualLineageSparkRuntimeStateV0;
   readonly plyMeshRuntimeState?: VisualLineagePlyMeshRuntimeStateV0;
+}
+
+interface BrowserHardwarePreflightBinding {
+  readonly profile: GrandHallHardwareBrowserProfileV1;
+  readonly marker: string;
+}
+
+async function browserHardwarePreflightBeforeSourceNavigation(
+  page: Page,
+  browserVersion: string,
+): Promise<BrowserHardwarePreflightBinding | undefined> {
+  if (!ORCHESTRATED_VISIBLE_FIRST) return undefined;
+  if (HARDWARE_BROWSER_PROFILE === undefined || HARDWARE_BROWSER_PROFILE_SHA256 === undefined) {
+    throw new Error("Orchestrated browser hardware preflight has no selected profile.");
+  }
+  const evidence = await readGrandHallWebGlEvidence(page);
+  assertGrandHallBrowserVersionMatchesProfile(HARDWARE_BROWSER_PROFILE, browserVersion);
+  assertGrandHallHardwareEvidenceMatchesProfile(HARDWARE_BROWSER_PROFILE, evidence);
+  return {
+    profile: HARDWARE_BROWSER_PROFILE,
+    marker: grandHallHardwarePreflightEvidenceMarker({
+      profileSha256: HARDWARE_BROWSER_PROFILE_SHA256,
+      browserVersion,
+      evidence,
+    }),
+  };
 }
 
 interface FrameSummary {
@@ -637,7 +686,7 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
   test.describe.configure({ mode: "serial" });
 
   for (const format of ["sog", "spz"] as const) {
-    test(`${format.toUpperCase()} exact-frontier names at the source-pose interior camera`, async ({ page }) => {
+    test(`${format.toUpperCase()} exact-frontier names at the source-pose interior camera`, async ({ browser, page }) => {
       test.skip(
         SELECTED_REPRESENTATION !== undefined && SELECTED_REPRESENTATION !== format,
         `The orchestrator selected the ${String(SELECTED_REPRESENTATION)} representation.`,
@@ -648,6 +697,10 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       );
       test.setTimeout(TEST_TIMEOUT_MS);
       if (SOURCE_ROOT === undefined || EVIDENCE_DIR === undefined) return;
+      const browserPreflight = await browserHardwarePreflightBeforeSourceNavigation(
+        page,
+        browser.version(),
+      );
       await mkdir(EVIDENCE_DIR, { recursive: true });
       const boundMembers = await readSourceMembers(SOURCE_ROOT, format);
       const sourceServer = await startBoundSourceServer(boundMembers);
@@ -788,6 +841,15 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
           `Grand Hall lineage requires explicit hardware WebGL evidence; classified ${rendererClass}: ${environment.webglVendor} / ${environment.webglRenderer}`,
         );
       }
+      if (browserPreflight !== undefined) {
+        assertGrandHallHardwareEvidenceMatchesProfile(browserPreflight.profile, {
+          userAgent: environment.browser,
+          webglVendor: environment.webglVendor,
+          webglRenderer: environment.webglRenderer,
+          webglVersion: environment.webglVersion,
+          contextLost: environment.contextLost,
+        });
+      }
 
       await page.locator("canvas").screenshot({ path: screenshotTempPath });
       const screenshotStat = await stat(screenshotTempPath);
@@ -865,6 +927,7 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
                   sourceRequestCountAfter,
                 })]
               : []),
+            ...(browserPreflight === undefined ? [] : [browserPreflight.marker]),
             ...(format === "spz"
               ? ["SOG and SPZ positions agree within the audited tolerance, but full attribute-level representation equivalence has not been established."]
               : []),
@@ -954,7 +1017,7 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
     });
   }
 
-  test("supplied PLY at the source-pose interior camera is structural evidence only", async ({ page }) => {
+  test("supplied PLY at the source-pose interior camera is structural evidence only", async ({ browser, page }) => {
     test.skip(
       SELECTED_REPRESENTATION !== undefined && SELECTED_REPRESENTATION !== "ply",
       `The orchestrator selected the ${String(SELECTED_REPRESENTATION)} representation.`,
@@ -965,6 +1028,10 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
     );
     test.setTimeout(TEST_TIMEOUT_MS);
     if (SOURCE_ROOT === undefined || EVIDENCE_DIR === undefined) return;
+    const browserPreflight = await browserHardwarePreflightBeforeSourceNavigation(
+      page,
+      browser.version(),
+    );
     await mkdir(EVIDENCE_DIR, { recursive: true });
     const boundSource = await readPlySource(SOURCE_ROOT);
     const sourceServer = await startBoundSourceServer([boundSource]);
@@ -1122,6 +1189,15 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
         `Grand Hall PLY lineage requires explicit hardware WebGL evidence; classified ${rendererClass}: ${environment.webglVendor} / ${environment.webglRenderer}`,
       );
     }
+    if (browserPreflight !== undefined) {
+      assertGrandHallHardwareEvidenceMatchesProfile(browserPreflight.profile, {
+        userAgent: environment.browser,
+        webglVendor: environment.webglVendor,
+        webglRenderer: environment.webglRenderer,
+        webglVersion: environment.webglVersion,
+        contextLost: environment.contextLost,
+      });
+    }
 
     await page.locator("canvas").screenshot({ path: screenshotTempPath });
     const screenshotStat = await stat(screenshotTempPath);
@@ -1181,6 +1257,7 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
                 sourceRequestCountAfter,
               })]
             : []),
+          ...(browserPreflight === undefined ? [] : [browserPreflight.marker]),
           ...(WARMUP_FRAME_COUNT < 120 || FRAME_SAMPLE_COUNT < 600
             ? [`Diagnostic ${String(WARMUP_FRAME_COUNT)}-warm-up/${String(FRAME_SAMPLE_COUNT)}-timed-frame sample; below the controlled 120-warm-up/600-timed-frame profile.`]
             : []),

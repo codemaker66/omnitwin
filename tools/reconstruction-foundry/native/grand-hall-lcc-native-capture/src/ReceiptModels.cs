@@ -127,15 +127,24 @@ namespace Venviewer.NativeCapture
         public string requestedPath;
         public bool commandLineSceneArgumentUsed;
         public bool preloadedSceneRejected;
+        public bool freshProjectStateVerified;
+        public bool temporaryProjectCreationSucceeded;
+        public bool projectInitializedVerified;
+        public bool temporaryProjectVerified;
+        public bool currentSceneDataNonNull;
+        public bool generatedLccAssetPresent;
+        public string generatedLccAssetPath;
+        public string generatedLccAssetResolvedPath;
+        public bool generatedLccAssetPathVerified;
+        public bool defaultSceneLoadAccepted;
         public string eventTopic;
         public bool eventSubscriptionAccepted;
         public string eventPath;
         public bool eventPathVerified;
-        public bool callbackObserved;
-        public bool callbackLoadedCanonicalSceneVerified;
-        public bool returnedHandlerNonNull;
-        public string returnedHandlerPath;
-        public bool returnedHandlerPathVerified;
+        public bool rendererHandlerNonNull;
+        public string rendererHandlerPath;
+        public bool rendererHandlerPathVerified;
+        public bool canonicalSceneLoadedVerified;
     }
 
     internal sealed class CaptureAttemptReceipt

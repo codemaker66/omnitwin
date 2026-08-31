@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import {
+  GRAND_HALL_HARDWARE_BROWSER_PROFILE_ENV,
+  parseGrandHallHardwareBrowserProfile,
+} from "./e2e/grand-hall-browser-hardware.js";
+
 // ---------------------------------------------------------------------------
 // Playwright E2E configuration — OMNITWIN web package
 //
@@ -19,6 +24,17 @@ const START_SERVER = process.env["E2E_START_SERVER"] !== "false";
 const REUSE_EXISTING_SERVER = process.env["E2E_REUSE_EXISTING_SERVER"] !== "false"
   && process.env["CI"] === undefined;
 const BROWSER_CHANNEL = process.env["E2E_BROWSER_CHANNEL"];
+const GRAND_HALL_BROWSER_PROFILE_RAW =
+  process.env[GRAND_HALL_HARDWARE_BROWSER_PROFILE_ENV];
+if (
+  GRAND_HALL_BROWSER_PROFILE_RAW !== undefined
+  && process.env["GRAND_HALL_LINEAGE_ORCHESTRATED"] !== "1"
+) {
+  throw new Error("The Grand Hall hardware browser profile is orchestrator-only.");
+}
+const GRAND_HALL_BROWSER_PROFILE = GRAND_HALL_BROWSER_PROFILE_RAW === undefined
+  ? undefined
+  : parseGrandHallHardwareBrowserProfile(GRAND_HALL_BROWSER_PROFILE_RAW);
 const BASE_URL_PORT = Number.parseInt(new URL(BASE_URL).port, 10)
   || (IS_PREVIEW_MODE ? 4176 : 5173);
 
@@ -52,7 +68,14 @@ export default defineConfig({
         // Venue-facing visual and date assertions must not depend on the CI
         // runner's host timezone. Trades Hall operates in Europe/London.
         timezoneId: "Europe/London",
-        ...(BROWSER_CHANNEL === undefined ? {} : { channel: BROWSER_CHANNEL }),
+        ...(GRAND_HALL_BROWSER_PROFILE === undefined
+          ? (BROWSER_CHANNEL === undefined ? {} : { channel: BROWSER_CHANNEL })
+          : {
+              channel: GRAND_HALL_BROWSER_PROFILE.channel,
+              headless: GRAND_HALL_BROWSER_PROFILE.headless,
+              userAgent: GRAND_HALL_BROWSER_PROFILE.userAgent,
+              launchOptions: { args: [...GRAND_HALL_BROWSER_PROFILE.launchArgs] },
+            }),
       },
     },
   ],

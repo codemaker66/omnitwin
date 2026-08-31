@@ -12,8 +12,9 @@ The orchestrator runs the representations sequentially in this order:
 2. name-matched SPZ candidate;
 3. supplied triangle PLY.
 
-Each lane receives a new Playwright operating-system process, a new Chromium
-browser, and a strict-port Vite server. Within that one browser, the lane emits
+Each lane receives a new Playwright operating-system process, a new browser
+from the selected installed Chrome/Edge channel, and a strict-port Vite server.
+Within that one browser, the lane emits
 one cold capture followed by three warm captures. SOG and SPZ form the only
 captured-radiance review pool. PLY remains structural evidence with
 deterministic debug appearance and is excluded from radiance ranking.
@@ -44,6 +45,9 @@ accepted native-to-browser room transform.
   `docs/evidence/grand-hall-lineage`. The orchestrator never overwrites an
   existing run.
 - Reserve three consecutive localhost ports. The default range is 5189-5191.
+- Install current Google Chrome or Microsoft Edge on the Windows operator
+  machine. The bundled Playwright Chromium is deliberately not a bake-off
+  candidate because its headless launch can resolve to SwiftShader.
 - Do not run another WebGL workload that competes for the same GPU during this
   bake-off.
 
@@ -68,11 +72,44 @@ explicit warm-up frames, and 600 timed frames for every capture. It does not
 inherit lower frame-count overrides, CI retry mode, alternate browser channels,
 preview-server mode, or alternate capture modes from the operator shell.
 
+## Hardware browser launch
+
+Before it creates the evidence directory, the orchestrator probes installed
+Chrome and Edge candidates in fail-closed order. The preferred candidate is
+the installed `chrome` channel in headless mode. A headed launch of the same
+channel is the first fallback; Edge headless/headed candidates follow. Every
+candidate receives these exact arguments:
+
+```text
+--use-angle=d3d11
+--disable-software-rasterizer
+--disable-backgrounding-occluded-windows
+--disable-renderer-backgrounding
+--disable-features=CalculateNativeWinOcclusion
+--force-device-scale-factor=1
+```
+
+The lightweight probe creates only a 16 x 16 WebGL canvas. It selects a
+candidate only when unmasked renderer evidence names recognised hardware and
+the context is live. Software renderers such as SwiftShader, generic/unknown
+renderer strings, context loss, a missing browser channel, or an unavailable
+WebGL context are rejected. There is no software fallback.
+
+The selected browser/channel/headless state, exact launch arguments, browser
+version, user agent, WebGL vendor/renderer/version, probe duration, rejected
+attempts, and profile SHA-256 are bound into the v2 bundle receipt. Each fresh
+lane process then repeats the 16 x 16 check inside its own Playwright worker
+before reading or navigating to any Grand Hall source. Its capture records
+carry a digest-bound `VENVIEWER_BROWSER_HARDWARE_PREFLIGHT_V1` marker, and the
+orchestrator rejects a worker whose hardware identity differs from the
+selected launch profile.
+
 ## Fail-closed checks
 
 Before launching a browser, the orchestrator requires an absent output path, a
 clean worktree, a stable `HEAD`, a successful shared-types build, and an exact
-shared-camera profile. It rechecks source state after all lanes.
+shared-camera profile. The hardware selection probe must pass before the output
+directory exists. It rechecks source state after the probe and after all lanes.
 
 Each lane must produce exactly four JSON/PNG pairs labelled `cold-run-1`,
 `warm-run-1`, `warm-run-2`, and `warm-run-3`. The cold record must show one
@@ -80,7 +117,8 @@ request for every immutable source member. Warm records must show no additional
 source requests, proving use of the same browser HTTP cache rather than merely
 renaming repeated cold loads. The orchestrator also verifies source counts,
 bytes, hashes, decoded counts, camera values, screenshot hashes, lack of WebGL
-context loss through the evidence schema, and distinct runner process IDs.
+context loss through the evidence schema, the pre-source hardware marker and
+profile digest, and distinct runner process IDs.
 
 Any mismatch exits non-zero and no completed bundle receipt is written.
 

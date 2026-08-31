@@ -4,6 +4,15 @@ import { constants as fileSystemConstants, copyFile, lstat, mkdir, readFile, rea
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import {
+  GRAND_HALL_HARDWARE_BROWSER_PROFILE_ENV,
+  GRAND_HALL_HARDWARE_PREFLIGHT_MARKER,
+  assertGrandHallHardwareEvidenceMatchesProfile,
+  selectGrandHallHardwareBrowserProfile,
+  serializeGrandHallHardwareBrowserProfile,
+  type GrandHallHardwareBrowserProfileV1,
+} from "./grand-hall-browser-hardware.ts";
+
 const CAMERA_ID = "source-pose-19890-interior-v1";
 const CAMERA_PROFILE_RELATIVE_PATH =
   "tools/reconstruction-foundry/native/grand-hall-lcc-native-capture/camera-profile.json";
@@ -76,6 +85,7 @@ interface LaneExecutionReceipt {
   readonly representation: Lane["representation"];
   readonly runnerPid: number;
   readonly baseUrl: string;
+  readonly browserProfileSha256: string;
   readonly radianceRankingEligible: boolean;
   readonly captures: readonly ValidatedCaptureReceipt[];
 }
@@ -267,6 +277,7 @@ export function grandHallVisibleFirstSanitizedParentEnvironment(
     "CI",
     "E2E_BROWSER_CHANNEL",
     "E2E_WEB_SERVER",
+    GRAND_HALL_HARDWARE_BROWSER_PROFILE_ENV,
     "GRAND_HALL_LINEAGE_CAPTURE_MODE",
   ]);
   return Object.fromEntries(
@@ -290,6 +301,8 @@ async function validateCaptureRecord(input: {
   readonly lane: Lane;
   readonly gitSha: string;
   readonly cameraProfile: CameraProfileBinding;
+  readonly browserProfile: GrandHallHardwareBrowserProfileV1;
+  readonly browserProfileSha256: string;
 }): Promise<ValidatedCaptureReceipt> {
   const recordBytes = await readFile(input.recordPath);
   const parsed: unknown = JSON.parse(recordBytes.toString("utf8"));
@@ -302,6 +315,7 @@ async function validateCaptureRecord(input: {
   const representation = representations[0];
   const limitations = requiredArray(representation, "limitations");
   const actualCamera = requiredRecord(representation, "actualCamera");
+  const environment = requiredRecord(representation, "environment");
   const sourceMembers = requiredArray(representation, "sourceMembers");
   const sourceSizeBytes = sourceMembers.reduce<number>((total, member) => {
     if (!isRecord(member)) throw new Error("Source member receipt must be an object.");
@@ -373,6 +387,28 @@ async function validateCaptureRecord(input: {
     throw new Error(`Capture record cache-state contract mismatch: ${input.recordPath}`);
   }
 
+  const browserMarker = markerPayload(limitations, GRAND_HALL_HARDWARE_PREFLIGHT_MARKER);
+  const capturedBrowserEvidence = {
+    userAgent: requiredString(environment, "browser"),
+    webglVendor: requiredString(environment, "webglVendor"),
+    webglRenderer: requiredString(environment, "webglRenderer"),
+    webglVersion: requiredString(environment, "webglVersion"),
+    contextLost: requiredBoolean(environment, "contextLost"),
+  };
+  assertGrandHallHardwareEvidenceMatchesProfile(input.browserProfile, capturedBrowserEvidence);
+  if (
+    requiredString(browserMarker, "profileSha256") !== input.browserProfileSha256
+    || !requiredBoolean(browserMarker, "completedBeforeSourceNavigation")
+    || requiredString(browserMarker, "browserVersion") !== input.browserProfile.browserVersion
+    || requiredString(browserMarker, "userAgent") !== capturedBrowserEvidence.userAgent
+    || requiredString(browserMarker, "webglVendor") !== capturedBrowserEvidence.webglVendor
+    || requiredString(browserMarker, "webglRenderer") !== capturedBrowserEvidence.webglRenderer
+    || requiredString(browserMarker, "webglVersion") !== capturedBrowserEvidence.webglVersion
+    || requiredBoolean(browserMarker, "contextLost")
+  ) {
+    throw new Error(`Capture record hardware-preflight binding mismatch: ${input.recordPath}`);
+  }
+
   const screenshot = requiredRecord(representation, "screenshot");
   const screenshotPath = path.resolve(requiredString(screenshot, "path"));
   const screenshotBytes = await readFile(screenshotPath);
@@ -402,6 +438,8 @@ async function validateLaneEvidence(input: {
   readonly plan: GrandHallVisibleFirstLanePlan;
   readonly gitSha: string;
   readonly cameraProfile: CameraProfileBinding;
+  readonly browserProfile: GrandHallHardwareBrowserProfileV1;
+  readonly browserProfileSha256: string;
 }): Promise<readonly ValidatedCaptureReceipt[]> {
   const entries = await readdir(input.plan.evidenceDirectory, { withFileTypes: true });
   const recordPaths = entries
@@ -418,6 +456,8 @@ async function validateLaneEvidence(input: {
     lane: input.plan.lane,
     gitSha: input.gitSha,
     cameraProfile: input.cameraProfile,
+    browserProfile: input.browserProfile,
+    browserProfileSha256: input.browserProfileSha256,
   })));
   validated.sort((left, right) => left.runOrdinal - right.runOrdinal);
   if (
@@ -435,6 +475,7 @@ function runPlaywrightLane(input: {
   readonly sourceRoot: string;
   readonly gitSha: string;
   readonly cameraProfileSha256: string;
+  readonly browserProfileSerialized: string;
 }): number {
   const playwrightCli = path.resolve(input.webRoot, "node_modules/@playwright/test/cli.js");
   const result = spawnSync(
@@ -458,6 +499,7 @@ function runPlaywrightLane(input: {
         GRAND_HALL_LINEAGE_REPRESENTATION: input.plan.lane.representation,
         GRAND_HALL_LINEAGE_EXPECTED_GIT_SHA: input.gitSha,
         GRAND_HALL_LINEAGE_EXPECTED_CAMERA_PROFILE_SHA256: input.cameraProfileSha256,
+        [GRAND_HALL_HARDWARE_BROWSER_PROFILE_ENV]: input.browserProfileSerialized,
         GRAND_HALL_LINEAGE_WARMUP_FRAMES: String(CONTROLLED_WARMUP_FRAME_COUNT),
         GRAND_HALL_LINEAGE_FRAME_SAMPLES: String(CONTROLLED_FRAME_SAMPLE_COUNT),
         E2E_BASE_URL: input.plan.baseUrl,
@@ -520,6 +562,17 @@ async function main(): Promise<void> {
   const basePortRaw = process.env["GRAND_HALL_LINEAGE_BASE_PORT"];
   const basePort = basePortRaw === undefined ? DEFAULT_BASE_PORT : Number.parseInt(basePortRaw, 10);
   const plans = grandHallVisibleFirstLanePlan(evidenceDirectory, basePort);
+  const browserSelection = await selectGrandHallHardwareBrowserProfile();
+  const browserProfileSerialized = serializeGrandHallHardwareBrowserProfile(
+    browserSelection.profile,
+  );
+  const browserProfileSha256 = sha256(Buffer.from(browserProfileSerialized, "utf8"));
+  if (
+    git(repositoryRoot, ["rev-parse", "HEAD"]) !== gitSha
+    || gitStatus(repositoryRoot).length > 0
+  ) {
+    throw new Error("HEAD or source worktree state changed during the hardware browser preflight.");
+  }
 
   await mkdir(path.dirname(evidenceDirectory), { recursive: true });
   await mkdir(evidenceDirectory);
@@ -547,12 +600,20 @@ async function main(): Promise<void> {
       sourceRoot,
       gitSha,
       cameraProfileSha256: cameraProfile.sha256,
+      browserProfileSerialized,
     });
-    const captures = await validateLaneEvidence({ plan, gitSha, cameraProfile });
+    const captures = await validateLaneEvidence({
+      plan,
+      gitSha,
+      cameraProfile,
+      browserProfile: browserSelection.profile,
+      browserProfileSha256,
+    });
     laneReceipts.push({
       representation: plan.lane.representation,
       runnerPid,
       baseUrl: plan.baseUrl,
+      browserProfileSha256,
       radianceRankingEligible: plan.lane.radianceRankingEligible,
       captures,
     });
@@ -569,7 +630,7 @@ async function main(): Promise<void> {
 
   const receiptPath = path.join(evidenceDirectory, "visible-first-browser-bakeoff-receipt.json");
   await writeFile(receiptPath, `${JSON.stringify({
-    schemaVersion: "venviewer.grand-hall.visible-first-browser-bakeoff.v1",
+    schemaVersion: "venviewer.grand-hall.visible-first-browser-bakeoff.v2",
     authority: "none",
     gitSha,
     worktreeDirty: false,
@@ -583,6 +644,12 @@ async function main(): Promise<void> {
       target: cameraProfile.target,
     },
     processIsolation: "one_fresh_playwright_and_browser_process_per_representation",
+    browserHardwarePreflight: {
+      profileSha256: browserProfileSha256,
+      selectedProfile: browserSelection.profile,
+      attempts: browserSelection.attempts,
+      completedBeforeEvidenceDirectoryCreation: true,
+    },
     executionOrder: GRAND_HALL_VISIBLE_FIRST_LANES.map((lane) => lane.representation),
     radianceRankingEligibleRepresentations: ["sog", "spz"],
     structuralOnlyRepresentations: ["ply"],

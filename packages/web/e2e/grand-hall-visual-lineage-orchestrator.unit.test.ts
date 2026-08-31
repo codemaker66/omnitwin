@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -58,7 +59,43 @@ describe("Grand Hall visible-first process orchestrator", () => {
       CI: "true",
       E2E_BROWSER_CHANNEL: "chrome",
       E2E_WEB_SERVER: "preview",
+      GRAND_HALL_LINEAGE_BROWSER_PROFILE_V1: "untrusted-parent-profile",
       GRAND_HALL_LINEAGE_CAPTURE_MODE: "difix-no-reference-v1",
     })).toEqual({ PATH: "preserved" });
+  });
+
+  it("runs both hardware gates before creating evidence or reading a Grand Hall source", () => {
+    const orchestrator = readFileSync(
+      new URL("./grand-hall-visual-lineage-orchestrator.ts", import.meta.url),
+      "utf8",
+    );
+    expect(orchestrator.indexOf("await selectGrandHallHardwareBrowserProfile()"))
+      .toBeLessThan(orchestrator.indexOf("await mkdir(path.dirname(evidenceDirectory)"));
+
+    const captureSpec = readFileSync(
+      new URL("./grand-hall-visual-lineage.local.spec.ts", import.meta.url),
+      "utf8",
+    );
+    const radianceTestStart = captureSpec.indexOf(
+      "for (const format of [\"sog\", \"spz\"] as const)",
+    );
+    const radiancePreflight = captureSpec.indexOf(
+      "await browserHardwarePreflightBeforeSourceNavigation(",
+      radianceTestStart,
+    );
+    expect(radiancePreflight).toBeGreaterThan(radianceTestStart);
+    expect(radiancePreflight).toBeLessThan(
+      captureSpec.indexOf("await readSourceMembers(SOURCE_ROOT, format)", radianceTestStart),
+    );
+
+    const plyTestStart = captureSpec.indexOf("supplied PLY at the source-pose interior camera");
+    const plyPreflight = captureSpec.indexOf(
+      "await browserHardwarePreflightBeforeSourceNavigation(",
+      plyTestStart,
+    );
+    expect(plyPreflight).toBeGreaterThan(plyTestStart);
+    expect(plyPreflight).toBeLessThan(
+      captureSpec.indexOf("await readPlySource(SOURCE_ROOT)", plyTestStart),
+    );
   });
 });

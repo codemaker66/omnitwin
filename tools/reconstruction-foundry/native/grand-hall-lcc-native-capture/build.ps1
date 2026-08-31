@@ -225,7 +225,7 @@ $commonCompilerArguments = @(
 $managedRoot = Join-Path $LccEditorRoot 'LCCEditor_Data\Managed'
 $newtonsoftReference = '/reference:' + (Join-Path $managedRoot 'Newtonsoft.Json.dll')
 $netstandardReference = '/reference:' + (Join-Path $managedRoot 'netstandard.dll')
-& $compiler @commonCompilerArguments '/target:exe' "/out:$testOutputPath" $newtonsoftReference $netstandardReference $capturePolicyPath $cameraProfileSourceCodePath $testSourcePath
+& $compiler @commonCompilerArguments '/nowarn:0649' '/target:exe' "/out:$testOutputPath" $newtonsoftReference $netstandardReference $capturePolicyPath $cameraProfileSourceCodePath $receiptModelsPath $testSourcePath
 if ($LASTEXITCODE -ne 0) {
     throw "Capture policy test compilation failed with exit code $LASTEXITCODE."
 }
@@ -248,6 +248,8 @@ $references = @(
     'UniTask.dll',
     'Cinemachine.dll',
     'Newtonsoft.Json.dll',
+    'USD.NET.Unity.dll',
+    'USD.NET.dll',
     'netstandard.dll'
 ) | ForEach-Object { '/reference:' + (Join-Path $managedRoot $_) }
 

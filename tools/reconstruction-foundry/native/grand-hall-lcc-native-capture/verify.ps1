@@ -66,7 +66,7 @@ foreach ($requiredPath in @(
 
 $plugin = Get-Content -LiteralPath $pluginPath -Raw | ConvertFrom-Json
 Assert-Equal 'com.venviewer.native_capture' ([string]$plugin.Id) 'plugin Id'
-Assert-Equal '1.2.1' ([string]$plugin.Version) 'plugin version'
+Assert-Equal '1.2.2' ([string]$plugin.Version) 'plugin version'
 Assert-Equal 'managed' ([string]$plugin.Type) 'plugin type'
 Assert-Equal 'VenviewerNativeCapture.dll' ([string]$plugin.EntryPoint) 'plugin entry point'
 Assert-Equal 'Venviewer.NativeCapture.NativeCaptureModule' ([string]$plugin.Class) 'plugin class'
@@ -361,13 +361,11 @@ if ($unsubscribeSceneSource.IndexOf('_eventBus.Unsubscribe("lccscene.loaded"', [
 $watchSceneIndex = $moduleSource.IndexOf('private async UniTask WatchSceneLoadAsync()', [StringComparison]::Ordinal)
 $failArmedIndex = $moduleSource.IndexOf('private void FailArmedStartup(', [StringComparison]::Ordinal)
 $handleSceneIndex = $moduleSource.IndexOf('private bool HandleSceneLoaded(', [StringComparison]::Ordinal)
-$handleCallbackIndex = $moduleSource.IndexOf('private void HandleSceneLoadedCallback()', [StringComparison]::Ordinal)
 $startCaptureIndex = $moduleSource.IndexOf('private void StartCapture(', [StringComparison]::Ordinal)
 $runCaptureIndex = $moduleSource.IndexOf('private async UniTask RunCaptureAsync(', [StringComparison]::Ordinal)
 foreach ($stoppedWorkContract in @(
     @($watchSceneIndex, $failArmedIndex, '_lifecycle.IsStopped', 'scene-load watchdog'),
-    @($handleSceneIndex, $handleCallbackIndex, '_lifecycle.IsStopped', 'scene event handler'),
-    @($handleCallbackIndex, $tryStartIndex, '_lifecycle.IsStopped', 'scene callback'),
+    @($handleSceneIndex, $tryStartIndex, '_lifecycle.IsStopped', 'scene event handler'),
     @($startCaptureIndex, $runCaptureIndex, '_lifecycle.IsStopped', 'capture start')
 )) {
     $contractStart = [int]$stoppedWorkContract[0]
@@ -419,28 +417,46 @@ if ($moduleSource.IndexOf('_preLoadPackageSnapshot = CapturePolicy.SnapshotCanon
     throw 'Canonical package identity is not captured before scene subscription/load.'
 }
 $subscribeIndex = $moduleSource.IndexOf('_eventBus.Subscribe("lccscene.loaded"', [StringComparison]::Ordinal)
-$loadSceneIndex = $moduleSource.IndexOf('_lccSceneManager.LoadScene(', [StringComparison]::Ordinal)
-if ($subscribeIndex -lt 0 -or $loadSceneIndex -lt 0 -or $subscribeIndex -gt $loadSceneIndex) {
-    throw 'The canonical event subscription must succeed before ILCCSceneManager.LoadScene(path, callback).'
+$temporaryProjectIndex = $moduleSource.IndexOf('_projectManager.CreateTemporaryLCCProject(', [StringComparison]::Ordinal)
+$defaultSceneLoadIndex = $moduleSource.IndexOf('_sceneManager.LoadDefaultScene()', [StringComparison]::Ordinal)
+if ($subscribeIndex -lt 0 -or $temporaryProjectIndex -lt 0 -or $defaultSceneLoadIndex -lt 0 -or
+    $subscribeIndex -gt $temporaryProjectIndex -or $temporaryProjectIndex -gt $defaultSceneLoadIndex) {
+    throw 'The canonical event subscription, temporary project creation, and default-scene load are out of order.'
 }
 foreach ($loadContract in @(
-    '_loadHandler = _lccSceneManager.LoadScene(',
-    'if (_loadHandler == null)',
-    'CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path)',
-    'HandleSceneLoadedCallback',
+    'RequireFreshVendorState();',
+    'ValidateTemporaryProjectState();',
+    '_projectManager.CreateTemporaryLCCProject(',
+    '_sceneManager.LoadDefaultScene()',
+    '_sceneManager.CurrentSceneData.TryGetLCCAsset(out asset)',
+    '_projectManager.GetAssetFinalPath(asset.path)',
+    '_lccSceneManager.GetRendererHandlerByPath(',
+    'CapturePolicy.RequireCanonicalScenePath(_rendererHandler.Path)',
+    '_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath)',
     'Volatile.Read(ref _sceneLoadedEventObserved)',
-    'Volatile.Read(ref _sceneLoadedCallbackObserved)',
     'commandLineSceneArgumentUsed = false',
+    'venviewer.grand-hall.lcc-native-capture-receipt.v2',
     'FixedCameraProfile.Load('
 )) {
     if ($moduleSource.IndexOf($loadContract, [StringComparison]::Ordinal) -lt 0) {
         throw "The fail-closed native scene-load/profile contract is missing '$loadContract'."
     }
 }
-$freshProcessGateIndex = $moduleSource.IndexOf('if (_lccSceneManager.IsSceneLoaded())', [StringComparison]::Ordinal)
+$freshProcessGateIndex = $moduleSource.IndexOf('RequireFreshVendorState();', [StringComparison]::Ordinal)
 $preLoadSnapshotIndex = $moduleSource.IndexOf('_preLoadPackageSnapshot = CapturePolicy.SnapshotCanonicalPackage', [StringComparison]::Ordinal)
 if ($freshProcessGateIndex -lt 0 -or $freshProcessGateIndex -gt $preLoadSnapshotIndex) {
     throw 'The pre-load package snapshot is not protected by a fresh-process scene gate.'
+}
+foreach ($forbiddenDirectLoadContract in @(
+    '_lccSceneManager.LoadScene(',
+    '_sceneLoadedCallback',
+    'HandleSceneLoadedCallback',
+    'callbackObserved',
+    'returnedHandlerNonNull'
+)) {
+    if ($moduleSource.IndexOf($forbiddenDirectLoadContract, [StringComparison]::Ordinal) -ge 0) {
+        throw "The obsolete direct scene-load contract remains: $forbiddenDirectLoadContract"
+    }
 }
 if ($moduleSource -notmatch 'File\.Move\(temporaryPath, finalPath\)') {
     throw 'Final PNG no longer uses same-directory no-replace promotion.'
@@ -643,7 +659,14 @@ foreach ($requiredIlPattern in @(
     'NativeCaptureLifecycleState::Stop',
     'Interlocked::CompareExchange',
     'ICaptureManager::CaptureToFileAsync',
-    'ILCCSceneManager::LoadScene',
+    'IProjectManager::CreateTemporaryLCCProject',
+    'IProjectManager::get_IsInitialized',
+    'IProjectManager::get_IsTemporary',
+    'IProjectManager::GetAssetFinalPath',
+    'ISceneManager::LoadDefaultScene',
+    'SceneData::TryGetLCCAsset',
+    'ILCCSceneManager::GetRendererHandlerByPath',
+    'ILCCSceneManager::IsSceneLoaded',
     'LCCRendererHandler::get_Path',
     'ILCCSceneManager::LCCObjectToWorldSpace',
     'ILCCSceneManager::SetRecordMode',
@@ -663,6 +686,9 @@ foreach ($requiredIlPattern in @(
         throw "The compiled module is missing required IL evidence '$requiredIlPattern'."
     }
 }
+if ($il -match 'ILCCSceneManager::LoadScene') {
+    throw 'The compiled module still calls the low-level ILCCSceneManager.LoadScene API.'
+}
 foreach ($forbiddenAssembly in @('System.Net.Http', 'NetMQ', 'MCPForUnity')) {
     if ($il -match "\.assembly extern '$([Regex]::Escape($forbiddenAssembly))'|\.assembly extern $([Regex]::Escape($forbiddenAssembly))") {
         throw "The compiled module unexpectedly references $forbiddenAssembly."
@@ -672,7 +698,7 @@ foreach ($forbiddenAssembly in @('System.Net.Http', 'NetMQ', 'MCPForUnity')) {
 Write-Output 'PASS: plugin contract'
 Write-Output 'PASS: canonical GH_1 LCC2 manifest and 60-file policy receipt'
 Write-Output 'PASS: digest-bound fixed-camera profile and exact Three tuple'
-Write-Output 'PASS: LoadScene handler/event/callback fail-closed contract'
+Write-Output 'PASS: temporary-project/default-scene event/handler fail-closed contract'
 Write-Output 'PASS: modules.loaded next-frame one-shot lifecycle/cleanup contract'
 Write-Output 'PASS: terminal Stop/internal scene-unsubscribe/cooperative async-stop contract'
 Write-Output 'PASS: reversible per-user native-module toggle lease static contract'

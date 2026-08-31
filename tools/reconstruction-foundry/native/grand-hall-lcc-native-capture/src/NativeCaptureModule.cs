@@ -9,6 +9,7 @@ using Cysharp.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
 using XGrids.LCCWorld.Framework;
+using XGrids.LCCWorld.Framework.Model;
 using Debug = UnityEngine.Debug;
 
 namespace Venviewer.NativeCapture
@@ -16,7 +17,7 @@ namespace Venviewer.NativeCapture
     public sealed class NativeCaptureModule : IModule
     {
         private const string ModuleId = "com.venviewer.native_capture";
-        private const string ModuleVersion = "1.2.1";
+        private const string ModuleVersion = "1.2.2";
         private const string OutputDirectoryEnvironmentVariable =
             "VENVIEWER_LCC_NATIVE_CAPTURE_OUTPUT_DIR";
         private const string ModuleShaEnvironmentVariable =
@@ -71,6 +72,7 @@ namespace Venviewer.NativeCapture
         };
 
         private IEventBus _eventBus;
+        private IProjectManager _projectManager;
         private ICameraService _cameraService;
         private ISceneManager _sceneManager;
         private ILCCSceneManager _lccSceneManager;
@@ -78,9 +80,8 @@ namespace Venviewer.NativeCapture
         private IRendererQualityService _rendererQualityService;
         private Func<IEvent, bool> _modulesLoadedHandler;
         private Func<EventArg<string>, bool> _sceneLoadedHandler;
-        private Action _sceneLoadedCallback;
         private readonly NativeCaptureLifecycleState _lifecycle = new NativeCaptureLifecycleState();
-        private LCCRendererHandler _loadHandler;
+        private LCCRendererHandler _rendererHandler;
         private string _modulePath;
         private string _outputDirectory;
         private string _expectedModuleSha256;
@@ -98,9 +99,18 @@ namespace Venviewer.NativeCapture
         private bool _armed;
         private int _started;
         private int _sceneLoadedEventObserved;
-        private int _sceneLoadedCallbackObserved;
         private string _sceneLoadedEventPath;
         private bool _preloadedSceneRejected;
+        private bool _freshProjectStateVerified;
+        private bool _temporaryProjectCreationSucceeded;
+        private bool _projectInitializedVerified;
+        private bool _temporaryProjectVerified;
+        private bool _currentSceneDataNonNull;
+        private bool _generatedLccAssetPresent;
+        private string _generatedLccAssetPath;
+        private string _generatedLccAssetResolvedPath;
+        private bool _defaultSceneLoadAccepted;
+        private bool _canonicalSceneLoadedVerified;
 
         public string Id { get { return ModuleId; } }
         public string Name { get { return "Venviewer Grand Hall native capture"; } }
@@ -116,6 +126,7 @@ namespace Venviewer.NativeCapture
 
             _modulePath = CapturePolicy.NormalizePath(modulePath);
             _eventBus = container.Resolve<IEventBus>();
+            _projectManager = container.Resolve<IProjectManager>();
             _cameraService = container.Resolve<ICameraService>();
             _sceneManager = container.Resolve<ISceneManager>();
             _lccSceneManager = container.Resolve<ILCCSceneManager>();
@@ -123,7 +134,6 @@ namespace Venviewer.NativeCapture
             _rendererQualityService = container.Resolve<IRendererQualityService>();
             _modulesLoadedHandler = HandleModulesLoaded;
             _sceneLoadedHandler = HandleSceneLoaded;
-            _sceneLoadedCallback = HandleSceneLoadedCallback;
             ValidateResolvedServices();
 
             _modulesLoadedSubscribed = _eventBus.Subscribe<IEvent>(
@@ -184,12 +194,9 @@ namespace Venviewer.NativeCapture
             try
             {
                 ValidateResolvedServices();
-                if (_lccSceneManager.IsSceneLoaded())
-                {
-                    throw new InvalidOperationException(
-                        "The armed module requires a fresh process with no scene loaded before its pre-load snapshots.");
-                }
+                RequireFreshVendorState();
                 _preloadedSceneRejected = true;
+                _freshProjectStateVerified = true;
 
                 ValidateLaunchEnvironment();
                 _preLoadPackageSnapshot = CapturePolicy.SnapshotCanonicalPackage(
@@ -201,21 +208,21 @@ namespace Venviewer.NativeCapture
                     throw new InvalidOperationException("The lccscene.loaded subscription was rejected.");
                 }
 
-                if (_lccSceneManager.IsSceneLoaded())
+                RequireFreshVendorState();
+                _temporaryProjectCreationSucceeded = _projectManager.CreateTemporaryLCCProject(
+                    CapturePolicy.CanonicalScenePath);
+                if (!_temporaryProjectCreationSucceeded)
                 {
                     throw new InvalidOperationException(
-                        "A scene became preloaded before the canonical LoadScene call could be issued.");
+                        "IProjectManager.CreateTemporaryLCCProject rejected the canonical GH_1 LCC2 path.");
                 }
-
-                _loadHandler = _lccSceneManager.LoadScene(
-                    CapturePolicy.CanonicalScenePath,
-                    _sceneLoadedCallback);
-                if (_loadHandler == null)
+                ValidateTemporaryProjectState();
+                _defaultSceneLoadAccepted = _sceneManager.LoadDefaultScene();
+                if (!_defaultSceneLoadAccepted)
                 {
                     throw new InvalidOperationException(
-                        "ILCCSceneManager.LoadScene returned a null renderer handler for the canonical GH_1 LCC2.");
+                        "ISceneManager.LoadDefaultScene rejected the generated temporary GH_1 project scene.");
                 }
-                CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path);
 
                 WatchSceneLoadAsync().Forget(HandleUnhandledException, true);
             }
@@ -333,12 +340,60 @@ namespace Venviewer.NativeCapture
         private void ValidateResolvedServices()
         {
             if (_eventBus == null || _cameraService == null || _sceneManager == null ||
-                _lccSceneManager == null || _captureManager == null || _rendererQualityService == null ||
-                _modulesLoadedHandler == null || _sceneLoadedHandler == null || _sceneLoadedCallback == null)
+                _lccSceneManager == null || _projectManager == null || _captureManager == null ||
+                _rendererQualityService == null || _modulesLoadedHandler == null || _sceneLoadedHandler == null)
             {
                 throw new InvalidOperationException(
                     "One or more required public LCCEditor services could not be resolved.");
             }
+        }
+
+        private void RequireFreshVendorState()
+        {
+            if (_projectManager.IsInitialized ||
+                _sceneManager.CurrentSceneData != null ||
+                _sceneManager.HasLCCAsset ||
+                _lccSceneManager.IsSceneLoaded())
+            {
+                throw new InvalidOperationException(
+                    "Native capture requires a fresh vendor process with no project, current scene data, or loaded LCC.");
+            }
+        }
+
+        private void ValidateTemporaryProjectState()
+        {
+            _projectInitializedVerified = _projectManager.IsInitialized;
+            _temporaryProjectVerified = _projectManager.IsTemporary;
+            if (!_projectInitializedVerified || !_temporaryProjectVerified)
+            {
+                throw new InvalidOperationException(
+                    "CreateTemporaryLCCProject did not initialize a temporary vendor project.");
+            }
+            _currentSceneDataNonNull = _sceneManager.CurrentSceneData != null;
+            if (!_currentSceneDataNonNull)
+            {
+                throw new InvalidOperationException(
+                    "CreateTemporaryLCCProject did not generate current scene data.");
+            }
+            _generatedLccAssetPresent = _sceneManager.HasLCCAsset;
+            if (!_generatedLccAssetPresent)
+            {
+                throw new InvalidOperationException(
+                    "The generated temporary scene does not declare an LCC asset.");
+            }
+
+            LCCAsset asset;
+            if (!_sceneManager.CurrentSceneData.TryGetLCCAsset(out asset) || asset == null ||
+                String.IsNullOrWhiteSpace(asset.path))
+            {
+                throw new InvalidOperationException(
+                    "The generated temporary scene did not expose a usable LCC asset path.");
+            }
+
+            _generatedLccAssetPath = asset.path;
+            _generatedLccAssetResolvedPath = CapturePolicy.NormalizePath(
+                _projectManager.GetAssetFinalPath(asset.path));
+            CapturePolicy.RequireCanonicalScenePath(_generatedLccAssetResolvedPath);
         }
 
         private void ValidateLaunchEnvironment()
@@ -439,7 +494,7 @@ namespace Venviewer.NativeCapture
             if (Interlocked.CompareExchange(ref _started, 1, 0) == 0)
             {
                 FailArmedStartupCore(new TimeoutException(
-                    "The canonical scene did not satisfy both the lccscene.loaded event and LoadScene callback within " +
+                    "The high-level default-scene load did not publish the exact canonical lccscene.loaded event within " +
                     CapturePolicy.SceneLoadTimeoutSeconds.ToString("R", CultureInfo.InvariantCulture) +
                     " seconds."));
             }
@@ -502,18 +557,26 @@ namespace Venviewer.NativeCapture
 
                 string scenePath = eventData.t;
                 CapturePolicy.RequireCanonicalScenePath(scenePath);
-                if (_loadHandler == null)
+                _rendererHandler = _lccSceneManager.GetRendererHandlerByPath(
+                    CapturePolicy.CanonicalScenePath);
+                if (_rendererHandler == null)
                 {
                     throw new InvalidOperationException(
-                        "The lccscene.loaded event arrived without a non-null LoadScene renderer handler.");
+                        "The lccscene.loaded event arrived without a canonical renderer handler.");
                 }
-                CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path);
+                CapturePolicy.RequireCanonicalScenePath(_rendererHandler.Path);
+                if (!_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath))
+                {
+                    throw new InvalidOperationException(
+                        "The exact canonical GH_1 LCC2 is not loaded after lccscene.loaded.");
+                }
                 if (Interlocked.Exchange(ref _sceneLoadedEventObserved, 1) != 0)
                 {
                     throw new InvalidOperationException("The canonical lccscene.loaded event was published more than once.");
                 }
 
                 _sceneLoadedEventPath = CapturePolicy.NormalizePath(scenePath);
+                _canonicalSceneLoadedVerified = true;
                 TryStartCaptureAfterLoadContract(true);
             }
             catch (Exception exception)
@@ -523,58 +586,23 @@ namespace Venviewer.NativeCapture
             return true;
         }
 
-        private void HandleSceneLoadedCallback()
-        {
-            if (_lifecycle.IsStopped)
-            {
-                Debug.LogWarning("[VenviewerNativeCapture] LoadScene callback was ignored after Stop.");
-                return;
-            }
-
-            try
-            {
-                if (_loadHandler == null)
-                {
-                    throw new InvalidOperationException(
-                        "The LoadScene callback arrived without a non-null renderer handler.");
-                }
-                CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path);
-                if (!_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath))
-                {
-                    throw new InvalidOperationException(
-                        "The LoadScene callback did not resolve to the requested canonical GH_1 LCC2 path.");
-                }
-                if (Interlocked.Exchange(ref _sceneLoadedCallbackObserved, 1) != 0)
-                {
-                    throw new InvalidOperationException("The canonical LoadScene callback was invoked more than once.");
-                }
-
-                TryStartCaptureAfterLoadContract(false);
-            }
-            catch (Exception exception)
-            {
-                FailSceneLoadContract(exception);
-            }
-        }
-
         private void TryStartCaptureAfterLoadContract(bool deferUntilEventDispatchUnwinds)
         {
             if (_lifecycle.IsStopped)
             {
                 return;
             }
-            if (Volatile.Read(ref _sceneLoadedEventObserved) == 0 ||
-                Volatile.Read(ref _sceneLoadedCallbackObserved) == 0)
+            if (Volatile.Read(ref _sceneLoadedEventObserved) == 0)
             {
                 return;
             }
 
             CapturePolicy.RequireCanonicalScenePath(_sceneLoadedEventPath);
-            CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path);
+            CapturePolicy.RequireCanonicalScenePath(_rendererHandler.Path);
             if (!_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath))
             {
                 throw new InvalidOperationException(
-                    "The event and callback completed but the canonical GH_1 LCC2 is not the loaded scene.");
+                    "The canonical event completed but the exact GH_1 LCC2 is not the loaded scene.");
             }
 
             if (deferUntilEventDispatchUnwinds)
@@ -754,7 +782,7 @@ namespace Venviewer.NativeCapture
         {
             return new NativeCaptureReceipt
             {
-                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v1",
+                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v2",
                 status = "running",
                 authority = "none",
                 truthClass = "RECONSTRUCTED_DIAGNOSTIC",
@@ -803,19 +831,28 @@ namespace Venviewer.NativeCapture
         {
             return new SceneLoadReceipt
             {
-                api = "ILCCSceneManager.LoadScene(string, Action)",
+                api = "IProjectManager.CreateTemporaryLCCProject(string) + ISceneManager.LoadDefaultScene()",
                 requestedPath = CapturePolicy.CanonicalScenePath,
                 commandLineSceneArgumentUsed = false,
                 preloadedSceneRejected = _preloadedSceneRejected,
+                freshProjectStateVerified = _freshProjectStateVerified,
+                temporaryProjectCreationSucceeded = _temporaryProjectCreationSucceeded,
+                projectInitializedVerified = _projectInitializedVerified,
+                temporaryProjectVerified = _temporaryProjectVerified,
+                currentSceneDataNonNull = _currentSceneDataNonNull,
+                generatedLccAssetPresent = _generatedLccAssetPresent,
+                generatedLccAssetPath = _generatedLccAssetPath,
+                generatedLccAssetResolvedPath = _generatedLccAssetResolvedPath,
+                generatedLccAssetPathVerified = IsCanonicalScenePath(_generatedLccAssetResolvedPath),
+                defaultSceneLoadAccepted = _defaultSceneLoadAccepted,
                 eventTopic = "lccscene.loaded",
                 eventSubscriptionAccepted = _subscribed || Volatile.Read(ref _sceneLoadedEventObserved) != 0,
                 eventPath = _sceneLoadedEventPath,
                 eventPathVerified = Volatile.Read(ref _sceneLoadedEventObserved) != 0,
-                callbackObserved = Volatile.Read(ref _sceneLoadedCallbackObserved) != 0,
-                callbackLoadedCanonicalSceneVerified = Volatile.Read(ref _sceneLoadedCallbackObserved) != 0,
-                returnedHandlerNonNull = _loadHandler != null,
-                returnedHandlerPath = _loadHandler == null ? null : _loadHandler.Path,
-                returnedHandlerPathVerified = _loadHandler != null && IsCanonicalScenePath(_loadHandler.Path)
+                rendererHandlerNonNull = _rendererHandler != null,
+                rendererHandlerPath = _rendererHandler == null ? null : _rendererHandler.Path,
+                rendererHandlerPathVerified = _rendererHandler != null && IsCanonicalScenePath(_rendererHandler.Path),
+                canonicalSceneLoadedVerified = _canonicalSceneLoadedVerified
             };
         }
 
