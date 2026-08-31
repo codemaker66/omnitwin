@@ -10,6 +10,7 @@ export * from "./grand-hall-difix-no-reference-input-pack.js";
 export * from "./grand-hall-difix-experiment-materializer.js";
 export * from "./grand-hall-forbidden-architecture-evaluator.js";
 export * from "./grand-hall-protected-region-metrics.js";
+export * from "./grand-hall-visible-first-radiance-comparison.js";
 export * from "./grand-hall-difix-one-shot-contract.js";
 export * from "./grand-hall-difix-one-shot.js";
 export * from "./grand-hall-camera-metric-subset-contract.js";
