@@ -1,9 +1,9 @@
 {
   "Id": "com.venviewer.native_capture",
   "Name": "Venviewer Grand Hall Native Capture",
-  "Version": "1.2.7",
+  "Version": "1.7.0",
   "Author": "Venviewer",
-  "Description": "Fail-closed native fixed-camera evidence capture with first-party readback of the locked XGRIDS SnapFrame surface for the canonical Grand Hall GH_1 LCC2 package.",
+  "Description": "Fail-closed Grand Hall Gamma/UNorm SingleCameraRequest capture with immutable display-code evidence, identity-mapped sRGB-tagged PNG8, exact no-added-precision PNG16 expansion, and exact run-bounded shutdown-profile classification.",
   "LoadOrder": 900,
   "Enabled": true,
   "EntryPoint": "VenviewerNativeCapture.dll",

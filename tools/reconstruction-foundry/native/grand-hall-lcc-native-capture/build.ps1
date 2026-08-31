@@ -19,6 +19,7 @@ $cameraProfileOutputPath = Join-Path $outputRoot 'camera-profile.json'
 $testOutputPath = Join-Path $outputRoot 'CapturePolicyTests.exe'
 $runtimeClosureTestOutputPath = Join-Path $outputRoot 'RuntimeClosureTests.exe'
 $buildReceiptPath = Join-Path $outputRoot 'build-receipt.json'
+$pendingBuildReceiptPath = Join-Path $outputRoot 'build-receipt.json.pending'
 $runtimeClosureOutputPath = Join-Path $outputRoot 'runtime-closure-lock.json'
 
 function Resolve-AbsolutePath {
@@ -172,7 +173,7 @@ foreach ($file in $vendorLock.externalFiles) {
 if (-not (Test-Path -LiteralPath $outputRoot -PathType Container)) {
     New-Item -ItemType Directory -Path $outputRoot | Out-Null
 }
-foreach ($generatedPath in @($moduleOutputPath, $cameraProfileOutputPath, $testOutputPath, $runtimeClosureTestOutputPath, $buildReceiptPath, $runtimeClosureOutputPath)) {
+foreach ($generatedPath in @($moduleOutputPath, $cameraProfileOutputPath, $testOutputPath, $runtimeClosureTestOutputPath, $buildReceiptPath, $pendingBuildReceiptPath, $runtimeClosureOutputPath)) {
     if (Test-Path -LiteralPath $generatedPath -PathType Leaf) {
         Remove-Item -LiteralPath $generatedPath -Force
     }
@@ -206,9 +207,12 @@ if ($compilerVersion -cne [string]$vendorLock.compiler.fileVersion) {
 $capturePolicyPath = Join-Path $sourceRoot 'CapturePolicy.cs'
 $receiptModelsPath = Join-Path $sourceRoot 'ReceiptModels.cs'
 $moduleSourcePath = Join-Path $sourceRoot 'NativeCaptureModule.cs'
+$displayEncodingSourcePath = Join-Path $sourceRoot 'DisplayEncodingPolicy.cs'
+$deterministicPngSourcePath = Join-Path $sourceRoot 'DeterministicPng.cs'
 $runtimeClosureSourcePath = Join-Path $sourceRoot 'RuntimeClosurePolicy.cs'
 $cameraProfileSourceCodePath = Join-Path $sourceRoot 'FixedCameraProfile.cs'
 $testSourcePath = Join-Path $testRoot 'CapturePolicyTests.cs'
+$displayEncodingTestSourcePath = Join-Path $testRoot 'DisplayEncodingTests.cs'
 $runtimeClosureTestSourcePath = Join-Path $testRoot 'RuntimeClosureTests.cs'
 
 $commonCompilerArguments = @(
@@ -225,7 +229,7 @@ $commonCompilerArguments = @(
 $managedRoot = Join-Path $LccEditorRoot 'LCCEditor_Data\Managed'
 $newtonsoftReference = '/reference:' + (Join-Path $managedRoot 'Newtonsoft.Json.dll')
 $netstandardReference = '/reference:' + (Join-Path $managedRoot 'netstandard.dll')
-& $compiler @commonCompilerArguments '/nowarn:0649' '/target:exe' "/out:$testOutputPath" $newtonsoftReference $netstandardReference $capturePolicyPath $cameraProfileSourceCodePath $receiptModelsPath $testSourcePath
+& $compiler @commonCompilerArguments '/nowarn:0649' '/target:exe' "/out:$testOutputPath" $newtonsoftReference $netstandardReference $capturePolicyPath $cameraProfileSourceCodePath $receiptModelsPath $displayEncodingSourcePath $deterministicPngSourcePath $testSourcePath $displayEncodingTestSourcePath
 if ($LASTEXITCODE -ne 0) {
     throw "Capture policy test compilation failed with exit code $LASTEXITCODE."
 }
@@ -242,6 +246,7 @@ if ($LASTEXITCODE -ne 0) {
 
 $references = @(
     'LCCWorld.dll',
+    'LCCWorld.Common.dll',
     'LCCSDK.dll',
     'UnityEngine.dll',
     'UnityEngine.CoreModule.dll',
@@ -276,9 +281,14 @@ if ($LASTEXITCODE -ne 0) {
     throw "Runtime closure tests failed with exit code $LASTEXITCODE."
 }
 
-& $compiler @commonCompilerArguments '/nostdlib+' '/target:library' "/out:$moduleOutputPath" @unityProfileReferences @references $capturePolicyPath $cameraProfileSourceCodePath $receiptModelsPath $runtimeClosureSourcePath $moduleSourcePath
+& $compiler @commonCompilerArguments '/nostdlib+' '/target:library' "/out:$moduleOutputPath" @unityProfileReferences @references $capturePolicyPath $cameraProfileSourceCodePath $receiptModelsPath $displayEncodingSourcePath $deterministicPngSourcePath $runtimeClosureSourcePath $moduleSourcePath
 if ($LASTEXITCODE -ne 0) {
     throw "Native capture module compilation failed with exit code $LASTEXITCODE."
+}
+
+& (Join-Path $moduleRoot 'run-capture.ps1') -PlayerLogAuditSelfTest
+if ($LASTEXITCODE -ne 0) {
+    throw "Run-specific Player.log audit self-test failed with exit code $LASTEXITCODE."
 }
 
 $sourceReceipts = @(
@@ -286,9 +296,12 @@ $sourceReceipts = @(
     $cameraProfileSourceCodePath,
     $cameraProfileSourcePath,
     $receiptModelsPath,
+    $displayEncodingSourcePath,
+    $deterministicPngSourcePath,
     $moduleSourcePath,
     $runtimeClosureSourcePath,
     $testSourcePath,
+    $displayEncodingTestSourcePath,
     $runtimeClosureTestSourcePath,
     $pluginPath,
     $lockPath,
@@ -346,6 +359,8 @@ $buildReceipt = [ordered]@{
     }
     tests = [ordered]@{
         executable = $testOutputPath
+        displayEncodingTestsPassed = $true
+        playerLogAuditSelfTestPassed = $true
         runtimeClosureExecutable = $runtimeClosureTestOutputPath
         liveCanonicalPackageVerified = -not $SkipLiveSourceVerification.IsPresent
         runtimeClosureVerified = $true
@@ -356,11 +371,24 @@ $buildReceipt = [ordered]@{
 }
 
 $json = $buildReceipt | ConvertTo-Json -Depth 8
-[IO.File]::WriteAllText($buildReceiptPath, $json + [Environment]::NewLine, [Text.UTF8Encoding]::new($false))
-
-& (Join-Path $moduleRoot 'verify.ps1') -LccEditorRoot $LccEditorRoot -ModulePath $moduleOutputPath -BuildReceiptPath $buildReceiptPath
-if ($LASTEXITCODE -ne 0) {
-    throw "Offline verification failed with exit code $LASTEXITCODE."
+[IO.File]::WriteAllText(
+    $pendingBuildReceiptPath,
+    $json + [Environment]::NewLine,
+    [Text.UTF8Encoding]::new($false))
+try {
+    & (Join-Path $moduleRoot 'verify.ps1') `
+        -LccEditorRoot $LccEditorRoot `
+        -ModulePath $moduleOutputPath `
+        -BuildReceiptPath $pendingBuildReceiptPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Offline verification failed with exit code $LASTEXITCODE."
+    }
+    [IO.File]::Move($pendingBuildReceiptPath, $buildReceiptPath)
+}
+finally {
+    if (Test-Path -LiteralPath $pendingBuildReceiptPath -PathType Leaf) {
+        Remove-Item -LiteralPath $pendingBuildReceiptPath -Force
+    }
 }
 
 Write-Output "Module: $moduleOutputPath"

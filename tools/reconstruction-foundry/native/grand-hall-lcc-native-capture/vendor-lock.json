@@ -35,7 +35,7 @@
       "relativePath": "LCCEditor_Data/Managed/LCCWorld.Common.dll",
       "byteLength": 189440,
       "sha256": "CC166D8396D462A1EE27C308855DDADF7010E58FD185276D78645490A747EFC2",
-      "role": "runtime"
+      "role": "compile_and_runtime"
     },
     {
       "relativePath": "LCCEditor_Data/Managed/UnityEngine.dll",

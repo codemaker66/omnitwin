@@ -1,0 +1,198 @@
+{
+  "schemaVersion": "venviewer.grand-hall.native-lcc-fixed-camera-compact-evidence.v1",
+  "authority": "none",
+  "truthClass": "RECONSTRUCTED_DIAGNOSTIC",
+  "roomRef": "trades-hall/grand-hall",
+  "taskId": "T-562",
+  "status": "successful_diagnostic_capture",
+  "inspectionProfile": {
+    "profileId": "source-pose-19890-interior-v1",
+    "sha256": "sha256:9eca9b6582b7301ec1c059b1a5be699e5a4983773afecb2beea46c2668305922",
+    "inspectionOnly": true,
+    "environmentIncluded": false
+  },
+  "canonicalInput": {
+    "representation": "GH_1 canonical LCC2 package with env.sog excluded",
+    "memberCount": 60,
+    "totalByteLength": 214350601,
+    "manifestSha256": "sha256:927a92699de222e99d2684ca2567a35ab1e523a036461e6e01236b7b77b7f659",
+    "inventorySha256": "sha256:6013763ae4d9fa13cb10d2c62e9b11b971bc2f22420ca2ade6f736aeecc4b793",
+    "beforeAfterByteIdentityVerified": true,
+    "beforeAfterTimestampIdentityVerified": true,
+    "preLoadThroughPostCaptureIdentityVerified": true
+  },
+  "frozenBuildEvidence": {
+    "buildReceiptSha256": "sha256:b3fb90a93e0e8f3da81301557d0c706998d0cedd230ba3921739b039c7ebb08a",
+    "moduleVersion": "1.7.0",
+    "moduleSha256": "sha256:2b7de5c1d6475f7c34ad4ee8c2bbf4a96ec2c454d5b4e094410cbdc7ee954e19",
+    "pluginManifestSha256": "sha256:453c74eab820f2b70db9101b777b41af9171e077a00e79b7a0781c25262ac55b",
+    "operatorSourceByteLength": 129478,
+    "operatorSourceSha256": "sha256:2210186770c357cff583be060a11be83b2dc776ab5efcc124d0b4c073675b7c6",
+    "runtimeClosureLockSha256": "sha256:f3ced55c3bd215fbc8bba49be453829d67d689a6a42d2f3a338eff2a0d95cec5",
+    "runtimeClosureInventorySha256": "sha256:e76dae03144f07e47c1600582ac6a15b19a21812c5648e0c864f86b61f328cf8",
+    "networkUsed": false,
+    "vendorBinariesCopiedIntoRepository": false,
+    "verificationPassed": true
+  },
+  "runEvidence": {
+    "runId": "grand-hall-gh1-lcc2-20260831T210928Z-61dd133e",
+    "nativeReceipt": {
+      "schemaVersion": "venviewer.grand-hall.lcc-native-capture-receipt.v14",
+      "byteLength": 487155,
+      "sha256": "sha256:a97006c8facd90b8e4e8d4914acc72ea63ffbb967754ac9aaca4132c99369f90"
+    },
+    "operatorReceipt": {
+      "schemaVersion": "venviewer.grand-hall.lcc-native-capture-operator-receipt.v4",
+      "byteLength": 12735,
+      "sha256": "sha256:a37fa98ee31abbd14a96a91462e571c2aed2b4b6e8b51d4918cda39efe7e314e"
+    },
+    "playerLog": {
+      "byteLength": 67735,
+      "sha256": "sha256:5de2d06f1b922326dea9da7509ab7ec113bb1d3fd8866d1f563ccb2b02280b28",
+      "shutdownProfileSetId": "venviewer.grand-hall.lcc-native-shutdown-profile-set.v1",
+      "approvedShutdownProfile": "clean_shutdown_no_exceptions",
+      "knownStartupDbufferClearShaderUnsupportedErrorCount": 1,
+      "knownWindowsMediaFoundationUnknownColorPrimariesWarningCount": 1,
+      "unexpectedErrorLineCount": 0,
+      "unclassifiedExceptionCount": 0,
+      "unclassifiedExceptionDiagnosticLineCount": 0,
+      "terminalShutdownMarkerAtEof": true,
+      "onlyExpectedDiagnosticsObserved": true
+    },
+    "processExitCode": 0,
+    "timedOut": false,
+    "observedReadinessFrames": 1783,
+    "observedReadinessSeconds": 15.0061873,
+    "captureElapsedSeconds": 6.1273932,
+    "completedAttempts": 3,
+    "requiredConsecutiveIdenticalHashes": 3,
+    "stableConsecutiveIdenticalHashes": 3,
+    "sameHostHashPlateauVerified": true,
+    "everyAttemptDecodedAndNonDegenerate": true,
+    "everyAttemptSpawnPointVisualizationsSuppressedAndRestored": true
+  },
+  "featureToggleRestoration": {
+    "expectedOriginalSha256": "sha256:8ff16cac30f3f49a71be9a06d486b1bb9b682e0ccf1c5c35869a251d98313531",
+    "restoredSha256": "sha256:8ff16cac30f3f49a71be9a06d486b1bb9b682e0ccf1c5c35869a251d98313531",
+    "restoredMetadataExact": true,
+    "stockModuleEntriesUnchanged": true,
+    "noLccEditorProcessBeforeRestore": true,
+    "remainingLccEditorProcessIdsBeforeRestore": [],
+    "leaseResidueRetained": false
+  },
+  "publishedDiagnosticImage": {
+    "fileName": "grand-hall-native-fixed-camera-v14.png",
+    "width": 1600,
+    "height": 900,
+    "byteLength": 4321366,
+    "sha256": "sha256:c08e5f2074792e852635b3ae6b48d1cdc114c440efd6f604f31f9ed1827c13e7",
+    "encoding": "identity sRGB-tagged PNG8 from Unity-Gamma R8G8B8A8_UNorm display codes"
+  },
+  "additionalLocalPixelEvidence": {
+    "rawRgb24": {
+      "byteLength": 4320000,
+      "sha256": "sha256:aa5caa2c91da3e9526bb538d77d495848dbe15fd6217b1470138e6bd3cea2364",
+      "semantics": "Unity-Gamma R8G8B8A8_UNorm display-code values, lower-left row origin"
+    },
+    "expandedSrgbTaggedPng16": {
+      "byteLength": 8641696,
+      "sha256": "sha256:6fb177906d1a0f4484b2c5b664453439cd776fa6b7ed7f844f0906eb892e8b69",
+      "mapping": "each PNG8 code value multiplied by 257",
+      "addsPrecision": false
+    },
+    "rawToPng8Validation": {
+      "mapping": "exact vertical row flip only",
+      "comparedByteCount": 4320000,
+      "differingByteCount": 0
+    },
+    "png16Validation": {
+      "decoder": "independent direct PNG chunk parse plus zlib inflate",
+      "ihdrBitDepth": 16,
+      "ihdrColorType": 2,
+      "interlaced": false,
+      "chunkOrder": [
+        "IHDR",
+        "sRGB",
+        "gAMA",
+        "cHRM",
+        "IDAT",
+        "IEND"
+      ],
+      "scanlinesWithNonzeroFilter": 0,
+      "comparedSampleCount": 4320000,
+      "samplesNotEqualToPng8Times257": 0
+    },
+    "linearLightPhotometryClaimed": false,
+    "exactPhotometricTransferClaimed": false
+  },
+  "nativeInclusiveComparison": {
+    "receiptPath": "../2026-08-31-native-inclusive-visible-first-v1/native-inclusive-comparison-receipt.json",
+    "receiptFileSha256": "sha256:68889dd7d73b6c3e7525501f9f0984507c83223bc0dc81d6bf93084b8b4a96f4",
+    "browserComparisonReceiptSha256": "sha256:b82b428b309368cf9a9ab129a683e2296bc9edd6b677ba5eba64e2925c2e1776",
+    "sogNative": {
+      "mae": 3.1683013888888887,
+      "rmse": 4.83841897195232,
+      "psnr": 34.43673416061889,
+      "maxAbsoluteError": 97
+    },
+    "spzNative": {
+      "mae": 3.549888425925926,
+      "rmse": 5.177340766011777,
+      "psnr": 33.848668595972335,
+      "maxAbsoluteError": 98
+    },
+    "sogSpz": {
+      "mae": 1.8918046296296296,
+      "rmse": 2.5220771495234136,
+      "psnr": 40.095636261322205,
+      "maxAbsoluteError": 34
+    },
+    "plyDisposition": "structural_only_excluded_from_radiance_comparison"
+  },
+  "diagnosticVisualObservation": {
+    "reviewerClass": "two_independent_codex_agent_observations_not_qualified_human_acceptance",
+    "nativeResolutionInspected": true,
+    "fixedViewOnly": true,
+    "visibleSpawnOrWatermarkOverlayObserved": false,
+    "falseDarkCentralFloorObserved": false,
+    "neighbouringRoomObserved": false,
+    "facadeObserved": false,
+    "generatedFillObserved": false,
+    "nativeOnlyWindowDoorOrApertureObserved": false,
+    "alignmentDiagnostics": {
+      "zeroShiftLuminanceCorrelationSogNative": 0.996,
+      "zeroShiftLuminanceCorrelationSpzNative": 0.9956,
+      "zeroShiftOutperformedEveryTestedShiftWithinPixels": 4,
+      "flippedCorrelationRange": [
+        0.23,
+        0.29
+      ],
+      "cropOrientationOrGeometricMisregistrationObserved": false
+    },
+    "comparisonArtifactValidation": {
+      "sideBySideDecodedPanelMismatchCount": 0,
+      "differenceImageFormulaMismatchCount": 0,
+      "validatedDifferenceImageCount": 3
+    },
+    "dominantDisagreement": "Broad renderer-dependent tone and colour differences across the existing timber floor plus differences along existing highlights, chandeliers, millwork, portraits and window edges; no localized insertion, deletion, false aperture or dark floor slab was observed.",
+    "note": "Visible windows, doors, floor, wall panelling, portraits, chandeliers and ceiling structure are shared across the source-derived SOG, SPZ and native lanes in this fixed view; that agreement is not whole-room architectural acceptance."
+  },
+  "decision": {
+    "winner": null,
+    "rankingPermitted": false,
+    "visualAcceptance": "not_reviewed_by_qualified_human",
+    "capturedMasterSelected": false,
+    "metricAuthorityGranted": false,
+    "roomScopeAuthorityGranted": false,
+    "runtimeAdmissionGranted": false,
+    "humanReviewRequired": true
+  },
+  "limitations": [
+    "This compact receipt binds a successful authority-none diagnostic at one fixed inspection camera; it is not an accepted captured master.",
+    "The native lane renders the same canonical SOG payload family through the XGRIDS vendor renderer and is not an independent reconstruction.",
+    "No supplied source view is established as ground truth for this exact synthetic inspection camera, so representation disagreement cannot select a fidelity winner.",
+    "The PNG16 is an exact code-value expansion and contains no extra captured precision.",
+    "No qualified human has accepted the room boundary, architecture, interface decisions, difficult oblique coverage, metric transform or whole-room fidelity.",
+    "No source, vendor binary, production system or staging system was modified; no push, upload, deployment, publication, paid provider run or runtime admission occurred."
+  ]
+}

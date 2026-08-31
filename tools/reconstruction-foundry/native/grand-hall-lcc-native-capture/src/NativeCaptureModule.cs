@@ -4,12 +4,14 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using LCCCore;
 using Newtonsoft.Json;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using XGrids.LCCWorld.Framework;
@@ -21,7 +23,7 @@ namespace Venviewer.NativeCapture
     public sealed class NativeCaptureModule : IModule
     {
         private const string ModuleId = "com.venviewer.native_capture";
-        private const string ModuleVersion = "1.2.7";
+        private const string ModuleVersion = "1.7.0";
         private const string OutputDirectoryEnvironmentVariable =
             "VENVIEWER_LCC_NATIVE_CAPTURE_OUTPUT_DIR";
         private const string ModuleShaEnvironmentVariable =
@@ -40,6 +42,10 @@ namespace Venviewer.NativeCapture
         private const string ReceiptFileName = "grand-hall-native-capture-receipt.json";
         private const string FailureReceiptFileName = "grand-hall-native-capture-failure-receipt.json";
         private const string FinalPngFileName = "grand-hall-native-capture-1600x900.png";
+        private const string FinalRawRgb24FileName =
+            "grand-hall-native-capture-1600x900.unorm-lower-left.rgb24";
+        private const string FinalExpandedSrgbTagged16PngFileName =
+            "grand-hall-native-capture-1600x900.srgb-tagged-expanded16.png";
 
         private static readonly LockedRuntimeFile[] LockedRuntimeFiles =
         {
@@ -152,6 +158,7 @@ namespace Venviewer.NativeCapture
         private bool _defaultSceneLoadAccepted;
         private bool _canonicalSceneLoadedVerified;
         private SnapFrameReadbackOperation _activeReadbackOperation;
+        private SingleCameraRenderRequestOperation _activeSingleCameraRenderRequestOperation;
 
         public string Id { get { return ModuleId; } }
         public string Name { get { return "Venviewer Grand Hall native capture"; } }
@@ -413,6 +420,12 @@ namespace Venviewer.NativeCapture
             if (operation != null)
             {
                 operation.Abort();
+            }
+            SingleCameraRenderRequestOperation requestOperation = Volatile.Read(
+                ref _activeSingleCameraRenderRequestOperation);
+            if (requestOperation != null)
+            {
+                requestOperation.Abort();
             }
         }
 
@@ -880,7 +893,7 @@ namespace Venviewer.NativeCapture
             RequireSameRuntimeClosure(_preLoadRuntimeClosure, postCaptureRuntimeClosure);
             receipt.vendor.runtimeClosure.preLoadAndPostCaptureIdentityVerified = true;
             ThrowIfStopped();
-            FinalizePng(receipt.capture);
+            FinalizeCaptureArtifacts(receipt.capture);
             await UniTask.SwitchToMainThread();
             ThrowIfStopped();
             receipt.input = ToInputReceipt(after, true);
@@ -918,7 +931,7 @@ namespace Venviewer.NativeCapture
         {
             return new NativeCaptureReceipt
             {
-                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v7",
+                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v14",
                 status = "running",
                 authority = "none",
                 truthClass = "RECONSTRUCTED_DIAGNOSTIC",
@@ -930,20 +943,27 @@ namespace Venviewer.NativeCapture
                 {
                     "The look target is an inspection-only q05/q95 pose-envelope centre; it is not a calibrated source-camera orientation.",
                     "A native renderer screenshot is diagnostic evidence, not human acceptance of Grand Hall scope, transform, geometry, or architectural truth.",
-                    "Three consecutive byte-identical, decoded, non-degenerate PNGs establish a same-host pixel plateau only after the conservative readiness gate; they do not prove every possible streamed Gaussian is resident.",
+                    "Three consecutive byte-identical, decoded, non-degenerate lower-left Unity-Gamma R8G8B8A8_UNorm RGB24 display-code hashes establish a same-host pixel plateau before row reversal and PNG tagging and only after the conservative readiness gate; they do not prove every possible streamed Gaussian is resident.",
+                    "The UNorm target and RGB24 readback prove stored display code values and orientation, not linear-light photometry or an exact photometric transfer. PNG8 preserves those code values exactly after row reversal and tags the result as sRGB for browser display; PNG16 expands each 8-bit value exactly by value*257 and adds no precision.",
                     "SetRenderAll(true) is applied in the synchronous lccscene.load.begin handler after renderer initialization and before the canonical Renderer.Load call, then observed again after lccscene.loaded. The public API still exposes no loaded-splat residency count or streaming-completion metric, so readiness also requires a minimum 300 rendered frames and 15 seconds before hash sampling.",
                     "The locked vendor SetRenderAll method writes a pending next-load field while IsRenderAll reads the active loaded-dataset field. Cleanup requests pending false without claiming a public read-back; disposable process exit is the final isolation boundary.",
-                    "The first-party SnapFrame operation has cooperative cancellation at each end-of-frame await and restores the exact camera in its async finally block. It still cannot preempt a blocked Unity main thread, GPU synchronization, or native driver call; the external operator process watchdog and disposable process exit remain the hard boundary.",
-                    "Admission pixels come only from a first-party RGB24 readback of the stable vendor-owned LCCCore.SnapFrameCaptureFeature.FrameRT. The module never calls SetActive, never changes TargetCamera, never destroys FrameRT, and never admits the previously rejected Camera.targetTexture or an ICaptureManager-returned Texture2D.",
-                    "Before the first attempt, a synchronous public-getter-only URP inventory records every configured renderer-data feature, every already-instantiated renderer slot, and whether any configured SnapFrame feature matches SnapFrameCaptureFeature.Instance. It never calls renderer getters that can rebuild state, never creates a missing renderer, and scopes stability claims to that synchronous inventory window.",
+                    "Each first-party readback operation has cooperative cancellation at every end-of-frame await and restores the exact camera in its async finally block. It still cannot preempt a blocked Unity main thread, ReadPixels GPU synchronization, or native driver call; the external operator process watchdog and disposable process exit remain the hard boundary.",
+                    "Admission pixels come only from a first-party RGB24 ReadPixels of a module-owned 1600x900 sRGB RenderTexture supplied directly as the destination of the locked URP UniversalRenderPipeline.SingleCameraRequest. This is a new standalone exact-camera render, not the displayed screen backbuffer, vendor FrameRT, Camera.Render, the previously rejected generic Camera.targetTexture lane, or an ICaptureManager-returned Texture2D.",
+                    "The locked LCCWorld SceneCameraScreenRenderer getter is true exactly when its private temporary render target is null; setting the property false allocates that vendor target and assigns it to the camera. The clean request boundary therefore requires the getter to remain true and the original camera target to remain null before and after URP temporarily binds the exact owned destination.",
+                    "Before the capability preflight, a synchronous public-getter-only URP inventory records the locked pipeline asset, renderer-data and feature configuration without creating a missing renderer. If RenderPipelineManager.currentPipeline is null, the locked Unity 6000.0.60f1 public SupportsRenderRequest contract performs Unity-owned runtime initialization inside this disposable process. The receipt records that transition and does not claim renderer-instance identity remained stable across initialization or that no runtime lifecycle mutation occurred.",
+                    "The renderer-data and feature configuration signature must remain byte-identical across Unity-owned initialization. A separate full renderer-instance signature is established only after initialization and must remain stable through both request renders. No persistent pipeline-asset mutation is claimed, and process exit is the ownership boundary for Unity-created runtime renderer instances.",
                     "The public side-effect-free URP surface does not expose the scene camera's serialized renderer index. A sole non-null renderer-data/renderer pair is labelled an inference rather than an observed camera binding; ScriptableRendererFeature.isActive is only the base feature toggle and does not prove AddRenderPasses ran for this camera.",
-                    "Each attempt requires exact-camera begin/end SRP callback history and a four-end-of-frame false/true/true/false FrameDirty handshake. A discarded five-centimetre transform sentinel and exact restore force a fresh public SnapFrame blit without changing source files or retaining a camera edit.",
-                    "SnapFrame event 500 is CameraTarget after transparents and before later post-processing or overlay composition; it is not claimed to be the final visible framebuffer. The module rejects known capture overlays, visible capture view, camera/world-space Canvas contributors, camera stacks, target textures, and uncontrolled view helpers, while visual QA remains necessary.",
+                    "Every attempt performs two synchronous SingleCameraRequest renders: a discarded five-centimetre sentinel and a restored exact-pose request. Each request must emit exactly beginContext, beginCamera, endCamera, and endContext in one frame for only the exact scene camera while its target is the owned destination. The sentinel and exact RGB24 hashes must be non-degenerate and distinct.",
+                    "The fresh XGRIDS scene creates one self-mode marker and one avatar spawn marker. Every Unity Renderer below each exact AnchorScale3D is forceRenderingOff only during sentinel/exact submission and readback, with loaded-scene cardinality, closure identity, hierarchy, state, SceneDirty checkpoints, reverse-order restoration, and retryable finally cleanup receipted. No owner or GameObject is deactivated.",
+                    "Raw ReadPixels bytes are preserved unchanged as lower-left Unity-Gamma R8G8B8A8_UNorm RGB24 display-code evidence. The deterministic browser PNG8 uses an integrity-checked identity LUT, while the sRGB-tagged PNG16 uses an integrity-checked exact value*257 expansion LUT and adds no precision. Both retain strict sRGB/gAMA/cHRM, chunk-order, CRC, Adler, filter, orientation, decoded-sample and trailing-byte verification.",
+                    "The locked URP SingleCameraRequest Tex2D/mip-zero path temporarily binds the owned destination directly, renders and submits one camera, emits its context/camera callbacks, and restores the original camera target. No first-party renderer-data, renderer-feature, camera-stack, blit, copy, command-buffer, or manual-submit API is called by this module. The configured SnapFrame feature may be instantiated by Unity-owned pipeline initialization, but the module never activates it, targets it, invokes its API, or uses its FrameRT or pixels. Screen-space overlay canvases are excluded by the non-null request-target contract, while camera-space and in-mask world-space canvases, known capture overlays, visible capture view, and uncontrolled view helpers are rejected.",
+                    "The active vendor LCCCore.CameraDraw end-camera callback is recorded as a potential contributor and its locked call graph can reach a 78-by-13 bottom-right watermark draw. The native result therefore remains reconstructed diagnostic evidence until visual QA explicitly checks that region, orientation and architectural fidelity.",
                     "In the locked vendor implementation, SupportFullRender(Ultra) is a current-scene splat-budget eligibility predicate, not an API-capability flag. Its false result for this 6,019,684-finest-splat package is recorded as telemetry and is not substituted for the observed IsRenderAll state.",
                     "Environment data is explicitly requested false for browser-frontier parity, excluding env.sog. The public API exposes no environment-visibility getter, so this receipt records the request and does not claim read-back visibility.",
                     "The runtime closure hashes every regular file in the disposable editor tree except this first-party module. It does not close over the GPU driver, operating system, CodeMeter service, firmware, or external per-user configuration.",
                     "Pixel hashes are not promised to remain identical across GPU drivers, graphics APIs, Unity builds, or LCCSDK versions.",
                     "The module adds no generated fill, neighboring-room asset, facade asset, window, doorway, or architectural edit; it renders only the locked native GH_1 LCC2 package.",
+                    "This native receipt is durably written before Application.Quit and cannot characterize the later vendor teardown. Operator v4 separately requires exactly one complete profile from its closed shutdown-profile set: a clean exception-free tail or one exact named vendor-exception limitation shape. It rejects incomplete, unclassified, mixed, reordered, wrong-count, pre-receipt, or extended exception evidence.",
                     "XGRIDS executable and SDK binaries remain vendor software and are not redistributed by this module or its build output."
                 }
             };
@@ -1432,6 +1452,14 @@ namespace Venviewer.NativeCapture
                     state.Camera);
             CapturePolicy.RequireReadOnlyUrpRendererInventory(
                 capture.urpRendererInventory);
+            capture.surface =
+                "ISceneManager.SceneCamera through a module-owned 1600x900 URP SingleCameraRequest " +
+                "RenderTexture, exact four-event render transcript, first-party RGB24 ReadPixels, " +
+                "immutable lower-left R8G8B8A8_UNorm RGB24 code-value evidence, and deterministic tagged sRGB PNG8/PNG16 derivatives";
+            capture.renderCallbackSurface =
+                "RenderPipelineManager beginContext/beginCamera/endCamera/endContext for exactly the " +
+                "scene camera and owned request target";
+            capture.configuredPixelSource = CapturePolicy.SingleCameraRenderRequestPixelSource;
             var stopwatch = Stopwatch.StartNew();
             string previousHash = null;
             int consecutive = 0;
@@ -1455,6 +1483,14 @@ namespace Venviewer.NativeCapture
                 string candidatePath = Path.Combine(
                     _outputDirectory,
                     ".native-candidate-" + ordinal.ToString("D3", CultureInfo.InvariantCulture) + ".png");
+                string rawRgb24CandidatePath = Path.Combine(
+                    _outputDirectory,
+                    ".native-unorm-rgb24-candidate-" +
+                        ordinal.ToString("D3", CultureInfo.InvariantCulture) + ".rgb24");
+                string expandedSrgbTagged16CandidatePath = Path.Combine(
+                    _outputDirectory,
+                    ".native-srgb-tagged-expanded16-candidate-" +
+                    ordinal.ToString("D3", CultureInfo.InvariantCulture) + ".png");
                 var attempt = new CaptureAttemptReceipt
                 {
                     ordinal = ordinal,
@@ -1463,26 +1499,39 @@ namespace Venviewer.NativeCapture
                     height = _cameraProfile.Output.Height,
                     firstSrpEndCameraRenderingFrame = -1,
                     lastSrpEndCameraRenderingFrame = -1,
-                    underlyingCaptureCancellationAvailable = true,
-                    snapFrameSurface = new SnapFrameSurfaceReceipt()
+                    underlyingCaptureCancellationAvailable = false,
+                    singleCameraRenderRequestSurface =
+                        new SingleCameraRenderRequestSurfaceReceipt()
                 };
                 capture.attempts.Add(attempt);
                 try
                 {
-                    if (File.Exists(candidatePath))
+                    if (File.Exists(candidatePath) ||
+                        File.Exists(rawRgb24CandidatePath) ||
+                        File.Exists(expandedSrgbTagged16CandidatePath))
                     {
-                        throw new IOException("A capture candidate path already exists: " + candidatePath);
+                        throw new IOException(
+                            "One or more capture candidate artifact paths already exist for ordinal " +
+                            ordinal.ToString(CultureInfo.InvariantCulture) + ".");
                     }
 
                     RequireLockedCameraState(state);
                     ThrowIfStopped();
-                    await PopulateCaptureAttemptAsync(state, candidatePath, attempt);
+                    await PopulateCaptureAttemptAsync(
+                        state,
+                        rawRgb24CandidatePath,
+                        candidatePath,
+                        expandedSrgbTagged16CandidatePath,
+                        attempt);
                     ThrowIfStopped();
 
-                    consecutive = String.Equals(previousHash, attempt.sha256, StringComparison.OrdinalIgnoreCase)
+                    consecutive = String.Equals(
+                            previousHash,
+                            attempt.plateauHashSha256,
+                            StringComparison.Ordinal)
                         ? consecutive + 1
                         : 1;
-                    previousHash = attempt.sha256;
+                    previousHash = attempt.plateauHashSha256;
                     attempt.consecutiveIdenticalHashes = consecutive;
                     attempt.elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
                     attempt.status = "accepted";
@@ -1517,6 +1566,9 @@ namespace Venviewer.NativeCapture
                     RequireLockedCameraState(state);
                     capture.renderAllVerifiedAtEveryGate = true;
                     capture.selectedAttemptPath = candidatePath;
+                    capture.selectedRawRgb24AttemptPath = rawRgb24CandidatePath;
+                    capture.selectedBrowserDisplaySrgbTaggedExpanded16AttemptPath =
+                        expandedSrgbTagged16CandidatePath;
                     capture.sameHostHashPlateauVerified = true;
                     return;
                 }
@@ -1524,14 +1576,16 @@ namespace Venviewer.NativeCapture
 
             capture.elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
             throw new TimeoutException(
-                "The native renderer did not produce three consecutive byte-identical 1600x900 PNGs within " +
+                "The native renderer did not produce three consecutive byte-identical 1600x900 R8G8B8A8_UNorm RGB24 rasters within " +
                 CapturePolicy.MaximumCaptureAttempts.ToString(CultureInfo.InvariantCulture) + " attempts and " +
                 CapturePolicy.MaximumConvergenceSeconds.ToString("R", CultureInfo.InvariantCulture) + " seconds.");
         }
 
         private async UniTask PopulateCaptureAttemptAsync(
             CameraState state,
-            string candidatePath,
+            string rawRgb24CandidatePath,
+            string displaySrgb8CandidatePath,
+            string expandedSrgbTagged16CandidatePath,
             CaptureAttemptReceipt attempt)
         {
             if (state == null || state.Camera == null)
@@ -1539,21 +1593,25 @@ namespace Venviewer.NativeCapture
                 throw new ArgumentNullException("state");
             }
             Texture2D texture = null;
-            byte[] pngBytes;
+            byte[] rawRgb24Bytes = null;
+            byte[] browserDisplaySrgbTagged8PngBytes = null;
+            byte[] browserDisplaySrgbTaggedExpanded16PngBytes = null;
+            SrgbTaggedDisplayFrame browserDisplaySrgbTagged8 = null;
+            SrgbTaggedDisplayFrame browserDisplaySrgbTaggedExpanded16 = null;
             try
             {
-                texture = await CaptureTextureWithTimeout(state, attempt);
+                texture = await CaptureSingleCameraRequestTextureWithTimeout(state, attempt);
                 ThrowIfStopped();
                 if (texture == null)
                 {
                     throw new InvalidDataException(
-                        "The first-party SnapFrame readback returned a null texture.");
+                        "The first-party SingleCameraRequest readback returned a null texture.");
                 }
                 if (texture.width != _cameraProfile.Output.Width ||
                     texture.height != _cameraProfile.Output.Height)
                 {
                     throw new InvalidDataException(
-                        "The first-party SnapFrame readback returned unexpected dimensions.");
+                        "The first-party SingleCameraRequest readback returned unexpected dimensions.");
                 }
 
                 if (!String.Equals(
@@ -1563,14 +1621,14 @@ namespace Venviewer.NativeCapture
                     attempt.firstPartyTextureInstanceId != texture.GetInstanceID())
                 {
                     throw new InvalidDataException(
-                        "The transferred first-party SnapFrame texture differs from the readback receipt.");
+                        "The transferred first-party SingleCameraRequest texture differs from the readback receipt.");
                 }
                 attempt.firstPartyTextureReadable = texture.isReadable;
                 attempt.firstPartyTextureNoMipChain = texture.mipmapCount == 1;
                 if (!attempt.firstPartyTextureReadable || !attempt.firstPartyTextureNoMipChain)
                 {
                     throw new InvalidDataException(
-                        "The first-party SnapFrame texture is not readable RGB24 without mip levels.");
+                        "The first-party SingleCameraRequest texture is not readable RGB24 without mip levels.");
                 }
 
                 Color32[] pixels = texture.GetPixels32();
@@ -1584,19 +1642,98 @@ namespace Venviewer.NativeCapture
                     attempt.raster,
                     _cameraProfile.Output.Width,
                     _cameraProfile.Output.Height);
-                CapturePolicy.RequireSnapFrameExactRasterBinding(
-                    attempt.snapFrameSurface,
+                CapturePolicy.RequireSingleCameraRenderRequestExactRasterBinding(
+                    attempt.singleCameraRenderRequestSurface,
                     attempt.raster);
 
-                // Raster admission deliberately precedes encoding and publication.
-                pngBytes = ImageConversion.EncodeToPNG(texture);
-                if (pngBytes == null || pngBytes.Length == 0)
+                var unityGammaUnorm = DisplayEncodingPolicy.CreateUnityGammaUnormRgb24(
+                    _cameraProfile.Output.Width,
+                    _cameraProfile.Output.Height,
+                    RasterRowOrigin.LowerLeft,
+                    rgb24);
+                if (!String.Equals(
+                        unityGammaUnorm.Sha256,
+                        attempt.raster.rgb24Sha256,
+                        StringComparison.Ordinal))
                 {
-                    throw new InvalidDataException("Unity ImageConversion returned an empty PNG payload.");
+                    throw new InvalidDataException(
+                        "The immutable Unity-Gamma UNorm RGB24 display-code frame differs from the admitted raster.");
                 }
+
+                // Exact UNorm display-code admission deliberately precedes row reversal and PNG tagging.
+                rawRgb24Bytes = unityGammaUnorm.CopyBytes();
+                attempt.plateauHashDomain =
+                    "lower_left_Unity_Gamma_R8G8B8A8_UNorm_display_code_rgb24_sha256_before_row_flip_and_sRGB_tagging";
+                attempt.plateauHashSha256 = unityGammaUnorm.Sha256;
+                attempt.rawRgb24Semantics = DisplayEncodingPolicy.RawRgb24Semantics;
+                attempt.rawRgb24LinearLightPhotometryClaimed =
+                    DisplayEncodingPolicy.RawRgb24LinearLightPhotometryClaimed;
+                attempt.rawRgb24CandidatePath = rawRgb24CandidatePath;
+                attempt.rawRgb24ByteLength = unityGammaUnorm.ByteLength;
+                attempt.rawRgb24Sha256 = unityGammaUnorm.Sha256;
+                attempt.browserDisplay8CodeMapping =
+                    DisplayEncodingPolicy.BrowserDisplay8CodeMapping;
+                attempt.browserDisplay16CodeMapping =
+                    DisplayEncodingPolicy.BrowserDisplay16CodeMapping;
+                attempt.exactPhotometricTransferClaimed =
+                    DisplayEncodingPolicy.ExactPhotometricTransferClaimed;
+                attempt.expanded16AddsPrecision =
+                    DisplayEncodingPolicy.Expanded16AddsPrecision;
+
+                browserDisplaySrgbTagged8 =
+                    DisplayEncodingPolicy.MapIdentityToSrgbTagged8(unityGammaUnorm);
+                browserDisplaySrgbTaggedExpanded16 =
+                    DisplayEncodingPolicy.ExpandToSrgbTagged16(unityGammaUnorm);
+                browserDisplaySrgbTagged8PngBytes =
+                    DeterministicPng.Encode(browserDisplaySrgbTagged8);
+                browserDisplaySrgbTaggedExpanded16PngBytes =
+                    DeterministicPng.Encode(browserDisplaySrgbTaggedExpanded16);
+                DeterministicPngVerification browserDisplaySrgbTagged8Verification =
+                    DeterministicPng.VerifyAndDecode(
+                        browserDisplaySrgbTagged8PngBytes,
+                        RasterRowOrigin.LowerLeft);
+                DeterministicPngVerification browserDisplaySrgbTaggedExpanded16Verification =
+                    DeterministicPng.VerifyAndDecode(
+                        browserDisplaySrgbTaggedExpanded16PngBytes,
+                        RasterRowOrigin.LowerLeft);
+                RequireDeterministicDisplayPng(
+                    browserDisplaySrgbTagged8Verification,
+                    browserDisplaySrgbTagged8,
+                    8,
+                    DisplayEncodingPolicy.Sha256Bytes(browserDisplaySrgbTagged8PngBytes));
+                RequireDeterministicDisplayPng(
+                    browserDisplaySrgbTaggedExpanded16Verification,
+                    browserDisplaySrgbTaggedExpanded16,
+                    16,
+                    DisplayEncodingPolicy.Sha256Bytes(
+                        browserDisplaySrgbTaggedExpanded16PngBytes));
+
+                attempt.browserDisplaySrgbTagged8SampleSha256 =
+                    browserDisplaySrgbTagged8.Sha256;
+                attempt.browserDisplaySrgbTagged8CandidatePath = displaySrgb8CandidatePath;
+                attempt.browserDisplaySrgbTagged8BitDepth = 8;
+                attempt.browserDisplaySrgbTagged8PngEncodingCompleted = true;
+                attempt.browserDisplaySrgbTagged8PngChunksVerified = true;
+                attempt.browserDisplaySrgbTagged8EncodedByteLength =
+                    browserDisplaySrgbTagged8PngBytes.LongLength;
+                attempt.browserDisplaySrgbTagged8EncodedSha256 =
+                    browserDisplaySrgbTagged8Verification.PngSha256;
+                attempt.browserDisplaySrgbTaggedExpanded16SampleSha256 =
+                    browserDisplaySrgbTaggedExpanded16.Sha256;
+                attempt.browserDisplaySrgbTaggedExpanded16CandidatePath =
+                    expandedSrgbTagged16CandidatePath;
+                attempt.browserDisplaySrgbTaggedExpanded16BitDepth = 16;
+                attempt.browserDisplaySrgbTaggedExpanded16PngEncodingCompleted = true;
+                attempt.browserDisplaySrgbTaggedExpanded16PngChunksVerified = true;
+                attempt.browserDisplaySrgbTaggedExpanded16EncodedByteLength =
+                    browserDisplaySrgbTaggedExpanded16PngBytes.LongLength;
+                attempt.browserDisplaySrgbTaggedExpanded16EncodedSha256 =
+                    browserDisplaySrgbTaggedExpanded16Verification.PngSha256;
+
+                // Compatibility aliases describe the browser-facing PNG8 artifact.
                 attempt.pngEncodingCompleted = true;
-                attempt.encodedByteLength = pngBytes.LongLength;
-                attempt.encodedSha256 = CapturePolicy.Sha256Bytes(pngBytes);
+                attempt.encodedByteLength = browserDisplaySrgbTagged8PngBytes.LongLength;
+                attempt.encodedSha256 = browserDisplaySrgbTagged8Verification.PngSha256;
             }
             finally
             {
@@ -1607,22 +1744,108 @@ namespace Venviewer.NativeCapture
             }
 
             ThrowIfStopped();
-            WriteNoReplaceBytes(candidatePath, pngBytes);
-            CapturePolicy.RequirePngDimensions(
-                candidatePath,
-                _cameraProfile.Output.Width,
-                _cameraProfile.Output.Height);
-            var info = new FileInfo(candidatePath);
-            string fileSha256 = CapturePolicy.Sha256File(candidatePath);
-            if (!String.Equals(fileSha256, attempt.encodedSha256, StringComparison.OrdinalIgnoreCase))
+            WriteNoReplaceBytes(rawRgb24CandidatePath, rawRgb24Bytes);
+            var rawRgb24Info = new FileInfo(rawRgb24CandidatePath);
+            string rawRgb24FileSha256 =
+                CapturePolicy.Sha256File(rawRgb24CandidatePath);
+            if (rawRgb24Info.Length != attempt.rawRgb24ByteLength ||
+                !String.Equals(
+                    rawRgb24FileSha256,
+                    attempt.rawRgb24Sha256,
+                    StringComparison.Ordinal))
             {
                 throw new InvalidDataException(
-                    "The durably published PNG differs from the encoded in-memory payload.");
+                    "The durably published raw UNorm RGB24 evidence differs from its admitted raster.");
+            }
+            attempt.rawRgb24BytePublicationCompleted = true;
+            attempt.rawRgb24PostWriteFileShaVerified = true;
+
+            WriteNoReplaceBytes(
+                expandedSrgbTagged16CandidatePath,
+                browserDisplaySrgbTaggedExpanded16PngBytes);
+            WriteNoReplaceBytes(
+                displaySrgb8CandidatePath,
+                browserDisplaySrgbTagged8PngBytes);
+            CapturePolicy.RequirePngDimensions(
+                displaySrgb8CandidatePath,
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height);
+            CapturePolicy.RequirePngDimensions(
+                expandedSrgbTagged16CandidatePath,
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height);
+            byte[] publishedSrgb8 = File.ReadAllBytes(displaySrgb8CandidatePath);
+            byte[] publishedSrgb16 = File.ReadAllBytes(expandedSrgbTagged16CandidatePath);
+            DeterministicPngVerification publishedSrgb8Verification =
+                DeterministicPng.VerifyAndDecode(
+                    publishedSrgb8,
+                    RasterRowOrigin.LowerLeft);
+            DeterministicPngVerification publishedSrgb16Verification =
+                DeterministicPng.VerifyAndDecode(
+                    publishedSrgb16,
+                    RasterRowOrigin.LowerLeft);
+            RequireDeterministicDisplayPng(
+                publishedSrgb8Verification,
+                browserDisplaySrgbTagged8,
+                8,
+                attempt.browserDisplaySrgbTagged8EncodedSha256);
+            RequireDeterministicDisplayPng(
+                publishedSrgb16Verification,
+                browserDisplaySrgbTaggedExpanded16,
+                16,
+                attempt.browserDisplaySrgbTaggedExpanded16EncodedSha256);
+            var displaySrgb8Info = new FileInfo(displaySrgb8CandidatePath);
+            var displaySrgb16Info = new FileInfo(expandedSrgbTagged16CandidatePath);
+            if (displaySrgb8Info.Length != attempt.browserDisplaySrgbTagged8EncodedByteLength ||
+                displaySrgb16Info.Length !=
+                    attempt.browserDisplaySrgbTaggedExpanded16EncodedByteLength)
+            {
+                throw new InvalidDataException(
+                    "A durably published display PNG differs in byte length from its encoded payload.");
             }
 
-            attempt.sha256 = fileSha256;
-            attempt.byteLength = info.Length;
+            attempt.browserDisplaySrgbTagged8PostWriteFileShaVerified = true;
+            attempt.browserDisplaySrgbTaggedExpanded16PostWriteFileShaVerified = true;
+            attempt.sha256 = publishedSrgb8Verification.PngSha256;
+            attempt.byteLength = displaySrgb8Info.Length;
             attempt.postWriteFileShaVerified = true;
+        }
+
+        private static void RequireDeterministicDisplayPng(
+            DeterministicPngVerification verification,
+            SrgbTaggedDisplayFrame expectedFrame,
+            int expectedBitDepth,
+            string expectedPngSha256)
+        {
+            if (verification == null || expectedFrame == null ||
+                verification.Width != expectedFrame.Width ||
+                verification.Height != expectedFrame.Height ||
+                verification.BitDepth != expectedBitDepth ||
+                verification.RenderingIntent != DeterministicPng.SrgbRenderingIntent ||
+                verification.Gamma != DeterministicPng.SrgbGamma ||
+                !String.Equals(
+                    String.Join(",", verification.CopyChunkSequence()),
+                    DeterministicPng.ChunkSequence,
+                    StringComparison.Ordinal) ||
+                !verification.AllChunkCrcsVerified ||
+                !verification.ZlibStoredBlocksVerified ||
+                !verification.Adler32Verified ||
+                !verification.FilterZeroVerified ||
+                !verification.NoTrailingBytesVerified ||
+                verification.DecodedFrame == null ||
+                verification.DecodedFrame.RowOrigin != RasterRowOrigin.LowerLeft ||
+                !String.Equals(
+                    verification.DecodedFrame.Sha256,
+                    expectedFrame.Sha256,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    verification.PngSha256,
+                    expectedPngSha256,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "A deterministic sRGB display PNG failed strict metadata, checksum, orientation, or sample verification.");
+            }
         }
 
         private static void UpdateCaptureReadbackAggregates(CaptureReceipt capture)
@@ -1645,6 +1868,132 @@ namespace Venviewer.NativeCapture
                     candidate,
                     capture.configuredPixelSource,
                     StringComparison.Ordinal));
+            capture.everyAttemptSpawnPointVisualizationsSuppressedAndRestored =
+                capture.attempts.Count > 0 && capture.attempts.All(candidate =>
+                    String.Equals(candidate.status, "accepted", StringComparison.Ordinal) &&
+                    candidate.singleCameraRenderRequestSurface != null &&
+                    candidate.singleCameraRenderRequestSurface
+                        .spawnPointVisualizationSuppression != null &&
+                    candidate.singleCameraRenderRequestSurface
+                        .spawnPointVisualizationSuppression
+                        .leaseHeldDuringEveryAcceptedAttempt &&
+                    candidate.singleCameraRenderRequestSurface
+                        .spawnPointVisualizationSuppression.everyTargetSuppressed &&
+                    candidate.singleCameraRenderRequestSurface
+                        .spawnPointVisualizationSuppression.everyTargetRestored &&
+                    candidate.singleCameraRenderRequestSurface
+                        .spawnPointVisualizationSuppression
+                        .sceneDirtyEqualAtEveryCheckpoint &&
+                    candidate.singleCameraRenderRequestSurface
+                        .spawnPointVisualizationSuppression
+                        .identityStableAtEveryCheckpoint &&
+                    candidate.singleCameraRenderRequestSurface
+                        .spawnPointVisualizationSuppression.disposed);
+        }
+
+        private async UniTask<Texture2D> CaptureSingleCameraRequestTextureWithTimeout(
+            CameraState state,
+            CaptureAttemptReceipt attempt)
+        {
+            if (state == null || state.Camera == null)
+            {
+                throw new ArgumentNullException("state");
+            }
+            ThrowIfStopped();
+            var operation = new SingleCameraRenderRequestOperation(this, state, attempt);
+            CancellationTokenSource deadlineCancellation = null;
+            Texture2D completedTexture = null;
+            bool completedTextureReturned = false;
+            try
+            {
+                if (Interlocked.CompareExchange(
+                    ref _activeSingleCameraRenderRequestOperation,
+                    operation,
+                    null) != null)
+                {
+                    throw new InvalidOperationException(
+                        "A second SingleCameraRequest operation cannot overlap the active operation.");
+                }
+                ThrowIfStopped();
+                deadlineCancellation = new CancellationTokenSource();
+                UniTask deadlineOrStopTask = WaitForCaptureDeadlineOrStopAsync(
+                    deadlineCancellation.Token);
+                ThrowIfStopped();
+                UniTask<Texture2D> captureTask = operation.CaptureAsync().Preserve();
+                (bool captureWon, Texture2D racedTexture) =
+                    await UniTask.WhenAny(captureTask, deadlineOrStopTask);
+                completedTexture = racedTexture;
+                if (!captureWon)
+                {
+                    operation.Abort();
+                    Texture2D cancelledTexture = null;
+                    Exception cleanupFailure = null;
+                    try
+                    {
+                        cancelledTexture = await captureTask;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+                    catch (Exception exception)
+                    {
+                        cleanupFailure = exception;
+                    }
+                    finally
+                    {
+                        if (cancelledTexture != null)
+                        {
+                            UnityEngine.Object.Destroy(cancelledTexture);
+                        }
+                    }
+                    if (cleanupFailure != null)
+                    {
+                        throw new InvalidOperationException(
+                            "The cancelled SingleCameraRequest operation failed during owned-resource cleanup.",
+                            cleanupFailure);
+                    }
+                    if (_lifecycle.IsStopped)
+                    {
+                        attempt.captureTaskStopObserved = true;
+                        throw new OperationCanceledException(
+                            "Stop cancelled the SingleCameraRequest operation outside its synchronous submit call.");
+                    }
+                    attempt.captureTaskTimeoutObserved = true;
+                    throw new TimeoutException(
+                        "The SingleCameraRequest operation exceeded the cooperative player-loop deadline of " +
+                        CapturePolicy.PerCaptureTimeoutSeconds.ToString("R", CultureInfo.InvariantCulture) +
+                        " seconds. SubmitRenderRequest is synchronous and non-cancellable; a blocked Unity main " +
+                        "thread or GPU remains bounded only by disposable process exit.");
+                }
+
+                attempt.captureTaskCompletedBeforeDeadline = true;
+                ThrowIfStopped();
+                if (completedTexture == null)
+                {
+                    throw new InvalidDataException(
+                        "The SingleCameraRequest operation returned a null first-party texture.");
+                }
+                completedTextureReturned = true;
+                return completedTexture;
+            }
+            finally
+            {
+                if (!completedTextureReturned && completedTexture != null)
+                {
+                    UnityEngine.Object.Destroy(completedTexture);
+                }
+                if (deadlineCancellation != null)
+                {
+                    deadlineCancellation.Cancel();
+                    deadlineCancellation.Dispose();
+                }
+                operation.Abort();
+                Interlocked.CompareExchange(
+                    ref _activeSingleCameraRenderRequestOperation,
+                    null,
+                    operation);
+                operation.Dispose();
+            }
         }
 
         private async UniTask<Texture2D> CaptureTextureWithTimeout(
@@ -1768,48 +2117,172 @@ namespace Venviewer.NativeCapture
                     false).SuppressCancellationThrow());
         }
 
-        private void FinalizePng(CaptureReceipt capture)
+        private void FinalizeCaptureArtifacts(CaptureReceipt capture)
         {
             if (!capture.sameHostHashPlateauVerified ||
-                String.IsNullOrEmpty(capture.selectedAttemptPath))
+                !capture.everyAttemptSpawnPointVisualizationsSuppressedAndRestored ||
+                String.IsNullOrEmpty(capture.selectedAttemptPath) ||
+                String.IsNullOrEmpty(capture.selectedRawRgb24AttemptPath) ||
+                String.IsNullOrEmpty(
+                    capture.selectedBrowserDisplaySrgbTaggedExpanded16AttemptPath))
             {
-                throw new InvalidOperationException("A stable candidate does not exist.");
+                throw new InvalidOperationException(
+                    "A stable, marker-free raw/display candidate set does not exist.");
             }
 
             string finalPath = Path.Combine(_outputDirectory, FinalPngFileName);
-            if (File.Exists(finalPath))
+            string rawRgb24FinalPath = Path.Combine(
+                _outputDirectory,
+                FinalRawRgb24FileName);
+            string expandedSrgbTagged16FinalPath = Path.Combine(
+                _outputDirectory,
+                FinalExpandedSrgbTagged16PngFileName);
+            if (File.Exists(finalPath) || File.Exists(rawRgb24FinalPath) ||
+                File.Exists(expandedSrgbTagged16FinalPath))
             {
-                throw new IOException("The final native capture path already exists: " + finalPath);
+                throw new IOException(
+                    "One or more final native capture artifact paths already exist.");
             }
 
             CapturePolicy.RequirePngDimensions(
                 capture.selectedAttemptPath,
                 _cameraProfile.Output.Width,
                 _cameraProfile.Output.Height);
-            byte[] selectedBytes = File.ReadAllBytes(capture.selectedAttemptPath);
-            string selectedBytesSha256 = CapturePolicy.Sha256Bytes(selectedBytes);
+            CapturePolicy.RequirePngDimensions(
+                capture.selectedBrowserDisplaySrgbTaggedExpanded16AttemptPath,
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height);
+            byte[] selectedSrgb8Bytes = File.ReadAllBytes(capture.selectedAttemptPath);
+            byte[] selectedSrgbTaggedExpanded16Bytes = File.ReadAllBytes(
+                capture.selectedBrowserDisplaySrgbTaggedExpanded16AttemptPath);
+            byte[] selectedRawRgb24Bytes = File.ReadAllBytes(
+                capture.selectedRawRgb24AttemptPath);
             CaptureAttemptReceipt selected = capture.attempts[capture.attempts.Count - 1];
-            if (!String.Equals(selectedBytesSha256, selected.sha256, StringComparison.OrdinalIgnoreCase))
+            if (!String.Equals(
+                    DisplayEncodingPolicy.Sha256Bytes(selectedRawRgb24Bytes),
+                    selected.rawRgb24Sha256,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    DisplayEncodingPolicy.Sha256Bytes(selectedSrgb8Bytes),
+                    selected.browserDisplaySrgbTagged8EncodedSha256,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    DisplayEncodingPolicy.Sha256Bytes(selectedSrgbTaggedExpanded16Bytes),
+                    selected.browserDisplaySrgbTaggedExpanded16EncodedSha256,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    selected.plateauHashSha256,
+                    selected.rawRgb24Sha256,
+                    StringComparison.Ordinal) ||
+                selectedRawRgb24Bytes.LongLength != selected.rawRgb24ByteLength ||
+                !String.Equals(
+                    selected.rawRgb24Semantics,
+                    DisplayEncodingPolicy.RawRgb24Semantics,
+                    StringComparison.Ordinal) ||
+                selected.rawRgb24LinearLightPhotometryClaimed ||
+                selected.exactPhotometricTransferClaimed ||
+                selected.expanded16AddsPrecision ||
+                !String.Equals(
+                    selected.browserDisplay8CodeMapping,
+                    DisplayEncodingPolicy.BrowserDisplay8CodeMapping,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    selected.browserDisplay16CodeMapping,
+                    DisplayEncodingPolicy.BrowserDisplay16CodeMapping,
+                    StringComparison.Ordinal))
             {
-                throw new InvalidOperationException("The selected candidate changed before finalization.");
+                throw new InvalidOperationException(
+                    "A selected raw or display candidate changed before finalization.");
             }
 
-            WriteNoReplaceBytes(finalPath, selectedBytes);
+            UnityGammaUnormRgb24Frame selectedUnityGammaUnorm =
+                DisplayEncodingPolicy.CreateUnityGammaUnormRgb24(
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height,
+                RasterRowOrigin.LowerLeft,
+                    selectedRawRgb24Bytes);
+            SrgbTaggedDisplayFrame expectedSrgbTagged8 =
+                DisplayEncodingPolicy.MapIdentityToSrgbTagged8(selectedUnityGammaUnorm);
+            SrgbTaggedDisplayFrame expectedSrgbTaggedExpanded16 =
+                DisplayEncodingPolicy.ExpandToSrgbTagged16(selectedUnityGammaUnorm);
+            RequireDeterministicDisplayPng(
+                DeterministicPng.VerifyAndDecode(
+                    selectedSrgb8Bytes,
+                    RasterRowOrigin.LowerLeft),
+                expectedSrgbTagged8,
+                8,
+                selected.browserDisplaySrgbTagged8EncodedSha256);
+            RequireDeterministicDisplayPng(
+                DeterministicPng.VerifyAndDecode(
+                    selectedSrgbTaggedExpanded16Bytes,
+                    RasterRowOrigin.LowerLeft),
+                expectedSrgbTaggedExpanded16,
+                16,
+                selected.browserDisplaySrgbTaggedExpanded16EncodedSha256);
+
+            WriteNoReplaceBytes(rawRgb24FinalPath, selectedRawRgb24Bytes);
+            WriteNoReplaceBytes(
+                expandedSrgbTagged16FinalPath,
+                selectedSrgbTaggedExpanded16Bytes);
+            WriteNoReplaceBytes(finalPath, selectedSrgb8Bytes);
             CapturePolicy.RequirePngDimensions(
                 finalPath,
                 _cameraProfile.Output.Width,
                 _cameraProfile.Output.Height);
+            CapturePolicy.RequirePngDimensions(
+                expandedSrgbTagged16FinalPath,
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height);
 
-            var info = new FileInfo(finalPath);
-            string sha256 = CapturePolicy.Sha256File(finalPath);
-            if (!String.Equals(sha256, selected.sha256, StringComparison.OrdinalIgnoreCase))
+            var rawRgb24Info = new FileInfo(rawRgb24FinalPath);
+            var expandedSrgbTagged16Info = new FileInfo(expandedSrgbTagged16FinalPath);
+            var finalInfo = new FileInfo(finalPath);
+            string rawRgb24Sha256 = CapturePolicy.Sha256File(rawRgb24FinalPath);
+            string expandedSrgbTagged16Sha256 =
+                CapturePolicy.Sha256File(expandedSrgbTagged16FinalPath);
+            string finalSha256 = CapturePolicy.Sha256File(finalPath);
+            if (!String.Equals(
+                    rawRgb24Sha256,
+                    selected.rawRgb24Sha256,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    expandedSrgbTagged16Sha256,
+                    selected.browserDisplaySrgbTaggedExpanded16EncodedSha256,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    finalSha256,
+                    selected.browserDisplaySrgbTagged8EncodedSha256,
+                    StringComparison.Ordinal))
             {
-                throw new InvalidOperationException("The final PNG differs from the selected stable candidate.");
+                throw new InvalidOperationException(
+                    "A final raw or display artifact differs from its stable candidate.");
             }
 
+            capture.plateauHashDomain = selected.plateauHashDomain;
+            capture.rawRgb24Semantics = selected.rawRgb24Semantics;
+            capture.rawRgb24LinearLightPhotometryClaimed =
+                selected.rawRgb24LinearLightPhotometryClaimed;
+            capture.rawRgb24EvidencePath = rawRgb24FinalPath;
+            capture.rawRgb24EvidenceByteLength = rawRgb24Info.Length;
+            capture.rawRgb24EvidenceSha256 = rawRgb24Sha256;
+            capture.exactPhotometricTransferClaimed =
+                DisplayEncodingPolicy.ExactPhotometricTransferClaimed;
+            capture.expanded16AddsPrecision = DisplayEncodingPolicy.Expanded16AddsPrecision;
+            capture.browserDisplaySrgbTaggedExpanded16PngPath =
+                expandedSrgbTagged16FinalPath;
+            capture.browserDisplaySrgbTaggedExpanded16PngByteLength =
+                expandedSrgbTagged16Info.Length;
+            capture.browserDisplaySrgbTaggedExpanded16PngSha256 =
+                expandedSrgbTagged16Sha256;
+            capture.browserDisplaySrgbTaggedExpanded16PngChunksVerified = true;
+            capture.finalBrowserDisplayCodeMapping =
+                DisplayEncodingPolicy.BrowserDisplay8CodeMapping;
+            capture.finalExpanded16CodeMapping =
+                DisplayEncodingPolicy.BrowserDisplay16CodeMapping;
+            capture.finalPngSrgbTagsVerified = true;
             capture.finalPngPath = finalPath;
-            capture.finalPngByteLength = info.Length;
-            capture.finalPngSha256 = sha256;
+            capture.finalPngByteLength = finalInfo.Length;
+            capture.finalPngSha256 = finalSha256;
         }
 
         private void PruneOldCandidates(int currentOrdinal)
@@ -1823,9 +2296,25 @@ namespace Venviewer.NativeCapture
             string path = Path.Combine(
                 _outputDirectory,
                 ".native-candidate-" + pruneThrough.ToString("D3", CultureInfo.InvariantCulture) + ".png");
-            if (File.Exists(path))
+            string rawRgb24Path = Path.Combine(
+                _outputDirectory,
+                ".native-unorm-rgb24-candidate-" +
+                pruneThrough.ToString("D3", CultureInfo.InvariantCulture) + ".rgb24");
+            string expandedSrgbTagged16Path = Path.Combine(
+                _outputDirectory,
+                ".native-srgb-tagged-expanded16-candidate-" +
+                pruneThrough.ToString("D3", CultureInfo.InvariantCulture) + ".png");
+            foreach (string candidatePath in new[]
+                {
+                    path,
+                    rawRgb24Path,
+                    expandedSrgbTagged16Path
+                })
             {
-                File.Delete(path);
+                if (File.Exists(candidatePath))
+                {
+                    File.Delete(candidatePath);
+                }
             }
         }
 
@@ -1834,8 +2323,8 @@ namespace Venviewer.NativeCapture
             RenderPipelineAsset pipelineAsset = GraphicsSettings.currentRenderPipeline;
             return new CaptureReceipt
             {
-                surface = "ISceneManager.SceneCamera through public LCCCore.SnapFrameCaptureFeature.FrameRT at AfterRenderingTransparents, exact-camera SRP callback handshake, first-party RGB24 ReadPixels, and Unity ImageConversion.EncodeToPNG",
-                imageFormat = "PNG",
+                surface = "ISceneManager.SceneCamera through a module-owned Gamma-space R8G8B8A8_UNorm non-sRGB URP SingleCameraRequest destination, exact render-request callback transcript, immutable lower-left display-code RGB24 evidence, an identity-mapped sRGB-tagged browser PNG8, and an exact value*257 sRGB-tagged PNG16 expansion",
+                imageFormat = "UNITY_GAMMA_R8G8B8A8_UNORM_RGB24_DISPLAY_CODES_PLUS_IDENTITY_SRGB_TAGGED_PNG8_AND_EXACT_EXPANDED_PNG16",
                 width = _cameraProfile.Output.Width,
                 height = _cameraProfile.Output.Height,
                 uiComposited = false,
@@ -1852,7 +2341,7 @@ namespace Venviewer.NativeCapture
                 framesBetweenCaptureAttempts = CapturePolicy.FramesBetweenCaptureAttempts,
                 sceneLoadTimeoutSeconds = CapturePolicy.SceneLoadTimeoutSeconds,
                 perCaptureTimeoutSeconds = CapturePolicy.PerCaptureTimeoutSeconds,
-                perCaptureTimeoutSemantics = "cooperative_cancelled_end_of_frame_handshake_with_exact_camera_finally_restore",
+                perCaptureTimeoutSemantics = "cooperative_around_synchronous_non_cancellable_submit_with_exact_camera_and_owned_resource_finally_restore",
                 perCaptureTimeoutCanPreemptBlockedUnityMainThread = false,
                 lateResultObserverCompletionAwaitedBeforeProcessExit = false,
                 hardTerminationBoundary = "external_operator_process_watchdog",
@@ -1873,13 +2362,13 @@ namespace Venviewer.NativeCapture
                 environmentExclusionRequested = true,
                 environmentExclusionReason = _cameraProfile.Environment.Reason,
                 environmentVisibilityGetterAvailable = _cameraProfile.Environment.VisibilityGetterAvailable,
-                renderCallbackSurface = "RenderPipelineManager.beginCameraRendering and endCameraRendering for the exact SceneCamera at baseline, discarded sentinel, exact restore, and stable exact stages",
+                renderCallbackSurface = "RenderPipelineManager beginContext/beginCamera/endCamera/endContext for exactly the SceneCamera and owned request target",
                 globalCameraCallbackRequiredForAdmission = true,
                 standardCameraRenderCallbackProofAvailable = false,
                 pipelineAssetType = pipelineAsset == null
                     ? "null"
                     : pipelineAsset.GetType().AssemblyQualifiedName,
-                configuredPixelSource = CapturePolicy.SnapFramePixelSource,
+                configuredPixelSource = CapturePolicy.SingleCameraRenderRequestPixelSource,
                 observedPixelSource = null,
                 everyObservedPixelSourceMatchesConfigured = false,
                 blackChannelThreshold = CapturePolicy.BlackChannelThreshold,
@@ -1888,6 +2377,15 @@ namespace Venviewer.NativeCapture
                 minimumDistinctRgbCount = CapturePolicy.MinimumDistinctRgbCount,
                 minimumLuminanceStandardDeviation = CapturePolicy.MinimumLuminanceStandardDeviation,
                 everyAttemptDecodedAndNonDegenerate = false,
+                everyAttemptSpawnPointVisualizationsSuppressedAndRestored = false,
+                plateauHashDomain =
+                    "lower_left_Unity_Gamma_R8G8B8A8_UNorm_display_code_rgb24_sha256_before_row_flip_and_sRGB_tagging",
+                rawRgb24Semantics = DisplayEncodingPolicy.RawRgb24Semantics,
+                rawRgb24LinearLightPhotometryClaimed =
+                    DisplayEncodingPolicy.RawRgb24LinearLightPhotometryClaimed,
+                exactPhotometricTransferClaimed =
+                    DisplayEncodingPolicy.ExactPhotometricTransferClaimed,
+                expanded16AddsPrecision = DisplayEncodingPolicy.Expanded16AddsPrecision,
                 attempts = new List<CaptureAttemptReceipt>()
             };
         }
@@ -2313,6 +2811,2507 @@ namespace Venviewer.NativeCapture
             Application.Quit(2);
         }
 
+        private sealed class SpawnPointVisualizationSuppressionLease
+        {
+            private sealed class TargetState
+            {
+                internal UnityEngine.Renderer Renderer;
+                internal bool ForceRenderingOffBefore;
+                internal bool RendererEnabledBefore;
+                internal bool ActiveInHierarchyBefore;
+                internal int LayerBefore;
+                internal int GameObjectInstanceId;
+                internal string HierarchyPath;
+                internal SpawnPointVisualizationTargetReceipt Receipt;
+            }
+
+            private sealed class OwnerState
+            {
+                internal string Role;
+                internal Component Owner;
+                internal SpawnPointElement Element;
+                internal XGrids.LCCWorld.Common.Components.AnchorScale3D Anchor;
+                internal TargetState[] Targets;
+            }
+
+            private readonly NativeCaptureModule _owner;
+            private readonly Camera _camera;
+            private readonly List<TargetState> _targets = new List<TargetState>();
+            private readonly List<OwnerState> _owners = new List<OwnerState>();
+            private readonly SpawnPointVisualizationSuppressionReceipt _receipt;
+            private bool _suppressionStarted;
+            private bool _suppressed;
+            private bool _restoreInProgress;
+            private bool _restoreCompleted;
+            private bool _sceneDirtyFailureObserved;
+
+            internal SpawnPointVisualizationSuppressionLease(
+                NativeCaptureModule owner,
+                Camera camera)
+            {
+                if (owner == null)
+                {
+                    throw new ArgumentNullException("owner");
+                }
+                if (camera == null)
+                {
+                    throw new ArgumentNullException("camera");
+                }
+
+                _owner = owner;
+                _camera = camera;
+                _receipt = new SpawnPointVisualizationSuppressionReceipt
+                {
+                    purpose =
+                        "exclude_only_generated_self_and_avatar_spawn_point_anchor_visualizations_from_exact_native_pixels",
+                    selectionContract =
+                        "exactly_one_loaded_active_enabled_SelfModeSpawnPointComponent_and_AvatarSpawnPointComponent_in_one_scene_each_with_one_loaded_active_enabled_SpawnPointElement_AnchorScale3D_and_every_descendant_UnityEngine.Renderer_forceRenderingOff",
+                    mutationApi = "UnityEngine.Renderer.forceRenderingOff",
+                    targets = new List<SpawnPointVisualizationTargetReceipt>(),
+                    unexpectedRenderPathComponentTypeNames = new string[0]
+                };
+            }
+
+            internal SpawnPointVisualizationSuppressionReceipt Receipt
+            {
+                get { return _receipt; }
+            }
+
+            internal void Suppress()
+            {
+                if (_suppressionStarted || _suppressed || _restoreCompleted)
+                {
+                    throw new InvalidOperationException(
+                        "Spawn-point visualization suppression was requested more than once.");
+                }
+
+                _receipt.sceneDirtyBefore = _owner._sceneManager.SceneDirty;
+                _receipt.sceneDirtyWhileSuppressed = _receipt.sceneDirtyBefore;
+                _receipt.sceneDirtyFalseAtEntry = !_receipt.sceneDirtyBefore;
+                _receipt.sceneDirtyEqualAtEveryCheckpoint =
+                    _receipt.sceneDirtyFalseAtEntry;
+                if (!_receipt.sceneDirtyFalseAtEntry)
+                {
+                    throw new InvalidOperationException(
+                        "The fresh temporary scene is already dirty before spawn-point suppression.");
+                }
+
+                SelfModeSpawnPointComponent[] selfLoaded =
+                    Resources.FindObjectsOfTypeAll<SelfModeSpawnPointComponent>()
+                        .Where(IsLoadedSceneComponent)
+                        .ToArray();
+                AvatarSpawnPointComponent[] avatarLoaded =
+                    Resources.FindObjectsOfTypeAll<AvatarSpawnPointComponent>()
+                        .Where(IsLoadedSceneComponent)
+                        .ToArray();
+                SelfModeSpawnPointComponent[] selfActive = selfLoaded
+                    .Where(IsActiveEnabledSceneBehaviour)
+                    .ToArray();
+                AvatarSpawnPointComponent[] avatarActive = avatarLoaded
+                    .Where(IsActiveEnabledSceneBehaviour)
+                    .ToArray();
+                _receipt.selfModeOwnerLoadedSceneCount = selfLoaded.Length;
+                _receipt.avatarOwnerLoadedSceneCount = avatarLoaded.Length;
+                _receipt.selfModeOwnerActiveEnabledCount = selfActive.Length;
+                _receipt.avatarOwnerActiveEnabledCount = avatarActive.Length;
+                if (selfLoaded.Length != 1 || avatarLoaded.Length != 1 ||
+                    selfActive.Length != 1 || avatarActive.Length != 1 ||
+                    selfActive[0].gameObject.scene.handle !=
+                        avatarActive[0].gameObject.scene.handle)
+                {
+                    throw new InvalidOperationException(
+                        "The fresh scene must contain exactly one loaded, active, enabled self owner and avatar owner in the same scene.");
+                }
+
+                _receipt.expectedSceneHandle = selfActive[0].gameObject.scene.handle;
+                _receipt.expectedScenePath = selfActive[0].gameObject.scene.path;
+                int selfTotalElements;
+                int selfActiveElements;
+                int selfInitiallyRenderable;
+                AddOwnerTargets(
+                    "self_mode",
+                    selfActive[0],
+                    out selfTotalElements,
+                    out selfActiveElements,
+                    out selfInitiallyRenderable);
+                int avatarTotalElements;
+                int avatarActiveElements;
+                int avatarInitiallyRenderable;
+                AddOwnerTargets(
+                    "avatar",
+                    avatarActive[0],
+                    out avatarTotalElements,
+                    out avatarActiveElements,
+                    out avatarInitiallyRenderable);
+                _receipt.selfModeVisualizationElementTotalCount = selfTotalElements;
+                _receipt.avatarVisualizationElementTotalCount = avatarTotalElements;
+                _receipt.selfModeVisualizationElementActiveEnabledCount =
+                    selfActiveElements;
+                _receipt.avatarVisualizationElementActiveEnabledCount =
+                    avatarActiveElements;
+                _receipt.selfModeInitiallyRenderableTargetCount =
+                    selfInitiallyRenderable;
+                _receipt.avatarInitiallyRenderableTargetCount =
+                    avatarInitiallyRenderable;
+                _receipt.initiallyRenderableTargetCount =
+                    selfInitiallyRenderable + avatarInitiallyRenderable;
+                if (selfTotalElements != 1 || avatarTotalElements != 1 ||
+                    selfActiveElements != 1 || avatarActiveElements != 1 ||
+                    selfInitiallyRenderable < 1 || avatarInitiallyRenderable < 1 ||
+                    _targets.Count < 2 ||
+                    _targets.Select(candidate => candidate.Renderer.GetInstanceID())
+                        .Distinct().Count() != _targets.Count)
+                {
+                    throw new InvalidOperationException(
+                        "The two generated spawn-point anchors lack a unique, complete renderer closure with one initially visible target per role.");
+                }
+
+                string[] unexpected = _owners
+                    .SelectMany(candidate => FindUnexpectedRenderPathTypes(candidate.Anchor))
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(candidate => candidate, StringComparer.Ordinal)
+                    .ToArray();
+                _receipt.unexpectedRenderPathComponentTypeNames = unexpected;
+                _receipt.unexpectedRenderPathAbsent = unexpected.Length == 0;
+                if (!_receipt.unexpectedRenderPathAbsent)
+                {
+                    throw new InvalidOperationException(
+                        "A spawn-point anchor contains a non-Renderer visual path: " +
+                        String.Join(", ", unexpected));
+                }
+
+                _receipt.targetCount = _targets.Count;
+                _suppressionStarted = true;
+                try
+                {
+                    foreach (TargetState target in _targets)
+                    {
+                        target.Receipt.suppressionRequested = true;
+                        _receipt.forceRenderingOffSetterCallCount += 1;
+                        target.Renderer.forceRenderingOff = true;
+                        ObserveCleanScene();
+                        target.Receipt.forceRenderingOffObservedWhileSuppressed =
+                            target.Renderer.forceRenderingOff;
+                        if (!target.Receipt.forceRenderingOffObservedWhileSuppressed)
+                        {
+                            throw new InvalidOperationException(
+                                "A generated spawn-point anchor renderer rejected forceRenderingOff=true.");
+                        }
+                    }
+
+                    _suppressed = true;
+                    RequireSuppressed();
+                    _receipt.everyTargetSuppressed = true;
+                }
+                catch (Exception suppressionFailure)
+                {
+                    try
+                    {
+                        Restore();
+                    }
+                    catch (Exception restoreFailure)
+                    {
+                        throw new AggregateException(
+                            "Spawn-point suppression failed and exact restoration also failed.",
+                            suppressionFailure,
+                            restoreFailure);
+                    }
+                    throw;
+                }
+            }
+
+            internal void MarkSentinelRequestAndReadbackComplete()
+            {
+                RequireSuppressed();
+                _receipt.coveredSentinelRequestAndReadback = true;
+            }
+
+            internal void MarkExactRequestAndReadbackComplete()
+            {
+                RequireSuppressed();
+                _receipt.coveredExactRequestAndReadback = true;
+                _receipt.leaseHeldDuringEveryAcceptedAttempt =
+                    _receipt.coveredSentinelRequestAndReadback &&
+                    _receipt.coveredExactRequestAndReadback;
+            }
+
+            internal void RequireSuppressed()
+            {
+                if (!_suppressionStarted || !_suppressed || _restoreCompleted)
+                {
+                    throw new InvalidOperationException(
+                        "The generated spawn-point visualization suppression lease is not intact.");
+                }
+                ObserveCleanScene();
+                RequireIdentityClosure(true);
+                _receipt.sceneDirtyWhileSuppressed = _owner._sceneManager.SceneDirty;
+            }
+
+            internal void Restore()
+            {
+                if (_restoreCompleted)
+                {
+                    try
+                    {
+                        RequireRestored();
+                        return;
+                    }
+                    catch
+                    {
+                        _restoreCompleted = false;
+                        _receipt.disposed = false;
+                    }
+                }
+                if (!_suppressionStarted)
+                {
+                    return;
+                }
+                if (_restoreInProgress)
+                {
+                    throw new InvalidOperationException(
+                        "Spawn-point restoration re-entered before its prior attempt completed.");
+                }
+
+                _restoreInProgress = true;
+                _receipt.restoreAttemptCount += 1;
+                var failures = new List<Exception>();
+                try
+                {
+                    for (int index = _targets.Count - 1; index >= 0; index -= 1)
+                    {
+                        TargetState target = _targets[index];
+                        try
+                        {
+                            target.Receipt.restorationRequested = true;
+                            if (target.Renderer == null)
+                            {
+                                throw new InvalidOperationException(
+                                    "A generated spawn-point anchor renderer was destroyed before restoration.");
+                            }
+                            _receipt.forceRenderingOffSetterCallCount += 1;
+                            target.Renderer.forceRenderingOff =
+                                target.ForceRenderingOffBefore;
+                            ObserveCleanScene();
+                            CaptureRestoredTargetState(target);
+                            if (!target.Receipt.exactRendererStateRestored)
+                            {
+                                throw new InvalidOperationException(
+                                    "A generated spawn-point anchor renderer did not restore its exact entry state.");
+                            }
+                        }
+                        catch (Exception exception)
+                        {
+                            failures.Add(exception);
+                        }
+                    }
+
+                    try
+                    {
+                        RequireIdentityClosure(false);
+                        ObserveCleanScene();
+                    }
+                    catch (Exception exception)
+                    {
+                        failures.Add(exception);
+                    }
+
+                    _receipt.sceneDirtyAfter = _owner._sceneManager.SceneDirty;
+                    _receipt.sceneDirtyEqualAtEveryCheckpoint =
+                        !_sceneDirtyFailureObserved &&
+                        !_receipt.sceneDirtyBefore &&
+                        !_receipt.sceneDirtyWhileSuppressed &&
+                        !_receipt.sceneDirtyAfter;
+                    _receipt.everyTargetRestored = failures.Count == 0 &&
+                        _targets.All(candidate =>
+                            candidate.Receipt.exactRendererStateRestored);
+                    if (failures.Count > 0 ||
+                        !_receipt.sceneDirtyEqualAtEveryCheckpoint ||
+                        !_receipt.everyTargetRestored)
+                    {
+                        if (failures.Count == 1)
+                        {
+                            throw failures[0];
+                        }
+                        throw new AggregateException(failures);
+                    }
+
+                    _suppressed = false;
+                    _restoreCompleted = true;
+                    _receipt.disposed = true;
+                    try
+                    {
+                        RequireRestored();
+                    }
+                    catch
+                    {
+                        _restoreCompleted = false;
+                        _receipt.disposed = false;
+                        throw;
+                    }
+                }
+                finally
+                {
+                    _restoreInProgress = false;
+                }
+            }
+
+            internal void RequireRestored()
+            {
+                if (!_restoreCompleted || !_receipt.everyTargetRestored ||
+                    !_receipt.sceneDirtyEqualAtEveryCheckpoint ||
+                    !_receipt.identityStableAtEveryCheckpoint ||
+                    !_receipt.disposed)
+                {
+                    throw new InvalidOperationException(
+                        "The generated spawn-point visualization suppression lease lacks exact restoration proof.");
+                }
+                ObserveCleanScene();
+                RequireIdentityClosure(false);
+            }
+
+            private void AddOwnerTargets<T>(
+                string role,
+                T ownerComponent,
+                out int totalElementCount,
+                out int activeElementCount,
+                out int initiallyRenderableCount)
+                where T : Component
+            {
+                SpawnPointElement[] elements = ownerComponent
+                    .GetComponentsInChildren<SpawnPointElement>(true)
+                    .Where(candidate => candidate != null)
+                    .ToArray();
+                totalElementCount = elements.Length;
+                activeElementCount = elements.Count(IsActiveEnabledSceneBehaviour);
+                initiallyRenderableCount = 0;
+                if (totalElementCount != 1 || activeElementCount != 1)
+                {
+                    return;
+                }
+
+                SpawnPointElement element = elements[0];
+                XGrids.LCCWorld.Common.Components.AnchorScale3D anchor =
+                    element.AnchorScale3D;
+                if (anchor == null || !IsActiveEnabledSceneBehaviour(anchor) ||
+                    (anchor.transform != element.transform &&
+                        !anchor.transform.IsChildOf(element.transform)) ||
+                    ownerComponent.gameObject.scene.handle !=
+                        _receipt.expectedSceneHandle ||
+                    element.gameObject.scene.handle != _receipt.expectedSceneHandle ||
+                    anchor.gameObject.scene.handle != _receipt.expectedSceneHandle)
+                {
+                    throw new InvalidOperationException(
+                        "A generated spawn-point element lacks one active, enabled, in-scene anchor_scale_3d descendant.");
+                }
+
+                UnityEngine.Renderer[] renderers = GetRendererClosure(anchor);
+                if (renderers.Length == 0)
+                {
+                    throw new InvalidOperationException(
+                        "A generated spawn-point anchor exposes no UnityEngine.Renderer descendants.");
+                }
+
+                var ownerTargets = new List<TargetState>();
+                foreach (UnityEngine.Renderer renderer in renderers)
+                {
+                    bool initiallyRenderable = renderer.enabled &&
+                        renderer.gameObject.activeInHierarchy &&
+                        !renderer.forceRenderingOff &&
+                        LayerIncludedByCamera(renderer.gameObject.layer);
+                    if (initiallyRenderable)
+                    {
+                        initiallyRenderableCount += 1;
+                    }
+                    var targetReceipt = new SpawnPointVisualizationTargetReceipt
+                    {
+                        role = role,
+                        ownerComponentTypeFullName = ownerComponent.GetType().FullName,
+                        ownerComponentInstanceId = ownerComponent.GetInstanceID(),
+                        ownerHierarchyPath = BuildHierarchyPath(ownerComponent.transform),
+                        ownerSceneHandle = ownerComponent.gameObject.scene.handle,
+                        ownerScenePath = ownerComponent.gameObject.scene.path,
+                        spawnPointElementInstanceId = element.GetInstanceID(),
+                        spawnPointElementHierarchyPath = BuildHierarchyPath(element.transform),
+                        visualizationComponentTypeFullName = anchor.GetType().FullName,
+                        visualizationComponentInstanceId = anchor.GetInstanceID(),
+                        visualizationHierarchyPath = BuildHierarchyPath(anchor.transform),
+                        rendererTypeFullName = renderer.GetType().FullName,
+                        rendererInstanceId = renderer.GetInstanceID(),
+                        rendererHierarchyPath = BuildHierarchyPath(renderer.transform),
+                        rendererGameObjectInstanceId = renderer.gameObject.GetInstanceID(),
+                        rendererLayer = renderer.gameObject.layer,
+                        rendererLayerName = LayerMask.LayerToName(renderer.gameObject.layer),
+                        rendererLayerIncludedBySceneCamera =
+                            LayerIncludedByCamera(renderer.gameObject.layer),
+                        rendererEnabledBefore = renderer.enabled,
+                        forceRenderingOffBefore = renderer.forceRenderingOff,
+                        activeInHierarchyBefore = renderer.gameObject.activeInHierarchy,
+                        initiallyRenderableBySceneCamera = initiallyRenderable
+                    };
+                    var target = new TargetState
+                    {
+                        Renderer = renderer,
+                        ForceRenderingOffBefore = renderer.forceRenderingOff,
+                        RendererEnabledBefore = renderer.enabled,
+                        ActiveInHierarchyBefore = renderer.gameObject.activeInHierarchy,
+                        LayerBefore = renderer.gameObject.layer,
+                        GameObjectInstanceId = renderer.gameObject.GetInstanceID(),
+                        HierarchyPath = BuildHierarchyPath(renderer.transform),
+                        Receipt = targetReceipt
+                    };
+                    _receipt.targets.Add(targetReceipt);
+                    _targets.Add(target);
+                    ownerTargets.Add(target);
+                }
+                _owners.Add(new OwnerState
+                {
+                    Role = role,
+                    Owner = ownerComponent,
+                    Element = element,
+                    Anchor = anchor,
+                    Targets = ownerTargets.ToArray()
+                });
+            }
+
+            private void RequireIdentityClosure(bool expectSuppressed)
+            {
+                foreach (OwnerState owner in _owners)
+                {
+                    if (owner.Owner == null || owner.Element == null ||
+                        owner.Anchor == null ||
+                        !IsActiveEnabledSceneBehaviour(owner.Owner) ||
+                        !IsActiveEnabledSceneBehaviour(owner.Element) ||
+                        !IsActiveEnabledSceneBehaviour(owner.Anchor) ||
+                        owner.Owner.gameObject.scene.handle !=
+                            _receipt.expectedSceneHandle ||
+                        owner.Element.gameObject.scene.handle !=
+                            _receipt.expectedSceneHandle ||
+                        owner.Anchor.gameObject.scene.handle !=
+                            _receipt.expectedSceneHandle ||
+                        (owner.Anchor.transform != owner.Element.transform &&
+                            !owner.Anchor.transform.IsChildOf(owner.Element.transform)))
+                    {
+                        throw new InvalidOperationException(
+                            "A generated spawn-point owner, element, anchor, or scene identity drifted.");
+                    }
+                    SpawnPointElement[] elements = owner.Owner
+                        .GetComponentsInChildren<SpawnPointElement>(true)
+                        .Where(candidate => candidate != null)
+                        .ToArray();
+                    if (elements.Length != 1 ||
+                        !System.Object.ReferenceEquals(elements[0], owner.Element) ||
+                        !System.Object.ReferenceEquals(
+                            owner.Element.AnchorScale3D,
+                            owner.Anchor))
+                    {
+                        throw new InvalidOperationException(
+                            "The generated spawn-point element cardinality or anchor identity drifted.");
+                    }
+                    UnityEngine.Renderer[] current = GetRendererClosure(owner.Anchor);
+                    if (current.Length != owner.Targets.Length ||
+                        !current.Select(candidate => candidate.GetInstanceID())
+                            .SequenceEqual(
+                                owner.Targets.Select(candidate =>
+                                    candidate.Renderer.GetInstanceID())))
+                    {
+                        throw new InvalidOperationException(
+                            "The generated spawn-point renderer closure changed while leased.");
+                    }
+                    string[] unexpected = FindUnexpectedRenderPathTypes(owner.Anchor);
+                    if (unexpected.Length != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "A non-Renderer visual path appeared inside a leased spawn-point anchor.");
+                    }
+                    foreach (TargetState target in owner.Targets)
+                    {
+                        if (target.Renderer == null ||
+                            target.Renderer.GetInstanceID() !=
+                                target.Receipt.rendererInstanceId ||
+                            target.Renderer.gameObject.GetInstanceID() !=
+                                target.GameObjectInstanceId ||
+                            target.Renderer.gameObject.scene.handle !=
+                                _receipt.expectedSceneHandle ||
+                            target.Renderer.gameObject.layer != target.LayerBefore ||
+                            !String.Equals(
+                                BuildHierarchyPath(target.Renderer.transform),
+                                target.HierarchyPath,
+                                StringComparison.Ordinal) ||
+                            target.Renderer.enabled != target.RendererEnabledBefore ||
+                            target.Renderer.gameObject.activeInHierarchy !=
+                                target.ActiveInHierarchyBefore ||
+                            (expectSuppressed
+                                ? !target.Renderer.forceRenderingOff
+                                : target.Renderer.forceRenderingOff !=
+                                    target.ForceRenderingOffBefore))
+                        {
+                            throw new InvalidOperationException(
+                                "A generated spawn-point renderer identity or state drifted while leased.");
+                        }
+                    }
+                }
+                _receipt.identityStableAtEveryCheckpoint = true;
+                foreach (TargetState target in _targets)
+                {
+                    target.Receipt.identityStableAtEveryCheckpoint = true;
+                }
+            }
+
+            private void CaptureRestoredTargetState(TargetState target)
+            {
+                target.Receipt.rendererEnabledAfter = target.Renderer.enabled;
+                target.Receipt.forceRenderingOffAfter =
+                    target.Renderer.forceRenderingOff;
+                target.Receipt.activeInHierarchyAfter =
+                    target.Renderer.gameObject.activeInHierarchy;
+                target.Receipt.exactRendererStateRestored =
+                    target.Receipt.rendererEnabledAfter ==
+                        target.RendererEnabledBefore &&
+                    target.Receipt.forceRenderingOffAfter ==
+                        target.ForceRenderingOffBefore &&
+                    target.Receipt.activeInHierarchyAfter ==
+                        target.ActiveInHierarchyBefore &&
+                    target.Renderer.gameObject.layer == target.LayerBefore &&
+                    target.Renderer.gameObject.GetInstanceID() ==
+                        target.GameObjectInstanceId &&
+                    String.Equals(
+                        BuildHierarchyPath(target.Renderer.transform),
+                        target.HierarchyPath,
+                        StringComparison.Ordinal);
+            }
+
+            private void ObserveCleanScene()
+            {
+                _receipt.suppressionCheckpointCount += 1;
+                if (_owner._sceneManager.SceneDirty)
+                {
+                    _sceneDirtyFailureObserved = true;
+                    _receipt.sceneDirtyEqualAtEveryCheckpoint = false;
+                    throw new InvalidOperationException(
+                        "SceneDirty became true at a spawn-point suppression checkpoint.");
+                }
+                _receipt.sceneDirtyEqualAtEveryCheckpoint =
+                    !_sceneDirtyFailureObserved;
+            }
+
+            private static UnityEngine.Renderer[] GetRendererClosure(
+                XGrids.LCCWorld.Common.Components.AnchorScale3D anchor)
+            {
+                return anchor.GetComponentsInChildren<UnityEngine.Renderer>(true)
+                    .Where(candidate => candidate != null)
+                    .OrderBy(candidate => BuildHierarchyPath(candidate.transform),
+                        StringComparer.Ordinal)
+                    .ThenBy(candidate => candidate.GetInstanceID())
+                    .ToArray();
+            }
+
+            private static string[] FindUnexpectedRenderPathTypes(Component anchor)
+            {
+                return anchor.GetComponentsInChildren<Component>(true)
+                    .Where(candidate => candidate != null &&
+                        IsUnexpectedRenderPath(candidate))
+                    .Select(candidate => candidate.GetType().FullName)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(candidate => candidate, StringComparer.Ordinal)
+                    .ToArray();
+            }
+
+            private static bool IsUnexpectedRenderPath(Component component)
+            {
+                if (component is UnityEngine.Renderer)
+                {
+                    return false;
+                }
+                if (component is Camera || component is Canvas ||
+                    component is CanvasRenderer)
+                {
+                    return true;
+                }
+                Type type = component.GetType();
+                string fullName = type.FullName ?? String.Empty;
+                if (fullName.IndexOf("LCCRenderer", StringComparison.Ordinal) >= 0 ||
+                    fullName.IndexOf("UnityEngine.VFX.VisualEffect", StringComparison.Ordinal) >= 0)
+                {
+                    return true;
+                }
+                string[] renderCallbacks =
+                {
+                    "OnRenderObject",
+                    "OnPostRender",
+                    "OnPreRender",
+                    "OnWillRenderObject"
+                };
+                return type.GetMethods(
+                        BindingFlags.Instance |
+                        BindingFlags.Public |
+                        BindingFlags.NonPublic |
+                        BindingFlags.DeclaredOnly)
+                    .Any(method => renderCallbacks.Contains(
+                        method.Name,
+                        StringComparer.Ordinal));
+            }
+
+            private static bool IsLoadedSceneComponent(Component component)
+            {
+                return component != null && component.gameObject != null &&
+                    component.gameObject.scene.IsValid() &&
+                    component.gameObject.scene.isLoaded;
+            }
+
+            private static bool IsActiveEnabledSceneBehaviour(Component component)
+            {
+                Behaviour behaviour = component as Behaviour;
+                return IsLoadedSceneComponent(component) && behaviour != null &&
+                    behaviour.isActiveAndEnabled;
+            }
+
+            private bool LayerIncludedByCamera(int layer)
+            {
+                return (_camera.cullingMask & (1 << layer)) != 0;
+            }
+
+            private static string BuildHierarchyPath(UnityEngine.Transform transform)
+            {
+                if (transform == null)
+                {
+                    return null;
+                }
+                var segments = new List<string>();
+                UnityEngine.Transform current = transform;
+                while (current != null)
+                {
+                    segments.Add(
+                        current.name + "[" +
+                        current.GetSiblingIndex().ToString(CultureInfo.InvariantCulture) + "]");
+                    current = current.parent;
+                }
+                segments.Reverse();
+                return String.Join("/", segments.ToArray());
+            }
+        }
+
+        private sealed class SingleCameraRenderRequestOperation : IDisposable
+        {
+            private const int MaximumRecordedCallbacks = 16;
+            private const string SentinelStage = "sentinel_discard";
+            private const string ExactStage = "stable_exact";
+
+            private readonly NativeCaptureModule _owner;
+            private readonly CameraState _cameraState;
+            private readonly Camera _camera;
+            private readonly int _cameraInstanceId;
+            private readonly CaptureAttemptReceipt _attempt;
+            private readonly SingleCameraRenderRequestSurfaceReceipt _surface;
+            private readonly CancellationTokenSource _cancellation =
+                new CancellationTokenSource();
+            private readonly Action<ScriptableRenderContext, List<Camera>>
+                _beginContextHandler;
+            private readonly Action<ScriptableRenderContext, List<Camera>>
+                _endContextHandler;
+            private readonly Action<ScriptableRenderContext, Camera> _beginCameraHandler;
+            private readonly Action<ScriptableRenderContext, Camera> _endCameraHandler;
+            private readonly Vector3 _exactPosition;
+            private readonly Quaternion _exactRotation;
+            private readonly Matrix4x4 _exactWorldToCamera;
+            private readonly Matrix4x4 _exactProjection;
+            private readonly Vector3 _sentinelPosition;
+            private RenderPipeline _entryPipeline;
+            private RenderPipeline _pipelineBefore;
+            private RenderPipelineAsset _pipelineAssetBeforePreflight;
+            private RenderTexture _ownedRenderTexture;
+            private string _requestedGraphicsFormat;
+            private bool _requestedSrgb;
+            private RenderTexture _originalCameraTargetTexture;
+            private RenderTexture _originalRenderTextureActive;
+            private SingleCameraRenderRequestInvocationReceipt _activeInvocation;
+            private Vector3 _stageExpectedPosition;
+            private Quaternion _stageExpectedRotation;
+            private Matrix4x4 _stageExpectedWorldToCamera;
+            private int _callbackSequence;
+            private int _requestOrdinal;
+            private bool _beginContextSubscribed;
+            private bool _beginCameraSubscribed;
+            private bool _endCameraSubscribed;
+            private bool _endContextSubscribed;
+            private bool _cameraBaselineVerified;
+            private bool _restoreBaselinesCaptured;
+            private bool _initialSurfaceStateCompleted;
+            private SpawnPointVisualizationSuppressionLease _spawnPointSuppression;
+            private int _abortRequested;
+            private int _disposed;
+
+            internal SingleCameraRenderRequestOperation(
+                NativeCaptureModule owner,
+                CameraState cameraState,
+                CaptureAttemptReceipt attempt)
+            {
+                if (owner == null)
+                {
+                    throw new ArgumentNullException("owner");
+                }
+                if (cameraState == null || cameraState.Camera == null)
+                {
+                    throw new ArgumentNullException("cameraState");
+                }
+                if (attempt == null)
+                {
+                    throw new ArgumentNullException("attempt");
+                }
+
+                _owner = owner;
+                _cameraState = cameraState;
+                _camera = cameraState.Camera;
+                _cameraInstanceId = _camera.GetInstanceID();
+                _attempt = attempt;
+                _surface = attempt.singleCameraRenderRequestSurface ??
+                    new SingleCameraRenderRequestSurfaceReceipt();
+                _attempt.singleCameraRenderRequestSurface = _surface;
+                _surface.activeCanvases = new List<NativeCanvasReceipt>();
+                _surface.knownActiveCaptureOverlayNames = new string[0];
+                _surface.cleanViewStateVerifiedAtEveryCheckpoint = true;
+                _surface.pixelSurfaceProvenance =
+                    CapturePolicy.SingleCameraRenderRequestSurfaceProvenance;
+                _surface.renderBoundaryEvidence =
+                    CapturePolicy.SingleCameraRenderRequestRenderBoundaryEvidence;
+                _surface.lockedRequestType =
+                    "UnityEngine.Rendering.Universal.UniversalRenderPipeline+SingleCameraRequest";
+                _surface.urpRendererDataOrFeatureMutationApiInvoked = false;
+                _surface.prohibitedFirstPartyMutationApis =
+                    CapturePolicy.CreateSingleCameraRenderRequestProhibitedMutationApis();
+                _surface.sceneCameraScreenRendererGetterContract =
+                    CapturePolicy.SceneCameraScreenRendererGetterContract;
+                _surface.sceneCameraScreenRendererSetterInvoked = false;
+                _surface.snapFrameApiInvoked = false;
+                _surface.snapFramePixelSourceUsed = false;
+                _surface.snapFrameExecutionPrevented = false;
+                _surface.cameraTargetTextureAssignedByModule = false;
+                _surface.ownedRenderTextureCreatedAfterRelease = false;
+                _surface.returnedTextureDestroyRequested = false;
+                _surface.exactTextureOwnershipTransferred = false;
+                _surface.unownedResourceDestroyOrReleaseRequested = false;
+                _surface.visualQaRequired = true;
+                _surface.captureAcceptanceScope =
+                    CapturePolicy.SingleCameraRenderRequestAcceptanceScope;
+                _surface.finalSourceFaithfulAcceptanceClaimed = false;
+                _exactPosition = _camera.transform.position;
+                _exactRotation = _camera.transform.rotation;
+                _exactWorldToCamera = _camera.worldToCameraMatrix;
+                _exactProjection = _camera.projectionMatrix;
+                _sentinelPosition = _exactPosition + new Vector3(
+                    (float)CapturePolicy.SnapFrameSentinelTranslationMetres,
+                    0.0f,
+                    0.0f);
+                _beginContextHandler = HandleBeginContextRendering;
+                _beginCameraHandler = HandleBeginCameraRendering;
+                _endCameraHandler = HandleEndCameraRendering;
+                _endContextHandler = HandleEndContextRendering;
+            }
+
+            internal async UniTask<Texture2D> CaptureAsync()
+            {
+                Texture2D sentinelTexture = null;
+                Texture2D exactTexture = null;
+                bool exactOwnershipTransferred = false;
+                Exception operationFailure = null;
+                try
+                {
+                    ThrowIfAbortedOrStopped();
+                    CaptureInitialSurfaceState();
+                    CreateOwnedRenderTexture();
+                    EstablishLockedRenderPipelineBoundary();
+                    _spawnPointSuppression =
+                        new SpawnPointVisualizationSuppressionLease(_owner, _camera);
+                    _surface.spawnPointVisualizationSuppression =
+                        _spawnPointSuppression.Receipt;
+                    _spawnPointSuppression.Suppress();
+                    RequireCheckpoint(_exactPosition, _exactRotation, _exactWorldToCamera);
+
+                    ApplyPose(_sentinelPosition, _exactRotation);
+                    _surface.sentinelPosition = ToArray(_sentinelPosition);
+                    _surface.sentinelRotationXyzw = ToArray(_exactRotation);
+                    _surface.sentinelWorldToCameraMatrixColumnMajor =
+                        MatrixToColumnMajor(_camera.worldToCameraMatrix);
+                    _owner._lccSceneManager.ForceRerenderer();
+                    await UniTask.WaitForEndOfFrame(_cancellation.Token);
+                    ThrowIfAbortedOrStopped();
+                    _surface.sentinelPoseReached = PoseMatches(
+                        _camera,
+                        _sentinelPosition,
+                        _exactRotation,
+                        _camera.worldToCameraMatrix);
+                    if (!_surface.sentinelPoseReached)
+                    {
+                        throw new InvalidOperationException(
+                            "The deterministic five-centimetre request sentinel pose was not reached.");
+                    }
+                    RequireCheckpoint(
+                        _sentinelPosition,
+                        _exactRotation,
+                        _camera.worldToCameraMatrix);
+                    _spawnPointSuppression.RequireSuppressed();
+                    _surface.sentinelRequest = ExecuteRequest(
+                        SentinelStage,
+                        _sentinelPosition,
+                        _exactRotation,
+                        _camera.worldToCameraMatrix,
+                        out sentinelTexture);
+                    byte[] sentinelRgb24 = ToRgb24(sentinelTexture.GetPixels32());
+                    _surface.sentinelRaster = CapturePolicy.AnalyzeRgb24(
+                        sentinelRgb24,
+                        _owner._cameraProfile.Output.Width,
+                        _owner._cameraProfile.Output.Height);
+                    CapturePolicy.RequireNonDegenerateRaster(
+                        _surface.sentinelRaster,
+                        _owner._cameraProfile.Output.Width,
+                        _owner._cameraProfile.Output.Height);
+                    _spawnPointSuppression.MarkSentinelRequestAndReadbackComplete();
+                    UnityEngine.Object.Destroy(sentinelTexture);
+                    _surface.sentinelTextureDestroyRequested = true;
+                    sentinelTexture = null;
+
+                    RestoreExactCameraState();
+                    await UniTask.WaitForEndOfFrame(_cancellation.Token);
+                    ThrowIfAbortedOrStopped();
+                    CaptureExactCameraAfterState();
+                    if (!_surface.exactRestoreVerified)
+                    {
+                        throw new InvalidOperationException(
+                            "The exact inspection camera was not restored before its request render.");
+                    }
+                    RequireCheckpoint(
+                        _exactPosition,
+                        _exactRotation,
+                        _exactWorldToCamera);
+                    _spawnPointSuppression.RequireSuppressed();
+                    _surface.exactRequest = ExecuteRequest(
+                        ExactStage,
+                        _exactPosition,
+                        _exactRotation,
+                        _exactWorldToCamera,
+                        out exactTexture);
+                    byte[] exactRgb24 = ToRgb24(exactTexture.GetPixels32());
+                    _surface.exactFrameRgb24Sha256 =
+                        CapturePolicy.Sha256Bytes(exactRgb24);
+                    _surface.sentinelAndExactRgbDiffer = !String.Equals(
+                        _surface.sentinelRaster.rgb24Sha256,
+                        _surface.exactFrameRgb24Sha256,
+                        StringComparison.OrdinalIgnoreCase);
+                    if (!_surface.sentinelAndExactRgbDiffer)
+                    {
+                        throw new InvalidDataException(
+                            "The sentinel and exact SingleCameraRequest rasters were byte-identical; fresh rendering is unproved.");
+                    }
+                    _spawnPointSuppression.MarkExactRequestAndReadbackComplete();
+                    RestoreSpawnPointVisualizations();
+
+                    _surface.rendererInventoryAfter =
+                        SnapFrameReadbackOperation.CaptureReadOnlyUrpRendererInventory(
+                            _camera);
+                    CapturePolicy.RequireReadOnlyUrpRendererInventory(
+                        _surface.rendererInventoryAfter);
+                    _surface.rendererStateSignatureAfterSha256 =
+                        CapturePolicy.ComputeUrpRendererStateSignature(
+                            _surface.rendererInventoryAfter);
+                    _surface.rendererDataFeatureIdentityAndActiveStateStable =
+                        String.Equals(
+                            _surface.rendererStateSignatureBeforeSha256,
+                            _surface.rendererStateSignatureAfterSha256,
+                            StringComparison.Ordinal) &&
+                        _surface.rendererInventoryBefore
+                            .rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory &&
+                        _surface.rendererInventoryAfter
+                            .rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory;
+                    if (!_surface.rendererDataFeatureIdentityAndActiveStateStable)
+                    {
+                        throw new InvalidOperationException(
+                            "The public URP renderer-data, renderer, or feature identity/state changed across request rendering.");
+                    }
+
+                    CaptureExactCameraAfterState();
+                    CaptureFinalSurfaceState();
+                    ReleaseAndDestroyOwnedRenderTexture();
+                    RestoreRenderTextureActive();
+                    _surface.renderTextureActiveRestoredAfterOperation =
+                        RenderTextureActiveMatchesOriginal();
+                    if (!_surface.renderTextureActiveRestoredAfterOperation)
+                    {
+                        throw new InvalidOperationException(
+                            "RenderTexture.active was not restored after the request operation.");
+                    }
+
+                    SingleCameraRenderRequestReadbackReceipt exactReadback =
+                        _surface.exactRequest.readback;
+                    _attempt.firstPartyTextureInstanceId = exactTexture.GetInstanceID();
+                    _attempt.firstPartyTextureFormat = exactTexture.format.ToString();
+                    _attempt.firstPartyTextureReadable = exactTexture.isReadable;
+                    _attempt.firstPartyTextureNoMipChain = exactTexture.mipmapCount == 1;
+                    _attempt.firstPartyReadPixelsCompleted =
+                        exactReadback.firstPartyReadPixelsCompleted;
+                    _attempt.firstPartyApplyCompleted =
+                        exactReadback.firstPartyApplyCompleted;
+                    _attempt.pixelSource =
+                        CapturePolicy.SingleCameraRenderRequestPixelSource;
+                    _attempt.readbackTrigger =
+                        "locked_urp_single_camera_request_owned_destination_direct_rgb24_readback";
+                    _attempt.standardCameraRenderCallbackProofAvailable = true;
+                    _attempt.srpEndCameraRenderingCallbackCount = 2;
+                    _attempt.firstSrpEndCameraRenderingFrame =
+                        CallbackFrame(_surface.sentinelRequest, "endCamera");
+                    _attempt.lastSrpEndCameraRenderingFrame =
+                        CallbackFrame(_surface.exactRequest, "endCamera");
+
+                    _surface.exactTextureOwnershipTransferred = true;
+                    CapturePolicy.RequireSingleCameraRenderRequestCaptureRoute(
+                        _surface,
+                        _attempt.pixelSource);
+                    exactOwnershipTransferred = true;
+                    return exactTexture;
+                }
+                catch (Exception exception)
+                {
+                    operationFailure = exception;
+                    throw;
+                }
+                finally
+                {
+                    var cleanupFailures = new List<Exception>();
+                    AttemptCleanup(RestoreSpawnPointVisualizations, cleanupFailures);
+                    AttemptCleanup(UnsubscribeAll, cleanupFailures);
+                    if (_restoreBaselinesCaptured)
+                    {
+                        AttemptCleanup(RestoreOriginalCameraTargetTexture, cleanupFailures);
+                        AttemptCleanup(RestoreRenderTextureActive, cleanupFailures);
+                    }
+                    if (_cameraBaselineVerified)
+                    {
+                        AttemptCleanup(
+                            delegate
+                            {
+                                if (!ExactCameraStateMatches())
+                                {
+                                    RestoreExactCameraState();
+                                }
+                                CaptureExactCameraAfterState();
+                                _owner.RequireLockedCameraState(_cameraState);
+                            },
+                            cleanupFailures);
+                    }
+                    if (_initialSurfaceStateCompleted)
+                    {
+                        AttemptCleanup(CaptureFinalSurfaceState, cleanupFailures);
+                    }
+                    AttemptCleanup(ReleaseAndDestroyOwnedRenderTexture, cleanupFailures);
+                    if (_restoreBaselinesCaptured)
+                    {
+                        AttemptCleanup(RestoreRenderTextureActive, cleanupFailures);
+                        _surface.renderTextureActiveRestoredAfterOperation =
+                            RenderTextureActiveMatchesOriginal();
+                    }
+                    if (sentinelTexture != null)
+                    {
+                        UnityEngine.Object.Destroy(sentinelTexture);
+                        _surface.sentinelTextureDestroyRequested = true;
+                    }
+                    if ((!exactOwnershipTransferred || cleanupFailures.Count > 0) &&
+                        exactTexture != null)
+                    {
+                        UnityEngine.Object.Destroy(exactTexture);
+                        _surface.returnedTextureDestroyRequested = true;
+                        _surface.exactTextureOwnershipTransferred = false;
+                    }
+                    if (cleanupFailures.Count > 0)
+                    {
+                        Exception cleanupFailure = cleanupFailures.Count == 1
+                            ? cleanupFailures[0]
+                            : new AggregateException(cleanupFailures);
+                        Exception combinedFailure = operationFailure == null
+                            ? cleanupFailure
+                            : new AggregateException(operationFailure, cleanupFailure);
+                        throw new InvalidOperationException(
+                            "SingleCameraRequest cleanup could not prove exact camera, target, and renderer-state restoration.",
+                            combinedFailure);
+                    }
+                }
+            }
+
+            internal void Abort()
+            {
+                if (Interlocked.Exchange(ref _abortRequested, 1) != 0)
+                {
+                    return;
+                }
+                try
+                {
+                    _cancellation.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                {
+                    return;
+                }
+                Abort();
+                _cancellation.Dispose();
+            }
+
+            private void CaptureInitialSurfaceState()
+            {
+                _owner.RequireLockedCameraState(_cameraState);
+                _cameraBaselineVerified = true;
+                _originalCameraTargetTexture = _camera.targetTexture;
+                _originalRenderTextureActive = RenderTexture.active;
+                _restoreBaselinesCaptured = true;
+                _surface.sceneCameraTargetTextureNullBeforeOperation =
+                    _originalCameraTargetTexture == null;
+                if (_originalCameraTargetTexture != null)
+                {
+                    throw new InvalidOperationException(
+                        "The exact scene camera already has a target texture before SingleCameraRequest preflight.");
+                }
+
+                _entryPipeline = RenderPipelineManager.currentPipeline;
+                _surface.entryPipelinePresent =
+                    _entryPipeline != null && !_entryPipeline.disposed;
+                _surface.entryPipelineTypeFullName = _entryPipeline == null
+                    ? null
+                    : _entryPipeline.GetType().FullName;
+                _surface.entryPipelineRuntimeIdentityHashCode =
+                    _entryPipeline == null
+                        ? 0
+                        : RuntimeHelpers.GetHashCode(_entryPipeline);
+                if (_entryPipeline != null &&
+                    (_entryPipeline.disposed ||
+                        !String.Equals(
+                            _surface.entryPipelineTypeFullName,
+                            "UnityEngine.Rendering.Universal.UniversalRenderPipeline",
+                            StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException(
+                        "The entry render pipeline is disposed or is not the locked UniversalRenderPipeline.");
+                }
+
+                _pipelineAssetBeforePreflight = GraphicsSettings.currentRenderPipeline;
+                _surface.graphicsSettingsAssetPresentBeforePreflight =
+                    _pipelineAssetBeforePreflight != null;
+                _surface.graphicsSettingsAssetTypeFullNameBeforePreflight =
+                    _pipelineAssetBeforePreflight == null
+                        ? null
+                        : _pipelineAssetBeforePreflight.GetType().FullName;
+                _surface.graphicsSettingsAssetInstanceIdBeforePreflight =
+                    _pipelineAssetBeforePreflight == null
+                        ? 0
+                        : _pipelineAssetBeforePreflight.GetInstanceID();
+                if (!_surface.graphicsSettingsAssetPresentBeforePreflight ||
+                    !String.Equals(
+                        _surface.graphicsSettingsAssetTypeFullNameBeforePreflight,
+                        "UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset",
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "GraphicsSettings.currentRenderPipeline is not the locked UniversalRenderPipelineAsset.");
+                }
+
+                _surface.rendererConfigurationBeforePreflight =
+                    SnapFrameReadbackOperation
+                        .CaptureReadOnlyUrpRendererConfiguration();
+                _surface.rendererConfigurationSignatureBeforeSha256 =
+                    CapturePolicy.ComputeUrpRendererConfigurationSignature(
+                        _surface.rendererConfigurationBeforePreflight);
+                _surface.sceneCameraLive = IsLiveCamera(
+                    _owner._sceneManager.SceneCamera);
+                _surface.sceneCameraInstanceId = _surface.sceneCameraLive
+                    ? _owner._sceneManager.SceneCamera.GetInstanceID()
+                    : 0;
+                _surface.captureViewAbsentBefore =
+                    !_owner._captureManager.IsCaptureViewVisible;
+                _surface.sceneCameraScreenRendererModeBefore =
+                    _owner._sceneManager.SceneCameraScreenRenderer;
+                _surface.exactPositionBefore = ToArray(_exactPosition);
+                _surface.exactRotationXyzwBefore = ToArray(_exactRotation);
+                _surface.exactWorldToCameraMatrixColumnMajorBefore =
+                    MatrixToColumnMajor(_exactWorldToCamera);
+                _surface.exactProjectionMatrixColumnMajorBefore =
+                    MatrixToColumnMajor(_exactProjection);
+                _surface.graphicsDeviceType =
+                    SystemInfo.graphicsDeviceType.ToString();
+                _surface.graphicsUvStartsAtTop =
+                    SystemInfo.graphicsUVStartsAtTop;
+                _surface.activeColorSpace =
+                    QualitySettings.activeColorSpace.ToString();
+                if (QualitySettings.activeColorSpace != ColorSpace.Gamma)
+                {
+                    throw new InvalidOperationException(
+                        "The v14 capture contract requires Unity Gamma color space.");
+                }
+                _surface.readPixelsCoordinateOrigin =
+                    CapturePolicy.SingleCameraRenderRequestReadPixelsCoordinateOrigin;
+                _surface.cpuRowTransform =
+                    CapturePolicy.SingleCameraRenderRequestCpuRowTransform;
+                _surface.cpuOrientationStatus =
+                    "unverified_pending_visual_qa";
+                CaptureCameraConfiguration();
+                CaptureOverlayInventory();
+                CapturePotentialCameraCallbackContributors();
+                RequireNoUnsafeSurfaceContributor();
+                _initialSurfaceStateCompleted = true;
+            }
+
+            private void CreateOwnedRenderTexture()
+            {
+                if (_ownedRenderTexture != null)
+                {
+                    throw new InvalidOperationException(
+                        "The request destination was already created.");
+                }
+                if (!SystemInfo.IsFormatSupported(
+                    GraphicsFormat.R8G8B8A8_UNorm,
+                    GraphicsFormatUsage.Render))
+                {
+                    throw new NotSupportedException(
+                        "The locked graphics device cannot render to exact R8G8B8A8_UNorm.");
+                }
+
+                var descriptor = new RenderTextureDescriptor(
+                    _owner._cameraProfile.Output.Width,
+                    _owner._cameraProfile.Output.Height,
+                    GraphicsFormat.R8G8B8A8_UNorm,
+                    0,
+                    1)
+                {
+                    dimension = TextureDimension.Tex2D,
+                    volumeDepth = 1,
+                    msaaSamples = 1,
+                    mipCount = 1,
+                    depthStencilFormat = GraphicsFormat.None,
+                    useMipMap = false,
+                    autoGenerateMips = false,
+                    enableRandomWrite = false,
+                    bindMS = false,
+                    useDynamicScale = false,
+                    useDynamicScaleExplicit = false,
+                    memoryless = RenderTextureMemoryless.None,
+                    sRGB = false
+                };
+                _requestedGraphicsFormat = descriptor.graphicsFormat.ToString();
+                _requestedSrgb = descriptor.sRGB;
+                if (!String.Equals(
+                        _requestedGraphicsFormat,
+                        GraphicsFormat.R8G8B8A8_UNorm.ToString(),
+                        StringComparison.Ordinal) ||
+                    _requestedSrgb)
+                {
+                    throw new InvalidOperationException(
+                        "The explicit RenderTextureDescriptor request is not exact R8G8B8A8_UNorm with sRGB=false.");
+                }
+                _ownedRenderTexture = new RenderTexture(descriptor)
+                {
+                    name = "VenviewerGrandHallSingleCameraRequest-" +
+                        _attempt.ordinal.ToString("D3", CultureInfo.InvariantCulture)
+                };
+                if (!_ownedRenderTexture.Create() ||
+                    !_ownedRenderTexture.IsCreated())
+                {
+                    throw new InvalidOperationException(
+                        "Unity did not create the module-owned SingleCameraRequest destination.");
+                }
+                RequireOwnedTargetReceipt(CaptureOwnedTarget());
+            }
+
+            private void EstablishLockedRenderPipelineBoundary()
+            {
+                ThrowIfAbortedOrStopped();
+                RequireOwnedTargetReceipt(CaptureOwnedTarget());
+                var request = new UniversalRenderPipeline.SingleCameraRequest
+                {
+                    destination = _ownedRenderTexture,
+                    mipLevel = 0,
+                    slice = 0,
+                    face = CubemapFace.Unknown
+                };
+                _surface.capabilityPreflightCallCount = 1;
+                _surface.capabilityPreflightDestinationInstanceId =
+                    _ownedRenderTexture.GetInstanceID();
+                _surface.capabilityPreflightBoundToExactOwnedDestination = true;
+                _surface.capabilityPreflightSubmitRenderRequestInvoked = false;
+                _surface.capabilityPreflightReadbackInvoked = false;
+                _surface.capabilityPreflightSupportsRenderRequestReturnedTrue =
+                    RenderPipeline.SupportsRenderRequest(_camera, request);
+
+                _pipelineBefore = RenderPipelineManager.currentPipeline;
+                _surface.establishedPipelinePresent =
+                    _pipelineBefore != null && !_pipelineBefore.disposed;
+                _surface.establishedPipelineTypeFullName = _pipelineBefore == null
+                    ? null
+                    : _pipelineBefore.GetType().FullName;
+                _surface.establishedPipelineRuntimeIdentityHashCode =
+                    _pipelineBefore == null
+                        ? 0
+                        : RuntimeHelpers.GetHashCode(_pipelineBefore);
+                _surface.unityOwnedRuntimeInitializationOccurred =
+                    !_surface.entryPipelinePresent &&
+                    _surface.establishedPipelinePresent;
+                _surface.disposableProcessOnlyRuntimeLifetime = true;
+                _surface.persistentRenderPipelineAssetMutationClaimed = false;
+
+                RenderPipelineAsset pipelineAssetAfterPreflight =
+                    GraphicsSettings.currentRenderPipeline;
+                _surface.graphicsSettingsAssetPresentAfterPreflight =
+                    pipelineAssetAfterPreflight != null;
+                _surface.graphicsSettingsAssetTypeFullNameAfterPreflight =
+                    pipelineAssetAfterPreflight == null
+                        ? null
+                        : pipelineAssetAfterPreflight.GetType().FullName;
+                _surface.graphicsSettingsAssetInstanceIdAfterPreflight =
+                    pipelineAssetAfterPreflight == null
+                        ? 0
+                        : pipelineAssetAfterPreflight.GetInstanceID();
+
+                if (!_surface.capabilityPreflightSupportsRenderRequestReturnedTrue ||
+                    !_surface.establishedPipelinePresent ||
+                    !String.Equals(
+                        _surface.establishedPipelineTypeFullName,
+                        "UnityEngine.Rendering.Universal.UniversalRenderPipeline",
+                        StringComparison.Ordinal) ||
+                    (_surface.entryPipelinePresent &&
+                        !System.Object.ReferenceEquals(
+                            _entryPipeline,
+                            _pipelineBefore)) ||
+                    !_surface.graphicsSettingsAssetPresentAfterPreflight ||
+                    !System.Object.ReferenceEquals(
+                        pipelineAssetAfterPreflight,
+                        _pipelineAssetBeforePreflight) ||
+                    !String.Equals(
+                        _surface.graphicsSettingsAssetTypeFullNameAfterPreflight,
+                        _surface.graphicsSettingsAssetTypeFullNameBeforePreflight,
+                        StringComparison.Ordinal) ||
+                    _surface.graphicsSettingsAssetInstanceIdAfterPreflight !=
+                        _surface.graphicsSettingsAssetInstanceIdBeforePreflight)
+                {
+                    throw new InvalidOperationException(
+                        "The public SingleCameraRequest capability preflight did not establish the exact locked URP while preserving its GraphicsSettings asset identity.");
+                }
+
+                _surface.rendererConfigurationAfterPreflight =
+                    SnapFrameReadbackOperation
+                        .CaptureReadOnlyUrpRendererConfiguration();
+                _surface.rendererConfigurationSignatureAfterSha256 =
+                    CapturePolicy.ComputeUrpRendererConfigurationSignature(
+                        _surface.rendererConfigurationAfterPreflight);
+                _surface.rendererConfigurationStableAcrossInitialization =
+                    String.Equals(
+                        _surface.rendererConfigurationSignatureBeforeSha256,
+                        _surface.rendererConfigurationSignatureAfterSha256,
+                        StringComparison.Ordinal);
+                if (!_surface.rendererConfigurationStableAcrossInitialization)
+                {
+                    throw new InvalidOperationException(
+                        "Unity-owned URP initialization changed the locked renderer-data or feature configuration.");
+                }
+
+                _surface.rendererInventoryBefore =
+                    SnapFrameReadbackOperation.CaptureReadOnlyUrpRendererInventory(
+                        _camera);
+                CapturePolicy.RequireReadOnlyUrpRendererInventory(
+                    _surface.rendererInventoryBefore);
+                _surface.rendererStateSignatureBeforeSha256 =
+                    CapturePolicy.ComputeUrpRendererStateSignature(
+                        _surface.rendererInventoryBefore);
+            }
+
+            private SingleCameraRenderRequestInvocationReceipt ExecuteRequest(
+                string stage,
+                Vector3 expectedPosition,
+                Quaternion expectedRotation,
+                Matrix4x4 expectedWorldToCamera,
+                out Texture2D texture)
+            {
+                ThrowIfAbortedOrStopped();
+                if (_spawnPointSuppression == null)
+                {
+                    throw new InvalidOperationException(
+                        "The generated spawn-point visualization suppression lease is absent.");
+                }
+                _spawnPointSuppression.RequireSuppressed();
+                RequireCheckpoint(
+                    expectedPosition,
+                    expectedRotation,
+                    expectedWorldToCamera);
+                var invocation = new SingleCameraRenderRequestInvocationReceipt
+                {
+                    stage = stage,
+                    requestNonce = CapturePolicy.Sha256Text(
+                        _attempt.ordinal.ToString(CultureInfo.InvariantCulture) + "|" +
+                        (++_requestOrdinal).ToString(CultureInfo.InvariantCulture) + "|" +
+                        stage + "|" +
+                        Time.frameCount.ToString(CultureInfo.InvariantCulture) + "|" +
+                        Time.realtimeSinceStartupAsDouble.ToString(
+                            "R",
+                            CultureInfo.InvariantCulture)),
+                    requestMipLevel = 0,
+                    requestSlice = 0,
+                    requestCubemapFace = CubemapFace.Unknown.ToString(),
+                    requestDestinationInstanceId =
+                        _ownedRenderTexture.GetInstanceID(),
+                    requestDestinationMatchesOwnedTarget = true,
+                    requestDirectTex2DMipZeroContract = true,
+                    supportsRenderRequestCallCount = 0,
+                    submitRenderRequestCallCount = 0,
+                    targetBeforeSubmit = CaptureOwnedTarget(),
+                    originalCameraTargetTextureNull =
+                        _originalCameraTargetTexture == null,
+                    originalCameraTargetTextureInstanceId =
+                        _originalCameraTargetTexture == null
+                            ? 0
+                            : _originalCameraTargetTexture.GetInstanceID(),
+                    callbacks = new List<SingleCameraRenderRequestCallbackReceipt>()
+                };
+                texture = null;
+                Exception requestFailure = null;
+                _activeInvocation = invocation;
+                _stageExpectedPosition = expectedPosition;
+                _stageExpectedRotation = expectedRotation;
+                _stageExpectedWorldToCamera = expectedWorldToCamera;
+                _callbackSequence = 0;
+                SubscribeAll();
+                try
+                {
+                    RenderPipeline currentPipeline =
+                        RenderPipelineManager.currentPipeline;
+                    if (currentPipeline == null || currentPipeline.disposed ||
+                        !System.Object.ReferenceEquals(currentPipeline, _pipelineBefore))
+                    {
+                        throw new InvalidOperationException(
+                            "The established locked URP instance drifted before SupportsRenderRequest.");
+                    }
+                    var request = new UniversalRenderPipeline.SingleCameraRequest
+                    {
+                        destination = _ownedRenderTexture,
+                        mipLevel = 0,
+                        slice = 0,
+                        face = CubemapFace.Unknown
+                    };
+                    invocation.supportsRenderRequestCallCount = 1;
+                    invocation.supportsRenderRequestReturnedTrue =
+                        RenderPipeline.SupportsRenderRequest(_camera, request);
+                    if (!invocation.supportsRenderRequestReturnedTrue)
+                    {
+                        throw new NotSupportedException(
+                            "Locked URP rejected its public SingleCameraRequest contract.");
+                    }
+                    currentPipeline = RenderPipelineManager.currentPipeline;
+                    invocation.pipelineIdentityVerifiedAfterSupports =
+                        currentPipeline != null &&
+                        !currentPipeline.disposed &&
+                        System.Object.ReferenceEquals(
+                            currentPipeline,
+                            _pipelineBefore);
+                    if (!invocation.pipelineIdentityVerifiedAfterSupports)
+                    {
+                        throw new InvalidOperationException(
+                            "The locked URP identity changed during the request capability check.");
+                    }
+                    UrpRendererInventoryReceipt inventoryAfterSupports =
+                        SnapFrameReadbackOperation.CaptureReadOnlyUrpRendererInventory(
+                            _camera);
+                    CapturePolicy.RequireReadOnlyUrpRendererInventory(
+                        inventoryAfterSupports);
+                    invocation.rendererStateVerifiedAfterSupports =
+                        String.Equals(
+                            CapturePolicy.ComputeUrpRendererStateSignature(
+                                inventoryAfterSupports),
+                            _surface.rendererStateSignatureBeforeSha256,
+                            StringComparison.Ordinal);
+                    if (!invocation.rendererStateVerifiedAfterSupports)
+                    {
+                        throw new InvalidOperationException(
+                            "The locked URP renderer state changed during the request capability check.");
+                    }
+                    invocation.submitRenderRequestInvoked = true;
+                    invocation.submitRenderRequestCallCount = 1;
+                    _spawnPointSuppression.RequireSuppressed();
+                    RenderPipeline.SubmitRenderRequest(_camera, request);
+                    invocation.submitRenderRequestReturned = true;
+                    _spawnPointSuppression.RequireSuppressed();
+                }
+                catch (Exception exception)
+                {
+                    invocation.submitRenderRequestThrew =
+                        invocation.submitRenderRequestInvoked &&
+                        !invocation.submitRenderRequestReturned;
+                    invocation.submitFailureType = exception.GetType().FullName;
+                    invocation.submitFailureMessage = exception.Message;
+                    requestFailure = exception;
+                }
+                finally
+                {
+                    UnsubscribeAll();
+                    invocation.callbackSubscriptionsRemoved =
+                        !_beginContextSubscribed && !_beginCameraSubscribed &&
+                        !_endCameraSubscribed && !_endContextSubscribed;
+                    invocation.targetAfterSubmit = CaptureOwnedTarget();
+                    invocation.targetIdentityAndDescriptorStable =
+                        OwnedTargetsEqual(
+                            invocation.targetBeforeSubmit,
+                            invocation.targetAfterSubmit);
+                    invocation.cameraTargetTextureRestored =
+                        System.Object.ReferenceEquals(
+                            _camera.targetTexture,
+                            _originalCameraTargetTexture);
+                    invocation.exactFourEventTranscriptVerified =
+                        ExactFourEventTranscriptMatches(invocation);
+                    _activeInvocation = null;
+                }
+                if (requestFailure != null)
+                {
+                    throw new InvalidOperationException(
+                        "The locked URP SingleCameraRequest failed for " + stage + ".",
+                        requestFailure);
+                }
+                if (invocation.callbackFailureObserved)
+                {
+                    throw new InvalidOperationException(
+                        "A non-throwing render callback observer failed for " + stage + ": " +
+                        invocation.callbackFailureMessage);
+                }
+                if (!invocation.exactFourEventTranscriptVerified ||
+                    !invocation.cameraTargetTextureRestored ||
+                    !invocation.targetIdentityAndDescriptorStable)
+                {
+                    throw new InvalidOperationException(
+                        "The exact four-event request transcript, camera-target restoration, or owned-target identity proof failed for " +
+                        stage + ".");
+                }
+
+                invocation.readback = new SingleCameraRenderRequestReadbackReceipt();
+                texture = ReadOwnedRenderTexture(invocation.readback);
+                _spawnPointSuppression.RequireSuppressed();
+                return invocation;
+            }
+
+            private void RestoreSpawnPointVisualizations()
+            {
+                if (_spawnPointSuppression != null)
+                {
+                    _spawnPointSuppression.Restore();
+                }
+            }
+
+            private Texture2D ReadOwnedRenderTexture(
+                SingleCameraRenderRequestReadbackReceipt readback)
+            {
+                if (readback == null || _ownedRenderTexture == null ||
+                    !_ownedRenderTexture.IsCreated())
+                {
+                    throw new InvalidOperationException(
+                        "The owned request destination is unavailable for readback.");
+                }
+                int targetInstanceId = _ownedRenderTexture.GetInstanceID();
+                RenderTexture previousActive = RenderTexture.active;
+                readback.observationFrame = Time.frameCount;
+                readback.sourceRenderTextureInstanceId = targetInstanceId;
+                readback.sourceOwnedAndCreatedBeforeReadback = true;
+                readback.width = _owner._cameraProfile.Output.Width;
+                readback.height = _owner._cameraProfile.Output.Height;
+                readback.renderTextureActiveWasNullBeforeReadback =
+                    previousActive == null;
+                readback.renderTextureActiveBeforeReadbackInstanceId =
+                    previousActive == null ? 0 : previousActive.GetInstanceID();
+                Texture2D texture = null;
+                Exception readbackFailure = null;
+                try
+                {
+                    RenderTexture.active = _ownedRenderTexture;
+                    RenderTexture active = RenderTexture.active;
+                    readback.renderTextureActiveBoundForReadbackInstanceId =
+                        active == null ? 0 : active.GetInstanceID();
+                    readback.exactOwnedRenderTextureActiveBeforeReadPixels =
+                        active != null && active.GetInstanceID() == targetInstanceId;
+                    if (!readback.exactOwnedRenderTextureActiveBeforeReadPixels)
+                    {
+                        throw new InvalidOperationException(
+                            "RenderTexture.active did not bind the owned request destination.");
+                    }
+                    texture = new Texture2D(
+                        _owner._cameraProfile.Output.Width,
+                        _owner._cameraProfile.Output.Height,
+                        TextureFormat.RGB24,
+                        false);
+                    readback.firstPartyTextureInstanceId = texture.GetInstanceID();
+                    readback.firstPartyTextureFormat = texture.format.ToString();
+                    texture.ReadPixels(
+                        new Rect(
+                            0.0f,
+                            0.0f,
+                            _owner._cameraProfile.Output.Width,
+                            _owner._cameraProfile.Output.Height),
+                        0,
+                        0,
+                        false);
+                    readback.firstPartyReadPixelsCompleted = true;
+                    texture.Apply(false, false);
+                    readback.firstPartyApplyCompleted = true;
+                    readback.firstPartyTextureReadable = texture.isReadable;
+                    readback.firstPartyTextureNoMipChain =
+                        texture.mipmapCount == 1;
+                    readback.firstPartyTextureDistinctFromOwnedRenderTexture =
+                        texture.GetInstanceID() != targetInstanceId;
+                    byte[] rgb24 = ToRgb24(texture.GetPixels32());
+                    readback.rgb24ByteLength = rgb24.LongLength;
+                    readback.rgb24Sha256 = CapturePolicy.Sha256Bytes(rgb24);
+                    readback.readbackCompletedAfterSubmitReturned = true;
+                    if (texture.format != TextureFormat.RGB24 ||
+                        !readback.firstPartyTextureReadable ||
+                        !readback.firstPartyTextureNoMipChain ||
+                        !readback.firstPartyTextureDistinctFromOwnedRenderTexture)
+                    {
+                        throw new InvalidDataException(
+                            "The direct request readback is not a distinct readable RGB24 texture without mip levels.");
+                    }
+                }
+                catch (Exception exception)
+                {
+                    readbackFailure = exception;
+                }
+                finally
+                {
+                    RenderTexture.active = previousActive;
+                    RenderTexture restored = RenderTexture.active;
+                    readback.renderTextureActiveWasNullAfterReadback =
+                        restored == null;
+                    readback.renderTextureActiveAfterReadbackInstanceId =
+                        restored == null ? 0 : restored.GetInstanceID();
+                    readback.renderTextureActiveRestored =
+                        previousActive == null
+                            ? restored == null
+                            : restored != null && restored.GetInstanceID() ==
+                                previousActive.GetInstanceID();
+                }
+                if (!readback.renderTextureActiveRestored || readbackFailure != null)
+                {
+                    if (texture != null)
+                    {
+                        UnityEngine.Object.Destroy(texture);
+                    }
+                    throw new InvalidOperationException(
+                        "Direct RGB24 readback from the owned request destination failed or did not restore RenderTexture.active.",
+                        readbackFailure);
+                }
+                if (_ownedRenderTexture == null ||
+                    !_ownedRenderTexture.IsCreated() ||
+                    _ownedRenderTexture.GetInstanceID() != targetInstanceId)
+                {
+                    UnityEngine.Object.Destroy(texture);
+                    throw new InvalidOperationException(
+                        "The owned request destination drifted across direct RGB24 readback.");
+                }
+                return texture;
+            }
+
+            private void CaptureCameraConfiguration()
+            {
+                _surface.sceneCameraPixelWidth = _camera.pixelWidth;
+                _surface.sceneCameraPixelHeight = _camera.pixelHeight;
+                _surface.sceneCameraCullingMask = _camera.cullingMask;
+                _surface.sceneCameraTargetDisplay = _camera.targetDisplay;
+                _surface.sceneCameraEnabledBefore = _camera.enabled;
+                _surface.sceneCameraClearFlags = _camera.clearFlags.ToString();
+                _surface.sceneCameraDepth = _camera.depth;
+                _surface.sceneCameraRect = RectToArray(_camera.rect);
+                _surface.sceneCameraPixelRect = RectToArray(_camera.pixelRect);
+                UniversalAdditionalCameraData data =
+                    _camera.GetComponent<UniversalAdditionalCameraData>();
+                _surface.universalAdditionalCameraDataPresent = data != null;
+                if (data != null)
+                {
+                    _surface.universalCameraRenderType =
+                        data.renderType.ToString();
+                    _surface.universalRenderPostProcessing =
+                        data.renderPostProcessing;
+                }
+                _surface.cameraStackGetterInvoked = false;
+                _surface.cameraStackBypassedByRequestContract = true;
+                if (_surface.sceneCameraPixelWidth !=
+                        _owner._cameraProfile.Output.Width ||
+                    _surface.sceneCameraPixelHeight !=
+                        _owner._cameraProfile.Output.Height ||
+                    !_surface.universalAdditionalCameraDataPresent ||
+                    !String.Equals(
+                        _surface.universalCameraRenderType,
+                        CameraRenderType.Base.ToString(),
+                        StringComparison.Ordinal) ||
+                    (_camera.clearFlags != CameraClearFlags.Color &&
+                        _camera.clearFlags != CameraClearFlags.SolidColor &&
+                        _camera.clearFlags != CameraClearFlags.Skybox))
+                {
+                    throw new InvalidOperationException(
+                        "The exact scene camera is not a full-clear 1600x900 URP Base camera.");
+                }
+            }
+
+            private void CaptureFinalSurfaceState()
+            {
+                _surface.captureViewAbsentAfter =
+                    !_owner._captureManager.IsCaptureViewVisible;
+                _surface.sceneCameraScreenRendererModeAfter =
+                    _owner._sceneManager.SceneCameraScreenRenderer;
+                _surface.sceneCameraTargetTextureNullAfterOperation =
+                    _camera.targetTexture == null;
+                _surface.sceneCameraCullingMaskAfter = _camera.cullingMask;
+                _surface.sceneCameraTargetDisplayAfter = _camera.targetDisplay;
+                _surface.sceneCameraEnabledAfter = _camera.enabled;
+                _surface.sceneCameraClearFlagsAfter =
+                    _camera.clearFlags.ToString();
+                _surface.sceneCameraDepthAfter = _camera.depth;
+                _surface.activeColorSpaceAfter =
+                    QualitySettings.activeColorSpace.ToString();
+                _surface.sceneCameraRectAfter = RectToArray(_camera.rect);
+                _surface.sceneCameraPixelRectAfter = RectToArray(_camera.pixelRect);
+                UniversalAdditionalCameraData data =
+                    _camera.GetComponent<UniversalAdditionalCameraData>();
+                _surface.universalAdditionalCameraDataPresentAfter = data != null;
+                _surface.universalCameraRenderTypeAfter = data == null
+                    ? null
+                    : data.renderType.ToString();
+                _surface.universalRenderPostProcessingAfter =
+                    data != null && data.renderPostProcessing;
+                RenderPipeline pipelineAfter =
+                    RenderPipelineManager.currentPipeline;
+                _surface.pipelinePresentAfterOperation =
+                    pipelineAfter != null && !pipelineAfter.disposed;
+                _surface.pipelineTypeFullNameAfterOperation = pipelineAfter == null
+                    ? null
+                    : pipelineAfter.GetType().FullName;
+                _surface.pipelineRuntimeIdentityHashCodeAfterOperation = pipelineAfter == null
+                    ? 0
+                    : RuntimeHelpers.GetHashCode(pipelineAfter);
+                _surface.pipelineRuntimeIdentityStableAfterEstablishment =
+                    _surface.pipelinePresentAfterOperation &&
+                    System.Object.ReferenceEquals(pipelineAfter, _pipelineBefore) &&
+                    String.Equals(
+                        _surface.pipelineTypeFullNameAfterOperation,
+                        _surface.establishedPipelineTypeFullName,
+                        StringComparison.Ordinal) &&
+                    _surface.pipelineRuntimeIdentityHashCodeAfterOperation ==
+                        _surface.establishedPipelineRuntimeIdentityHashCode;
+                _surface.cameraConfigurationUnchanged =
+                    _surface.sceneCameraCullingMaskAfter ==
+                        _surface.sceneCameraCullingMask &&
+                    _surface.sceneCameraTargetDisplayAfter ==
+                        _surface.sceneCameraTargetDisplay &&
+                    _surface.sceneCameraEnabledAfter ==
+                        _surface.sceneCameraEnabledBefore &&
+                    String.Equals(
+                        _surface.sceneCameraClearFlagsAfter,
+                        _surface.sceneCameraClearFlags,
+                        StringComparison.Ordinal) &&
+                    Math.Abs(
+                        _surface.sceneCameraDepthAfter -
+                        _surface.sceneCameraDepth) <=
+                        CapturePolicy.ProjectionTolerance &&
+                    String.Equals(
+                        _surface.activeColorSpaceAfter,
+                        _surface.activeColorSpace,
+                        StringComparison.Ordinal) &&
+                    _surface.universalAdditionalCameraDataPresentAfter ==
+                        _surface.universalAdditionalCameraDataPresent &&
+                    String.Equals(
+                        _surface.universalCameraRenderTypeAfter,
+                        _surface.universalCameraRenderType,
+                        StringComparison.Ordinal) &&
+                    _surface.universalRenderPostProcessingAfter ==
+                        _surface.universalRenderPostProcessing &&
+                    RectArraysEqual(
+                        _surface.sceneCameraRectAfter,
+                        _surface.sceneCameraRect) &&
+                    RectArraysEqual(
+                        _surface.sceneCameraPixelRectAfter,
+                        _surface.sceneCameraPixelRect) &&
+                    _camera.pixelWidth == _surface.sceneCameraPixelWidth &&
+                    _camera.pixelHeight == _surface.sceneCameraPixelHeight &&
+                    String.Equals(
+                        _camera.clearFlags.ToString(),
+                        _surface.sceneCameraClearFlags,
+                        StringComparison.Ordinal) &&
+                    System.Object.ReferenceEquals(
+                        _camera.targetTexture,
+                        _originalCameraTargetTexture);
+                CaptureOverlayInventory();
+                CapturePotentialCameraCallbackContributors();
+                RequireNoUnsafeSurfaceContributor();
+            }
+
+            private void CapturePotentialCameraCallbackContributors()
+            {
+                string[] identities =
+                    Resources.FindObjectsOfTypeAll<CameraDraw>()
+                        .Where(candidate => candidate != null && candidate.enabled &&
+                            candidate.gameObject != null &&
+                            candidate.gameObject.activeInHierarchy)
+                        .Select(candidate =>
+                            candidate.GetType().FullName + "|" +
+                            candidate.GetInstanceID().ToString(
+                                CultureInfo.InvariantCulture) + "|" +
+                            candidate.name)
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(candidate => candidate, StringComparer.Ordinal)
+                        .ToArray();
+                string[] accumulatedIdentities =
+                    (_surface.knownPotentialCameraCallbackContributorIdentities ??
+                        new string[0])
+                        .Concat(identities)
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(candidate => candidate, StringComparer.Ordinal)
+                        .ToArray();
+                _surface.cameraCallbackContributorInventoryCompleted = true;
+                _surface.knownPotentialCameraCallbackContributorIdentities =
+                    accumulatedIdentities;
+                _surface.knownPotentialCameraCallbackContributorCount =
+                    accumulatedIdentities.Length;
+                _surface.cameraCallbackContaminationExcluded =
+                    accumulatedIdentities.Length == 0;
+            }
+
+            private void CaptureOverlayInventory()
+            {
+                var canvases = new List<NativeCanvasReceipt>();
+                bool unsafeCanvas = false;
+                int screenSpaceOverlayCount = 0;
+                foreach (Canvas canvas in Resources.FindObjectsOfTypeAll<Canvas>())
+                {
+                    if (canvas == null || !canvas.enabled || canvas.gameObject == null ||
+                        !canvas.gameObject.activeInHierarchy)
+                    {
+                        continue;
+                    }
+                    Camera worldCamera = canvas.worldCamera;
+                    int layer = canvas.gameObject.layer;
+                    bool layerIncluded = layer >= 0 && layer < 32 &&
+                        (_camera.cullingMask & (1 << layer)) != 0;
+                    bool worldCameraMatches = IsLiveCamera(worldCamera) &&
+                        worldCamera.GetInstanceID() == _cameraInstanceId;
+                    bool screenSpaceOverlay =
+                        canvas.renderMode == UnityEngine.RenderMode.ScreenSpaceOverlay;
+                    bool canRenderIntoRequest =
+                        canvas.renderMode == UnityEngine.RenderMode.WorldSpace &&
+                            layerIncluded ||
+                        canvas.renderMode == UnityEngine.RenderMode.ScreenSpaceCamera &&
+                            (worldCamera == null || worldCameraMatches);
+                    if (screenSpaceOverlay)
+                    {
+                        screenSpaceOverlayCount += 1;
+                    }
+                    unsafeCanvas |= canRenderIntoRequest;
+                    canvases.Add(new NativeCanvasReceipt
+                    {
+                        instanceId = canvas.GetInstanceID(),
+                        name = canvas.name,
+                        renderMode = canvas.renderMode.ToString(),
+                        layer = layer,
+                        layerName = LayerMask.LayerToName(layer),
+                        worldCameraInstanceId = IsLiveCamera(worldCamera)
+                            ? worldCamera.GetInstanceID()
+                            : 0,
+                        worldCameraMatchesSceneCamera = worldCameraMatches,
+                        layerIncludedBySceneCamera = layerIncluded,
+                        canRenderIntoRequest = canRenderIntoRequest,
+                        excludedByNonNullTargetContract = screenSpaceOverlay
+                    });
+                }
+                _surface.activeCanvases = canvases;
+                _surface.unsafeCanvasObserved |= unsafeCanvas;
+                _surface.activeScreenSpaceOverlayCanvasCount =
+                    screenSpaceOverlayCount;
+                _surface.screenSpaceOverlayExcludedByRequestContract =
+                    canvases.Where(candidate => String.Equals(
+                        candidate.renderMode,
+                        UnityEngine.RenderMode.ScreenSpaceOverlay.ToString(),
+                        StringComparison.Ordinal)).All(candidate =>
+                            candidate.excludedByNonNullTargetContract &&
+                            !candidate.canRenderIntoRequest);
+
+                string[] currentOverlayNames =
+                    Resources.FindObjectsOfTypeAll<GameObject>()
+                        .Where(candidate => candidate != null &&
+                            candidate.activeInHierarchy &&
+                            IsKnownCaptureOverlayName(candidate.name))
+                        .Select(candidate => candidate.name)
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(candidate => candidate, StringComparer.Ordinal)
+                        .ToArray();
+                _surface.knownActiveCaptureOverlayNames =
+                    (_surface.knownActiveCaptureOverlayNames ?? new string[0])
+                        .Concat(currentOverlayNames)
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(candidate => candidate, StringComparer.Ordinal)
+                        .ToArray();
+                _surface.knownActiveCaptureOverlayCount =
+                    _surface.knownActiveCaptureOverlayNames.Length;
+            }
+
+            private void RequireNoUnsafeSurfaceContributor()
+            {
+                bool clean = _surface.sceneCameraLive &&
+                    _surface.sceneCameraInstanceId == _cameraInstanceId &&
+                    !_owner._captureManager.IsCaptureViewVisible &&
+                    _owner._sceneManager.SceneCameraScreenRenderer &&
+                    _surface.knownActiveCaptureOverlayCount == 0 &&
+                    !_surface.unsafeCanvasObserved &&
+                    !_owner._sceneManager.IsGridVisible &&
+                    !_owner._sceneManager.IsSceneGizmoVisible &&
+                    !_owner._sceneManager.ShowTrajectory &&
+                    !_owner._sceneManager.SceneCameraInteraction &&
+                    System.Object.ReferenceEquals(
+                        _camera.targetTexture,
+                        _originalCameraTargetTexture) &&
+                    _camera.cullingMask == _surface.sceneCameraCullingMask &&
+                    _camera.targetDisplay == _surface.sceneCameraTargetDisplay &&
+                    RectArraysEqual(
+                        RectToArray(_camera.rect),
+                        _surface.sceneCameraRect) &&
+                    RectArraysEqual(
+                        RectToArray(_camera.pixelRect),
+                        _surface.sceneCameraPixelRect);
+                _surface.cleanViewStateVerifiedAtEveryCheckpoint &= clean;
+                if (!clean)
+                {
+                    throw new InvalidOperationException(
+                        "A camera-space/world-space Canvas, capture overlay, capture view, helper, target, or camera configuration could contaminate the request destination.");
+                }
+            }
+
+            private void RequireCheckpoint(
+                Vector3 expectedPosition,
+                Quaternion expectedRotation,
+                Matrix4x4 expectedWorldToCamera)
+            {
+                ThrowIfAbortedOrStopped();
+                if (_ownedRenderTexture == null ||
+                    !_ownedRenderTexture.IsCreated() ||
+                    !PoseMatches(
+                        _camera,
+                        expectedPosition,
+                        expectedRotation,
+                        expectedWorldToCamera) ||
+                    !MatrixApproximatelyEqual(
+                        _camera.projectionMatrix,
+                        _exactProjection) ||
+                    !System.Object.ReferenceEquals(
+                        _camera.targetTexture,
+                        _originalCameraTargetTexture))
+                {
+                    throw new InvalidOperationException(
+                        "The exact camera pose, projection, original target, or owned request destination drifted.");
+                }
+                RenderPipeline currentPipeline =
+                    RenderPipelineManager.currentPipeline;
+                if (currentPipeline == null || currentPipeline.disposed ||
+                    !System.Object.ReferenceEquals(currentPipeline, _pipelineBefore))
+                {
+                    throw new InvalidOperationException(
+                        "The initialized UniversalRenderPipeline instance drifted across a request checkpoint.");
+                }
+                CaptureOverlayInventory();
+                RequireNoUnsafeSurfaceContributor();
+                if (PositionsApproximatelyEqual(expectedPosition, _exactPosition))
+                {
+                    _owner.RequireLockedCameraState(_cameraState);
+                }
+                else
+                {
+                    _owner.RequireObservedUltraRenderAll();
+                    if (!_owner._lccSceneManager.IsSceneLoaded(
+                            CapturePolicy.CanonicalScenePath) ||
+                        !_owner._lccSceneManager.HasEnvironment)
+                    {
+                        throw new InvalidOperationException(
+                            "The canonical Grand Hall scene or renderer readiness drifted at the sentinel checkpoint.");
+                    }
+                }
+            }
+
+            private SingleCameraRenderRequestTargetReceipt CaptureOwnedTarget()
+            {
+                RenderTexture target = _ownedRenderTexture;
+                return new SingleCameraRenderRequestTargetReceipt
+                {
+                    instanceId = target == null ? 0 : target.GetInstanceID(),
+                    ownedByModule = target != null,
+                    created = target != null && target.IsCreated(),
+                    width = target == null ? 0 : target.width,
+                    height = target == null ? 0 : target.height,
+                    volumeDepth = target == null ? 0 : target.volumeDepth,
+                    depthBits = target == null ? 0 : target.depth,
+                    depthStencilFormat = target == null
+                        ? null
+                        : target.depthStencilFormat.ToString(),
+                    antiAliasing = target == null ? 0 : target.antiAliasing,
+                    mipCount = target == null
+                        ? 0
+                        : target.descriptor.mipCount,
+                    dimension = target == null ? null : target.dimension.ToString(),
+                    colorFormat = target == null ? null : target.format.ToString(),
+                    requestedGraphicsFormat = _requestedGraphicsFormat,
+                    requestedSrgb = _requestedSrgb,
+                    effectiveGraphicsFormat = target == null
+                        ? null
+                        : target.graphicsFormat.ToString(),
+                    effectiveGraphicsFormatRenderSupported = target != null &&
+                        SystemInfo.IsFormatSupported(
+                            target.graphicsFormat,
+                            GraphicsFormatUsage.Render),
+                    effectiveSrgb = target != null && target.sRGB,
+                    requestedAndEffectiveFormatMatch = target != null &&
+                        String.Equals(
+                            _requestedGraphicsFormat,
+                            target.graphicsFormat.ToString(),
+                            StringComparison.Ordinal) &&
+                        _requestedSrgb == target.sRGB,
+                    useMipMap = target != null && target.useMipMap,
+                    autoGenerateMips = target != null &&
+                        target.autoGenerateMips,
+                    useDynamicScale = target != null &&
+                        target.useDynamicScale,
+                    enableRandomWrite = target != null &&
+                        target.enableRandomWrite
+                };
+            }
+
+            private static void RequireOwnedTargetReceipt(
+                SingleCameraRenderRequestTargetReceipt target)
+            {
+                if (target == null || target.instanceId == 0 ||
+                    !target.ownedByModule || !target.created ||
+                    target.width != CapturePolicy.CaptureWidth ||
+                    target.height != CapturePolicy.CaptureHeight ||
+                    target.volumeDepth != 1 || target.depthBits != 0 ||
+                    !String.Equals(
+                        target.depthStencilFormat,
+                        GraphicsFormat.None.ToString(),
+                        StringComparison.Ordinal) ||
+                    target.antiAliasing != 1 ||
+                    target.mipCount != 1 ||
+                    !String.Equals(
+                        target.dimension,
+                        TextureDimension.Tex2D.ToString(),
+                        StringComparison.Ordinal) ||
+                    !String.Equals(
+                        target.requestedGraphicsFormat,
+                        GraphicsFormat.R8G8B8A8_UNorm.ToString(),
+                        StringComparison.Ordinal) ||
+                    target.requestedSrgb ||
+                    !String.Equals(
+                        target.effectiveGraphicsFormat,
+                        target.requestedGraphicsFormat,
+                        StringComparison.Ordinal) ||
+                    !target.effectiveGraphicsFormatRenderSupported ||
+                    target.effectiveSrgb != target.requestedSrgb ||
+                    !target.requestedAndEffectiveFormatMatch ||
+                    target.useMipMap ||
+                    target.autoGenerateMips || target.useDynamicScale ||
+                    target.enableRandomWrite)
+                {
+                    throw new InvalidOperationException(
+                        "The module-owned request destination descriptor is not exact requested/effective R8G8B8A8_UNorm sRGB=false 1600x900 Tex2D, single-sample, depthless, and mipless.");
+                }
+            }
+
+            private static bool OwnedTargetsEqual(
+                SingleCameraRenderRequestTargetReceipt left,
+                SingleCameraRenderRequestTargetReceipt right)
+            {
+                return left != null && right != null &&
+                    left.instanceId == right.instanceId &&
+                    left.ownedByModule == right.ownedByModule &&
+                    left.created == right.created &&
+                    left.width == right.width && left.height == right.height &&
+                    left.volumeDepth == right.volumeDepth &&
+                    left.depthBits == right.depthBits &&
+                    String.Equals(
+                        left.depthStencilFormat,
+                        right.depthStencilFormat,
+                        StringComparison.Ordinal) &&
+                    left.antiAliasing == right.antiAliasing &&
+                    left.mipCount == right.mipCount &&
+                    String.Equals(left.dimension, right.dimension, StringComparison.Ordinal) &&
+                    String.Equals(left.colorFormat, right.colorFormat, StringComparison.Ordinal) &&
+                    String.Equals(
+                        left.requestedGraphicsFormat,
+                        right.requestedGraphicsFormat,
+                        StringComparison.Ordinal) &&
+                    left.requestedSrgb == right.requestedSrgb &&
+                    String.Equals(
+                        left.effectiveGraphicsFormat,
+                        right.effectiveGraphicsFormat,
+                        StringComparison.Ordinal) &&
+                    left.effectiveGraphicsFormatRenderSupported ==
+                        right.effectiveGraphicsFormatRenderSupported &&
+                    left.effectiveSrgb == right.effectiveSrgb &&
+                    left.requestedAndEffectiveFormatMatch ==
+                        right.requestedAndEffectiveFormatMatch &&
+                    left.useMipMap == right.useMipMap &&
+                    left.autoGenerateMips == right.autoGenerateMips &&
+                    left.useDynamicScale == right.useDynamicScale &&
+                    left.enableRandomWrite == right.enableRandomWrite;
+            }
+
+            private void SubscribeAll()
+            {
+                RenderPipelineManager.beginContextRendering +=
+                    _beginContextHandler;
+                _beginContextSubscribed = true;
+                RenderPipelineManager.beginCameraRendering +=
+                    _beginCameraHandler;
+                _beginCameraSubscribed = true;
+                RenderPipelineManager.endCameraRendering +=
+                    _endCameraHandler;
+                _endCameraSubscribed = true;
+                RenderPipelineManager.endContextRendering +=
+                    _endContextHandler;
+                _endContextSubscribed = true;
+            }
+
+            private void UnsubscribeAll()
+            {
+                if (_beginContextSubscribed)
+                {
+                    RenderPipelineManager.beginContextRendering -=
+                        _beginContextHandler;
+                    _beginContextSubscribed = false;
+                }
+                if (_beginCameraSubscribed)
+                {
+                    RenderPipelineManager.beginCameraRendering -=
+                        _beginCameraHandler;
+                    _beginCameraSubscribed = false;
+                }
+                if (_endCameraSubscribed)
+                {
+                    RenderPipelineManager.endCameraRendering -=
+                        _endCameraHandler;
+                    _endCameraSubscribed = false;
+                }
+                if (_endContextSubscribed)
+                {
+                    RenderPipelineManager.endContextRendering -=
+                        _endContextHandler;
+                    _endContextSubscribed = false;
+                }
+            }
+
+            private void HandleBeginContextRendering(
+                ScriptableRenderContext context,
+                List<Camera> cameras)
+            {
+                TryRecordCallback("beginContext", cameras);
+            }
+
+            private void HandleBeginCameraRendering(
+                ScriptableRenderContext context,
+                Camera camera)
+            {
+                TryRecordCallback(
+                    "beginCamera",
+                    camera == null ? new List<Camera>() : new List<Camera> { camera });
+            }
+
+            private void HandleEndCameraRendering(
+                ScriptableRenderContext context,
+                Camera camera)
+            {
+                TryRecordCallback(
+                    "endCamera",
+                    camera == null ? new List<Camera>() : new List<Camera> { camera });
+            }
+
+            private void HandleEndContextRendering(
+                ScriptableRenderContext context,
+                List<Camera> cameras)
+            {
+                TryRecordCallback("endContext", cameras);
+            }
+
+            private void TryRecordCallback(string callback, List<Camera> cameras)
+            {
+                try
+                {
+                    RecordCallback(callback, cameras);
+                }
+                catch (Exception exception)
+                {
+                    SingleCameraRenderRequestInvocationReceipt invocation =
+                        _activeInvocation;
+                    if (invocation != null)
+                    {
+                        invocation.callbackFailureObserved = true;
+                        invocation.callbackFailureType = exception.GetType().FullName;
+                        invocation.callbackFailureMessage = exception.Message;
+                    }
+                }
+            }
+
+            private void RecordCallback(string callback, List<Camera> cameras)
+            {
+                SingleCameraRenderRequestInvocationReceipt invocation =
+                    _activeInvocation;
+                if (invocation == null)
+                {
+                    return;
+                }
+                if (invocation.callbacks.Count >= MaximumRecordedCallbacks)
+                {
+                    invocation.callbackHistoryOverflowed = true;
+                    return;
+                }
+
+                int cameraCount = cameras == null ? 0 : cameras.Count;
+                var cameraIds = new int[cameraCount];
+                for (int index = 0; index < cameraCount; index += 1)
+                {
+                    Camera candidate = cameras[index];
+                    cameraIds[index] = candidate == null
+                        ? 0
+                        : candidate.GetInstanceID();
+                }
+                bool exactCameraOnly = cameraCount == 1 &&
+                    cameraIds[0] == _cameraInstanceId;
+                RenderTexture liveTarget = _camera.targetTexture;
+                int liveTargetId = liveTarget == null
+                    ? 0
+                    : liveTarget.GetInstanceID();
+                int ownedTargetId = _ownedRenderTexture == null
+                    ? 0
+                    : _ownedRenderTexture.GetInstanceID();
+                Camera evidenceCamera = exactCameraOnly ? cameras[0] : _camera;
+                invocation.callbacks.Add(
+                    new SingleCameraRenderRequestCallbackReceipt
+                    {
+                        sequence = ++_callbackSequence,
+                        callback = callback,
+                        requestNonce = invocation.requestNonce,
+                        frame = Time.frameCount,
+                        realtimeSeconds = Time.realtimeSinceStartupAsDouble,
+                        cameraCount = cameraCount,
+                        cameraInstanceIds = cameraIds,
+                        exactSceneCameraOnly = exactCameraOnly,
+                        cameraTargetMatchesOwnedRenderTexture =
+                            liveTargetId != 0 && liveTargetId == ownedTargetId,
+                        cameraTargetTextureInstanceId = liveTargetId,
+                        poseMatchesRequestedStage = PoseMatches(
+                            evidenceCamera,
+                            _stageExpectedPosition,
+                            _stageExpectedRotation,
+                            _stageExpectedWorldToCamera),
+                        projectionMatchesExactProfile =
+                            evidenceCamera != null && MatrixApproximatelyEqual(
+                                evidenceCamera.projectionMatrix,
+                                _exactProjection),
+                        position = evidenceCamera == null
+                            ? null
+                            : ToArray(evidenceCamera.transform.position),
+                        rotationXyzw = evidenceCamera == null
+                            ? null
+                            : ToArray(evidenceCamera.transform.rotation),
+                        worldToCameraMatrixColumnMajor = evidenceCamera == null
+                            ? null
+                            : MatrixToColumnMajor(
+                                evidenceCamera.worldToCameraMatrix),
+                        projectionMatrixColumnMajor = evidenceCamera == null
+                            ? null
+                            : MatrixToColumnMajor(
+                                evidenceCamera.projectionMatrix)
+                    });
+            }
+
+            private bool ExactFourEventTranscriptMatches(
+                SingleCameraRenderRequestInvocationReceipt invocation)
+            {
+                if (invocation == null || invocation.callbackHistoryOverflowed ||
+                    invocation.callbackFailureObserved ||
+                    invocation.callbacks == null || invocation.callbacks.Count != 4)
+                {
+                    return false;
+                }
+                string[] expected =
+                {
+                    "beginContext",
+                    "beginCamera",
+                    "endCamera",
+                    "endContext"
+                };
+                int frame = invocation.callbacks[0].frame;
+                for (int index = 0; index < expected.Length; index += 1)
+                {
+                    SingleCameraRenderRequestCallbackReceipt callback =
+                        invocation.callbacks[index];
+                    if (callback == null || callback.sequence != index + 1 ||
+                        !String.Equals(
+                            callback.callback,
+                            expected[index],
+                            StringComparison.Ordinal) ||
+                        callback.frame != frame || !callback.exactSceneCameraOnly ||
+                        !callback.cameraTargetMatchesOwnedRenderTexture ||
+                        !callback.poseMatchesRequestedStage ||
+                        !callback.projectionMatchesExactProfile)
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            private void ApplyPose(Vector3 position, Quaternion rotation)
+            {
+                _owner._cameraService.SetTransform(position, rotation);
+                _owner._sceneManager.SceneCameraPosition = position;
+                _owner._sceneManager.SceneCameraRotation = rotation;
+                _owner.ApplyProjection(_camera);
+            }
+
+            private void RestoreExactCameraState()
+            {
+                ApplyPose(_exactPosition, _exactRotation);
+                _owner._lccSceneManager.SetFOV(
+                    _owner._cameraProfile.Output.Width,
+                    _owner._cameraProfile.Output.Height,
+                    (float)_owner._cameraProfile.Projection.VerticalFieldOfViewDegrees,
+                    (float)_owner._cameraProfile.Projection.Aspect);
+                _owner._lccSceneManager.ForceRerenderer();
+            }
+
+            private void CaptureExactCameraAfterState()
+            {
+                _surface.exactPositionAfter =
+                    ToArray(_camera.transform.position);
+                _surface.exactRotationXyzwAfter =
+                    ToArray(_camera.transform.rotation);
+                _surface.exactWorldToCameraMatrixColumnMajorAfter =
+                    MatrixToColumnMajor(_camera.worldToCameraMatrix);
+                _surface.exactProjectionMatrixColumnMajorAfter =
+                    MatrixToColumnMajor(_camera.projectionMatrix);
+                _surface.exactRestoreVerified = ExactCameraStateMatches();
+            }
+
+            private bool ExactCameraStateMatches()
+            {
+                return PoseMatches(
+                        _camera,
+                        _exactPosition,
+                        _exactRotation,
+                        _exactWorldToCamera) &&
+                    MatrixApproximatelyEqual(
+                        _camera.projectionMatrix,
+                        _exactProjection) &&
+                    System.Object.ReferenceEquals(
+                        _camera.targetTexture,
+                        _originalCameraTargetTexture);
+            }
+
+            private void RestoreOriginalCameraTargetTexture()
+            {
+                if (!System.Object.ReferenceEquals(
+                    _camera.targetTexture,
+                    _originalCameraTargetTexture))
+                {
+                    _surface.cameraTargetTextureAssignedByModule = true;
+                    _camera.targetTexture = _originalCameraTargetTexture;
+                }
+            }
+
+            private void RestoreRenderTextureActive()
+            {
+                RenderTexture.active = _originalRenderTextureActive;
+            }
+
+            private bool RenderTextureActiveMatchesOriginal()
+            {
+                RenderTexture current = RenderTexture.active;
+                return _originalRenderTextureActive == null
+                    ? current == null
+                    : current != null && current.GetInstanceID() ==
+                        _originalRenderTextureActive.GetInstanceID();
+            }
+
+            private void ReleaseAndDestroyOwnedRenderTexture()
+            {
+                RenderTexture target = _ownedRenderTexture;
+                if (target == null)
+                {
+                    return;
+                }
+                RenderTexture currentActive = RenderTexture.active;
+                if (currentActive != null &&
+                    currentActive.GetInstanceID() == target.GetInstanceID())
+                {
+                    RestoreRenderTextureActive();
+                }
+                if (target.IsCreated())
+                {
+                    target.Release();
+                    _surface.ownedRenderTextureReleaseRequested = true;
+                }
+                _surface.ownedRenderTextureCreatedAfterRelease =
+                    target.IsCreated();
+                UnityEngine.Object.Destroy(target);
+                _surface.ownedRenderTextureDestroyRequested = true;
+                _ownedRenderTexture = null;
+            }
+
+            private void ThrowIfAbortedOrStopped()
+            {
+                if (Volatile.Read(ref _abortRequested) != 0 ||
+                    _cancellation.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(
+                        "The SingleCameraRequest operation was cancelled outside its synchronous submit call.");
+                }
+                _owner.ThrowIfStopped();
+            }
+
+            private bool PoseMatches(
+                Camera camera,
+                Vector3 expectedPosition,
+                Quaternion expectedRotation,
+                Matrix4x4 expectedWorldToCamera)
+            {
+                if (camera == null)
+                {
+                    return false;
+                }
+                double tolerance =
+                    _owner._cameraProfile.Frames.Native.AssertionTolerance;
+                float rotationDot = Quaternion.Dot(
+                    camera.transform.rotation,
+                    expectedRotation);
+                return IsFinite(camera.transform.position.x) &&
+                    IsFinite(camera.transform.position.y) &&
+                    IsFinite(camera.transform.position.z) &&
+                    IsFinite(expectedPosition.x) && IsFinite(expectedPosition.y) &&
+                    IsFinite(expectedPosition.z) && IsFinite(rotationDot) &&
+                    Math.Abs(camera.transform.position.x - expectedPosition.x) <=
+                        tolerance &&
+                    Math.Abs(camera.transform.position.y - expectedPosition.y) <=
+                        tolerance &&
+                    Math.Abs(camera.transform.position.z - expectedPosition.z) <=
+                        tolerance &&
+                    Math.Abs(rotationDot) >= 0.999999 &&
+                    MatrixApproximatelyEqual(
+                        camera.worldToCameraMatrix,
+                        expectedWorldToCamera);
+            }
+
+            private static bool MatrixApproximatelyEqual(
+                Matrix4x4 left,
+                Matrix4x4 right)
+            {
+                for (int row = 0; row < 4; row += 1)
+                {
+                    for (int column = 0; column < 4; column += 1)
+                    {
+                        float leftValue = left[row, column];
+                        float rightValue = right[row, column];
+                        if (!IsFinite(leftValue) || !IsFinite(rightValue) ||
+                            Math.Abs(leftValue - rightValue) >
+                                CapturePolicy.ProjectionTolerance)
+                        {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            }
+
+            private bool PositionsApproximatelyEqual(Vector3 left, Vector3 right)
+            {
+                double tolerance =
+                    _owner._cameraProfile.Frames.Native.AssertionTolerance;
+                return IsFinite(left.x) && IsFinite(left.y) && IsFinite(left.z) &&
+                    IsFinite(right.x) && IsFinite(right.y) && IsFinite(right.z) &&
+                    Math.Abs(left.x - right.x) <= tolerance &&
+                    Math.Abs(left.y - right.y) <= tolerance &&
+                    Math.Abs(left.z - right.z) <= tolerance;
+            }
+
+            private static bool IsLiveCamera(Camera camera)
+            {
+                return camera != null;
+            }
+
+            private static bool IsKnownCaptureOverlayName(string name)
+            {
+                if (String.IsNullOrEmpty(name))
+                {
+                    return false;
+                }
+                string normalized = name.Replace("_", String.Empty)
+                    .Replace("-", String.Empty)
+                    .Replace(" ", String.Empty)
+                    .ToLowerInvariant();
+                return String.Equals(
+                        normalized,
+                        "captureview",
+                        StringComparison.Ordinal) ||
+                    String.Equals(
+                        normalized,
+                        "capturemask",
+                        StringComparison.Ordinal);
+            }
+
+            private static int CallbackFrame(
+                SingleCameraRenderRequestInvocationReceipt invocation,
+                string callbackName)
+            {
+                SingleCameraRenderRequestCallbackReceipt callback =
+                    invocation.callbacks.First(candidate => String.Equals(
+                        candidate.callback,
+                        callbackName,
+                        StringComparison.Ordinal));
+                return callback.frame;
+            }
+
+            private static float[] RectToArray(Rect value)
+            {
+                return new[] { value.x, value.y, value.width, value.height };
+            }
+
+            private static bool RectArraysEqual(float[] left, float[] right)
+            {
+                if (left == null || right == null ||
+                    left.Length != 4 || right.Length != 4)
+                {
+                    return false;
+                }
+                for (int index = 0; index < 4; index += 1)
+                {
+                    if (!IsFinite(left[index]) || !IsFinite(right[index]) ||
+                        Math.Abs(left[index] - right[index]) >
+                            CapturePolicy.ProjectionTolerance)
+                    {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            private static void AttemptCleanup(
+                Action action,
+                ICollection<Exception> failures)
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception exception)
+                {
+                    failures.Add(exception);
+                }
+            }
+        }
+
         private sealed class SnapFrameReadbackOperation : IDisposable
         {
             private const int MaximumRecordedCameraCallbacks = 64;
@@ -2707,6 +5706,191 @@ namespace Venviewer.NativeCapture
                 RequireNoUnsafeSurfaceContributor();
             }
 
+            internal static UrpRendererConfigurationReceipt
+                CaptureReadOnlyUrpRendererConfiguration()
+            {
+                const string ObservationApi =
+                    "GraphicsSettings.currentRenderPipeline + UniversalRenderPipelineAsset.rendererDataList + ScriptableRendererData.rendererFeatures";
+                var receipt = new UrpRendererConfigurationReceipt
+                {
+                    observationApi = ObservationApi,
+                    observationFrame = Time.frameCount,
+                    observationRealtimeSeconds = Time.realtimeSinceStartupAsDouble,
+                    publicConfigurationGettersOnly = true,
+                    runtimeRendererOrSingletonApiInvoked = false,
+                    mutationApiInvoked = false,
+                    prohibitedRuntimeOrMutationApis =
+                        CapturePolicy
+                            .CreateUrpRendererConfigurationProhibitedRuntimeOrMutationApis(),
+                    rendererData =
+                        new List<UrpRendererConfigurationDataReceipt>()
+                };
+
+                RenderPipelineAsset pipelineAsset = GraphicsSettings.currentRenderPipeline;
+                receipt.currentRenderPipelineAssetPresent = pipelineAsset != null;
+                receipt.currentRenderPipelineAssetName = pipelineAsset == null
+                    ? null
+                    : pipelineAsset.name;
+                receipt.currentRenderPipelineAssetTypeFullName = pipelineAsset == null
+                    ? null
+                    : pipelineAsset.GetType().FullName;
+                receipt.currentRenderPipelineAssetInstanceId = pipelineAsset == null
+                    ? 0
+                    : pipelineAsset.GetInstanceID();
+                UniversalRenderPipelineAsset universalAsset =
+                    pipelineAsset as UniversalRenderPipelineAsset;
+                receipt.currentRenderPipelineAssetIsUniversal = universalAsset != null;
+                if (universalAsset == null)
+                {
+                    return receipt;
+                }
+
+                ReadOnlySpan<ScriptableRendererData> rendererDataSpan =
+                    universalAsset.rendererDataList;
+                receipt.rendererDataCount = rendererDataSpan.Length;
+                var rendererDataReferences =
+                    new ScriptableRendererData[rendererDataSpan.Length];
+                var nativeRenderPassStates = new bool[rendererDataSpan.Length];
+                var featureReferences =
+                    new List<ScriptableRendererFeature[]>(rendererDataSpan.Length);
+                var featureActiveStates = new List<bool[]>(rendererDataSpan.Length);
+
+                for (int index = 0; index < rendererDataSpan.Length; index += 1)
+                {
+                    ScriptableRendererData rendererData = rendererDataSpan[index];
+                    rendererDataReferences[index] = rendererData;
+                    bool useNativeRenderPass = rendererData != null &&
+                        rendererData.useNativeRenderPass;
+                    nativeRenderPassStates[index] = useNativeRenderPass;
+                    var dataReceipt = new UrpRendererConfigurationDataReceipt
+                    {
+                        rendererDataIndex = index,
+                        present = rendererData != null,
+                        name = rendererData == null ? null : rendererData.name,
+                        typeFullName = rendererData == null
+                            ? null
+                            : rendererData.GetType().FullName,
+                        instanceId = rendererData == null
+                            ? 0
+                            : rendererData.GetInstanceID(),
+                        useNativeRenderPass = useNativeRenderPass,
+                        features =
+                            new List<UrpRendererConfigurationFeatureReceipt>()
+                    };
+                    List<ScriptableRendererFeature> features = rendererData == null
+                        ? null
+                        : rendererData.rendererFeatures;
+                    int featureCount = features == null ? 0 : features.Count;
+                    dataReceipt.featureCount = featureCount;
+                    var entryFeatureReferences =
+                        new ScriptableRendererFeature[featureCount];
+                    var entryFeatureActiveStates = new bool[featureCount];
+                    for (int featureIndex = 0;
+                        featureIndex < featureCount;
+                        featureIndex += 1)
+                    {
+                        ScriptableRendererFeature feature = features[featureIndex];
+                        entryFeatureReferences[featureIndex] = feature;
+                        bool present = feature != null;
+                        bool active = present && feature.isActive;
+                        entryFeatureActiveStates[featureIndex] = active;
+                        string typeFullName = present
+                            ? feature.GetType().FullName
+                            : null;
+                        bool isSnapFrame = String.Equals(
+                            typeFullName,
+                            CapturePolicy.SnapFrameFeatureTypeFullName,
+                            StringComparison.Ordinal);
+                        if (isSnapFrame)
+                        {
+                            dataReceipt.snapFrameCaptureFeatureCount += 1;
+                            receipt.snapFrameCaptureFeatureCount += 1;
+                            if (active)
+                            {
+                                receipt.activeSnapFrameCaptureFeatureCount += 1;
+                            }
+                        }
+                        dataReceipt.features.Add(
+                            new UrpRendererConfigurationFeatureReceipt
+                            {
+                                featureIndex = featureIndex,
+                                present = present,
+                                name = present ? feature.name : null,
+                                typeFullName = typeFullName,
+                                instanceId = present ? feature.GetInstanceID() : 0,
+                                active = active,
+                                snapFrameCaptureFeatureType = isSnapFrame
+                            });
+                    }
+                    featureReferences.Add(entryFeatureReferences);
+                    featureActiveStates.Add(entryFeatureActiveStates);
+                    receipt.rendererData.Add(dataReceipt);
+                }
+
+                ReadOnlySpan<ScriptableRendererData> rendererDataAfter =
+                    universalAsset.rendererDataList;
+                bool configurationStable =
+                    rendererDataAfter.Length == rendererDataReferences.Length;
+                if (configurationStable)
+                {
+                    for (int dataIndex = 0;
+                        dataIndex < rendererDataReferences.Length;
+                        dataIndex += 1)
+                    {
+                        ScriptableRendererData rendererData = rendererDataAfter[dataIndex];
+                        if (!System.Object.ReferenceEquals(
+                                rendererData,
+                                rendererDataReferences[dataIndex]) ||
+                            (rendererData != null && rendererData.useNativeRenderPass) !=
+                                nativeRenderPassStates[dataIndex])
+                        {
+                            configurationStable = false;
+                            break;
+                        }
+                        List<ScriptableRendererFeature> currentFeatures =
+                            rendererData == null ? null : rendererData.rendererFeatures;
+                        ScriptableRendererFeature[] expectedFeatures =
+                            featureReferences[dataIndex];
+                        bool[] expectedActiveStates = featureActiveStates[dataIndex];
+                        int currentFeatureCount = currentFeatures == null
+                            ? 0
+                            : currentFeatures.Count;
+                        if (currentFeatureCount != expectedFeatures.Length)
+                        {
+                            configurationStable = false;
+                            break;
+                        }
+                        for (int featureIndex = 0;
+                            featureIndex < expectedFeatures.Length;
+                            featureIndex += 1)
+                        {
+                            ScriptableRendererFeature currentFeature =
+                                currentFeatures[featureIndex];
+                            bool currentActive =
+                                currentFeature != null && currentFeature.isActive;
+                            if (!System.Object.ReferenceEquals(
+                                    currentFeature,
+                                    expectedFeatures[featureIndex]) ||
+                                currentActive != expectedActiveStates[featureIndex])
+                            {
+                                configurationStable = false;
+                                break;
+                            }
+                        }
+                        if (!configurationStable)
+                        {
+                            break;
+                        }
+                    }
+                }
+                receipt
+                    .rendererDataFeatureIdentityAndActiveStateStableDuringSynchronousObservation =
+                    configurationStable;
+                receipt.mutationObservedDuringSynchronousObservation =
+                    !configurationStable;
+                return receipt;
+            }
+
             internal static UrpRendererInventoryReceipt CaptureReadOnlyUrpRendererInventory(
                 Camera camera)
             {
@@ -2760,17 +5944,9 @@ namespace Venviewer.NativeCapture
                     return receipt;
                 }
 
-                SnapFrameCaptureFeature staticSnapFrameFeature =
-                    SnapFrameCaptureFeature.Instance;
-                receipt.snapFrameStaticInstancePresent =
-                    staticSnapFrameFeature != null;
-                receipt.snapFrameStaticInstanceId = staticSnapFrameFeature == null
-                    ? 0
-                    : staticSnapFrameFeature.GetInstanceID();
-                receipt.snapFrameStaticInstanceTypeFullName =
-                    staticSnapFrameFeature == null
-                        ? null
-                        : staticSnapFrameFeature.GetType().FullName;
+                receipt.snapFrameStaticInstancePresent = false;
+                receipt.snapFrameStaticInstanceId = 0;
+                receipt.snapFrameStaticInstanceTypeFullName = null;
 
                 ReadOnlySpan<ScriptableRendererData> rendererDataSpan =
                     universalAsset.rendererDataList;
@@ -2826,10 +6002,7 @@ namespace Venviewer.NativeCapture
                             typeFullName,
                             CapturePolicy.SnapFrameFeatureTypeFullName,
                             StringComparison.Ordinal);
-                        bool matchesStaticInstance = present &&
-                            staticSnapFrameFeature != null &&
-                            feature.GetInstanceID() ==
-                                staticSnapFrameFeature.GetInstanceID();
+                        bool matchesStaticInstance = false;
                         if (isSnapFrame)
                         {
                             dataReceipt.snapFrameCaptureFeatureCount += 1;
@@ -2961,13 +6134,8 @@ namespace Venviewer.NativeCapture
                 }
                 receipt.rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory =
                     featureStateStable;
-                SnapFrameCaptureFeature staticSnapFrameFeatureAfter =
-                    SnapFrameCaptureFeature.Instance;
-                bool staticInstanceStable = System.Object.ReferenceEquals(
-                    staticSnapFrameFeature,
-                    staticSnapFrameFeatureAfter);
-                receipt.snapFrameStaticInstanceStableDuringSynchronousInventory =
-                    staticInstanceStable;
+                bool staticInstanceStable = true;
+                receipt.snapFrameStaticInstanceStableDuringSynchronousInventory = true;
                 receipt.mutationObservedDuringSynchronousInventory =
                     !rendererIdentityStable || !featureStateStable ||
                     !staticInstanceStable;
