@@ -13,7 +13,7 @@ service, operating system, or GPU driver is network-silent.
 The module exists for one evidence task only: render the locked canonical
 `scans_BIG_MODEL_TH_GH_1` native LCC2 at one exact inspection camera and produce
 an overlay-free 1600x900 PNG plus a machine-readable receipt.
-The repaired contract is module `1.2.4` and native receipt schema `v4`.
+The repaired contract is module `1.2.5` and native receipt schema `v5`.
 
 ## What is authoritative
 
@@ -70,8 +70,15 @@ with that application:
 - `ISceneManager.SceneCamera` for the exact Unity camera and clean-view flags;
 - `ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender)` for
   the exact scene-camera render texture, not a desktop or UI screenshot;
-- `RenderPipelineManager.endCameraRendering` for proof that the same camera
-  rendered into the same assigned render target before it was read; and
+- `RenderPipelineManager.endCameraRendering`, when the exact scene camera
+  emits it, as the preferred first-party readback point and standard-camera
+  callback evidence;
+- the vendor `afterRender` callback as an explicit fallback only when no exact
+  scene-camera SRP callback was observed during the locked three-end-of-frame
+  capture window;
+- `RenderTexture.active`, a first-party no-mipmap RGB24 `Texture2D`,
+  `Texture2D.ReadPixels()`, and `Texture2D.Apply()` for an exact assigned-target
+  readback independent of the vendor-returned texture; and
 - `Texture2D.GetPixels32()` plus `ImageConversion.EncodeToPNG()` for decoded
   RGB admission followed by local PNG encoding.
 
@@ -88,13 +95,14 @@ required because the locked vendor EventBus enumerates the same mutable
 subscriber list that `Unsubscribe()` edits. Separate Interlocked one-shot gates
 reject duplicate event or execution delivery. `Stop()` and `Dispose()` remove
 any pending lifecycle subscription, so an editor shutdown cannot leave the
-bridge armed. Public `Stop()` is terminal: scene-load callbacks, watchdogs,
-readiness waits, convergence waits, and later async continuations reject new
-work. Successful internal scene-load completion removes its
-`lccscene.load.begin` and `lccscene.loaded` subscriptions only after the current
-event dispatch has unwound and does not enter that terminal state. A stop during
-capture is surfaced through the existing failure receipt and independent
-camera/mode restoration path.
+bridge armed. Public `Stop()` is terminal: it synchronously aborts any active
+exact-target readback probe and removes its SRP subscription; scene-load
+callbacks, watchdogs, readiness waits, convergence waits, and later async
+continuations reject new work. Successful internal scene-load completion
+removes its `lccscene.load.begin` and `lccscene.loaded` subscriptions only after
+the current event dispatch has unwound and does not enter that terminal state.
+A stop during capture is surfaced through the existing failure receipt and
+independent camera/mode restoration path.
 
 ## Safety and failure behavior
 
@@ -138,26 +146,64 @@ Attempts are spaced by another 15 rendered frames, and every clean-view flag,
 camera value, projection value, Ultra quality, full-render mode, and canonical
 scene identity is re-asserted throughout. Three consecutive byte-identical PNGs
 establish a same-host hash plateau. The run stops after 60 attempts or 180
-seconds, and each individual `ICaptureManager` operation has a 30-second
-deadline with no retry after timeout. Each attempt is added to the receipt
-before capture begins, so a timeout, black raster, target drift, or other
-failure remains visible instead of disappearing with an exception.
+seconds. Each individual `ICaptureManager` operation has a 30-second
+cooperative Unity-player-loop deadline with no retry after an observed timeout.
+That deadline cannot preempt a blocked Unity main thread or GPU synchronization;
+the wrapper's 900-second process watchdog is the hard termination boundary.
+The cooperative wait also races terminal `Stop()` on the Unity update loop, and
+its cancellation source is cancelled and disposed when the capture, deadline,
+or stop path wins. This cancellation closes the remaining cooperative waiter;
+it does not claim to cancel the vendor capture operation.
+Each attempt is added to the receipt before capture begins, so a timeout, black
+raster, target drift, or other failure remains visible instead of disappearing
+with an exception.
 
-The capture callback records the exact render target assigned to the exact
-scene camera. An attempt is admitted only if an `endCameraRendering` callback
-observes that same camera still targeting that same object at 1600x900 and the
-after-render callback confirms it did not drift. The returned readable
-`Texture2D` is decoded to RGB before any PNG is encoded or written. The raster
-gate rejects all-black and near-constant frames using minimum non-black-pixel
-fraction, channel-range, distinct-colour, and luminance-variation requirements.
-Only an admitted RGB frame is encoded, durably written without replacement,
-validated for PNG dimensions, and hash-checked against the encoded bytes.
+The vendor `beforeRender` callback records the exact `RenderTexture` assigned
+to the exact scene camera. That target must remain a live, created 1600x900,
+single-sample, no-mipmap object with the same native instance ID through
+readback and `afterRender`, or the attempt fails. The standard
+`RenderPipelineManager.endCameraRendering` route is preferred when observed for
+that camera: each such callback performs a synchronous first-party readback of
+the exact retained target, and any callback readback failure or target drift
+rejects the attempt. A global camera callback is not required for admission
+because the locked vendor implementation did not emit one for the observed
+custom LCC render path.
 
-The per-attempt timeout observes a preserved capture task. On timeout the
-render-frame probe is closed and unsubscribed, and a local continuation observes
-the late result solely to destroy any returned `Texture2D`; it cannot admit that
-attempt or start a retry. The normal and exceptional paths likewise destroy
-every texture that was not explicitly transferred to the decoder.
+When the exact-camera SRP callback count is zero, the vendor `afterRender`
+callback performs the same first-party readback as an explicit, receipted
+fallback. Locked vendor IL places that callback after three end-of-frame waits
+while the assigned temporary render target is still alive, and before the
+vendor's own readback and release. Every first-party readback saves the prior
+`RenderTexture.active`, activates and verifies the exact retained target,
+creates a readable no-mipmap RGB24 `Texture2D`, calls `ReadPixels()` and
+`Apply()`, and restores and verifies the prior active target in `finally`.
+
+The `Texture2D` returned by `ICaptureManager` must be present and distinct from
+the first-party texture. Destruction of the vendor texture is requested, and
+its pixels are never used for admission. Only the first-party readable RGB24
+texture is decoded before PNG encoding. The raster gate rejects all-black and
+near-constant frames using minimum non-black-pixel fraction, channel-range,
+distinct-colour, and luminance-variation requirements. Only an admitted RGB
+frame is encoded, durably written without replacement, validated for PNG
+dimensions, and hash-checked against the encoded bytes.
+
+Capture-level provenance distinguishes the configured pixel source from an
+actually observed source. `configuredPixelSource` declares the required lane;
+`observedPixelSource` remains null until an attempt completes first-party
+readback, and `everyObservedPixelSourceMatchesConfigured` remains false when no
+source was observed. These aggregates are recomputed from all retained attempts
+after both accepted and rejected outcomes, so a failure receipt cannot imply
+that configured pixels were produced.
+
+The per-attempt timeout observes a preserved capture task. On an observed
+cooperative timeout, the exact-target readback probe is closed and unsubscribed,
+and a fire-and-forget continuation is attached to request destruction if a late
+vendor `Texture2D` arrives. Its completion is not awaited before receipt
+publication or process exit, so the receipt claims only attachment and the
+disposable process remains the final cleanup boundary. A late result cannot
+admit that attempt or start a retry. Terminal `Stop()` is receipted separately
+from an elapsed cooperative deadline. The normal and exceptional synchronous
+paths request destruction for every texture not transferred to the decoder.
 
 The canonical inventory contains `data/3dgs/env.sog`, but browser-frontier
 parity excludes it. The module therefore calls `SetEnvironmentData(false)` and

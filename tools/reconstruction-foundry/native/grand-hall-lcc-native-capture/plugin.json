@@ -1,9 +1,9 @@
 {
   "Id": "com.venviewer.native_capture",
   "Name": "Venviewer Grand Hall Native Capture",
-  "Version": "1.2.4",
+  "Version": "1.2.5",
   "Author": "Venviewer",
-  "Description": "Fail-closed native fixed-camera evidence capture for the locked canonical Grand Hall GH_1 LCC2 package.",
+  "Description": "Fail-closed native fixed-camera evidence capture with first-party exact-target RGB24 readback for the locked canonical Grand Hall GH_1 LCC2 package.",
   "LoadOrder": 900,
   "Enabled": true,
   "EntryPoint": "VenviewerNativeCapture.dll",

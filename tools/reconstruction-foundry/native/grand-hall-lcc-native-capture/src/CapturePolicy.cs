@@ -209,6 +209,41 @@ namespace Venviewer.NativeCapture
             }
         }
 
+        internal static void RequireExactTargetReadbackRoute(
+            int srpCallbackCount,
+            int firstSrpFrame,
+            int lastSrpFrame,
+            bool standardCallbackProofAvailable,
+            string callbackFailureType,
+            string readbackTrigger)
+        {
+            bool fallbackRouteValid =
+                srpCallbackCount == 0 &&
+                firstSrpFrame == -1 &&
+                lastSrpFrame == -1 &&
+                !standardCallbackProofAvailable &&
+                String.IsNullOrEmpty(callbackFailureType) &&
+                String.Equals(
+                    readbackTrigger,
+                    "vendor_afterRender_fallback",
+                    StringComparison.Ordinal);
+            bool standardCallbackRouteValid =
+                srpCallbackCount > 0 &&
+                firstSrpFrame >= 0 &&
+                lastSrpFrame >= firstSrpFrame &&
+                standardCallbackProofAvailable &&
+                String.IsNullOrEmpty(callbackFailureType) &&
+                String.Equals(
+                    readbackTrigger,
+                    "srp_endCameraRendering",
+                    StringComparison.Ordinal);
+            if (!fallbackRouteValid && !standardCallbackRouteValid)
+            {
+                throw new InvalidOperationException(
+                    "The exact-target readback route is internally inconsistent.");
+            }
+        }
+
         internal static readonly ExpectedFile[] ExpectedInputFiles =
         {
             new ExpectedFile(@"data\3dgs\0_0_0_1_0_1.sog", 9980174, "97EFA65F9AADDBD69780664C6668817125C3153469918D5F291B348EE0B6D7E1"),

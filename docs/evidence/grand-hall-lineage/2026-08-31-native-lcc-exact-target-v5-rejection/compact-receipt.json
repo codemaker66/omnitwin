@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "venviewer.grand-hall.native-lcc-exact-target-rejection.v1",
+  "status": "rejected",
+  "truthClass": "CAPTURED_TRUTH_DIAGNOSTIC_REJECTION",
+  "authority": "none",
+  "roomRef": "trades-hall-grand-hall",
+  "source": {
+    "representation": "canonical GH_1 LCC2",
+    "packageInventorySha256": "6013763AE4D9FA13CB10D2C62E9B11B971BC2F22420CA2ADE6F736AEECC4B793",
+    "runtimeClosureInventorySha256": "E76DAE03144F07E47C1600582AC6A15B19A21812C5648E0C864F86B61F328CF8",
+    "cameraProfileSha256": "9ECA9B6582B7301EC1C059B1A5BE699E5A4983773AFECB2BEEA46C2668305922"
+  },
+  "producer": {
+    "moduleVersion": "1.2.5",
+    "moduleSha256": "7066C7AC4A2FE9865A41CF2A036B976E7C512A8FC8D30C9C5BA36945F6DDB8A2",
+    "pluginSha256": "F9FFAF9D51A553AA6E5055D722621F2D202A3819D2240C0F06D92BFD48349990",
+    "buildReceiptSha256": "2441EA4BA53BD44CD1531A0D7116059667C39375F89FDFFBC16DB50FFE5B2E94"
+  },
+  "run": {
+    "localRunDirectory": "C:/Users/blake/AppData/Local/Venviewer/native-captures/grand-hall-gh1-lcc2-20260831T134329Z-d9e24f24",
+    "failureReceipt": {
+      "fileName": "grand-hall-native-capture-failure-receipt.json",
+      "byteLength": 256329,
+      "sha256": "91CCB9708C2A3AE7F8E44A714B611AA7A74F09B7358FC96B24FE45E55A6D6F69"
+    },
+    "operatorReceipt": {
+      "fileName": "grand-hall-native-capture-operator-receipt.json",
+      "byteLength": 5817,
+      "sha256": "BF18890320F4840766710FABB9DF843870083ACA9EFB390F0F136B7D17A3246E"
+    },
+    "processExitCode": 2,
+    "externalWatchdogTimedOut": false,
+    "featureToggleRestoredExactly": true,
+    "unexpectedVendorProcessRemaining": false
+  },
+  "readiness": {
+    "observedFrames": 1785,
+    "observedSeconds": 15.0053208,
+    "ultraQualityVerified": true,
+    "renderAllObserved": true
+  },
+  "attempt": {
+    "ordinal": 1,
+    "configuredPixelSource": "first_party_exact_vendor_render_target",
+    "observedPixelSource": "first_party_exact_vendor_render_target",
+    "readbackTrigger": "vendor_afterRender_fallback",
+    "beforeRenderFrame": 20133,
+    "afterRenderFrame": 20136,
+    "srpEndCameraRenderingCallbackCount": 0,
+    "renderTarget": {
+      "instanceId": -19832,
+      "width": 1600,
+      "height": 900,
+      "created": true,
+      "antiAliasing": 1,
+      "useMipMap": false,
+      "driftObserved": false
+    },
+    "firstPartyTextureInstanceId": -19834,
+    "vendorReturnedTextureInstanceId": -19836,
+    "vendorReturnedTextureDistinctFromFirstParty": true,
+    "vendorReturnedTextureUsedForAdmission": false,
+    "raster": {
+      "pixelCount": 1440000,
+      "nonBlackPixelCount": 0,
+      "maximumChannelDynamicRange": 0,
+      "distinctRgbLowerBound": 1,
+      "luminanceStandardDeviation": 0.0,
+      "rgb24Sha256": "2C4BD5E75B50567DD5A3CB4111A7DF207CE8B453D73C916A0EE00C5C88129E5A"
+    }
+  },
+  "disposition": {
+    "pngEncoded": false,
+    "pngPublished": false,
+    "acceptedForVisualEvidence": false,
+    "reason": "The exact assigned camera target was live, dimensionally correct, read by first-party RGB24 code, and pure black. The XGRIDS LCC renderer does not place its visible frame in Camera.targetTexture on this locked runtime. The non-degenerate raster gate was retained.",
+    "nextInvestigation": "Read the public LCCCore.SnapFrameCaptureFeature.FrameRT surface after an exact, reversible projection refresh; retain the system-framebuffer scene-camera rectangle only as a separate diagnostic fallback."
+  }
+}

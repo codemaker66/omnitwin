@@ -66,7 +66,7 @@ foreach ($requiredPath in @(
 
 $plugin = Get-Content -LiteralPath $pluginPath -Raw | ConvertFrom-Json
 Assert-Equal 'com.venviewer.native_capture' ([string]$plugin.Id) 'plugin Id'
-Assert-Equal '1.2.4' ([string]$plugin.Version) 'plugin version'
+Assert-Equal '1.2.5' ([string]$plugin.Version) 'plugin version'
 Assert-Equal 'managed' ([string]$plugin.Type) 'plugin type'
 Assert-Equal 'VenviewerNativeCapture.dll' ([string]$plugin.EntryPoint) 'plugin entry point'
 Assert-Equal 'Venviewer.NativeCapture.NativeCaptureModule' ([string]$plugin.Class) 'plugin class'
@@ -230,10 +230,11 @@ if (-not (Select-String -LiteralPath (Join-Path $sourceRoot 'CapturePolicy.cs') 
 $moduleSource = Get-Content -LiteralPath (Join-Path $sourceRoot 'NativeCaptureModule.cs') -Raw
 $capturePolicySource = Get-Content -LiteralPath (Join-Path $sourceRoot 'CapturePolicy.cs') -Raw
 $receiptModelsSource = Get-Content -LiteralPath (Join-Path $sourceRoot 'ReceiptModels.cs') -Raw
+$capturePolicyTestsSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'tests\CapturePolicyTests.cs') -Raw
 if ($moduleSource.IndexOf(
-        'private const string ModuleVersion = "1.2.4";',
+        'private const string ModuleVersion = "1.2.5";',
         [StringComparison]::Ordinal) -lt 0) {
-    throw 'The compiled module source and plugin manifest version are not both 1.2.4.'
+    throw 'The compiled module source and plugin manifest version are not both 1.2.5.'
 }
 if ($capturePolicySource -notmatch
     '(?s)class InterlockedOneShotGate.*?TryEnter\(\).*?Interlocked\.CompareExchange\(ref _entered, 1, 0\) == 0') {
@@ -458,7 +459,7 @@ foreach ($loadContract in @(
     '_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath)',
     'Volatile.Read(ref _sceneLoadedEventObserved)',
     'commandLineSceneArgumentUsed = false',
-    'venviewer.grand-hall.lcc-native-capture-receipt.v4',
+    'venviewer.grand-hall.lcc-native-capture-receipt.v5',
     'FixedCameraProfile.Load('
 )) {
     if ($moduleSource.IndexOf($loadContract, [StringComparison]::Ordinal) -lt 0) {
@@ -581,14 +582,14 @@ foreach ($renderAllReceiptContract in @(
     'public string renderAllIsolationBoundary;'
 )) {
     if ($receiptModelsSource.IndexOf($renderAllReceiptContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "Receipt v4 is missing render-all evidence '$renderAllReceiptContract'."
+        throw "Receipt v5 is missing render-all evidence '$renderAllReceiptContract'."
     }
 }
 if ($moduleSource.IndexOf('renderAllPendingResetReadbackAvailable = false', [StringComparison]::Ordinal) -lt 0 -or
     $moduleSource.IndexOf('renderAllIsolationBoundary = "disposable_process_exit"', [StringComparison]::Ordinal) -lt 0 -or
     $moduleSource.IndexOf('RenderAllMutated', [StringComparison]::Ordinal) -ge 0 -or
     $moduleSource.IndexOf('_originalRenderAll', [StringComparison]::Ordinal) -ge 0) {
-    throw 'Receipt v4 no longer states the honest pending-reset/disposable-process boundary.'
+    throw 'Receipt v5 no longer states the honest pending-reset/disposable-process boundary.'
 }
 foreach ($forbiddenDirectLoadContract in @(
     '_lccSceneManager.LoadScene(',
@@ -685,7 +686,7 @@ if ($attemptRetainedIndex -lt 0 -or $attemptCaptureIndex -lt 0 -or
     $convergenceSource.IndexOf('attempt.status = "rejected";', [StringComparison]::Ordinal) -lt 0 -or
     $convergenceSource.IndexOf('attempt.failureType = exception.GetType().FullName;', [StringComparison]::Ordinal) -lt 0 -or
     $convergenceSource.IndexOf('attempt.failureMessage = exception.Message;', [StringComparison]::Ordinal) -lt 0) {
-    throw 'A failed native capture attempt can disappear instead of remaining in receipt v4.'
+    throw 'A failed native capture attempt can disappear instead of remaining in receipt v5.'
 }
 
 $populateAttemptSource = $moduleSource.Substring(
@@ -700,10 +701,12 @@ $postWriteHashIndex = $populateAttemptSource.IndexOf('CapturePolicy.Sha256File(c
 if ($pixelReadIndex -lt 0 -or $rasterAnalysisIndex -le $pixelReadIndex -or
     $rasterAdmissionIndex -le $rasterAnalysisIndex -or $pngEncodeIndex -le $rasterAdmissionIndex -or
     $candidateWriteIndex -le $pngEncodeIndex -or $postWriteHashIndex -le $candidateWriteIndex -or
-    $populateAttemptSource.IndexOf('attempt.textureReadable = texture.isReadable;', [StringComparison]::Ordinal) -lt 0 -or
+    $populateAttemptSource.IndexOf('attempt.firstPartyTextureReadable = texture.isReadable;', [StringComparison]::Ordinal) -lt 0 -or
+    $populateAttemptSource.IndexOf('attempt.firstPartyTextureNoMipChain = texture.mipmapCount == 1;', [StringComparison]::Ordinal) -lt 0 -or
+    $populateAttemptSource.IndexOf('attempt.firstPartyTextureInstanceId != texture.GetInstanceID()', [StringComparison]::Ordinal) -lt 0 -or
     $populateAttemptSource.IndexOf('attempt.encodedSha256 = CapturePolicy.Sha256Bytes(pngBytes);', [StringComparison]::Ordinal) -lt 0 -or
     $populateAttemptSource.IndexOf('attempt.postWriteFileShaVerified = true;', [StringComparison]::Ordinal) -lt 0) {
-    throw 'Decoded RGB admission must precede PNG encoding, durable publication, and byte/file hash agreement.'
+    throw 'First-party decoded RGB admission must precede PNG encoding, durable publication, and byte/file hash agreement.'
 }
 $textureDestroyIndex = $populateAttemptSource.IndexOf(
     'UnityEngine.Object.Destroy(texture);',
@@ -716,32 +719,163 @@ if ($textureDestroyIndex -lt 0 -or
 $captureTextureSource = $moduleSource.Substring(
     $captureTimeoutIndex,
     $observeLateIndex - $captureTimeoutIndex)
+if ($moduleSource.IndexOf('private ExactTargetReadbackProbe _activeReadbackProbe;', [StringComparison]::Ordinal) -lt 0 -or
+    $captureTextureSource -notmatch '(?s)Interlocked\.CompareExchange\(\s*ref _activeReadbackProbe,\s*probe,\s*null\) != null') {
+    throw 'The module no longer owns exactly one active readback probe through registration and final cleanup.'
+}
+$stopMethodStart = $moduleSource.IndexOf('public void Stop()', [StringComparison]::Ordinal)
+$disposeMethodStart = $moduleSource.IndexOf('public void Dispose()', [StringComparison]::Ordinal)
+if ($stopMethodStart -lt 0 -or $disposeMethodStart -le $stopMethodStart) {
+    throw 'The terminal Stop/Dispose method boundaries are missing.'
+}
+$stopMethodSource = $moduleSource.Substring(
+    $stopMethodStart,
+    $disposeMethodStart - $stopMethodStart)
+$stopLifecycleIndex = $stopMethodSource.IndexOf('_lifecycle.Stop();', [StringComparison]::Ordinal)
+$stopProbeAbortIndex = $stopMethodSource.IndexOf('AbortActiveReadbackProbe();', [StringComparison]::Ordinal)
+$stopLifecycleUnsubscribeIndex = $stopMethodSource.IndexOf('UnsubscribeModulesLoaded();', [StringComparison]::Ordinal)
+if ($stopLifecycleIndex -lt 0 -or $stopProbeAbortIndex -le $stopLifecycleIndex -or
+    $stopLifecycleUnsubscribeIndex -le $stopProbeAbortIndex) {
+    throw 'Terminal Stop must close lifecycle entry, abort the active readback probe, then remove lifecycle subscriptions.'
+}
 foreach ($captureTextureContract in @(
+    'var probe = new ExactTargetReadbackProbe(',
+    'Texture2D vendorTexture = null;',
+    'Texture2D firstPartyTexture = null;',
+    'bool firstPartyOwnershipTransferred = false;',
+    'CancellationTokenSource deadlineCancellation = null;',
+    'deadlineCancellation = new CancellationTokenSource();',
+    'UniTask deadlineOrStopTask = WaitForCaptureDeadlineOrStopAsync(',
     '_captureManager.CaptureToTextureAsync(',
     'probe.Begin();',
     'probe.AfterRender).Preserve();',
-    'await UniTask.WhenAny(captureTask, timeoutTask)',
+    'await UniTask.WhenAny(captureTask, deadlineOrStopTask)',
+    'if (_lifecycle.IsStopped)',
+    'attempt.captureTaskStopObserved = true;',
     'attempt.captureTaskTimeoutObserved = true;',
     'probe.Abort();',
     'attempt.lateCaptureTaskObserverAttached = true;',
     'ObserveLateCaptureAsync(captureTask).Forget(',
     'attempt.captureTaskCompletedBeforeDeadline = true;',
+    'if (vendorTexture == null)',
+    'attempt.vendorReturnedTexturePresent = true;',
+    'attempt.vendorReturnedTextureUsedForAdmission = false;',
     'probe.RequireCompleted();',
+    'firstPartyTexture = probe.TakeReadbackTexture();',
+    'if (firstPartyTexture == null)',
+    'vendorTexture.GetInstanceID() != firstPartyTexture.GetInstanceID();',
+    'UnityEngine.Object.Destroy(vendorTexture);',
+    'attempt.vendorReturnedTextureDestroyRequested = true;',
+    'firstPartyOwnershipTransferred = true;',
+    'return firstPartyTexture;',
+    'deadlineCancellation.Cancel();',
+    'deadlineCancellation.Dispose();',
     'probe.CopyTo(attempt);',
-    'if (!ownershipTransferred && texture != null)',
-    'UnityEngine.Object.Destroy(texture);'
+    'if (!firstPartyOwnershipTransferred && firstPartyTexture != null)',
+    'probe.DestroyOwnedReadbackTexture();'
 )) {
     if ($captureTextureSource.IndexOf($captureTextureContract, [StringComparison]::Ordinal) -lt 0) {
         throw "The bounded texture-capture contract is missing '$captureTextureContract'."
     }
 }
+$captureFinallyIndex = $captureTextureSource.IndexOf('finally', [StringComparison]::Ordinal)
+if ($captureFinallyIndex -lt 0) {
+    throw 'The capture-task final cleanup block is missing.'
+}
+$captureFinallySource = $captureTextureSource.Substring($captureFinallyIndex)
+$deadlineCancelIndex = $captureFinallySource.IndexOf('deadlineCancellation.Cancel();', [StringComparison]::Ordinal)
+$deadlineDisposeIndex = $captureFinallySource.IndexOf('deadlineCancellation.Dispose();', [StringComparison]::Ordinal)
+$finalProbeAbortIndex = $captureFinallySource.IndexOf('probe.Abort();', [StringComparison]::Ordinal)
+$activeProbeClearIndex = $captureFinallySource.IndexOf(
+    'Interlocked.CompareExchange(',
+    [StringComparison]::Ordinal)
+if ($deadlineCancelIndex -lt 0 -or $deadlineDisposeIndex -le $deadlineCancelIndex -or
+    $finalProbeAbortIndex -le $deadlineDisposeIndex -or $activeProbeClearIndex -le $finalProbeAbortIndex -or
+    $captureFinallySource -notmatch '(?s)Interlocked\.CompareExchange\(\s*ref _activeReadbackProbe,\s*null,\s*probe\);') {
+    throw 'Capture finalization must cancel/dispose the cooperative deadline/Stop loser, abort the probe, then clear module ownership.'
+}
+$vendorUnusedIndex = $captureTextureSource.IndexOf(
+    'attempt.vendorReturnedTextureUsedForAdmission = false;',
+    [StringComparison]::Ordinal)
+$firstPartyTakeIndex = $captureTextureSource.IndexOf(
+    'firstPartyTexture = probe.TakeReadbackTexture();',
+    [StringComparison]::Ordinal)
+$vendorDistinctIndex = $captureTextureSource.IndexOf(
+    'attempt.vendorReturnedTextureDistinctFromFirstParty =',
+    [StringComparison]::Ordinal)
+$vendorInstanceDistinctIndex = $captureTextureSource.IndexOf(
+    'vendorTexture.GetInstanceID() != firstPartyTexture.GetInstanceID();',
+    [StringComparison]::Ordinal)
+$vendorDestroyIndex = $captureTextureSource.IndexOf(
+    'UnityEngine.Object.Destroy(vendorTexture);',
+    [StringComparison]::Ordinal)
+$vendorDestroyReceiptIndex = $captureTextureSource.IndexOf(
+    'attempt.vendorReturnedTextureDestroyRequested = true;',
+    [StringComparison]::Ordinal)
+$firstPartyReturnIndex = $captureTextureSource.IndexOf(
+    'return firstPartyTexture;',
+    [StringComparison]::Ordinal)
+if ($vendorUnusedIndex -lt 0 -or $firstPartyTakeIndex -le $vendorUnusedIndex -or
+    $vendorDistinctIndex -le $firstPartyTakeIndex -or
+    $vendorInstanceDistinctIndex -le $vendorDistinctIndex -or
+    $vendorDestroyIndex -le $vendorInstanceDistinctIndex -or
+    $vendorDestroyReceiptIndex -le $vendorDestroyIndex -or $firstPartyReturnIndex -le $vendorDestroyReceiptIndex) {
+    throw 'Vendor texture separation, destruction request, and first-party texture transfer are out of order.'
+}
+if (@([Regex]::Matches(
+        $captureTextureSource,
+        [Regex]::Escape('UnityEngine.Object.Destroy(vendorTexture);'))).Count -lt 2 -or
+    @([Regex]::Matches(
+        $captureTextureSource,
+        [Regex]::Escape('attempt.vendorReturnedTextureDestroyRequested = true;'))).Count -lt 2) {
+    throw 'Vendor texture destruction must be requested and receipted on both normal and exceptional retained-result paths.'
+}
+foreach ($forbiddenVendorAdmission in @(
+    'vendorTexture.GetPixels32(',
+    'ImageConversion.EncodeToPNG(vendorTexture)',
+    'return vendorTexture;'
+)) {
+    if ($captureTextureSource.IndexOf($forbiddenVendorAdmission, [StringComparison]::Ordinal) -ge 0) {
+        throw "The vendor-returned Texture2D can reach admission through '$forbiddenVendorAdmission'."
+    }
+}
+$deadlineTaskIndex = $captureTextureSource.IndexOf(
+    'UniTask deadlineOrStopTask = WaitForCaptureDeadlineOrStopAsync(',
+    [StringComparison]::Ordinal)
 $capturePreserveIndex = $captureTextureSource.IndexOf('.Preserve();', [StringComparison]::Ordinal)
-$captureWaitIndex = $captureTextureSource.IndexOf('await UniTask.WhenAny(captureTask, timeoutTask)', [StringComparison]::Ordinal)
+$captureWaitIndex = $captureTextureSource.IndexOf('await UniTask.WhenAny(captureTask, deadlineOrStopTask)', [StringComparison]::Ordinal)
 $timeoutAbortIndex = $captureTextureSource.IndexOf('probe.Abort();', [StringComparison]::Ordinal)
 $lateObserverIndex = $captureTextureSource.IndexOf('ObserveLateCaptureAsync(captureTask).Forget(', [StringComparison]::Ordinal)
-if ($capturePreserveIndex -lt 0 -or $captureWaitIndex -le $capturePreserveIndex -or
+if ($deadlineTaskIndex -lt 0 -or $capturePreserveIndex -le $deadlineTaskIndex -or
+    $captureWaitIndex -le $capturePreserveIndex -or
     $timeoutAbortIndex -le $captureWaitIndex -or $lateObserverIndex -le $timeoutAbortIndex) {
-    throw 'Timeout handling must preserve and wait once, abort the probe, then attach the late-result disposer.'
+    throw 'Deadline/Stop handling must start before capture, preserve and wait once, abort the probe, then attach the late-result observer.'
+}
+
+$deadlineOrStopStart = $moduleSource.IndexOf(
+    'private async UniTask WaitForCaptureDeadlineOrStopAsync(',
+    [StringComparison]::Ordinal)
+if ($deadlineOrStopStart -le $captureTimeoutIndex -or $deadlineOrStopStart -ge $observeLateIndex) {
+    throw 'The cooperative deadline/Stop helper is missing or outside the capture-task boundary.'
+}
+$deadlineOrStopSource = $moduleSource.Substring(
+    $deadlineOrStopStart,
+    $observeLateIndex - $deadlineOrStopStart)
+foreach ($deadlineOrStopContract in @(
+    'await UniTask.WhenAny(',
+    'UniTask.Delay(',
+    'TimeSpan.FromSeconds(CapturePolicy.PerCaptureTimeoutSeconds)',
+    'delegate { return _lifecycle.IsStopped; }',
+    'PlayerLoopTiming.Update',
+    'cancellationToken',
+    'SuppressCancellationThrow()'
+)) {
+    if ($deadlineOrStopSource.IndexOf($deadlineOrStopContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The cooperative deadline/Stop helper is missing '$deadlineOrStopContract'."
+    }
+}
+if (@([Regex]::Matches($deadlineOrStopSource, 'SuppressCancellationThrow\(\)')).Count -ne 2) {
+    throw 'Both the deadline and terminal-Stop cooperative waiters must suppress their shared cancellation.'
 }
 
 $observeLateSource = $moduleSource.Substring(
@@ -752,7 +886,7 @@ $lateMainThreadIndex = $observeLateSource.IndexOf('await UniTask.SwitchToMainThr
 $lateDestroyIndex = $observeLateSource.IndexOf('UnityEngine.Object.Destroy(lateTexture);', [StringComparison]::Ordinal)
 if ($lateAwaitIndex -lt 0 -or $lateMainThreadIndex -le $lateAwaitIndex -or
     $lateDestroyIndex -le $lateMainThreadIndex) {
-    throw 'The timed-out vendor task is not observed and its late texture destroyed on the Unity thread.'
+    throw 'The attached late-result observer no longer awaits the vendor result and requests texture destruction on the Unity thread.'
 }
 
 $finalizePngSource = $moduleSource.Substring(
@@ -770,48 +904,259 @@ foreach ($finalPublicationContract in @(
 }
 
 $renderProbeIndex = $moduleSource.IndexOf(
-    'private sealed class RenderFrameProbe',
+    'private sealed class ExactTargetReadbackProbe',
     [StringComparison]::Ordinal)
 $lockedRuntimeFileIndex = $moduleSource.IndexOf(
     'private sealed class LockedRuntimeFile',
     [StringComparison]::Ordinal)
+if ($renderProbeIndex -lt 0 -or $lockedRuntimeFileIndex -le $renderProbeIndex) {
+    throw 'The exact-target readback probe class boundaries are missing.'
+}
 $renderProbeSource = $moduleSource.Substring(
     $renderProbeIndex,
     $lockedRuntimeFileIndex - $renderProbeIndex)
 foreach ($renderProbeContract in @(
+    'private readonly int _expectedCameraInstanceId;',
     'private RenderTexture _expectedTarget;',
+    'private Texture2D _readbackTexture;',
+    '_expectedCameraInstanceId = expectedCamera.GetInstanceID();',
     '_expectedTarget = target;',
     'RenderTargetInstanceId = target.GetInstanceID();',
+    'RenderTargetIsCreated = target.IsCreated();',
+    'RenderTargetAntiAliasing = target.antiAliasing;',
+    'RenderTargetUseMipMap = target.useMipMap;',
     'RenderPipelineManager.endCameraRendering += _handler;',
     'internal void AfterRender()',
     'internal void Abort()',
     'internal void CopyTo(CaptureAttemptReceipt attempt)',
     'RenderPipelineManager.endCameraRendering -= _handler;',
     'internal void RequireCompleted()',
-    'ReferenceEquals(camera, _expectedCamera)',
-    'ReferenceEquals(currentTarget, _expectedTarget)',
+    'internal Texture2D TakeReadbackTexture()',
+    'camera.GetInstanceID() != _expectedCameraInstanceId',
     'currentTarget.GetInstanceID() == RenderTargetInstanceId',
+    '_expectedTarget.GetInstanceID() == RenderTargetInstanceId',
     'currentTarget.width == _expectedWidth',
-    'currentTarget.height == _expectedHeight'
+    'currentTarget.height == _expectedHeight',
+    'CaptureExactTargetReadback("srp_endCameraRendering");',
+    'CaptureExactTargetReadback("vendor_afterRender_fallback");'
 )) {
     if ($renderProbeSource.IndexOf($renderProbeContract, [StringComparison]::Ordinal) -lt 0) {
         throw "Exact-camera/exact-render-target proof is missing '$renderProbeContract'."
     }
 }
 
+$afterRenderStart = $renderProbeSource.IndexOf(
+    'internal void AfterRender()',
+    [StringComparison]::Ordinal)
+$takeReadbackStart = $renderProbeSource.IndexOf(
+    'internal Texture2D TakeReadbackTexture()',
+    [StringComparison]::Ordinal)
+if ($afterRenderStart -lt 0 -or $takeReadbackStart -le $afterRenderStart) {
+    throw 'The vendor afterRender hybrid-route method boundaries are missing.'
+}
+$afterRenderSource = $renderProbeSource.Substring(
+    $afterRenderStart,
+    $takeReadbackStart - $afterRenderStart)
+if ($afterRenderSource -notmatch
+    '(?s)RemoveSubscription\(\);\s*if \(SrpEndCameraRenderingCallbackCount > 0\).*?StandardCameraRenderCallbackProofAvailable = true;\s*}\s*else\s*{\s*CaptureExactTargetReadback\("vendor_afterRender_fallback"\);') {
+    throw 'The vendor afterRender path no longer prefers a clean exact-camera SRP readback and falls back only when its callback count is zero.'
+}
+
+$requireCompletedStart = $renderProbeSource.IndexOf(
+    'internal void RequireCompleted()',
+    [StringComparison]::Ordinal)
+$handleSrpStart = $renderProbeSource.IndexOf(
+    'private void HandleEndCameraRendering(',
+    [StringComparison]::Ordinal)
+if ($requireCompletedStart -lt 0 -or $handleSrpStart -le $requireCompletedStart) {
+    throw 'The exact-target route-admission method boundaries are missing.'
+}
+$requireCompletedSource = $renderProbeSource.Substring(
+    $requireCompletedStart,
+    $handleSrpStart - $requireCompletedStart)
+if ($requireCompletedSource.IndexOf(
+        'CapturePolicy.RequireExactTargetReadbackRoute(',
+        [StringComparison]::Ordinal) -lt 0) {
+    throw 'The exact-target probe no longer delegates route admission to its tested pure policy.'
+}
+$routePolicyStart = $capturePolicySource.IndexOf(
+    'internal static void RequireExactTargetReadbackRoute(',
+    [StringComparison]::Ordinal)
+$expectedInputFilesStart = $capturePolicySource.IndexOf(
+    'internal static readonly ExpectedFile[] ExpectedInputFiles',
+    [StringComparison]::Ordinal)
+if ($routePolicyStart -lt 0 -or $expectedInputFilesStart -le $routePolicyStart) {
+    throw 'The pure exact-target route-policy method boundaries are missing.'
+}
+$routePolicySource = $capturePolicySource.Substring(
+    $routePolicyStart,
+    $expectedInputFilesStart - $routePolicyStart)
+foreach ($routeContract in @(
+    'bool fallbackRouteValid =',
+    'srpCallbackCount == 0 &&',
+    'firstSrpFrame == -1 &&',
+    'lastSrpFrame == -1 &&',
+    '!standardCallbackProofAvailable &&',
+    'String.IsNullOrEmpty(callbackFailureType) &&',
+    '"vendor_afterRender_fallback",',
+    'bool standardCallbackRouteValid =',
+    'srpCallbackCount > 0 &&',
+    'firstSrpFrame >= 0 &&',
+    'lastSrpFrame >= firstSrpFrame &&',
+    'standardCallbackProofAvailable &&',
+    '"srp_endCameraRendering",',
+    'if (!fallbackRouteValid && !standardCallbackRouteValid)'
+)) {
+    if ($routePolicySource.IndexOf($routeContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The pure exact-target route policy is missing '$routeContract'."
+    }
+}
+if ($capturePolicyTestsSource.IndexOf('TestExactTargetReadbackRoutePolicy();', [StringComparison]::Ordinal) -lt 0 -or
+    @([Regex]::Matches(
+        $capturePolicyTestsSource,
+        'CapturePolicy\.RequireExactTargetReadbackRoute\(')).Count -lt 12) {
+    throw 'The exact-target route policy is not exercised by its valid and adversarial test matrix.'
+}
+foreach ($adversarialRouteTest in @(
+    'RequireExactTargetReadbackRoute(0, 0, -1, false, null, "vendor_afterRender_fallback")',
+    'RequireExactTargetReadbackRoute(0, -1, -1, true, null, "vendor_afterRender_fallback")',
+    'RequireExactTargetReadbackRoute(0, -1, -1, false, "failure", "vendor_afterRender_fallback")',
+    'RequireExactTargetReadbackRoute(0, -1, -1, false, null, "srp_endCameraRendering")',
+    'RequireExactTargetReadbackRoute(1, -1, -1, true, null, "srp_endCameraRendering")',
+    'RequireExactTargetReadbackRoute(1, 5, 4, true, null, "srp_endCameraRendering")',
+    'RequireExactTargetReadbackRoute(1, 5, 5, false, null, "srp_endCameraRendering")',
+    'RequireExactTargetReadbackRoute(1, 5, 5, true, "failure", "srp_endCameraRendering")',
+    'RequireExactTargetReadbackRoute(1, 5, 5, true, null, "vendor_afterRender_fallback")'
+)) {
+    if ($capturePolicyTestsSource.IndexOf($adversarialRouteTest, [StringComparison]::Ordinal) -lt 0) {
+        throw "The adversarial exact-target route matrix is missing '$adversarialRouteTest'."
+    }
+}
+
+$hasExpectedTargetStart = $renderProbeSource.IndexOf(
+    'private bool HasExpectedTarget()',
+    [StringComparison]::Ordinal)
+if ($hasExpectedTargetStart -le $handleSrpStart) {
+    throw 'The preferred exact-camera SRP handler boundaries are missing.'
+}
+$handleSrpSource = $renderProbeSource.Substring(
+    $handleSrpStart,
+    $hasExpectedTargetStart - $handleSrpStart)
+if ($handleSrpSource.IndexOf('camera == null || _expectedCamera == null ||', [StringComparison]::Ordinal) -lt 0 -or
+    $handleSrpSource.IndexOf('camera.GetInstanceID() != _expectedCameraInstanceId', [StringComparison]::Ordinal) -lt 0 -or
+    $handleSrpSource.IndexOf('if (!HasExpectedTarget())', [StringComparison]::Ordinal) -lt 0 -or
+    $handleSrpSource.IndexOf('SrpEndCameraRenderingCallbackCount += 1;', [StringComparison]::Ordinal) -lt 0 -or
+    $handleSrpSource.IndexOf('CaptureExactTargetReadback("srp_endCameraRendering");', [StringComparison]::Ordinal) -lt 0) {
+    throw 'The preferred SRP path no longer filters the exact camera/target and performs first-party readback.'
+}
+
+$exactReadbackStart = $renderProbeSource.IndexOf(
+    'private void CaptureExactTargetReadback(string trigger)',
+    [StringComparison]::Ordinal)
+if ($exactReadbackStart -lt 0) {
+    throw 'The first-party exact-target readback method is missing.'
+}
+$hasExpectedTargetSource = $renderProbeSource.Substring(
+    $hasExpectedTargetStart,
+    $exactReadbackStart - $hasExpectedTargetStart)
+foreach ($nativeIdentityContract in @(
+    '_expectedCamera == null ||',
+    '_expectedCamera.GetInstanceID() != _expectedCameraInstanceId ||',
+    '_expectedTarget == null',
+    'currentTarget != null &&',
+    'currentTarget.GetInstanceID() == RenderTargetInstanceId &&',
+    '_expectedTarget.GetInstanceID() == RenderTargetInstanceId &&',
+    'currentTarget.IsCreated() &&',
+    'currentTarget.antiAliasing == 1 &&',
+    '!currentTarget.useMipMap;'
+)) {
+    if ($hasExpectedTargetSource.IndexOf($nativeIdentityContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The exact-target probe is missing native liveness/instance-ID evidence '$nativeIdentityContract'."
+    }
+}
+$exactReadbackSource = $renderProbeSource.Substring($exactReadbackStart)
+$previousActiveIndex = $exactReadbackSource.IndexOf(
+    'RenderTexture previousActive = RenderTexture.active;',
+    [StringComparison]::Ordinal)
+$setActiveIndex = $exactReadbackSource.IndexOf(
+    'RenderTexture.active = _expectedTarget;',
+    [StringComparison]::Ordinal)
+$verifyActiveIndex = $exactReadbackSource.IndexOf(
+    'if (active == null || active.GetInstanceID() != RenderTargetInstanceId)',
+    [StringComparison]::Ordinal)
+$rgb24Index = $exactReadbackSource.IndexOf(
+    'TextureFormat.RGB24,',
+    [StringComparison]::Ordinal)
+$readPixelsIndex = $exactReadbackSource.IndexOf(
+    'candidate.ReadPixels(',
+    [StringComparison]::Ordinal)
+$applyIndex = $exactReadbackSource.IndexOf(
+    'candidate.Apply(false, false);',
+    [StringComparison]::Ordinal)
+$restoreActiveIndex = $exactReadbackSource.IndexOf(
+    'RenderTexture.active = RenderTextureActiveWasNullBeforeReadback',
+    [StringComparison]::Ordinal)
+$verifyRestoredIndex = $exactReadbackSource.IndexOf(
+    'RenderTextureActiveRestored = RenderTextureActiveWasNullBeforeReadback',
+    [StringComparison]::Ordinal)
+if ($previousActiveIndex -lt 0 -or $setActiveIndex -le $previousActiveIndex -or
+    $verifyActiveIndex -le $setActiveIndex -or $rgb24Index -le $verifyActiveIndex -or
+    $readPixelsIndex -le $rgb24Index -or $applyIndex -le $readPixelsIndex -or
+    $restoreActiveIndex -le $applyIndex -or $verifyRestoredIndex -le $restoreActiveIndex -or
+    $exactReadbackSource -notmatch '(?s)finally\s*{\s*RenderTexture\.active = RenderTextureActiveWasNullBeforeReadback\s*\? null\s*:\s*previousActive;' -or
+    $exactReadbackSource.IndexOf('previousActive == null;', [StringComparison]::Ordinal) -lt 0 -or
+    $exactReadbackSource.IndexOf('restoredActive.GetInstanceID() ==', [StringComparison]::Ordinal) -lt 0) {
+    throw 'The first-party RGB24 exact-target ReadPixels/Apply path no longer saves, verifies, and restores RenderTexture.active.'
+}
+
 foreach ($attemptReceiptContract in @(
     'public string status;',
     'public bool beforeRenderCallbackInvoked;',
     'public bool afterRenderCallbackInvoked;',
+    'public int beforeRenderFrame;',
+    'public int afterRenderFrame;',
+    'public double beforeRenderRealtimeSeconds;',
+    'public double afterRenderRealtimeSeconds;',
     'public bool renderProbeSubscriptionRemoved;',
+    'public int srpEndCameraRenderingCallbackCount;',
+    'public int firstSrpEndCameraRenderingFrame;',
+    'public int lastSrpEndCameraRenderingFrame;',
+    'public bool standardCameraRenderCallbackProofAvailable;',
     'public int renderTargetInstanceId;',
+    'public bool renderTargetIsCreated;',
+    'public int renderTargetAntiAliasing;',
+    'public string renderTargetColorFormat;',
+    'public string renderTargetGraphicsFormat;',
+    'public bool renderTargetSrgb;',
+    'public bool renderTargetUseMipMap;',
     'public bool renderTargetDriftObserved;',
+    'public bool renderTextureActiveWasNullBeforeReadback;',
+    'public int renderTextureActiveBeforeReadbackInstanceId;',
+    'public bool activeExactTargetVerifiedBeforeReadPixels;',
+    'public bool renderTextureActiveRestored;',
+    'public bool firstPartyReadPixelsCompleted;',
+    'public bool firstPartyApplyCompleted;',
+    'public int firstPartyTextureInstanceId;',
+    'public string firstPartyTextureFormat;',
+    'public bool firstPartyTextureReadable;',
+    'public bool firstPartyTextureNoMipChain;',
+    'public string pixelSource;',
+    'public string readbackTrigger;',
+    'public int readbackReplacementDisposalRequestCount;',
+    'public string callbackReadbackFailureType;',
+    'public string callbackReadbackFailureMessage;',
+    'public bool vendorReturnedTexturePresent;',
+    'public int vendorReturnedTextureInstanceId;',
+    'public string vendorReturnedTextureFormat;',
+    'public bool vendorReturnedTextureReadable;',
+    'public bool vendorReturnedTextureDistinctFromFirstParty;',
+    'public bool vendorReturnedTextureDestroyRequested;',
+    'public bool vendorReturnedTextureUsedForAdmission;',
     'public bool captureTaskCompletedBeforeDeadline;',
+    'public bool captureTaskStopObserved;',
     'public bool captureTaskTimeoutObserved;',
     'public bool lateCaptureTaskObserverAttached;',
     'public bool underlyingCaptureCancellationAvailable;',
-    'public string textureFormat;',
-    'public bool textureReadable;',
     'public bool pixelReadCompleted;',
     'public RasterStatisticsReceipt raster;',
     'public bool pngEncodingCompleted;',
@@ -821,7 +1166,18 @@ foreach ($attemptReceiptContract in @(
     'public string failureMessage;'
 )) {
     if ($receiptModelsSource.IndexOf($attemptReceiptContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "Receipt v4 is missing capture-attempt evidence '$attemptReceiptContract'."
+        throw "Receipt v5 is missing capture-attempt evidence '$attemptReceiptContract'."
+    }
+}
+foreach ($obsoleteAttemptReceiptContract in @(
+    'public int exactCameraRenderCallbackCount;',
+    'public int firstExactCameraRenderFrame;',
+    'public int lastExactCameraRenderFrame;',
+    'public string textureFormat;',
+    'public bool textureReadable;'
+)) {
+    if ($receiptModelsSource.IndexOf($obsoleteAttemptReceiptContract, [StringComparison]::Ordinal) -ge 0) {
+        throw "Receipt v5 retains obsolete callback-required/vendor-texture evidence '$obsoleteAttemptReceiptContract'."
     }
 }
 foreach ($rasterPolicyContract in @(
@@ -838,8 +1194,24 @@ foreach ($rasterPolicyContract in @(
     }
 }
 foreach ($captureReceiptContract in @(
-    'surface = "ISceneManager.SceneCamera via ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender) + Unity ImageConversion.EncodeToPNG"',
-    'renderCallbackSurface = "RenderPipelineManager.endCameraRendering for the exact SceneCamera while it retains the exact assigned RenderTexture"',
+    'surface = "ISceneManager.SceneCamera via ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender), first-party exact-target RGB24 ReadPixels, and Unity ImageConversion.EncodeToPNG"',
+    'renderCallbackSurface = "RenderPipelineManager.endCameraRendering when observed for the exact SceneCamera; otherwise the vendor afterRender callback after its three locked end-of-frame waits"',
+    'globalCameraCallbackRequiredForAdmission = false',
+    'standardCameraRenderCallbackProofAvailable = false',
+    'pipelineAssetType = pipelineAsset == null',
+    'configuredPixelSource = "first_party_exact_vendor_render_target"',
+    'observedPixelSource = null',
+    'everyObservedPixelSourceMatchesConfigured = false',
+    'UpdateCaptureReadbackAggregates(capture);',
+    'capture.observedPixelSource = observedPixelSources.FirstOrDefault();',
+    'capture.everyObservedPixelSourceMatchesConfigured =',
+    'observedPixelSources.Length > 0 &&',
+    'capture.configuredPixelSource,',
+    'perCaptureTimeoutSemantics = "cooperative_unity_player_loop_update"',
+    'perCaptureTimeoutCanPreemptBlockedUnityMainThread = false',
+    'lateResultObserverCompletionAwaitedBeforeProcessExit = false',
+    'hardTerminationBoundary = "external_operator_process_watchdog"',
+    'capture.standardCameraRenderCallbackProofAvailable = capture.attempts.Any(',
     'blackChannelThreshold = CapturePolicy.BlackChannelThreshold',
     'minimumNonBlackPixelFraction = CapturePolicy.MinimumNonBlackPixelFraction',
     'minimumMaximumChannelDynamicRange = CapturePolicy.MinimumMaximumChannelDynamicRange',
@@ -848,8 +1220,59 @@ foreach ($captureReceiptContract in @(
     'everyAttemptDecodedAndNonDegenerate = false'
 )) {
     if ($moduleSource.IndexOf($captureReceiptContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "Receipt v4 is missing capture-admission evidence '$captureReceiptContract'."
+        throw "Receipt v5 is missing hybrid capture-admission evidence '$captureReceiptContract'."
     }
+}
+foreach ($captureReceiptModelContract in @(
+    'public string perCaptureTimeoutSemantics;',
+    'public bool perCaptureTimeoutCanPreemptBlockedUnityMainThread;',
+    'public bool lateResultObserverCompletionAwaitedBeforeProcessExit;',
+    'public string hardTerminationBoundary;',
+    'public bool globalCameraCallbackRequiredForAdmission;',
+    'public bool standardCameraRenderCallbackProofAvailable;',
+    'public string pipelineAssetType;',
+    'public string configuredPixelSource;',
+    'public string observedPixelSource;',
+    'public bool everyObservedPixelSourceMatchesConfigured;'
+)) {
+    if ($receiptModelsSource.IndexOf($captureReceiptModelContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Receipt v5 is missing capture-level hybrid evidence '$captureReceiptModelContract'."
+    }
+}
+if ($moduleSource.IndexOf('globalCameraCallbackRequiredForAdmission = true', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Receipt v5 must not claim that a global camera callback is required for admission.'
+}
+$updateReadbackAggregatesStart = $moduleSource.IndexOf(
+    'private static void UpdateCaptureReadbackAggregates(CaptureReceipt capture)',
+    [StringComparison]::Ordinal)
+if ($updateReadbackAggregatesStart -lt 0 -or
+    $moduleSource.IndexOf(
+        'private async UniTask<Texture2D> CaptureTextureWithTimeout(',
+        [StringComparison]::Ordinal) -le $updateReadbackAggregatesStart) {
+    throw 'The capture-level readback-provenance aggregator boundaries are missing.'
+}
+$updateReadbackAggregatesSource = $moduleSource.Substring(
+    $updateReadbackAggregatesStart,
+    $captureTimeoutIndex - $updateReadbackAggregatesStart)
+foreach ($readbackAggregateContract in @(
+    'capture.attempts',
+    '.Where(candidate => !String.IsNullOrEmpty(candidate.pixelSource))',
+    '.Select(candidate => candidate.pixelSource)',
+    'capture.observedPixelSource = observedPixelSources.FirstOrDefault();',
+    'capture.everyObservedPixelSourceMatchesConfigured =',
+    'observedPixelSources.Length > 0 &&',
+    'observedPixelSources.All(candidate => String.Equals(',
+    'capture.configuredPixelSource,',
+    'StringComparison.Ordinal));'
+)) {
+    if ($updateReadbackAggregatesSource.IndexOf($readbackAggregateContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The capture-level pixel-source aggregator is missing '$readbackAggregateContract'."
+    }
+}
+if (@([Regex]::Matches(
+        $convergenceSource,
+        [Regex]::Escape('UpdateCaptureReadbackAggregates(capture);'))).Count -lt 2) {
+    throw 'Pixel-source/callback aggregates must be recomputed after both rejected and non-rejected attempts.'
 }
 
 $operatorTokens = $null
@@ -1027,7 +1450,12 @@ foreach ($requiredIlPattern in @(
     'NativeCaptureLifecycleState::Stop',
     'Interlocked::CompareExchange',
     'ICaptureManager::CaptureToTextureAsync',
+    'Texture2D::\.ctor',
+    'Texture2D::ReadPixels',
+    'Texture2D::Apply',
     'Texture2D::GetPixels32',
+    'RenderTexture::get_active',
+    'RenderTexture::set_active',
     'ImageConversion::EncodeToPNG',
     'RenderPipelineManager::add_endCameraRendering',
     'RenderPipelineManager::remove_endCameraRendering',

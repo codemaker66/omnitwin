@@ -34,6 +34,7 @@ internal static class CapturePolicyTests
             TestNativeCaptureLifecycleState();
             TestSceneLoadReceiptContract();
             TestNativeRenderModeContract();
+            TestExactTargetReadbackRoutePolicy();
             TestPngDimensionGate();
             TestDecodedRasterAdmissionGate();
             TestSnapshotChangeGate();
@@ -138,6 +139,16 @@ internal static class CapturePolicyTests
             "renderAllObservedAfterSceneLoad",
             "renderAllVerifiedAtEveryGate",
             "renderCallbackSurface",
+            "globalCameraCallbackRequiredForAdmission",
+            "standardCameraRenderCallbackProofAvailable",
+            "pipelineAssetType",
+            "configuredPixelSource",
+            "observedPixelSource",
+            "everyObservedPixelSourceMatchesConfigured",
+            "perCaptureTimeoutSemantics",
+            "perCaptureTimeoutCanPreemptBlockedUnityMainThread",
+            "lateResultObserverCompletionAwaitedBeforeProcessExit",
+            "hardTerminationBoundary",
             "blackChannelThreshold",
             "minimumNonBlackPixelFraction",
             "minimumMaximumChannelDynamicRange",
@@ -153,10 +164,52 @@ internal static class CapturePolicyTests
             }
         }
         if (fields.Contains("fullRenderSupported") ||
-            fields.Contains("vendorFullRenderBudgetEligibilityReported"))
+            fields.Contains("vendorFullRenderBudgetEligibilityReported") ||
+            fields.Contains("exactCameraRenderCallbackRequired"))
         {
             throw new InvalidOperationException(
                 "A misleading SupportFullRender receipt field remains.");
+        }
+    }
+
+    private static void TestExactTargetReadbackRoutePolicy()
+    {
+        CapturePolicy.RequireExactTargetReadbackRoute(
+            0,
+            -1,
+            -1,
+            false,
+            null,
+            "vendor_afterRender_fallback");
+        CapturePolicy.RequireExactTargetReadbackRoute(
+            1,
+            120,
+            120,
+            true,
+            null,
+            "srp_endCameraRendering");
+        CapturePolicy.RequireExactTargetReadbackRoute(
+            3,
+            120,
+            122,
+            true,
+            String.Empty,
+            "srp_endCameraRendering");
+
+        foreach (Action invalid in new Action[]
+        {
+            delegate { CapturePolicy.RequireExactTargetReadbackRoute(0, 0, -1, false, null, "vendor_afterRender_fallback"); },
+            delegate { CapturePolicy.RequireExactTargetReadbackRoute(0, -1, -1, true, null, "vendor_afterRender_fallback"); },
+            delegate { CapturePolicy.RequireExactTargetReadbackRoute(0, -1, -1, false, "failure", "vendor_afterRender_fallback"); },
+            delegate { CapturePolicy.RequireExactTargetReadbackRoute(0, -1, -1, false, null, "srp_endCameraRendering"); },
+            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, -1, -1, true, null, "srp_endCameraRendering"); },
+            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, 5, 4, true, null, "srp_endCameraRendering"); },
+            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, 5, 5, false, null, "srp_endCameraRendering"); },
+            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, 5, 5, true, "failure", "srp_endCameraRendering"); },
+            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, 5, 5, true, null, "vendor_afterRender_fallback"); }
+        })
+        {
+            ExpectThrows<InvalidOperationException>(invalid);
         }
     }
 
@@ -431,21 +484,53 @@ internal static class CapturePolicyTests
             "elapsedSeconds",
             "beforeRenderCallbackInvoked",
             "afterRenderCallbackInvoked",
+            "beforeRenderFrame",
+            "afterRenderFrame",
+            "beforeRenderRealtimeSeconds",
+            "afterRenderRealtimeSeconds",
             "renderProbeSubscriptionRemoved",
+            "srpEndCameraRenderingCallbackCount",
+            "firstSrpEndCameraRenderingFrame",
+            "lastSrpEndCameraRenderingFrame",
+            "standardCameraRenderCallbackProofAvailable",
             "renderTargetAssignedBeforeCapture",
             "renderTargetInstanceId",
             "renderTargetWidth",
             "renderTargetHeight",
+            "renderTargetIsCreated",
+            "renderTargetAntiAliasing",
+            "renderTargetColorFormat",
+            "renderTargetGraphicsFormat",
+            "renderTargetSrgb",
+            "renderTargetUseMipMap",
             "renderTargetDriftObserved",
-            "exactCameraRenderCallbackCount",
-            "firstExactCameraRenderFrame",
-            "lastExactCameraRenderFrame",
+            "renderTextureActiveWasNullBeforeReadback",
+            "renderTextureActiveBeforeReadbackInstanceId",
+            "activeExactTargetVerifiedBeforeReadPixels",
+            "renderTextureActiveRestored",
+            "firstPartyReadPixelsCompleted",
+            "firstPartyApplyCompleted",
+            "firstPartyTextureInstanceId",
+            "firstPartyTextureFormat",
+            "firstPartyTextureReadable",
+            "firstPartyTextureNoMipChain",
+            "pixelSource",
+            "readbackTrigger",
+            "readbackReplacementDisposalRequestCount",
+            "callbackReadbackFailureType",
+            "callbackReadbackFailureMessage",
+            "vendorReturnedTexturePresent",
+            "vendorReturnedTextureInstanceId",
+            "vendorReturnedTextureFormat",
+            "vendorReturnedTextureReadable",
+            "vendorReturnedTextureDistinctFromFirstParty",
+            "vendorReturnedTextureDestroyRequested",
+            "vendorReturnedTextureUsedForAdmission",
             "captureTaskCompletedBeforeDeadline",
+            "captureTaskStopObserved",
             "captureTaskTimeoutObserved",
             "lateCaptureTaskObserverAttached",
             "underlyingCaptureCancellationAvailable",
-            "textureFormat",
-            "textureReadable",
             "pixelReadCompleted",
             "raster",
             "pngEncodingCompleted",
@@ -459,6 +544,22 @@ internal static class CapturePolicyTests
             if (!attemptFields.Contains(expected))
             {
                 throw new InvalidOperationException("Capture-attempt evidence field is missing: " + expected);
+            }
+        }
+        foreach (string forbidden in new[]
+        {
+            "exactCameraRenderCallbackCount",
+            "firstExactCameraRenderFrame",
+            "lastExactCameraRenderFrame",
+            "textureFormat",
+            "textureReadable",
+            "vendorReturnedTextureDestroyed"
+        })
+        {
+            if (attemptFields.Contains(forbidden))
+            {
+                throw new InvalidOperationException(
+                    "Obsolete or overclaimed capture-attempt field remains: " + forbidden);
             }
         }
     }

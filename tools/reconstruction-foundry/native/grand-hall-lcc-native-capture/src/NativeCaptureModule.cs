@@ -18,7 +18,7 @@ namespace Venviewer.NativeCapture
     public sealed class NativeCaptureModule : IModule
     {
         private const string ModuleId = "com.venviewer.native_capture";
-        private const string ModuleVersion = "1.2.4";
+        private const string ModuleVersion = "1.2.5";
         private const string OutputDirectoryEnvironmentVariable =
             "VENVIEWER_LCC_NATIVE_CAPTURE_OUTPUT_DIR";
         private const string ModuleShaEnvironmentVariable =
@@ -124,6 +124,7 @@ namespace Venviewer.NativeCapture
         private string _generatedLccAssetResolvedPath;
         private bool _defaultSceneLoadAccepted;
         private bool _canonicalSceneLoadedVerified;
+        private ExactTargetReadbackProbe _activeReadbackProbe;
 
         public string Id { get { return ModuleId; } }
         public string Name { get { return "Venviewer Grand Hall native capture"; } }
@@ -258,6 +259,7 @@ namespace Venviewer.NativeCapture
         public void Stop()
         {
             _lifecycle.Stop();
+            AbortActiveReadbackProbe();
             UnsubscribeModulesLoaded();
             UnsubscribeSceneLoadBegin();
             UnsubscribeSceneLoaded();
@@ -374,6 +376,17 @@ namespace Venviewer.NativeCapture
             {
                 throw new OperationCanceledException(
                     "The native capture was stopped before the current operation completed.");
+            }
+        }
+
+        private void AbortActiveReadbackProbe()
+        {
+            ExactTargetReadbackProbe probe = Interlocked.Exchange(
+                ref _activeReadbackProbe,
+                null);
+            if (probe != null)
+            {
+                probe.Abort();
             }
         }
 
@@ -879,7 +892,7 @@ namespace Venviewer.NativeCapture
         {
             return new NativeCaptureReceipt
             {
-                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v4",
+                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v5",
                 status = "running",
                 authority = "none",
                 truthClass = "RECONSTRUCTED_DIAGNOSTIC",
@@ -894,7 +907,9 @@ namespace Venviewer.NativeCapture
                     "Three consecutive byte-identical, decoded, non-degenerate PNGs establish a same-host pixel plateau only after the conservative readiness gate; they do not prove every possible streamed Gaussian is resident.",
                     "SetRenderAll(true) is applied in the synchronous lccscene.load.begin handler after renderer initialization and before the canonical Renderer.Load call, then observed again after lccscene.loaded. The public API still exposes no loaded-splat residency count or streaming-completion metric, so readiness also requires a minimum 300 rendered frames and 15 seconds before hash sampling.",
                     "The locked vendor SetRenderAll method writes a pending next-load field while IsRenderAll reads the active loaded-dataset field. Cleanup requests pending false without claiming a public read-back; disposable process exit is the final isolation boundary.",
-                    "The vendor CaptureToTextureAsync operation exposes no cancellation token. A per-attempt timeout aborts the first-party render probe and attaches a late-result observer for disposal; it does not claim to cancel the vendor operation.",
+                    "The vendor CaptureToTextureAsync operation exposes no cancellation token. The per-attempt UniTask.Delay is a cooperative Unity-player-loop deadline and cannot preempt a blocked Unity main thread or GPU synchronization; the external operator process watchdog is the hard termination boundary.",
+                    "On a cooperative per-attempt timeout, the first-party probe is aborted and a fire-and-forget late-result observer is attached. Its completion is not awaited before receipt publication or process exit, so disposable process exit remains the final cleanup boundary and only observer attachment is claimed.",
+                    "Admission pixels come from a first-party RGB24 readback of the exact retained vendor RenderTexture. A standard SRP end-camera callback is preferred when observed; the vendor afterRender callback is the explicit fallback after three end-of-frame waits and is recorded without inventing camera-event proof. Destruction of the vendor-returned Texture2D is requested, and its pixels are never used for admission.",
                     "In the locked vendor implementation, SupportFullRender(Ultra) is a current-scene splat-budget eligibility predicate, not an API-capability flag. Its false result for this 6,019,684-finest-splat package is recorded as telemetry and is not substituted for the observed IsRenderAll state.",
                     "Environment data is explicitly requested false for browser-frontier parity, excluding env.sog. The public API exposes no environment-visibility getter, so this receipt records the request and does not claim read-back visibility.",
                     "The runtime closure hashes every regular file in the disposable editor tree except this first-party module. It does not close over the GPU driver, operating system, CodeMeter service, firmware, or external per-user configuration.",
@@ -1291,8 +1306,9 @@ namespace Venviewer.NativeCapture
 
         private void RequireLockedCameraState(CameraState state)
         {
-            if (state == null || state.Camera == null ||
-                !ReferenceEquals(state.Camera, _sceneManager.SceneCamera))
+            Camera currentSceneCamera = _sceneManager.SceneCamera;
+            if (state == null || state.Camera == null || currentSceneCamera == null ||
+                state.Camera.GetInstanceID() != currentSceneCamera.GetInstanceID())
             {
                 throw new InvalidOperationException("The public scene camera changed during capture.");
             }
@@ -1400,8 +1416,8 @@ namespace Venviewer.NativeCapture
                     status = "running",
                     width = _cameraProfile.Output.Width,
                     height = _cameraProfile.Output.Height,
-                    firstExactCameraRenderFrame = -1,
-                    lastExactCameraRenderFrame = -1,
+                    firstSrpEndCameraRenderingFrame = -1,
+                    lastSrpEndCameraRenderingFrame = -1,
                     underlyingCaptureCancellationAvailable = false
                 };
                 capture.attempts.Add(attempt);
@@ -1435,6 +1451,7 @@ namespace Venviewer.NativeCapture
                         candidate => String.Equals(candidate.status, "accepted", StringComparison.Ordinal));
                     capture.elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
                     capture.everyAttemptDecodedAndNonDegenerate = false;
+                    UpdateCaptureReadbackAggregates(capture);
                     throw;
                 }
 
@@ -1445,6 +1462,7 @@ namespace Venviewer.NativeCapture
                 capture.everyAttemptDecodedAndNonDegenerate = capture.attempts.All(
                     candidate => String.Equals(candidate.status, "accepted", StringComparison.Ordinal) &&
                         candidate.raster != null && candidate.raster.nonDegenerateVerified);
+                UpdateCaptureReadbackAggregates(capture);
                 PruneOldCandidates(ordinal);
 
                 if (consecutive >= CapturePolicy.RequiredConsecutiveHashes)
@@ -1487,11 +1505,21 @@ namespace Venviewer.NativeCapture
                         "ICaptureManager returned a texture with unexpected dimensions.");
                 }
 
-                attempt.textureFormat = texture.format.ToString();
-                attempt.textureReadable = texture.isReadable;
-                if (!attempt.textureReadable)
+                if (!String.Equals(
+                    attempt.firstPartyTextureFormat,
+                    texture.format.ToString(),
+                    StringComparison.Ordinal) ||
+                    attempt.firstPartyTextureInstanceId != texture.GetInstanceID())
                 {
-                    throw new InvalidDataException("ICaptureManager returned a non-readable capture texture.");
+                    throw new InvalidDataException(
+                        "The transferred first-party readback texture differs from the probe receipt.");
+                }
+                attempt.firstPartyTextureReadable = texture.isReadable;
+                attempt.firstPartyTextureNoMipChain = texture.mipmapCount == 1;
+                if (!attempt.firstPartyTextureReadable || !attempt.firstPartyTextureNoMipChain)
+                {
+                    throw new InvalidDataException(
+                        "The first-party exact-target capture texture is not readable RGB24 without mip levels.");
                 }
 
                 Color32[] pixels = texture.GetPixels32();
@@ -1540,19 +1568,56 @@ namespace Venviewer.NativeCapture
             attempt.postWriteFileShaVerified = true;
         }
 
+        private static void UpdateCaptureReadbackAggregates(CaptureReceipt capture)
+        {
+            if (capture == null)
+            {
+                throw new ArgumentNullException("capture");
+            }
+
+            capture.standardCameraRenderCallbackProofAvailable = capture.attempts.Any(
+                candidate => candidate.standardCameraRenderCallbackProofAvailable);
+            string[] observedPixelSources = capture.attempts
+                .Where(candidate => !String.IsNullOrEmpty(candidate.pixelSource))
+                .Select(candidate => candidate.pixelSource)
+                .ToArray();
+            capture.observedPixelSource = observedPixelSources.FirstOrDefault();
+            capture.everyObservedPixelSourceMatchesConfigured =
+                observedPixelSources.Length > 0 &&
+                observedPixelSources.All(candidate => String.Equals(
+                    candidate,
+                    capture.configuredPixelSource,
+                    StringComparison.Ordinal));
+        }
+
         private async UniTask<Texture2D> CaptureTextureWithTimeout(
             Camera camera,
             CaptureAttemptReceipt attempt)
         {
             ThrowIfStopped();
-            var probe = new RenderFrameProbe(
+            var probe = new ExactTargetReadbackProbe(
                 camera,
                 _cameraProfile.Output.Width,
                 _cameraProfile.Output.Height);
-            Texture2D texture = null;
-            bool ownershipTransferred = false;
+            Texture2D vendorTexture = null;
+            Texture2D firstPartyTexture = null;
+            bool firstPartyOwnershipTransferred = false;
+            CancellationTokenSource deadlineCancellation = null;
             try
             {
+                if (Interlocked.CompareExchange(
+                    ref _activeReadbackProbe,
+                    probe,
+                    null) != null)
+                {
+                    throw new InvalidOperationException(
+                        "A second exact-target readback probe cannot overlap the active probe.");
+                }
+                ThrowIfStopped();
+                deadlineCancellation = new CancellationTokenSource();
+                UniTask deadlineOrStopTask = WaitForCaptureDeadlineOrStopAsync(
+                    deadlineCancellation.Token);
+                ThrowIfStopped();
                 UniTask<Texture2D> captureTask = _captureManager.CaptureToTextureAsync(
                     new Rect(0, 0, _cameraProfile.Output.Width, _cameraProfile.Output.Height),
                     delegate
@@ -1561,47 +1626,102 @@ namespace Venviewer.NativeCapture
                         _lccSceneManager.ForceRerenderer();
                     },
                     probe.AfterRender).Preserve();
-                UniTask timeoutTask = UniTask.Delay(
-                    TimeSpan.FromSeconds(CapturePolicy.PerCaptureTimeoutSeconds),
-                    true,
-                    PlayerLoopTiming.Update,
-                    CancellationToken.None,
-                    false);
                 (bool captureWon, Texture2D completedTexture) =
-                    await UniTask.WhenAny(captureTask, timeoutTask);
+                    await UniTask.WhenAny(captureTask, deadlineOrStopTask);
                 if (!captureWon)
                 {
-                    attempt.captureTaskTimeoutObserved = true;
                     probe.Abort();
                     attempt.lateCaptureTaskObserverAttached = true;
                     ObserveLateCaptureAsync(captureTask).Forget(LogLateCaptureObserverFailure, true);
+                    if (_lifecycle.IsStopped)
+                    {
+                        attempt.captureTaskStopObserved = true;
+                        throw new OperationCanceledException(
+                            "Stop interrupted the wait for the non-cancellable vendor capture task; " +
+                            "a late-result observer is attached and process exit remains the final cleanup boundary.");
+                    }
+                    attempt.captureTaskTimeoutObserved = true;
                     throw new TimeoutException(
-                        "ICaptureManager exceeded the per-capture deadline of " +
+                        "ICaptureManager exceeded the cooperative Unity-player-loop per-capture deadline of " +
                         CapturePolicy.PerCaptureTimeoutSeconds.ToString("R", CultureInfo.InvariantCulture) +
-                        " seconds. The vendor operation has no cancellation token; its late result is observed and disposed.");
+                        " seconds. The vendor operation has no cancellation token; a late-result observer is attached, while disposable process exit remains the final cleanup boundary.");
                 }
 
-                texture = completedTexture;
+                vendorTexture = completedTexture;
                 attempt.captureTaskCompletedBeforeDeadline = true;
                 ThrowIfStopped();
-                if (texture == null)
+                if (vendorTexture == null)
                 {
                     throw new InvalidDataException("ICaptureManager returned a null capture texture.");
                 }
+                attempt.vendorReturnedTexturePresent = true;
+                attempt.vendorReturnedTextureInstanceId = vendorTexture.GetInstanceID();
+                attempt.vendorReturnedTextureFormat = vendorTexture.format.ToString();
+                attempt.vendorReturnedTextureReadable = vendorTexture.isReadable;
+                attempt.vendorReturnedTextureUsedForAdmission = false;
 
                 probe.RequireCompleted();
-                ownershipTransferred = true;
-                return texture;
+                firstPartyTexture = probe.TakeReadbackTexture();
+                if (firstPartyTexture == null)
+                {
+                    throw new InvalidDataException(
+                        "The exact-target probe did not transfer its first-party readback texture.");
+                }
+                attempt.vendorReturnedTextureDistinctFromFirstParty =
+                    vendorTexture.GetInstanceID() != firstPartyTexture.GetInstanceID();
+                if (!attempt.vendorReturnedTextureDistinctFromFirstParty)
+                {
+                    throw new InvalidDataException(
+                        "The vendor-returned texture unexpectedly aliases the first-party admission texture.");
+                }
+
+                UnityEngine.Object.Destroy(vendorTexture);
+                attempt.vendorReturnedTextureDestroyRequested = true;
+                vendorTexture = null;
+                firstPartyOwnershipTransferred = true;
+                return firstPartyTexture;
             }
             finally
             {
-                probe.Abort();
-                probe.CopyTo(attempt);
-                if (!ownershipTransferred && texture != null)
+                if (deadlineCancellation != null)
                 {
-                    UnityEngine.Object.Destroy(texture);
+                    deadlineCancellation.Cancel();
+                    deadlineCancellation.Dispose();
                 }
+                probe.Abort();
+                Interlocked.CompareExchange(
+                    ref _activeReadbackProbe,
+                    null,
+                    probe);
+                if (vendorTexture != null)
+                {
+                    UnityEngine.Object.Destroy(vendorTexture);
+                    attempt.vendorReturnedTextureDestroyRequested = true;
+                }
+                if (!firstPartyOwnershipTransferred && firstPartyTexture != null)
+                {
+                    UnityEngine.Object.Destroy(firstPartyTexture);
+                }
+                probe.DestroyOwnedReadbackTexture();
+                probe.CopyTo(attempt);
             }
+        }
+
+        private async UniTask WaitForCaptureDeadlineOrStopAsync(
+            CancellationToken cancellationToken)
+        {
+            await UniTask.WhenAny(
+                UniTask.Delay(
+                    TimeSpan.FromSeconds(CapturePolicy.PerCaptureTimeoutSeconds),
+                    true,
+                    PlayerLoopTiming.Update,
+                    cancellationToken,
+                    false).SuppressCancellationThrow(),
+                UniTask.WaitUntil(
+                    delegate { return _lifecycle.IsStopped; },
+                    PlayerLoopTiming.Update,
+                    cancellationToken,
+                    false).SuppressCancellationThrow());
         }
 
         private static async UniTask ObserveLateCaptureAsync(UniTask<Texture2D> captureTask)
@@ -1696,9 +1816,10 @@ namespace Venviewer.NativeCapture
 
         private CaptureReceipt CreateInitialCaptureReceipt()
         {
+            RenderPipelineAsset pipelineAsset = GraphicsSettings.currentRenderPipeline;
             return new CaptureReceipt
             {
-                surface = "ISceneManager.SceneCamera via ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender) + Unity ImageConversion.EncodeToPNG",
+                surface = "ISceneManager.SceneCamera via ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender), first-party exact-target RGB24 ReadPixels, and Unity ImageConversion.EncodeToPNG",
                 imageFormat = "PNG",
                 width = _cameraProfile.Output.Width,
                 height = _cameraProfile.Output.Height,
@@ -1716,6 +1837,10 @@ namespace Venviewer.NativeCapture
                 framesBetweenCaptureAttempts = CapturePolicy.FramesBetweenCaptureAttempts,
                 sceneLoadTimeoutSeconds = CapturePolicy.SceneLoadTimeoutSeconds,
                 perCaptureTimeoutSeconds = CapturePolicy.PerCaptureTimeoutSeconds,
+                perCaptureTimeoutSemantics = "cooperative_unity_player_loop_update",
+                perCaptureTimeoutCanPreemptBlockedUnityMainThread = false,
+                lateResultObserverCompletionAwaitedBeforeProcessExit = false,
+                hardTerminationBoundary = "external_operator_process_watchdog",
                 renderQuality = _rendererQualityService.CurrentQuality.ToString(),
                 ultraQualityVerified = _rendererQualityService.CurrentQuality == RenderQualityType.Ultra,
                 // Preserve the vendor predicate as telemetry without treating it as API capability.
@@ -1733,7 +1858,15 @@ namespace Venviewer.NativeCapture
                 environmentExclusionRequested = true,
                 environmentExclusionReason = _cameraProfile.Environment.Reason,
                 environmentVisibilityGetterAvailable = _cameraProfile.Environment.VisibilityGetterAvailable,
-                renderCallbackSurface = "RenderPipelineManager.endCameraRendering for the exact SceneCamera while it retains the exact assigned RenderTexture",
+                renderCallbackSurface = "RenderPipelineManager.endCameraRendering when observed for the exact SceneCamera; otherwise the vendor afterRender callback after its three locked end-of-frame waits",
+                globalCameraCallbackRequiredForAdmission = false,
+                standardCameraRenderCallbackProofAvailable = false,
+                pipelineAssetType = pipelineAsset == null
+                    ? "null"
+                    : pipelineAsset.GetType().AssemblyQualifiedName,
+                configuredPixelSource = "first_party_exact_vendor_render_target",
+                observedPixelSource = null,
+                everyObservedPixelSourceMatchesConfigured = false,
                 blackChannelThreshold = CapturePolicy.BlackChannelThreshold,
                 minimumNonBlackPixelFraction = CapturePolicy.MinimumNonBlackPixelFraction,
                 minimumMaximumChannelDynamicRange = CapturePolicy.MinimumMaximumChannelDynamicRange,
@@ -2165,42 +2298,80 @@ namespace Venviewer.NativeCapture
             Application.Quit(2);
         }
 
-        private sealed class RenderFrameProbe
+        private sealed class ExactTargetReadbackProbe
         {
             private readonly Camera _expectedCamera;
+            private readonly int _expectedCameraInstanceId;
             private readonly int _expectedWidth;
             private readonly int _expectedHeight;
             private readonly Action<ScriptableRenderContext, Camera> _handler;
             private RenderTexture _expectedTarget;
+            private Texture2D _readbackTexture;
             private bool _begun;
-            private bool _subscribed;
-            private bool _closed;
+            private int _subscriptionState;
+            private volatile bool _closed;
 
-            internal RenderFrameProbe(Camera expectedCamera, int expectedWidth, int expectedHeight)
+            internal ExactTargetReadbackProbe(
+                Camera expectedCamera,
+                int expectedWidth,
+                int expectedHeight)
             {
-                _expectedCamera = expectedCamera ?? throw new ArgumentNullException("expectedCamera");
+                if (expectedCamera == null)
+                {
+                    throw new ArgumentNullException("expectedCamera");
+                }
+                _expectedCamera = expectedCamera;
+                _expectedCameraInstanceId = expectedCamera.GetInstanceID();
                 _expectedWidth = expectedWidth;
                 _expectedHeight = expectedHeight;
                 _handler = HandleEndCameraRendering;
-                FirstExactCameraRenderFrame = -1;
-                LastExactCameraRenderFrame = -1;
+                FirstSrpEndCameraRenderingFrame = -1;
+                LastSrpEndCameraRenderingFrame = -1;
             }
 
             internal bool RenderTargetAssignedBeforeCapture { get; private set; }
             internal int RenderTargetInstanceId { get; private set; }
             internal int RenderTargetWidth { get; private set; }
             internal int RenderTargetHeight { get; private set; }
+            internal bool RenderTargetIsCreated { get; private set; }
+            internal int RenderTargetAntiAliasing { get; private set; }
+            internal string RenderTargetColorFormat { get; private set; }
+            internal string RenderTargetGraphicsFormat { get; private set; }
+            internal bool RenderTargetSrgb { get; private set; }
+            internal bool RenderTargetUseMipMap { get; private set; }
             internal bool RenderTargetDriftObserved { get; private set; }
             internal bool BeforeRenderCallbackInvoked { get; private set; }
             internal bool AfterRenderCallbackInvoked { get; private set; }
+            internal int BeforeRenderFrame { get; private set; }
+            internal int AfterRenderFrame { get; private set; }
+            internal double BeforeRenderRealtimeSeconds { get; private set; }
+            internal double AfterRenderRealtimeSeconds { get; private set; }
             internal bool SubscriptionRemoved { get; private set; }
-            internal int ExactCameraRenderCallbackCount { get; private set; }
-            internal int FirstExactCameraRenderFrame { get; private set; }
-            internal int LastExactCameraRenderFrame { get; private set; }
+            internal int SrpEndCameraRenderingCallbackCount { get; private set; }
+            internal int FirstSrpEndCameraRenderingFrame { get; private set; }
+            internal int LastSrpEndCameraRenderingFrame { get; private set; }
+            internal bool StandardCameraRenderCallbackProofAvailable { get; private set; }
+            internal bool RenderTextureActiveWasNullBeforeReadback { get; private set; }
+            internal int RenderTextureActiveBeforeReadbackInstanceId { get; private set; }
+            internal bool ActiveExactTargetVerifiedBeforeReadPixels { get; private set; }
+            internal bool RenderTextureActiveRestored { get; private set; }
+            internal bool FirstPartyReadPixelsCompleted { get; private set; }
+            internal bool FirstPartyApplyCompleted { get; private set; }
+            internal int FirstPartyTextureInstanceId { get; private set; }
+            internal string FirstPartyTextureFormat { get; private set; }
+            internal bool FirstPartyTextureReadable { get; private set; }
+            internal bool FirstPartyTextureNoMipChain { get; private set; }
+            internal string PixelSource { get; private set; }
+            internal string ReadbackTrigger { get; private set; }
+            internal int ReadbackReplacementDisposalRequestCount { get; private set; }
+            internal string CallbackReadbackFailureType { get; private set; }
+            internal string CallbackReadbackFailureMessage { get; private set; }
 
             internal void Begin()
             {
                 BeforeRenderCallbackInvoked = true;
+                BeforeRenderFrame = Time.frameCount;
+                BeforeRenderRealtimeSeconds = Time.realtimeSinceStartup;
                 if (_closed)
                 {
                     throw new InvalidOperationException(
@@ -2222,39 +2393,92 @@ namespace Venviewer.NativeCapture
                 RenderTargetInstanceId = target.GetInstanceID();
                 RenderTargetWidth = target.width;
                 RenderTargetHeight = target.height;
-                if (RenderTargetWidth != _expectedWidth || RenderTargetHeight != _expectedHeight)
+                RenderTargetIsCreated = target.IsCreated();
+                RenderTargetAntiAliasing = target.antiAliasing;
+                RenderTargetColorFormat = target.format.ToString();
+                RenderTargetGraphicsFormat = target.graphicsFormat.ToString();
+                RenderTargetSrgb = target.sRGB;
+                RenderTargetUseMipMap = target.useMipMap;
+                if (RenderTargetWidth != _expectedWidth || RenderTargetHeight != _expectedHeight ||
+                    !RenderTargetIsCreated || RenderTargetAntiAliasing != 1 || RenderTargetUseMipMap)
                 {
                     throw new InvalidOperationException(
-                        "ICaptureManager assigned an unexpected camera render-target size.");
+                        "ICaptureManager assigned a target outside the exact created, single-sample, no-mipmap contract.");
                 }
 
                 RenderPipelineManager.endCameraRendering += _handler;
-                _subscribed = true;
+                Interlocked.Exchange(ref _subscriptionState, 1);
                 _begun = true;
+                if (_closed)
+                {
+                    RemoveSubscription();
+                    throw new OperationCanceledException(
+                        "The exact-target probe was stopped while its render callback was being registered.");
+                }
             }
 
             internal void AfterRender()
             {
                 AfterRenderCallbackInvoked = true;
+                AfterRenderFrame = Time.frameCount;
+                AfterRenderRealtimeSeconds = Time.realtimeSinceStartup;
                 if (_closed)
                 {
                     return;
                 }
-                if (!_begun)
+                try
                 {
-                    Abort();
-                    throw new InvalidOperationException(
-                        "ICaptureManager invoked afterRender before the exact-target probe began.");
+                    if (!_begun)
+                    {
+                        throw new InvalidOperationException(
+                            "ICaptureManager invoked afterRender before the exact-target probe began.");
+                    }
+                    if (!HasExpectedTarget())
+                    {
+                        RenderTargetDriftObserved = true;
+                        throw new InvalidOperationException(
+                            "The exact scene camera no longer targeted the assigned render texture in afterRender.");
+                    }
+
+                    RemoveSubscription();
+                    if (SrpEndCameraRenderingCallbackCount > 0)
+                    {
+                        if (RenderTargetDriftObserved ||
+                            !String.IsNullOrEmpty(CallbackReadbackFailureType) ||
+                            _readbackTexture == null)
+                        {
+                            throw new InvalidOperationException(
+                                "A standard exact-camera callback occurred but its exact-target readback did not complete cleanly.");
+                        }
+                        StandardCameraRenderCallbackProofAvailable = true;
+                    }
+                    else
+                    {
+                        CaptureExactTargetReadback("vendor_afterRender_fallback");
+                    }
                 }
-                if (!HasExpectedTarget())
+                finally
                 {
-                    RenderTargetDriftObserved = true;
                     Abort();
-                    throw new InvalidOperationException(
-                        "The exact scene camera no longer targeted the assigned render texture in afterRender.");
+                }
+            }
+
+            internal Texture2D TakeReadbackTexture()
+            {
+                Texture2D texture = _readbackTexture;
+                _readbackTexture = null;
+                return texture;
+            }
+
+            internal void DestroyOwnedReadbackTexture()
+            {
+                if (_readbackTexture == null)
+                {
+                    return;
                 }
 
-                Abort();
+                UnityEngine.Object.Destroy(_readbackTexture);
+                _readbackTexture = null;
             }
 
             internal void Abort()
@@ -2272,47 +2496,93 @@ namespace Venviewer.NativeCapture
 
                 attempt.beforeRenderCallbackInvoked = BeforeRenderCallbackInvoked;
                 attempt.afterRenderCallbackInvoked = AfterRenderCallbackInvoked;
+                attempt.beforeRenderFrame = BeforeRenderFrame;
+                attempt.afterRenderFrame = AfterRenderFrame;
+                attempt.beforeRenderRealtimeSeconds = BeforeRenderRealtimeSeconds;
+                attempt.afterRenderRealtimeSeconds = AfterRenderRealtimeSeconds;
                 attempt.renderProbeSubscriptionRemoved = SubscriptionRemoved;
+                attempt.srpEndCameraRenderingCallbackCount = SrpEndCameraRenderingCallbackCount;
+                attempt.firstSrpEndCameraRenderingFrame = FirstSrpEndCameraRenderingFrame;
+                attempt.lastSrpEndCameraRenderingFrame = LastSrpEndCameraRenderingFrame;
+                attempt.standardCameraRenderCallbackProofAvailable =
+                    StandardCameraRenderCallbackProofAvailable;
                 attempt.renderTargetAssignedBeforeCapture = RenderTargetAssignedBeforeCapture;
                 attempt.renderTargetInstanceId = RenderTargetInstanceId;
                 attempt.renderTargetWidth = RenderTargetWidth;
                 attempt.renderTargetHeight = RenderTargetHeight;
+                attempt.renderTargetIsCreated = RenderTargetIsCreated;
+                attempt.renderTargetAntiAliasing = RenderTargetAntiAliasing;
+                attempt.renderTargetColorFormat = RenderTargetColorFormat;
+                attempt.renderTargetGraphicsFormat = RenderTargetGraphicsFormat;
+                attempt.renderTargetSrgb = RenderTargetSrgb;
+                attempt.renderTargetUseMipMap = RenderTargetUseMipMap;
                 attempt.renderTargetDriftObserved = RenderTargetDriftObserved;
-                attempt.exactCameraRenderCallbackCount = ExactCameraRenderCallbackCount;
-                attempt.firstExactCameraRenderFrame = FirstExactCameraRenderFrame;
-                attempt.lastExactCameraRenderFrame = LastExactCameraRenderFrame;
+                attempt.renderTextureActiveWasNullBeforeReadback =
+                    RenderTextureActiveWasNullBeforeReadback;
+                attempt.renderTextureActiveBeforeReadbackInstanceId =
+                    RenderTextureActiveBeforeReadbackInstanceId;
+                attempt.activeExactTargetVerifiedBeforeReadPixels =
+                    ActiveExactTargetVerifiedBeforeReadPixels;
+                attempt.renderTextureActiveRestored = RenderTextureActiveRestored;
+                attempt.firstPartyReadPixelsCompleted = FirstPartyReadPixelsCompleted;
+                attempt.firstPartyApplyCompleted = FirstPartyApplyCompleted;
+                attempt.firstPartyTextureInstanceId = FirstPartyTextureInstanceId;
+                attempt.firstPartyTextureFormat = FirstPartyTextureFormat;
+                attempt.firstPartyTextureReadable = FirstPartyTextureReadable;
+                attempt.firstPartyTextureNoMipChain = FirstPartyTextureNoMipChain;
+                attempt.pixelSource = PixelSource;
+                attempt.readbackTrigger = ReadbackTrigger;
+                attempt.readbackReplacementDisposalRequestCount =
+                    ReadbackReplacementDisposalRequestCount;
+                attempt.callbackReadbackFailureType = CallbackReadbackFailureType;
+                attempt.callbackReadbackFailureMessage = CallbackReadbackFailureMessage;
             }
 
             private void RemoveSubscription()
             {
-                if (!_subscribed)
+                if (Interlocked.Exchange(ref _subscriptionState, 0) == 0)
                 {
                     return;
                 }
 
                 RenderPipelineManager.endCameraRendering -= _handler;
-                _subscribed = false;
                 SubscriptionRemoved = true;
             }
 
             internal void RequireCompleted()
             {
-                if (!_begun || !_closed || _subscribed ||
+                if (!_begun || !_closed || Volatile.Read(ref _subscriptionState) != 0 ||
                     !BeforeRenderCallbackInvoked || !AfterRenderCallbackInvoked ||
+                    AfterRenderFrame < BeforeRenderFrame ||
+                    AfterRenderRealtimeSeconds < BeforeRenderRealtimeSeconds ||
                     !SubscriptionRemoved || !RenderTargetAssignedBeforeCapture ||
-                    RenderTargetDriftObserved || _expectedTarget == null ||
-                    ExactCameraRenderCallbackCount <= 0 ||
-                    FirstExactCameraRenderFrame < 0 ||
-                    LastExactCameraRenderFrame < FirstExactCameraRenderFrame)
+                    !RenderTargetIsCreated || RenderTargetAntiAliasing != 1 || RenderTargetUseMipMap ||
+                    RenderTargetDriftObserved || _expectedTarget == null || _readbackTexture == null ||
+                    !ActiveExactTargetVerifiedBeforeReadPixels || !RenderTextureActiveRestored ||
+                    !FirstPartyReadPixelsCompleted || !FirstPartyApplyCompleted ||
+                    !FirstPartyTextureReadable || !FirstPartyTextureNoMipChain ||
+                    !String.Equals(FirstPartyTextureFormat, TextureFormat.RGB24.ToString(), StringComparison.Ordinal) ||
+                    !String.Equals(
+                        PixelSource,
+                        "first_party_exact_vendor_render_target",
+                        StringComparison.Ordinal))
                 {
                     throw new InvalidOperationException(
-                        "No exact-camera endCameraRendering event proved that the assigned capture target rendered.");
+                        "The first-party exact-target readback contract did not complete cleanly.");
                 }
+                CapturePolicy.RequireExactTargetReadbackRoute(
+                    SrpEndCameraRenderingCallbackCount,
+                    FirstSrpEndCameraRenderingFrame,
+                    LastSrpEndCameraRenderingFrame,
+                    StandardCameraRenderCallbackProofAvailable,
+                    CallbackReadbackFailureType,
+                    ReadbackTrigger);
             }
 
             private void HandleEndCameraRendering(ScriptableRenderContext context, Camera camera)
             {
-                if (!ReferenceEquals(camera, _expectedCamera))
+                if (_closed || camera == null || _expectedCamera == null ||
+                    camera.GetInstanceID() != _expectedCameraInstanceId)
                 {
                     return;
                 }
@@ -2323,22 +2593,142 @@ namespace Venviewer.NativeCapture
                 }
 
                 int frame = Time.frameCount;
-                if (ExactCameraRenderCallbackCount == 0)
+                if (SrpEndCameraRenderingCallbackCount == 0)
                 {
-                    FirstExactCameraRenderFrame = frame;
+                    FirstSrpEndCameraRenderingFrame = frame;
                 }
-                ExactCameraRenderCallbackCount += 1;
-                LastExactCameraRenderFrame = frame;
+                SrpEndCameraRenderingCallbackCount += 1;
+                LastSrpEndCameraRenderingFrame = frame;
+                try
+                {
+                    CaptureExactTargetReadback("srp_endCameraRendering");
+                }
+                catch (Exception exception)
+                {
+                    if (String.IsNullOrEmpty(CallbackReadbackFailureType))
+                    {
+                        CallbackReadbackFailureType = exception.GetType().FullName;
+                        CallbackReadbackFailureMessage = exception.Message;
+                    }
+                }
             }
 
             private bool HasExpectedTarget()
             {
+                if (_expectedCamera == null ||
+                    _expectedCamera.GetInstanceID() != _expectedCameraInstanceId ||
+                    _expectedTarget == null)
+                {
+                    return false;
+                }
                 RenderTexture currentTarget = _expectedCamera.targetTexture;
-                return _expectedTarget != null &&
-                    ReferenceEquals(currentTarget, _expectedTarget) &&
+                return currentTarget != null &&
                     currentTarget.GetInstanceID() == RenderTargetInstanceId &&
+                    _expectedTarget.GetInstanceID() == RenderTargetInstanceId &&
                     currentTarget.width == _expectedWidth &&
-                    currentTarget.height == _expectedHeight;
+                    currentTarget.height == _expectedHeight &&
+                    currentTarget.IsCreated() &&
+                    currentTarget.antiAliasing == 1 &&
+                    !currentTarget.useMipMap;
+            }
+
+            private void CaptureExactTargetReadback(string trigger)
+            {
+                if (!HasExpectedTarget())
+                {
+                    RenderTargetDriftObserved = true;
+                    throw new InvalidOperationException(
+                        "The exact assigned render target drifted before first-party readback.");
+                }
+
+                RenderTexture previousActive = RenderTexture.active;
+                RenderTextureActiveWasNullBeforeReadback = previousActive == null;
+                RenderTextureActiveBeforeReadbackInstanceId =
+                    RenderTextureActiveWasNullBeforeReadback ? 0 : previousActive.GetInstanceID();
+                ActiveExactTargetVerifiedBeforeReadPixels = false;
+                RenderTextureActiveRestored = false;
+                FirstPartyReadPixelsCompleted = false;
+                FirstPartyApplyCompleted = false;
+                Texture2D candidate = null;
+                Exception readbackFailure = null;
+                try
+                {
+                    RenderTexture.active = _expectedTarget;
+                    RenderTexture active = RenderTexture.active;
+                    if (active == null || active.GetInstanceID() != RenderTargetInstanceId)
+                    {
+                        throw new InvalidOperationException(
+                            "RenderTexture.active did not bind the exact retained vendor target.");
+                    }
+                    ActiveExactTargetVerifiedBeforeReadPixels = true;
+
+                    candidate = new Texture2D(
+                        _expectedWidth,
+                        _expectedHeight,
+                        TextureFormat.RGB24,
+                        false);
+                    FirstPartyTextureInstanceId = candidate.GetInstanceID();
+                    FirstPartyTextureFormat = candidate.format.ToString();
+                    candidate.ReadPixels(
+                        new Rect(0.0f, 0.0f, _expectedWidth, _expectedHeight),
+                        0,
+                        0,
+                        false);
+                    FirstPartyReadPixelsCompleted = true;
+                    candidate.Apply(false, false);
+                    FirstPartyApplyCompleted = true;
+                    FirstPartyTextureReadable = candidate.isReadable;
+                    FirstPartyTextureNoMipChain = candidate.mipmapCount == 1;
+                    if (!FirstPartyTextureReadable || !FirstPartyTextureNoMipChain ||
+                        candidate.format != TextureFormat.RGB24)
+                    {
+                        throw new InvalidDataException(
+                            "The first-party target readback did not remain readable RGB24 without mip levels.");
+                    }
+
+                    if (_readbackTexture != null)
+                    {
+                        UnityEngine.Object.Destroy(_readbackTexture);
+                        ReadbackReplacementDisposalRequestCount += 1;
+                    }
+                    _readbackTexture = candidate;
+                    candidate = null;
+                    PixelSource = "first_party_exact_vendor_render_target";
+                    ReadbackTrigger = trigger;
+                }
+                catch (Exception exception)
+                {
+                    readbackFailure = exception;
+                }
+                finally
+                {
+                    RenderTexture.active = RenderTextureActiveWasNullBeforeReadback
+                        ? null
+                        : previousActive;
+                    RenderTexture restoredActive = RenderTexture.active;
+                    RenderTextureActiveRestored = RenderTextureActiveWasNullBeforeReadback
+                        ? restoredActive == null
+                        : restoredActive != null &&
+                            restoredActive.GetInstanceID() ==
+                                RenderTextureActiveBeforeReadbackInstanceId;
+                    if (candidate != null)
+                    {
+                        UnityEngine.Object.Destroy(candidate);
+                    }
+                }
+
+                if (!RenderTextureActiveRestored)
+                {
+                    throw new InvalidOperationException(
+                        "RenderTexture.active was not restored after first-party exact-target readback.",
+                        readbackFailure);
+                }
+                if (readbackFailure != null)
+                {
+                    throw new InvalidOperationException(
+                        "First-party exact-target RGB24 readback failed.",
+                        readbackFailure);
+                }
             }
         }
 
