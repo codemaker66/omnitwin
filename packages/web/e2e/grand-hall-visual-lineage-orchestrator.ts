@@ -397,14 +397,11 @@ async function validateCaptureRecord(input: {
   };
   assertGrandHallHardwareEvidenceMatchesProfile(input.browserProfile, capturedBrowserEvidence);
   if (
-    requiredString(browserMarker, "profileSha256") !== input.browserProfileSha256
+    Object.keys(browserMarker).sort().join(",")
+      !== "browserVersion,completedBeforeSourceNavigation,profileSha256"
+    || requiredString(browserMarker, "profileSha256") !== input.browserProfileSha256
     || !requiredBoolean(browserMarker, "completedBeforeSourceNavigation")
     || requiredString(browserMarker, "browserVersion") !== input.browserProfile.browserVersion
-    || requiredString(browserMarker, "userAgent") !== capturedBrowserEvidence.userAgent
-    || requiredString(browserMarker, "webglVendor") !== capturedBrowserEvidence.webglVendor
-    || requiredString(browserMarker, "webglRenderer") !== capturedBrowserEvidence.webglRenderer
-    || requiredString(browserMarker, "webglVersion") !== capturedBrowserEvidence.webglVersion
-    || requiredBoolean(browserMarker, "contextLost")
   ) {
     throw new Error(`Capture record hardware-preflight binding mismatch: ${input.recordPath}`);
   }

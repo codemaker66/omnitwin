@@ -124,11 +124,11 @@ describe("Grand Hall hardware browser selection", () => {
     const marker = grandHallHardwarePreflightEvidenceMarker({
       profileSha256: `sha256:${"a".repeat(64)}`,
       browserVersion: selected.profile.browserVersion,
-      evidence: HARDWARE_EVIDENCE,
     });
     expect(marker).toContain("VENVIEWER_BROWSER_HARDWARE_PREFLIGHT_V1:");
     expect(marker).toContain('"completedBeforeSourceNavigation":true');
     expect(marker).toContain('"browserVersion":"151.0.7922.175"');
-    expect(marker).toContain(selected.profile.webglRenderer);
+    expect(marker).not.toContain(selected.profile.webglRenderer);
+    expect(marker.length).toBeLessThanOrEqual(500);
   });
 });

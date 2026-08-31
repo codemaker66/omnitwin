@@ -205,7 +205,6 @@ async function browserHardwarePreflightBeforeSourceNavigation(
     marker: grandHallHardwarePreflightEvidenceMarker({
       profileSha256: HARDWARE_BROWSER_PROFILE_SHA256,
       browserVersion,
-      evidence,
     }),
   };
 }

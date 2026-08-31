@@ -350,7 +350,6 @@ export function parseGrandHallHardwareBrowserProfile(
 export function grandHallHardwarePreflightEvidenceMarker(input: {
   readonly profileSha256: string;
   readonly browserVersion: string;
-  readonly evidence: GrandHallWebGlEvidence;
 }): string {
   if (!/^sha256:[a-f0-9]{64}$/u.test(input.profileSha256)) {
     throw new Error("Hardware browser profile SHA-256 is invalid.");
@@ -359,6 +358,5 @@ export function grandHallHardwarePreflightEvidenceMarker(input: {
     profileSha256: input.profileSha256,
     completedBeforeSourceNavigation: true,
     browserVersion: input.browserVersion,
-    ...input.evidence,
   })}`;
 }
