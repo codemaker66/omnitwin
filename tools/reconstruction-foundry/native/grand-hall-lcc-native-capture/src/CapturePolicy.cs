@@ -85,11 +85,18 @@ namespace Venviewer.NativeCapture
 
     internal static class CapturePolicy
     {
-        internal const string ArmValue = "CANONICAL_GH9_NATIVE_CAPTURE_V1";
+        internal const string ArmValue = "CANONICAL_GH1_LCC2_NATIVE_CAPTURE_V1";
         internal const string CanonicalScenePath =
-            @"C:\GRAND_HALL_BIG_MODEL_VARIATIONS\scans_BIG_MODEL_TH_GH_9\lcc-result\Grand_Hall.lcc";
+            @"C:\GRAND_HALL_BIG_MODEL_VARIATIONS\scans_BIG_MODEL_TH_GH_1\lcc2-result\Grand_Hall.lcc2";
         internal const string CanonicalManifestSha256 =
-            "CE2A539483C7C2A271CA2555F6390E16425BB911851A8A56C2F16B17C248CAC1";
+            "927A92699DE222E99D2684CA2567A35AB1E523A036461E6E01236B7B77B7F659";
+        internal const string CanonicalInventorySha256 =
+            "6013763AE4D9FA13CB10D2C62E9B11B971BC2F22420CA2ADE6F736AEECC4B793";
+        internal const int CanonicalMemberCount = 60;
+        internal const long CanonicalTotalByteLength = 214350601;
+        internal const string CameraProfileFileName = "camera-profile.json";
+        internal const string CameraProfileSha256 =
+            "9ECA9B6582B7301EC1C059B1A5BE699E5A4983773AFECB2BEEA46C2668305922";
         internal const string InstalledVendorTreeRoot = @"F:\LccStudio";
         internal const string ApprovedSandboxEditorPath =
             @"C:\Users\blake\AppData\Local\Venviewer\lcc-native-capture-sandbox\lcceditor-0.15.0.7";
@@ -106,72 +113,68 @@ namespace Venviewer.NativeCapture
         internal const double PerCaptureTimeoutSeconds = 30.0;
         internal const double NativeCoordinateTolerance = 0.00001;
         internal const double ProjectionTolerance = 0.00001;
-        internal const float VerticalFieldOfViewDegrees = 60.0f;
-        internal const float NearClipMetres = 0.05f;
-        internal const float FarClipMetres = 80.0f;
-        internal const float AspectRatio = 16.0f / 9.0f;
-
-        // Pose 19,890 is the source-position authority. The target is explicitly an
-        // inspection-only horizontal q05/q95 pose-envelope centre, not a calibrated
-        // source-camera orientation.
-        internal static readonly Vec3d SourcePosition = new Vec3d(-4.774913, -16.59914, -0.687065);
-        internal static readonly Vec3d SourceTarget = new Vec3d(-4.5826875, -8.392191, -0.687065);
-        internal static readonly Vec3d SourceUp = new Vec3d(0.0, 0.0, 1.0);
-        internal static readonly Vec3d ExpectedNativePosition = new Vec3d(4.774913, -0.687065, 16.59914);
-        internal static readonly Vec3d ExpectedNativeTarget = new Vec3d(4.5826875, -0.687065, 8.392191);
-        internal static readonly Vec3d ExpectedNativeUp = new Vec3d(0.0, 1.0, 0.0);
-        internal static readonly Vec3d ExpectedNativeDirection =
-            new Vec3d(-0.0234158630569611, 0.0, -0.999725811088869);
-
-        internal static readonly double[] ExpectedNativeQuaternionXyzw =
-            { 0.0, -0.999931450422695, 0.0, 0.0117087341572578 };
-
         internal static readonly ExpectedFile[] ExpectedInputFiles =
         {
-            new ExpectedFile(
-                @"assets\poses.json",
-                2561254,
-                "7A020E5F1CC00029CE773D1F448804FA1B7F16355412B023320975122556418D"),
-            new ExpectedFile(
-                "attrs.lcp",
-                572,
-                "2DE67E07AD085AB28855F79B67F5B6E5C6BD8485203E05C69E002D371CF7D54B"),
-            new ExpectedFile(
-                "collision.lci",
-                1521440,
-                "BA410F1E6FA7F93B1C4AE7DD2DBB0AEF211329DDE40E8E3D75D29204F45B5248"),
-            new ExpectedFile(
-                "data.bin",
-                373926848,
-                "18627958FCA65242C0B1702D26D772EC4B254F35C51B0C834DB53F926E308206"),
-            new ExpectedFile(
-                "environment.bin",
-                1084416,
-                "6FEE62EED083810490F370D2F6F9826C580036AB27AE49C863E9F5F05864C2D1"),
-            new ExpectedFile(
-                "Grand_Hall.lcc",
-                1983,
-                CanonicalManifestSha256),
-            new ExpectedFile(
-                "index.bin",
-                672,
-                "60605FAF37657F1FE426CCFAF5FC748E7DDEDEF00011F9A95FB4CD50F82E1C8C"),
-            new ExpectedFile(
-                "log.txt",
-                2338,
-                "A369B6316CE602C2488C692588E18A8B18A6A25DD41F243D6C3253A5FAC24094"),
-            new ExpectedFile(
-                "report.json",
-                607,
-                "4EBE53C9DE2C59A34D5748157F3581ACC929D59F75680F6B1CB15AA2944165CB"),
-            new ExpectedFile(
-                "shcoef.bin",
-                747853696,
-                "77B8D974244D3634F3AE1943FA139F2C5ECF1EC58CBFF5B69D86A7EF1BF5565B"),
-            new ExpectedFile(
-                "thumb.jpg",
-                184943,
-                "0C1B8D9A17DFA58E0C09F5E50DF10D989213BAD0CE510B07F96CC2A57589AB87")
+            new ExpectedFile(@"data\3dgs\0_0_0_1_0_1.sog", 9980174, "97EFA65F9AADDBD69780664C6668817125C3153469918D5F291B348EE0B6D7E1"),
+            new ExpectedFile(@"data\3dgs\0_0.sog", 7226379, "AD9EE1A5EDB4CDB07773BFCA8BAFC211BDA2C470820FFF310948EE1FA266F41D"),
+            new ExpectedFile(@"data\3dgs\0_1_0_0_0.sog", 9287335, "E8DF50B2E00F48C25C394E870EB22FACF1EEE78FD24DAF1BB33D7B5BA3E24D97"),
+            new ExpectedFile(@"data\3dgs\0_1_0_1_0_0.sog", 9500250, "2B0C0CCE30CB31A34B253D5985985B3D547DEBE8BCA1A97401EB72AB3AD3BDBF"),
+            new ExpectedFile(@"data\3dgs\0_2_0_0_1_1.sog", 10575631, "B354BA55785E73A42AA4D108AC0C1FB93C333CBF5BD881E6C75149C2CECCCD3E"),
+            new ExpectedFile(@"data\3dgs\0_2_0_1_0.sog", 9812960, "A2F5DC09CC3C8E0E6A64163D70D45DADBD0869CACC7F4C402B46BDA59917E79B"),
+            new ExpectedFile(@"data\3dgs\0_2_0_1.sog", 9607542, "522B01AC0A8672688555A4824D41C9C382808E89444B3F3C93B80DFBF0D6EA6E"),
+            new ExpectedFile(@"data\3dgs\0_3_0_0_0_0.sog", 10376269, "E590FB5D7488071C63F10DF33B31E451F3C0348C2209F1BF594015C28A1FFF24"),
+            new ExpectedFile(@"data\3dgs\0_3_0_1_0_1.sog", 10207866, "84B2FF813E0746D8FC8DFCC9D044DBA15FEF5F62CA137794C30989C04BA82A9D"),
+            new ExpectedFile(@"data\3dgs\0_4_0_0_0.sog", 10051936, "DE10E3AE76615FC1F1BFD5D029B13816AB21F860A816856A656F06B9F522E773"),
+            new ExpectedFile(@"data\3dgs\0_4_0_1_0_0.sog", 9199768, "5863E052C6F99316914DF9168829543B82FB35DB0118B5E02D30E4D326A79D03"),
+            new ExpectedFile(@"data\3dgs\0_5_0_0_0_1.sog", 8975642, "65FD21B69A1DEF23CB4BD5B756DA7AC03E4451A476A80A61C47B853A0366A8F1"),
+            new ExpectedFile(@"data\3dgs\0_5_0_1_0_1.sog", 9708760, "D3272FEE659E486190AF1D2AC9427C39E5536BC85B90B5570DF4B6E9E9124631"),
+            new ExpectedFile(@"data\3dgs\0_5_0_1_0.sog", 10453154, "C0856A3A2DCB4FC14CA4ED3A37DA258755CE047B8A009072A66C8D4EB413C27F"),
+            new ExpectedFile(@"data\3dgs\0_5_0_1.sog", 10047647, "C1F2DBAEAC2C49F4E5B08122C72FEDA5B8DB73EA107B2C74F2FB2696C00BE9F2"),
+            new ExpectedFile(@"data\3dgs\0_5_0.sog", 9819031, "64D22C432B8C275CBCDDA0F1C5A979FD3F7C6D735AF7BE9F5ACEB9D1AB5D0F1A"),
+            new ExpectedFile(@"data\3dgs\0_6_0_0_0_1.sog", 10231737, "18E23290236BB3F220DF2B59F6F255A421151C0F1DA7ED633BD00D06EDDF0171"),
+            new ExpectedFile(@"data\3dgs\0_6_0_0.sog", 7434360, "0553F77EEB242B620C4EE6FF9A34AC7DCB198DDD47C71E6856E6EED4CF8E052E"),
+            new ExpectedFile(@"data\3dgs\0_6_0.sog", 4617467, "97434A3BC82407F5690E94023982D48516586AB6D95B12A140C5A1B01269F6D4"),
+            new ExpectedFile(@"data\3dgs\0_7_0_0_0_0.sog", 9417293, "7C4CCA3644294C2955CFE9E41F387E70CE79E1AEDCCA132392C0493325CE4386"),
+            new ExpectedFile(@"data\3dgs\0_7_0_0_0_1.sog", 8306348, "5E4409B07084CE7089E77A17D1EEC0D2C4691F7A9D9E52F55EF752529D356EA9"),
+            new ExpectedFile(@"data\3dgs\0_7_0_0_0.sog", 9927441, "4C067908C5E62F1411E76EF470CC1F7F246200EAC2AC98255EBD3D946745229D"),
+            new ExpectedFile(@"data\3dgs\0_7_0_1_0.sog", 4615298, "3AAB5477D7404D2A25E4D207CC167B6DEB9C54EDF9DDEC6DA255019487CA1F1C"),
+            new ExpectedFile(@"data\3dgs\env.sog", 414176, "B74E7CD9899BBEA8AAD30B16C6512B43326C53A46C36FFD6CBD272EB48F914BD"),
+            new ExpectedFile(@"data\mesh\0_0_0_0.btree", 10400, "22E2E03894CB2FA4444BF1C47027A0A23FD58D06DA3E93083D980731F26F227E"),
+            new ExpectedFile(@"data\mesh\0_0_0_0.ply", 59614, "A0F5145330FAEF0A6AF7033A111157AFDFA8187C7C69D51924478380A390E5F6"),
+            new ExpectedFile(@"data\mesh\0_0_0_1.btree", 17568, "933C2D273E5318E8CC6637D3D5BA03FE605F2E20067F21355E65D08F71CFE4DE"),
+            new ExpectedFile(@"data\mesh\0_0_0_1.ply", 95601, "2E6F2B996CB2C0D1D4F9CD5E27E1EA01D9936AC950347CA2E9C3431FE9C2807C"),
+            new ExpectedFile(@"data\mesh\0_1_0_0.btree", 10592, "EFAD491AB1668BA21FE9C5D605E776335E6C69AC41320905F2DC9E128A2D4F44"),
+            new ExpectedFile(@"data\mesh\0_1_0_0.ply", 56472, "9670C93AF964B6EC5E3279885EE435945B8E9806ABFC52CDA11EC4D783D512D8"),
+            new ExpectedFile(@"data\mesh\0_1_0_1.btree", 11360, "A060BBCF80F6D3B895D1849CB5AD3D5421DF27BABC9CF6D56FF74EFD60DA0112"),
+            new ExpectedFile(@"data\mesh\0_1_0_1.ply", 60907, "45EF906B35CD00900989AEF02DC8D2A660D990B012B4CC6C7FEC2A9D45B1FC99"),
+            new ExpectedFile(@"data\mesh\0_2_0_0.btree", 19616, "39AE181B5C1B4831B055B1E2EED8CF3B81FFF9B8922C285B7E8CEB2A77824FCF"),
+            new ExpectedFile(@"data\mesh\0_2_0_0.ply", 92504, "64C3676FEAA64D5957A82B406F2003B7F277DD79EE6DE41EAB6D6747E94465E6"),
+            new ExpectedFile(@"data\mesh\0_2_0_1.btree", 21920, "365EF5757D29EC8244AACD2AE6DE485C646E7637734C847AC9EF5499C280BFC6"),
+            new ExpectedFile(@"data\mesh\0_2_0_1.ply", 106904, "A8720AF100A3058C78C225B6123A7DB43503EEC4A9A6982219E4F8C370CCB96E"),
+            new ExpectedFile(@"data\mesh\0_3_0_0.btree", 21664, "746B0517451B5EB5F4FD6588542717A1088F8EADD8312852BEBD66FEE374F5B5"),
+            new ExpectedFile(@"data\mesh\0_3_0_0.ply", 103803, "57D67F1A3412BCFB671826795564CBFEF7ADABB47C535A30C84639EFD490FE3E"),
+            new ExpectedFile(@"data\mesh\0_3_0_1.btree", 24672, "09DE42FC898AAD7528578F674B174A72A839781F63D4813BF2228B141184C776"),
+            new ExpectedFile(@"data\mesh\0_3_0_1.ply", 131163, "C052513ECD65865CA4928F9770F173D59A74F14F988D642E9D16F25E82DFD0A8"),
+            new ExpectedFile(@"data\mesh\0_4_0_0.btree", 14624, "023856D08144341B30812E532DBEF4CE8CC7922847E087AFE9ABD2C3F442C414"),
+            new ExpectedFile(@"data\mesh\0_4_0_0.ply", 78492, "062294E8CFC6ADFC5B9E25E5BE4F8EC9EE0E0831CCA2314FECB922F35FC98FAF"),
+            new ExpectedFile(@"data\mesh\0_4_0_1.btree", 21216, "ED039A171D0EB495E3B3071B8F05A92A9152622106F6A1A76ACAC30D6A52BDA2"),
+            new ExpectedFile(@"data\mesh\0_4_0_1.ply", 114787, "0269DB7EF7797DE96EC366EC66041FF2D78E7641856E00DECABEF00232AAC4B8"),
+            new ExpectedFile(@"data\mesh\0_5_0_0.btree", 14624, "2BEDCD2E9B6D82BE113E2992CBDD37E6C3A70B9CEC95DD9DCDC9AA3856727004"),
+            new ExpectedFile(@"data\mesh\0_5_0_0.ply", 73736, "76DA4FCAAC288F175CAC4198E88CD67F66247C3AC035D40C059F25019B7FEF80"),
+            new ExpectedFile(@"data\mesh\0_5_0_1.btree", 20832, "EB5A28751AE698E6D3FEB9A326DDF32389C1C9DB7494FD8AFD2C4BEE673FC798"),
+            new ExpectedFile(@"data\mesh\0_5_0_1.ply", 101298, "2CA56769115830E95D430C9AA53800C9FDFE1C502483A92F4E37722D92463C00"),
+            new ExpectedFile(@"data\mesh\0_6_0_0.btree", 15328, "E1B0C9848326A9F362A11D4EF03ECCFF0666BF3BFDEAC843CBD43B108672CE76"),
+            new ExpectedFile(@"data\mesh\0_6_0_0.ply", 80410, "90A793D116A7010EB6092918A4BA5AA756EE060761CAC83E5AC0915D4BAA369E"),
+            new ExpectedFile(@"data\mesh\0_6_0_1.btree", 17824, "758D30FDA88EAE6D99928936ACE1B6D6EE3F378DC59654E3AF8721C16B839D3A"),
+            new ExpectedFile(@"data\mesh\0_6_0_1.ply", 100133, "7E577753C3B2527DDC84CA28373DB88141AE29C87B7ACC3EF01EFCA32A2B33B9"),
+            new ExpectedFile(@"data\mesh\0_7_0_0.btree", 8672, "BC1AFC71132EF1A2D5A6115F762A009E8B067DE63E60D58F1C3E7FDA047808B1"),
+            new ExpectedFile(@"data\mesh\0_7_0_0.ply", 46592, "7EEB1E1FA4D3D7A7189D9119AF25CB2334C070FD7F585C481064CB7F03917C19"),
+            new ExpectedFile(@"data\mesh\0_7_0_1.btree", 20960, "85113A25D3A4ADFB60D363296EC323DDDCB4A245869EF8BFB7D5040637B273FE"),
+            new ExpectedFile(@"data\mesh\0_7_0_1.ply", 110975, "BFC91D2CCDE0328E8A013144875BE4FC8E1D86DC8AA811A4DAF384AF57F79389"),
+            new ExpectedFile("Grand_Hall.lcc2", 124070, CanonicalManifestSha256),
+            new ExpectedFile(@"info\poses.json", 2561254, "7A020E5F1CC00029CE773D1F448804FA1B7F16355412B023320975122556418D"),
+            new ExpectedFile(@"info\report.json", 607, "4EBE53C9DE2C59A34D5748157F3581ACC929D59F75680F6B1CB15AA2944165CB"),
+            new ExpectedFile(@"info\thumb.jpg", 184943, "0C1B8D9A17DFA58E0C09F5E50DF10D989213BAD0CE510B07F96CC2A57589AB87")
         };
 
         internal static string NormalizePath(string path)
@@ -203,7 +206,7 @@ namespace Venviewer.NativeCapture
             if (!String.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(
-                    "The loaded scene is not the locked canonical Grand Hall _9 LCC. Expected '" +
+                    "The loaded scene is not the locked canonical Grand Hall GH_1 LCC2. Expected '" +
                     expected + "' but received '" + actual + "'.");
             }
         }
@@ -362,13 +365,23 @@ namespace Venviewer.NativeCapture
             RequireCanonicalInventory(root);
 
             List<FileReceipt> receipts = ExpectedInputFiles
-                .OrderBy(file => file.RelativePath, StringComparer.Ordinal)
                 .Select(expected => SnapshotExpectedFile(root, expected))
                 .ToList();
-            return new PackageSnapshot(
+            var snapshot = new PackageSnapshot(
                 normalizedScenePath,
                 receipts,
                 InventorySha256(receipts));
+            long totalByteLength = receipts.Sum(receipt => receipt.ByteLength);
+            if (receipts.Count != CanonicalMemberCount || totalByteLength != CanonicalTotalByteLength ||
+                !String.Equals(snapshot.InventorySha256, CanonicalInventorySha256, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The canonical GH_1 LCC2 inventory aggregate differs from the locked 60-file receipt. " +
+                    "Expected " + CanonicalInventorySha256 + " but found " +
+                    snapshot.InventorySha256 + ".");
+            }
+
+            return snapshot;
         }
 
         private static void RequireCanonicalInventory(string root)
@@ -385,7 +398,7 @@ namespace Venviewer.NativeCapture
             if (!actualRelativePaths.SequenceEqual(expectedRelativePaths, StringComparer.Ordinal))
             {
                 throw new InvalidOperationException(
-                    "The canonical _9 package inventory differs from its locked 11-member receipt. " +
+                    "The canonical GH_1 LCC2 package inventory differs from its locked 60-member receipt. " +
                     "Expected [" + String.Join(", ", expectedRelativePaths) + "] but found [" +
                     String.Join(", ", actualRelativePaths) + "].");
             }
@@ -503,7 +516,7 @@ namespace Venviewer.NativeCapture
                 Math.Abs(actual.Z - expected.Z) > tolerance)
             {
                 throw new InvalidOperationException(
-                    label + " is outside the raw _9 coordinate tolerance. Expected [" +
+                    label + " is outside the fixed-camera coordinate tolerance. Expected [" +
                     FormatVector(expected) + "] but received [" + FormatVector(actual) +
                     "] with tolerance " + tolerance.ToString("R", CultureInfo.InvariantCulture) + ".");
             }
@@ -563,7 +576,7 @@ namespace Venviewer.NativeCapture
         private static string InventorySha256(IEnumerable<FileReceipt> receipts)
         {
             var builder = new StringBuilder();
-            foreach (FileReceipt receipt in receipts.OrderBy(item => item.RelativePath, StringComparer.Ordinal))
+            foreach (FileReceipt receipt in receipts)
             {
                 builder.Append(receipt.RelativePath);
                 builder.Append('|');

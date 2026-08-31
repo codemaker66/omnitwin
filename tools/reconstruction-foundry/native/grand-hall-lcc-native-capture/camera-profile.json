@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "venviewer.grand-hall.fixed-camera-profile.v1",
+  "profileId": "source-pose-19890-interior-v1",
+  "authority": "none",
+  "truthClass": "RECONSTRUCTED_DIAGNOSTIC",
+  "roomRef": "trades-hall/grand-hall",
+  "sourcePoseIndex": 19890,
+  "sourcePoseTimestamp": "1780223098.347440958",
+  "frames": {
+    "source": {
+      "id": "xgrids_lcc2_source_z_up",
+      "position": [-4.774913, -16.59914, -0.687065],
+      "target": [-4.5826875, -8.392191, -0.687065],
+      "up": [0.0, 0.0, 1.0]
+    },
+    "native": {
+      "id": "xgrids_lcceditor_unity_y_up",
+      "expectedPosition": [4.774913, -0.687065, 16.59914],
+      "expectedTarget": [4.5826875, -0.687065, 8.392191],
+      "expectedUp": [0.0, 1.0, 0.0],
+      "expectedDirection": [-0.0234158630569611, 0.0, -0.999725811088869],
+      "expectedQuaternionXyzw": [0.0, -0.999931450422695, 0.0, 0.0117087341572578],
+      "assertionTolerance": 0.00001
+    },
+    "three": {
+      "id": "venviewer_browser_centered_y_up",
+      "position": [-0.03426186932373998, 2.15606153541565, 8.015104841842623],
+      "target": [0.15796363067625974, 2.15606153541565, -0.19184415815737577],
+      "up": [0.0, 1.0, 0.0],
+      "mappingStatus": "diagnostic_browser_frontier_mapping_not_accepted_room_transform"
+    }
+  },
+  "projection": {
+    "type": "perspective",
+    "verticalFieldOfViewDegrees": 60.0,
+    "nearClipMetres": 0.05,
+    "farClipMetres": 80.0,
+    "aspect": 1.7777777777777777
+  },
+  "output": {
+    "width": 1600,
+    "height": 900,
+    "devicePixelRatio": 1
+  },
+  "environment": {
+    "include": false,
+    "reason": "browser_frontier_parity_env_sog_excluded",
+    "visibilityGetterAvailable": false
+  },
+  "targetDerivation": "pose_q05_q95_horizontal_centre_at_source_pose_height",
+  "inspectionOnly": true,
+  "limitations": [
+    "The look target is an inspection-only q05/q95 pose-envelope centre, not a calibrated source-camera orientation.",
+    "The Three.js mapping is diagnostic and is not an accepted room transform.",
+    "This profile grants no room-scope, geometry, transform, architectural-truth, staging, publication, or production authority."
+  ]
+}

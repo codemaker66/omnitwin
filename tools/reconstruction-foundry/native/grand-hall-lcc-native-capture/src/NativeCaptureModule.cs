@@ -16,7 +16,7 @@ namespace Venviewer.NativeCapture
     public sealed class NativeCaptureModule : IModule
     {
         private const string ModuleId = "com.venviewer.native_capture";
-        private const string ModuleVersion = "1.1.1";
+        private const string ModuleVersion = "1.2.0";
         private const string OutputDirectoryEnvironmentVariable =
             "VENVIEWER_LCC_NATIVE_CAPTURE_OUTPUT_DIR";
         private const string ModuleShaEnvironmentVariable =
@@ -25,6 +25,8 @@ namespace Venviewer.NativeCapture
             "VENVIEWER_LCC_NATIVE_CAPTURE_PLUGIN_SHA256";
         private const string RuntimeClosureShaEnvironmentVariable =
             "VENVIEWER_LCC_NATIVE_CAPTURE_RUNTIME_CLOSURE_SHA256";
+        private const string CameraProfileShaEnvironmentVariable =
+            "VENVIEWER_LCC_NATIVE_CAPTURE_CAMERA_PROFILE_SHA256";
         private const string EditorRootEnvironmentVariable =
             "VENVIEWER_LCC_NATIVE_CAPTURE_EDITOR_ROOT";
         private const string ArmEnvironmentVariable = "VENVIEWER_LCC_NATIVE_CAPTURE_ARM";
@@ -75,12 +77,16 @@ namespace Venviewer.NativeCapture
         private ICaptureManager _captureManager;
         private IRendererQualityService _rendererQualityService;
         private Func<EventArg<string>, bool> _sceneLoadedHandler;
+        private Action _sceneLoadedCallback;
+        private LCCRendererHandler _loadHandler;
         private string _modulePath;
         private string _outputDirectory;
         private string _expectedModuleSha256;
         private string _expectedManifestSha256;
         private string _expectedRuntimeClosureSha256;
+        private string _expectedCameraProfileSha256;
         private string _editorRoot;
+        private FixedCameraProfile _cameraProfile;
         private RenderQualityType _originalQuality;
         private bool _qualityCaptured;
         private bool _subscribed;
@@ -88,6 +94,10 @@ namespace Venviewer.NativeCapture
         private RuntimeClosureReceipt _preLoadRuntimeClosure;
         private bool _armed;
         private int _started;
+        private int _sceneLoadedEventObserved;
+        private int _sceneLoadedCallbackObserved;
+        private string _sceneLoadedEventPath;
+        private bool _preloadedSceneRejected;
 
         public string Id { get { return ModuleId; } }
         public string Name { get { return "Venviewer Grand Hall native capture"; } }
@@ -109,6 +119,7 @@ namespace Venviewer.NativeCapture
             _captureManager = container.Resolve<ICaptureManager>();
             _rendererQualityService = container.Resolve<IRendererQualityService>();
             _sceneLoadedHandler = HandleSceneLoaded;
+            _sceneLoadedCallback = HandleSceneLoadedCallback;
         }
 
         public void Execute()
@@ -135,6 +146,7 @@ namespace Venviewer.NativeCapture
                     throw new InvalidOperationException(
                         "The armed module requires a fresh process with no scene loaded before its pre-load snapshots.");
                 }
+                _preloadedSceneRejected = true;
 
                 ValidateLaunchEnvironment();
                 _preLoadPackageSnapshot = CapturePolicy.SnapshotCanonicalPackage(
@@ -145,6 +157,22 @@ namespace Venviewer.NativeCapture
                 {
                     throw new InvalidOperationException("The lccscene.loaded subscription was rejected.");
                 }
+
+                if (_lccSceneManager.IsSceneLoaded())
+                {
+                    throw new InvalidOperationException(
+                        "A scene became preloaded before the canonical LoadScene call could be issued.");
+                }
+
+                _loadHandler = _lccSceneManager.LoadScene(
+                    CapturePolicy.CanonicalScenePath,
+                    _sceneLoadedCallback);
+                if (_loadHandler == null)
+                {
+                    throw new InvalidOperationException(
+                        "ILCCSceneManager.LoadScene returned a null renderer handler for the canonical GH_1 LCC2.");
+                }
+                CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path);
 
                 WatchSceneLoadAsync().Forget(HandleUnhandledException, true);
             }
@@ -171,7 +199,8 @@ namespace Venviewer.NativeCapture
         private void ValidateResolvedServices()
         {
             if (_eventBus == null || _cameraService == null || _sceneManager == null ||
-                _lccSceneManager == null || _captureManager == null || _rendererQualityService == null)
+                _lccSceneManager == null || _captureManager == null || _rendererQualityService == null ||
+                _sceneLoadedHandler == null || _sceneLoadedCallback == null)
             {
                 throw new InvalidOperationException(
                     "One or more required public LCCEditor services could not be resolved.");
@@ -208,6 +237,17 @@ namespace Venviewer.NativeCapture
             _expectedRuntimeClosureSha256 = CapturePolicy.RequireSha256(
                 Environment.GetEnvironmentVariable(RuntimeClosureShaEnvironmentVariable),
                 RuntimeClosureShaEnvironmentVariable);
+            _expectedCameraProfileSha256 = CapturePolicy.RequireSha256(
+                Environment.GetEnvironmentVariable(CameraProfileShaEnvironmentVariable),
+                CameraProfileShaEnvironmentVariable);
+            if (!String.Equals(
+                _expectedCameraProfileSha256,
+                CapturePolicy.CameraProfileSha256,
+                StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The operator-declared camera profile SHA-256 does not equal the compiled digest lock.");
+            }
             RequireLockedFile(
                 Path.Combine(_modulePath, "VenviewerNativeCapture.dll"),
                 _expectedModuleSha256,
@@ -216,6 +256,9 @@ namespace Venviewer.NativeCapture
                 Path.Combine(_modulePath, "plugin.json"),
                 _expectedManifestSha256,
                 "first-party plugin manifest");
+            _cameraProfile = FixedCameraProfile.Load(
+                Path.Combine(_modulePath, CapturePolicy.CameraProfileFileName),
+                _expectedCameraProfileSha256);
             _preLoadRuntimeClosure = RuntimeClosurePolicy.Verify(
                 _editorRoot,
                 Path.Combine(_modulePath, "runtime-closure-lock.json"),
@@ -249,7 +292,7 @@ namespace Venviewer.NativeCapture
             if (Interlocked.CompareExchange(ref _started, 1, 0) == 0)
             {
                 FailArmedStartupCore(new TimeoutException(
-                    "The canonical scene did not publish lccscene.loaded within " +
+                    "The canonical scene did not satisfy both the lccscene.loaded event and LoadScene callback within " +
                     CapturePolicy.SceneLoadTimeoutSeconds.ToString("R", CultureInfo.InvariantCulture) +
                     " seconds."));
             }
@@ -297,9 +340,94 @@ namespace Venviewer.NativeCapture
 
         private bool HandleSceneLoaded(EventArg<string> eventData)
         {
-            string scenePath = eventData == null ? null : eventData.t;
-            StartCapture(scenePath);
+            try
+            {
+                if (eventData == null)
+                {
+                    throw new InvalidOperationException("The lccscene.loaded event supplied a null event argument.");
+                }
+
+                string scenePath = eventData.t;
+                CapturePolicy.RequireCanonicalScenePath(scenePath);
+                if (_loadHandler == null)
+                {
+                    throw new InvalidOperationException(
+                        "The lccscene.loaded event arrived without a non-null LoadScene renderer handler.");
+                }
+                CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path);
+                if (Interlocked.Exchange(ref _sceneLoadedEventObserved, 1) != 0)
+                {
+                    throw new InvalidOperationException("The canonical lccscene.loaded event was published more than once.");
+                }
+
+                _sceneLoadedEventPath = CapturePolicy.NormalizePath(scenePath);
+                TryStartCaptureAfterLoadContract();
+            }
+            catch (Exception exception)
+            {
+                FailSceneLoadContract(exception);
+            }
             return true;
+        }
+
+        private void HandleSceneLoadedCallback()
+        {
+            try
+            {
+                if (_loadHandler == null)
+                {
+                    throw new InvalidOperationException(
+                        "The LoadScene callback arrived without a non-null renderer handler.");
+                }
+                CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path);
+                if (!_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath))
+                {
+                    throw new InvalidOperationException(
+                        "The LoadScene callback did not resolve to the requested canonical GH_1 LCC2 path.");
+                }
+                if (Interlocked.Exchange(ref _sceneLoadedCallbackObserved, 1) != 0)
+                {
+                    throw new InvalidOperationException("The canonical LoadScene callback was invoked more than once.");
+                }
+
+                TryStartCaptureAfterLoadContract();
+            }
+            catch (Exception exception)
+            {
+                FailSceneLoadContract(exception);
+            }
+        }
+
+        private void TryStartCaptureAfterLoadContract()
+        {
+            if (Volatile.Read(ref _sceneLoadedEventObserved) == 0 ||
+                Volatile.Read(ref _sceneLoadedCallbackObserved) == 0)
+            {
+                return;
+            }
+
+            CapturePolicy.RequireCanonicalScenePath(_sceneLoadedEventPath);
+            CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path);
+            if (!_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath))
+            {
+                throw new InvalidOperationException(
+                    "The event and callback completed but the canonical GH_1 LCC2 is not the loaded scene.");
+            }
+
+            Stop();
+            StartCapture(CapturePolicy.CanonicalScenePath);
+        }
+
+        private void FailSceneLoadContract(Exception exception)
+        {
+            if (Interlocked.CompareExchange(ref _started, 1, 0) == 0)
+            {
+                FailArmedStartupCore(exception);
+                return;
+            }
+
+            Debug.LogException(exception);
+            Application.Quit(2);
         }
 
         private void StartCapture(string scenePath)
@@ -436,19 +564,81 @@ namespace Venviewer.NativeCapture
                 truthClass = "RECONSTRUCTED_DIAGNOSTIC",
                 roomRef = "trades-hall/grand-hall",
                 runStartedAtUtc = startedAt.ToString("o", CultureInfo.InvariantCulture),
+                cameraProfile = CreateCameraProfileReceipt(),
+                sceneLoad = CreateSceneLoadReceipt(),
                 limitations = new[]
                 {
                     "The look target is an inspection-only q05/q95 pose-envelope centre; it is not a calibrated source-camera orientation.",
                     "A native renderer screenshot is diagnostic evidence, not human acceptance of Grand Hall scope, transform, geometry, or architectural truth.",
                     "Three consecutive byte-identical PNGs establish a same-host pixel plateau only after the conservative readiness gate; they do not prove every possible streamed Gaussian is resident.",
                     "The public API exposes Ultra quality and IsRenderAll mode, but no loaded-splat residency count or streaming-completion metric. Readiness therefore also requires a minimum 300 rendered frames and 15 seconds before hash sampling.",
-                    "The public API exposes HasEnvironment and a SetEnvironmentData request but no environment-visibility getter; the receipt records that bounded limitation rather than claiming verified visibility.",
+                    "Environment data is explicitly requested false for browser-frontier parity, excluding env.sog. The public API exposes no environment-visibility getter, so this receipt records the request and does not claim read-back visibility.",
                     "The runtime closure hashes every regular file in the disposable editor tree except this first-party module. It does not close over the GPU driver, operating system, CodeMeter service, firmware, or external per-user configuration.",
                     "Pixel hashes are not promised to remain identical across GPU drivers, graphics APIs, Unity builds, or LCCSDK versions.",
-                    "The module adds no generated fill, neighboring-room asset, facade asset, window, doorway, or architectural edit; it renders only the locked native _9 package.",
+                    "The module adds no generated fill, neighboring-room asset, facade asset, window, doorway, or architectural edit; it renders only the locked native GH_1 LCC2 package.",
                     "XGRIDS executable and SDK binaries remain vendor software and are not redistributed by this module or its build output."
                 }
             };
+        }
+
+        private CameraProfileReceipt CreateCameraProfileReceipt()
+        {
+            if (_cameraProfile == null)
+            {
+                return null;
+            }
+
+            return new CameraProfileReceipt
+            {
+                path = _cameraProfile.Path,
+                sha256 = _cameraProfile.Sha256,
+                schemaVersion = _cameraProfile.SchemaVersion,
+                profileId = _cameraProfile.ProfileId,
+                sourceFrame = _cameraProfile.Frames.Source.Id,
+                nativeFrame = _cameraProfile.Frames.Native.Id,
+                threeFrame = _cameraProfile.Frames.Three.Id,
+                inspectionOnly = _cameraProfile.InspectionOnly,
+                environmentIncluded = _cameraProfile.Environment.Include,
+                environmentExclusionReason = _cameraProfile.Environment.Reason
+            };
+        }
+
+        private SceneLoadReceipt CreateSceneLoadReceipt()
+        {
+            return new SceneLoadReceipt
+            {
+                api = "ILCCSceneManager.LoadScene(string, Action)",
+                requestedPath = CapturePolicy.CanonicalScenePath,
+                commandLineSceneArgumentUsed = false,
+                preloadedSceneRejected = _preloadedSceneRejected,
+                eventTopic = "lccscene.loaded",
+                eventSubscriptionAccepted = _subscribed || Volatile.Read(ref _sceneLoadedEventObserved) != 0,
+                eventPath = _sceneLoadedEventPath,
+                eventPathVerified = Volatile.Read(ref _sceneLoadedEventObserved) != 0,
+                callbackObserved = Volatile.Read(ref _sceneLoadedCallbackObserved) != 0,
+                callbackLoadedCanonicalSceneVerified = Volatile.Read(ref _sceneLoadedCallbackObserved) != 0,
+                returnedHandlerNonNull = _loadHandler != null,
+                returnedHandlerPath = _loadHandler == null ? null : _loadHandler.Path,
+                returnedHandlerPathVerified = _loadHandler != null && IsCanonicalScenePath(_loadHandler.Path)
+            };
+        }
+
+        private static bool IsCanonicalScenePath(string path)
+        {
+            if (String.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                CapturePolicy.RequireCanonicalScenePath(path);
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
         }
 
         private RuntimeEvidence VerifyRuntimeEvidence(
@@ -611,9 +801,12 @@ namespace Venviewer.NativeCapture
         private void ApplyLockedCamera(CameraState state)
         {
             Camera camera = state.Camera;
-            Vector3 sourcePosition = ToUnity(CapturePolicy.SourcePosition);
-            Vector3 sourceTarget = ToUnity(CapturePolicy.SourceTarget);
-            Vector3 sourceUpEnd = ToUnity(CapturePolicy.SourcePosition + CapturePolicy.SourceUp);
+            Vec3d profileSourcePosition = _cameraProfile.SourcePosition();
+            Vec3d profileSourceTarget = _cameraProfile.SourceTarget();
+            Vec3d profileSourceUp = _cameraProfile.SourceUp();
+            Vector3 sourcePosition = ToUnity(profileSourcePosition);
+            Vector3 sourceTarget = ToUnity(profileSourceTarget);
+            Vector3 sourceUpEnd = ToUnity(profileSourcePosition + profileSourceUp);
             Vector3 nativePosition = _lccSceneManager.LCCObjectToWorldSpace(sourcePosition);
             Vector3 nativeTarget = _lccSceneManager.LCCObjectToWorldSpace(sourceTarget);
             Vector3 nativeUpEnd = _lccSceneManager.LCCObjectToWorldSpace(sourceUpEnd);
@@ -623,34 +816,35 @@ namespace Venviewer.NativeCapture
             CapturePolicy.RequireApproximatelyEqual(
                 "Native camera position",
                 ToDouble(nativePosition),
-                CapturePolicy.ExpectedNativePosition,
-                CapturePolicy.NativeCoordinateTolerance);
+                _cameraProfile.ExpectedNativePosition(),
+                _cameraProfile.Frames.Native.AssertionTolerance);
             CapturePolicy.RequireApproximatelyEqual(
                 "Native camera target",
                 ToDouble(nativeTarget),
-                CapturePolicy.ExpectedNativeTarget,
-                CapturePolicy.NativeCoordinateTolerance);
+                _cameraProfile.ExpectedNativeTarget(),
+                _cameraProfile.Frames.Native.AssertionTolerance);
             CapturePolicy.RequireApproximatelyEqual(
                 "Native camera up",
                 ToDouble(nativeUp),
-                CapturePolicy.ExpectedNativeUp,
-                CapturePolicy.NativeCoordinateTolerance);
+                _cameraProfile.ExpectedNativeUp(),
+                _cameraProfile.Frames.Native.AssertionTolerance);
             CapturePolicy.RequireApproximatelyEqual(
                 "Native camera direction",
                 ToDouble(nativeDirection),
-                CapturePolicy.ExpectedNativeDirection,
-                CapturePolicy.NativeCoordinateTolerance);
+                _cameraProfile.ExpectedNativeDirection(),
+                _cameraProfile.Frames.Native.AssertionTolerance);
 
+            double[] expectedQuaternion = _cameraProfile.Frames.Native.ExpectedQuaternionXyzw;
             Quaternion rotation = Quaternion.LookRotation(nativeDirection, nativeUp);
             Quaternion expectedRotation = new Quaternion(
-                (float)CapturePolicy.ExpectedNativeQuaternionXyzw[0],
-                (float)CapturePolicy.ExpectedNativeQuaternionXyzw[1],
-                (float)CapturePolicy.ExpectedNativeQuaternionXyzw[2],
-                (float)CapturePolicy.ExpectedNativeQuaternionXyzw[3]);
+                (float)expectedQuaternion[0],
+                (float)expectedQuaternion[1],
+                (float)expectedQuaternion[2],
+                (float)expectedQuaternion[3]);
             if (Math.Abs(Quaternion.Dot(rotation, expectedRotation)) < 0.999999)
             {
                 throw new InvalidOperationException(
-                    "The native camera quaternion does not match the locked raw _9 expectation.");
+                    "The native camera quaternion does not match the digest-bound fixed-camera profile.");
             }
 
             RequireUltraFullRenderCapability();
@@ -673,20 +867,20 @@ namespace Venviewer.NativeCapture
             _lccSceneManager.SetMainCamera(camera);
             _lccSceneManager.SetRecordMode(
                 true,
-                new Vector2(CapturePolicy.CaptureWidth, CapturePolicy.CaptureHeight),
-                CapturePolicy.VerticalFieldOfViewDegrees);
+                new Vector2(_cameraProfile.Output.Width, _cameraProfile.Output.Height),
+                (float)_cameraProfile.Projection.VerticalFieldOfViewDegrees);
             state.RecordModeEnabled = true;
             _lccSceneManager.SetFOV(
-                CapturePolicy.CaptureWidth,
-                CapturePolicy.CaptureHeight,
-                CapturePolicy.VerticalFieldOfViewDegrees,
-                CapturePolicy.AspectRatio);
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height,
+                (float)_cameraProfile.Projection.VerticalFieldOfViewDegrees,
+                (float)_cameraProfile.Projection.Aspect);
             _lccSceneManager.SetLockFPS(true);
             state.LockFpsEnabled = true;
             _lccSceneManager.SetRenderAll(true);
             state.RenderAllMutated = true;
-            _lccSceneManager.SetEnvironmentData(true);
-            state.EnvironmentVisibilityRequested = true;
+            _lccSceneManager.SetEnvironmentData(false);
+            state.EnvironmentExclusionRequested = true;
             ApplyProjection(camera);
             _lccSceneManager.ForceRerenderer();
             state.Receipt = CreateCameraReceipt(
@@ -698,13 +892,13 @@ namespace Venviewer.NativeCapture
                 _lccSceneManager.LocalToWorldMatrix);
         }
 
-        private static void ApplyProjection(Camera camera)
+        private void ApplyProjection(Camera camera)
         {
             camera.orthographic = false;
-            camera.fieldOfView = CapturePolicy.VerticalFieldOfViewDegrees;
-            camera.nearClipPlane = CapturePolicy.NearClipMetres;
-            camera.farClipPlane = CapturePolicy.FarClipMetres;
-            camera.aspect = CapturePolicy.AspectRatio;
+            camera.fieldOfView = (float)_cameraProfile.Projection.VerticalFieldOfViewDegrees;
+            camera.nearClipPlane = (float)_cameraProfile.Projection.NearClipMetres;
+            camera.farClipPlane = (float)_cameraProfile.Projection.FarClipMetres;
+            camera.aspect = (float)_cameraProfile.Projection.Aspect;
             camera.rect = new Rect(0.0f, 0.0f, 1.0f, 1.0f);
             camera.ResetProjectionMatrix();
         }
@@ -769,10 +963,11 @@ namespace Venviewer.NativeCapture
             CapturePolicy.RequireApproximatelyEqual(
                 "Applied scene-camera position",
                 ToDouble(state.Camera.transform.position),
-                CapturePolicy.ExpectedNativePosition,
-                CapturePolicy.NativeCoordinateTolerance);
+                _cameraProfile.ExpectedNativePosition(),
+                _cameraProfile.Frames.Native.AssertionTolerance);
+            double[] expectedQuaternion = _cameraProfile.Frames.Native.ExpectedQuaternionXyzw;
             if (Math.Abs(Quaternion.Dot(state.Camera.transform.rotation, ToUnityQuaternion(
-                CapturePolicy.ExpectedNativeQuaternionXyzw))) < 0.999999)
+                expectedQuaternion))) < 0.999999)
             {
                 throw new InvalidOperationException(
                     "The live scene-camera rotation drifted after the fixed transform was applied.");
@@ -781,10 +976,16 @@ namespace Venviewer.NativeCapture
             RequireProjectionValue(
                 "vertical FOV",
                 state.Camera.fieldOfView,
-                CapturePolicy.VerticalFieldOfViewDegrees);
-            RequireProjectionValue("near clip", state.Camera.nearClipPlane, CapturePolicy.NearClipMetres);
-            RequireProjectionValue("far clip", state.Camera.farClipPlane, CapturePolicy.FarClipMetres);
-            RequireProjectionValue("aspect", state.Camera.aspect, CapturePolicy.AspectRatio);
+                (float)_cameraProfile.Projection.VerticalFieldOfViewDegrees);
+            RequireProjectionValue(
+                "near clip",
+                state.Camera.nearClipPlane,
+                (float)_cameraProfile.Projection.NearClipMetres);
+            RequireProjectionValue(
+                "far clip",
+                state.Camera.farClipPlane,
+                (float)_cameraProfile.Projection.FarClipMetres);
+            RequireProjectionValue("aspect", state.Camera.aspect, (float)_cameraProfile.Projection.Aspect);
             Rect rect = state.Camera.rect;
             if (state.Camera.orthographic ||
                 Math.Abs(rect.x) > CapturePolicy.ProjectionTolerance ||
@@ -854,8 +1055,8 @@ namespace Venviewer.NativeCapture
                 await UniTask.SwitchToThreadPool();
                 CapturePolicy.RequirePngDimensions(
                     candidatePath,
-                    CapturePolicy.CaptureWidth,
-                    CapturePolicy.CaptureHeight);
+                    _cameraProfile.Output.Width,
+                    _cameraProfile.Output.Height);
                 var info = new FileInfo(candidatePath);
                 string sha256 = CapturePolicy.Sha256File(candidatePath);
                 await UniTask.SwitchToMainThread();
@@ -869,8 +1070,8 @@ namespace Venviewer.NativeCapture
                     ordinal = ordinal,
                     sha256 = sha256,
                     byteLength = info.Length,
-                    width = CapturePolicy.CaptureWidth,
-                    height = CapturePolicy.CaptureHeight,
+                    width = _cameraProfile.Output.Width,
+                    height = _cameraProfile.Output.Height,
                     consecutiveIdenticalHashes = consecutive
                 });
                 capture.completedAttempts = ordinal;
@@ -899,7 +1100,7 @@ namespace Venviewer.NativeCapture
         {
             UniTask<bool> captureTask = _captureManager.CaptureToFileAsync(
                 candidatePath,
-                new Rect(0, 0, CapturePolicy.CaptureWidth, CapturePolicy.CaptureHeight),
+                new Rect(0, 0, _cameraProfile.Output.Width, _cameraProfile.Output.Height),
                 ImageFormat.PNG);
             UniTask timeoutTask = UniTask.Delay(
                 TimeSpan.FromSeconds(CapturePolicy.PerCaptureTimeoutSeconds),
@@ -941,8 +1142,8 @@ namespace Venviewer.NativeCapture
                 File.Copy(capture.selectedAttemptPath, temporaryPath, false);
                 CapturePolicy.RequirePngDimensions(
                     temporaryPath,
-                    CapturePolicy.CaptureWidth,
-                    CapturePolicy.CaptureHeight);
+                    _cameraProfile.Output.Width,
+                    _cameraProfile.Output.Height);
                 if (File.Exists(finalPath))
                 {
                     throw new IOException("The final native capture path appeared during finalization.");
@@ -994,8 +1195,8 @@ namespace Venviewer.NativeCapture
             {
                 surface = "ISceneManager.SceneCamera via ICaptureManager.CaptureToFileAsync(Rect, PNG)",
                 imageFormat = "PNG",
-                width = CapturePolicy.CaptureWidth,
-                height = CapturePolicy.CaptureHeight,
+                width = _cameraProfile.Output.Width,
+                height = _cameraProfile.Output.Height,
                 uiComposited = false,
                 recordModeEnabled = true,
                 gridHidden = true,
@@ -1016,13 +1217,15 @@ namespace Venviewer.NativeCapture
                 renderAllRequested = true,
                 renderAllVerifiedAtEveryGate = false,
                 canonicalPackageHasEnvironment = _lccSceneManager.HasEnvironment,
-                environmentVisibilityRequested = true,
-                environmentVisibilityGetterAvailable = false,
+                environmentDataIncluded = false,
+                environmentExclusionRequested = true,
+                environmentExclusionReason = _cameraProfile.Environment.Reason,
+                environmentVisibilityGetterAvailable = _cameraProfile.Environment.VisibilityGetterAvailable,
                 attempts = new List<CaptureAttemptReceipt>()
             };
         }
 
-        private static CameraReceipt CreateCameraReceipt(
+        private CameraReceipt CreateCameraReceipt(
             Vector3 nativePosition,
             Vector3 nativeTarget,
             Vector3 nativeUp,
@@ -1032,33 +1235,33 @@ namespace Venviewer.NativeCapture
         {
             return new CameraReceipt
             {
-                cameraId = "source-pose-19890-interior-v1",
-                sourcePoseIndex = 19890,
-                sourcePoseTimestamp = "1780223098.347440958",
-                sourceFrame = "xgrids_lcc_source_z_up",
-                nativeFrame = "xgrids_lcceditor_unity_y_up",
-                targetDerivation = "pose_q05_q95_horizontal_centre_at_source_pose_height",
+                cameraId = _cameraProfile.ProfileId,
+                sourcePoseIndex = _cameraProfile.SourcePoseIndex,
+                sourcePoseTimestamp = _cameraProfile.SourcePoseTimestamp,
+                sourceFrame = _cameraProfile.Frames.Source.Id,
+                nativeFrame = _cameraProfile.Frames.Native.Id,
+                targetDerivation = _cameraProfile.TargetDerivation,
                 targetCalibrationStatus = "inspection_only_not_calibrated_source_orientation",
-                sourcePosition = CapturePolicy.SourcePosition.ToArray(),
-                sourceTarget = CapturePolicy.SourceTarget.ToArray(),
-                sourceUp = CapturePolicy.SourceUp.ToArray(),
+                sourcePosition = _cameraProfile.Frames.Source.Position,
+                sourceTarget = _cameraProfile.Frames.Source.Target,
+                sourceUp = _cameraProfile.Frames.Source.Up,
                 nativePosition = ToArray(nativePosition),
                 nativeTarget = ToArray(nativeTarget),
                 nativeUp = ToArray(nativeUp),
                 nativeDirection = ToArray(nativeDirection),
                 nativeQuaternionXyzw = ToArray(nativeRotation),
-                expectedRawNativePosition = CapturePolicy.ExpectedNativePosition.ToArray(),
-                expectedRawNativeTarget = CapturePolicy.ExpectedNativeTarget.ToArray(),
-                expectedRawNativeUp = CapturePolicy.ExpectedNativeUp.ToArray(),
-                expectedRawNativeDirection = CapturePolicy.ExpectedNativeDirection.ToArray(),
-                expectedRawNativeQuaternionXyzw = CapturePolicy.ExpectedNativeQuaternionXyzw,
-                rawNativeAssertionTolerance = CapturePolicy.NativeCoordinateTolerance,
+                expectedRawNativePosition = _cameraProfile.Frames.Native.ExpectedPosition,
+                expectedRawNativeTarget = _cameraProfile.Frames.Native.ExpectedTarget,
+                expectedRawNativeUp = _cameraProfile.Frames.Native.ExpectedUp,
+                expectedRawNativeDirection = _cameraProfile.Frames.Native.ExpectedDirection,
+                expectedRawNativeQuaternionXyzw = _cameraProfile.Frames.Native.ExpectedQuaternionXyzw,
+                rawNativeAssertionTolerance = _cameraProfile.Frames.Native.AssertionTolerance,
                 lccLocalToWorldMatrixColumnMajor = MatrixToColumnMajor(localToWorld),
-                projection = "perspective",
-                verticalFieldOfViewDegrees = CapturePolicy.VerticalFieldOfViewDegrees,
-                nearClipMetres = CapturePolicy.NearClipMetres,
-                farClipMetres = CapturePolicy.FarClipMetres,
-                aspect = CapturePolicy.AspectRatio
+                projection = _cameraProfile.Projection.Type,
+                verticalFieldOfViewDegrees = (float)_cameraProfile.Projection.VerticalFieldOfViewDegrees,
+                nearClipMetres = (float)_cameraProfile.Projection.NearClipMetres,
+                farClipMetres = (float)_cameraProfile.Projection.FarClipMetres,
+                aspect = (float)_cameraProfile.Projection.Aspect
             };
         }
 
@@ -1119,8 +1322,8 @@ namespace Venviewer.NativeCapture
                     {
                         _lccSceneManager.SetRecordMode(
                             false,
-                            new Vector2(CapturePolicy.CaptureWidth, CapturePolicy.CaptureHeight),
-                            CapturePolicy.VerticalFieldOfViewDegrees);
+                            new Vector2(_cameraProfile.Output.Width, _cameraProfile.Output.Height),
+                            (float)_cameraProfile.Projection.VerticalFieldOfViewDegrees);
                         state.RecordModeEnabled = false;
                     },
                     restoreErrors);
@@ -1138,14 +1341,14 @@ namespace Venviewer.NativeCapture
                     restoreErrors);
             }
 
-            if (state.EnvironmentVisibilityRequested)
+            if (state.EnvironmentExclusionRequested)
             {
                 AttemptRestore(
-                    "environment visibility request",
+                    "environment exclusion request",
                     delegate
                     {
                         _lccSceneManager.SetEnvironmentData(false);
-                        state.EnvironmentVisibilityRequested = false;
+                        state.EnvironmentExclusionRequested = false;
                     },
                     restoreErrors);
             }
@@ -1412,7 +1615,7 @@ namespace Venviewer.NativeCapture
             internal bool RecordModeEnabled;
             internal bool LockFpsEnabled;
             internal bool RenderAllMutated;
-            internal bool EnvironmentVisibilityRequested;
+            internal bool EnvironmentExclusionRequested;
             internal bool RenderAll;
             internal bool HasEnvironment;
             internal CameraReceipt Receipt;

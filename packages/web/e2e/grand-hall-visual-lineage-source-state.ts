@@ -9,8 +9,12 @@ export const GRAND_HALL_LINEAGE_SOURCE_PATHSPEC = Object.freeze([
   "packages/web/vite.config.ts",
   "packages/web/src",
   "packages/web/e2e/grand-hall-visual-lineage.local.spec.ts",
+  "packages/web/e2e/grand-hall-visual-lineage-bakeoff.ts",
+  "packages/web/e2e/grand-hall-visual-lineage-camera-profile.ts",
   "packages/web/e2e/grand-hall-visual-lineage-capture-mode.ts",
+  "packages/web/e2e/grand-hall-visual-lineage-orchestrator.ts",
   "packages/web/e2e/grand-hall-visual-lineage-source-state.ts",
+  "tools/reconstruction-foundry/native/grand-hall-lcc-native-capture/camera-profile.json",
 ]);
 
 export interface GrandHallLineageSourceStateFile {

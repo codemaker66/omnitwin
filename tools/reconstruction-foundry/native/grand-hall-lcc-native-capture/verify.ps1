@@ -11,18 +11,24 @@ $ErrorActionPreference = 'Stop'
 $pluginPath = Join-Path $PSScriptRoot 'plugin.json'
 $lockPath = Join-Path $PSScriptRoot 'vendor-lock.json'
 $operatorPath = Join-Path $PSScriptRoot 'run-capture.ps1'
+$cameraProfilePath = Join-Path $PSScriptRoot 'camera-profile.json'
 $sourceRoot = Join-Path $PSScriptRoot 'src'
-$canonicalManifestPath = 'C:\GRAND_HALL_BIG_MODEL_VARIATIONS\scans_BIG_MODEL_TH_GH_9\lcc-result\Grand_Hall.lcc'
-$canonicalManifestSha256 = 'CE2A539483C7C2A271CA2555F6390E16425BB911851A8A56C2F16B17C248CAC1'
+$canonicalManifestPath = 'C:\GRAND_HALL_BIG_MODEL_VARIATIONS\scans_BIG_MODEL_TH_GH_1\lcc2-result\Grand_Hall.lcc2'
+$canonicalManifestSha256 = '927A92699DE222E99D2684CA2567A35AB1E523A036461E6E01236B7B77B7F659'
+$cameraProfileSha256 = '9ECA9B6582B7301EC1C059B1A5BE699E5A4983773AFECB2BEEA46C2668305922'
+$featureTogglePath = 'C:\Users\blake\AppData\LocalLow\XGrids\LCCEditor\feature_toggles\module_toggles.dat'
+$featureToggleSha256 = '8FF16CAC30F3F49A71BE9A06D486B1BB9B682E0CCF1C5C35869A251D98313531'
 $expectedCompilerPath = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\Roslyn\csc.exe'
 $expectedCompilerVersion = '4.1400.26.36408'
 $expectedCompilerSha256 = 'F895C265B8FA8ED9601F6D8EC87D1E2079F5E851C70D0719A90007564AE8F6AB'
 $expectedSourceRelativePaths = @(
     'README.md',
     'build.ps1',
+    'camera-profile.json',
     'plugin.json',
     'run-capture.ps1',
     'src\CapturePolicy.cs',
+    'src\FixedCameraProfile.cs',
     'src\NativeCaptureModule.cs',
     'src\ReceiptModels.cs',
     'src\RuntimeClosurePolicy.cs',
@@ -50,6 +56,7 @@ foreach ($requiredPath in @(
     $pluginPath,
     $lockPath,
     $operatorPath,
+    $cameraProfilePath,
     $canonicalManifestPath
 )) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -59,7 +66,7 @@ foreach ($requiredPath in @(
 
 $plugin = Get-Content -LiteralPath $pluginPath -Raw | ConvertFrom-Json
 Assert-Equal 'com.venviewer.native_capture' ([string]$plugin.Id) 'plugin Id'
-Assert-Equal '1.1.1' ([string]$plugin.Version) 'plugin version'
+Assert-Equal '1.2.0' ([string]$plugin.Version) 'plugin version'
 Assert-Equal 'managed' ([string]$plugin.Type) 'plugin type'
 Assert-Equal 'VenviewerNativeCapture.dll' ([string]$plugin.EntryPoint) 'plugin entry point'
 Assert-Equal 'Venviewer.NativeCapture.NativeCaptureModule' ([string]$plugin.Class) 'plugin class'
@@ -75,6 +82,9 @@ $actualModuleSha256 = (Get-FileHash -LiteralPath $ModulePath -Algorithm SHA256).
 $actualPluginSha256 = (Get-FileHash -LiteralPath $pluginPath -Algorithm SHA256).Hash
 Assert-Equal ([string]$buildReceipt.module.sha256) $actualModuleSha256 'built module SHA-256'
 Assert-Equal ([string]$buildReceipt.pluginManifest.sha256) $actualPluginSha256 'plugin SHA-256'
+Assert-Equal $cameraProfileSha256 ([string]$buildReceipt.cameraProfile.sha256) 'camera profile receipt SHA-256'
+Assert-Equal $cameraProfileSha256 ((Get-FileHash -LiteralPath $cameraProfilePath -Algorithm SHA256).Hash) 'camera profile source SHA-256'
+Assert-Equal $cameraProfileSha256 ((Get-FileHash -LiteralPath ([string]$buildReceipt.cameraProfile.path) -Algorithm SHA256).Hash) 'camera profile output SHA-256'
 Assert-Equal $false ([bool]$buildReceipt.networkUsed) 'network-used flag'
 Assert-Equal $false ([bool]$buildReceipt.vendorBinariesCopiedIntoRepository) 'vendor-copy flag'
 
@@ -159,7 +169,41 @@ foreach ($manifest in Get-ChildItem -LiteralPath (Join-Path $LccEditorRoot 'Modu
 }
 
 $actualManifestSha256 = (Get-FileHash -LiteralPath $canonicalManifestPath -Algorithm SHA256).Hash
-Assert-Equal $canonicalManifestSha256 $actualManifestSha256 'canonical _9 manifest SHA-256'
+Assert-Equal $canonicalManifestSha256 $actualManifestSha256 'canonical GH_1 LCC2 manifest SHA-256'
+$cameraProfileRaw = Get-Content -LiteralPath $cameraProfilePath -Raw
+$cameraProfile = $cameraProfileRaw | ConvertFrom-Json
+Assert-Equal 'venviewer.grand-hall.fixed-camera-profile.v1' ([string]$cameraProfile.schemaVersion) 'camera profile schema'
+Assert-Equal 'xgrids_lcc2_source_z_up' ([string]$cameraProfile.frames.source.id) 'camera profile source frame'
+Assert-Equal 'xgrids_lcceditor_unity_y_up' ([string]$cameraProfile.frames.native.id) 'camera profile native frame'
+Assert-Equal 'venviewer_browser_centered_y_up' ([string]$cameraProfile.frames.three.id) 'camera profile Three frame'
+Assert-Equal 1600 ([int]$cameraProfile.output.width) 'camera profile width'
+Assert-Equal 900 ([int]$cameraProfile.output.height) 'camera profile height'
+Assert-Equal $false ([bool]$cameraProfile.environment.include) 'camera profile environment inclusion'
+Assert-Equal $false ([bool]$cameraProfile.environment.visibilityGetterAvailable) 'camera profile environment getter claim'
+if ($cameraProfileRaw -notmatch
+    '"target"\s*:\s*\[\s*0\.15796363067625974\s*,\s*2\.15606153541565\s*,\s*-0\.19184415815737577\s*\]') {
+    throw 'The camera profile does not contain the exact browser-authority Three target tuple.'
+}
+
+Assert-Equal $featureToggleSha256 ((Get-FileHash -LiteralPath $featureTogglePath -Algorithm SHA256).Hash) 'reviewed original per-user feature-toggle SHA-256'
+$encryptUtilAssembly = Join-Path $LccEditorRoot 'LCCEditor_Data\Managed\LCCWorld.Common.dll'
+$encryptUtilType = [Reflection.Assembly]::LoadFrom($encryptUtilAssembly).GetType(
+    'XGrids.LCCWorld.Common.Utils.EncryptUtil',
+    $true)
+$decryptMethod = $encryptUtilType.GetMethod('DecryptFromHex', [Reflection.BindingFlags]'Public,Static')
+$encryptMethod = $encryptUtilType.GetMethod('EncryptToHex', [Reflection.BindingFlags]'Public,Static')
+if ($null -eq $decryptMethod -or $null -eq $encryptMethod) {
+    throw 'The installed public EncryptUtil contract is unavailable.'
+}
+$toggleCiphertext = [string](Get-Content -LiteralPath $featureTogglePath -Raw)
+$decryptArguments = [object[]]::new(2)
+$decryptArguments[0] = $toggleCiphertext
+$decryptArguments[1] = [string]'xgrids'
+$toggleJson = [string]$decryptMethod.Invoke($null, $decryptArguments)
+$toggleConfig = $toggleJson | ConvertFrom-Json
+Assert-Equal 0 (@($toggleConfig.toggles | Where-Object {
+    [string]$_.module_id -ceq 'com.venviewer.native_capture'
+}).Count) 'reviewed original native-capture toggle count'
 
 $forbiddenSourcePatterns = @(
     'System\.Net',
@@ -192,6 +236,25 @@ if ($moduleSource.IndexOf('_preLoadPackageSnapshot = CapturePolicy.SnapshotCanon
         $moduleSource.IndexOf('_eventBus.Subscribe("lccscene.loaded"', [StringComparison]::Ordinal)) {
     throw 'Canonical package identity is not captured before scene subscription/load.'
 }
+$subscribeIndex = $moduleSource.IndexOf('_eventBus.Subscribe("lccscene.loaded"', [StringComparison]::Ordinal)
+$loadSceneIndex = $moduleSource.IndexOf('_lccSceneManager.LoadScene(', [StringComparison]::Ordinal)
+if ($subscribeIndex -lt 0 -or $loadSceneIndex -lt 0 -or $subscribeIndex -gt $loadSceneIndex) {
+    throw 'The canonical event subscription must succeed before ILCCSceneManager.LoadScene(path, callback).'
+}
+foreach ($loadContract in @(
+    '_loadHandler = _lccSceneManager.LoadScene(',
+    'if (_loadHandler == null)',
+    'CapturePolicy.RequireCanonicalScenePath(_loadHandler.Path)',
+    'HandleSceneLoadedCallback',
+    'Volatile.Read(ref _sceneLoadedEventObserved)',
+    'Volatile.Read(ref _sceneLoadedCallbackObserved)',
+    'commandLineSceneArgumentUsed = false',
+    'FixedCameraProfile.Load('
+)) {
+    if ($moduleSource.IndexOf($loadContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The fail-closed native scene-load/profile contract is missing '$loadContract'."
+    }
+}
 $freshProcessGateIndex = $moduleSource.IndexOf('if (_lccSceneManager.IsSceneLoaded())', [StringComparison]::Ordinal)
 $preLoadSnapshotIndex = $moduleSource.IndexOf('_preLoadPackageSnapshot = CapturePolicy.SnapshotCanonicalPackage', [StringComparison]::Ordinal)
 if ($freshProcessGateIndex -lt 0 -or $freshProcessGateIndex -gt $preLoadSnapshotIndex) {
@@ -207,10 +270,10 @@ if ($stateCaptureIndex -lt 0 -or $cameraApplyIndex -lt 0 -or $stateCaptureIndex 
 }
 
 foreach ($immediateMutationContract in @(
-    '(?s)_lccSceneManager\.SetRecordMode\(\s*true,.*?CapturePolicy\.VerticalFieldOfViewDegrees\);\s*state\.RecordModeEnabled = true;',
+    '(?s)_lccSceneManager\.SetRecordMode\(\s*true,.*?_cameraProfile\.Projection\.VerticalFieldOfViewDegrees\);\s*state\.RecordModeEnabled = true;',
     '_lccSceneManager\.SetLockFPS\(true\);\s*state\.LockFpsEnabled = true;',
     '_lccSceneManager\.SetRenderAll\(true\);\s*state\.RenderAllMutated = true;',
-    '_lccSceneManager\.SetEnvironmentData\(true\);\s*state\.EnvironmentVisibilityRequested = true;'
+    '_lccSceneManager\.SetEnvironmentData\(false\);\s*state\.EnvironmentExclusionRequested = true;'
 )) {
     if ($moduleSource -notmatch $immediateMutationContract) {
         throw "A native mutation is not followed immediately by its cleanup-state transition: $immediateMutationContract"
@@ -220,7 +283,7 @@ foreach ($requiredIndependentRestore in @(
     'if (state.RecordModeEnabled)',
     'if (state.LockFpsEnabled)',
     'if (state.RenderAllMutated)',
-    'if (state.EnvironmentVisibilityRequested)',
+    'if (state.EnvironmentExclusionRequested)',
     'throw new AggregateException("One or more native capture cleanup operations failed.", restoreErrors)'
 )) {
     if ($moduleSource.IndexOf($requiredIndependentRestore, [StringComparison]::Ordinal) -lt 0) {
@@ -249,11 +312,82 @@ foreach ($operatorContract in @(
     "'/F'",
     'grand-hall-native-capture-operator-receipt\.json',
     '\[IO\.File\]::Move\(\$temporaryPath, \$finalPath\)',
-    '\$priorEnvironment\[\$name\]'
+    '\$priorEnvironment\[\$name\]',
+    '\$expectedOriginalFeatureToggleSha256 = ''8FF16CAC30F3F49A71BE9A06D486B1BB9B682E0CCF1C5C35869A251D98313531''',
+    'XGrids\.LCCWorld\.Common\.Utils\.EncryptUtil',
+    'Write-DurableNewFile -Path \$featureToggleBackupPath',
+    '\[IO\.File\]::Replace\(\$temporaryPath, \$Path, \$displacedPath\)',
+    'Assert-OnlyNativeCaptureToggleAdded',
+    'Assert-NoLccEditorProcess',
+    'function Restore-FeatureToggleLease',
+    'Restore-FeatureToggleLease -Evidence \$featureToggleLeaseEvidence',
+    'Set-ExactFileMetadata -Path \$featureTogglePath',
+    'restoredMetadataExact',
+    'preRestoreTargetMatchedLease',
+    'secondOwnedTerminationAttemptedBeforeRestore',
+    'noLccEditorProcessBeforeRestore',
+    'remainingLccEditorProcessIdsBeforeRestore',
+    'restorationDeferredForLiveEditor',
+    'stockModuleEntriesUnchanged',
+    'featureToggleLease = \$FeatureToggleLeaseEvidence',
+    'VENVIEWER_LCC_NATIVE_CAPTURE_CAMERA_PROFILE_SHA256'
 )) {
     if ($operatorSource -notmatch $operatorContract) {
         throw "The bounded operator watchdog is missing required evidence '$operatorContract'."
     }
+}
+if ($operatorSource -match '-ArgumentList\s+@\(\$scene' -or
+    $operatorSource -notmatch "-ArgumentList\s+@\('-screen-width'") {
+    throw 'The operator must not rely on an ignored positional scene argument.'
+}
+$metadataCaptureIndex = $operatorSource.IndexOf(
+    '$originalMetadata = Get-FileMetadataReceipt -Path $featureTogglePath',
+    [StringComparison]::Ordinal)
+$originalByteReadIndex = $operatorSource.IndexOf(
+    '$originalBytes = [IO.File]::ReadAllBytes($featureTogglePath)',
+    [StringComparison]::Ordinal)
+if ($metadataCaptureIndex -lt 0 -or $originalByteReadIndex -lt 0 -or
+    $metadataCaptureIndex -gt $originalByteReadIndex -or
+    $operatorSource -notmatch '638900000000000000' -or
+    $operatorSource -notmatch '638800000000000000') {
+    throw 'Feature-toggle metadata must be captured before the first byte read and tested with distinct last-write/last-access timestamps.'
+}
+& $operatorPath -LeaseSelfTest
+if (-not $?) {
+    throw 'The crash-recoverable feature-toggle lease self-test failed.'
+}
+$processDisposeIndex = $operatorSource.LastIndexOf('$captureProcess.Dispose()', [StringComparison]::Ordinal)
+$featureRestoreIndex = $operatorSource.LastIndexOf(
+    'Restore-FeatureToggleLease -Evidence $featureToggleLeaseEvidence',
+    [StringComparison]::Ordinal)
+if ($processDisposeIndex -lt 0 -or $featureRestoreIndex -lt 0 -or $processDisposeIndex -gt $featureRestoreIndex) {
+    throw 'Exact per-user feature-toggle restoration must occur after child-process termination/disposal.'
+}
+$zeroEditorGateIndex = $operatorSource.LastIndexOf(
+    'if ($allEditorsBeforeRestore.Count -eq 0)',
+    [StringComparison]::Ordinal)
+$deferredRestoreIndex = $operatorSource.LastIndexOf(
+    '$featureToggleLeaseEvidence.restorationDeferredForLiveEditor = $true',
+    [StringComparison]::Ordinal)
+if ($zeroEditorGateIndex -lt 0 -or $featureRestoreIndex -lt $zeroEditorGateIndex -or
+    $deferredRestoreIndex -lt $featureRestoreIndex) {
+    throw 'Feature-toggle restoration is not gated on zero owned or unexpected LCCEditor processes.'
+}
+$restoreFunctionIndex = $operatorSource.IndexOf(
+    'function Restore-FeatureToggleLease',
+    [StringComparison]::Ordinal)
+$restoreFunctionEndIndex = $operatorSource.IndexOf(
+    'function Repair-StaleFeatureToggleLease',
+    [StringComparison]::Ordinal)
+$restoreFunctionSource = $operatorSource.Substring(
+    $restoreFunctionIndex,
+    $restoreFunctionEndIndex - $restoreFunctionIndex)
+if (@([regex]::Matches($restoreFunctionSource, 'Assert-NoLccEditorProcess')).Count -lt 2) {
+    throw 'The restoration primitive must gate both its evidence read and atomic replacement on zero LCCEditor processes.'
+}
+if ($operatorSource -match 'com\.xgrids\.' -or
+    $operatorSource -match '(Stop-Service|Start-Service|sc\.exe|CodeMeter\.exe|CodeMeterCC)') {
+    throw 'The operator must not target stock module IDs, vendor services, or CodeMeter.'
 }
 if ($operatorSource -notmatch '-WindowStyle Hidden' -or
     $operatorSource -notmatch 'processTreeTerminationSucceeded') {
@@ -266,6 +400,7 @@ foreach ($operatorEvidenceContract in @(
     'pluginManifestSha256',
     'runtimeClosureLockSha256',
     'runtimeClosureInventorySha256',
+    'cameraProfileSha256',
     'liveCanonicalPackageVerified',
     'runtimeClosureVerified',
     'vendorBinariesCopiedIntoRepository',
@@ -313,6 +448,8 @@ foreach ($requiredIlPattern in @(
     'NativeCaptureModule::Init',
     'NativeCaptureModule::Execute',
     'ICaptureManager::CaptureToFileAsync',
+    'ILCCSceneManager::LoadScene',
+    'LCCRendererHandler::get_Path',
     'ILCCSceneManager::LCCObjectToWorldSpace',
     'ILCCSceneManager::SetRecordMode',
     'ILCCSceneManager::SetFOV',
@@ -322,6 +459,7 @@ foreach ($requiredIlPattern in @(
     'IRendererQualitySceneManager::SetRenderAll',
     'IRendererQualitySceneManager::IsRenderAll',
     'ILCCSceneManager::SetEnvironmentData',
+    'FixedCameraProfile::Load',
     'UniTask::WhenAny',
     'lccscene\.loaded'
 )) {
@@ -336,7 +474,10 @@ foreach ($forbiddenAssembly in @('System.Net.Http', 'NetMQ', 'MCPForUnity')) {
 }
 
 Write-Output 'PASS: plugin contract'
-Write-Output 'PASS: canonical _9 manifest receipt'
+Write-Output 'PASS: canonical GH_1 LCC2 manifest and 60-file policy receipt'
+Write-Output 'PASS: digest-bound fixed-camera profile and exact Three tuple'
+Write-Output 'PASS: LoadScene handler/event/callback fail-closed contract'
+Write-Output 'PASS: reversible per-user native-module toggle lease static contract'
 Write-Output 'PASS: no vendor binary copied into the first-party folder'
 Write-Output 'PASS: no network API or unfinished-code source pattern'
 Write-Output 'PASS: compiled public IModule/camera/LCC/capture API calls'

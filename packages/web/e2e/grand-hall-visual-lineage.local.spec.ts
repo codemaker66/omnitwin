@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { createServer, type Server } from "node:http";
 import {
   constants as fileSystemConstants,
   copyFile,
@@ -39,6 +40,19 @@ import {
   grandHallPlyLineageFixturePath,
 } from "../src/lib/grand-hall-visual-lineage.js";
 import {
+  GRAND_HALL_VISIBLE_FIRST_CAPTURE_RUNS,
+  grandHallBrowserCacheEvidence,
+  grandHallVisibleFirstRunLabel,
+  parseGrandHallVisibleFirstRepresentation,
+  type GrandHallVisibleFirstCaptureRun,
+} from "./grand-hall-visual-lineage-bakeoff.js";
+import {
+  grandHallSharedCameraProfileEvidence,
+  grandHallSharedCameraProfileMatchesActual,
+  readGrandHallSharedCameraProfile,
+  type GrandHallSharedCameraProfileBinding,
+} from "./grand-hall-visual-lineage-camera-profile.js";
+import {
   GRAND_HALL_DIFIX_CAPTURE_MODE,
   deriveGrandHallLineageCaptureProfile,
   grandHallCaptureEvidenceLimitation,
@@ -52,8 +66,38 @@ import {
 const SOURCE_ROOT = process.env["GRAND_HALL_LINEAGE_ROOT"];
 const EVIDENCE_DIR = process.env["GRAND_HALL_LINEAGE_EVIDENCE_DIR"];
 const ENABLED = SOURCE_ROOT !== undefined && EVIDENCE_DIR !== undefined;
-const BOUND_SOURCE_BASE_URL = "http://grand-hall-lineage.local/";
 const REQUESTED_CAPTURE_MODE = process.env["GRAND_HALL_LINEAGE_CAPTURE_MODE"];
+const ORCHESTRATED_VISIBLE_FIRST = process.env["GRAND_HALL_LINEAGE_ORCHESTRATED"] === "1";
+const SELECTED_REPRESENTATION = parseGrandHallVisibleFirstRepresentation(
+  process.env["GRAND_HALL_LINEAGE_REPRESENTATION"],
+);
+const EXPECTED_GIT_SHA = process.env["GRAND_HALL_LINEAGE_EXPECTED_GIT_SHA"];
+const EXPECTED_CAMERA_PROFILE_SHA256 =
+  process.env["GRAND_HALL_LINEAGE_EXPECTED_CAMERA_PROFILE_SHA256"];
+
+if (ORCHESTRATED_VISIBLE_FIRST && SELECTED_REPRESENTATION === undefined) {
+  throw new Error(
+    "The visible-first orchestrator must select exactly one GRAND_HALL_LINEAGE_REPRESENTATION.",
+  );
+}
+if (ORCHESTRATED_VISIBLE_FIRST && REQUESTED_CAPTURE_MODE !== undefined) {
+  throw new Error("The visible-first orchestrator cannot be combined with an alternate capture mode.");
+}
+if (
+  ORCHESTRATED_VISIBLE_FIRST
+  && (EXPECTED_GIT_SHA === undefined || !/^[a-f0-9]{40}$/u.test(EXPECTED_GIT_SHA))
+) {
+  throw new Error("The visible-first orchestrator requires a 40-character expected Git SHA.");
+}
+if (
+  ORCHESTRATED_VISIBLE_FIRST
+  && (
+    EXPECTED_CAMERA_PROFILE_SHA256 === undefined
+    || !/^sha256:[a-f0-9]{64}$/u.test(EXPECTED_CAMERA_PROFILE_SHA256)
+  )
+) {
+  throw new Error("The visible-first orchestrator requires an expected shared-camera SHA-256.");
+}
 
 function boundedFrameCount(
   raw: string | undefined,
@@ -90,6 +134,10 @@ const CAPTURE_VIEWPORT = CAPTURE_PROFILE.viewport;
 const WARMUP_FRAME_COUNT = CAPTURE_PROFILE.warmupFrameCount;
 const FRAME_SAMPLE_COUNT = CAPTURE_PROFILE.frameSampleCount;
 const TEST_TIMEOUT_MS = boundedTimeoutMs(process.env["GRAND_HALL_LINEAGE_TEST_TIMEOUT_MS"]);
+const SINGLE_LEGACY_CAPTURE_RUN = GRAND_HALL_VISIBLE_FIRST_CAPTURE_RUNS.slice(0, 1);
+const CAPTURE_RUNS: readonly GrandHallVisibleFirstCaptureRun[] = ORCHESTRATED_VISIBLE_FIRST
+  ? GRAND_HALL_VISIBLE_FIRST_CAPTURE_RUNS
+  : SINGLE_LEGACY_CAPTURE_RUN;
 
 interface FixtureBridgeSnapshot {
   readonly status: "loading" | "loaded" | "error";
@@ -328,17 +376,18 @@ function sourceVariant(format: "sog" | "spz"): string {
 interface BoundSourceMember {
   readonly receipt: VisualLineageSourceMemberV0;
   readonly bytes: Buffer;
-  readonly url: string;
   readonly expectedSplatCount?: number;
 }
 
-interface BoundPlySource {
-  readonly receipt: VisualLineageSourceMemberV0;
-  readonly url: string;
-  readonly requestCount: () => number;
+interface BoundSourceServer {
+  readonly baseUrl: string;
+  readonly urlFor: (member: BoundSourceMember) => string;
+  readonly totalRequestCount: () => number;
+  readonly requestCountFor: (member: BoundSourceMember) => number;
+  readonly close: () => Promise<void>;
 }
 
-async function bindPlySource(page: Page, sourceRoot: string): Promise<BoundPlySource> {
+async function readPlySource(sourceRoot: string): Promise<BoundSourceMember> {
   const absolutePath = path.join(sourceRoot, GRAND_HALL_PLY_SOURCE_MEMBER.relativePath);
   const bytes = await readFile(absolutePath);
   const sha256 = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -349,37 +398,17 @@ async function bindPlySource(page: Page, sourceRoot: string): Promise<BoundPlySo
     throw new Error("Pinned Grand Hall PLY source receipt mismatch.");
   }
   const normalizedRelativePath = GRAND_HALL_PLY_SOURCE_MEMBER.relativePath.replaceAll("\\", "/");
-  const url = new URL(normalizedRelativePath, BOUND_SOURCE_BASE_URL).toString();
-  let requests = 0;
-  await page.route(`${BOUND_SOURCE_BASE_URL}**`, async (route) => {
-    if (route.request().url() !== url) {
-      await route.abort("blockedbyclient");
-      return;
-    }
-    requests += 1;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/octet-stream",
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-store",
-      },
-      body: bytes,
-    });
-  });
   return {
     receipt: {
       relativePath: normalizedRelativePath,
       sizeBytes: bytes.byteLength,
       sha256,
     },
-    url,
-    requestCount: () => requests,
+    bytes,
   };
 }
 
-async function bindSourceMembers(
-  page: Page,
+async function readSourceMembers(
   sourceRoot: string,
   format: "sog" | "spz",
 ): Promise<readonly BoundSourceMember[]> {
@@ -401,35 +430,93 @@ async function bindSourceMembers(
     boundMembers.push({
       receipt: { relativePath: normalizedRelativePath, sizeBytes: bytes.byteLength, sha256 },
       bytes,
-      url: new URL(normalizedRelativePath, BOUND_SOURCE_BASE_URL).toString(),
       expectedSplatCount: member.gaussianCount,
     });
   }
 
-  const sourcesByUrl = new Map(boundMembers.map((member) => [member.url, member.bytes]));
-  await page.route(`${BOUND_SOURCE_BASE_URL}**`, async (route) => {
-    const sourceBytes = sourcesByUrl.get(route.request().url());
-    if (sourceBytes === undefined) {
-      await route.abort("blockedbyclient");
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/octet-stream",
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-store",
-      },
-      body: sourceBytes,
+  return boundMembers;
+}
+
+function serverRequestPath(member: BoundSourceMember): string {
+  return `/${member.receipt.relativePath.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function closeHttpServer(server: Server): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error === undefined) resolve();
+      else reject(error);
     });
   });
-  return boundMembers;
+}
+
+async function startBoundSourceServer(
+  members: readonly BoundSourceMember[],
+): Promise<BoundSourceServer> {
+  const sourcesByPath = new Map(members.map((member) => [serverRequestPath(member), member]));
+  const requestCounts = new Map<string, number>();
+  const server = createServer((request, response) => {
+    const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+    const member = sourcesByPath.get(requestUrl.pathname);
+    if (request.method !== "GET" || member === undefined) {
+      response.writeHead(404, { "Cache-Control": "no-store" });
+      response.end();
+      return;
+    }
+    requestCounts.set(
+      member.receipt.relativePath,
+      (requestCounts.get(member.receipt.relativePath) ?? 0) + 1,
+    );
+    response.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "Content-Length": String(member.bytes.byteLength),
+      "Content-Type": "application/octet-stream",
+      ETag: `"${member.receipt.sha256}"`,
+    });
+    response.end(member.bytes);
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => {
+      reject(error);
+    };
+    server.once("error", onError);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", onError);
+      resolve();
+    });
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    await closeHttpServer(server);
+    throw new Error("Grand Hall bound-source server did not expose a TCP address.");
+  }
+  const port = address.port;
+  const baseUrl = `http://127.0.0.1:${String(port)}/`;
+
+  return {
+    baseUrl,
+    urlFor: (member) => new URL(serverRequestPath(member), baseUrl).toString(),
+    totalRequestCount: () => [...requestCounts.values()].reduce(
+      (total, count) => total + count,
+      0,
+    ),
+    requestCountFor: (member) => requestCounts.get(member.receipt.relativePath) ?? 0,
+    close: () => closeHttpServer(server),
+  };
 }
 
 interface GitIdentity {
   readonly sha: string;
   readonly dirty: boolean;
   readonly sourceStateSha256: string;
+}
+
+function repositoryRoot(): string {
+  return execFileSync("git", ["rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+  }).trim();
 }
 
 async function filesBelow(root: string, relativeRoot = ""): Promise<readonly string[]> {
@@ -445,9 +532,7 @@ async function filesBelow(root: string, relativeRoot = ""): Promise<readonly str
 }
 
 async function gitIdentity(): Promise<GitIdentity> {
-  const repoRoot = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-    encoding: "utf8",
-  }).trim();
+  const repoRoot = repositoryRoot();
   const statusPathspec = [
     "--",
     ".",
@@ -504,6 +589,49 @@ async function gitIdentity(): Promise<GitIdentity> {
   };
 }
 
+function assertOrchestratedGitIdentity(identity: GitIdentity): void {
+  if (!ORCHESTRATED_VISIBLE_FIRST) return;
+  if (identity.dirty) {
+    throw new Error("The visible-first bake-off refuses a dirty source worktree.");
+  }
+  if (identity.sha !== EXPECTED_GIT_SHA) {
+    throw new Error(
+      `The visible-first bake-off expected HEAD ${String(EXPECTED_GIT_SHA)} but observed ${identity.sha}.`,
+    );
+  }
+}
+
+function assertOrchestratedCameraProfile(
+  binding: GrandHallSharedCameraProfileBinding,
+): void {
+  if (!ORCHESTRATED_VISIBLE_FIRST) return;
+  if (binding.sha256 !== EXPECTED_CAMERA_PROFILE_SHA256) {
+    throw new Error(
+      `The shared camera profile changed: expected ${String(EXPECTED_CAMERA_PROFILE_SHA256)}, observed ${binding.sha256}.`,
+    );
+  }
+}
+
+function assertSourceCacheState(input: {
+  readonly run: GrandHallVisibleFirstCaptureRun;
+  readonly members: readonly BoundSourceMember[];
+  readonly sourceServer: BoundSourceServer;
+  readonly requestCountBefore: number;
+  readonly requestCountAfter: number;
+}): void {
+  if (!ORCHESTRATED_VISIBLE_FIRST) return;
+  if (input.run.cacheState === "cold") {
+    expect(input.requestCountBefore).toBe(0);
+    expect(input.requestCountAfter).toBe(input.members.length);
+    for (const member of input.members) {
+      expect(input.sourceServer.requestCountFor(member)).toBe(1);
+    }
+    return;
+  }
+  expect(input.requestCountBefore).toBe(input.members.length);
+  expect(input.requestCountAfter).toBe(input.requestCountBefore);
+}
+
 test.describe("Grand Hall local fixed-camera visual lineage", () => {
   test.skip(!ENABLED, "Set GRAND_HALL_LINEAGE_ROOT and GRAND_HALL_LINEAGE_EVIDENCE_DIR.");
   test.describe.configure({ mode: "serial" });
@@ -511,23 +639,40 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
   for (const format of ["sog", "spz"] as const) {
     test(`${format.toUpperCase()} exact-frontier names at the source-pose interior camera`, async ({ page }) => {
       test.skip(
+        SELECTED_REPRESENTATION !== undefined && SELECTED_REPRESENTATION !== format,
+        `The orchestrator selected the ${String(SELECTED_REPRESENTATION)} representation.`,
+      );
+      test.skip(
         DIFIX_NO_REFERENCE_CAPTURE_ENABLED && format !== "sog",
         "The explicit Difix no-reference input capture is SOG-only.",
       );
       test.setTimeout(TEST_TIMEOUT_MS);
       if (SOURCE_ROOT === undefined || EVIDENCE_DIR === undefined) return;
       await mkdir(EVIDENCE_DIR, { recursive: true });
+      const boundMembers = await readSourceMembers(SOURCE_ROOT, format);
+      const sourceServer = await startBoundSourceServer(boundMembers);
+      const cameraProfile = await readGrandHallSharedCameraProfile(repositoryRoot());
+      assertOrchestratedCameraProfile(cameraProfile);
+      try {
+        for (const captureRun of CAPTURE_RUNS) {
+          await test.step(grandHallVisibleFirstRunLabel(captureRun), async () => {
+            if (captureRun.ordinal > 1) {
+              await page.goto("about:blank", { waitUntil: "load" });
+            }
       const sampleLabel = DIFIX_NO_REFERENCE_CAPTURE_ENABLED
         ? GRAND_HALL_DIFIX_CAPTURE_MODE
         : WARMUP_FRAME_COUNT >= 120 && FRAME_SAMPLE_COUNT >= 600
           ? `diagnostic-controlled-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`
           : `diagnostic-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`;
-      const artifactStem = `grand-hall-${format}-${GRAND_HALL_LINEAGE_CAMERA.id}-${sampleLabel}`;
+      const runLabel = grandHallVisibleFirstRunLabel(captureRun);
+      const artifactStem = ORCHESTRATED_VISIBLE_FIRST
+        ? `grand-hall-${format}-${GRAND_HALL_LINEAGE_CAMERA.id}-${runLabel}-${sampleLabel}`
+        : `grand-hall-${format}-${GRAND_HALL_LINEAGE_CAMERA.id}-${sampleLabel}`;
       const screenshotPath = path.join(EVIDENCE_DIR, `${artifactStem}.png`);
       const recordPath = path.join(EVIDENCE_DIR, `${artifactStem}.json`);
       const temporaryNonce = DIFIX_NO_REFERENCE_CAPTURE_ENABLED
         ? randomUUID()
-        : String(process.pid);
+        : `${String(process.pid)}-${String(captureRun.ordinal)}`;
       const screenshotTempPath = path.join(
         EVIDENCE_DIR,
         `.tmp-${temporaryNonce}-grand-hall-${format}-${sampleLabel}.png`,
@@ -536,7 +681,9 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
         EVIDENCE_DIR,
         `.tmp-${temporaryNonce}-grand-hall-${format}-${sampleLabel}.json`,
       );
-      if (CAPTURE_PROFILE.publication === "create_exclusive") {
+      const createExclusive = ORCHESTRATED_VISIBLE_FIRST
+        || CAPTURE_PROFILE.publication === "create_exclusive";
+      if (createExclusive) {
         await Promise.all([
           assertPathAbsent(screenshotPath),
           assertPathAbsent(recordPath),
@@ -552,24 +699,35 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
         ]);
       }
       const gitAtStart = await gitIdentity();
+      assertOrchestratedGitIdentity(gitAtStart);
       await page.setViewportSize(CAPTURE_VIEWPORT);
-      const boundMembers = await bindSourceMembers(page, SOURCE_ROOT, format);
-      const fixturePath = grandHallLineageFixturePath(format, BOUND_SOURCE_BASE_URL);
+      const fixturePath = grandHallLineageFixturePath(format, sourceServer.baseUrl);
+      const sourceRequestCountBefore = sourceServer.totalRequestCount();
       const startedAt = Date.now();
       const runStartedAt = new Date(startedAt).toISOString();
       await page.goto(fixturePath, { waitUntil: "domcontentloaded" });
       let bridge = await waitForLoadedFixture(page);
+      const sourceRequestCountAfter = sourceServer.totalRequestCount();
+      assertSourceCacheState({
+        run: captureRun,
+        members: boundMembers,
+        sourceServer,
+        requestCountBefore: sourceRequestCountBefore,
+        requestCountAfter: sourceRequestCountAfter,
+      });
       if (bridge.actualCamera === undefined || bridge.settings === undefined) {
         throw new Error("Loaded lineage fixture did not expose its camera and renderer settings.");
       }
       expect(bridge.results).toHaveLength(GRAND_HALL_CAPTURED_SOG_MEMBERS.length);
       expect(bridge.results.every((result) => result.ok)).toBe(true);
       expect(bridge.results.map((result) => result.url).sort()).toEqual(
-        boundMembers.map((member) => member.url).sort(),
+        boundMembers.map((member) => sourceServer.urlFor(member)).sort(),
       );
       const resultsByUrl = new Map(bridge.results.map((result) => [result.url, result]));
       for (const member of boundMembers) {
-        expect(resultsByUrl.get(member.url)?.splatCount).toBe(member.expectedSplatCount);
+        expect(resultsByUrl.get(sourceServer.urlFor(member))?.splatCount).toBe(
+          member.expectedSplatCount,
+        );
       }
       const decodedSplatCount = bridge.results.reduce(
         (sum, entry) => sum + (entry.splatCount ?? 0),
@@ -578,6 +736,9 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       expect(decodedSplatCount).toBe(GRAND_HALL_CAPTURED_SOURCE.gaussianCount);
       if (!grandHallLineageCameraMatches(bridge.actualCamera)) {
         throw new Error(`Grand Hall fixture camera deviated from its complete fixed-camera contract: ${JSON.stringify(bridge.actualCamera)}`);
+      }
+      if (!grandHallSharedCameraProfileMatchesActual(cameraProfile, bridge.actualCamera)) {
+        throw new Error("Grand Hall fixture camera deviated from the shared native/browser profile.");
       }
 
       bridge = await waitForStableVisibleFixture(page);
@@ -651,6 +812,7 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       }
       const screenshotSha256 = await hashFile(screenshotTempPath);
       const gitAtEnd = await gitIdentity();
+      assertOrchestratedGitIdentity(gitAtEnd);
       if (
         gitAtEnd.sha !== gitAtStart.sha
         || gitAtEnd.dirty !== gitAtStart.dirty
@@ -666,7 +828,9 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
         ...GRAND_HALL_LINEAGE_INITIAL_BENCHMARK,
         benchmarkId: DIFIX_NO_REFERENCE_CAPTURE_ENABLED
           ? "grand-hall-sog-source-pose-19890-difix-input-1024x576-v1"
-          : `grand-hall-${format}-source-pose-local-${sampleLabel}-v1`,
+          : ORCHESTRATED_VISIBLE_FIRST
+            ? `grand-hall-${format}-source-pose-local-${runLabel}-${sampleLabel}-v1`
+            : `grand-hall-${format}-source-pose-local-${sampleLabel}-v1`,
         viewport: {
           width: CAPTURE_VIEWPORT.width,
           height: CAPTURE_VIEWPORT.height,
@@ -692,6 +856,15 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
             "The fixture records resolved Spark runtime values, but those inherited defaults were not supplied as a controlled explicit profile.",
             "Frame percentiles are demand-render request-to-observed-frame wall times, not GPU timer-query measurements.",
             "The non-background pixel gate proves render presence only; it does not establish completeness, fidelity, room identity, or visual acceptance.",
+            grandHallSharedCameraProfileEvidence(cameraProfile),
+            ...(ORCHESTRATED_VISIBLE_FIRST
+              ? [grandHallBrowserCacheEvidence({
+                  representation: format,
+                  run: captureRun,
+                  sourceRequestCountBefore,
+                  sourceRequestCountAfter,
+                })]
+              : []),
             ...(format === "spz"
               ? ["SOG and SPZ positions agree within the audited tolerance, but full attribute-level representation equivalence has not been established."]
               : []),
@@ -758,11 +931,11 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       await writeFile(
         recordTempPath,
         `${JSON.stringify(validatedResult, null, 2)}\n`,
-        CAPTURE_PROFILE.publication === "create_exclusive"
+        createExclusive
           ? { encoding: "utf8", flag: "wx" }
           : { encoding: "utf8" },
       );
-      if (CAPTURE_PROFILE.publication === "create_exclusive") {
+      if (createExclusive) {
         await copyFile(screenshotTempPath, screenshotPath, fileSystemConstants.COPYFILE_EXCL);
         await copyFile(recordTempPath, recordPath, fileSystemConstants.COPYFILE_EXCL);
         await Promise.all([
@@ -773,10 +946,19 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
         await rename(screenshotTempPath, screenshotPath);
         await rename(recordTempPath, recordPath);
       }
+          });
+        }
+      } finally {
+        await sourceServer.close();
+      }
     });
   }
 
   test("supplied PLY at the source-pose interior camera is structural evidence only", async ({ page }) => {
+    test.skip(
+      SELECTED_REPRESENTATION !== undefined && SELECTED_REPRESENTATION !== "ply",
+      `The orchestrator selected the ${String(SELECTED_REPRESENTATION)} representation.`,
+    );
     test.skip(
       DIFIX_NO_REFERENCE_CAPTURE_ENABLED,
       "The explicit Difix no-reference input capture is SOG-only.",
@@ -784,29 +966,61 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
     test.setTimeout(TEST_TIMEOUT_MS);
     if (SOURCE_ROOT === undefined || EVIDENCE_DIR === undefined) return;
     await mkdir(EVIDENCE_DIR, { recursive: true });
+    const boundSource = await readPlySource(SOURCE_ROOT);
+    const sourceServer = await startBoundSourceServer([boundSource]);
+    const cameraProfile = await readGrandHallSharedCameraProfile(repositoryRoot());
+    assertOrchestratedCameraProfile(cameraProfile);
+    try {
+      for (const captureRun of CAPTURE_RUNS) {
+        await test.step(grandHallVisibleFirstRunLabel(captureRun), async () => {
+          if (captureRun.ordinal > 1) {
+            await page.goto("about:blank", { waitUntil: "load" });
+          }
     const sampleLabel = WARMUP_FRAME_COUNT >= 120 && FRAME_SAMPLE_COUNT >= 600
       ? `structural-diagnostic-controlled-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`
       : `structural-diagnostic-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`;
-    const artifactStem = `grand-hall-ply-${GRAND_HALL_LINEAGE_CAMERA.id}-${sampleLabel}`;
+    const runLabel = grandHallVisibleFirstRunLabel(captureRun);
+    const artifactStem = ORCHESTRATED_VISIBLE_FIRST
+      ? `grand-hall-ply-${GRAND_HALL_LINEAGE_CAMERA.id}-${runLabel}-${sampleLabel}`
+      : `grand-hall-ply-${GRAND_HALL_LINEAGE_CAMERA.id}-${sampleLabel}`;
     const screenshotPath = path.join(EVIDENCE_DIR, `${artifactStem}.png`);
     const recordPath = path.join(EVIDENCE_DIR, `${artifactStem}.json`);
-    const screenshotTempPath = path.join(EVIDENCE_DIR, `.tmp-${String(process.pid)}-${artifactStem}.png`);
-    const recordTempPath = path.join(EVIDENCE_DIR, `.tmp-${String(process.pid)}-${artifactStem}.json`);
+    const temporaryNonce = `${String(process.pid)}-${String(captureRun.ordinal)}`;
+    const screenshotTempPath = path.join(EVIDENCE_DIR, `.tmp-${temporaryNonce}-${artifactStem}.png`);
+    const recordTempPath = path.join(EVIDENCE_DIR, `.tmp-${temporaryNonce}-${artifactStem}.json`);
+    if (ORCHESTRATED_VISIBLE_FIRST) {
+      await Promise.all([
+        assertPathAbsent(screenshotPath),
+        assertPathAbsent(recordPath),
+        assertPathAbsent(screenshotTempPath),
+        assertPathAbsent(recordTempPath),
+      ]);
+    } else {
     await Promise.all([
       rm(screenshotPath, { force: true }),
       rm(recordPath, { force: true }),
       rm(screenshotTempPath, { force: true }),
       rm(recordTempPath, { force: true }),
     ]);
+    }
 
     const gitAtStart = await gitIdentity();
+    assertOrchestratedGitIdentity(gitAtStart);
     await page.setViewportSize({ width: 1600, height: 900 });
-    const boundSource = await bindPlySource(page, SOURCE_ROOT);
-    const fixturePath = grandHallPlyLineageFixturePath(BOUND_SOURCE_BASE_URL);
+    const fixturePath = grandHallPlyLineageFixturePath(sourceServer.baseUrl);
+    const sourceRequestCountBefore = sourceServer.totalRequestCount();
     const startedAt = Date.now();
     const runStartedAt = new Date(startedAt).toISOString();
     await page.goto(fixturePath, { waitUntil: "domcontentloaded" });
     let bridge = await waitForLoadedFixture(page);
+    const sourceRequestCountAfter = sourceServer.totalRequestCount();
+    assertSourceCacheState({
+      run: captureRun,
+      members: [boundSource],
+      sourceServer,
+      requestCountBefore: sourceRequestCountBefore,
+      requestCountAfter: sourceRequestCountAfter,
+    });
     if (
       bridge.actualCamera === undefined
       || bridge.actualRenderer === undefined
@@ -816,11 +1030,14 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       throw new Error("Loaded PLY fixture did not expose complete camera, renderer, settings, and geometry evidence.");
     }
     expect(bridge.results).toHaveLength(1);
-    expect(bridge.results[0]).toMatchObject({ url: boundSource.url, ok: true });
-    expect(boundSource.requestCount()).toBe(1);
+    expect(bridge.results[0]).toMatchObject({ url: sourceServer.urlFor(boundSource), ok: true });
+    expect(sourceServer.requestCountFor(boundSource)).toBe(1);
     expect(bridge.sparkRuntimeState).toBeUndefined();
     if (!grandHallLineageCameraMatches(bridge.actualCamera)) {
       throw new Error(`Grand Hall PLY camera deviated from its complete fixed-camera contract: ${JSON.stringify(bridge.actualCamera)}`);
+    }
+    if (!grandHallSharedCameraProfileMatchesActual(cameraProfile, bridge.actualCamera)) {
+      throw new Error("Grand Hall PLY camera deviated from the shared native/browser profile.");
     }
 
     const runtime = bridge.plyMeshRuntimeState;
@@ -924,6 +1141,7 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
     }
     const screenshotSha256 = await hashFile(screenshotTempPath);
     const gitAtEnd = await gitIdentity();
+    assertOrchestratedGitIdentity(gitAtEnd);
     if (
       gitAtEnd.sha !== gitAtStart.sha
       || gitAtEnd.dirty !== gitAtStart.dirty
@@ -935,7 +1153,9 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
 
     const result = {
       ...GRAND_HALL_LINEAGE_INITIAL_BENCHMARK,
-      benchmarkId: `grand-hall-ply-source-pose-local-${sampleLabel}-v1`,
+      benchmarkId: ORCHESTRATED_VISIBLE_FIRST
+        ? `grand-hall-ply-source-pose-local-${runLabel}-${sampleLabel}-v1`
+        : `grand-hall-ply-source-pose-local-${sampleLabel}-v1`,
       rendererSettings: GRAND_HALL_PLY_RENDERER_SETTINGS,
       representations: [{
         id: "supplied-ply-mesh",
@@ -952,6 +1172,15 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
           "The supplied mesh is rendered byte-complete and uncropped; its broad extent includes geometry outside the current Grand Hall visual frontier.",
           "Grand Hall boundary membership and room-interface decisions have not yet been human accepted for this mesh.",
           "The camera is the shared inspection camera, not a recovered optical camera.",
+          grandHallSharedCameraProfileEvidence(cameraProfile),
+          ...(ORCHESTRATED_VISIBLE_FIRST
+            ? [grandHallBrowserCacheEvidence({
+                representation: "ply",
+                run: captureRun,
+                sourceRequestCountBefore,
+                sourceRequestCountAfter,
+              })]
+            : []),
           ...(WARMUP_FRAME_COUNT < 120 || FRAME_SAMPLE_COUNT < 600
             ? [`Diagnostic ${String(WARMUP_FRAME_COUNT)}-warm-up/${String(FRAME_SAMPLE_COUNT)}-timed-frame sample; below the controlled 120-warm-up/600-timed-frame profile.`]
             : []),
@@ -1005,8 +1234,28 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       await rm(screenshotTempPath, { force: true });
       throw error;
     }
-    await writeFile(recordTempPath, `${JSON.stringify(validatedResult, null, 2)}\n`, "utf8");
-    await rename(screenshotTempPath, screenshotPath);
-    await rename(recordTempPath, recordPath);
+    await writeFile(
+      recordTempPath,
+      `${JSON.stringify(validatedResult, null, 2)}\n`,
+      ORCHESTRATED_VISIBLE_FIRST
+        ? { encoding: "utf8", flag: "wx" }
+        : { encoding: "utf8" },
+    );
+    if (ORCHESTRATED_VISIBLE_FIRST) {
+      await copyFile(screenshotTempPath, screenshotPath, fileSystemConstants.COPYFILE_EXCL);
+      await copyFile(recordTempPath, recordPath, fileSystemConstants.COPYFILE_EXCL);
+      await Promise.all([
+        rm(screenshotTempPath, { force: true }),
+        rm(recordTempPath, { force: true }),
+      ]);
+    } else {
+      await rename(screenshotTempPath, screenshotPath);
+      await rename(recordTempPath, recordPath);
+    }
+        });
+      }
+    } finally {
+      await sourceServer.close();
+    }
   });
 });

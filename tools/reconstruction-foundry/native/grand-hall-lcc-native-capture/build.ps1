@@ -13,7 +13,9 @@ $testRoot = Join-Path $moduleRoot 'tests'
 $outputRoot = Join-Path $moduleRoot 'out'
 $lockPath = Join-Path $moduleRoot 'vendor-lock.json'
 $pluginPath = Join-Path $moduleRoot 'plugin.json'
+$cameraProfileSourcePath = Join-Path $moduleRoot 'camera-profile.json'
 $moduleOutputPath = Join-Path $outputRoot 'VenviewerNativeCapture.dll'
+$cameraProfileOutputPath = Join-Path $outputRoot 'camera-profile.json'
 $testOutputPath = Join-Path $outputRoot 'CapturePolicyTests.exe'
 $runtimeClosureTestOutputPath = Join-Path $outputRoot 'RuntimeClosureTests.exe'
 $buildReceiptPath = Join-Path $outputRoot 'build-receipt.json'
@@ -170,13 +172,18 @@ foreach ($file in $vendorLock.externalFiles) {
 if (-not (Test-Path -LiteralPath $outputRoot -PathType Container)) {
     New-Item -ItemType Directory -Path $outputRoot | Out-Null
 }
-foreach ($generatedPath in @($moduleOutputPath, $testOutputPath, $runtimeClosureTestOutputPath, $buildReceiptPath, $runtimeClosureOutputPath)) {
+foreach ($generatedPath in @($moduleOutputPath, $cameraProfileOutputPath, $testOutputPath, $runtimeClosureTestOutputPath, $buildReceiptPath, $runtimeClosureOutputPath)) {
     if (Test-Path -LiteralPath $generatedPath -PathType Leaf) {
         Remove-Item -LiteralPath $generatedPath -Force
     }
 }
 
 New-RuntimeClosureLock -EditorRoot $LccEditorRoot -OutputPath $runtimeClosureOutputPath
+Assert-FileReceipt `
+    -Path $cameraProfileSourcePath `
+    -ExpectedByteLength 2136 `
+    -ExpectedSha256 '9ECA9B6582B7301EC1C059B1A5BE699E5A4983773AFECB2BEEA46C2668305922'
+Copy-Item -LiteralPath $cameraProfileSourcePath -Destination $cameraProfileOutputPath
 
 $compiler = Find-RoslynCompiler
 $compilerVersion = (Get-Item -LiteralPath $compiler).VersionInfo.FileVersion
@@ -200,6 +207,7 @@ $capturePolicyPath = Join-Path $sourceRoot 'CapturePolicy.cs'
 $receiptModelsPath = Join-Path $sourceRoot 'ReceiptModels.cs'
 $moduleSourcePath = Join-Path $sourceRoot 'NativeCaptureModule.cs'
 $runtimeClosureSourcePath = Join-Path $sourceRoot 'RuntimeClosurePolicy.cs'
+$cameraProfileSourceCodePath = Join-Path $sourceRoot 'FixedCameraProfile.cs'
 $testSourcePath = Join-Path $testRoot 'CapturePolicyTests.cs'
 $runtimeClosureTestSourcePath = Join-Path $testRoot 'RuntimeClosureTests.cs'
 
@@ -214,22 +222,24 @@ $commonCompilerArguments = @(
     '/debug-'
 )
 
-& $compiler @commonCompilerArguments '/target:exe' "/out:$testOutputPath" $capturePolicyPath $testSourcePath
+$managedRoot = Join-Path $LccEditorRoot 'LCCEditor_Data\Managed'
+$newtonsoftReference = '/reference:' + (Join-Path $managedRoot 'Newtonsoft.Json.dll')
+$netstandardReference = '/reference:' + (Join-Path $managedRoot 'netstandard.dll')
+& $compiler @commonCompilerArguments '/target:exe' "/out:$testOutputPath" $newtonsoftReference $netstandardReference $capturePolicyPath $cameraProfileSourceCodePath $testSourcePath
 if ($LASTEXITCODE -ne 0) {
     throw "Capture policy test compilation failed with exit code $LASTEXITCODE."
 }
 
 if ($SkipLiveSourceVerification) {
-    & $testOutputPath
+    & $testOutputPath $cameraProfileSourcePath (Join-Path $managedRoot 'Newtonsoft.Json.dll')
 }
 else {
-    & $testOutputPath '--live'
+    & $testOutputPath $cameraProfileSourcePath (Join-Path $managedRoot 'Newtonsoft.Json.dll') '--live'
 }
 if ($LASTEXITCODE -ne 0) {
     throw "Capture policy tests failed with exit code $LASTEXITCODE."
 }
 
-$managedRoot = Join-Path $LccEditorRoot 'LCCEditor_Data\Managed'
 $references = @(
     'LCCWorld.dll',
     'LCCSDK.dll',
@@ -252,13 +262,15 @@ if ($LASTEXITCODE -ne 0) {
     throw "Runtime closure tests failed with exit code $LASTEXITCODE."
 }
 
-& $compiler @commonCompilerArguments '/target:library' "/out:$moduleOutputPath" @references $capturePolicyPath $receiptModelsPath $runtimeClosureSourcePath $moduleSourcePath
+& $compiler @commonCompilerArguments '/target:library' "/out:$moduleOutputPath" @references $capturePolicyPath $cameraProfileSourceCodePath $receiptModelsPath $runtimeClosureSourcePath $moduleSourcePath
 if ($LASTEXITCODE -ne 0) {
     throw "Native capture module compilation failed with exit code $LASTEXITCODE."
 }
 
 $sourceReceipts = @(
     $capturePolicyPath,
+    $cameraProfileSourceCodePath,
+    $cameraProfileSourcePath,
     $receiptModelsPath,
     $moduleSourcePath,
     $runtimeClosureSourcePath,
@@ -284,6 +296,7 @@ $sourceReceipts = @(
 $moduleItem = Get-Item -LiteralPath $moduleOutputPath
 $pluginItem = Get-Item -LiteralPath $pluginPath
 $runtimeClosureItem = Get-Item -LiteralPath $runtimeClosureOutputPath
+$cameraProfileItem = Get-Item -LiteralPath $cameraProfileOutputPath
 $buildReceipt = [ordered]@{
     schemaVersion = 'venviewer.grand-hall.lcc-native-capture-build-receipt.v1'
     builtAtUtc = [DateTime]::UtcNow.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
@@ -304,6 +317,11 @@ $buildReceipt = [ordered]@{
         path = $pluginItem.FullName
         byteLength = $pluginItem.Length
         sha256 = (Get-FileHash -LiteralPath $pluginItem.FullName -Algorithm SHA256).Hash
+    }
+    cameraProfile = [ordered]@{
+        path = $cameraProfileItem.FullName
+        byteLength = $cameraProfileItem.Length
+        sha256 = (Get-FileHash -LiteralPath $cameraProfileItem.FullName -Algorithm SHA256).Hash
     }
     runtimeClosureLock = [ordered]@{
         path = $runtimeClosureItem.FullName

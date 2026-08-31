@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Venviewer.NativeCapture;
 
 internal static class CapturePolicyTests
@@ -10,8 +11,23 @@ internal static class CapturePolicyTests
     {
         try
         {
+            if (args.Length < 2)
+            {
+                throw new InvalidOperationException(
+                    "The digest-bound camera profile and installed Newtonsoft.Json paths are required.");
+            }
+            string newtonsoftPath = Path.GetFullPath(args[1]);
+            AppDomain.CurrentDomain.AssemblyResolve += delegate(object sender, ResolveEventArgs eventArgs)
+            {
+                var requested = new AssemblyName(eventArgs.Name);
+                return String.Equals(requested.Name, "Newtonsoft.Json", StringComparison.Ordinal)
+                    ? Assembly.LoadFrom(newtonsoftPath)
+                    : null;
+            };
+            FixedCameraProfile profile = FixedCameraProfile.Load(args[0], CapturePolicy.CameraProfileSha256);
             TestCanonicalPathGate();
-            TestRawCoordinateTransform();
+            TestRawCoordinateTransform(profile);
+            TestFixedCameraProfile(profile);
             TestShaGate();
             TestOutputPathGate();
             TestSandboxAndReadinessPolicy();
@@ -66,16 +82,17 @@ internal static class CapturePolicyTests
         ExpectThrows<InvalidOperationException>(delegate
         {
             CapturePolicy.RequireCanonicalScenePath(
-                @"C:\GRAND_HALL_BIG_MODEL_VARIATIONS\scans_BIG_MODEL_TH_GH_8\lcc-result\Grand_Hall.lcc");
+                @"C:\GRAND_HALL_BIG_MODEL_VARIATIONS\scans_BIG_MODEL_TH_GH_2\lcc2-result\Grand_Hall.lcc2");
         });
     }
 
-    private static void TestRawCoordinateTransform()
+    private static void TestRawCoordinateTransform(FixedCameraProfile profile)
     {
-        Vec3d position = CapturePolicy.RawLccSourceToUnity(CapturePolicy.SourcePosition);
-        Vec3d target = CapturePolicy.RawLccSourceToUnity(CapturePolicy.SourceTarget);
+        Vec3d sourcePosition = profile.SourcePosition();
+        Vec3d position = CapturePolicy.RawLccSourceToUnity(sourcePosition);
+        Vec3d target = CapturePolicy.RawLccSourceToUnity(profile.SourceTarget());
         Vec3d upEnd = CapturePolicy.RawLccSourceToUnity(
-            CapturePolicy.SourcePosition + CapturePolicy.SourceUp);
+            sourcePosition + profile.SourceUp());
         Vec3d up = new Vec3d(
             upEnd.X - position.X,
             upEnd.Y - position.Y,
@@ -84,25 +101,41 @@ internal static class CapturePolicyTests
         CapturePolicy.RequireApproximatelyEqual(
             "position",
             position,
-            CapturePolicy.ExpectedNativePosition,
+            profile.ExpectedNativePosition(),
             0.000000001);
         CapturePolicy.RequireApproximatelyEqual(
             "target",
             target,
-            CapturePolicy.ExpectedNativeTarget,
+            profile.ExpectedNativeTarget(),
             0.000000001);
         CapturePolicy.RequireApproximatelyEqual(
             "up",
             up,
-            CapturePolicy.ExpectedNativeUp,
+            profile.ExpectedNativeUp(),
             0.000000001);
         ExpectThrows<InvalidOperationException>(delegate
         {
             CapturePolicy.RequireApproximatelyEqual(
                 "wrong position",
                 new Vec3d(position.X + 0.1, position.Y, position.Z),
-                CapturePolicy.ExpectedNativePosition,
-                CapturePolicy.NativeCoordinateTolerance);
+                profile.ExpectedNativePosition(),
+                profile.Frames.Native.AssertionTolerance);
+        });
+    }
+
+    private static void TestFixedCameraProfile(FixedCameraProfile profile)
+    {
+        AssertEqual(CapturePolicy.CameraProfileSha256, profile.Sha256, "camera profile SHA");
+        AssertEqual("xgrids_lcc2_source_z_up", profile.Frames.Source.Id, "source frame");
+        AssertEqual("xgrids_lcceditor_unity_y_up", profile.Frames.Native.Id, "native frame");
+        AssertEqual("venviewer_browser_centered_y_up", profile.Frames.Three.Id, "Three frame");
+        AssertEqual(1600, profile.Output.Width, "capture width");
+        AssertEqual(900, profile.Output.Height, "capture height");
+        AssertEqual(false, profile.Environment.Include, "environment inclusion");
+        AssertEqual(false, profile.Environment.VisibilityGetterAvailable, "environment visibility getter");
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            FixedCameraProfile.Load(profile.Path, new string('0', 64));
         });
     }
 
@@ -180,19 +213,19 @@ internal static class CapturePolicyTests
     {
         var firstMembers = new List<FileReceipt>
         {
-            new FileReceipt("Grand_Hall.lcc", "C:\\fixture\\Grand_Hall.lcc", 1, "AA", 10)
+            new FileReceipt("Grand_Hall.lcc2", "C:\\fixture\\Grand_Hall.lcc2", 1, "AA", 10)
         };
         var unchangedMembers = new List<FileReceipt>
         {
-            new FileReceipt("Grand_Hall.lcc", "C:\\fixture\\Grand_Hall.lcc", 1, "AA", 10)
+            new FileReceipt("Grand_Hall.lcc2", "C:\\fixture\\Grand_Hall.lcc2", 1, "AA", 10)
         };
         var touchedMembers = new List<FileReceipt>
         {
-            new FileReceipt("Grand_Hall.lcc", "C:\\fixture\\Grand_Hall.lcc", 1, "AA", 11)
+            new FileReceipt("Grand_Hall.lcc2", "C:\\fixture\\Grand_Hall.lcc2", 1, "AA", 11)
         };
-        var before = new PackageSnapshot("C:\\fixture\\Grand_Hall.lcc", firstMembers, "BB");
-        var unchanged = new PackageSnapshot("C:\\fixture\\Grand_Hall.lcc", unchangedMembers, "BB");
-        var touched = new PackageSnapshot("C:\\fixture\\Grand_Hall.lcc", touchedMembers, "BB");
+        var before = new PackageSnapshot("C:\\fixture\\Grand_Hall.lcc2", firstMembers, "BB");
+        var unchanged = new PackageSnapshot("C:\\fixture\\Grand_Hall.lcc2", unchangedMembers, "BB");
+        var touched = new PackageSnapshot("C:\\fixture\\Grand_Hall.lcc2", touchedMembers, "BB");
         CapturePolicy.RequireUnchanged(before, unchanged);
         ExpectThrows<InvalidOperationException>(delegate
         {
@@ -203,9 +236,15 @@ internal static class CapturePolicyTests
     private static void TestLiveCanonicalPackageReceipt()
     {
         PackageSnapshot before = CapturePolicy.SnapshotCanonicalPackage(CapturePolicy.CanonicalScenePath);
-        AssertEqual(11, before.Members.Count, "canonical member count");
-        FileReceipt manifest = before.Members.Single(member => member.RelativePath == "Grand_Hall.lcc");
+        AssertEqual(CapturePolicy.CanonicalMemberCount, before.Members.Count, "canonical member count");
+        AssertEqual(CapturePolicy.CanonicalTotalByteLength, before.Members.Sum(member => member.ByteLength),
+            "canonical total byte length");
+        AssertEqual(CapturePolicy.CanonicalInventorySha256, before.InventorySha256,
+            "canonical inventory SHA");
+        FileReceipt manifest = before.Members.Single(member => member.RelativePath == "Grand_Hall.lcc2");
         AssertEqual(CapturePolicy.CanonicalManifestSha256, manifest.Sha256, "canonical manifest SHA");
+        AssertEqual(1, before.Members.Count(member => member.RelativePath == @"data\3dgs\env.sog"),
+            "environment SOG inventory member count");
         PackageSnapshot after = CapturePolicy.SnapshotCanonicalPackage(CapturePolicy.CanonicalScenePath);
         CapturePolicy.RequireUnchanged(before, after);
         Console.WriteLine("PASS: live canonical package " + before.InventorySha256);

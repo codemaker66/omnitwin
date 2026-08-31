@@ -441,6 +441,13 @@ record `worktreeDirty: false`, Chrome 147 / ANGLE D3D11 / NVIDIA GeForce RTX
 4090, 1600 × 900 at DPR 1, 120 warm-up and 600 timed frames, and no context
 loss.
 
+This dated evidence contains one capture per representation. It does **not**
+prove the protocol's promised fresh browser process per representation or one
+cold plus three warm captures. It remains valid diagnostic history, but the
+canonical executable for the complete browser schedule is now the sequential
+orchestrator documented in
+[`grand-hall-visible-first-browser-bakeoff-runbook.md`](../operations/grand-hall-visible-first-browser-bakeoff-runbook.md).
+
 | Candidate | Exact decoded source | Visible evidence | Current disposition |
 | --- | --- | --- | --- |
 | Exact SOG fine frontier | 11 members; 106,479,738 bytes; 6,019,684 decoded and active Gaussians | PNG `sha256:72f4c376d2742128daac0fb1a8ec68c178fd0e373bf47c1ce9e808cd077d3aae` | **DIAGNOSTIC / HUMAN REVIEW PENDING** — captured-radiance review pool |
@@ -569,25 +576,27 @@ camera, and an explicit renderer profile do not.
    Execute one cold-cache run and three warm-cache runs per camera and
    representation. Never reuse one representation's page or GPU resources for
    the next. Preserve raw JSON and canvas-only PNG for every run.
-8. **Use the dedicated diagnostic harness.** The executable entry point is
-   `packages/web/e2e/grand-hall-visual-lineage.local.spec.ts`. It requires
-   explicit source/evidence paths. Playwright reads and hashes each source into
-   an immutable buffer before navigation; the SOG variant must match every
-   pinned canonical size/hash receipt. Build shared types first, then force a
-   fresh strict-port server so another worktree cannot be reused. For example:
+8. **Use the sequential browser orchestrator.** The executable entry point is
+   the `@omnitwin/web` `visual-lineage:bakeoff` script. It requires explicit
+   source/evidence paths, builds shared types, and launches a separate direct
+   Playwright process with a fresh strict-port server for each representation.
+   Playwright reads and hashes each source into an immutable buffer before
+   navigation; the SOG variant must match every pinned canonical size/hash
+   receipt. Use a new, absent evidence directory under
+   `docs/evidence/grand-hall-lineage`. For example:
 
    ```powershell
    $env:GRAND_HALL_LINEAGE_ROOT='C:\GRAND_HALL_BIG_MODEL_VARIATIONS'
-   $env:GRAND_HALL_LINEAGE_EVIDENCE_DIR='<absolute evidence directory>'
-   $env:E2E_BASE_URL='http://127.0.0.1:5189'
-   $env:E2E_REUSE_EXISTING_SERVER='false'
-   pnpm --filter @omnitwin/types build
-   pnpm --filter @omnitwin/web exec playwright test e2e/grand-hall-visual-lineage.local.spec.ts --project=chromium --workers=1
+   $env:GRAND_HALL_LINEAGE_EVIDENCE_DIR="$(Resolve-Path .)\docs\evidence\grand-hall-lineage\<new-run-id>"
+   $env:GRAND_HALL_LINEAGE_BASE_PORT='5189'
+   pnpm --filter @omnitwin/web visual-lineage:bakeoff
    ```
 
-   The defaults request 120 warm-up plus 600 timed frames. Environment
-   overrides may reduce those counts only for an output labelled and validated
-   as `diagnostic`; they can never create a `passed` record.
+   The orchestrator binds each record to the exact shared camera-profile
+   digest, requires one cold and three warm captures per representation, and
+   verifies that only the cold capture fetches source bytes. It fixes every
+   capture at 120 warm-up plus 600 timed frames and does not inherit lower
+   frame-count overrides from the operator shell.
 9. **Validate before comparison.** Schema-validate every record; confirm exact
    camera matrices, viewport/output dimensions, profile values, representation
    hashes, loaded counts, and absence of context loss. Reject incomplete runs.

@@ -107,6 +107,37 @@ namespace Venviewer.NativeCapture
         public float aspect;
     }
 
+    internal sealed class CameraProfileReceipt
+    {
+        public string path;
+        public string sha256;
+        public string schemaVersion;
+        public string profileId;
+        public string sourceFrame;
+        public string nativeFrame;
+        public string threeFrame;
+        public bool inspectionOnly;
+        public bool environmentIncluded;
+        public string environmentExclusionReason;
+    }
+
+    internal sealed class SceneLoadReceipt
+    {
+        public string api;
+        public string requestedPath;
+        public bool commandLineSceneArgumentUsed;
+        public bool preloadedSceneRejected;
+        public string eventTopic;
+        public bool eventSubscriptionAccepted;
+        public string eventPath;
+        public bool eventPathVerified;
+        public bool callbackObserved;
+        public bool callbackLoadedCanonicalSceneVerified;
+        public bool returnedHandlerNonNull;
+        public string returnedHandlerPath;
+        public bool returnedHandlerPathVerified;
+    }
+
     internal sealed class CaptureAttemptReceipt
     {
         public int ordinal;
@@ -145,7 +176,9 @@ namespace Venviewer.NativeCapture
         public bool renderAllRequested;
         public bool renderAllVerifiedAtEveryGate;
         public bool canonicalPackageHasEnvironment;
-        public bool environmentVisibilityRequested;
+        public bool environmentDataIncluded;
+        public bool environmentExclusionRequested;
+        public string environmentExclusionReason;
         public bool environmentVisibilityGetterAvailable;
         public bool rendererReadinessContractSatisfied;
         public double elapsedSeconds;
@@ -193,6 +226,8 @@ namespace Venviewer.NativeCapture
         public VendorReceipt vendor;
         public ModuleReceipt module;
         public InputReceipt input;
+        public CameraProfileReceipt cameraProfile;
+        public SceneLoadReceipt sceneLoad;
         public CameraReceipt camera;
         public CaptureReceipt capture;
         public HostReceipt host;

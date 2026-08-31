@@ -15,8 +15,10 @@ human. The lane never edits source SOG, SPZ, LCC, mesh, E57 or panorama data.
 - It is evidence under ordinary trusted-local-host assumptions, not
   cryptographically complete execution provenance.
 - It is a broad repaint, not a localized or multiview-consistent repair, and
-  is ineligible for the captured master and is not nominated. No formal
-  forbidden-architecture verdict was recorded.
+  is ineligible for the captured master and is not nominated. A deterministic
+  forbidden-architecture review-evidence pack now records the full-frame
+  change, but its semantic status correctly remains `not_evaluated` pending
+  qualified human review.
 - The current v5 supervisor materially strengthens directory and process
   binding, but no provider preflight or inference has run under this build.
 - V5 remains **NO-GO for promotable cryptographic provenance** because it does
@@ -70,6 +72,29 @@ The formal forbidden-architecture semantic verdict is `not_evaluated`.
 Inspection must not be represented as a formal clearance for windows, doors,
 openings, walls, dark central floor, neighbouring rooms, facade content or
 generated fill.
+
+The authority-none evidence pack is local at:
+
+```text
+F:\venviewer-provider-cache\gsfix3d\evaluations\grand-hall-gsfixer-v2-forbidden-architecture-evidence-20260831T0800Z
+```
+
+It binds the exact source and candidate above, records 589,793 changed pixels
+outside the empty generated region (589,793 changed pixels total), and includes
+lossless source/candidate/difference views. The contact sheet is 4,046,058
+bytes with SHA-256
+`ee4dba96f41e9d9068638e821fa97df6767aab11d8b82c183ff2de09571f3ff6`;
+the heatmap is 462,103 bytes with SHA-256
+`6bc06496fe85fbd0ae0f190a958c135afd6cf7936ddcd2ceba8aef337b9d29c2`.
+The receipt-last publication receipt is 1,240 bytes with SHA-256
+`d5d6e31ad2d1aabb9210eb00a2293840024d37157932f328e8a5b52579ebfd51`.
+The semantic document self-digest reported by the evaluator is
+`b1e0598b357d8ae5bf8e0a6b029ef44cee8ffeb92f7a8dd964373de35445b789`;
+the serialized semantic-result file is 885 bytes with SHA-256
+`47d0fcee9cc8f6841eec0b99ef4035ba5d68ccb0184f92ed54ea02c26ade03f1`.
+Automatic semantic detection was deliberately not performed, so these outputs
+are navigation evidence for review rather than an architectural pass/fail
+claim.
 
 ## Current v5 hardening artifact
 

@@ -6,9 +6,25 @@ import {
 } from "./grand-hall-visual-lineage-source-state.js";
 
 describe("Grand Hall lineage source-state closure", () => {
-  it("includes the capture-mode helper and changes its digest when that dirty helper changes", () => {
+  it("includes every local orchestration helper and the native-owned camera profile", () => {
     const helperPath = "packages/web/e2e/grand-hall-visual-lineage-capture-mode.ts";
     expect(GRAND_HALL_LINEAGE_SOURCE_PATHSPEC).toContain(helperPath);
+    expect(GRAND_HALL_LINEAGE_SOURCE_PATHSPEC).toContain(
+      "packages/web/e2e/grand-hall-visual-lineage-bakeoff.ts",
+    );
+    expect(GRAND_HALL_LINEAGE_SOURCE_PATHSPEC).toContain(
+      "packages/web/e2e/grand-hall-visual-lineage-camera-profile.ts",
+    );
+    expect(GRAND_HALL_LINEAGE_SOURCE_PATHSPEC).toContain(
+      "packages/web/e2e/grand-hall-visual-lineage-orchestrator.ts",
+    );
+    expect(GRAND_HALL_LINEAGE_SOURCE_PATHSPEC).toContain(
+      "tools/reconstruction-foundry/native/grand-hall-lcc-native-capture/camera-profile.json",
+    );
+  });
+
+  it("changes its digest when a dirty orchestration helper changes", () => {
+    const helperPath = "packages/web/e2e/grand-hall-visual-lineage-capture-mode.ts";
     const digest = (helperBytes: string): string => grandHallLineageSourceStateSha256({
       trackedDiff: Buffer.alloc(0),
       untrackedFiles: [{ relativePath: helperPath, bytes: Buffer.from(helperBytes, "utf8") }],

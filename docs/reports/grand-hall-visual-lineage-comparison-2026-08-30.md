@@ -9,6 +9,12 @@ or synthetic fill. The camera is a source-position-derived inspection camera,
 not a recovered optical camera, so these records remain `diagnostic` even
 though the long frame profile completed.
 
+This historical bundle contains one capture per representation. It does not
+establish fresh-browser process isolation or the later-required one-cold plus
+three-warm schedule. Future complete browser runs use the
+[`visible-first browser bake-off runbook`](../operations/grand-hall-visible-first-browser-bakeoff-runbook.md);
+these images remain diagnostic history and are not silently upgraded.
+
 ## Captured-radiance review pool
 
 Only the SOG and SPZ rows below are eligible for captured-radiance review.

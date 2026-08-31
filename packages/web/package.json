@@ -14,6 +14,7 @@
     "lint": "eslint src/ e2e/",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui",
+    "visual-lineage:bakeoff": "node --experimental-strip-types e2e/grand-hall-visual-lineage-orchestrator.ts",
     "frame-budget": "node scripts/frame-budget-pass.mjs",
     "visual-check": "node scripts/visual-check.mjs",
     "clean": "rm -rf dist",
