@@ -20,6 +20,8 @@ import {
   assertGrandHallDifixExperimentBindingProjectionMatches,
   compileGrandHallDifixExecutionAuthorization,
   createGrandHallDifixAuthorizationClaim,
+  grandHallDifixExecutionLockDigest,
+  grandHallDifixPortableDomainDigest,
   type GrandHallDifixBoundFile,
   type GrandHallDifixExecutionAuthorization,
   type GrandHallDifixExperimentBindings,
@@ -84,7 +86,10 @@ function executionLock(root: string): GrandHallDifixExecutionLock {
     plannedExecutionLockSha256: sha("planned-lock"),
     providerAdapterId: GRAND_HALL_DIFIX_ADAPTER_ID,
     configuration,
-    configurationSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1", configuration),
+    configurationSha256: grandHallDifixPortableDomainDigest(
+      "VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1",
+      configuration,
+    ),
     experimentBindings: {
       provider: {
         repositorySourceArchiveSha256: sha("provider-source-archive"),
@@ -212,7 +217,7 @@ function executionLock(root: string): GrandHallDifixExecutionLock {
   };
   return GrandHallDifixExecutionLockSchema.parse({
     ...payload,
-    executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", payload),
+    executionLockSha256: grandHallDifixExecutionLockDigest(payload),
   });
 }
 
@@ -428,6 +433,66 @@ describe("Grand Hall Difix one-shot authorization overlay", () => {
 });
 
 describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
+  it("matches the Python canonical digest for the cross-language regression vector", () => {
+    const value = {
+      nested: {
+        renderGenerationReceipt: "g",
+        rendererArtifact: "r",
+      },
+      renderGenerationReceiptSha256: "g",
+      rendererArtifactSha256: "r",
+    };
+    expect(grandHallDifixPortableDomainDigest(
+      "VENVIEWER_GRAND_HALL_DIFIX_CROSS_LANGUAGE_CANONICAL_TEST_V1",
+      value,
+    )).toBe("sha256:e3d8ffd05318aca4cfc932d136fb27c348b0cf11e417e57f31aabcf0ad71299c");
+  });
+
+  it("fails closed on numbers whose JSON spellings are not cross-language locked", () => {
+    for (const value of [1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => grandHallDifixPortableDomainDigest(
+        "VENVIEWER_GRAND_HALL_DIFIX_CROSS_LANGUAGE_CANONICAL_TEST_V1",
+        { value },
+      )).toThrow("safe integers only");
+    }
+  });
+
+  it("rejects sparse arrays and JSON-invisible object properties", () => {
+    const sparse = new Array<unknown>(1);
+    expect(() => grandHallDifixPortableDomainDigest(
+      "VENVIEWER_GRAND_HALL_DIFIX_CROSS_LANGUAGE_CANONICAL_TEST_V1",
+      sparse,
+    )).toThrow("dense arrays without extra properties only");
+
+    const withSymbol = { visible: true } as Record<PropertyKey, unknown>;
+    withSymbol[Symbol("hidden")] = true;
+    expect(() => grandHallDifixPortableDomainDigest(
+      "VENVIEWER_GRAND_HALL_DIFIX_CROSS_LANGUAGE_CANONICAL_TEST_V1",
+      withSymbol,
+    )).toThrow("enumerable string-keyed properties only");
+
+    const withHidden = { visible: true };
+    Object.defineProperty(withHidden, "hidden", { enumerable: false, value: true });
+    expect(() => grandHallDifixPortableDomainDigest(
+      "VENVIEWER_GRAND_HALL_DIFIX_CROSS_LANGUAGE_CANONICAL_TEST_V1",
+      withHidden,
+    )).toThrow("enumerable string-keyed properties only");
+  });
+
+  it("keeps a legacy locale-digested lock audit-readable while new fixtures use the portable digest", async () => {
+    const { lock } = await harness();
+    const { executionLockSha256: _digest, ...payload } = lock;
+    const legacyExecutionLockSha256 = digest(
+      "VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1",
+      payload,
+    );
+    expect(lock.executionLockSha256).toBe(grandHallDifixExecutionLockDigest(payload));
+    expect(GrandHallDifixExecutionLockSchema.parse({
+      ...payload,
+      executionLockSha256: legacyExecutionLockSha256,
+    }).executionLockSha256).toBe(legacyExecutionLockSha256);
+  });
+
   it("binds the WSL NVIDIA utility directory into the exact offline execution environment", async () => {
     const { lock } = await harness();
     expect(lock.launch.offlineEnvironment.PATH).toBe(
@@ -447,7 +512,7 @@ describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
     };
     expect(() => GrandHallDifixExecutionLockSchema.parse({
       ...tamperedPayload,
-      executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
+      executionLockSha256: grandHallDifixExecutionLockDigest(tamperedPayload),
     })).toThrow();
   });
 
@@ -475,7 +540,7 @@ describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
     const tamperedPayload = { ...payload, [field]: sha(`tampered-${field}`) };
     expect(() => GrandHallDifixExecutionLockSchema.parse({
       ...tamperedPayload,
-      executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
+      executionLockSha256: grandHallDifixExecutionLockDigest(tamperedPayload),
     })).toThrow(`${field} must equal its exact bound-file digest`);
   });
 
@@ -494,7 +559,7 @@ describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
     };
     expect(() => GrandHallDifixExecutionLockSchema.parse({
       ...tamperedPayload,
-      executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
+      executionLockSha256: grandHallDifixExecutionLockDigest(tamperedPayload),
     })).toThrow("exact canonical one-shot configuration bytes");
   });
 
@@ -670,7 +735,7 @@ describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
     };
     expect(() => GrandHallDifixExecutionLockSchema.parse({
       ...tamperedPayload,
-      executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
+      executionLockSha256: grandHallDifixExecutionLockDigest(tamperedPayload),
     })).toThrow("WSL path");
   });
 
@@ -683,7 +748,7 @@ describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
     };
     expect(() => GrandHallDifixExecutionLockSchema.parse({
       ...tamperedPayload,
-      executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
+      executionLockSha256: grandHallDifixExecutionLockDigest(tamperedPayload),
     })).toThrow("sourceImageWsl must equal the exact bound source-image WSL path");
   });
 
@@ -700,7 +765,7 @@ describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
     };
     expect(() => GrandHallDifixExecutionLockSchema.parse({
       ...tamperedPayload,
-      executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
+      executionLockSha256: grandHallDifixExecutionLockDigest(tamperedPayload),
     })).toThrow("attempt artifact must be a direct attempt-directory child");
   });
 
@@ -717,7 +782,7 @@ describe("Grand Hall Difix one-shot tamper and path boundaries", () => {
     };
     expect(() => GrandHallDifixExecutionLockSchema.parse({
       ...tamperedPayload,
-      executionLockSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1", tamperedPayload),
+      executionLockSha256: grandHallDifixExecutionLockDigest(tamperedPayload),
     })).toThrow("attempt artifact must be a direct attempt-directory child");
   });
 
@@ -813,20 +878,27 @@ describe("pinned Python adapter and OS sandbox", () => {
     const contract = await readFile(fileURLToPath(new URL("../grand-hall-difix-one-shot-contract.ts", import.meta.url)), "utf8");
     const adapter = await readFile(fileURLToPath(new URL("../../python/grand_hall_difix_no_reference_adapter.py", import.meta.url)), "utf8");
     const mappingIndex = runner.indexOf("await verifyWslHostMappings(lock, authorization)");
+    const pythonLockPreflightDefinitionIndex = runner.indexOf("const PYTHON_EXECUTION_LOCK_DIGEST_PREFLIGHT");
+    const pythonGoldenIndex = runner.indexOf("sha256:e3d8ffd05318aca4cfc932d136fb27c348b0cf11e417e57f31aabcf0ad71299c");
     const quickCheckIndex = runner.indexOf("const before = await checkExactMaterials(lock, false)");
+    const pythonLockIndex = runner.indexOf("await preflightPythonCanonicalExecutionLock(lock, lockStable)");
     const namespaceIndex = runner.indexOf("await preflightExactNamespace(lock)");
     const claimIndex = runner.indexOf("await claimGrandHallDifixAuthorizationCreateOnly");
     const exhaustiveIndex = runner.indexOf("const exhaustiveBefore = await checkExactMaterials(lock, true)");
     const launchIndex = runner.indexOf('exitCode = await spawnToLogs("wsl.exe"');
     expect(contract).toContain('["unshare", "--user", "--map-root-user", "--net"]');
     expect(mappingIndex).toBeGreaterThan(-1);
+    expect(pythonGoldenIndex).toBeGreaterThan(pythonLockPreflightDefinitionIndex);
     expect(mappingIndex).toBeLessThan(quickCheckIndex);
-    expect(quickCheckIndex).toBeLessThan(namespaceIndex);
+    expect(quickCheckIndex).toBeLessThan(pythonLockIndex);
+    expect(pythonLockIndex).toBeLessThan(namespaceIndex);
     expect(namespaceIndex).toBeLessThan(claimIndex);
     expect(claimIndex).toBeLessThan(exhaustiveIndex);
     expect(exhaustiveIndex).toBeLessThan(launchIndex);
     expect(runner).toContain("Bound materials changed between quick and exhaustive preflight.");
     expect(runner).toContain("authorization objective artifact post-exhaustive-preflight");
+    expect(runner).toContain("Python-canonical execution-lock preflight failed before claim.");
+    expect(runner).toContain("sha256:e3d8ffd05318aca4cfc932d136fb27c348b0cf11e417e57f31aabcf0ad71299c");
     expect(runner).toContain('"--model-execution-snapshot", lock.paths.modelExecutionSnapshotWsl');
     expect(adapter).toContain("result != errno.ENETUNREACH");
     expect(adapter).toContain("torch.cuda.is_available()");

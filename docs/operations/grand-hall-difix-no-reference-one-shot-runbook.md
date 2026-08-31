@@ -2,9 +2,19 @@
 
 ## Status and scope
 
-This runbook describes a future single-frame, local, zero-external-cost Difix
-diagnostic. The lane is implemented but **has not been sealed, authorized, or
-executed** by the implementation change that introduced it.
+This runbook describes the single-frame, local, zero-external-cost Difix
+diagnostic lane. Its runtime and model are sealed. One authorized adapter
+process was launched on 2026-08-30, but it stopped before model load or inference
+because its TypeScript-compiled lock used locale-sensitive key ordering while
+Python used code-point ordering. It produced no candidate, adapter receipt, or
+actual-execution evidence. That consumed, failed attempt remains immutable at
+`F:\venviewer-provider-cache\difix3d\runs\grand-hall-difix-source-pose-19890-one-shot-v1-49ce7219-20260830T131956Z`.
+Its stored lock digest is
+`sha256:30488d9a1bd32c372d72e728e5f8c775f64029cc4e5c396fce10810ea1645bae`;
+the Python/portable recomputation is
+`sha256:de6c2a5f3a1f1684c5f9bff0e2ab370e425332b3fc5ee6dfd43bbe635700366f`;
+and its terminal attempt-receipt digest is
+`sha256:2d1e6232a9c328d2130462d27ecd04a4692aa8a0c409dd0786035052ce1bbdcf`.
 
 The source render and captured master remain immutable. A result from this lane
 is always `generated_cinematic_diagnostic` with no captured, structural, room
@@ -230,6 +240,24 @@ pnpm --filter @omnitwin/reconstruction-foundry-cli grand-hall-difix-one-shot -- 
 This creates only the exact lock path named by the spec. Its reported state is
 `compiled_not_authorized_not_dispatched`.
 
+New locks use the Difix cross-language canonical digest: printable-ASCII object
+keys are ordered by Unicode code point, strings must contain valid Unicode, and
+numbers must be safe integers. This is the exact ordering used by the isolated
+Python adapter. Historical locks made with the earlier locale-sensitive
+TypeScript ordering remain schema-readable for forensic audit. When that digest
+differs from the portable digest, the runner's isolated Python canonical check
+rejects the lock before an authorization claim can be created. A historical
+lock whose two algorithms happen to agree is already portable-compatible and
+remains subject to every other current gate. Never rewrite a historical lock.
+Compile a new lock with a new commit, nonce, run root, and create-only paths
+instead.
+
+The same portable verifier is used at every Python-to-TypeScript boundary that
+the control plane recomputes: configuration, directory inventories, runtime and
+model seals, preload closure, private model snapshot, and adapter receipt. The
+scheduler configuration digest remains Python-only because the raw scheduler
+configuration is not re-canonicalized by TypeScript.
+
 ## 3. Check without authorization
 
 The quick check rehashes every directly bound file and revalidates the existing
@@ -277,9 +305,12 @@ can complete within the 30-minute authorization window:
 2. verifies the immutable experiment is still `not_authorized`;
 3. binds the quick material projection and validates the objective and
    authorization time window;
-4. enters the exact OS no-network namespace;
-5. requires socket `connect_ex` to return Linux `ENETUNREACH` (101); and
-6. allocates and synchronizes a CUDA tensor on the visible GPU.
+4. stable-reads the lock again inside an isolated Python no-network process and
+   requires its raw bytes, size, stored digest, and Python-canonical digest to
+   match the exact pre-claim lock;
+5. enters the exact OS no-network namespace;
+6. requires socket `connect_ex` to return Linux `ENETUNREACH` (101); and
+7. allocates and synchronizes a CUDA tensor on the visible GPU.
 
 Only then does it atomically create the claim. The claim consumes the
 authorization even if attempt-directory creation, exhaustive material

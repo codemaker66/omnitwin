@@ -105,6 +105,94 @@ function digest(domain: string, payload: unknown): string {
   return `sha256:${domainSeparatedSha256(domain, toCanonicalJson(payload))}`;
 }
 
+function assertPortableUnicodeString(value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) {
+        throw new Error("Portable canonical JSON rejects unpaired UTF-16 surrogates.");
+      }
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      throw new Error("Portable canonical JSON rejects unpaired UTF-16 surrogates.");
+    }
+  }
+}
+
+function portableCanonicalJson(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string") {
+    assertPortableUnicodeString(value);
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) {
+      throw new Error("Portable canonical JSON accepts safe integers only.");
+    }
+    return JSON.stringify(Object.is(value, -0) ? 0 : value);
+  }
+  if (Array.isArray(value)) {
+    const ownKeys = Reflect.ownKeys(value);
+    if (
+      ownKeys.length !== value.length + 1
+      || ownKeys.some((key) => key !== "length" && (
+        typeof key !== "string"
+        || !/^(0|[1-9][0-9]*)$/u.test(key)
+        || !Object.prototype.propertyIsEnumerable.call(value, key)
+      ))
+    ) {
+      throw new Error("Portable canonical JSON accepts dense arrays without extra properties only.");
+    }
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, index)) {
+        throw new Error("Portable canonical JSON accepts dense arrays without extra properties only.");
+      }
+    }
+    return `[${value.map(portableCanonicalJson).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const prototype = Reflect.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new Error("Portable canonical JSON accepts plain objects only.");
+    }
+    const object = value as Readonly<Record<string, unknown>>;
+    const ownKeys = Reflect.ownKeys(object);
+    if (ownKeys.some((key) => (
+      typeof key !== "string"
+      || !Object.prototype.propertyIsEnumerable.call(object, key)
+    ))) {
+      throw new Error("Portable canonical JSON accepts enumerable string-keyed properties only.");
+    }
+    const keys = ownKeys as string[];
+    for (const key of keys) {
+      assertPortableUnicodeString(key);
+      if (!/^[\x20-\x7e]+$/u.test(key)) {
+        throw new Error("Portable canonical JSON object keys must be printable ASCII.");
+      }
+    }
+    keys.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${portableCanonicalJson(object[key])}`).join(",")}}`;
+  }
+  throw new Error(`Portable canonical JSON rejects ${typeof value} values.`);
+}
+
+export function grandHallDifixPortableDomainDigest(domain: string, payload: unknown): string {
+  if (!/^[A-Z0-9_.-]{8,120}$/u.test(domain)) {
+    throw new Error("Portable digest domains must be explicit uppercase ASCII identifiers.");
+  }
+  return `sha256:${createHash("sha256")
+    .update(domain, "ascii")
+    .update(Buffer.from([0]))
+    .update(portableCanonicalJson(payload), "utf8")
+    .digest("hex")}`;
+}
+
+export function grandHallDifixExecutionLockDigest(payload: unknown): string {
+  return grandHallDifixPortableDomainDigest(EXECUTION_LOCK_DIGEST_DOMAIN, payload);
+}
+
 function canonicalEqual(left: unknown, right: unknown): boolean {
   return stableCanonicalJson(toCanonicalJson(left)) === stableCanonicalJson(toCanonicalJson(right));
 }
@@ -247,7 +335,7 @@ const DirectoryInventorySchema = z.object({
   if (value.totalFileBytes !== value.files.reduce((sum, entry) => sum + entry.sizeBytes, 0)) {
     ctx.addIssue({ code: "custom", path: ["totalFileBytes"], message: "totalFileBytes must match files" });
   }
-  if (value.inventorySha256 !== digest("VENVIEWER_GRAND_HALL_DIFIX_DIRECTORY_INVENTORY_V1", {
+  if (value.inventorySha256 !== grandHallDifixPortableDomainDigest("VENVIEWER_GRAND_HALL_DIFIX_DIRECTORY_INVENTORY_V1", {
     files: value.files,
     symlinks: value.symlinks,
   })) {
@@ -319,7 +407,10 @@ export const GrandHallDifixRuntimeSealSchema = RuntimeSealPayloadObjectSchema.ex
 }).strict().superRefine((value, ctx) => {
   const { runtimeSealSha256: _digest, ...payload } = value;
   validateRuntimeSealPayload(RuntimeSealPayloadObjectSchema.parse(payload), ctx);
-  if (value.runtimeSealSha256 !== digest("VENVIEWER_GRAND_HALL_DIFIX_RUNTIME_SEAL_V1", payload)) {
+  if (
+    value.runtimeSealSha256
+    !== grandHallDifixPortableDomainDigest("VENVIEWER_GRAND_HALL_DIFIX_RUNTIME_SEAL_V1", payload)
+  ) {
     ctx.addIssue({ code: "custom", path: ["runtimeSealSha256"], message: "runtime seal digest mismatch" });
   }
 });
@@ -364,7 +455,10 @@ export const GrandHallDifixModelSealSchema = ModelSealPayloadSchema.extend({
   modelSealSha256: Sha256Schema,
 }).strict().superRefine((value, ctx) => {
   const { modelSealSha256: _digest, ...payload } = value;
-  if (value.modelSealSha256 !== digest("VENVIEWER_GRAND_HALL_DIFIX_MODEL_SEAL_V1", payload)) {
+  if (
+    value.modelSealSha256
+    !== grandHallDifixPortableDomainDigest("VENVIEWER_GRAND_HALL_DIFIX_MODEL_SEAL_V1", payload)
+  ) {
     ctx.addIssue({ code: "custom", path: ["modelSealSha256"], message: "model seal digest mismatch" });
   }
   const expected = value.expectedWeightFiles.map((entry) => entry.relativePath);
@@ -711,10 +805,18 @@ export const GrandHallDifixExecutionLockSchema = ExecutionLockPayloadSchema.exte
   executionLockSha256: Sha256Schema,
 }).strict().superRefine((value, ctx) => {
   const { executionLockSha256: _digest, ...payload } = value;
-  if (value.executionLockSha256 !== digest(EXECUTION_LOCK_DIGEST_DOMAIN, payload)) {
+  const portableDigest = grandHallDifixExecutionLockDigest(payload);
+  const legacyLocaleDigest = digest(EXECUTION_LOCK_DIGEST_DOMAIN, payload);
+  if (
+    value.executionLockSha256 !== portableDigest
+    && value.executionLockSha256 !== legacyLocaleDigest
+  ) {
     ctx.addIssue({ code: "custom", path: ["executionLockSha256"], message: "execution lock digest mismatch" });
   }
-  if (value.configurationSha256 !== digest("VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1", value.configuration)) {
+  if (
+    value.configurationSha256
+    !== grandHallDifixPortableDomainDigest("VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1", value.configuration)
+  ) {
     ctx.addIssue({ code: "custom", path: ["configurationSha256"], message: "configuration digest mismatch" });
   }
   if (
@@ -1483,7 +1585,10 @@ export function compileGrandHallDifixExecutionLock(
     plannedExecutionLockSha256: experiment.plannedExecutionLock.plannedExecutionLockSha256,
     providerAdapterId: GRAND_HALL_DIFIX_ADAPTER_ID,
     configuration,
-    configurationSha256: digest("VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1", configuration),
+    configurationSha256: grandHallDifixPortableDomainDigest(
+      "VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1",
+      configuration,
+    ),
     experimentBindings,
     runtimeSealSha256: runtimeSeal.runtimeSealSha256,
     modelSealSha256: modelSeal.modelSealSha256,
@@ -1528,7 +1633,7 @@ export function compileGrandHallDifixExecutionLock(
   });
   return GrandHallDifixExecutionLockSchema.parse({
     ...payload,
-    executionLockSha256: digest(EXECUTION_LOCK_DIGEST_DOMAIN, payload),
+    executionLockSha256: grandHallDifixExecutionLockDigest(payload),
   });
 }
 

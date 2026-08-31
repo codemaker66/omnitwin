@@ -55,6 +55,7 @@ import {
   createGrandHallDifixAttemptReceipt,
   createGrandHallDifixAuthorizationClaim,
   grandHallDifixExpectedLocalExperimentMaterials,
+  grandHallDifixPortableDomainDigest,
   type GrandHallDifixAttemptReceipt,
   type GrandHallDifixBoundFile,
   type GrandHallDifixExecutionAuthorization,
@@ -103,6 +104,71 @@ if len(source) != expected_size or actual_sha256 != expected_sha256:
 sys.argv = [path, *sys.argv[4:]]
 namespace = {"__name__": "__main__", "__file__": path, "__package__": None, "__cached__": None}
 exec(compile(source, path, "exec", dont_inherit=True), namespace)
+`;
+const PYTHON_EXECUTION_LOCK_DIGEST_PREFLIGHT = String.raw`import hashlib
+import json
+import os
+import stat
+import sys
+
+golden_value = {
+    "nested": {"renderGenerationReceipt": "g", "rendererArtifact": "r"},
+    "renderGenerationReceiptSha256": "g",
+    "rendererArtifactSha256": "r",
+}
+golden_canonical = json.dumps(
+    golden_value, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True
+)
+golden_digest = "sha256:" + hashlib.sha256(
+    b"VENVIEWER_GRAND_HALL_DIFIX_CROSS_LANGUAGE_CANONICAL_TEST_V1\x00"
+    + golden_canonical.encode("utf-8")
+).hexdigest()
+if golden_digest != "sha256:e3d8ffd05318aca4cfc932d136fb27c348b0cf11e417e57f31aabcf0ad71299c":
+    raise RuntimeError("isolated Python canonical digest implementation failed its golden vector")
+
+path = sys.argv[1]
+expected_file_sha256 = sys.argv[2]
+expected_size = int(sys.argv[3])
+expected_lock_sha256 = sys.argv[4]
+before = os.stat(path, follow_symlinks=False)
+if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+    raise RuntimeError("execution lock must be a direct single-link regular file")
+descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+try:
+    opened_before = os.fstat(descriptor)
+    chunks = []
+    while True:
+        chunk = os.read(descriptor, 1024 * 1024)
+        if not chunk:
+            break
+        chunks.append(chunk)
+    raw = b"".join(chunks)
+    opened_after = os.fstat(descriptor)
+finally:
+    os.close(descriptor)
+after = os.stat(path, follow_symlinks=False)
+identity = lambda value: (value.st_dev, value.st_ino, value.st_mode, value.st_nlink, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+if identity(before) != identity(opened_before) or identity(opened_before) != identity(opened_after) or identity(opened_after) != identity(after):
+    raise RuntimeError("execution lock changed during Python canonical preflight")
+file_sha256 = "sha256:" + hashlib.sha256(raw).hexdigest()
+if len(raw) != expected_size or file_sha256 != expected_file_sha256:
+    raise RuntimeError("execution lock file bytes differ from the pre-claim stable read")
+parsed = json.loads(raw)
+if not isinstance(parsed, dict):
+    raise RuntimeError("execution lock must be a JSON object")
+stored_lock_sha256 = parsed.pop("executionLockSha256", None)
+canonical = json.dumps(parsed, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True)
+actual_lock_sha256 = "sha256:" + hashlib.sha256(
+    b"VENVIEWER_GRAND_HALL_DIFIX_EXECUTION_LOCK_V1\x00" + canonical.encode("utf-8")
+).hexdigest()
+if stored_lock_sha256 != expected_lock_sha256 or actual_lock_sha256 != expected_lock_sha256:
+    raise RuntimeError("execution lock Python-canonical digest mismatch")
+print(json.dumps({
+    "schemaVersion": "venviewer.grand-hall.difix-python-canonical-lock-preflight.v1",
+    "executionLockFileSha256": file_sha256,
+    "executionLockSha256": actual_lock_sha256,
+    "executionLockSizeBytes": len(raw),
+}, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True))
 `;
 
 const Sha256Schema = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
@@ -1101,6 +1167,49 @@ async function preflightExactNamespace(lock: GrandHallDifixExecutionLock): Promi
   PreflightSchema.parse(parseStrictJson(Buffer.from(line, "utf8"), "preflight receipt"));
 }
 
+const PythonCanonicalLockPreflightSchema = z.object({
+  schemaVersion: z.literal("venviewer.grand-hall.difix-python-canonical-lock-preflight.v1"),
+  executionLockFileSha256: Sha256Schema,
+  executionLockSha256: Sha256Schema,
+  executionLockSizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+}).strict();
+
+async function preflightPythonCanonicalExecutionLock(
+  lock: GrandHallDifixExecutionLock,
+  lockStable: StableFile,
+): Promise<void> {
+  const result = await spawnCaptured("wsl.exe", [
+    ...wslNamespacePrefix(lock),
+    ...grandHallDifixOfflineEnvArguments(lock, "/tmp"),
+    lock.paths.trustedVerifierPythonWsl,
+    "-I",
+    "-B",
+    "-S",
+    "-c",
+    PYTHON_EXECUTION_LOCK_DIGEST_PREFLIGHT,
+    lock.paths.executionLockWsl,
+    lockStable.sha256,
+    String(lockStable.sizeBytes),
+    lock.executionLockSha256,
+  ]).catch((error: unknown) => fail(
+    "PREFLIGHT_FAILED",
+    "Python-canonical execution-lock preflight could not launch.",
+    error,
+  ));
+  if (result.exitCode !== 0) {
+    fail("PREFLIGHT_FAILED", "Python-canonical execution-lock preflight failed before claim.");
+  }
+  const line = result.stdout.toString("utf8").trim().split(/\r?\n/u).at(-1) ?? "";
+  const receipt = PythonCanonicalLockPreflightSchema.parse(
+    parseStrictJson(Buffer.from(line, "utf8"), "Python-canonical execution-lock preflight receipt"),
+  );
+  if (
+    receipt.executionLockFileSha256 !== lockStable.sha256
+    || receipt.executionLockSha256 !== lock.executionLockSha256
+    || receipt.executionLockSizeBytes !== lockStable.sizeBytes
+  ) fail("PREFLIGHT_FAILED", "Python-canonical execution-lock preflight receipt disagrees with the exact lock.");
+}
+
 async function openCreateOnlyLog(path: string, stream: "stdout" | "stderr"): Promise<FileHandle> {
   const handle = await open(path, "ax", 0o600).catch((error: unknown) => {
     if (hasErrnoCode(error, "EEXIST")) fail("OUTPUT_EXISTS", `${stream} log already exists.`);
@@ -1170,7 +1279,10 @@ const PreloadClosureSchema = PreloadClosurePayloadSchema.extend({
   closureSha256: Sha256Schema,
 }).strict().superRefine((value, ctx) => {
   const { closureSha256: _digest, ...payload } = value;
-  if (value.closureSha256 !== digest("VENVIEWER_GRAND_HALL_DIFIX_PRELOAD_CLOSURE_V1", payload)) {
+  if (
+    value.closureSha256
+    !== grandHallDifixPortableDomainDigest("VENVIEWER_GRAND_HALL_DIFIX_PRELOAD_CLOSURE_V1", payload)
+  ) {
     ctx.addIssue({ code: "custom", path: ["closureSha256"], message: "preload closure digest mismatch" });
   }
 });
@@ -1186,11 +1298,11 @@ const PrivateModelExecutionSnapshotSchema = z.object({
   const after = { wslRoot: value.wslRoot, files: value.filesAfterInference };
   if (
     value.snapshotSha256BeforeLoad
-    !== digest("VENVIEWER_GRAND_HALL_DIFIX_PRIVATE_MODEL_SNAPSHOT_V1", before)
+    !== grandHallDifixPortableDomainDigest("VENVIEWER_GRAND_HALL_DIFIX_PRIVATE_MODEL_SNAPSHOT_V1", before)
   ) ctx.addIssue({ code: "custom", path: ["snapshotSha256BeforeLoad"], message: "private model snapshot pre-load digest mismatch" });
   if (
     value.snapshotSha256AfterInference
-    !== digest("VENVIEWER_GRAND_HALL_DIFIX_PRIVATE_MODEL_SNAPSHOT_V1", after)
+    !== grandHallDifixPortableDomainDigest("VENVIEWER_GRAND_HALL_DIFIX_PRIVATE_MODEL_SNAPSHOT_V1", after)
   ) ctx.addIssue({ code: "custom", path: ["snapshotSha256AfterInference"], message: "private model snapshot post-inference digest mismatch" });
   if (value.snapshotSha256BeforeLoad !== value.snapshotSha256AfterInference) {
     ctx.addIssue({ code: "custom", path: ["snapshotSha256AfterInference"], message: "private model snapshot changed after load" });
@@ -1247,7 +1359,10 @@ const AdapterReceiptSchema = z.object({
   adapterReceiptSha256: Sha256Schema,
 }).strict().superRefine((value, ctx) => {
   const { adapterReceiptSha256: _digest, ...payload } = value;
-  if (value.adapterReceiptSha256 !== digest("VENVIEWER_GRAND_HALL_DIFIX_PYTHON_ADAPTER_RECEIPT_V1", payload)) {
+  if (
+    value.adapterReceiptSha256
+    !== grandHallDifixPortableDomainDigest("VENVIEWER_GRAND_HALL_DIFIX_PYTHON_ADAPTER_RECEIPT_V1", payload)
+  ) {
     ctx.addIssue({ code: "custom", path: ["adapterReceiptSha256"], message: "adapter receipt digest mismatch" });
   }
   if (
@@ -1377,6 +1492,7 @@ export async function runGrandHallDifixOneShot(
 
   await verifyWslHostMappings(lock, authorization);
   const before = await checkExactMaterials(lock, false);
+  await preflightPythonCanonicalExecutionLock(lock, lockStable);
   await preflightExactNamespace(lock);
   const lockAgain = await stableRead(options.lockHostPath, "execution lock post-preflight", MAX_JSON_BYTES);
   const authAgain = await stableRead(options.authorizationHostPath, "authorization post-preflight", MAX_JSON_BYTES);
@@ -1575,7 +1691,10 @@ export async function runGrandHallDifixOneShot(
     const stable = await stableRead(lock.paths.adapterReceiptHost, "adapter receipt", MAX_JSON_BYTES);
     const adapterReceipt = AdapterReceiptSchema.parse(parseStrictJson(stable.bytes, "adapter receipt"));
     if (
-      digest("VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1", adapterReceipt.configuration)
+      grandHallDifixPortableDomainDigest(
+        "VENVIEWER_GRAND_HALL_DIFIX_CONFIGURATION_V1",
+        adapterReceipt.configuration,
+      )
       !== lock.configurationSha256
     ) fail("PROCESS_FAILED", "Adapter receipt configuration differs from the exact execution lock.");
     const expectedProviderPipeline = postflight.runtime.providerSourceTree.files.find(
