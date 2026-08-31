@@ -1,0 +1,289 @@
+{
+  "schemaVersion": "venviewer.grand-hall.visible-first-browser-bakeoff.v3",
+  "authority": "none",
+  "gitSha": "8a71c1b7d6e7abd07cae4479e642905dd8ba16a3",
+  "worktreeDirty": false,
+  "startedAt": "2026-08-31T10:43:34.456Z",
+  "completedAt": "2026-08-31T10:49:30.723Z",
+  "cameraProfile": {
+    "profileId": "source-pose-19890-interior-v1",
+    "sourcePath": "tools/reconstruction-foundry/native/grand-hall-lcc-native-capture/camera-profile.json",
+    "artifactPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\source-pose-19890-interior-v1-9eca9b6582b7301ec1c059b1a5be699e5a4983773afecb2beea46c2668305922.json",
+    "sha256": "sha256:9eca9b6582b7301ec1c059b1a5be699e5a4983773afecb2beea46c2668305922",
+    "target": [
+      0.15796363067625974,
+      2.15606153541565,
+      -0.19184415815737577
+    ]
+  },
+  "processIsolation": "one_fresh_playwright_and_browser_process_per_representation",
+  "browserHardwarePreflight": {
+    "profileSha256": "sha256:61a38a3424dbbda3b4139677a92caa1ac918879d6ac50212de0ca073d8bb922e",
+    "selectedProfile": {
+      "schemaVersion": "venviewer.grand-hall.hardware-browser-profile.v1",
+      "candidateId": "chrome-stable-headless-d3d11",
+      "browserName": "chromium",
+      "channel": "chrome",
+      "headless": true,
+      "launchArgs": [
+        "--use-angle=d3d11",
+        "--disable-software-rasterizer",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-features=CalculateNativeWinOcclusion",
+        "--force-device-scale-factor=1"
+      ],
+      "browserVersion": "151.0.7922.175",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+      "webglVendor": "Google Inc. (NVIDIA)",
+      "webglRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "webglVersion": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+      "contextLost": false,
+      "probeDurationMs": 862
+    },
+    "attempts": [
+      {
+        "candidate": {
+          "candidateId": "chrome-stable-headless-d3d11",
+          "browserName": "chromium",
+          "channel": "chrome",
+          "headless": true,
+          "launchArgs": [
+            "--use-angle=d3d11",
+            "--disable-software-rasterizer",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-features=CalculateNativeWinOcclusion",
+            "--force-device-scale-factor=1"
+          ]
+        },
+        "outcome": "selected_hardware",
+        "evidence": {
+          "browserVersion": "151.0.7922.175",
+          "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+          "webglVendor": "Google Inc. (NVIDIA)",
+          "webglRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 (0x00002684) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+          "webglVersion": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+          "contextLost": false,
+          "probeDurationMs": 862
+        }
+      }
+    ],
+    "completedBeforeEvidenceDirectoryCreation": true
+  },
+  "executionOrder": [
+    "sog",
+    "spz",
+    "ply"
+  ],
+  "radianceRankingEligibleRepresentations": [
+    "sog",
+    "spz"
+  ],
+  "structuralOnlyRepresentations": [
+    "ply"
+  ],
+  "lanes": [
+    {
+      "representation": "sog",
+      "runnerPid": 24488,
+      "baseUrl": "http://127.0.0.1:5195",
+      "browserProfileSha256": "sha256:61a38a3424dbbda3b4139677a92caa1ac918879d6ac50212de0ca073d8bb922e",
+      "radianceRankingEligible": true,
+      "captures": [
+        {
+          "runOrdinal": 1,
+          "residencyState": "cold_load",
+          "residencyRunOrdinal": 1,
+          "sourceRequestCountBefore": 0,
+          "sourceRequestCountAfter": 11,
+          "runtimeInstanceId": "23a80c79-0214-4afd-8aa6-98714db414e8",
+          "renderedFrameCountBefore": 22,
+          "renderedFrameCountAfter": 742,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\sog\\grand-hall-sog-source-pose-19890-interior-v1-cold-load-1-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:0270b81be421c604b9ee6e81a8b9bfaed2f357719a0650effaf32c4c1cd33dcd",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\sog\\grand-hall-sog-source-pose-19890-interior-v1-cold-load-1-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:72f4c376d2742128daac0fb1a8ec68c178fd0e373bf47c1ce9e808cd077d3aae"
+        },
+        {
+          "runOrdinal": 2,
+          "residencyState": "resident",
+          "residencyRunOrdinal": 1,
+          "sourceRequestCountBefore": 11,
+          "sourceRequestCountAfter": 11,
+          "runtimeInstanceId": "23a80c79-0214-4afd-8aa6-98714db414e8",
+          "renderedFrameCountBefore": 742,
+          "renderedFrameCountAfter": 1462,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\sog\\grand-hall-sog-source-pose-19890-interior-v1-resident-capture-1-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:76934396feb181d44f40fff6a469ab369506bd30f07114f09e50b3942163524d",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\sog\\grand-hall-sog-source-pose-19890-interior-v1-resident-capture-1-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:72f4c376d2742128daac0fb1a8ec68c178fd0e373bf47c1ce9e808cd077d3aae"
+        },
+        {
+          "runOrdinal": 3,
+          "residencyState": "resident",
+          "residencyRunOrdinal": 2,
+          "sourceRequestCountBefore": 11,
+          "sourceRequestCountAfter": 11,
+          "runtimeInstanceId": "23a80c79-0214-4afd-8aa6-98714db414e8",
+          "renderedFrameCountBefore": 1462,
+          "renderedFrameCountAfter": 2182,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\sog\\grand-hall-sog-source-pose-19890-interior-v1-resident-capture-2-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:719bcb8401f96d30157a7b524f156823240e49c34db7a0d75b09b37b565a3c91",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\sog\\grand-hall-sog-source-pose-19890-interior-v1-resident-capture-2-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:72f4c376d2742128daac0fb1a8ec68c178fd0e373bf47c1ce9e808cd077d3aae"
+        },
+        {
+          "runOrdinal": 4,
+          "residencyState": "resident",
+          "residencyRunOrdinal": 3,
+          "sourceRequestCountBefore": 11,
+          "sourceRequestCountAfter": 11,
+          "runtimeInstanceId": "23a80c79-0214-4afd-8aa6-98714db414e8",
+          "renderedFrameCountBefore": 2182,
+          "renderedFrameCountAfter": 2902,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\sog\\grand-hall-sog-source-pose-19890-interior-v1-resident-capture-3-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:e8a1f33f32c133525147b0ce837280d5b2a4b02db09df9b8c33d8c590c4b4879",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\sog\\grand-hall-sog-source-pose-19890-interior-v1-resident-capture-3-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:72f4c376d2742128daac0fb1a8ec68c178fd0e373bf47c1ce9e808cd077d3aae"
+        }
+      ]
+    },
+    {
+      "representation": "spz",
+      "runnerPid": 32628,
+      "baseUrl": "http://127.0.0.1:5196",
+      "browserProfileSha256": "sha256:61a38a3424dbbda3b4139677a92caa1ac918879d6ac50212de0ca073d8bb922e",
+      "radianceRankingEligible": true,
+      "captures": [
+        {
+          "runOrdinal": 1,
+          "residencyState": "cold_load",
+          "residencyRunOrdinal": 1,
+          "sourceRequestCountBefore": 0,
+          "sourceRequestCountAfter": 11,
+          "runtimeInstanceId": "80b20329-2aac-455a-8a96-a6f96c28da26",
+          "renderedFrameCountBefore": 22,
+          "renderedFrameCountAfter": 742,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\spz\\grand-hall-spz-source-pose-19890-interior-v1-cold-load-1-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:5284645643c8feb8fa0361606f83b0908014a5fb84fa1c883990e28b7fd21bed",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\spz\\grand-hall-spz-source-pose-19890-interior-v1-cold-load-1-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:02740825e322d119fd3484bda8d2b90fd2acd4352c5891cb9d51fca9b9613d20"
+        },
+        {
+          "runOrdinal": 2,
+          "residencyState": "resident",
+          "residencyRunOrdinal": 1,
+          "sourceRequestCountBefore": 11,
+          "sourceRequestCountAfter": 11,
+          "runtimeInstanceId": "80b20329-2aac-455a-8a96-a6f96c28da26",
+          "renderedFrameCountBefore": 742,
+          "renderedFrameCountAfter": 1462,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\spz\\grand-hall-spz-source-pose-19890-interior-v1-resident-capture-1-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:629a7eaf9652562c6eaea25d994a3cc5dc48cb9caaeaf288f98e24b2c7d43d85",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\spz\\grand-hall-spz-source-pose-19890-interior-v1-resident-capture-1-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:02740825e322d119fd3484bda8d2b90fd2acd4352c5891cb9d51fca9b9613d20"
+        },
+        {
+          "runOrdinal": 3,
+          "residencyState": "resident",
+          "residencyRunOrdinal": 2,
+          "sourceRequestCountBefore": 11,
+          "sourceRequestCountAfter": 11,
+          "runtimeInstanceId": "80b20329-2aac-455a-8a96-a6f96c28da26",
+          "renderedFrameCountBefore": 1462,
+          "renderedFrameCountAfter": 2182,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\spz\\grand-hall-spz-source-pose-19890-interior-v1-resident-capture-2-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:ecaf699ce97d9f366d47a2668400d517826e249adc4cd6733dd279a277444f90",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\spz\\grand-hall-spz-source-pose-19890-interior-v1-resident-capture-2-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:02740825e322d119fd3484bda8d2b90fd2acd4352c5891cb9d51fca9b9613d20"
+        },
+        {
+          "runOrdinal": 4,
+          "residencyState": "resident",
+          "residencyRunOrdinal": 3,
+          "sourceRequestCountBefore": 11,
+          "sourceRequestCountAfter": 11,
+          "runtimeInstanceId": "80b20329-2aac-455a-8a96-a6f96c28da26",
+          "renderedFrameCountBefore": 2182,
+          "renderedFrameCountAfter": 2902,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\spz\\grand-hall-spz-source-pose-19890-interior-v1-resident-capture-3-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:8b1fd3148a1b97412b8a859c69bf46620cf09e24cedc210d9b51202a8582875f",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\spz\\grand-hall-spz-source-pose-19890-interior-v1-resident-capture-3-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:02740825e322d119fd3484bda8d2b90fd2acd4352c5891cb9d51fca9b9613d20"
+        }
+      ]
+    },
+    {
+      "representation": "ply",
+      "runnerPid": 31876,
+      "baseUrl": "http://127.0.0.1:5197",
+      "browserProfileSha256": "sha256:61a38a3424dbbda3b4139677a92caa1ac918879d6ac50212de0ca073d8bb922e",
+      "radianceRankingEligible": false,
+      "captures": [
+        {
+          "runOrdinal": 1,
+          "residencyState": "cold_load",
+          "residencyRunOrdinal": 1,
+          "sourceRequestCountBefore": 0,
+          "sourceRequestCountAfter": 1,
+          "runtimeInstanceId": "9adb15bb-c277-483b-8fc8-889c2aeedeb2",
+          "renderedFrameCountBefore": 2,
+          "renderedFrameCountAfter": 722,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\ply\\grand-hall-ply-source-pose-19890-interior-v1-cold-load-1-structural-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:128af36092cb6517c94c76fea174d974d4e008fef092cbb183813be3d030300b",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\ply\\grand-hall-ply-source-pose-19890-interior-v1-cold-load-1-structural-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:1678e63618c828ceac130d72dc1e9ac0c7de496814fb9944cff266190b338f60"
+        },
+        {
+          "runOrdinal": 2,
+          "residencyState": "resident",
+          "residencyRunOrdinal": 1,
+          "sourceRequestCountBefore": 1,
+          "sourceRequestCountAfter": 1,
+          "runtimeInstanceId": "9adb15bb-c277-483b-8fc8-889c2aeedeb2",
+          "renderedFrameCountBefore": 722,
+          "renderedFrameCountAfter": 1442,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\ply\\grand-hall-ply-source-pose-19890-interior-v1-resident-capture-1-structural-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:063fc161ccd647f65a5e115ec5cc912a8e74e3b1d83562e4ae9fc5eeb636e8a1",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\ply\\grand-hall-ply-source-pose-19890-interior-v1-resident-capture-1-structural-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:1678e63618c828ceac130d72dc1e9ac0c7de496814fb9944cff266190b338f60"
+        },
+        {
+          "runOrdinal": 3,
+          "residencyState": "resident",
+          "residencyRunOrdinal": 2,
+          "sourceRequestCountBefore": 1,
+          "sourceRequestCountAfter": 1,
+          "runtimeInstanceId": "9adb15bb-c277-483b-8fc8-889c2aeedeb2",
+          "renderedFrameCountBefore": 1442,
+          "renderedFrameCountAfter": 2162,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\ply\\grand-hall-ply-source-pose-19890-interior-v1-resident-capture-2-structural-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:8cb2d5526f70f3adefcbc097e3eca7a682a9e7539c717e24e6ab4feba1556f38",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\ply\\grand-hall-ply-source-pose-19890-interior-v1-resident-capture-2-structural-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:1678e63618c828ceac130d72dc1e9ac0c7de496814fb9944cff266190b338f60"
+        },
+        {
+          "runOrdinal": 4,
+          "residencyState": "resident",
+          "residencyRunOrdinal": 3,
+          "sourceRequestCountBefore": 1,
+          "sourceRequestCountAfter": 1,
+          "runtimeInstanceId": "9adb15bb-c277-483b-8fc8-889c2aeedeb2",
+          "renderedFrameCountBefore": 2162,
+          "renderedFrameCountAfter": 2882,
+          "recordPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\ply\\grand-hall-ply-source-pose-19890-interior-v1-resident-capture-3-structural-diagnostic-controlled-120w-600f.json",
+          "recordSha256": "sha256:940640734a9c67a565d7b3455e68a8c0cb15eec52fff5888a8cd4cd171183dbd",
+          "screenshotPath": "C:\\Users\\blake\\omnitwin2-grand-hall-exact-runtime\\docs\\evidence\\grand-hall-lineage\\2026-08-31-visible-first-hardware-v3\\ply\\grand-hall-ply-source-pose-19890-interior-v1-resident-capture-3-structural-diagnostic-controlled-120w-600f.png",
+          "screenshotSha256": "sha256:1678e63618c828ceac130d72dc1e9ac0c7de496814fb9944cff266190b338f60"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "The shared camera is inspection-only, not a recovered optical camera.",
+    "PLY is reconstructed structural evidence and is excluded from radiance ranking.",
+    "Each representation receives one cold source navigation/load and four total captures from one live fixture runtime. The following three resident captures perform no navigation, source fetch, decode, or scene attachment. They measure visual and frame-time stability of the long-lived decoded runtime; they do not claim HTTP-cache reload performance.",
+    "No human visual acceptance, winner selection, room admission, staging, deployment, or production authority is granted."
+  ]
+}
