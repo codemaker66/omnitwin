@@ -16,7 +16,7 @@ namespace Venviewer.NativeCapture
     public sealed class NativeCaptureModule : IModule
     {
         private const string ModuleId = "com.venviewer.native_capture";
-        private const string ModuleVersion = "1.2.0";
+        private const string ModuleVersion = "1.2.1";
         private const string OutputDirectoryEnvironmentVariable =
             "VENVIEWER_LCC_NATIVE_CAPTURE_OUTPUT_DIR";
         private const string ModuleShaEnvironmentVariable =
@@ -76,8 +76,10 @@ namespace Venviewer.NativeCapture
         private ILCCSceneManager _lccSceneManager;
         private ICaptureManager _captureManager;
         private IRendererQualityService _rendererQualityService;
+        private Func<IEvent, bool> _modulesLoadedHandler;
         private Func<EventArg<string>, bool> _sceneLoadedHandler;
         private Action _sceneLoadedCallback;
+        private readonly NativeCaptureLifecycleState _lifecycle = new NativeCaptureLifecycleState();
         private LCCRendererHandler _loadHandler;
         private string _modulePath;
         private string _outputDirectory;
@@ -89,6 +91,7 @@ namespace Venviewer.NativeCapture
         private FixedCameraProfile _cameraProfile;
         private RenderQualityType _originalQuality;
         private bool _qualityCaptured;
+        private bool _modulesLoadedSubscribed;
         private bool _subscribed;
         private PackageSnapshot _preLoadPackageSnapshot;
         private RuntimeClosureReceipt _preLoadRuntimeClosure;
@@ -118,12 +121,52 @@ namespace Venviewer.NativeCapture
             _lccSceneManager = container.Resolve<ILCCSceneManager>();
             _captureManager = container.Resolve<ICaptureManager>();
             _rendererQualityService = container.Resolve<IRendererQualityService>();
+            _modulesLoadedHandler = HandleModulesLoaded;
             _sceneLoadedHandler = HandleSceneLoaded;
             _sceneLoadedCallback = HandleSceneLoadedCallback;
+            ValidateResolvedServices();
+
+            _modulesLoadedSubscribed = _eventBus.Subscribe<IEvent>(
+                "modules.loaded",
+                _modulesLoadedHandler,
+                100);
+            if (!_modulesLoadedSubscribed)
+            {
+                throw new InvalidOperationException("The modules.loaded lifecycle subscription was rejected.");
+            }
+
+            Debug.Log(
+                "[VenviewerNativeCapture] Lifecycle bridge subscribed to exact modules.loaded; " +
+                "guarded execution is waiting for the next Unity frame after that event.");
         }
 
         public void Execute()
         {
+            LifecycleExecutionDecision executionDecision = _lifecycle.TryEnterExecution();
+            if (executionDecision == LifecycleExecutionDecision.NotReady)
+            {
+                Debug.LogWarning(
+                    "[VenviewerNativeCapture] Execute was requested before the modules.loaded next-frame " +
+                    "handoff and was ignored.");
+                return;
+            }
+
+            if (executionDecision == LifecycleExecutionDecision.Stopped)
+            {
+                Debug.LogWarning("[VenviewerNativeCapture] Execute was requested after Stop and was ignored.");
+                return;
+            }
+
+            if (executionDecision == LifecycleExecutionDecision.Duplicate)
+            {
+                Debug.LogWarning(
+                    "[VenviewerNativeCapture] Duplicate Execute request ignored by the Interlocked one-shot guard.");
+                return;
+            }
+
+            Debug.Log(
+                "[VenviewerNativeCapture] Interlocked one-shot Execute guard acquired after modules.loaded " +
+                "and one full Unity-frame handoff.");
             string arm = Environment.GetEnvironmentVariable(ArmEnvironmentVariable);
             if (String.IsNullOrEmpty(arm))
             {
@@ -184,11 +227,9 @@ namespace Venviewer.NativeCapture
 
         public void Stop()
         {
-            if (_subscribed && _eventBus != null && _sceneLoadedHandler != null)
-            {
-                _eventBus.Unsubscribe("lccscene.loaded", _sceneLoadedHandler);
-                _subscribed = false;
-            }
+            _lifecycle.Stop();
+            UnsubscribeModulesLoaded();
+            UnsubscribeSceneLoaded();
         }
 
         public void Dispose()
@@ -196,11 +237,104 @@ namespace Venviewer.NativeCapture
             Stop();
         }
 
+        private bool HandleModulesLoaded(IEvent moduleLoadedEvent)
+        {
+            if (_lifecycle.IsStopped)
+            {
+                Debug.LogWarning("[VenviewerNativeCapture] modules.loaded was ignored after Stop.");
+                return true;
+            }
+            if (!_lifecycle.TryScheduleModulesLoaded())
+            {
+                Debug.LogWarning(
+                    "[VenviewerNativeCapture] Duplicate modules.loaded delivery ignored by the " +
+                    "Interlocked one-shot scheduling guard.");
+                return true;
+            }
+
+            Debug.Log(
+                "[VenviewerNativeCapture] Exact modules.loaded observed; deferring one-shot removal until " +
+                "the current vendor EventBus dispatch has unwound.");
+            ScheduleExecuteAfterModulesLoadedAsync().Forget(HandleUnhandledException, true);
+            return true;
+        }
+
+        private async UniTask ScheduleExecuteAfterModulesLoadedAsync()
+        {
+            await UniTask.Yield(PlayerLoopTiming.LastPostLateUpdate);
+            if (_lifecycle.IsStopped)
+            {
+                Debug.LogWarning(
+                    "[VenviewerNativeCapture] The modules.loaded handoff was cancelled because Stop ran " +
+                    "while the vendor EventBus dispatch was unwinding.");
+                return;
+            }
+
+            UnsubscribeModulesLoaded();
+            Debug.Log(
+                "[VenviewerNativeCapture] modules.loaded subscription safely removed after vendor dispatch; " +
+                "scheduling Execute for the next Unity frame.");
+            await UniTask.NextFrame(PlayerLoopTiming.LastPostLateUpdate);
+            if (!_lifecycle.TryMarkNextFrameExecutionReady())
+            {
+                Debug.LogWarning(
+                    "[VenviewerNativeCapture] The modules.loaded handoff was cancelled because Stop ran " +
+                    "before the next Unity frame.");
+                return;
+            }
+
+            Debug.Log(
+                "[VenviewerNativeCapture] Next Unity frame reached after modules.loaded; invoking guarded Execute now.");
+            Execute();
+        }
+
+        private void UnsubscribeModulesLoaded()
+        {
+            if (!_modulesLoadedSubscribed || _eventBus == null || _modulesLoadedHandler == null)
+            {
+                return;
+            }
+
+            bool removed = _eventBus.Unsubscribe<IEvent>("modules.loaded", _modulesLoadedHandler);
+            _modulesLoadedSubscribed = false;
+            if (!removed)
+            {
+                Debug.LogWarning(
+                    "[VenviewerNativeCapture] modules.loaded unsubscribe reported no matching handler; " +
+                    "the Interlocked one-shot guards remain closed to duplicate execution.");
+            }
+        }
+
+        private void UnsubscribeSceneLoaded()
+        {
+            if (!_subscribed || _eventBus == null || _sceneLoadedHandler == null)
+            {
+                return;
+            }
+
+            bool removed = _eventBus.Unsubscribe("lccscene.loaded", _sceneLoadedHandler);
+            _subscribed = false;
+            if (!removed)
+            {
+                Debug.LogWarning(
+                    "[VenviewerNativeCapture] lccscene.loaded unsubscribe reported no matching handler.");
+            }
+        }
+
+        private void ThrowIfStopped()
+        {
+            if (_lifecycle.IsStopped)
+            {
+                throw new OperationCanceledException(
+                    "The native capture was stopped before the current operation completed.");
+            }
+        }
+
         private void ValidateResolvedServices()
         {
             if (_eventBus == null || _cameraService == null || _sceneManager == null ||
                 _lccSceneManager == null || _captureManager == null || _rendererQualityService == null ||
-                _sceneLoadedHandler == null || _sceneLoadedCallback == null)
+                _modulesLoadedHandler == null || _sceneLoadedHandler == null || _sceneLoadedCallback == null)
             {
                 throw new InvalidOperationException(
                     "One or more required public LCCEditor services could not be resolved.");
@@ -282,13 +416,26 @@ namespace Venviewer.NativeCapture
 
         private async UniTask WatchSceneLoadAsync()
         {
+            if (_lifecycle.IsStopped)
+            {
+                return;
+            }
+
             var stopwatch = Stopwatch.StartNew();
             while (Volatile.Read(ref _started) == 0 &&
                 stopwatch.Elapsed.TotalSeconds < CapturePolicy.SceneLoadTimeoutSeconds)
             {
                 await UniTask.NextFrame(PlayerLoopTiming.LastPostLateUpdate);
+                if (_lifecycle.IsStopped)
+                {
+                    return;
+                }
             }
 
+            if (_lifecycle.IsStopped)
+            {
+                return;
+            }
             if (Interlocked.CompareExchange(ref _started, 1, 0) == 0)
             {
                 FailArmedStartupCore(new TimeoutException(
@@ -340,6 +487,12 @@ namespace Venviewer.NativeCapture
 
         private bool HandleSceneLoaded(EventArg<string> eventData)
         {
+            if (_lifecycle.IsStopped)
+            {
+                Debug.LogWarning("[VenviewerNativeCapture] lccscene.loaded was ignored after Stop.");
+                return true;
+            }
+
             try
             {
                 if (eventData == null)
@@ -361,7 +514,7 @@ namespace Venviewer.NativeCapture
                 }
 
                 _sceneLoadedEventPath = CapturePolicy.NormalizePath(scenePath);
-                TryStartCaptureAfterLoadContract();
+                TryStartCaptureAfterLoadContract(true);
             }
             catch (Exception exception)
             {
@@ -372,6 +525,12 @@ namespace Venviewer.NativeCapture
 
         private void HandleSceneLoadedCallback()
         {
+            if (_lifecycle.IsStopped)
+            {
+                Debug.LogWarning("[VenviewerNativeCapture] LoadScene callback was ignored after Stop.");
+                return;
+            }
+
             try
             {
                 if (_loadHandler == null)
@@ -390,7 +549,7 @@ namespace Venviewer.NativeCapture
                     throw new InvalidOperationException("The canonical LoadScene callback was invoked more than once.");
                 }
 
-                TryStartCaptureAfterLoadContract();
+                TryStartCaptureAfterLoadContract(false);
             }
             catch (Exception exception)
             {
@@ -398,8 +557,12 @@ namespace Venviewer.NativeCapture
             }
         }
 
-        private void TryStartCaptureAfterLoadContract()
+        private void TryStartCaptureAfterLoadContract(bool deferUntilEventDispatchUnwinds)
         {
+            if (_lifecycle.IsStopped)
+            {
+                return;
+            }
             if (Volatile.Read(ref _sceneLoadedEventObserved) == 0 ||
                 Volatile.Read(ref _sceneLoadedCallbackObserved) == 0)
             {
@@ -414,7 +577,25 @@ namespace Venviewer.NativeCapture
                     "The event and callback completed but the canonical GH_1 LCC2 is not the loaded scene.");
             }
 
-            Stop();
+            if (deferUntilEventDispatchUnwinds)
+            {
+                StartCaptureAfterSceneEventDispatchAsync().Forget(HandleUnhandledException, true);
+                return;
+            }
+
+            UnsubscribeSceneLoaded();
+            StartCapture(CapturePolicy.CanonicalScenePath);
+        }
+
+        private async UniTask StartCaptureAfterSceneEventDispatchAsync()
+        {
+            await UniTask.Yield(PlayerLoopTiming.LastPostLateUpdate);
+            if (_lifecycle.IsStopped)
+            {
+                return;
+            }
+
+            UnsubscribeSceneLoaded();
             StartCapture(CapturePolicy.CanonicalScenePath);
         }
 
@@ -432,7 +613,7 @@ namespace Venviewer.NativeCapture
 
         private void StartCapture(string scenePath)
         {
-            if (!_armed || Interlocked.CompareExchange(ref _started, 1, 0) != 0)
+            if (_lifecycle.IsStopped || !_armed || Interlocked.CompareExchange(ref _started, 1, 0) != 0)
             {
                 return;
             }
@@ -448,7 +629,9 @@ namespace Venviewer.NativeCapture
 
             try
             {
+                ThrowIfStopped();
                 await ExecuteCapturePipelineAsync(scenePath, receipt, context);
+                ThrowIfStopped();
                 exitCode = 0;
             }
             catch (Exception exception)
@@ -488,20 +671,25 @@ namespace Venviewer.NativeCapture
             NativeCaptureReceipt receipt,
             CaptureRunContext context)
         {
+            ThrowIfStopped();
             CapturePolicy.RequireCanonicalScenePath(scenePath);
             string editorRoot = _editorRoot;
             string executablePath = CapturePolicy.NormalizePath(
                 Process.GetCurrentProcess().MainModule.FileName);
             string unityVersion = Application.unityVersion;
 
+            ThrowIfStopped();
             await UniTask.SwitchToThreadPool();
+            ThrowIfStopped();
             RuntimeEvidence runtimeEvidence = VerifyRuntimeEvidence(
                 editorRoot,
                 executablePath,
                 unityVersion);
             PackageSnapshot before = CapturePolicy.SnapshotCanonicalPackage(scenePath);
             CapturePolicy.RequireUnchanged(_preLoadPackageSnapshot, before);
+            ThrowIfStopped();
             await UniTask.SwitchToMainThread();
+            ThrowIfStopped();
             PopulateRuntimeReceipt(receipt, runtimeEvidence, before);
 
             context.CameraState = CaptureOriginalCameraState();
@@ -509,20 +697,28 @@ namespace Venviewer.NativeCapture
             receipt.camera = context.CameraState.Receipt;
             receipt.capture = CreateInitialCaptureReceipt();
             await WaitForCameraApplication(context.CameraState);
+            ThrowIfStopped();
             await WaitForRendererReadiness(receipt.capture, context.CameraState);
+            ThrowIfStopped();
             await CaptureUntilConverged(receipt.capture, context.CameraState);
+            ThrowIfStopped();
 
             await UniTask.SwitchToThreadPool();
+            ThrowIfStopped();
             PackageSnapshot after = CapturePolicy.SnapshotCanonicalPackage(scenePath);
+            ThrowIfStopped();
             CapturePolicy.RequireUnchanged(before, after);
             RuntimeClosureReceipt postCaptureRuntimeClosure = RuntimeClosurePolicy.Verify(
                 editorRoot,
                 Path.Combine(_modulePath, "runtime-closure-lock.json"),
                 _expectedRuntimeClosureSha256);
+            ThrowIfStopped();
             RequireSameRuntimeClosure(_preLoadRuntimeClosure, postCaptureRuntimeClosure);
             receipt.vendor.runtimeClosure.preLoadAndPostCaptureIdentityVerified = true;
+            ThrowIfStopped();
             FinalizePng(receipt.capture);
             await UniTask.SwitchToMainThread();
+            ThrowIfStopped();
             receipt.input = ToInputReceipt(after, true);
             receipt.status = "success";
             receipt.failure = null;
@@ -905,20 +1101,25 @@ namespace Venviewer.NativeCapture
 
         private async UniTask WaitForCameraApplication(CameraState state)
         {
+            ThrowIfStopped();
             await UniTask.NextFrame(PlayerLoopTiming.LastPostLateUpdate);
+            ThrowIfStopped();
             await UniTask.NextFrame(PlayerLoopTiming.LastPostLateUpdate);
+            ThrowIfStopped();
             ApplyProjection(state.Camera);
             RequireLockedCameraState(state);
         }
 
         private async UniTask WaitForRendererReadiness(CaptureReceipt capture, CameraState state)
         {
+            ThrowIfStopped();
             var stopwatch = Stopwatch.StartNew();
             int frame = 0;
             while (frame < CapturePolicy.MinimumReadinessFrames ||
                 stopwatch.Elapsed.TotalSeconds < CapturePolicy.MinimumReadinessSeconds ||
                 !_lccSceneManager.IsRenderAll())
             {
+                ThrowIfStopped();
                 if (stopwatch.Elapsed.TotalSeconds > CapturePolicy.MaximumReadinessSeconds)
                 {
                     throw new TimeoutException(
@@ -927,10 +1128,12 @@ namespace Venviewer.NativeCapture
 
                 _lccSceneManager.ForceRerenderer();
                 await UniTask.NextFrame(PlayerLoopTiming.LastPostLateUpdate);
+                ThrowIfStopped();
                 RequireLockedCameraState(state);
                 frame += 1;
             }
 
+            ThrowIfStopped();
             capture.observedReadinessFrames = frame;
             capture.observedReadinessSeconds = stopwatch.Elapsed.TotalSeconds;
             capture.rendererReadinessContractSatisfied = true;
@@ -1020,12 +1223,14 @@ namespace Venviewer.NativeCapture
 
         private async UniTask CaptureUntilConverged(CaptureReceipt capture, CameraState state)
         {
+            ThrowIfStopped();
             var stopwatch = Stopwatch.StartNew();
             string previousHash = null;
             int consecutive = 0;
 
             for (int ordinal = 1; ordinal <= CapturePolicy.MaximumCaptureAttempts; ordinal += 1)
             {
+                ThrowIfStopped();
                 if (stopwatch.Elapsed.TotalSeconds > CapturePolicy.MaximumConvergenceSeconds)
                 {
                     break;
@@ -1034,7 +1239,9 @@ namespace Venviewer.NativeCapture
                 _lccSceneManager.ForceRerenderer();
                 for (int frame = 0; frame < CapturePolicy.FramesBetweenCaptureAttempts; frame += 1)
                 {
+                    ThrowIfStopped();
                     await UniTask.NextFrame(PlayerLoopTiming.LastPostLateUpdate);
+                    ThrowIfStopped();
                     RequireLockedCameraState(state);
                 }
                 string candidatePath = Path.Combine(
@@ -1046,13 +1253,16 @@ namespace Venviewer.NativeCapture
                 }
 
                 RequireLockedCameraState(state);
+                ThrowIfStopped();
                 bool captured = await CaptureWithTimeout(candidatePath);
+                ThrowIfStopped();
                 if (!captured || !File.Exists(candidatePath))
                 {
                     throw new IOException("ICaptureManager did not produce capture attempt " + ordinal + ".");
                 }
 
                 await UniTask.SwitchToThreadPool();
+                ThrowIfStopped();
                 CapturePolicy.RequirePngDimensions(
                     candidatePath,
                     _cameraProfile.Output.Width,
@@ -1060,6 +1270,7 @@ namespace Venviewer.NativeCapture
                 var info = new FileInfo(candidatePath);
                 string sha256 = CapturePolicy.Sha256File(candidatePath);
                 await UniTask.SwitchToMainThread();
+                ThrowIfStopped();
 
                 consecutive = String.Equals(previousHash, sha256, StringComparison.OrdinalIgnoreCase)
                     ? consecutive + 1
@@ -1081,6 +1292,7 @@ namespace Venviewer.NativeCapture
 
                 if (consecutive >= CapturePolicy.RequiredConsecutiveHashes)
                 {
+                    ThrowIfStopped();
                     RequireLockedCameraState(state);
                     capture.renderAllVerifiedAtEveryGate = true;
                     capture.selectedAttemptPath = candidatePath;
@@ -1098,6 +1310,7 @@ namespace Venviewer.NativeCapture
 
         private async UniTask<bool> CaptureWithTimeout(string candidatePath)
         {
+            ThrowIfStopped();
             UniTask<bool> captureTask = _captureManager.CaptureToFileAsync(
                 candidatePath,
                 new Rect(0, 0, _cameraProfile.Output.Width, _cameraProfile.Output.Height),
@@ -1109,6 +1322,7 @@ namespace Venviewer.NativeCapture
                 CancellationToken.None,
                 false);
             (bool captureWon, bool captured) = await UniTask.WhenAny(captureTask, timeoutTask);
+            ThrowIfStopped();
             if (!captureWon)
             {
                 throw new TimeoutException(

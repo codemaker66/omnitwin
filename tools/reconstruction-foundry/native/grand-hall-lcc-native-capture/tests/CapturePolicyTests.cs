@@ -31,6 +31,7 @@ internal static class CapturePolicyTests
             TestShaGate();
             TestOutputPathGate();
             TestSandboxAndReadinessPolicy();
+            TestNativeCaptureLifecycleState();
             TestPngDimensionGate();
             TestSnapshotChangeGate();
 
@@ -84,6 +85,50 @@ internal static class CapturePolicyTests
             CapturePolicy.RequireCanonicalScenePath(
                 @"C:\GRAND_HALL_BIG_MODEL_VARIATIONS\scans_BIG_MODEL_TH_GH_2\lcc2-result\Grand_Hall.lcc2");
         });
+    }
+
+    private static void TestNativeCaptureLifecycleState()
+    {
+        var normal = new NativeCaptureLifecycleState();
+        AssertEqual(LifecycleExecutionDecision.NotReady, normal.TryEnterExecution(),
+            "Execute before modules.loaded next-frame handoff");
+        AssertEqual(true, normal.TryScheduleModulesLoaded(), "first modules.loaded delivery");
+        AssertEqual(false, normal.TryScheduleModulesLoaded(), "duplicate modules.loaded delivery");
+        AssertEqual(true, normal.TryMarkNextFrameExecutionReady(), "next-frame execution readiness");
+        AssertEqual(LifecycleExecutionDecision.Acquired, normal.TryEnterExecution(),
+            "first guarded execution");
+        AssertEqual(LifecycleExecutionDecision.Duplicate, normal.TryEnterExecution(),
+            "duplicate guarded execution");
+
+        var stoppedBeforeLifecycle = new NativeCaptureLifecycleState();
+        stoppedBeforeLifecycle.Stop();
+        AssertEqual(true, stoppedBeforeLifecycle.IsStopped, "terminal Stop state");
+        AssertEqual(false, stoppedBeforeLifecycle.TryScheduleModulesLoaded(),
+            "modules.loaded after Stop");
+        AssertEqual(false, stoppedBeforeLifecycle.TryMarkNextFrameExecutionReady(),
+            "next-frame readiness after Stop");
+        AssertEqual(LifecycleExecutionDecision.Stopped, stoppedBeforeLifecycle.TryEnterExecution(),
+            "Execute after Stop");
+
+        var stoppedBetweenLifecycleAwaits = new NativeCaptureLifecycleState();
+        AssertEqual(true, stoppedBetweenLifecycleAwaits.TryScheduleModulesLoaded(),
+            "modules.loaded before first lifecycle await");
+        stoppedBetweenLifecycleAwaits.Stop();
+        AssertEqual(false, stoppedBetweenLifecycleAwaits.TryMarkNextFrameExecutionReady(),
+            "Stop between lifecycle awaits");
+        AssertEqual(LifecycleExecutionDecision.Stopped,
+            stoppedBetweenLifecycleAwaits.TryEnterExecution(),
+            "Execute rejected after Stop between lifecycle awaits");
+
+        var stoppedDuringSceneLoad = new NativeCaptureLifecycleState();
+        AssertEqual(true, stoppedDuringSceneLoad.TryScheduleModulesLoaded(),
+            "scene-load lifecycle scheduled");
+        AssertEqual(true, stoppedDuringSceneLoad.TryMarkNextFrameExecutionReady(),
+            "scene-load execution ready");
+        AssertEqual(LifecycleExecutionDecision.Acquired, stoppedDuringSceneLoad.TryEnterExecution(),
+            "scene-load execution started");
+        stoppedDuringSceneLoad.Stop();
+        AssertEqual(true, stoppedDuringSceneLoad.IsStopped, "Stop during scene load");
     }
 
     private static void TestRawCoordinateTransform(FixedCameraProfile profile)

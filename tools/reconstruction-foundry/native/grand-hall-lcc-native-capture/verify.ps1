@@ -66,7 +66,7 @@ foreach ($requiredPath in @(
 
 $plugin = Get-Content -LiteralPath $pluginPath -Raw | ConvertFrom-Json
 Assert-Equal 'com.venviewer.native_capture' ([string]$plugin.Id) 'plugin Id'
-Assert-Equal '1.2.0' ([string]$plugin.Version) 'plugin version'
+Assert-Equal '1.2.1' ([string]$plugin.Version) 'plugin version'
 Assert-Equal 'managed' ([string]$plugin.Type) 'plugin type'
 Assert-Equal 'VenviewerNativeCapture.dll' ([string]$plugin.EntryPoint) 'plugin entry point'
 Assert-Equal 'Venviewer.NativeCapture.NativeCaptureModule' ([string]$plugin.Class) 'plugin class'
@@ -228,6 +228,188 @@ if (-not (Select-String -LiteralPath (Join-Path $sourceRoot 'CapturePolicy.cs') 
     throw 'Canonical package snapshot no longer proves recursive reparse-point rejection.'
 }
 $moduleSource = Get-Content -LiteralPath (Join-Path $sourceRoot 'NativeCaptureModule.cs') -Raw
+$capturePolicySource = Get-Content -LiteralPath (Join-Path $sourceRoot 'CapturePolicy.cs') -Raw
+if ($capturePolicySource -notmatch
+    '(?s)class InterlockedOneShotGate.*?TryEnter\(\).*?Interlocked\.CompareExchange\(ref _entered, 1, 0\) == 0') {
+    throw 'The Interlocked one-shot lifecycle gate implementation is missing.'
+}
+foreach ($lifecycleStateContract in @(
+    'class NativeCaptureLifecycleState',
+    'TryScheduleModulesLoaded()',
+    'TryMarkNextFrameExecutionReady()',
+    'LifecycleExecutionDecision TryEnterExecution()',
+    'Interlocked.Exchange(ref _stopped, 1);'
+)) {
+    if ($capturePolicySource.IndexOf($lifecycleStateContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The testable lifecycle-state contract is missing '$lifecycleStateContract'."
+    }
+}
+$lifecycleSubscribeMatch = [Regex]::Match(
+    $moduleSource,
+    '_eventBus\.Subscribe<IEvent>\(\s*"modules\.loaded"',
+    [Text.RegularExpressions.RegexOptions]::Singleline)
+$lifecycleSubscribeIndex = if ($lifecycleSubscribeMatch.Success) {
+    $lifecycleSubscribeMatch.Index
+}
+else {
+    -1
+}
+$executeMethodIndex = $moduleSource.IndexOf('public void Execute()', [StringComparison]::Ordinal)
+if ($lifecycleSubscribeIndex -lt 0 -or $executeMethodIndex -lt 0 -or
+    $lifecycleSubscribeIndex -gt $executeMethodIndex) {
+    throw 'Init no longer subscribes to exact modules.loaded before the Execute entry point.'
+}
+$modulesLoadedHandlerIndex = $moduleSource.IndexOf(
+    'private bool HandleModulesLoaded(IEvent moduleLoadedEvent)',
+    [StringComparison]::Ordinal)
+$nextFrameSchedulerIndex = $moduleSource.IndexOf(
+    'private async UniTask ScheduleExecuteAfterModulesLoadedAsync()',
+    [StringComparison]::Ordinal)
+if ($modulesLoadedHandlerIndex -lt 0 -or $nextFrameSchedulerIndex -lt 0 -or
+    $modulesLoadedHandlerIndex -gt $nextFrameSchedulerIndex) {
+    throw 'The modules.loaded lifecycle handler/scheduler contract is missing.'
+}
+$modulesLoadedHandlerSource = $moduleSource.Substring(
+    $modulesLoadedHandlerIndex,
+    $nextFrameSchedulerIndex - $modulesLoadedHandlerIndex)
+$lifecycleScheduleIndex = $modulesLoadedHandlerSource.IndexOf(
+    'ScheduleExecuteAfterModulesLoadedAsync().Forget(',
+    [StringComparison]::Ordinal)
+if ($modulesLoadedHandlerSource.IndexOf('_lifecycle.IsStopped', [StringComparison]::Ordinal) -lt 0 -or
+    $modulesLoadedHandlerSource.IndexOf('_lifecycle.TryScheduleModulesLoaded()', [StringComparison]::Ordinal) -lt 0 -or
+    $lifecycleScheduleIndex -lt 0) {
+    throw 'modules.loaded no longer uses its Interlocked one-shot deferred handoff.'
+}
+$validateServicesIndex = $moduleSource.IndexOf('private void ValidateResolvedServices()', [StringComparison]::Ordinal)
+$nextFrameSchedulerSource = $moduleSource.Substring(
+    $nextFrameSchedulerIndex,
+    $validateServicesIndex - $nextFrameSchedulerIndex)
+foreach ($nextFrameContract in @(
+    'await UniTask.Yield(PlayerLoopTiming.LastPostLateUpdate);',
+    'UnsubscribeModulesLoaded();',
+    'await UniTask.NextFrame(PlayerLoopTiming.LastPostLateUpdate);',
+    '_lifecycle.TryMarkNextFrameExecutionReady()',
+    'Execute();'
+)) {
+    if ($nextFrameSchedulerSource.IndexOf($nextFrameContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The next-frame lifecycle scheduler is missing '$nextFrameContract'."
+    }
+}
+$deferredUnsubscribeIndex = $nextFrameSchedulerSource.IndexOf(
+    'UnsubscribeModulesLoaded();',
+    [StringComparison]::Ordinal)
+$nextFrameIndex = $nextFrameSchedulerSource.IndexOf(
+    'await UniTask.NextFrame(PlayerLoopTiming.LastPostLateUpdate);',
+    [StringComparison]::Ordinal)
+$guardedExecuteIndex = $nextFrameSchedulerSource.IndexOf('Execute();', [StringComparison]::Ordinal)
+if ($deferredUnsubscribeIndex -lt 0 -or $nextFrameIndex -lt 0 -or $guardedExecuteIndex -lt 0 -or
+    $deferredUnsubscribeIndex -gt $nextFrameIndex -or $nextFrameIndex -gt $guardedExecuteIndex) {
+    throw 'modules.loaded must safely unsubscribe after dispatch and before scheduling next-frame Execute.'
+}
+foreach ($executionContract in @(
+    '_lifecycle.TryEnterExecution()',
+    'LifecycleExecutionDecision.NotReady',
+    'LifecycleExecutionDecision.Stopped',
+    'LifecycleExecutionDecision.Duplicate',
+    'Duplicate Execute request ignored by the Interlocked one-shot guard.'
+)) {
+    if ($moduleSource.IndexOf($executionContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The guarded Execute contract is missing '$executionContract'."
+    }
+}
+$stopMethodIndex = $moduleSource.IndexOf('public void Stop()', [StringComparison]::Ordinal)
+$disposeMethodIndex = $moduleSource.IndexOf('public void Dispose()', [StringComparison]::Ordinal)
+$handleModulesLoadedIndex = $moduleSource.IndexOf('private bool HandleModulesLoaded(', [StringComparison]::Ordinal)
+if ($stopMethodIndex -lt 0 -or $disposeMethodIndex -lt 0 -or $handleModulesLoadedIndex -lt 0 -or
+    $stopMethodIndex -gt $disposeMethodIndex -or $disposeMethodIndex -gt $handleModulesLoadedIndex) {
+    throw 'The Stop/Dispose lifecycle-cleanup structure is missing.'
+}
+$stopMethodSource = $moduleSource.Substring($stopMethodIndex, $disposeMethodIndex - $stopMethodIndex)
+$disposeMethodSource = $moduleSource.Substring($disposeMethodIndex, $handleModulesLoadedIndex - $disposeMethodIndex)
+if ($stopMethodSource.IndexOf('_lifecycle.Stop();', [StringComparison]::Ordinal) -lt 0 -or
+    $stopMethodSource.IndexOf('UnsubscribeModulesLoaded();', [StringComparison]::Ordinal) -lt 0 -or
+    $stopMethodSource.IndexOf('UnsubscribeSceneLoaded();', [StringComparison]::Ordinal) -lt 0 -or
+    $disposeMethodSource.IndexOf('Stop();', [StringComparison]::Ordinal) -lt 0) {
+    throw 'Stop/Dispose no longer terminally closes and removes both lifecycle subscriptions.'
+}
+$tryStartIndex = $moduleSource.IndexOf(
+    'private void TryStartCaptureAfterLoadContract(bool deferUntilEventDispatchUnwinds)',
+    [StringComparison]::Ordinal)
+$failSceneLoadIndex = $moduleSource.IndexOf('private void FailSceneLoadContract(', [StringComparison]::Ordinal)
+$unsubscribeSceneIndex = $moduleSource.IndexOf('private void UnsubscribeSceneLoaded()', [StringComparison]::Ordinal)
+$throwIfStoppedIndex = $moduleSource.IndexOf('private void ThrowIfStopped()', [StringComparison]::Ordinal)
+if ($tryStartIndex -lt 0 -or $failSceneLoadIndex -lt 0 -or $tryStartIndex -gt $failSceneLoadIndex -or
+    $unsubscribeSceneIndex -lt 0 -or $throwIfStoppedIndex -lt 0) {
+    throw 'The internal scene-unsubscribe/cooperative-stop structure is missing.'
+}
+$tryStartSource = $moduleSource.Substring($tryStartIndex, $failSceneLoadIndex - $tryStartIndex)
+$internalUnsubscribeIndex = $tryStartSource.IndexOf('UnsubscribeSceneLoaded();', [StringComparison]::Ordinal)
+$internalStartIndex = $tryStartSource.IndexOf('StartCapture(CapturePolicy.CanonicalScenePath);', [StringComparison]::Ordinal)
+if ($tryStartSource.IndexOf('_lifecycle.IsStopped', [StringComparison]::Ordinal) -lt 0 -or
+    $tryStartSource.IndexOf('StartCaptureAfterSceneEventDispatchAsync().Forget(', [StringComparison]::Ordinal) -lt 0 -or
+    $tryStartSource.IndexOf('await UniTask.Yield(PlayerLoopTiming.LastPostLateUpdate);', [StringComparison]::Ordinal) -lt 0 -or
+    $internalUnsubscribeIndex -lt 0 -or $internalStartIndex -lt 0 -or
+    $internalUnsubscribeIndex -gt $internalStartIndex -or
+    $tryStartSource.IndexOf('Stop();', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Successful internal scene load must unsubscribe its event without terminally calling Stop.'
+}
+$unsubscribeSceneSource = $moduleSource.Substring($unsubscribeSceneIndex, $throwIfStoppedIndex - $unsubscribeSceneIndex)
+if ($unsubscribeSceneSource.IndexOf('_eventBus.Unsubscribe("lccscene.loaded"', [StringComparison]::Ordinal) -lt 0 -or
+    $unsubscribeSceneSource.IndexOf('_lifecycle.Stop();', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Internal scene unsubscription is missing or terminally stops the lifecycle.'
+}
+$watchSceneIndex = $moduleSource.IndexOf('private async UniTask WatchSceneLoadAsync()', [StringComparison]::Ordinal)
+$failArmedIndex = $moduleSource.IndexOf('private void FailArmedStartup(', [StringComparison]::Ordinal)
+$handleSceneIndex = $moduleSource.IndexOf('private bool HandleSceneLoaded(', [StringComparison]::Ordinal)
+$handleCallbackIndex = $moduleSource.IndexOf('private void HandleSceneLoadedCallback()', [StringComparison]::Ordinal)
+$startCaptureIndex = $moduleSource.IndexOf('private void StartCapture(', [StringComparison]::Ordinal)
+$runCaptureIndex = $moduleSource.IndexOf('private async UniTask RunCaptureAsync(', [StringComparison]::Ordinal)
+foreach ($stoppedWorkContract in @(
+    @($watchSceneIndex, $failArmedIndex, '_lifecycle.IsStopped', 'scene-load watchdog'),
+    @($handleSceneIndex, $handleCallbackIndex, '_lifecycle.IsStopped', 'scene event handler'),
+    @($handleCallbackIndex, $tryStartIndex, '_lifecycle.IsStopped', 'scene callback'),
+    @($startCaptureIndex, $runCaptureIndex, '_lifecycle.IsStopped', 'capture start')
+)) {
+    $contractStart = [int]$stoppedWorkContract[0]
+    $contractEnd = [int]$stoppedWorkContract[1]
+    if ($contractStart -lt 0 -or $contractEnd -le $contractStart -or
+        $moduleSource.Substring($contractStart, $contractEnd - $contractStart).IndexOf(
+            [string]$stoppedWorkContract[2],
+            [StringComparison]::Ordinal) -lt 0) {
+        throw "The $($stoppedWorkContract[3]) no longer rejects work after Stop."
+    }
+}
+$waitCameraIndex = $moduleSource.IndexOf('private async UniTask WaitForCameraApplication(', [StringComparison]::Ordinal)
+$waitReadinessIndex = $moduleSource.IndexOf('private async UniTask WaitForRendererReadiness(', [StringComparison]::Ordinal)
+$requireCameraIndex = $moduleSource.IndexOf('private void RequireLockedCameraState(', [StringComparison]::Ordinal)
+$captureConvergenceIndex = $moduleSource.IndexOf('private async UniTask CaptureUntilConverged(', [StringComparison]::Ordinal)
+$captureTimeoutIndex = $moduleSource.IndexOf('private async UniTask<bool> CaptureWithTimeout(', [StringComparison]::Ordinal)
+$finalizePngIndex = $moduleSource.IndexOf('private void FinalizePng(', [StringComparison]::Ordinal)
+foreach ($cooperativeStopContract in @(
+    @($runCaptureIndex, $waitCameraIndex, 'capture pipeline'),
+    @($waitCameraIndex, $waitReadinessIndex, 'camera-application awaits'),
+    @($waitReadinessIndex, $requireCameraIndex, 'renderer-readiness loop'),
+    @($captureConvergenceIndex, $captureTimeoutIndex, 'capture-convergence loop'),
+    @($captureTimeoutIndex, $finalizePngIndex, 'bounded capture await')
+)) {
+    $contractStart = [int]$cooperativeStopContract[0]
+    $contractEnd = [int]$cooperativeStopContract[1]
+    if ($contractStart -lt 0 -or $contractEnd -le $contractStart -or
+        $moduleSource.Substring($contractStart, $contractEnd - $contractStart).IndexOf(
+            'ThrowIfStopped();',
+            [StringComparison]::Ordinal) -lt 0) {
+        throw "The $($cooperativeStopContract[2]) lacks cooperative Stop checks."
+    }
+}
+foreach ($postConvergenceStopContract in @(
+    '(?s)PackageSnapshot after = CapturePolicy\.SnapshotCanonicalPackage\(scenePath\);\s*ThrowIfStopped\(\);\s*CapturePolicy\.RequireUnchanged\(before, after\);',
+    '(?s)RuntimeClosureReceipt postCaptureRuntimeClosure = RuntimeClosurePolicy\.Verify\(.*?_expectedRuntimeClosureSha256\);\s*ThrowIfStopped\(\);\s*RequireSameRuntimeClosure',
+    '(?s)receipt\.vendor\.runtimeClosure\.preLoadAndPostCaptureIdentityVerified = true;\s*ThrowIfStopped\(\);\s*FinalizePng\(receipt\.capture\);'
+)) {
+    if ($moduleSource -notmatch $postConvergenceStopContract) {
+        throw "A post-convergence Stop boundary is missing: $postConvergenceStopContract"
+    }
+}
 if ($moduleSource -notmatch 'camera\.orthographic = false' -or $moduleSource -notmatch 'state\.Camera\.orthographic') {
     throw 'Perspective camera enforcement is missing.'
 }
@@ -447,6 +629,19 @@ foreach ($requiredIlPattern in @(
     'implements \[LCCWorld\]XGrids\.LCCWorld\.Framework\.IModule',
     'NativeCaptureModule::Init',
     'NativeCaptureModule::Execute',
+    'NativeCaptureModule::HandleModulesLoaded',
+    'NativeCaptureModule::ScheduleExecuteAfterModulesLoadedAsync',
+    'NativeCaptureModule::Stop',
+    'NativeCaptureModule::Dispose',
+    'NativeCaptureModule::UnsubscribeSceneLoaded',
+    'NativeCaptureModule::StartCaptureAfterSceneEventDispatchAsync',
+    'NativeCaptureModule::ThrowIfStopped',
+    'InterlockedOneShotGate::TryEnter',
+    'NativeCaptureLifecycleState::TryScheduleModulesLoaded',
+    'NativeCaptureLifecycleState::TryMarkNextFrameExecutionReady',
+    'NativeCaptureLifecycleState::TryEnterExecution',
+    'NativeCaptureLifecycleState::Stop',
+    'Interlocked::CompareExchange',
     'ICaptureManager::CaptureToFileAsync',
     'ILCCSceneManager::LoadScene',
     'LCCRendererHandler::get_Path',
@@ -461,7 +656,8 @@ foreach ($requiredIlPattern in @(
     'ILCCSceneManager::SetEnvironmentData',
     'FixedCameraProfile::Load',
     'UniTask::WhenAny',
-    'lccscene\.loaded'
+    'lccscene\.loaded',
+    'modules\.loaded'
 )) {
     if ($il -notmatch $requiredIlPattern) {
         throw "The compiled module is missing required IL evidence '$requiredIlPattern'."
@@ -477,6 +673,8 @@ Write-Output 'PASS: plugin contract'
 Write-Output 'PASS: canonical GH_1 LCC2 manifest and 60-file policy receipt'
 Write-Output 'PASS: digest-bound fixed-camera profile and exact Three tuple'
 Write-Output 'PASS: LoadScene handler/event/callback fail-closed contract'
+Write-Output 'PASS: modules.loaded next-frame one-shot lifecycle/cleanup contract'
+Write-Output 'PASS: terminal Stop/internal scene-unsubscribe/cooperative async-stop contract'
 Write-Output 'PASS: reversible per-user native-module toggle lease static contract'
 Write-Output 'PASS: no vendor binary copied into the first-party folder'
 Write-Output 'PASS: no network API or unfinished-code source pattern'

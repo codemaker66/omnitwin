@@ -57,7 +57,8 @@ LCCSDK. The module uses public, inspectable managed contracts already shipped
 with that application:
 
 - `IModule` and `IContainer.Resolve<T>()` for plugin loading;
-- `IEventBus` and `lccscene.loaded`, plus
+- `IEventBus`, the exact global `modules.loaded` lifecycle event, and
+  `lccscene.loaded`, plus
   `ILCCSceneManager.LoadScene(path, callback)`, for load initiation/completion;
 - `ILCCSceneManager.LCCObjectToWorldSpace`, `SetMainCamera`, `SetFOV`,
   `SetRecordMode`, `SetLockFPS`, and `ForceRerenderer`;
@@ -69,6 +70,22 @@ with that application:
 The stock executable has no camera/screenshot command-line arguments. The
 installed Qt editor has camera IPC but no demonstrated colour-raster capture
 endpoint. This in-process first-party module is the available native path.
+
+The locked editor loads managed modules through `Init()` but does not invoke
+the loader's `ExecuteAll()` in the observed startup path. The module therefore
+subscribes in `Init()` to the editor's exact `modules.loaded` event, removes
+that handler once the current vendor event dispatch has unwound, and only then
+schedules guarded `Execute()` for the next Unity frame. The deferred removal is
+required because the locked vendor EventBus enumerates the same mutable
+subscriber list that `Unsubscribe()` edits. Separate Interlocked one-shot gates
+reject duplicate event or execution delivery. `Stop()` and `Dispose()` remove
+any pending lifecycle subscription, so an editor shutdown cannot leave the
+bridge armed. Public `Stop()` is terminal: scene-load callbacks, watchdogs,
+readiness waits, convergence waits, and later async continuations reject new
+work. Successful internal scene-load completion removes only its
+`lccscene.loaded` subscription and does not enter that terminal state. A stop
+during capture is surfaced through the existing failure-receipt and independent
+camera/mode restoration path.
 
 ## Safety and failure behavior
 

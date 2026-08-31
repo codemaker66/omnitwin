@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 
 namespace Venviewer.NativeCapture
 {
@@ -81,6 +82,73 @@ namespace Venviewer.NativeCapture
         internal string ScenePath { get; private set; }
         internal IList<FileReceipt> Members { get; private set; }
         internal string InventorySha256 { get; private set; }
+    }
+
+    internal sealed class InterlockedOneShotGate
+    {
+        private int _entered;
+
+        internal bool TryEnter()
+        {
+            return Interlocked.CompareExchange(ref _entered, 1, 0) == 0;
+        }
+    }
+
+    internal enum LifecycleExecutionDecision
+    {
+        Acquired,
+        NotReady,
+        Stopped,
+        Duplicate
+    }
+
+    internal sealed class NativeCaptureLifecycleState
+    {
+        private readonly InterlockedOneShotGate _modulesLoadedGate = new InterlockedOneShotGate();
+        private readonly InterlockedOneShotGate _executionGate = new InterlockedOneShotGate();
+        private int _stopped;
+        private int _nextFrameExecutionReady;
+
+        internal bool IsStopped
+        {
+            get { return Volatile.Read(ref _stopped) != 0; }
+        }
+
+        internal bool TryScheduleModulesLoaded()
+        {
+            return !IsStopped && _modulesLoadedGate.TryEnter();
+        }
+
+        internal bool TryMarkNextFrameExecutionReady()
+        {
+            if (IsStopped)
+            {
+                return false;
+            }
+
+            Interlocked.Exchange(ref _nextFrameExecutionReady, 1);
+            return !IsStopped;
+        }
+
+        internal LifecycleExecutionDecision TryEnterExecution()
+        {
+            if (IsStopped)
+            {
+                return LifecycleExecutionDecision.Stopped;
+            }
+            if (Volatile.Read(ref _nextFrameExecutionReady) == 0)
+            {
+                return LifecycleExecutionDecision.NotReady;
+            }
+            return _executionGate.TryEnter()
+                ? LifecycleExecutionDecision.Acquired
+                : LifecycleExecutionDecision.Duplicate;
+        }
+
+        internal void Stop()
+        {
+            Interlocked.Exchange(ref _stopped, 1);
+        }
     }
 
     internal static class CapturePolicy
