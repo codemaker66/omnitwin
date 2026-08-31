@@ -1,0 +1,275 @@
+{
+  "schemaVersion": "omnitwin.foundry.restoration-provider-profile.v0",
+  "lane": "difix3d_plus",
+  "displayName": "Difix3D+ diagnostic image-repair lane",
+  "readiness": {
+    "status": "wait",
+    "scope": "single_frame_2d_internal_r_and_d",
+    "publicCapability": "single_frame_image_repair",
+    "minimumGpuVramGiB": null,
+    "blockers": [
+      "evaluator_configuration_not_proven",
+      "fixed_camera_render_closure_not_proven",
+      "local_model_manifest_not_proven",
+      "local_weight_file_not_proven",
+      "protected_generated_masks_not_proven",
+      "required_input_artifacts_not_proven",
+      "runtime_environment_not_proven"
+    ]
+  },
+  "repositoryRequirements": [
+    {
+      "role": "difix3d_source",
+      "repositoryId": "nv-tlabs/Difix3D",
+      "revision": "c76edc595586e16732c91ddee82f3a6d83a8a9cc",
+      "officialLicenseComponents": [
+        {
+          "componentId": "nvidia_license",
+          "licenseName": "NVIDIA License",
+          "scope": "nvidia_materials",
+          "permissionCodes": [
+            "distribute",
+            "prepare_derivative_works",
+            "publicly_display",
+            "publicly_perform",
+            "reproduce",
+            "sublicense",
+            "use"
+          ],
+          "conditionCodes": [
+            "conditional_redistribution",
+            "noncommercial_research_and_evaluation_only"
+          ],
+          "clauseRefs": [
+            "nvidia_section_2_1",
+            "nvidia_section_3_1",
+            "nvidia_section_3_3"
+          ]
+        },
+        {
+          "componentId": "stability_ai_community_license",
+          "licenseName": "Stability AI Community License Agreement",
+          "scope": "stability_ai_materials",
+          "permissionCodes": [
+            "create_derivative_works",
+            "distribute",
+            "modify",
+            "reproduce",
+            "use"
+          ],
+          "conditionCodes": [
+            "acceptable_use_policy_applies",
+            "attribution_and_notice_required",
+            "commercial_use_registration_required",
+            "enterprise_license_required_above_revenue_threshold",
+            "non_sublicensable",
+            "nontransferable",
+            "revocable"
+          ],
+          "clauseRefs": [
+            "stability_section_ii_research_and_noncommercial_use_license",
+            "stability_section_iii_commercial_use_license",
+            "stability_section_iv_a_distribution_and_attribution",
+            "stability_section_iv_b_acceptable_use_policy_and_use_restrictions",
+            "stability_section_v_definitions"
+          ]
+        }
+      ],
+      "requiredUsePosture": "noncommercial_internal_r_and_d_only",
+      "licenseDocument": {
+        "locator": "https://github.com/nv-tlabs/Difix3D/blob/c76edc595586e16732c91ddee82f3a6d83a8a9cc/LICENSE.txt",
+        "revision": "c76edc595586e16732c91ddee82f3a6d83a8a9cc",
+        "relativePath": "LICENSE.txt",
+        "sizeBytes": 15842,
+        "sha256": "sha256:b6207945851e878c5ce4aec6352f61f4741f724674d090b070cf0d468de54fa8"
+      }
+    }
+  ],
+  "modelRequirements": [
+    {
+      "role": "difix_checkpoint",
+      "modelId": "nvidia/difix",
+      "revision": "2b0c6fb5797c26b01154dfdeb19d36e5e2eaf388",
+      "access": "public",
+      "officialLicenseComponents": [
+        {
+          "componentId": "nvidia_license",
+          "licenseName": "NVIDIA License",
+          "scope": "nvidia_materials",
+          "permissionCodes": [
+            "distribute",
+            "prepare_derivative_works",
+            "publicly_display",
+            "publicly_perform",
+            "reproduce",
+            "sublicense",
+            "use"
+          ],
+          "conditionCodes": [
+            "conditional_redistribution",
+            "noncommercial_research_and_evaluation_only"
+          ],
+          "clauseRefs": [
+            "nvidia_section_2_1",
+            "nvidia_section_3_1",
+            "nvidia_section_3_3"
+          ]
+        },
+        {
+          "componentId": "stability_ai_community_license",
+          "licenseName": "Stability AI Community License Agreement",
+          "scope": "stability_ai_materials",
+          "permissionCodes": [
+            "create_derivative_works",
+            "distribute",
+            "modify",
+            "reproduce",
+            "use"
+          ],
+          "conditionCodes": [
+            "acceptable_use_policy_applies",
+            "attribution_and_notice_required",
+            "commercial_use_registration_required",
+            "enterprise_license_required_above_revenue_threshold",
+            "non_sublicensable",
+            "nontransferable",
+            "revocable"
+          ],
+          "clauseRefs": [
+            "stability_section_ii_research_and_noncommercial_use_license",
+            "stability_section_iii_commercial_use_license",
+            "stability_section_iv_a_distribution_and_attribution",
+            "stability_section_iv_b_acceptable_use_policy_and_use_restrictions",
+            "stability_section_v_definitions"
+          ]
+        }
+      ],
+      "requiredUsePosture": "noncommercial_internal_r_and_d_only",
+      "licenseDocument": {
+        "locator": "https://huggingface.co/nvidia/difix/blob/2b0c6fb5797c26b01154dfdeb19d36e5e2eaf388/LICENSE.txt",
+        "revision": "2b0c6fb5797c26b01154dfdeb19d36e5e2eaf388",
+        "relativePath": "LICENSE.txt",
+        "sizeBytes": 15848,
+        "sha256": "sha256:e2f578631a7d4b5aff03be4489b5defbd6536c8878024720c8261a3b0eea6c1a"
+      },
+      "variants": [
+        "difix"
+      ]
+    },
+    {
+      "role": "difix_ref_checkpoint",
+      "modelId": "nvidia/difix_ref",
+      "revision": "d4830559772a5795c9d136302c5b197d6418d3fb",
+      "access": "public",
+      "officialLicenseComponents": [
+        {
+          "componentId": "nvidia_license",
+          "licenseName": "NVIDIA License",
+          "scope": "nvidia_materials",
+          "permissionCodes": [
+            "distribute",
+            "prepare_derivative_works",
+            "publicly_display",
+            "publicly_perform",
+            "reproduce",
+            "sublicense",
+            "use"
+          ],
+          "conditionCodes": [
+            "conditional_redistribution",
+            "noncommercial_research_and_evaluation_only"
+          ],
+          "clauseRefs": [
+            "nvidia_section_2_1",
+            "nvidia_section_3_1",
+            "nvidia_section_3_3"
+          ]
+        },
+        {
+          "componentId": "stability_ai_community_license",
+          "licenseName": "Stability AI Community License Agreement",
+          "scope": "stability_ai_materials",
+          "permissionCodes": [
+            "create_derivative_works",
+            "distribute",
+            "modify",
+            "reproduce",
+            "use"
+          ],
+          "conditionCodes": [
+            "acceptable_use_policy_applies",
+            "attribution_and_notice_required",
+            "commercial_use_registration_required",
+            "enterprise_license_required_above_revenue_threshold",
+            "non_sublicensable",
+            "nontransferable",
+            "revocable"
+          ],
+          "clauseRefs": [
+            "stability_section_ii_research_and_noncommercial_use_license",
+            "stability_section_iii_commercial_use_license",
+            "stability_section_iv_a_distribution_and_attribution",
+            "stability_section_iv_b_acceptable_use_policy_and_use_restrictions",
+            "stability_section_v_definitions"
+          ]
+        }
+      ],
+      "requiredUsePosture": "noncommercial_internal_r_and_d_only",
+      "licenseDocument": {
+        "locator": "https://huggingface.co/nvidia/difix_ref/blob/d4830559772a5795c9d136302c5b197d6418d3fb/LICENSE.txt",
+        "revision": "d4830559772a5795c9d136302c5b197d6418d3fb",
+        "relativePath": "LICENSE.txt",
+        "sizeBytes": 15848,
+        "sha256": "sha256:e2f578631a7d4b5aff03be4489b5defbd6536c8878024720c8261a3b0eea6c1a"
+      },
+      "variants": [
+        "difix_ref"
+      ]
+    }
+  ],
+  "requiredInputs": [
+    {
+      "role": "captured_reference_image",
+      "truthLayer": "CAPTURED_TRUTH",
+      "artifactClass": "captured_observation",
+      "mediaType": "image/png",
+      "requiresImageDimensions": true,
+      "variants": [
+        "difix_ref"
+      ]
+    },
+    {
+      "role": "source_fixed_camera_render",
+      "truthLayer": "SOURCE_DERIVED_TRUTH",
+      "artifactClass": "source_derived_reconstruction_render",
+      "mediaType": "image/png",
+      "requiresImageDimensions": true,
+      "variants": [
+        "difix",
+        "difix_ref"
+      ]
+    },
+    {
+      "role": "source_reconstruction",
+      "truthLayer": "SOURCE_DERIVED_TRUTH",
+      "artifactClass": "source_derived_reconstruction",
+      "mediaType": "application/vnd.venviewer.grand-hall.reconstruction+json",
+      "requiresImageDimensions": false,
+      "variants": [
+        "difix",
+        "difix_ref"
+      ]
+    }
+  ],
+  "candidateArtifactClass": "restoration_candidate",
+  "allowedCandidateMediaTypes": [
+    "image/png"
+  ],
+  "executionPolicy": {
+    "dispatchAuthorized": false,
+    "commercialUseAllowed": false,
+    "publicDistributionAllowed": false,
+    "sourceTruthReplacementAllowed": false
+  },
+  "profileSha256": "sha256:c597c9cdc19190ffc9fdec62f902d052e219abab8634b3cb72041b2ff34f66e3"
+}

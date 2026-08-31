@@ -28,6 +28,15 @@ docs/operations/grand-hall-authority-none-icp-*.json text eol=lf
 docs/operations/grand-hall-authority-none-registration-seed-*.json text eol=lf
 docs/operations/grand-hall-authority-none-coordinate-free-nomination-checkpoint-*.json text eol=lf
 docs/operations/grand-hall-processed-big-inventory-*.json text eol=lf
+# The GSFixer supervisor pins the exact adapter bytes. Preserve the audited
+# source, adapter and adversarial fixtures across Windows/Linux checkouts.
+tools/reconstruction-foundry/native/grand_hall_gsfixer_supervisor.c text eol=lf
+tools/reconstruction-foundry/python/grand_hall_gsfixer_base_adapter.py text eol=lf
+tools/reconstruction-foundry/scripts/tests/fixtures/gsfixer_proof_*.c text eol=lf
+tools/reconstruction-foundry/scripts/tests/fixtures/gsfixer_proof_*.py text eol=lf
+tools/reconstruction-foundry/scripts/tests/test_grand_hall_gsfixer_base_adapter.py text eol=lf
+# Frozen V0 compatibility bytes must survive Windows/Linux checkouts exactly.
+packages/reconstruction-foundry/src/__tests__/fixtures/restoration-provider-profile-v0-difix.json text eol=lf
 # Byte-pinned evidence vector document (activation-v1 test suite) — exact
 # bytes, overriding the eol=lf rule above.
 docs/specs/omnitwin-foundry-activation-v1-authenticated-evidence-byte-vectors.json -text
