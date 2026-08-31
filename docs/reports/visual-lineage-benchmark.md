@@ -1,21 +1,23 @@
 # Grand Hall visual-lineage benchmark
 
-**Status:** clean-commit hardware diagnostics executed for SOG, SPZ, and supplied PLY; genuine native LCC vendor-UI diagnostic captured; matched native adapter frame and human acceptance pending
-**Source audit date:** 2026-08-23; visible evidence refreshed 2026-08-30
-**Audit reference:** `codex/grand-hall-exact-runtime` at `a940a281`
+**Status:** clean-commit hardware-v3 residency diagnostics and a symmetric SOG/SPZ comparison completed; genuine native LCC vendor-UI diagnostic captured; matched native adapter frame and human acceptance pending
+**Source audit date:** 2026-08-23; visible evidence refreshed 2026-08-31
+**Audit reference:** hardware-v3 producer `8a71c1b7`; sealed comparison tool `09034f8f`
 **Source root:** `C:\GRAND_HALL_BIG_MODEL_VARIATIONS`
 **Target:** Trades Hall Glasgow / Grand Hall only
 
 This report freezes the evidence and contract for the first deterministic
-visual-lineage comparison. The current SOG, SPZ, and structural PLY records
-come from a clean commit, an RTX 4090 hardware renderer, and a 120-warm-up /
-600-timed-frame profile. They are still diagnostics: the camera is
-inspection-only, SOG/SPZ retain resolved inherited Spark defaults, and human
-review is pending. A separate genuine vendor-editor native-LCC UI frame now
-exists, but it has UI chrome and no deterministic camera, projection,
-residency, convergence, or native-capture receipt, so it is not admitted to the
-matched-camera ranking. Authenticated staging/package browser-WebGL QA has not
-run and is not required for this local milestone.
+visual-lineage comparison. The hardware-v3 SOG, SPZ, and structural PLY lanes
+come from clean commit `8a71c1b7`, an RTX 4090 hardware renderer, distinct
+browser processes, and one cold load plus three same-runtime resident captures
+per representation. Every capture retains a 120-warm-up / 600-timed-frame
+profile. They are still diagnostics: the camera is inspection-only, SOG/SPZ
+retain resolved inherited Spark defaults, and human review is pending. A
+separate genuine vendor-editor native-LCC UI frame now exists, but it has UI
+chrome and no deterministic camera, projection, residency, convergence, or
+native-capture receipt, so it is not admitted to the matched-camera ranking.
+Authenticated staging/package browser-WebGL QA has not run and is not required
+for this local milestone.
 
 The source files were supplied by the project owner with authority to use them
 for this project. Rights to use an asset do not change its truth class. Truth is
@@ -44,6 +46,46 @@ operational geometry.
   diagnostic history. Fresh
   source-position interior SOG and SPZ frames read as a coherent Grand Hall to
   Codex, but formal human review of those exact hashes remains pending.
+
+## 1.1 Hardware-v3 residency and symmetric radiance comparison
+
+The complete local successor bundle is
+[`2026-08-31-visible-first-hardware-v3`](../evidence/grand-hall-lineage/2026-08-31-visible-first-hardware-v3/visible-first-browser-bakeoff-receipt.json).
+SOG and SPZ each served eleven source members exactly once, then retained the
+same runtime UUID and source-request total through three further captures. PLY
+served its one source member once and remained structural-only. All twelve
+screenshots were byte-stable within their representation; WebGL2 stayed on
+ANGLE D3D11 / NVIDIA GeForce RTX 4090 with no context loss.
+
+The sealed authority-none comparator produced exactly three create-only files:
+
+<figure>
+  <img src="../evidence/grand-hall-lineage/2026-08-31-visible-first-hardware-v3-comparison/sog-left-spz-right.png" alt="Receipt-bound SOG on the left and SPZ on the right at the same Grand Hall inspection camera" width="1200">
+  <figcaption>SOG left · SPZ right · exact decoded RGB8 pixels · human review pending.</figcaption>
+</figure>
+
+<figure>
+  <img src="../evidence/grand-hall-lineage/2026-08-31-visible-first-hardware-v3-comparison/sog-spz-absolute-rgb-difference-x8.png" alt="Eight-times-amplified absolute RGB-byte difference between the SOG and SPZ Grand Hall frames" width="960">
+  <figcaption>Per-channel <code>min(255, abs(SOG-SPZ) × 8)</code>; this is disagreement visualization, not an error map against ground truth.</figcaption>
+</figure>
+
+- Side-by-side PNG SHA-256:
+  `8dced4d88ec65a884f63b02e6646ce797a1d90825c0c26167292cff869516add`
+- Difference PNG SHA-256:
+  `68e65209e737748f0fa5ac608d018ddfaefd01ef34745510dfaf0078916a9a7d`
+- [Canonical comparison receipt](../evidence/grand-hall-lineage/2026-08-31-visible-first-hardware-v3-comparison/comparison-receipt.json)
+  SHA-256:
+  `b82b428b309368cf9a9ab129a683e2296bc9edd6b677ba5eba64e2925c2e1776`
+- Aggregate RGB-byte MAE `1.8918046296296296`; RMSE
+  `2.5220771495234136`; PSNR `40.095636261322205 dB`; maximum channel
+  delta `34`; two RGB samples clipped by the ×8 display amplification.
+
+The two frames are visually very close. In this one view, both show the empty
+Grand Hall with a continuous timber floor and no facade, neighbouring room, or
+false dark central floor. That limited observation cannot clear the whole room,
+prove architectural fidelity, or decide which representation is more accurate
+or beautiful. The receipt therefore fixes `winner: null`,
+`visualAcceptance: not_reviewed`, and `rankingPermitted: false`.
 
 ## 2. Verified source inventory
 

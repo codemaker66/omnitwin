@@ -18,14 +18,18 @@ these images remain diagnostic history and are not silently upgraded.
 
 The later `2026-08-31-visible-first-hardware-v2` attempt is also rejected and
 incomplete: its cold SOG capture was followed by an invalid reload that raised
-served source requests from 11 to 22, and it produced no final receipt. The
-fresh successor target is `2026-08-31-visible-first-hardware-v3`, with evidence
-labels `cold-load-1`, `resident-capture-1`, `resident-capture-2`, and
+served source requests from 11 to 22, and it produced no final receipt. Its
+clean successor, [`2026-08-31-visible-first-hardware-v3`](../evidence/grand-hall-lineage/2026-08-31-visible-first-hardware-v3/visible-first-browser-bakeoff-receipt.json),
+has now completed SOG, SPZ, and structural-only PLY with evidence labels
+`cold-load-1`, `resident-capture-1`, `resident-capture-2`, and
 `resident-capture-3`, marker `VENVIEWER_BROWSER_SOURCE_RESIDENCY_V1`, exact
 process scope
 `one_representation_one_cold_load_plus_three_resident_captures`, and a v3 final
-receipt. Neither failed attempt changes the review state of the frozen 2026-08-30
-images below.
+receipt. Its SOG/SPZ/PLY pixels are byte-identical to the respective frozen
+2026-08-30 frames; the new evidence proves fresh-process isolation and
+same-runtime residency rather than new appearance. A separate
+[symmetric comparison receipt](../evidence/grand-hall-lineage/2026-08-31-visible-first-hardware-v3-comparison/comparison-receipt.json)
+records disagreement metrics but grants no winner or visual acceptance.
 
 ## Captured-radiance review pool
 
