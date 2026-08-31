@@ -56,6 +56,30 @@
       "role": "compile_and_runtime"
     },
     {
+      "relativePath": "LCCEditor_Data/Managed/UnityEngine.UIModule.dll",
+      "byteLength": 45488,
+      "sha256": "F6B73BB8B4DFF00448F0C2E20BF9A92487128A05F81AAF814A1DE021DA59C6A5",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/Unity.RenderPipelines.Core.Runtime.dll",
+      "byteLength": 859648,
+      "sha256": "E68FCEB04E8F571E6F2B10ED15D5FE19A83E274EC557E68AE2D72C3E068E074D",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/Unity.RenderPipelines.Universal.Runtime.dll",
+      "byteLength": 798208,
+      "sha256": "59458EF5AD12F800842598647AE8AE6E82A074852C1D2684B81A322FDBC86CE1",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/Unity.RenderPipelines.GPUDriven.Runtime.dll",
+      "byteLength": 226304,
+      "sha256": "5A240D9060CA4ED75FBBF6D764C777477B5F6D11B8AC0B58D00E4F730C61661C",
+      "role": "compile_and_runtime"
+    },
+    {
       "relativePath": "LCCEditor_Data/Managed/UniTask.dll",
       "byteLength": 566272,
       "sha256": "0DCC2A27BFEF118AE85AB448F4BDFCDA2906894EFB90A951FB2EC06A6FCC07B8",
@@ -77,6 +101,30 @@
       "relativePath": "LCCEditor_Data/Managed/netstandard.dll",
       "byteLength": 90112,
       "sha256": "6AE62E082DC494A2433984177F60CA4DB5FAE69B1F360A8B33754172B310B8C5",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/mscorlib.dll",
+      "byteLength": 4632064,
+      "sha256": "E3CF08610C3F99B3436C106AB3C54564417B7EE47BC5D764311C4910B41EB1CE",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/System.dll",
+      "byteLength": 2641920,
+      "sha256": "0EA6AFCCBD47AC4110E0C3EA6A9ED3A2B5154445CBFAAD23531E2924AE80D40B",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/System.Core.dll",
+      "byteLength": 1113088,
+      "sha256": "FFD6840FA7808D2372FED8542FEA05B0913AC03018A3BF2BD3D200F078595C49",
+      "role": "compile_and_runtime"
+    },
+    {
+      "relativePath": "LCCEditor_Data/Managed/System.Memory.dll",
+      "byteLength": 4608,
+      "sha256": "C4F030A2CBA7DA7CDCF493257C24560E203D355904AEE490D645A935842F834A",
       "role": "compile_and_runtime"
     }
   ],

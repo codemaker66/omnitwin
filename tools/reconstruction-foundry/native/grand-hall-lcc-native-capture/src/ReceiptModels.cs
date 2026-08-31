@@ -177,6 +177,239 @@ namespace Venviewer.NativeCapture
         public bool nonDegenerateVerified;
     }
 
+    internal sealed class SnapFrameRenderTextureObservationReceipt
+    {
+        public int observationFrame;
+        public int instanceId;
+        public bool isLive;
+        public bool isCreated;
+        public int width;
+        public int height;
+        public int depth;
+        public int antiAliasing;
+        public string colorFormat;
+        public string graphicsFormat;
+        public bool sRgb;
+        public bool useMipMap;
+        public bool autoGenerateMips;
+    }
+
+    internal sealed class SnapFrameDirtyObservationReceipt
+    {
+        public int observationFrame;
+        public bool dirty;
+    }
+
+    internal sealed class SnapFrameReadbackReceipt
+    {
+        public bool renderTextureActiveWasNullBeforeReadback;
+        public int renderTextureActiveBeforeReadbackInstanceId;
+        public int renderTextureActiveBoundForReadbackInstanceId;
+        public bool activeFrameRenderTextureVerifiedBeforeReadPixels;
+        public bool firstPartyReadPixelsCompleted;
+        public bool firstPartyApplyCompleted;
+        public bool renderTextureActiveWasNullAfterReadback;
+        public int renderTextureActiveAfterReadbackInstanceId;
+        public bool renderTextureActiveRestored;
+        public int firstPartyTextureInstanceId;
+        public string firstPartyTextureFormat;
+        public bool firstPartyTextureReadable;
+        public bool firstPartyTextureNoMipChain;
+        public bool firstPartyTextureDistinctFromVendorFrameRenderTexture;
+        public bool vendorFrameRenderTextureDestroyRequested;
+    }
+
+    internal sealed class SnapFrameCameraCallbackReceipt
+    {
+        public int sequence;
+        public string callback;
+        public string stage;
+        public int frame;
+        public double realtimeSeconds;
+        public bool cameraMatchesExactSceneCamera;
+        public bool targetTextureNull;
+        public bool poseMatchesStage;
+        public bool projectionMatchesExactProfile;
+        public bool frameDirty;
+        public int frameRenderTextureInstanceId;
+        public double[] position;
+        public double[] rotationXyzw;
+        public double[] worldToCameraMatrixColumnMajor;
+        public double[] projectionMatrixColumnMajor;
+    }
+
+    internal sealed class SnapFrameCanvasReceipt
+    {
+        public int instanceId;
+        public string name;
+        public string renderMode;
+        public int layer;
+        public string layerName;
+        public int worldCameraInstanceId;
+        public bool worldCameraMatchesSceneCamera;
+        public bool layerIncludedBySceneCamera;
+        public bool canRenderThroughSceneCamera;
+    }
+
+    internal sealed class UrpRendererFeatureReceipt
+    {
+        public int featureIndex;
+        public bool present;
+        public string name;
+        public string typeFullName;
+        public int instanceId;
+        public bool active;
+        public bool snapFrameCaptureFeatureType;
+        public bool matchesSnapFrameStaticInstance;
+    }
+
+    internal sealed class UrpRendererDataReceipt
+    {
+        public int rendererDataIndex;
+        public bool present;
+        public string name;
+        public string typeFullName;
+        public int instanceId;
+        public bool useNativeRenderPass;
+        public int featureCount;
+        public int snapFrameCaptureFeatureCount;
+        public List<UrpRendererFeatureReceipt> features;
+    }
+
+    internal sealed class UrpRendererInstanceReceipt
+    {
+        public int rendererIndex;
+        public bool present;
+        public string typeFullName;
+        public int runtimeIdentityHashCode;
+    }
+
+    internal sealed class UrpRendererInventoryReceipt
+    {
+        public string observationApi;
+        public int observationFrame;
+        public double observationRealtimeSeconds;
+        public bool publicGettersOnly;
+        public bool mutationApiInvoked;
+        public string[] prohibitedMutationApis;
+        public bool currentRenderPipelineAssetPresent;
+        public string currentRenderPipelineAssetName;
+        public string currentRenderPipelineAssetTypeFullName;
+        public int currentRenderPipelineAssetInstanceId;
+        public bool currentRenderPipelineAssetIsUniversal;
+        public bool universalAdditionalCameraDataPresent;
+        public int rendererDataCount;
+        public int rendererInstanceCount;
+        public bool rendererDataAndInstanceCountsMatch;
+        public List<UrpRendererDataReceipt> rendererData;
+        public List<UrpRendererInstanceReceipt> rendererInstances;
+        public int snapFrameCaptureFeatureCount;
+        public int activeSnapFrameCaptureFeatureCount;
+        public bool snapFrameStaticInstancePresent;
+        public int snapFrameStaticInstanceId;
+        public string snapFrameStaticInstanceTypeFullName;
+        public int snapFrameStaticInstanceMatchedConfiguredFeatureCount;
+        public bool snapFrameStaticInstanceStableDuringSynchronousInventory;
+        public bool sceneCameraRendererIndexInferred;
+        public int sceneCameraRendererIndex;
+        public string sceneCameraRendererIndexProvenance;
+        public bool rendererObjectIdentityStableDuringSynchronousInventory;
+        public bool rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory;
+        public bool mutationObservedDuringSynchronousInventory;
+    }
+
+    internal sealed class SnapFrameSurfaceReceipt
+    {
+        public bool featurePresent;
+        public string featureTypeFullName;
+        public int featureInstanceId;
+        public bool featureStaticInstanceMatched;
+        public bool featureBaseActiveBefore;
+        public bool featureBaseActiveAfter;
+        public bool sceneCameraLive;
+        public int sceneCameraInstanceId;
+        public bool featureTargetCameraLiveBefore;
+        public int featureTargetCameraInstanceIdBefore;
+        public bool featureTargetCameraLiveAtReadback;
+        public int featureTargetCameraInstanceIdAtReadback;
+        public bool featureTargetCameraLiveAfter;
+        public int featureTargetCameraInstanceIdAfter;
+        public bool featureTargetUnchanged;
+        public bool sceneCameraTargetTextureNullBefore;
+        public bool sceneCameraTargetTextureNullAfterDirtyRequest;
+        public bool sceneCameraTargetTextureNullBeforeReadback;
+        public bool sceneCameraTargetTextureNullAfter;
+        public bool captureViewAbsentBefore;
+        public bool captureViewAbsentAfterDirtyRequest;
+        public bool captureViewAbsentBeforeReadback;
+        public bool captureViewAbsentAfter;
+        public int knownActiveCaptureOverlayCount;
+        public string[] knownActiveCaptureOverlayNames;
+        public List<SnapFrameCanvasReceipt> activeCanvases;
+        public bool unsafeRenderThroughCanvasObserved;
+        public string graphicsDeviceType;
+        public bool graphicsUvStartsAtTop;
+        public string activeColorSpace;
+        public string readPixelsCoordinateOrigin;
+        public string cpuRowTransform;
+        public int sceneCameraPixelWidth;
+        public int sceneCameraPixelHeight;
+        public int screenWidth;
+        public int screenHeight;
+        public int sceneCameraCullingMask;
+        public int sceneCameraCullingMaskAfter;
+        public int sceneCameraTargetDisplay;
+        public int sceneCameraTargetDisplayAfter;
+        public float sceneCameraDepth;
+        public float[] sceneCameraRect;
+        public float[] sceneCameraRectAfter;
+        public float[] sceneCameraPixelRect;
+        public float[] sceneCameraPixelRectAfter;
+        public bool cameraConfigurationUnchanged;
+        public bool cleanViewStateVerifiedAtEveryCheckpoint;
+        public bool universalAdditionalCameraDataPresent;
+        public string universalCameraRenderType;
+        public int universalCameraStackCount;
+        public bool universalRenderPostProcessing;
+        public string frameSurfaceProvenance;
+        public SnapFrameRenderTextureObservationReceipt frameRenderTextureBefore;
+        public SnapFrameRenderTextureObservationReceipt frameRenderTextureAfterDirtyRequest;
+        public SnapFrameRenderTextureObservationReceipt frameRenderTextureBeforeReadback;
+        public SnapFrameRenderTextureObservationReceipt frameRenderTextureAfter;
+        public SnapFrameDirtyObservationReceipt dirtyBeforeRequest;
+        public SnapFrameDirtyObservationReceipt dirtyAfterRequest;
+        public SnapFrameDirtyObservationReceipt dirtyBeforeReadback;
+        public SnapFrameDirtyObservationReceipt dirtyAfterCompletion;
+        public double[] exactPositionBefore;
+        public double[] exactRotationXyzwBefore;
+        public double[] exactWorldToCameraMatrixColumnMajorBefore;
+        public double[] exactProjectionMatrixColumnMajorBefore;
+        public double[] sentinelPosition;
+        public double[] sentinelRotationXyzw;
+        public double[] sentinelWorldToCameraMatrixColumnMajor;
+        public double[] exactPositionAfter;
+        public double[] exactRotationXyzwAfter;
+        public double[] exactWorldToCameraMatrixColumnMajorAfter;
+        public double[] exactProjectionMatrixColumnMajorAfter;
+        public bool sentinelPoseReached;
+        public SnapFrameReadbackReceipt sentinelReadback;
+        public RasterStatisticsReceipt sentinelRaster;
+        public string exactFrameRgb24Sha256;
+        public bool sentinelAndExactRgbDiffer;
+        public bool exactRestoreVerified;
+        public bool cameraCallbackSubscriptionRemoved;
+        public int beginCameraRenderingCallbackCount;
+        public int endCameraRenderingCallbackCount;
+        public bool callbackHistoryOverflowed;
+        public bool everyCameraCallbackMatchedStagePose;
+        public bool baselineExactEndCallbackVerified;
+        public bool sentinelEndCallbackVerified;
+        public bool restoredExactEndCallbackVerified;
+        public bool stableExactEndCallbackVerified;
+        public List<SnapFrameCameraCallbackReceipt> cameraCallbacks;
+        public SnapFrameReadbackReceipt readback;
+    }
+
     internal sealed class CaptureAttemptReceipt
     {
         public int ordinal;
@@ -187,54 +420,22 @@ namespace Venviewer.NativeCapture
         public int height;
         public int consecutiveIdenticalHashes;
         public double elapsedSeconds;
-        public bool beforeRenderCallbackInvoked;
-        public bool afterRenderCallbackInvoked;
-        public int beforeRenderFrame;
-        public int afterRenderFrame;
-        public double beforeRenderRealtimeSeconds;
-        public double afterRenderRealtimeSeconds;
-        public bool renderProbeSubscriptionRemoved;
         public int srpEndCameraRenderingCallbackCount;
         public int firstSrpEndCameraRenderingFrame;
         public int lastSrpEndCameraRenderingFrame;
         public bool standardCameraRenderCallbackProofAvailable;
-        public bool renderTargetAssignedBeforeCapture;
-        public int renderTargetInstanceId;
-        public int renderTargetWidth;
-        public int renderTargetHeight;
-        public bool renderTargetIsCreated;
-        public int renderTargetAntiAliasing;
-        public string renderTargetColorFormat;
-        public string renderTargetGraphicsFormat;
-        public bool renderTargetSrgb;
-        public bool renderTargetUseMipMap;
-        public bool renderTargetDriftObserved;
-        public bool renderTextureActiveWasNullBeforeReadback;
-        public int renderTextureActiveBeforeReadbackInstanceId;
-        public bool activeExactTargetVerifiedBeforeReadPixels;
-        public bool renderTextureActiveRestored;
         public bool firstPartyReadPixelsCompleted;
         public bool firstPartyApplyCompleted;
         public int firstPartyTextureInstanceId;
         public string firstPartyTextureFormat;
         public bool firstPartyTextureReadable;
         public bool firstPartyTextureNoMipChain;
+        public SnapFrameSurfaceReceipt snapFrameSurface;
         public string pixelSource;
         public string readbackTrigger;
-        public int readbackReplacementDisposalRequestCount;
-        public string callbackReadbackFailureType;
-        public string callbackReadbackFailureMessage;
-        public bool vendorReturnedTexturePresent;
-        public int vendorReturnedTextureInstanceId;
-        public string vendorReturnedTextureFormat;
-        public bool vendorReturnedTextureReadable;
-        public bool vendorReturnedTextureDistinctFromFirstParty;
-        public bool vendorReturnedTextureDestroyRequested;
-        public bool vendorReturnedTextureUsedForAdmission;
         public bool captureTaskCompletedBeforeDeadline;
         public bool captureTaskStopObserved;
         public bool captureTaskTimeoutObserved;
-        public bool lateCaptureTaskObserverAttached;
         public bool underlyingCaptureCancellationAvailable;
         public bool pixelReadCompleted;
         public RasterStatisticsReceipt raster;
@@ -304,6 +505,7 @@ namespace Venviewer.NativeCapture
         public double elapsedSeconds;
         public int completedAttempts;
         public List<CaptureAttemptReceipt> attempts;
+        public UrpRendererInventoryReceipt urpRendererInventory;
         public string selectedAttemptPath;
         public string finalPngPath;
         public long finalPngByteLength;

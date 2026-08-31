@@ -12,8 +12,9 @@ service, operating system, or GPU driver is network-silent.
 
 The module exists for one evidence task only: render the locked canonical
 `scans_BIG_MODEL_TH_GH_1` native LCC2 at one exact inspection camera and produce
-an overlay-free 1600x900 PNG plus a machine-readable receipt.
-The repaired contract is module `1.2.5` and native receipt schema `v5`.
+a conditionally clean 1600x900 diagnostic PNG plus a machine-readable receipt.
+The read-only renderer-inventory contract is module `1.2.7` and native receipt
+schema `v7`.
 
 ## What is authoritative
 
@@ -68,23 +69,42 @@ with that application:
   `SetRecordMode`, `SetLockFPS`, and `ForceRerenderer`;
 - `ICameraService.SetTransform` for the numeric pose;
 - `ISceneManager.SceneCamera` for the exact Unity camera and clean-view flags;
-- `ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender)` for
-  the exact scene-camera render texture, not a desktop or UI screenshot;
-- `RenderPipelineManager.endCameraRendering`, when the exact scene camera
-  emits it, as the preferred first-party readback point and standard-camera
-  callback evidence;
-- the vendor `afterRender` callback as an explicit fallback only when no exact
-  scene-camera SRP callback was observed during the locked three-end-of-frame
-  capture window;
+- `GraphicsSettings.currentRenderPipeline`,
+  `UniversalRenderPipelineAsset.rendererDataList`/`renderers`,
+  `ScriptableRendererData.rendererFeatures`/`useNativeRenderPass`, and
+  `ScriptableRendererFeature.isActive` for a synchronous, read-only inventory
+  of configured renderer data, already-instantiated renderer slots, and the
+  SnapFrame singleton relationship before the first capture attempt;
+- `LCCCore.SnapFrameCaptureFeature.Instance`, `TargetCamera`, `FrameRT`, and
+  `FrameDirty` for read-only access to the renderer feature already activated
+  by the vendor's loaded-world workflow;
+- `RenderPipelineManager.beginCameraRendering` and `endCameraRendering` for
+  exact-camera, exact-pose, projection, frame, and dirty-state evidence across
+  a four-stage freshness handshake;
+- `ICameraService.SetTransform` for one discarded 5 cm camera sentinel and the
+  exact restoration that forces the vendor SnapFrame pass to refresh without
+  toggling the pass or replacing its target camera;
 - `RenderTexture.active`, a first-party no-mipmap RGB24 `Texture2D`,
-  `Texture2D.ReadPixels()`, and `Texture2D.Apply()` for an exact assigned-target
-  readback independent of the vendor-returned texture; and
+  `Texture2D.ReadPixels()`, and `Texture2D.Apply()` for direct readback of the
+  stable vendor-owned `FrameRT`; and
 - `Texture2D.GetPixels32()` plus `ImageConversion.EncodeToPNG()` for decoded
   RGB admission followed by local PNG encoding.
 
 The stock executable has no camera/screenshot command-line arguments. The
 installed Qt editor has camera IPC but no demonstrated colour-raster capture
 endpoint. This in-process first-party module is the available native path.
+
+The renderer inventory deliberately does not call
+`UniversalAdditionalCameraData.scriptableRenderer`,
+`UniversalRenderPipelineAsset.scriptableRenderer`,
+`UniversalRenderPipelineAsset.GetRenderer`, `SetRenderer`, `SetDirty`, or
+`SetActive`: locked Unity IL shows those paths can create, destroy, replace, or
+retarget runtime state. Public side-effect-free APIs do not expose the camera's
+serialized renderer index. A sole non-null renderer-data/renderer pair is
+therefore labelled an inference, never an observed camera binding. Feature
+`isActive` is only the serialized base toggle; it is not proof that
+`AddRenderPasses` ran for this camera. Null renderer slots are inventoried but
+never instantiated by this module.
 
 The locked editor loads managed modules through `Init()` but does not invoke
 the loader's `ExecuteAll()` in the observed startup path. The module therefore
@@ -95,14 +115,16 @@ required because the locked vendor EventBus enumerates the same mutable
 subscriber list that `Unsubscribe()` edits. Separate Interlocked one-shot gates
 reject duplicate event or execution delivery. `Stop()` and `Dispose()` remove
 any pending lifecycle subscription, so an editor shutdown cannot leave the
-bridge armed. Public `Stop()` is terminal: it synchronously aborts any active
-exact-target readback probe and removes its SRP subscription; scene-load
+bridge armed. Public `Stop()` is terminal: it cooperatively aborts any active
+SnapFrame operation at its next end-of-frame await; scene-load
 callbacks, watchdogs, readiness waits, convergence waits, and later async
 continuations reject new work. Successful internal scene-load completion
 removes its `lccscene.load.begin` and `lccscene.loaded` subscriptions only after
 the current event dispatch has unwound and does not enter that terminal state.
-A stop during capture is surfaced through the existing failure receipt and
-independent camera/mode restoration path.
+A stop during capture is surfaced through the existing failure receipt. The
+operation's `finally` path restores and verifies the exact source camera,
+removes both SRP subscriptions, restores `RenderTexture.active`, and destroys
+only its own temporary readable textures.
 
 ## Safety and failure behavior
 
@@ -146,46 +168,62 @@ Attempts are spaced by another 15 rendered frames, and every clean-view flag,
 camera value, projection value, Ultra quality, full-render mode, and canonical
 scene identity is re-asserted throughout. Three consecutive byte-identical PNGs
 establish a same-host hash plateau. The run stops after 60 attempts or 180
-seconds. Each individual `ICaptureManager` operation has a 30-second
-cooperative Unity-player-loop deadline with no retry after an observed timeout.
+seconds. Each individual SnapFrame operation has a 30-second cooperative
+Unity-player-loop deadline with no retry after an observed timeout.
 That deadline cannot preempt a blocked Unity main thread or GPU synchronization;
 the wrapper's 900-second process watchdog is the hard termination boundary.
-The cooperative wait also races terminal `Stop()` on the Unity update loop, and
-its cancellation source is cancelled and disposed when the capture, deadline,
-or stop path wins. This cancellation closes the remaining cooperative waiter;
-it does not claim to cancel the vendor capture operation.
+The cooperative wait also races terminal `Stop()` on the Unity update loop. No
+vendor capture task is launched, retained, or allowed to finish after receipt
+publication.
 Each attempt is added to the receipt before capture begins, so a timeout, black
-raster, target drift, or other failure remains visible instead of disappearing
+raster, surface drift, or other failure remains visible instead of disappearing
 with an exception.
 
-The vendor `beforeRender` callback records the exact `RenderTexture` assigned
-to the exact scene camera. That target must remain a live, created 1600x900,
-single-sample, no-mipmap object with the same native instance ID through
-readback and `afterRender`, or the attempt fails. The standard
-`RenderPipelineManager.endCameraRendering` route is preferred when observed for
-that camera: each such callback performs a synchronous first-party readback of
-the exact retained target, and any callback readback failure or target drift
-rejects the attempt. A global camera callback is not required for admission
-because the locked vendor implementation did not emit one for the observed
-custom LCC render path.
+Locked IL shows that the vendor's `SnapFrameCaptureFeature` blits the scene
+camera target at `AfterRenderingTransparents` into an ARGB32 `FrameRT` when its
+public `FrameDirty` predicate detects a camera change. The module never calls
+`SetActive`, never writes `TargetCamera`, never writes or destroys `FrameRT`,
+and never assigns `Camera.targetTexture`. It requires the existing feature to
+be active, bound to the exact scene camera, and backed by one stable, live,
+created, single-sample, 1600x900, no-mipmap `FrameRT` throughout the attempt.
 
-When the exact-camera SRP callback count is zero, the vendor `afterRender`
-callback performs the same first-party readback as an explicit, receipted
-fallback. Locked vendor IL places that callback after three end-of-frame waits
-while the assigned temporary render target is still alive, and before the
-vendor's own readback and release. Every first-party readback saves the prior
-`RenderTexture.active`, activates and verifies the exact retained target,
-creates a readable no-mipmap RGB24 `Texture2D`, calls `ReadPixels()` and
-`Apply()`, and restores and verifies the prior active target in `finally`.
+The freshness proof spans four strictly increasing exact-camera end callbacks:
+an unchanged exact baseline with `FrameDirty=false`; a deterministic 5 cm
+sentinel with `FrameDirty=true`; restoration of the exact pose with
+`FrameDirty=true`; and an unchanged exact frame with `FrameDirty=false`. The
+sentinel is read and analysed only as discarded evidence. Its non-degenerate
+RGB hash must differ from the final exact-pose RGB hash. The exact pose,
+world-to-camera matrix, projection, camera identity, target binding, surface
+identity, and callback history must all survive the sequence.
 
-The `Texture2D` returned by `ICaptureManager` must be present and distinct from
-the first-party texture. Destruction of the vendor texture is requested, and
-its pixels are never used for admission. Only the first-party readable RGB24
-texture is decoded before PNG encoding. The raster gate rejects all-black and
-near-constant frames using minimum non-black-pixel fraction, channel-range,
-distinct-colour, and luminance-variation requirements. Only an admitted RGB
+Every first-party readback saves the prior `RenderTexture.active`, activates
+and verifies the vendor-owned `FrameRT`, creates a readable no-mipmap RGB24
+`Texture2D`, calls `ReadPixels()` and `Apply()`, and restores and verifies the
+prior active target in `finally`. The raster gate rejects all-black and
+near-constant frames using minimum non-black-pixel fraction, channel range,
+distinct-colour count, and luminance variation. Only an admitted exact-pose RGB
 frame is encoded, durably written without replacement, validated for PNG
 dimensions, and hash-checked against the encoded bytes.
+
+`FrameRT` is specifically the camera target after transparents and before later
+post-processing or overlay composition; it is not claimed to be the final
+visible framebuffer. The module therefore inventories active canvases, rejects
+every active world-space Canvas and screen-space-camera canvases that can render through the scene
+camera, rejects known capture overlays and capture view, and requires a single
+unstacked URP base camera with null target texture and the exact full-screen
+viewport. Grid, gizmo, trajectory, interaction, and screen-renderer helpers
+must remain disabled at every checkpoint. These gates reduce contamination;
+they do not replace visual QA.
+
+The receipt also records `SystemInfo.graphicsDeviceType`,
+`SystemInfo.graphicsUVStartsAtTop`, the active Unity colour space, the stable
+FrameRT graphics format and sRGB flag, the lower-left `ReadPixels` coordinate
+origin, and the currently applied CPU row transform (`none`). These values make
+the orientation and colour path inspectable; they do not prove that a D3D
+RenderTexture blit is visually upright. The first native PNG remains diagnostic
+until its top and bottom are visually compared with the locked SOG/SPZ evidence.
+If it is inverted, the implementation must apply and receipt one deterministic
+vertical row flip before it can support matched-camera metrics.
 
 Capture-level provenance distinguishes the configured pixel source from an
 actually observed source. `configuredPixelSource` declares the required lane;
@@ -195,15 +233,15 @@ source was observed. These aggregates are recomputed from all retained attempts
 after both accepted and rejected outcomes, so a failure receipt cannot imply
 that configured pixels were produced.
 
-The per-attempt timeout observes a preserved capture task. On an observed
-cooperative timeout, the exact-target readback probe is closed and unsubscribed,
-and a fire-and-forget continuation is attached to request destruction if a late
-vendor `Texture2D` arrives. Its completion is not awaited before receipt
-publication or process exit, so the receipt claims only attachment and the
-disposable process remains the final cleanup boundary. A late result cannot
-admit that attempt or start a retry. Terminal `Stop()` is receipted separately
-from an elapsed cooperative deadline. The normal and exceptional synchronous
-paths request destruction for every texture not transferred to the decoder.
+The per-attempt timeout observes the module-owned SnapFrame operation. On an
+observed cooperative timeout or terminal `Stop()`, cancellation is consumed at
+the next end-of-frame await and the same operation restores the exact camera
+before it completes. Cleanup failure is never hidden behind the initiating
+failure. The disposable process remains the final boundary for a blocked Unity
+main thread, GPU synchronization, or native driver call. A failed operation
+restores and verifies the camera synchronously but does not claim that the
+vendor FrameRT completed a restored/stable render handshake before process
+exit; only successful attempts make that surface-restoration claim.
 
 The canonical inventory contains `data/3dgs/env.sog`, but browser-frontier
 parity excludes it. The module therefore calls `SetEnvironmentData(false)` and

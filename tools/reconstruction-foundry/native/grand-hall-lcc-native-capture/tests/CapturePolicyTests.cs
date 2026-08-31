@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -34,7 +35,8 @@ internal static class CapturePolicyTests
             TestNativeCaptureLifecycleState();
             TestSceneLoadReceiptContract();
             TestNativeRenderModeContract();
-            TestExactTargetReadbackRoutePolicy();
+            TestReadOnlyUrpRendererInventoryContract();
+            TestSnapFrameCaptureRoutePolicy();
             TestPngDimensionGate();
             TestDecodedRasterAdmissionGate();
             TestSnapshotChangeGate();
@@ -154,7 +156,8 @@ internal static class CapturePolicyTests
             "minimumMaximumChannelDynamicRange",
             "minimumDistinctRgbCount",
             "minimumLuminanceStandardDeviation",
-            "everyAttemptDecodedAndNonDegenerate"
+            "everyAttemptDecodedAndNonDegenerate",
+            "urpRendererInventory"
         })
         {
             if (!fields.Contains(expected))
@@ -172,45 +175,885 @@ internal static class CapturePolicyTests
         }
     }
 
-    private static void TestExactTargetReadbackRoutePolicy()
+    private static void TestReadOnlyUrpRendererInventoryContract()
     {
-        CapturePolicy.RequireExactTargetReadbackRoute(
-            0,
-            -1,
-            -1,
-            false,
-            null,
-            "vendor_afterRender_fallback");
-        CapturePolicy.RequireExactTargetReadbackRoute(
-            1,
-            120,
-            120,
-            true,
-            null,
-            "srp_endCameraRendering");
-        CapturePolicy.RequireExactTargetReadbackRoute(
-            3,
-            120,
-            122,
-            true,
-            String.Empty,
-            "srp_endCameraRendering");
-
-        foreach (Action invalid in new Action[]
+        var fields = new HashSet<string>(typeof(UrpRendererInventoryReceipt).GetFields(
+            BindingFlags.Instance | BindingFlags.Public).Select(field => field.Name),
+            StringComparer.Ordinal);
+        foreach (string expected in new[]
         {
-            delegate { CapturePolicy.RequireExactTargetReadbackRoute(0, 0, -1, false, null, "vendor_afterRender_fallback"); },
-            delegate { CapturePolicy.RequireExactTargetReadbackRoute(0, -1, -1, true, null, "vendor_afterRender_fallback"); },
-            delegate { CapturePolicy.RequireExactTargetReadbackRoute(0, -1, -1, false, "failure", "vendor_afterRender_fallback"); },
-            delegate { CapturePolicy.RequireExactTargetReadbackRoute(0, -1, -1, false, null, "srp_endCameraRendering"); },
-            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, -1, -1, true, null, "srp_endCameraRendering"); },
-            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, 5, 4, true, null, "srp_endCameraRendering"); },
-            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, 5, 5, false, null, "srp_endCameraRendering"); },
-            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, 5, 5, true, "failure", "srp_endCameraRendering"); },
-            delegate { CapturePolicy.RequireExactTargetReadbackRoute(1, 5, 5, true, null, "vendor_afterRender_fallback"); }
+            "observationApi",
+            "observationFrame",
+            "observationRealtimeSeconds",
+            "publicGettersOnly",
+            "mutationApiInvoked",
+            "prohibitedMutationApis",
+            "currentRenderPipelineAssetPresent",
+            "currentRenderPipelineAssetTypeFullName",
+            "currentRenderPipelineAssetIsUniversal",
+            "rendererDataCount",
+            "rendererInstanceCount",
+            "rendererData",
+            "rendererInstances",
+            "snapFrameCaptureFeatureCount",
+            "activeSnapFrameCaptureFeatureCount",
+            "snapFrameStaticInstancePresent",
+            "snapFrameStaticInstanceId",
+            "snapFrameStaticInstanceTypeFullName",
+            "snapFrameStaticInstanceMatchedConfiguredFeatureCount",
+            "snapFrameStaticInstanceStableDuringSynchronousInventory",
+            "sceneCameraRendererIndexInferred",
+            "sceneCameraRendererIndex",
+            "sceneCameraRendererIndexProvenance",
+            "rendererObjectIdentityStableDuringSynchronousInventory",
+            "rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory",
+            "mutationObservedDuringSynchronousInventory"
         })
         {
-            ExpectThrows<InvalidOperationException>(invalid);
+            if (!fields.Contains(expected))
+            {
+                throw new InvalidOperationException(
+                    "URP renderer-inventory receipt field is missing: " + expected);
+            }
         }
+
+        UrpRendererInventoryReceipt valid = CreateValidUrpRendererInventory();
+        CapturePolicy.RequireReadOnlyUrpRendererInventory(valid);
+
+        UrpRendererInventoryReceipt missingSnapFrame = CreateValidUrpRendererInventory();
+        missingSnapFrame.rendererData[0].features.Clear();
+        missingSnapFrame.rendererData[0].featureCount = 0;
+        missingSnapFrame.rendererData[0].snapFrameCaptureFeatureCount = 0;
+        missingSnapFrame.snapFrameCaptureFeatureCount = 0;
+        missingSnapFrame.snapFrameStaticInstancePresent = false;
+        missingSnapFrame.snapFrameStaticInstanceId = 0;
+        missingSnapFrame.snapFrameStaticInstanceTypeFullName = null;
+        missingSnapFrame.snapFrameStaticInstanceMatchedConfiguredFeatureCount = 0;
+        CapturePolicy.RequireReadOnlyUrpRendererInventory(missingSnapFrame);
+
+        UrpRendererInventoryReceipt configuredWithoutSingleton =
+            CreateValidUrpRendererInventory();
+        configuredWithoutSingleton.rendererData[0].features[0]
+            .matchesSnapFrameStaticInstance = false;
+        configuredWithoutSingleton.snapFrameStaticInstancePresent = false;
+        configuredWithoutSingleton.snapFrameStaticInstanceId = 0;
+        configuredWithoutSingleton.snapFrameStaticInstanceTypeFullName = null;
+        configuredWithoutSingleton.snapFrameStaticInstanceMatchedConfiguredFeatureCount = 0;
+        CapturePolicy.RequireReadOnlyUrpRendererInventory(configuredWithoutSingleton);
+
+        UrpRendererInventoryReceipt singletonOutsideConfiguredList =
+            CreateValidUrpRendererInventory();
+        singletonOutsideConfiguredList.rendererData[0].features[0]
+            .matchesSnapFrameStaticInstance = false;
+        singletonOutsideConfiguredList.snapFrameStaticInstanceId = 99;
+        singletonOutsideConfiguredList.snapFrameStaticInstanceMatchedConfiguredFeatureCount = 0;
+        CapturePolicy.RequireReadOnlyUrpRendererInventory(singletonOutsideConfiguredList);
+
+        UrpRendererInventoryReceipt blankNames = CreateValidUrpRendererInventory();
+        blankNames.currentRenderPipelineAssetName = String.Empty;
+        blankNames.rendererData[0].name = String.Empty;
+        blankNames.rendererData[0].features[0].name = String.Empty;
+        CapturePolicy.RequireReadOnlyUrpRendererInventory(blankNames);
+
+        UrpRendererInventoryReceipt nullSlots = CreateValidUrpRendererInventory();
+        nullSlots.rendererData[0].present = false;
+        nullSlots.rendererData[0].name = null;
+        nullSlots.rendererData[0].typeFullName = null;
+        nullSlots.rendererData[0].instanceId = 0;
+        nullSlots.rendererData[0].features.Clear();
+        nullSlots.rendererData[0].featureCount = 0;
+        nullSlots.rendererData[0].snapFrameCaptureFeatureCount = 0;
+        nullSlots.rendererInstances[0].present = false;
+        nullSlots.rendererInstances[0].typeFullName = null;
+        nullSlots.rendererInstances[0].runtimeIdentityHashCode = 0;
+        nullSlots.snapFrameCaptureFeatureCount = 0;
+        nullSlots.snapFrameStaticInstancePresent = false;
+        nullSlots.snapFrameStaticInstanceId = 0;
+        nullSlots.snapFrameStaticInstanceTypeFullName = null;
+        nullSlots.snapFrameStaticInstanceMatchedConfiguredFeatureCount = 0;
+        nullSlots.sceneCameraRendererIndexInferred = false;
+        nullSlots.sceneCameraRendererIndex = -1;
+        nullSlots.sceneCameraRendererIndexProvenance =
+            "unavailable_without_a_public_side_effect_free_renderer_index_getter";
+        CapturePolicy.RequireReadOnlyUrpRendererInventory(nullSlots);
+
+        UrpRendererInventoryReceipt lazyRendererArray =
+            CreateValidUrpRendererInventory();
+        lazyRendererArray.rendererDataCount = 2;
+        lazyRendererArray.rendererInstanceCount = 1;
+        lazyRendererArray.rendererDataAndInstanceCountsMatch = false;
+        lazyRendererArray.rendererData.Add(new UrpRendererDataReceipt
+        {
+            rendererDataIndex = 1,
+            present = false,
+            features = new List<UrpRendererFeatureReceipt>()
+        });
+        lazyRendererArray.rendererInstances[0].present = false;
+        lazyRendererArray.rendererInstances[0].typeFullName = null;
+        lazyRendererArray.rendererInstances[0].runtimeIdentityHashCode = 0;
+        lazyRendererArray.rendererData[0].features[0]
+            .matchesSnapFrameStaticInstance = false;
+        lazyRendererArray.snapFrameStaticInstancePresent = false;
+        lazyRendererArray.snapFrameStaticInstanceId = 0;
+        lazyRendererArray.snapFrameStaticInstanceTypeFullName = null;
+        lazyRendererArray.snapFrameStaticInstanceMatchedConfiguredFeatureCount = 0;
+        lazyRendererArray.sceneCameraRendererIndexInferred = false;
+        lazyRendererArray.sceneCameraRendererIndex = -1;
+        lazyRendererArray.sceneCameraRendererIndexProvenance =
+            "unavailable_without_a_public_side_effect_free_renderer_index_getter";
+        CapturePolicy.RequireReadOnlyUrpRendererInventory(lazyRendererArray);
+
+        UrpRendererInventoryReceipt nonPublic = CreateValidUrpRendererInventory();
+        nonPublic.publicGettersOnly = false;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(nonPublic);
+        });
+        UrpRendererInventoryReceipt mutated = CreateValidUrpRendererInventory();
+        mutated.mutationApiInvoked = true;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(mutated);
+        });
+        UrpRendererInventoryReceipt unstable = CreateValidUrpRendererInventory();
+        unstable.rendererObjectIdentityStableDuringSynchronousInventory = false;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(unstable);
+        });
+        UrpRendererInventoryReceipt featureDrift = CreateValidUrpRendererInventory();
+        featureDrift.rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory = false;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(featureDrift);
+        });
+        UrpRendererInventoryReceipt observedMutation = CreateValidUrpRendererInventory();
+        observedMutation.mutationObservedDuringSynchronousInventory = true;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(observedMutation);
+        });
+        UrpRendererInventoryReceipt countMismatch = CreateValidUrpRendererInventory();
+        countMismatch.snapFrameCaptureFeatureCount = 0;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(countMismatch);
+        });
+        UrpRendererInventoryReceipt forgedSingletonMatch =
+            CreateValidUrpRendererInventory();
+        forgedSingletonMatch.snapFrameStaticInstanceId = 99;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(forgedSingletonMatch);
+        });
+        UrpRendererInventoryReceipt suppressedSingletonMatch =
+            CreateValidUrpRendererInventory();
+        suppressedSingletonMatch.rendererData[0].features[0]
+            .matchesSnapFrameStaticInstance = false;
+        suppressedSingletonMatch.snapFrameStaticInstanceMatchedConfiguredFeatureCount = 0;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(
+                suppressedSingletonMatch);
+        });
+        UrpRendererInventoryReceipt forgedTypeFlag = CreateValidUrpRendererInventory();
+        forgedTypeFlag.rendererData[0].features[0].snapFrameCaptureFeatureType = false;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(forgedTypeFlag);
+        });
+        UrpRendererInventoryReceipt duplicateIndex = CreateValidUrpRendererInventory();
+        duplicateIndex.rendererData[0].rendererDataIndex = 1;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(duplicateIndex);
+        });
+        UrpRendererInventoryReceipt prohibitedApiDrift = CreateValidUrpRendererInventory();
+        prohibitedApiDrift.prohibitedMutationApis[0] =
+            "UniversalRenderPipelineAsset.scriptableRenderer";
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(prohibitedApiDrift);
+        });
+        UrpRendererInventoryReceipt falseCountEquality =
+            CreateValidUrpRendererInventory();
+        falseCountEquality.rendererInstanceCount = 0;
+        falseCountEquality.rendererInstances.Clear();
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(falseCountEquality);
+        });
+        UrpRendererInventoryReceipt unresolvedSoleRenderer = CreateValidUrpRendererInventory();
+        unresolvedSoleRenderer.sceneCameraRendererIndexInferred = false;
+        unresolvedSoleRenderer.sceneCameraRendererIndex = -1;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(unresolvedSoleRenderer);
+        });
+        UrpRendererInventoryReceipt forgedInferredProvenance =
+            CreateValidUrpRendererInventory();
+        forgedInferredProvenance.sceneCameraRendererIndexProvenance =
+            "observed_camera_binding";
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(
+                forgedInferredProvenance);
+        });
+        UrpRendererInventoryReceipt forgedUnresolvedProvenance =
+            CreateValidUrpRendererInventory();
+        forgedUnresolvedProvenance.rendererDataCount = 2;
+        forgedUnresolvedProvenance.rendererDataAndInstanceCountsMatch = false;
+        forgedUnresolvedProvenance.rendererData.Add(new UrpRendererDataReceipt
+        {
+            rendererDataIndex = 1,
+            present = false,
+            features = new List<UrpRendererFeatureReceipt>()
+        });
+        forgedUnresolvedProvenance.sceneCameraRendererIndexInferred = false;
+        forgedUnresolvedProvenance.sceneCameraRendererIndex = -1;
+        forgedUnresolvedProvenance.sceneCameraRendererIndexProvenance =
+            "sole_renderer_data_and_instance_entry";
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(
+                forgedUnresolvedProvenance);
+        });
+        UrpRendererInventoryReceipt negativeFrame = CreateValidUrpRendererInventory();
+        negativeFrame.observationFrame = -1;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(negativeFrame);
+        });
+        UrpRendererInventoryReceipt nonFiniteRealtime =
+            CreateValidUrpRendererInventory();
+        nonFiniteRealtime.observationRealtimeSeconds = Double.NaN;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(nonFiniteRealtime);
+        });
+        UrpRendererInventoryReceipt infiniteRealtime =
+            CreateValidUrpRendererInventory();
+        infiniteRealtime.observationRealtimeSeconds = Double.PositiveInfinity;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(infiniteRealtime);
+        });
+        UrpRendererInventoryReceipt negativeRealtime =
+            CreateValidUrpRendererInventory();
+        negativeRealtime.observationRealtimeSeconds = -0.01;
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireReadOnlyUrpRendererInventory(negativeRealtime);
+        });
+    }
+
+    private static UrpRendererInventoryReceipt CreateValidUrpRendererInventory()
+    {
+        return new UrpRendererInventoryReceipt
+        {
+            observationApi =
+                "GraphicsSettings.currentRenderPipeline + UniversalRenderPipelineAsset.rendererDataList/renderers + ScriptableRendererData.rendererFeatures",
+            publicGettersOnly = true,
+            mutationApiInvoked = false,
+            prohibitedMutationApis = new[]
+            {
+                "UniversalRenderPipelineAsset.GetRenderer",
+                "UniversalRenderPipelineAsset.scriptableRenderer",
+                "UniversalAdditionalCameraData.scriptableRenderer",
+                "UniversalAdditionalCameraData.SetRenderer",
+                "ScriptableRendererData.SetDirty",
+                "ScriptableRendererFeature.SetActive"
+            },
+            currentRenderPipelineAssetPresent = true,
+            currentRenderPipelineAssetName = "URP asset",
+            currentRenderPipelineAssetTypeFullName =
+                "UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset",
+            currentRenderPipelineAssetInstanceId = 10,
+            currentRenderPipelineAssetIsUniversal = true,
+            universalAdditionalCameraDataPresent = true,
+            rendererDataCount = 1,
+            rendererInstanceCount = 1,
+            rendererDataAndInstanceCountsMatch = true,
+            rendererData = new List<UrpRendererDataReceipt>
+            {
+                new UrpRendererDataReceipt
+                {
+                    rendererDataIndex = 0,
+                    present = true,
+                    name = "UniversalRendererData",
+                    typeFullName =
+                        "UnityEngine.Rendering.Universal.UniversalRendererData",
+                    instanceId = 11,
+                    useNativeRenderPass = false,
+                    featureCount = 1,
+                    snapFrameCaptureFeatureCount = 1,
+                    features = new List<UrpRendererFeatureReceipt>
+                    {
+                        new UrpRendererFeatureReceipt
+                        {
+                            featureIndex = 0,
+                            present = true,
+                            name = "SnapFrameCaptureFeature",
+                            typeFullName = CapturePolicy.SnapFrameFeatureTypeFullName,
+                            instanceId = 12,
+                            active = false,
+                            snapFrameCaptureFeatureType = true,
+                            matchesSnapFrameStaticInstance = true
+                        }
+                    }
+                }
+            },
+            rendererInstances = new List<UrpRendererInstanceReceipt>
+            {
+                new UrpRendererInstanceReceipt
+                {
+                    rendererIndex = 0,
+                    present = true,
+                    typeFullName =
+                        "UnityEngine.Rendering.Universal.UniversalRenderer",
+                    runtimeIdentityHashCode = 13
+                }
+            },
+            snapFrameCaptureFeatureCount = 1,
+            activeSnapFrameCaptureFeatureCount = 0,
+            snapFrameStaticInstancePresent = true,
+            snapFrameStaticInstanceId = 12,
+            snapFrameStaticInstanceTypeFullName =
+                CapturePolicy.SnapFrameFeatureTypeFullName,
+            snapFrameStaticInstanceMatchedConfiguredFeatureCount = 1,
+            snapFrameStaticInstanceStableDuringSynchronousInventory = true,
+            sceneCameraRendererIndexInferred = true,
+            sceneCameraRendererIndex = 0,
+            sceneCameraRendererIndexProvenance =
+                "sole_renderer_data_and_instance_entry",
+            rendererObjectIdentityStableDuringSynchronousInventory = true,
+            rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory = true,
+            mutationObservedDuringSynchronousInventory = false
+        };
+    }
+
+    private static void TestSnapFrameCaptureRoutePolicy()
+    {
+        AssertEqual(
+            0.05,
+            CapturePolicy.SnapFrameSentinelTranslationMetres,
+            "SnapFrame sentinel translation metres");
+        SnapFrameSurfaceReceipt valid = CreateValidSnapFrameSurfaceReceipt();
+        CapturePolicy.RequireSnapFrameCaptureRoute(valid, CapturePolicy.SnapFramePixelSource);
+
+        SnapFrameSurfaceReceipt nonNullActive = CreateValidSnapFrameSurfaceReceipt();
+        nonNullActive.readback.renderTextureActiveWasNullBeforeReadback = false;
+        nonNullActive.readback.renderTextureActiveBeforeReadbackInstanceId = 701;
+        nonNullActive.readback.renderTextureActiveWasNullAfterReadback = false;
+        nonNullActive.readback.renderTextureActiveAfterReadbackInstanceId = 701;
+        CapturePolicy.RequireSnapFrameCaptureRoute(
+            nonNullActive,
+            CapturePolicy.SnapFramePixelSource);
+
+        SnapFrameSurfaceReceipt reverifiedRaster = CreateValidSnapFrameSurfaceReceipt();
+        reverifiedRaster.sentinelRaster.nonDegenerateVerified = false;
+        CapturePolicy.RequireSnapFrameCaptureRoute(
+            reverifiedRaster,
+            CapturePolicy.SnapFramePixelSource);
+        AssertEqual(
+            true,
+            reverifiedRaster.sentinelRaster.nonDegenerateVerified,
+            "SnapFrame sentinel raster re-verification");
+
+        SnapFrameSurfaceReceipt boundSurface = CreateValidSnapFrameSurfaceReceipt();
+        RasterStatisticsReceipt boundRaster = boundSurface.sentinelRaster;
+        boundRaster.rgb24Sha256 = boundSurface.exactFrameRgb24Sha256;
+        CapturePolicy.RequireSnapFrameExactRasterBinding(boundSurface, boundRaster);
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            SnapFrameSurfaceReceipt mismatchedSurface = CreateValidSnapFrameSurfaceReceipt();
+            CapturePolicy.RequireSnapFrameExactRasterBinding(
+                mismatchedSurface,
+                mismatchedSurface.sentinelRaster);
+        });
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireSnapFrameExactRasterBinding(null, boundRaster);
+        });
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireSnapFrameExactRasterBinding(boundSurface, null);
+        });
+        ExpectThrows<InvalidDataException>(delegate
+        {
+            SnapFrameSurfaceReceipt degenerateSentinel = CreateValidSnapFrameSurfaceReceipt();
+            degenerateSentinel.sentinelRaster.luminanceStandardDeviation = 0.0;
+            CapturePolicy.RequireSnapFrameCaptureRoute(
+                degenerateSentinel,
+                CapturePolicy.SnapFramePixelSource);
+        });
+        ExpectThrows<InvalidDataException>(delegate
+        {
+            SnapFrameSurfaceReceipt nonFiniteSentinel = CreateValidSnapFrameSurfaceReceipt();
+            nonFiniteSentinel.sentinelRaster.nonBlackPixelFraction = Double.NaN;
+            CapturePolicy.RequireSnapFrameCaptureRoute(
+                nonFiniteSentinel,
+                CapturePolicy.SnapFramePixelSource);
+        });
+
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireSnapFrameCaptureRoute(null, CapturePolicy.SnapFramePixelSource);
+        });
+        int invalidationIndex = 0;
+        foreach (Action<SnapFrameSurfaceReceipt> invalidate in new Action<SnapFrameSurfaceReceipt>[]
+        {
+            surface => surface.featurePresent = false,
+            surface => surface.featureTypeFullName = "LCCCore.OtherFeature",
+            surface => surface.featureInstanceId = 0,
+            surface => surface.featureStaticInstanceMatched = false,
+            surface => surface.featureBaseActiveBefore = false,
+            surface => surface.featureBaseActiveAfter = false,
+            surface => surface.sceneCameraLive = false,
+            surface => surface.sceneCameraInstanceId = 0,
+            surface => surface.featureTargetCameraLiveBefore = false,
+            surface => surface.featureTargetCameraInstanceIdBefore += 1,
+            surface => surface.featureTargetCameraLiveAtReadback = false,
+            surface => surface.featureTargetCameraInstanceIdAtReadback += 1,
+            surface => surface.featureTargetCameraLiveAfter = false,
+            surface => surface.featureTargetCameraInstanceIdAfter += 1,
+            surface => surface.featureTargetUnchanged = false,
+            surface => surface.sceneCameraTargetTextureNullBefore = false,
+            surface => surface.sceneCameraTargetTextureNullAfterDirtyRequest = false,
+            surface => surface.sceneCameraTargetTextureNullBeforeReadback = false,
+            surface => surface.sceneCameraTargetTextureNullAfter = false,
+            surface => surface.captureViewAbsentBefore = false,
+            surface => surface.captureViewAbsentAfterDirtyRequest = false,
+            surface => surface.captureViewAbsentBeforeReadback = false,
+            surface => surface.captureViewAbsentAfter = false,
+            surface => surface.knownActiveCaptureOverlayCount = 1,
+            surface => surface.knownActiveCaptureOverlayNames = new[] { "CaptureView" },
+            surface => surface.knownActiveCaptureOverlayNames = null,
+            surface => surface.activeCanvases = null,
+            surface => surface.activeCanvases.Add(new SnapFrameCanvasReceipt
+            {
+                canRenderThroughSceneCamera = true
+            }),
+            surface => surface.unsafeRenderThroughCanvasObserved = true,
+            surface => surface.cleanViewStateVerifiedAtEveryCheckpoint = false,
+            surface => surface.graphicsDeviceType = null,
+            surface => surface.activeColorSpace = null,
+            surface => surface.readPixelsCoordinateOrigin = "upper_left",
+            surface => surface.cpuRowTransform = "vertical_flip",
+            surface => surface.sceneCameraPixelWidth -= 1,
+            surface => surface.sceneCameraPixelHeight -= 1,
+            surface => surface.screenWidth -= 1,
+            surface => surface.screenHeight -= 1,
+            surface => surface.sceneCameraCullingMaskAfter ^= 1,
+            surface => surface.sceneCameraTargetDisplayAfter += 1,
+            surface => surface.cameraConfigurationUnchanged = false,
+            surface => surface.sceneCameraRect[2] = 0.5f,
+            surface => surface.sceneCameraRect[0] = Single.NaN,
+            surface => surface.sceneCameraRectAfter[3] = 0.5f,
+            surface => surface.sceneCameraPixelRect[2] -= 1.0f,
+            surface => surface.sceneCameraPixelRectAfter[3] -= 1.0f,
+            surface => surface.universalAdditionalCameraDataPresent = false,
+            surface => surface.universalCameraRenderType = "Overlay",
+            surface => surface.universalCameraStackCount = 1,
+            surface => surface.frameSurfaceProvenance = "final_framebuffer",
+            surface => surface.frameRenderTextureBefore = null,
+            surface => surface.frameRenderTextureAfterDirtyRequest = null,
+            surface => surface.frameRenderTextureBeforeReadback = null,
+            surface => surface.frameRenderTextureAfter = null,
+            surface => surface.frameRenderTextureBefore.observationFrame = -1,
+            surface => surface.frameRenderTextureBefore.instanceId = 0,
+            surface => surface.frameRenderTextureBefore.isLive = false,
+            surface => surface.frameRenderTextureBefore.isCreated = false,
+            surface => surface.frameRenderTextureBefore.width -= 1,
+            surface => surface.frameRenderTextureBefore.height -= 1,
+            surface => surface.frameRenderTextureBefore.depth = 1,
+            surface => surface.frameRenderTextureBefore.antiAliasing = 2,
+            surface => surface.frameRenderTextureBefore.colorFormat = "DefaultHDR",
+            surface => surface.frameRenderTextureBefore.graphicsFormat = null,
+            surface => surface.frameRenderTextureBefore.useMipMap = true,
+            surface => surface.frameRenderTextureBefore.autoGenerateMips = true,
+            surface => surface.frameRenderTextureAfterDirtyRequest.instanceId += 1,
+            surface => surface.frameRenderTextureBeforeReadback.instanceId += 1,
+            surface => surface.frameRenderTextureAfter.instanceId += 1,
+            surface => surface.frameRenderTextureAfterDirtyRequest.graphicsFormat = "B8G8R8A8_UNorm",
+            surface => surface.frameRenderTextureAfter.graphicsFormat = "B8G8R8A8_UNorm",
+            surface => surface.frameRenderTextureBeforeReadback.sRgb = true,
+            surface => surface.frameRenderTextureAfter.sRgb = true,
+            surface => surface.frameRenderTextureBefore.observationFrame = 99,
+            surface => surface.frameRenderTextureAfterDirtyRequest.observationFrame = 99,
+            surface => surface.frameRenderTextureBeforeReadback.observationFrame = 100,
+            surface => surface.frameRenderTextureAfter.observationFrame = 101,
+            surface => surface.dirtyBeforeRequest = null,
+            surface => surface.dirtyAfterRequest = null,
+            surface => surface.dirtyBeforeReadback = null,
+            surface => surface.dirtyAfterCompletion = null,
+            surface => surface.dirtyBeforeRequest.observationFrame = -1,
+            surface => surface.dirtyBeforeRequest.dirty = true,
+            surface => surface.dirtyAfterRequest.dirty = false,
+            surface => surface.dirtyBeforeReadback.dirty = false,
+            surface => surface.dirtyAfterCompletion.dirty = true,
+            surface => surface.dirtyAfterRequest.observationFrame = 100,
+            surface => surface.dirtyBeforeReadback.observationFrame = 101,
+            surface => surface.dirtyAfterCompletion.observationFrame = 102,
+            surface => surface.sentinelPoseReached = false,
+            surface => surface.exactPositionAfter[0] += 0.1,
+            surface => surface.exactPositionAfter[0] = Double.NaN,
+            surface => surface.exactRotationXyzwAfter[0] += 0.1,
+            surface => surface.exactWorldToCameraMatrixColumnMajorAfter[0] += 0.1,
+            surface => surface.exactProjectionMatrixColumnMajorAfter[0] += 0.1,
+            surface => surface.sentinelPosition = (double[])surface.exactPositionBefore.Clone(),
+            surface => surface.sentinelPosition[0] =
+                surface.exactPositionBefore[0] + 0.06,
+            surface => surface.sentinelRotationXyzw[0] += 0.1,
+            surface => surface.sentinelWorldToCameraMatrixColumnMajor[0] += 0.1,
+            surface => surface.exactRestoreVerified = false,
+            surface => surface.cameraCallbackSubscriptionRemoved = false,
+            surface => surface.beginCameraRenderingCallbackCount = 3,
+            surface => surface.endCameraRenderingCallbackCount = 3,
+            surface => surface.callbackHistoryOverflowed = true,
+            surface => surface.everyCameraCallbackMatchedStagePose = false,
+            surface => surface.baselineExactEndCallbackVerified = false,
+            surface => surface.sentinelEndCallbackVerified = false,
+            surface => surface.restoredExactEndCallbackVerified = false,
+            surface => surface.stableExactEndCallbackVerified = false,
+            surface => surface.cameraCallbacks = null,
+            surface => surface.cameraCallbacks[0].sequence = 9,
+            surface =>
+            {
+                surface.cameraCallbacks[0].callback = "end";
+                surface.cameraCallbacks[1].callback = "begin";
+            },
+            surface => surface.cameraCallbacks[0].callback = "other",
+            surface => surface.cameraCallbacks[0].stage = "other",
+            surface => surface.cameraCallbacks[0].realtimeSeconds = Double.NaN,
+            surface => surface.cameraCallbacks[0].cameraMatchesExactSceneCamera = false,
+            surface => surface.cameraCallbacks[0].targetTextureNull = false,
+            surface => surface.cameraCallbacks[0].poseMatchesStage = false,
+            surface => surface.cameraCallbacks[0].projectionMatchesExactProfile = false,
+            surface => surface.cameraCallbacks[0].position[0] = Double.NaN,
+            surface => surface.cameraCallbacks[0].frameRenderTextureInstanceId += 1,
+            surface => surface.sentinelReadback = null,
+            surface => surface.sentinelReadback.firstPartyTextureDistinctFromVendorFrameRenderTexture = false,
+            surface => surface.sentinelReadback.vendorFrameRenderTextureDestroyRequested = true,
+            surface => surface.sentinelRaster = null,
+            surface => surface.exactFrameRgb24Sha256 = null,
+            surface => surface.sentinelAndExactRgbDiffer = false,
+            surface => surface.exactFrameRgb24Sha256 = surface.sentinelRaster.rgb24Sha256,
+            surface => surface.readback = null,
+            surface => surface.readback.renderTextureActiveBeforeReadbackInstanceId = 1,
+            surface =>
+            {
+                surface.readback.renderTextureActiveWasNullBeforeReadback = false;
+                surface.readback.renderTextureActiveBeforeReadbackInstanceId = 0;
+                surface.readback.renderTextureActiveWasNullAfterReadback = false;
+            },
+            surface => surface.readback.renderTextureActiveBoundForReadbackInstanceId += 1,
+            surface => surface.readback.activeFrameRenderTextureVerifiedBeforeReadPixels = false,
+            surface => surface.readback.firstPartyReadPixelsCompleted = false,
+            surface => surface.readback.firstPartyApplyCompleted = false,
+            surface => surface.readback.renderTextureActiveWasNullAfterReadback = false,
+            surface => surface.readback.renderTextureActiveAfterReadbackInstanceId = 1,
+            surface => surface.readback.renderTextureActiveRestored = false,
+            surface => surface.readback.firstPartyTextureInstanceId = 0,
+            surface => surface.readback.firstPartyTextureFormat = "RGBA32",
+            surface => surface.readback.firstPartyTextureReadable = false,
+            surface => surface.readback.firstPartyTextureNoMipChain = false,
+            surface => surface.readback.firstPartyTextureDistinctFromVendorFrameRenderTexture = false,
+            surface => surface.readback.vendorFrameRenderTextureDestroyRequested = true
+        })
+        {
+            invalidationIndex += 1;
+            SnapFrameSurfaceReceipt invalid = CreateValidSnapFrameSurfaceReceipt();
+            invalidate(invalid);
+            ExpectThrows<InvalidOperationException>(delegate
+            {
+                CapturePolicy.RequireSnapFrameCaptureRoute(
+                    invalid,
+                    CapturePolicy.SnapFramePixelSource);
+            }, "SnapFrame adversarial mutation #" +
+                invalidationIndex.ToString(CultureInfo.InvariantCulture));
+        }
+        foreach (string invalidPixelSource in new[]
+        {
+            null,
+            String.Empty,
+            "first_party_exact_vendor_render_target",
+            "FIRST_PARTY_LCC_SNAP_FRAME_RENDER_TARGET"
+        })
+        {
+            ExpectThrows<InvalidOperationException>(delegate
+            {
+                CapturePolicy.RequireSnapFrameCaptureRoute(
+                    CreateValidSnapFrameSurfaceReceipt(),
+                    invalidPixelSource);
+            });
+        }
+
+        var attemptFields = new HashSet<string>(typeof(CaptureAttemptReceipt).GetFields(
+            BindingFlags.Instance | BindingFlags.Public).Select(field => field.Name),
+            StringComparer.Ordinal);
+        if (!attemptFields.Contains("snapFrameSurface"))
+        {
+            throw new InvalidOperationException(
+                "Capture-attempt SnapFrame surface receipt field is missing.");
+        }
+    }
+
+    private static SnapFrameSurfaceReceipt CreateValidSnapFrameSurfaceReceipt()
+    {
+        const int featureInstanceId = -101;
+        const int sceneCameraInstanceId = -202;
+        const int frameRenderTextureInstanceId = -303;
+        return new SnapFrameSurfaceReceipt
+        {
+            featurePresent = true,
+            featureTypeFullName = CapturePolicy.SnapFrameFeatureTypeFullName,
+            featureInstanceId = featureInstanceId,
+            featureStaticInstanceMatched = true,
+            featureBaseActiveBefore = true,
+            featureBaseActiveAfter = true,
+            sceneCameraLive = true,
+            sceneCameraInstanceId = sceneCameraInstanceId,
+            featureTargetCameraLiveBefore = true,
+            featureTargetCameraInstanceIdBefore = sceneCameraInstanceId,
+            featureTargetCameraLiveAtReadback = true,
+            featureTargetCameraInstanceIdAtReadback = sceneCameraInstanceId,
+            featureTargetCameraLiveAfter = true,
+            featureTargetCameraInstanceIdAfter = sceneCameraInstanceId,
+            featureTargetUnchanged = true,
+            sceneCameraTargetTextureNullBefore = true,
+            sceneCameraTargetTextureNullAfterDirtyRequest = true,
+            sceneCameraTargetTextureNullBeforeReadback = true,
+            sceneCameraTargetTextureNullAfter = true,
+            captureViewAbsentBefore = true,
+            captureViewAbsentAfterDirtyRequest = true,
+            captureViewAbsentBeforeReadback = true,
+            captureViewAbsentAfter = true,
+            knownActiveCaptureOverlayCount = 0,
+            knownActiveCaptureOverlayNames = new string[0],
+            activeCanvases = new List<SnapFrameCanvasReceipt>(),
+            unsafeRenderThroughCanvasObserved = false,
+            graphicsDeviceType = "Direct3D12",
+            graphicsUvStartsAtTop = true,
+            activeColorSpace = "Linear",
+            readPixelsCoordinateOrigin = CapturePolicy.SnapFrameReadPixelsCoordinateOrigin,
+            cpuRowTransform = CapturePolicy.SnapFrameCpuRowTransform,
+            sceneCameraPixelWidth = CapturePolicy.CaptureWidth,
+            sceneCameraPixelHeight = CapturePolicy.CaptureHeight,
+            screenWidth = CapturePolicy.CaptureWidth,
+            screenHeight = CapturePolicy.CaptureHeight,
+            sceneCameraCullingMask = -1,
+            sceneCameraCullingMaskAfter = -1,
+            sceneCameraTargetDisplay = 0,
+            sceneCameraTargetDisplayAfter = 0,
+            sceneCameraRect = new[] { 0.0f, 0.0f, 1.0f, 1.0f },
+            sceneCameraRectAfter = new[] { 0.0f, 0.0f, 1.0f, 1.0f },
+            sceneCameraPixelRect = new[]
+            {
+                0.0f,
+                0.0f,
+                (float)CapturePolicy.CaptureWidth,
+                (float)CapturePolicy.CaptureHeight
+            },
+            sceneCameraPixelRectAfter = new[]
+            {
+                0.0f,
+                0.0f,
+                (float)CapturePolicy.CaptureWidth,
+                (float)CapturePolicy.CaptureHeight
+            },
+            cameraConfigurationUnchanged = true,
+            cleanViewStateVerifiedAtEveryCheckpoint = true,
+            universalAdditionalCameraDataPresent = true,
+            universalCameraRenderType = "Base",
+            universalCameraStackCount = 0,
+            universalRenderPostProcessing = false,
+            frameSurfaceProvenance = CapturePolicy.SnapFrameSurfaceProvenance,
+            frameRenderTextureBefore = CreateValidSnapFrameObservation(
+                100,
+                frameRenderTextureInstanceId),
+            frameRenderTextureAfterDirtyRequest = CreateValidSnapFrameObservation(
+                101,
+                frameRenderTextureInstanceId),
+            frameRenderTextureBeforeReadback = CreateValidSnapFrameObservation(
+                102,
+                frameRenderTextureInstanceId),
+            frameRenderTextureAfter = CreateValidSnapFrameObservation(
+                103,
+                frameRenderTextureInstanceId),
+            dirtyBeforeRequest = new SnapFrameDirtyObservationReceipt
+            {
+                observationFrame = 100,
+                dirty = false
+            },
+            dirtyAfterRequest = new SnapFrameDirtyObservationReceipt
+            {
+                observationFrame = 101,
+                dirty = true
+            },
+            dirtyBeforeReadback = new SnapFrameDirtyObservationReceipt
+            {
+                observationFrame = 102,
+                dirty = true
+            },
+            dirtyAfterCompletion = new SnapFrameDirtyObservationReceipt
+            {
+                observationFrame = 103,
+                dirty = false
+            },
+            exactPositionBefore = new[] { 1.0, 2.0, 3.0 },
+            exactRotationXyzwBefore = new[] { 0.0, 0.0, 0.0, 1.0 },
+            exactWorldToCameraMatrixColumnMajorBefore = IdentityMatrix(),
+            exactProjectionMatrixColumnMajorBefore = IdentityMatrix(),
+            sentinelPosition = new[] { 1.05, 2.0, 3.0 },
+            sentinelRotationXyzw = new[] { 0.0, 0.0, 0.0, 1.0 },
+            sentinelWorldToCameraMatrixColumnMajor = IdentityMatrix(),
+            exactPositionAfter = new[] { 1.0, 2.0, 3.0 },
+            exactRotationXyzwAfter = new[] { 0.0, 0.0, 0.0, 1.0 },
+            exactWorldToCameraMatrixColumnMajorAfter = IdentityMatrix(),
+            exactProjectionMatrixColumnMajorAfter = IdentityMatrix(),
+            sentinelPoseReached = true,
+            sentinelReadback = CreateValidSnapFrameReadback(
+                frameRenderTextureInstanceId,
+                -405),
+            sentinelRaster = new RasterStatisticsReceipt
+            {
+                pixelCount = (long)CapturePolicy.CaptureWidth * CapturePolicy.CaptureHeight,
+                nonBlackPixelCount = 1000000,
+                nonBlackPixelFraction = 1000000.0 /
+                    (CapturePolicy.CaptureWidth * CapturePolicy.CaptureHeight),
+                minimumRed = 0,
+                maximumRed = 255,
+                minimumGreen = 0,
+                maximumGreen = 255,
+                minimumBlue = 0,
+                maximumBlue = 255,
+                maximumChannelDynamicRange = 255,
+                distinctRgbLowerBound = 1024,
+                distinctRgbCountCapped = false,
+                meanLuminance = 100.0,
+                luminanceStandardDeviation = 20.0,
+                rgb24Sha256 = new string('A', 64),
+                nonDegenerateVerified = true
+            },
+            exactFrameRgb24Sha256 = new string('B', 64),
+            sentinelAndExactRgbDiffer = true,
+            exactRestoreVerified = true,
+            cameraCallbackSubscriptionRemoved = true,
+            beginCameraRenderingCallbackCount = 4,
+            endCameraRenderingCallbackCount = 4,
+            callbackHistoryOverflowed = false,
+            everyCameraCallbackMatchedStagePose = true,
+            baselineExactEndCallbackVerified = true,
+            sentinelEndCallbackVerified = true,
+            restoredExactEndCallbackVerified = true,
+            stableExactEndCallbackVerified = true,
+            cameraCallbacks = CreateValidSnapFrameCallbacks(
+                sceneCameraInstanceId,
+                frameRenderTextureInstanceId),
+            readback = CreateValidSnapFrameReadback(
+                frameRenderTextureInstanceId,
+                -404)
+        };
+    }
+
+    private static SnapFrameRenderTextureObservationReceipt CreateValidSnapFrameObservation(
+        int frame,
+        int instanceId)
+    {
+        return new SnapFrameRenderTextureObservationReceipt
+        {
+            observationFrame = frame,
+            instanceId = instanceId,
+            isLive = true,
+            isCreated = true,
+            width = CapturePolicy.CaptureWidth,
+            height = CapturePolicy.CaptureHeight,
+            depth = 0,
+            antiAliasing = 1,
+            colorFormat = "ARGB32",
+            graphicsFormat = "R8G8B8A8_UNorm",
+            sRgb = false,
+            useMipMap = false,
+            autoGenerateMips = false
+        };
+    }
+
+    private static SnapFrameReadbackReceipt CreateValidSnapFrameReadback(
+        int frameRenderTextureInstanceId,
+        int textureInstanceId)
+    {
+        return new SnapFrameReadbackReceipt
+        {
+            renderTextureActiveWasNullBeforeReadback = true,
+            renderTextureActiveBeforeReadbackInstanceId = 0,
+            renderTextureActiveBoundForReadbackInstanceId = frameRenderTextureInstanceId,
+            activeFrameRenderTextureVerifiedBeforeReadPixels = true,
+            firstPartyReadPixelsCompleted = true,
+            firstPartyApplyCompleted = true,
+            renderTextureActiveWasNullAfterReadback = true,
+            renderTextureActiveAfterReadbackInstanceId = 0,
+            renderTextureActiveRestored = true,
+            firstPartyTextureInstanceId = textureInstanceId,
+            firstPartyTextureFormat = "RGB24",
+            firstPartyTextureReadable = true,
+            firstPartyTextureNoMipChain = true,
+            firstPartyTextureDistinctFromVendorFrameRenderTexture = true,
+            vendorFrameRenderTextureDestroyRequested = false
+        };
+    }
+
+    private static List<SnapFrameCameraCallbackReceipt> CreateValidSnapFrameCallbacks(
+        int sceneCameraInstanceId,
+        int frameRenderTextureInstanceId)
+    {
+        var result = new List<SnapFrameCameraCallbackReceipt>();
+        string[] stages =
+        {
+            "baseline_exact",
+            "sentinel_discard",
+            "restored_exact",
+            "stable_exact"
+        };
+        bool[] dirty = { false, true, true, false };
+        for (int index = 0; index < stages.Length; index += 1)
+        {
+            foreach (string callback in new[] { "begin", "end" })
+            {
+                result.Add(new SnapFrameCameraCallbackReceipt
+                {
+                    sequence = result.Count + 1,
+                    callback = callback,
+                    stage = stages[index],
+                    frame = 100 + index,
+                    realtimeSeconds = 1.0 + index,
+                    cameraMatchesExactSceneCamera = sceneCameraInstanceId != 0,
+                    targetTextureNull = true,
+                    poseMatchesStage = true,
+                    projectionMatchesExactProfile = true,
+                    frameDirty = dirty[index],
+                    frameRenderTextureInstanceId = frameRenderTextureInstanceId,
+                    position = index == 1
+                        ? new[] { 1.05, 2.0, 3.0 }
+                        : new[] { 1.0, 2.0, 3.0 },
+                    rotationXyzw = new[] { 0.0, 0.0, 0.0, 1.0 },
+                    worldToCameraMatrixColumnMajor = IdentityMatrix(),
+                    projectionMatrixColumnMajor = IdentityMatrix()
+                });
+            }
+        }
+        return result;
+    }
+
+    private static double[] IdentityMatrix()
+    {
+        return new[]
+        {
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        };
     }
 
     private static void TestSandboxAndReadinessPolicy()
@@ -326,6 +1169,14 @@ internal static class CapturePolicyTests
             CapturePolicy.RequireApproximatelyEqual(
                 "wrong position",
                 new Vec3d(position.X + 0.1, position.Y, position.Z),
+                profile.ExpectedNativePosition(),
+                profile.Frames.Native.AssertionTolerance);
+        });
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireApproximatelyEqual(
+                "non-finite position",
+                new Vec3d(Double.NaN, position.Y, position.Z),
                 profile.ExpectedNativePosition(),
                 profile.Frames.Native.AssertionTolerance);
         });
@@ -482,54 +1333,22 @@ internal static class CapturePolicyTests
         {
             "status",
             "elapsedSeconds",
-            "beforeRenderCallbackInvoked",
-            "afterRenderCallbackInvoked",
-            "beforeRenderFrame",
-            "afterRenderFrame",
-            "beforeRenderRealtimeSeconds",
-            "afterRenderRealtimeSeconds",
-            "renderProbeSubscriptionRemoved",
             "srpEndCameraRenderingCallbackCount",
             "firstSrpEndCameraRenderingFrame",
             "lastSrpEndCameraRenderingFrame",
             "standardCameraRenderCallbackProofAvailable",
-            "renderTargetAssignedBeforeCapture",
-            "renderTargetInstanceId",
-            "renderTargetWidth",
-            "renderTargetHeight",
-            "renderTargetIsCreated",
-            "renderTargetAntiAliasing",
-            "renderTargetColorFormat",
-            "renderTargetGraphicsFormat",
-            "renderTargetSrgb",
-            "renderTargetUseMipMap",
-            "renderTargetDriftObserved",
-            "renderTextureActiveWasNullBeforeReadback",
-            "renderTextureActiveBeforeReadbackInstanceId",
-            "activeExactTargetVerifiedBeforeReadPixels",
-            "renderTextureActiveRestored",
             "firstPartyReadPixelsCompleted",
             "firstPartyApplyCompleted",
             "firstPartyTextureInstanceId",
             "firstPartyTextureFormat",
             "firstPartyTextureReadable",
             "firstPartyTextureNoMipChain",
+            "snapFrameSurface",
             "pixelSource",
             "readbackTrigger",
-            "readbackReplacementDisposalRequestCount",
-            "callbackReadbackFailureType",
-            "callbackReadbackFailureMessage",
-            "vendorReturnedTexturePresent",
-            "vendorReturnedTextureInstanceId",
-            "vendorReturnedTextureFormat",
-            "vendorReturnedTextureReadable",
-            "vendorReturnedTextureDistinctFromFirstParty",
-            "vendorReturnedTextureDestroyRequested",
-            "vendorReturnedTextureUsedForAdmission",
             "captureTaskCompletedBeforeDeadline",
             "captureTaskStopObserved",
             "captureTaskTimeoutObserved",
-            "lateCaptureTaskObserverAttached",
             "underlyingCaptureCancellationAvailable",
             "pixelReadCompleted",
             "raster",
@@ -553,7 +1372,12 @@ internal static class CapturePolicyTests
             "lastExactCameraRenderFrame",
             "textureFormat",
             "textureReadable",
-            "vendorReturnedTextureDestroyed"
+            "vendorReturnedTextureDestroyed",
+            "beforeRenderCallbackInvoked",
+            "activeExactTargetVerifiedBeforeReadPixels",
+            "renderTargetAssignedBeforeCapture",
+            "vendorReturnedTexturePresent",
+            "lateCaptureTaskObserverAttached"
         })
         {
             if (attemptFields.Contains(forbidden))
@@ -636,7 +1460,7 @@ internal static class CapturePolicyTests
         }
     }
 
-    private static void ExpectThrows<TException>(Action action)
+    private static void ExpectThrows<TException>(Action action, string label = null)
         where TException : Exception
     {
         try
@@ -648,7 +1472,9 @@ internal static class CapturePolicyTests
             return;
         }
 
-        throw new InvalidOperationException("Expected exception " + typeof(TException).FullName + ".");
+        throw new InvalidOperationException(
+            (String.IsNullOrEmpty(label) ? String.Empty : label + ": ") +
+            "Expected exception " + typeof(TException).FullName + ".");
     }
 
     private static void DeleteOwnedTempTree(string path, string requiredPrefix)

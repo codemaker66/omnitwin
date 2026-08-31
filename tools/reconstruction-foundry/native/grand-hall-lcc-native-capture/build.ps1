@@ -246,12 +246,23 @@ $references = @(
     'UnityEngine.dll',
     'UnityEngine.CoreModule.dll',
     'UnityEngine.ImageConversionModule.dll',
+    'UnityEngine.UIModule.dll',
+    'Unity.RenderPipelines.Core.Runtime.dll',
+    'Unity.RenderPipelines.Universal.Runtime.dll',
+    'Unity.RenderPipelines.GPUDriven.Runtime.dll',
     'UniTask.dll',
     'Cinemachine.dll',
     'Newtonsoft.Json.dll',
     'USD.NET.Unity.dll',
     'USD.NET.dll',
     'netstandard.dll'
+) | ForEach-Object { '/reference:' + (Join-Path $managedRoot $_) }
+
+$unityProfileReferences = @(
+    'mscorlib.dll',
+    'System.dll',
+    'System.Core.dll',
+    'System.Memory.dll'
 ) | ForEach-Object { '/reference:' + (Join-Path $managedRoot $_) }
 
 & $compiler @commonCompilerArguments '/nowarn:0649' '/target:exe' "/out:$runtimeClosureTestOutputPath" @references $capturePolicyPath $receiptModelsPath $runtimeClosureSourcePath $runtimeClosureTestSourcePath
@@ -265,7 +276,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Runtime closure tests failed with exit code $LASTEXITCODE."
 }
 
-& $compiler @commonCompilerArguments '/target:library' "/out:$moduleOutputPath" @references $capturePolicyPath $cameraProfileSourceCodePath $receiptModelsPath $runtimeClosureSourcePath $moduleSourcePath
+& $compiler @commonCompilerArguments '/nostdlib+' '/target:library' "/out:$moduleOutputPath" @unityProfileReferences @references $capturePolicyPath $cameraProfileSourceCodePath $receiptModelsPath $runtimeClosureSourcePath $moduleSourcePath
 if ($LASTEXITCODE -ne 0) {
     throw "Native capture module compilation failed with exit code $LASTEXITCODE."
 }

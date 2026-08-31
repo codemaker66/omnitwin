@@ -187,6 +187,13 @@ namespace Venviewer.NativeCapture
         internal const double MinimumLuminanceStandardDeviation = 2.0;
         internal const double NativeCoordinateTolerance = 0.00001;
         internal const double ProjectionTolerance = 0.00001;
+        internal const string SnapFrameFeatureTypeFullName = "LCCCore.SnapFrameCaptureFeature";
+        internal const string SnapFramePixelSource = "first_party_lcc_snap_frame_render_target";
+        internal const string SnapFrameSurfaceProvenance =
+            "vendor_snap_frame_camera_target_after_transparents_pre_postprocess";
+        internal const string SnapFrameReadPixelsCoordinateOrigin = "unity_texture_lower_left";
+        internal const string SnapFrameCpuRowTransform = "none";
+        internal const double SnapFrameSentinelTranslationMetres = 0.05;
 
         internal static void RequireUltraQuality(bool ultraQualityObserved)
         {
@@ -209,39 +216,534 @@ namespace Venviewer.NativeCapture
             }
         }
 
-        internal static void RequireExactTargetReadbackRoute(
-            int srpCallbackCount,
-            int firstSrpFrame,
-            int lastSrpFrame,
-            bool standardCallbackProofAvailable,
-            string callbackFailureType,
-            string readbackTrigger)
+        internal static void RequireSnapFrameCaptureRoute(
+            SnapFrameSurfaceReceipt surface,
+            string pixelSource)
         {
-            bool fallbackRouteValid =
-                srpCallbackCount == 0 &&
-                firstSrpFrame == -1 &&
-                lastSrpFrame == -1 &&
-                !standardCallbackProofAvailable &&
-                String.IsNullOrEmpty(callbackFailureType) &&
-                String.Equals(
-                    readbackTrigger,
-                    "vendor_afterRender_fallback",
-                    StringComparison.Ordinal);
-            bool standardCallbackRouteValid =
-                srpCallbackCount > 0 &&
-                firstSrpFrame >= 0 &&
-                lastSrpFrame >= firstSrpFrame &&
-                standardCallbackProofAvailable &&
-                String.IsNullOrEmpty(callbackFailureType) &&
-                String.Equals(
-                    readbackTrigger,
-                    "srp_endCameraRendering",
-                    StringComparison.Ordinal);
-            if (!fallbackRouteValid && !standardCallbackRouteValid)
+            if (surface == null)
             {
                 throw new InvalidOperationException(
-                    "The exact-target readback route is internally inconsistent.");
+                    "The SnapFrame surface receipt is absent.");
             }
+            if (!surface.featurePresent ||
+                !String.Equals(
+                    surface.featureTypeFullName,
+                    SnapFrameFeatureTypeFullName,
+                    StringComparison.Ordinal) ||
+                surface.featureInstanceId == 0 ||
+                !surface.featureStaticInstanceMatched ||
+                !surface.featureBaseActiveBefore ||
+                !surface.featureBaseActiveAfter)
+            {
+                throw new InvalidOperationException(
+                    "The public SnapFrame feature identity was not proven.");
+            }
+            if (!surface.sceneCameraLive || surface.sceneCameraInstanceId == 0 ||
+                !surface.featureTargetCameraLiveBefore ||
+                !surface.featureTargetCameraLiveAtReadback ||
+                !surface.featureTargetCameraLiveAfter ||
+                surface.featureTargetCameraInstanceIdBefore != surface.sceneCameraInstanceId ||
+                surface.featureTargetCameraInstanceIdAtReadback != surface.sceneCameraInstanceId ||
+                surface.featureTargetCameraInstanceIdAfter != surface.sceneCameraInstanceId ||
+                !surface.featureTargetUnchanged)
+            {
+                throw new InvalidOperationException(
+                    "The SnapFrame scene-camera and feature-target identity contract drifted.");
+            }
+            if (!surface.sceneCameraTargetTextureNullBefore ||
+                !surface.sceneCameraTargetTextureNullAfterDirtyRequest ||
+                !surface.sceneCameraTargetTextureNullBeforeReadback ||
+                !surface.sceneCameraTargetTextureNullAfter)
+            {
+                throw new InvalidOperationException(
+                    "The scene camera targetTexture was not null throughout SnapFrame capture.");
+            }
+            if (!surface.captureViewAbsentBefore ||
+                !surface.captureViewAbsentAfterDirtyRequest ||
+                !surface.captureViewAbsentBeforeReadback ||
+                !surface.captureViewAbsentAfter)
+            {
+                throw new InvalidOperationException(
+                    "A vendor capture view was present during SnapFrame capture.");
+            }
+            if (surface.unsafeRenderThroughCanvasObserved ||
+                surface.knownActiveCaptureOverlayCount != 0 ||
+                surface.knownActiveCaptureOverlayNames == null ||
+                surface.knownActiveCaptureOverlayNames.Length != 0 ||
+                surface.activeCanvases == null ||
+                surface.activeCanvases.Any(canvas => canvas == null ||
+                    canvas.canRenderThroughSceneCamera) ||
+                !surface.cleanViewStateVerifiedAtEveryCheckpoint)
+            {
+                throw new InvalidOperationException(
+                    "An unsafe render-through-canvas, overlay, or clean-view route was observed.");
+            }
+            if (surface.sceneCameraPixelWidth != CaptureWidth ||
+                surface.sceneCameraPixelHeight != CaptureHeight ||
+                surface.screenWidth != CaptureWidth || surface.screenHeight != CaptureHeight ||
+                String.IsNullOrEmpty(surface.graphicsDeviceType) ||
+                String.IsNullOrEmpty(surface.activeColorSpace) ||
+                !String.Equals(
+                    surface.readPixelsCoordinateOrigin,
+                    SnapFrameReadPixelsCoordinateOrigin,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    surface.cpuRowTransform,
+                    SnapFrameCpuRowTransform,
+                    StringComparison.Ordinal) ||
+                surface.sceneCameraCullingMaskAfter != surface.sceneCameraCullingMask ||
+                surface.sceneCameraTargetDisplayAfter != surface.sceneCameraTargetDisplay ||
+                !surface.cameraConfigurationUnchanged ||
+                !IsFullCaptureRect(surface.sceneCameraRect) ||
+                !IsFullCapturePixelRect(surface.sceneCameraPixelRect) ||
+                !IsFullCaptureRect(surface.sceneCameraRectAfter) ||
+                !IsFullCapturePixelRect(surface.sceneCameraPixelRectAfter) ||
+                !surface.universalAdditionalCameraDataPresent ||
+                !String.Equals(surface.universalCameraRenderType, "Base", StringComparison.Ordinal) ||
+                surface.universalCameraStackCount != 0 ||
+                !String.Equals(
+                    surface.frameSurfaceProvenance,
+                    SnapFrameSurfaceProvenance,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The exact 1600x900 unstacked URP scene-camera surface was not preserved.");
+            }
+
+            RequireSnapFrameRenderTextureObservation(
+                surface.frameRenderTextureBefore,
+                "before request");
+            RequireSnapFrameRenderTextureObservation(
+                surface.frameRenderTextureAfterDirtyRequest,
+                "after dirty request");
+            RequireSnapFrameRenderTextureObservation(
+                surface.frameRenderTextureBeforeReadback,
+                "before readback");
+            RequireSnapFrameRenderTextureObservation(
+                surface.frameRenderTextureAfter,
+                "after capture");
+            int frameRenderTextureInstanceId = surface.frameRenderTextureBefore.instanceId;
+            if (surface.frameRenderTextureAfterDirtyRequest.instanceId != frameRenderTextureInstanceId ||
+                surface.frameRenderTextureBeforeReadback.instanceId != frameRenderTextureInstanceId ||
+                surface.frameRenderTextureAfter.instanceId != frameRenderTextureInstanceId ||
+                !String.Equals(
+                    surface.frameRenderTextureAfterDirtyRequest.graphicsFormat,
+                    surface.frameRenderTextureBefore.graphicsFormat,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    surface.frameRenderTextureBeforeReadback.graphicsFormat,
+                    surface.frameRenderTextureBefore.graphicsFormat,
+                    StringComparison.Ordinal) ||
+                !String.Equals(
+                    surface.frameRenderTextureAfter.graphicsFormat,
+                    surface.frameRenderTextureBefore.graphicsFormat,
+                    StringComparison.Ordinal) ||
+                surface.frameRenderTextureAfterDirtyRequest.sRgb !=
+                    surface.frameRenderTextureBefore.sRgb ||
+                surface.frameRenderTextureBeforeReadback.sRgb !=
+                    surface.frameRenderTextureBefore.sRgb ||
+                surface.frameRenderTextureAfter.sRgb !=
+                    surface.frameRenderTextureBefore.sRgb ||
+                surface.frameRenderTextureAfterDirtyRequest.observationFrame <
+                    surface.frameRenderTextureBefore.observationFrame ||
+                surface.frameRenderTextureBeforeReadback.observationFrame <
+                    surface.frameRenderTextureAfterDirtyRequest.observationFrame ||
+                surface.frameRenderTextureAfter.observationFrame <
+                    surface.frameRenderTextureBeforeReadback.observationFrame)
+            {
+                throw new InvalidOperationException(
+                    "The SnapFrame FrameRT identity or observation order drifted.");
+            }
+
+            RequireSnapFrameDirtySequence(surface);
+            if (surface.frameRenderTextureBefore.observationFrame !=
+                    surface.dirtyBeforeRequest.observationFrame ||
+                surface.frameRenderTextureAfterDirtyRequest.observationFrame !=
+                    surface.dirtyAfterRequest.observationFrame ||
+                surface.frameRenderTextureBeforeReadback.observationFrame !=
+                    surface.dirtyBeforeReadback.observationFrame ||
+                surface.frameRenderTextureAfter.observationFrame !=
+                    surface.dirtyAfterCompletion.observationFrame)
+            {
+                throw new InvalidOperationException(
+                    "The SnapFrame FrameRT observations are not bound to their dirty-state frames.");
+            }
+            if (!surface.sentinelPoseReached || !surface.exactRestoreVerified ||
+                !VectorsApproximatelyEqual(surface.exactPositionBefore, surface.exactPositionAfter) ||
+                !VectorsApproximatelyEqual(surface.exactRotationXyzwBefore, surface.exactRotationXyzwAfter) ||
+                !VectorsApproximatelyEqual(
+                    surface.exactWorldToCameraMatrixColumnMajorBefore,
+                    surface.exactWorldToCameraMatrixColumnMajorAfter) ||
+                !VectorsApproximatelyEqual(
+                    surface.exactProjectionMatrixColumnMajorBefore,
+                    surface.exactProjectionMatrixColumnMajorAfter) ||
+                !SentinelPositionMatchesExpected(
+                    surface.exactPositionBefore,
+                    surface.sentinelPosition) ||
+                !VectorsApproximatelyEqual(
+                    surface.exactRotationXyzwBefore,
+                    surface.sentinelRotationXyzw) ||
+                !IsFiniteVector(surface.sentinelWorldToCameraMatrixColumnMajor, 16))
+            {
+                throw new InvalidOperationException(
+                    "The SnapFrame transform sentinel or exact camera restoration was not proven.");
+            }
+            RequireSnapFrameCallbackHistory(surface);
+            RequireSnapFrameReadback(
+                surface.sentinelReadback,
+                surface.frameRenderTextureAfterDirtyRequest.instanceId);
+            if (surface.sentinelRaster == null)
+            {
+                throw new InvalidOperationException(
+                    "The discarded sentinel raster receipt is absent.");
+            }
+            RequireNonDegenerateRaster(surface.sentinelRaster, CaptureWidth, CaptureHeight);
+            if (String.IsNullOrEmpty(surface.sentinelRaster.rgb24Sha256) ||
+                String.IsNullOrEmpty(surface.exactFrameRgb24Sha256) ||
+                !surface.sentinelAndExactRgbDiffer ||
+                String.Equals(
+                    surface.sentinelRaster.rgb24Sha256,
+                    surface.exactFrameRgb24Sha256,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "The discarded sentinel did not prove a fresh, distinct SnapFrame response.");
+            }
+            RequireSnapFrameReadback(
+                surface.readback,
+                surface.frameRenderTextureAfter.instanceId);
+            if (!String.Equals(pixelSource, SnapFramePixelSource, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The SnapFrame capture pixel source is not the first-party FrameRT readback.");
+            }
+        }
+
+        internal static void RequireSnapFrameExactRasterBinding(
+            SnapFrameSurfaceReceipt surface,
+            RasterStatisticsReceipt exactRaster)
+        {
+            if (surface == null || exactRaster == null)
+            {
+                throw new InvalidOperationException(
+                    "The SnapFrame exact-pose surface or decoded raster receipt is absent.");
+            }
+            string surfaceSha256 = RequireSha256(
+                surface.exactFrameRgb24Sha256,
+                "SnapFrame exact-pose RGB24 SHA-256");
+            string decodedSha256 = RequireSha256(
+                exactRaster.rgb24Sha256,
+                "decoded exact-pose RGB24 SHA-256");
+            if (!String.Equals(surfaceSha256, decodedSha256, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The SnapFrame freshness raster is not the exact CPU raster selected for PNG encoding.");
+            }
+        }
+
+        private static void RequireSnapFrameRenderTextureObservation(
+            SnapFrameRenderTextureObservationReceipt observation,
+            string label)
+        {
+            if (observation == null || observation.observationFrame < 0 ||
+                observation.instanceId == 0 || !observation.isLive || !observation.isCreated ||
+                observation.width != CaptureWidth || observation.height != CaptureHeight ||
+                observation.depth != 0 || observation.antiAliasing != 1 ||
+                !String.Equals(observation.colorFormat, "ARGB32", StringComparison.Ordinal) ||
+                String.IsNullOrEmpty(observation.graphicsFormat) || observation.useMipMap ||
+                observation.autoGenerateMips)
+            {
+                throw new InvalidOperationException(
+                    "The SnapFrame FrameRT observation is invalid at " + label + ".");
+            }
+        }
+
+        private static void RequireSnapFrameDirtySequence(SnapFrameSurfaceReceipt surface)
+        {
+            if (surface.dirtyBeforeRequest == null || surface.dirtyAfterRequest == null ||
+                surface.dirtyBeforeReadback == null || surface.dirtyAfterCompletion == null ||
+                surface.dirtyBeforeRequest.observationFrame < 0 ||
+                surface.dirtyAfterRequest.observationFrame < 0 ||
+                surface.dirtyBeforeReadback.observationFrame < 0 ||
+                surface.dirtyAfterCompletion.observationFrame < 0 ||
+                surface.dirtyBeforeRequest.dirty ||
+                !surface.dirtyAfterRequest.dirty ||
+                !surface.dirtyBeforeReadback.dirty ||
+                surface.dirtyAfterCompletion.dirty ||
+                surface.dirtyAfterRequest.observationFrame <=
+                    surface.dirtyBeforeRequest.observationFrame ||
+                surface.dirtyBeforeReadback.observationFrame <=
+                    surface.dirtyAfterRequest.observationFrame ||
+                surface.dirtyAfterCompletion.observationFrame <=
+                    surface.dirtyBeforeReadback.observationFrame)
+            {
+                throw new InvalidOperationException(
+                    "The SnapFrame FrameDirty sequence was not false, true, true, false " +
+                    "on strictly increasing frames.");
+            }
+        }
+
+        private static void RequireSnapFrameReadback(
+            SnapFrameReadbackReceipt readback,
+            int expectedFrameRenderTextureInstanceId)
+        {
+            if (readback == null ||
+                (readback.renderTextureActiveWasNullBeforeReadback
+                    ? readback.renderTextureActiveBeforeReadbackInstanceId != 0
+                    : readback.renderTextureActiveBeforeReadbackInstanceId == 0) ||
+                readback.renderTextureActiveBoundForReadbackInstanceId !=
+                    expectedFrameRenderTextureInstanceId ||
+                !readback.activeFrameRenderTextureVerifiedBeforeReadPixels ||
+                !readback.firstPartyReadPixelsCompleted ||
+                !readback.firstPartyApplyCompleted ||
+                readback.renderTextureActiveWasNullAfterReadback !=
+                    readback.renderTextureActiveWasNullBeforeReadback ||
+                readback.renderTextureActiveAfterReadbackInstanceId !=
+                    readback.renderTextureActiveBeforeReadbackInstanceId ||
+                !readback.renderTextureActiveRestored ||
+                readback.firstPartyTextureInstanceId == 0 ||
+                !String.Equals(
+                    readback.firstPartyTextureFormat,
+                    "RGB24",
+                    StringComparison.Ordinal) ||
+                !readback.firstPartyTextureReadable ||
+                !readback.firstPartyTextureNoMipChain ||
+                !readback.firstPartyTextureDistinctFromVendorFrameRenderTexture ||
+                readback.vendorFrameRenderTextureDestroyRequested)
+            {
+                throw new InvalidOperationException(
+                    "The first-party SnapFrame RGB24 readback contract did not complete cleanly.");
+            }
+        }
+
+        private static void RequireSnapFrameCallbackHistory(SnapFrameSurfaceReceipt surface)
+        {
+            if (!surface.cameraCallbackSubscriptionRemoved ||
+                surface.beginCameraRenderingCallbackCount < 4 ||
+                surface.endCameraRenderingCallbackCount < 4 ||
+                surface.callbackHistoryOverflowed ||
+                !surface.everyCameraCallbackMatchedStagePose ||
+                !surface.baselineExactEndCallbackVerified ||
+                !surface.sentinelEndCallbackVerified ||
+                !surface.restoredExactEndCallbackVerified ||
+                !surface.stableExactEndCallbackVerified ||
+                surface.cameraCallbacks == null ||
+                surface.cameraCallbacks.Any(callback => callback == null) ||
+                surface.cameraCallbacks.Count < 8 ||
+                surface.cameraCallbacks.Count(callback => String.Equals(
+                    callback.callback,
+                    "begin",
+                    StringComparison.Ordinal)) != surface.beginCameraRenderingCallbackCount ||
+                surface.cameraCallbacks.Count(callback => String.Equals(
+                    callback.callback,
+                    "end",
+                    StringComparison.Ordinal)) != surface.endCameraRenderingCallbackCount)
+            {
+                throw new InvalidOperationException(
+                    "The exact-camera SRP callback history is incomplete or inconsistent.");
+            }
+
+            int previousSequence = 0;
+            foreach (SnapFrameCameraCallbackReceipt callback in surface.cameraCallbacks)
+            {
+                if (callback.sequence <= previousSequence || callback.frame < 0 ||
+                    !IsFinite(callback.realtimeSeconds) || callback.realtimeSeconds < 0.0 ||
+                    (!String.Equals(callback.callback, "begin", StringComparison.Ordinal) &&
+                        !String.Equals(callback.callback, "end", StringComparison.Ordinal)) ||
+                    !IsSnapFrameStage(callback.stage) ||
+                    !callback.cameraMatchesExactSceneCamera || !callback.targetTextureNull ||
+                    !callback.poseMatchesStage || !callback.projectionMatchesExactProfile ||
+                    callback.frameRenderTextureInstanceId != surface.frameRenderTextureBefore.instanceId ||
+                    callback.position == null || callback.position.Length != 3 ||
+                    callback.rotationXyzw == null || callback.rotationXyzw.Length != 4 ||
+                    callback.worldToCameraMatrixColumnMajor == null ||
+                    callback.worldToCameraMatrixColumnMajor.Length != 16 ||
+                    callback.projectionMatrixColumnMajor == null ||
+                    callback.projectionMatrixColumnMajor.Length != 16 ||
+                    !CallbackMatchesStageEvidence(surface, callback))
+                {
+                    throw new InvalidOperationException(
+                        "A recorded exact-camera callback is invalid or out of sequence.");
+                }
+                previousSequence = callback.sequence;
+            }
+
+            RequireStageEndCallback(
+                surface,
+                "baseline_exact",
+                surface.dirtyBeforeRequest.observationFrame,
+                false);
+            RequireStageBeginCallback(
+                surface,
+                "baseline_exact",
+                surface.dirtyBeforeRequest.observationFrame,
+                false);
+            RequireStageEndCallback(
+                surface,
+                "sentinel_discard",
+                surface.dirtyAfterRequest.observationFrame,
+                true);
+            RequireStageBeginCallback(
+                surface,
+                "sentinel_discard",
+                surface.dirtyAfterRequest.observationFrame,
+                true);
+            RequireStageEndCallback(
+                surface,
+                "restored_exact",
+                surface.dirtyBeforeReadback.observationFrame,
+                true);
+            RequireStageBeginCallback(
+                surface,
+                "restored_exact",
+                surface.dirtyBeforeReadback.observationFrame,
+                true);
+            RequireStageEndCallback(
+                surface,
+                "stable_exact",
+                surface.dirtyAfterCompletion.observationFrame,
+                false);
+            RequireStageBeginCallback(
+                surface,
+                "stable_exact",
+                surface.dirtyAfterCompletion.observationFrame,
+                false);
+        }
+
+        private static void RequireStageBeginCallback(
+            SnapFrameSurfaceReceipt surface,
+            string stage,
+            int frame,
+            bool endDirty)
+        {
+            SnapFrameCameraCallbackReceipt end = surface.cameraCallbacks
+                .Where(callback =>
+                    String.Equals(callback.callback, "end", StringComparison.Ordinal) &&
+                    String.Equals(callback.stage, stage, StringComparison.Ordinal) &&
+                    callback.frame == frame && callback.frameDirty == endDirty)
+                .OrderBy(callback => callback.sequence)
+                .FirstOrDefault();
+            if (end == null || !surface.cameraCallbacks.Any(callback =>
+                String.Equals(callback.callback, "begin", StringComparison.Ordinal) &&
+                String.Equals(callback.stage, stage, StringComparison.Ordinal) &&
+                callback.frame == frame && callback.sequence < end.sequence))
+            {
+                throw new InvalidOperationException(
+                    "The required " + stage +
+                    " begin-camera callback did not precede its same-frame end callback.");
+            }
+        }
+
+        private static bool CallbackMatchesStageEvidence(
+            SnapFrameSurfaceReceipt surface,
+            SnapFrameCameraCallbackReceipt callback)
+        {
+            bool sentinel = String.Equals(
+                callback.stage,
+                "sentinel_discard",
+                StringComparison.Ordinal);
+            double[] expectedPosition = sentinel
+                ? surface.sentinelPosition
+                : surface.exactPositionBefore;
+            double[] expectedRotation = sentinel
+                ? surface.sentinelRotationXyzw
+                : surface.exactRotationXyzwBefore;
+            double[] expectedWorldToCamera = sentinel
+                ? surface.sentinelWorldToCameraMatrixColumnMajor
+                : surface.exactWorldToCameraMatrixColumnMajorBefore;
+            return VectorsApproximatelyEqual(callback.position, expectedPosition) &&
+                VectorsApproximatelyEqual(callback.rotationXyzw, expectedRotation) &&
+                VectorsApproximatelyEqual(
+                    callback.worldToCameraMatrixColumnMajor,
+                    expectedWorldToCamera) &&
+                VectorsApproximatelyEqual(
+                    callback.projectionMatrixColumnMajor,
+                    surface.exactProjectionMatrixColumnMajorBefore);
+        }
+
+        private static void RequireStageEndCallback(
+            SnapFrameSurfaceReceipt surface,
+            string stage,
+            int frame,
+            bool dirty)
+        {
+            if (!surface.cameraCallbacks.Any(callback =>
+                String.Equals(callback.callback, "end", StringComparison.Ordinal) &&
+                String.Equals(callback.stage, stage, StringComparison.Ordinal) &&
+                callback.frame == frame && callback.frameDirty == dirty))
+            {
+                throw new InvalidOperationException(
+                    "The required " + stage + " end-camera callback is absent.");
+            }
+        }
+
+        private static bool IsSnapFrameStage(string stage)
+        {
+            return String.Equals(stage, "baseline_exact", StringComparison.Ordinal) ||
+                String.Equals(stage, "sentinel_discard", StringComparison.Ordinal) ||
+                String.Equals(stage, "restored_exact", StringComparison.Ordinal) ||
+                String.Equals(stage, "stable_exact", StringComparison.Ordinal);
+        }
+
+        private static bool VectorsApproximatelyEqual(double[] left, double[] right)
+        {
+            if (left == null || right == null || left.Length == 0 || left.Length != right.Length ||
+                !IsFiniteVector(left, left.Length) || !IsFiniteVector(right, right.Length))
+            {
+                return false;
+            }
+            for (int index = 0; index < left.Length; index += 1)
+            {
+                if (Math.Abs(left[index] - right[index]) > ProjectionTolerance)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static bool SentinelPositionMatchesExpected(double[] exact, double[] sentinel)
+        {
+            return IsFiniteVector(exact, 3) && IsFiniteVector(sentinel, 3) &&
+                Math.Abs(
+                    sentinel[0] - exact[0] - SnapFrameSentinelTranslationMetres) <=
+                    ProjectionTolerance &&
+                Math.Abs(sentinel[1] - exact[1]) <= ProjectionTolerance &&
+                Math.Abs(sentinel[2] - exact[2]) <= ProjectionTolerance;
+        }
+
+        private static bool IsFiniteVector(double[] value, int expectedLength)
+        {
+            return value != null && value.Length == expectedLength &&
+                value.All(candidate => IsFinite(candidate));
+        }
+
+        private static bool IsFinite(double value)
+        {
+            return !Double.IsNaN(value) && !Double.IsInfinity(value);
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !Single.IsNaN(value) && !Single.IsInfinity(value);
+        }
+
+        private static bool IsFullCaptureRect(float[] value)
+        {
+            return value != null && value.Length == 4 && value.All(candidate => IsFinite(candidate)) &&
+                Math.Abs(value[0]) <= ProjectionTolerance &&
+                Math.Abs(value[1]) <= ProjectionTolerance &&
+                Math.Abs(value[2] - 1.0f) <= ProjectionTolerance &&
+                Math.Abs(value[3] - 1.0f) <= ProjectionTolerance;
+        }
+
+        private static bool IsFullCapturePixelRect(float[] value)
+        {
+            return value != null && value.Length == 4 && value.All(candidate => IsFinite(candidate)) &&
+                Math.Abs(value[0]) <= ProjectionTolerance &&
+                Math.Abs(value[1]) <= ProjectionTolerance &&
+                Math.Abs(value[2] - CaptureWidth) <= ProjectionTolerance &&
+                Math.Abs(value[3] - CaptureHeight) <= ProjectionTolerance;
         }
 
         internal static readonly ExpectedFile[] ExpectedInputFiles =
@@ -731,6 +1233,9 @@ namespace Venviewer.NativeCapture
 
             long expectedPixelCount = checked((long)expectedWidth * expectedHeight);
             if (statistics.pixelCount != expectedPixelCount ||
+                !IsFinite(statistics.nonBlackPixelFraction) ||
+                !IsFinite(statistics.meanLuminance) ||
+                !IsFinite(statistics.luminanceStandardDeviation) ||
                 statistics.nonBlackPixelFraction < MinimumNonBlackPixelFraction ||
                 statistics.maximumChannelDynamicRange < MinimumMaximumChannelDynamicRange ||
                 statistics.distinctRgbLowerBound < MinimumDistinctRgbCount ||
@@ -749,6 +1254,219 @@ namespace Venviewer.NativeCapture
             }
 
             statistics.nonDegenerateVerified = true;
+        }
+
+        internal static void RequireReadOnlyUrpRendererInventory(
+            UrpRendererInventoryReceipt inventory)
+        {
+            if (inventory == null)
+            {
+                throw new ArgumentNullException("inventory");
+            }
+            if (!String.Equals(
+                    inventory.observationApi,
+                    "GraphicsSettings.currentRenderPipeline + UniversalRenderPipelineAsset.rendererDataList/renderers + ScriptableRendererData.rendererFeatures",
+                    StringComparison.Ordinal) ||
+                !inventory.publicGettersOnly ||
+                inventory.mutationApiInvoked ||
+                inventory.mutationObservedDuringSynchronousInventory ||
+                !inventory.currentRenderPipelineAssetPresent ||
+                !inventory.currentRenderPipelineAssetIsUniversal ||
+                !String.Equals(
+                    inventory.currentRenderPipelineAssetTypeFullName,
+                    "UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset",
+                    StringComparison.Ordinal) ||
+                inventory.currentRenderPipelineAssetInstanceId == 0 ||
+                !inventory.universalAdditionalCameraDataPresent ||
+                inventory.rendererDataCount <= 0 ||
+                inventory.rendererInstanceCount < 0 ||
+                inventory.rendererDataAndInstanceCountsMatch !=
+                    (inventory.rendererDataCount == inventory.rendererInstanceCount) ||
+                inventory.rendererData == null ||
+                inventory.rendererInstances == null ||
+                inventory.prohibitedMutationApis == null ||
+                inventory.prohibitedMutationApis.Length != 6 ||
+                inventory.observationFrame < 0 ||
+                !IsFinite(inventory.observationRealtimeSeconds) ||
+                inventory.observationRealtimeSeconds < 0.0 ||
+                inventory.rendererData.Count != inventory.rendererDataCount ||
+                inventory.rendererInstances.Count != inventory.rendererInstanceCount ||
+                !inventory.rendererObjectIdentityStableDuringSynchronousInventory ||
+                !inventory.rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory ||
+                !inventory.snapFrameStaticInstanceStableDuringSynchronousInventory ||
+                !inventory.prohibitedMutationApis.SequenceEqual(
+                    new[]
+                    {
+                        "UniversalRenderPipelineAsset.GetRenderer",
+                        "UniversalRenderPipelineAsset.scriptableRenderer",
+                        "UniversalAdditionalCameraData.scriptableRenderer",
+                        "UniversalAdditionalCameraData.SetRenderer",
+                        "ScriptableRendererData.SetDirty",
+                        "ScriptableRendererFeature.SetActive"
+                    },
+                    StringComparer.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The public URP renderer inventory is incomplete, mutated state, or did not remain identity-stable.");
+            }
+
+            int snapFrameCount = 0;
+            int activeSnapFrameCount = 0;
+            int staticInstanceMatchCount = 0;
+            for (int dataIndex = 0;
+                dataIndex < inventory.rendererData.Count;
+                dataIndex += 1)
+            {
+                UrpRendererDataReceipt rendererData = inventory.rendererData[dataIndex];
+                if (rendererData == null ||
+                    rendererData.rendererDataIndex != dataIndex ||
+                    rendererData.features == null ||
+                    rendererData.featureCount != rendererData.features.Count)
+                {
+                    throw new InvalidOperationException(
+                        "The public URP renderer-data inventory contains an invalid entry.");
+                }
+                if (!rendererData.present)
+                {
+                    if (!String.IsNullOrEmpty(rendererData.name) ||
+                        !String.IsNullOrEmpty(rendererData.typeFullName) ||
+                        rendererData.instanceId != 0 ||
+                        rendererData.useNativeRenderPass ||
+                        rendererData.featureCount != 0 ||
+                        rendererData.snapFrameCaptureFeatureCount != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "A null public URP renderer-data slot claims live identity or state.");
+                    }
+                    continue;
+                }
+                if (String.IsNullOrWhiteSpace(rendererData.typeFullName) ||
+                    rendererData.instanceId == 0)
+                {
+                    throw new InvalidOperationException(
+                        "A live public URP renderer-data slot is missing identity evidence.");
+                }
+
+                int rendererSnapFrameCount = 0;
+                for (int featureIndex = 0;
+                    featureIndex < rendererData.features.Count;
+                    featureIndex += 1)
+                {
+                    UrpRendererFeatureReceipt feature =
+                        rendererData.features[featureIndex];
+                    if (feature == null || feature.featureIndex != featureIndex)
+                    {
+                        throw new InvalidOperationException(
+                            "The public URP renderer-feature inventory contains an invalid entry.");
+                    }
+                    if (!feature.present)
+                    {
+                        if (!String.IsNullOrEmpty(feature.name) ||
+                            !String.IsNullOrEmpty(feature.typeFullName) ||
+                            feature.instanceId != 0 || feature.active ||
+                            feature.snapFrameCaptureFeatureType ||
+                            feature.matchesSnapFrameStaticInstance)
+                        {
+                            throw new InvalidOperationException(
+                                "A null public URP renderer-feature slot claims live identity or state.");
+                        }
+                        continue;
+                    }
+                    if (String.IsNullOrWhiteSpace(feature.typeFullName) ||
+                        feature.instanceId == 0)
+                    {
+                        throw new InvalidOperationException(
+                            "A live public URP renderer feature is missing identity evidence.");
+                    }
+                    bool typeIsSnapFrame = String.Equals(
+                        feature.typeFullName,
+                        SnapFrameFeatureTypeFullName,
+                        StringComparison.Ordinal);
+                    bool expectedStaticInstanceMatch = typeIsSnapFrame &&
+                        inventory.snapFrameStaticInstancePresent &&
+                        feature.instanceId == inventory.snapFrameStaticInstanceId;
+                    if (feature.snapFrameCaptureFeatureType != typeIsSnapFrame ||
+                        feature.matchesSnapFrameStaticInstance !=
+                            expectedStaticInstanceMatch)
+                    {
+                        throw new InvalidOperationException(
+                            "A public URP renderer feature has inconsistent SnapFrame type or singleton evidence.");
+                    }
+                    if (typeIsSnapFrame)
+                    {
+                        rendererSnapFrameCount += 1;
+                        snapFrameCount += 1;
+                        if (feature.active)
+                        {
+                            activeSnapFrameCount += 1;
+                        }
+                        if (feature.matchesSnapFrameStaticInstance)
+                        {
+                            staticInstanceMatchCount += 1;
+                        }
+                    }
+                }
+                if (rendererData.snapFrameCaptureFeatureCount != rendererSnapFrameCount)
+                {
+                    throw new InvalidOperationException(
+                        "The per-renderer SnapFrame feature count disagrees with the feature inventory.");
+                }
+            }
+
+            for (int rendererIndex = 0;
+                rendererIndex < inventory.rendererInstances.Count;
+                rendererIndex += 1)
+            {
+                UrpRendererInstanceReceipt renderer =
+                    inventory.rendererInstances[rendererIndex];
+                if (renderer == null || renderer.rendererIndex != rendererIndex ||
+                    renderer.present &&
+                        (String.IsNullOrWhiteSpace(renderer.typeFullName) ||
+                            renderer.runtimeIdentityHashCode == 0) ||
+                    !renderer.present &&
+                        (!String.IsNullOrEmpty(renderer.typeFullName) ||
+                            renderer.runtimeIdentityHashCode != 0))
+                {
+                    throw new InvalidOperationException(
+                        "The public URP renderer-instance inventory contains an invalid entry.");
+                }
+            }
+
+            if (inventory.snapFrameCaptureFeatureCount != snapFrameCount ||
+                inventory.activeSnapFrameCaptureFeatureCount != activeSnapFrameCount ||
+                inventory.snapFrameStaticInstanceMatchedConfiguredFeatureCount !=
+                    staticInstanceMatchCount ||
+                activeSnapFrameCount > snapFrameCount ||
+                inventory.snapFrameStaticInstancePresent !=
+                    (inventory.snapFrameStaticInstanceId != 0) ||
+                inventory.snapFrameStaticInstancePresent !=
+                    !String.IsNullOrWhiteSpace(
+                        inventory.snapFrameStaticInstanceTypeFullName) ||
+                inventory.snapFrameStaticInstancePresent &&
+                    !String.Equals(
+                        inventory.snapFrameStaticInstanceTypeFullName,
+                        SnapFrameFeatureTypeFullName,
+                        StringComparison.Ordinal) ||
+                !inventory.snapFrameStaticInstancePresent &&
+                    staticInstanceMatchCount != 0 ||
+                staticInstanceMatchCount > 1 ||
+                inventory.sceneCameraRendererIndexInferred !=
+                    (inventory.rendererDataCount == 1 &&
+                        inventory.rendererInstanceCount == 1 &&
+                        inventory.rendererData[0].present &&
+                        inventory.rendererInstances[0].present) ||
+                inventory.sceneCameraRendererIndex !=
+                    (inventory.sceneCameraRendererIndexInferred ? 0 : -1) ||
+                !String.Equals(
+                    inventory.sceneCameraRendererIndexProvenance,
+                    inventory.sceneCameraRendererIndexInferred
+                        ? "sole_renderer_data_and_instance_entry"
+                        : "unavailable_without_a_public_side_effect_free_renderer_index_getter",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The aggregate public URP renderer inventory is internally inconsistent.");
+            }
         }
 
         internal static string ReceiptInventorySha256(IEnumerable<FileReceipt> receipts)
@@ -772,7 +1490,10 @@ namespace Venviewer.NativeCapture
             Vec3d expected,
             double tolerance)
         {
-            if (Math.Abs(actual.X - expected.X) > tolerance ||
+            if (!IsFinite(actual.X) || !IsFinite(actual.Y) || !IsFinite(actual.Z) ||
+                !IsFinite(expected.X) || !IsFinite(expected.Y) || !IsFinite(expected.Z) ||
+                !IsFinite(tolerance) || tolerance < 0.0 ||
+                Math.Abs(actual.X - expected.X) > tolerance ||
                 Math.Abs(actual.Y - expected.Y) > tolerance ||
                 Math.Abs(actual.Z - expected.Z) > tolerance)
             {

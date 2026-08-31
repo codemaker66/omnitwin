@@ -66,7 +66,7 @@ foreach ($requiredPath in @(
 
 $plugin = Get-Content -LiteralPath $pluginPath -Raw | ConvertFrom-Json
 Assert-Equal 'com.venviewer.native_capture' ([string]$plugin.Id) 'plugin Id'
-Assert-Equal '1.2.5' ([string]$plugin.Version) 'plugin version'
+Assert-Equal '1.2.7' ([string]$plugin.Version) 'plugin version'
 Assert-Equal 'managed' ([string]$plugin.Type) 'plugin type'
 Assert-Equal 'VenviewerNativeCapture.dll' ([string]$plugin.EntryPoint) 'plugin entry point'
 Assert-Equal 'Venviewer.NativeCapture.NativeCaptureModule' ([string]$plugin.Class) 'plugin class'
@@ -231,10 +231,11 @@ $moduleSource = Get-Content -LiteralPath (Join-Path $sourceRoot 'NativeCaptureMo
 $capturePolicySource = Get-Content -LiteralPath (Join-Path $sourceRoot 'CapturePolicy.cs') -Raw
 $receiptModelsSource = Get-Content -LiteralPath (Join-Path $sourceRoot 'ReceiptModels.cs') -Raw
 $capturePolicyTestsSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'tests\CapturePolicyTests.cs') -Raw
+$buildSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'build.ps1') -Raw
 if ($moduleSource.IndexOf(
-        'private const string ModuleVersion = "1.2.5";',
+        'private const string ModuleVersion = "1.2.7";',
         [StringComparison]::Ordinal) -lt 0) {
-    throw 'The compiled module source and plugin manifest version are not both 1.2.5.'
+    throw 'The compiled module source and plugin manifest version are not both 1.2.7.'
 }
 if ($capturePolicySource -notmatch
     '(?s)class InterlockedOneShotGate.*?TryEnter\(\).*?Interlocked\.CompareExchange\(ref _entered, 1, 0\) == 0') {
@@ -459,7 +460,7 @@ foreach ($loadContract in @(
     '_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath)',
     'Volatile.Read(ref _sceneLoadedEventObserved)',
     'commandLineSceneArgumentUsed = false',
-    'venviewer.grand-hall.lcc-native-capture-receipt.v5',
+    'venviewer.grand-hall.lcc-native-capture-receipt.v7',
     'FixedCameraProfile.Load('
 )) {
     if ($moduleSource.IndexOf($loadContract, [StringComparison]::Ordinal) -lt 0) {
@@ -582,14 +583,14 @@ foreach ($renderAllReceiptContract in @(
     'public string renderAllIsolationBoundary;'
 )) {
     if ($receiptModelsSource.IndexOf($renderAllReceiptContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "Receipt v5 is missing render-all evidence '$renderAllReceiptContract'."
+        throw "Receipt v7 is missing render-all evidence '$renderAllReceiptContract'."
     }
 }
 if ($moduleSource.IndexOf('renderAllPendingResetReadbackAvailable = false', [StringComparison]::Ordinal) -lt 0 -or
     $moduleSource.IndexOf('renderAllIsolationBoundary = "disposable_process_exit"', [StringComparison]::Ordinal) -lt 0 -or
     $moduleSource.IndexOf('RenderAllMutated', [StringComparison]::Ordinal) -ge 0 -or
     $moduleSource.IndexOf('_originalRenderAll', [StringComparison]::Ordinal) -ge 0) {
-    throw 'Receipt v5 no longer states the honest pending-reset/disposable-process boundary.'
+    throw 'Receipt v7 no longer states the honest pending-reset/disposable-process boundary.'
 }
 foreach ($forbiddenDirectLoadContract in @(
     '_lccSceneManager.LoadScene(',
@@ -659,34 +660,211 @@ foreach ($requiredIndependentRestore in @(
     }
 }
 
-if ($moduleSource.IndexOf('CaptureToFileAsync', [StringComparison]::Ordinal) -ge 0) {
-    throw 'The obsolete file-capture/readback path remains in the native module.'
+foreach ($obsoleteCaptureRoute in @(
+    'CaptureToFileAsync(',
+    'CaptureToTextureAsync(',
+    'ExactTargetReadbackProbe',
+    'RequireExactTargetReadbackRoute('
+)) {
+    if ($moduleSource.IndexOf($obsoleteCaptureRoute, [StringComparison]::Ordinal) -ge 0 -or
+        $capturePolicySource.IndexOf($obsoleteCaptureRoute, [StringComparison]::Ordinal) -ge 0) {
+        throw "The obsolete Camera.targetTexture/vendor capture route remains: '$obsoleteCaptureRoute'."
+    }
 }
+if ($moduleSource -match '\.SetActive\s*\(' -or
+    $moduleSource -match '\.TargetCamera\s*=(?!=)' -or
+    $moduleSource -match '\.targetTexture\s*=(?!=)' -or
+    $moduleSource -match '\.FrameRT\s*=(?!=)') {
+    throw 'The first-party module must not activate/mutate SnapFrame, TargetCamera, Camera.targetTexture, or FrameRT.'
+}
+
+$lockedSnapFrameReferences = @(
+    @('UnityEngine.UIModule.dll', 'F6B73BB8B4DFF00448F0C2E20BF9A92487128A05F81AAF814A1DE021DA59C6A5'),
+    @('Unity.RenderPipelines.Core.Runtime.dll', 'E68FCEB04E8F571E6F2B10ED15D5FE19A83E274EC557E68AE2D72C3E068E074D'),
+    @('Unity.RenderPipelines.Universal.Runtime.dll', '59458EF5AD12F800842598647AE8AE6E82A074852C1D2684B81A322FDBC86CE1'),
+    @('Unity.RenderPipelines.GPUDriven.Runtime.dll', '5A240D9060CA4ED75FBBF6D764C777477B5F6D11B8AC0B58D00E4F730C61661C'),
+    @('mscorlib.dll', 'E3CF08610C3F99B3436C106AB3C54564417B7EE47BC5D764311C4910B41EB1CE'),
+    @('System.dll', '0EA6AFCCBD47AC4110E0C3EA6A9ED3A2B5154445CBFAAD23531E2924AE80D40B'),
+    @('System.Core.dll', 'FFD6840FA7808D2372FED8542FEA05B0913AC03018A3BF2BD3D200F078595C49'),
+    @('System.Memory.dll', 'C4F030A2CBA7DA7CDCF493257C24560E203D355904AEE490D645A935842F834A')
+)
+foreach ($lockedReference in $lockedSnapFrameReferences) {
+    $name = [string]$lockedReference[0]
+    $sha256 = [string]$lockedReference[1]
+    if ($buildSource.IndexOf("'$name'", [StringComparison]::Ordinal) -lt 0 -or
+        $moduleSource.IndexOf($name, [StringComparison]::Ordinal) -lt 0 -or
+        $moduleSource.IndexOf($sha256, [StringComparison]::Ordinal) -lt 0) {
+        throw "The public SnapFrame dependency is not compile-time and runtime locked: $name."
+    }
+}
+foreach ($unityProfileCompileContract in @(
+    "'/nostdlib+'",
+    "'mscorlib.dll'",
+    "'System.dll'",
+    "'System.Core.dll'",
+    "'System.Memory.dll'",
+    "'Unity.RenderPipelines.GPUDriven.Runtime.dll'"
+)) {
+    if ($buildSource.IndexOf($unityProfileCompileContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The locked Unity-profile ReadOnlySpan build is missing '$unityProfileCompileContract'."
+    }
+}
+
+$inventoryMethodStart = $moduleSource.IndexOf(
+    'internal static UrpRendererInventoryReceipt CaptureReadOnlyUrpRendererInventory(',
+    [StringComparison]::Ordinal)
+$inventoryMethodEnd = $moduleSource.IndexOf(
+    'private void CaptureFinalSurfaceState()',
+    [StringComparison]::Ordinal)
+if ($inventoryMethodStart -lt 0 -or $inventoryMethodEnd -le $inventoryMethodStart) {
+    throw 'The bounded synchronous public-URP inventory method is missing.'
+}
+$inventoryMethodSource = $moduleSource.Substring(
+    $inventoryMethodStart,
+    $inventoryMethodEnd - $inventoryMethodStart)
+foreach ($inventorySourceContract in @(
+    'GraphicsSettings.currentRenderPipeline',
+    'universalAsset.rendererDataList',
+    'universalAsset.renderers',
+    'rendererData.rendererFeatures',
+    'rendererData.useNativeRenderPass',
+    'feature.isActive',
+    'SnapFrameCaptureFeature.Instance',
+    '"UniversalRenderPipelineAsset.scriptableRenderer"',
+    'matchesSnapFrameStaticInstance = matchesStaticInstance',
+    'RuntimeHelpers.GetHashCode(renderer)',
+    'rendererObjectIdentityStableDuringSynchronousInventory',
+    'rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory',
+    'snapFrameStaticInstanceStableDuringSynchronousInventory',
+    'mutationObservedDuringSynchronousInventory'
+)) {
+    if ($inventoryMethodSource.IndexOf($inventorySourceContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The read-only URP renderer inventory is missing '$inventorySourceContract'."
+    }
+}
+foreach ($inventoryAsyncOrCapturePattern in @(
+    '\bawait\b',
+    '=>',
+    '\byield\s+return\b',
+    '\.Select\s*\(',
+    '\.Where\s*\(',
+    '\.ToArray\s*\('
+)) {
+    if ($inventoryMethodSource -match $inventoryAsyncOrCapturePattern) {
+        throw "The ReadOnlySpan inventory escaped its synchronous non-LINQ boundary: '$inventoryAsyncOrCapturePattern'."
+    }
+}
+$inventoryCodeWithoutStrings = [Regex]::Replace(
+    $inventoryMethodSource,
+    '"(?:\\.|[^"\\])*"',
+    '""')
+foreach ($inventoryMutationPattern in @(
+    '\.GetRenderer\s*\(',
+    '\.scriptableRenderer\b',
+    '\.SetRenderer\s*\(',
+    '\.SetDirty\s*\(',
+    '\.SetActive\s*\(',
+    '\.Create\s*\(',
+    '\.Dispose\s*\(',
+    '\.rendererFeatures\s*\.(Add|Remove|Clear|Insert)\s*\('
+)) {
+    if ($inventoryCodeWithoutStrings -match $inventoryMutationPattern) {
+        throw "The supposedly read-only URP inventory calls a mutation-risk API: '$inventoryMutationPattern'."
+    }
+}
+foreach ($inventoryPolicyContract in @(
+    'internal static void RequireReadOnlyUrpRendererInventory(',
+    'inventory.prohibitedMutationApis.SequenceEqual(',
+    'inventory.prohibitedMutationApis.Length != 6',
+    'bool expectedStaticInstanceMatch = typeIsSnapFrame &&',
+    'feature.instanceId == inventory.snapFrameStaticInstanceId',
+    'feature.matchesSnapFrameStaticInstance !=',
+    'inventory.snapFrameStaticInstanceId',
+    'inventory.observationFrame < 0',
+    '!IsFinite(inventory.observationRealtimeSeconds)',
+    'inventory.sceneCameraRendererIndexProvenance,',
+    'inventory.rendererDataAndInstanceCountsMatch !=',
+    'feature.featureIndex != featureIndex',
+    'rendererData.rendererDataIndex != dataIndex',
+    'renderer.rendererIndex != rendererIndex',
+    'feature.snapFrameCaptureFeatureType != typeIsSnapFrame',
+    'inventory.snapFrameStaticInstanceMatchedConfiguredFeatureCount !=',
+    'staticInstanceMatchCount',
+    'inventory.sceneCameraRendererIndexInferred !='
+)) {
+    if ($capturePolicySource.IndexOf($inventoryPolicyContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The pure read-only URP inventory policy is missing '$inventoryPolicyContract'."
+    }
+}
+foreach ($inventoryTestContract in @(
+    'TestReadOnlyUrpRendererInventoryContract();',
+    'configuredWithoutSingleton',
+    'singletonOutsideConfiguredList',
+    'blankNames',
+    'nullSlots',
+    'lazyRendererArray',
+    'forgedTypeFlag',
+    'duplicateIndex',
+    'prohibitedApiDrift',
+    'forgedSingletonMatch',
+    'suppressedSingletonMatch',
+    'forgedInferredProvenance',
+    'forgedUnresolvedProvenance',
+    'negativeFrame',
+    'nonFiniteRealtime',
+    'infiniteRealtime',
+    'negativeRealtime'
+)) {
+    if ($capturePolicyTestsSource.IndexOf($inventoryTestContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The adversarial read-only URP inventory tests are missing '$inventoryTestContract'."
+    }
+}
+
 $populateAttemptIndex = $moduleSource.IndexOf(
     'private async UniTask PopulateCaptureAttemptAsync(',
     [StringComparison]::Ordinal)
-$observeLateIndex = $moduleSource.IndexOf(
-    'private static async UniTask ObserveLateCaptureAsync(',
+$snapFrameOperationIndex = $moduleSource.IndexOf(
+    'private sealed class SnapFrameReadbackOperation : IDisposable',
+    [StringComparison]::Ordinal)
+$lockedRuntimeFileIndex = $moduleSource.IndexOf(
+    'private sealed class LockedRuntimeFile',
     [StringComparison]::Ordinal)
 if ($populateAttemptIndex -lt 0 -or $captureTimeoutIndex -le $populateAttemptIndex -or
-    $observeLateIndex -le $captureTimeoutIndex -or $finalizePngIndex -le $observeLateIndex) {
-    throw 'The retained-attempt/texture-capture/late-observer pipeline structure is missing.'
+    $finalizePngIndex -le $captureTimeoutIndex -or
+    $snapFrameOperationIndex -le $finalizePngIndex -or
+    $lockedRuntimeFileIndex -le $snapFrameOperationIndex) {
+    throw 'The retained-attempt/SnapFrame-operation/publication pipeline structure is missing.'
 }
 $convergenceSource = $moduleSource.Substring(
     $captureConvergenceIndex,
     $populateAttemptIndex - $captureConvergenceIndex)
+$inventoryAssignmentIndex = $convergenceSource.IndexOf(
+    'capture.urpRendererInventory =',
+    [StringComparison]::Ordinal)
+$inventoryPolicyIndex = $convergenceSource.IndexOf(
+    'CapturePolicy.RequireReadOnlyUrpRendererInventory(',
+    [StringComparison]::Ordinal)
+$convergenceStopwatchIndex = $convergenceSource.IndexOf(
+    'var stopwatch = Stopwatch.StartNew();',
+    [StringComparison]::Ordinal)
 $attemptRetainedIndex = $convergenceSource.IndexOf(
     'capture.attempts.Add(attempt);',
     [StringComparison]::Ordinal)
 $attemptCaptureIndex = $convergenceSource.IndexOf(
-    'await PopulateCaptureAttemptAsync(state.Camera, candidatePath, attempt);',
+    'await PopulateCaptureAttemptAsync(state, candidatePath, attempt);',
     [StringComparison]::Ordinal)
-if ($attemptRetainedIndex -lt 0 -or $attemptCaptureIndex -lt 0 -or
+if ($inventoryAssignmentIndex -lt 0 -or $inventoryPolicyIndex -lt 0 -or
+    $convergenceStopwatchIndex -lt 0 -or
+    $inventoryAssignmentIndex -gt $inventoryPolicyIndex -or
+    $inventoryPolicyIndex -gt $convergenceStopwatchIndex -or
+    $attemptRetainedIndex -lt 0 -or $attemptCaptureIndex -lt 0 -or
     $attemptRetainedIndex -gt $attemptCaptureIndex -or
+    $convergenceSource.IndexOf('snapFrameSurface = new SnapFrameSurfaceReceipt()', [StringComparison]::Ordinal) -lt 0 -or
+    $convergenceSource.IndexOf('underlyingCaptureCancellationAvailable = true', [StringComparison]::Ordinal) -lt 0 -or
     $convergenceSource.IndexOf('attempt.status = "rejected";', [StringComparison]::Ordinal) -lt 0 -or
     $convergenceSource.IndexOf('attempt.failureType = exception.GetType().FullName;', [StringComparison]::Ordinal) -lt 0 -or
     $convergenceSource.IndexOf('attempt.failureMessage = exception.Message;', [StringComparison]::Ordinal) -lt 0) {
-    throw 'A failed native capture attempt can disappear instead of remaining in receipt v5.'
+    throw 'A failed public-SnapFrame attempt can disappear instead of remaining in receipt v7.'
 }
 
 $populateAttemptSource = $moduleSource.Substring(
@@ -695,33 +873,33 @@ $populateAttemptSource = $moduleSource.Substring(
 $pixelReadIndex = $populateAttemptSource.IndexOf('texture.GetPixels32();', [StringComparison]::Ordinal)
 $rasterAnalysisIndex = $populateAttemptSource.IndexOf('CapturePolicy.AnalyzeRgb24(', [StringComparison]::Ordinal)
 $rasterAdmissionIndex = $populateAttemptSource.IndexOf('CapturePolicy.RequireNonDegenerateRaster(', [StringComparison]::Ordinal)
+$exactRasterBindingIndex = $populateAttemptSource.IndexOf('CapturePolicy.RequireSnapFrameExactRasterBinding(', [StringComparison]::Ordinal)
 $pngEncodeIndex = $populateAttemptSource.IndexOf('ImageConversion.EncodeToPNG(texture);', [StringComparison]::Ordinal)
 $candidateWriteIndex = $populateAttemptSource.IndexOf('WriteNoReplaceBytes(candidatePath, pngBytes);', [StringComparison]::Ordinal)
 $postWriteHashIndex = $populateAttemptSource.IndexOf('CapturePolicy.Sha256File(candidatePath);', [StringComparison]::Ordinal)
 if ($pixelReadIndex -lt 0 -or $rasterAnalysisIndex -le $pixelReadIndex -or
-    $rasterAdmissionIndex -le $rasterAnalysisIndex -or $pngEncodeIndex -le $rasterAdmissionIndex -or
+    $rasterAdmissionIndex -le $rasterAnalysisIndex -or
+    $exactRasterBindingIndex -le $rasterAdmissionIndex -or
+    $pngEncodeIndex -le $exactRasterBindingIndex -or
     $candidateWriteIndex -le $pngEncodeIndex -or $postWriteHashIndex -le $candidateWriteIndex -or
     $populateAttemptSource.IndexOf('attempt.firstPartyTextureReadable = texture.isReadable;', [StringComparison]::Ordinal) -lt 0 -or
     $populateAttemptSource.IndexOf('attempt.firstPartyTextureNoMipChain = texture.mipmapCount == 1;', [StringComparison]::Ordinal) -lt 0 -or
     $populateAttemptSource.IndexOf('attempt.firstPartyTextureInstanceId != texture.GetInstanceID()', [StringComparison]::Ordinal) -lt 0 -or
     $populateAttemptSource.IndexOf('attempt.encodedSha256 = CapturePolicy.Sha256Bytes(pngBytes);', [StringComparison]::Ordinal) -lt 0 -or
     $populateAttemptSource.IndexOf('attempt.postWriteFileShaVerified = true;', [StringComparison]::Ordinal) -lt 0) {
-    throw 'First-party decoded RGB admission must precede PNG encoding, durable publication, and byte/file hash agreement.'
+    throw 'First-party SnapFrame RGB admission and exact-surface/raster binding must precede PNG encoding, durable publication, and byte/file hash agreement.'
 }
-$textureDestroyIndex = $populateAttemptSource.IndexOf(
-    'UnityEngine.Object.Destroy(texture);',
-    [StringComparison]::Ordinal)
-if ($textureDestroyIndex -lt 0 -or
-    $populateAttemptSource.IndexOf('finally', [StringComparison]::Ordinal) -lt 0) {
-    throw 'The admitted texture is not destroyed on every decoder/encoder outcome.'
+$populateTextureOwnershipPattern = '(?s)Texture2D\s+texture\s*=\s*null;\s*byte\[\]\s+pngBytes;\s*try\s*\{\s*texture\s*=\s*await\s+CaptureTextureWithTimeout\(state,\s*attempt\);.*?ImageConversion\.EncodeToPNG\(texture\);.*?\}\s*finally\s*\{\s*if\s*\(texture\s*!=\s*null\)\s*\{\s*UnityEngine\.Object\.Destroy\(texture\);\s*\}\s*\}\s*ThrowIfStopped\(\);\s*WriteNoReplaceBytes\(candidatePath,\s*pngBytes\);'
+if ($populateAttemptSource -notmatch $populateTextureOwnershipPattern) {
+    throw 'The transferred first-party Texture2D is not owned by one try/finally spanning readback, raster admission, and PNG encoding before durable publication.'
 }
 
 $captureTextureSource = $moduleSource.Substring(
     $captureTimeoutIndex,
-    $observeLateIndex - $captureTimeoutIndex)
-if ($moduleSource.IndexOf('private ExactTargetReadbackProbe _activeReadbackProbe;', [StringComparison]::Ordinal) -lt 0 -or
-    $captureTextureSource -notmatch '(?s)Interlocked\.CompareExchange\(\s*ref _activeReadbackProbe,\s*probe,\s*null\) != null') {
-    throw 'The module no longer owns exactly one active readback probe through registration and final cleanup.'
+    $finalizePngIndex - $captureTimeoutIndex)
+if ($moduleSource.IndexOf('private SnapFrameReadbackOperation _activeReadbackOperation;', [StringComparison]::Ordinal) -lt 0 -or
+    $captureTextureSource -notmatch '(?s)Interlocked\.CompareExchange\(\s*ref _activeReadbackOperation,\s*operation,\s*null\) != null') {
+    throw 'The module no longer owns exactly one cancellable SnapFrame operation through atomic registration and cleanup.'
 }
 $stopMethodStart = $moduleSource.IndexOf('public void Stop()', [StringComparison]::Ordinal)
 $disposeMethodStart = $moduleSource.IndexOf('public void Dispose()', [StringComparison]::Ordinal)
@@ -732,135 +910,80 @@ $stopMethodSource = $moduleSource.Substring(
     $stopMethodStart,
     $disposeMethodStart - $stopMethodStart)
 $stopLifecycleIndex = $stopMethodSource.IndexOf('_lifecycle.Stop();', [StringComparison]::Ordinal)
-$stopProbeAbortIndex = $stopMethodSource.IndexOf('AbortActiveReadbackProbe();', [StringComparison]::Ordinal)
+$stopOperationAbortIndex = $stopMethodSource.IndexOf('AbortActiveReadbackOperation();', [StringComparison]::Ordinal)
 $stopLifecycleUnsubscribeIndex = $stopMethodSource.IndexOf('UnsubscribeModulesLoaded();', [StringComparison]::Ordinal)
-if ($stopLifecycleIndex -lt 0 -or $stopProbeAbortIndex -le $stopLifecycleIndex -or
-    $stopLifecycleUnsubscribeIndex -le $stopProbeAbortIndex) {
-    throw 'Terminal Stop must close lifecycle entry, abort the active readback probe, then remove lifecycle subscriptions.'
+if ($stopLifecycleIndex -lt 0 -or $stopOperationAbortIndex -le $stopLifecycleIndex -or
+    $stopLifecycleUnsubscribeIndex -le $stopOperationAbortIndex) {
+    throw 'Terminal Stop must close lifecycle entry, cancel the active SnapFrame operation, then remove subscriptions.'
 }
 foreach ($captureTextureContract in @(
-    'var probe = new ExactTargetReadbackProbe(',
-    'Texture2D vendorTexture = null;',
-    'Texture2D firstPartyTexture = null;',
-    'bool firstPartyOwnershipTransferred = false;',
+    'var operation = new SnapFrameReadbackOperation(this, state, attempt);',
     'CancellationTokenSource deadlineCancellation = null;',
     'deadlineCancellation = new CancellationTokenSource();',
     'UniTask deadlineOrStopTask = WaitForCaptureDeadlineOrStopAsync(',
-    '_captureManager.CaptureToTextureAsync(',
-    'probe.Begin();',
-    'probe.AfterRender).Preserve();',
-    'await UniTask.WhenAny(captureTask, deadlineOrStopTask)',
-    'if (_lifecycle.IsStopped)',
+    'UniTask<Texture2D> captureTask = operation.CaptureAsync().Preserve();',
+    'await UniTask.WhenAny(captureTask, deadlineOrStopTask);',
+    'Texture2D completedTexture = null;',
+    'bool completedTextureReturned = false;',
+    'operation.Abort();',
+    'cancelledTexture = await captureTask;',
+    'UnityEngine.Object.Destroy(cancelledTexture);',
+    'Exception cleanupFailure = null;',
+    'if (cleanupFailure != null)',
     'attempt.captureTaskStopObserved = true;',
     'attempt.captureTaskTimeoutObserved = true;',
-    'probe.Abort();',
-    'attempt.lateCaptureTaskObserverAttached = true;',
-    'ObserveLateCaptureAsync(captureTask).Forget(',
     'attempt.captureTaskCompletedBeforeDeadline = true;',
-    'if (vendorTexture == null)',
-    'attempt.vendorReturnedTexturePresent = true;',
-    'attempt.vendorReturnedTextureUsedForAdmission = false;',
-    'probe.RequireCompleted();',
-    'firstPartyTexture = probe.TakeReadbackTexture();',
-    'if (firstPartyTexture == null)',
-    'vendorTexture.GetInstanceID() != firstPartyTexture.GetInstanceID();',
-    'UnityEngine.Object.Destroy(vendorTexture);',
-    'attempt.vendorReturnedTextureDestroyRequested = true;',
-    'firstPartyOwnershipTransferred = true;',
-    'return firstPartyTexture;',
+    'completedTextureReturned = true;',
+    'return completedTexture;',
     'deadlineCancellation.Cancel();',
     'deadlineCancellation.Dispose();',
-    'probe.CopyTo(attempt);',
-    'if (!firstPartyOwnershipTransferred && firstPartyTexture != null)',
-    'probe.DestroyOwnedReadbackTexture();'
+    'operation.Dispose();'
 )) {
     if ($captureTextureSource.IndexOf($captureTextureContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "The bounded texture-capture contract is missing '$captureTextureContract'."
+        throw "The bounded, cooperatively cancellable SnapFrame contract is missing '$captureTextureContract'."
     }
 }
-$captureFinallyIndex = $captureTextureSource.IndexOf('finally', [StringComparison]::Ordinal)
+$captureFinallyIndex = $captureTextureSource.LastIndexOf('finally', [StringComparison]::Ordinal)
 if ($captureFinallyIndex -lt 0) {
-    throw 'The capture-task final cleanup block is missing.'
+    throw 'The SnapFrame-operation final cleanup block is missing.'
 }
 $captureFinallySource = $captureTextureSource.Substring($captureFinallyIndex)
+$unreturnedTextureDestroyIndex = $captureFinallySource.IndexOf('if (!completedTextureReturned && completedTexture != null)', [StringComparison]::Ordinal)
 $deadlineCancelIndex = $captureFinallySource.IndexOf('deadlineCancellation.Cancel();', [StringComparison]::Ordinal)
 $deadlineDisposeIndex = $captureFinallySource.IndexOf('deadlineCancellation.Dispose();', [StringComparison]::Ordinal)
-$finalProbeAbortIndex = $captureFinallySource.IndexOf('probe.Abort();', [StringComparison]::Ordinal)
-$activeProbeClearIndex = $captureFinallySource.IndexOf(
-    'Interlocked.CompareExchange(',
-    [StringComparison]::Ordinal)
-if ($deadlineCancelIndex -lt 0 -or $deadlineDisposeIndex -le $deadlineCancelIndex -or
-    $finalProbeAbortIndex -le $deadlineDisposeIndex -or $activeProbeClearIndex -le $finalProbeAbortIndex -or
-    $captureFinallySource -notmatch '(?s)Interlocked\.CompareExchange\(\s*ref _activeReadbackProbe,\s*null,\s*probe\);') {
-    throw 'Capture finalization must cancel/dispose the cooperative deadline/Stop loser, abort the probe, then clear module ownership.'
-}
-$vendorUnusedIndex = $captureTextureSource.IndexOf(
-    'attempt.vendorReturnedTextureUsedForAdmission = false;',
-    [StringComparison]::Ordinal)
-$firstPartyTakeIndex = $captureTextureSource.IndexOf(
-    'firstPartyTexture = probe.TakeReadbackTexture();',
-    [StringComparison]::Ordinal)
-$vendorDistinctIndex = $captureTextureSource.IndexOf(
-    'attempt.vendorReturnedTextureDistinctFromFirstParty =',
-    [StringComparison]::Ordinal)
-$vendorInstanceDistinctIndex = $captureTextureSource.IndexOf(
-    'vendorTexture.GetInstanceID() != firstPartyTexture.GetInstanceID();',
-    [StringComparison]::Ordinal)
-$vendorDestroyIndex = $captureTextureSource.IndexOf(
-    'UnityEngine.Object.Destroy(vendorTexture);',
-    [StringComparison]::Ordinal)
-$vendorDestroyReceiptIndex = $captureTextureSource.IndexOf(
-    'attempt.vendorReturnedTextureDestroyRequested = true;',
-    [StringComparison]::Ordinal)
-$firstPartyReturnIndex = $captureTextureSource.IndexOf(
-    'return firstPartyTexture;',
-    [StringComparison]::Ordinal)
-if ($vendorUnusedIndex -lt 0 -or $firstPartyTakeIndex -le $vendorUnusedIndex -or
-    $vendorDistinctIndex -le $firstPartyTakeIndex -or
-    $vendorInstanceDistinctIndex -le $vendorDistinctIndex -or
-    $vendorDestroyIndex -le $vendorInstanceDistinctIndex -or
-    $vendorDestroyReceiptIndex -le $vendorDestroyIndex -or $firstPartyReturnIndex -le $vendorDestroyReceiptIndex) {
-    throw 'Vendor texture separation, destruction request, and first-party texture transfer are out of order.'
-}
-if (@([Regex]::Matches(
-        $captureTextureSource,
-        [Regex]::Escape('UnityEngine.Object.Destroy(vendorTexture);'))).Count -lt 2 -or
-    @([Regex]::Matches(
-        $captureTextureSource,
-        [Regex]::Escape('attempt.vendorReturnedTextureDestroyRequested = true;'))).Count -lt 2) {
-    throw 'Vendor texture destruction must be requested and receipted on both normal and exceptional retained-result paths.'
-}
-foreach ($forbiddenVendorAdmission in @(
-    'vendorTexture.GetPixels32(',
-    'ImageConversion.EncodeToPNG(vendorTexture)',
-    'return vendorTexture;'
-)) {
-    if ($captureTextureSource.IndexOf($forbiddenVendorAdmission, [StringComparison]::Ordinal) -ge 0) {
-        throw "The vendor-returned Texture2D can reach admission through '$forbiddenVendorAdmission'."
-    }
+$finalOperationAbortIndex = $captureFinallySource.IndexOf('operation.Abort();', [StringComparison]::Ordinal)
+$activeOperationClearIndex = $captureFinallySource.IndexOf('Interlocked.CompareExchange(', [StringComparison]::Ordinal)
+$operationDisposeIndex = $captureFinallySource.IndexOf('operation.Dispose();', [StringComparison]::Ordinal)
+if ($unreturnedTextureDestroyIndex -lt 0 -or
+    $deadlineCancelIndex -le $unreturnedTextureDestroyIndex -or $deadlineDisposeIndex -le $deadlineCancelIndex -or
+    $finalOperationAbortIndex -le $deadlineDisposeIndex -or
+    $activeOperationClearIndex -le $finalOperationAbortIndex -or
+    $operationDisposeIndex -le $activeOperationClearIndex -or
+    $captureFinallySource -notmatch '(?s)Interlocked\.CompareExchange\(\s*ref _activeReadbackOperation,\s*null,\s*operation\);') {
+    throw 'SnapFrame finalization must destroy an unreturned owned texture, cancel/dispose the deadline loser, abort, atomically clear ownership, then dispose.'
 }
 $deadlineTaskIndex = $captureTextureSource.IndexOf(
     'UniTask deadlineOrStopTask = WaitForCaptureDeadlineOrStopAsync(',
     [StringComparison]::Ordinal)
-$capturePreserveIndex = $captureTextureSource.IndexOf('.Preserve();', [StringComparison]::Ordinal)
+$capturePreserveIndex = $captureTextureSource.IndexOf('operation.CaptureAsync().Preserve();', [StringComparison]::Ordinal)
 $captureWaitIndex = $captureTextureSource.IndexOf('await UniTask.WhenAny(captureTask, deadlineOrStopTask)', [StringComparison]::Ordinal)
-$timeoutAbortIndex = $captureTextureSource.IndexOf('probe.Abort();', [StringComparison]::Ordinal)
-$lateObserverIndex = $captureTextureSource.IndexOf('ObserveLateCaptureAsync(captureTask).Forget(', [StringComparison]::Ordinal)
+$timeoutAbortIndex = $captureTextureSource.IndexOf('operation.Abort();', [StringComparison]::Ordinal)
+$cancelledAwaitIndex = $captureTextureSource.IndexOf('cancelledTexture = await captureTask;', [StringComparison]::Ordinal)
 if ($deadlineTaskIndex -lt 0 -or $capturePreserveIndex -le $deadlineTaskIndex -or
     $captureWaitIndex -le $capturePreserveIndex -or
-    $timeoutAbortIndex -le $captureWaitIndex -or $lateObserverIndex -le $timeoutAbortIndex) {
-    throw 'Deadline/Stop handling must start before capture, preserve and wait once, abort the probe, then attach the late-result observer.'
+    $timeoutAbortIndex -le $captureWaitIndex -or $cancelledAwaitIndex -le $timeoutAbortIndex) {
+    throw 'Deadline/Stop handling must preserve one operation, cancel its four-EOF handshake, and await exact restoration before throwing.'
 }
 
 $deadlineOrStopStart = $moduleSource.IndexOf(
     'private async UniTask WaitForCaptureDeadlineOrStopAsync(',
     [StringComparison]::Ordinal)
-if ($deadlineOrStopStart -le $captureTimeoutIndex -or $deadlineOrStopStart -ge $observeLateIndex) {
-    throw 'The cooperative deadline/Stop helper is missing or outside the capture-task boundary.'
+if ($deadlineOrStopStart -le $captureTimeoutIndex -or $deadlineOrStopStart -ge $finalizePngIndex) {
+    throw 'The cooperative deadline/Stop helper is missing or outside the bounded SnapFrame operation.'
 }
 $deadlineOrStopSource = $moduleSource.Substring(
     $deadlineOrStopStart,
-    $observeLateIndex - $deadlineOrStopStart)
+    $finalizePngIndex - $deadlineOrStopStart)
 foreach ($deadlineOrStopContract in @(
     'await UniTask.WhenAny(',
     'UniTask.Delay(',
@@ -878,17 +1001,6 @@ if (@([Regex]::Matches($deadlineOrStopSource, 'SuppressCancellationThrow\(\)')).
     throw 'Both the deadline and terminal-Stop cooperative waiters must suppress their shared cancellation.'
 }
 
-$observeLateSource = $moduleSource.Substring(
-    $observeLateIndex,
-    $finalizePngIndex - $observeLateIndex)
-$lateAwaitIndex = $observeLateSource.IndexOf('lateTexture = await captureTask;', [StringComparison]::Ordinal)
-$lateMainThreadIndex = $observeLateSource.IndexOf('await UniTask.SwitchToMainThread();', [StringComparison]::Ordinal)
-$lateDestroyIndex = $observeLateSource.IndexOf('UnityEngine.Object.Destroy(lateTexture);', [StringComparison]::Ordinal)
-if ($lateAwaitIndex -lt 0 -or $lateMainThreadIndex -le $lateAwaitIndex -or
-    $lateDestroyIndex -le $lateMainThreadIndex) {
-    throw 'The attached late-result observer no longer awaits the vendor result and requests texture destruction on the Unity thread.'
-}
-
 $finalizePngSource = $moduleSource.Substring(
     $finalizePngIndex,
     $moduleSource.IndexOf('private void PruneOldCandidates(', [StringComparison]::Ordinal) - $finalizePngIndex)
@@ -903,281 +1015,699 @@ foreach ($finalPublicationContract in @(
     }
 }
 
-$renderProbeIndex = $moduleSource.IndexOf(
-    'private sealed class ExactTargetReadbackProbe',
-    [StringComparison]::Ordinal)
-$lockedRuntimeFileIndex = $moduleSource.IndexOf(
-    'private sealed class LockedRuntimeFile',
-    [StringComparison]::Ordinal)
-if ($renderProbeIndex -lt 0 -or $lockedRuntimeFileIndex -le $renderProbeIndex) {
-    throw 'The exact-target readback probe class boundaries are missing.'
-}
-$renderProbeSource = $moduleSource.Substring(
-    $renderProbeIndex,
-    $lockedRuntimeFileIndex - $renderProbeIndex)
-foreach ($renderProbeContract in @(
-    'private readonly int _expectedCameraInstanceId;',
-    'private RenderTexture _expectedTarget;',
-    'private Texture2D _readbackTexture;',
-    '_expectedCameraInstanceId = expectedCamera.GetInstanceID();',
-    '_expectedTarget = target;',
-    'RenderTargetInstanceId = target.GetInstanceID();',
-    'RenderTargetIsCreated = target.IsCreated();',
-    'RenderTargetAntiAliasing = target.antiAliasing;',
-    'RenderTargetUseMipMap = target.useMipMap;',
-    'RenderPipelineManager.endCameraRendering += _handler;',
-    'internal void AfterRender()',
+$snapFrameOperationSource = $moduleSource.Substring(
+    $snapFrameOperationIndex,
+    $lockedRuntimeFileIndex - $snapFrameOperationIndex)
+foreach ($snapFrameOperationContract in @(
+    '(float)CapturePolicy.SnapFrameSentinelTranslationMetres,',
+    'private const string BaselineStage = "baseline_exact";',
+    'private const string SentinelStage = "sentinel_discard";',
+    'private const string RestoredStage = "restored_exact";',
+    'private const string StableStage = "stable_exact";',
+    'SnapFrameCaptureFeature.Instance;',
+    '_feature.TargetCamera',
+    '_feature.FrameRT',
+    '_feature.FrameDirty',
+    '_feature.isActive',
+    '_surface.graphicsDeviceType = SystemInfo.graphicsDeviceType.ToString();',
+    '_surface.graphicsUvStartsAtTop = SystemInfo.graphicsUVStartsAtTop;',
+    '_surface.activeColorSpace = QualitySettings.activeColorSpace.ToString();',
+    '_surface.readPixelsCoordinateOrigin =',
+    'CapturePolicy.SnapFrameReadPixelsCoordinateOrigin;',
+    '_surface.cpuRowTransform = CapturePolicy.SnapFrameCpuRowTransform;',
+    'internal async UniTask<Texture2D> CaptureAsync()',
     'internal void Abort()',
-    'internal void CopyTo(CaptureAttemptReceipt attempt)',
-    'RenderPipelineManager.endCameraRendering -= _handler;',
-    'internal void RequireCompleted()',
-    'internal Texture2D TakeReadbackTexture()',
-    'camera.GetInstanceID() != _expectedCameraInstanceId',
-    'currentTarget.GetInstanceID() == RenderTargetInstanceId',
-    '_expectedTarget.GetInstanceID() == RenderTargetInstanceId',
-    'currentTarget.width == _expectedWidth',
-    'currentTarget.height == _expectedHeight',
-    'CaptureExactTargetReadback("srp_endCameraRendering");',
-    'CaptureExactTargetReadback("vendor_afterRender_fallback");'
+    'public void Dispose()',
+    'CapturePolicy.RequireSnapFrameCaptureRoute(',
+    '_attempt.pixelSource = CapturePolicy.SnapFramePixelSource;',
+    '_attempt.readbackTrigger = "public_snap_frame_four_eof_camera_callback_handshake";'
 )) {
-    if ($renderProbeSource.IndexOf($renderProbeContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "Exact-camera/exact-render-target proof is missing '$renderProbeContract'."
+    if ($snapFrameOperationSource.IndexOf($snapFrameOperationContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The direct public SnapFrame operation is missing '$snapFrameOperationContract'."
+    }
+}
+if ($snapFrameOperationSource -match 'UnityEngine\.Object\.DestroyImmediate\s*\(' -or
+    $snapFrameOperationSource -match '\.Release\s*\(') {
+    throw 'The first-party module must never destroy or release the vendor-owned SnapFrame FrameRT.'
+}
+$allowedSnapFrameDestroyArguments = @('sentinelTexture', 'exactTexture', 'texture')
+foreach ($destroyCall in [Regex]::Matches(
+        $snapFrameOperationSource,
+        'UnityEngine\.Object\.Destroy\(\s*(?<argument>[^\)\r\n]+)\s*\)')) {
+    $destroyArgument = $destroyCall.Groups['argument'].Value.Trim()
+    if ($allowedSnapFrameDestroyArguments -cnotcontains $destroyArgument) {
+        throw "The SnapFrame operation destroys an unowned or vendor-surface object '$destroyArgument'."
     }
 }
 
-$afterRenderStart = $renderProbeSource.IndexOf(
-    'internal void AfterRender()',
+$captureAsyncStart = $snapFrameOperationSource.IndexOf(
+    'internal async UniTask<Texture2D> CaptureAsync()',
     [StringComparison]::Ordinal)
-$takeReadbackStart = $renderProbeSource.IndexOf(
-    'internal Texture2D TakeReadbackTexture()',
+$abortStart = $snapFrameOperationSource.IndexOf(
+    'internal void Abort()',
     [StringComparison]::Ordinal)
-if ($afterRenderStart -lt 0 -or $takeReadbackStart -le $afterRenderStart) {
-    throw 'The vendor afterRender hybrid-route method boundaries are missing.'
+if ($captureAsyncStart -lt 0 -or $abortStart -le $captureAsyncStart) {
+    throw 'The four-end-of-frame SnapFrame operation boundaries are missing.'
 }
-$afterRenderSource = $renderProbeSource.Substring(
-    $afterRenderStart,
-    $takeReadbackStart - $afterRenderStart)
-if ($afterRenderSource -notmatch
-    '(?s)RemoveSubscription\(\);\s*if \(SrpEndCameraRenderingCallbackCount > 0\).*?StandardCameraRenderCallbackProofAvailable = true;\s*}\s*else\s*{\s*CaptureExactTargetReadback\("vendor_afterRender_fallback"\);') {
-    throw 'The vendor afterRender path no longer prefers a clean exact-camera SRP readback and falls back only when its callback count is zero.'
+$captureAsyncSource = $snapFrameOperationSource.Substring(
+    $captureAsyncStart,
+    $abortStart - $captureAsyncStart)
+if (@([Regex]::Matches(
+        $captureAsyncSource,
+        [Regex]::Escape('await UniTask.WaitForEndOfFrame(_cancellation.Token);'))).Count -ne 4) {
+    throw 'The SnapFrame operation must use exactly four cancellable end-of-frame waits.'
+}
+$orderedCaptureContracts = @(
+    'CaptureInitialSurfaceState();',
+    'Subscribe();',
+    'BaselineStage,',
+    'await UniTask.WaitForEndOfFrame(_cancellation.Token);',
+    '_surface.dirtyBeforeRequest = ToDirtyObservation(baseline);',
+    '_surface.frameRenderTextureBefore = ObserveAndRequireFrameRenderTexture(',
+    'ApplyPose(_sentinelPosition, _exactRotation);',
+    '_surface.sentinelPosition = ToArray(_sentinelPosition);',
+    '_surface.sentinelWorldToCameraMatrixColumnMajor =',
+    'SentinelStage,',
+    'await UniTask.WaitForEndOfFrame(_cancellation.Token);',
+    '_surface.dirtyAfterRequest = ToDirtyObservation(sentinel);',
+    '_surface.frameRenderTextureAfterDirtyRequest = ObserveAndRequireFrameRenderTexture(',
+    'sentinelTexture = ReadFrameRenderTexture(',
+    '_surface.sentinelRaster = CapturePolicy.AnalyzeRgb24(',
+    'CapturePolicy.RequireNonDegenerateRaster(',
+    'UnityEngine.Object.Destroy(sentinelTexture);',
+    'RestoreExactCameraState();',
+    'RestoredStage,',
+    'await UniTask.WaitForEndOfFrame(_cancellation.Token);',
+    '_surface.dirtyBeforeReadback = ToDirtyObservation(restored);',
+    '_surface.frameRenderTextureBeforeReadback = ObserveAndRequireFrameRenderTexture(',
+    'StableStage,',
+    'await UniTask.WaitForEndOfFrame(_cancellation.Token);',
+    '_surface.dirtyAfterCompletion = ToDirtyObservation(stable);',
+    '_surface.frameRenderTextureAfter = ObserveAndRequireFrameRenderTexture(',
+    '_surface.exactRestoreVerified = ExactCameraStateMatches();',
+    'exactTexture = ReadFrameRenderTexture(_feature.FrameRT, _surface.readback);',
+    '_surface.exactFrameRgb24Sha256 = CapturePolicy.Sha256Bytes(exactRgb24);',
+    '_surface.sentinelAndExactRgbDiffer = !String.Equals(',
+    '_attempt.pixelSource = CapturePolicy.SnapFramePixelSource;',
+    'CaptureExactCameraAfterState();',
+    'CaptureFinalSurfaceState();',
+    'Unsubscribe();',
+    'CapturePolicy.RequireSnapFrameCaptureRoute(',
+    'exactOwnershipTransferred = true;',
+    'return exactTexture;'
+)
+$orderedSearchFrom = 0
+foreach ($orderedCaptureContract in $orderedCaptureContracts) {
+    $orderedCaptureIndex = $captureAsyncSource.IndexOf(
+        $orderedCaptureContract,
+        $orderedSearchFrom,
+        [StringComparison]::Ordinal)
+    if ($orderedCaptureIndex -lt 0) {
+        throw "The four-EOF sentinel/restore/readback sequence is missing or out of order at '$orderedCaptureContract'."
+    }
+    $orderedSearchFrom = $orderedCaptureIndex + $orderedCaptureContract.Length
+}
+foreach ($captureFinallyContract in @(
+    'finally',
+    'Exception cleanupFailure = null;',
+    'if (!ExactCameraStateMatches())',
+    'RestoreExactCameraState();',
+    'CaptureExactCameraAfterState();',
+    '_owner.RequireLockedCameraState(_cameraState);',
+    'CaptureFinalSurfaceState();',
+    'Unsubscribe();',
+    'if (sentinelTexture != null)',
+    'if ((!exactOwnershipTransferred || cleanupFailure != null) &&',
+    'Exception combinedFailure = operationFailure == null',
+    'new AggregateException(operationFailure, cleanupFailure);',
+    'throw new InvalidOperationException('
+)) {
+    if ($captureAsyncSource.IndexOf($captureFinallyContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "SnapFrame camera/readback cleanup is missing '$captureFinallyContract'."
+    }
+}
+if ($captureAsyncSource.IndexOf('Exception operationFailure = null;', [StringComparison]::Ordinal) -lt 0 -or
+    $captureAsyncSource.IndexOf('operationFailure = exception;', [StringComparison]::Ordinal) -lt 0) {
+    throw 'SnapFrame operation failures are not retained for cleanup-failure aggregation.'
+}
+foreach ($exactAfterContract in @(
+    'private void CaptureExactCameraAfterState()',
+    '_surface.exactPositionAfter = ToArray(_camera.transform.position);',
+    '_surface.exactRotationXyzwAfter = ToArray(_camera.transform.rotation);',
+    '_surface.exactWorldToCameraMatrixColumnMajorAfter =',
+    '_surface.exactProjectionMatrixColumnMajorAfter =',
+    '_surface.exactRestoreVerified = ExactCameraStateMatches();'
+)) {
+    if ($snapFrameOperationSource.IndexOf($exactAfterContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Exact after-state and restoration evidence is missing '$exactAfterContract'."
+    }
 }
 
-$requireCompletedStart = $renderProbeSource.IndexOf(
-    'internal void RequireCompleted()',
-    [StringComparison]::Ordinal)
-$handleSrpStart = $renderProbeSource.IndexOf(
-    'private void HandleEndCameraRendering(',
-    [StringComparison]::Ordinal)
-if ($requireCompletedStart -lt 0 -or $handleSrpStart -le $requireCompletedStart) {
-    throw 'The exact-target route-admission method boundaries are missing.'
+foreach ($cameraCallbackContract in @(
+    'RenderPipelineManager.beginCameraRendering += _beginHandler;',
+    'RenderPipelineManager.endCameraRendering += _endHandler;',
+    'RenderPipelineManager.beginCameraRendering -= _beginHandler;',
+    'RenderPipelineManager.endCameraRendering -= _endHandler;',
+    'RecordCameraCallback("begin", callbackCamera);',
+    'RecordCameraCallback("end", callbackCamera);',
+    'callbackCamera.GetInstanceID() != _cameraInstanceId',
+    'cameraMatchesExactSceneCamera = sceneCameraMatch',
+    'poseMatchesStage = poseMatches',
+    'projectionMatchesExactProfile = projectionMatches',
+    'frameDirty = _feature != null && _feature.FrameDirty',
+    '_surface.beginCameraRenderingCallbackCount += 1;',
+    '_surface.endCameraRenderingCallbackCount += 1;',
+    'private SnapFrameCameraCallbackReceipt RequireStageEndCallback(',
+    'candidate.cameraMatchesExactSceneCamera',
+    'candidate.targetTextureNull',
+    'candidate.poseMatchesStage',
+    'candidate.projectionMatchesExactProfile',
+    'candidate.frameDirty == expectedDirty'
+)) {
+    if ($snapFrameOperationSource.IndexOf($cameraCallbackContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Exact-camera begin/end callback provenance is missing '$cameraCallbackContract'."
+    }
 }
-$requireCompletedSource = $renderProbeSource.Substring(
-    $requireCompletedStart,
-    $handleSrpStart - $requireCompletedStart)
-if ($requireCompletedSource.IndexOf(
-        'CapturePolicy.RequireExactTargetReadbackRoute(',
-        [StringComparison]::Ordinal) -lt 0) {
-    throw 'The exact-target probe no longer delegates route admission to its tested pure policy.'
+
+foreach ($surfaceIsolationContract in @(
+    'UniversalAdditionalCameraData',
+    'CameraRenderType.Base',
+    'data.cameraStack.Count',
+    'Resources.FindObjectsOfTypeAll<Canvas>()',
+    'canvas.renderMode == UnityEngine.RenderMode.WorldSpace ||',
+    'canvas.renderMode == UnityEngine.RenderMode.ScreenSpaceCamera',
+    'Resources.FindObjectsOfTypeAll<GameObject>()',
+    'IsKnownCaptureOverlayName(candidate.name)',
+    '_owner._captureManager.IsCaptureViewVisible',
+    '_owner._sceneManager.IsGridVisible',
+    '_owner._sceneManager.IsSceneGizmoVisible',
+    '_owner._sceneManager.ShowTrajectory',
+    '_owner._sceneManager.SceneCameraInteraction',
+    '_owner._sceneManager.SceneCameraScreenRenderer',
+    '_surface.cleanViewStateVerifiedAtEveryCheckpoint &= cleanView;',
+    '_surface.cameraConfigurationUnchanged =',
+    'RectArraysEqual(_surface.sceneCameraPixelRectAfter, _surface.sceneCameraPixelRect)'
+)) {
+    if ($snapFrameOperationSource.IndexOf($surfaceIsolationContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "SnapFrame overlay/canvas/camera-stack isolation is missing '$surfaceIsolationContract'."
+    }
 }
+if (@([Regex]::Matches(
+        $captureAsyncSource,
+        [Regex]::Escape('RequireCheckpoint('))).Count -ne 4) {
+    throw 'The four-EOF operation must execute exactly four surface-contamination checkpoints.'
+}
+$captureOverlayInventoryStart = $snapFrameOperationSource.IndexOf(
+    'private void CaptureOverlayInventory()',
+    [StringComparison]::Ordinal)
+$requireNoUnsafeStart = $snapFrameOperationSource.IndexOf(
+    'private void RequireNoUnsafeSurfaceContributor()',
+    [StringComparison]::Ordinal)
+$requireCheckpointStart = $snapFrameOperationSource.IndexOf(
+    'private void RequireCheckpoint(',
+    [StringComparison]::Ordinal)
+$observeFrameRenderTextureStart = $snapFrameOperationSource.IndexOf(
+    'private SnapFrameRenderTextureObservationReceipt ObserveAndRequireFrameRenderTexture(',
+    [StringComparison]::Ordinal)
+if ($captureOverlayInventoryStart -lt 0 -or $requireNoUnsafeStart -le $captureOverlayInventoryStart -or
+    $requireCheckpointStart -le $requireNoUnsafeStart -or
+    $observeFrameRenderTextureStart -le $requireCheckpointStart) {
+    throw 'The SnapFrame overlay-inventory/checkpoint method boundaries are missing.'
+}
+$captureOverlayInventorySource = $snapFrameOperationSource.Substring(
+    $captureOverlayInventoryStart,
+    $requireNoUnsafeStart - $captureOverlayInventoryStart)
+foreach ($stickyInventoryContract in @(
+    '_surface.unsafeRenderThroughCanvasObserved |= unsafeCanvas;',
+    '(_surface.knownActiveCaptureOverlayNames ??',
+    '.Concat(currentOverlayNames)',
+    '_surface.knownActiveCaptureOverlayNames = overlayNames;',
+    '_surface.knownActiveCaptureOverlayCount = overlayNames.Length;'
+)) {
+    if ($captureOverlayInventorySource.IndexOf($stickyInventoryContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Transient Canvas/overlay evidence is not sticky across checkpoints: '$stickyInventoryContract'."
+    }
+}
+$requireCheckpointSource = $snapFrameOperationSource.Substring(
+    $requireCheckpointStart,
+    $observeFrameRenderTextureStart - $requireCheckpointStart)
+foreach ($checkpointInventoryContract in @(
+    'CaptureOverlayInventory();',
+    '_surface.knownActiveCaptureOverlayCount == 0',
+    '!_surface.unsafeRenderThroughCanvasObserved',
+    '_surface.cleanViewStateVerifiedAtEveryCheckpoint &= cleanView;'
+)) {
+    if ($requireCheckpointSource.IndexOf($checkpointInventoryContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "A four-EOF checkpoint no longer refreshes and retains transient surface evidence: '$checkpointInventoryContract'."
+    }
+}
+
+foreach ($frameRenderTextureContract in @(
+    'RenderTexture frameRenderTexture = _feature.FrameRT;',
+    'isLive = frameRenderTexture != null',
+    'isCreated = frameRenderTexture != null && frameRenderTexture.IsCreated()',
+    'width = frameRenderTexture == null ? 0 : frameRenderTexture.width',
+    'height = frameRenderTexture == null ? 0 : frameRenderTexture.height',
+    'depth = frameRenderTexture == null ? 0 : frameRenderTexture.depth',
+    'antiAliasing = frameRenderTexture == null ? 0 : frameRenderTexture.antiAliasing',
+    'colorFormat = frameRenderTexture == null',
+    'frameRenderTexture.format.ToString()',
+    'graphicsFormat = frameRenderTexture == null',
+    'frameRenderTexture.graphicsFormat.ToString()',
+    'sRgb = frameRenderTexture != null && frameRenderTexture.sRGB',
+    'receipt.width != _owner._cameraProfile.Output.Width',
+    'receipt.width != _camera.pixelWidth || receipt.height != _camera.pixelHeight',
+    'receipt.depth != 0 || receipt.antiAliasing != 1',
+    'receipt.useMipMap || receipt.autoGenerateMips',
+    'expectedInstanceId != 0 && receipt.instanceId != expectedInstanceId',
+    '_frameRenderTextureInstanceId != receipt.instanceId'
+)) {
+    if ($snapFrameOperationSource.IndexOf($frameRenderTextureContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Stable, live 1600x900 public FrameRT proof is missing '$frameRenderTextureContract'."
+    }
+}
+
+foreach ($runtimeFiniteContract in @(
+    'private static void RequireProjectionValue(string label, float actual, float expected)',
+    'if (!IsFinite(actual) || !IsFinite(expected) ||',
+    'private static bool IsFinite(float value)',
+    'return !Single.IsNaN(value) && !Single.IsInfinity(value);',
+    'IsFinite(camera.transform.position.x)',
+    'IsFinite(expectedPosition.x)',
+    'IsFinite(rotationDot)',
+    'if (!IsFinite(leftValue) || !IsFinite(rightValue) ||'
+)) {
+    if ($moduleSource.IndexOf($runtimeFiniteContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The runtime camera/projection comparator is not finite-number fail-closed: '$runtimeFiniteContract'."
+    }
+}
+
+$operationDisposeStart = $snapFrameOperationSource.IndexOf(
+    'public void Dispose()',
+    [StringComparison]::Ordinal)
+$captureInitialSurfaceStart = $snapFrameOperationSource.IndexOf(
+    'private void CaptureInitialSurfaceState()',
+    [StringComparison]::Ordinal)
+if ($operationDisposeStart -lt 0 -or $captureInitialSurfaceStart -le $operationDisposeStart) {
+    throw 'The SnapFrame operation Dispose method boundaries are missing.'
+}
+$operationDisposeSource = $snapFrameOperationSource.Substring(
+    $operationDisposeStart,
+    $captureInitialSurfaceStart - $operationDisposeStart)
+$disposeAbortIndex = $operationDisposeSource.IndexOf('Abort();', [StringComparison]::Ordinal)
+$disposeCancellationIndex = $operationDisposeSource.IndexOf('_cancellation.Dispose();', [StringComparison]::Ordinal)
+if ($operationDisposeSource.IndexOf('Interlocked.Exchange(ref _disposed, 1)', [StringComparison]::Ordinal) -lt 0 -or
+    $disposeAbortIndex -lt 0 -or $disposeCancellationIndex -le $disposeAbortIndex) {
+    throw 'SnapFrame operation disposal must be idempotent, abort cooperative waits, then dispose its CancellationTokenSource.'
+}
+
+$readFrameStart = $snapFrameOperationSource.IndexOf(
+    'private Texture2D ReadFrameRenderTexture(',
+    [StringComparison]::Ordinal)
+$applyPoseStart = $snapFrameOperationSource.IndexOf(
+    'private void ApplyPose(',
+    [StringComparison]::Ordinal)
+if ($readFrameStart -lt 0 -or $applyPoseStart -le $readFrameStart) {
+    throw 'The first-party SnapFrame RGB24 readback method boundaries are missing.'
+}
+$readFrameSource = $snapFrameOperationSource.Substring(
+    $readFrameStart,
+    $applyPoseStart - $readFrameStart)
+$previousActiveIndex = $readFrameSource.IndexOf('RenderTexture previousActive = RenderTexture.active;', [StringComparison]::Ordinal)
+$setActiveIndex = $readFrameSource.IndexOf('RenderTexture.active = frameRenderTexture;', [StringComparison]::Ordinal)
+$verifyActiveIndex = $readFrameSource.IndexOf('active.GetInstanceID() == _frameRenderTextureInstanceId;', [StringComparison]::Ordinal)
+$rgb24Index = $readFrameSource.IndexOf('TextureFormat.RGB24,', [StringComparison]::Ordinal)
+$readPixelsIndex = $readFrameSource.IndexOf('texture.ReadPixels(', [StringComparison]::Ordinal)
+$applyIndex = $readFrameSource.IndexOf('texture.Apply(false, false);', [StringComparison]::Ordinal)
+$restoreActiveIndex = $readFrameSource.IndexOf('RenderTexture.active = readback.renderTextureActiveWasNullBeforeReadback', [StringComparison]::Ordinal)
+$verifyRestoredIndex = $readFrameSource.IndexOf('readback.renderTextureActiveRestored =', [StringComparison]::Ordinal)
+$stableAfterReadbackIndex = $readFrameSource.IndexOf('RenderTexture current = _feature.FrameRT;', [StringComparison]::Ordinal)
+if ($previousActiveIndex -lt 0 -or $setActiveIndex -le $previousActiveIndex -or
+    $verifyActiveIndex -le $setActiveIndex -or $rgb24Index -le $verifyActiveIndex -or
+    $readPixelsIndex -le $rgb24Index -or $applyIndex -le $readPixelsIndex -or
+    $restoreActiveIndex -le $applyIndex -or $verifyRestoredIndex -le $restoreActiveIndex -or
+    $stableAfterReadbackIndex -le $verifyRestoredIndex -or
+    $readFrameSource -notmatch '(?s)finally\s*{\s*RenderTexture\.active = readback\.renderTextureActiveWasNullBeforeReadback\s*\? null\s*:\s*previousActive;' -or
+    $readFrameSource.IndexOf('readback.firstPartyTextureDistinctFromVendorFrameRenderTexture =', [StringComparison]::Ordinal) -lt 0 -or
+    $readFrameSource.IndexOf('readback.vendorFrameRenderTextureDestroyRequested = false;', [StringComparison]::Ordinal) -lt 0) {
+    throw 'First-party RGB24 FrameRT ReadPixels/Apply must save, verify, and exactly restore RenderTexture.active without destroying FrameRT.'
+}
+
 $routePolicyStart = $capturePolicySource.IndexOf(
-    'internal static void RequireExactTargetReadbackRoute(',
+    'internal static void RequireSnapFrameCaptureRoute(',
     [StringComparison]::Ordinal)
 $expectedInputFilesStart = $capturePolicySource.IndexOf(
     'internal static readonly ExpectedFile[] ExpectedInputFiles',
     [StringComparison]::Ordinal)
 if ($routePolicyStart -lt 0 -or $expectedInputFilesStart -le $routePolicyStart) {
-    throw 'The pure exact-target route-policy method boundaries are missing.'
+    throw 'The tested pure SnapFrame route-policy boundaries are missing.'
 }
 $routePolicySource = $capturePolicySource.Substring(
     $routePolicyStart,
     $expectedInputFilesStart - $routePolicyStart)
+if ($capturePolicySource.IndexOf(
+        'internal const double SnapFrameSentinelTranslationMetres = 0.05;',
+        [StringComparison]::Ordinal) -lt 0 -or
+    $capturePolicyTestsSource.IndexOf(
+        'CapturePolicy.SnapFrameSentinelTranslationMetres,',
+        [StringComparison]::Ordinal) -lt 0 -or
+    $capturePolicyTestsSource.IndexOf(
+        'sentinelPosition = new[] { 1.05, 2.0, 3.0 },',
+        [StringComparison]::Ordinal) -lt 0) {
+    throw 'The exact five-centimetre SnapFrame sentinel constant and valid receipt fixture are not locked.'
+}
 foreach ($routeContract in @(
-    'bool fallbackRouteValid =',
-    'srpCallbackCount == 0 &&',
-    'firstSrpFrame == -1 &&',
-    'lastSrpFrame == -1 &&',
-    '!standardCallbackProofAvailable &&',
-    'String.IsNullOrEmpty(callbackFailureType) &&',
-    '"vendor_afterRender_fallback",',
-    'bool standardCallbackRouteValid =',
-    'srpCallbackCount > 0 &&',
-    'firstSrpFrame >= 0 &&',
-    'lastSrpFrame >= firstSrpFrame &&',
-    'standardCallbackProofAvailable &&',
-    '"srp_endCameraRendering",',
-    'if (!fallbackRouteValid && !standardCallbackRouteValid)'
+    'SnapFrameFeatureTypeFullName',
+    'surface.featureBaseActiveBefore',
+    'surface.featureBaseActiveAfter',
+    'surface.featureTargetCameraInstanceIdBefore != surface.sceneCameraInstanceId',
+    'surface.sceneCameraTargetTextureNullBefore',
+    'surface.captureViewAbsentBefore',
+    'surface.unsafeRenderThroughCanvasObserved',
+    'surface.knownActiveCaptureOverlayCount != 0',
+    'canvas.canRenderThroughSceneCamera',
+    'surface.cleanViewStateVerifiedAtEveryCheckpoint',
+    'String.IsNullOrEmpty(surface.graphicsDeviceType)',
+    'String.IsNullOrEmpty(surface.activeColorSpace)',
+    'surface.readPixelsCoordinateOrigin,',
+    'SnapFrameReadPixelsCoordinateOrigin,',
+    'surface.cpuRowTransform,',
+    'SnapFrameCpuRowTransform,',
+    'surface.universalCameraStackCount != 0',
+    'SnapFrameSurfaceProvenance',
+    'RequireSnapFrameRenderTextureObservation(',
+    'observation.depth != 0 || observation.antiAliasing != 1',
+    'observation.colorFormat, "ARGB32"',
+    'String.IsNullOrEmpty(observation.graphicsFormat)',
+    'surface.frameRenderTextureAfterDirtyRequest.graphicsFormat,',
+    'surface.frameRenderTextureBeforeReadback.graphicsFormat,',
+    'surface.frameRenderTextureAfter.graphicsFormat,',
+    'surface.frameRenderTextureAfterDirtyRequest.sRgb !=',
+    'surface.frameRenderTextureBeforeReadback.sRgb !=',
+    'surface.frameRenderTextureAfter.sRgb !=',
+    'surface.frameRenderTextureBefore.sRgb',
+    'RequireSnapFrameDirtySequence(surface);',
+    'surface.dirtyBeforeRequest.dirty',
+    '!surface.dirtyAfterRequest.dirty',
+    '!surface.dirtyBeforeReadback.dirty',
+    'surface.dirtyAfterCompletion.dirty',
+    'surface.frameRenderTextureBefore.observationFrame !=',
+    'surface.dirtyBeforeRequest.observationFrame',
+    'surface.sentinelPoseReached',
+    'surface.exactRestoreVerified',
+    'SentinelPositionMatchesExpected(',
+    'SnapFrameSentinelTranslationMetres',
+    'IsFiniteVector(surface.sentinelWorldToCameraMatrixColumnMajor, 16)',
+    'RequireSnapFrameCallbackHistory(surface);',
+    'surface.beginCameraRenderingCallbackCount < 4',
+    'surface.endCameraRenderingCallbackCount < 4',
+    'surface.cameraCallbacks.Count < 8',
+    'callback.sequence < end.sequence',
+    'callback.frame == frame && callback.sequence < end.sequence',
+    '!IsFinite(callback.realtimeSeconds)',
+    '!CallbackMatchesStageEvidence(surface, callback)',
+    'surface.sentinelReadback',
+    'RequireNonDegenerateRaster(surface.sentinelRaster, CaptureWidth, CaptureHeight);',
+    'surface.sentinelAndExactRgbDiffer',
+    'surface.exactFrameRgb24Sha256',
+    'internal static void RequireSnapFrameExactRasterBinding(',
+    'string surfaceSha256 = RequireSha256(',
+    'string decodedSha256 = RequireSha256(',
+    'String.Equals(surfaceSha256, decodedSha256, StringComparison.Ordinal)',
+    'readback.firstPartyTextureDistinctFromVendorFrameRenderTexture',
+    'readback.vendorFrameRenderTextureDestroyRequested',
+    'SnapFramePixelSource'
 )) {
     if ($routePolicySource.IndexOf($routeContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "The pure exact-target route policy is missing '$routeContract'."
+        throw "The tested pure SnapFrame admission policy is missing '$routeContract'."
     }
 }
-if ($capturePolicyTestsSource.IndexOf('TestExactTargetReadbackRoutePolicy();', [StringComparison]::Ordinal) -lt 0 -or
-    @([Regex]::Matches(
-        $capturePolicyTestsSource,
-        'CapturePolicy\.RequireExactTargetReadbackRoute\(')).Count -lt 12) {
-    throw 'The exact-target route policy is not exercised by its valid and adversarial test matrix.'
+if ($capturePolicyTestsSource.IndexOf('TestSnapFrameCaptureRoutePolicy();', [StringComparison]::Ordinal) -lt 0) {
+    throw 'The SnapFrame route policy test is not invoked.'
 }
-foreach ($adversarialRouteTest in @(
-    'RequireExactTargetReadbackRoute(0, 0, -1, false, null, "vendor_afterRender_fallback")',
-    'RequireExactTargetReadbackRoute(0, -1, -1, true, null, "vendor_afterRender_fallback")',
-    'RequireExactTargetReadbackRoute(0, -1, -1, false, "failure", "vendor_afterRender_fallback")',
-    'RequireExactTargetReadbackRoute(0, -1, -1, false, null, "srp_endCameraRendering")',
-    'RequireExactTargetReadbackRoute(1, -1, -1, true, null, "srp_endCameraRendering")',
-    'RequireExactTargetReadbackRoute(1, 5, 4, true, null, "srp_endCameraRendering")',
-    'RequireExactTargetReadbackRoute(1, 5, 5, false, null, "srp_endCameraRendering")',
-    'RequireExactTargetReadbackRoute(1, 5, 5, true, "failure", "srp_endCameraRendering")',
-    'RequireExactTargetReadbackRoute(1, 5, 5, true, null, "vendor_afterRender_fallback")'
+foreach ($adversarialSnapFrameTest in @(
+    'surface => surface.featureBaseActiveBefore = false',
+    'surface => surface.featureTargetCameraInstanceIdBefore += 1',
+    'surface => surface.knownActiveCaptureOverlayCount = 1',
+    'canRenderThroughSceneCamera = true',
+    'surface => surface.cleanViewStateVerifiedAtEveryCheckpoint = false',
+    'surface => surface.graphicsDeviceType = null',
+    'surface => surface.activeColorSpace = null',
+    'surface => surface.readPixelsCoordinateOrigin = "upper_left"',
+    'surface => surface.cpuRowTransform = "vertical_flip"',
+    'surface => surface.universalCameraStackCount = 1',
+    'surface => surface.frameRenderTextureBefore.depth = 1',
+    'surface => surface.frameRenderTextureBeforeReadback.sRgb = true',
+    'surface => surface.frameRenderTextureAfter.graphicsFormat = "B8G8R8A8_UNorm"',
+    'surface => surface.frameRenderTextureAfter.sRgb = true',
+    'surface => surface.frameRenderTextureAfterDirtyRequest.observationFrame = 99',
+    'surface => surface.dirtyAfterRequest.dirty = false',
+    'surface => surface.sentinelPoseReached = false',
+    'surface => surface.sentinelPosition[0] =',
+    'surface.exactPositionBefore[0] + 0.06',
+    'surface => surface.exactPositionAfter[0] = Double.NaN',
+    'surface => surface.callbackHistoryOverflowed = true',
+    'surface.cameraCallbacks[0].callback = "end";',
+    'surface.cameraCallbacks[1].callback = "begin";',
+    'surface => surface.cameraCallbacks[0].realtimeSeconds = Double.NaN',
+    'surface => surface.cameraCallbacks[0].position[0] = Double.NaN',
+    'surface => surface.sentinelReadback.vendorFrameRenderTextureDestroyRequested = true',
+    'degenerateSentinel.sentinelRaster.luminanceStandardDeviation = 0.0',
+    'nonFiniteSentinel.sentinelRaster.nonBlackPixelFraction = Double.NaN',
+    'surface => surface.sentinelAndExactRgbDiffer = false',
+    'surface => surface.readback.firstPartyTextureDistinctFromVendorFrameRenderTexture = false',
+    'CapturePolicy.RequireSnapFrameExactRasterBinding(boundSurface, boundRaster);',
+    'CapturePolicy.RequireSnapFrameExactRasterBinding(null, boundRaster);',
+    '"first_party_exact_vendor_render_target"'
 )) {
-    if ($capturePolicyTestsSource.IndexOf($adversarialRouteTest, [StringComparison]::Ordinal) -lt 0) {
-        throw "The adversarial exact-target route matrix is missing '$adversarialRouteTest'."
+    if ($capturePolicyTestsSource.IndexOf($adversarialSnapFrameTest, [StringComparison]::Ordinal) -lt 0) {
+        throw "The adversarial SnapFrame matrix is missing '$adversarialSnapFrameTest'."
     }
 }
 
-$hasExpectedTargetStart = $renderProbeSource.IndexOf(
-    'private bool HasExpectedTarget()',
-    [StringComparison]::Ordinal)
-if ($hasExpectedTargetStart -le $handleSrpStart) {
-    throw 'The preferred exact-camera SRP handler boundaries are missing.'
-}
-$handleSrpSource = $renderProbeSource.Substring(
-    $handleSrpStart,
-    $hasExpectedTargetStart - $handleSrpStart)
-if ($handleSrpSource.IndexOf('camera == null || _expectedCamera == null ||', [StringComparison]::Ordinal) -lt 0 -or
-    $handleSrpSource.IndexOf('camera.GetInstanceID() != _expectedCameraInstanceId', [StringComparison]::Ordinal) -lt 0 -or
-    $handleSrpSource.IndexOf('if (!HasExpectedTarget())', [StringComparison]::Ordinal) -lt 0 -or
-    $handleSrpSource.IndexOf('SrpEndCameraRenderingCallbackCount += 1;', [StringComparison]::Ordinal) -lt 0 -or
-    $handleSrpSource.IndexOf('CaptureExactTargetReadback("srp_endCameraRendering");', [StringComparison]::Ordinal) -lt 0) {
-    throw 'The preferred SRP path no longer filters the exact camera/target and performs first-party readback.'
-}
+function Get-ReceiptModelSection {
+    param(
+        [Parameter(Mandatory = $true)][string]$StartMarker,
+        [Parameter(Mandatory = $true)][string]$EndMarker,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
 
-$exactReadbackStart = $renderProbeSource.IndexOf(
-    'private void CaptureExactTargetReadback(string trigger)',
-    [StringComparison]::Ordinal)
-if ($exactReadbackStart -lt 0) {
-    throw 'The first-party exact-target readback method is missing.'
-}
-$hasExpectedTargetSource = $renderProbeSource.Substring(
-    $hasExpectedTargetStart,
-    $exactReadbackStart - $hasExpectedTargetStart)
-foreach ($nativeIdentityContract in @(
-    '_expectedCamera == null ||',
-    '_expectedCamera.GetInstanceID() != _expectedCameraInstanceId ||',
-    '_expectedTarget == null',
-    'currentTarget != null &&',
-    'currentTarget.GetInstanceID() == RenderTargetInstanceId &&',
-    '_expectedTarget.GetInstanceID() == RenderTargetInstanceId &&',
-    'currentTarget.IsCreated() &&',
-    'currentTarget.antiAliasing == 1 &&',
-    '!currentTarget.useMipMap;'
-)) {
-    if ($hasExpectedTargetSource.IndexOf($nativeIdentityContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "The exact-target probe is missing native liveness/instance-ID evidence '$nativeIdentityContract'."
+    $start = $receiptModelsSource.IndexOf($StartMarker, [StringComparison]::Ordinal)
+    $end = $receiptModelsSource.IndexOf($EndMarker, [StringComparison]::Ordinal)
+    if ($start -lt 0 -or $end -le $start) {
+        throw "Receipt v7 is missing the $Label model boundaries."
     }
-}
-$exactReadbackSource = $renderProbeSource.Substring($exactReadbackStart)
-$previousActiveIndex = $exactReadbackSource.IndexOf(
-    'RenderTexture previousActive = RenderTexture.active;',
-    [StringComparison]::Ordinal)
-$setActiveIndex = $exactReadbackSource.IndexOf(
-    'RenderTexture.active = _expectedTarget;',
-    [StringComparison]::Ordinal)
-$verifyActiveIndex = $exactReadbackSource.IndexOf(
-    'if (active == null || active.GetInstanceID() != RenderTargetInstanceId)',
-    [StringComparison]::Ordinal)
-$rgb24Index = $exactReadbackSource.IndexOf(
-    'TextureFormat.RGB24,',
-    [StringComparison]::Ordinal)
-$readPixelsIndex = $exactReadbackSource.IndexOf(
-    'candidate.ReadPixels(',
-    [StringComparison]::Ordinal)
-$applyIndex = $exactReadbackSource.IndexOf(
-    'candidate.Apply(false, false);',
-    [StringComparison]::Ordinal)
-$restoreActiveIndex = $exactReadbackSource.IndexOf(
-    'RenderTexture.active = RenderTextureActiveWasNullBeforeReadback',
-    [StringComparison]::Ordinal)
-$verifyRestoredIndex = $exactReadbackSource.IndexOf(
-    'RenderTextureActiveRestored = RenderTextureActiveWasNullBeforeReadback',
-    [StringComparison]::Ordinal)
-if ($previousActiveIndex -lt 0 -or $setActiveIndex -le $previousActiveIndex -or
-    $verifyActiveIndex -le $setActiveIndex -or $rgb24Index -le $verifyActiveIndex -or
-    $readPixelsIndex -le $rgb24Index -or $applyIndex -le $readPixelsIndex -or
-    $restoreActiveIndex -le $applyIndex -or $verifyRestoredIndex -le $restoreActiveIndex -or
-    $exactReadbackSource -notmatch '(?s)finally\s*{\s*RenderTexture\.active = RenderTextureActiveWasNullBeforeReadback\s*\? null\s*:\s*previousActive;' -or
-    $exactReadbackSource.IndexOf('previousActive == null;', [StringComparison]::Ordinal) -lt 0 -or
-    $exactReadbackSource.IndexOf('restoredActive.GetInstanceID() ==', [StringComparison]::Ordinal) -lt 0) {
-    throw 'The first-party RGB24 exact-target ReadPixels/Apply path no longer saves, verifies, and restores RenderTexture.active.'
+    return $receiptModelsSource.Substring($start, $end - $start)
 }
 
-foreach ($attemptReceiptContract in @(
-    'public string status;',
-    'public bool beforeRenderCallbackInvoked;',
-    'public bool afterRenderCallbackInvoked;',
-    'public int beforeRenderFrame;',
-    'public int afterRenderFrame;',
-    'public double beforeRenderRealtimeSeconds;',
-    'public double afterRenderRealtimeSeconds;',
-    'public bool renderProbeSubscriptionRemoved;',
-    'public int srpEndCameraRenderingCallbackCount;',
-    'public int firstSrpEndCameraRenderingFrame;',
-    'public int lastSrpEndCameraRenderingFrame;',
-    'public bool standardCameraRenderCallbackProofAvailable;',
-    'public int renderTargetInstanceId;',
-    'public bool renderTargetIsCreated;',
-    'public int renderTargetAntiAliasing;',
-    'public string renderTargetColorFormat;',
-    'public string renderTargetGraphicsFormat;',
-    'public bool renderTargetSrgb;',
-    'public bool renderTargetUseMipMap;',
-    'public bool renderTargetDriftObserved;',
-    'public bool renderTextureActiveWasNullBeforeReadback;',
-    'public int renderTextureActiveBeforeReadbackInstanceId;',
-    'public bool activeExactTargetVerifiedBeforeReadPixels;',
-    'public bool renderTextureActiveRestored;',
-    'public bool firstPartyReadPixelsCompleted;',
-    'public bool firstPartyApplyCompleted;',
-    'public int firstPartyTextureInstanceId;',
-    'public string firstPartyTextureFormat;',
-    'public bool firstPartyTextureReadable;',
-    'public bool firstPartyTextureNoMipChain;',
-    'public string pixelSource;',
-    'public string readbackTrigger;',
-    'public int readbackReplacementDisposalRequestCount;',
-    'public string callbackReadbackFailureType;',
-    'public string callbackReadbackFailureMessage;',
-    'public bool vendorReturnedTexturePresent;',
-    'public int vendorReturnedTextureInstanceId;',
-    'public string vendorReturnedTextureFormat;',
-    'public bool vendorReturnedTextureReadable;',
-    'public bool vendorReturnedTextureDistinctFromFirstParty;',
-    'public bool vendorReturnedTextureDestroyRequested;',
-    'public bool vendorReturnedTextureUsedForAdmission;',
-    'public bool captureTaskCompletedBeforeDeadline;',
-    'public bool captureTaskStopObserved;',
-    'public bool captureTaskTimeoutObserved;',
-    'public bool lateCaptureTaskObserverAttached;',
-    'public bool underlyingCaptureCancellationAvailable;',
-    'public bool pixelReadCompleted;',
-    'public RasterStatisticsReceipt raster;',
-    'public bool pngEncodingCompleted;',
-    'public string encodedSha256;',
-    'public bool postWriteFileShaVerified;',
-    'public string failureType;',
-    'public string failureMessage;'
-)) {
-    if ($receiptModelsSource.IndexOf($attemptReceiptContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "Receipt v5 is missing capture-attempt evidence '$attemptReceiptContract'."
+$snapFrameRenderReceiptSource = Get-ReceiptModelSection `
+    -StartMarker 'internal sealed class SnapFrameRenderTextureObservationReceipt' `
+    -EndMarker 'internal sealed class SnapFrameDirtyObservationReceipt' `
+    -Label 'SnapFrame RenderTexture observation'
+$snapFrameDirtyReceiptSource = Get-ReceiptModelSection `
+    -StartMarker 'internal sealed class SnapFrameDirtyObservationReceipt' `
+    -EndMarker 'internal sealed class SnapFrameReadbackReceipt' `
+    -Label 'SnapFrame dirty observation'
+$snapFrameReadbackReceiptSource = Get-ReceiptModelSection `
+    -StartMarker 'internal sealed class SnapFrameReadbackReceipt' `
+    -EndMarker 'internal sealed class SnapFrameCameraCallbackReceipt' `
+    -Label 'SnapFrame readback'
+$snapFrameCallbackReceiptSource = Get-ReceiptModelSection `
+    -StartMarker 'internal sealed class SnapFrameCameraCallbackReceipt' `
+    -EndMarker 'internal sealed class SnapFrameCanvasReceipt' `
+    -Label 'SnapFrame camera callback'
+$snapFrameCanvasReceiptSource = Get-ReceiptModelSection `
+    -StartMarker 'internal sealed class SnapFrameCanvasReceipt' `
+    -EndMarker 'internal sealed class UrpRendererFeatureReceipt' `
+    -Label 'SnapFrame Canvas'
+$urpRendererInventoryReceiptSource = Get-ReceiptModelSection `
+    -StartMarker 'internal sealed class UrpRendererFeatureReceipt' `
+    -EndMarker 'internal sealed class SnapFrameSurfaceReceipt' `
+    -Label 'read-only URP renderer inventory'
+$snapFrameSurfaceReceiptSource = Get-ReceiptModelSection `
+    -StartMarker 'internal sealed class SnapFrameSurfaceReceipt' `
+    -EndMarker 'internal sealed class CaptureAttemptReceipt' `
+    -Label 'SnapFrame surface'
+$attemptReceiptSource = Get-ReceiptModelSection `
+    -StartMarker 'internal sealed class CaptureAttemptReceipt' `
+    -EndMarker 'internal sealed class CaptureReceipt' `
+    -Label 'capture attempt'
+$captureReceiptSource = Get-ReceiptModelSection `
+    -StartMarker 'internal sealed class CaptureReceipt' `
+    -EndMarker 'internal sealed class HostReceipt' `
+    -Label 'capture'
+
+$receiptSectionContracts = @(
+    @('SnapFrame RenderTexture observation', $snapFrameRenderReceiptSource, @(
+        'public int observationFrame;', 'public int instanceId;', 'public bool isLive;',
+        'public bool isCreated;', 'public int width;', 'public int height;', 'public int depth;',
+        'public int antiAliasing;', 'public string colorFormat;', 'public string graphicsFormat;',
+        'public bool sRgb;', 'public bool useMipMap;', 'public bool autoGenerateMips;')),
+    @('SnapFrame dirty observation', $snapFrameDirtyReceiptSource, @(
+        'public int observationFrame;', 'public bool dirty;')),
+    @('SnapFrame readback', $snapFrameReadbackReceiptSource, @(
+        'public bool renderTextureActiveWasNullBeforeReadback;',
+        'public int renderTextureActiveBeforeReadbackInstanceId;',
+        'public int renderTextureActiveBoundForReadbackInstanceId;',
+        'public bool activeFrameRenderTextureVerifiedBeforeReadPixels;',
+        'public bool firstPartyReadPixelsCompleted;', 'public bool firstPartyApplyCompleted;',
+        'public bool renderTextureActiveWasNullAfterReadback;',
+        'public int renderTextureActiveAfterReadbackInstanceId;',
+        'public bool renderTextureActiveRestored;', 'public int firstPartyTextureInstanceId;',
+        'public string firstPartyTextureFormat;', 'public bool firstPartyTextureReadable;',
+        'public bool firstPartyTextureNoMipChain;',
+        'public bool firstPartyTextureDistinctFromVendorFrameRenderTexture;',
+        'public bool vendorFrameRenderTextureDestroyRequested;')),
+    @('SnapFrame camera callback', $snapFrameCallbackReceiptSource, @(
+        'public int sequence;', 'public string callback;', 'public string stage;', 'public int frame;',
+        'public double realtimeSeconds;', 'public bool cameraMatchesExactSceneCamera;',
+        'public bool targetTextureNull;', 'public bool poseMatchesStage;',
+        'public bool projectionMatchesExactProfile;', 'public bool frameDirty;',
+        'public int frameRenderTextureInstanceId;', 'public double[] position;',
+        'public double[] rotationXyzw;', 'public double[] worldToCameraMatrixColumnMajor;',
+        'public double[] projectionMatrixColumnMajor;')),
+    @('SnapFrame Canvas', $snapFrameCanvasReceiptSource, @(
+        'public int instanceId;', 'public string name;', 'public string renderMode;',
+        'public int layer;', 'public string layerName;', 'public int worldCameraInstanceId;',
+        'public bool worldCameraMatchesSceneCamera;', 'public bool layerIncludedBySceneCamera;',
+        'public bool canRenderThroughSceneCamera;')),
+    @('read-only URP renderer inventory', $urpRendererInventoryReceiptSource, @(
+        'internal sealed class UrpRendererFeatureReceipt',
+        'public int featureIndex;', 'public bool present;', 'public string name;',
+        'public string typeFullName;', 'public int instanceId;', 'public bool active;',
+        'public bool snapFrameCaptureFeatureType;',
+        'public bool matchesSnapFrameStaticInstance;',
+        'internal sealed class UrpRendererDataReceipt',
+        'public int rendererDataIndex;', 'public bool useNativeRenderPass;',
+        'public int featureCount;', 'public int snapFrameCaptureFeatureCount;',
+        'public List<UrpRendererFeatureReceipt> features;',
+        'internal sealed class UrpRendererInstanceReceipt',
+        'public int rendererIndex;', 'public int runtimeIdentityHashCode;',
+        'internal sealed class UrpRendererInventoryReceipt',
+        'public string observationApi;', 'public int observationFrame;',
+        'public double observationRealtimeSeconds;', 'public bool publicGettersOnly;',
+        'public bool mutationApiInvoked;', 'public string[] prohibitedMutationApis;',
+        'public bool currentRenderPipelineAssetPresent;',
+        'public string currentRenderPipelineAssetName;',
+        'public string currentRenderPipelineAssetTypeFullName;',
+        'public int currentRenderPipelineAssetInstanceId;',
+        'public bool currentRenderPipelineAssetIsUniversal;',
+        'public bool universalAdditionalCameraDataPresent;',
+        'public int rendererDataCount;', 'public int rendererInstanceCount;',
+        'public bool rendererDataAndInstanceCountsMatch;',
+        'public List<UrpRendererDataReceipt> rendererData;',
+        'public List<UrpRendererInstanceReceipt> rendererInstances;',
+        'public int activeSnapFrameCaptureFeatureCount;',
+        'public bool snapFrameStaticInstancePresent;',
+        'public int snapFrameStaticInstanceId;',
+        'public string snapFrameStaticInstanceTypeFullName;',
+        'public int snapFrameStaticInstanceMatchedConfiguredFeatureCount;',
+        'public bool snapFrameStaticInstanceStableDuringSynchronousInventory;',
+        'public bool sceneCameraRendererIndexInferred;',
+        'public int sceneCameraRendererIndex;',
+        'public string sceneCameraRendererIndexProvenance;',
+        'public bool rendererObjectIdentityStableDuringSynchronousInventory;',
+        'public bool rendererFeatureIdentityAndActiveStateStableDuringSynchronousInventory;',
+        'public bool mutationObservedDuringSynchronousInventory;')),
+    @('SnapFrame surface', $snapFrameSurfaceReceiptSource, @(
+        'public bool featurePresent;', 'public string featureTypeFullName;',
+        'public int featureInstanceId;', 'public bool featureStaticInstanceMatched;',
+        'public bool featureBaseActiveBefore;', 'public bool featureBaseActiveAfter;',
+        'public bool sceneCameraLive;', 'public int sceneCameraInstanceId;',
+        'public bool featureTargetCameraLiveBefore;',
+        'public int featureTargetCameraInstanceIdBefore;',
+        'public bool featureTargetCameraLiveAtReadback;',
+        'public int featureTargetCameraInstanceIdAtReadback;',
+        'public bool featureTargetCameraLiveAfter;',
+        'public int featureTargetCameraInstanceIdAfter;', 'public bool featureTargetUnchanged;',
+        'public bool sceneCameraTargetTextureNullBefore;',
+        'public bool sceneCameraTargetTextureNullAfterDirtyRequest;',
+        'public bool sceneCameraTargetTextureNullBeforeReadback;',
+        'public bool sceneCameraTargetTextureNullAfter;',
+        'public bool captureViewAbsentBefore;', 'public bool captureViewAbsentAfterDirtyRequest;',
+        'public bool captureViewAbsentBeforeReadback;', 'public bool captureViewAbsentAfter;',
+        'public int knownActiveCaptureOverlayCount;',
+        'public string[] knownActiveCaptureOverlayNames;',
+        'public List<SnapFrameCanvasReceipt> activeCanvases;',
+        'public bool unsafeRenderThroughCanvasObserved;',
+        'public string graphicsDeviceType;', 'public bool graphicsUvStartsAtTop;',
+        'public string activeColorSpace;', 'public string readPixelsCoordinateOrigin;',
+        'public string cpuRowTransform;',
+        'public int sceneCameraPixelWidth;', 'public int sceneCameraPixelHeight;',
+        'public int screenWidth;', 'public int screenHeight;',
+        'public int sceneCameraCullingMask;', 'public int sceneCameraCullingMaskAfter;',
+        'public int sceneCameraTargetDisplay;', 'public int sceneCameraTargetDisplayAfter;',
+        'public float[] sceneCameraRect;', 'public float[] sceneCameraRectAfter;',
+        'public float[] sceneCameraPixelRect;', 'public float[] sceneCameraPixelRectAfter;',
+        'public bool cameraConfigurationUnchanged;',
+        'public bool cleanViewStateVerifiedAtEveryCheckpoint;',
+        'public bool universalAdditionalCameraDataPresent;',
+        'public string universalCameraRenderType;', 'public int universalCameraStackCount;',
+        'public bool universalRenderPostProcessing;', 'public string frameSurfaceProvenance;',
+        'public SnapFrameRenderTextureObservationReceipt frameRenderTextureBefore;',
+        'public SnapFrameRenderTextureObservationReceipt frameRenderTextureAfterDirtyRequest;',
+        'public SnapFrameRenderTextureObservationReceipt frameRenderTextureBeforeReadback;',
+        'public SnapFrameRenderTextureObservationReceipt frameRenderTextureAfter;',
+        'public SnapFrameDirtyObservationReceipt dirtyBeforeRequest;',
+        'public SnapFrameDirtyObservationReceipt dirtyAfterRequest;',
+        'public SnapFrameDirtyObservationReceipt dirtyBeforeReadback;',
+        'public SnapFrameDirtyObservationReceipt dirtyAfterCompletion;',
+        'public double[] exactPositionBefore;', 'public double[] exactRotationXyzwBefore;',
+        'public double[] exactWorldToCameraMatrixColumnMajorBefore;',
+        'public double[] exactProjectionMatrixColumnMajorBefore;',
+        'public double[] sentinelPosition;', 'public double[] sentinelRotationXyzw;',
+        'public double[] sentinelWorldToCameraMatrixColumnMajor;',
+        'public double[] exactPositionAfter;', 'public double[] exactRotationXyzwAfter;',
+        'public double[] exactWorldToCameraMatrixColumnMajorAfter;',
+        'public double[] exactProjectionMatrixColumnMajorAfter;',
+        'public bool sentinelPoseReached;',
+        'public SnapFrameReadbackReceipt sentinelReadback;',
+        'public RasterStatisticsReceipt sentinelRaster;',
+        'public string exactFrameRgb24Sha256;', 'public bool sentinelAndExactRgbDiffer;',
+        'public bool exactRestoreVerified;', 'public bool cameraCallbackSubscriptionRemoved;',
+        'public int beginCameraRenderingCallbackCount;',
+        'public int endCameraRenderingCallbackCount;', 'public bool callbackHistoryOverflowed;',
+        'public bool everyCameraCallbackMatchedStagePose;',
+        'public bool baselineExactEndCallbackVerified;',
+        'public bool sentinelEndCallbackVerified;',
+        'public bool restoredExactEndCallbackVerified;',
+        'public bool stableExactEndCallbackVerified;',
+        'public List<SnapFrameCameraCallbackReceipt> cameraCallbacks;',
+        'public SnapFrameReadbackReceipt readback;')),
+    @('capture attempt', $attemptReceiptSource, @(
+        'public string status;', 'public int srpEndCameraRenderingCallbackCount;',
+        'public int firstSrpEndCameraRenderingFrame;', 'public int lastSrpEndCameraRenderingFrame;',
+        'public bool standardCameraRenderCallbackProofAvailable;',
+        'public bool firstPartyReadPixelsCompleted;', 'public bool firstPartyApplyCompleted;',
+        'public int firstPartyTextureInstanceId;', 'public string firstPartyTextureFormat;',
+        'public bool firstPartyTextureReadable;', 'public bool firstPartyTextureNoMipChain;',
+        'public SnapFrameSurfaceReceipt snapFrameSurface;', 'public string pixelSource;',
+        'public string readbackTrigger;', 'public bool captureTaskCompletedBeforeDeadline;',
+        'public bool captureTaskStopObserved;', 'public bool captureTaskTimeoutObserved;',
+        'public bool underlyingCaptureCancellationAvailable;', 'public bool pixelReadCompleted;',
+        'public RasterStatisticsReceipt raster;', 'public bool pngEncodingCompleted;',
+        'public long encodedByteLength;', 'public string encodedSha256;',
+        'public bool postWriteFileShaVerified;', 'public string failureType;',
+        'public string failureMessage;'))
+)
+foreach ($receiptSectionContract in $receiptSectionContracts) {
+    $label = [string]$receiptSectionContract[0]
+    $source = [string]$receiptSectionContract[1]
+    foreach ($requiredField in @($receiptSectionContract[2])) {
+        if ($source.IndexOf([string]$requiredField, [StringComparison]::Ordinal) -lt 0) {
+            throw "Receipt v7 $label evidence is missing '$requiredField'."
+        }
     }
 }
 foreach ($obsoleteAttemptReceiptContract in @(
-    'public int exactCameraRenderCallbackCount;',
-    'public int firstExactCameraRenderFrame;',
-    'public int lastExactCameraRenderFrame;',
-    'public string textureFormat;',
-    'public bool textureReadable;'
+    'beforeRenderCallbackInvoked', 'afterRenderCallbackInvoked', 'renderProbeSubscriptionRemoved',
+    'renderTargetInstanceId', 'activeExactTargetVerifiedBeforeReadPixels',
+    'readbackReplacementDisposalRequestCount', 'callbackReadbackFailureType',
+    'vendorReturnedTexturePresent', 'vendorReturnedTextureUsedForAdmission',
+    'lateCaptureTaskObserverAttached', 'exactCameraRenderCallbackCount'
 )) {
-    if ($receiptModelsSource.IndexOf($obsoleteAttemptReceiptContract, [StringComparison]::Ordinal) -ge 0) {
-        throw "Receipt v5 retains obsolete callback-required/vendor-texture evidence '$obsoleteAttemptReceiptContract'."
+    if ($attemptReceiptSource.IndexOf($obsoleteAttemptReceiptContract, [StringComparison]::Ordinal) -ge 0) {
+        throw "Receipt v7 retains obsolete exact-target/vendor-texture evidence '$obsoleteAttemptReceiptContract'."
     }
 }
 foreach ($rasterPolicyContract in @(
@@ -1186,6 +1716,9 @@ foreach ($rasterPolicyContract in @(
     'statistics.nonBlackPixelFraction < MinimumNonBlackPixelFraction',
     'statistics.maximumChannelDynamicRange < MinimumMaximumChannelDynamicRange',
     'statistics.distinctRgbLowerBound < MinimumDistinctRgbCount',
+    '!IsFinite(statistics.nonBlackPixelFraction)',
+    '!IsFinite(statistics.meanLuminance)',
+    '!IsFinite(statistics.luminanceStandardDeviation)',
     'statistics.luminanceStandardDeviation < MinimumLuminanceStandardDeviation',
     'statistics.nonDegenerateVerified = true;'
 )) {
@@ -1194,12 +1727,13 @@ foreach ($rasterPolicyContract in @(
     }
 }
 foreach ($captureReceiptContract in @(
-    'surface = "ISceneManager.SceneCamera via ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender), first-party exact-target RGB24 ReadPixels, and Unity ImageConversion.EncodeToPNG"',
-    'renderCallbackSurface = "RenderPipelineManager.endCameraRendering when observed for the exact SceneCamera; otherwise the vendor afterRender callback after its three locked end-of-frame waits"',
-    'globalCameraCallbackRequiredForAdmission = false',
+    'surface = "ISceneManager.SceneCamera through public LCCCore.SnapFrameCaptureFeature.FrameRT at AfterRenderingTransparents, exact-camera SRP callback handshake, first-party RGB24 ReadPixels, and Unity ImageConversion.EncodeToPNG"',
+    'renderCallbackSurface = "RenderPipelineManager.beginCameraRendering and endCameraRendering for the exact SceneCamera at baseline, discarded sentinel, exact restore, and stable exact stages"',
+    'uiComposited = false',
+    'globalCameraCallbackRequiredForAdmission = true',
     'standardCameraRenderCallbackProofAvailable = false',
     'pipelineAssetType = pipelineAsset == null',
-    'configuredPixelSource = "first_party_exact_vendor_render_target"',
+    'configuredPixelSource = CapturePolicy.SnapFramePixelSource',
     'observedPixelSource = null',
     'everyObservedPixelSourceMatchesConfigured = false',
     'UpdateCaptureReadbackAggregates(capture);',
@@ -1207,11 +1741,12 @@ foreach ($captureReceiptContract in @(
     'capture.everyObservedPixelSourceMatchesConfigured =',
     'observedPixelSources.Length > 0 &&',
     'capture.configuredPixelSource,',
-    'perCaptureTimeoutSemantics = "cooperative_unity_player_loop_update"',
+    'perCaptureTimeoutSemantics = "cooperative_cancelled_end_of_frame_handshake_with_exact_camera_finally_restore"',
     'perCaptureTimeoutCanPreemptBlockedUnityMainThread = false',
     'lateResultObserverCompletionAwaitedBeforeProcessExit = false',
     'hardTerminationBoundary = "external_operator_process_watchdog"',
     'capture.standardCameraRenderCallbackProofAvailable = capture.attempts.Any(',
+    '_attempt.standardCameraRenderCallbackProofAvailable = true;',
     'blackChannelThreshold = CapturePolicy.BlackChannelThreshold',
     'minimumNonBlackPixelFraction = CapturePolicy.MinimumNonBlackPixelFraction',
     'minimumMaximumChannelDynamicRange = CapturePolicy.MinimumMaximumChannelDynamicRange',
@@ -1220,7 +1755,7 @@ foreach ($captureReceiptContract in @(
     'everyAttemptDecodedAndNonDegenerate = false'
 )) {
     if ($moduleSource.IndexOf($captureReceiptContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "Receipt v5 is missing hybrid capture-admission evidence '$captureReceiptContract'."
+        throw "Receipt v7 is missing public-SnapFrame capture-admission evidence '$captureReceiptContract'."
     }
 }
 foreach ($captureReceiptModelContract in @(
@@ -1233,14 +1768,15 @@ foreach ($captureReceiptModelContract in @(
     'public string pipelineAssetType;',
     'public string configuredPixelSource;',
     'public string observedPixelSource;',
-    'public bool everyObservedPixelSourceMatchesConfigured;'
+    'public bool everyObservedPixelSourceMatchesConfigured;',
+    'public UrpRendererInventoryReceipt urpRendererInventory;'
 )) {
-    if ($receiptModelsSource.IndexOf($captureReceiptModelContract, [StringComparison]::Ordinal) -lt 0) {
-        throw "Receipt v5 is missing capture-level hybrid evidence '$captureReceiptModelContract'."
+    if ($captureReceiptSource.IndexOf($captureReceiptModelContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Receipt v7 is missing capture-level SnapFrame evidence '$captureReceiptModelContract'."
     }
 }
-if ($moduleSource.IndexOf('globalCameraCallbackRequiredForAdmission = true', [StringComparison]::Ordinal) -ge 0) {
-    throw 'Receipt v5 must not claim that a global camera callback is required for admission.'
+if ($moduleSource.IndexOf('globalCameraCallbackRequiredForAdmission = false', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Receipt v7 must require exact-camera global begin/end callback evidence for admission.'
 }
 $updateReadbackAggregatesStart = $moduleSource.IndexOf(
     'private static void UpdateCaptureReadbackAggregates(CaptureReceipt capture)',
@@ -1405,6 +1941,25 @@ $vendorHashes = @{}
 foreach ($file in $vendorLock.files) {
     $vendorHashes[[string]$file.sha256] = [string]$file.relativePath
 }
+foreach ($lockedReference in $lockedSnapFrameReferences) {
+    $name = [string]$lockedReference[0]
+    $sha256 = [string]$lockedReference[1]
+    $relativePath = 'LCCEditor_Data/Managed/' + $name
+    $matches = @($vendorLock.files | Where-Object {
+        [string]$_.relativePath -ceq $relativePath
+    })
+    if ($matches.Count -ne 1) {
+        throw "The vendor lock must contain exactly one public SnapFrame dependency entry for $relativePath."
+    }
+    Assert-Equal 'compile_and_runtime' ([string]$matches[0].role) "vendor-lock role $relativePath"
+    Assert-Equal $sha256 ([string]$matches[0].sha256) "vendor-lock SHA-256 $relativePath"
+    $installedReferencePath = Join-Path $LccEditorRoot ($relativePath -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $installedReferencePath -PathType Leaf)) {
+        throw "The locked public SnapFrame dependency is missing from the installed editor: $installedReferencePath"
+    }
+    Assert-Equal ([long]$matches[0].byteLength) ([long](Get-Item -LiteralPath $installedReferencePath).Length) "installed byte length $relativePath"
+    Assert-Equal $sha256 ((Get-FileHash -LiteralPath $installedReferencePath -Algorithm SHA256).Hash) "installed SHA-256 $relativePath"
+}
 $firstPartyBinaries = Get-ChildItem -LiteralPath $PSScriptRoot -File -Recurse |
     Where-Object { $_.Extension -in @('.dll', '.exe') }
 foreach ($binary in $firstPartyBinaries) {
@@ -1441,24 +1996,65 @@ foreach ($requiredIlPattern in @(
     'NativeCaptureModule::StartCaptureAfterSceneEventDispatchAsync',
     'NativeCaptureModule::PopulateCaptureAttemptAsync',
     'NativeCaptureModule::CaptureTextureWithTimeout',
-    'NativeCaptureModule::ObserveLateCaptureAsync',
     'NativeCaptureModule::ThrowIfStopped',
+    'SnapFrameReadbackOperation::CaptureAsync',
+    'SnapFrameReadbackOperation::Abort',
+    'SnapFrameReadbackOperation::Dispose',
+    'SnapFrameReadbackOperation::CaptureReadOnlyUrpRendererInventory',
+    'SnapFrameReadbackOperation::Subscribe',
+    'SnapFrameReadbackOperation::Unsubscribe',
+    'SnapFrameReadbackOperation::ObserveAndRequireFrameRenderTexture',
+    'SnapFrameReadbackOperation::ReadFrameRenderTexture',
+    'CapturePolicy::RequireSnapFrameCaptureRoute',
+    'CapturePolicy::RequireSnapFrameExactRasterBinding',
+    'CapturePolicy::RequireNonDegenerateRaster',
+    'CapturePolicy::RequireReadOnlyUrpRendererInventory',
     'InterlockedOneShotGate::TryEnter',
     'NativeCaptureLifecycleState::TryScheduleModulesLoaded',
     'NativeCaptureLifecycleState::TryMarkNextFrameExecutionReady',
     'NativeCaptureLifecycleState::TryEnterExecution',
     'NativeCaptureLifecycleState::Stop',
     'Interlocked::CompareExchange',
-    'ICaptureManager::CaptureToTextureAsync',
+    'SnapFrameCaptureFeature::get_Instance',
+    'SnapFrameCaptureFeature::get_TargetCamera',
+    'SnapFrameCaptureFeature::get_FrameRT',
+    'SnapFrameCaptureFeature::get_FrameDirty',
+    'ScriptableRendererFeature::get_isActive',
+    'GraphicsSettings::get_currentRenderPipeline',
+    'UniversalRenderPipelineAsset::get_rendererDataList',
+    'UniversalRenderPipelineAsset::get_renderers',
+    'ScriptableRendererData::get_rendererFeatures',
+    'ScriptableRendererData::get_useNativeRenderPass',
+    'RuntimeHelpers::GetHashCode',
     'Texture2D::\.ctor',
     'Texture2D::ReadPixels',
     'Texture2D::Apply',
     'Texture2D::GetPixels32',
     'RenderTexture::get_active',
     'RenderTexture::set_active',
+    'RenderTexture::IsCreated',
+    'RenderTexture::get_format',
+    'RenderTexture::get_graphicsFormat',
+    'RenderTexture::get_sRGB',
+    'RenderTexture::get_useMipMap',
+    'RenderTexture::get_autoGenerateMips',
+    'Camera::get_targetTexture',
     'ImageConversion::EncodeToPNG',
+    'RenderPipelineManager::add_beginCameraRendering',
+    'RenderPipelineManager::remove_beginCameraRendering',
     'RenderPipelineManager::add_endCameraRendering',
     'RenderPipelineManager::remove_endCameraRendering',
+    'UniversalAdditionalCameraData::get_renderType',
+    'UniversalAdditionalCameraData::get_cameraStack',
+    'UniversalAdditionalCameraData::get_renderPostProcessing',
+    'Resources::FindObjectsOfTypeAll',
+    'Canvas::get_worldCamera',
+    'Canvas::get_renderMode',
+    'SystemInfo::get_graphicsDeviceType',
+    'SystemInfo::get_graphicsUVStartsAtTop',
+    'QualitySettings::get_activeColorSpace',
+    'System\.Single::IsNaN',
+    'System\.Single::IsInfinity',
     'UnityEngine\.Object::Destroy',
     'IProjectManager::CreateTemporaryLCCProject',
     'IProjectManager::get_IsInitialized',
@@ -1491,8 +2087,28 @@ foreach ($requiredIlPattern in @(
 if ($il -match 'ILCCSceneManager::LoadScene') {
     throw 'The compiled module still calls the low-level ILCCSceneManager.LoadScene API.'
 }
-if ($il -match 'ICaptureManager::CaptureToFileAsync') {
-    throw 'The compiled module still calls the proven-corrupt file-capture API.'
+foreach ($forbiddenIlPattern in @(
+    'ICaptureManager::CaptureToFileAsync',
+    'ICaptureManager::CaptureToTextureAsync',
+    'SnapFrameCaptureFeature::set_TargetCamera',
+    'SnapFrameCaptureFeature::set_FrameRT',
+    'ScriptableRendererFeature::SetActive',
+    'UniversalAdditionalCameraData::get_scriptableRenderer',
+    'UniversalRenderPipelineAsset::get_scriptableRenderer',
+    'UniversalRenderPipelineAsset::GetRenderer',
+    'UniversalAdditionalCameraData::SetRenderer',
+    'ScriptableRendererData::SetDirty',
+    'ScriptableRendererFeature::Create',
+    'ScriptableRendererFeature::Dispose',
+    'ScriptableRenderer::Dispose',
+    'GraphicsSettings::set_',
+    'QualitySettings::set_renderPipeline',
+    'Camera::set_targetTexture',
+    'RenderTexture::Release'
+)) {
+    if ($il -match $forbiddenIlPattern) {
+        throw "The compiled module contains a forbidden capture-surface mutation or obsolete API call '$forbiddenIlPattern'."
+    }
 }
 foreach ($forbiddenAssembly in @('System.Net.Http', 'NetMQ', 'MCPForUnity')) {
     if ($il -match "\.assembly extern '$([Regex]::Escape($forbiddenAssembly))'|\.assembly extern $([Regex]::Escape($forbiddenAssembly))") {
@@ -1509,8 +2125,8 @@ Write-Output 'PASS: terminal Stop/internal scene-unsubscribe/cooperative async-s
 Write-Output 'PASS: reversible per-user native-module toggle lease static contract'
 Write-Output 'PASS: no vendor binary copied into the first-party folder'
 Write-Output 'PASS: no network API or unfinished-code source pattern'
-Write-Output 'PASS: retained-attempt decoded-raster/exact-target/late-texture capture contract'
-Write-Output 'PASS: compiled public IModule/camera/LCC/texture-capture API calls'
+Write-Output 'PASS: retained-attempt decoded-raster/public-SnapFrame/four-EOF capture contract'
+Write-Output 'PASS: compiled public IModule/camera/LCC/SnapFrame/URP readback API calls'
 Write-Output "PASS: bounded runtime closure $($runtimeClosure.memberCount) files / $($runtimeClosure.totalByteLength) bytes"
 Write-Output "Module SHA-256: $actualModuleSha256"
 Write-Output "Plugin SHA-256: $actualPluginSha256"
