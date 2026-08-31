@@ -10,10 +10,22 @@ not a recovered optical camera, so these records remain `diagnostic` even
 though the long frame profile completed.
 
 This historical bundle contains one capture per representation. It does not
-establish fresh-browser process isolation or the later-required one-cold plus
-three-warm schedule. Future complete browser runs use the
+establish fresh-browser process isolation or the later-required one-cold-load
+plus three same-runtime resident-captures schedule. Future complete browser
+runs use the
 [`visible-first browser bake-off runbook`](../operations/grand-hall-visible-first-browser-bakeoff-runbook.md);
 these images remain diagnostic history and are not silently upgraded.
+
+The later `2026-08-31-visible-first-hardware-v2` attempt is also rejected and
+incomplete: its cold SOG capture was followed by an invalid reload that raised
+served source requests from 11 to 22, and it produced no final receipt. The
+fresh successor target is `2026-08-31-visible-first-hardware-v3`, with evidence
+labels `cold-load-1`, `resident-capture-1`, `resident-capture-2`, and
+`resident-capture-3`, marker `VENVIEWER_BROWSER_SOURCE_RESIDENCY_V1`, exact
+process scope
+`one_representation_one_cold_load_plus_three_resident_captures`, and a v3 final
+receipt. Neither failed attempt changes the review state of the frozen 2026-08-30
+images below.
 
 ## Captured-radiance review pool
 

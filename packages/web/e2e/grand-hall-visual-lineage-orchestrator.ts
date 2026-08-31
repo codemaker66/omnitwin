@@ -12,12 +12,12 @@ import {
   serializeGrandHallHardwareBrowserProfile,
   type GrandHallHardwareBrowserProfileV1,
 } from "./grand-hall-browser-hardware.ts";
+import { GRAND_HALL_BROWSER_SOURCE_RESIDENCY_EVIDENCE_PREFIX } from "./grand-hall-visual-lineage-bakeoff.ts";
 
 const CAMERA_ID = "source-pose-19890-interior-v1";
 const CAMERA_PROFILE_RELATIVE_PATH =
   "tools/reconstruction-foundry/native/grand-hall-lcc-native-capture/camera-profile.json";
 const CAMERA_PROFILE_MARKER = "VENVIEWER_SHARED_CAMERA_PROFILE_V1:";
-const CACHE_MARKER = "VENVIEWER_BROWSER_CACHE_STATE_V1:";
 const DEFAULT_BASE_PORT = 5_189;
 const EXPECTED_DECODED_SPLAT_COUNT = 6_019_684;
 const CONTROLLED_WARMUP_FRAME_COUNT = 120;
@@ -71,10 +71,18 @@ interface CameraProfileBinding {
   readonly aspect: number;
 }
 
-interface ValidatedCaptureReceipt {
+export interface GrandHallVisibleFirstResidencyStage {
   readonly runOrdinal: number;
-  readonly cacheState: "cold" | "warm";
-  readonly cacheRunOrdinal: number;
+  readonly residencyState: "cold_load" | "resident";
+  readonly residencyRunOrdinal: number;
+  readonly sourceRequestCountBefore: number;
+  readonly sourceRequestCountAfter: number;
+  readonly runtimeInstanceId: string;
+  readonly renderedFrameCountBefore: number;
+  readonly renderedFrameCountAfter: number;
+}
+
+interface ValidatedCaptureReceipt extends GrandHallVisibleFirstResidencyStage {
   readonly recordPath: string;
   readonly recordSha256: string;
   readonly screenshotPath: string;
@@ -296,6 +304,66 @@ function markerPayload(
   return parsed;
 }
 
+export function assertGrandHallVisibleFirstResidencySequence(input: {
+  readonly captures: readonly GrandHallVisibleFirstResidencyStage[];
+  readonly sourceMemberCount: number;
+}): void {
+  if (!Number.isInteger(input.sourceMemberCount) || input.sourceMemberCount <= 0) {
+    throw new Error("Source-residency validation requires a positive source-member count.");
+  }
+  if (input.captures.length !== 4) {
+    throw new Error("Source-residency validation requires one cold load and three resident captures.");
+  }
+  const expected = [
+    { runOrdinal: 1, residencyState: "cold_load", residencyRunOrdinal: 1 },
+    { runOrdinal: 2, residencyState: "resident", residencyRunOrdinal: 1 },
+    { runOrdinal: 3, residencyState: "resident", residencyRunOrdinal: 2 },
+    { runOrdinal: 4, residencyState: "resident", residencyRunOrdinal: 3 },
+  ] as const;
+  const runtimeInstanceId = input.captures[0]?.runtimeInstanceId;
+  if (runtimeInstanceId === undefined || runtimeInstanceId.length === 0) {
+    throw new Error("Source-residency evidence is missing its runtime identity.");
+  }
+  let previousRenderedFrameCountAfter: number | undefined;
+  for (const [index, capture] of input.captures.entries()) {
+    const expectedCapture = expected[index];
+    if (
+      expectedCapture === undefined
+      || capture.runOrdinal !== expectedCapture.runOrdinal
+      || capture.residencyState !== expectedCapture.residencyState
+      || capture.residencyRunOrdinal !== expectedCapture.residencyRunOrdinal
+    ) {
+      throw new Error("Source-residency evidence has the wrong cold/resident sequence.");
+    }
+    const expectedRequestCountBefore = capture.residencyState === "cold_load"
+      ? 0
+      : input.sourceMemberCount;
+    if (
+      capture.sourceRequestCountBefore !== expectedRequestCountBefore
+      || capture.sourceRequestCountAfter !== input.sourceMemberCount
+    ) {
+      throw new Error("Source-residency evidence contains a source reload or incomplete source load.");
+    }
+    if (capture.runtimeInstanceId !== runtimeInstanceId) {
+      throw new Error("Source-residency evidence changed runtime identity between captures.");
+    }
+    if (
+      !Number.isInteger(capture.renderedFrameCountBefore)
+      || !Number.isInteger(capture.renderedFrameCountAfter)
+      || capture.renderedFrameCountBefore < 0
+      || capture.renderedFrameCountAfter - capture.renderedFrameCountBefore
+        < CONTROLLED_WARMUP_FRAME_COUNT + CONTROLLED_FRAME_SAMPLE_COUNT
+      || (
+        previousRenderedFrameCountAfter !== undefined
+        && capture.renderedFrameCountBefore < previousRenderedFrameCountAfter
+      )
+    ) {
+      throw new Error("Source-residency evidence has insufficient or non-monotonic frame ranges.");
+    }
+    previousRenderedFrameCountAfter = capture.renderedFrameCountAfter;
+  }
+}
+
 async function validateCaptureRecord(input: {
   readonly recordPath: string;
   readonly lane: Lane;
@@ -316,6 +384,7 @@ async function validateCaptureRecord(input: {
   const limitations = requiredArray(representation, "limitations");
   const actualCamera = requiredRecord(representation, "actualCamera");
   const environment = requiredRecord(representation, "environment");
+  const timings = requiredRecord(representation, "timings");
   const sourceMembers = requiredArray(representation, "sourceMembers");
   const sourceSizeBytes = sourceMembers.reduce<number>((total, member) => {
     if (!isRecord(member)) throw new Error("Source member receipt must be an object.");
@@ -367,24 +436,39 @@ async function validateCaptureRecord(input: {
   ) {
     throw new Error(`Capture record camera-profile binding mismatch: ${input.recordPath}`);
   }
-  const cacheMarker = markerPayload(limitations, CACHE_MARKER);
-  const runOrdinal = requiredNumber(cacheMarker, "runOrdinal");
-  const cacheState = requiredString(cacheMarker, "cacheState");
-  const cacheRunOrdinal = requiredNumber(cacheMarker, "cacheRunOrdinal");
-  const requestCountBefore = requiredNumber(cacheMarker, "sourceRequestCountBefore");
-  const requestCountAfter = requiredNumber(cacheMarker, "sourceRequestCountAfter");
+  const residencyMarker = markerPayload(
+    limitations,
+    GRAND_HALL_BROWSER_SOURCE_RESIDENCY_EVIDENCE_PREFIX,
+  );
+  const runOrdinal = requiredNumber(residencyMarker, "runOrdinal");
+  const residencyState = requiredString(residencyMarker, "residencyState");
+  const residencyRunOrdinal = requiredNumber(residencyMarker, "residencyRunOrdinal");
+  const sourceRequestCountBefore = requiredNumber(
+    residencyMarker,
+    "sourceRequestCountBefore",
+  );
+  const sourceRequestCountAfter = requiredNumber(
+    residencyMarker,
+    "sourceRequestCountAfter",
+  );
+  const runtimeInstanceId = requiredString(residencyMarker, "runtimeInstanceId");
+  const renderedFrameCountBefore = requiredNumber(
+    residencyMarker,
+    "renderedFrameCountBefore",
+  );
+  const renderedFrameCountAfter = requiredNumber(
+    residencyMarker,
+    "renderedFrameCountAfter",
+  );
+  const loadMs = requiredNumber(timings, "loadMs");
   if (
-    requiredString(cacheMarker, "representation") !== input.lane.representation
-    || requiredString(cacheMarker, "browserProcessScope")
-      !== "one_representation_cold_plus_three_warm"
-    || (cacheState !== "cold" && cacheState !== "warm")
-    || (cacheState === "cold"
-      ? runOrdinal !== 1 || cacheRunOrdinal !== 1 || requestCountBefore !== 0
-      : runOrdinal < 2 || runOrdinal > 4 || cacheRunOrdinal !== runOrdinal - 1)
-    || requestCountAfter !== input.lane.sourceMemberCount
-    || (cacheState === "warm" && requestCountBefore !== requestCountAfter)
+    requiredString(residencyMarker, "representation") !== input.lane.representation
+    || requiredString(residencyMarker, "browserProcessScope")
+      !== "one_representation_one_cold_load_plus_three_resident_captures"
+    || (residencyState !== "cold_load" && residencyState !== "resident")
+    || (residencyState === "resident" && loadMs !== 0)
   ) {
-    throw new Error(`Capture record cache-state contract mismatch: ${input.recordPath}`);
+    throw new Error(`Capture record source-residency contract mismatch: ${input.recordPath}`);
   }
 
   const browserMarker = markerPayload(limitations, GRAND_HALL_HARDWARE_PREFLIGHT_MARKER);
@@ -416,14 +500,21 @@ async function validateCaptureRecord(input: {
   ) {
     throw new Error(`Capture screenshot receipt mismatch: ${screenshotPath}`);
   }
-  const runLabel = cacheState === "cold" ? "cold-run-1" : `warm-run-${String(cacheRunOrdinal)}`;
+  const runLabel = residencyState === "cold_load"
+    ? "cold-load-1"
+    : `resident-capture-${String(residencyRunOrdinal)}`;
   if (!path.basename(input.recordPath).includes(runLabel)) {
     throw new Error(`Capture filename does not bind its ${runLabel} state: ${input.recordPath}`);
   }
   return {
     runOrdinal,
-    cacheState,
-    cacheRunOrdinal,
+    residencyState,
+    residencyRunOrdinal,
+    sourceRequestCountBefore,
+    sourceRequestCountAfter,
+    runtimeInstanceId,
+    renderedFrameCountBefore,
+    renderedFrameCountAfter,
     recordPath: input.recordPath,
     recordSha256: sha256(recordBytes),
     screenshotPath,
@@ -457,12 +548,10 @@ async function validateLaneEvidence(input: {
     browserProfileSha256: input.browserProfileSha256,
   })));
   validated.sort((left, right) => left.runOrdinal - right.runOrdinal);
-  if (
-    validated.map((capture) => `${capture.cacheState}:${String(capture.cacheRunOrdinal)}`).join(",")
-    !== "cold:1,warm:1,warm:2,warm:3"
-  ) {
-    throw new Error(`${input.plan.lane.representation} did not produce cold + three warm captures.`);
-  }
+  assertGrandHallVisibleFirstResidencySequence({
+    captures: validated,
+    sourceMemberCount: input.plan.lane.sourceMemberCount,
+  });
   return validated;
 }
 
@@ -627,7 +716,7 @@ async function main(): Promise<void> {
 
   const receiptPath = path.join(evidenceDirectory, "visible-first-browser-bakeoff-receipt.json");
   await writeFile(receiptPath, `${JSON.stringify({
-    schemaVersion: "venviewer.grand-hall.visible-first-browser-bakeoff.v2",
+    schemaVersion: "venviewer.grand-hall.visible-first-browser-bakeoff.v3",
     authority: "none",
     gitSha,
     worktreeDirty: false,
@@ -654,6 +743,7 @@ async function main(): Promise<void> {
     limitations: [
       "The shared camera is inspection-only, not a recovered optical camera.",
       "PLY is reconstructed structural evidence and is excluded from radiance ranking.",
+      "Each representation receives one cold source navigation/load and four total captures from one live fixture runtime. The following three resident captures perform no navigation, source fetch, decode, or scene attachment. They measure visual and frame-time stability of the long-lived decoded runtime; they do not claim HTTP-cache reload performance.",
       "No human visual acceptance, winner selection, room admission, staging, deployment, or production authority is granted.",
     ],
   }, null, 2)}\n`, { encoding: "utf8", flag: "wx" });

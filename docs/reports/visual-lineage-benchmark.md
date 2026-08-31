@@ -329,7 +329,7 @@ The initial controlled profile is:
 | Camera | Exact immutable fixture; controls disabled |
 | Animation | Disabled; fixed scene time |
 | Colour/tone | Explicit color space, tone mapping, tone-mapping exposure, alpha, and clear colour recorded |
-| Network/cache | `cold` or `warm` declared; never aggregate the two |
+| Source lifecycle | `cold_load` or `resident` declared; no HTTP-cache reload claim |
 
 Current product code explicitly creates `SparkRenderer` with
 `transparent:true` and `depthWrite:false`, and exact Grand Hall `SplatMesh`
@@ -398,7 +398,7 @@ extend that record with the following raw observations rather than infer them:
 - first member attached, all expected members attached, and exact loaded-splat
   total reached;
 - time to stable, including the criteria used to declare stability;
-- cold-cache and warm-cache totals reported separately;
+- cold-load and same-runtime resident-capture totals reported separately;
 - timed frame count, elapsed sample duration, mean/p50/p95/p99/max frame time,
   mean/p50/p95/p99 FPS, and long-frame count at declared thresholds;
 - renderer calls, triangles, points, textures, geometries, and programs before
@@ -443,10 +443,19 @@ loss.
 
 This dated evidence contains one capture per representation. It does **not**
 prove the protocol's promised fresh browser process per representation or one
-cold plus three warm captures. It remains valid diagnostic history, but the
-canonical executable for the complete browser schedule is now the sequential
-orchestrator documented in
+cold-load capture plus three same-runtime resident captures. It remains valid
+diagnostic history, but the canonical executable for the complete browser
+schedule is now the sequential orchestrator documented in
 [`grand-hall-visible-first-browser-bakeoff-runbook.md`](../operations/grand-hall-visible-first-browser-bakeoff-runbook.md).
+
+The later `2026-08-31-visible-first-hardware-v2` attempt is rejected and
+incomplete. The cold SOG record was produced, but its first reload caused the
+bound source-server total to increase from 11 to 22; therefore it has no valid
+resident sequence and no final v2 receipt. The fresh successor target is
+`2026-08-31-visible-first-hardware-v3`, which must use
+`cold-load-1`, `resident-capture-1`, `resident-capture-2`, and
+`resident-capture-3`, bind `VENVIEWER_BROWSER_SOURCE_RESIDENCY_V1`, and finish
+with a `venviewer.grand-hall.visible-first-browser-bakeoff.v3` receipt.
 
 | Candidate | Exact decoded source | Visible evidence | Current disposition |
 | --- | --- | --- | --- |
@@ -572,10 +581,14 @@ camera, and an explicit renderer profile do not.
    bytes, and SHA-256. If the viewer cannot reproduce the numeric camera, leave
    the native row unavailable.
 7. **Run browser candidates.** Launch a fresh Playwright Chromium process for
-   each representation. Apply the fixed profile and camera before attachment.
-   Execute one cold-cache run and three warm-cache runs per camera and
-   representation. Never reuse one representation's page or GPU resources for
-   the next. Preserve raw JSON and canvas-only PNG for every run.
+    each representation. Apply the fixed profile and camera before attachment.
+    Navigate and load the source once, capture `cold-load-1`, then capture
+    `resident-capture-1`, `resident-capture-2`, and `resident-capture-3` from
+    that same live fixture runtime without another navigation, source fetch,
+    decode, or scene attachment. Never reuse one representation's page or GPU
+    resources for the next representation. Preserve raw JSON and canvas-only
+    PNG for every capture. This is a residency and visual/frame-stability
+    schedule, not an HTTP-cache reload benchmark.
 8. **Use the sequential browser orchestrator.** The executable entry point is
    the `@omnitwin/web` `visual-lineage:bakeoff` script. It requires explicit
    source/evidence paths, builds shared types, and launches a separate direct
@@ -593,8 +606,13 @@ camera, and an explicit renderer profile do not.
    ```
 
    The orchestrator binds each record to the exact shared camera-profile
-   digest, requires one cold and three warm captures per representation, and
-   verifies that only the cold capture fetches source bytes. It fixes every
+   digest, requires one cold-load and three resident captures per
+   representation, and verifies that the same runtime identity survives while
+   source-request totals remain unchanged after the cold load. Each record
+   carries `VENVIEWER_BROWSER_SOURCE_RESIDENCY_V1` with process scope
+   `one_representation_one_cold_load_plus_three_resident_captures`. The final
+   receipt schema is
+   `venviewer.grand-hall.visible-first-browser-bakeoff.v3`. It fixes every
    capture at 120 warm-up plus 600 timed frames and does not inherit lower
    frame-count overrides from the operator shell.
 9. **Validate before comparison.** Schema-validate every record; confirm exact

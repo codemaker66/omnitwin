@@ -14,10 +14,18 @@ The orchestrator runs the representations sequentially in this order:
 
 Each lane receives a new Playwright operating-system process, a new browser
 from the selected installed Chrome/Edge channel, and a strict-port Vite server.
-Within that one browser, the lane emits
-one cold capture followed by three warm captures. SOG and SPZ form the only
-captured-radiance review pool. PLY remains structural evidence with
-deterministic debug appearance and is excluded from radiance ranking.
+SOG and SPZ form the only captured-radiance review pool. PLY remains structural
+evidence with deterministic debug appearance and is excluded from radiance
+ranking.
+
+Each representation receives one cold source navigation/load and four total captures from one live fixture runtime. The following three resident captures perform no navigation, source fetch, decode, or scene attachment. They measure visual and frame-time stability of the long-lived decoded runtime; they do not claim HTTP-cache reload performance.
+
+The rejected `2026-08-31-visible-first-hardware-v2` attempt is incomplete. Its
+cold SOG capture succeeded, but the first reload increased served source
+requests from 11 to 22. It produced no complete four-capture SOG lane, no SPZ
+or PLY lane, and no final bundle receipt. The fresh successor target is
+`2026-08-31-visible-first-hardware-v3`, using the same-runtime resident-capture
+contract below rather than another reload experiment.
 
 ## Required fixed camera
 
@@ -65,7 +73,8 @@ pnpm --filter @omnitwin/web visual-lineage:bakeoff
 
 Do not invoke the Playwright spec directly for the bake-off. Direct invocation
 retains the legacy one-capture diagnostic path; the orchestrator owns process
-isolation, the cold-plus-three-warm schedule, and the final receipt.
+isolation, the one-cold-load-plus-three-resident-captures schedule, and the
+final receipt.
 
 The orchestrator fixes the controlled profile at 1600 x 900 at DPR 1, 120
 explicit warm-up frames, and 600 timed frames for every capture. It does not
@@ -111,14 +120,19 @@ clean worktree, a stable `HEAD`, a successful shared-types build, and an exact
 shared-camera profile. The hardware selection probe must pass before the output
 directory exists. It rechecks source state after the probe and after all lanes.
 
-Each lane must produce exactly four JSON/PNG pairs labelled `cold-run-1`,
-`warm-run-1`, `warm-run-2`, and `warm-run-3`. The cold record must show one
-request for every immutable source member. Warm records must show no additional
-source requests, proving use of the same browser HTTP cache rather than merely
-renaming repeated cold loads. The orchestrator also verifies source counts,
-bytes, hashes, decoded counts, camera values, screenshot hashes, lack of WebGL
-context loss through the evidence schema, the pre-source hardware marker and
-profile digest, and distinct runner process IDs.
+Each lane must produce exactly four JSON/PNG pairs labelled `cold-load-1`,
+`resident-capture-1`, `resident-capture-2`, and `resident-capture-3`. The cold
+record must show one request for every immutable source member. Every resident
+record must show the same cumulative source-request total, the same live
+fixture-runtime identity, and a strictly advancing controlled frame interval.
+The records carry a `VENVIEWER_BROWSER_SOURCE_RESIDENCY_V1` marker whose exact
+process scope is
+`one_representation_one_cold_load_plus_three_resident_captures`. These facts
+prove same-runtime residency for this harness; they do not test a reload or
+claim an HTTP-cache hit. The orchestrator also verifies source counts, bytes,
+hashes, decoded counts, camera values, screenshot hashes, lack of WebGL context
+loss through the evidence schema, the pre-source hardware marker and profile
+digest, and distinct runner process IDs.
 
 Any mismatch exits non-zero and no completed bundle receipt is written.
 
@@ -126,7 +140,8 @@ Any mismatch exits non-zero and no completed bundle receipt is written.
 
 The new directory contains a digest-addressed camera-profile artifact, one
 subdirectory per representation, and
-`visible-first-browser-bakeoff-receipt.json`. That receipt identifies SOG and
+`visible-first-browser-bakeoff-receipt.json`. Its schema is
+`venviewer.grand-hall.visible-first-browser-bakeoff.v3`; it identifies SOG and
 SPZ as radiance-ranking eligible and PLY as structural-only.
 
 Successful execution still leaves every image `diagnostic` and

@@ -41,7 +41,8 @@ import {
 } from "../src/lib/grand-hall-visual-lineage.js";
 import {
   GRAND_HALL_VISIBLE_FIRST_CAPTURE_RUNS,
-  grandHallBrowserCacheEvidence,
+  grandHallBrowserSourceResidencyEvidence,
+  grandHallVisibleFirstRequiresSourceNavigation,
   grandHallVisibleFirstRunLabel,
   parseGrandHallVisibleFirstRepresentation,
   type GrandHallVisibleFirstCaptureRun,
@@ -163,6 +164,7 @@ const CAPTURE_RUNS: readonly GrandHallVisibleFirstCaptureRun[] = ORCHESTRATED_VI
   : SINGLE_LEGACY_CAPTURE_RUN;
 
 interface FixtureBridgeSnapshot {
+  readonly runtimeInstanceId?: string;
   readonly status: "loading" | "loaded" | "error";
   readonly startedAtMs: number;
   readonly results: readonly {
@@ -660,7 +662,7 @@ function assertOrchestratedCameraProfile(
   }
 }
 
-function assertSourceCacheState(input: {
+function assertSourceResidencyState(input: {
   readonly run: GrandHallVisibleFirstCaptureRun;
   readonly members: readonly BoundSourceMember[];
   readonly sourceServer: BoundSourceServer;
@@ -668,16 +670,15 @@ function assertSourceCacheState(input: {
   readonly requestCountAfter: number;
 }): void {
   if (!ORCHESTRATED_VISIBLE_FIRST) return;
-  if (input.run.cacheState === "cold") {
+  if (input.run.residencyState === "cold_load") {
     expect(input.requestCountBefore).toBe(0);
-    expect(input.requestCountAfter).toBe(input.members.length);
-    for (const member of input.members) {
-      expect(input.sourceServer.requestCountFor(member)).toBe(1);
-    }
-    return;
+  } else {
+    expect(input.requestCountBefore).toBe(input.members.length);
   }
-  expect(input.requestCountBefore).toBe(input.members.length);
-  expect(input.requestCountAfter).toBe(input.requestCountBefore);
+  expect(input.requestCountAfter).toBe(input.members.length);
+  for (const member of input.members) {
+    expect(input.sourceServer.requestCountFor(member)).toBe(1);
+  }
 }
 
 test.describe("Grand Hall local fixed-camera visual lineage", () => {
@@ -705,12 +706,13 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       const sourceServer = await startBoundSourceServer(boundMembers);
       const cameraProfile = await readGrandHallSharedCameraProfile(repositoryRoot());
       assertOrchestratedCameraProfile(cameraProfile);
+      await page.setViewportSize(CAPTURE_VIEWPORT);
+      const fixturePath = grandHallLineageFixturePath(format, sourceServer.baseUrl);
+      let residentFixtureUrl: string | undefined;
+      let residentRuntimeInstanceId: string | undefined;
       try {
         for (const captureRun of CAPTURE_RUNS) {
           await test.step(grandHallVisibleFirstRunLabel(captureRun), async () => {
-            if (captureRun.ordinal > 1) {
-              await page.goto("about:blank", { waitUntil: "load" });
-            }
       const sampleLabel = DIFIX_NO_REFERENCE_CAPTURE_ENABLED
         ? GRAND_HALL_DIFIX_CAPTURE_MODE
         : WARMUP_FRAME_COUNT >= 120 && FRAME_SAMPLE_COUNT >= 600
@@ -752,25 +754,29 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       }
       const gitAtStart = await gitIdentity();
       assertOrchestratedGitIdentity(gitAtStart);
-      await page.setViewportSize(CAPTURE_VIEWPORT);
-      const fixturePath = grandHallLineageFixturePath(format, sourceServer.baseUrl);
       const sourceRequestCountBefore = sourceServer.totalRequestCount();
       const startedAt = Date.now();
       const runStartedAt = new Date(startedAt).toISOString();
-      await page.goto(fixturePath, { waitUntil: "domcontentloaded" });
-      let bridge = await waitForLoadedFixture(page);
-      const sourceRequestCountAfter = sourceServer.totalRequestCount();
-      assertSourceCacheState({
-        run: captureRun,
-        members: boundMembers,
-        sourceServer,
-        requestCountBefore: sourceRequestCountBefore,
-        requestCountAfter: sourceRequestCountAfter,
-      });
-      if (bridge.actualCamera === undefined || bridge.settings === undefined) {
-        throw new Error("Loaded lineage fixture did not expose its camera and renderer settings.");
+      if (grandHallVisibleFirstRequiresSourceNavigation(captureRun)) {
+        await page.goto(fixturePath, { waitUntil: "domcontentloaded" });
+        residentFixtureUrl = page.url();
+      } else {
+        expect(residentFixtureUrl).toBeDefined();
+        expect(page.url()).toBe(residentFixtureUrl);
       }
-      expect(bridge.results).toHaveLength(GRAND_HALL_CAPTURED_SOG_MEMBERS.length);
+      let bridge = await waitForLoadedFixture(page);
+      if (
+        bridge.actualCamera === undefined
+        || bridge.settings === undefined
+        || bridge.runtimeInstanceId === undefined
+      ) {
+        throw new Error(
+          "Loaded lineage fixture did not expose its camera, renderer settings, and runtime identity.",
+        );
+      }
+      residentRuntimeInstanceId ??= bridge.runtimeInstanceId;
+      expect(bridge.runtimeInstanceId).toBe(residentRuntimeInstanceId);
+      expect(bridge.results).toHaveLength(boundMembers.length);
       expect(bridge.results.every((result) => result.ok)).toBe(true);
       expect(bridge.results.map((result) => result.url).sort()).toEqual(
         boundMembers.map((member) => sourceServer.urlFor(member)).sort(),
@@ -796,6 +802,8 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       bridge = await waitForStableVisibleFixture(page);
       expect(bridge.sparkRuntimeState?.sortRadial).toBe(false);
       expect(bridge.sparkRuntimeState?.activeSplats).toBe(GRAND_HALL_CAPTURED_SOURCE.gaussianCount);
+      expect(bridge.runtimeInstanceId).toBe(residentRuntimeInstanceId);
+      const renderedFrameCountBefore = bridge.renderedFrameCount;
       const stableAtMs = Date.now() - startedAt;
       await renderFixtureFrames(page, WARMUP_FRAME_COUNT);
       const frames = summarizeFrames(await renderFixtureFrames(page, FRAME_SAMPLE_COUNT));
@@ -805,9 +813,15 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
         || bridge.actualCamera === undefined
         || bridge.actualRenderer === undefined
         || bridge.sparkRuntimeState === undefined
+        || bridge.runtimeInstanceId === undefined
       ) {
         throw new Error("Final lineage frame did not expose complete post-render runtime state.");
       }
+      expect(bridge.runtimeInstanceId).toBe(residentRuntimeInstanceId);
+      const renderedFrameCountAfter = bridge.renderedFrameCount;
+      expect(renderedFrameCountAfter - renderedFrameCountBefore).toBeGreaterThanOrEqual(
+        WARMUP_FRAME_COUNT + FRAME_SAMPLE_COUNT,
+      );
       const environment = await page.locator("canvas").evaluate((canvas) => {
         if (!(canvas instanceof HTMLCanvasElement)) throw new Error("Lineage target is not a canvas.");
         const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
@@ -871,6 +885,19 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
           })}`,
         );
       }
+      const sourceRequestCountAfter = sourceServer.totalRequestCount();
+      try {
+        assertSourceResidencyState({
+          run: captureRun,
+          members: boundMembers,
+          sourceServer,
+          requestCountBefore: sourceRequestCountBefore,
+          requestCountAfter: sourceRequestCountAfter,
+        });
+      } catch (error: unknown) {
+        await rm(screenshotTempPath, { force: true });
+        throw error;
+      }
       const screenshotSha256 = await hashFile(screenshotTempPath);
       const gitAtEnd = await gitIdentity();
       assertOrchestratedGitIdentity(gitAtEnd);
@@ -919,12 +946,20 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
             "The non-background pixel gate proves render presence only; it does not establish completeness, fidelity, room identity, or visual acceptance.",
             grandHallSharedCameraProfileEvidence(cameraProfile),
             ...(ORCHESTRATED_VISIBLE_FIRST
-              ? [grandHallBrowserCacheEvidence({
+              ? [grandHallBrowserSourceResidencyEvidence({
                   representation: format,
                   run: captureRun,
                   sourceRequestCountBefore,
                   sourceRequestCountAfter,
+                  runtimeInstanceId: bridge.runtimeInstanceId,
+                  renderedFrameCountBefore,
+                  renderedFrameCountAfter,
                 })]
+              : []),
+            ...(captureRun.residencyState === "resident"
+              ? [
+                  "Resident capture reuses one live fixture runtime; no navigation, source fetch, decode, or scene attachment is performed. It measures long-lived decoded-runtime stability, not HTTP-cache reload performance.",
+                ]
               : []),
             ...(browserPreflight === undefined ? [] : [browserPreflight.marker]),
             ...(format === "spz"
@@ -951,7 +986,9 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
             nonBackgroundPixelRatio: pixelCoverage.nonBackgroundPixelRatio,
           },
           timings: {
-            loadMs: Math.max(...bridge.results.map((entry) => entry.elapsedMs)),
+            loadMs: captureRun.residencyState === "cold_load"
+              ? Math.max(...bridge.results.map((entry) => entry.elapsedMs))
+              : 0,
             stableMs: stableAtMs,
             frameP50Ms: frames.p50Ms,
             frameP95Ms: frames.p95Ms,
@@ -1036,12 +1073,13 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
     const sourceServer = await startBoundSourceServer([boundSource]);
     const cameraProfile = await readGrandHallSharedCameraProfile(repositoryRoot());
     assertOrchestratedCameraProfile(cameraProfile);
+    await page.setViewportSize({ width: 1600, height: 900 });
+    const fixturePath = grandHallPlyLineageFixturePath(sourceServer.baseUrl);
+    let residentFixtureUrl: string | undefined;
+    let residentRuntimeInstanceId: string | undefined;
     try {
       for (const captureRun of CAPTURE_RUNS) {
         await test.step(grandHallVisibleFirstRunLabel(captureRun), async () => {
-          if (captureRun.ordinal > 1) {
-            await page.goto("about:blank", { waitUntil: "load" });
-          }
     const sampleLabel = WARMUP_FRAME_COUNT >= 120 && FRAME_SAMPLE_COUNT >= 600
       ? `structural-diagnostic-controlled-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`
       : `structural-diagnostic-${String(WARMUP_FRAME_COUNT)}w-${String(FRAME_SAMPLE_COUNT)}f`;
@@ -1072,29 +1110,28 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
 
     const gitAtStart = await gitIdentity();
     assertOrchestratedGitIdentity(gitAtStart);
-    await page.setViewportSize({ width: 1600, height: 900 });
-    const fixturePath = grandHallPlyLineageFixturePath(sourceServer.baseUrl);
     const sourceRequestCountBefore = sourceServer.totalRequestCount();
     const startedAt = Date.now();
     const runStartedAt = new Date(startedAt).toISOString();
-    await page.goto(fixturePath, { waitUntil: "domcontentloaded" });
+    if (grandHallVisibleFirstRequiresSourceNavigation(captureRun)) {
+      await page.goto(fixturePath, { waitUntil: "domcontentloaded" });
+      residentFixtureUrl = page.url();
+    } else {
+      expect(residentFixtureUrl).toBeDefined();
+      expect(page.url()).toBe(residentFixtureUrl);
+    }
     let bridge = await waitForLoadedFixture(page);
-    const sourceRequestCountAfter = sourceServer.totalRequestCount();
-    assertSourceCacheState({
-      run: captureRun,
-      members: [boundSource],
-      sourceServer,
-      requestCountBefore: sourceRequestCountBefore,
-      requestCountAfter: sourceRequestCountAfter,
-    });
     if (
       bridge.actualCamera === undefined
       || bridge.actualRenderer === undefined
       || bridge.settings === undefined
       || bridge.plyMeshRuntimeState === undefined
+      || bridge.runtimeInstanceId === undefined
     ) {
-      throw new Error("Loaded PLY fixture did not expose complete camera, renderer, settings, and geometry evidence.");
+      throw new Error("Loaded PLY fixture did not expose complete camera, renderer, settings, geometry, and runtime-identity evidence.");
     }
+    residentRuntimeInstanceId ??= bridge.runtimeInstanceId;
+    expect(bridge.runtimeInstanceId).toBe(residentRuntimeInstanceId);
     expect(bridge.results).toHaveLength(1);
     expect(bridge.results[0]).toMatchObject({ url: sourceServer.urlFor(boundSource), ok: true });
     expect(sourceServer.requestCountFor(boundSource)).toBe(1);
@@ -1145,6 +1182,7 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       registrationAuthority: "inspection_only",
     });
 
+    const renderedFrameCountBefore = bridge.renderedFrameCount;
     const stableAtMs = Date.now() - startedAt;
     await renderFixtureFrames(page, WARMUP_FRAME_COUNT);
     const frames = summarizeFrames(await renderFixtureFrames(page, FRAME_SAMPLE_COUNT));
@@ -1155,9 +1193,15 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       || bridge.actualRenderer === undefined
       || bridge.settings === undefined
       || bridge.plyMeshRuntimeState === undefined
+      || bridge.runtimeInstanceId === undefined
     ) {
       throw new Error("Final PLY lineage frame did not expose complete post-render evidence.");
     }
+    expect(bridge.runtimeInstanceId).toBe(residentRuntimeInstanceId);
+    const renderedFrameCountAfter = bridge.renderedFrameCount;
+    expect(renderedFrameCountAfter - renderedFrameCountBefore).toBeGreaterThanOrEqual(
+      WARMUP_FRAME_COUNT + FRAME_SAMPLE_COUNT,
+    );
 
     const environment = await page.locator("canvas").evaluate((canvas) => {
       if (!(canvas instanceof HTMLCanvasElement)) throw new Error("Lineage target is not a canvas.");
@@ -1214,6 +1258,19 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
       await rm(screenshotTempPath, { force: true });
       throw new Error("PLY lineage PNG contains no material structural coverage above background.");
     }
+    const sourceRequestCountAfter = sourceServer.totalRequestCount();
+    try {
+      assertSourceResidencyState({
+        run: captureRun,
+        members: [boundSource],
+        sourceServer,
+        requestCountBefore: sourceRequestCountBefore,
+        requestCountAfter: sourceRequestCountAfter,
+      });
+    } catch (error: unknown) {
+      await rm(screenshotTempPath, { force: true });
+      throw error;
+    }
     const screenshotSha256 = await hashFile(screenshotTempPath);
     const gitAtEnd = await gitIdentity();
     assertOrchestratedGitIdentity(gitAtEnd);
@@ -1249,12 +1306,20 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
           "The camera is the shared inspection camera, not a recovered optical camera.",
           grandHallSharedCameraProfileEvidence(cameraProfile),
           ...(ORCHESTRATED_VISIBLE_FIRST
-            ? [grandHallBrowserCacheEvidence({
+            ? [grandHallBrowserSourceResidencyEvidence({
                 representation: "ply",
                 run: captureRun,
                 sourceRequestCountBefore,
                 sourceRequestCountAfter,
+                runtimeInstanceId: bridge.runtimeInstanceId,
+                renderedFrameCountBefore,
+                renderedFrameCountAfter,
               })]
+            : []),
+          ...(captureRun.residencyState === "resident"
+            ? [
+                "Resident capture reuses one live fixture runtime; no navigation, source fetch, decode, or scene attachment is performed. It measures long-lived decoded-runtime stability, not HTTP-cache reload performance.",
+              ]
             : []),
           ...(browserPreflight === undefined ? [] : [browserPreflight.marker]),
           ...(WARMUP_FRAME_COUNT < 120 || FRAME_SAMPLE_COUNT < 600
@@ -1272,7 +1337,9 @@ test.describe("Grand Hall local fixed-camera visual lineage", () => {
           nonBackgroundPixelRatio: pixelCoverage.nonBackgroundPixelRatio,
         },
         timings: {
-          loadMs: bridge.results[0]?.elapsedMs ?? 0,
+          loadMs: captureRun.residencyState === "cold_load"
+            ? bridge.results[0]?.elapsedMs ?? 0
+            : 0,
           stableMs: stableAtMs,
           frameP50Ms: frames.p50Ms,
           frameP95Ms: frames.p95Ms,

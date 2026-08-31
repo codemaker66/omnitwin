@@ -54,6 +54,12 @@ describe("T-087 Spark renderer dependency unit", () => {
     expect(source).toContain("{fixedCamera ? null : (");
     expect(source).toContain("truthModeEnabled && !fixedCamera");
     expect(source).toContain('if (allLoaded) fixtureBridge().status = "loaded"');
+    expect(source.match(
+      /const runtimeInstanceId = useRef\(crypto\.randomUUID\(\)\)\.current;/gu,
+    )).toHaveLength(2);
+    expect(source.match(
+      /fixtureBridge\(\)\.runtimeInstanceId = runtimeInstanceId;/gu,
+    )).toHaveLength(2);
   });
 
   it("loads real runtime assets through Spark's SplatMesh API, not textSplats", async () => {

@@ -2,24 +2,27 @@ export const GRAND_HALL_VISIBLE_FIRST_REPRESENTATIONS = ["sog", "spz", "ply"] as
 
 export type GrandHallVisibleFirstRepresentation =
   (typeof GRAND_HALL_VISIBLE_FIRST_REPRESENTATIONS)[number];
-export type GrandHallVisibleFirstCacheState = "cold" | "warm";
+export type GrandHallVisibleFirstResidencyState = "cold_load" | "resident";
 
-export interface GrandHallVisibleFirstCaptureRun {
-  readonly ordinal: 1 | 2 | 3 | 4;
-  readonly cacheState: GrandHallVisibleFirstCacheState;
-  readonly cacheRunOrdinal: 1 | 2 | 3;
-}
+export type GrandHallVisibleFirstCaptureRun = Readonly<
+  | { ordinal: 1; residencyState: "cold_load"; residencyRunOrdinal: 1 }
+  | {
+      ordinal: 2 | 3 | 4;
+      residencyState: "resident";
+      residencyRunOrdinal: 1 | 2 | 3;
+    }
+>;
 
 export const GRAND_HALL_VISIBLE_FIRST_CAPTURE_RUNS = Object.freeze([
-  { ordinal: 1, cacheState: "cold", cacheRunOrdinal: 1 },
-  { ordinal: 2, cacheState: "warm", cacheRunOrdinal: 1 },
-  { ordinal: 3, cacheState: "warm", cacheRunOrdinal: 2 },
-  { ordinal: 4, cacheState: "warm", cacheRunOrdinal: 3 },
+  { ordinal: 1, residencyState: "cold_load", residencyRunOrdinal: 1 },
+  { ordinal: 2, residencyState: "resident", residencyRunOrdinal: 1 },
+  { ordinal: 3, residencyState: "resident", residencyRunOrdinal: 2 },
+  { ordinal: 4, residencyState: "resident", residencyRunOrdinal: 3 },
 ] as const satisfies readonly GrandHallVisibleFirstCaptureRun[]);
 
 export const GRAND_HALL_VISIBLE_FIRST_CAMERA_ID = "source-pose-19890-interior-v1";
-export const GRAND_HALL_BROWSER_CACHE_EVIDENCE_PREFIX =
-  "VENVIEWER_BROWSER_CACHE_STATE_V1:";
+export const GRAND_HALL_BROWSER_SOURCE_RESIDENCY_EVIDENCE_PREFIX =
+  "VENVIEWER_BROWSER_SOURCE_RESIDENCY_V1:";
 
 export function parseGrandHallVisibleFirstRepresentation(
   value: string | undefined,
@@ -36,25 +39,37 @@ export function parseGrandHallVisibleFirstRepresentation(
 export function grandHallVisibleFirstRunLabel(
   run: GrandHallVisibleFirstCaptureRun,
 ): string {
-  return run.cacheState === "cold"
-    ? "cold-run-1"
-    : `warm-run-${String(run.cacheRunOrdinal)}`;
+  return run.residencyState === "cold_load"
+    ? "cold-load-1"
+    : `resident-capture-${String(run.residencyRunOrdinal)}`;
 }
 
-export function grandHallBrowserCacheEvidence(input: {
+export function grandHallVisibleFirstRequiresSourceNavigation(
+  run: GrandHallVisibleFirstCaptureRun,
+): boolean {
+  return run.residencyState === "cold_load";
+}
+
+export function grandHallBrowserSourceResidencyEvidence(input: {
   readonly representation: GrandHallVisibleFirstRepresentation;
   readonly run: GrandHallVisibleFirstCaptureRun;
   readonly sourceRequestCountBefore: number;
   readonly sourceRequestCountAfter: number;
+  readonly runtimeInstanceId: string;
+  readonly renderedFrameCountBefore: number;
+  readonly renderedFrameCountAfter: number;
 }): string {
-  return `${GRAND_HALL_BROWSER_CACHE_EVIDENCE_PREFIX}${JSON.stringify({
+  return `${GRAND_HALL_BROWSER_SOURCE_RESIDENCY_EVIDENCE_PREFIX}${JSON.stringify({
     representation: input.representation,
     runOrdinal: input.run.ordinal,
-    cacheState: input.run.cacheState,
-    cacheRunOrdinal: input.run.cacheRunOrdinal,
+    residencyState: input.run.residencyState,
+    residencyRunOrdinal: input.run.residencyRunOrdinal,
     sourceRequestCountBefore: input.sourceRequestCountBefore,
     sourceRequestCountAfter: input.sourceRequestCountAfter,
-    browserProcessScope: "one_representation_cold_plus_three_warm",
+    runtimeInstanceId: input.runtimeInstanceId,
+    renderedFrameCountBefore: input.renderedFrameCountBefore,
+    renderedFrameCountAfter: input.renderedFrameCountAfter,
+    browserProcessScope: "one_representation_one_cold_load_plus_three_resident_captures",
   })}`;
 }
 

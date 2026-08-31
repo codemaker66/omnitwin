@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "venviewer.grand-hall.visible-first-browser-bakeoff.incomplete-run-rejection.v1",
+  "authority": "none",
+  "roomRef": "trades-hall/grand-hall",
+  "evidenceDirectory": "docs/evidence/grand-hall-lineage/2026-08-31-visible-first-hardware-v2",
+  "disposition": "REJECTED_INCOMPLETE",
+  "headGitSha": "25f53a63fefe7b93e3807e6fabd01e3616890b14",
+  "coldEvidence": {
+    "runLabel": "cold-run-1",
+    "representation": "sog",
+    "sourceRequestCountBefore": 0,
+    "sourceRequestCountAfter": 11,
+    "sourceRequestDelta": 11,
+    "sourceMemberCount": 11,
+    "status": "diagnostic",
+    "visualAssessment": "not_reviewed",
+    "cameraRegistration": "inspection_only"
+  },
+  "firstResidentReloadFailure": {
+    "attemptedRunLabel": "warm-run-1",
+    "attemptSemantics": "first_resident_reload_attempt",
+    "sourceRequestCountBefore": 11,
+    "expectedSourceRequestCountAfter": 11,
+    "observedSourceRequestCountAfter": 22,
+    "sourceRequestDelta": 11,
+    "failurePoint": "The request-count invariant failed after the reloaded fixture reported loaded and before warm camera validation, timing, screenshot capture, or receipt publication.",
+    "outcome": "rejected_request_count_invariant"
+  },
+  "preservedComponents": [
+    {
+      "role": "digest_addressed_inspection_camera_profile",
+      "relativePath": "source-pose-19890-interior-v1-9eca9b6582b7301ec1c059b1a5be699e5a4983773afecb2beea46c2668305922.json",
+      "sizeBytes": 2136,
+      "sha256": "sha256:9eca9b6582b7301ec1c059b1a5be699e5a4983773afecb2beea46c2668305922"
+    },
+    {
+      "role": "partial_cold_sog_diagnostic_receipt",
+      "relativePath": "sog/grand-hall-sog-source-pose-19890-interior-v1-cold-run-1-diagnostic-controlled-120w-600f.json",
+      "sizeBytes": 11228,
+      "sha256": "sha256:c15206befd5487bffc2e0721d026ef3faaf4d3997629223e6fe008b63a015589"
+    },
+    {
+      "role": "partial_cold_sog_diagnostic_png",
+      "relativePath": "sog/grand-hall-sog-source-pose-19890-interior-v1-cold-run-1-diagnostic-controlled-120w-600f.png",
+      "sizeBytes": 2226204,
+      "sha256": "sha256:72f4c376d2742128daac0fb1a8ec68c178fd0e373bf47c1ce9e808cd077d3aae"
+    }
+  ],
+  "duplicateEvidence": {
+    "preservedComponent": "sog/grand-hall-sog-source-pose-19890-interior-v1-cold-run-1-diagnostic-controlled-120w-600f.png",
+    "duplicatesExistingPath": "docs/evidence/grand-hall-lineage/2026-08-30/grand-hall-sog-source-pose-19890-interior-v1-diagnostic-controlled-120w-600f.png",
+    "sharedSha256": "sha256:72f4c376d2742128daac0fb1a8ec68c178fd0e373bf47c1ce9e808cd077d3aae",
+    "meaning": "The preserved PNG adds no new visual pixels beyond the 2026-08-30 SOG diagnostic; only its partial cold-run context differs."
+  },
+  "missingRequiredEvidence": [
+    "No SOG warm or resident capture pair was published.",
+    "No SPZ capture or receipt was published.",
+    "No PLY capture or receipt was published.",
+    "No final visible-first-browser-bakeoff-receipt.json was published."
+  ],
+  "authorityExclusions": {
+    "comparisonWinnerDeclared": false,
+    "humanVisualAcceptanceGranted": false,
+    "roomOrTransformAuthorityGranted": false,
+    "runtimeAdmissionGranted": false,
+    "stagingOrProductionAuthorityGranted": false
+  },
+  "limitations": [
+    "This receipt rejects the directory as an incomplete bake-off bundle while preserving its three partial diagnostic components for forensic review.",
+    "The cold SOG component remains diagnostic, not reviewed, and inspection-only.",
+    "No result in this directory may be promoted as a completed warm-cache or resident-capture experiment, representation comparison, winner, accepted room artifact, or production evidence."
+  ]
+}

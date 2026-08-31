@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Color, FrontSide, NoToneMapping, PerspectiveCamera } from "three";
@@ -29,6 +29,7 @@ import {
 // P0 ingestion probe bridge (dev route only): headless checks read load
 // results per URL from this window global instead of scraping the canvas.
 interface SplatFixtureBridge {
+  runtimeInstanceId?: string;
   status: "loading" | "loaded" | "error";
   startedAtMs: number;
   results: {
@@ -168,6 +169,7 @@ function parsePositiveNumber(raw: string | null, fallback: number): number {
 function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.ReactElement {
   const expected = urls.length;
   const [allLoaded, setAllLoaded] = useState(false);
+  const runtimeInstanceId = useRef(crypto.randomUUID()).current;
 
   useEffect(() => {
     if (allLoaded) fixtureBridge().status = "loaded";
@@ -207,8 +209,8 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
   }, []);
 
   useEffect(() => {
-    fixtureBridge();
-  }, []);
+    fixtureBridge().runtimeInstanceId = runtimeInstanceId;
+  }, [runtimeInstanceId]);
 
   return (
     <>
@@ -229,6 +231,10 @@ function UrlSplatScene({ urls }: { readonly urls: readonly string[] }): React.Re
 }
 
 function PlyStructuralScene({ url }: { readonly url: string }): React.ReactElement {
+  const runtimeInstanceId = useRef(crypto.randomUUID()).current;
+  useEffect(() => {
+    fixtureBridge().runtimeInstanceId = runtimeInstanceId;
+  }, [runtimeInstanceId]);
   const onLoad = useCallback((event: PlyStructuralEvidenceLoadEvent) => {
     const bridge = fixtureBridge();
     bridge.results.push({

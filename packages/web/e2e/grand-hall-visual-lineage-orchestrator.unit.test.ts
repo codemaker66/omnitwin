@@ -5,9 +5,54 @@ import { describe, expect, it } from "vitest";
 
 import {
   GRAND_HALL_VISIBLE_FIRST_LANES,
+  assertGrandHallVisibleFirstResidencySequence,
   grandHallVisibleFirstLanePlan,
   grandHallVisibleFirstSanitizedParentEnvironment,
+  type GrandHallVisibleFirstResidencyStage,
 } from "./grand-hall-visual-lineage-orchestrator.js";
+
+const validResidencyStages: readonly GrandHallVisibleFirstResidencyStage[] = [
+  {
+    runOrdinal: 1,
+    residencyState: "cold_load",
+    residencyRunOrdinal: 1,
+    sourceRequestCountBefore: 0,
+    sourceRequestCountAfter: 11,
+    runtimeInstanceId: "grand-hall-runtime-1",
+    renderedFrameCountBefore: 5,
+    renderedFrameCountAfter: 725,
+  },
+  {
+    runOrdinal: 2,
+    residencyState: "resident",
+    residencyRunOrdinal: 1,
+    sourceRequestCountBefore: 11,
+    sourceRequestCountAfter: 11,
+    runtimeInstanceId: "grand-hall-runtime-1",
+    renderedFrameCountBefore: 725,
+    renderedFrameCountAfter: 1_445,
+  },
+  {
+    runOrdinal: 3,
+    residencyState: "resident",
+    residencyRunOrdinal: 2,
+    sourceRequestCountBefore: 11,
+    sourceRequestCountAfter: 11,
+    runtimeInstanceId: "grand-hall-runtime-1",
+    renderedFrameCountBefore: 1_445,
+    renderedFrameCountAfter: 2_165,
+  },
+  {
+    runOrdinal: 4,
+    residencyState: "resident",
+    residencyRunOrdinal: 3,
+    sourceRequestCountBefore: 11,
+    sourceRequestCountAfter: 11,
+    runtimeInstanceId: "grand-hall-runtime-1",
+    renderedFrameCountBefore: 2_165,
+    renderedFrameCountAfter: 2_885,
+  },
+];
 
 describe("Grand Hall visible-first process orchestrator", () => {
   it("creates three sequential process lanes with distinct server ports and directories", () => {
@@ -97,5 +142,85 @@ describe("Grand Hall visible-first process orchestrator", () => {
     expect(plyPreflight).toBeLessThan(
       captureSpec.indexOf("await readPlySource(SOURCE_ROOT)", plyTestStart),
     );
+  });
+
+  it("keeps all four captures on one loaded fixture instead of remounting the scene", () => {
+    const captureSpec = readFileSync(
+      new URL("./grand-hall-visual-lineage.local.spec.ts", import.meta.url),
+      "utf8",
+    );
+    expect(captureSpec).not.toContain("page.goto(\"about:blank\"");
+    expect(captureSpec.match(
+      /if \(grandHallVisibleFirstRequiresSourceNavigation\(captureRun\)\)/gu,
+    )).toHaveLength(2);
+    expect(captureSpec).not.toContain("expect(page.url()).toBe(fixturePath)");
+    expect(captureSpec.match(/residentFixtureUrl = page\.url\(\);/gu)).toHaveLength(2);
+    expect(captureSpec.match(
+      /expect\(page\.url\(\)\)\.toBe\(residentFixtureUrl\);/gu,
+    )).toHaveLength(2);
+  });
+
+  it("accepts one cold load and three advancing captures from the same resident runtime", () => {
+    expect(() => {
+      assertGrandHallVisibleFirstResidencySequence({
+        captures: validResidencyStages,
+        sourceMemberCount: 11,
+      });
+    }).not.toThrow();
+  });
+
+  it("rejects the observed 11-to-22 repeat-load failure", () => {
+    const captures = validResidencyStages.map((stage, index) => index === 1
+      ? { ...stage, sourceRequestCountAfter: 22 }
+      : stage);
+    expect(() => {
+      assertGrandHallVisibleFirstResidencySequence({ captures, sourceMemberCount: 11 });
+    }).toThrow(/reload/u);
+  });
+
+  it("rejects a changed runtime identity even when source requests stay resident", () => {
+    const captures = validResidencyStages.map((stage, index) => index === 2
+      ? { ...stage, runtimeInstanceId: "grand-hall-runtime-2" }
+      : stage);
+    expect(() => {
+      assertGrandHallVisibleFirstResidencySequence({ captures, sourceMemberCount: 11 });
+    }).toThrow(/runtime identity/u);
+  });
+
+  it("rejects incorrect cold/resident ordering", () => {
+    const second = validResidencyStages[1];
+    const third = validResidencyStages[2];
+    if (second === undefined || third === undefined) throw new Error("Test fixture is incomplete.");
+    const captures = [validResidencyStages[0], third, second, validResidencyStages[3]]
+      .filter((stage): stage is GrandHallVisibleFirstResidencyStage => stage !== undefined);
+    expect(() => {
+      assertGrandHallVisibleFirstResidencySequence({ captures, sourceMemberCount: 11 });
+    }).toThrow(/wrong cold\/resident sequence/u);
+  });
+
+  it("rejects insufficient and non-monotonic rendered-frame ranges", () => {
+    const shortCapture = validResidencyStages.map((stage, index) => index === 1
+      ? { ...stage, renderedFrameCountAfter: stage.renderedFrameCountBefore + 719 }
+      : stage);
+    expect(() => {
+      assertGrandHallVisibleFirstResidencySequence({
+        captures: shortCapture,
+        sourceMemberCount: 11,
+      });
+    }).toThrow(/frame ranges/u);
+
+    const rewoundCapture = validResidencyStages.map((stage, index) => index === 2
+      ? {
+          ...stage,
+          renderedFrameCountBefore: 1_444,
+          renderedFrameCountAfter: 2_164,
+        }
+      : stage);
+    expect(() => {
+      assertGrandHallVisibleFirstResidencySequence({
+        captures: rewoundCapture,
+        sourceMemberCount: 11,
+      });
+    }).toThrow(/frame ranges/u);
   });
 });
