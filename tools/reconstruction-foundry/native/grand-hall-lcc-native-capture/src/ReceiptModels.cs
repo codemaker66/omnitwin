@@ -145,16 +145,73 @@ namespace Venviewer.NativeCapture
         public string rendererHandlerPath;
         public bool rendererHandlerPathVerified;
         public bool canonicalSceneLoadedVerified;
+        public string renderAllBeginEventTopic;
+        public bool renderAllBeginEventSubscriptionAccepted;
+        public bool renderAllBeginEventObserved;
+        public bool renderAllPendingDefaultDerivedFromFreshRenderer;
+        public bool renderAllPendingTrueRequestedBeforeLoad;
+        public bool renderAllActiveTrueObservedAfterLoad;
+        public bool renderAllPendingFalseResetAttempted;
+        public bool renderAllPendingFalseResetCallCompleted;
+        public bool renderAllPendingResetReadbackAvailable;
+        public string renderAllIsolationBoundary;
+    }
+
+    internal sealed class RasterStatisticsReceipt
+    {
+        public long pixelCount;
+        public long nonBlackPixelCount;
+        public double nonBlackPixelFraction;
+        public int minimumRed;
+        public int maximumRed;
+        public int minimumGreen;
+        public int maximumGreen;
+        public int minimumBlue;
+        public int maximumBlue;
+        public int maximumChannelDynamicRange;
+        public int distinctRgbLowerBound;
+        public bool distinctRgbCountCapped;
+        public double meanLuminance;
+        public double luminanceStandardDeviation;
+        public string rgb24Sha256;
+        public bool nonDegenerateVerified;
     }
 
     internal sealed class CaptureAttemptReceipt
     {
         public int ordinal;
+        public string status;
         public string sha256;
         public long byteLength;
         public int width;
         public int height;
         public int consecutiveIdenticalHashes;
+        public double elapsedSeconds;
+        public bool beforeRenderCallbackInvoked;
+        public bool afterRenderCallbackInvoked;
+        public bool renderProbeSubscriptionRemoved;
+        public bool renderTargetAssignedBeforeCapture;
+        public int renderTargetInstanceId;
+        public int renderTargetWidth;
+        public int renderTargetHeight;
+        public bool renderTargetDriftObserved;
+        public int exactCameraRenderCallbackCount;
+        public int firstExactCameraRenderFrame;
+        public int lastExactCameraRenderFrame;
+        public bool captureTaskCompletedBeforeDeadline;
+        public bool captureTaskTimeoutObserved;
+        public bool lateCaptureTaskObserverAttached;
+        public bool underlyingCaptureCancellationAvailable;
+        public string textureFormat;
+        public bool textureReadable;
+        public bool pixelReadCompleted;
+        public RasterStatisticsReceipt raster;
+        public bool pngEncodingCompleted;
+        public long encodedByteLength;
+        public string encodedSha256;
+        public bool postWriteFileShaVerified;
+        public string failureType;
+        public string failureMessage;
     }
 
     internal sealed class CaptureReceipt
@@ -186,6 +243,8 @@ namespace Venviewer.NativeCapture
         public bool vendorFullRenderBudgetEligibilityUsedForAdmission;
         public bool renderAllRequested;
         public bool renderAllObservedAfterRequest;
+        public bool renderAllRequestedBeforeSceneLoad;
+        public bool renderAllObservedAfterSceneLoad;
         public bool renderAllVerifiedAtEveryGate;
         public bool canonicalPackageHasEnvironment;
         public bool environmentDataIncluded;
@@ -193,6 +252,13 @@ namespace Venviewer.NativeCapture
         public string environmentExclusionReason;
         public bool environmentVisibilityGetterAvailable;
         public bool rendererReadinessContractSatisfied;
+        public string renderCallbackSurface;
+        public int blackChannelThreshold;
+        public double minimumNonBlackPixelFraction;
+        public int minimumMaximumChannelDynamicRange;
+        public int minimumDistinctRgbCount;
+        public double minimumLuminanceStandardDeviation;
+        public bool everyAttemptDecodedAndNonDegenerate;
         public double elapsedSeconds;
         public int completedAttempts;
         public List<CaptureAttemptReceipt> attempts;

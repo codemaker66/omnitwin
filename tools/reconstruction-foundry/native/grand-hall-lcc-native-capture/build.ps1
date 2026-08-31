@@ -245,6 +245,7 @@ $references = @(
     'LCCSDK.dll',
     'UnityEngine.dll',
     'UnityEngine.CoreModule.dll',
+    'UnityEngine.ImageConversionModule.dll',
     'UniTask.dll',
     'Cinemachine.dll',
     'Newtonsoft.Json.dll',

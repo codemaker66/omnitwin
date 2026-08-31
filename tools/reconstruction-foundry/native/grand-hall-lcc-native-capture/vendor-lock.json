@@ -50,6 +50,12 @@
       "role": "compile_and_runtime"
     },
     {
+      "relativePath": "LCCEditor_Data/Managed/UnityEngine.ImageConversionModule.dll",
+      "byteLength": 28080,
+      "sha256": "B9B639B4A278C2A01A7F326575D8D3C07280314682DA4DDDC055266E8A30953C",
+      "role": "compile_and_runtime"
+    },
+    {
       "relativePath": "LCCEditor_Data/Managed/UniTask.dll",
       "byteLength": 566272,
       "sha256": "0DCC2A27BFEF118AE85AB448F4BDFCDA2906894EFB90A951FB2EC06A6FCC07B8",

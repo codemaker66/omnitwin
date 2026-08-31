@@ -13,6 +13,7 @@ service, operating system, or GPU driver is network-silent.
 The module exists for one evidence task only: render the locked canonical
 `scans_BIG_MODEL_TH_GH_1` native LCC2 at one exact inspection camera and produce
 an overlay-free 1600x900 PNG plus a machine-readable receipt.
+The repaired contract is module `1.2.4` and native receipt schema `v4`.
 
 ## What is authoritative
 
@@ -57,8 +58,9 @@ LCCSDK. The module uses public, inspectable managed contracts already shipped
 with that application:
 
 - `IModule` and `IContainer.Resolve<T>()` for plugin loading;
-- `IEventBus`, the exact global `modules.loaded` lifecycle event, and
-  `lccscene.loaded`, for lifecycle completion;
+- `IEventBus`, the exact global `modules.loaded` lifecycle event,
+  `lccscene.load.begin`, and `lccscene.loaded`, for lifecycle completion and
+  the vendor's pre-`Renderer.Load(...)` full-render latch;
 - `IProjectManager.CreateTemporaryLCCProject(path)` and
   `ISceneManager.LoadDefaultScene()` for the vendor's high-level project and
   scene-load workflow;
@@ -66,8 +68,12 @@ with that application:
   `SetRecordMode`, `SetLockFPS`, and `ForceRerenderer`;
 - `ICameraService.SetTransform` for the numeric pose;
 - `ISceneManager.SceneCamera` for the exact Unity camera and clean-view flags;
-- `ICaptureManager.CaptureToFileAsync(path, Rect, ImageFormat.PNG)` for a
-  camera render texture, not a desktop or UI screenshot.
+- `ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender)` for
+  the exact scene-camera render texture, not a desktop or UI screenshot;
+- `RenderPipelineManager.endCameraRendering` for proof that the same camera
+  rendered into the same assigned render target before it was read; and
+- `Texture2D.GetPixels32()` plus `ImageConversion.EncodeToPNG()` for decoded
+  RGB admission followed by local PNG encoding.
 
 The stock executable has no camera/screenshot command-line arguments. The
 installed Qt editor has camera IPC but no demonstrated colour-raster capture
@@ -84,9 +90,10 @@ reject duplicate event or execution delivery. `Stop()` and `Dispose()` remove
 any pending lifecycle subscription, so an editor shutdown cannot leave the
 bridge armed. Public `Stop()` is terminal: scene-load callbacks, watchdogs,
 readiness waits, convergence waits, and later async continuations reject new
-work. Successful internal scene-load completion removes only its
-`lccscene.loaded` subscription and does not enter that terminal state. A stop
-during capture is surfaced through the existing failure-receipt and independent
+work. Successful internal scene-load completion removes its
+`lccscene.load.begin` and `lccscene.loaded` subscriptions only after the current
+event dispatch has unwound and does not enter that terminal state. A stop during
+capture is surfaced through the existing failure receipt and independent
 camera/mode restoration path.
 
 ## Safety and failure behavior
@@ -107,14 +114,21 @@ recipe below are present. An armed run fails closed when any of these drift:
 - output directory safety/emptiness;
 - progressive convergence.
 
-The module requests `Ultra` through `IRendererQualityService`, calls
-`SetRenderAll(true)`, and requires the public `IsRenderAll` read-back immediately
-and at every later gate. The locked vendor IL proves that
+The module requests `Ultra` through `IRendererQualityService`, then subscribes
+the stable `Func<EventArg<bool>, bool>` handler for the exact
+`lccscene.load.begin` topic at `Int32.MaxValue` before
+`LoadDefaultScene()`. That synchronous handler calls `SetRenderAll(true)`
+before the vendor's `Renderer.Load(...)`. The pending value written by
+`SetRenderAll` and the active loaded-dataset value returned by `IsRenderAll`
+are distinct vendor fields, so the module deliberately makes no immediate
+read-back claim. It instead requires `IsRenderAll()` to be true after the
+matching `lccscene.loaded` event and at every later render gate. The locked
+vendor IL proves that
 `SupportFullRender(Ultra)` is not an API-capability flag: it compares the
 current scene's finest-LOD splat count with Ultra's configured `3000` budget.
 The canonical package reports 6,019,684 finest-LOD splats, so that predicate is
 false by construction. The module records the value as vendor budget-eligibility
-telemetry and does not use it in place of the actual render-mode read-back.
+telemetry and does not use it in place of the post-load active-mode read-back.
 Because the public API exposes no loaded-splat residency count or
 streaming-completion metric, `IsRenderAll` is not presented as proof that every
 possible Gaussian is resident. After `lccscene.loaded`, the module additionally
@@ -125,7 +139,25 @@ camera value, projection value, Ultra quality, full-render mode, and canonical
 scene identity is re-asserted throughout. Three consecutive byte-identical PNGs
 establish a same-host hash plateau. The run stops after 60 attempts or 180
 seconds, and each individual `ICaptureManager` operation has a 30-second
-deadline with no retry after timeout.
+deadline with no retry after timeout. Each attempt is added to the receipt
+before capture begins, so a timeout, black raster, target drift, or other
+failure remains visible instead of disappearing with an exception.
+
+The capture callback records the exact render target assigned to the exact
+scene camera. An attempt is admitted only if an `endCameraRendering` callback
+observes that same camera still targeting that same object at 1600x900 and the
+after-render callback confirms it did not drift. The returned readable
+`Texture2D` is decoded to RGB before any PNG is encoded or written. The raster
+gate rejects all-black and near-constant frames using minimum non-black-pixel
+fraction, channel-range, distinct-colour, and luminance-variation requirements.
+Only an admitted RGB frame is encoded, durably written without replacement,
+validated for PNG dimensions, and hash-checked against the encoded bytes.
+
+The per-attempt timeout observes a preserved capture task. On timeout the
+render-frame probe is closed and unsubscribed, and a local continuation observes
+the late result solely to destroy any returned `Texture2D`; it cannot admit that
+attempt or start a retry. The normal and exceptional paths likewise destroy
+every texture that was not explicitly transferred to the decoder.
 
 The canonical inventory contains `data/3dgs/env.sog`, but browser-frontier
 parity excludes it. The module therefore calls `SetEnvironmentData(false)` and
@@ -136,8 +168,14 @@ does not claim a read-back value. The auto-quit disposable process bounds the
 unknown prior visibility state.
 
 Every successful public mode mutation records its cleanup state immediately.
-Record mode, locked FPS, render-all, and the environment request are restored
-independently so one failing vendor cleanup call does not suppress the others.
+Record mode, locked FPS, the environment request, and the pre-load render-all
+latch are cleaned up independently so one failing vendor cleanup call does not
+suppress the others. A fresh disposable process proves the pending render-all
+default is false before the load-begin request. Cleanup therefore requests
+`SetRenderAll(false)` for the next load. The vendor exposes no public pending
+field getter, so the receipt records that the reset call completed but that no
+pending-reset read-back exists; disposable-process exit is the final isolation
+boundary, not a fabricated restoration observation.
 
 The module writes only beneath a new, explicitly supplied empty output
 directory. It refuses output inside either the source package or disposable
@@ -146,11 +184,13 @@ failure.
 
 An armed run also requires a fresh editor process with no project, current
 scene data, or loaded LCC. It hashes the canonical source package and complete
-disposable-editor closure, subscribes to `lccscene.loaded`, and asks the public
-project manager to create a temporary project from the exact canonical GH_1
-path. The module requires successful creation, initialized/temporary state,
-non-null current scene data, and an LCC asset whose final resolved path is the
-same canonical path. It then calls the public `ISceneManager.LoadDefaultScene()`.
+disposable-editor closure, subscribes to `lccscene.load.begin` and
+`lccscene.loaded`, and asks the public project manager to create a temporary
+project from the exact canonical GH_1 path. The module requires successful
+creation, initialized/temporary state, non-null current scene data, and an LCC
+asset whose final resolved path is the same canonical path. Both exact handlers
+must be accepted before it calls the public
+`ISceneManager.LoadDefaultScene()`.
 No positional scene argument is used. After the exact event, capture begins
 only when `GetRendererHandlerByPath(canonicalPath)` returns a handler with the
 same exact path and `IsSceneLoaded(canonicalPath)` succeeds. Any stale project,

@@ -66,7 +66,7 @@ foreach ($requiredPath in @(
 
 $plugin = Get-Content -LiteralPath $pluginPath -Raw | ConvertFrom-Json
 Assert-Equal 'com.venviewer.native_capture' ([string]$plugin.Id) 'plugin Id'
-Assert-Equal '1.2.3' ([string]$plugin.Version) 'plugin version'
+Assert-Equal '1.2.4' ([string]$plugin.Version) 'plugin version'
 Assert-Equal 'managed' ([string]$plugin.Type) 'plugin type'
 Assert-Equal 'VenviewerNativeCapture.dll' ([string]$plugin.EntryPoint) 'plugin entry point'
 Assert-Equal 'Venviewer.NativeCapture.NativeCaptureModule' ([string]$plugin.Class) 'plugin class'
@@ -229,6 +229,12 @@ if (-not (Select-String -LiteralPath (Join-Path $sourceRoot 'CapturePolicy.cs') 
 }
 $moduleSource = Get-Content -LiteralPath (Join-Path $sourceRoot 'NativeCaptureModule.cs') -Raw
 $capturePolicySource = Get-Content -LiteralPath (Join-Path $sourceRoot 'CapturePolicy.cs') -Raw
+$receiptModelsSource = Get-Content -LiteralPath (Join-Path $sourceRoot 'ReceiptModels.cs') -Raw
+if ($moduleSource.IndexOf(
+        'private const string ModuleVersion = "1.2.4";',
+        [StringComparison]::Ordinal) -lt 0) {
+    throw 'The compiled module source and plugin manifest version are not both 1.2.4.'
+}
 if ($capturePolicySource -notmatch
     '(?s)class InterlockedOneShotGate.*?TryEnter\(\).*?Interlocked\.CompareExchange\(ref _entered, 1, 0\) == 0') {
     throw 'The Interlocked one-shot lifecycle gate implementation is missing.'
@@ -328,9 +334,10 @@ $stopMethodSource = $moduleSource.Substring($stopMethodIndex, $disposeMethodInde
 $disposeMethodSource = $moduleSource.Substring($disposeMethodIndex, $handleModulesLoadedIndex - $disposeMethodIndex)
 if ($stopMethodSource.IndexOf('_lifecycle.Stop();', [StringComparison]::Ordinal) -lt 0 -or
     $stopMethodSource.IndexOf('UnsubscribeModulesLoaded();', [StringComparison]::Ordinal) -lt 0 -or
+    $stopMethodSource.IndexOf('UnsubscribeSceneLoadBegin();', [StringComparison]::Ordinal) -lt 0 -or
     $stopMethodSource.IndexOf('UnsubscribeSceneLoaded();', [StringComparison]::Ordinal) -lt 0 -or
     $disposeMethodSource.IndexOf('Stop();', [StringComparison]::Ordinal) -lt 0) {
-    throw 'Stop/Dispose no longer terminally closes and removes both lifecycle subscriptions.'
+    throw 'Stop/Dispose no longer terminally closes and removes all lifecycle subscriptions.'
 }
 $tryStartIndex = $moduleSource.IndexOf(
     'private void TryStartCaptureAfterLoadContract(bool deferUntilEventDispatchUnwinds)',
@@ -343,20 +350,24 @@ if ($tryStartIndex -lt 0 -or $failSceneLoadIndex -lt 0 -or $tryStartIndex -gt $f
     throw 'The internal scene-unsubscribe/cooperative-stop structure is missing.'
 }
 $tryStartSource = $moduleSource.Substring($tryStartIndex, $failSceneLoadIndex - $tryStartIndex)
-$internalUnsubscribeIndex = $tryStartSource.IndexOf('UnsubscribeSceneLoaded();', [StringComparison]::Ordinal)
+$internalBeginUnsubscribeIndex = $tryStartSource.IndexOf('UnsubscribeSceneLoadBegin();', [StringComparison]::Ordinal)
+$internalLoadedUnsubscribeIndex = $tryStartSource.IndexOf('UnsubscribeSceneLoaded();', [StringComparison]::Ordinal)
 $internalStartIndex = $tryStartSource.IndexOf('StartCapture(CapturePolicy.CanonicalScenePath);', [StringComparison]::Ordinal)
 if ($tryStartSource.IndexOf('_lifecycle.IsStopped', [StringComparison]::Ordinal) -lt 0 -or
     $tryStartSource.IndexOf('StartCaptureAfterSceneEventDispatchAsync().Forget(', [StringComparison]::Ordinal) -lt 0 -or
     $tryStartSource.IndexOf('await UniTask.Yield(PlayerLoopTiming.LastPostLateUpdate);', [StringComparison]::Ordinal) -lt 0 -or
-    $internalUnsubscribeIndex -lt 0 -or $internalStartIndex -lt 0 -or
-    $internalUnsubscribeIndex -gt $internalStartIndex -or
+    $internalBeginUnsubscribeIndex -lt 0 -or $internalLoadedUnsubscribeIndex -lt 0 -or
+    $internalStartIndex -lt 0 -or
+    $internalBeginUnsubscribeIndex -gt $internalStartIndex -or
+    $internalLoadedUnsubscribeIndex -gt $internalStartIndex -or
     $tryStartSource.IndexOf('Stop();', [StringComparison]::Ordinal) -ge 0) {
     throw 'Successful internal scene load must unsubscribe its event without terminally calling Stop.'
 }
 $unsubscribeSceneSource = $moduleSource.Substring($unsubscribeSceneIndex, $throwIfStoppedIndex - $unsubscribeSceneIndex)
 if ($unsubscribeSceneSource.IndexOf('_eventBus.Unsubscribe("lccscene.loaded"', [StringComparison]::Ordinal) -lt 0 -or
+    $unsubscribeSceneSource.IndexOf('_eventBus.Unsubscribe("lccscene.load.begin"', [StringComparison]::Ordinal) -lt 0 -or
     $unsubscribeSceneSource.IndexOf('_lifecycle.Stop();', [StringComparison]::Ordinal) -ge 0) {
-    throw 'Internal scene unsubscription is missing or terminally stops the lifecycle.'
+    throw 'Internal begin/loaded scene unsubscription is missing or terminally stops the lifecycle.'
 }
 $watchSceneIndex = $moduleSource.IndexOf('private async UniTask WatchSceneLoadAsync()', [StringComparison]::Ordinal)
 $failArmedIndex = $moduleSource.IndexOf('private void FailArmedStartup(', [StringComparison]::Ordinal)
@@ -381,14 +392,16 @@ $waitCameraIndex = $moduleSource.IndexOf('private async UniTask WaitForCameraApp
 $waitReadinessIndex = $moduleSource.IndexOf('private async UniTask WaitForRendererReadiness(', [StringComparison]::Ordinal)
 $requireCameraIndex = $moduleSource.IndexOf('private void RequireLockedCameraState(', [StringComparison]::Ordinal)
 $captureConvergenceIndex = $moduleSource.IndexOf('private async UniTask CaptureUntilConverged(', [StringComparison]::Ordinal)
-$captureTimeoutIndex = $moduleSource.IndexOf('private async UniTask<bool> CaptureWithTimeout(', [StringComparison]::Ordinal)
+$captureTimeoutIndex = $moduleSource.IndexOf(
+    'private async UniTask<Texture2D> CaptureTextureWithTimeout(',
+    [StringComparison]::Ordinal)
 $finalizePngIndex = $moduleSource.IndexOf('private void FinalizePng(', [StringComparison]::Ordinal)
 foreach ($cooperativeStopContract in @(
     @($runCaptureIndex, $waitCameraIndex, 'capture pipeline'),
     @($waitCameraIndex, $waitReadinessIndex, 'camera-application awaits'),
     @($waitReadinessIndex, $requireCameraIndex, 'renderer-readiness loop'),
     @($captureConvergenceIndex, $captureTimeoutIndex, 'capture-convergence loop'),
-    @($captureTimeoutIndex, $finalizePngIndex, 'bounded capture await')
+    @($captureTimeoutIndex, $finalizePngIndex, 'bounded texture-capture await')
 )) {
     $contractStart = [int]$cooperativeStopContract[0]
     $contractEnd = [int]$cooperativeStopContract[1]
@@ -413,15 +426,25 @@ if ($moduleSource -notmatch 'camera\.orthographic = false' -or $moduleSource -no
 }
 if ($moduleSource.IndexOf('_preLoadPackageSnapshot = CapturePolicy.SnapshotCanonicalPackage', [StringComparison]::Ordinal) -lt 0 -or
     $moduleSource.IndexOf('_preLoadPackageSnapshot = CapturePolicy.SnapshotCanonicalPackage', [StringComparison]::Ordinal) -gt
-        $moduleSource.IndexOf('_eventBus.Subscribe("lccscene.loaded"', [StringComparison]::Ordinal)) {
+        $moduleSource.IndexOf('"lccscene.load.begin"', [StringComparison]::Ordinal)) {
     throw 'Canonical package identity is not captured before scene subscription/load.'
 }
-$subscribeIndex = $moduleSource.IndexOf('_eventBus.Subscribe("lccscene.loaded"', [StringComparison]::Ordinal)
+$beginSubscribeMatch = [Regex]::Match(
+    $moduleSource,
+    '(?s)_sceneLoadBeginSubscribed\s*=\s*_eventBus\.Subscribe(?:<EventArg<bool>>)?\(\s*"lccscene\.load\.begin"\s*,\s*_sceneLoadBeginHandler\s*,\s*Int32\.MaxValue\s*\);')
+$beginSubscribeIndex = if ($beginSubscribeMatch.Success) { $beginSubscribeMatch.Index } else { -1 }
+$loadedSubscribeMatch = [Regex]::Match(
+    $moduleSource,
+    '(?s)_subscribed\s*=\s*_eventBus\.Subscribe(?:<EventArg<string>>)?\(\s*"lccscene\.loaded"\s*,\s*_sceneLoadedHandler\s*,\s*100\s*\);')
+$subscribeIndex = if ($loadedSubscribeMatch.Success) { $loadedSubscribeMatch.Index } else { -1 }
 $temporaryProjectIndex = $moduleSource.IndexOf('_projectManager.CreateTemporaryLCCProject(', [StringComparison]::Ordinal)
 $defaultSceneLoadIndex = $moduleSource.IndexOf('_sceneManager.LoadDefaultScene()', [StringComparison]::Ordinal)
-if ($subscribeIndex -lt 0 -or $temporaryProjectIndex -lt 0 -or $defaultSceneLoadIndex -lt 0 -or
-    $subscribeIndex -gt $temporaryProjectIndex -or $temporaryProjectIndex -gt $defaultSceneLoadIndex) {
-    throw 'The canonical event subscription, temporary project creation, and default-scene load are out of order.'
+if ($beginSubscribeIndex -lt 0 -or $subscribeIndex -lt 0 -or
+    $temporaryProjectIndex -lt 0 -or $defaultSceneLoadIndex -lt 0 -or
+    $beginSubscribeIndex -gt $subscribeIndex -or
+    $subscribeIndex -gt $temporaryProjectIndex -or
+    $temporaryProjectIndex -gt $defaultSceneLoadIndex) {
+    throw 'The priority load-begin subscription, loaded subscription, temporary project creation, and default-scene load are out of order.'
 }
 foreach ($loadContract in @(
     'RequireFreshVendorState();',
@@ -435,7 +458,7 @@ foreach ($loadContract in @(
     '_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath)',
     'Volatile.Read(ref _sceneLoadedEventObserved)',
     'commandLineSceneArgumentUsed = false',
-    'venviewer.grand-hall.lcc-native-capture-receipt.v3',
+    'venviewer.grand-hall.lcc-native-capture-receipt.v4',
     'FixedCameraProfile.Load('
 )) {
     if ($moduleSource.IndexOf($loadContract, [StringComparison]::Ordinal) -lt 0) {
@@ -446,6 +469,126 @@ $freshProcessGateIndex = $moduleSource.IndexOf('RequireFreshVendorState();', [St
 $preLoadSnapshotIndex = $moduleSource.IndexOf('_preLoadPackageSnapshot = CapturePolicy.SnapshotCanonicalPackage', [StringComparison]::Ordinal)
 if ($freshProcessGateIndex -lt 0 -or $freshProcessGateIndex -gt $preLoadSnapshotIndex) {
     throw 'The pre-load package snapshot is not protected by a fresh-process scene gate.'
+}
+
+$loadBeginHandlerIndex = $moduleSource.IndexOf(
+    'private bool HandleSceneLoadBegin(EventArg<bool> eventData)',
+    [StringComparison]::Ordinal)
+$loadedHandlerIndex = $moduleSource.IndexOf(
+    'private bool HandleSceneLoaded(EventArg<string> eventData)',
+    [StringComparison]::Ordinal)
+if ($loadBeginHandlerIndex -lt 0 -or $loadedHandlerIndex -le $loadBeginHandlerIndex) {
+    throw 'The exact typed lccscene.load.begin/loaded handler contract is missing.'
+}
+$loadBeginHandlerSource = $moduleSource.Substring(
+    $loadBeginHandlerIndex,
+    $loadedHandlerIndex - $loadBeginHandlerIndex)
+$setRenderAllTrueIndex = $loadBeginHandlerSource.IndexOf(
+    '_lccSceneManager.SetRenderAll(true);',
+    [StringComparison]::Ordinal)
+if ($moduleSource.IndexOf(
+        'private Func<EventArg<bool>, bool> _sceneLoadBeginHandler;',
+        [StringComparison]::Ordinal) -lt 0 -or
+    $moduleSource.IndexOf(
+        '_sceneLoadBeginHandler = HandleSceneLoadBegin;',
+        [StringComparison]::Ordinal) -lt 0 -or
+    $setRenderAllTrueIndex -lt 0 -or
+    @([Regex]::Matches($moduleSource, '_lccSceneManager\.SetRenderAll\(true\);')).Count -ne 1 -or
+    $loadBeginHandlerSource.IndexOf(
+        '_renderAllPendingTrueRequestedBeforeLoad = true;',
+        [StringComparison]::Ordinal) -lt $setRenderAllTrueIndex) {
+    throw 'SetRenderAll(true) must occur exactly once in the stable typed load-begin handler.'
+}
+$afterSetRenderAllTrue = $loadBeginHandlerSource.Substring($setRenderAllTrueIndex)
+if ($afterSetRenderAllTrue.IndexOf('_lccSceneManager.IsRenderAll()', [StringComparison]::Ordinal) -ge 0) {
+    throw 'The load-begin handler falsely treats IsRenderAll as an immediate pending-value read-back.'
+}
+if ($loadBeginHandlerSource.IndexOf(
+        '_renderAllPendingDefaultDerivedFromFreshRenderer = _freshProjectStateVerified;',
+        [StringComparison]::Ordinal) -lt 0) {
+    throw 'The fresh disposable renderer no longer supplies the pending-false default evidence.'
+}
+
+$tryStartAfterLoadedIndex = $moduleSource.IndexOf(
+    'private void TryStartCaptureAfterLoadContract(',
+    [StringComparison]::Ordinal)
+$loadedHandlerSource = $moduleSource.Substring(
+    $loadedHandlerIndex,
+    $tryStartAfterLoadedIndex - $loadedHandlerIndex)
+foreach ($postLoadRenderAllContract in @(
+    '_renderAllActiveTrueObservedAfterLoad = _lccSceneManager.IsRenderAll();',
+    '!_renderAllPendingDefaultDerivedFromFreshRenderer',
+    '!_renderAllPendingTrueRequestedBeforeLoad',
+    '!_renderAllActiveTrueObservedAfterLoad'
+)) {
+    if ($loadedHandlerSource.IndexOf($postLoadRenderAllContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The post-load active render-all admission is missing '$postLoadRenderAllContract'."
+    }
+}
+
+$deferredSceneUnsubscribeIndex = $moduleSource.IndexOf(
+    'private async UniTask StartCaptureAfterSceneEventDispatchAsync()',
+    [StringComparison]::Ordinal)
+$failSceneContractIndex = $moduleSource.IndexOf(
+    'private void FailSceneLoadContract(',
+    [StringComparison]::Ordinal)
+$deferredSceneUnsubscribeSource = $moduleSource.Substring(
+    $deferredSceneUnsubscribeIndex,
+    $failSceneContractIndex - $deferredSceneUnsubscribeIndex)
+$sceneYieldIndex = $deferredSceneUnsubscribeSource.IndexOf(
+    'await UniTask.Yield(PlayerLoopTiming.LastPostLateUpdate);',
+    [StringComparison]::Ordinal)
+$beginRemovalIndex = $deferredSceneUnsubscribeSource.IndexOf(
+    'UnsubscribeSceneLoadBegin();',
+    [StringComparison]::Ordinal)
+$loadedRemovalIndex = $deferredSceneUnsubscribeSource.IndexOf(
+    'UnsubscribeSceneLoaded();',
+    [StringComparison]::Ordinal)
+if ($sceneYieldIndex -lt 0 -or $beginRemovalIndex -lt $sceneYieldIndex -or
+    $loadedRemovalIndex -lt $sceneYieldIndex) {
+    throw 'Scene-load handlers must be removed only after the mutable vendor dispatch has yielded.'
+}
+
+$restorePreLoadIndex = $moduleSource.IndexOf(
+    'private void RestorePreLoadRenderState()',
+    [StringComparison]::Ordinal)
+$attemptRestoreIndex = $moduleSource.IndexOf(
+    'private static void AttemptRestore(',
+    [StringComparison]::Ordinal)
+$restorePreLoadSource = $moduleSource.Substring(
+    $restorePreLoadIndex,
+    $attemptRestoreIndex - $restorePreLoadIndex)
+foreach ($pendingResetContract in @(
+    '_renderAllPendingFalseResetAttempted = true;',
+    '_lccSceneManager.SetRenderAll(false);',
+    '_renderAllPendingFalseResetCallCompleted = true;'
+)) {
+    if ($restorePreLoadSource.IndexOf($pendingResetContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The pending render-all cleanup is missing '$pendingResetContract'."
+    }
+}
+if ($restorePreLoadSource.IndexOf('_lccSceneManager.IsRenderAll()', [StringComparison]::Ordinal) -ge 0 -or
+    @([Regex]::Matches($moduleSource, '_lccSceneManager\.SetRenderAll\(false\);')).Count -ne 1) {
+    throw 'Pending render-all reset must be requested once without a fabricated public read-back.'
+}
+foreach ($renderAllReceiptContract in @(
+    'public bool renderAllPendingDefaultDerivedFromFreshRenderer;',
+    'public bool renderAllPendingTrueRequestedBeforeLoad;',
+    'public bool renderAllActiveTrueObservedAfterLoad;',
+    'public bool renderAllPendingFalseResetAttempted;',
+    'public bool renderAllPendingFalseResetCallCompleted;',
+    'public bool renderAllPendingResetReadbackAvailable;',
+    'public string renderAllIsolationBoundary;'
+)) {
+    if ($receiptModelsSource.IndexOf($renderAllReceiptContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Receipt v4 is missing render-all evidence '$renderAllReceiptContract'."
+    }
+}
+if ($moduleSource.IndexOf('renderAllPendingResetReadbackAvailable = false', [StringComparison]::Ordinal) -lt 0 -or
+    $moduleSource.IndexOf('renderAllIsolationBoundary = "disposable_process_exit"', [StringComparison]::Ordinal) -lt 0 -or
+    $moduleSource.IndexOf('RenderAllMutated', [StringComparison]::Ordinal) -ge 0 -or
+    $moduleSource.IndexOf('_originalRenderAll', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Receipt v4 no longer states the honest pending-reset/disposable-process boundary.'
 }
 foreach ($forbiddenDirectLoadContract in @(
     '_lccSceneManager.LoadScene(',
@@ -458,8 +601,16 @@ foreach ($forbiddenDirectLoadContract in @(
         throw "The obsolete direct scene-load contract remains: $forbiddenDirectLoadContract"
     }
 }
-if ($moduleSource -notmatch 'File\.Move\(temporaryPath, finalPath\)') {
-    throw 'Final PNG no longer uses same-directory no-replace promotion.'
+$writeBytesIndex = $moduleSource.IndexOf('private static void WriteNoReplaceBytes(', [StringComparison]::Ordinal)
+$writeTextIndex = $moduleSource.IndexOf('private static void WriteNoReplaceText(', [StringComparison]::Ordinal)
+if ($writeBytesIndex -lt 0 -or $writeTextIndex -le $writeBytesIndex) {
+    throw 'The durable no-replace byte writer is missing.'
+}
+$writeBytesSource = $moduleSource.Substring($writeBytesIndex, $writeTextIndex - $writeBytesIndex)
+if ($writeBytesSource.IndexOf('FileMode.CreateNew', [StringComparison]::Ordinal) -lt 0 -or
+    $writeBytesSource.IndexOf('stream.Flush(true);', [StringComparison]::Ordinal) -lt 0 -or
+    $writeBytesSource.IndexOf('File.Move(temporaryPath, path);', [StringComparison]::Ordinal) -lt 0) {
+    throw 'The byte writer no longer durably flushes and promotes without replacement.'
 }
 $stateCaptureIndex = $moduleSource.IndexOf('context.CameraState = CaptureOriginalCameraState()', [StringComparison]::Ordinal)
 $cameraApplyIndex = $moduleSource.IndexOf('ApplyLockedCamera(context.CameraState)', [StringComparison]::Ordinal)
@@ -470,7 +621,6 @@ if ($stateCaptureIndex -lt 0 -or $cameraApplyIndex -lt 0 -or $stateCaptureIndex 
 foreach ($immediateMutationContract in @(
     '(?s)_lccSceneManager\.SetRecordMode\(\s*true,.*?_cameraProfile\.Projection\.VerticalFieldOfViewDegrees\);\s*state\.RecordModeEnabled = true;',
     '_lccSceneManager\.SetLockFPS\(true\);\s*state\.LockFpsEnabled = true;',
-    '_lccSceneManager\.SetRenderAll\(true\);\s*state\.RenderAllMutated = true;',
     '_lccSceneManager\.SetEnvironmentData\(false\);\s*state\.EnvironmentExclusionRequested = true;'
 )) {
     if ($moduleSource -notmatch $immediateMutationContract) {
@@ -484,7 +634,8 @@ foreach ($renderModeContract in @(
     'vendorFullRenderBudgetEligible =',
     'vendorFullRenderBudgetEligibilityUsedForAdmission = false',
     '_rendererQualityService.SupportFullRender(RenderQualityType.Ultra)',
-    'renderAllObservedAfterRequest = _lccSceneManager.IsRenderAll()'
+    'renderAllRequestedBeforeSceneLoad = _renderAllPendingTrueRequestedBeforeLoad',
+    'renderAllObservedAfterSceneLoad = _renderAllActiveTrueObservedAfterLoad'
 )) {
     if ($moduleSource.IndexOf($renderModeContract, [StringComparison]::Ordinal) -lt 0) {
         throw "Native Ultra/render-all evidence is missing: $renderModeContract"
@@ -498,12 +649,206 @@ if ($moduleSource.IndexOf('fullRenderSupported =', [StringComparison]::Ordinal) 
 foreach ($requiredIndependentRestore in @(
     'if (state.RecordModeEnabled)',
     'if (state.LockFpsEnabled)',
-    'if (state.RenderAllMutated)',
     'if (state.EnvironmentExclusionRequested)',
+    'RestorePreLoadRenderState();',
     'throw new AggregateException("One or more native capture cleanup operations failed.", restoreErrors)'
 )) {
     if ($moduleSource.IndexOf($requiredIndependentRestore, [StringComparison]::Ordinal) -lt 0) {
         throw "Independent cleanup evidence is missing: $requiredIndependentRestore"
+    }
+}
+
+if ($moduleSource.IndexOf('CaptureToFileAsync', [StringComparison]::Ordinal) -ge 0) {
+    throw 'The obsolete file-capture/readback path remains in the native module.'
+}
+$populateAttemptIndex = $moduleSource.IndexOf(
+    'private async UniTask PopulateCaptureAttemptAsync(',
+    [StringComparison]::Ordinal)
+$observeLateIndex = $moduleSource.IndexOf(
+    'private static async UniTask ObserveLateCaptureAsync(',
+    [StringComparison]::Ordinal)
+if ($populateAttemptIndex -lt 0 -or $captureTimeoutIndex -le $populateAttemptIndex -or
+    $observeLateIndex -le $captureTimeoutIndex -or $finalizePngIndex -le $observeLateIndex) {
+    throw 'The retained-attempt/texture-capture/late-observer pipeline structure is missing.'
+}
+$convergenceSource = $moduleSource.Substring(
+    $captureConvergenceIndex,
+    $populateAttemptIndex - $captureConvergenceIndex)
+$attemptRetainedIndex = $convergenceSource.IndexOf(
+    'capture.attempts.Add(attempt);',
+    [StringComparison]::Ordinal)
+$attemptCaptureIndex = $convergenceSource.IndexOf(
+    'await PopulateCaptureAttemptAsync(state.Camera, candidatePath, attempt);',
+    [StringComparison]::Ordinal)
+if ($attemptRetainedIndex -lt 0 -or $attemptCaptureIndex -lt 0 -or
+    $attemptRetainedIndex -gt $attemptCaptureIndex -or
+    $convergenceSource.IndexOf('attempt.status = "rejected";', [StringComparison]::Ordinal) -lt 0 -or
+    $convergenceSource.IndexOf('attempt.failureType = exception.GetType().FullName;', [StringComparison]::Ordinal) -lt 0 -or
+    $convergenceSource.IndexOf('attempt.failureMessage = exception.Message;', [StringComparison]::Ordinal) -lt 0) {
+    throw 'A failed native capture attempt can disappear instead of remaining in receipt v4.'
+}
+
+$populateAttemptSource = $moduleSource.Substring(
+    $populateAttemptIndex,
+    $captureTimeoutIndex - $populateAttemptIndex)
+$pixelReadIndex = $populateAttemptSource.IndexOf('texture.GetPixels32();', [StringComparison]::Ordinal)
+$rasterAnalysisIndex = $populateAttemptSource.IndexOf('CapturePolicy.AnalyzeRgb24(', [StringComparison]::Ordinal)
+$rasterAdmissionIndex = $populateAttemptSource.IndexOf('CapturePolicy.RequireNonDegenerateRaster(', [StringComparison]::Ordinal)
+$pngEncodeIndex = $populateAttemptSource.IndexOf('ImageConversion.EncodeToPNG(texture);', [StringComparison]::Ordinal)
+$candidateWriteIndex = $populateAttemptSource.IndexOf('WriteNoReplaceBytes(candidatePath, pngBytes);', [StringComparison]::Ordinal)
+$postWriteHashIndex = $populateAttemptSource.IndexOf('CapturePolicy.Sha256File(candidatePath);', [StringComparison]::Ordinal)
+if ($pixelReadIndex -lt 0 -or $rasterAnalysisIndex -le $pixelReadIndex -or
+    $rasterAdmissionIndex -le $rasterAnalysisIndex -or $pngEncodeIndex -le $rasterAdmissionIndex -or
+    $candidateWriteIndex -le $pngEncodeIndex -or $postWriteHashIndex -le $candidateWriteIndex -or
+    $populateAttemptSource.IndexOf('attempt.textureReadable = texture.isReadable;', [StringComparison]::Ordinal) -lt 0 -or
+    $populateAttemptSource.IndexOf('attempt.encodedSha256 = CapturePolicy.Sha256Bytes(pngBytes);', [StringComparison]::Ordinal) -lt 0 -or
+    $populateAttemptSource.IndexOf('attempt.postWriteFileShaVerified = true;', [StringComparison]::Ordinal) -lt 0) {
+    throw 'Decoded RGB admission must precede PNG encoding, durable publication, and byte/file hash agreement.'
+}
+$textureDestroyIndex = $populateAttemptSource.IndexOf(
+    'UnityEngine.Object.Destroy(texture);',
+    [StringComparison]::Ordinal)
+if ($textureDestroyIndex -lt 0 -or
+    $populateAttemptSource.IndexOf('finally', [StringComparison]::Ordinal) -lt 0) {
+    throw 'The admitted texture is not destroyed on every decoder/encoder outcome.'
+}
+
+$captureTextureSource = $moduleSource.Substring(
+    $captureTimeoutIndex,
+    $observeLateIndex - $captureTimeoutIndex)
+foreach ($captureTextureContract in @(
+    '_captureManager.CaptureToTextureAsync(',
+    'probe.Begin();',
+    'probe.AfterRender).Preserve();',
+    'await UniTask.WhenAny(captureTask, timeoutTask)',
+    'attempt.captureTaskTimeoutObserved = true;',
+    'probe.Abort();',
+    'attempt.lateCaptureTaskObserverAttached = true;',
+    'ObserveLateCaptureAsync(captureTask).Forget(',
+    'attempt.captureTaskCompletedBeforeDeadline = true;',
+    'probe.RequireCompleted();',
+    'probe.CopyTo(attempt);',
+    'if (!ownershipTransferred && texture != null)',
+    'UnityEngine.Object.Destroy(texture);'
+)) {
+    if ($captureTextureSource.IndexOf($captureTextureContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The bounded texture-capture contract is missing '$captureTextureContract'."
+    }
+}
+$capturePreserveIndex = $captureTextureSource.IndexOf('.Preserve();', [StringComparison]::Ordinal)
+$captureWaitIndex = $captureTextureSource.IndexOf('await UniTask.WhenAny(captureTask, timeoutTask)', [StringComparison]::Ordinal)
+$timeoutAbortIndex = $captureTextureSource.IndexOf('probe.Abort();', [StringComparison]::Ordinal)
+$lateObserverIndex = $captureTextureSource.IndexOf('ObserveLateCaptureAsync(captureTask).Forget(', [StringComparison]::Ordinal)
+if ($capturePreserveIndex -lt 0 -or $captureWaitIndex -le $capturePreserveIndex -or
+    $timeoutAbortIndex -le $captureWaitIndex -or $lateObserverIndex -le $timeoutAbortIndex) {
+    throw 'Timeout handling must preserve and wait once, abort the probe, then attach the late-result disposer.'
+}
+
+$observeLateSource = $moduleSource.Substring(
+    $observeLateIndex,
+    $finalizePngIndex - $observeLateIndex)
+$lateAwaitIndex = $observeLateSource.IndexOf('lateTexture = await captureTask;', [StringComparison]::Ordinal)
+$lateMainThreadIndex = $observeLateSource.IndexOf('await UniTask.SwitchToMainThread();', [StringComparison]::Ordinal)
+$lateDestroyIndex = $observeLateSource.IndexOf('UnityEngine.Object.Destroy(lateTexture);', [StringComparison]::Ordinal)
+if ($lateAwaitIndex -lt 0 -or $lateMainThreadIndex -le $lateAwaitIndex -or
+    $lateDestroyIndex -le $lateMainThreadIndex) {
+    throw 'The timed-out vendor task is not observed and its late texture destroyed on the Unity thread.'
+}
+
+$finalizePngSource = $moduleSource.Substring(
+    $finalizePngIndex,
+    $moduleSource.IndexOf('private void PruneOldCandidates(', [StringComparison]::Ordinal) - $finalizePngIndex)
+foreach ($finalPublicationContract in @(
+    'byte[] selectedBytes = File.ReadAllBytes(capture.selectedAttemptPath);',
+    'CapturePolicy.Sha256Bytes(selectedBytes);',
+    'WriteNoReplaceBytes(finalPath, selectedBytes);',
+    'CapturePolicy.Sha256File(finalPath);'
+)) {
+    if ($finalizePngSource.IndexOf($finalPublicationContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Final PNG publication is missing '$finalPublicationContract'."
+    }
+}
+
+$renderProbeIndex = $moduleSource.IndexOf(
+    'private sealed class RenderFrameProbe',
+    [StringComparison]::Ordinal)
+$lockedRuntimeFileIndex = $moduleSource.IndexOf(
+    'private sealed class LockedRuntimeFile',
+    [StringComparison]::Ordinal)
+$renderProbeSource = $moduleSource.Substring(
+    $renderProbeIndex,
+    $lockedRuntimeFileIndex - $renderProbeIndex)
+foreach ($renderProbeContract in @(
+    'private RenderTexture _expectedTarget;',
+    '_expectedTarget = target;',
+    'RenderTargetInstanceId = target.GetInstanceID();',
+    'RenderPipelineManager.endCameraRendering += _handler;',
+    'internal void AfterRender()',
+    'internal void Abort()',
+    'internal void CopyTo(CaptureAttemptReceipt attempt)',
+    'RenderPipelineManager.endCameraRendering -= _handler;',
+    'internal void RequireCompleted()',
+    'ReferenceEquals(camera, _expectedCamera)',
+    'ReferenceEquals(currentTarget, _expectedTarget)',
+    'currentTarget.GetInstanceID() == RenderTargetInstanceId',
+    'currentTarget.width == _expectedWidth',
+    'currentTarget.height == _expectedHeight'
+)) {
+    if ($renderProbeSource.IndexOf($renderProbeContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Exact-camera/exact-render-target proof is missing '$renderProbeContract'."
+    }
+}
+
+foreach ($attemptReceiptContract in @(
+    'public string status;',
+    'public bool beforeRenderCallbackInvoked;',
+    'public bool afterRenderCallbackInvoked;',
+    'public bool renderProbeSubscriptionRemoved;',
+    'public int renderTargetInstanceId;',
+    'public bool renderTargetDriftObserved;',
+    'public bool captureTaskCompletedBeforeDeadline;',
+    'public bool captureTaskTimeoutObserved;',
+    'public bool lateCaptureTaskObserverAttached;',
+    'public bool underlyingCaptureCancellationAvailable;',
+    'public string textureFormat;',
+    'public bool textureReadable;',
+    'public bool pixelReadCompleted;',
+    'public RasterStatisticsReceipt raster;',
+    'public bool pngEncodingCompleted;',
+    'public string encodedSha256;',
+    'public bool postWriteFileShaVerified;',
+    'public string failureType;',
+    'public string failureMessage;'
+)) {
+    if ($receiptModelsSource.IndexOf($attemptReceiptContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Receipt v4 is missing capture-attempt evidence '$attemptReceiptContract'."
+    }
+}
+foreach ($rasterPolicyContract in @(
+    'internal static RasterStatisticsReceipt AnalyzeRgb24(',
+    'internal static void RequireNonDegenerateRaster(',
+    'statistics.nonBlackPixelFraction < MinimumNonBlackPixelFraction',
+    'statistics.maximumChannelDynamicRange < MinimumMaximumChannelDynamicRange',
+    'statistics.distinctRgbLowerBound < MinimumDistinctRgbCount',
+    'statistics.luminanceStandardDeviation < MinimumLuminanceStandardDeviation',
+    'statistics.nonDegenerateVerified = true;'
+)) {
+    if ($capturePolicySource.IndexOf($rasterPolicyContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "The decoded-raster admission policy is missing '$rasterPolicyContract'."
+    }
+}
+foreach ($captureReceiptContract in @(
+    'surface = "ISceneManager.SceneCamera via ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender) + Unity ImageConversion.EncodeToPNG"',
+    'renderCallbackSurface = "RenderPipelineManager.endCameraRendering for the exact SceneCamera while it retains the exact assigned RenderTexture"',
+    'blackChannelThreshold = CapturePolicy.BlackChannelThreshold',
+    'minimumNonBlackPixelFraction = CapturePolicy.MinimumNonBlackPixelFraction',
+    'minimumMaximumChannelDynamicRange = CapturePolicy.MinimumMaximumChannelDynamicRange',
+    'minimumDistinctRgbCount = CapturePolicy.MinimumDistinctRgbCount',
+    'minimumLuminanceStandardDeviation = CapturePolicy.MinimumLuminanceStandardDeviation',
+    'everyAttemptDecodedAndNonDegenerate = false'
+)) {
+    if ($moduleSource.IndexOf($captureReceiptContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Receipt v4 is missing capture-admission evidence '$captureReceiptContract'."
     }
 }
 
@@ -667,8 +1012,13 @@ foreach ($requiredIlPattern in @(
     'NativeCaptureModule::ScheduleExecuteAfterModulesLoadedAsync',
     'NativeCaptureModule::Stop',
     'NativeCaptureModule::Dispose',
+    'NativeCaptureModule::HandleSceneLoadBegin',
+    'NativeCaptureModule::UnsubscribeSceneLoadBegin',
     'NativeCaptureModule::UnsubscribeSceneLoaded',
     'NativeCaptureModule::StartCaptureAfterSceneEventDispatchAsync',
+    'NativeCaptureModule::PopulateCaptureAttemptAsync',
+    'NativeCaptureModule::CaptureTextureWithTimeout',
+    'NativeCaptureModule::ObserveLateCaptureAsync',
     'NativeCaptureModule::ThrowIfStopped',
     'InterlockedOneShotGate::TryEnter',
     'NativeCaptureLifecycleState::TryScheduleModulesLoaded',
@@ -676,7 +1026,12 @@ foreach ($requiredIlPattern in @(
     'NativeCaptureLifecycleState::TryEnterExecution',
     'NativeCaptureLifecycleState::Stop',
     'Interlocked::CompareExchange',
-    'ICaptureManager::CaptureToFileAsync',
+    'ICaptureManager::CaptureToTextureAsync',
+    'Texture2D::GetPixels32',
+    'ImageConversion::EncodeToPNG',
+    'RenderPipelineManager::add_endCameraRendering',
+    'RenderPipelineManager::remove_endCameraRendering',
+    'UnityEngine\.Object::Destroy',
     'IProjectManager::CreateTemporaryLCCProject',
     'IProjectManager::get_IsInitialized',
     'IProjectManager::get_IsTemporary',
@@ -697,6 +1052,7 @@ foreach ($requiredIlPattern in @(
     'ILCCSceneManager::SetEnvironmentData',
     'FixedCameraProfile::Load',
     'UniTask::WhenAny',
+    'lccscene\.load\.begin',
     'lccscene\.loaded',
     'modules\.loaded'
 )) {
@@ -707,6 +1063,9 @@ foreach ($requiredIlPattern in @(
 if ($il -match 'ILCCSceneManager::LoadScene') {
     throw 'The compiled module still calls the low-level ILCCSceneManager.LoadScene API.'
 }
+if ($il -match 'ICaptureManager::CaptureToFileAsync') {
+    throw 'The compiled module still calls the proven-corrupt file-capture API.'
+}
 foreach ($forbiddenAssembly in @('System.Net.Http', 'NetMQ', 'MCPForUnity')) {
     if ($il -match "\.assembly extern '$([Regex]::Escape($forbiddenAssembly))'|\.assembly extern $([Regex]::Escape($forbiddenAssembly))") {
         throw "The compiled module unexpectedly references $forbiddenAssembly."
@@ -716,13 +1075,14 @@ foreach ($forbiddenAssembly in @('System.Net.Http', 'NetMQ', 'MCPForUnity')) {
 Write-Output 'PASS: plugin contract'
 Write-Output 'PASS: canonical GH_1 LCC2 manifest and 60-file policy receipt'
 Write-Output 'PASS: digest-bound fixed-camera profile and exact Three tuple'
-Write-Output 'PASS: temporary-project/default-scene event/handler fail-closed contract'
+Write-Output 'PASS: priority load-begin/default-scene/active-render-all fail-closed contract'
 Write-Output 'PASS: modules.loaded next-frame one-shot lifecycle/cleanup contract'
 Write-Output 'PASS: terminal Stop/internal scene-unsubscribe/cooperative async-stop contract'
 Write-Output 'PASS: reversible per-user native-module toggle lease static contract'
 Write-Output 'PASS: no vendor binary copied into the first-party folder'
 Write-Output 'PASS: no network API or unfinished-code source pattern'
-Write-Output 'PASS: compiled public IModule/camera/LCC/capture API calls'
+Write-Output 'PASS: retained-attempt decoded-raster/exact-target/late-texture capture contract'
+Write-Output 'PASS: compiled public IModule/camera/LCC/texture-capture API calls'
 Write-Output "PASS: bounded runtime closure $($runtimeClosure.memberCount) files / $($runtimeClosure.totalByteLength) bytes"
 Write-Output "Module SHA-256: $actualModuleSha256"
 Write-Output "Plugin SHA-256: $actualPluginSha256"

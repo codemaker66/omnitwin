@@ -179,6 +179,12 @@ namespace Venviewer.NativeCapture
         internal const int FramesBetweenCaptureAttempts = 15;
         internal const double SceneLoadTimeoutSeconds = 180.0;
         internal const double PerCaptureTimeoutSeconds = 30.0;
+        internal const int BlackChannelThreshold = 8;
+        internal const double MinimumNonBlackPixelFraction = 0.05;
+        internal const int MinimumMaximumChannelDynamicRange = 16;
+        internal const int MinimumDistinctRgbCount = 64;
+        internal const int DistinctRgbCountCap = 4096;
+        internal const double MinimumLuminanceStandardDeviation = 2.0;
         internal const double NativeCoordinateTolerance = 0.00001;
         internal const double ProjectionTolerance = 0.00001;
 
@@ -574,10 +580,140 @@ namespace Venviewer.NativeCapture
 
         internal static string Sha256Text(string value)
         {
+            return Sha256Bytes(Encoding.UTF8.GetBytes(value));
+        }
+
+        internal static string Sha256Bytes(byte[] value)
+        {
+            if (value == null)
+            {
+                throw new ArgumentNullException("value");
+            }
+
             using (SHA256 sha256 = SHA256.Create())
             {
-                return ToHex(sha256.ComputeHash(Encoding.UTF8.GetBytes(value)));
+                return ToHex(sha256.ComputeHash(value));
             }
+        }
+
+        internal static RasterStatisticsReceipt AnalyzeRgb24(byte[] rgb24, int width, int height)
+        {
+            if (rgb24 == null)
+            {
+                throw new ArgumentNullException("rgb24");
+            }
+            if (width <= 0 || height <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    "width",
+                    "Raster dimensions must both be positive.");
+            }
+
+            long pixelCount = checked((long)width * height);
+            long expectedByteLength = checked(pixelCount * 3L);
+            if (rgb24.LongLength != expectedByteLength)
+            {
+                throw new InvalidDataException(
+                    "The decoded RGB24 raster has " +
+                    rgb24.LongLength.ToString(CultureInfo.InvariantCulture) +
+                    " bytes; expected " + expectedByteLength.ToString(CultureInfo.InvariantCulture) + ".");
+            }
+
+            int minimumRed = 255;
+            int maximumRed = 0;
+            int minimumGreen = 255;
+            int maximumGreen = 0;
+            int minimumBlue = 255;
+            int maximumBlue = 0;
+            long nonBlackPixelCount = 0;
+            long observedPixelCount = 0;
+            double meanLuminance = 0.0;
+            double luminanceM2 = 0.0;
+            var distinctRgb = new HashSet<int>();
+
+            for (int offset = 0; offset < rgb24.Length; offset += 3)
+            {
+                int red = rgb24[offset];
+                int green = rgb24[offset + 1];
+                int blue = rgb24[offset + 2];
+                minimumRed = Math.Min(minimumRed, red);
+                maximumRed = Math.Max(maximumRed, red);
+                minimumGreen = Math.Min(minimumGreen, green);
+                maximumGreen = Math.Max(maximumGreen, green);
+                minimumBlue = Math.Min(minimumBlue, blue);
+                maximumBlue = Math.Max(maximumBlue, blue);
+                if (red > BlackChannelThreshold ||
+                    green > BlackChannelThreshold ||
+                    blue > BlackChannelThreshold)
+                {
+                    nonBlackPixelCount += 1;
+                }
+
+                if (distinctRgb.Count < DistinctRgbCountCap)
+                {
+                    distinctRgb.Add((red << 16) | (green << 8) | blue);
+                }
+
+                double luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+                observedPixelCount += 1;
+                double delta = luminance - meanLuminance;
+                meanLuminance += delta / observedPixelCount;
+                luminanceM2 += delta * (luminance - meanLuminance);
+            }
+
+            return new RasterStatisticsReceipt
+            {
+                pixelCount = pixelCount,
+                nonBlackPixelCount = nonBlackPixelCount,
+                nonBlackPixelFraction = (double)nonBlackPixelCount / pixelCount,
+                minimumRed = minimumRed,
+                maximumRed = maximumRed,
+                minimumGreen = minimumGreen,
+                maximumGreen = maximumGreen,
+                minimumBlue = minimumBlue,
+                maximumBlue = maximumBlue,
+                maximumChannelDynamicRange = Math.Max(
+                    maximumRed - minimumRed,
+                    Math.Max(maximumGreen - minimumGreen, maximumBlue - minimumBlue)),
+                distinctRgbLowerBound = distinctRgb.Count,
+                distinctRgbCountCapped = distinctRgb.Count == DistinctRgbCountCap,
+                meanLuminance = meanLuminance,
+                luminanceStandardDeviation = Math.Sqrt(luminanceM2 / pixelCount),
+                rgb24Sha256 = Sha256Bytes(rgb24),
+                nonDegenerateVerified = false
+            };
+        }
+
+        internal static void RequireNonDegenerateRaster(
+            RasterStatisticsReceipt statistics,
+            int expectedWidth,
+            int expectedHeight)
+        {
+            if (statistics == null)
+            {
+                throw new ArgumentNullException("statistics");
+            }
+
+            long expectedPixelCount = checked((long)expectedWidth * expectedHeight);
+            if (statistics.pixelCount != expectedPixelCount ||
+                statistics.nonBlackPixelFraction < MinimumNonBlackPixelFraction ||
+                statistics.maximumChannelDynamicRange < MinimumMaximumChannelDynamicRange ||
+                statistics.distinctRgbLowerBound < MinimumDistinctRgbCount ||
+                statistics.luminanceStandardDeviation < MinimumLuminanceStandardDeviation)
+            {
+                throw new InvalidDataException(
+                    "The decoded capture is blank or near-constant and cannot enter hash convergence. " +
+                    "Observed non-black fraction " +
+                    statistics.nonBlackPixelFraction.ToString("R", CultureInfo.InvariantCulture) +
+                    ", maximum channel range " +
+                    statistics.maximumChannelDynamicRange.ToString(CultureInfo.InvariantCulture) +
+                    ", distinct RGB lower bound " +
+                    statistics.distinctRgbLowerBound.ToString(CultureInfo.InvariantCulture) +
+                    ", and luminance standard deviation " +
+                    statistics.luminanceStandardDeviation.ToString("R", CultureInfo.InvariantCulture) + ".");
+            }
+
+            statistics.nonDegenerateVerified = true;
         }
 
         internal static string ReceiptInventorySha256(IEnumerable<FileReceipt> receipts)

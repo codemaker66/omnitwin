@@ -8,6 +8,7 @@ using System.Threading;
 using Cysharp.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityEngine;
+using UnityEngine.Rendering;
 using XGrids.LCCWorld.Framework;
 using XGrids.LCCWorld.Framework.Model;
 using Debug = UnityEngine.Debug;
@@ -17,7 +18,7 @@ namespace Venviewer.NativeCapture
     public sealed class NativeCaptureModule : IModule
     {
         private const string ModuleId = "com.venviewer.native_capture";
-        private const string ModuleVersion = "1.2.3";
+        private const string ModuleVersion = "1.2.4";
         private const string OutputDirectoryEnvironmentVariable =
             "VENVIEWER_LCC_NATIVE_CAPTURE_OUTPUT_DIR";
         private const string ModuleShaEnvironmentVariable =
@@ -58,6 +59,9 @@ namespace Venviewer.NativeCapture
                 @"LCCEditor_Data\Managed\UnityEngine.CoreModule.dll",
                 "4FB767E950977C4600E85CB4358F399DC283DB4262A8342A966C73E2EF9AE811"),
             new LockedRuntimeFile(
+                @"LCCEditor_Data\Managed\UnityEngine.ImageConversionModule.dll",
+                "B9B639B4A278C2A01A7F326575D8D3C07280314682DA4DDDC055266E8A30953C"),
+            new LockedRuntimeFile(
                 @"LCCEditor_Data\Managed\UniTask.dll",
                 "0DCC2A27BFEF118AE85AB448F4BDFCDA2906894EFB90A951FB2EC06A6FCC07B8"),
             new LockedRuntimeFile(
@@ -79,6 +83,7 @@ namespace Venviewer.NativeCapture
         private ICaptureManager _captureManager;
         private IRendererQualityService _rendererQualityService;
         private Func<IEvent, bool> _modulesLoadedHandler;
+        private Func<EventArg<bool>, bool> _sceneLoadBeginHandler;
         private Func<EventArg<string>, bool> _sceneLoadedHandler;
         private readonly NativeCaptureLifecycleState _lifecycle = new NativeCaptureLifecycleState();
         private LCCRendererHandler _rendererHandler;
@@ -92,13 +97,21 @@ namespace Venviewer.NativeCapture
         private FixedCameraProfile _cameraProfile;
         private RenderQualityType _originalQuality;
         private bool _qualityCaptured;
+        private bool _renderAllPendingDefaultDerivedFromFreshRenderer;
+        private bool _renderAllPendingTrueRequestAttempted;
+        private bool _renderAllPendingTrueRequestedBeforeLoad;
+        private bool _renderAllActiveTrueObservedAfterLoad;
+        private bool _renderAllPendingFalseResetAttempted;
+        private bool _renderAllPendingFalseResetCallCompleted;
         private bool _modulesLoadedSubscribed;
+        private bool _sceneLoadBeginSubscribed;
         private bool _subscribed;
         private PackageSnapshot _preLoadPackageSnapshot;
         private RuntimeClosureReceipt _preLoadRuntimeClosure;
         private bool _armed;
         private int _started;
         private int _sceneLoadedEventObserved;
+        private int _sceneLoadBeginEventObserved;
         private string _sceneLoadedEventPath;
         private bool _preloadedSceneRejected;
         private bool _freshProjectStateVerified;
@@ -133,6 +146,7 @@ namespace Venviewer.NativeCapture
             _captureManager = container.Resolve<ICaptureManager>();
             _rendererQualityService = container.Resolve<IRendererQualityService>();
             _modulesLoadedHandler = HandleModulesLoaded;
+            _sceneLoadBeginHandler = HandleSceneLoadBegin;
             _sceneLoadedHandler = HandleSceneLoaded;
             ValidateResolvedServices();
 
@@ -201,7 +215,16 @@ namespace Venviewer.NativeCapture
                 ValidateLaunchEnvironment();
                 _preLoadPackageSnapshot = CapturePolicy.SnapshotCanonicalPackage(
                     CapturePolicy.CanonicalScenePath);
-                ConfigureUltraQuality();
+                ConfigureUltraQualityBeforeSceneLoad();
+                _sceneLoadBeginSubscribed = _eventBus.Subscribe(
+                    "lccscene.load.begin",
+                    _sceneLoadBeginHandler,
+                    Int32.MaxValue);
+                if (!_sceneLoadBeginSubscribed)
+                {
+                    throw new InvalidOperationException(
+                        "The lccscene.load.begin subscription was rejected.");
+                }
                 _subscribed = _eventBus.Subscribe("lccscene.loaded", _sceneLoadedHandler, 100);
                 if (!_subscribed)
                 {
@@ -236,6 +259,7 @@ namespace Venviewer.NativeCapture
         {
             _lifecycle.Stop();
             UnsubscribeModulesLoaded();
+            UnsubscribeSceneLoadBegin();
             UnsubscribeSceneLoaded();
         }
 
@@ -328,6 +352,22 @@ namespace Venviewer.NativeCapture
             }
         }
 
+        private void UnsubscribeSceneLoadBegin()
+        {
+            if (!_sceneLoadBeginSubscribed || _eventBus == null || _sceneLoadBeginHandler == null)
+            {
+                return;
+            }
+
+            bool removed = _eventBus.Unsubscribe("lccscene.load.begin", _sceneLoadBeginHandler);
+            _sceneLoadBeginSubscribed = false;
+            if (!removed)
+            {
+                Debug.LogWarning(
+                    "[VenviewerNativeCapture] lccscene.load.begin unsubscribe reported no matching handler.");
+            }
+        }
+
         private void ThrowIfStopped()
         {
             if (_lifecycle.IsStopped)
@@ -341,7 +381,8 @@ namespace Venviewer.NativeCapture
         {
             if (_eventBus == null || _cameraService == null || _sceneManager == null ||
                 _lccSceneManager == null || _projectManager == null || _captureManager == null ||
-                _rendererQualityService == null || _modulesLoadedHandler == null || _sceneLoadedHandler == null)
+                _rendererQualityService == null || _modulesLoadedHandler == null ||
+                _sceneLoadBeginHandler == null || _sceneLoadedHandler == null)
             {
                 throw new InvalidOperationException(
                     "One or more required public LCCEditor services could not be resolved.");
@@ -454,7 +495,7 @@ namespace Venviewer.NativeCapture
                 _expectedRuntimeClosureSha256);
         }
 
-        private void ConfigureUltraQuality()
+        private void ConfigureUltraQualityBeforeSceneLoad()
         {
             _originalQuality = _rendererQualityService.CurrentQuality;
             _qualityCaptured = true;
@@ -509,11 +550,7 @@ namespace Venviewer.NativeCapture
             Debug.LogException(exception);
             try
             {
-                if (_qualityCaptured && _rendererQualityService != null &&
-                    _rendererQualityService.CurrentQuality != _originalQuality)
-                {
-                    _rendererQualityService.SetRenderQualityType(_originalQuality);
-                }
+                RestorePreLoadRenderState();
             }
             catch (Exception restoreException)
             {
@@ -536,6 +573,45 @@ namespace Venviewer.NativeCapture
             }
 
             Application.Quit(2);
+        }
+
+        private bool HandleSceneLoadBegin(EventArg<bool> eventData)
+        {
+            if (_lifecycle.IsStopped)
+            {
+                Debug.LogWarning("[VenviewerNativeCapture] lccscene.load.begin was ignored after Stop.");
+                return true;
+            }
+
+            try
+            {
+                if (eventData == null)
+                {
+                    throw new InvalidOperationException(
+                        "The lccscene.load.begin event supplied a null event argument.");
+                }
+                if (Interlocked.Exchange(ref _sceneLoadBeginEventObserved, 1) != 0)
+                {
+                    throw new InvalidOperationException(
+                        "The lccscene.load.begin event was published more than once.");
+                }
+
+                bool activeRenderAllBeforeLoad = _lccSceneManager.IsRenderAll();
+                if (activeRenderAllBeforeLoad)
+                {
+                    throw new InvalidOperationException(
+                        "The fresh renderer unexpectedly reported an active loaded-dataset render-all state before load.");
+                }
+                _renderAllPendingDefaultDerivedFromFreshRenderer = _freshProjectStateVerified;
+                _renderAllPendingTrueRequestAttempted = true;
+                _lccSceneManager.SetRenderAll(true);
+                _renderAllPendingTrueRequestedBeforeLoad = true;
+            }
+            catch (Exception exception)
+            {
+                FailArmedStartup(exception);
+            }
+            return true;
         }
 
         private bool HandleSceneLoaded(EventArg<string> eventData)
@@ -567,6 +643,15 @@ namespace Venviewer.NativeCapture
                 {
                     throw new InvalidOperationException(
                         "The exact canonical GH_1 LCC2 is not loaded after lccscene.loaded.");
+                }
+                _renderAllActiveTrueObservedAfterLoad = _lccSceneManager.IsRenderAll();
+                if (Volatile.Read(ref _sceneLoadBeginEventObserved) == 0 ||
+                    !_renderAllPendingDefaultDerivedFromFreshRenderer ||
+                    !_renderAllPendingTrueRequestedBeforeLoad ||
+                    !_renderAllActiveTrueObservedAfterLoad)
+                {
+                    throw new InvalidOperationException(
+                        "Full-render mode was not requested before and observed after canonical scene load.");
                 }
                 if (Interlocked.Exchange(ref _sceneLoadedEventObserved, 1) != 0)
                 {
@@ -609,6 +694,7 @@ namespace Venviewer.NativeCapture
                 return;
             }
 
+            UnsubscribeSceneLoadBegin();
             UnsubscribeSceneLoaded();
             StartCapture(CapturePolicy.CanonicalScenePath);
         }
@@ -621,6 +707,7 @@ namespace Venviewer.NativeCapture
                 return;
             }
 
+            UnsubscribeSceneLoadBegin();
             UnsubscribeSceneLoaded();
             StartCapture(CapturePolicy.CanonicalScenePath);
         }
@@ -678,6 +765,18 @@ namespace Venviewer.NativeCapture
                 Debug.LogException(restoreException);
             }
 
+            try
+            {
+                RestorePreLoadRenderState();
+            }
+            catch (Exception restoreException)
+            {
+                exitCode = 2;
+                SetFailure(receipt, restoreException, "Pre-load render-state cleanup failed: ");
+                Debug.LogException(restoreException);
+            }
+
+            receipt.sceneLoad = CreateSceneLoadReceipt();
             receipt.runCompletedAtUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             try
             {
@@ -780,7 +879,7 @@ namespace Venviewer.NativeCapture
         {
             return new NativeCaptureReceipt
             {
-                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v3",
+                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v4",
                 status = "running",
                 authority = "none",
                 truthClass = "RECONSTRUCTED_DIAGNOSTIC",
@@ -792,8 +891,10 @@ namespace Venviewer.NativeCapture
                 {
                     "The look target is an inspection-only q05/q95 pose-envelope centre; it is not a calibrated source-camera orientation.",
                     "A native renderer screenshot is diagnostic evidence, not human acceptance of Grand Hall scope, transform, geometry, or architectural truth.",
-                    "Three consecutive byte-identical PNGs establish a same-host pixel plateau only after the conservative readiness gate; they do not prove every possible streamed Gaussian is resident.",
-                    "The public API exposes Ultra quality and SetRenderAll/IsRenderAll mode, but no loaded-splat residency count or streaming-completion metric. Readiness therefore also requires a minimum 300 rendered frames and 15 seconds before hash sampling.",
+                    "Three consecutive byte-identical, decoded, non-degenerate PNGs establish a same-host pixel plateau only after the conservative readiness gate; they do not prove every possible streamed Gaussian is resident.",
+                    "SetRenderAll(true) is applied in the synchronous lccscene.load.begin handler after renderer initialization and before the canonical Renderer.Load call, then observed again after lccscene.loaded. The public API still exposes no loaded-splat residency count or streaming-completion metric, so readiness also requires a minimum 300 rendered frames and 15 seconds before hash sampling.",
+                    "The locked vendor SetRenderAll method writes a pending next-load field while IsRenderAll reads the active loaded-dataset field. Cleanup requests pending false without claiming a public read-back; disposable process exit is the final isolation boundary.",
+                    "The vendor CaptureToTextureAsync operation exposes no cancellation token. A per-attempt timeout aborts the first-party render probe and attaches a late-result observer for disposal; it does not claim to cancel the vendor operation.",
                     "In the locked vendor implementation, SupportFullRender(Ultra) is a current-scene splat-budget eligibility predicate, not an API-capability flag. Its false result for this 6,019,684-finest-splat package is recorded as telemetry and is not substituted for the observed IsRenderAll state.",
                     "Environment data is explicitly requested false for browser-frontier parity, excluding env.sog. The public API exposes no environment-visibility getter, so this receipt records the request and does not claim read-back visibility.",
                     "The runtime closure hashes every regular file in the disposable editor tree except this first-party module. It does not close over the GPU driver, operating system, CodeMeter service, firmware, or external per-user configuration.",
@@ -851,7 +952,19 @@ namespace Venviewer.NativeCapture
                 rendererHandlerNonNull = _rendererHandler != null,
                 rendererHandlerPath = _rendererHandler == null ? null : _rendererHandler.Path,
                 rendererHandlerPathVerified = _rendererHandler != null && IsCanonicalScenePath(_rendererHandler.Path),
-                canonicalSceneLoadedVerified = _canonicalSceneLoadedVerified
+                canonicalSceneLoadedVerified = _canonicalSceneLoadedVerified,
+                renderAllBeginEventTopic = "lccscene.load.begin",
+                renderAllBeginEventSubscriptionAccepted =
+                    _sceneLoadBeginSubscribed || Volatile.Read(ref _sceneLoadBeginEventObserved) != 0,
+                renderAllBeginEventObserved = Volatile.Read(ref _sceneLoadBeginEventObserved) != 0,
+                renderAllPendingDefaultDerivedFromFreshRenderer =
+                    _renderAllPendingDefaultDerivedFromFreshRenderer,
+                renderAllPendingTrueRequestedBeforeLoad = _renderAllPendingTrueRequestedBeforeLoad,
+                renderAllActiveTrueObservedAfterLoad = _renderAllActiveTrueObservedAfterLoad,
+                renderAllPendingFalseResetAttempted = _renderAllPendingFalseResetAttempted,
+                renderAllPendingFalseResetCallCompleted = _renderAllPendingFalseResetCallCompleted,
+                renderAllPendingResetReadbackAvailable = false,
+                renderAllIsolationBoundary = "disposable_process_exit"
             };
         }
 
@@ -1025,7 +1138,6 @@ namespace Venviewer.NativeCapture
                 Aspect = camera.aspect,
                 Orthographic = camera.orthographic,
                 Rect = camera.rect,
-                RenderAll = _lccSceneManager.IsRenderAll(),
                 HasEnvironment = _lccSceneManager.HasEnvironment
             };
         }
@@ -1110,10 +1222,8 @@ namespace Venviewer.NativeCapture
                 (float)_cameraProfile.Projection.Aspect);
             _lccSceneManager.SetLockFPS(true);
             state.LockFpsEnabled = true;
-            _lccSceneManager.SetRenderAll(true);
-            state.RenderAllMutated = true;
             // The locked SupportFullRender implementation is a scene-budget predicate.
-            // Only the public renderer-mode read-back can admit this capture lane.
+            // Full-render mode was requested before the scene load and remains a required read-back.
             RequireObservedUltraRenderAll();
             _lccSceneManager.SetEnvironmentData(false);
             state.EnvironmentExclusionRequested = true;
@@ -1284,47 +1394,57 @@ namespace Venviewer.NativeCapture
                 string candidatePath = Path.Combine(
                     _outputDirectory,
                     ".native-candidate-" + ordinal.ToString("D3", CultureInfo.InvariantCulture) + ".png");
-                if (File.Exists(candidatePath))
-                {
-                    throw new IOException("A capture candidate path already exists: " + candidatePath);
-                }
-
-                RequireLockedCameraState(state);
-                ThrowIfStopped();
-                bool captured = await CaptureWithTimeout(candidatePath);
-                ThrowIfStopped();
-                if (!captured || !File.Exists(candidatePath))
-                {
-                    throw new IOException("ICaptureManager did not produce capture attempt " + ordinal + ".");
-                }
-
-                await UniTask.SwitchToThreadPool();
-                ThrowIfStopped();
-                CapturePolicy.RequirePngDimensions(
-                    candidatePath,
-                    _cameraProfile.Output.Width,
-                    _cameraProfile.Output.Height);
-                var info = new FileInfo(candidatePath);
-                string sha256 = CapturePolicy.Sha256File(candidatePath);
-                await UniTask.SwitchToMainThread();
-                ThrowIfStopped();
-
-                consecutive = String.Equals(previousHash, sha256, StringComparison.OrdinalIgnoreCase)
-                    ? consecutive + 1
-                    : 1;
-                previousHash = sha256;
-                capture.attempts.Add(new CaptureAttemptReceipt
+                var attempt = new CaptureAttemptReceipt
                 {
                     ordinal = ordinal,
-                    sha256 = sha256,
-                    byteLength = info.Length,
+                    status = "running",
                     width = _cameraProfile.Output.Width,
                     height = _cameraProfile.Output.Height,
-                    consecutiveIdenticalHashes = consecutive
-                });
-                capture.completedAttempts = ordinal;
+                    firstExactCameraRenderFrame = -1,
+                    lastExactCameraRenderFrame = -1,
+                    underlyingCaptureCancellationAvailable = false
+                };
+                capture.attempts.Add(attempt);
+                try
+                {
+                    if (File.Exists(candidatePath))
+                    {
+                        throw new IOException("A capture candidate path already exists: " + candidatePath);
+                    }
+
+                    RequireLockedCameraState(state);
+                    ThrowIfStopped();
+                    await PopulateCaptureAttemptAsync(state.Camera, candidatePath, attempt);
+                    ThrowIfStopped();
+
+                    consecutive = String.Equals(previousHash, attempt.sha256, StringComparison.OrdinalIgnoreCase)
+                        ? consecutive + 1
+                        : 1;
+                    previousHash = attempt.sha256;
+                    attempt.consecutiveIdenticalHashes = consecutive;
+                    attempt.elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
+                    attempt.status = "accepted";
+                }
+                catch (Exception exception)
+                {
+                    attempt.status = "rejected";
+                    attempt.elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
+                    attempt.failureType = exception.GetType().FullName;
+                    attempt.failureMessage = exception.Message;
+                    capture.completedAttempts = capture.attempts.Count(
+                        candidate => String.Equals(candidate.status, "accepted", StringComparison.Ordinal));
+                    capture.elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
+                    capture.everyAttemptDecodedAndNonDegenerate = false;
+                    throw;
+                }
+
+                capture.completedAttempts = capture.attempts.Count(
+                    candidate => String.Equals(candidate.status, "accepted", StringComparison.Ordinal));
                 capture.elapsedSeconds = stopwatch.Elapsed.TotalSeconds;
                 capture.stableConsecutiveIdenticalHashes = consecutive;
+                capture.everyAttemptDecodedAndNonDegenerate = capture.attempts.All(
+                    candidate => String.Equals(candidate.status, "accepted", StringComparison.Ordinal) &&
+                        candidate.raster != null && candidate.raster.nonDegenerateVerified);
                 PruneOldCandidates(ordinal);
 
                 if (consecutive >= CapturePolicy.RequiredConsecutiveHashes)
@@ -1345,30 +1465,172 @@ namespace Venviewer.NativeCapture
                 CapturePolicy.MaximumConvergenceSeconds.ToString("R", CultureInfo.InvariantCulture) + " seconds.");
         }
 
-        private async UniTask<bool> CaptureWithTimeout(string candidatePath)
+        private async UniTask PopulateCaptureAttemptAsync(
+            Camera camera,
+            string candidatePath,
+            CaptureAttemptReceipt attempt)
         {
+            Texture2D texture = await CaptureTextureWithTimeout(camera, attempt);
             ThrowIfStopped();
-            UniTask<bool> captureTask = _captureManager.CaptureToFileAsync(
-                candidatePath,
-                new Rect(0, 0, _cameraProfile.Output.Width, _cameraProfile.Output.Height),
-                ImageFormat.PNG);
-            UniTask timeoutTask = UniTask.Delay(
-                TimeSpan.FromSeconds(CapturePolicy.PerCaptureTimeoutSeconds),
-                true,
-                PlayerLoopTiming.Update,
-                CancellationToken.None,
-                false);
-            (bool captureWon, bool captured) = await UniTask.WhenAny(captureTask, timeoutTask);
-            ThrowIfStopped();
-            if (!captureWon)
+            if (texture == null)
             {
-                throw new TimeoutException(
-                    "ICaptureManager exceeded the per-capture deadline of " +
-                    CapturePolicy.PerCaptureTimeoutSeconds.ToString("R", CultureInfo.InvariantCulture) +
-                    " seconds. No retry will be started.");
+                throw new InvalidDataException("ICaptureManager returned a null capture texture.");
             }
 
-            return captured;
+            byte[] pngBytes;
+            try
+            {
+                if (texture.width != _cameraProfile.Output.Width ||
+                    texture.height != _cameraProfile.Output.Height)
+                {
+                    throw new InvalidDataException(
+                        "ICaptureManager returned a texture with unexpected dimensions.");
+                }
+
+                attempt.textureFormat = texture.format.ToString();
+                attempt.textureReadable = texture.isReadable;
+                if (!attempt.textureReadable)
+                {
+                    throw new InvalidDataException("ICaptureManager returned a non-readable capture texture.");
+                }
+
+                Color32[] pixels = texture.GetPixels32();
+                attempt.pixelReadCompleted = true;
+                byte[] rgb24 = ToRgb24(pixels);
+                attempt.raster = CapturePolicy.AnalyzeRgb24(
+                    rgb24,
+                    _cameraProfile.Output.Width,
+                    _cameraProfile.Output.Height);
+                CapturePolicy.RequireNonDegenerateRaster(
+                    attempt.raster,
+                    _cameraProfile.Output.Width,
+                    _cameraProfile.Output.Height);
+
+                // Raster admission deliberately precedes encoding and publication.
+                pngBytes = ImageConversion.EncodeToPNG(texture);
+                if (pngBytes == null || pngBytes.Length == 0)
+                {
+                    throw new InvalidDataException("Unity ImageConversion returned an empty PNG payload.");
+                }
+                attempt.pngEncodingCompleted = true;
+                attempt.encodedByteLength = pngBytes.LongLength;
+                attempt.encodedSha256 = CapturePolicy.Sha256Bytes(pngBytes);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(texture);
+            }
+
+            ThrowIfStopped();
+            WriteNoReplaceBytes(candidatePath, pngBytes);
+            CapturePolicy.RequirePngDimensions(
+                candidatePath,
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height);
+            var info = new FileInfo(candidatePath);
+            string fileSha256 = CapturePolicy.Sha256File(candidatePath);
+            if (!String.Equals(fileSha256, attempt.encodedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    "The durably published PNG differs from the encoded in-memory payload.");
+            }
+
+            attempt.sha256 = fileSha256;
+            attempt.byteLength = info.Length;
+            attempt.postWriteFileShaVerified = true;
+        }
+
+        private async UniTask<Texture2D> CaptureTextureWithTimeout(
+            Camera camera,
+            CaptureAttemptReceipt attempt)
+        {
+            ThrowIfStopped();
+            var probe = new RenderFrameProbe(
+                camera,
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height);
+            Texture2D texture = null;
+            bool ownershipTransferred = false;
+            try
+            {
+                UniTask<Texture2D> captureTask = _captureManager.CaptureToTextureAsync(
+                    new Rect(0, 0, _cameraProfile.Output.Width, _cameraProfile.Output.Height),
+                    delegate
+                    {
+                        probe.Begin();
+                        _lccSceneManager.ForceRerenderer();
+                    },
+                    probe.AfterRender).Preserve();
+                UniTask timeoutTask = UniTask.Delay(
+                    TimeSpan.FromSeconds(CapturePolicy.PerCaptureTimeoutSeconds),
+                    true,
+                    PlayerLoopTiming.Update,
+                    CancellationToken.None,
+                    false);
+                (bool captureWon, Texture2D completedTexture) =
+                    await UniTask.WhenAny(captureTask, timeoutTask);
+                if (!captureWon)
+                {
+                    attempt.captureTaskTimeoutObserved = true;
+                    probe.Abort();
+                    attempt.lateCaptureTaskObserverAttached = true;
+                    ObserveLateCaptureAsync(captureTask).Forget(LogLateCaptureObserverFailure, true);
+                    throw new TimeoutException(
+                        "ICaptureManager exceeded the per-capture deadline of " +
+                        CapturePolicy.PerCaptureTimeoutSeconds.ToString("R", CultureInfo.InvariantCulture) +
+                        " seconds. The vendor operation has no cancellation token; its late result is observed and disposed.");
+                }
+
+                texture = completedTexture;
+                attempt.captureTaskCompletedBeforeDeadline = true;
+                ThrowIfStopped();
+                if (texture == null)
+                {
+                    throw new InvalidDataException("ICaptureManager returned a null capture texture.");
+                }
+
+                probe.RequireCompleted();
+                ownershipTransferred = true;
+                return texture;
+            }
+            finally
+            {
+                probe.Abort();
+                probe.CopyTo(attempt);
+                if (!ownershipTransferred && texture != null)
+                {
+                    UnityEngine.Object.Destroy(texture);
+                }
+            }
+        }
+
+        private static async UniTask ObserveLateCaptureAsync(UniTask<Texture2D> captureTask)
+        {
+            Texture2D lateTexture = null;
+            try
+            {
+                lateTexture = await captureTask;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "[VenviewerNativeCapture] Timed-out vendor capture completed with an observed exception: " +
+                    exception.GetType().FullName + ": " + exception.Message);
+                return;
+            }
+
+            if (lateTexture != null)
+            {
+                await UniTask.SwitchToMainThread();
+                UnityEngine.Object.Destroy(lateTexture);
+            }
+        }
+
+        private static void LogLateCaptureObserverFailure(Exception exception)
+        {
+            Debug.LogWarning(
+                "[VenviewerNativeCapture] Late capture observer failed: " +
+                exception.GetType().FullName + ": " + exception.Message);
         }
 
         private void FinalizePng(CaptureReceipt capture)
@@ -1385,34 +1647,26 @@ namespace Venviewer.NativeCapture
                 throw new IOException("The final native capture path already exists: " + finalPath);
             }
 
-            string temporaryPath = Path.Combine(
-                _outputDirectory,
-                "." + FinalPngFileName + ".tmp-" + Guid.NewGuid().ToString("N"));
-            try
+            CapturePolicy.RequirePngDimensions(
+                capture.selectedAttemptPath,
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height);
+            byte[] selectedBytes = File.ReadAllBytes(capture.selectedAttemptPath);
+            string selectedBytesSha256 = CapturePolicy.Sha256Bytes(selectedBytes);
+            CaptureAttemptReceipt selected = capture.attempts[capture.attempts.Count - 1];
+            if (!String.Equals(selectedBytesSha256, selected.sha256, StringComparison.OrdinalIgnoreCase))
             {
-                File.Copy(capture.selectedAttemptPath, temporaryPath, false);
-                CapturePolicy.RequirePngDimensions(
-                    temporaryPath,
-                    _cameraProfile.Output.Width,
-                    _cameraProfile.Output.Height);
-                if (File.Exists(finalPath))
-                {
-                    throw new IOException("The final native capture path appeared during finalization.");
-                }
+                throw new InvalidOperationException("The selected candidate changed before finalization.");
+            }
 
-                File.Move(temporaryPath, finalPath);
-            }
-            finally
-            {
-                if (File.Exists(temporaryPath))
-                {
-                    File.Delete(temporaryPath);
-                }
-            }
+            WriteNoReplaceBytes(finalPath, selectedBytes);
+            CapturePolicy.RequirePngDimensions(
+                finalPath,
+                _cameraProfile.Output.Width,
+                _cameraProfile.Output.Height);
 
             var info = new FileInfo(finalPath);
             string sha256 = CapturePolicy.Sha256File(finalPath);
-            CaptureAttemptReceipt selected = capture.attempts[capture.attempts.Count - 1];
             if (!String.Equals(sha256, selected.sha256, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("The final PNG differs from the selected stable candidate.");
@@ -1444,7 +1698,7 @@ namespace Venviewer.NativeCapture
         {
             return new CaptureReceipt
             {
-                surface = "ISceneManager.SceneCamera via ICaptureManager.CaptureToFileAsync(Rect, PNG)",
+                surface = "ISceneManager.SceneCamera via ICaptureManager.CaptureToTextureAsync(Rect, beforeRender, afterRender) + Unity ImageConversion.EncodeToPNG",
                 imageFormat = "PNG",
                 width = _cameraProfile.Output.Width,
                 height = _cameraProfile.Output.Height,
@@ -1470,13 +1724,22 @@ namespace Venviewer.NativeCapture
                     _rendererQualityService.SupportFullRender(RenderQualityType.Ultra),
                 vendorFullRenderBudgetEligibilityUsedForAdmission = false,
                 renderAllRequested = true,
-                renderAllObservedAfterRequest = _lccSceneManager.IsRenderAll(),
+                renderAllObservedAfterRequest = _renderAllActiveTrueObservedAfterLoad,
+                renderAllRequestedBeforeSceneLoad = _renderAllPendingTrueRequestedBeforeLoad,
+                renderAllObservedAfterSceneLoad = _renderAllActiveTrueObservedAfterLoad,
                 renderAllVerifiedAtEveryGate = false,
                 canonicalPackageHasEnvironment = _lccSceneManager.HasEnvironment,
                 environmentDataIncluded = false,
                 environmentExclusionRequested = true,
                 environmentExclusionReason = _cameraProfile.Environment.Reason,
                 environmentVisibilityGetterAvailable = _cameraProfile.Environment.VisibilityGetterAvailable,
+                renderCallbackSurface = "RenderPipelineManager.endCameraRendering for the exact SceneCamera while it retains the exact assigned RenderTexture",
+                blackChannelThreshold = CapturePolicy.BlackChannelThreshold,
+                minimumNonBlackPixelFraction = CapturePolicy.MinimumNonBlackPixelFraction,
+                minimumMaximumChannelDynamicRange = CapturePolicy.MinimumMaximumChannelDynamicRange,
+                minimumDistinctRgbCount = CapturePolicy.MinimumDistinctRgbCount,
+                minimumLuminanceStandardDeviation = CapturePolicy.MinimumLuminanceStandardDeviation,
+                everyAttemptDecodedAndNonDegenerate = false,
                 attempts = new List<CaptureAttemptReceipt>()
             };
         }
@@ -1609,18 +1872,6 @@ namespace Venviewer.NativeCapture
                     restoreErrors);
             }
 
-            if (state.RenderAllMutated)
-            {
-                AttemptRestore(
-                    "render-all mode",
-                    delegate
-                    {
-                        _lccSceneManager.SetRenderAll(state.RenderAll);
-                        state.RenderAllMutated = false;
-                    },
-                    restoreErrors);
-            }
-
             AttemptRestore(
                 "camera input flag",
                 delegate { _cameraService.InputEnabled = state.InputEnabled; },
@@ -1689,25 +1940,54 @@ namespace Venviewer.NativeCapture
                 "camera projection matrix",
                 delegate { state.Camera.ResetProjectionMatrix(); },
                 restoreErrors);
-            AttemptRestore(
-                "renderer quality",
-                delegate
-                {
-                    if (_qualityCaptured && _rendererQualityService.CurrentQuality != _originalQuality)
+            if (restoreErrors.Count > 0)
+            {
+                throw new AggregateException("One or more native capture cleanup operations failed.", restoreErrors);
+            }
+        }
+
+        private void RestorePreLoadRenderState()
+        {
+            var restoreErrors = new List<Exception>();
+            if (_renderAllPendingTrueRequestAttempted && _lccSceneManager != null &&
+                !_renderAllPendingFalseResetAttempted)
+            {
+                AttemptRestore(
+                    "fresh-renderer pending render-all default",
+                    delegate
                     {
-                        _rendererQualityService.SetRenderQualityType(_originalQuality);
+                        _renderAllPendingFalseResetAttempted = true;
+                        _lccSceneManager.SetRenderAll(false);
+                        _renderAllPendingFalseResetCallCompleted = true;
+                    },
+                    restoreErrors);
+            }
+
+            if (_qualityCaptured && _rendererQualityService != null)
+            {
+                AttemptRestore(
+                    "renderer quality",
+                    delegate
+                    {
+                        if (_rendererQualityService.CurrentQuality != _originalQuality)
+                        {
+                            _rendererQualityService.SetRenderQualityType(_originalQuality);
+                        }
                         if (_rendererQualityService.CurrentQuality != _originalQuality)
                         {
                             throw new InvalidOperationException(
                                 "The original renderer quality could not be restored.");
                         }
-                    }
-                },
-                restoreErrors);
+                        _qualityCaptured = false;
+                    },
+                    restoreErrors);
+            }
 
             if (restoreErrors.Count > 0)
             {
-                throw new AggregateException("One or more native capture cleanup operations failed.", restoreErrors);
+                throw new AggregateException(
+                    "One or more pre-load render-state cleanup operations failed.",
+                    restoreErrors);
             }
         }
 
@@ -1746,6 +2026,44 @@ namespace Venviewer.NativeCapture
         {
             string json = JsonConvert.SerializeObject(receipt, Formatting.Indented) + Environment.NewLine;
             WriteNoReplaceText(path, json);
+        }
+
+        private static void WriteNoReplaceBytes(string path, byte[] bytes)
+        {
+            if (bytes == null)
+            {
+                throw new ArgumentNullException("bytes");
+            }
+            if (File.Exists(path))
+            {
+                throw new IOException("Refusing to replace an existing binary path: " + path);
+            }
+
+            string temporaryPath = path + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                using (var stream = new FileStream(
+                    temporaryPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None))
+                {
+                    stream.Write(bytes, 0, bytes.Length);
+                    stream.Flush(true);
+                }
+                if (File.Exists(path))
+                {
+                    throw new IOException("The binary destination appeared during publication: " + path);
+                }
+                File.Move(temporaryPath, path);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
+            }
         }
 
         private static void WriteNoReplaceText(string path, string text)
@@ -1822,10 +2140,206 @@ namespace Venviewer.NativeCapture
             return result;
         }
 
+        private static byte[] ToRgb24(Color32[] pixels)
+        {
+            if (pixels == null)
+            {
+                throw new ArgumentNullException("pixels");
+            }
+
+            var rgb24 = new byte[checked(pixels.Length * 3)];
+            for (int pixelIndex = 0; pixelIndex < pixels.Length; pixelIndex += 1)
+            {
+                int byteOffset = pixelIndex * 3;
+                Color32 pixel = pixels[pixelIndex];
+                rgb24[byteOffset] = pixel.r;
+                rgb24[byteOffset + 1] = pixel.g;
+                rgb24[byteOffset + 2] = pixel.b;
+            }
+            return rgb24;
+        }
+
         private static void HandleUnhandledException(Exception exception)
         {
             Debug.LogException(exception);
             Application.Quit(2);
+        }
+
+        private sealed class RenderFrameProbe
+        {
+            private readonly Camera _expectedCamera;
+            private readonly int _expectedWidth;
+            private readonly int _expectedHeight;
+            private readonly Action<ScriptableRenderContext, Camera> _handler;
+            private RenderTexture _expectedTarget;
+            private bool _begun;
+            private bool _subscribed;
+            private bool _closed;
+
+            internal RenderFrameProbe(Camera expectedCamera, int expectedWidth, int expectedHeight)
+            {
+                _expectedCamera = expectedCamera ?? throw new ArgumentNullException("expectedCamera");
+                _expectedWidth = expectedWidth;
+                _expectedHeight = expectedHeight;
+                _handler = HandleEndCameraRendering;
+                FirstExactCameraRenderFrame = -1;
+                LastExactCameraRenderFrame = -1;
+            }
+
+            internal bool RenderTargetAssignedBeforeCapture { get; private set; }
+            internal int RenderTargetInstanceId { get; private set; }
+            internal int RenderTargetWidth { get; private set; }
+            internal int RenderTargetHeight { get; private set; }
+            internal bool RenderTargetDriftObserved { get; private set; }
+            internal bool BeforeRenderCallbackInvoked { get; private set; }
+            internal bool AfterRenderCallbackInvoked { get; private set; }
+            internal bool SubscriptionRemoved { get; private set; }
+            internal int ExactCameraRenderCallbackCount { get; private set; }
+            internal int FirstExactCameraRenderFrame { get; private set; }
+            internal int LastExactCameraRenderFrame { get; private set; }
+
+            internal void Begin()
+            {
+                BeforeRenderCallbackInvoked = true;
+                if (_closed)
+                {
+                    throw new InvalidOperationException(
+                        "The vendor capture invoked beforeRender after the probe was aborted.");
+                }
+                if (_begun)
+                {
+                    throw new InvalidOperationException("The native render-frame probe was begun more than once.");
+                }
+
+                RenderTexture target = _expectedCamera.targetTexture;
+                if (target == null)
+                {
+                    throw new InvalidOperationException(
+                        "ICaptureManager invoked beforeRender without assigning a camera render target.");
+                }
+                _expectedTarget = target;
+                RenderTargetAssignedBeforeCapture = true;
+                RenderTargetInstanceId = target.GetInstanceID();
+                RenderTargetWidth = target.width;
+                RenderTargetHeight = target.height;
+                if (RenderTargetWidth != _expectedWidth || RenderTargetHeight != _expectedHeight)
+                {
+                    throw new InvalidOperationException(
+                        "ICaptureManager assigned an unexpected camera render-target size.");
+                }
+
+                RenderPipelineManager.endCameraRendering += _handler;
+                _subscribed = true;
+                _begun = true;
+            }
+
+            internal void AfterRender()
+            {
+                AfterRenderCallbackInvoked = true;
+                if (_closed)
+                {
+                    return;
+                }
+                if (!_begun)
+                {
+                    Abort();
+                    throw new InvalidOperationException(
+                        "ICaptureManager invoked afterRender before the exact-target probe began.");
+                }
+                if (!HasExpectedTarget())
+                {
+                    RenderTargetDriftObserved = true;
+                    Abort();
+                    throw new InvalidOperationException(
+                        "The exact scene camera no longer targeted the assigned render texture in afterRender.");
+                }
+
+                Abort();
+            }
+
+            internal void Abort()
+            {
+                _closed = true;
+                RemoveSubscription();
+            }
+
+            internal void CopyTo(CaptureAttemptReceipt attempt)
+            {
+                if (attempt == null)
+                {
+                    throw new ArgumentNullException("attempt");
+                }
+
+                attempt.beforeRenderCallbackInvoked = BeforeRenderCallbackInvoked;
+                attempt.afterRenderCallbackInvoked = AfterRenderCallbackInvoked;
+                attempt.renderProbeSubscriptionRemoved = SubscriptionRemoved;
+                attempt.renderTargetAssignedBeforeCapture = RenderTargetAssignedBeforeCapture;
+                attempt.renderTargetInstanceId = RenderTargetInstanceId;
+                attempt.renderTargetWidth = RenderTargetWidth;
+                attempt.renderTargetHeight = RenderTargetHeight;
+                attempt.renderTargetDriftObserved = RenderTargetDriftObserved;
+                attempt.exactCameraRenderCallbackCount = ExactCameraRenderCallbackCount;
+                attempt.firstExactCameraRenderFrame = FirstExactCameraRenderFrame;
+                attempt.lastExactCameraRenderFrame = LastExactCameraRenderFrame;
+            }
+
+            private void RemoveSubscription()
+            {
+                if (!_subscribed)
+                {
+                    return;
+                }
+
+                RenderPipelineManager.endCameraRendering -= _handler;
+                _subscribed = false;
+                SubscriptionRemoved = true;
+            }
+
+            internal void RequireCompleted()
+            {
+                if (!_begun || !_closed || _subscribed ||
+                    !BeforeRenderCallbackInvoked || !AfterRenderCallbackInvoked ||
+                    !SubscriptionRemoved || !RenderTargetAssignedBeforeCapture ||
+                    RenderTargetDriftObserved || _expectedTarget == null ||
+                    ExactCameraRenderCallbackCount <= 0 ||
+                    FirstExactCameraRenderFrame < 0 ||
+                    LastExactCameraRenderFrame < FirstExactCameraRenderFrame)
+                {
+                    throw new InvalidOperationException(
+                        "No exact-camera endCameraRendering event proved that the assigned capture target rendered.");
+                }
+            }
+
+            private void HandleEndCameraRendering(ScriptableRenderContext context, Camera camera)
+            {
+                if (!ReferenceEquals(camera, _expectedCamera))
+                {
+                    return;
+                }
+                if (!HasExpectedTarget())
+                {
+                    RenderTargetDriftObserved = true;
+                    return;
+                }
+
+                int frame = Time.frameCount;
+                if (ExactCameraRenderCallbackCount == 0)
+                {
+                    FirstExactCameraRenderFrame = frame;
+                }
+                ExactCameraRenderCallbackCount += 1;
+                LastExactCameraRenderFrame = frame;
+            }
+
+            private bool HasExpectedTarget()
+            {
+                RenderTexture currentTarget = _expectedCamera.targetTexture;
+                return _expectedTarget != null &&
+                    ReferenceEquals(currentTarget, _expectedTarget) &&
+                    currentTarget.GetInstanceID() == RenderTargetInstanceId &&
+                    currentTarget.width == _expectedWidth &&
+                    currentTarget.height == _expectedHeight;
+            }
         }
 
         private sealed class LockedRuntimeFile
@@ -1870,9 +2384,7 @@ namespace Venviewer.NativeCapture
             internal Rect Rect;
             internal bool RecordModeEnabled;
             internal bool LockFpsEnabled;
-            internal bool RenderAllMutated;
             internal bool EnvironmentExclusionRequested;
-            internal bool RenderAll;
             internal bool HasEnvironment;
             internal CameraReceipt Receipt;
         }

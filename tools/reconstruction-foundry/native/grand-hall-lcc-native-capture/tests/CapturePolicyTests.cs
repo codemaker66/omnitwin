@@ -35,6 +35,7 @@ internal static class CapturePolicyTests
             TestSceneLoadReceiptContract();
             TestNativeRenderModeContract();
             TestPngDimensionGate();
+            TestDecodedRasterAdmissionGate();
             TestSnapshotChangeGate();
 
             if (args.Any(value => String.Equals(value, "--live", StringComparison.Ordinal)))
@@ -72,7 +73,17 @@ internal static class CapturePolicyTests
             "rendererHandlerNonNull",
             "rendererHandlerPath",
             "rendererHandlerPathVerified",
-            "canonicalSceneLoadedVerified"
+            "canonicalSceneLoadedVerified",
+            "renderAllBeginEventTopic",
+            "renderAllBeginEventSubscriptionAccepted",
+            "renderAllBeginEventObserved",
+            "renderAllPendingDefaultDerivedFromFreshRenderer",
+            "renderAllPendingTrueRequestedBeforeLoad",
+            "renderAllActiveTrueObservedAfterLoad",
+            "renderAllPendingFalseResetAttempted",
+            "renderAllPendingFalseResetCallCompleted",
+            "renderAllPendingResetReadbackAvailable",
+            "renderAllIsolationBoundary"
         })
         {
             if (!fields.Contains(expected))
@@ -123,7 +134,16 @@ internal static class CapturePolicyTests
             "vendorFullRenderBudgetEligibilityUsedForAdmission",
             "renderAllRequested",
             "renderAllObservedAfterRequest",
-            "renderAllVerifiedAtEveryGate"
+            "renderAllRequestedBeforeSceneLoad",
+            "renderAllObservedAfterSceneLoad",
+            "renderAllVerifiedAtEveryGate",
+            "renderCallbackSurface",
+            "blackChannelThreshold",
+            "minimumNonBlackPixelFraction",
+            "minimumMaximumChannelDynamicRange",
+            "minimumDistinctRgbCount",
+            "minimumLuminanceStandardDeviation",
+            "everyAttemptDecodedAndNonDegenerate"
         })
         {
             if (!fields.Contains(expected))
@@ -341,6 +361,105 @@ internal static class CapturePolicyTests
         finally
         {
             DeleteOwnedTempTree(root, "venviewer-native-png-policy-");
+        }
+    }
+
+    private static void TestDecodedRasterAdmissionGate()
+    {
+        const int width = 64;
+        const int height = 64;
+        var valid = new byte[width * height * 3];
+        for (int y = 0; y < height; y += 1)
+        {
+            for (int x = 0; x < width; x += 1)
+            {
+                int offset = ((y * width) + x) * 3;
+                valid[offset] = (byte)((x * 4) & 255);
+                valid[offset + 1] = (byte)((y * 4) & 255);
+                valid[offset + 2] = (byte)(((x * 3) + (y * 5)) & 255);
+            }
+        }
+
+        RasterStatisticsReceipt validStatistics = CapturePolicy.AnalyzeRgb24(valid, width, height);
+        CapturePolicy.RequireNonDegenerateRaster(validStatistics, width, height);
+        AssertEqual(true, validStatistics.nonDegenerateVerified, "valid raster admission");
+        AssertEqual((long)width * height, validStatistics.pixelCount, "valid raster pixel count");
+        AssertEqual(CapturePolicy.Sha256Bytes(valid), validStatistics.rgb24Sha256, "valid raster RGB hash");
+        if (validStatistics.distinctRgbLowerBound < CapturePolicy.MinimumDistinctRgbCount ||
+            validStatistics.maximumChannelDynamicRange < CapturePolicy.MinimumMaximumChannelDynamicRange ||
+            validStatistics.luminanceStandardDeviation < CapturePolicy.MinimumLuminanceStandardDeviation)
+        {
+            throw new InvalidOperationException("The valid synthetic raster did not exercise the admission margin.");
+        }
+
+        var black = new byte[width * height * 3];
+        RasterStatisticsReceipt blackStatistics = CapturePolicy.AnalyzeRgb24(black, width, height);
+        AssertEqual(0L, blackStatistics.nonBlackPixelCount, "black raster non-black count");
+        AssertEqual(1, blackStatistics.distinctRgbLowerBound, "black raster distinct RGB count");
+        ExpectThrows<InvalidDataException>(delegate
+        {
+            CapturePolicy.RequireNonDegenerateRaster(blackStatistics, width, height);
+        });
+
+        var nearConstant = Enumerable.Repeat((byte)4, width * height * 3).ToArray();
+        for (int index = 0; index < 12; index += 1)
+        {
+            nearConstant[index] = 5;
+        }
+        RasterStatisticsReceipt nearConstantStatistics =
+            CapturePolicy.AnalyzeRgb24(nearConstant, width, height);
+        ExpectThrows<InvalidDataException>(delegate
+        {
+            CapturePolicy.RequireNonDegenerateRaster(nearConstantStatistics, width, height);
+        });
+
+        ExpectThrows<InvalidDataException>(delegate
+        {
+            CapturePolicy.AnalyzeRgb24(new byte[7], 2, 2);
+        });
+        ExpectThrows<InvalidDataException>(delegate
+        {
+            CapturePolicy.RequireNonDegenerateRaster(validStatistics, width + 1, height);
+        });
+
+        var attemptFields = new HashSet<string>(typeof(CaptureAttemptReceipt).GetFields(
+            BindingFlags.Instance | BindingFlags.Public).Select(field => field.Name),
+            StringComparer.Ordinal);
+        foreach (string expected in new[]
+        {
+            "status",
+            "elapsedSeconds",
+            "beforeRenderCallbackInvoked",
+            "afterRenderCallbackInvoked",
+            "renderProbeSubscriptionRemoved",
+            "renderTargetAssignedBeforeCapture",
+            "renderTargetInstanceId",
+            "renderTargetWidth",
+            "renderTargetHeight",
+            "renderTargetDriftObserved",
+            "exactCameraRenderCallbackCount",
+            "firstExactCameraRenderFrame",
+            "lastExactCameraRenderFrame",
+            "captureTaskCompletedBeforeDeadline",
+            "captureTaskTimeoutObserved",
+            "lateCaptureTaskObserverAttached",
+            "underlyingCaptureCancellationAvailable",
+            "textureFormat",
+            "textureReadable",
+            "pixelReadCompleted",
+            "raster",
+            "pngEncodingCompleted",
+            "encodedByteLength",
+            "encodedSha256",
+            "postWriteFileShaVerified",
+            "failureType",
+            "failureMessage"
+        })
+        {
+            if (!attemptFields.Contains(expected))
+            {
+                throw new InvalidOperationException("Capture-attempt evidence field is missing: " + expected);
+            }
         }
     }
 

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "venviewer.grand-hall.native-capture-rejection.v1",
+  "authority": "none",
+  "truthClass": "RECONSTRUCTED_DIAGNOSTIC",
+  "roomRef": "trades-hall/grand-hall",
+  "runId": "grand-hall-gh1-lcc2-20260831T125500Z-d87109dd",
+  "moduleVersion": "1.2.4",
+  "moduleSha256": "177D9F9603853231644FA0BF47820191007FF306AAE4E4B9326BCB2459E9E096",
+  "canonicalPackageInventorySha256": "6013763AE4D9FA13CB10D2C62E9B11B971BC2F22420CA2ADE6F736AEECC4B793",
+  "runtimeClosureInventorySha256": "E76DAE03144F07E47C1600582AC6A15B19A21812C5648E0C864F86B61F328CF8",
+  "externalFailureReceipt": {
+    "path": "C:\\Users\\blake\\AppData\\Local\\Venviewer\\native-captures\\grand-hall-gh1-lcc2-20260831T125500Z-d87109dd\\grand-hall-native-capture-failure-receipt.json",
+    "byteLength": 252475,
+    "sha256": "DF42982F98213F1D21E012B494CD78CF509B755B469988FDD79B0B0F3F80C2AE"
+  },
+  "externalOperatorReceipt": {
+    "path": "C:\\Users\\blake\\AppData\\Local\\Venviewer\\native-captures\\grand-hall-gh1-lcc2-20260831T125500Z-d87109dd\\grand-hall-native-capture-operator-receipt.json",
+    "byteLength": 5817,
+    "sha256": "A0905902E4E3A25D3241168AAB4B1F207E04CFE4AE09EE752E52B24F27478F00"
+  },
+  "verifiedFacts": {
+    "canonicalSceneLoaded": true,
+    "renderAllPendingTrueRequestedBeforeLoad": true,
+    "renderAllActiveTrueObservedAfterLoad": true,
+    "renderAllPendingFalseResetCallCompleted": true,
+    "rendererReadinessContractSatisfied": true,
+    "observedReadinessFrames": 1777,
+    "observedReadinessSeconds": 15.003722999999999,
+    "captureAttemptRetained": true,
+    "beforeRenderCallbackInvoked": true,
+    "afterRenderCallbackInvoked": true,
+    "exactAssignedRenderTargetRetained": true,
+    "renderTargetWidth": 1600,
+    "renderTargetHeight": 900,
+    "srpEndCameraRenderingCallbackCount": 0,
+    "vendorReadPixelsTimingErrorObserved": true,
+    "pngAccepted": false,
+    "featureToggleRestoredExactly": true,
+    "remainingLccEditorProcessCount": 0
+  },
+  "rejection": {
+    "exceptionType": "System.InvalidOperationException",
+    "message": "No exact-camera endCameraRendering event proved that the assigned capture target rendered.",
+    "disposition": "rejected_before_pixel_admission"
+  },
+  "limitations": [
+    "The external receipts remain local and are referenced by exact byte length and SHA-256; this compact repository record is not a substitute for their full runtime closure.",
+    "The failed diagnostic grants no visual acceptance, room-boundary authority, transform authority, runtime admission, staging, publication, or production trust.",
+    "The absence of an SRP end-camera callback does not prove the assigned target was unrendered; it proves that this callback surface cannot be used as the sole admission gate in the locked renderer path.",
+    "No PNG was accepted or copied into the repository."
+  ]
+}
