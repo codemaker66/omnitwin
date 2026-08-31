@@ -107,12 +107,19 @@ recipe below are present. An armed run fails closed when any of these drift:
 - output directory safety/emptiness;
 - progressive convergence.
 
-The module requests `Ultra` through `IRendererQualityService`, requires public
-full-render support, calls `SetRenderAll(true)`, and records `IsRenderAll` at
-every gate. Because the public API exposes no loaded-splat residency count or
-streaming-completion metric, this is not presented as proof that every possible
-Gaussian is resident. After `lccscene.loaded`, the module instead requires a
-conservative minimum of 300 rendered frames and 15 seconds before sampling.
+The module requests `Ultra` through `IRendererQualityService`, calls
+`SetRenderAll(true)`, and requires the public `IsRenderAll` read-back immediately
+and at every later gate. The locked vendor IL proves that
+`SupportFullRender(Ultra)` is not an API-capability flag: it compares the
+current scene's finest-LOD splat count with Ultra's configured `3000` budget.
+The canonical package reports 6,019,684 finest-LOD splats, so that predicate is
+false by construction. The module records the value as vendor budget-eligibility
+telemetry and does not use it in place of the actual render-mode read-back.
+Because the public API exposes no loaded-splat residency count or
+streaming-completion metric, `IsRenderAll` is not presented as proof that every
+possible Gaussian is resident. After `lccscene.loaded`, the module additionally
+requires a conservative minimum of 300 rendered frames and 15 seconds before
+sampling.
 Attempts are spaced by another 15 rendered frames, and every clean-view flag,
 camera value, projection value, Ultra quality, full-render mode, and canonical
 scene identity is re-asserted throughout. Three consecutive byte-identical PNGs

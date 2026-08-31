@@ -181,8 +181,11 @@ namespace Venviewer.NativeCapture
         public double perCaptureTimeoutSeconds;
         public string renderQuality;
         public bool ultraQualityVerified;
-        public bool fullRenderSupported;
+        public string vendorFullRenderBudgetPredicate;
+        public bool vendorFullRenderBudgetEligible;
+        public bool vendorFullRenderBudgetEligibilityUsedForAdmission;
         public bool renderAllRequested;
+        public bool renderAllObservedAfterRequest;
         public bool renderAllVerifiedAtEveryGate;
         public bool canonicalPackageHasEnvironment;
         public bool environmentDataIncluded;

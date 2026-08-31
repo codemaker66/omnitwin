@@ -17,7 +17,7 @@ namespace Venviewer.NativeCapture
     public sealed class NativeCaptureModule : IModule
     {
         private const string ModuleId = "com.venviewer.native_capture";
-        private const string ModuleVersion = "1.2.2";
+        private const string ModuleVersion = "1.2.3";
         private const string OutputDirectoryEnvironmentVariable =
             "VENVIEWER_LCC_NATIVE_CAPTURE_OUTPUT_DIR";
         private const string ModuleShaEnvironmentVariable =
@@ -463,10 +463,8 @@ namespace Venviewer.NativeCapture
                 _rendererQualityService.SetRenderQualityType(RenderQualityType.Ultra);
             }
 
-            if (_rendererQualityService.CurrentQuality != RenderQualityType.Ultra)
-            {
-                throw new InvalidOperationException("The public renderer-quality service did not enter Ultra mode.");
-            }
+            CapturePolicy.RequireUltraQuality(
+                _rendererQualityService.CurrentQuality == RenderQualityType.Ultra);
         }
 
         private async UniTask WatchSceneLoadAsync()
@@ -782,7 +780,7 @@ namespace Venviewer.NativeCapture
         {
             return new NativeCaptureReceipt
             {
-                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v2",
+                schemaVersion = "venviewer.grand-hall.lcc-native-capture-receipt.v3",
                 status = "running",
                 authority = "none",
                 truthClass = "RECONSTRUCTED_DIAGNOSTIC",
@@ -795,7 +793,8 @@ namespace Venviewer.NativeCapture
                     "The look target is an inspection-only q05/q95 pose-envelope centre; it is not a calibrated source-camera orientation.",
                     "A native renderer screenshot is diagnostic evidence, not human acceptance of Grand Hall scope, transform, geometry, or architectural truth.",
                     "Three consecutive byte-identical PNGs establish a same-host pixel plateau only after the conservative readiness gate; they do not prove every possible streamed Gaussian is resident.",
-                    "The public API exposes Ultra quality and IsRenderAll mode, but no loaded-splat residency count or streaming-completion metric. Readiness therefore also requires a minimum 300 rendered frames and 15 seconds before hash sampling.",
+                    "The public API exposes Ultra quality and SetRenderAll/IsRenderAll mode, but no loaded-splat residency count or streaming-completion metric. Readiness therefore also requires a minimum 300 rendered frames and 15 seconds before hash sampling.",
+                    "In the locked vendor implementation, SupportFullRender(Ultra) is a current-scene splat-budget eligibility predicate, not an API-capability flag. Its false result for this 6,019,684-finest-splat package is recorded as telemetry and is not substituted for the observed IsRenderAll state.",
                     "Environment data is explicitly requested false for browser-frontier parity, excluding env.sog. The public API exposes no environment-visibility getter, so this receipt records the request and does not claim read-back visibility.",
                     "The runtime closure hashes every regular file in the disposable editor tree except this first-party module. It does not close over the GPU driver, operating system, CodeMeter service, firmware, or external per-user configuration.",
                     "Pixel hashes are not promised to remain identical across GPU drivers, graphics APIs, Unity builds, or LCCSDK versions.",
@@ -1080,7 +1079,8 @@ namespace Venviewer.NativeCapture
                     "The native camera quaternion does not match the digest-bound fixed-camera profile.");
             }
 
-            RequireUltraFullRenderCapability();
+            CapturePolicy.RequireUltraQuality(
+                _rendererQualityService.CurrentQuality == RenderQualityType.Ultra);
             if (!state.HasEnvironment)
             {
                 throw new InvalidOperationException(
@@ -1112,6 +1112,9 @@ namespace Venviewer.NativeCapture
             state.LockFpsEnabled = true;
             _lccSceneManager.SetRenderAll(true);
             state.RenderAllMutated = true;
+            // The locked SupportFullRender implementation is a scene-budget predicate.
+            // Only the public renderer-mode read-back can admit this capture lane.
+            RequireObservedUltraRenderAll();
             _lccSceneManager.SetEnvironmentData(false);
             state.EnvironmentExclusionRequested = true;
             ApplyProjection(camera);
@@ -1193,8 +1196,8 @@ namespace Venviewer.NativeCapture
                     "The canonical scene or one of the clean-view interaction flags drifted during capture.");
             }
 
-            RequireUltraFullRenderCapability();
-            if (!_lccSceneManager.IsRenderAll() || !_lccSceneManager.HasEnvironment)
+            RequireObservedUltraRenderAll();
+            if (!_lccSceneManager.HasEnvironment)
             {
                 throw new InvalidOperationException(
                     "Full-render mode or canonical environment availability drifted during capture.");
@@ -1237,14 +1240,11 @@ namespace Venviewer.NativeCapture
             }
         }
 
-        private void RequireUltraFullRenderCapability()
+        private void RequireObservedUltraRenderAll()
         {
-            if (_rendererQualityService.CurrentQuality != RenderQualityType.Ultra ||
-                !_rendererQualityService.SupportFullRender(RenderQualityType.Ultra))
-            {
-                throw new InvalidOperationException(
-                    "Ultra quality with public full-render support is required for native evidence capture.");
-            }
+            CapturePolicy.RequireObservedUltraRenderAll(
+                _rendererQualityService.CurrentQuality == RenderQualityType.Ultra,
+                _lccSceneManager.IsRenderAll());
         }
 
         private static void RequireProjectionValue(string label, float actual, float expected)
@@ -1464,8 +1464,13 @@ namespace Venviewer.NativeCapture
                 perCaptureTimeoutSeconds = CapturePolicy.PerCaptureTimeoutSeconds,
                 renderQuality = _rendererQualityService.CurrentQuality.ToString(),
                 ultraQualityVerified = _rendererQualityService.CurrentQuality == RenderQualityType.Ultra,
-                fullRenderSupported = _rendererQualityService.SupportFullRender(RenderQualityType.Ultra),
+                // Preserve the vendor predicate as telemetry without treating it as API capability.
+                vendorFullRenderBudgetPredicate = "SupportFullRender(Ultra)",
+                vendorFullRenderBudgetEligible =
+                    _rendererQualityService.SupportFullRender(RenderQualityType.Ultra),
+                vendorFullRenderBudgetEligibilityUsedForAdmission = false,
                 renderAllRequested = true,
+                renderAllObservedAfterRequest = _lccSceneManager.IsRenderAll(),
                 renderAllVerifiedAtEveryGate = false,
                 canonicalPackageHasEnvironment = _lccSceneManager.HasEnvironment,
                 environmentDataIncluded = false,

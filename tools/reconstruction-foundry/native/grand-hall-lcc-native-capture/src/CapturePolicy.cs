@@ -181,6 +181,28 @@ namespace Venviewer.NativeCapture
         internal const double PerCaptureTimeoutSeconds = 30.0;
         internal const double NativeCoordinateTolerance = 0.00001;
         internal const double ProjectionTolerance = 0.00001;
+
+        internal static void RequireUltraQuality(bool ultraQualityObserved)
+        {
+            if (!ultraQualityObserved)
+            {
+                throw new InvalidOperationException(
+                    "The public renderer-quality service is not in Ultra mode.");
+            }
+        }
+
+        internal static void RequireObservedUltraRenderAll(
+            bool ultraQualityObserved,
+            bool renderAllObserved)
+        {
+            RequireUltraQuality(ultraQualityObserved);
+            if (!renderAllObserved)
+            {
+                throw new InvalidOperationException(
+                    "The public renderer did not enter full-render mode after SetRenderAll(true).");
+            }
+        }
+
         internal static readonly ExpectedFile[] ExpectedInputFiles =
         {
             new ExpectedFile(@"data\3dgs\0_0_0_1_0_1.sog", 9980174, "97EFA65F9AADDBD69780664C6668817125C3153469918D5F291B348EE0B6D7E1"),

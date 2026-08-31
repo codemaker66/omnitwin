@@ -33,6 +33,7 @@ internal static class CapturePolicyTests
             TestSandboxAndReadinessPolicy();
             TestNativeCaptureLifecycleState();
             TestSceneLoadReceiptContract();
+            TestNativeRenderModeContract();
             TestPngDimensionGate();
             TestSnapshotChangeGate();
 
@@ -92,6 +93,50 @@ internal static class CapturePolicyTests
             {
                 throw new InvalidOperationException("Obsolete direct-load receipt field remains: " + forbidden);
             }
+        }
+    }
+
+    private static void TestNativeRenderModeContract()
+    {
+        CapturePolicy.RequireUltraQuality(true);
+        CapturePolicy.RequireObservedUltraRenderAll(true, true);
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireUltraQuality(false);
+        });
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireObservedUltraRenderAll(false, true);
+        });
+        ExpectThrows<InvalidOperationException>(delegate
+        {
+            CapturePolicy.RequireObservedUltraRenderAll(true, false);
+        });
+
+        var fields = new HashSet<string>(typeof(CaptureReceipt).GetFields(
+            BindingFlags.Instance | BindingFlags.Public).Select(field => field.Name),
+            StringComparer.Ordinal);
+        foreach (string expected in new[]
+        {
+            "vendorFullRenderBudgetPredicate",
+            "vendorFullRenderBudgetEligible",
+            "vendorFullRenderBudgetEligibilityUsedForAdmission",
+            "renderAllRequested",
+            "renderAllObservedAfterRequest",
+            "renderAllVerifiedAtEveryGate"
+        })
+        {
+            if (!fields.Contains(expected))
+            {
+                throw new InvalidOperationException(
+                    "Native render-mode receipt field is missing: " + expected);
+            }
+        }
+        if (fields.Contains("fullRenderSupported") ||
+            fields.Contains("vendorFullRenderBudgetEligibilityReported"))
+        {
+            throw new InvalidOperationException(
+                "A misleading SupportFullRender receipt field remains.");
         }
     }
 

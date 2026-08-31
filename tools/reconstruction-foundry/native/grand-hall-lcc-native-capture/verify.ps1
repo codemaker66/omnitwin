@@ -66,7 +66,7 @@ foreach ($requiredPath in @(
 
 $plugin = Get-Content -LiteralPath $pluginPath -Raw | ConvertFrom-Json
 Assert-Equal 'com.venviewer.native_capture' ([string]$plugin.Id) 'plugin Id'
-Assert-Equal '1.2.2' ([string]$plugin.Version) 'plugin version'
+Assert-Equal '1.2.3' ([string]$plugin.Version) 'plugin version'
 Assert-Equal 'managed' ([string]$plugin.Type) 'plugin type'
 Assert-Equal 'VenviewerNativeCapture.dll' ([string]$plugin.EntryPoint) 'plugin entry point'
 Assert-Equal 'Venviewer.NativeCapture.NativeCaptureModule' ([string]$plugin.Class) 'plugin class'
@@ -435,7 +435,7 @@ foreach ($loadContract in @(
     '_lccSceneManager.IsSceneLoaded(CapturePolicy.CanonicalScenePath)',
     'Volatile.Read(ref _sceneLoadedEventObserved)',
     'commandLineSceneArgumentUsed = false',
-    'venviewer.grand-hall.lcc-native-capture-receipt.v2',
+    'venviewer.grand-hall.lcc-native-capture-receipt.v3',
     'FixedCameraProfile.Load('
 )) {
     if ($moduleSource.IndexOf($loadContract, [StringComparison]::Ordinal) -lt 0) {
@@ -476,6 +476,24 @@ foreach ($immediateMutationContract in @(
     if ($moduleSource -notmatch $immediateMutationContract) {
         throw "A native mutation is not followed immediately by its cleanup-state transition: $immediateMutationContract"
     }
+}
+foreach ($renderModeContract in @(
+    'CapturePolicy.RequireUltraQuality(',
+    'RequireObservedUltraRenderAll();',
+    'vendorFullRenderBudgetPredicate = "SupportFullRender(Ultra)"',
+    'vendorFullRenderBudgetEligible =',
+    'vendorFullRenderBudgetEligibilityUsedForAdmission = false',
+    '_rendererQualityService.SupportFullRender(RenderQualityType.Ultra)',
+    'renderAllObservedAfterRequest = _lccSceneManager.IsRenderAll()'
+)) {
+    if ($moduleSource.IndexOf($renderModeContract, [StringComparison]::Ordinal) -lt 0) {
+        throw "Native Ultra/render-all evidence is missing: $renderModeContract"
+    }
+}
+if ($moduleSource.IndexOf('fullRenderSupported =', [StringComparison]::Ordinal) -ge 0 -or
+    $moduleSource.IndexOf('vendorFullRenderBudgetEligibilityReported =', [StringComparison]::Ordinal) -ge 0 -or
+    $moduleSource.IndexOf('RequireUltraFullRenderCapability', [StringComparison]::Ordinal) -ge 0) {
+    throw 'The vendor scene-budget predicate is still being treated as full-render capability.'
 }
 foreach ($requiredIndependentRestore in @(
     'if (state.RecordModeEnabled)',
