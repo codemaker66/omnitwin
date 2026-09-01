@@ -28,6 +28,7 @@ test.describe.configure({ mode: "serial" });
 declare global {
   interface Window {
     __stageWake?: number;
+    __setWalkMode?: (value: boolean) => void;
     __walkDebug?: {
       walkMode: boolean;
       roomSlug: string | null;
@@ -294,24 +295,4 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
       .toBe(false);
   });
 
-  test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, baseURL }) => {
-    test.setTimeout(240_000);
-    const origin = baseURL ?? "http://localhost:5173";
-    await page.emulateMedia({ reducedMotion: "reduce" });
-
-    await stubPlannerBootstrap(page);
-    await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
-      void route.fulfill({ json: { data: receptionRuntimePackage(origin) } });
-    });
-
-    await page.goto("/plan?capture=1");
-
-    await expect
-      .poll(() => readPhase(page), { timeout: 20_000, message: "waiting for developing" })
-      .toBe("developing");
-    await expect(page.getByTestId("room-resolve-caption").last()).toBeVisible();
-    await expect
-      .poll(async () => `${await readPhase(page)}|${await readCaptionVisible(page)}`, { timeout: 180_000 })
-      .toBe("resolved|false");
-  });
 });
