@@ -176,6 +176,24 @@ jobs:
       - name: Claim safety guard
         run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/public-claim-guard.test.ts
 
+      - name: Setup Python for twin-forge E57 guards
+        # tools/twin-forge's e57-script-guards.test.ts shells out to the
+        # Python unittest suite under e57-scripts/tests. Those modules (and
+        # the production modules they import) need numpy, scipy, Pillow and
+        # pye57; the hosted runner's Python ships with none of them, so 8
+        # of the suite's 17 tests died at import and the whole Test job
+        # went red (master, from 2026-08-28). The unittest loader stops at
+        # the FIRST missing import per module, so only numpy showed in the
+        # log — the full set comes from grepping the modules' imports.
+        # setup-python puts a pip-friendly interpreter first on PATH (the
+        # OS python is PEP 668 externally-managed and refuses pip).
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python deps for twin-forge E57 guards
+        run: python3 -m pip install numpy scipy Pillow pye57
+
       - name: Test (Vitest)
         # --no-bail: without it, pnpm stops at the FIRST failing package, so a
         # red package hides every package after it. That is how three latent
