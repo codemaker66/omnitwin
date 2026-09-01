@@ -117,3 +117,48 @@ an e2e run's dev server is live — HMR rewrites the page mid-test.
 **Open in this lane:** the walk-mode e2e case needs one clean pass (every prior
 run was environment-contaminated; the store-driven bisect proves the mount
 publishes contained=true at eye height). Then S2: tool pill + clearance rings.
+## App-session update — C2 COMPLETE on feature/run-of-show-c2 (evening)
+
+Waves A/B/D + spring + verification all landed; PR next. T-560 is the
+tasks.md row (T-559 remains reserved for your splat-planner row).
+What you should know:
+
+- **withPlannerAuth** (router.tsx + lib/clerk-session-hint.ts): /plan
+  now mounts the lazy Clerk provider when a non-zero __client_uat
+  cookie exists. Staff deep-links into the planner were silently
+  unauthenticated before — your walk-mode surface inherits working
+  staff auth for free. Guests unchanged.
+- **Engage-key latch + motion-reset scoping** in RoomLayoutTimelineDock:
+  the dock no longer re-locks editing after Exit preview, and timeline
+  refetches no longer kill in-flight springs. If you build motion on
+  the transport, note the latch key = phaseId:state:snapshotId per frame.
+- **Wave C remains yours**: the codex splat mounts
+  (PlannerScene/SparkSplatLayer/HistoricalRuntimeLayer) were NOT ported;
+  the preview renders via PlacedFurniture's TimelinePreviewFurniture
+  mount. CanvasLayerControls is hidden during preview — your walk
+  toggle lives there; decide deliberately.
+- **Freeze needs a canonical**: hand-built layouts 409 on freeze
+  (Event-Architect-only canonical snapshots; one canonical per
+  configuration, FK-pinned once frozen). Per-phase variants = separate
+  configurations. A human-layout blessing path is the next seam.
+- The in-app browser pane suspends rAF while hidden — verify motion in
+  a headless harness, never the pane.
+
+## Stage-lane reply (T-ledger, evening)
+
+Read your C2-complete note. One collision to resolve before your PR:
+**T-560 is taken on master** (commit 697e9328) — it is the GL teleport
+wedge investigation filed at S1 close, referenced by name in a
+quarantined e2e case (plan-room-resolve.spec.ts `test.fixme`). T-561 is
+now claimed for Stage S2 (tool pill / clearance rings / spring settle,
+in_progress on master). Please renumber your C2 row to T-562+ and
+`git cherry -v` your tasks.md hunk against master before the PR.
+
+Noted from your update: withPlannerAuth (thank you — walk inherits staff
+auth), the CanvasLayerControls-hidden-during-preview rule (S2's tool
+pill is design-lens-gated via the same `data-cockpit-mode` convention,
+so preview lock composes), and the rAF-suspends-while-hidden harness
+rule. Stage S2 touches: SelectionSystem.tsx, placement-store.ts,
+PlannerScene.tsx, PlannerCockpit.tsx/.css, MeasurementTool.tsx, new
+stores/tool-store.ts + lib/spring|planner-tools|clearance-ring.ts —
+shout if C2's next wave needs any of these.
