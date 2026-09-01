@@ -30,12 +30,15 @@ import type { BoardDrag, DragBlockDescriptor } from "../hooks/useBoardDrag.js";
 // colour survives everything, then title, then times (Canon §8 priority).
 // ---------------------------------------------------------------------------
 
-const SUB_ROW_HEIGHT = 44;
-const BLOCK_HEIGHT = 38;
+const SUB_ROW_HEIGHT = 58;
+const BLOCK_HEIGHT = 52;
 const LANE_PADDING = 6;
 const MIN_BLOCK_WIDTH = 12;
 const TITLE_MIN_WIDTH = 42;
 const TIME_MIN_WIDTH = 88;
+const FACE_MIN_WIDTH = 150;
+const COUNTDOWN_WINDOW_MS = 4 * 3_600_000;
+const SEGMENT_LABEL_MIN_PX = 46;
 
 export interface BoardGridProps {
   readonly rooms: readonly CalendarRoom[];
@@ -92,6 +95,29 @@ function tiltFor(id: string, kind: string, active: boolean): 0 | 1 | 2 {
   let hash = 0;
   for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) | 0;
   return ((Math.abs(hash) % 2) + 1) as 1 | 2;
+}
+
+
+/** Which band of the day a phase segment belongs to, judged by its midpoint
+ *  against the booking window — the same partition a hallkeeper makes:
+ *  before doors is setup, after the end is teardown, the rest is live. */
+function segmentPhase(
+  segment: { readonly startMs: number; readonly endMs: number },
+  block: { readonly startMs: number; readonly endMs: number },
+): "setup" | "live" | "teardown" {
+  const midMs = (segment.startMs + segment.endMs) / 2;
+  if (midMs < block.startMs) return "setup";
+  if (midMs >= block.endMs) return "teardown";
+  return "live";
+}
+
+/** Minute-granular duration for the doors countdown ("2h 05m"). */
+function countdownLabel(ms: number): string {
+  const totalMinutes = Math.ceil(ms / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${String(minutes)}m`;
+  return `${String(hours)}h ${String(minutes).padStart(2, "0")}m`;
 }
 
 export function BoardGrid(props: BoardGridProps): ReactElement {
@@ -248,9 +274,20 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                     };
                     const handlers = isActive ? drag.handlersFor(descriptor) : {};
                     const timeLabel = `${formatWallTime(block.startMs)}–${formatWallTime(block.endMs)}`;
+                    const startsInMs = block.startMs - nowMs;
+                    const countdown =
+                      isActive && block.entry.kind === "ink" && startsInMs > 0 && startsInMs <= COUNTDOWN_WINDOW_MS
+                        ? BOARD_COPY.card.doorsIn(countdownLabel(startsInMs))
+                        : null;
+                    const clientName = block.entry.clientName ?? null;
+                    const guestCount = block.entry.guestCount ?? null;
+                    const faceParts = [
+                      clientName,
+                      guestCount === null || guestCount === 0 ? null : BOARD_COPY.card.guests(guestCount),
+                    ].filter((part): part is string => part !== null);
                     const stateClass = `is-${block.entry.status === "active" ? block.entry.kind : "exited"}`;
                     const beingDragged = drag.activeBlockId === block.entry.id;
-                    const ariaLabel = `${block.entry.title} — ${BOARD_COPY.legend[block.entry.kind]}, ${timeLabel}, ${room.name}${chip === null ? "" : `, ${chip}`}${severity === undefined ? "" : ", has a conflict"}${writable && isActive ? `. ${BOARD_COPY.drag.grabHint}` : ""}`;
+                    const ariaLabel = `${block.entry.title} — ${BOARD_COPY.legend[block.entry.kind]}, ${timeLabel}, ${room.name}${faceParts.length === 0 ? "" : `, ${faceParts.join(", ")}`}${countdown === null ? "" : `, ${countdown}`}${chip === null ? "" : `, ${chip}`}${severity === undefined ? "" : ", has a conflict"}${writable && isActive ? `. ${BOARD_COPY.drag.grabHint}` : ""}`;
 
                     return (
                       <button
@@ -280,14 +317,24 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                           className="diary-block-card"
                           data-tilt={tiltFor(block.entry.id, block.entry.kind, isActive)}
                         >
-                        {width >= TITLE_MIN_WIDTH ? (
-                          <span className="diary-block-title">{block.entry.title}</span>
-                        ) : null}
+                        <span className="diary-block-main">
+                          {width >= TITLE_MIN_WIDTH ? (
+                            <span className="diary-block-title">{block.entry.title}</span>
+                          ) : null}
+                          {countdown !== null && width >= TIME_MIN_WIDTH ? (
+                            <span className="diary-block-countdown">{countdown}</span>
+                          ) : null}
+                          {chip !== null && width >= TIME_MIN_WIDTH ? (
+                            <span className="diary-block-chip">{chip}</span>
+                          ) : null}
+                        </span>
                         {width >= TIME_MIN_WIDTH ? (
-                          <span className="diary-block-time">{timeLabel}</span>
-                        ) : null}
-                        {chip !== null && width >= TIME_MIN_WIDTH ? (
-                          <span className="diary-block-chip">{chip}</span>
+                          <span className="diary-block-face">
+                            <span className="diary-block-time">{timeLabel}</span>
+                            {faceParts.length > 0 && width >= FACE_MIN_WIDTH ? (
+                              <span className="diary-block-client">{faceParts.join(" · ")}</span>
+                            ) : null}
+                          </span>
                         ) : null}
                         {block.segments.length > 0 && width >= TITLE_MIN_WIDTH ? (
                           <span className="diary-block-segments" aria-hidden="true">
@@ -295,16 +342,20 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                               const segStart = Math.max(segment.startMs, block.startMs);
                               const segEnd = Math.min(segment.endMs, block.endMs);
                               const total = block.endMs - block.startMs;
+                              const phase = segmentPhase(segment, block);
+                              const segWidthPx = ((segEnd - segStart) / total) * width;
                               return (
                                 <span
                                   key={segment.id}
-                                  className="diary-block-segment"
+                                  className={`diary-block-segment is-${phase}`}
                                   style={{
                                     left: `${String(((segStart - block.startMs) / total) * 100)}%`,
                                     width: `${String(((segEnd - segStart) / total) * 100)}%`,
                                   }}
-                                  title={segment.name}
-                                />
+                                  title={`${BOARD_COPY.card.segments[phase]} · ${segment.name}`}
+                                >
+                                  {segWidthPx >= SEGMENT_LABEL_MIN_PX ? BOARD_COPY.card.segments[phase] : null}
+                                </span>
                               );
                             })}
                           </span>

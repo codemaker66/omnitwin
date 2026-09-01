@@ -21,6 +21,14 @@ export const BOARD_COPY = {
   showExited: "Show released & cancelled",
 
   views: { day: "Day", week: "Week", "2w": "2W", month: "Month" } as const,
+
+  /** The Command Centre card face (C1). Doors language, never compliance;
+   *  the countdown is minute-granular on the shared board clock. */
+  card: {
+    doorsIn: (label: string): string => `Doors in ${label}`,
+    guests: (count: number): string => `${String(count)} guests`,
+    segments: { setup: "Setup", live: "Live", teardown: "Teardown" } as const,
+  },
   today: "Today",
   previous: "Earlier",
   next: "Later",
