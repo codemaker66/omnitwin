@@ -23,11 +23,13 @@ async function readCaptionVisible(page: Page): Promise<string> {
   return page.evaluate(() => {
     const captions = document.querySelectorAll('[data-testid="room-resolve-caption"]');
     const last = captions[captions.length - 1];
-    return last === undefined ? "false" : String(last.checkVisibility());
+    return last?.getAttribute("data-visible") ?? "absent";
   });
 }
 
 test.describe("CARD A2 reduced motion", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
   test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, baseURL }) => {
     test.setTimeout(240_000);
     page.on("pageerror", (error) => { console.log(`[rm-pageerror] ${error.message.slice(0, 300)}`); });
