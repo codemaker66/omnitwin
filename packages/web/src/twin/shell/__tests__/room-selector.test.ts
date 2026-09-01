@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TwinManifestSchema, type TwinScanNode } from "@omnitwin/types";
@@ -35,12 +35,17 @@ import {
 // about this building. Both are here, and they are testing different things.
 // -----------------------------------------------------------------------------
 
-const MANIFEST = TwinManifestSchema.parse(
-  JSON.parse(
-    readFileSync(resolve(process.cwd(), "public/twin/trades-hall/manifest.json"), "utf8"),
-  ),
-);
-const NODES: readonly TwinScanNode[] = MANIFEST.nodes;
+// The shipped manifest is a staged asset (gitignored): present on a machine
+// that has run the twin staging pipeline, absent in CI and fresh checkouts.
+// The fixture suites below always run; the suites that interrogate the REAL
+// bundle skip honestly when there is no real bundle to interrogate, instead
+// of failing the whole file at module scope (red on every clean checkout).
+const MANIFEST_PATH = resolve(process.cwd(), "public/twin/trades-hall/manifest.json");
+const HAS_MANIFEST = existsSync(MANIFEST_PATH);
+const NODES: readonly TwinScanNode[] = HAS_MANIFEST
+  ? TwinManifestSchema.parse(JSON.parse(readFileSync(MANIFEST_PATH, "utf8"))).nodes
+  : [];
+const describeWithManifest = describe.skipIf(!HAS_MANIFEST);
 
 /** Synthetic pose: E57 metres, Z-up, level tripod at the usual head height. */
 function node(id: string, x: number, y: number, floor: number): TwinScanNode {
@@ -94,7 +99,7 @@ describe("ROOM_SELECTOR_ORDER", () => {
   });
 });
 
-describe("pickRoomTarget", () => {
+describeWithManifest("pickRoomTarget", () => {
   it("picks the nearer end of the Grand Hall when the walk starts in the Saloon", () => {
     // Real poses, real bundle. Both ends are correct answers — this is a
     // tie-break, not a route claim — but scan_046 is the end the Saloon opens
@@ -157,7 +162,7 @@ describe("formatRoomComparison", () => {
   });
 });
 
-describe("planRoomSelector", () => {
+describeWithManifest("planRoomSelector", () => {
   it("groups the shipped bundle into its two storeys", () => {
     const levels = planRoomSelector(NODES, "scan_028");
     expect(levels).toHaveLength(2);

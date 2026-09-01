@@ -161,6 +161,15 @@ export function DashboardLayout({ activeView, onViewChange, mainLabel, children 
             The Diary
           </Link>
         )}
+        {(user?.platformRole === "admin" || ["admin", "staff", "hallkeeper"].includes(user?.role ?? "")) && (
+          <Link
+            className={routeLinkClass("/hallkeeper/today")}
+            aria-current={isRouteActive("/hallkeeper/today") ? "page" : undefined}
+            to="/hallkeeper/today"
+          >
+            Day Board
+          </Link>
+        )}
         {(user?.platformRole === "admin" || ["admin", "staff", "planner"].includes(user?.role ?? "")) && (
           <Link
             className={routeLinkClass("/plan")}

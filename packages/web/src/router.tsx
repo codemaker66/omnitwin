@@ -68,6 +68,9 @@ const DashboardPage = lazy(() =>
 const HallkeeperPage = lazy(() =>
   cockpitImport(() => import("./pages/HallkeeperPage.js").then((m) => ({ default: m.HallkeeperPage }))),
 );
+const DayBoardPage = lazy(() =>
+  import("./pages/hallkeeper/DayBoardPage.js").then((m) => ({ default: m.DayBoardPage })),
+);
 const PrivacyPage = lazy(() =>
   cockpitImport(() => import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "privacy" }) }))),
 );
@@ -325,6 +328,18 @@ export const router = createBrowserRouter([
     // flagship customer.
     path: "/v/:venueSlug/plan",
     element: withSuspense(<EditorPage />),
+  },
+  {
+    // The Day Board (Day Board S1): the hallkeeper's live view of today —
+    // a projection of GET /calendar with the countdown/LIVE/exception state
+    // machine. Declared before /hallkeeper/:configId for clarity, though v7
+    // route ranking would prefer the static segment regardless.
+    path: "/hallkeeper/today",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper"]}>
+        <DayBoardPage />
+      </ProtectedRoute>,
+    ),
   },
   {
     // Hallkeeper sheets expose PII (enquiry contact details, event info) and

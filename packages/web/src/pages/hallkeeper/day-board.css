@@ -1,0 +1,286 @@
+/* ---------------------------------------------------------------------------
+   The Day Board (Day Board S1) — Ink & Gilt, tuned for a wall tablet.
+
+   Colour discipline: text is ALWAYS paper-on-ink (AA everywhere; the board
+   deliberately commits to its own dark look and paints its background
+   explicitly). Tone lives in the dot, the border and the ring, never under
+   the text — which is also what keeps every state legible for colour-blind
+   hallkeepers: the words carry the meaning, the colour only underlines it.
+
+   Motion discipline: transform/opacity keyframes only. Every animated
+   element takes `animation-delay: var(--dayboard-epoch)` — one shared
+   origin set once per mount — so all pulses of a cadence breathe together.
+   All cadences (4s / 3s / 2s / 1.5s) divide 60s, so one epoch locks every
+   family. prefers-reduced-motion stops the pulses; the countdown text in
+   each chip already says everything the motion says.
+--------------------------------------------------------------------------- */
+
+.dayboard {
+  --db-ink: #221c14;
+  --db-ink-raised: #2b241b;
+  --db-paper: #efe7d6;
+  --db-paper-dim: rgba(239, 231, 214, 0.66);
+  --db-line: rgba(246, 241, 232, 0.12);
+  --db-gilt: #c9a961;
+  --db-green: #4f9d69;
+  --db-amber: #d99a2b;
+  --db-amber-deep: #c9761d;
+  --db-live: #8f2f2a;
+  --db-red: #c23b2e;
+  --db-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  min-height: 100%;
+  padding: 20px 24px 28px;
+  background: var(--db-ink);
+  color: var(--db-paper);
+}
+
+.dayboard-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.dayboard-title {
+  font-size: 1.4rem;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.dayboard-subtitle {
+  margin: 2px 0 0;
+  color: var(--db-paper-dim);
+  font-size: 0.9rem;
+}
+
+.dayboard-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--db-paper-dim);
+}
+
+.dayboard-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--db-paper-dim);
+}
+
+.dayboard-live-dot.is-connected {
+  background: var(--db-green);
+}
+
+.dayboard-notice {
+  border: 1px solid var(--db-line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  color: var(--db-paper-dim);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* --- lanes ---------------------------------------------------------------- */
+
+.dayboard-lanes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.dayboard-lane {
+  background: var(--db-ink-raised);
+  border: 1px solid var(--db-line);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dayboard-lane-title {
+  margin: 0 0 2px;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--db-gilt);
+}
+
+.dayboard-lane-empty {
+  margin: 0;
+  color: var(--db-paper-dim);
+  font-size: 0.85rem;
+}
+
+/* --- slot cards ----------------------------------------------------------- */
+
+.dayboard-slot {
+  --db-tone: var(--db-paper-dim);
+  border: 1px solid var(--db-line);
+  border-left: 3px solid var(--db-tone);
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+  background: var(--db-ink);
+}
+
+.dayboard-tone-green { --db-tone: var(--db-green); }
+.dayboard-tone-amber { --db-tone: var(--db-amber); }
+.dayboard-tone-amber-deep { --db-tone: var(--db-amber-deep); }
+.dayboard-tone-live { --db-tone: var(--db-live); }
+.dayboard-tone-red { --db-tone: var(--db-red); }
+
+.dayboard-tone-faded {
+  opacity: 0.55;
+}
+
+.dayboard-slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dayboard-slot-time {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+  color: var(--db-paper-dim);
+}
+
+.dayboard-slot-title {
+  margin: 6px 0 2px;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.dayboard-slot-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--db-paper-dim);
+}
+
+.dayboard-slot-state {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+
+.dayboard-slot-alert {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--db-red);
+  color: var(--db-paper);
+  font-size: 0.82rem;
+}
+
+.dayboard-slot-warning {
+  margin: 8px 0 0;
+  color: var(--db-amber);
+  font-size: 0.8rem;
+}
+
+/* --- chips: the pulse lives HERE, on the dot, never under text ------------ */
+
+.dayboard-chip {
+  --db-chip-tone: var(--db-paper-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px 3px 7px;
+  border: 1px solid var(--db-line);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--db-paper);
+  white-space: nowrap;
+}
+
+.dayboard-chip-green { --db-chip-tone: var(--db-green); }
+.dayboard-chip-amber { --db-chip-tone: var(--db-amber); }
+.dayboard-chip-amber-deep { --db-chip-tone: var(--db-amber-deep); }
+.dayboard-chip-live { --db-chip-tone: var(--db-gilt); }
+.dayboard-chip-red { --db-chip-tone: var(--db-red); }
+.dayboard-chip-quiet,
+.dayboard-chip-faded { --db-chip-tone: var(--db-paper-dim); }
+
+.dayboard-chip-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--db-chip-tone);
+  flex: none;
+}
+
+/* The expanding ring that gives the pulse its life — pure transform/opacity
+   on a tiny element, so sixty of them cost nothing. */
+.dayboard-chip-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid var(--db-chip-tone);
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+@keyframes dayboard-pulse-ring {
+  0% { opacity: 0.9; transform: scale(0.6); }
+  70% { opacity: 0; transform: scale(1.9); }
+  100% { opacity: 0; transform: scale(1.9); }
+}
+
+@keyframes dayboard-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+[data-motion="pulse-4s"] .dayboard-chip-dot::after {
+  animation: dayboard-pulse-ring 4s var(--db-ease-out) infinite;
+  animation-delay: var(--dayboard-epoch, 0s);
+}
+
+[data-motion="pulse-3s"] .dayboard-chip-dot::after {
+  animation: dayboard-pulse-ring 3s var(--db-ease-out) infinite;
+  animation-delay: var(--dayboard-epoch, 0s);
+}
+
+[data-motion="pulse-2s"] .dayboard-chip-dot::after {
+  animation: dayboard-pulse-ring 2s var(--db-ease-out) infinite;
+  animation-delay: var(--dayboard-epoch, 0s);
+}
+
+[data-motion="pulse-fast"] .dayboard-chip-dot::after {
+  animation: dayboard-pulse-ring 1.5s var(--db-ease-out) infinite;
+  animation-delay: var(--dayboard-epoch, 0s);
+}
+
+[data-motion="breathe-4s"] .dayboard-chip-dot {
+  animation: dayboard-breathe 4s ease-in-out infinite;
+  animation-delay: var(--dayboard-epoch, 0s);
+}
+
+/* Reduced motion: the pulses stop; the words were already doing the work. */
+@media (prefers-reduced-motion: reduce) {
+  .dayboard *,
+  .dayboard *::after {
+    animation: none !important;
+  }
+}
+
+/* --- legend ---------------------------------------------------------------- */
+
+.dayboard-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--db-line);
+}
