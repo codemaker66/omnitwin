@@ -386,27 +386,57 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                           </span>
                         ) : null}
                         {block.segments.length > 0 && width >= TITLE_MIN_WIDTH ? (
+                          // The card's run of show, drawn as a SCHEMATIC over
+                          // the occupancy extent (setup phases live before
+                          // doors, teardown after the end — clamping them to
+                          // the booking window would erase them). The booking
+                          // window itself is the LIVE band. Decoration with
+                          // titles; the timeline's positional truth stays
+                          // with the blocks and phases themselves.
                           <span className="diary-block-segments" aria-hidden="true">
-                            {block.segments.map((segment) => {
-                              const segStart = Math.max(segment.startMs, block.startMs);
-                              const segEnd = Math.min(segment.endMs, block.endMs);
-                              const total = block.endMs - block.startMs;
-                              const phase = segmentPhase(segment, block);
-                              const segWidthPx = ((segEnd - segStart) / total) * width;
-                              return (
-                                <span
-                                  key={segment.id}
-                                  className={`diary-block-segment is-${phase}`}
-                                  style={{
-                                    left: `${String(((segStart - block.startMs) / total) * 100)}%`,
-                                    width: `${String(((segEnd - segStart) / total) * 100)}%`,
-                                  }}
-                                  title={`${BOARD_COPY.card.segments[phase]} · ${segment.name}`}
-                                >
-                                  {segWidthPx >= SEGMENT_LABEL_MIN_PX ? BOARD_COPY.card.segments[phase] : null}
-                                </span>
+                            {(() => {
+                              const extentStart = Math.min(
+                                block.startMs,
+                                ...block.segments.map((segment) => segment.startMs),
                               );
-                            })}
+                              const extentEnd = Math.max(
+                                block.endMs,
+                                ...block.segments.map((segment) => segment.endMs),
+                              );
+                              const total = extentEnd - extentStart;
+                              const bands = [
+                                ...block.segments.map((segment) => ({
+                                  id: segment.id,
+                                  name: segment.name,
+                                  startMs: segment.startMs,
+                                  endMs: segment.endMs,
+                                  phase: segmentPhase(segment, block),
+                                })),
+                                {
+                                  id: `${block.entry.id}:live`,
+                                  name: block.entry.title,
+                                  startMs: block.startMs,
+                                  endMs: block.endMs,
+                                  phase: "live" as const,
+                                },
+                              ];
+                              return bands.map((band) => {
+                                const bandWidthPx = ((band.endMs - band.startMs) / total) * width;
+                                return (
+                                  <span
+                                    key={band.id}
+                                    className={`diary-block-segment is-${band.phase}`}
+                                    style={{
+                                      left: `${String(((band.startMs - extentStart) / total) * 100)}%`,
+                                      width: `${String(((band.endMs - band.startMs) / total) * 100)}%`,
+                                    }}
+                                    title={`${BOARD_COPY.card.segments[band.phase]} · ${band.name}`}
+                                  >
+                                    {bandWidthPx >= SEGMENT_LABEL_MIN_PX ? BOARD_COPY.card.segments[band.phase] : null}
+                                  </span>
+                                );
+                              });
+                            })()}
                           </span>
                         ) : null}
                         {severity === "blocking" ? (
