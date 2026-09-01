@@ -1,0 +1,84 @@
+{
+  "authority": "none",
+  "files": [
+    {
+      "relativePath": "orientation-review-contact-sheet-source-only.png",
+      "sha256": "147f86a89c0cc95a36ee0b1b7bc62c28dcf00c9aeb63b6aa1f605a9b550b59bc",
+      "sizeBytes": 9318051
+    },
+    {
+      "relativePath": "orientation-review-sweep-041-scan-040-primary-source-only.png",
+      "sha256": "ee7ffb8dc4315915775bed98fc821f627d1f49f5a8d741b626514bb6176c2852",
+      "sizeBytes": 10629597
+    },
+    {
+      "relativePath": "orientation-review-sweep-042-scan-041-primary-source-only.png",
+      "sha256": "4b345d12457761966e8be4a5760a69d842e64b8282fa5ead1553bae263146372",
+      "sizeBytes": 10675477
+    },
+    {
+      "relativePath": "orientation-review-sweep-043-scan-042-primary-source-only.png",
+      "sha256": "cb3e965a48dd0feca62970eff3c9b0572112d7191c60941f5da8cd6b1f39aefa",
+      "sizeBytes": 10685795
+    },
+    {
+      "relativePath": "orientation-review-sweep-044-scan-043-primary-source-only.png",
+      "sha256": "d493a3d973556d4052d66144743be89b2c2e1b9add557e541a529ed3b72bad44",
+      "sizeBytes": 10265379
+    },
+    {
+      "relativePath": "orientation-review-sweep-045-scan-044-primary-source-only.png",
+      "sha256": "5b66c9f06ed0d387f15b4dead9c30fbbf0f3b6a270eeaff29afa7a8d646d7c81",
+      "sizeBytes": 10799535
+    },
+    {
+      "relativePath": "orientation-review-sweep-046-scan-045-primary-source-only.png",
+      "sha256": "eeb8fd0a9e22219349b6ae4e6f9bb9f31379a05a64fa373bc7cb9215b1f8328c",
+      "sizeBytes": 10658520
+    },
+    {
+      "relativePath": "orientation-review-sweep-047-scan-010-alternate-source-only.png",
+      "sha256": "af4232d549700cdf7a0328ab1816bf2de351a9e647303cc90d07ce537483257f",
+      "sizeBytes": 10706049
+    },
+    {
+      "relativePath": "orientation-review-sweep-047-scan-046-primary-source-only.png",
+      "sha256": "322198be155e857b3ca5a2ef46bccfebd2483e2cd7b16eab1eb0eaa068a7b8fd",
+      "sizeBytes": 10553454
+    },
+    {
+      "relativePath": "orientation-review-sweep-048-scan-047-primary-source-only.png",
+      "sha256": "1d96da5710866b071731a212ace69bdb915cf2e6cdae9b0f041959a3d6cb09fc",
+      "sizeBytes": 10648408
+    },
+    {
+      "relativePath": "panorama-e57-orientations-authority-none.json",
+      "sha256": "e191fe09cd2ca033d362a7a6fde154f1c5a02fe5d3c10978a16662e3e4da3325",
+      "sizeBytes": 4256392
+    }
+  ],
+  "generatorSha256": "72e71b6458dd0c7b6ed6a5ad06f087a72ee7d0b54ea308ca1f9ced8e19a40dfa",
+  "permissions": {
+    "authority": "none",
+    "correspondenceAccepted": false,
+    "e57CubefaceOrientationBasisAccepted": false,
+    "e57ToObjTransformAccepted": false,
+    "e57ToXgridsTransformAccepted": false,
+    "externalPanoramaOrientationAccepted": false,
+    "externalPanoramaPoseAccepted": false,
+    "generatedContentUsed": false,
+    "grandHallPixelMaskAccepted": false,
+    "productionTrustPermitted": false,
+    "providerInputPermitted": false,
+    "publicationPermitted": false,
+    "reconstructionInputPermitted": false,
+    "roomMembershipAccepted": false,
+    "runtimeInputPermitted": false,
+    "stagingPermitted": false,
+    "trainingInputPermitted": false
+  },
+  "publicationComplete": true,
+  "receiptWrittenLast": true,
+  "schemaVersion": "venviewer.panorama-e57-orientation-publication-authority-none.v1",
+  "sourceBindingsSha256": "13746fdaf3c8deef818c6d4f3a51ee7f09d679cc83740dd24c44fd16c564d514"
+}
