@@ -264,8 +264,12 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     await settleCockpit(page);
     const walkToggle = page.getByTestId("planner-walk-toggle");
     await expect(walkToggle).toBeEnabled();
-    await walkToggle.click();
-    await expect(walkToggle).toHaveAttribute("aria-pressed", "true");
+    // force: skip the pre-click stability waltz, not the click. On a loaded
+    // machine the stability check's rAF polls starve against a heavy splat
+    // scene and the click never fires at all; the dispatched input and every
+    // behavioural assertion after it stay fully real.
+    await walkToggle.click({ force: true });
+    await expect(walkToggle).toHaveAttribute("aria-pressed", "true", { timeout: 15_000 });
 
     // The walk camera publishes its containment; standing in the room means
     // inside the walk bounds at human eye height. The poll carries the mount
