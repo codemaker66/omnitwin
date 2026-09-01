@@ -105,21 +105,27 @@ describe("PlannerScene", () => {
   });
 
   it("disables planner canvas antialiasing on mobile and tablet viewports", () => {
+    // preserveDrawingBuffer is the C2 dev-only capture aid (?capture=1);
+    // outside that flag it is always the explicit false below.
     expect(plannerCanvasGlForViewportWidth(390)).toEqual({
       antialias: false,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: false,
     });
     expect(plannerCanvasGlForViewportWidth(768)).toEqual({
       antialias: false,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: false,
     });
     expect(plannerCanvasGlForViewportWidth(1024)).toEqual({
       antialias: false,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: false,
     });
     expect(plannerCanvasGlForViewportWidth(1440)).toEqual({
       antialias: true,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: false,
     });
   });
 
