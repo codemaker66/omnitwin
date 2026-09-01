@@ -53,7 +53,15 @@ export type DrawerMode =
       readonly ownerUserId: string;
     }
   | { readonly kind: "edit"; readonly booking: CalendarBookingEntry }
-  | { readonly kind: "convert"; readonly enquiry: ConvertSource; readonly ownerUserId: string };
+  | {
+      readonly kind: "convert";
+      readonly enquiry: ConvertSource;
+      readonly ownerUserId: string;
+      /** Set when the enquiry was DRAGGED onto the board: the lane and the
+       *  snapped instant it was dropped at override the enquiry's own
+       *  space/preferred-date seeding. The drawer still owns every rule. */
+      readonly drop?: { readonly spaceId: string; readonly startMs: number };
+    };
 
 export type FieldErrors = Readonly<Record<string, string>>;
 
@@ -100,11 +108,15 @@ export function initialDrawerForm(mode: DrawerMode): DrawerForm {
       enquiry.preferredDate === null
         ? null
         : wallInputToMs(`${enquiry.preferredDate}T00:00`);
-    const startMs = (dayStart ?? Date.now()) + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
-    const endMs = (dayStart ?? Date.now()) + DEFAULT_END_HOUR_OFFSET * HOUR_MS;
+    const startMs =
+      mode.drop?.startMs ?? (dayStart ?? Date.now()) + DEFAULT_START_HOUR_OFFSET * HOUR_MS;
+    const endMs =
+      mode.drop === undefined
+        ? (dayStart ?? Date.now()) + DEFAULT_END_HOUR_OFFSET * HOUR_MS
+        : mode.drop.startMs + (DEFAULT_END_HOUR_OFFSET - DEFAULT_START_HOUR_OFFSET) * HOUR_MS;
     return {
       kind: "hold",
-      spaceId: enquiry.spaceId,
+      spaceId: mode.drop?.spaceId ?? enquiry.spaceId,
       title: `${enquiry.name}${enquiry.eventType === null ? "" : ` — ${enquiry.eventType}`}`.slice(0, 200),
       eventType: enquiry.eventType ?? "",
       startsAt: msToWallInput(startMs),

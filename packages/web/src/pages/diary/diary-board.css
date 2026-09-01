@@ -1371,3 +1371,89 @@ a.diary-button {
     transition: none;
   }
 }
+
+
+/* --- the unplaced clipboard (C1) ------------------------------------------ */
+
+.diary-tray-enquiry.is-draggable {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.diary-tray-enquiry.is-draggable:active {
+  cursor: grabbing;
+}
+
+.diary-tray-enquiry {
+  background:
+    var(--diary-grain),
+    var(--diary-paper);
+  color: var(--diary-paper-ink);
+  border: 1px solid rgba(43, 36, 27, 0.3);
+  border-radius: 4px;
+  padding: 8px 10px 8px 18px;
+  position: relative;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+}
+
+.diary-tray-enquiry::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #f0d9a0, var(--diary-brass-deep) 72%);
+}
+
+.diary-tray-enquiry .diary-tray-item-title {
+  font-family: var(--diary-hand);
+  font-style: italic;
+  font-variation-settings: "SOFT" 100, "WONK" 1;
+  color: var(--diary-paper-ink);
+}
+
+.diary-tray-enquiry .diary-tray-item-reason {
+  color: rgba(43, 36, 27, 0.75);
+}
+
+.diary-tray-drag-hint {
+  margin: 2px 0 8px;
+  font-size: 0.68rem;
+  color: var(--vv-muted);
+}
+
+/* The slip in flight: a fixed paper chip under the pointer. */
+.diary-enquiry-ghost {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background:
+    var(--diary-grain),
+    var(--diary-paper);
+  color: var(--diary-paper-ink);
+  border: 1px solid rgba(43, 36, 27, 0.35);
+  border-radius: 4px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  max-width: 240px;
+}
+
+.diary-enquiry-ghost .diary-tray-item-title {
+  font-family: var(--diary-hand);
+  font-style: italic;
+  font-variation-settings: "SOFT" 100, "WONK" 1;
+  color: var(--diary-paper-ink);
+}
+
+.diary-enquiry-ghost-time {
+  font-family: var(--diary-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.68rem;
+  color: rgba(43, 36, 27, 0.85);
+}

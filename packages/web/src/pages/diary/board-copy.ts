@@ -129,6 +129,9 @@ export const BOARD_COPY = {
   },
 
   trayEnquiries: {
+    dragHint: "Drag a slip onto a room lane to pencil it in.",
+    dropAt: (time: string): string => `Pencil at ${time}`,
+    dropSeeking: "Drop on a room lane",
     title: "Open enquiries",
     empty: "No open enquiries right now.",
     convert: "Pencil in…",

@@ -11,6 +11,8 @@ import { ApiError } from "../../api/client.js";
 import { moveBooking } from "../../api/diary.js";
 import { BOARD_COPY } from "./board-copy.js";
 import {
+  formatWallTime,
+  snapMs,
   boardRange,
   rangeTitle,
   shiftRange,
@@ -34,7 +36,8 @@ import { listEnquiries, type Enquiry } from "../../api/enquiries.js";
 import { BoardGrid } from "./components/BoardGrid.js";
 import { BookingDrawer } from "./components/BookingDrawer.js";
 import { WelcomePanel } from "./components/WelcomePanel.js";
-import { ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
+import {
+  type TrayEnquiry, ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import "./diary-board.css";
 
@@ -329,7 +332,7 @@ export function DiaryBoardPage(): ReactElement {
   }, [openDrawer, range.fromMs, rooms, user]);
 
   const openConvertDrawer = useCallback(
-    (enquiryId: string) => {
+    (enquiryId: string, drop?: { readonly spaceId: string; readonly startMs: number }) => {
       const enquiry = openEnquiries.find((candidate) => candidate.id === enquiryId);
       if (enquiry === undefined || user === null) return;
       openDrawer({
@@ -342,10 +345,91 @@ export function DiaryBoardPage(): ReactElement {
           preferredDate: enquiry.preferredDate,
         },
         ownerUserId: user.id,
+        ...(drop === undefined ? {} : { drop }),
       });
     },
     [openDrawer, openEnquiries, user],
   );
+
+  // --- the unplaced clipboard's drag-on (C1) ------------------------------
+  // A slip dragged from the tray follows the pointer as a paper chip; over a
+  // room lane it announces the snapped pencil time, and release opens the
+  // SAME convert drawer, prefilled — the drawer keeps every rule (hold
+  // hygiene, kinds, validation). Escape or releasing off-lane cancels.
+  const [enquiryDrag, setEnquiryDrag] = useState<{
+    readonly enquiryId: string;
+    readonly name: string;
+    readonly x: number;
+    readonly y: number;
+    readonly laneId: string | null;
+    readonly startMs: number | null;
+  } | null>(null);
+
+  const beginEnquiryDrag = useCallback(
+    (enquiry: TrayEnquiry, event: React.PointerEvent<HTMLElement>) => {
+      if (!writable) return;
+      event.preventDefault();
+      setEnquiryDrag({
+        enquiryId: enquiry.id,
+        name: enquiry.name,
+        x: event.clientX,
+        y: event.clientY,
+        laneId: null,
+        startMs: null,
+      });
+    },
+    [writable],
+  );
+
+  const enquiryDragActive = enquiryDrag !== null;
+  useEffect(() => {
+    if (!enquiryDragActive) return;
+    const HOUR = 3_600_000;
+    const pxPerHour = PX_PER_HOUR[range.view];
+    const onMove = (event: PointerEvent): void => {
+      const lane = document
+        .elementsFromPoint(event.clientX, event.clientY)
+        .find((element): element is HTMLElement =>
+          element instanceof HTMLElement && element.dataset["diaryLane"] !== undefined,
+        );
+      let laneId: string | null = null;
+      let startMs: number | null = null;
+      if (lane !== undefined) {
+        laneId = lane.dataset["diaryLane"] ?? null;
+        const rect = lane.getBoundingClientRect();
+        const rawMs = range.fromMs + ((event.clientX - rect.left) / pxPerHour) * HOUR;
+        const snapped = snapMs(rawMs, 15);
+        startMs = Math.min(Math.max(snapped, range.fromMs), range.toMs - 15 * 60_000);
+      }
+      setEnquiryDrag((current) =>
+        current === null ? null : { ...current, x: event.clientX, y: event.clientY, laneId, startMs },
+      );
+    };
+    const onUp = (): void => {
+      setEnquiryDrag((current) => {
+        if (current !== null && current.laneId !== null && current.startMs !== null) {
+          openConvertDrawer(current.enquiryId, {
+            spaceId: current.laneId,
+            startMs: current.startMs,
+          });
+        }
+        return null;
+      });
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setEnquiryDrag(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [enquiryDragActive, openConvertDrawer, range.fromMs, range.toMs, range.view]);
 
   const onDrawerSaved = useCallback(
     (message: string) => {
@@ -560,6 +644,7 @@ export function DiaryBoardPage(): ReactElement {
               }))}
               canConvert={writable}
               onConvertEnquiry={openConvertDrawer}
+              onBeginEnquiryDrag={writable ? beginEnquiryDrag : undefined}
             />
             <ConflictRail report={data.conflicts} onFocusEntry={focusEntry} />
             {entries.length === 0 ? (
@@ -586,6 +671,21 @@ export function DiaryBoardPage(): ReactElement {
       ) : null}
 
       {drag.confirming ? <InkConfirm onConfirm={drag.confirmDrop} onCancel={drag.cancel} /> : null}
+      {enquiryDrag !== null ? (
+        <div
+          className="diary-enquiry-ghost"
+          style={{ left: enquiryDrag.x + 12, top: enquiryDrag.y + 10 }}
+          aria-hidden="true"
+        >
+          <span className="diary-tray-item-title">{enquiryDrag.name}</span>
+          <span className="diary-enquiry-ghost-time">
+            {enquiryDrag.startMs !== null
+              ? BOARD_COPY.trayEnquiries.dropAt(formatWallTime(enquiryDrag.startMs))
+              : BOARD_COPY.trayEnquiries.dropSeeking}
+          </span>
+        </div>
+      ) : null}
+
       {toast !== null ? (
         <UndoToast
           key={toast.key}

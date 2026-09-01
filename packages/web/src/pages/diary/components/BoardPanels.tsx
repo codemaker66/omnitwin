@@ -85,6 +85,12 @@ export interface HoldingTrayProps {
   readonly enquiries: readonly TrayEnquiry[];
   readonly canConvert: boolean;
   readonly onConvertEnquiry: (enquiryId: string) => void;
+  /** Pointer drag from a slip onto a board lane (C1). The Pencil-in button
+   *  stays the keyboard/screen-reader path; the drag is an accelerator. */
+  readonly onBeginEnquiryDrag?: (
+    enquiry: TrayEnquiry,
+    event: React.PointerEvent<HTMLElement>,
+  ) => void;
 }
 
 export function HoldingTray({
@@ -93,6 +99,7 @@ export function HoldingTray({
   enquiries,
   canConvert,
   onConvertEnquiry,
+  onBeginEnquiryDrag,
 }: HoldingTrayProps): ReactElement {
   return (
     <section className="diary-panel diary-tray" aria-label={BOARD_COPY.tray.title}>
@@ -126,12 +133,23 @@ export function HoldingTray({
       )}
 
       <h3 className="diary-checks-title">{BOARD_COPY.trayEnquiries.title}</h3>
+      {canConvert && onBeginEnquiryDrag !== undefined && enquiries.length > 0 ? (
+        <p className="diary-tray-drag-hint">{BOARD_COPY.trayEnquiries.dragHint}</p>
+      ) : null}
       {enquiries.length === 0 ? (
         <p className="diary-panel-empty">{BOARD_COPY.trayEnquiries.empty}</p>
       ) : (
         <ul className="diary-tray-list">
           {enquiries.map((enquiry) => (
-            <li key={enquiry.id} className="diary-tray-enquiry">
+            <li
+              key={enquiry.id}
+              className={`diary-tray-enquiry${canConvert && onBeginEnquiryDrag !== undefined ? " is-draggable" : ""}`}
+              onPointerDown={
+                canConvert && onBeginEnquiryDrag !== undefined
+                  ? (event) => { onBeginEnquiryDrag(enquiry, event); }
+                  : undefined
+              }
+            >
               <span className="diary-tray-item-title">{enquiry.name}</span>
               <span className="diary-tray-item-reason">
                 {BOARD_COPY.trayEnquiries.detail(enquiry.eventType, enquiry.estimatedGuests)}
