@@ -21,7 +21,7 @@ import {
   widthPx,
   type BoardRange,
 } from "../lib/board-time.js";
-import { laneGaps, layoutLane, type PositionedBlock } from "../lib/board-layout.js";
+import { laneGaps, laneUtilisation, layoutLane, type PositionedBlock } from "../lib/board-layout.js";
 import type { BoardDrag, DragBlockDescriptor } from "../hooks/useBoardDrag.js";
 
 // ---------------------------------------------------------------------------
@@ -214,6 +214,24 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                         {BOARD_COPY.lane.holdCount(holdCount)}
                       </span>
                     </span>
+                    {(() => {
+                      const pct = Math.round(laneUtilisation(lane.blocks, range) * 100);
+                      return (
+                        <span
+                          className="diary-rail-utilisation"
+                          title={BOARD_COPY.rail.utilisationNote}
+                        >
+                          <span
+                            className="diary-rail-dial"
+                            style={{
+                              background: `conic-gradient(var(--diary-brass) ${String(pct)}%, rgba(246, 241, 232, 0.12) ${String(pct)}% 100%)`,
+                            }}
+                            aria-hidden="true"
+                          />
+                          {pct}%
+                        </span>
+                      );
+                    })()}
                   </span>
                 </div>
                 <div

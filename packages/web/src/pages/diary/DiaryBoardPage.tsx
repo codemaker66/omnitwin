@@ -38,6 +38,7 @@ import { BookingDrawer } from "./components/BookingDrawer.js";
 import { WelcomePanel } from "./components/WelcomePanel.js";
 import {
   type TrayEnquiry, ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
+import { BoardPalette, type PaletteResult } from "./components/BoardPalette.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import "./diary-board.css";
 
@@ -351,6 +352,45 @@ export function DiaryBoardPage(): ReactElement {
     [openDrawer, openEnquiries, user],
   );
 
+  // --- the finding palette (C1, Ctrl/Cmd-K) -------------------------------
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
+  const paletteResults = useMemo<readonly PaletteResult[]>(() => {
+    const query = paletteQuery.trim().toLowerCase();
+    if (query.length < 2 || data === null) return [];
+    const out: PaletteResult[] = [];
+    const roomName = (spaceId: string): string =>
+      data.rooms.find((room) => room.id === spaceId)?.name ?? "";
+    for (const room of data.rooms) {
+      if (room.name.toLowerCase().includes(query)) {
+        out.push({ kind: "room", id: room.id, label: room.name, detail: BOARD_COPY.palette.roomDetail });
+      }
+    }
+    for (const entry of data.entries) {
+      if (entry.entryType !== "booking") continue;
+      const hay = `${entry.title} ${entry.clientName ?? ""} ${entry.eventName ?? ""}`.toLowerCase();
+      if (hay.includes(query)) {
+        out.push({
+          kind: "booking",
+          id: entry.id,
+          label: entry.title,
+          detail: `${roomName(entry.spaceId)} · ${formatWallTime(Date.parse(entry.startsAt))}`,
+        });
+      }
+    }
+    for (const enquiry of openEnquiries) {
+      if (`${enquiry.name} ${enquiry.eventType ?? ""}`.toLowerCase().includes(query)) {
+        out.push({
+          kind: "enquiry",
+          id: enquiry.id,
+          label: enquiry.name,
+          detail: BOARD_COPY.palette.enquiryDetail,
+        });
+      }
+    }
+    return out.slice(0, 12);
+  }, [data, openEnquiries, paletteQuery]);
+
   // --- the unplaced clipboard's drag-on (C1) ------------------------------
   // A slip dragged from the tray follows the pointer as a paper chip; over a
   // room lane it announces the snapped pencil time, and release opens the
@@ -468,6 +508,11 @@ export function DiaryBoardPage(): ReactElement {
         undo();
         return;
       }
+      if ((event.ctrlKey || event.metaKey) && (event.key === "k" || event.key === "K")) {
+        event.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (drag.state.phase !== "idle") return;
       if (event.key === "t") setRange(view, Date.now());
@@ -488,6 +533,26 @@ export function DiaryBoardPage(): ReactElement {
     element.scrollIntoView({ block: "nearest", inline: "center" });
     element.focus({ preventScroll: true });
   }, []);
+
+  const pickPaletteResult = useCallback(
+    (result: PaletteResult) => {
+      setPaletteOpen(false);
+      setPaletteQuery("");
+      if (result.kind === "booking") {
+        focusEntry(result.id);
+        return;
+      }
+      if (result.kind === "room") {
+        document
+          .querySelector(`[data-diary-lane="${result.id}"]`)
+          ?.scrollIntoView({ block: "center", inline: "nearest" });
+        return;
+      }
+      if (writable) openConvertDrawer(result.id);
+    },
+    [focusEntry, openConvertDrawer, writable],
+  );
+
 
   if (user !== null && venueId === null) {
     return (
@@ -605,6 +670,15 @@ export function DiaryBoardPage(): ReactElement {
           <li className="diary-legend-item is-internal_block">{BOARD_COPY.legend.internal_block}</li>
           <li className="diary-legend-item is-phase">{BOARD_COPY.legend.phase}</li>
         </ul>
+      <footer className="diary-title-block" aria-label="Sheet details">
+        <span className="diary-title-block-name">{BOARD_COPY.titleBlock.sheet}</span>
+        <span className="diary-title-block-field">
+          {BOARD_COPY.titleBlock.drawnBy}: {BOARD_COPY.titleBlock.drawnByValue}
+        </span>
+        <span className="diary-title-block-field">
+          {BOARD_COPY.titleBlock.rangeLabel}: {rangeTitle(range)}
+        </span>
+      </footer>
       </header>
 
       {status === "error" ? (
@@ -671,6 +745,19 @@ export function DiaryBoardPage(): ReactElement {
       ) : null}
 
       {drag.confirming ? <InkConfirm onConfirm={drag.confirmDrop} onCancel={drag.cancel} /> : null}
+      {paletteOpen ? (
+        <BoardPalette
+          query={paletteQuery}
+          results={paletteResults}
+          onQueryChange={setPaletteQuery}
+          onPick={pickPaletteResult}
+          onClose={() => {
+            setPaletteOpen(false);
+            setPaletteQuery("");
+          }}
+        />
+      ) : null}
+
       {enquiryDrag !== null ? (
         <div
           className="diary-enquiry-ghost"

@@ -3,6 +3,7 @@ import type { CalendarBookingEntry, CalendarEntry, CalendarPhaseEntry } from "@o
 import {
   filterBoardEntries,
   laneGaps,
+  laneUtilisation,
   layoutLane,
   needsAction,
 } from "../board-layout.js";
@@ -161,6 +162,46 @@ describe("laneGaps — the dimensioned changeovers", () => {
     const gaps = laneGaps(laneFor([first, second]).blocks, undefined, SPACE);
     expect(gaps[0]?.minutes).toBe(30);
     expect(gaps[0]?.tight).toBe(false);
+  });
+});
+
+describe("laneUtilisation — booked share, pure arithmetic", () => {
+  const RANGE = {
+    fromMs: Date.parse("2026-09-18T00:00:00.000Z"),
+    toMs: Date.parse("2026-09-19T00:00:00.000Z"),
+  };
+
+  it("merges overlapping occupancies before measuring", () => {
+    const first = bookingEntry({
+      kind: "hold", state: "hold", rank: 1,
+      startsAt: "2026-09-18T10:00:00.000Z",
+      endsAt: "2026-09-18T16:00:00.000Z",
+    });
+    const second = bookingEntry({
+      kind: "hold", state: "hold", rank: 2,
+      startsAt: "2026-09-18T14:00:00.000Z",
+      endsAt: "2026-09-18T18:00:00.000Z",
+    });
+    const share = laneUtilisation(layoutLane([first, second], SPACE).blocks, RANGE);
+    expect(share).toBeCloseTo(8 / 24, 5);
+  });
+
+  it("clips to the visible range and ignores prospects", () => {
+    const spillsOut = bookingEntry({
+      startsAt: "2026-09-17T20:00:00.000Z",
+      endsAt: "2026-09-18T04:00:00.000Z",
+    });
+    const prospect = bookingEntry({
+      kind: "prospect", state: "prospect",
+      startsAt: "2026-09-18T10:00:00.000Z",
+      endsAt: "2026-09-18T22:00:00.000Z",
+    });
+    const share = laneUtilisation(layoutLane([spillsOut, prospect], SPACE).blocks, RANGE);
+    expect(share).toBeCloseTo(4 / 24, 5);
+  });
+
+  it("an empty lane is 0 percent, never NaN", () => {
+    expect(laneUtilisation([], RANGE)).toBe(0);
   });
 });
 

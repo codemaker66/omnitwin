@@ -1457,3 +1457,169 @@ a.diary-button {
   font-size: 0.68rem;
   color: rgba(43, 36, 27, 0.85);
 }
+
+
+/* --- utilisation dial (C1) ------------------------------------------------- */
+
+.diary-rail-utilisation {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--diary-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.64rem;
+  color: var(--vv-muted);
+}
+
+.diary-rail-dial {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.diary-rail-dial::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: #1b1510;
+}
+
+/* --- the finding palette (C1) ---------------------------------------------- */
+
+.diary-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(9, 8, 7, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.diary-palette {
+  width: min(560px, calc(100vw - 32px));
+  background:
+    var(--diary-grain),
+    linear-gradient(180deg, #241d14, #1b1510);
+  border: 1px solid rgba(198, 161, 91, 0.45);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diary-palette-input {
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--vv-cream);
+  background: rgba(9, 8, 7, 0.6);
+  border: 1px solid var(--diary-line);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.diary-palette-input:focus-visible {
+  outline: 2px solid var(--vv-focus);
+}
+
+.diary-palette-empty {
+  margin: 2px 4px 6px;
+  font-size: 0.78rem;
+  color: var(--vv-muted);
+}
+
+.diary-palette-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.diary-palette-result {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--vv-cream);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.diary-palette-result:hover,
+.diary-palette-result:focus-visible {
+  background: rgba(198, 161, 91, 0.12);
+  border-color: rgba(198, 161, 91, 0.3);
+  outline: none;
+}
+
+.diary-palette-kind {
+  flex: 0 0 auto;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--diary-brass);
+  border: 1px solid rgba(198, 161, 91, 0.4);
+  border-radius: 3px;
+  padding: 0 5px;
+}
+
+.diary-palette-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diary-palette-detail {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--diary-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.68rem;
+  color: var(--vv-muted);
+}
+
+/* --- the drawing-sheet title block (C1) ------------------------------------ */
+
+.diary-title-block {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid rgba(198, 161, 91, 0.45);
+  border-radius: 4px;
+  overflow: hidden;
+  font-family: var(--diary-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(217, 185, 107, 0.9);
+  background: linear-gradient(180deg, #241d14, #1b1510);
+}
+
+.diary-title-block > span {
+  padding: 5px 12px;
+  border-left: 1px solid rgba(198, 161, 91, 0.3);
+  white-space: nowrap;
+}
+
+.diary-title-block > span:first-child {
+  border-left: 0;
+  color: #241c10;
+  background: linear-gradient(180deg, var(--diary-brass-bright), var(--diary-brass-deep));
+  font-weight: 700;
+}

@@ -31,6 +31,31 @@ export const BOARD_COPY = {
     tightGap: (guidelineMinutes: number): string =>
       `under the ${String(guidelineMinutes)}m guideline`,
   },
+
+  /** Ctrl/Cmd-K finding palette (C1). */
+  palette: {
+    title: "Find on the board",
+    placeholder: "Rooms, events, clients…",
+    empty:
+      "Nothing in view matches — the search covers the visible range and open enquiries.",
+    kinds: { room: "Room", booking: "Booking", enquiry: "Enquiry" } as const,
+    roomDetail: "Jump to lane",
+    enquiryDetail: "Open the pencil-in form",
+  },
+
+  /** Lane rail extras (C1). */
+  rail: {
+    utilisationNote:
+      "Booked share of the visible range — arithmetic from the diary, not advice.",
+  },
+
+  /** The drawing-sheet title block (C1). Labels only — no claims. */
+  titleBlock: {
+    sheet: "The Diary · booking command centre",
+    drawnBy: "Drawn from",
+    drawnByValue: "the live diary",
+    rangeLabel: "Sheet",
+  },
   today: "Today",
   previous: "Earlier",
   next: "Later",

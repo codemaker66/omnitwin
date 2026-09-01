@@ -219,6 +219,36 @@ export function laneGaps(
   return result;
 }
 
+
+/** Booked share of a range on one lane: the union of active, non-prospect
+ *  occupancy extents clipped to the range, over the range's length. Pure
+ *  arithmetic from the diary — never advice. */
+export function laneUtilisation(
+  blocks: readonly PositionedBlock[],
+  range: { readonly fromMs: number; readonly toMs: number },
+): number {
+  const spans = blocks
+    .filter((block) => block.entry.status === "active" && block.entry.kind !== "prospect")
+    .map((block) => blockExtent(block))
+    .map((extent) => ({
+      startMs: Math.max(extent.startMs, range.fromMs),
+      endMs: Math.min(extent.endMs, range.toMs),
+    }))
+    .filter((extent) => extent.endMs > extent.startMs)
+    .sort((a, b) => a.startMs - b.startMs);
+  let occupied = 0;
+  let cursor = -Infinity;
+  for (const span of spans) {
+    const from = Math.max(span.startMs, cursor);
+    if (span.endMs > from) {
+      occupied += span.endMs - from;
+      cursor = span.endMs;
+    }
+  }
+  const total = range.toMs - range.fromMs;
+  return total <= 0 ? 0 : occupied / total;
+}
+
 export interface BoardFilter {
   readonly showExited: boolean;
 }
