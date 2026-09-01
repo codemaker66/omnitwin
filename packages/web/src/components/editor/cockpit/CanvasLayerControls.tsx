@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, type ReactElement } from "react";
+import { useEffect, useMemo, type ReactElement } from "react";
 import { Cuboid, Sparkles, Layers3, Footprints, type LucideIcon } from "lucide-react";
 import { COCKPIT_LAYER_MODES, type CockpitLayerMode } from "../../../lib/cockpit-modes.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -126,14 +126,11 @@ export function CanvasLayerControls(): ReactElement {
           }
           data-testid="planner-walk-toggle"
           onClick={() => {
-            // Entering walk mounts a camera into a scene holding millions of
-            // gaussians. Inside a discrete event React flushes that mount
-            // synchronously, which on a slow GPU wedges the main thread hard
-            // enough that even devtools evaluates starve; the same mount
-            // scheduled as a transition completes cleanly (proven by bisect:
-            // store-driven entry works, click-driven entry hung). Non-urgent
-            // is also simply true — this is a mode change, not a keystroke.
-            startTransition(() => { useCockpitStore.getState().setWalkMode(!walkMode); });
+            // A plain synchronous flip, deliberately: the store-driven bisect
+            // proved this exact mount path healthy, and wrapping the flip in
+            // startTransition made R3F's first walk frame wedge intermittently
+            // (a transition-committed Canvas subtree meeting the demand loop).
+            useCockpitStore.getState().setWalkMode(!walkMode);
           }}
         >
           <Footprints size={14} aria-hidden="true" />
