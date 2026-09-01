@@ -204,6 +204,7 @@ flowchart TD
         T561(["T-561 - all-source panorama visual-scope successor"])
         T562(["T-562 - source-only fixed-camera browser/native bake-off"])
         T563(["T-563 - raw-to-processed pose-lineage diagnostic"])
+        T564(["T-564 - pose-blind E57 cubeface extrinsics"])
     end
 
     subgraph B [b · next 2 weeks — gap closing + ops follow-on]
@@ -587,6 +588,8 @@ flowchart TD
     T550 --> T561
     T550 --> T562
     T553 --> T563
+    T559 --> T564
+    T560 --> T564
 
     classDef done fill:#b8965a,color:#1a2e3b
     classDef inprogress fill:#7d9579,color:#f4ede0
@@ -694,7 +697,12 @@ acceptance, difficult-oblique coverage, captured-master selection, and metric
 authority. T-563 binds
 the raw and processed XGRIDS trajectories and retains only authority-none
 component-order and similarity diagnostics; it does not establish an optical
-camera, physical units, E57 registration, room membership, or runtime use. No push,
+camera, physical units, E57 registration, room membership, or runtime use. T-564
+independently recovers the exact native E57 six-face camera convention for scans
+40–47 from coloured points and bound JPEGs without reading stored Image2D poses.
+Its candidate extrinsics remain authority-none and cannot establish external
+panorama correspondence, Grand Hall membership, masks, cross-source registration,
+training eligibility, reconstruction input, or runtime use. No push,
 merge, deployment,
 intake activation, source mutation, LCC launch, or generative enhancement is
 implied by either subgraph.

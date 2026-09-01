@@ -1,0 +1,31 @@
+{
+  "authority": "none",
+  "configurationSha256": "8cbe8ee76ca43f94a14744015815726ca39b682dc3d06c2013d187588ea10203",
+  "evidenceGradeDependencyAttestationPassed": true,
+  "files": [
+    {
+      "relativePath": "cubeface-extrinsics-authority-none.json",
+      "sha256": "27d247086fbbf85e3ec53397dd8fa79616d7ceb0a9618345d57055c0e44e71bd",
+      "sizeBytes": 744483
+    }
+  ],
+  "generatorSha256": "7e914c705ae1a78cb5a3071aa332bda37577d3fb941d0dba2a32a9275f440781",
+  "permissions": {
+    "correspondenceAccepted": false,
+    "humanRoomAcceptanceInferred": false,
+    "metricTransformAuthorityGranted": false,
+    "productionTrustPermitted": false,
+    "providerInputPermitted": false,
+    "publicExposurePermitted": false,
+    "publicationPermitted": false,
+    "reconstructionInputPermitted": false,
+    "roomMembershipAccepted": false,
+    "runtimeInputPermitted": false,
+    "stagingPermitted": false,
+    "trainingInputPermitted": false
+  },
+  "publicationComplete": true,
+  "receiptWrittenLast": true,
+  "schemaVersion": "venviewer.e57-cubeface-extrinsics-publication-authority-none.v1",
+  "sourceBindingsSha256": "658114bf3f9d4cd6a2a8743dfc21dde20b56026a54a80d1df1b2f3de0c41ced3"
+}
