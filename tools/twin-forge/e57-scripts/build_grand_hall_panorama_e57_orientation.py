@@ -995,7 +995,16 @@ def _generator_binding(repo_root: Path, reviewed_git_sha: str) -> dict[str, obje
             check=True, capture_output=True, timeout=30,
         ).stdout
         if working != committed:
-            raise ValueError(f"generator file differs from reviewed Git blob: {relative}")
+            filtered_object = subprocess.run(
+                ["git", "hash-object", f"--path={relative}", "--", relative],
+                cwd=repo_root, check=True, capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
+            committed_object = subprocess.run(
+                ["git", "rev-parse", f"{reviewed_git_sha}:{relative}"],
+                cwd=repo_root, check=True, capture_output=True, text=True, timeout=30,
+            ).stdout.strip()
+            if filtered_object != committed_object:
+                raise ValueError(f"generator file differs from reviewed Git blob: {relative}")
         files.append({
             "relativePath": relative,
             "sha256": sha256_bytes(working),
