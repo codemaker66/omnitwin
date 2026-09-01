@@ -237,6 +237,12 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
 
   test("walk: stand in the captured room at eye level; Escape returns to plan view", async ({ page }) => {
     test.setTimeout(240_000);
+    // Surface anything the canvas error boundary would swallow: a useFrame
+    // exception kills the loop silently and reads as "camera never published".
+    page.on("pageerror", (error) => { console.log(`[pageerror] ${error.message}`); });
+    page.on("console", (message) => {
+      if (message.type() === "error") console.log(`[console] ${message.text().slice(0, 200)}`);
+    });
     await stubPlannerBootstrap(page);
     await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
       void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
@@ -264,12 +270,21 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     // The walk camera publishes its containment; standing in the room means
     // inside the walk bounds at human eye height. The poll carries the mount
     // gates so a failure names the gate that refused instead of a bare null.
-    await expect
-      .poll(() => page.evaluate(() => JSON.stringify({
+    let walkState = "";
+    for (let sample = 0; sample < 20; sample += 1) {
+      walkState = await page.evaluate(() => JSON.stringify({
         contained: window.__roomCamera?.contained ?? null,
         gates: window.__walkDebug ?? null,
-      })), { timeout: 15_000 })
-      .toContain('"contained":true');
+        // InteriorCamera's listener effect sets this; it is the one-bit
+        // answer to "did the component actually commit and run effects".
+        interiorMounted: document.querySelector("canvas")?.style.touchAction === "none",
+        canvases: document.querySelectorAll("canvas").length,
+      }));
+      console.log(`[walk:${String(sample)}] ${walkState}`);
+      if (walkState.includes('"contained":true')) break;
+      await page.waitForTimeout(750);
+    }
+    expect(walkState).toContain('"contained":true');
     const eyeY = await page.evaluate(() => window.__roomCamera?.position[1] ?? 0);
     expect(eyeY).toBeGreaterThan(1);
     expect(eyeY).toBeLessThan(2.6);
