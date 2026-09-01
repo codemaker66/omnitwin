@@ -398,6 +398,16 @@ export const CalendarBookingEntrySchema = z.object({
   nextActionDueAt: IsoInstantSchema.nullable(),
   eventId: z.string().uuid().nullable(),
   seriesId: z.string().uuid().nullable(),
+  // --- Command Centre card face (C1) -------------------------------------
+  // Optional so older servers and recorded fixtures stay valid (the
+  // turnaroundRules contract); nullable because a booking may have no
+  // event, or the event may be soft-deleted. guestCount is the event's
+  // legacy working number — the headcount triple stays server-side until
+  // a card needs it. notes is the booking's own margin note.
+  eventName: z.string().max(200).nullable().optional(),
+  clientName: z.string().max(200).nullable().optional(),
+  guestCount: z.number().int().nonnegative().nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
 });
 export type CalendarBookingEntry = z.infer<typeof CalendarBookingEntrySchema>;
 

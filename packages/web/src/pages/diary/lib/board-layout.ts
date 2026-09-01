@@ -1,4 +1,8 @@
-import type { CalendarBookingEntry, CalendarEntry, CalendarPhaseEntry } from "@omnitwin/types";
+import {
+  resolveTurnaroundGuideline,
+} from "../../../lib/turnaround-guidelines.js";
+import type {
+  CalendarTurnaroundRule, CalendarBookingEntry, CalendarEntry, CalendarPhaseEntry } from "@omnitwin/types";
 
 // ---------------------------------------------------------------------------
 // Board lane layout (T-493; Canon §8/§18). Pure functions:
@@ -143,6 +147,106 @@ export function layoutLane(entries: readonly CalendarEntry[], spaceId: string): 
     blocks,
     orphanPhases,
   };
+}
+
+
+// ---------------------------------------------------------------------------
+// Changeover gaps (C1) — the dimensioned spans between neighbouring
+// occupancies on a lane, drawn like an architect's dimension line. A gap is
+// TIGHT only where the server engine would measure it (ink into ink, the
+// guideline resolved for the INCOMING side's eventType) and the gap falls
+// short of the guideline. Guidance, never a ruling.
+// ---------------------------------------------------------------------------
+
+export interface LaneGap {
+  readonly id: string;
+  readonly startMs: number;
+  readonly endMs: number;
+  readonly minutes: number;
+  /** Set only when both neighbours are ink and a guideline resolves. */
+  readonly guidelineMinutes: number | null;
+  readonly guidelineName: string | null;
+  readonly tight: boolean;
+}
+
+/** A block's occupancy extent: booking window stretched over its attached
+ *  phase segments (the same merge the engine and the ribbon use). */
+function blockExtent(block: PositionedBlock): { startMs: number; endMs: number } {
+  let startMs = block.startMs;
+  let endMs = block.endMs;
+  for (const segment of block.segments) {
+    if (segment.startMs < startMs) startMs = segment.startMs;
+    if (segment.endMs > endMs) endMs = segment.endMs;
+  }
+  return { startMs, endMs };
+}
+
+export function laneGaps(
+  blocks: readonly PositionedBlock[],
+  rules: readonly CalendarTurnaroundRule[] | undefined,
+  spaceId: string,
+): readonly LaneGap[] {
+  // Prospects never block, exits are history — neither takes part in a
+  // changeover. Everything else occupies the room.
+  const occupants = blocks
+    .filter((block) => block.entry.status === "active" && block.entry.kind !== "prospect")
+    .map((block) => ({ block, extent: blockExtent(block) }))
+    .sort((a, b) => a.extent.startMs - b.extent.startMs || (a.block.entry.id < b.block.entry.id ? -1 : 1));
+
+  const result: LaneGap[] = [];
+  for (let index = 0; index + 1 < occupants.length; index += 1) {
+    const previous = occupants[index];
+    const next = occupants[index + 1];
+    if (previous === undefined || next === undefined) continue;
+    const startMs = previous.extent.endMs;
+    const endMs = next.extent.startMs;
+    if (endMs <= startMs) continue; // overlap — the conflict checks' domain
+    const inkPair = previous.block.entry.kind === "ink" && next.block.entry.kind === "ink";
+    const guideline = inkPair
+      ? resolveTurnaroundGuideline(rules, spaceId, next.block.entry.eventType)
+      : null;
+    const minutes = Math.round((endMs - startMs) / 60_000);
+    result.push({
+      id: `${previous.block.entry.id}:${next.block.entry.id}`,
+      startMs,
+      endMs,
+      minutes,
+      guidelineMinutes: guideline?.minutes ?? null,
+      guidelineName: guideline?.name ?? null,
+      tight: guideline !== null && minutes < guideline.minutes,
+    });
+  }
+  return result;
+}
+
+
+/** Booked share of a range on one lane: the union of active, non-prospect
+ *  occupancy extents clipped to the range, over the range's length. Pure
+ *  arithmetic from the diary — never advice. */
+export function laneUtilisation(
+  blocks: readonly PositionedBlock[],
+  range: { readonly fromMs: number; readonly toMs: number },
+): number {
+  const spans = blocks
+    .filter((block) => block.entry.status === "active" && block.entry.kind !== "prospect")
+    .map((block) => blockExtent(block))
+    .map((extent) => ({
+      startMs: Math.max(extent.startMs, range.fromMs),
+      endMs: Math.min(extent.endMs, range.toMs),
+    }))
+    .filter((extent) => extent.endMs > extent.startMs)
+    .sort((a, b) => a.startMs - b.startMs);
+  let occupied = 0;
+  let cursor = -Infinity;
+  for (const span of spans) {
+    const from = Math.max(span.startMs, cursor);
+    if (span.endMs > from) {
+      occupied += span.endMs - from;
+      cursor = span.endMs;
+    }
+  }
+  const total = range.toMs - range.fromMs;
+  return total <= 0 ? 0 : occupied / total;
 }
 
 export interface BoardFilter {

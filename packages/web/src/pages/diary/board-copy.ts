@@ -20,7 +20,42 @@ export const BOARD_COPY = {
   emptyRange: "Nothing in the diary for this range yet.",
   showExited: "Show released & cancelled",
 
-  views: { day: "Day", week: "Week", month: "Month" } as const,
+  views: { day: "Day", week: "Week", "2w": "2W", month: "Month" } as const,
+
+  /** The Command Centre card face (C1). Doors language, never compliance;
+   *  the countdown is minute-granular on the shared board clock. */
+  card: {
+    doorsIn: (label: string): string => `Doors in ${label}`,
+    guests: (count: number): string => `${String(count)} guests`,
+    segments: { setup: "Setup", live: "Live", teardown: "Teardown" } as const,
+    tightGap: (guidelineMinutes: number): string =>
+      `under the ${String(guidelineMinutes)}m guideline`,
+  },
+
+  /** Ctrl/Cmd-K finding palette (C1). */
+  palette: {
+    title: "Find on the board",
+    placeholder: "Rooms, events, clients…",
+    empty:
+      "Nothing in view matches — the search covers the visible range and open enquiries.",
+    kinds: { room: "Room", booking: "Booking", enquiry: "Enquiry" } as const,
+    roomDetail: "Jump to lane",
+    enquiryDetail: "Open the pencil-in form",
+  },
+
+  /** Lane rail extras (C1). */
+  rail: {
+    utilisationNote:
+      "Booked share of the visible range — arithmetic from the diary, not advice.",
+  },
+
+  /** The drawing-sheet title block (C1). Labels only — no claims. */
+  titleBlock: {
+    sheet: "The Diary · booking command centre",
+    drawnBy: "Drawn from",
+    drawnByValue: "the live diary",
+    rangeLabel: "Sheet",
+  },
   today: "Today",
   previous: "Earlier",
   next: "Later",
@@ -119,6 +154,9 @@ export const BOARD_COPY = {
   },
 
   trayEnquiries: {
+    dragHint: "Drag a slip onto a room lane to pencil it in.",
+    dropAt: (time: string): string => `Pencil at ${time}`,
+    dropSeeking: "Drop on a room lane",
     title: "Open enquiries",
     empty: "No open enquiries right now.",
     convert: "Pencil in…",

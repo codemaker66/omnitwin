@@ -11,6 +11,8 @@ import { ApiError } from "../../api/client.js";
 import { moveBooking } from "../../api/diary.js";
 import { BOARD_COPY } from "./board-copy.js";
 import {
+  formatWallTime,
+  snapMs,
   boardRange,
   rangeTitle,
   shiftRange,
@@ -34,7 +36,9 @@ import { listEnquiries, type Enquiry } from "../../api/enquiries.js";
 import { BoardGrid } from "./components/BoardGrid.js";
 import { BookingDrawer } from "./components/BookingDrawer.js";
 import { WelcomePanel } from "./components/WelcomePanel.js";
-import { ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
+import {
+  type TrayEnquiry, ConflictRail, HoldingTray, InkConfirm, UndoToast } from "./components/BoardPanels.js";
+import { BoardPalette, type PaletteResult } from "./components/BoardPalette.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
 import "./diary-board.css";
 
@@ -48,14 +52,17 @@ import "./diary-board.css";
 // split server-side). URL carries ?view=&date= so board positions deep-link.
 // ---------------------------------------------------------------------------
 
-const PX_PER_HOUR: Record<BoardView, number> = { day: 96, week: 18, month: 3 };
-const VIEWS: readonly BoardView[] = ["day", "week", "month"];
+const PX_PER_HOUR: Record<BoardView, number> = { day: 96, week: 18, "2w": 9, month: 3 };
+// The toolbar offers the reference sheet's three zooms. Month stays in the
+// union and URL-reachable (?view=month, the m key) so old deep links keep
+// working — a deliberate compat decision, not an oversight.
+const VIEWS: readonly BoardView[] = ["day", "week", "2w"];
 const TOAST_MS = 7_000;
 const NOW_TICK_MS = 60_000;
 const SEVERITY_RANK: Record<ConflictSeverity, number> = { blocking: 3, warning: 2, info: 1 };
 
 function isBoardView(value: string | null): value is BoardView {
-  return value === "day" || value === "week" || value === "month";
+  return value === "day" || value === "week" || value === "2w" || value === "month";
 }
 
 function anchorFromParam(dateParam: string | null): number {
@@ -326,7 +333,7 @@ export function DiaryBoardPage(): ReactElement {
   }, [openDrawer, range.fromMs, rooms, user]);
 
   const openConvertDrawer = useCallback(
-    (enquiryId: string) => {
+    (enquiryId: string, drop?: { readonly spaceId: string; readonly startMs: number }) => {
       const enquiry = openEnquiries.find((candidate) => candidate.id === enquiryId);
       if (enquiry === undefined || user === null) return;
       openDrawer({
@@ -339,10 +346,130 @@ export function DiaryBoardPage(): ReactElement {
           preferredDate: enquiry.preferredDate,
         },
         ownerUserId: user.id,
+        ...(drop === undefined ? {} : { drop }),
       });
     },
     [openDrawer, openEnquiries, user],
   );
+
+  // --- the finding palette (C1, Ctrl/Cmd-K) -------------------------------
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState("");
+  const paletteResults = useMemo<readonly PaletteResult[]>(() => {
+    const query = paletteQuery.trim().toLowerCase();
+    if (query.length < 2 || data === null) return [];
+    const out: PaletteResult[] = [];
+    const roomName = (spaceId: string): string =>
+      data.rooms.find((room) => room.id === spaceId)?.name ?? "";
+    for (const room of data.rooms) {
+      if (room.name.toLowerCase().includes(query)) {
+        out.push({ kind: "room", id: room.id, label: room.name, detail: BOARD_COPY.palette.roomDetail });
+      }
+    }
+    for (const entry of data.entries) {
+      if (entry.entryType !== "booking") continue;
+      const hay = `${entry.title} ${entry.clientName ?? ""} ${entry.eventName ?? ""}`.toLowerCase();
+      if (hay.includes(query)) {
+        out.push({
+          kind: "booking",
+          id: entry.id,
+          label: entry.title,
+          detail: `${roomName(entry.spaceId)} · ${formatWallTime(Date.parse(entry.startsAt))}`,
+        });
+      }
+    }
+    for (const enquiry of openEnquiries) {
+      if (`${enquiry.name} ${enquiry.eventType ?? ""}`.toLowerCase().includes(query)) {
+        out.push({
+          kind: "enquiry",
+          id: enquiry.id,
+          label: enquiry.name,
+          detail: BOARD_COPY.palette.enquiryDetail,
+        });
+      }
+    }
+    return out.slice(0, 12);
+  }, [data, openEnquiries, paletteQuery]);
+
+  // --- the unplaced clipboard's drag-on (C1) ------------------------------
+  // A slip dragged from the tray follows the pointer as a paper chip; over a
+  // room lane it announces the snapped pencil time, and release opens the
+  // SAME convert drawer, prefilled — the drawer keeps every rule (hold
+  // hygiene, kinds, validation). Escape or releasing off-lane cancels.
+  const [enquiryDrag, setEnquiryDrag] = useState<{
+    readonly enquiryId: string;
+    readonly name: string;
+    readonly x: number;
+    readonly y: number;
+    readonly laneId: string | null;
+    readonly startMs: number | null;
+  } | null>(null);
+
+  const beginEnquiryDrag = useCallback(
+    (enquiry: TrayEnquiry, event: React.PointerEvent<HTMLElement>) => {
+      if (!writable) return;
+      event.preventDefault();
+      setEnquiryDrag({
+        enquiryId: enquiry.id,
+        name: enquiry.name,
+        x: event.clientX,
+        y: event.clientY,
+        laneId: null,
+        startMs: null,
+      });
+    },
+    [writable],
+  );
+
+  const enquiryDragActive = enquiryDrag !== null;
+  useEffect(() => {
+    if (!enquiryDragActive) return;
+    const HOUR = 3_600_000;
+    const pxPerHour = PX_PER_HOUR[range.view];
+    const onMove = (event: PointerEvent): void => {
+      const lane = document
+        .elementsFromPoint(event.clientX, event.clientY)
+        .find((element): element is HTMLElement =>
+          element instanceof HTMLElement && element.dataset["diaryLane"] !== undefined,
+        );
+      let laneId: string | null = null;
+      let startMs: number | null = null;
+      if (lane !== undefined) {
+        laneId = lane.dataset["diaryLane"] ?? null;
+        const rect = lane.getBoundingClientRect();
+        const rawMs = range.fromMs + ((event.clientX - rect.left) / pxPerHour) * HOUR;
+        const snapped = snapMs(rawMs, 15);
+        startMs = Math.min(Math.max(snapped, range.fromMs), range.toMs - 15 * 60_000);
+      }
+      setEnquiryDrag((current) =>
+        current === null ? null : { ...current, x: event.clientX, y: event.clientY, laneId, startMs },
+      );
+    };
+    const onUp = (): void => {
+      setEnquiryDrag((current) => {
+        if (current !== null && current.laneId !== null && current.startMs !== null) {
+          openConvertDrawer(current.enquiryId, {
+            spaceId: current.laneId,
+            startMs: current.startMs,
+          });
+        }
+        return null;
+      });
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setEnquiryDrag(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [enquiryDragActive, openConvertDrawer, range.fromMs, range.toMs, range.view]);
 
   const onDrawerSaved = useCallback(
     (message: string) => {
@@ -381,11 +508,17 @@ export function DiaryBoardPage(): ReactElement {
         undo();
         return;
       }
+      if ((event.ctrlKey || event.metaKey) && (event.key === "k" || event.key === "K")) {
+        event.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (drag.state.phase !== "idle") return;
       if (event.key === "t") setRange(view, Date.now());
       else if (event.key === "d") setRange("day", anchorMs);
       else if (event.key === "w") setRange("week", anchorMs);
+      else if (event.key === "f") setRange("2w", anchorMs);
       else if (event.key === "m") setRange("month", anchorMs);
     };
     window.addEventListener("keydown", onKeyDown);
@@ -400,6 +533,26 @@ export function DiaryBoardPage(): ReactElement {
     element.scrollIntoView({ block: "nearest", inline: "center" });
     element.focus({ preventScroll: true });
   }, []);
+
+  const pickPaletteResult = useCallback(
+    (result: PaletteResult) => {
+      setPaletteOpen(false);
+      setPaletteQuery("");
+      if (result.kind === "booking") {
+        focusEntry(result.id);
+        return;
+      }
+      if (result.kind === "room") {
+        document
+          .querySelector(`[data-diary-lane="${result.id}"]`)
+          ?.scrollIntoView({ block: "center", inline: "nearest" });
+        return;
+      }
+      if (writable) openConvertDrawer(result.id);
+    },
+    [focusEntry, openConvertDrawer, writable],
+  );
+
 
   if (user !== null && venueId === null) {
     return (
@@ -517,6 +670,15 @@ export function DiaryBoardPage(): ReactElement {
           <li className="diary-legend-item is-internal_block">{BOARD_COPY.legend.internal_block}</li>
           <li className="diary-legend-item is-phase">{BOARD_COPY.legend.phase}</li>
         </ul>
+      <footer className="diary-title-block" aria-label="Sheet details">
+        <span className="diary-title-block-name">{BOARD_COPY.titleBlock.sheet}</span>
+        <span className="diary-title-block-field">
+          {BOARD_COPY.titleBlock.drawnBy}: {BOARD_COPY.titleBlock.drawnByValue}
+        </span>
+        <span className="diary-title-block-field">
+          {BOARD_COPY.titleBlock.rangeLabel}: {rangeTitle(range)}
+        </span>
+      </footer>
       </header>
 
       {status === "error" ? (
@@ -542,6 +704,7 @@ export function DiaryBoardPage(): ReactElement {
             drag={drag}
             writable={writable}
             nowMs={nowMs}
+            turnaroundRules={data.turnaroundRules}
           />
           <aside className="diary-side">
             <HoldingTray
@@ -555,6 +718,7 @@ export function DiaryBoardPage(): ReactElement {
               }))}
               canConvert={writable}
               onConvertEnquiry={openConvertDrawer}
+              onBeginEnquiryDrag={writable ? beginEnquiryDrag : undefined}
             />
             <ConflictRail report={data.conflicts} onFocusEntry={focusEntry} />
             {entries.length === 0 ? (
@@ -581,6 +745,34 @@ export function DiaryBoardPage(): ReactElement {
       ) : null}
 
       {drag.confirming ? <InkConfirm onConfirm={drag.confirmDrop} onCancel={drag.cancel} /> : null}
+      {paletteOpen ? (
+        <BoardPalette
+          query={paletteQuery}
+          results={paletteResults}
+          onQueryChange={setPaletteQuery}
+          onPick={pickPaletteResult}
+          onClose={() => {
+            setPaletteOpen(false);
+            setPaletteQuery("");
+          }}
+        />
+      ) : null}
+
+      {enquiryDrag !== null ? (
+        <div
+          className="diary-enquiry-ghost"
+          style={{ left: enquiryDrag.x + 12, top: enquiryDrag.y + 10 }}
+          aria-hidden="true"
+        >
+          <span className="diary-tray-item-title">{enquiryDrag.name}</span>
+          <span className="diary-enquiry-ghost-time">
+            {enquiryDrag.startMs !== null
+              ? BOARD_COPY.trayEnquiries.dropAt(formatWallTime(enquiryDrag.startMs))
+              : BOARD_COPY.trayEnquiries.dropSeeking}
+          </span>
+        </div>
+      ) : null}
+
       {toast !== null ? (
         <UndoToast
           key={toast.key}

@@ -14,7 +14,7 @@
 
 export const VENUE_TIME_ZONE = "Europe/London";
 
-export type BoardView = "day" | "week" | "month";
+export type BoardView = "day" | "week" | "2w" | "month";
 
 export interface BoardRange {
   readonly view: BoardView;
@@ -146,29 +146,52 @@ function previousLocalMidnight(midnightMs: number, timeZone: string): number {
   return localMidnight(midnightMs - 12 * HOUR_MS, timeZone);
 }
 
+function mondayOf(anchorMs: number, timeZone: string): number {
+  let monday = localMidnight(anchorMs, timeZone);
+  for (let i = 0; i < 6 && wallParts(monday, timeZone).weekday !== "Mon"; i += 1) {
+    monday = previousLocalMidnight(monday, timeZone);
+  }
+  return monday;
+}
+
+function addLocalDays(midnightMs: number, days: number, timeZone: string): number {
+  let ms = midnightMs;
+  for (let i = 0; i < days; i += 1) ms = nextLocalMidnight(ms, timeZone);
+  return ms;
+}
+
+// Exhaustive by construction: an unhandled view is a compile error, never a
+// silent month board (the pre-2w code fell through if/else to month).
 export function boardRange(
   anchorMs: number,
   view: BoardView,
   timeZone: string = VENUE_TIME_ZONE,
 ): BoardRange {
-  if (view === "day") {
-    const fromMs = localMidnight(anchorMs, timeZone);
-    return { view, fromMs, toMs: nextLocalMidnight(fromMs, timeZone) };
-  }
-  if (view === "week") {
-    let monday = localMidnight(anchorMs, timeZone);
-    for (let i = 0; i < 6 && wallParts(monday, timeZone).weekday !== "Mon"; i += 1) {
-      monday = previousLocalMidnight(monday, timeZone);
+  switch (view) {
+    case "day": {
+      const fromMs = localMidnight(anchorMs, timeZone);
+      return { view, fromMs, toMs: nextLocalMidnight(fromMs, timeZone) };
     }
-    let toMs = monday;
-    for (let i = 0; i < 7; i += 1) toMs = nextLocalMidnight(toMs, timeZone);
-    return { view, fromMs: monday, toMs };
+    case "week": {
+      const monday = mondayOf(anchorMs, timeZone);
+      return { view, fromMs: monday, toMs: addLocalDays(monday, 7, timeZone) };
+    }
+    case "2w": {
+      const monday = mondayOf(anchorMs, timeZone);
+      return { view, fromMs: monday, toMs: addLocalDays(monday, 14, timeZone) };
+    }
+    case "month": {
+      const wall = wallParts(anchorMs, timeZone);
+      const fromMs = instantForWall(wall.year, wall.month, 1, timeZone);
+      const nextYear = wall.month === 12 ? wall.year + 1 : wall.year;
+      const nextMonth = wall.month === 12 ? 1 : wall.month + 1;
+      return { view, fromMs, toMs: instantForWall(nextYear, nextMonth, 1, timeZone) };
+    }
+    default: {
+      const exhausted: never = view;
+      throw new Error(`Unhandled board view: ${String(exhausted)}`);
+    }
   }
-  const wall = wallParts(anchorMs, timeZone);
-  const fromMs = instantForWall(wall.year, wall.month, 1, timeZone);
-  const nextYear = wall.month === 12 ? wall.year + 1 : wall.year;
-  const nextMonth = wall.month === 12 ? 1 : wall.month + 1;
-  return { view, fromMs, toMs: instantForWall(nextYear, nextMonth, 1, timeZone) };
 }
 
 export function shiftRange(
@@ -266,11 +289,22 @@ export function hourTicks(
 }
 
 export function rangeTitle(range: BoardRange, timeZone: string = VENUE_TIME_ZONE): string {
-  if (range.view === "day") return formatWallDayFull(range.fromMs, timeZone);
-  if (range.view === "week") return `Week of ${formatWallDayFull(range.fromMs, timeZone)}`;
-  return cachedFormatter(`month:${timeZone}`, {
-    timeZone,
-    month: "long",
-    year: "numeric",
-  }).format(new Date(range.fromMs));
+  switch (range.view) {
+    case "day":
+      return formatWallDayFull(range.fromMs, timeZone);
+    case "week":
+      return `Week of ${formatWallDayFull(range.fromMs, timeZone)}`;
+    case "2w":
+      return `Fortnight of ${formatWallDayFull(range.fromMs, timeZone)}`;
+    case "month":
+      return cachedFormatter(`month:${timeZone}`, {
+        timeZone,
+        month: "long",
+        year: "numeric",
+      }).format(new Date(range.fromMs));
+    default: {
+      const exhausted: never = range.view;
+      throw new Error(`Unhandled board view: ${String(exhausted)}`);
+    }
+  }
 }

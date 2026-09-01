@@ -18,6 +18,7 @@
     "visual-check": "node scripts/visual-check.mjs",
     "visual-check:day-board": "node scripts/day-board-visual-check.mjs",
     "visual-check:when-ribbon": "node scripts/when-ribbon-visual-check.mjs",
+    "visual-check:command-centre": "node scripts/command-centre-visual-check.mjs",
     "clean": "rm -rf dist",
     "voice:generate": "node --experimental-strip-types --import ./scripts/convener-voice/register.mjs scripts/convener-voice/generate.mjs"
   },

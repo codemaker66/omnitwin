@@ -166,6 +166,23 @@ describe("calendar read model — source contract", () => {
     expect(source).toContain("CalendarResponseSchema.parse({");
   });
 
+  it("enriches booking entries with the event's card face in the SAME round-trip — flat rows, explicit select", async () => {
+    // The Command Centre card shows event name, client and guest count.
+    // A bare select().from().leftJoin() would nest Drizzle rows and break
+    // every flat row.* read — the explicit column map is load-bearing.
+    const source = await readFile(resolve("src/routes/calendar.ts"), "utf-8");
+    expect(source).toContain(".leftJoin(events, and(eq(bookings.eventId, events.id), isNull(events.deletedAt)))");
+    expect(source).toContain("eventName: events.name");
+    expect(source).toContain("eventClientName: events.clientName");
+    expect(source).toContain("eventGuestCount: events.guestCount");
+    expect(source).toContain("clientName: row.eventClientName");
+    expect(source).toContain("guestCount: row.eventGuestCount");
+    expect(source).toContain("notes: row.notes");
+    // The join must not resurrect soft-deleted bookings' events silently:
+    // the booking filter still excludes deleted bookings.
+    expect(source).toContain("isNull(bookings.deletedAt)");
+  });
+
   it("exposes the venue's turnaround rules on the response — the SAME rows the conflict engine resolves", async () => {
     // The When ribbon draws guideline buffers for positions that do not
     // exist yet, so the client needs the rules, not just the pairwise

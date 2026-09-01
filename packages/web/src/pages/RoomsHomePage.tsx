@@ -1,3 +1,4 @@
+import { roomPosterUrl as posterUrl } from "../lib/room-posters.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -32,40 +33,8 @@ function displayName(slug: string): string {
   return TRADES_HALL_RUNTIME_ROOMS.find((room) => room.slug === slug)?.label ?? slug;
 }
 
-/**
- * Pictures supplied for the front door, which win over anything generated.
- *
- * A photograph chosen for a room beats a frame grabbed from its scan, so these
- * take precedence and are never overwritten by the poster renderer — it writes
- * to `images/rooms/`, these live in `images/rooms/supplied/`.
- */
-const SUPPLIED_STILLS: Readonly<Record<string, string>> = {
-  "grand-hall": "/images/rooms/supplied/grand-hall.jpeg",
-  "reception-room": "/images/rooms/supplied/reception-room.jpeg",
-  "robert-adam-room": "/images/rooms/supplied/robert-adam-room.jpg",
-  "lady-convenors-room": "/images/rooms/supplied/lady-convenors-room.png",
-  "deacon-conveners-room": "/images/rooms/supplied/deacon-conveners-room.png",
-  "north-gallery": "/images/rooms/supplied/north-gallery.png",
-  "south-gallery": "/images/rooms/supplied/south-gallery.png",
-  saloon: "/images/venue/saloon-room.jpg",
-};
-
-/**
- * Otherwise, the still rendered from the room's own scan.
- *
- * Shot from inside, because a capture only ever saw a room's interior — from
- * outside you get the back of a ceiling, which is noise. These are the truest
- * posters available: the picture is the thing you get when you click it, and
- * they cover rooms the venue has no photograph of at all.
- *
- * No list is kept of which rooms have one. The card requests the file and falls
- * back to a typographic plate if it is not there, so a newly rendered poster
- * appears on the front door without a code change — and a room with neither is
- * never shown a broken image.
- */
-function posterUrl(slug: string): string {
-  return SUPPLIED_STILLS[slug] ?? `/images/rooms/${slug}.jpg`;
-}
+// Poster resolution lives in lib/room-posters.ts (shared with the
+// Command Centre's lane rails) — the same two-tier fallback as before.
 
 /** Floor dimensions, to one decimal, in the order a person would say them. */
 function footprint(bundle: GeneratedRoomSplatBundle): string {
