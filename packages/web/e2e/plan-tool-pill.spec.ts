@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { API, settleCockpit, stubPlannerBootstrap } from "./support/plan-bootstrap.js";
 
 // ---------------------------------------------------------------------------
-// Stage S2 — the hands (T-561).
+// Stage S2 — the hands (T-562).
 //
 // The pill's DOM state machine and the judged clearance ring, on a booted
 // cockpit with the whole backend stubbed (no live API, splat tiles 404 so the

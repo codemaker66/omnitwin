@@ -7,7 +7,7 @@
 // the single-file walkway (0.90 m), amber with a named reason when one does
 // not. (The Stage goal phrases this as "lib/egress rules"; per-table aisle
 // clearance lives in lib/circulation — lib/egress is exit-capacity maths.
-// The mapping is flagged in T-561 rather than silently reinterpreted.)
+// The mapping is flagged in T-562 rather than silently reinterpreted.)
 //
 // SAFE LANGUAGE: this is a PLANNING-GRADE circulation estimate, never a
 // legal egress route or fire-code width — same rule CirculationOverlay

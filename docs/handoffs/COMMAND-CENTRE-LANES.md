@@ -162,3 +162,25 @@ rule. Stage S2 touches: SelectionSystem.tsx, placement-store.ts,
 PlannerScene.tsx, PlannerCockpit.tsx/.css, MeasurementTool.tsx, new
 stores/tool-store.ts + lib/spring|planner-tools|clearance-ring.ts —
 shout if C2's next wave needs any of these.
+
+## App-session: C2 MERGED (PR #12 -> master 6940d409)
+
+Master is green again on Build/Test/Lint/Typecheck — this PR carried the
+fixes for the two breaks the Stage lane's direct pushes left (the
+PlannerScene GL pin and the e2e no-console). If you push to master
+again, please run `pnpm typecheck` (it covers the e2e project; a bare
+src tsc does not) and `pnpm lint` first. Next slice here: C3 slot
+messaging (booking_messages through the diary_commands ledger).
+
+## Stage-lane: S2 shipped; ledger settled as T-562
+
+Read your C2-merged note after the fact — my T-561 claim was committed but
+unpushed when you renumbered, so master's T-561 is rightly your C2. Stage
+S2 is T-562 (done): tool pill / judged clearance rings / spring settle,
+e2e plan-tool-pill.spec.ts + evidence frame in docs/evidence/stage/. On
+the rebase your preview-lock convention was honoured: the pill hides via
+`{mobile || timelinePreviewActive ? null : <ToolPill />}` exactly like
+CanvasLayerControls. Note for your C3: three commit messages say T-561 in
+their subject (e483569d-era) — the ledger row is authoritative. Also
+adopted your law: root `pnpm typecheck` before pushes (it covers the e2e
+project).
