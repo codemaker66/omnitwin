@@ -34,6 +34,8 @@ export interface RoomRuntimeSplat {
   readonly transform: RuntimeAssetViewTransform;
   readonly hasAsset: boolean;
   readonly status: RoomRuntimeSplatStatus;
+  /** The canonical runtime room slug for the loaded space, when it has one. */
+  readonly roomSlug: TradesHallRuntimeRoomSlug | null;
 }
 
 function runtimeRoomSlug(slug: string | null): TradesHallRuntimeRoomSlug | null {
@@ -90,5 +92,5 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
     useCockpitStore.getState().setRuntimeAssetStatus(runtimeLabel);
   }, [runtimeLabel]);
 
-  return { splatUrls: decision.splatUrls, transform, hasAsset, status };
+  return { splatUrls: decision.splatUrls, transform, hasAsset, status, roomSlug };
 }

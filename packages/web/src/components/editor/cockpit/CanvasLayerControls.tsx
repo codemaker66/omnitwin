@@ -1,7 +1,11 @@
-import { type ReactElement } from "react";
-import { Cuboid, Sparkles, Layers3, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, type ReactElement } from "react";
+import { Cuboid, Sparkles, Layers3, Footprints, type LucideIcon } from "lucide-react";
 import { COCKPIT_LAYER_MODES, type CockpitLayerMode } from "../../../lib/cockpit-modes.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useBookmarkStore } from "../../../stores/bookmark-store.js";
+import { useEditorStore } from "../../../stores/editor-store.js";
+import { roomSplatBundle } from "../../../data/room-splat-bundles.js";
+import { TRADES_HALL_RUNTIME_ROOMS } from "../../../lib/runtime-package-resolution.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../../shared/FloatingWidgetFrame.js";
 import "./CanvasLayerControls.css";
 
@@ -38,9 +42,41 @@ const LAYER_CONTROLS_AVOID_SELECTORS = [
  * cockpit store's layer mode, which the scene reads to choose between the
  * procedural mesh and the measured Gaussian-splat capture.
  */
+/**
+ * Whether the loaded space's capture can be walked: it must exist and carry
+ * walk data (where the scanner stood). Static manifest data — no fetch.
+ */
+function walkAvailableForSlug(spaceSlug: string | null): boolean {
+  if (spaceSlug === null) return false;
+  const known = TRADES_HALL_RUNTIME_ROOMS.some((room) => room.slug === spaceSlug);
+  if (!known) return false;
+  const bundle = roomSplatBundle(spaceSlug);
+  return bundle !== null && bundle.spawn !== null && bundle.bounds !== null;
+}
+
 export function CanvasLayerControls(): ReactElement {
   const layerMode = useCockpitStore((s) => s.layerMode);
   const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
+  const walkMode = useCockpitStore((s) => s.walkMode);
+  const spaceSlug = useEditorStore((s) => s.space?.slug ?? null);
+  const povActive = useBookmarkStore((s) => s.activeReferenceId !== null);
+  const walkAvailable = useMemo(() => walkAvailableForSlug(spaceSlug), [spaceSlug]);
+  const walkDisabled = !walkAvailable || povActive;
+
+  // Escape leaves the room. Listening only while walking keeps this from
+  // shadowing the rig's own Escape duties (tours, POV exit), none of which
+  // can be active at the same time as walk.
+  useEffect(() => {
+    if (!walkMode) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.code !== "Escape") return;
+      event.preventDefault();
+      useCockpitStore.getState().setWalkMode(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => { window.removeEventListener("keydown", onKeyDown); };
+  }, [walkMode]);
+
   return (
     <FloatingWidgetFrame
       id="planner-layer-controls"
@@ -75,6 +111,25 @@ export function CanvasLayerControls(): ReactElement {
             </button>
           );
         })}
+        <span className="cockpit-layer-controls__divider" aria-hidden="true" />
+        <button
+          type="button"
+          aria-pressed={walkMode}
+          className={walkMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
+          disabled={walkDisabled}
+          title={
+            walkDisabled
+              ? (povActive
+                ? "Leave the POV reference before walking the room"
+                : "This room's capture has no walk data yet")
+              : (walkMode ? "Back to plan view (Esc)" : "Stand in the room at eye level")
+          }
+          data-testid="planner-walk-toggle"
+          onClick={() => { useCockpitStore.getState().setWalkMode(!walkMode); }}
+        >
+          <Footprints size={14} aria-hidden="true" />
+          Walk
+        </button>
       </div>
     </FloatingWidgetFrame>
   );

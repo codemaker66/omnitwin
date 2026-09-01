@@ -25,6 +25,17 @@ import {
 // (same policy as public-config-flow.spec.ts).
 test.describe.configure({ mode: "serial" });
 
+declare global {
+  interface Window {
+    __roomCamera?: {
+      position: [number, number, number];
+      yaw: number;
+      pitch: number;
+      contained: boolean;
+    };
+  }
+}
+
 const FIFTY_MBPS_BYTES_PER_SECOND = (50 * 1000 * 1000) / 8;
 
 async function throttleTo50Mbps(page: Page): Promise<void> {
@@ -67,12 +78,6 @@ async function readPhase(page: Page): Promise<string> {
     const last = stages[stages.length - 1];
     return last?.getAttribute("data-resolve-phase") ?? "absent";
   });
-}
-
-async function expectSettledPhase(page: Page, phase: string, timeoutMs: number): Promise<void> {
-  await expect
-    .poll(() => readPhase(page), { timeout: timeoutMs, message: `waiting for settled phase ${phase}` })
-    .toBe(phase);
 }
 
 async function readCaptionVisible(page: Page): Promise<string> {
@@ -156,7 +161,14 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     await attachStageScreenshot(page, testInfo, "card-a2-resolve-complete.png");
   });
 
-  test("fallback: no package → the blueprint stays, the caption never appears", async ({ page }, testInfo) => {
+  test("staged: no package → the room STILL resolves, from the staged capture, under its label", async ({ page }, testInfo) => {
+    // Stage S1 rewrote what a missing registry row means. Before, no package
+    // was the fallback path (blueprint stays, nothing streams); that atelier
+    // state is still unit-pinned for rooms with no capture at all
+    // (use-room-runtime-splat.test.tsx). For a captured room, the staged tiles
+    // now stream exactly like a registered package — the difference the user
+    // must see is the chip: staged, never reviewed.
+    test.setTimeout(240_000);
     await stubPlannerBootstrap(page);
     await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
       void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
@@ -165,12 +177,47 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     await page.goto("/plan");
 
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
-    await expectSettledPhase(page, "fallback", 15_000);
     await expect
-      .poll(() => readCaptionVisible(page), { timeout: 10_000 })
-      .toBe("false");
-    await expect(page.locator('[role="progressbar"]')).toHaveCount(0);
-    await attachStageScreenshot(page, testInfo, "card-a2-fallback-blueprint.png");
+      .poll(() => readPhase(page), { timeout: 60_000, message: "waiting for the staged develop" })
+      .toBe("developing");
+    await expect
+      .poll(() => readPhase(page), { timeout: 180_000, message: "waiting for the staged resolve" })
+      .toBe("resolved");
+    await expect(
+      page.getByText("Captured layer staged from source — not yet registered or alignment-reviewed"),
+    ).toBeVisible();
+    await attachStageScreenshot(page, testInfo, "stage-s1-staged-resolve.png");
+  });
+
+  test("walk: stand in the captured room at eye level; Escape returns to plan view", async ({ page }, testInfo) => {
+    test.setTimeout(240_000);
+    await stubPlannerBootstrap(page);
+    await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
+      void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
+    });
+
+    await page.goto("/plan");
+    await expect
+      .poll(() => readPhase(page), { timeout: 180_000, message: "waiting for the staged resolve" })
+      .toBe("resolved");
+
+    const walkToggle = page.getByTestId("planner-walk-toggle");
+    await expect(walkToggle).toBeEnabled();
+    await walkToggle.click();
+    await expect(walkToggle).toHaveAttribute("aria-pressed", "true");
+
+    // The walk camera publishes its containment; standing in the room means
+    // inside the walk bounds at human eye height.
+    await expect
+      .poll(() => page.evaluate(() => window.__roomCamera?.contained ?? null), { timeout: 15_000 })
+      .toBe(true);
+    const eyeY = await page.evaluate(() => window.__roomCamera?.position[1] ?? 0);
+    expect(eyeY).toBeGreaterThan(1);
+    expect(eyeY).toBeLessThan(2.6);
+    await attachStageScreenshot(page, testInfo, "stage-s1-walk-eye-level.png");
+
+    await page.keyboard.press("Escape");
+    await expect(walkToggle).toHaveAttribute("aria-pressed", "false");
   });
 
   test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, baseURL }) => {

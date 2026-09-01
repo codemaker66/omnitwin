@@ -42,6 +42,14 @@ describe("cockpit-store", () => {
     expect(s.layersOpen).toBe(false);
   });
 
+  it("defaults walk mode off, toggles it, and clears it on reset", () => {
+    expect(useCockpitStore.getState().walkMode).toBe(false);
+    useCockpitStore.getState().setWalkMode(true);
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    useCockpitStore.getState().reset();
+    expect(useCockpitStore.getState().walkMode).toBe(false);
+  });
+
   it("setRuntimeAssetStatus updates the runtime label", () => {
     useCockpitStore.getState().setRuntimeAssetStatus("Captured visual layer loaded / not yet signed");
     expect(useCockpitStore.getState().runtimeAssetStatus).toBe("Captured visual layer loaded / not yet signed");

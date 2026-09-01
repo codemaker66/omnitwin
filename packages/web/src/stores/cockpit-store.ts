@@ -83,6 +83,15 @@ interface CockpitState {
   readonly clearBeam: () => void;
   readonly requestFocus: (x: number, z: number) => void;
   readonly setCameraInteractionActive: (active: boolean) => void;
+  /**
+   * Walk mode: the planner camera stands in the captured room at eye level.
+   *
+   * Only meaningful while a staged capture with walk data is mounted; the
+   * toggle that sets it is responsible for checking availability. CameraRig
+   * yields the camera entirely while this is true.
+   */
+  readonly walkMode: boolean;
+  readonly setWalkMode: (active: boolean) => void;
   readonly reset: () => void;
 }
 
@@ -97,6 +106,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   beam: null,
   focusRequest: null,
   cameraInteractionActive: false,
+  walkMode: false,
   plannedGuestCount: null,
   flowArrivalMinutes: 30,
   setMode: (mode) => { set({ activeMode: mode }); },
@@ -115,6 +125,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   setPlannedGuestCount: (count) => { set({ plannedGuestCount: count }); },
   setFlowArrivalMinutes: (minutes) => { set({ flowArrivalMinutes: minutes }); },
   setRuntimeAssetStatus: (status) => { set({ runtimeAssetStatus: status }); },
+  setWalkMode: (active) => { set({ walkMode: active }); },
   setRoomResolve: (resolve) => {
     set((state) => (
       state.roomResolve.phase === resolve.phase
@@ -142,6 +153,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
       selectedPhaseId: null,
       runtimeAssetStatus: DEFAULT_RUNTIME_ASSET_STATUS,
       roomResolve: DEFAULT_ROOM_RESOLVE,
+      walkMode: false,
       layersOpen: false,
       beam: null,
       focusRequest: null,
