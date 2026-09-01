@@ -3,6 +3,7 @@ import { App as Editor3D } from "../../../App.js";
 import { CockpitNavRail } from "./CockpitNavRail.js";
 import { CockpitTopBar } from "./CockpitTopBar.js";
 import { CockpitRightDock } from "./CockpitRightDock.js";
+import { WhenRibbon } from "./WhenRibbon.js";
 import { CockpitBottom } from "./CockpitBottom.js";
 import { CanvasLayerControls } from "./CanvasLayerControls.js";
 import { CockpitMinimap } from "./CockpitMinimap.js";
@@ -42,6 +43,7 @@ export function PlannerCockpit(): ReactElement {
         <CockpitMinimap />
       </section>
       <CockpitRightDock />
+      <WhenRibbon />
       <CockpitBottom />
     </div>
   );

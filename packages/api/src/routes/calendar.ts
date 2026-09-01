@@ -252,6 +252,11 @@ export async function calendarRoutes(
       rooms,
       entries,
       conflicts,
+      // The same rows the conflict engine just resolved — exposed so clients
+      // can draw guideline buffers for positions that don't exist yet (the
+      // When ribbon). Guidance for the team's judgement, never an enforced
+      // gap; the engine's advisory-only stance is unchanged.
+      turnaroundRules: ruleRows,
     });
     return { data: response };
   });

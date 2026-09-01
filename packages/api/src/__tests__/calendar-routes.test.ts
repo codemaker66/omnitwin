@@ -165,4 +165,16 @@ describe("calendar read model — source contract", () => {
     const source = await readFile(resolve("src/routes/calendar.ts"), "utf-8");
     expect(source).toContain("CalendarResponseSchema.parse({");
   });
+
+  it("exposes the venue's turnaround rules on the response — the SAME rows the conflict engine resolves", async () => {
+    // The When ribbon draws guideline buffers for positions that do not
+    // exist yet, so the client needs the rules, not just the pairwise
+    // conflicts. One fetch feeds both consumers or they drift.
+    const source = await readFile(resolve("src/routes/calendar.ts"), "utf-8");
+    expect(source).toContain("turnaroundRules: ruleRows");
+    const engineCall = source.indexOf("detectCalendarConflicts({");
+    const responseField = source.indexOf("turnaroundRules: ruleRows");
+    expect(engineCall).toBeGreaterThan(-1);
+    expect(responseField).toBeGreaterThan(engineCall);
+  });
 });
