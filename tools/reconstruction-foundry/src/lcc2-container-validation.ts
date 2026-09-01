@@ -129,6 +129,47 @@ export interface InspectOrderedSogMemberOptionsV1 {
   };
 }
 
+export interface OrderedSogCoordinateBoundsV1 {
+  readonly logDomainMins: readonly [number, number, number];
+  readonly logDomainMaxs: readonly [number, number, number];
+}
+
+export interface OrderedSogCoordinateChunkV1 {
+  readonly localStart: number;
+  readonly gaussianCount: number;
+  /**
+   * Ephemeral `x,y,z` uint16 little-endian records. The buffer is cleared as
+   * soon as the awaited consumer returns and must not be retained.
+   */
+  readonly quantizedUint16LeXyz: Buffer;
+  /**
+   * Ephemeral `x,y,z` IEEE-754 float64 little-endian records after the public
+   * SOG v2 linear dequantization and symmetric-log inverse. The buffer is
+   * cleared as soon as the awaited consumer returns and must not be retained.
+   */
+  readonly dequantizedFloat64LeXyz: Buffer;
+}
+
+export interface InspectOrderedSogMemberCoordinateStreamOptionsV1
+  extends InspectOrderedSogMemberOptionsV1 {
+  readonly consumeCoordinateChunk: (
+    chunk: OrderedSogCoordinateChunkV1,
+  ) => void | PromiseLike<void>;
+}
+
+export interface OrderedSogMemberCoordinateStreamV1 {
+  readonly inventory: OrderedSogMemberInventoryV1;
+  readonly bounds: OrderedSogCoordinateBoundsV1;
+  readonly decoding: {
+    readonly quantizedEncoding: "uint16_le_xyz";
+    readonly dequantizedEncoding: "ieee754_float64_le_xyz";
+    readonly lowHighRule: "q=(upper<<8)|lower";
+    readonly normalizedRule: "u=q/65535";
+    readonly linearRule: "scale=(max-min)||1;n=min+scale*(q/65535)";
+    readonly symmetricLogInverseRule: "p=n<0?-(exp(abs(n))-1):exp(abs(n))-1";
+  };
+}
+
 interface ZipMember {
   readonly name: string;
   readonly flags: number;
@@ -595,6 +636,8 @@ function decodeStrictSogJson(bytes: Buffer): string {
 }
 
 interface SogImagePlan {
+  readonly meansMins: readonly [number, number, number];
+  readonly meansMaxs: readonly [number, number, number];
   readonly referencedFiles: readonly string[];
   readonly perGaussianFiles: readonly string[];
   readonly perGaussianPlanes: readonly {
@@ -722,7 +765,24 @@ function sogImagePlan(meta: Record<string, unknown>): SogImagePlan {
   if (new Set(referencedFiles).size !== referencedFiles.length) {
     return fail("invalid", "SOG meta.json references a WebP member more than once.");
   }
-  return { referencedFiles, perGaussianFiles, perGaussianPlanes, shNCentroids };
+  const meansMins: readonly [number, number, number] = [
+    mins[0] ?? 0,
+    mins[1] ?? 0,
+    mins[2] ?? 0,
+  ];
+  const meansMaxs: readonly [number, number, number] = [
+    maxs[0] ?? 0,
+    maxs[1] ?? 0,
+    maxs[2] ?? 0,
+  ];
+  return {
+    meansMins,
+    meansMaxs,
+    referencedFiles,
+    perGaussianFiles,
+    perGaussianPlanes,
+    shNCentroids,
+  };
 }
 
 async function validateSog(
@@ -1005,16 +1065,49 @@ function requiredPlane(
   return plane;
 }
 
-function buildOrderedRecordDigests(
+export function decodeSogV2CoordinateV1(
+  logDomainMinimum: number,
+  logDomainMaximum: number,
+  quantized: number,
+): number {
+  if (
+    !Number.isFinite(logDomainMinimum) ||
+    !Number.isFinite(logDomainMaximum) ||
+    logDomainMinimum > logDomainMaximum ||
+    !Number.isInteger(quantized) ||
+    quantized < 0 ||
+    quantized > 65_535
+  ) {
+    return fail("invalid", "SOG v2 coordinate decoding requires finite ordered bounds and one uint16 code.");
+  }
+  // Preserve the operation order and degenerate-range fallback used by the
+  // public PlayCanvas SOG v2 iterator. In particular, use Math.exp rather than
+  // Math.expm1 and the `< 0` branch rather than Math.sign so emitted float64
+  // bytes remain compatible with @playcanvas/splat-transform 3.3.3.
+  const scale = (logDomainMaximum - logDomainMinimum) || 1;
+  const logCoordinate = logDomainMinimum + scale * (quantized / 65_535);
+  const magnitude = Math.exp(Math.abs(logCoordinate)) - 1;
+  const coordinate = logCoordinate < 0 ? -magnitude : magnitude;
+  if (!Number.isFinite(coordinate)) {
+    return fail("invalid", "SOG v2 coordinate decoding produced a non-finite value.");
+  }
+  return coordinate;
+}
+
+async function buildOrderedRecordDigests(
   planes: ReadonlyMap<OrderedSogPlaneRoleV1, DecodedOrderedSogPlane>,
   gaussianCount: number,
   shNPaletteCount: number | undefined,
   signal: AbortSignal | undefined,
-): {
+  coordinateStream: {
+    readonly bounds: OrderedSogCoordinateBoundsV1;
+    readonly consume: InspectOrderedSogMemberCoordinateStreamOptionsV1["consumeCoordinateChunk"];
+  } | undefined,
+): Promise<{
   readonly packedRecordBytes: 17 | 19;
   readonly quantizedPositionSha256: string;
   readonly packedRecordSha256: string;
-} {
+}> {
   const meansLower = requiredPlane(planes, "means_lower_bytes").rawRgba;
   const meansUpper = requiredPlane(planes, "means_upper_bytes").rawRgba;
   const scales = requiredPlane(planes, "scale_codebook_indices").rawRgba;
@@ -1029,6 +1122,9 @@ function buildOrderedRecordDigests(
   const maximumChunkGaussians = Math.min(ORDERED_RECORD_CHUNK_GAUSSIANS, gaussianCount);
   const positions = Buffer.allocUnsafe(Math.max(1, maximumChunkGaussians * 6));
   const packed = Buffer.allocUnsafe(Math.max(1, maximumChunkGaussians * packedRecordBytes));
+  const coordinates = coordinateStream === undefined
+    ? undefined
+    : Buffer.allocUnsafe(Math.max(1, maximumChunkGaussians * 24));
   try {
     for (let start = 0; start < gaussianCount; start += ORDERED_RECORD_CHUNK_GAUSSIANS) {
       assertNotCancelled(signal);
@@ -1073,6 +1169,35 @@ function buildOrderedRecordDigests(
       }
       positionHash.update(positions.subarray(0, count * 6));
       packedHash.update(packed.subarray(0, count * packedRecordBytes));
+      if (coordinates !== undefined && coordinateStream !== undefined) {
+        for (let localIndex = 0; localIndex < count; localIndex += 1) {
+          const positionOffset = localIndex * 6;
+          const coordinateOffset = localIndex * 24;
+          for (let axis = 0; axis < 3; axis += 1) {
+            const quantized = positions.readUInt16LE(positionOffset + axis * 2);
+            coordinates.writeDoubleLE(decodeSogV2CoordinateV1(
+              coordinateStream.bounds.logDomainMins[axis] ?? 0,
+              coordinateStream.bounds.logDomainMaxs[axis] ?? 0,
+              quantized,
+            ), coordinateOffset + axis * 8);
+          }
+        }
+        const quantizedView = positions.subarray(0, count * 6);
+        const dequantizedView = coordinates.subarray(0, count * 24);
+        try {
+          await coordinateStream.consume({
+            localStart: start,
+            gaussianCount: count,
+            quantizedUint16LeXyz: quantizedView,
+            dequantizedFloat64LeXyz: dequantizedView,
+          });
+        } finally {
+          // Enforce the documented ephemeral lifetime even when the consumer
+          // throws. A retained view observes cleared bytes after the await.
+          quantizedView.fill(0);
+          dequantizedView.fill(0);
+        }
+      }
     }
     return {
       packedRecordBytes,
@@ -1082,6 +1207,7 @@ function buildOrderedRecordDigests(
   } finally {
     positions.fill(0);
     packed.fill(0);
+    coordinates?.fill(0);
   }
 }
 
@@ -1090,9 +1216,10 @@ function buildOrderedRecordDigests(
  * exact row-major quantized-record order used by the SOG v2 format. This does
  * not dequantize coordinates or infer a room boundary.
  */
-export async function inspectOrderedSogMember(
+async function inspectOrderedSogMemberInternal(
   options: InspectOrderedSogMemberOptionsV1,
-): Promise<OrderedSogMemberInventoryV1> {
+  consumeCoordinateChunk?: InspectOrderedSogMemberCoordinateStreamOptionsV1["consumeCoordinateChunk"],
+): Promise<OrderedSogMemberCoordinateStreamV1> {
   if (
     !Number.isSafeInteger(options.expectedSizeBytes) ||
     options.expectedSizeBytes < 1 ||
@@ -1219,11 +1346,26 @@ export async function inspectOrderedSogMember(
     const pixelCapacity = dimensions.width * dimensions.height;
     const planeMap = new Map(decodedPlanes.map((plane) => [plane.role, plane] as const));
     const shNPaletteCount = imagePlan.shNCentroids?.paletteCount;
-    const recordDigests = buildOrderedRecordDigests(
+    const bounds = Object.freeze({
+      logDomainMins: Object.freeze([
+        imagePlan.meansMins[0],
+        imagePlan.meansMins[1],
+        imagePlan.meansMins[2],
+      ] as const),
+      logDomainMaxs: Object.freeze([
+        imagePlan.meansMaxs[0],
+        imagePlan.meansMaxs[1],
+        imagePlan.meansMaxs[2],
+      ] as const),
+    });
+    const recordDigests = await buildOrderedRecordDigests(
       planeMap,
       options.expectedGaussianCount,
       shNPaletteCount,
       options.signal,
+      consumeCoordinateChunk === undefined
+        ? undefined
+        : { bounds, consume: consumeCoordinateChunk },
     );
 
     await options.testHooks?.beforeFinalIdentityCheck?.();
@@ -1248,7 +1390,7 @@ export async function inspectOrderedSogMember(
     }
 
     const hasShN = shNPaletteCount !== undefined;
-    return Object.freeze({
+    const inventory: OrderedSogMemberInventoryV1 = Object.freeze({
       relativePath: options.relativePath,
       sizeBytes: options.expectedSizeBytes,
       sha256: options.expectedSha256,
@@ -1280,6 +1422,18 @@ export async function inspectOrderedSogMember(
         storageTransportAssessment: "not_established" as const,
       }),
     });
+    return Object.freeze({
+      inventory,
+      bounds,
+      decoding: Object.freeze({
+        quantizedEncoding: "uint16_le_xyz" as const,
+        dequantizedEncoding: "ieee754_float64_le_xyz" as const,
+        lowHighRule: "q=(upper<<8)|lower" as const,
+        normalizedRule: "u=q/65535" as const,
+        linearRule: "scale=(max-min)||1;n=min+scale*(q/65535)" as const,
+        symmetricLogInverseRule: "p=n<0?-(exp(abs(n))-1):exp(abs(n))-1" as const,
+      }),
+    });
   } catch (error: unknown) {
     if (error instanceof Lcc2ContainerValidationError) throw error;
     return fail("source_changed", `Ordered SOG member became unavailable: ${options.relativePath}.`, error);
@@ -1288,6 +1442,29 @@ export async function inspectOrderedSogMember(
     snapshot?.fill(0);
     await handle.close();
   }
+}
+
+/**
+ * Reads one already-declared SOG member without writing it, then freezes the
+ * exact row-major quantized-record order used by the SOG v2 format. This does
+ * not dequantize coordinates or infer a room boundary.
+ */
+export async function inspectOrderedSogMember(
+  options: InspectOrderedSogMemberOptionsV1,
+): Promise<OrderedSogMemberInventoryV1> {
+  return (await inspectOrderedSogMemberInternal(options)).inventory;
+}
+
+/**
+ * Decodes exact SOG v2 coordinate chunks from the same bounded immutable
+ * member snapshot used for ordered-record validation. The decoded values are
+ * source coordinate values only; this establishes no metric, room, transform,
+ * mask, or architectural authority.
+ */
+export async function inspectOrderedSogMemberCoordinateStream(
+  options: InspectOrderedSogMemberCoordinateStreamOptionsV1,
+): Promise<OrderedSogMemberCoordinateStreamV1> {
+  return inspectOrderedSogMemberInternal(options, options.consumeCoordinateChunk);
 }
 
 function spzBytesPerSplat(version: number, shDegree: number, flags: number): number {

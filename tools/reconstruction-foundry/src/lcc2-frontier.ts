@@ -173,6 +173,12 @@ export interface InspectLcc2HighestDetailFrontierOptionsV0 {
   };
 }
 
+export interface InspectLcc2HighestDetailFrontierPlanOptionsV0 {
+  readonly manifestPath: string;
+  readonly environmentPolicy: Lcc2EnvironmentPolicy;
+  readonly signal?: AbortSignal;
+}
+
 interface MutableFileUse {
   readonly fileIndex: number;
   readonly relativePath: string;
@@ -884,6 +890,25 @@ async function assertFilesUnchanged(files: readonly LocatedFile[]): Promise<void
 
 function rawSha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * Manifest-only planning pass. This establishes bounded traversal counts
+ * before a format adapter opens any declared container or output body.
+ */
+export async function inspectLcc2HighestDetailFrontierPlan(
+  options: InspectLcc2HighestDetailFrontierPlanOptionsV0,
+): Promise<Lcc2HighestDetailFrontierPlanV0> {
+  const environmentPolicy = normalizeEnvironmentPolicy(options.environmentPolicy);
+  assertNotCancelled(options.signal);
+  const manifestFile = await locateManifest(options.manifestPath);
+  const manifestBytes = await readStableManifest(manifestFile, options.signal);
+  const plan = compileLcc2HighestDetailFrontier(parseManifestBytes(manifestBytes), {
+    environmentPolicy,
+  });
+  await assertFilesUnchanged([manifestFile]);
+  assertNotCancelled(options.signal);
+  return plan;
 }
 
 /**

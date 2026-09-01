@@ -92,6 +92,8 @@ export * from "./lcc2-frontier-cli.js";
 export * from "./lcc2-frontier.js";
 export * from "./lcc2-ordered-gaussian-inventory-cli.js";
 export * from "./lcc2-ordered-gaussian-inventory.js";
+export * from "./lcc2-sog-coordinate-stream-cli.js";
+export * from "./lcc2-sog-coordinate-stream.js";
 export * from "./local-app.js";
 export * from "./local-offline-normalization-preview.js";
 export * from "./signing.js";

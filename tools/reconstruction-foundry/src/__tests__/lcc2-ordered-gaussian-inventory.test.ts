@@ -2,13 +2,17 @@ import { createHash } from "node:crypto";
 import {
   appendFile,
   link,
+  lstat,
   mkdir,
   mkdtemp,
+  readFile,
+  readdir,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { endianness, tmpdir } from "node:os";
+import { dirname, join, sep } from "node:path";
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -16,17 +20,37 @@ import {
   toCanonicalJson,
 } from "@omnitwin/reconstruction-foundry";
 import {
+  decodeSogV2CoordinateV1,
   inspectOrderedSogMember,
+  inspectOrderedSogMemberCoordinateStream,
   Lcc2ContainerValidationError,
 } from "../lcc2-container-validation.js";
 import {
   inspectLcc2OrderedGaussianInventory,
 } from "../lcc2-ordered-gaussian-inventory.js";
 import { parseLcc2OrderedGaussianInventoryArguments } from "../lcc2-ordered-gaussian-inventory-cli.js";
+import {
+  LCC2_SOG_COORDINATE_STREAM_FLOAT64_FILE_V1,
+  LCC2_SOG_COORDINATE_STREAM_LIMITS_V1,
+  LCC2_SOG_COORDINATE_STREAM_QUANTIZED_FILE_V1,
+  LCC2_SOG_COORDINATE_STREAM_RECEIPT_FILE_V1,
+  LCC2_SOG_COORDINATE_DECODER_V1,
+  GRAND_HALL_BIG_SOG_V1_COORDINATE_SOURCE_PROFILE,
+  checkLcc2SogCoordinateStream as checkLcc2SogCoordinateStreamLibrary,
+  writeLcc2SogCoordinateStream as writeLcc2SogCoordinateStreamLibrary,
+  type Lcc2SogCoordinateStreamExpectedSourceProfileV1,
+  type Lcc2SogCoordinateStreamOptionsV1,
+} from "../lcc2-sog-coordinate-stream.js";
+import { parseLcc2SogCoordinateStreamArguments } from "../lcc2-sog-coordinate-stream-cli.js";
 
 const cleanup: string[] = [];
+const fixtureSourceProfiles = new Map<
+  string,
+  Promise<Lcc2SogCoordinateStreamExpectedSourceProfileV1>
+>();
 
 afterEach(async () => {
+  fixtureSourceProfiles.clear();
   await Promise.all(cleanup.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -130,6 +154,8 @@ async function makeOrderedSog(
     readonly duplicateCountKey?: boolean;
     readonly escapedDuplicateCountKey?: boolean;
     readonly prohibitedMetaKey?: boolean;
+    readonly meansMins?: readonly [number, number, number];
+    readonly meansMaxs?: readonly [number, number, number];
   } = {},
 ): Promise<OrderedSogFixture> {
   const trailing = options.trailingSeed ?? 200;
@@ -193,7 +219,11 @@ async function makeOrderedSog(
     version: 2,
     count,
     antialias: false,
-    means: { mins: [0, 0, 0], maxs: [1, 1, 1], files: ["means_l.webp", "means_u.webp"] },
+    means: {
+      mins: options.meansMins ?? [0, 0, 0],
+      maxs: options.meansMaxs ?? [1, 1, 1],
+      files: ["means_l.webp", "means_u.webp"],
+    },
     scales: { codebook: Array.from({ length: 256 }, () => 0), files: ["scales.webp"] },
     quats: { files: ["quats.webp"] },
     sh0: { codebook: Array.from({ length: 256 }, () => 0), files: ["sh0.webp"] },
@@ -373,17 +403,48 @@ describe("inspectOrderedSogMember", () => {
       },
     })).rejects.toMatchObject({ code: "source_changed" });
   });
+
+  it("clears ephemeral coordinate views immediately after the awaited consumer returns", async () => {
+    const fixture = await makeOrderedSog(3);
+    const path = await writeSog(fixture.bytes);
+    let retainedQuantized: Buffer | undefined;
+    let retainedFloat64: Buffer | undefined;
+    await inspectOrderedSogMemberCoordinateStream({
+      absolutePath: path,
+      relativePath: "fixture.sog",
+      expectedSizeBytes: fixture.bytes.length,
+      expectedSha256: `sha256:${sha256(fixture.bytes)}`,
+      expectedGaussianCount: 3,
+      consumeCoordinateChunk: (chunk) => {
+        retainedQuantized = chunk.quantizedUint16LeXyz;
+        retainedFloat64 = chunk.dequantizedFloat64LeXyz;
+        expect(retainedQuantized.some((value) => value !== 0)).toBe(true);
+      },
+      testHooks: {
+        beforeFinalIdentityCheck: () => {
+          expect(retainedQuantized?.every((value) => value === 0)).toBe(true);
+          expect(retainedFloat64?.every((value) => value === 0)).toBe(true);
+        },
+      },
+    });
+  });
 });
 
 async function writeLcc2Fixture(options: {
   readonly oversizedLeaf?: boolean;
   readonly leafSeed?: number;
+  readonly meansMins?: readonly [number, number, number];
+  readonly meansMaxs?: readonly [number, number, number];
 } = {}): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "lcc2-ordered-package-"));
   cleanup.push(root);
   const paths = ["data/3dgs/leaf-0.sog", "data/3dgs/leaf-1.sog", "data/3dgs/env.sog"];
   const fixtures = [
-    await makeOrderedSog(2, options.leafSeed ?? 0, { oversizedHeader: options.oversizedLeaf }),
+    await makeOrderedSog(2, options.leafSeed ?? 0, {
+      oversizedHeader: options.oversizedLeaf,
+      meansMins: options.meansMins,
+      meansMaxs: options.meansMaxs,
+    }),
     await makeOrderedSog(1, 60),
     await makeOrderedSog(1, 90),
   ];
@@ -416,6 +477,99 @@ async function writeLcc2Fixture(options: {
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   return manifestPath;
 }
+
+async function expectedFixtureSourceProfile(
+  manifestPath: string,
+): Promise<Lcc2SogCoordinateStreamExpectedSourceProfileV1> {
+  const cached = fixtureSourceProfiles.get(manifestPath);
+  if (cached !== undefined) return cached;
+  const pending = inspectLcc2OrderedGaussianInventory({ manifestPath }).then((receipt) => ({
+    profileId: "synthetic-lcc2-sog-v1",
+    gaussianCount: receipt.inventory.gaussianCount,
+    memberCount: receipt.inventory.members.length,
+    ordinalInventorySha256: receipt.inventory.ordinalInventorySha256,
+    orderedInventoryReceiptSha256: receipt.receiptSha256,
+  }));
+  fixtureSourceProfiles.set(manifestPath, pending);
+  return pending;
+}
+
+type FixtureCoordinateStreamOptions = Omit<
+  Lcc2SogCoordinateStreamOptionsV1,
+  "expectedSourceProfile"
+> & {
+  readonly expectedSourceProfile?: Lcc2SogCoordinateStreamExpectedSourceProfileV1;
+};
+
+async function writeLcc2SogCoordinateStream(
+  options: FixtureCoordinateStreamOptions,
+) {
+  return writeLcc2SogCoordinateStreamLibrary({
+    ...options,
+    expectedSourceProfile: options.expectedSourceProfile ??
+      await expectedFixtureSourceProfile(options.manifestPath),
+  });
+}
+
+async function checkLcc2SogCoordinateStream(
+  options: FixtureCoordinateStreamOptions,
+) {
+  return checkLcc2SogCoordinateStreamLibrary({
+    ...options,
+    expectedSourceProfile: options.expectedSourceProfile ??
+      await expectedFixtureSourceProfile(options.manifestPath),
+  });
+}
+
+async function writeManifestOnlyLimitFixture(input: {
+  readonly gaussianCount: number;
+  readonly memberCount: number;
+}): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "lcc2-coordinate-limit-package-"));
+  cleanup.push(root);
+  const memberPaths = Array.from(
+    { length: input.memberCount },
+    (_, index) => `data/3dgs/leaf-${String(index)}.sog`,
+  );
+  const environmentPath = "data/3dgs/env.sog";
+  const perMemberCounts = Array.from({ length: input.memberCount }, (_, index) =>
+    index === 0 ? input.gaussianCount - (input.memberCount - 1) : 1);
+  const manifest = {
+    version: "0.0.3",
+    guid: "0123456789abcdef0123456789abcdef",
+    fileType: "quality",
+    splatType: ".sog",
+    totalLevels: 1,
+    lodSplats: [input.gaussianCount],
+    totalSplats: input.gaussianCount,
+    env: { type: "splats", splatsCount: 1 },
+    root: {
+      id: "0",
+      childNum: input.memberCount,
+      splatFiles: [...memberPaths, environmentPath],
+      data: { env: { name: input.memberCount } },
+      child: Object.fromEntries(perMemberCounts.map((count, index) => [
+        String(index),
+        {
+          id: `0_${String(index)}`,
+          childNum: 0,
+          data: { "3dgs": { name: index, start: 0, count } },
+        },
+      ])),
+    },
+  };
+  const manifestPath = join(root, "scene.lcc2");
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifestPath;
+}
+
+const boundedDummySourceProfile: Lcc2SogCoordinateStreamExpectedSourceProfileV1 = {
+  profileId: "bounded-test-profile-v1",
+  gaussianCount: 3,
+  memberCount: 2,
+  ordinalInventorySha256: `sha256:${"0".repeat(64)}`,
+  orderedInventoryReceiptSha256: `sha256:${"1".repeat(64)}`,
+};
 
 describe("inspectLcc2OrderedGaussianInventory", () => {
   it("assigns one exact contiguous global ordinal domain in file-index order", async () => {
@@ -512,6 +666,461 @@ describe("parseLcc2OrderedGaussianInventoryArguments", () => {
     expect(parseLcc2OrderedGaussianInventoryArguments(["--help"])).toBeNull();
     expect(() => parseLcc2OrderedGaussianInventoryArguments([
       "--manifest", "C:\\capture\\scene.lcc2", "--environment", "include",
+    ])).toThrow(/Unknown/u);
+  });
+});
+
+function expectedFixtureQuantizedCoordinates(): Buffer {
+  return Buffer.from([
+    1, 10, 2, 11, 3, 12,
+    4, 13, 5, 14, 6, 15,
+    61, 10, 2, 11, 3, 12,
+  ]);
+}
+
+function expectedUnloggedCoordinate(low: number, high: number): number {
+  const quantized = low | (high << 8);
+  const normalizedLogCoordinate = quantized / 65_535;
+  return normalizedLogCoordinate < 0
+    ? -(Math.exp(Math.abs(normalizedLogCoordinate)) - 1)
+    : Math.exp(Math.abs(normalizedLogCoordinate)) - 1;
+}
+
+describe("LCC2 SOG coordinate stream", () => {
+  it("pins the only real CLI source profile and the bounded adapter ceilings", () => {
+    expect(LCC2_SOG_COORDINATE_STREAM_LIMITS_V1).toEqual({
+      maximumGaussianCount: 8_000_000,
+      maximumMemberCount: 64,
+    });
+    expect(GRAND_HALL_BIG_SOG_V1_COORDINATE_SOURCE_PROFILE).toEqual({
+      profileId: "grand-hall-big-sog-v1",
+      gaussianCount: 6_019_684,
+      memberCount: 11,
+      ordinalInventorySha256: "sha256:e8d7c8d94b246bfb1e047088af31e4fcb74c34c65ed67c16435995a4f46ab46d",
+      orderedInventoryReceiptSha256: "sha256:247cdad37b50821a9b06c59a139e3e6897c8b8c318c9c78de15b3c26187b30e3",
+    });
+    expect(Object.isFrozen(LCC2_SOG_COORDINATE_STREAM_LIMITS_V1)).toBe(true);
+    expect(Object.isFrozen(GRAND_HALL_BIG_SOG_V1_COORDINATE_SOURCE_PROFILE)).toBe(true);
+  });
+
+  it("pins SOG v2 endpoint, midpoint, negative, zero, and degenerate-bound arithmetic", () => {
+    const reference = (minimum: number, maximum: number, quantized: number): number => {
+      const scale = (maximum - minimum) || 1;
+      const logCoordinate = minimum + scale * (quantized / 65_535);
+      const magnitude = Math.exp(Math.abs(logCoordinate)) - 1;
+      return logCoordinate < 0 ? -magnitude : magnitude;
+    };
+    expect(decodeSogV2CoordinateV1(-2, 3, 0)).toBe(reference(-2, 3, 0));
+    expect(decodeSogV2CoordinateV1(-2, 3, 65_535)).toBe(reference(-2, 3, 65_535));
+    expect(decodeSogV2CoordinateV1(-2, 3, 32_768)).toBe(reference(-2, 3, 32_768));
+    expect(decodeSogV2CoordinateV1(-2, -1, 17)).toBe(reference(-2, -1, 17));
+    expect(Object.is(decodeSogV2CoordinateV1(-0, -0, 0), -0)).toBe(false);
+    expect(decodeSogV2CoordinateV1(0.75, 0.75, 0)).toBe(reference(0.75, 0.75, 0));
+    expect(decodeSogV2CoordinateV1(0.75, 0.75, 65_535)).toBe(reference(0.75, 0.75, 65_535));
+    expect(decodeSogV2CoordinateV1(0.75, 0.75, 0))
+      .not.toBe(decodeSogV2CoordinateV1(0.75, 0.75, 65_535));
+
+    const float64Le = (value: number): string => {
+      const bytes = Buffer.alloc(8);
+      bytes.writeDoubleLE(value);
+      return bytes.toString("hex");
+    };
+    expect(float64Le(decodeSogV2CoordinateV1(-2, 3, 0))).toBe("aeddd4b8648e19c0");
+    expect(float64Le(decodeSogV2CoordinateV1(-2, 3, 65_535))).toBe("06b16fbfe5153340");
+    expect(float64Le(decodeSogV2CoordinateV1(-2, 3, 32_768))).toBe("389b3403d7c2e43f");
+    expect(float64Le(decodeSogV2CoordinateV1(0.75, 0.75, 0))).toBe("f0b9cf683bdff13f");
+    expect(float64Le(decodeSogV2CoordinateV1(0.75, 0.75, 65_535))).toBe("beac5b90b6041340");
+    expect(float64Le(decodeSogV2CoordinateV1(-0, -0, 0))).toBe("0000000000000000");
+  });
+
+  it("publishes exact manifest/member/global order with the public SOG v2 symmetric-log inverse", async () => {
+    const manifestPath = await writeLcc2Fixture();
+    const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-output-"));
+    cleanup.push(outputParent);
+    const outputDirectory = join(outputParent, "coordinate-stream");
+
+    const receipt = await writeLcc2SogCoordinateStream({ manifestPath, outputDirectory });
+    const quantized = await readFile(join(outputDirectory, LCC2_SOG_COORDINATE_STREAM_QUANTIZED_FILE_V1));
+    const float64 = await readFile(join(outputDirectory, LCC2_SOG_COORDINATE_STREAM_FLOAT64_FILE_V1));
+    const expectedQuantized = expectedFixtureQuantizedCoordinates();
+
+    expect(quantized).toEqual(expectedQuantized);
+    expect(float64.length).toBe(3 * 3 * 8);
+    for (let gaussian = 0; gaussian < 3; gaussian += 1) {
+      for (let axis = 0; axis < 3; axis += 1) {
+        const quantizedOffset = gaussian * 6 + axis * 2;
+        expect(float64.readDoubleLE(gaussian * 24 + axis * 8)).toBe(
+          expectedUnloggedCoordinate(
+            expectedQuantized[quantizedOffset] ?? 0,
+            expectedQuantized[quantizedOffset + 1] ?? 0,
+          ),
+        );
+      }
+    }
+    expect(receipt.stream.gaussianCount).toBe(3);
+    expect(receipt.sourceProfile).toEqual(await expectedFixtureSourceProfile(manifestPath));
+    expect(receipt.limits).toEqual(LCC2_SOG_COORDINATE_STREAM_LIMITS_V1);
+    expect(receipt.stream.decoder).toEqual(LCC2_SOG_COORDINATE_DECODER_V1);
+    expect(receipt.stream.emitterRuntime).toEqual({
+      nodeVersion: process.version,
+      v8Version: process.versions.v8,
+      platform: process.platform,
+      architecture: process.arch,
+      hostByteOrder: endianness(),
+      outputByteOrder: "explicit_little_endian_buffer_writes",
+    });
+    const quantizedMins = [2_561, 2_818, 3_075] as const;
+    const quantizedMaxs = [3_332, 3_589, 3_846] as const;
+    const float64Mins = quantizedMins.map((value) => decodeSogV2CoordinateV1(0, 1, value));
+    const float64Maxs = quantizedMaxs.map((value) => decodeSogV2CoordinateV1(0, 1, value));
+    expect(receipt.stream.statistics).toEqual({
+      quantizedUint16: { mins: quantizedMins, maxs: quantizedMaxs },
+      decodedFloat64PreFround: {
+        mins: float64Mins,
+        maxs: float64Maxs,
+        finiteCounts: [3, 3, 3],
+        nonFiniteCounts: [0, 0, 0],
+      },
+      referenceFloat32Projection: {
+        projection: "Math.fround",
+        mins: float64Mins.map(Math.fround),
+        maxs: float64Maxs.map(Math.fround),
+        finiteCounts: [3, 3, 3],
+        nonFiniteCounts: [0, 0, 0],
+      },
+    });
+    expect(receipt.stream.members.map(({ statistics }) =>
+      statistics.decodedFloat64PreFround.finiteCounts)).toEqual([
+      [2, 2, 2],
+      [1, 1, 1],
+    ]);
+    expect(receipt.stream.members.map((member) => ({
+      fileIndex: member.fileIndex,
+      start: member.globalStart,
+      end: member.globalEndExclusive,
+    }))).toEqual([
+      { fileIndex: 0, start: 0, end: 2 },
+      { fileIndex: 1, start: 2, end: 3 },
+    ]);
+    expect(receipt.proof).toEqual(expect.objectContaining({
+      authority: "none",
+      coordinatesDequantizedFromExactSogV2Bytes: true,
+      everyDecodedFloat64AndReferenceFloat32Finite: true,
+      expectedSourceProfileMatched: true,
+      sourceLimitsCheckedBeforeCoordinateDecode: true,
+      sourceLimitsCheckedBeforeOutputBodyCreation: true,
+      independentReferenceComparisonPerformed: false,
+      coordinateFrameEstablished: false,
+      roomMembershipEstablished: false,
+      maskProduced: false,
+      transformProduced: false,
+      transformAccepted: false,
+      trainingPerformed: false,
+      reconstructionPerformed: false,
+      generatedContentAdded: false,
+      runtimeAdmissionGranted: false,
+      productionTrust: null,
+    }));
+    expect(JSON.parse(await readFile(
+      join(outputDirectory, LCC2_SOG_COORDINATE_STREAM_RECEIPT_FILE_V1),
+      "utf8",
+    ))).toEqual(receipt);
+
+    const before = await Promise.all([
+      LCC2_SOG_COORDINATE_STREAM_QUANTIZED_FILE_V1,
+      LCC2_SOG_COORDINATE_STREAM_FLOAT64_FILE_V1,
+      LCC2_SOG_COORDINATE_STREAM_RECEIPT_FILE_V1,
+    ].map((name) => lstat(join(outputDirectory, name))));
+    await expect(checkLcc2SogCoordinateStream({ manifestPath, outputDirectory })).resolves.toEqual(receipt);
+    const after = await Promise.all([
+      LCC2_SOG_COORDINATE_STREAM_QUANTIZED_FILE_V1,
+      LCC2_SOG_COORDINATE_STREAM_FLOAT64_FILE_V1,
+      LCC2_SOG_COORDINATE_STREAM_RECEIPT_FILE_V1,
+    ].map((name) => lstat(join(outputDirectory, name))));
+    expect(after.map(({ size, mtimeMs, ctimeMs }) => ({ size, mtimeMs, ctimeMs })))
+      .toEqual(before.map(({ size, mtimeMs, ctimeMs }) => ({ size, mtimeMs, ctimeMs })));
+  });
+
+  it("normalizes an equivalent output spelling before post-publication verification", async () => {
+    const manifestPath = await writeLcc2Fixture();
+    const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-output-"));
+    cleanup.push(outputParent);
+    const outputDirectory = join(outputParent, "coordinate-stream");
+    const equivalentOutputSpelling = `${outputDirectory}${sep}`;
+
+    const receipt = await writeLcc2SogCoordinateStream({
+      manifestPath,
+      outputDirectory: equivalentOutputSpelling,
+    });
+
+    expect(receipt.stream.gaussianCount).toBe(3);
+    await expect(checkLcc2SogCoordinateStream({ manifestPath, outputDirectory }))
+      .resolves.toEqual(receipt);
+    expect((await readdir(outputDirectory)).sort()).toEqual([
+      LCC2_SOG_COORDINATE_STREAM_RECEIPT_FILE_V1,
+      LCC2_SOG_COORDINATE_STREAM_FLOAT64_FILE_V1,
+      LCC2_SOG_COORDINATE_STREAM_QUANTIZED_FILE_V1,
+    ].sort());
+  });
+
+  it.runIf(process.platform === "win32")(
+    "rejects Windows file-namespace aliases before source/output containment checks",
+    async () => {
+      const manifestPath = await writeLcc2Fixture();
+      const expectedSourceProfile = await expectedFixtureSourceProfile(manifestPath);
+      const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-output-"));
+      cleanup.push(outputParent);
+      const outputInsideSource = join(dirname(manifestPath), "unsafe-coordinate-output");
+      const namespacedOutputInsideSource = `\\\\?\\${outputInsideSource}`;
+      const ordinaryOutput = join(outputParent, "ordinary-output");
+      const namespacedManifest = `\\\\?\\${manifestPath}`;
+
+      await expect(writeLcc2SogCoordinateStreamLibrary({
+        manifestPath,
+        outputDirectory: namespacedOutputInsideSource,
+        expectedSourceProfile,
+      })).rejects.toMatchObject({ code: "LCC2_COORDINATE_ARGUMENT_INVALID" });
+      await expect(writeLcc2SogCoordinateStreamLibrary({
+        manifestPath: namespacedManifest,
+        outputDirectory: ordinaryOutput,
+        expectedSourceProfile,
+      })).rejects.toMatchObject({ code: "LCC2_COORDINATE_ARGUMENT_INVALID" });
+      await expect(lstat(outputInsideSource)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(lstat(ordinaryOutput)).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
+
+  it("rejects over-total and over-member manifest plans before staging or coordinate decoding", async () => {
+    const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-limit-output-"));
+    cleanup.push(outputParent);
+    const cases = [
+      {
+        label: "over-total",
+        manifestPath: await writeManifestOnlyLimitFixture({
+          gaussianCount: LCC2_SOG_COORDINATE_STREAM_LIMITS_V1.maximumGaussianCount + 1,
+          memberCount: 1,
+        }),
+      },
+      {
+        label: "over-members",
+        manifestPath: await writeManifestOnlyLimitFixture({
+          gaussianCount: LCC2_SOG_COORDINATE_STREAM_LIMITS_V1.maximumMemberCount + 1,
+          memberCount: LCC2_SOG_COORDINATE_STREAM_LIMITS_V1.maximumMemberCount + 1,
+        }),
+      },
+    ] as const;
+    for (const testCase of cases) {
+      const outputDirectory = join(outputParent, testCase.label);
+      let stagingClaimed = false;
+      await expect(writeLcc2SogCoordinateStreamLibrary({
+        manifestPath: testCase.manifestPath,
+        outputDirectory,
+        expectedSourceProfile: boundedDummySourceProfile,
+        testHooks: {
+          afterStagingClaimed: () => {
+            stagingClaimed = true;
+          },
+        },
+      })).rejects.toMatchObject({ code: "LCC2_COORDINATE_LIMIT_EXCEEDED" });
+      expect(stagingClaimed).toBe(false);
+      await expect(lstat(outputDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    expect((await readdir(outputParent)).filter((name) => name.includes(".staging-"))).toEqual([]);
+  });
+
+  it("rejects wrong expected counts, ordinal identity, or ordered-receipt identity before publication", async () => {
+    const manifestPath = await writeLcc2Fixture();
+    const expected = await expectedFixtureSourceProfile(manifestPath);
+    const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-profile-output-"));
+    cleanup.push(outputParent);
+    const wrongProfiles = [
+      {
+        ...expected,
+        gaussianCount: expected.gaussianCount + 1,
+      },
+      {
+        ...expected,
+        memberCount: expected.memberCount + 1,
+      },
+      {
+        ...expected,
+        ordinalInventorySha256: `sha256:${"a".repeat(64)}`,
+      },
+      {
+        ...expected,
+        orderedInventoryReceiptSha256: `sha256:${"b".repeat(64)}`,
+      },
+    ] as const;
+    for (const [index, expectedSourceProfile] of wrongProfiles.entries()) {
+      const outputDirectory = join(outputParent, `wrong-profile-${String(index)}`);
+      let publishAttempted = false;
+      await expect(writeLcc2SogCoordinateStreamLibrary({
+        manifestPath,
+        outputDirectory,
+        expectedSourceProfile,
+        testHooks: {
+          beforePublish: () => {
+            publishAttempted = true;
+          },
+        },
+      })).rejects.toMatchObject({ code: "LCC2_COORDINATE_SOURCE_PROFILE_MISMATCH" });
+      expect(publishAttempted).toBe(false);
+      await expect(lstat(outputDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    expect((await readdir(outputParent)).filter((name) => name.includes(".staging-"))).toEqual([]);
+  });
+
+  it("is create-only, detects a changed body in zero-write check mode, and preserves the first publication", async () => {
+    const manifestPath = await writeLcc2Fixture();
+    const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-output-"));
+    cleanup.push(outputParent);
+    const outputDirectory = join(outputParent, "coordinate-stream");
+    const first = await writeLcc2SogCoordinateStream({ manifestPath, outputDirectory });
+
+    await expect(writeLcc2SogCoordinateStream({ manifestPath, outputDirectory }))
+      .rejects.toMatchObject({ code: "LCC2_COORDINATE_OUTPUT_EXISTS" });
+    expect(JSON.parse(await readFile(
+      join(outputDirectory, LCC2_SOG_COORDINATE_STREAM_RECEIPT_FILE_V1),
+      "utf8",
+    ))).toEqual(first);
+
+    const quantizedPath = join(outputDirectory, LCC2_SOG_COORDINATE_STREAM_QUANTIZED_FILE_V1);
+    const changed = await readFile(quantizedPath);
+    changed[0] = (changed[0] ?? 0) ^ 0xff;
+    await writeFile(quantizedPath, changed);
+    await expect(checkLcc2SogCoordinateStream({ manifestPath, outputDirectory }))
+      .rejects.toMatchObject({ code: "LCC2_COORDINATE_OUTPUT_MISMATCH" });
+  });
+
+  it("rejects float64 drift, receipt drift, and an extra output member", async () => {
+    const manifestPath = await writeLcc2Fixture();
+    const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-output-"));
+    cleanup.push(outputParent);
+
+    const float64Output = join(outputParent, "float64-drift");
+    await writeLcc2SogCoordinateStream({ manifestPath, outputDirectory: float64Output });
+    const float64Path = join(float64Output, LCC2_SOG_COORDINATE_STREAM_FLOAT64_FILE_V1);
+    const changedFloat64 = await readFile(float64Path);
+    changedFloat64[changedFloat64.length - 1] = (changedFloat64[changedFloat64.length - 1] ?? 0) ^ 0x80;
+    await writeFile(float64Path, changedFloat64);
+    await expect(checkLcc2SogCoordinateStream({ manifestPath, outputDirectory: float64Output }))
+      .rejects.toMatchObject({ code: "LCC2_COORDINATE_OUTPUT_MISMATCH" });
+
+    const receiptOutput = join(outputParent, "receipt-drift");
+    await writeLcc2SogCoordinateStream({ manifestPath, outputDirectory: receiptOutput });
+    const receiptPath = join(receiptOutput, LCC2_SOG_COORDINATE_STREAM_RECEIPT_FILE_V1);
+    await appendFile(receiptPath, Buffer.from(" ", "ascii"));
+    await expect(checkLcc2SogCoordinateStream({ manifestPath, outputDirectory: receiptOutput }))
+      .rejects.toMatchObject({ code: "LCC2_COORDINATE_OUTPUT_MISMATCH" });
+
+    const extraOutput = join(outputParent, "extra-file");
+    await writeLcc2SogCoordinateStream({ manifestPath, outputDirectory: extraOutput });
+    await writeFile(join(extraOutput, "unexpected.bin"), Buffer.from([1]));
+    await expect(checkLcc2SogCoordinateStream({ manifestPath, outputDirectory: extraOutput }))
+      .rejects.toMatchObject({ code: "LCC2_COORDINATE_OUTPUT_MISMATCH" });
+  });
+
+  it("maps a rejected body-handle write and removes only its owned private staging directory", async () => {
+    const manifestPath = await writeLcc2Fixture();
+    const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-output-"));
+    cleanup.push(outputParent);
+    const outputDirectory = join(outputParent, "write-failure");
+    await expect(writeLcc2SogCoordinateStream({
+      manifestPath,
+      outputDirectory,
+      testHooks: {
+        beforeFirstBodyWrite: async ({ closeBodyHandles }) => closeBodyHandles(),
+      },
+    })).rejects.toMatchObject({ code: "LCC2_COORDINATE_OUTPUT_WRITE_FAILED" });
+    await expect(lstat(outputDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await readdir(outputParent)).filter((name) => name.includes(".staging-"))).toEqual([]);
+  });
+
+  it("cleans its private staging directory on source drift and never replaces a racing target", async () => {
+    const manifestPath = await writeLcc2Fixture();
+    const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-output-"));
+    cleanup.push(outputParent);
+    const driftTarget = join(outputParent, "drift");
+    await expect(writeLcc2SogCoordinateStream({
+      manifestPath,
+      outputDirectory: driftTarget,
+      testHooks: {
+        beforeFinalInventoryInspection: async () => appendFile(
+          join(dirname(manifestPath), "data", "3dgs", "leaf-0.sog"),
+          Buffer.from([0]),
+        ),
+      },
+    })).rejects.toBeInstanceOf(Error);
+    await expect(lstat(driftTarget)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const racingManifest = await writeLcc2Fixture();
+    const racingTarget = join(outputParent, "racing");
+    await expect(writeLcc2SogCoordinateStream({
+      manifestPath: racingManifest,
+      outputDirectory: racingTarget,
+      testHooks: {
+        beforePublish: async ({ targetDirectory }) => mkdir(targetDirectory),
+      },
+    })).rejects.toMatchObject({ code: "LCC2_COORDINATE_OUTPUT_EXISTS" });
+    expect((await lstat(racingTarget)).isDirectory()).toBe(true);
+  });
+
+  it("rejects non-finite symmetric-log recovery and a replaced check target", async () => {
+    const manifestPath = await writeLcc2Fixture({
+      meansMins: [1_000, 1_000, 1_000],
+      meansMaxs: [1_001, 1_001, 1_001],
+    });
+    const outputParent = await mkdtemp(join(tmpdir(), "lcc2-coordinate-output-"));
+    cleanup.push(outputParent);
+    await expect(writeLcc2SogCoordinateStream({
+      manifestPath,
+      outputDirectory: join(outputParent, "overflow"),
+    })).rejects.toMatchObject({ code: "LCC2_COORDINATE_DECODE_INVALID" });
+
+    const stableManifest = await writeLcc2Fixture();
+    const outputDirectory = join(outputParent, "replace-race");
+    await writeLcc2SogCoordinateStream({ manifestPath: stableManifest, outputDirectory });
+    const moved = join(outputParent, "moved-original");
+    await expect(checkLcc2SogCoordinateStream({
+      manifestPath: stableManifest,
+      outputDirectory,
+      testHooks: {
+        afterOutputIdentityRead: async ({ targetDirectory }) => {
+          await rename(targetDirectory, moved);
+          await mkdir(targetDirectory);
+        },
+      },
+    })).rejects.toMatchObject({ code: "LCC2_COORDINATE_OUTPUT_UNSAFE" });
+  });
+});
+
+describe("parseLcc2SogCoordinateStreamArguments", () => {
+  it("requires the one named Grand Hall profile plus an explicit mode and manifest/output pair", () => {
+    expect(parseLcc2SogCoordinateStreamArguments([
+      "write", "--profile", "grand-hall-big-sog-v1",
+      "--manifest", "C:\\capture\\scene.lcc2", "--output", "D:\\evidence\\coordinates",
+    ])).toEqual({
+      mode: "write",
+      profile: "grand-hall-big-sog-v1",
+      manifestPath: "C:\\capture\\scene.lcc2",
+      outputDirectory: "D:\\evidence\\coordinates",
+    });
+    expect(parseLcc2SogCoordinateStreamArguments(["--help"])).toBeNull();
+    expect(() => parseLcc2SogCoordinateStreamArguments([
+      "check", "--profile", "grand-hall-big-sog-v1",
+      "--manifest", "C:\\capture\\scene.lcc2", "--output", "D:\\evidence\\coordinates", "--mask", "x",
+    ])).toThrow(/Unknown/u);
+    expect(() => parseLcc2SogCoordinateStreamArguments([
+      "write", "--profile", "arbitrary-source",
+      "--manifest", "C:\\capture\\scene.lcc2", "--output", "D:\\evidence\\coordinates",
+    ])).toThrow(/grand-hall-big-sog-v1/u);
+    expect(() => parseLcc2SogCoordinateStreamArguments([
+      "write", "--manifest", "C:\\capture\\scene.lcc2", "--output", "D:\\evidence\\coordinates",
+    ])).toThrow(/--profile is required/u);
+    expect(() => parseLcc2SogCoordinateStreamArguments([
+      "write", "--profile", "grand-hall-big-sog-v1",
+      "--manifest", "C:\\capture\\scene.lcc2", "--output", "D:\\evidence\\coordinates",
+      "--ordinal-sha256", `sha256:${"0".repeat(64)}`,
     ])).toThrow(/Unknown/u);
   });
 });

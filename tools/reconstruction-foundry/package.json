@@ -40,6 +40,7 @@
     "grand-hall-t561-author-observation-input": "tsx src/grand-hall-t561-real-observation-input-entry.ts",
     "lcc2-frontier": "tsx src/lcc2-frontier-entry.ts",
     "lcc2-ordered-inventory": "tsx src/lcc2-ordered-gaussian-inventory-entry.ts",
+    "lcc2-sog-coordinate-stream": "tsx src/lcc2-sog-coordinate-stream-entry.ts",
     "local-app": "tsx src/entry.ts local-app",
     "test": "vitest run",
     "lint": "eslint src",
