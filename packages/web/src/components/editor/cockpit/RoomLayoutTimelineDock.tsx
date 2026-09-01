@@ -767,9 +767,8 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
       spaceId ?? "",
       frames.map((frame) => {
         const kf = frame.keyframe;
-        const status = "status" in kf && typeof kf.status === "string" ? kf.status : "";
-        const snapshotId = "id" in kf && typeof kf.id === "string" ? kf.id : "";
-        return `${frame.phaseId}:${kf.state}:${status}:${snapshotId}`;
+        const snapshotId = "snapshotId" in kf ? kf.snapshotId : "";
+        return `${frame.phaseId}:${kf.state}:${snapshotId}`;
       }).join("|"),
     ].join("~");
     // Same picture: never touch running user-driven motion; the transport
