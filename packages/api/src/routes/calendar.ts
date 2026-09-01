@@ -114,9 +114,38 @@ export async function calendarRoutes(
     // The three reads are independent — one round-trip of latency, not three
     // (review finding: this is the endpoint every calendar view polls).
     const [bookingRows, phaseRows, ruleRows] = await Promise.all([
+      // Explicit column map, NOT db.select().from(...): adding a join to a
+      // bare select() silently changes Drizzle's row shape to nested
+      // { bookings: {...}, events: {...} } and every flat row.* read below
+      // would break. The left join enriches each booking with its event's
+      // card-face fields (name, client, guest count) in the same
+      // round-trip — the route's own latency rule.
       db
-        .select()
+        .select({
+          id: bookings.id,
+          spaceId: bookings.spaceId,
+          kind: bookings.kind,
+          status: bookings.status,
+          title: bookings.title,
+          eventType: bookings.eventType,
+          startsAt: bookings.startsAt,
+          endsAt: bookings.endsAt,
+          rank: bookings.rank,
+          jointFlag: bookings.jointFlag,
+          decisionAt: bookings.decisionAt,
+          ownerUserId: bookings.ownerUserId,
+          nextAction: bookings.nextAction,
+          nextActionDueAt: bookings.nextActionDueAt,
+          eventId: bookings.eventId,
+          seriesId: bookings.seriesId,
+          notes: bookings.notes,
+          deletedAt: bookings.deletedAt,
+          eventName: events.name,
+          eventClientName: events.clientName,
+          eventGuestCount: events.guestCount,
+        })
         .from(bookings)
+        .leftJoin(events, and(eq(bookings.eventId, events.id), isNull(events.deletedAt)))
         .where(
           and(
             eq(bookings.venueId, query.venueId),
@@ -233,6 +262,13 @@ export async function calendarRoutes(
       nextActionDueAt: row.nextActionDueAt === null ? null : row.nextActionDueAt.toISOString(),
       eventId: row.eventId,
       seriesId: row.seriesId,
+      // Command Centre card face (C1): the joined event's name/client/guests
+      // (null when the booking has no live event) and the booking's own
+      // margin note. All optional on the schema — older clients strip them.
+      eventName: row.eventName,
+      clientName: row.eventClientName,
+      guestCount: row.eventGuestCount,
+      notes: row.notes,
     }));
 
     const entries = [...bookingEntries, ...phaseEntries].sort((a, b) => {

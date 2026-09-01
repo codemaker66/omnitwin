@@ -8,6 +8,7 @@ import {
   CalendarConflictSchema,
   CalendarEntrySchema,
   CalendarQuerySchema,
+  CalendarBookingEntrySchema,
   CalendarResponseSchema,
   ConflictReportSchema,
   CreateBookingSchema,
@@ -30,6 +31,7 @@ import {
 const VENUE_ID = "00000000-0000-4000-8000-00000000000a";
 const SPACE_ID = "00000000-0000-4000-8000-00000000000b";
 const OWNER_ID = "00000000-0000-4000-8000-00000000000c";
+const BOOKING_ID = "00000000-0000-4000-8000-00000000000d";
 
 function validHoldInput(): Record<string, unknown> {
   return {
@@ -543,6 +545,55 @@ describe("Calendar entries and conflicts", () => {
       },
     });
     expect(result.success).toBe(true);
+  });
+
+  it("the card-face enrichment is optional (older servers) and nullable (event-less bookings)", () => {
+    const entry = {
+      entryType: "booking",
+      id: BOOKING_ID,
+      spaceId: SPACE_ID,
+      kind: "ink",
+      status: "active",
+      state: "ink",
+      title: "Chamber dinner",
+      eventType: "dinner",
+      startsAt: "2026-09-16T12:00:00.000Z",
+      endsAt: "2026-09-16T16:00:00.000Z",
+      rank: null,
+      jointFlag: false,
+      decisionAt: null,
+      ownerUserId: null,
+      nextAction: null,
+      nextActionDueAt: null,
+      eventId: null,
+      seriesId: null,
+    };
+    // Absent: valid — an older server's response.
+    expect(CalendarBookingEntrySchema.safeParse(entry).success).toBe(true);
+    // Present and populated: the Command Centre card face.
+    expect(
+      CalendarBookingEntrySchema.safeParse({
+        ...entry,
+        eventName: "Chamber dinner",
+        clientName: "The Hartwell Family",
+        guestCount: 120,
+        notes: "Client arriving early — meet at Glassford St door.",
+      }).success,
+    ).toBe(true);
+    // Present and null: a booking with no live event.
+    expect(
+      CalendarBookingEntrySchema.safeParse({
+        ...entry,
+        eventName: null,
+        clientName: null,
+        guestCount: null,
+        notes: null,
+      }).success,
+    ).toBe(true);
+    // A negative guest count is not a headcount.
+    expect(
+      CalendarBookingEntrySchema.safeParse({ ...entry, guestCount: -1 }).success,
+    ).toBe(false);
   });
 
   it("turnaroundRules are optional (older servers) and carry the rule wire shape when present", () => {
