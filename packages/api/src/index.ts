@@ -236,21 +236,28 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   // time so an on-call engineer correlating a Sentry event to a
   // release doesn't have to guess.
   //
-  // These are stamped into the image by the Dockerfile's BUILD_GIT_SHA /
-  // BUILD_TIMESTAMP / BUILD_APP_VERSION args (Railway passes matching
-  // service variables through as build args). NOTHING injects them in CI —
-  // an earlier version of this comment claimed that, which is why all three
-  // fields read "dev"/"0.0.0" in production for months and deploys had to be
-  // verified by endpoint-behaviour flips instead. `npm_package_version` is
-  // unset in production because the start command invokes node directly
-  // rather than through a pnpm script, hence the APP_VERSION source.
+  // Two provenance sources, in order of trust:
+  //   1. RAILWAY_GIT_COMMIT_SHA — injected by Railway at runtime for a deploy
+  //      triggered from the GitHub integration. It names the commit that was
+  //      actually built and cannot go stale.
+  //   2. GIT_SHA — baked into the image from the Dockerfile's BUILD_GIT_SHA
+  //      arg, fed by a service variable the checklist sets before a manual
+  //      `railway up` (a CLI upload carries no git metadata). It is a static
+  //      variable, so it CAN go stale: production reported a six-week-old SHA
+  //      on 2026-09-01 because an 18 Aug GitHub-triggered deploy shipped an
+  //      image stamped by hand in July.
+  // NOTHING injects these in CI — an earlier version of this comment claimed
+  // that, which is why all three fields read "dev"/"0.0.0" in production for
+  // months. `npm_package_version` is unset in production because the start
+  // command invokes node directly rather than through a pnpm script, hence
+  // the APP_VERSION source.
   //
   // Unauthenticated + unrate-limited — `/health*` routes are ops
   // surfaces. Contents are public-safe (commit SHA is not a secret).
   server.get("/health/version", async () => {
     return {
       version: process.env["APP_VERSION"] ?? process.env["npm_package_version"] ?? "0.0.0",
-      gitSha: process.env["GIT_SHA"] ?? "dev",
+      gitSha: process.env["RAILWAY_GIT_COMMIT_SHA"] ?? process.env["GIT_SHA"] ?? "dev",
       builtAt: process.env["BUILD_TIMESTAMP"] ?? "dev",
       nodeEnv: env.NODE_ENV,
     };

@@ -5,8 +5,8 @@
 **Companion:** `docs/operations/diary-production-rollout-runbook.md` (diagnostic / emergency selective-apply only).
 
 **Coupled docs — fix in the same commit or the owner reads the wrong thing one click away:**
-- `docs/RUNBOOK.md` § "Deploying a change → API (Railway)" still claims Railway watches `packages/api/**`. **There is no GitHub integration for the API.** Its "Required in production" env table is also wrong: it lists `JWT_SECRET` (never read by `env.ts`) and omits `PUBLIC_API_ORIGIN` plus all four `RUNTIME_PROFILE_R2_*`.
-- `docs/operations/deploy-flow-current.md` says "The API deployment is expected to be handled by Railway's GitHub integration". That expectation is **disproven**.
+- `docs/RUNBOOK.md` § "Deploying a change → API (Railway)" says Railway watches `packages/api/**`. **That was RIGHT** (corrected here 2026-09-02 after reading the deployment metadata: the service is GitHub-connected and skips pushes that miss its watch patterns). Its "Required in production" env table is still wrong: it lists `JWT_SECRET` (never read by `env.ts`) and omits `PUBLIC_API_ORIGIN` plus all four `RUNTIME_PROFILE_R2_*`.
+- `docs/operations/deploy-flow-current.md` says "The API deployment is expected to be handled by Railway's GitHub integration". **True, with the watch-pattern caveat above** — a push that changes only docs, web, or the Dockerfile does not build.
 - `docs/operations/diary-first-week-operations.md` repeats this doc's old broken smoke command (missing `E2E_START_SERVER=false`).
 
 ## Who does what
@@ -37,7 +37,7 @@ Most of this is agent-executable. Steps marked **[OWNER]** need a human: browser
 ## 1. The pipeline, as it actually behaves
 
 - **Web (Vercel): deploys on every push to `master`, and does NOT wait for CI.** Push = a live web release.
-- **API (Railway): does NOT deploy on push.** There is no GitHub integration for this service. The API only moves when someone runs `railway up` from a linked directory (project `bubbly-solace`, environment `production`, service `@omnitwin/api`). Between 2026-07-06 and 2026-07-20 dozens of commits reached master and the API never moved — nobody noticed for two weeks. **Deploying the API is a separate, deliberate act: §5.**
+- **API (Railway): DOES deploy on push, but only when a watched path changes — corrected 2026-09-02.** The service IS connected to `codemaker66/omnitwin` `master`: every push creates a Railway deployment, and it is **SKIPPED with `skippedReason: "No changes to watched files"`** unless the diff touches the service's watch patterns (dashboard setting was `/packages/api/**` alone; `railway.json` now declares the full set the image depends on: Dockerfile, lockfile, root manifests, `packages/{api,types,reconstruction-foundry}`, `tools/{reconstruction-foundry,capture-factory,twin-forge}`). That is why "dozens of commits reached master and the API never moved" between 2026-07-06 and 07-20 — none touched `packages/api/**` — and why the 18 Aug quiz-runs route (which did) went live with a stale hand stamp. **The same watch filter is applied to `railway up`** (deployment 6bbb1db5 was skipped for a Dockerfile-only change); `railway redeploy --service "@omnitwin/api" --from-source --yes` forces a build of the latest master commit. `/health/version` now prefers `RAILWAY_GIT_COMMIT_SHA` (set by Railway on GitHub-triggered deploys) over the manual `GIT_SHA` stamp, so a push-triggered deploy reports its own commit.
 - **`.github/workflows/deploy.yml` runs `db:migrate` only after CI succeeds.** CI is currently red, so **this never runs** — do not expect it to, and do not rely on it. Apply migrations yourself (§3).
 - `deploy.yml`'s `notify-railway` job only `echo`s text. It performs no deploy.
 

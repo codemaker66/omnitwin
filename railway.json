@@ -2,7 +2,22 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile"
+    "dockerfilePath": "Dockerfile",
+    "watchPatterns": [
+      "/Dockerfile",
+      "/.railwayignore",
+      "/railway.json",
+      "/package.json",
+      "/pnpm-lock.yaml",
+      "/pnpm-workspace.yaml",
+      "/tsconfig.base.json",
+      "/packages/api/**",
+      "/packages/types/**",
+      "/packages/reconstruction-foundry/**",
+      "/tools/reconstruction-foundry/**",
+      "/tools/capture-factory/**",
+      "/tools/twin-forge/**"
+    ]
   },
   "deploy": {
     "startCommand": "node --conditions=omnitwin-dist dist/index.js",

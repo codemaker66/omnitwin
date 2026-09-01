@@ -108,7 +108,9 @@ interface VersionBody {
 }
 
 describe("GET /health/version (build provenance)", () => {
-  const KEYS = ["GIT_SHA", "BUILD_TIMESTAMP", "APP_VERSION", "npm_package_version"] as const;
+  const KEYS = [
+    "GIT_SHA", "BUILD_TIMESTAMP", "APP_VERSION", "npm_package_version", "RAILWAY_GIT_COMMIT_SHA",
+  ] as const;
   const saved = new Map<string, string | undefined>();
 
   beforeAll(() => {
@@ -134,6 +136,31 @@ describe("GET /health/version (build provenance)", () => {
     expect(body.gitSha).toBe("abc1234");
     expect(body.builtAt).toBe("2026-01-01T00:00:00Z");
     expect(body.version).toBe("1.2.3");
+  });
+
+  it("falls back to Railway's own commit variable when the image was not stamped", async () => {
+    // A GitHub-triggered Railway deploy never runs the checklist's stamp step,
+    // so GIT_SHA is absent while RAILWAY_GIT_COMMIT_SHA names the real commit.
+    // Production reported a six-week-old SHA for exactly this reason.
+    for (const key of KEYS) Reflect.deleteProperty(process.env, key);
+    process.env["RAILWAY_GIT_COMMIT_SHA"] = "feedface0123456789";
+
+    const response = await server.inject({ method: "GET", url: "/health/version" });
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body) as VersionBody;
+    expect(body.gitSha).toBe("feedface0123456789");
+  });
+
+  it("prefers Railway's commit variable over a manual stamp when both exist", async () => {
+    // The manual stamp is a static service variable that outlives the deploy
+    // it described; Railway's variable names the commit that was built.
+    for (const key of KEYS) Reflect.deleteProperty(process.env, key);
+    process.env["GIT_SHA"] = "abc1234";
+    process.env["RAILWAY_GIT_COMMIT_SHA"] = "feedface0123456789";
+
+    const response = await server.inject({ method: "GET", url: "/health/version" });
+    const body = JSON.parse(response.body) as VersionBody;
+    expect(body.gitSha).toBe("feedface0123456789");
   });
 
   it("falls back to dev placeholders when nothing is stamped, keeping the shape stable", async () => {
