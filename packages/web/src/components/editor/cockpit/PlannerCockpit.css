@@ -10,10 +10,11 @@
   inset: 0;
   display: grid;
   grid-template-columns: var(--cockpit-rail-width) minmax(0, 1fr) var(--cockpit-right-width);
-  grid-template-rows: var(--cockpit-topbar-height) minmax(0, 1fr) var(--cockpit-bottom-height);
+  grid-template-rows: var(--cockpit-topbar-height) minmax(0, 1fr) auto var(--cockpit-bottom-height);
   grid-template-areas:
     "topbar topbar topbar"
     "rail   stage  panel"
+    "rail   ribbon ribbon"
     "rail   bottom bottom";
   overflow: hidden;
   /* CARD A3: planner chrome consumes House names directly — the proof path

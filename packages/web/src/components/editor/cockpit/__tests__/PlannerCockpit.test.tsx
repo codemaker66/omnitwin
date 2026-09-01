@@ -9,6 +9,9 @@ vi.mock("../../../../App.js", () => ({ App: () => <div data-testid="mock-editor-
 vi.mock("../CockpitTopBar.js", () => ({ CockpitTopBar: () => <header data-testid="cockpit-topbar-mock" /> }));
 vi.mock("../CockpitRightDock.js", () => ({ CockpitRightDock: () => <aside data-testid="cockpit-dock-mock" /> }));
 vi.mock("../CockpitBottom.js", () => ({ CockpitBottom: () => <footer data-testid="cockpit-bottom-mock" /> }));
+// The When ribbon reads router search params (its ?eventId corridor) and
+// fetches the calendar — out of scope for a structural shell test.
+vi.mock("../WhenRibbon.js", () => ({ WhenRibbon: () => <aside data-testid="when-ribbon-mock" /> }));
 
 const { PlannerCockpit } = await import("../PlannerCockpit.js");
 

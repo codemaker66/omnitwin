@@ -544,4 +544,40 @@ describe("Calendar entries and conflicts", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("turnaroundRules are optional (older servers) and carry the rule wire shape when present", () => {
+    const base = {
+      venueId: VENUE_ID,
+      range: { from: "2026-09-14T00:00:00.000Z", to: "2026-09-21T00:00:00.000Z" },
+      rooms: [],
+      entries: [],
+      conflicts: {
+        conflicts: [],
+        checks: {
+          inkDoubleBook: { status: "checked" },
+          holdOverlap: { status: "checked" },
+          turnaround: { status: "checked", uncoveredPairCount: 0, detail: "All gaps covered." },
+        },
+      },
+    };
+    // Absent: valid — a client treats this as "guidelines unavailable".
+    expect(CalendarResponseSchema.safeParse(base).success).toBe(true);
+    // Present: the exact rows the conflict engine resolves.
+    const withRules = CalendarResponseSchema.safeParse({
+      ...base,
+      turnaroundRules: [
+        { spaceId: null, eventType: null, name: "House default", minutes: 90, isActive: true },
+        { spaceId: SPACE_ID, eventType: "wedding", name: "Grand Hall wedding", minutes: 180, isActive: true },
+      ],
+    });
+    expect(withRules.success).toBe(true);
+    // Negative minutes are not a guideline.
+    const negative = CalendarResponseSchema.safeParse({
+      ...base,
+      turnaroundRules: [
+        { spaceId: null, eventType: null, name: "House default", minutes: -30, isActive: true },
+      ],
+    });
+    expect(negative.success).toBe(false);
+  });
 });

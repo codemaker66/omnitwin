@@ -1,0 +1,289 @@
+/* ---------------------------------------------------------------------------
+   The When ribbon (Day Board S2) — Ink & Gilt over the cockpit's shell grid.
+
+   A grid-row dock (grid-area: ribbon), so no z-index is needed: grid
+   siblings do not stack, and the stage's fixed chrome is scoped to the
+   stage cell by its containing block. Motion here is transform/opacity
+   only; the drag springs are JS-driven (lib/springs.ts) because the
+   cockpit shell zeroes ALL CSS animation under prefers-reduced-motion —
+   the JS spring checks the preference itself and settles instantly.
+--------------------------------------------------------------------------- */
+
+.when-ribbon {
+  grid-area: ribbon;
+  border-top: 1px solid rgba(201, 168, 76, 0.2);
+  background: linear-gradient(180deg, rgba(20, 17, 13, 0.98), rgba(11, 10, 9, 0.99));
+  color: var(--house-text-1, #f4efe6);
+  font-family: "Inter", system-ui, sans-serif;
+  padding: 8px 14px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow: hidden;
+  user-select: none;
+}
+
+.when-ribbon__row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.when-ribbon__eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--house-accent-brass, #c6a15b);
+}
+
+.when-ribbon__day {
+  font-size: 0.74rem;
+  color: rgba(244, 239, 230, 0.8);
+}
+
+.when-ribbon__note {
+  font-size: 0.7rem;
+  color: rgba(244, 239, 230, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.when-ribbon__link {
+  color: var(--house-accent-brass, #c6a15b);
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* --- the strip ------------------------------------------------------------ */
+
+.when-ribbon__strip {
+  position: relative;
+  height: 44px;
+  border: 1px solid rgba(246, 241, 232, 0.1);
+  border-radius: 8px;
+  background: rgba(9, 8, 7, 0.6);
+  overflow: hidden;
+}
+
+.when-ribbon__tick {
+  position: absolute;
+  top: 2px;
+  bottom: 0;
+  border-left: 1px solid rgba(246, 241, 232, 0.07);
+  padding-left: 4px;
+  font-size: 0.58rem;
+  color: rgba(244, 239, 230, 0.4);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.when-ribbon__now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(244, 239, 230, 0.55);
+  pointer-events: none;
+}
+
+/* Hatched turnaround guidance — visibly advisory, never a wall. */
+.when-ribbon__buffer {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(201, 168, 76, 0.16) 0 5px,
+    transparent 5px 10px
+  );
+  pointer-events: none;
+}
+
+.when-ribbon__ghost {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  border-radius: 5px;
+  font-size: 0.64rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  color: rgba(244, 239, 230, 0.75);
+}
+
+.when-ribbon__ghost--ink {
+  background: rgba(34, 28, 20, 0.95);
+  border: 1px solid rgba(201, 168, 76, 0.45);
+}
+
+.when-ribbon__ghost--hold {
+  background: transparent;
+  border: 1px dashed rgba(244, 239, 230, 0.35);
+  color: rgba(244, 239, 230, 0.55);
+}
+
+.when-ribbon__ghost--internal_block,
+.when-ribbon__ghost--prospect {
+  background: rgba(70, 74, 80, 0.35);
+  border: 1px solid rgba(146, 152, 160, 0.3);
+  color: rgba(244, 239, 230, 0.55);
+}
+
+/* The snapped landing — where a release will settle. */
+.when-ribbon__shadow {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  border-radius: 6px;
+  border: 1px dashed rgba(201, 168, 76, 0.75);
+  background: rgba(201, 168, 76, 0.08);
+  pointer-events: none;
+}
+
+/* --- the ingot ------------------------------------------------------------ */
+
+.when-ribbon__ingot {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  min-width: 34px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #d9b96b, #b9924a 55%, #a37f3c);
+  border: 1px solid rgba(255, 235, 190, 0.55);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  color: #241c10;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  cursor: grab;
+  touch-action: none;
+  will-change: transform;
+}
+
+.when-ribbon__ingot.is-active {
+  cursor: grabbing;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+.when-ribbon__ingot.is-readonly {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.when-ribbon__ingot:focus-visible {
+  outline: 2px solid rgba(226, 193, 93, 0.72);
+  outline-offset: 2px;
+}
+
+.when-ribbon__ingot-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.when-ribbon__ingot-time {
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.when-ribbon__handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.when-ribbon__handle--start { left: -2px; border-radius: 6px 0 0 6px; }
+.when-ribbon__handle--end { right: -2px; border-radius: 0 6px 6px 0; }
+
+.when-ribbon__handle::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: rgba(36, 28, 16, 0.45);
+}
+
+/* --- foot ----------------------------------------------------------------- */
+
+.when-ribbon__foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 16px;
+  min-width: 0;
+}
+
+.when-ribbon__disclosure {
+  font-size: 0.62rem;
+  color: rgba(244, 239, 230, 0.42);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.when-ribbon__confirm,
+.when-ribbon__notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.when-ribbon__confirm { color: var(--house-text-1, #f4efe6); }
+.when-ribbon__confirm-warning { color: #d99a2b; }
+.when-ribbon__notice--warning { color: #d99a2b; }
+.when-ribbon__notice--error { color: #e06a5a; }
+.when-ribbon__notice--moved { color: rgba(244, 239, 230, 0.75); }
+
+.when-ribbon__button {
+  font: inherit;
+  font-size: 0.68rem;
+  color: var(--house-text-1, #f4efe6);
+  background: rgba(246, 241, 232, 0.08);
+  border: 1px solid rgba(246, 241, 232, 0.22);
+  border-radius: 5px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+
+.when-ribbon__button--primary {
+  background: rgba(201, 168, 76, 0.22);
+  border-color: rgba(201, 168, 76, 0.6);
+}
+
+.when-ribbon__button:focus-visible {
+  outline: 2px solid rgba(226, 193, 93, 0.72);
+  outline-offset: 2px;
+}
+
+.when-ribbon__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

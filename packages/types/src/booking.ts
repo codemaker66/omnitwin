@@ -421,11 +421,29 @@ export const CalendarEntrySchema = z.discriminatedUnion("entryType", [
 ]);
 export type CalendarEntry = z.infer<typeof CalendarEntrySchema>;
 
+/** The venue's turnaround guidance rules, as the calendar read model carries
+ *  them: the same rows the server's conflict engine resolves (most-specific
+ *  active rule for (spaceId, incoming eventType), ties toward the LARGEST
+ *  minutes). Exposed so a client can draw guideline buffers for positions
+ *  that do not exist yet (the When ribbon's hatched shoulders) — guidance
+ *  for the team's own judgement, never an enforced gap. */
+export const CalendarTurnaroundRuleSchema = z.object({
+  spaceId: z.string().uuid().nullable(),
+  eventType: z.string().max(80).nullable(),
+  name: z.string().min(1).max(200),
+  minutes: z.number().int().nonnegative(),
+  isActive: z.boolean(),
+});
+export type CalendarTurnaroundRule = z.infer<typeof CalendarTurnaroundRuleSchema>;
+
 export const CalendarResponseSchema = z.object({
   venueId: z.string().uuid(),
   range: z.object({ from: IsoInstantSchema, to: IsoInstantSchema }),
   rooms: z.array(CalendarRoomSchema),
   entries: z.array(CalendarEntrySchema),
   conflicts: ConflictReportSchema,
+  /** Optional so older servers (and recorded fixtures) stay valid; a client
+   *  that needs buffer geometry treats absence as "guidelines unavailable". */
+  turnaroundRules: z.array(CalendarTurnaroundRuleSchema).optional(),
 });
 export type CalendarResponse = z.infer<typeof CalendarResponseSchema>;
