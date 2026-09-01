@@ -1,8 +1,42 @@
 # Grand Hall T-554 native-review Stage 1 candidate runbook
 
-Status: implemented; no reviewed candidate has been issued yet
+Status: exact deterministic candidate issued and checked; human review pending
 Authority: none
 Scope: private local Grand Hall human-review workbench payload only
+
+## Issued candidate
+
+The create-only candidate generated from the exact clean reviewed commit is:
+
+```text
+D:\venviewer-evidence\trades-hall-grand-hall-t554-native-review-stage1-d9f5c6fc-v1
+```
+
+Its zero-write exact check passed on 2026-09-01 with this review tuple:
+
+- reviewed Git SHA:
+  `d9f5c6fca17d62130e500f82a9996924d1b5eb93`;
+- reviewed Git tree SHA:
+  `e275ae5c32c3d307914cc368dcca6e9b0e97f310`;
+- candidate semantic digest:
+  `sha256:d5e5b8756db6a2bc5eeee46a8c432b5398ba408176c775d62bc8ffe63f56a5dc`;
+- manifest semantic digest:
+  `sha256:b5ae4f7b47fc5bc4e2ee5435c532aef2c5c78677d9d9b34b30ef19b2c9f82549`;
+- manifest file digest / length:
+  `sha256:ff67c8d3c2349180934cac2d37c23dfde89163a0902e003389f7845b31768c2a`
+  / 5,551 bytes;
+- member-inventory digest / count / total bytes:
+  `sha256:fc5850b49b927f1182f8cc6808d0496e96695e6c1026a24469c0261d72a385a6`
+  / 15 / 20,489,015;
+- receipt semantic digest:
+  `sha256:bbf8baba9ef4eb1a31e32db7a1fa18b8a426801544adc45bfa1545e1280c2b4f`.
+
+The two builds are byte-identical and the checker reports
+`deterministicTwins: true`. This is still an unaccepted candidate:
+`stage1HashApprovalRequired: true`, `stage1HashApproved: false`,
+`runtimeAuthorityAvailable: false`, all closed-surface reviewer acceptances are
+false, and the review state is `human_pending`. The candidate directory itself
+must not be edited to record a decision.
 
 ## What this stage does
 
@@ -90,7 +124,8 @@ identical.
 
 ## Review gate
 
-Before Stage 2 is designed or compiled, inspect the candidate record and report
+Before Stage 2 is designed or compiled, inspect
+`stage1-candidate-authority-none.json` in the exact issued directory above and report
 these exact values together:
 
 - `reviewedGitSha`;
