@@ -82,21 +82,32 @@ describe("useRoomRuntimeSplat", () => {
     expect(runtimeApi.getLatestRuntimePackage).not.toHaveBeenCalled();
   });
 
-  it("fetches the runtime package for a known room and degrades when none exists", async () => {
+  it("mounts the room's staged capture when no package is registered", async () => {
+    // The Stage programme's S1 contract: with no registry row, the planner
+    // plans inside the staged capture rather than on clay — under its honest
+    // label, never presented as reviewed.
     runtimeApi.getLatestRuntimePackage.mockResolvedValue(null);
     useEditorStore.setState({ space: spaceWith("grand-hall") });
     const { result } = renderHook(() => useRoomRuntimeSplat());
     await waitFor(() => { expect(result.current.status).toBe("none"); });
     expect(runtimeApi.getLatestRuntimePackage).toHaveBeenCalledWith({ venue: "trades-hall", room: "grand-hall" });
-    expect(result.current.hasAsset).toBe(false);
+    expect(result.current.hasAsset).toBe(true);
+    expect(result.current.splatUrls.length).toBeGreaterThan(0);
+    expect(result.current.splatUrls[0]).toContain("/splats/trades-hall/grand-hall/");
+    // The staged transform is the derived room-local one, never a fudge.
+    expect(result.current.transform.scale).toBe(1);
+    expect(result.current.transform.rotation[0]).toBeCloseTo(-Math.PI / 2);
   });
 
-  it("degrades safely when the package request fails", async () => {
+  it("still mounts the staged capture when the registry request fails", async () => {
+    // A registry outage must not blank the room: the staged tiles are static
+    // and keep working while the API is down.
     runtimeApi.getLatestRuntimePackage.mockRejectedValue(new Error("boom"));
     useEditorStore.setState({ space: spaceWith("reception-room") });
     const { result } = renderHook(() => useRoomRuntimeSplat());
     await waitFor(() => { expect(result.current.status).toBe("none"); });
-    expect(result.current.hasAsset).toBe(false);
+    expect(result.current.hasAsset).toBe(true);
+    expect(result.current.splatUrls[0]).toContain("/splats/trades-hall/reception-room/");
   });
 
   it("ignores spaces that are not known Trades Hall runtime rooms", () => {
@@ -106,13 +117,23 @@ describe("useRoomRuntimeSplat", () => {
     expect(runtimeApi.getLatestRuntimePackage).not.toHaveBeenCalled();
   });
 
-  it("publishes the atelier fallback status when no package resolves", async () => {
+  it("publishes the staged label — never a reviewed claim — when staged tiles mount", async () => {
     runtimeApi.getLatestRuntimePackage.mockResolvedValue(null);
     // Seed a stale loaded label so the assertion proves the hook overwrote it.
     useCockpitStore.getState().setRuntimeAssetStatus("Runtime asset loaded, human reviewed.");
     useEditorStore.setState({ space: spaceWith("reception-room") });
     const { result } = renderHook(() => useRoomRuntimeSplat());
     await waitFor(() => { expect(result.current.status).toBe("none"); });
+    const label = useCockpitStore.getState().runtimeAssetStatus;
+    expect(label).toBe(
+      "Captured layer staged from source — not yet registered or alignment-reviewed",
+    );
+    expect(label).not.toMatch(/reviewed geometry|human reviewed|photoreal|survey/iu);
+  });
+
+  it("keeps the atelier fallback for a space with no capture at all", () => {
+    useEditorStore.setState({ space: spaceWith("some-other-room") });
+    renderHook(() => useRoomRuntimeSplat());
     expect(useCockpitStore.getState().runtimeAssetStatus).toBe(
       "Captured visual layer not yet available — planning on reviewed geometry",
     );

@@ -291,11 +291,15 @@ export interface RuntimeAssetOptions {
   /**
    * Whether staged-but-unregistered tiles may mount.
    *
-   * Off by default, deliberately. Public and planner surfaces must not present
-   * a capture that no registry row vouches for and no human has aligned; they
-   * show the procedural scene and say the captured layer is not available yet.
-   * Internal review surfaces opt in, because looking at the capture is the
-   * whole point of them.
+   * Off by default. A surface that opts in takes on one obligation: the
+   * decision's evidenceLabel (STAGED_CAPTURE_STATUS) must reach the person
+   * looking at the room, unedited — staged tiles are real measured capture,
+   * but nothing has reviewed them, and the label is what carries that truth.
+   *
+   * Who opts in: internal review surfaces (seeing the capture is their point),
+   * the public walkthrough, and — since the Stage programme's S1 — the
+   * planner, which plans inside the captured room under the staged chip.
+   * Surfaces that render without a visible label keep the default.
    */
   readonly allowStagedCapture?: boolean;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { RuntimePackage } from "@omnitwin/types";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
@@ -12,13 +12,17 @@ import {
   type TradesHallRuntimeRoomSlug,
 } from "../lib/runtime-package-resolution.js";
 
-// Resolves the registered runtime splat for the room currently open in the
-// planner. The cockpit is single-tenant (Trades Hall): the room slug comes from
-// the loaded space, the venue is fixed. Mirrors the dev route's proven
-// decision pipeline (decideRuntimeAsset → splat URLs + view transform) and
-// reflects the runtime-asset status into the cockpit top bar. Public read;
-// degrades to the atelier fallback (procedural clay + ink scene) whenever no
-// usable package exists — never a blank canvas.
+// Resolves the captured splat for the room currently open in the planner. The
+// cockpit is single-tenant (Trades Hall): the room slug comes from the loaded
+// space, the venue is fixed.
+//
+// Precedence is the shared decision pipeline's: a registered, immutable
+// RuntimePackage always wins; failing that, the room's staged capture mounts —
+// real measured tiles under their honest staged label (the Stage programme's
+// S1 decision: planning happens INSIDE the captured room, and the chip says
+// exactly what vouches for it, which today is staging, not review). Rooms with
+// neither degrade to the atelier fallback (procedural clay + ink scene) —
+// never a blank canvas.
 
 const RUNTIME_VENUE = "trades-hall";
 const IDENTITY_TRANSFORM: RuntimeAssetViewTransform = runtimeAssetViewTransformForRoom("grand-hall", "none");
@@ -66,11 +70,20 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
     return () => { cancelled = true; };
   }, [roomSlug]);
 
-  const decision = decideRuntimeAsset(null, pkg);
-  const hasAsset = decision.source === "package" && decision.splatUrls.length > 0;
-  const transform = roomSlug !== null
+  // Memoised because PlannerScene re-renders on every chunk arrival: the
+  // staged branches build fresh objects per call, and churning them through
+  // the scene during the develop window is pure waste.
+  const decision = useMemo(() => decideRuntimeAsset(null, pkg, {
+    room: roomSlug,
+    // The planner is a working surface for people planning real events in
+    // these rooms; seeing the staged capture is the point. The label carries
+    // the honesty: STAGED_CAPTURE_STATUS flows into the cockpit chip below.
+    allowStagedCapture: true,
+  }), [pkg, roomSlug]);
+  const hasAsset = decision.source !== "none" && decision.splatUrls.length > 0;
+  const transform = useMemo(() => (roomSlug !== null
     ? runtimeAssetViewTransformForRoom(roomSlug, decision.source)
-    : IDENTITY_TRANSFORM;
+    : IDENTITY_TRANSFORM), [roomSlug, decision.source]);
   const runtimeLabel = plannerRuntimeChipLabel(decision);
 
   useEffect(() => {
