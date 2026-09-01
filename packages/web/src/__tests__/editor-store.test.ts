@@ -440,6 +440,27 @@ describe("setObjectDressing", () => {
   });
 });
 
+describe("editor-only mutations request the debounced autosave", () => {
+  it("setObjectNotes and setObjectDressing both ping the requester", async () => {
+    const { setEditorAutosaveRequester } = await import("../stores/editor-store.js");
+    const requester = vi.fn();
+    setEditorAutosaveRequester(requester);
+    try {
+      useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+      const id = useEditorStore.getState().objects[0]?.id ?? "";
+
+      useEditorStore.getState().setObjectNotes(id, "VIP");
+      useEditorStore.getState().setObjectDressing(id, { chairStyle: "Victoria" });
+
+      // Notes and dressing never touch the placement store, so the scene
+      // bridge cannot schedule their save — the store must ask directly.
+      expect(requester).toHaveBeenCalledTimes(2);
+    } finally {
+      setEditorAutosaveRequester(null);
+    }
+  });
+});
+
 describe("removeObject", () => {
   it("removes object and marks dirty", () => {
     useEditorStore.getState().addObject("a1", 0, 0, 0);

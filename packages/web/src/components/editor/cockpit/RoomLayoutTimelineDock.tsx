@@ -436,6 +436,15 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
   const playheadMsRef = useRef(displayRange.fromMs);
   const visualFrameIndexRef = useRef(0);
   const requestedInitialPhaseIdRef = useRef(searchParams.get("timelinePhaseId"));
+  // One auto-engagement per timeline picture. The init layout-effect below
+  // re-runs whenever any of its callback deps change identity (every dock
+  // render), so without this latch "Exit preview" was immediately undone:
+  // the effect re-fired with unchanged data and re-entered the unavailable
+  // preview, pinning a phase-bearing room with no frozen snapshots in a
+  // permanent editing lock. The key captures everything that should
+  // legitimately re-engage the transport: room, range, and each phase's
+  // snapshot state (so a freeze refetch re-settles onto the new frame).
+  const initialEngageKeyRef = useRef<string | null>(null);
   const lastSearchParamSignatureRef = useRef(searchParamSignature);
   const selfNavigationSignatureRef = useRef<string | null>(null);
   const prePreviewPhaseRef = useRef<{ captured: boolean; phaseId: string | null }>({
@@ -748,6 +757,19 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
       }
       return;
     }
+    const engageKey = [
+      scope,
+      anchorDate,
+      spaceId ?? "",
+      frames.map((frame) => {
+        const kf = frame.keyframe;
+        const status = "status" in kf && typeof kf.status === "string" ? kf.status : "";
+        const snapshotId = "id" in kf && typeof kf.id === "string" ? kf.id : "";
+        return `${frame.phaseId}:${kf.state}:${status}:${snapshotId}`;
+      }).join("|"),
+    ].join("~");
+    if (initialEngageKeyRef.current === engageKey) return;
+    initialEngageKeyRef.current = engageKey;
     const requestedIndex = frames.findIndex((frame) =>
       frame.phaseId === requestedInitialPhaseIdRef.current,
     );

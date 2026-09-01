@@ -653,6 +653,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    // Notes never touch the placement store, so the bridge's scene
+    // subscription cannot schedule the save — request it here, like
+    // undo/redo do, or the note sits dirty until the next drag.
+    autosaveRequester?.();
   },
 
   setObjectDressing: (objectId, patch) => {
@@ -679,6 +683,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    // Same as setObjectNotes: dressing text edits are editor-store-only
+    // mutations; the scene bridge never sees them, so ask for the save.
+    autosaveRequester?.();
   },
 
   removeObject: (objectId) => {
