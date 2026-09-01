@@ -56,6 +56,8 @@ const CAMERA_INTERACTION_SETTLE_MS = 420;
 export interface PlannerCanvasGlOptions {
   readonly antialias: boolean;
   readonly powerPreference: "high-performance";
+  /** Dev-only capture aid; see plannerCanvasGlForViewportWidth. */
+  readonly preserveDrawingBuffer: boolean;
 }
 
 export function plannerCanvasDprForViewportWidth(viewportWidth: number): [number, number] {
@@ -71,6 +73,14 @@ export function plannerCanvasGlForViewportWidth(viewportWidth: number): PlannerC
   return {
     antialias: viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH,
     powerPreference: "high-performance",
+    // Dev-only capture aid (?capture=1): keep the drawing buffer so evidence
+    // harnesses can read the canvas back with toDataURL. A settled demand-loop
+    // splat canvas gives the compositor no frames, and page.screenshot waits
+    // on one forever — in-page readback is the only capture path that returns
+    // (see .claude/gotchas/splat-camera-and-capture.md). Never on in
+    // production: the preserved buffer costs a fullscreen copy per frame.
+    preserveDrawingBuffer:
+      import.meta.env.DEV && new URLSearchParams(window.location.search).has("capture"),
   };
 }
 
@@ -106,6 +116,18 @@ function usePlannerViewportWidth(): number {
   }, []);
 
   return viewportWidth;
+}
+
+declare global {
+  interface Window {
+    __walkDebug?: {
+      walkMode: boolean;
+      roomSlug: string | null;
+      hasAsset: boolean;
+      hasWalkData: boolean;
+    };
+    __setWalkMode?: (value: boolean) => void;
+  }
 }
 
 function isCameraNavigationPointer(event: PointerEvent<HTMLDivElement>): boolean {
@@ -269,6 +291,27 @@ export function PlannerScene(): ReactElement {
   useEffect(() => {
     if (walkMode && walkData === null) useCockpitStore.getState().setWalkMode(false);
   }, [walkMode, walkData]);
+
+  // DEV bridge for the walk mount conditions — the e2e reads this to say WHICH
+  // gate refused, instead of inferring it from a silent camera. __setWalkMode
+  // lets a probe flip the mode without a click, isolating input handling from
+  // the mount path.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    window.__walkDebug = {
+      walkMode,
+      roomSlug,
+      hasAsset,
+      hasWalkData: walkData !== null,
+    };
+    window.__setWalkMode = (value: boolean) => { useCockpitStore.getState().setWalkMode(value); };
+  }, [walkMode, roomSlug, hasAsset, walkData]);
+
+  // DEV bisect flag: ?walkNoCam=1 keeps walk mode's state transitions (the
+  // CameraRig yield included) but skips mounting InteriorCamera, so a hang can
+  // be attributed to one side or the other.
+  const walkCameraDisabled = import.meta.env.DEV
+    && new URLSearchParams(window.location.search).has("walkNoCam");
   const meshVisible = !hasAsset || layerMode !== "splat";
   const splatActive = hasAsset && layerMode !== "mesh";
 
@@ -388,14 +431,21 @@ export function PlannerScene(): ReactElement {
             active={cameraInteractionActive && splatActive && !walkMode}
           />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} />
-          {walkMode && walkData !== null && (
+          {walkMode && walkData !== null && !walkCameraDisabled && (
             <InteriorCamera
               key={roomSlug ?? "walk"}
               spawn={walkData.spawn}
               bounds={walkData.bounds}
               roomHeightM={walkData.roomHeightM}
               reducedMotion={prefersReducedMotion()}
-              settledDpr={Math.min(typeof window === "undefined" ? 1 : window.devicePixelRatio, 1.5)}
+              // Walk holds the planner's own 0.75 budget on BOTH sides:
+              // raising resolution at walk entry means a drawing-buffer resize
+              // racing Spark's first walk frame, which intermittently wedges
+              // the GL thread on slow GPUs (observed as an evaluate-starving
+              // native hang; the store-driven bisect without the resize passed
+              // repeatedly). The /room walkthrough keeps its raise — its
+              // canvas is created at that size, so it never resizes mid-scene.
+              settledDpr={0.75}
               motionDpr={0.75}
             />
           )}

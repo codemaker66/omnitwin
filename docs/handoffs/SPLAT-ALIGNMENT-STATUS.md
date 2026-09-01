@@ -260,3 +260,10 @@ Append here rather than rewriting, newest last.
   (`/`, poster-first, one room streams at a time). Public walkthrough at
   `/room/<slug>`. Splat clipping added, which makes a dollhouse view possible
   for any room whose box is right. Two of eight qualify today.
+
+- **2026-09-01, Claude Code** — Stage S1: the PLANNER now mounts each room's
+  staged capture (no registered package required) under the staged label, with
+  a Walk mode standing at the scanner's spawn. Your `roomCropM` improvements now
+  change what people PLAN INSIDE, not just the walkthrough — regenerating the
+  manifest reaches /plan with no web change, same contract as before. Nothing
+  about the crop workflow changes; the stakes just went up.

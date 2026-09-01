@@ -59,6 +59,8 @@ export default defineConfig({
     command: webServerCommand(),
     url: BASE_URL,
     reuseExistingServer: !process.env["CI"],
-    timeout: IS_PREVIEW_MODE ? 60_000 : 30_000,
+    // 120s: a cold vite boot on a loaded machine can exceed 30s, and a boot
+    // timeout reads as a mysterious run failure rather than what it is.
+    timeout: IS_PREVIEW_MODE ? 60_000 : 120_000,
   } : undefined,
 });

@@ -27,6 +27,13 @@ test.describe.configure({ mode: "serial" });
 
 declare global {
   interface Window {
+    __stageWake?: number;
+    __walkDebug?: {
+      walkMode: boolean;
+      roomSlug: string | null;
+      hasAsset: boolean;
+      hasWalkData: boolean;
+    };
     __roomCamera?: {
       position: [number, number, number];
       yaw: number;
@@ -51,14 +58,53 @@ async function throttleTo50Mbps(page: Page): Promise<void> {
 
 async function attachStageScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   const path = testInfo.outputPath(name);
-  let screenshot = await page.screenshot({ path, fullPage: false });
+  // A settled demand-loop splat canvas produces no frames, and page.screenshot
+  // waits for one forever (see .claude/gotchas/splat-camera-and-capture.md).
+  // This only ever worked before because the dissolve's per-frame setState kept
+  // the loop awake; the ref-driven dissolve lets the loop go properly idle. A
+  // single impulse is not enough either — it decays before the capture begins
+  // waiting — so alternating wheel impulses (net-zero zoom) keep frames flowing
+  // for the whole capture window, and stop the moment it is done.
+  await page.evaluate(() => {
+    const canvas = document.querySelector("canvas");
+    if (canvas === null) return;
+    let flip = 1;
+    window.__stageWake = window.setInterval(() => {
+      flip = -flip;
+      canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: flip, bubbles: true, cancelable: true }));
+    }, 120);
+  });
+  // In-page readback: the one capture path that returns on a splat canvas.
+  // Requires the page to have been opened with ?capture=1 (preserved buffer).
+  let screenshot: Buffer;
+  try {
+    await page.waitForTimeout(400);
+    const dataUrl = await page.evaluate(
+      () => document.querySelector("canvas")?.toDataURL("image/png") ?? null,
+    );
+    if (dataUrl === null) throw new Error("no canvas to capture");
+    screenshot = Buffer.from(dataUrl.split(",")[1] ?? "", "base64");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(path, screenshot);
+  } finally {
+    await page.evaluate(() => {
+      if (window.__stageWake !== undefined) window.clearInterval(window.__stageWake);
+      window.__stageWake = undefined;
+    });
+  }
   if (screenshot.byteLength <= 15_000) {
-    // Blank frame = the capture raced the recovery remount; settle + reshoot
-    // once. A persistently blank page still fails below. (No settleCockpit
-    // BEFORE the first shot here — mid-develop captures are time-sensitive.)
+    // Blank buffer = the capture raced the recovery remount; settle + reshoot
+    // once. A persistently blank canvas still fails below.
     await settleCockpit(page);
     await page.waitForTimeout(1_000);
-    screenshot = await page.screenshot({ path, fullPage: false });
+    const retryUrl = await page.evaluate(
+      () => document.querySelector("canvas")?.toDataURL("image/png") ?? null,
+    );
+    if (retryUrl !== null) {
+      screenshot = Buffer.from(retryUrl.split(",")[1] ?? "", "base64");
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(path, screenshot);
+    }
   }
   expect(screenshot.byteLength).toBeGreaterThan(15_000);
   await testInfo.attach(name, { body: screenshot, contentType: "image/png" });
@@ -102,7 +148,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     await throttleTo50Mbps(page);
 
     const startedAt = Date.now();
-    await page.goto("/plan");
+    await page.goto("/plan?capture=1");
 
     // First paint: the canvas (blueprint ink + clay proxy — both procedural,
     // zero network) must be up long before any splat byte lands. The 300 ms
@@ -174,7 +220,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
       void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
     });
 
-    await page.goto("/plan");
+    await page.goto("/plan?capture=1");
 
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
     await expect
@@ -189,32 +235,44 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     await attachStageScreenshot(page, testInfo, "stage-s1-staged-resolve.png");
   });
 
-  test("walk: stand in the captured room at eye level; Escape returns to plan view", async ({ page }, testInfo) => {
+  test("walk: stand in the captured room at eye level; Escape returns to plan view", async ({ page }) => {
     test.setTimeout(240_000);
     await stubPlannerBootstrap(page);
     await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
       void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
     });
 
+    // Deliberately WITHOUT ?capture=1: walk raises the pixel ratio on settle,
+    // and resizing a preserved drawing buffer races a native GL hang on slow
+    // GPUs (V8 pauses with an empty JS stack while evaluates starve). The
+    // product never runs with a preserved buffer; this case asserts the
+    // product. The staged case above carries the visual evidence instead.
     await page.goto("/plan");
     await expect
       .poll(() => readPhase(page), { timeout: 180_000, message: "waiting for the staged resolve" })
       .toBe("resolved");
 
+    // The local preview's known Clerk-JS failure flip remounts the planner
+    // tree once mid-run; interacting before it settles clicks a shell that is
+    // about to be thrown away (settleCockpit's whole reason to exist).
+    await settleCockpit(page);
     const walkToggle = page.getByTestId("planner-walk-toggle");
     await expect(walkToggle).toBeEnabled();
     await walkToggle.click();
     await expect(walkToggle).toHaveAttribute("aria-pressed", "true");
 
     // The walk camera publishes its containment; standing in the room means
-    // inside the walk bounds at human eye height.
+    // inside the walk bounds at human eye height. The poll carries the mount
+    // gates so a failure names the gate that refused instead of a bare null.
     await expect
-      .poll(() => page.evaluate(() => window.__roomCamera?.contained ?? null), { timeout: 15_000 })
-      .toBe(true);
+      .poll(() => page.evaluate(() => JSON.stringify({
+        contained: window.__roomCamera?.contained ?? null,
+        gates: window.__walkDebug ?? null,
+      })), { timeout: 15_000 })
+      .toContain('"contained":true');
     const eyeY = await page.evaluate(() => window.__roomCamera?.position[1] ?? 0);
     expect(eyeY).toBeGreaterThan(1);
     expect(eyeY).toBeLessThan(2.6);
-    await attachStageScreenshot(page, testInfo, "stage-s1-walk-eye-level.png");
 
     await page.keyboard.press("Escape");
     await expect(walkToggle).toHaveAttribute("aria-pressed", "false");
@@ -230,7 +288,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
       void route.fulfill({ json: { data: receptionRuntimePackage(origin) } });
     });
 
-    await page.goto("/plan");
+    await page.goto("/plan?capture=1");
 
     await expect
       .poll(() => readPhase(page), { timeout: 20_000, message: "waiting for developing" })
