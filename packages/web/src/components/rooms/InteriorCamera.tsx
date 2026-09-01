@@ -111,6 +111,14 @@ export function InteriorCamera({
     return () => { gl.setPixelRatio(mountDpr); };
   }, [gl]);
 
+  // Wake the demand loop the moment this camera takes over. Its useFrame is
+  // what teleports the view to the spawn — and useFrame cannot run while the
+  // loop is idle, which it is whenever this mounts into an already-settled
+  // scene (the planner's walk toggle, exactly). Without this the frame stays
+  // frozen on the plan view until the first drag. The walkthrough page never
+  // showed it because tile loads kept invalidating around mount.
+  useEffect(() => { invalidate(); }, [invalidate, spawn, bounds]);
+
   const start = useMemo<CameraState>(() => ({
     position: containPosition(spawn.position, bounds),
     yaw: spawn.yaw,
