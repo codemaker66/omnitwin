@@ -208,6 +208,16 @@
   outline-offset: 3px;
 }
 
+/* A closed room is a card, not a door: the pointer never lights it up, and
+ * nothing suggests it can be entered. Its state line says why. */
+.rooms__card--closed {
+  cursor: default;
+}
+
+.rooms__card--closed:hover .rooms__poster {
+  filter: saturate(0.82) brightness(0.74) blur(0.4px);
+}
+
 .rooms__cardName {
   display: block;
   margin-top: 0.65rem;
@@ -301,6 +311,11 @@
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   color: var(--stone-dim);
+}
+
+.rooms__state--hero {
+  margin-top: 0.9rem;
+  font-size: 0.82rem;
 }
 
 .rooms__state {

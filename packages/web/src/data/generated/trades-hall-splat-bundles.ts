@@ -274,7 +274,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "transform": {
         "position": [
           4.911651,
-          6.327585,
+          2.7753407083333332,
           -8.571432999999999
         ],
         "rotation": [
@@ -286,7 +286,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         10.087102,
-        12.921247197916665,
+        7.43706525,
         19.867694
       ],
       "spawn": {
@@ -310,8 +310,8 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         ]
       },
       "eyeHeightM": 3,
-      "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scans_BIG_MODEL_TH_GH_2: floor from the room mesh, room from the scanner's own walk. Derived 13.8x22.3x12.9 m disagrees with published 21.0x10.0x7.0 m (worst axis 85%). Check the capture-to-room mapping before wiring this room."
+      "alignmentConfidence": "confident",
+      "alignmentNote": "Derived from scans_BIG_MODEL_TH_GH_2: floor from the room mesh, room from the scanner's own walk. Derived 11.3x21.1x7.4 m agrees with published 21.0x10.0x7.0 m (worst axis 13%)."
     },
     {
       "roomSlug": "reception-room",
@@ -1244,7 +1244,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         5.059118,
-        3.4910959999999998,
+        3.4443495000000004,
         10.427301
       ],
       "spawn": {
@@ -1268,7 +1268,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
         ]
       },
       "eyeHeightM": 1.836213,
-      "alignmentConfidence": "review",
+      "alignmentConfidence": "confident",
       "alignmentNote": "Derived from scan_output_1_south: floor from the room mesh, room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
     },
     {

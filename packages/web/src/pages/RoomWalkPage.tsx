@@ -9,6 +9,7 @@ import {
   roomSplatServedSplats,
   roomsWithSplatBundles,
 } from "../data/room-splat-bundles.js";
+import { isRoomWalkable } from "../data/room-walk-exposure.js";
 import {
   TRADES_HALL_RUNTIME_ROOMS,
   type TradesHallRuntimeRoomSlug,
@@ -84,6 +85,20 @@ export function RoomWalkPage(): ReactElement {
     );
   }
 
+  // A capture that renders is not a room a visitor may stand in. Three rooms'
+  // walk boxes cannot yet hold the room (see data/room-walk-exposure.ts), so
+  // their door stays closed rather than placing someone through a wall.
+  if (!isRoomWalkable(room)) {
+    return (
+      <main className="walk walk--missing" data-testid="room-walk-closed">
+        <p className="walk__missingText">
+          {displayName(room)} is being aligned and is not yet walkable.
+        </p>
+        <Link className="walk__back" to="/">Back to the rooms</Link>
+      </main>
+    );
+  }
+
   const pct = progress.total === 0
     ? 0
     : Math.round((progress.settled / progress.total) * 100);
@@ -120,8 +135,9 @@ export function RoomWalkPage(): ReactElement {
 
       {!bare && <footer className="walk__foot">
         <p className="walk__note">
-          A working scan of the real room. Dimensions are measured from the scan,
-          not surveyed{bundle.alignmentConfidence === "confident" ? "" : ", and this room's alignment is still being checked"}.
+          {bundle.alignmentConfidence === "confident"
+            ? "A working scan of the real room, not a survey. Dimensions are measured from the scan, not the venue's own figures."
+            : "A working scan of the real room, not a survey. You can move where the scanner's operator walked; beyond that the scan has no data, so the room may end before its walls do. This room's alignment is still being checked, so no dimensions are given."}
         </p>
         {progress.failed > 0 && (
           <p className="walk__failed">{String(progress.failed)} parts of this room did not load.</p>

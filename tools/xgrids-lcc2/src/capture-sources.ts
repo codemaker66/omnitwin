@@ -50,8 +50,14 @@ export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
     publishedExtentM: [21, 10, 7],
     note:
       "GH_1/2/3 carry byte-identical manifests; GH_2 is the only SOG variant that also ships the room mesh. " +
-      "The smaller scan_output_1_GH_SMALL capture is deliberately excluded.",
-    roomCropM: null,
+      "The smaller scan_output_1_GH_SMALL capture is deliberately excluded. " +
+      "Crop derived 2026-09-01: the uncropped mesh's lowest slab sits at z ≈ -6.3, a storey down and ~18 m " +
+      "outside the hall (x ≈ -30), and obj-bounds took it as the floor, so every vertical figure (transform, " +
+      "extent height 12.9 m, eye height 3.0 m, spawn) was measured from it and visitors stood ~1 m under the " +
+      "hall floor. x/y = the trimmed walk region (-9.96..0.13, -18.51..1.36) + 0.6 m; z-min = 1.1 m below the " +
+      "hall floor slab (walk-footprint histogram peaks at -2.75/-2.25); z-max = mesh max 8.62 + margin. " +
+      "Measured through the tool: 11.3 x 21.1 x 7.44 m, 92% retention, confident.",
+    roomCropM: { min: [-10.6, -19.1, -3.2], max: [0.7, 2.0, 9.0] },
   },
   {
     roomSlug: "reception-room",
@@ -104,8 +110,8 @@ export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
     root: "scans",
     assetBaseName: "South Gallery",
     publishedExtentM: null,
-    note: null,
-    roomCropM: null,
+    note: "Crop derived 2026-09-01: a 5 m stair at x <= -8 and a west annex dragged the mesh frame; x-min sits just inside the annex west wall (mesh density peak at x -8..-7) so the stair is excluded and the annex kept, y = mesh frame +/- 0.4, z = floor -1.88 - 0.4 to ceiling 1.61 + 0.6. Measured through the tool: 99% retention, confident.",
+    roomCropM: { min: [-6.5, -12.0, -2.3], max: [2.2, 1.6, 2.2] },
   },
   {
     roomSlug: "deacon-conveners-room",

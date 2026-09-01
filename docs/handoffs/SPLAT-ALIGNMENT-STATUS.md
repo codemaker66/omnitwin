@@ -283,3 +283,16 @@ Append here rather than rewriting, newest last.
   stays staged and published, only one reaches a viewer. If you want a lighter
   tier for phones, pick ONE coarser level; never stack. See
   `.claude/gotchas/xgrids-lcc2-lod-levels-are-copies.md`.
+
+- **2026-09-01, Claude Code** — DECISIONS on the six 'review' rooms (T-568),
+  and two crops landed in `capture-sources.ts` with their derivations:
+  grand-hall (the mesh floor came from a slab a storey down and 18 m outside
+  the hall; visitors spawned under the floor) and south-gallery (a 5 m stair).
+  Both now measure `confident`. The public walk is gated per room by
+  `packages/web/src/data/room-walk-exposure.ts` — robert-adam-room,
+  north-gallery and lady-convenors-room are CLOSED until the tool can (1) crop
+  the walk as well as the mesh, (2) yaw a room swept at an angle, (3) take
+  extentM from the cropped mesh rather than the walk (today RoomClipBox clips
+  at the walked box + 0.35 m, so even confident rooms likely shave their
+  walls). That is T-569 and it is yours if you want it; reopening a room is
+  one line in the exposure record after someone stands at its spawn.

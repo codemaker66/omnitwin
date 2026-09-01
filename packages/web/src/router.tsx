@@ -499,10 +499,11 @@ export const router = createBrowserRouter([
     ),
   },
   {
-    // Room captures — the staged XGRIDS captures for every captured room.
-    // Admin-gated in production for the same reason as the visual console:
-    // these are unregistered working assets whose alignment is not signed,
-    // and six of the eight currently sit wrong. They must not reach clients.
+    // Room captures — the internal review console for every staged XGRIDS
+    // capture, all rooms, whatever their alignment. Admin-gated in production
+    // because it is a review surface. It is NOT what keeps a misaligned room
+    // from the public: /room/:roomSlug below is public and opens a room only
+    // when data/room-walk-exposure.ts says its walk box can hold it.
     // Placed above /venues/:venueSlug/rooms/:roomSlug so it can never fall
     // through to the public showcase matcher.
     path: "/venues/:venueSlug/captures/:roomSlug?",
@@ -527,7 +528,8 @@ export const router = createBrowserRouter([
   },
   {
     // Public room walkthrough — where a poster on the front door leads.
-    // Streams one room; the front door never streams eight at once.
+    // Streams one room; the front door never streams eight at once. Rooms
+    // closed in data/room-walk-exposure.ts render a closed door, not a scene.
     path: "/room/:roomSlug",
     element: withSuspense(<RoomWalkPage />),
   },

@@ -30,10 +30,14 @@ import "./RoomCapturesPage.css";
 // These are staged captures: real geometry, but no registry row vouches for
 // them and no human has signed their alignment. The page says so, and marks
 // per room whether the derived alignment is one the tool will stand behind —
-// six of the eight currently sit wrong, and hiding that would defeat the point.
+// four of the eight sit at "review" today, and hiding that would defeat the
+// point. Every room is listed here whatever its state: this is the console a
+// reviewer uses to look.
 //
-// Admin-gated in production (router.tsx) for exactly that reason: these are
-// working assets, not client-facing ones.
+// Admin-gated in production (router.tsx) because it is a review surface. It
+// is NOT what keeps a misaligned room from the public — the public walk at
+// /room/:slug is gated per room by data/room-walk-exposure.ts, a decision
+// record that says whether a room's walk box can hold a visitor.
 // ---------------------------------------------------------------------------
 
 const VENUE_SLUG = "trades-hall";

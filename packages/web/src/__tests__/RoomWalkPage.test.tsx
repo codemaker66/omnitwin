@@ -42,8 +42,25 @@ describe("RoomWalkPage", () => {
     expect(header).not.toContain(staged.toLocaleString("en-GB"));
   });
 
+  it("does not mount a room whose walk has been closed until its alignment is fixed", () => {
+    mount("/room/robert-adam-room");
+    expect(screen.queryByTestId("room-splat-scene")).toBeNull();
+    const body = document.body.textContent ?? "";
+    expect(body).toMatch(/being aligned/iu);
+    expect(body).toMatch(/not yet walkable/iu);
+    expect(screen.getByRole("link", { name: /rooms/iu }).getAttribute("href")).toBe("/");
+  });
+
+  it("tells a visitor of a review room how far the scan goes and withholds dimensions", () => {
+    mount("/room/saloon");
+    const body = document.body.textContent ?? "";
+    expect(body).toMatch(/where the scanner's operator walked/iu);
+    expect(body).toMatch(/alignment is still being checked/iu);
+    expect(body).not.toMatch(/\d+\.\d × \d+\.\d × \d+\.\d m/u);
+  });
+
   it("keeps the working-scan disclaimer and the alignment caveat for a room under review", () => {
-    mount("/room/grand-hall");
+    mount("/room/saloon");
     const body = document.body.textContent ?? "";
     expect(body).toMatch(/working scan of the real room/iu);
     expect(body).toMatch(/alignment is still being checked/iu);

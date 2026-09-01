@@ -8,6 +8,8 @@ import {
   type GeneratedRoomSplatBundle,
 } from "../data/room-splat-bundles.js";
 import { TRADES_HALL_RUNTIME_ROOMS } from "../lib/runtime-package-resolution.js";
+import { isRoomWalkable } from "../data/room-walk-exposure.js";
+import { footprint, measuredLine, splatLine, stateLine } from "../lib/room-card-copy.js";
 import "./RoomsHomePage.css";
 
 // ---------------------------------------------------------------------------
@@ -37,34 +39,6 @@ function displayName(slug: string): string {
 // Poster resolution lives in lib/room-posters.ts (shared with the
 // Command Centre's lane rails) — the same two-tier fallback as before.
 
-/** Floor dimensions, to one decimal, in the order a person would say them. */
-function footprint(bundle: GeneratedRoomSplatBundle): string {
-  const [width, height, depth] = bundle.extentM;
-  return `${width.toFixed(1)} × ${depth.toFixed(1)} × ${height.toFixed(1)} m`;
-}
-
-/**
- * The measured line, and what it is allowed to claim.
- *
- * The splat count is always true — it is a count of what was captured. The
- * dimensions are only true where the scan measured cleanly: a capture that
- * swept in a corridor reports a room far larger than the one people stand in,
- * and the Grand Hall's derived 13.8 × 22.3 m against its published 21 × 10 m is
- * exactly that error. So rooms still being aligned show the count alone rather
- * than printing a measurement the scan cannot support.
- */
-function measuredLine(bundle: GeneratedRoomSplatBundle): string {
-  return bundle.alignmentConfidence === "confident"
-    ? `${footprint(bundle)} · ${splatLine(bundle)}`
-    : splatLine(bundle);
-}
-
-function splatLine(bundle: GeneratedRoomSplatBundle): string {
-  // The served level's count, not the sum over every staged level: a visitor
-  // sees the finest level alone, which is the whole reconstruction.
-  return `${roomSplatServedSplats(bundle.roomSlug).toLocaleString("en-GB")} splats`;
-}
-
 interface CardProps {
   readonly slug: string;
   readonly bundle: GeneratedRoomSplatBundle;
@@ -84,19 +58,20 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
   const [posterFailed, setPosterFailed] = useState(false);
   const onPosterError = useCallback(() => { setPosterFailed(true); }, []);
   const showType = posterFailed;
-  const underReview = bundle.alignmentConfidence !== "confident";
+  const walkable = isRoomWalkable(slug);
+  const state = stateLine(bundle, walkable);
 
-  return (
-    <Link className="rooms__card" to={`/room/${slug}`} data-testid={`room-card-${slug}`}>
+  const face = (
+    <>
       <span className={`rooms__plate${showType ? " rooms__plate--type" : ""}`}>
         {showType
           ? (
             <span className="rooms__plateType" aria-hidden="true">
               <span className="rooms__plateNumber">
-                {bundle.alignmentConfidence === "confident" ? footprint(bundle) : splatLine(bundle)}
+                {bundle.alignmentConfidence === "confident" && walkable ? footprint(bundle) : splatLine(bundle)}
               </span>
               <span className="rooms__plateSplats">
-                {bundle.alignmentConfidence === "confident" ? splatLine(bundle) : "Alignment in progress"}
+                {state ?? splatLine(bundle)}
               </span>
             </span>
           )
@@ -114,10 +89,23 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
           )}
       </span>
       <span className="rooms__cardName">{displayName(slug)}</span>
-      <span className="rooms__measure">{measuredLine(bundle)}</span>
-      {underReview && <span className="rooms__state">Alignment in progress</span>}
-    </Link>
+      <span className="rooms__measure">{measuredLine(bundle, walkable)}</span>
+      {state !== null && <span className="rooms__state">{state}</span>}
+    </>
   );
+
+  // A closed room is a card, not a door: same face, no link, nothing to click.
+  return walkable
+    ? (
+      <Link className="rooms__card" to={`/room/${slug}`} data-testid={`room-card-${slug}`}>
+        {face}
+      </Link>
+    )
+    : (
+      <div className="rooms__card rooms__card--closed" data-testid={`room-card-${slug}`}>
+        {face}
+      </div>
+    );
 }
 
 export function RoomsHomePage(): ReactElement {
@@ -164,8 +152,10 @@ export function RoomsHomePage(): ReactElement {
           <div className="rooms__heroText">
             <p className="rooms__eyebrow">The room everyone comes for</p>
             <h1 className="rooms__heroName" id="rooms-hero-name">{displayName(HERO_ROOM)}</h1>
-            <p className="rooms__measure rooms__measure--hero">{measuredLine(heroBundle)}</p>
-            <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>Walk the room</Link>
+            <p className="rooms__measure rooms__measure--hero">{measuredLine(heroBundle, isRoomWalkable(HERO_ROOM))}</p>
+            {isRoomWalkable(HERO_ROOM)
+              ? <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>Walk the room</Link>
+              : <p className="rooms__state rooms__state--hero">{stateLine(heroBundle, false)}</p>}
           </div>
         </section>
       )}
