@@ -1711,12 +1711,151 @@ function repeatedStaticExternalImportV2(
   path: string,
   count = 1,
 ): readonly GrandHallT554NativeReviewCompiledModuleImportV2[] {
-  return Array.from({ length: count }, () => ({
-    path,
-    kind: "import-statement",
-    external: true,
-  }));
+  return Object.freeze(
+    Array.from({ length: count }, () =>
+      Object.freeze({
+        path,
+        kind: "import-statement" as const,
+        external: true as const,
+      }),
+    ),
+  );
 }
+
+function canonicalCompiledImportsV2(
+  imports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[],
+): readonly GrandHallT554NativeReviewCompiledModuleImportV2[] {
+  return Object.freeze(
+    imports
+      .map((entry) => Object.freeze({ ...entry }))
+      .sort((left, right) => {
+        const leftKey = importTupleKeyV2(left);
+        const rightKey = importTupleKeyV2(right);
+        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+      }),
+  );
+}
+
+function canonicalExternalImportPathsV2(
+  imports: readonly GrandHallT554NativeReviewCompiledModuleImportV2[],
+): readonly string[] {
+  return Object.freeze(imports.map((entry) => entry.path).sort());
+}
+
+const CLOSED_GATE_EMITTED_IMPORTS_V2 = canonicalCompiledImportsV2([
+  ...repeatedStaticExternalImportV2(
+    GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+  ),
+  {
+    path: GRAND_HALL_T554_NATIVE_REVIEW_GATE_CORE_IMPORT_V2,
+    kind: "dynamic-import",
+    external: true,
+  },
+]);
+const CLOSED_CORE_EMITTED_IMPORTS_V2 = canonicalCompiledImportsV2([
+  ...repeatedStaticExternalImportV2(
+    GRAND_HALL_T554_NATIVE_REVIEW_SERVER_SHARP_LOADER_IMPORT_V2,
+  ),
+  ...repeatedStaticExternalImportV2("node:crypto", 17),
+  ...repeatedStaticExternalImportV2("node:fs/promises", 9),
+  ...repeatedStaticExternalImportV2("node:path", 11),
+  ...repeatedStaticExternalImportV2("node:perf_hooks"),
+  ...repeatedStaticExternalImportV2("node:util"),
+  ...repeatedStaticExternalImportV2(
+    GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+  ),
+  ...repeatedStaticExternalImportV2(
+    GRAND_HALL_T554_NATIVE_REVIEW_CORE_HTTP_ADAPTER_IMPORT_V2,
+  ),
+]);
+const CLOSED_HTTP_ADAPTER_EMITTED_IMPORTS_V2 = Object.freeze([]);
+const CLOSED_RUNTIME_BOOTSTRAP_EMITTED_IMPORTS_V2 =
+  canonicalCompiledImportsV2([
+    ...repeatedStaticExternalImportV2("node:crypto"),
+    ...repeatedStaticExternalImportV2("node:fs/promises"),
+    ...repeatedStaticExternalImportV2("node:module"),
+    ...repeatedStaticExternalImportV2("node:path"),
+    ...repeatedStaticExternalImportV2("node:url"),
+  ]);
+const CLOSED_SHARP_LOADER_EMITTED_IMPORTS_V2 = canonicalCompiledImportsV2([
+  ...repeatedStaticExternalImportV2("node:events"),
+  ...repeatedStaticExternalImportV2("node:module"),
+  ...repeatedStaticExternalImportV2("node:path", 2),
+  ...repeatedStaticExternalImportV2("node:stream"),
+  ...repeatedStaticExternalImportV2("node:url"),
+  ...repeatedStaticExternalImportV2("node:util"),
+]);
+
+export const GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2 =
+  Object.freeze({
+    fixedAdmissionCapsuleUrl:
+      GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
+    externalImports: Object.freeze({
+      gate: canonicalExternalImportPathsV2(CLOSED_GATE_EMITTED_IMPORTS_V2),
+      core: canonicalExternalImportPathsV2(CLOSED_CORE_EMITTED_IMPORTS_V2),
+      httpAdapter: canonicalExternalImportPathsV2(
+        CLOSED_HTTP_ADAPTER_EMITTED_IMPORTS_V2,
+      ),
+      runtimeBootstrap: canonicalExternalImportPathsV2(
+        CLOSED_RUNTIME_BOOTSTRAP_EMITTED_IMPORTS_V2,
+      ),
+      sharpLoader: canonicalExternalImportPathsV2(
+        CLOSED_SHARP_LOADER_EMITTED_IMPORTS_V2,
+      ),
+    }),
+    emittedImports: Object.freeze({
+      gate: CLOSED_GATE_EMITTED_IMPORTS_V2,
+      core: CLOSED_CORE_EMITTED_IMPORTS_V2,
+      httpAdapter: CLOSED_HTTP_ADAPTER_EMITTED_IMPORTS_V2,
+      runtimeBootstrap: CLOSED_RUNTIME_BOOTSTRAP_EMITTED_IMPORTS_V2,
+      sharpLoader: CLOSED_SHARP_LOADER_EMITTED_IMPORTS_V2,
+    }),
+    exports: Object.freeze({
+      gate: Object.freeze([
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_ABI_WITNESS_V2",
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_V2",
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_POLICY_V2",
+        "loadGrandHallT554NativeReviewPayloadCoreV2",
+      ]),
+      core: Object.freeze([
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_ABI_WITNESS_V2",
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_POLICY_V2",
+        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_V2",
+        "createGrandHallT554NativeReviewPayloadWorkbenchV2",
+      ]),
+      httpAdapter: Object.freeze([
+        "GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_ADAPTER_V2",
+        "GrandHallT554NativeReviewHttpResponseAdapterErrorV2",
+        "bindGrandHallT554NativeReviewTileToHttpResponseV2",
+      ]),
+      runtimeBootstrap: Object.freeze([
+        "runGrandHallT554NativeReviewRuntimeBootstrap",
+      ]),
+      sharpLoader: Object.freeze(["default"]),
+    }),
+    moduleSyntax: Object.freeze({
+      gate: Object.freeze({
+        nonLiteralDynamicImportCount: 0,
+        importMetaExpressionCount: 0,
+      }),
+      core: Object.freeze({
+        nonLiteralDynamicImportCount: 0,
+        importMetaExpressionCount: 0,
+      }),
+      httpAdapter: Object.freeze({
+        nonLiteralDynamicImportCount: 0,
+        importMetaExpressionCount: 0,
+      }),
+      runtimeBootstrap: Object.freeze({
+        nonLiteralDynamicImportCount: 1,
+        importMetaExpressionCount: 2,
+      }),
+      sharpLoader: Object.freeze({
+        nonLiteralDynamicImportCount: 0,
+        importMetaExpressionCount: 2,
+      }),
+    }),
+  });
 
 function assertMetafileExcludesInput(
   result: EsbuildBuildResult,
@@ -3002,83 +3141,40 @@ export async function buildGrandHallT554NativeReviewCompiledPackV2(input: {
     );
     assertExactModuleOutputFactsV2(
       gateOutputFacts,
-      [
-        ...repeatedStaticExternalImportV2(
-          GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
-        ),
-        {
-          path: GRAND_HALL_T554_NATIVE_REVIEW_GATE_CORE_IMPORT_V2,
-          kind: "dynamic-import",
-          external: true,
-        },
-      ],
-      [
-        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_ABI_WITNESS_V2",
-        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_GATE_V2",
-        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_POLICY_V2",
-        "loadGrandHallT554NativeReviewPayloadCoreV2",
-      ],
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.emittedImports
+        .gate,
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.exports.gate,
       "V2 payload admission gate",
     );
     assertExactModuleOutputFactsV2(
       coreOutputFacts,
-      [
-        ...repeatedStaticExternalImportV2(
-          GRAND_HALL_T554_NATIVE_REVIEW_SERVER_SHARP_LOADER_IMPORT_V2,
-        ),
-        ...repeatedStaticExternalImportV2("node:crypto", 17),
-        ...repeatedStaticExternalImportV2("node:fs/promises", 9),
-        ...repeatedStaticExternalImportV2("node:path", 11),
-        ...repeatedStaticExternalImportV2("node:perf_hooks"),
-        ...repeatedStaticExternalImportV2("node:util"),
-        ...repeatedStaticExternalImportV2(
-          GRAND_HALL_T554_NATIVE_REVIEW_FIXED_ADMISSION_CAPSULE_URL_V2,
-        ),
-        ...repeatedStaticExternalImportV2(
-          GRAND_HALL_T554_NATIVE_REVIEW_CORE_HTTP_ADAPTER_IMPORT_V2,
-        ),
-      ],
-      [
-        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_ABI_WITNESS_V2",
-        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_POLICY_V2",
-        "GRAND_HALL_T554_NATIVE_REVIEW_PAYLOAD_CORE_V2",
-        "createGrandHallT554NativeReviewPayloadWorkbenchV2",
-      ],
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.emittedImports
+        .core,
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.exports.core,
       "V2 payload core",
     );
     assertExactModuleOutputFactsV2(
       httpAdapterOutputFacts,
-      [],
-      [
-        "GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_ADAPTER_V2",
-        "GrandHallT554NativeReviewHttpResponseAdapterErrorV2",
-        "bindGrandHallT554NativeReviewTileToHttpResponseV2",
-      ],
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.emittedImports
+        .httpAdapter,
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.exports
+        .httpAdapter,
       "V2 trusted HTTP adapter",
     );
     assertExactModuleOutputFactsV2(
       runtimeBootstrapOutputFacts,
-      [
-        ...repeatedStaticExternalImportV2("node:crypto"),
-        ...repeatedStaticExternalImportV2("node:fs/promises"),
-        ...repeatedStaticExternalImportV2("node:module"),
-        ...repeatedStaticExternalImportV2("node:path"),
-        ...repeatedStaticExternalImportV2("node:url"),
-      ],
-      ["runGrandHallT554NativeReviewRuntimeBootstrap"],
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.emittedImports
+        .runtimeBootstrap,
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.exports
+        .runtimeBootstrap,
       "V2 runtime bootstrap",
     );
     assertExactModuleOutputFactsV2(
       sharpLoaderOutputFacts,
-      [
-        ...repeatedStaticExternalImportV2("node:events"),
-        ...repeatedStaticExternalImportV2("node:module"),
-        ...repeatedStaticExternalImportV2("node:path", 2),
-        ...repeatedStaticExternalImportV2("node:stream"),
-        ...repeatedStaticExternalImportV2("node:url"),
-        ...repeatedStaticExternalImportV2("node:util"),
-      ],
-      ["default"],
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.emittedImports
+        .sharpLoader,
+      GRAND_HALL_T554_NATIVE_REVIEW_CLOSED_MODULE_SURFACE_V2.exports
+        .sharpLoader,
       "V2 vendored Sharp loader",
     );
 

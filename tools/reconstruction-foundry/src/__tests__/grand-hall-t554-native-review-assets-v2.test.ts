@@ -69,6 +69,37 @@ function validOperatorState() {
   };
 }
 
+function operatorStateWithMask(
+  phase: "mask_edit" | "mask_review",
+  workspaceRevision: number,
+  renderGeneration: number,
+) {
+  return {
+    ...validOperatorState(),
+    workspaceRevision,
+    maximumAllocatedRenderGeneration: renderGeneration,
+    activeSource: {
+      inventoryIndex: 46,
+      sweepNumber: 47,
+      renderGeneration,
+      phase,
+      sourceCoverage: {
+        completedTileCount: 512,
+        totalTileCount: 512,
+        complete: true,
+      },
+      mask: {
+        revision: phase === "mask_review" ? 6 : 7,
+        frozen: phase === "mask_review",
+        includedPixelCount: 18_874_368,
+        excludedPixelCount: 14_680_064,
+      },
+      decision: null,
+      humanAttested: false,
+    },
+  };
+}
+
 function exactFunctionSlice(startName: string, endName: string): string {
   const start = GRAND_HALL_T554_NATIVE_REVIEW_BROWSER_JAVASCRIPT_V2.indexOf(
     `function ${startName}`,
@@ -136,6 +167,7 @@ class MockElement {
   textContent = "";
   value = "";
   disabled = false;
+  open = false;
   type = "";
   scrollLeft = 0;
   scrollTop = 0;
@@ -188,6 +220,12 @@ class MockElement {
     return false;
   }
   releasePointerCapture(): void {}
+  showModal(): void {
+    this.open = true;
+  }
+  close(): void {
+    this.open = false;
+  }
 }
 
 function htmlElementIds(): readonly string[] {
@@ -635,18 +673,540 @@ describe("Grand Hall T-554 Canvas2D native-review assets v2", () => {
     },
   );
 
+  it("implements the accepted authority-none workbench hierarchy and restrained visual tokens without illustrative evidence", () => {
+    for (const token of [
+      "#080d11",
+      "#11171b",
+      "#151c20",
+      "#eee7da",
+      "#8e9698",
+      "#293136",
+      "#b88a45",
+      "#5f9f6e",
+      "#c49042",
+      "#c85a50",
+      "#46a7ad",
+    ]) {
+      expect(GRAND_HALL_T554_NATIVE_REVIEW_STYLESHEET_V2).toContain(token);
+    }
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_STYLESHEET_V2).not.toMatch(
+      /(?:linear|radial|conic)-gradient|box-shadow/iu,
+    );
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toContain(
+      "GRAND HALL TRUTH WORKBENCH",
+    );
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toContain(
+      'class="machine-evidence-rail"',
+    );
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toContain(
+      'class="decision-rail"',
+    );
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toContain(
+      "All human decisions begin UNSURE.",
+    );
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toContain(
+      "Not exposed by this operator core",
+    );
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toMatch(
+      /<ol id="source-list"/u,
+    );
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_BROWSER_JAVASCRIPT_V2).not.toContain(
+      'row.setAttribute("role", "listitem")',
+    );
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).not.toMatch(
+      /sweep_041|f6a1c9e7|Elaine Stewart/iu,
+    );
+  });
+
+  it("requires explicit EXCLUDE confirmation and sends nothing when validation fails or the operator cancels", async () => {
+    const actionSource =
+      "async " +
+      exactFunctionSlice("excludeSource", "leaveSourcePending").replace(
+        /\s+async\s*$/u,
+        "",
+      );
+    const harness: {
+      note: string;
+      confirmed: boolean;
+      readonly confirmationKinds: string[];
+      readonly mutations: Array<{
+        path: string;
+        body: Record<string, unknown>;
+        statusMessage: string;
+      }>;
+      readonly statuses: string[];
+      excludeSourceForTest?: () => Promise<void>;
+    } = {
+      note: "",
+      confirmed: false,
+      confirmationKinds: [],
+      mutations: [],
+      statuses: [],
+    };
+    new Script(
+      `const active = { inventoryIndex: 40, sweepNumber: 41, renderGeneration: 7, phase: "source_review" };
+const routes = { sourceExclude: "/api/v2/source/exclude" };
+const requestSchemas = { sourceExclude: "exclude.v2" };
+function requireActiveSource(phase) { if (phase !== active.phase) throw new Error("phase"); return active; }
+function requireElement(id) { if (id !== "decision-note") throw new Error("element"); return { value: globalThis.note }; }
+function epochRevisionGeneration(schemaVersion, source) { return { schemaVersion, expectedBrowserEpochNumber: 3, expectedWorkspaceRevision: 11, renderGeneration: source.renderGeneration }; }
+async function confirmSensitiveAction(kind) { globalThis.confirmationKinds.push(kind); return globalThis.confirmed; }
+async function runStateMutation(path, body, statusMessage) { globalThis.mutations.push({ path, body, statusMessage }); }
+function setStatus(message) { globalThis.statuses.push(message); }
+${actionSource}
+globalThis.excludeSourceForTest = excludeSource;`,
+    ).runInNewContext(harness);
+    const excludeSourceForTest = harness.excludeSourceForTest;
+    if (excludeSourceForTest === undefined) {
+      throw new Error("EXCLUDE action harness was not installed.");
+    }
+
+    await expect(excludeSourceForTest()).rejects.toThrow(
+      /EXCLUDE note must contain/iu,
+    );
+    expect(harness.confirmationKinds).toEqual([]);
+    expect(harness.mutations).toEqual([]);
+
+    harness.note = "The exact source contains no observed Grand Hall pixels.";
+    await excludeSourceForTest();
+    expect(harness.confirmationKinds).toEqual(["EXCLUDE"]);
+    expect(harness.mutations).toEqual([]);
+    expect(harness.statuses.at(-1)).toMatch(/decision UNSURE/iu);
+
+    harness.confirmed = true;
+    await excludeSourceForTest();
+    expect(harness.mutations).toEqual([
+      {
+        path: "/api/v2/source/exclude",
+        body: {
+          schemaVersion: "exclude.v2",
+          expectedBrowserEpochNumber: 3,
+          expectedWorkspaceRevision: 11,
+          renderGeneration: 7,
+          note: harness.note,
+        },
+        statusMessage: "Recorded an authority-none EXCLUDE decision.",
+      },
+    ]);
+  });
+
+  it("requires explicit INCLUDE confirmation bound to the frozen mask and sends nothing when cancelled", async () => {
+    const actionSource =
+      "async " +
+      exactFunctionSlice("includeSource", "knowledgeBasisFromInput").replace(
+        /\s+$/u,
+        "",
+      );
+    const detailsSource = exactFunctionSlice(
+      "confirmationDetails",
+      "settleConfirmation",
+    );
+    const harness: {
+      note: string;
+      classification: string;
+      confirmed: boolean;
+      readonly confirmationKinds: string[];
+      readonly mutations: Array<{
+        path: string;
+        body: Record<string, unknown>;
+        statusMessage: string;
+      }>;
+      readonly statuses: string[];
+      includeSourceForTest?: () => Promise<void>;
+      confirmationDetailsForTest?: (
+        kind: string,
+        active: Record<string, unknown>,
+      ) => { copy: string };
+    } = {
+      note: "The frozen binary mask contains only source-supported Grand Hall pixels.",
+      classification: "grand_hall_core",
+      confirmed: false,
+      confirmationKinds: [],
+      mutations: [],
+      statuses: [],
+    };
+    new Script(
+      `const active = { inventoryIndex: 46, sweepNumber: 47, renderGeneration: 13, phase: "mask_review", mask: { revision: 6, frozen: true, includedPixelCount: 18874368, excludedPixelCount: 14710304 } };
+const routes = { sourceInclude: "/api/v2/source/include" };
+const requestSchemas = { sourceInclude: "include.v2" };
+function requireActiveSource(phase) { if (phase !== active.phase) throw new Error("phase"); return active; }
+function requireElement(id) { if (id === "decision-note") return { value: globalThis.note }; if (id === "include-classification") return { value: globalThis.classification }; throw new Error("element"); }
+function epochRevisionGeneration(schemaVersion, source) { return { schemaVersion, expectedBrowserEpochNumber: 5, expectedWorkspaceRevision: 19, renderGeneration: source.renderGeneration }; }
+async function confirmSensitiveAction(kind) { globalThis.confirmationKinds.push(kind); return globalThis.confirmed; }
+async function runStateMutation(path, body, statusMessage) { globalThis.mutations.push({ path, body, statusMessage }); }
+function setStatus(message) { globalThis.statuses.push(message); }
+${actionSource}
+${detailsSource}
+globalThis.includeSourceForTest = includeSource;
+globalThis.confirmationDetailsForTest = confirmationDetails;`,
+    ).runInNewContext(harness);
+    const includeSourceForTest = harness.includeSourceForTest;
+    const confirmationDetailsForTest = harness.confirmationDetailsForTest;
+    if (
+      includeSourceForTest === undefined ||
+      confirmationDetailsForTest === undefined
+    ) {
+      throw new Error("INCLUDE action harness was not installed.");
+    }
+
+    await includeSourceForTest();
+    expect(harness.confirmationKinds).toEqual(["INCLUDE"]);
+    expect(harness.mutations).toEqual([]);
+    expect(harness.statuses.at(-1)).toMatch(/decision UNSURE/iu);
+
+    harness.confirmed = true;
+    await includeSourceForTest();
+    expect(harness.mutations).toHaveLength(1);
+    expect(harness.mutations[0]).toMatchObject({
+      path: "/api/v2/source/include",
+      body: {
+        schemaVersion: "include.v2",
+        expectedBrowserEpochNumber: 5,
+        expectedWorkspaceRevision: 19,
+        renderGeneration: 13,
+        classification: "grand_hall_core",
+        note: harness.note,
+      },
+    });
+    expect(
+      confirmationDetailsForTest("INCLUDE", {
+        inventoryIndex: 46,
+        sweepNumber: 47,
+        mask: {
+          revision: 6,
+          frozen: true,
+          includedPixelCount: 18_874_368,
+          excludedPixelCount: 14_710_304,
+        },
+      }).copy,
+    ).toMatch(/revision 6.*18874368 included.*14710304 excluded/iu);
+  });
+
+  it("exposes frozen-mask revision only when confirmed and uses the existing durable mask-edit route for the first edit", () => {
+    const editableSource = exactFunctionSlice(
+      "requireEditableMaskSource",
+      "epochRevisionGeneration",
+    );
+    const harness: {
+      phase: "mask_edit" | "mask_review";
+      armed: boolean;
+      requireEditableMaskSourceForTest?: () => { phase: string };
+    } = {
+      phase: "mask_review",
+      armed: false,
+    };
+    new Script(
+      `function requireActiveSource() { return { phase: globalThis.phase, mask: { revision: 6, frozen: globalThis.phase === "mask_review" } }; }
+function revisionArmMatches() { return globalThis.armed; }
+${editableSource}
+globalThis.requireEditableMaskSourceForTest = requireEditableMaskSource;`,
+    ).runInNewContext(harness);
+    const requireEditableMaskSourceForTest =
+      harness.requireEditableMaskSourceForTest;
+    if (requireEditableMaskSourceForTest === undefined) {
+      throw new Error("Frozen-mask revision harness was not installed.");
+    }
+    expect(() => requireEditableMaskSourceForTest()).toThrow(
+      /confirmed frozen-mask revision/iu,
+    );
+    harness.armed = true;
+    expect(requireEditableMaskSourceForTest().phase).toBe("mask_review");
+    harness.armed = false;
+    harness.phase = "mask_edit";
+    expect(requireEditableMaskSourceForTest().phase).toBe("mask_edit");
+
+    const toggleSource = exactFunctionSlice(
+      "toggleFrozenMaskRevision",
+      "renderActionGates",
+    );
+    const confirmationIndex = toggleSource.indexOf(
+      'await confirmSensitiveAction("REVISE", active)',
+    );
+    const armIndex = toggleSource.indexOf("frozenRevisionArm = {");
+    expect(confirmationIndex).toBeGreaterThan(-1);
+    expect(armIndex).toBeGreaterThan(confirmationIndex);
+    const editSource = exactFunctionSlice("applyMaskEdit", "freezeMask");
+    expect(editSource).toContain("const active = requireEditableMaskSource()");
+    expect(editSource).toContain("runStateMutation(routes.maskEdit");
+    expect(editSource).toMatch(/invalidated the previous frozen binding/iu);
+
+    const addPolygonSource = exactFunctionSlice(
+      "addPolygonPoint",
+      "submitPolygon",
+    );
+    expect(addPolygonSource).toContain("requireEditableMaskSource()");
+    expect(addPolygonSource).not.toContain('requireActiveSource("mask_edit")');
+    const submitPolygonSource = exactFunctionSlice(
+      "submitPolygon",
+      "setPointerMode",
+    );
+    expect(submitPolygonSource).toContain("requireEditableMaskSource()");
+    expect(submitPolygonSource).not.toContain(
+      'requireActiveSource("mask_edit")',
+    );
+    const rectanglePointerStart =
+      GRAND_HALL_T554_NATIVE_REVIEW_BROWSER_JAVASCRIPT_V2.indexOf(
+        'sourceCanvas.addEventListener("pointerdown"',
+      );
+    const rectanglePointerEnd =
+      GRAND_HALL_T554_NATIVE_REVIEW_BROWSER_JAVASCRIPT_V2.indexOf(
+        'sourceCanvas.addEventListener("pointermove"',
+        rectanglePointerStart,
+      );
+    expect(rectanglePointerStart).toBeGreaterThan(-1);
+    expect(rectanglePointerEnd).toBeGreaterThan(rectanglePointerStart);
+    const rectanglePointerSource =
+      GRAND_HALL_T554_NATIVE_REVIEW_BROWSER_JAVASCRIPT_V2.slice(
+        rectanglePointerStart,
+        rectanglePointerEnd,
+      );
+    expect(rectanglePointerSource).toContain(
+      'if (pointerMode === "rectangle")',
+    );
+    expect(rectanglePointerSource).toContain("requireEditableMaskSource()");
+    expect(rectanglePointerSource).not.toContain(
+      'requireActiveSource("mask_edit")',
+    );
+  });
+
+  it("keeps a cancelled frozen revision inert and executes the confirmed rectangle through the real mask-edit request", async () => {
+    const sourceContext = createMockCanvasContext();
+    const overlayContext = createMockCanvasContext();
+    const elements = new Map<string, MockElement>();
+    for (const id of htmlElementIds()) {
+      const context =
+        id === "source-canvas"
+          ? sourceContext
+          : id === "overlay-canvas"
+            ? overlayContext
+            : null;
+      elements.set(id, new MockElement(id, context));
+    }
+    for (const [id, value] of Object.entries({
+      "mask-operation": "include",
+      "mask-reason": "adjacent_room_pixels",
+      "rectangle-seam": "none",
+      "polygon-seam": "none",
+      "include-classification": "grand_hall_core",
+      "tile-column": "1",
+      "tile-row": "1",
+    })) {
+      const element = elements.get(id);
+      if (element !== undefined) element.value = value;
+    }
+
+    const fetchCalls: Array<{
+      path: string;
+      options: Record<string, unknown>;
+    }> = [];
+    const documentMock = {
+      title: "Grand Hall review",
+      visibilityState: "visible",
+      getElementById(id: string) {
+        return elements.get(id) ?? null;
+      },
+      createElement(tag: string) {
+        return new MockElement(tag);
+      },
+      hasFocus() {
+        return true;
+      },
+      addEventListener() {},
+    };
+    const windowMock = {
+      location: { hash: `#bootstrap=${bootstrapToken}`, pathname: "/" },
+      history: {
+        replaceState(_state: unknown, _title: string, path: string) {
+          expect(path).toBe("/");
+          windowMock.location.hash = "";
+        },
+      },
+      devicePixelRatio: 1,
+      addEventListener() {},
+      setInterval() {
+        return 1;
+      },
+    };
+    const abortedTileRequest = (): Promise<never> => {
+      const error = new Error("mocked tile load stopped");
+      error.name = "AbortError";
+      return Promise.reject(error);
+    };
+    const context: Record<string, unknown> = {
+      document: documentMock,
+      window: windowMock,
+      AbortController,
+      Uint8Array,
+      console,
+      fetch: (path: string, options: Record<string, unknown>) => {
+        fetchCalls.push({ path, options });
+        if (path === GRAND_HALL_T554_NATIVE_REVIEW_HTTP_ROUTES_V2.bootstrap) {
+          return Promise.resolve(
+            jsonResponse({
+              schemaVersion:
+                GRAND_HALL_T554_NATIVE_REVIEW_HTTP_RESPONSE_SCHEMA_VERSIONS_V2.bootstrap,
+              bearerToken,
+            }),
+          );
+        }
+        if (path === GRAND_HALL_T554_NATIVE_REVIEW_HTTP_ROUTES_V2.state) {
+          return Promise.resolve(
+            jsonResponse(operatorStateWithMask("mask_review", 0, 13)),
+          );
+        }
+        if (path === GRAND_HALL_T554_NATIVE_REVIEW_HTTP_ROUTES_V2.maskEdit) {
+          return Promise.resolve(
+            jsonResponse(operatorStateWithMask("mask_edit", 1, 14)),
+          );
+        }
+        return abortedTileRequest();
+      },
+    };
+
+    const waitFor = async (predicate: () => boolean): Promise<void> => {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (predicate()) return;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      throw new Error(
+        `Mocked browser interaction did not reach its expected state: ${elements.get("session-status")?.textContent ?? "no status"}`,
+      );
+    };
+    const dispatch = (
+      id: string,
+      eventName: string,
+      event: Record<string, unknown> = {},
+    ): void => {
+      const listeners = elements.get(id)?.listeners.get(eventName) ?? [];
+      expect(listeners.length).toBeGreaterThan(0);
+      for (const listener of listeners) listener(event as never);
+    };
+
+    new Script(GRAND_HALL_T554_NATIVE_REVIEW_BROWSER_JAVASCRIPT_V2, {
+      filename: "grand-hall-t554-native-review-v2.js",
+    }).runInNewContext(context);
+    await waitFor(
+      () =>
+        elements.get("viewer-heading")?.textContent.includes("Source 47") ===
+        true,
+    );
+    expect(elements.get("mask-revise")?.disabled).toBe(false);
+
+    dispatch("mask-revise", "click");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(
+      elements.get("confirmation-dialog")?.open,
+      elements.get("session-status")?.textContent,
+    ).toBe(true);
+    expect(
+      fetchCalls.some(
+        (call) =>
+          call.path === GRAND_HALL_T554_NATIVE_REVIEW_HTTP_ROUTES_V2.maskEdit,
+      ),
+    ).toBe(false);
+    dispatch("confirmation-cancel", "click");
+    await waitFor(() =>
+      /Kept the frozen mask unchanged/iu.test(
+        elements.get("session-status")?.textContent ?? "",
+      ),
+    );
+    dispatch("source-canvas", "pointerdown", {
+      button: 0,
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    });
+    dispatch("source-canvas", "pointerup", {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(
+      fetchCalls.some(
+        (call) =>
+          call.path === GRAND_HALL_T554_NATIVE_REVIEW_HTTP_ROUTES_V2.maskEdit,
+      ),
+    ).toBe(false);
+
+    dispatch("mask-revise", "click");
+    await waitFor(() => elements.get("confirmation-dialog")?.open === true);
+    dispatch("confirmation-commit", "click");
+    await waitFor(
+      () => elements.get("tool-rectangle")?.classList.members.has("is-selected") === true,
+    );
+
+    dispatch("source-canvas", "pointerdown", {
+      button: 0,
+      pointerId: 1,
+      clientX: 10,
+      clientY: 10,
+    });
+    dispatch("source-canvas", "pointerup", {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+    });
+    await waitFor(
+      () =>
+        fetchCalls.filter(
+          (call) =>
+            call.path === GRAND_HALL_T554_NATIVE_REVIEW_HTTP_ROUTES_V2.maskEdit,
+        ).length === 1,
+    );
+
+    const maskEditCall = fetchCalls.find(
+      (call) =>
+        call.path === GRAND_HALL_T554_NATIVE_REVIEW_HTTP_ROUTES_V2.maskEdit,
+    );
+    expect(maskEditCall).toBeDefined();
+    expect(JSON.parse(String(maskEditCall?.options.body))).toEqual({
+      schemaVersion:
+        GRAND_HALL_T554_NATIVE_REVIEW_HTTP_REQUEST_SCHEMA_VERSIONS_V2.maskEdit,
+      expectedBrowserEpochNumber: 1,
+      expectedWorkspaceRevision: 0,
+      renderGeneration: 13,
+      edit: {
+        expectedRevision: 6,
+        operation: "include",
+        primitive: {
+          kind: "rectangle",
+          horizontalSeam: "none",
+          leftPx: 80,
+          topPx: 80,
+          rightExclusivePx: 801,
+          bottomExclusivePx: 801,
+        },
+      },
+    });
+    await waitFor(() =>
+      /invalidated the previous frozen binding/iu.test(
+        elements.get("session-status")?.textContent ?? "",
+      ),
+    );
+    expect(elements.get("app-body")?.attributes.get("data-review-phase")).toBe(
+      "mask_edit",
+    );
+    expect(elements.get("mask-revision-label")?.textContent).toBe(
+      "Mask revision 7 · editable",
+    );
+  });
+
   it("keeps all permanent truth boundaries and exposes the complete non-authoritative phase flow", () => {
     const allAssets = [
       GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2,
       GRAND_HALL_T554_NATIVE_REVIEW_BROWSER_JAVASCRIPT_V2,
     ].join("\n");
-    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toContain("Authority: none");
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toMatch(/AUTHORITY NONE/iu);
     expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toContain("human_pending");
     expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toContain("PENDING");
     expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toMatch(
-      /No generated content or architectural inference is permitted/iu,
+      /No generated pixels/iu,
     );
-    expect(allAssets).not.toContain("UNSURE");
+    expect(allAssets).toContain("UNSURE");
+    expect(GRAND_HALL_T554_NATIVE_REVIEW_HTML_V2).toContain(
+      "Human decision: UNSURE",
+    );
     for (const routeName of [
       "sourceSelect",
       "sourceExclude",

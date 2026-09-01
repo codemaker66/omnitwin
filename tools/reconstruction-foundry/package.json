@@ -33,6 +33,7 @@
     "grand-hall-t554-interface-atlas": "tsx src/grand-hall-t554-interface-atlas-entry.ts",
     "grand-hall-t554-panorama-inventory-review": "tsx src/grand-hall-t554-panorama-inventory-review-entry.ts",
     "grand-hall-t554-panorama-review": "tsx src/grand-hall-t554-panorama-review-entry.ts",
+    "grand-hall-t554-stage1-candidate": "tsx src/grand-hall-t554-native-review-stage1-candidate-entry.ts",
     "grand-hall-t554-review-pack-v2": "tsx src/grand-hall-t554-review-pack-v2-entry.ts",
     "grand-hall-t554-review-pack-v3": "tsx src/grand-hall-t554-review-pack-v3-entry.ts",
     "grand-hall-t561-panorama-visual-observation": "tsx src/grand-hall-t561-panorama-visual-observation-entry.ts",
@@ -47,6 +48,7 @@
   "dependencies": {
     "@omnitwin/reconstruction-foundry": "workspace:*",
     "@omnitwin/types": "workspace:*",
+    "es-module-lexer": "2.1.0",
     "hash-wasm": "4.12.0",
     "sharp": "0.35.3",
     "zod": "3.24.2"
