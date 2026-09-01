@@ -726,10 +726,13 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
   }, [availableIndices, displayRange, playing]);
 
   useLayoutEffect(() => {
-    cancelAnimations();
-    setPlaying(false);
-    scrubTransitionRef.current = null;
+    const resetMotion = (): void => {
+      cancelAnimations();
+      setPlaying(false);
+      scrubTransitionRef.current = null;
+    };
     if (!timelineResponseMatchesSelection) {
+      resetMotion();
       if (prePreviewPhaseRef.current.captured) {
         useLayoutTimelinePreviewStore.getState().showPending(
           timeline.status === "error"
@@ -742,6 +745,7 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
       return;
     }
     if (!canExpand) {
+      resetMotion();
       setActiveIndex(0);
       visualFrameIndexRef.current = 0;
       cursorRef.current = 0;
@@ -768,8 +772,12 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
         return `${frame.phaseId}:${kf.state}:${status}:${snapshotId}`;
       }).join("|"),
     ].join("~");
+    // Same picture: never touch running user-driven motion; the transport
+    // is mid-gesture (chip spring, scrub, playback) and this effect only
+    // re-ran because a callback dep changed identity.
     if (initialEngageKeyRef.current === engageKey) return;
     initialEngageKeyRef.current = engageKey;
+    resetMotion();
     const requestedIndex = frames.findIndex((frame) =>
       frame.phaseId === requestedInitialPhaseIdRef.current,
     );
