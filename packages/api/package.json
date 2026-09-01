@@ -2,7 +2,7 @@
   "name": "@omnitwin/api",
   "version": "0.0.4",
   "private": true,
-  "description": "OMNITWIN API — Fastify + Drizzle ORM + Neon PostgreSQL",
+  "description": "OMNITWIN API \u2014 Fastify + Drizzle ORM + Neon PostgreSQL",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -68,6 +68,7 @@
   "devDependencies": {
     "@eslint/js": "9.19.0",
     "@types/pdfkit": "0.17.5",
+    "@types/pg": "8.11.6",
     "@types/qrcode": "1.5.6",
     "@types/react": "18.3.18",
     "@types/react-dom": "18.3.5",

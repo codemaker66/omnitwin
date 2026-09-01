@@ -47,6 +47,8 @@ import { onboardingRoutes } from "./routes/onboarding.js";
 import { opportunityRoutes } from "./routes/opportunities.js";
 import { bookingRoutes } from "./routes/bookings.js";
 import { calendarRoutes } from "./routes/calendar.js";
+import { roomLayoutTimelineRoutes } from "./routes/room-layout-timeline.js";
+import { phaseLayoutSnapshotRoutes } from "./routes/phase-layout-snapshots.js";
 import { proposalRoutes, proposalShareRoutes, publicProposalRoutes } from "./routes/proposals.js";
 import { quoteRoutes } from "./routes/quotes.js";
 import {
@@ -379,7 +381,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(opportunityRoutes, { db, prefix: "/opportunities" });
   await server.register(bookingRoutes, { db, prefix: "/bookings" });
   await server.register(calendarRoutes, { db, prefix: "/calendar" });
+  await server.register(roomLayoutTimelineRoutes, { db, prefix: "/calendar" });
   await server.register(eventRoutes, { db, prefix: "/events" });
+  await server.register(phaseLayoutSnapshotRoutes, { db, prefix: "/events" });
   await server.register(eventPlanLifecycleRoutes, { db, prefix: "/events" });
   await server.register(notificationRoutes, { db, prefix: "/notifications" });
   await server.register(eventDayEventRoutes, { db, prefix: "/events" });

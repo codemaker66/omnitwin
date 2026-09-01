@@ -14,6 +14,7 @@ const VENUE_ID = "00000000-0000-4000-8000-000000000001";
 const EVENT_ID = "00000000-0000-4000-8000-000000000002";
 const PHASE_ID = "00000000-0000-4000-8000-000000000003";
 const CONFIG_ID = "00000000-0000-4000-8000-000000000004";
+const OTHER_VENUE_ID = "00000000-0000-4000-8000-00000000000b";
 
 function signToken(payload: { id: string; email: string; role: string; venueId: string | null }): string {
   return JSON.stringify(payload);
@@ -25,6 +26,21 @@ const adminToken = (): string => signToken({
   role: "admin",
   venueId: VENUE_ID,
 });
+
+const roleToken = (role: "planner" | "staff" | "hallkeeper", venueId = VENUE_ID): string =>
+  signToken({
+    id: "00000000-0000-4000-8000-000000000099",
+    email: `${role}@test.com`,
+    role,
+    venueId,
+  });
+
+function responseCode(body: string): unknown {
+  const parsed: unknown = JSON.parse(body);
+  return typeof parsed === "object" && parsed !== null && "code" in parsed
+    ? (parsed as Readonly<Record<string, unknown>>)["code"]
+    : undefined;
+}
 
 beforeAll(async () => { server = await buildServer(); });
 afterAll(async () => { await server.close(); });
@@ -96,6 +112,25 @@ describe("event routes", () => {
     expect(res.statusCode).not.toBe(401);
   });
 
+  it("validates nullable phase room identity at the HTTP boundary", async () => {
+    for (const payload of [{ spaceId: VENUE_ID }, { spaceId: null }, {}]) {
+      const response = await server.inject({
+        method: "PATCH",
+        url: `/event-phases/${PHASE_ID}`,
+        headers: { authorization: `Bearer ${adminToken()}` },
+        payload,
+      });
+      expect(response.statusCode).not.toBe(400);
+    }
+    const malformed = await server.inject({
+      method: "PATCH",
+      url: `/event-phases/${PHASE_ID}`,
+      headers: { authorization: `Bearer ${adminToken()}` },
+      payload: { spaceId: "not-a-uuid" },
+    });
+    expect(malformed.statusCode, malformed.body).toBe(400);
+  });
+
   it("validates layout variant links", async () => {
     const res = await server.inject({
       method: "POST",
@@ -151,5 +186,81 @@ describe("event routes", () => {
     expect(migration).toContain('FOREIGN KEY ("event_id", "phase_id")');
     expect(migration).toContain('REFERENCES "event_phases" ("event_id", "id")');
     expect(migration).toContain('ON DELETE SET NULL ("phase_id")');
+  });
+
+  it("validates phase rooms against the persisted event venue before mutation", async () => {
+    const source = await readFile(resolve("src/routes/events.ts"), "utf-8");
+    expect(source).toContain("eventVenueContainsSpace");
+    expect(source).toContain("eq(spaces.venueId, venueId)");
+    expect(source).toContain("isNull(spaces.deletedAt)");
+    expect(source).toContain('code: "EVENT_PHASE_SPACE_MISMATCH"');
+    expect(source).toContain('surfaces.add("layout")');
+    expect(source).toContain('surface === "layout"');
+    const createPhase = source.slice(
+      source.indexOf('server.post("/:id/phases"'),
+      source.indexOf('server.post("/:id/scenarios"'),
+    );
+    expect(createPhase.indexOf("eventVenueContainsSpace"))
+      .toBeLessThan(createPhase.indexOf("db.insert(eventPhases)"));
+  });
+});
+
+describe("event writes — role and tenant isolation", () => {
+  const eventPayload = {
+    venueId: VENUE_ID,
+    name: "Wedding",
+    status: "draft",
+    guestCount: 120,
+  };
+
+  it.each(["planner", "hallkeeper"] as const)(
+    "returns an exact 403 when %s attempts event creation",
+    async (role) => {
+      const response = await server.inject({
+        method: "POST",
+        url: "/events",
+        headers: { authorization: `Bearer ${roleToken(role)}` },
+        payload: eventPayload,
+      });
+      expect(response.statusCode, response.body).toBe(403);
+      expect(responseCode(response.body)).toBe("FORBIDDEN");
+    },
+  );
+
+  it("returns an exact venue-scope 403 before a staff cross-tenant create", async () => {
+    const response = await server.inject({
+      method: "POST",
+      url: "/events",
+      headers: { authorization: `Bearer ${roleToken("staff", OTHER_VENUE_ID)}` },
+      payload: eventPayload,
+    });
+    expect(response.statusCode, response.body).toBe(403);
+    expect(responseCode(response.body)).toBe("VENUE_SCOPE_MISMATCH");
+  });
+
+  it("gates every by-id event write before loading or mutating a row", async () => {
+    const surfaces = [
+      { method: "PATCH" as const, url: `/events/${EVENT_ID}`, payload: { name: "Renamed" } },
+      { method: "POST" as const, url: `/events/${EVENT_ID}/phases`, payload: { name: "Dinner", durationMinutes: 60 } },
+      { method: "POST" as const, url: `/events/${EVENT_ID}/scenarios`, payload: { name: "Rain plan" } },
+      { method: "POST" as const, url: `/events/${EVENT_ID}/layout-variants`, payload: { name: "Option A" } },
+      { method: "PATCH" as const, url: `/event-phases/${PHASE_ID}`, payload: { durationMinutes: 45 } },
+    ];
+    for (const surface of surfaces) {
+      const response = await server.inject({
+        ...surface,
+        headers: { authorization: `Bearer ${roleToken("hallkeeper")}` },
+      });
+      expect(response.statusCode, `${surface.method} ${surface.url}: ${response.body}`).toBe(403);
+      expect(responseCode(response.body)).toBe("FORBIDDEN");
+    }
+  });
+
+  it("loads by-id rows before authorizing against their persisted venue", async () => {
+    const source = await readFile(resolve("src/routes/events.ts"), "utf-8");
+    expect(source).toContain("canWriteEvents(request.user, eventRow.venueId)");
+    expect(source).toContain("canWriteEvents(request.user, joined.event.venueId)");
+    expect(source).toContain("canWriteEvents(request.user, parsed.data.venueId)");
+    expect(source).toContain("requireEventWriteRole(request, reply)");
   });
 });
