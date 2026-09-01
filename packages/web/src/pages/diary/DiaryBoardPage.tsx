@@ -546,6 +546,7 @@ export function DiaryBoardPage(): ReactElement {
             drag={drag}
             writable={writable}
             nowMs={nowMs}
+            turnaroundRules={data?.turnaroundRules}
           />
           <aside className="diary-side">
             <HoldingTray

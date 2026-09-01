@@ -744,6 +744,74 @@
   text-overflow: ellipsis;
 }
 
+/* Dimension lines between neighbouring occupancies — the drafting sheet's
+   own annotation. Decoration only (aria-hidden); pointer-events off so
+   drag hit-testing never sees them. */
+.diary-gap {
+  position: absolute;
+  top: 50%;
+  height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.diary-gap-line {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 0;
+  border-top: 1px solid rgba(198, 161, 91, 0.45);
+}
+
+.diary-gap-line::before,
+.diary-gap-line::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  width: 0;
+  height: 0;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+}
+
+.diary-gap-line::before {
+  left: -1px;
+  border-right: 5px solid rgba(198, 161, 91, 0.6);
+}
+
+.diary-gap-line::after {
+  right: -1px;
+  border-left: 5px solid rgba(198, 161, 91, 0.6);
+}
+
+.diary-gap-label {
+  position: relative;
+  background: var(--diary-leather);
+  padding: 0 5px;
+  font-family: var(--diary-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6rem;
+  color: rgba(217, 185, 107, 0.9);
+  white-space: nowrap;
+}
+
+.diary-gap-note {
+  position: absolute;
+  top: 8px;
+  font-family: var(--diary-hand);
+  font-style: italic;
+  font-variation-settings: "SOFT" 100, "WONK" 1;
+  font-size: 0.66rem;
+  color: rgba(239, 231, 214, 0.85);
+  white-space: nowrap;
+}
+
+.diary-gap.is-tight .diary-gap-label {
+  color: #e8b9a0;
+}
+
 /* The NOW thread and its hanging brass plaque. */
 .diary-now {
   position: absolute;

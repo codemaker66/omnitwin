@@ -28,6 +28,8 @@ export const BOARD_COPY = {
     doorsIn: (label: string): string => `Doors in ${label}`,
     guests: (count: number): string => `${String(count)} guests`,
     segments: { setup: "Setup", live: "Live", teardown: "Teardown" } as const,
+    tightGap: (guidelineMinutes: number): string =>
+      `under the ${String(guidelineMinutes)}m guideline`,
   },
   today: "Today",
   previous: "Earlier",

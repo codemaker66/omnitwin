@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CalendarBookingEntry, CalendarEntry, CalendarPhaseEntry } from "@omnitwin/types";
 import {
   filterBoardEntries,
+  laneGaps,
   layoutLane,
   needsAction,
 } from "../board-layout.js";
@@ -56,6 +57,112 @@ function phaseEntry(overrides: Partial<CalendarPhaseEntry>): CalendarPhaseEntry 
     ...overrides,
   };
 }
+
+describe("laneGaps — the dimensioned changeovers", () => {
+  const RULES = [
+    { spaceId: null, eventType: null, name: "House default", minutes: 90, isActive: true },
+  ];
+
+  function laneFor(entries: readonly (CalendarBookingEntry | CalendarPhaseEntry)[]) {
+    return layoutLane(entries, SPACE);
+  }
+
+  it("dimensions the gap between neighbouring occupancies, tight when under the ink guideline", () => {
+    const first = bookingEntry({
+      startsAt: "2026-09-18T12:00:00.000Z",
+      endsAt: "2026-09-18T16:00:00.000Z",
+    });
+    const second = bookingEntry({
+      startsAt: "2026-09-18T17:00:00.000Z",
+      endsAt: "2026-09-18T22:00:00.000Z",
+    });
+    const gaps = laneGaps(laneFor([first, second]).blocks, RULES, SPACE);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.minutes).toBe(60);
+    expect(gaps[0]?.guidelineMinutes).toBe(90);
+    expect(gaps[0]?.tight).toBe(true);
+  });
+
+  it("a wide-enough gap is dimensioned but never tight", () => {
+    const first = bookingEntry({
+      startsAt: "2026-09-18T10:00:00.000Z",
+      endsAt: "2026-09-18T12:00:00.000Z",
+    });
+    const second = bookingEntry({
+      startsAt: "2026-09-18T15:00:00.000Z",
+      endsAt: "2026-09-18T20:00:00.000Z",
+    });
+    const gaps = laneGaps(laneFor([first, second]).blocks, RULES, SPACE);
+    expect(gaps[0]?.minutes).toBe(180);
+    expect(gaps[0]?.tight).toBe(false);
+  });
+
+  it("tightness is measured only where the engine measures it: ink into ink", () => {
+    const first = bookingEntry({
+      startsAt: "2026-09-18T12:00:00.000Z",
+      endsAt: "2026-09-18T16:00:00.000Z",
+    });
+    const pencil = bookingEntry({
+      kind: "hold",
+      state: "hold",
+      rank: 1,
+      startsAt: "2026-09-18T16:30:00.000Z",
+      endsAt: "2026-09-18T20:00:00.000Z",
+    });
+    const gaps = laneGaps(laneFor([first, pencil]).blocks, RULES, SPACE);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.guidelineMinutes).toBeNull();
+    expect(gaps[0]?.tight).toBe(false);
+  });
+
+  it("prospects never take part in a changeover", () => {
+    const first = bookingEntry({
+      startsAt: "2026-09-18T12:00:00.000Z",
+      endsAt: "2026-09-18T16:00:00.000Z",
+    });
+    const prospect = bookingEntry({
+      kind: "prospect",
+      state: "prospect",
+      startsAt: "2026-09-18T16:15:00.000Z",
+      endsAt: "2026-09-18T18:00:00.000Z",
+    });
+    expect(laneGaps(laneFor([first, prospect]).blocks, RULES, SPACE)).toHaveLength(0);
+  });
+
+  it("a gap is measured from occupancy extents — a setup phase eats into it", () => {
+    const eventId = "00000000-0000-4000-8000-0000000000ee";
+    const first = bookingEntry({
+      startsAt: "2026-09-18T10:00:00.000Z",
+      endsAt: "2026-09-18T12:00:00.000Z",
+    });
+    const second = bookingEntry({
+      eventId,
+      startsAt: "2026-09-18T16:00:00.000Z",
+      endsAt: "2026-09-18T20:00:00.000Z",
+    });
+    const setup = phaseEntry({
+      eventId,
+      startsAt: "2026-09-18T14:00:00.000Z",
+      endsAt: "2026-09-18T16:00:00.000Z",
+    });
+    const gaps = laneGaps(laneFor([first, second, setup]).blocks, RULES, SPACE);
+    expect(gaps[0]?.minutes).toBe(120); // 12:00 → 14:00, not 12:00 → 16:00
+  });
+
+  it("without rules on the wire, gaps still dimension — just never tight", () => {
+    const first = bookingEntry({
+      startsAt: "2026-09-18T12:00:00.000Z",
+      endsAt: "2026-09-18T16:00:00.000Z",
+    });
+    const second = bookingEntry({
+      startsAt: "2026-09-18T16:30:00.000Z",
+      endsAt: "2026-09-18T20:00:00.000Z",
+    });
+    const gaps = laneGaps(laneFor([first, second]).blocks, undefined, SPACE);
+    expect(gaps[0]?.minutes).toBe(30);
+    expect(gaps[0]?.tight).toBe(false);
+  });
+});
 
 describe("layoutLane packing", () => {
   it("keeps non-overlapping blocks on one sub-row (touching edges share)", () => {

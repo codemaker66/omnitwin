@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { ReactElement } from "react";
 import type {
+  CalendarTurnaroundRule,
   CalendarEntry,
   CalendarRoom,
   ConflictSeverity,
@@ -20,7 +21,7 @@ import {
   widthPx,
   type BoardRange,
 } from "../lib/board-time.js";
-import { layoutLane, type PositionedBlock } from "../lib/board-layout.js";
+import { laneGaps, layoutLane, type PositionedBlock } from "../lib/board-layout.js";
 import type { BoardDrag, DragBlockDescriptor } from "../hooks/useBoardDrag.js";
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,8 @@ const TIME_MIN_WIDTH = 88;
 const FACE_MIN_WIDTH = 150;
 const COUNTDOWN_WINDOW_MS = 4 * 3_600_000;
 const SEGMENT_LABEL_MIN_PX = 46;
+const GAP_LABEL_MIN_PX = 56;
+const GAP_NOTE_MIN_PX = 120;
 
 export interface BoardGridProps {
   readonly rooms: readonly CalendarRoom[];
@@ -49,6 +52,9 @@ export interface BoardGridProps {
   readonly drag: BoardDrag;
   readonly writable: boolean;
   readonly nowMs: number;
+  /** The venue's turnaround rules (optional on the wire) — gap dimensions
+   *  degrade to plain durations when an older server omits them. */
+  readonly turnaroundRules?: readonly CalendarTurnaroundRule[];
 }
 
 function ordinal(rank: number): string {
@@ -121,7 +127,7 @@ function countdownLabel(ms: number): string {
 }
 
 export function BoardGrid(props: BoardGridProps): ReactElement {
-  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs } = props;
+  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules } = props;
   const canvasWidth = widthPx(range.fromMs, range.toMs, pxPerHour);
   const columns = dayColumns(range);
   const ticks = range.view === "day" ? hourTicks(range) : [];
@@ -226,6 +232,31 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                       aria-hidden="true"
                     />
                   ))}
+
+                  {laneGaps(lane.blocks, turnaroundRules, room.id).map((gap) => {
+                    const gapStart = Math.max(gap.startMs, range.fromMs);
+                    const gapEnd = Math.min(gap.endMs, range.toMs);
+                    if (gapEnd <= gapStart) return null;
+                    const gapLeft = msToX(gapStart, range, pxPerHour);
+                    const gapWidth = widthPx(gapStart, gapEnd, pxPerHour);
+                    if (gapWidth < GAP_LABEL_MIN_PX) return null;
+                    return (
+                      <span
+                        key={gap.id}
+                        className={`diary-gap${gap.tight ? " is-tight" : ""}`}
+                        style={{ left: gapLeft, width: gapWidth }}
+                        aria-hidden="true"
+                      >
+                        <span className="diary-gap-line" />
+                        <span className="diary-gap-label">{countdownLabel(gap.endMs - gap.startMs)}</span>
+                        {gap.tight && gap.guidelineMinutes !== null && gapWidth >= GAP_NOTE_MIN_PX ? (
+                          <span className="diary-gap-note">
+                            {BOARD_COPY.card.tightGap(gap.guidelineMinutes)}
+                          </span>
+                        ) : null}
+                      </span>
+                    );
+                  })}
 
                   {lane.orphanPhases.map((positioned) => {
                     const left = msToX(

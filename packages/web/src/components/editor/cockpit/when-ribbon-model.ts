@@ -2,10 +2,18 @@ import type {
   CalendarBookingEntry,
   CalendarPhaseEntry,
   CalendarResponse,
-  CalendarTurnaroundRule,
 } from "@omnitwin/types";
 import { boardRange, snapMs, type BoardRange } from "../../../pages/diary/lib/board-time.js";
 import { RIBBON_COPY } from "./when-ribbon-copy.js";
+import {
+  resolveTurnaroundGuideline,
+  type TurnaroundGuideline,
+} from "../../../lib/turnaround-guidelines.js";
+
+// The resolver moved to lib/turnaround-guidelines.ts when the Command
+// Centre became its second consumer; re-exported so the model's tests (and
+// any earlier importer) keep their pin.
+export { resolveTurnaroundGuideline, type TurnaroundGuideline };
 
 // ---------------------------------------------------------------------------
 // The When ribbon's pure model (Day Board S2) — everything the ribbon
@@ -71,45 +79,6 @@ export interface RibbonDay {
   /** False when the server did not send turnaround rules (older API) — the
    *  ribbon then draws no buffers rather than guessing. */
   readonly guidelinesAvailable: boolean;
-}
-
-export interface TurnaroundGuideline {
-  readonly minutes: number;
-  readonly name: string;
-}
-
-/** The server engine's rule resolution, mirrored exactly (and pinned by
- *  tests): most specific active rule for (spaceId, incoming eventType);
- *  a typed rule needs a matching non-null incoming type; ties resolve
- *  toward the LARGEST minutes — the fail-safe direction. */
-export function resolveTurnaroundGuideline(
-  rules: readonly CalendarTurnaroundRule[] | undefined,
-  spaceId: string,
-  incomingEventType: string | null,
-): TurnaroundGuideline | null {
-  if (rules === undefined) return null;
-  let best: CalendarTurnaroundRule | null = null;
-  let bestScore = -1;
-  for (const candidate of rules) {
-    if (!candidate.isActive) continue;
-    if (candidate.spaceId !== null && candidate.spaceId !== spaceId) continue;
-    if (
-      candidate.eventType !== null &&
-      (incomingEventType === null || candidate.eventType !== incomingEventType)
-    ) {
-      continue;
-    }
-    const score =
-      (candidate.spaceId !== null ? 2 : 0) + (candidate.eventType !== null ? 1 : 0);
-    if (
-      score > bestScore ||
-      (score === bestScore && best !== null && candidate.minutes > best.minutes)
-    ) {
-      best = candidate;
-      bestScore = score;
-    }
-  }
-  return best === null ? null : { minutes: best.minutes, name: best.name };
 }
 
 function isBookingEntry(entry: CalendarResponse["entries"][number]): entry is CalendarBookingEntry {
