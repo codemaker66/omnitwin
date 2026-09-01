@@ -277,7 +277,12 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     expect(eyeY).toBeLessThan(2.6);
 
     await page.keyboard.press("Escape");
-    await expect(walkToggle).toHaveAttribute("aria-pressed", "false", { timeout: 15_000 });
+    // Exit is asserted on the state itself: the toggle element can be mid
+    // Clerk-flip remount at this point, and a detached node reads as "" while
+    // the mode has genuinely ended.
+    await expect
+      .poll(() => page.evaluate(() => window.__walkDebug?.walkMode ?? null), { timeout: 15_000 })
+      .toBe(false);
   });
 
   test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, baseURL }) => {
