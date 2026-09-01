@@ -59,6 +59,19 @@ describe("boardRange", () => {
     expect(fall.toMs - fall.fromMs).toBe(169 * HOUR);
   });
 
+  it("2w view is fourteen local days from the Monday", () => {
+    const range = boardRange(Date.parse("2026-09-16T09:00:00.000Z"), "2w");
+    expect(new Date(range.fromMs).toISOString()).toBe("2026-09-13T23:00:00.000Z");
+    expect(range.toMs - range.fromMs).toBe(336 * HOUR);
+  });
+
+  it("a fortnight containing a DST transition is 335 or 337 hours", () => {
+    const spring = boardRange(Date.parse("2026-03-26T12:00:00.000Z"), "2w");
+    expect(spring.toMs - spring.fromMs).toBe(335 * HOUR);
+    const fall = boardRange(Date.parse("2026-10-22T12:00:00.000Z"), "2w");
+    expect(fall.toMs - fall.fromMs).toBe(337 * HOUR);
+  });
+
   it("month view spans the 1st to the 1st", () => {
     const range = boardRange(Date.parse("2026-09-16T09:00:00.000Z"), "month");
     expect(new Date(range.fromMs).toISOString()).toBe("2026-08-31T23:00:00.000Z");
@@ -81,6 +94,14 @@ describe("shiftRange", () => {
     expect(sunday.toMs - sunday.fromMs).toBe(23 * HOUR);
     const monday = shiftRange(sunday, 1);
     expect(new Date(monday.fromMs).toISOString()).toBe("2026-03-29T23:00:00.000Z");
+  });
+
+  it("pages a fortnight by fourteen days and titles it honestly", () => {
+    const range = boardRange(Date.parse("2026-09-16T09:00:00.000Z"), "2w");
+    const next = shiftRange(range, 1);
+    expect(next.fromMs).toBe(range.toMs);
+    expect(next.toMs - next.fromMs).toBe(336 * HOUR);
+    expect(rangeTitle(range)).toMatch(/^Fortnight of /u);
   });
 
   it("moves months across the year boundary", () => {

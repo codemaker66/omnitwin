@@ -20,7 +20,7 @@ export const BOARD_COPY = {
   emptyRange: "Nothing in the diary for this range yet.",
   showExited: "Show released & cancelled",
 
-  views: { day: "Day", week: "Week", month: "Month" } as const,
+  views: { day: "Day", week: "Week", "2w": "2W", month: "Month" } as const,
   today: "Today",
   previous: "Earlier",
   next: "Later",

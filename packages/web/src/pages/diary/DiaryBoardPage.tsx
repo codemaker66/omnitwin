@@ -48,14 +48,17 @@ import "./diary-board.css";
 // split server-side). URL carries ?view=&date= so board positions deep-link.
 // ---------------------------------------------------------------------------
 
-const PX_PER_HOUR: Record<BoardView, number> = { day: 96, week: 18, month: 3 };
-const VIEWS: readonly BoardView[] = ["day", "week", "month"];
+const PX_PER_HOUR: Record<BoardView, number> = { day: 96, week: 18, "2w": 9, month: 3 };
+// The toolbar offers the reference sheet's three zooms. Month stays in the
+// union and URL-reachable (?view=month, the m key) so old deep links keep
+// working — a deliberate compat decision, not an oversight.
+const VIEWS: readonly BoardView[] = ["day", "week", "2w"];
 const TOAST_MS = 7_000;
 const NOW_TICK_MS = 60_000;
 const SEVERITY_RANK: Record<ConflictSeverity, number> = { blocking: 3, warning: 2, info: 1 };
 
 function isBoardView(value: string | null): value is BoardView {
-  return value === "day" || value === "week" || value === "month";
+  return value === "day" || value === "week" || value === "2w" || value === "month";
 }
 
 function anchorFromParam(dateParam: string | null): number {
@@ -386,6 +389,7 @@ export function DiaryBoardPage(): ReactElement {
       if (event.key === "t") setRange(view, Date.now());
       else if (event.key === "d") setRange("day", anchorMs);
       else if (event.key === "w") setRange("week", anchorMs);
+      else if (event.key === "f") setRange("2w", anchorMs);
       else if (event.key === "m") setRange("month", anchorMs);
     };
     window.addEventListener("keydown", onKeyDown);
