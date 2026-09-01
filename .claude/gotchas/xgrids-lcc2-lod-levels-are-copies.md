@@ -29,7 +29,7 @@ The finest level equals the XGRIDS build report's `pointCloudQuantity`
 room five times over, put 11.5 M splats through Spark's sort on every camera
 move, and froze the renderer for minutes even on an RTX 4090 (measured
 2026-09-01). The homepage's "58,991,948 splats" was this sum across rooms; the
-true finest-level total is 30,920,348.
+true finest-level total is 30,921,368.
 
 Rules that follow:
 

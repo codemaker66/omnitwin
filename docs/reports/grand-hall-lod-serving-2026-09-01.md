@@ -10,7 +10,7 @@ tile of every level as its own Spark `SplatMesh`, so the Grand Hall drew
 11,487,038 splats where its finest level, 6,019,684, is the whole
 reconstruction (it equals the XGRIDS build report's `pointCloudQuantity`).
 The homepage's "58,991,948 splats" was that same sum across the eight rooms;
-the finest-level total is 30,920,348.
+the finest-level total is 30,921,368.
 
 Root cause located in `packages/web/src/components/rooms/RoomSplatScene.tsx`
 (one layer per URL, no level selection) and
@@ -50,6 +50,17 @@ the completion time favours "after" by the network; heap and drag do not.
 | JS heap at complete | 2,991 MB | 1,201 MB |
 | Drag frame rate (rAF) | 4 fps | 13 fps |
 | Main-thread stalls during the drag | 5 tasks, 2,864 ms, worst 858 ms | 9 tasks, 1,012 ms, worst 126 ms |
+
+After the deploy (master d77d7f3b, Vercel), the same instrument against the
+same production URL, so network and origin are identical to the "before" row:
+
+| | Before: production, all 5 levels | After: production, finest level only |
+|---|---:|---:|
+| Time to "complete" | 66.6 s | 34.0 s |
+| First tile progress | 6.6 s | 12.8 s (R2 via Vercel, 12 larger tiles first) |
+| JS heap at complete | 2,991 MB | 735 MB |
+| Drag frame rate (rAF) | 4 fps | 15 fps |
+| Main-thread stalls during the drag | 5 tasks, 2,864 ms, worst 858 ms | 12 tasks, 1,320 ms, worst 242 ms |
 
 Earlier the same day, in the owner's real Chrome (same GPU, DPR 1.63), the
 all-levels page took about seven minutes to report complete, held a 2,966 MB
