@@ -6,6 +6,12 @@ import type {
   ConflictSeverity,
 } from "@omnitwin/types";
 import { BOARD_COPY } from "../board-copy.js";
+import { roomScanPosterUrl } from "../../../lib/room-posters.js";
+import {
+  TRADES_HALL_ROOM_CAPACITIES,
+  VENUE_TRUTH_PROVENANCE,
+  type PublishedRoomSlug,
+} from "../../../lib/trades-hall-venue-truth.js";
 import {
   dayColumns,
   formatWallTime,
@@ -63,6 +69,29 @@ function rankChip(block: PositionedBlock): string | null {
   if (entry.rank === null) return BOARD_COPY.block.unranked;
   if (entry.rank === 1 && entry.jointFlag) return BOARD_COPY.block.jointFirst;
   return BOARD_COPY.block.rank(ordinal(entry.rank));
+}
+
+
+/** Published reception capacity for the rail, or null — CalendarRoom.slug is
+ *  a plain string, so the venue-truth record needs a runtime guard. Only
+ *  published figures render; a room the venue publishes no number for shows
+ *  none (never a scan-derived guess). */
+function railCapacity(slug: string): number | null {
+  return slug in TRADES_HALL_ROOM_CAPACITIES
+    ? TRADES_HALL_ROOM_CAPACITIES[slug as PublishedRoomSlug].reception
+    : null;
+}
+
+
+/** Deterministic paper tilt for hold cards: a pencilled slip lies at a
+ *  slight, stable angle (same booking, same angle, every render). The tilt
+ *  lives on the INNER card, never the positioned button — the drag
+ *  hit-rect must stay rectangular. */
+function tiltFor(id: string, kind: string, active: boolean): 0 | 1 | 2 {
+  if (kind !== "hold" || !active) return 0;
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  return ((Math.abs(hash) % 2) + 1) as 1 | 2;
 }
 
 export function BoardGrid(props: BoardGridProps): ReactElement {
@@ -123,13 +152,35 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
             return (
               <div key={room.id} className="diary-lane-row" role="row">
                 <div className="diary-rail" role="rowheader">
-                  <span className="diary-rail-name">{room.name}</span>
-                  <span className="diary-rail-counts">
-                    <span className="diary-rail-count is-ink">
-                      {BOARD_COPY.lane.inkCount(inkCount)}
-                    </span>
-                    <span className="diary-rail-count is-hold">
-                      {BOARD_COPY.lane.holdCount(holdCount)}
+                  {/* The room's own scan poster (lightweight tier) — a broken
+                      or missing file collapses to the typographic rail. */}
+                  <img
+                    className="diary-rail-photo"
+                    src={roomScanPosterUrl(room.slug)}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    width={64}
+                    height={44}
+                    onError={(event) => { event.currentTarget.classList.add("is-missing"); }}
+                  />
+                  <span className="diary-rail-id">
+                    <span className="diary-rail-name">{room.name}</span>
+                    {railCapacity(room.slug) !== null ? (
+                      <span
+                        className="diary-rail-capacity"
+                        title={VENUE_TRUTH_PROVENANCE.capacities}
+                      >
+                        {railCapacity(room.slug)} reception
+                      </span>
+                    ) : null}
+                    <span className="diary-rail-counts">
+                      <span className="diary-rail-count is-ink">
+                        {BOARD_COPY.lane.inkCount(inkCount)}
+                      </span>
+                      <span className="diary-rail-count is-hold">
+                        {BOARD_COPY.lane.holdCount(holdCount)}
+                      </span>
                     </span>
                   </span>
                 </div>
@@ -225,6 +276,10 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                         aria-label={ariaLabel}
                         {...handlers}
                       >
+                        <span
+                          className="diary-block-card"
+                          data-tilt={tiltFor(block.entry.id, block.entry.kind, isActive)}
+                        >
                         {width >= TITLE_MIN_WIDTH ? (
                           <span className="diary-block-title">{block.entry.title}</span>
                         ) : null}
@@ -254,6 +309,12 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                             })}
                           </span>
                         ) : null}
+                        {severity === "blocking" ? (
+                          <span className="diary-block-stamp" aria-hidden="true">
+                            Conflict
+                          </span>
+                        ) : null}
+                        </span>
                       </button>
                     );
                   })}

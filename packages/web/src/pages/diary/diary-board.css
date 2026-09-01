@@ -1,20 +1,37 @@
 /* ---------------------------------------------------------------------------
-   The Diary Board — Ink & Gilt (T-493; Canon §18, concept A).
+   The Command Centre — Ink & Gilt, re-materialised (C1; T-493 Canon §18
+   concept A; the look is governed by docs/plan/reference/day-board/).
 
-   The Hallkeeper Test governs: information first, beauty as its reward.
-   Everything is crisp and opaque — no blur or translucency where data lives
-   (authority-map ruling). Ink = solid dark blocks with a gold left edge;
-   pencils = paper-textured cards; prospects = dashed ghosts; house blocks =
-   hatching. Local paper/wax tokens live here until the A3 merged token layer
-   absorbs them.
+   The Hallkeeper Test still governs: information first, beauty as its
+   reward. Everything stays crisp and opaque — no blur, no translucency,
+   no backdrop-filter where data lives (authority-map ruling), and no
+   text-shadow anywhere (House refusal). Bookings are physical objects:
+   INK = a brass-pinned plaque; PENCIL = a paper slip with a folded
+   corner, lying at a slight stable tilt (the tilt lives on the INNER
+   card — the positioned button stays rectangular so drag hit-testing
+   never bends); CONFLICT = wax-red hatching with a stamped label. The
+   board itself is a leather drawing sheet; grain is one cached SVG tile
+   (an image paint, never a live filter). Hands: Fraunces italic with its
+   SOFT/WONK axes (already shipped globally) falling back to Georgia
+   italic — the diary's established pencil voice. Data numerals: Geist
+   Mono, tabular.
 --------------------------------------------------------------------------- */
 
 .diary-page {
-  --diary-rail-width: 172px;
+  --diary-rail-width: 208px;
   --diary-paper: #efe7d6;
+  --diary-paper-2: #e4d9c2;
   --diary-paper-ink: #2b241b;
   --diary-wax: #8f2f2a;
   --diary-line: rgba(246, 241, 232, 0.1);
+  --diary-brass: #c6a15b;
+  --diary-brass-bright: #d9b96b;
+  --diary-brass-deep: #a37f3c;
+  --diary-leather: #16120d;
+  --diary-leather-2: #201a12;
+  --diary-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+  --diary-hand: "Fraunces", Georgia, "Times New Roman", serif;
+  --diary-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --diary-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
   min-height: 100vh;
@@ -179,9 +196,14 @@
 .diary-scroll {
   overflow: auto;
   max-height: calc(100vh - 220px);
-  border: 1px solid var(--diary-line);
+  border: 1px solid rgba(198, 161, 91, 0.28);
   border-radius: 10px;
-  background: var(--vv-ink);
+  /* The drawing sheet: leather ground + one cached grain tile. Layered
+     backgrounds are a single paint; never background-attachment: fixed
+     (it repaints every scroll frame in this very container). */
+  background:
+    var(--diary-grain),
+    linear-gradient(180deg, var(--diary-leather-2), var(--diary-leather));
   outline-offset: -2px;
 }
 
@@ -255,25 +277,63 @@
   z-index: 4;
   flex: 0 0 var(--diary-rail-width);
   width: var(--diary-rail-width);
-  background: var(--vv-ink-2);
-  border-right: 1px solid var(--vv-gold-2);
-  padding: 8px 12px;
+  background:
+    var(--diary-grain),
+    linear-gradient(180deg, #241d14, #1b1510);
+  border-right: 1px solid rgba(198, 161, 91, 0.4);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The room's own photograph, framed in a brass hairline. A missing file
+   collapses to the typographic rail (is-missing set by onError). */
+.diary-rail-photo {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(217, 185, 107, 0.55);
+  background: var(--diary-leather);
+}
+
+.diary-rail-photo.is-missing {
+  display: none;
+}
+
+.diary-rail-id {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  justify-content: center;
+  gap: 3px;
 }
 
 .diary-rail-name {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 0.95rem;
+  font-family: var(--diary-hand);
+  font-size: 0.9rem;
+  line-height: 1.15;
   color: var(--vv-cream);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diary-rail-capacity {
+  font-family: var(--diary-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.66rem;
+  color: var(--diary-brass);
 }
 
 .diary-rail-counts {
   display: flex;
   gap: 8px;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
+  font-family: var(--diary-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--vv-muted);
 }
 
@@ -300,21 +360,51 @@
 
 /* --- blocks ----------------------------------------------------------------- */
 
+/* The button is a transparent positioned SHELL: it owns layout, focus,
+   cursor and the drag surface (touch-action). The material lives on the
+   inner .diary-block-card, so paper tilt and the folded-corner clip never
+   bend the drag hit-rect. */
 .diary-block {
   position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.78rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: grab;
+  touch-action: none;
+}
+
+.diary-block-card {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 0 8px;
   border-radius: 5px;
   border: 1px solid transparent;
-  font-size: 0.78rem;
-  text-align: left;
   overflow: hidden;
-  white-space: nowrap;
-  cursor: grab;
-  touch-action: none;
   transition: transform 160ms var(--diary-ease-out), box-shadow 160ms ease;
+}
+
+/* Paper slips lie at a slight, stable angle. */
+.diary-block-card[data-tilt="1"] { transform: rotate(0.45deg); }
+.diary-block-card[data-tilt="2"] { transform: rotate(-0.45deg); }
+
+/* The brass pin every physical card hangs from. */
+.diary-block.is-ink .diary-block-card::before,
+.diary-block.is-hold .diary-block-card::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #f0d9a0, var(--diary-brass-deep) 72%);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
 }
 
 .diary-block:focus-visible {
@@ -326,7 +416,17 @@
 @media (hover: hover) and (pointer: fine) {
   .diary-block:hover {
     z-index: 2;
-    box-shadow: 0 0 0 1px var(--diary-line);
+  }
+
+  .diary-block:hover .diary-block-card {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+
+  .diary-block.is-hold:hover .diary-block-card {
+    /* Paper is clipped (folded corner) so outer shadows are cut; lift
+       with a hairline instead. */
+    box-shadow: none;
+    border-color: rgba(43, 36, 27, 0.5);
   }
 }
 
@@ -338,19 +438,27 @@
   opacity: 0.35;
 }
 
-.diary-block.is-ink {
-  background: var(--vv-ink-2);
-  border-color: rgba(215, 181, 109, 0.35);
+/* INK: a plaque. Bevelled ink, brass hairline, gold edge; the engraving
+   comes from weight and letter-spacing (text-shadow is banned). */
+.diary-block.is-ink .diary-block-card {
+  background: linear-gradient(180deg, #262019, #1d1811);
+  border-color: rgba(217, 185, 107, 0.4);
   border-left: 3px solid var(--vv-gold);
   color: var(--vv-cream);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 235, 190, 0.07);
+  padding-left: 16px;
 }
 
 .diary-block.is-ink .diary-block-title {
   font-weight: 600;
+  letter-spacing: 0.015em;
 }
 
-.diary-block.is-hold {
+/* PENCIL: a paper slip. Grain, pencil hatch, italic hand, folded corner.
+   Clipped paper casts no outer shadow; it lies flat, as paper does. */
+.diary-block.is-hold .diary-block-card {
   background:
+    var(--diary-grain),
     repeating-linear-gradient(
       45deg,
       rgba(43, 36, 27, 0.05) 0 2px,
@@ -358,57 +466,113 @@
     ),
     var(--diary-paper);
   color: var(--diary-paper-ink);
-  border-color: rgba(43, 36, 27, 0.25);
+  border-color: rgba(43, 36, 27, 0.3);
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% calc(100% - 9px),
+    calc(100% - 9px) 100%,
+    0 100%
+  );
+  padding-left: 16px;
+}
+
+.diary-block.is-hold .diary-block-card::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+  background: linear-gradient(315deg, var(--diary-paper-2) 50%, rgba(43, 36, 27, 0.22) 52%, var(--diary-paper) 56%);
 }
 
 .diary-block.is-hold .diary-block-title {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--diary-hand);
   font-style: italic;
+  font-variation-settings: "SOFT" 100, "WONK" 1;
 }
 
-.diary-block.is-prospect {
+.diary-block.is-prospect .diary-block-card {
   background: transparent;
   border: 1px dashed rgba(246, 241, 232, 0.45);
   color: var(--vv-muted);
 }
 
 .diary-block.is-internal_block {
+  cursor: default;
+}
+
+.diary-block.is-internal_block .diary-block-card {
   background: repeating-linear-gradient(
     45deg,
     rgba(246, 241, 232, 0.14) 0 4px,
     rgba(9, 8, 7, 0.4) 4px 8px
   );
   color: var(--vv-muted);
-  cursor: default;
 }
 
 .diary-block.is-exited {
+  cursor: default;
+}
+
+.diary-block.is-exited .diary-block-card {
   background: transparent;
   border: 1px solid var(--diary-line);
   color: rgba(246, 241, 232, 0.4);
   text-decoration: line-through;
-  cursor: default;
 }
 
-.diary-block.is-clipped-start {
+.diary-block.is-clipped-start .diary-block-card {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
 }
 
-.diary-block.is-clipped-end {
+.diary-block.is-clipped-end .diary-block-card {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
 }
 
-.diary-block.has-conflict-blocking {
+/* CONFLICT: wax. Blocking gets the stamped treatment; the reason lives in
+   the aria-label and the conflict rail, and ivory on deep wax is 7.0:1,
+   so the colour never carries the meaning alone. */
+.diary-block.has-conflict-blocking .diary-block-card {
   box-shadow: inset 0 0 0 2px var(--diary-wax);
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(143, 47, 42, 0.28) 0 6px,
+      rgba(143, 47, 42, 0.1) 6px 12px
+    );
 }
 
-.diary-block.has-conflict-warning {
+.diary-block-stamp {
+  display: none;
+}
+
+.diary-block.has-conflict-blocking .diary-block-stamp {
+  display: inline-block;
+  position: absolute;
+  right: 6px;
+  top: 3px;
+  transform: rotate(-2deg);
+  border: 1px solid rgba(255, 235, 190, 0.4);
+  border-radius: 2px;
+  color: #f4efe6;
+  background-color: var(--diary-wax);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0 4px;
+  pointer-events: none;
+}
+
+.diary-block.has-conflict-warning .diary-block-card {
   box-shadow: inset 0 0 0 2px var(--vv-gold-2);
 }
 
-.diary-block.has-conflict-info {
+.diary-block.has-conflict-info .diary-block-card {
   box-shadow: inset 0 0 0 1px rgba(107, 217, 232, 0.55);
 }
 
@@ -418,8 +582,10 @@
 }
 
 .diary-block-time {
-  font-size: 0.68rem;
-  opacity: 0.75;
+  font-family: var(--diary-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.66rem;
+  opacity: 0.8;
   flex: 0 0 auto;
 }
 
@@ -516,12 +682,13 @@
   text-overflow: ellipsis;
 }
 
+/* The NOW thread and its hanging brass plaque. */
 .diary-now {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 0;
-  border-left: 1px solid var(--vv-gold);
+  border-left: 1px solid var(--diary-brass-bright);
   z-index: 5;
   pointer-events: none;
 }
@@ -531,14 +698,16 @@
   top: 48px;
   display: inline-block;
   transform: translateX(-50%);
-  background: var(--vv-gold);
-  color: var(--vv-ink);
+  background: linear-gradient(180deg, var(--diary-brass-bright), var(--diary-brass-deep));
+  color: #241c10;
   font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  border: 1px solid rgba(255, 235, 190, 0.6);
   border-radius: 3px;
-  padding: 1px 6px;
+  padding: 2px 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
 /* --- side panels -------------------------------------------------------------- */
