@@ -29,6 +29,10 @@ import { SceneProvider } from "../SceneProvider.js";
 import { PerfMonitor } from "../PerfMonitor.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { usePlacementStore } from "../../stores/placement-store.js";
+import { useSelectionStore } from "../../stores/selection-store.js";
+import { useToolStore } from "../../stores/tool-store.js";
+import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { computeBoundingBox, resolveRoomGeometry } from "../../data/room-geometries.js";
 import { useChunkArrivals } from "../../hooks/use-chunk-arrivals.js";
 import { useRoomRuntimeSplat } from "../../hooks/use-room-runtime-splat.js";
@@ -129,6 +133,11 @@ declare global {
       hasWalkData: boolean;
     };
     __setWalkMode?: (value: boolean) => void;
+    __plannerHands?: {
+      placeTable: (x: number, z: number) => string | null;
+      select: (id: string) => void;
+      activeTool: () => string;
+    };
   }
 }
 
@@ -308,6 +317,31 @@ export function PlannerScene(): ReactElement {
       hasWalkData: walkData !== null,
     };
     window.__setWalkMode = (value: boolean) => { useCockpitStore.getState().setWalkMode(value); };
+    // __plannerHands: deterministic furniture setup for the tool-pill e2e —
+    // placing through the catalogue UI would couple the pill's evidence to
+    // drawer choreography. placeTable corrects position after placeItem so a
+    // probe can stage exact planning gaps regardless of grid snap.
+    window.__plannerHands = {
+      placeTable: (x: number, z: number): string | null => {
+        const table = getCatalogueItemBySlug("round-table-6ft");
+        if (table === undefined) return null;
+        const placement = usePlacementStore.getState();
+        placement.placeItem(table.id, x, z);
+        const items = usePlacementStore.getState().placedItems;
+        const placed = items[items.length - 1];
+        if (placed === undefined) return null;
+        // Exact staging: placeItem/moveItem both grid-snap AND magnetise to
+        // nearby furniture (alignment snap pulled a 0.60 m test gap shut).
+        // A probe needs the coordinates it asked for, verbatim.
+        usePlacementStore.setState({
+          placedItems: usePlacementStore.getState().placedItems.map((item) =>
+            item.id === placed.id ? { ...item, x, z } : item),
+        });
+        return placed.id;
+      },
+      select: (id: string) => { useSelectionStore.getState().select(id); },
+      activeTool: () => useToolStore.getState().activeTool,
+    };
   }, [walkMode, roomSlug, hasAsset, walkData]);
 
   // DEV bisect flag: ?walkNoCam=1 keeps walk mode's state transitions (the

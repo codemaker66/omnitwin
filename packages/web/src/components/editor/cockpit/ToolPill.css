@@ -10,7 +10,9 @@
 
 .planner-tool-pill {
   position: absolute;
-  top: calc(var(--cockpit-inset, 10px) + 4px);
+  /* The stage spans the whole cockpit grid (the un-letterboxing), so "top of
+     the stage" is the top of the viewport — clear the top bar's row. */
+  top: calc(var(--cockpit-topbar-height, 64px) + var(--cockpit-inset, 10px) + 4px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 6;
