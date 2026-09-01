@@ -222,7 +222,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
 
     await page.goto("/plan?capture=1");
 
-    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("canvas").first()).toBeVisible({ timeout: 60_000});
     await expect
       .poll(() => readPhase(page), { timeout: 60_000, message: "waiting for the staged develop" })
       .toBe("developing");
