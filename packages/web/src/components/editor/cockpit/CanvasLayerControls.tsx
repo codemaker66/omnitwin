@@ -24,6 +24,7 @@ const LAYER_CONTROLS_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
 
 const LAYER_CONTROLS_AVOID_SELECTORS = [
   "[data-testid='cockpit-topbar']",
+  "[data-testid='planner-tool-pill']",
   "[data-testid='planner-toolbar']",
   "[data-floating-widget-id='planner-view-mode']",
   "[data-floating-widget-id='cockpit-minimap']",

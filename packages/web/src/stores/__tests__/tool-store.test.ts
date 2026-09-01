@@ -47,7 +47,7 @@ describe("tool-store", () => {
 
   it("leaving Measure clears a pending tape point (no orphaned first click)", () => {
     useToolStore.getState().setTool("measure");
-    useMeasurementStore.getState().placePoint({ x: 1, y: 0, z: 1 });
+    useMeasurementStore.getState().placePoint([1, 0, 1]);
     expect(useMeasurementStore.getState().pendingPoint).not.toBeNull();
     useToolStore.getState().setTool("move");
     expect(useMeasurementStore.getState().pendingPoint).toBeNull();

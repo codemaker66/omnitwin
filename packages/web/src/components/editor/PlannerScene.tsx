@@ -22,6 +22,8 @@ import { SelectionSystem } from "../SelectionSystem.js";
 import { MarqueeSelect } from "../MarqueeSelect.js";
 import { SnapGuides } from "../SnapGuides.js";
 import { CirculationOverlay } from "../CirculationOverlay.js";
+import { ClearanceRings } from "./ClearanceRings.js";
+import { FurnitureMotion } from "./FurnitureMotion.js";
 import { MarkupLayer } from "../MarkupLayer.js";
 import { SceneProvider } from "../SceneProvider.js";
 import { PerfMonitor } from "../PerfMonitor.js";
@@ -148,6 +150,7 @@ function PlannerMotionOverlayLayers({
       <CockpitEvidenceBeam />
       <SnapGuides />
       <CirculationOverlay />
+      <ClearanceRings />
       <MarqueeSelect />
       <MarkupLayer />
       <DiagramLabels />
@@ -426,6 +429,7 @@ export function PlannerScene(): ReactElement {
           <PlacedFurniture />
           <PlacementGhost />
           <SelectionSystem />
+          <FurnitureMotion />
           <PlannerMotionOverlayLayers renderSceneOverlays={renderSceneOverlays} />
           <PlannerAdaptiveResolution
             active={cameraInteractionActive && splatActive && !walkMode}

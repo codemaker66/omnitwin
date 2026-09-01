@@ -15,9 +15,19 @@ import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { isDiningTableItem } from "../lib/furniture-semantics.js";
-import { expandIdsToGroupMembers, getGroupMemberIds } from "../lib/placement.js";
+import { expandIdsToGroupMembers, getGroupMemberIds, snapPositionToGrid } from "../lib/placement.js";
 import { computeFluidFurnitureDragFrame } from "../lib/furniture-drag.js";
 import { isSceneFurniturePlacement } from "../lib/table-dressing.js";
+import { useToolStore } from "../stores/tool-store.js";
+import {
+  formatDegrees,
+  formatScale,
+  rotationFromDrag,
+  scaleFromDrag,
+} from "../lib/planner-tools.js";
+import { beginFurnitureSettle, clearFurnitureSettle } from "../lib/furniture-motion.js";
+import { prefersReducedMotion } from "../lib/reduced-motion.js";
+import { normalizeFurnitureScale } from "../lib/furniture-scale.js";
 import {
   snapRotation,
   ROTATION_SNAP_RAD,
@@ -132,6 +142,16 @@ export function SelectionSystem(): null {
   const dragStartScreen = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragItemId = useRef<string | null>(null);
   const dragGrabOffset = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
+  // Which hand the drag belongs to, decided at pointer-down from the tool
+  // store: Select and Move share the move gesture; Rotate and Scale sweep
+  // around the primary item's centre.
+  const gestureKind = useRef<"move" | "rotate" | "scale">("move");
+  /** Initial rotation/scale per item at drag start (rotate/scale gestures). */
+  const gestureInitial = useRef<ReadonlyMap<string, number>>(new Map());
+  const gestureCentre = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
+  const gestureGrabFloor = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
+  /** The full moving set of the current move drag, for the release settle. */
+  const lastMovingIds = useRef<ReadonlySet<string>>(new Set());
   const wallClickKey = useRef<WallKey | null>(null);
   const rightClickStart = useRef<{ x: number; y: number } | null>(null);
   const rightClickMoved = useRef(false);
@@ -176,8 +196,22 @@ export function SelectionSystem(): null {
         return;
       }
 
-      // Escape — clear selection
+      // Escape — back out one layer at a time: a non-Select hand returns to
+      // Select first; a second press clears the selection. The measure hand
+      // defers to MeasurementTool's pending-point cancel, then puts the tape
+      // away.
       if (event.code === "Escape") {
+        const toolStore = useToolStore.getState();
+        if (toolStore.activeTool === "measure") {
+          if (useMeasurementStore.getState().pendingPoint === null) {
+            toolStore.setTool("select");
+          }
+          return;
+        }
+        if (toolStore.activeTool !== "select") {
+          toolStore.setTool("select");
+          return;
+        }
         if (selectedIds.size > 0) {
           useSelectionStore.getState().clearSelection();
           invalidateRef.current();
@@ -314,14 +348,25 @@ export function SelectionSystem(): null {
       wallClickKey.current = found.wallKey;
       dragGrabOffset.current = { x: 0, z: 0 };
       if (found.itemId !== null) {
+        const placedItems = usePlacementStore.getState().placedItems;
+        // Grab-interrupt: a mid-settle object is visually offset from store
+        // truth; drop its springs BEFORE measuring the grab so the drag maths
+        // stay blind to the animation layer.
+        for (const gid of getGroupMemberIds(found.itemId, placedItems)) {
+          clearFurnitureSettle(gid);
+        }
         const floorPos = screenToFloor(event.clientX, event.clientY, cachedRect, camera, raycaster);
-        const item = usePlacementStore.getState().placedItems.find((placed) => placed.id === found.itemId);
+        const item = placedItems.find((placed) => placed.id === found.itemId);
         if (floorPos !== null && item !== undefined) {
           dragGrabOffset.current = {
             x: floorPos.x - item.x,
             z: floorPos.z - item.z,
           };
+          gestureCentre.current = { x: item.x, z: item.z };
+          gestureGrabFloor.current = { x: floorPos.x, z: floorPos.z };
         }
+        const tool = useToolStore.getState().activeTool;
+        gestureKind.current = tool === "rotate" ? "rotate" : tool === "scale" ? "scale" : "move";
       }
     }
 
@@ -450,6 +495,23 @@ export function SelectionSystem(): null {
           if (!useSelectionStore.getState().selectedIds.has(dragItemId.current)) {
             useSelectionStore.getState().select(dragItemId.current);
           }
+          // Rotate/Scale sweep from each item's value at drag start.
+          if (gestureKind.current !== "move") {
+            const placedItems = usePlacementStore.getState().placedItems;
+            const ids = useSelectionStore.getState().selectedIds;
+            const initial = new Map<string, number>();
+            for (const item of placedItems) {
+              if (!ids.has(item.id) && item.id !== dragItemId.current) continue;
+              if (!isSceneFurniturePlacement(item)) continue;
+              initial.set(
+                item.id,
+                gestureKind.current === "rotate"
+                  ? item.rotationY
+                  : normalizeFurnitureScale(item.scale),
+              );
+            }
+            gestureInitial.current = initial;
+          }
         } else if (wallClickKey.current !== null) {
           // Preserve wall click-to-disassemble when the pointer jitters a few
           // pixels over the wall plane; don't convert that interaction into a
@@ -529,6 +591,33 @@ export function SelectionSystem(): null {
         return;
       }
 
+      if (isDragging.current && dragItemId.current !== null && gestureKind.current !== "move") {
+        // Rotate/Scale — the pointer sweeps around the primary item's centre;
+        // every selected item takes the same delta on its own initial value.
+        // One batched store write per frame, and the live readout feeds the
+        // pill's value chip.
+        const floorHit = screenToFloor(event.clientX, event.clientY, cachedRect, camera, raycaster);
+        if (floorHit !== null && gestureInitial.current.size > 0) {
+          const rotate = gestureKind.current === "rotate";
+          const free = event.shiftKey;
+          const next = new Map<string, number>();
+          let readout: string | null = null;
+          for (const [id, initial] of gestureInitial.current) {
+            const value = rotate
+              ? rotationFromDrag(gestureCentre.current, gestureGrabFloor.current, floorHit, initial, free)
+              : scaleFromDrag(gestureCentre.current, gestureGrabFloor.current, floorHit, initial, free);
+            next.set(id, value);
+            readout ??= rotate ? formatDegrees(value) : formatScale(value);
+          }
+          const placement = usePlacementStore.getState();
+          if (rotate) placement.rotateItemsTo(next);
+          else placement.scaleItemsTo(next);
+          useToolStore.getState().setLiveValue(readout);
+          invalidateRef.current();
+        }
+        return;
+      }
+
       if (isDragging.current && dragItemId.current !== null) {
         // Drag-move furniture — use math plane intersection (not floor mesh raycast)
         // so dragging works regardless of floor polygon shape
@@ -565,6 +654,7 @@ export function SelectionSystem(): null {
               );
               usePlacementStore.getState().moveItemsByDelta(allMovingIds, frame.dx, frame.dz);
               useSelectionStore.getState().setActiveGuides(frame.guides);
+              lastMovingIds.current = allMovingIds;
               invalidateRef.current();
             }
           }
@@ -654,6 +744,32 @@ export function SelectionSystem(): null {
       // Clear snap guides when interaction ends
       useSelectionStore.getState().setActiveGuides([]);
       if (isDragging.current) {
+        if (gestureKind.current === "move" && dragItemId.current !== null) {
+          // Release settle: write the SNAPPED position as truth immediately
+          // (undo, autosave and every footprint engine see the final value),
+          // then let the visual offset decay through the gridSettle spring.
+          // The whole formation takes the primary's snap delta — snapping
+          // each member separately would shear a table ring apart.
+          const placement = usePlacementStore.getState();
+          const primary = placement.placedItems.find((p) => p.id === dragItemId.current);
+          if (placement.snapEnabled && primary !== undefined && lastMovingIds.current.size > 0) {
+            const snapped = snapPositionToGrid(primary.x, primary.z);
+            const settleDx = snapped[0] - primary.x;
+            const settleDz = snapped[2] - primary.z;
+            if (settleDx !== 0 || settleDz !== 0) {
+              placement.moveItemsByDelta(lastMovingIds.current, settleDx, settleDz);
+              if (!prefersReducedMotion()) {
+                for (const id of lastMovingIds.current) {
+                  beginFurnitureSettle(id, -settleDx, -settleDz);
+                }
+              }
+              invalidateRef.current();
+            }
+          }
+          lastMovingIds.current = new Set();
+        } else {
+          useToolStore.getState().setLiveValue(null);
+        }
         // Close the drag's coalescing epoch so the next gesture starts a
         // fresh undo entry even when it begins within the time window.
         useEditorStore.getState().bumpHistoryEpoch();

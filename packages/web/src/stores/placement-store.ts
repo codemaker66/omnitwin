@@ -80,6 +80,10 @@ export interface PlacementState {
   readonly moveItem: (id: string, x: number, z: number) => void;
   /** Update a placed item's rotation. */
   readonly rotateItem: (id: string, rotationY: number) => void;
+  /** Set several items' rotations in one batch (rotate tool, scrub). */
+  readonly rotateItemsTo: (rotations: ReadonlyMap<string, number>) => void;
+  /** Set several items' uniform scales in one batch (scale tool, scrub). */
+  readonly scaleItemsTo: (scales: ReadonlyMap<string, number>) => void;
   /** Update ghost position and validity. */
   readonly updateGhost: (x: number, z: number, catalogueItemId: string) => void;
   /** Rotate ghost by a delta (radians). */
@@ -284,6 +288,30 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       placedItems: state.placedItems.map((item) =>
         item.id === id ? { ...item, rotationY } : item,
       ),
+    });
+  },
+
+  // One set() per gesture frame for the whole selection — N items must never
+  // cost N React batches (the lesson the Q/E rotation path already encodes).
+  rotateItemsTo: (rotations: ReadonlyMap<string, number>) => {
+    if (rotations.size === 0) return;
+    const state = get();
+    set({
+      placedItems: state.placedItems.map((item) => {
+        const rotationY = rotations.get(item.id);
+        return rotationY === undefined ? item : { ...item, rotationY };
+      }),
+    });
+  },
+
+  scaleItemsTo: (scales: ReadonlyMap<string, number>) => {
+    if (scales.size === 0) return;
+    const state = get();
+    set({
+      placedItems: state.placedItems.map((item) => {
+        const scale = scales.get(item.id);
+        return scale === undefined ? item : { ...item, scale };
+      }),
     });
   },
 

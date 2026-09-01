@@ -3,6 +3,7 @@ import { useThree } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { BufferGeometry, Float32BufferAttribute, Raycaster, Vector2 } from "three";
 import { useMeasurementStore, type Measurement } from "../stores/measurement-store.js";
+import { useToolStore } from "../stores/tool-store.js";
 import {
   type Point3,
   formatDistance,
@@ -187,7 +188,10 @@ export function MeasurementTool(): React.ReactElement {
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
 
       if (event.code === "KeyM") {
-        useMeasurementStore.getState().toggle();
+        // Route through the tool store so the pill, the M key and legacy
+        // paths agree on one authoritative mode.
+        const toolStore = useToolStore.getState();
+        toolStore.setTool(toolStore.activeTool === "measure" ? "select" : "measure");
         invalidate();
       } else if (event.code === "Escape") {
         useMeasurementStore.getState().cancelPending();

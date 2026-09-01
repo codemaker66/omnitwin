@@ -6,6 +6,7 @@ import { CockpitRightDock } from "./CockpitRightDock.js";
 import { WhenRibbon } from "./WhenRibbon.js";
 import { CockpitBottom } from "./CockpitBottom.js";
 import { CanvasLayerControls } from "./CanvasLayerControls.js";
+import { ToolPill } from "./ToolPill.js";
 import { CockpitMinimap } from "./CockpitMinimap.js";
 import { RoomResolveCaption } from "./RoomResolveCaption.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -62,6 +63,7 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
                 : "Visualizing phase change · frozen room outline + furniture are the plan · motion is not saved"}
           </p>
         )}
+        {mobile || timelinePreviewActive ? null : <ToolPill />}
         {mobile || timelinePreviewActive ? null : <CanvasLayerControls />}
         {mobile ? null : <CockpitMinimap />}
       </section>

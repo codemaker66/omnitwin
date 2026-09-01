@@ -208,6 +208,10 @@
 .cockpit-stage:not([data-cockpit-mode="design"]) [data-testid="planner-toolbar"] {
   display: none;
 }
+/* The tool pill is a Design-lens hand too — same rule, same reason. */
+.cockpit-stage:not([data-cockpit-mode="design"]) [data-testid="planner-tool-pill"] {
+  display: none;
+}
 .cockpit-stage:not([data-cockpit-mode="design"]) .planner-canvas-stage {
   padding-left: 0;
 }

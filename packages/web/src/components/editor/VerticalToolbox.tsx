@@ -65,6 +65,7 @@ const ICON_SIZE = 22;
 
 const TOOL_WIDGET_AVOID_SELECTORS = [
   "[data-testid='cockpit-topbar']",
+  "[data-testid='planner-tool-pill']",
   "[data-floating-widget-id='planner-layer-controls']",
   ".cockpit-layer-controls",
   "[data-testid='planner-toolbar']",
@@ -1019,6 +1020,7 @@ const ONBOARDING_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
 const ONBOARDING_AVOID_SELECTORS = [
   ".planner-status-header",
   "[data-testid='cockpit-topbar']",
+  "[data-testid='planner-tool-pill']",
   "[data-floating-widget-id='planner-layer-controls']",
   ".cockpit-layer-controls",
   "[data-testid='planner-toolbar']",
