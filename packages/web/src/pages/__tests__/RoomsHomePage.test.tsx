@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RoomsHomePage } from "../RoomsHomePage.js";
-import { roomSplatBundle, roomsWithSplatBundles } from "../../data/room-splat-bundles.js";
+import {
+  roomSplatBundle,
+  roomSplatServedSplats,
+  roomsWithSplatBundles,
+} from "../../data/room-splat-bundles.js";
 
 // globals: false in vitest.config, so auto-cleanup is not installed.
 afterEach(() => { cleanup(); });
@@ -50,6 +54,25 @@ describe("RoomsHomePage", () => {
       if (card === null) continue;
       expect(card.textContent).toMatch(/splats/u);
     }
+  });
+
+  it("counts the splats a visitor will see, not the sum over every staged level", () => {
+    mount();
+    const body = document.body.textContent ?? "";
+    let servedTotal = 0;
+    for (const slug of roomsWithSplatBundles()) {
+      const bundle = roomSplatBundle(slug);
+      const served = roomSplatServedSplats(slug);
+      servedTotal += served;
+      expect(body).toContain(served.toLocaleString("en-GB"));
+      // The all-levels sum is what the page used to print (11,487,038 for the
+      // Grand Hall against a 6,019,684-splat reconstruction). It must be gone
+      // wherever it differs from the served count.
+      if (bundle !== null && bundle.totalSplats !== served) {
+        expect(body).not.toContain(bundle.totalSplats.toLocaleString("en-GB"));
+      }
+    }
+    expect(body).toContain(`${servedTotal.toLocaleString("en-GB")} splats`);
   });
 
   it("says so when a room's alignment is still being worked out", () => {

@@ -22,6 +22,7 @@ export type {
   GeneratedRoomSplatBundle,
   GeneratedSplatTile,
 } from "./generated/trades-hall-splat-bundles.js";
+import type { GeneratedSplatTile } from "./generated/trades-hall-splat-bundles.js";
 
 /**
  * Where tile bytes are served from.
@@ -45,11 +46,31 @@ export function roomsWithSplatBundles(): readonly string[] {
 }
 
 /**
- * Tile URLs in load order: coarsest level first, environment shell last.
+ * The tiles that reach the renderer: the finest level only, plus the sky shell.
  *
- * The generated bundle is already ordered, so this only prefixes the base. The
- * environment shell stays included but last — a viewer whose connection gives
- * out before it arrives has still seen the room, which is the part that matters.
+ * An XGRIDS LCC2 octree is not progressive detail. Each level is the WHOLE
+ * room at a different density, so the finest level alone is the complete
+ * reconstruction and every coarser level is a lower-density copy of the same
+ * surfaces. Mounting them together draws the room once per level — the Grand
+ * Hall's 24 tiles put 11.5 million splats on screen where its finest level is
+ * 6.0 million, and the renderer froze for minutes even on a desktop GPU.
+ *
+ * The staged bundle keeps every level (a coarser tier is the right thing to
+ * serve a phone), but serving is one level, never a stack.
+ */
+function servedTiles(bundle: GeneratedRoomSplatBundle): readonly GeneratedSplatTile[] {
+  return bundle.tiles.filter(
+    (tile) => tile.isEnvironment || tile.lodLevel === bundle.finestLevel,
+  );
+}
+
+/**
+ * Tile URLs for a room, environment shell last.
+ *
+ * The generated bundle is already ordered, so this only selects the served
+ * level and prefixes the base. The environment shell stays included but last —
+ * a viewer whose connection gives out before it arrives has still seen the
+ * room, which is the part that matters.
  */
 export function roomSplatTileUrls(
   roomSlug: string,
@@ -58,10 +79,28 @@ export function roomSplatTileUrls(
   const bundle = roomSplatBundle(roomSlug);
   if (bundle === null) return [];
   const base = `${splatBaseUrl(configuredBaseUrl)}/${GENERATED_VENUE_SLUG}/${roomSlug}`;
-  return bundle.tiles.map((tile) => `${base}/${tile.file}`);
+  return servedTiles(bundle).map((tile) => `${base}/${tile.file}`);
 }
 
-/** Total bytes a room will pull, for honest load progress. */
+/** Splats the served level draws: the reconstruction's true count. */
+export function roomSplatServedSplats(roomSlug: string): number {
+  return roomSplatBundle(roomSlug)?.finestLevelSplats ?? 0;
+}
+
+/** Tiles a viewer fetches for a room, sky shell included. */
+export function roomSplatServedTileCount(roomSlug: string): number {
+  const bundle = roomSplatBundle(roomSlug);
+  return bundle === null ? 0 : servedTiles(bundle).length;
+}
+
+/** Bytes a room will actually pull, for honest load progress. */
+export function roomSplatServedBytes(roomSlug: string): number {
+  const bundle = roomSplatBundle(roomSlug);
+  if (bundle === null) return 0;
+  return servedTiles(bundle).reduce((sum, tile) => sum + tile.bytes, 0);
+}
+
+/** Bytes staged across every level, which is more than any viewer fetches. */
 export function roomSplatTotalBytes(roomSlug: string): number {
   return roomSplatBundle(roomSlug)?.totalBytes ?? 0;
 }

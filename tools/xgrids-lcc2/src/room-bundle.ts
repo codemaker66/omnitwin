@@ -34,8 +34,23 @@ export interface RoomBundleTile {
 export interface RoomBundle {
   readonly roomSlug: string;
   readonly splatType: string;
+  /** Sum over EVERY level. Not what one level draws - see splatsByLevel. */
   readonly totalSplats: number;
   readonly totalLevels: number;
+  /**
+   * Splats per level, indexed so that `splatsByLevel[level - 1]` is the count
+   * for tile level `level` (level 1 is the coarsest, as in tile ids).
+   *
+   * An LCC2 octree is not progressive detail. Every level is the whole room at
+   * a different density, so the finest level alone is the complete model and
+   * drawing a second level draws the room twice. XGRIDS lists `lodSplats`
+   * finest-first; this is that list reversed onto the tile numbering.
+   */
+  readonly splatsByLevel: readonly number[];
+  /** The deepest octree level: the full-resolution reconstruction. */
+  readonly finestLevel: number;
+  /** How many splats the finest level alone draws. */
+  readonly finestLevelSplats: number;
   readonly tiles: readonly RoomBundleTile[];
 }
 
@@ -67,11 +82,18 @@ export function roomBundleFromManifest(roomSlug: string, manifest: Lcc2Manifest)
     return left.file.localeCompare(right.file);
   });
 
+  const splatsByLevel = [...manifest.lodSplats].reverse();
+  const finestLevel = manifest.totalLevels;
+  const finestLevelSplats = splatsByLevel[finestLevel - 1] ?? 0;
+
   return {
     roomSlug,
     splatType: manifest.splatType,
     totalSplats: manifest.totalSplats,
     totalLevels: manifest.totalLevels,
+    splatsByLevel,
+    finestLevel,
+    finestLevelSplats,
     tiles,
   };
 }

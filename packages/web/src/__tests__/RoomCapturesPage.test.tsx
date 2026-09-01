@@ -39,6 +39,8 @@ vi.mock("../components/scene/SparkSplatLayer.js", () => ({
 }));
 
 const { RoomCapturesPage } = await import("../pages/RoomCapturesPage.js");
+const { roomSplatBundle, roomSplatServedBytes, roomSplatServedSplats } =
+  await import("../data/room-splat-bundles.js");
 
 function mount(path: string): void {
   render(
@@ -75,9 +77,30 @@ describe("RoomCapturesPage", () => {
     expect(urls.every((url) => url.includes("/trades-hall/reception-room/"))).toBe(true);
   });
 
-  it("loads the coarsest tile first so the room resolves from a rough whole", () => {
-    mount("/captures/reception-room");
-    expect(mountedUrls()[0]).toContain("/reception-room/0_0.sog");
+  it("mounts only the finest level, never a stack of every level", () => {
+    mount("/captures/grand-hall");
+    const bundle = roomSplatBundle("grand-hall");
+    const finest = bundle?.finestLevel ?? 0;
+    const byFile = new Map((bundle?.tiles ?? []).map((tile) => [tile.file, tile]));
+    const urls = mountedUrls();
+    expect(urls).toHaveLength(12);
+    for (const url of urls) {
+      const tile = byFile.get(url.split("/").pop() ?? "");
+      expect(tile, url).toBeDefined();
+      if (tile !== undefined && !tile.isEnvironment) expect(tile.lodLevel, url).toBe(finest);
+    }
+  });
+
+  it("tells the reviewer what is served and what is merely staged", () => {
+    mount("/captures/grand-hall");
+    const rail = screen.getByRole("navigation", { name: "Captured rooms" });
+    const meta = rail.textContent ?? "";
+    // 6,019,684 splats / ~107 MB reach a viewer; 24 tiles / 200 MB sit staged.
+    expect(meta).toContain(`${roomSplatServedSplats("grand-hall").toLocaleString("en-GB")} splats`);
+    expect(meta).toContain(`${(roomSplatServedBytes("grand-hall") / 1024 / 1024).toFixed(0)} MB`);
+    expect(meta).toMatch(/12 of 24 tiles/u);
+    expect(meta).not.toMatch(/24 tiles staged/u);
+    expect(meta).not.toContain("11,487,038");
   });
 
   it("shows the room named in the URL, not the default", () => {

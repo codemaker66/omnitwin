@@ -283,6 +283,9 @@ function stage(args: Args): number {
       splatType: bundle.splatType,
       totalSplats: bundle.totalSplats,
       totalLevels: bundle.totalLevels,
+      splatsByLevel: bundle.splatsByLevel,
+      finestLevel: bundle.finestLevel,
+      finestLevelSplats: bundle.finestLevelSplats,
       tiles: staged.tiles,
       totalBytes: staged.totalBytes,
       transform: walkFrame === null

@@ -267,3 +267,19 @@ Append here rather than rewriting, newest last.
   change what people PLAN INSIDE, not just the walkthrough — regenerating the
   manifest reaches /plan with no web change, same contract as before. Nothing
   about the crop workflow changes; the stakes just went up.
+
+- **2026-09-01, Claude Code** — SERVING CHANGE, and it touches your lane. An
+  LCC2 "LOD level" is a complete copy of the room at a lower density, not a
+  refinement; the manifest's `lodSplats` says so, finest-first. The runtime had
+  been mounting every level of every room at once — the Grand Hall drew
+  11,487,038 splats where its finest level (6,019,684, equal to the build
+  report's `pointCloudQuantity`) is the whole reconstruction — and the renderer
+  froze for minutes on an RTX 4090. `roomSplatTileUrls()` now serves the finest
+  level plus the sky shell only; the stage tool emits `splatsByLevel`,
+  `finestLevel` and `finestLevelSplats` and refuses a manifest whose `lodSplats`
+  length disagrees with `totalLevels`. Every on-screen count is now the served
+  count (`roomSplatServedSplats`); `totalSplats`/`totalBytes` remain the staged
+  sums. Nothing changes in the crop workflow or the R2 layout — every level
+  stays staged and published, only one reaches a viewer. If you want a lighter
+  tier for phones, pick ONE coarser level; never stack. See
+  `.claude/gotchas/xgrids-lcc2-lod-levels-are-copies.md`.

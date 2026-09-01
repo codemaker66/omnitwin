@@ -9,6 +9,9 @@ import {
 } from "../components/scene/SparkSplatLayer.js";
 import {
   roomSplatBundle,
+  roomSplatServedBytes,
+  roomSplatServedSplats,
+  roomSplatServedTileCount,
   roomSplatTileUrls,
   roomsWithSplatBundles,
 } from "../data/room-splat-bundles.js";
@@ -191,7 +194,9 @@ export function RoomCapturesPage(): ReactElement {
                 <span className="captures__roomMeta">
                   {entry === null
                     ? "—"
-                    : `${formatCount(entry.totalSplats)} splats · ${formatMb(entry.totalBytes)}`}
+                    : `${formatCount(roomSplatServedSplats(slug))} splats · ` +
+                      `${formatMb(roomSplatServedBytes(slug))} · ` +
+                      `${String(roomSplatServedTileCount(slug))} of ${String(entry.tiles.length)} tiles`}
                 </span>
                 <span className={`captures__badge captures__badge--${entry?.alignmentConfidence ?? "review"}`}>
                   {entry?.alignmentConfidence === "confident" ? "aligned" : "alignment under review"}

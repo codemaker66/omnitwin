@@ -97,6 +97,9 @@ export interface RoomManifestEntry {
   readonly splatType: string;
   readonly totalSplats: number;
   readonly totalLevels: number;
+  readonly splatsByLevel: readonly number[];
+  readonly finestLevel: number;
+  readonly finestLevelSplats: number;
   readonly tiles: readonly StagedTile[];
   readonly totalBytes: number;
   readonly transform: {
@@ -157,9 +160,23 @@ export function writeRoomManifest(outPath: string, entries: readonly RoomManifes
     "  readonly roomSlug: string;",
     "  readonly captureDir: string;",
     "  readonly splatType: string;",
+    "  /** Sum over EVERY level. Not what one level draws - see splatsByLevel. */",
     "  readonly totalSplats: number;",
     "  readonly totalLevels: number;",
+    "  /**",
+    "   * Splats per level: `splatsByLevel[level - 1]` is tile level `level`,",
+    "   * with level 1 the coarsest. Every level is the whole room at a different",
+    "   * density, so drawing two levels draws the room twice; the finest level",
+    "   * alone is the complete reconstruction.",
+    "   */",
+    "  readonly splatsByLevel: readonly number[];",
+    "  /** The deepest octree level: the full-resolution reconstruction. */",
+    "  readonly finestLevel: number;",
+    "  /** How many splats the finest level alone draws. */",
+    "  readonly finestLevelSplats: number;",
+    "  /** Every staged tile, all levels. The runtime picks one level to serve. */",
     "  readonly tiles: readonly GeneratedSplatTile[];",
+    "  /** Bytes across every staged tile, all levels. */",
     "  readonly totalBytes: number;",
     "  readonly transform: {",
     "    readonly position: readonly [number, number, number];",

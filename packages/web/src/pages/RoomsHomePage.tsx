@@ -2,6 +2,7 @@ import { roomPosterUrl as posterUrl } from "../lib/room-posters.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import {
+  roomSplatServedSplats,
   roomSplatBundle,
   roomsWithSplatBundles,
   type GeneratedRoomSplatBundle,
@@ -59,7 +60,9 @@ function measuredLine(bundle: GeneratedRoomSplatBundle): string {
 }
 
 function splatLine(bundle: GeneratedRoomSplatBundle): string {
-  return `${bundle.totalSplats.toLocaleString("en-GB")} splats`;
+  // The served level's count, not the sum over every staged level: a visitor
+  // sees the finest level alone, which is the whole reconstruction.
+  return `${roomSplatServedSplats(bundle.roomSlug).toLocaleString("en-GB")} splats`;
 }
 
 interface CardProps {
@@ -132,7 +135,7 @@ export function RoomsHomePage(): ReactElement {
   }, []);
 
   const totalSplats = slugs.reduce(
-    (sum, slug) => sum + (roomSplatBundle(slug)?.totalSplats ?? 0),
+    (sum, slug) => sum + roomSplatServedSplats(slug),
     0,
   );
 

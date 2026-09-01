@@ -88,7 +88,32 @@ export const Lcc2ManifestSchema = z.object({
     boundingBox: Lcc2BoundingBoxSchema,
   }),
   root: Lcc2NodeSchema,
-}).passthrough();
+}).passthrough().superRefine((manifest, ctx) => {
+  // XGRIDS lists lodSplats finest-first, one entry per octree level. A count
+  // that does not match totalLevels cannot be mapped onto tile levels, and a
+  // silently mis-mapped level would report the wrong splat count for a room.
+  if (manifest.lodSplats.length !== manifest.totalLevels) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["lodSplats"],
+      message:
+        `lodSplats has ${String(manifest.lodSplats.length)} entries but totalLevels is ` +
+        `${String(manifest.totalLevels)}.`,
+    });
+  }
+  // The runtime serves the finest level alone. A capture whose tile list never
+  // reaches its declared depth would render only the sky shell, silently.
+  const reachesFinest = (manifest.root.splatFiles ?? []).some(
+    (file) => lodLevelForTileId(tileIdForSplatFile(file)) === manifest.totalLevels,
+  );
+  if (!reachesFinest) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["root", "splatFiles"],
+      message: `No tile sits at the finest level (${String(manifest.totalLevels)}).`,
+    });
+  }
+});
 
 export type Lcc2Manifest = z.infer<typeof Lcc2ManifestSchema>;
 

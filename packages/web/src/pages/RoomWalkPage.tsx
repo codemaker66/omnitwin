@@ -4,7 +4,11 @@ import {
   RoomSplatScene,
   type RoomSplatProgress,
 } from "../components/rooms/RoomSplatScene.js";
-import { roomSplatBundle, roomsWithSplatBundles } from "../data/room-splat-bundles.js";
+import {
+  roomSplatBundle,
+  roomSplatServedSplats,
+  roomsWithSplatBundles,
+} from "../data/room-splat-bundles.js";
 import {
   TRADES_HALL_RUNTIME_ROOMS,
   type TradesHallRuntimeRoomSlug,
@@ -104,7 +108,7 @@ export function RoomWalkPage(): ReactElement {
               <span className="walk__dot" aria-hidden="true">·</span>
             </>
           )}
-          {bundle.totalSplats.toLocaleString("en-GB")} splats
+          {roomSplatServedSplats(room).toLocaleString("en-GB")} splats
         </p>
       </header>}
 

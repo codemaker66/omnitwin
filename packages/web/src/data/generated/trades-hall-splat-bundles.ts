@@ -24,9 +24,23 @@ export interface GeneratedRoomSplatBundle {
   readonly roomSlug: string;
   readonly captureDir: string;
   readonly splatType: string;
+  /** Sum over EVERY level. Not what one level draws - see splatsByLevel. */
   readonly totalSplats: number;
   readonly totalLevels: number;
+  /**
+   * Splats per level: `splatsByLevel[level - 1]` is tile level `level`,
+   * with level 1 the coarsest. Every level is the whole room at a different
+   * density, so drawing two levels draws the room twice; the finest level
+   * alone is the complete reconstruction.
+   */
+  readonly splatsByLevel: readonly number[];
+  /** The deepest octree level: the full-resolution reconstruction. */
+  readonly finestLevel: number;
+  /** How many splats the finest level alone draws. */
+  readonly finestLevelSplats: number;
+  /** Every staged tile, all levels. The runtime picks one level to serve. */
   readonly tiles: readonly GeneratedSplatTile[];
+  /** Bytes across every staged tile, all levels. */
   readonly totalBytes: number;
   readonly transform: {
     readonly position: readonly [number, number, number];
@@ -77,6 +91,15 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "splatType": ".sog",
       "totalSplats": 11487038,
       "totalLevels": 5,
+      "splatsByLevel": [
+        355593,
+        715516,
+        1451051,
+        2945194,
+        6019684
+      ],
+      "finestLevel": 5,
+      "finestLevelSplats": 6019684,
       "tiles": [
         {
           "file": "0_0.sog",
@@ -296,6 +319,14 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "splatType": ".sog",
       "totalSplats": 3933570,
       "totalLevels": 4,
+      "splatsByLevel": [
+        260867,
+        522118,
+        1045287,
+        2105298
+      ],
+      "finestLevel": 4,
+      "finestLevelSplats": 2105298,
       "tiles": [
         {
           "file": "0_0.sog",
@@ -410,6 +441,15 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "splatType": ".sog",
       "totalSplats": 11978081,
       "totalLevels": 5,
+      "splatsByLevel": [
+        382151,
+        766734,
+        1540768,
+        3089404,
+        6199024
+      ],
+      "finestLevel": 5,
+      "finestLevelSplats": 6199024,
       "tiles": [
         {
           "file": "0_0.sog",
@@ -629,6 +669,15 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "splatType": ".sog",
       "totalSplats": 8825496,
       "totalLevels": 5,
+      "splatsByLevel": [
+        282830,
+        566646,
+        1135220,
+        2273259,
+        4567541
+      ],
+      "finestLevel": 5,
+      "finestLevelSplats": 4567541,
       "tiles": [
         {
           "file": "0_0.sog",
@@ -806,6 +855,14 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "splatType": ".sog",
       "totalSplats": 4283652,
       "totalLevels": 4,
+      "splatsByLevel": [
+        285187,
+        570650,
+        1141793,
+        2286022
+      ],
+      "finestLevel": 4,
+      "finestLevelSplats": 2286022,
       "tiles": [
         {
           "file": "0_0.sog",
@@ -927,6 +984,14 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "splatType": ".sog",
       "totalSplats": 5336692,
       "totalLevels": 4,
+      "splatsByLevel": [
+        354818,
+        709939,
+        1420574,
+        2851361
+      ],
+      "finestLevel": 4,
+      "finestLevelSplats": 2851361,
       "tiles": [
         {
           "file": "0_0.sog",
@@ -1069,6 +1134,14 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "splatType": ".sog",
       "totalSplats": 5199073,
       "totalLevels": 4,
+      "splatsByLevel": [
+        345590,
+        691503,
+        1383761,
+        2778219
+      ],
+      "finestLevel": 4,
+      "finestLevelSplats": 2778219,
       "tiles": [
         {
           "file": "0_0.sog",
@@ -1204,6 +1277,15 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "splatType": ".sog",
       "totalSplats": 7948346,
       "totalLevels": 5,
+      "splatsByLevel": [
+        254937,
+        510435,
+        1022179,
+        2046576,
+        4114219
+      ],
+      "finestLevel": 5,
+      "finestLevelSplats": 4114219,
       "tiles": [
         {
           "file": "0_0.sog",

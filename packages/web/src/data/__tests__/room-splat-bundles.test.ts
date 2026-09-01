@@ -3,6 +3,9 @@ import {
   deriveRoomCamera,
   roomAlignmentIsConfident,
   roomSplatBundle,
+  roomSplatServedBytes,
+  roomSplatServedSplats,
+  roomSplatServedTileCount,
   roomSplatTileUrls,
   roomSplatTotalBytes,
   roomsWithSplatBundles,
@@ -49,25 +52,93 @@ describe("splatBaseUrl", () => {
 describe("roomSplatTileUrls", () => {
   it("namespaces tiles by venue and room", () => {
     const urls = roomSplatTileUrls("reception-room", NO_BASE_URL);
-    expect(urls[0]).toBe("/splats/trades-hall/reception-room/0_0.sog");
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(url).toMatch(/^\/splats\/trades-hall\/reception-room\/[^/]+\.sog$/u);
+    }
   });
 
-  it("loads coarsest LOD first so the room resolves from a rough whole", () => {
-    const bundle = roomSplatBundle("reception-room");
-    const levels = (bundle?.tiles ?? [])
-      .filter((tile) => !tile.isEnvironment)
-      .map((tile) => tile.lodLevel ?? 0);
-    expect(levels).toEqual([...levels].sort((a, b) => a - b));
+  it("serves only the finest LOD level, since every level is a complete copy of the room", () => {
+    // An XGRIDS LCC2 octree is not progressive detail: each level is the whole
+    // room at a different density. Drawing more than one level draws the room
+    // more than once. The Grand Hall ships 24 tiles across five levels; only
+    // the 11 finest-level tiles plus the sky shell may reach the renderer.
+    const bundle = roomSplatBundle("grand-hall");
+    const finest = bundle?.finestLevel ?? 0;
+    const urls = roomSplatTileUrls("grand-hall", NO_BASE_URL);
+    const served = (bundle?.tiles ?? []).filter(
+      (tile) => tile.isEnvironment || tile.lodLevel === finest,
+    );
+    expect(finest).toBe(5);
+    expect(urls).toHaveLength(12);
+    expect(urls).toEqual(served.map((tile) => `/splats/trades-hall/grand-hall/${tile.file}`));
+  });
+
+  it("never serves a coarser level alongside the finest one", () => {
+    for (const room of roomsWithSplatBundles()) {
+      const bundle = roomSplatBundle(room);
+      const finest = bundle?.finestLevel ?? 0;
+      const byFile = new Map((bundle?.tiles ?? []).map((tile) => [tile.file, tile]));
+      for (const url of roomSplatTileUrls(room, NO_BASE_URL)) {
+        const tile = byFile.get(url.split("/").pop() ?? "");
+        expect(tile, `${room}: ${url}`).toBeDefined();
+        if (tile !== undefined && !tile.isEnvironment) {
+          expect(tile.lodLevel, `${room}: ${url}`).toBe(finest);
+        }
+      }
+    }
   });
 
   it("puts the environment shell last, since it is sky and not room", () => {
-    const tiles = roomSplatBundle("reception-room")?.tiles ?? [];
-    expect(tiles.at(-1)?.isEnvironment).toBe(true);
-    expect(tiles.slice(0, -1).every((tile) => !tile.isEnvironment)).toBe(true);
+    const urls = roomSplatTileUrls("reception-room", NO_BASE_URL);
+    expect(urls.at(-1)?.endsWith("/env.sog")).toBe(true);
+    expect(urls.slice(0, -1).every((url) => !url.endsWith("/env.sog"))).toBe(true);
   });
 
   it("returns nothing for a room with no capture, rather than a broken URL", () => {
     expect(roomSplatTileUrls("no-such-room", NO_BASE_URL)).toEqual([]);
+  });
+});
+
+describe("roomSplatServedSplats", () => {
+  it("counts only the finest level, which is the whole reconstruction", () => {
+    // The XGRIDS build report for this capture records 6,019,684 Gaussians;
+    // the sum over every level (11,487,038) is what the site used to claim.
+    expect(roomSplatServedSplats("grand-hall")).toBe(6_019_684);
+    expect(roomSplatServedSplats("grand-hall")).toBeLessThan(
+      roomSplatBundle("grand-hall")?.totalSplats ?? 0,
+    );
+  });
+
+  it("is zero for an unknown room", () => {
+    expect(roomSplatServedSplats("no-such-room")).toBe(0);
+  });
+});
+
+describe("roomSplatServedTileCount", () => {
+  it("counts the tiles a viewer fetches, sky shell included", () => {
+    expect(roomSplatServedTileCount("grand-hall")).toBe(12);
+    expect(roomSplatServedTileCount("grand-hall")).toBe(roomSplatTileUrls("grand-hall", NO_BASE_URL).length);
+  });
+
+  it("is zero for an unknown room", () => {
+    expect(roomSplatServedTileCount("no-such-room")).toBe(0);
+  });
+});
+
+describe("roomSplatServedBytes", () => {
+  it("sums only the tiles that will actually be fetched", () => {
+    const bundle = roomSplatBundle("grand-hall");
+    const finest = bundle?.finestLevel ?? 0;
+    const expected = (bundle?.tiles ?? [])
+      .filter((tile) => tile.isEnvironment || tile.lodLevel === finest)
+      .reduce((sum, tile) => sum + tile.bytes, 0);
+    expect(roomSplatServedBytes("grand-hall")).toBe(expected);
+    expect(roomSplatServedBytes("grand-hall")).toBeLessThan(roomSplatTotalBytes("grand-hall"));
+  });
+
+  it("is zero for an unknown room", () => {
+    expect(roomSplatServedBytes("no-such-room")).toBe(0);
   });
 });
 

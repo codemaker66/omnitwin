@@ -46,7 +46,14 @@ function miniManifest(): unknown {
         },
       },
       data: { env: { name: 8 } },
-      splatFiles: ["data/3dgs/0_0.sog", "data/3dgs/0_7_0_0.sog", "data/3dgs/env.sog"],
+      // totalLevels is 4, so the tile list must reach depth 4 ("0_7_0_0_1"):
+      // a manifest whose finest level has no tile is refused, not coerced.
+      splatFiles: [
+        "data/3dgs/0_0.sog",
+        "data/3dgs/0_7_0_0.sog",
+        "data/3dgs/0_7_0_0_1.sog",
+        "data/3dgs/env.sog",
+      ],
       meshFiles: ["data/mesh/0_0_0.ply"],
       bvhFiles: [],
     },
