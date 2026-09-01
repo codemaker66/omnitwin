@@ -764,7 +764,7 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     const engageKey = [
       scope,
       anchorDate,
-      spaceId ?? "",
+      spaceId,
       frames.map((frame) => {
         const kf = frame.keyframe;
         const snapshotId = "snapshotId" in kf ? kf.snapshotId : "";
