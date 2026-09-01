@@ -27,6 +27,7 @@ import {
   isSceneFurniturePlacement,
   isTableDressingApplicator,
 } from "../lib/table-dressing.js";
+import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 
 // ---------------------------------------------------------------------------
 // Placement store — manages placed furniture and ghost state. Undo/redo for
@@ -133,6 +134,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   snapEnabled: true,
 
   placeItem: (catalogueItemId: string, x: number, z: number, rotationY: number = 0) => {
+    if (isLayoutTimelineMutationLocked()) return;
     // Cloths and place settings are contextual tools applied by
     // PlacementGhost. They are not physical catalogue objects and must never
     // be persisted as standalone PlacedItems through this lower-level API.
@@ -176,6 +178,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     endZ: number,
     rotationY: number = 0,
   ) => {
+    if (isLayoutTimelineMutationLocked()) return [];
     const state = get();
     const catalogueItem = getCatalogueItem(catalogueItemId);
     if (catalogueItem === undefined || catalogueItem.category !== "chair") return [];
@@ -208,11 +211,13 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   removeItem: (id: string) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     set({ placedItems: state.placedItems.filter((item) => item.id !== id) });
   },
 
   removeItems: (ids: ReadonlySet<string>) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     const state = get();
     const allIds = expandIdsToGroupMembers(ids, state.placedItems);
@@ -220,6 +225,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   moveItem: (id: string, x: number, z: number) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     const gridPos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
     // Apply platform edge snapping when moving stage items
@@ -270,6 +276,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   rotateItem: (id: string, rotationY: number) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     set({
       placedItems: state.placedItems.map((item) =>
@@ -279,6 +286,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   updateGhost: (x: number, z: number, catalogueItemId: string) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     const rot = state.ghostRotation;
     const gridPos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
@@ -321,14 +329,17 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   rotateGhost: (delta: number) => {
+    if (isLayoutTimelineMutationLocked()) return;
     set((state) => ({ ghostRotation: state.ghostRotation + delta }));
   },
 
   clearGhost: () => {
+    if (isLayoutTimelineMutationLocked()) return;
     set({ ghostPosition: null, ghostRotation: 0, ghostValid: false, ghostInvalidReason: null });
   },
 
   toggleCloth: (id: string) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     const target = state.placedItems.find((item) => item.id === id);
     if (target === undefined) return;
@@ -348,6 +359,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   applyTableCloth: (ids, style) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     const state = get();
     const targetIds = new Set<string>();
@@ -367,6 +379,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   applyTableSetting: (ids, setting) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     const state = get();
     const targetIds = new Set<string>();
@@ -386,6 +399,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   setItemLabel: (id: string, label: string) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const normalized = label.trim().slice(0, 80);
     const state = get();
     const current = state.placedItems.find((item) => item.id === id);
@@ -399,16 +413,19 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   toggleSnap: () => {
+    if (isLayoutTimelineMutationLocked()) return;
     set({ snapEnabled: !get().snapEnabled });
   },
 
   clearAll: () => {
+    if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     if (state.placedItems.length === 0) return;
     set({ placedItems: [], ghostPosition: null, ghostValid: false, ghostInvalidReason: null });
   },
 
   placeTableGroup: (catalogueItemId: string, x: number, z: number, rotationY: number, chairCount: number) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (isTableDressingApplicator(catalogueItemId)) return;
     const state = get();
     const pos = state.snapEnabled ? snapPositionToGrid(x, z) : [x, 0, z] as const;
@@ -453,6 +470,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   rearrangeGroup: (tableId: string, newChairCount: number) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     const newItems = rearrangeTableGroup(tableId, newChairCount, state.placedItems);
     // Recompute individual surface heights for rearranged chairs
@@ -471,6 +489,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   autoArrangeBanquet: (catalogueItemId: string, targetGuests: number, chairsPerTable: number) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const tableItem = getCatalogueItem(catalogueItemId);
     if (tableItem === undefined || !isDiningTableItem(tableItem)) return;
     const state = get();
@@ -510,6 +529,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   autoArrangeTheatre: (chairItemId: string, targetGuests: number) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const chairItem = getCatalogueItem(chairItemId);
     if (chairItem === undefined || chairItem.category !== "chair") return;
 
@@ -534,6 +554,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   breakFromGroup: (id: string) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     set({
       placedItems: state.placedItems.map((item) =>
@@ -543,6 +564,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   moveGroup: (itemId: string, dx: number, dz: number) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const state = get();
     const memberIds = getGroupMemberIds(itemId, state.placedItems);
     set({
@@ -563,6 +585,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   moveItemsByDelta: (ids: ReadonlySet<string>, dx: number, dz: number) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     const state = get();
     set({
@@ -583,6 +606,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   groupItems: (ids: ReadonlySet<string>) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (ids.size < 2) return;
     const state = get();
     const expandedIds = expandIdsToGroupMembers(ids, state.placedItems);
@@ -596,6 +620,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
   },
 
   ungroupItems: (ids: ReadonlySet<string>) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     const state = get();
     const expandedIds = expandIdsToGroupMembers(ids, state.placedItems);

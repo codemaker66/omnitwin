@@ -5,6 +5,7 @@ import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-q
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 
 const DEFAULT_PANEL_RIGHT_PX = 72;
 const COCKPIT_RIGHT_DOCK_WIDTH_PX = 360;
@@ -66,6 +67,7 @@ export function SaveSendPanel({
   const isNarrow = useIsNarrowViewport();
   const isTouch = useIsCoarsePointer();
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const [showEnquiry, setShowEnquiry] = useState(false);
   const [flushing, setFlushing] = useState(false);
   const mountedRef = useRef(true);
@@ -81,6 +83,7 @@ export function SaveSendPanel({
   if (isNarrow || isTouch) return null;
 
   const handleSend = (): void => {
+    if (timelinePreviewActive) return;
     setFlushing(true);
     void prepareLayoutForGuestEnquiry(configId)
       .then((readyToSend) => {
@@ -118,12 +121,15 @@ export function SaveSendPanel({
           aria-label="Send to Events Team"
           style={{
             ...sendBtn,
-            opacity: flushing ? 0.6 : 1,
+            opacity: flushing || timelinePreviewActive ? 0.6 : 1,
           }}
           onClick={handleSend}
-          disabled={flushing}
+          disabled={flushing || timelinePreviewActive}
+          title={timelinePreviewActive
+            ? "Exit the room timeline preview before sending this saved plan."
+            : undefined}
         >
-          Send to Events Team
+          {timelinePreviewActive ? "Exit preview to send" : "Send to Events Team"}
         </button>
       </FloatingWidgetFrame>
 

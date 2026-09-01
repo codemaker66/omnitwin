@@ -23,6 +23,8 @@ import {
   emptyEventInstructions,
 } from "@omnitwin/types";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
+import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { logPlannerAction } from "../../stores/planner-action-log.js";
 import { patchConfigMetadata, getConfig } from "../../api/configurations.js";
 import { GOLD, BORDER, CARD_BG, INPUT_BG, TEXT_MUT, TEXT_SEC } from "../../constants/ui-palette.js";
@@ -54,6 +56,7 @@ export interface EventDetailsPanelProps {
 export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): React.ReactElement | null {
   const configId = useEditorStore((s) => s.configId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   // `state === null` means "not hydrated yet" — distinct from
   // `emptyEventInstructions()` which represents a real saved-empty blob.
   // Holding null until the GET resolves prevents a mid-load Save from
@@ -122,10 +125,10 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
     return () => { guard.cancelled = true; };
   }, [open, configId, isPublicPreview]);
 
-  if (!open) return null;
+  if (!open || timelinePreviewActive) return null;
 
   const handleSave = async (): Promise<void> => {
-    if (configId === null || state === null) return;
+    if (configId === null || state === null || isLayoutTimelineMutationLocked()) return;
     setSaving(true);
     setError(null);
     try {
@@ -133,6 +136,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
       // schema requires dayOfContact.name to be non-empty (min(1)). An
       // empty draft should be treated as "no contact" rather than a 400.
       const payload = normalizeForSave(state);
+      if (isLayoutTimelineMutationLocked()) return;
       await patchConfigMetadata(configId, { instructions: payload });
       // G4: one Action per changed save. A no-change save still PATCHes
       // (behaviour untouched) but is not a mutation worth logging. Both

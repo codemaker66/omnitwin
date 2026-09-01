@@ -43,6 +43,7 @@ import {
 import type { CatalogueItem } from "../../lib/catalogue.js";
 import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../shared/FloatingWidgetFrame.js";
+import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 
 const LazyAuthModal = lazy(() =>
   import("./AuthModal.js").then((m) => ({ default: m.AuthModal })),
@@ -1513,6 +1514,7 @@ export function VerticalToolbox(): React.ReactElement {
   }, []);
 
   const openFurniturePanel = useCallback(() => {
+    if (isLayoutTimelineMutationLocked()) return;
     setPanelOpen(true);
     setActiveTool("add");
     setCameraOpen(false);
@@ -1522,6 +1524,7 @@ export function VerticalToolbox(): React.ReactElement {
   }, []);
 
   const handleToolClick = useCallback((tool: ActiveTool) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (tool === "add") {
       if (activeTool === "add" && panelOpen) {
         setPanelOpen(false);
@@ -1851,6 +1854,10 @@ export function VerticalToolbox(): React.ReactElement {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (isLayoutTimelineMutationLocked()) {
+        if (e.code === "KeyF" || e.code === "KeyD") e.preventDefault();
+        return;
+      }
       if (e.code === "KeyF" && !e.ctrlKey && !e.metaKey) {
         // Don't conflict with placement rotation (handled by PlacementGhost)
         if (useCatalogueStore.getState().selectedItemId !== null) return;

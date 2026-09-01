@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { EventDispatcher, Vector3 } from "three";
+import type { SpaceDimensions } from "@omnitwin/types";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { planningCameraGoal, type CameraPose } from "../../lib/cockpit-planning-camera.js";
@@ -50,9 +51,20 @@ function cameraVerticalFov(camera: { readonly type?: string; readonly fov?: numb
     : DEFAULT_VERTICAL_FOV;
 }
 
-export function CockpitPlanningCamera(): null {
+export function CockpitPlanningCamera({
+  dimensionsOverride,
+}: {
+  /** Renderer-local frozen bounds; never written into the live dimensions store. */
+  readonly dimensionsOverride?: SpaceDimensions;
+} = {}): null {
   const activeMode = useCockpitStore((state) => state.activeMode);
-  const dimensions = useRoomDimensionsStore((state) => state.dimensions);
+  const liveDimensions = useRoomDimensionsStore((state) => state.dimensions);
+  const selectedDimensions = dimensionsOverride ?? liveDimensions;
+  const dimensions = useMemo<SpaceDimensions>(() => ({
+    width: selectedDimensions.width,
+    length: selectedDimensions.length,
+    height: selectedDimensions.height,
+  }), [selectedDimensions.height, selectedDimensions.length, selectedDimensions.width]);
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls);
   const size = useThree((state) => state.size);

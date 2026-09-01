@@ -1,16 +1,22 @@
-import { useMemo, type MouseEvent, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, type MouseEvent, type ReactElement } from "react";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { useCockpitReplay } from "../../../hooks/use-cockpit-replay.js";
 import { getCatalogueItem } from "../../../lib/catalogue.js";
 import { sceneFurniturePlacements } from "../../../lib/table-dressing.js";
+import type { PlacedItem } from "../../../lib/placement.js";
 import {
   minimapLayout,
   minimapProject,
   minimapToWorld,
 } from "../../../lib/cockpit-minimap-model.js";
 import { projectReplayPointToFloor } from "../../../lib/cockpit-overlay-projection.js";
+import {
+  retainFrozenLayoutRoomModel,
+  type FrozenLayoutRoomModel,
+} from "../../../lib/frozen-layout-room.js";
 import {
   cockpitOverlayLayers,
   conflictSeverityColor,
@@ -43,6 +49,7 @@ const MINIMAP_DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
   offsetX: 84,
   offsetY: 112,
 };
+const PREVIEW_DOT_COLOURS = ["#f08a21", "#32b77a", "#be8fc1", "#b8ad92"] as const;
 const MINIMAP_AVOID_SELECTORS = [
   ".planner-status-header",
   ".cockpit-layer-controls",
@@ -78,14 +85,93 @@ interface MinimapConflictMarker {
   readonly message: string;
 }
 
+function TimelinePreviewMinimapDots({
+  layout,
+  furnitureOffset,
+}: {
+  readonly layout: ReturnType<typeof minimapLayout>;
+  readonly furnitureOffset: readonly [number, number, number];
+}): ReactElement {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const draw = (items: readonly PlacedItem[]): void => {
+      const canvas = canvasRef.current;
+      if (canvas === null) return;
+      canvas.dataset.previewObjectCount = String(items.length);
+      const context = canvas.getContext("2d");
+      if (context === null) return;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      for (const colour of PREVIEW_DOT_COLOURS) {
+        context.beginPath();
+        let count = 0;
+        for (const item of items) {
+          const category = item.embeddedAssetDefinition?.category
+            ?? getCatalogueItem(item.catalogueItemId)?.category;
+          if (dotColor(category) !== colour) continue;
+          const { left, top } = timelinePreviewMinimapPoint(item, layout, furnitureOffset);
+          context.moveTo(left + 3.5, top);
+          context.arc(left, top, 3.5, 0, Math.PI * 2);
+          count += 1;
+        }
+        if (count > 0) {
+          context.fillStyle = colour;
+          context.fill();
+        }
+      }
+    };
+
+    draw(useLayoutTimelinePreviewStore.getState().currentItems);
+    return useLayoutTimelinePreviewStore.subscribe((state, previous) => {
+      if (state.currentItems === previous.currentItems) return;
+      draw(state.currentItems);
+    });
+  }, [furnitureOffset, layout]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="cockpit-minimap__preview-canvas"
+      width={Math.ceil(layout.width)}
+      height={Math.ceil(layout.height)}
+      aria-label="Phase preview furniture positions"
+      data-preview-furniture-offset={furnitureOffset.join(",")}
+      data-preview-room-dimensions={`${String(layout.width / layout.scale)},${String(layout.height / layout.scale)}`}
+    />
+  );
+}
+
+export function timelinePreviewMinimapPoint(
+  item: Pick<PlacedItem, "x" | "z">,
+  layout: ReturnType<typeof minimapLayout>,
+  furnitureOffset: readonly [number, number, number],
+): ReturnType<typeof minimapProject> {
+  return minimapProject(
+    item.x + furnitureOffset[0],
+    item.z + furnitureOffset[2],
+    layout,
+  );
+}
+
 export function CockpitMinimap(): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const sceneItems = useMemo(() => sceneFurniturePlacements(placedItems), [placedItems]);
-  const dimensions = useRoomDimensionsStore((state) => state.dimensions);
+  const liveDimensions = useRoomDimensionsStore((state) => state.dimensions);
   const requestFocus = useCockpitStore((state) => state.requestFocus);
   const activeMode = useCockpitStore((state) => state.activeMode);
   const overlayVisibility = useCockpitStore((state) => state.overlayVisibility);
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
+  const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const activeVenueRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
+  const timelinePreviewActive = timelinePreviewMode !== "inactive";
+  const frozenRoomRef = useRef<FrozenLayoutRoomModel | null>(null);
+  const frozenRoom = retainFrozenLayoutRoomModel(
+    frozenRoomRef.current,
+    activeVenueRuntime,
+  );
+  frozenRoomRef.current = frozenRoom;
+  const dimensions = frozenRoom?.renderDimensions ?? liveDimensions;
+  const previewFurnitureOffset = frozenRoom?.furnitureOffset ?? [0, 0, 0] as const;
 
   const layout = useMemo(() => minimapLayout(dimensions, MINIMAP_MAX_PX), [dimensions]);
   const layers = useMemo(
@@ -93,13 +179,13 @@ export function CockpitMinimap(): ReactElement {
     [overlayVisibility, activeMode],
   );
   const replayNeeded = useMemo(
-    () => shouldLoadReplay(overlayVisibility, activeMode),
-    [overlayVisibility, activeMode],
+    () => !timelinePreviewActive && shouldLoadReplay(overlayVisibility, activeMode),
+    [overlayVisibility, activeMode, timelinePreviewActive],
   );
   const { artifact, bounds } = useCockpitReplay(replayNeeded);
 
   const conflictMarkers = useMemo<readonly MinimapConflictMarker[]>(() => {
-    if (!layers.routeConflicts || artifact === null || bounds === null) return [];
+    if (timelinePreviewActive || !layers.routeConflicts || artifact === null || bounds === null) return [];
     return selectRouteConflicts(artifact.routeConflicts, MAX_MINIMAP_CONFLICTS).map((conflict) => {
       const [x, , z] = projectReplayPointToFloor(conflict.point, bounds, dimensions, 0);
       const pixel = minimapProject(x, z, layout);
@@ -111,7 +197,7 @@ export function CockpitMinimap(): ReactElement {
         message: conflict.message,
       };
     });
-  }, [layers.routeConflicts, artifact, bounds, dimensions, layout]);
+  }, [timelinePreviewActive, layers.routeConflicts, artifact, bounds, dimensions, layout]);
 
   const heritageInset = Math.min(
     HERITAGE_INSET_M * layout.scale,
@@ -125,9 +211,35 @@ export function CockpitMinimap(): ReactElement {
     requestFocus(x, z);
   };
 
-  const note = conflictMarkers.length > 0
+  const note = timelinePreviewActive
+    ? "Phase preview · saved plan unchanged · click to recentre"
+    : conflictMarkers.length > 0
     ? `${String(conflictMarkers.length)} simulated review marker${conflictMarkers.length === 1 ? "" : "s"} · click to recentre`
     : "Planning overview · click to recentre";
+
+  if (timelinePreviewActive && frozenRoom === null) {
+    return (
+      <FloatingWidgetFrame
+        id="cockpit-minimap"
+        title="Plan view"
+        compactLabel="Plan"
+        className="cockpit-minimap-widget"
+        bodyClassName="cockpit-minimap-widget__body"
+        defaultPlacement={MINIMAP_DEFAULT_PLACEMENT}
+        avoidSelectors={MINIMAP_AVOID_SELECTORS}
+        avoidPaddingPx={MINIMAP_AVOID_PADDING_PX}
+        zIndex={36}
+        autoCompact={cameraInteractionActive}
+      >
+        <aside className="cockpit-minimap" aria-label="Plan view minimap">
+          <p className="cockpit-minimap__unavailable" data-testid="cockpit-minimap-unavailable" role="status">
+            No room preview available
+          </p>
+          <p className="cockpit-minimap__note">No room shell or saved layout shown</p>
+        </aside>
+      </FloatingWidgetFrame>
+    );
+  }
 
   return (
     <FloatingWidgetFrame
@@ -150,14 +262,19 @@ export function CockpitMinimap(): ReactElement {
           onClick={handleClick}
           aria-label="Recentre the planner camera on a point in the room"
         >
-          {heritageInset > 0 && (
+          {!timelinePreviewActive && heritageInset > 0 && (
             <span
               className="cockpit-minimap__heritage"
               style={{ inset: `${String(heritageInset)}px` }}
               aria-hidden="true"
             />
           )}
-          {sceneItems.map((item) => {
+          {timelinePreviewActive ? (
+            <TimelinePreviewMinimapDots
+              layout={layout}
+              furnitureOffset={previewFurnitureOffset}
+            />
+          ) : sceneItems.map((item) => {
             const { left, top } = minimapProject(item.x, item.z, layout);
             const category = getCatalogueItem(item.catalogueItemId)?.category;
             return (

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { GOLD, BORDER, CARD_BG, TEXT_SEC, TEXT_MUT } from "../../constants/ui-palette.js";
 
 // ---------------------------------------------------------------------------
@@ -20,6 +21,7 @@ const MAX_NOTE = 500;
 
 export function ObjectNotePanel(): React.ReactElement | null {
   const selectedId = useEditorStore((s) => s.selectedObjectId);
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   // Subscribe to the notes primitive only, not the whole object. `.find()`
   // returns a fresh reference on every mutation to the selected object
   // (drag, rotate, autosave round-trip that replaces `objects` wholesale),
@@ -51,7 +53,9 @@ export function ObjectNotePanel(): React.ReactElement | null {
     setDirty(false);
   }, [selectedId]);
 
-  if (selectedId === null || savedNotes === null) return null;
+  // Keep the component mounted so an in-progress note draft survives a
+  // preview, but remove its editing surface while the scene is read-only.
+  if (timelinePreviewActive || selectedId === null || savedNotes === null) return null;
 
   const handleSave = (): void => {
     setObjectNotes(selectedId, draft.trim());

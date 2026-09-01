@@ -20,6 +20,9 @@ import { usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
+import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
+import { TimelinePreviewFurniture } from "./editor/TimelinePreviewFurniture.js";
+import { SAVED_LAYOUT_FURNITURE_GROUP } from "../lib/layout-timeline-capture.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useFurnitureInspectionStore } from "../stores/furniture-inspection-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
@@ -912,6 +915,11 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
 
 export function PlacedFurniture(): React.ReactElement {
   const { invalidate, size } = useThree();
+  // C2 Run of Show: while a phase preview holds the stage, the SAVED plan
+  // rests and the frozen keyframe renders instead. This mount lives here
+  // (not PlannerScene) deliberately — the scene file is the walk-mode
+  // lane's surface (docs/handoffs/COMMAND-CENTRE-LANES.md).
+  const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const placedItems = usePlacementStore((s) => s.placedItems);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
@@ -1067,7 +1075,16 @@ export function PlacedFurniture(): React.ReactElement {
     [inspectedPlacedItemId, placedItems],
   );
 
+  if (timelinePreviewMode !== "inactive") {
+    return (
+      <group name="timeline-preview-furniture">
+        <TimelinePreviewFurniture />
+      </group>
+    );
+  }
+
   return (
+    <group name={SAVED_LAYOUT_FURNITURE_GROUP}>
     <group name="placed-furniture">
       {useLeanFurniture ? (
         <LeanFurnitureLayer items={leanItems} />
@@ -1104,6 +1121,7 @@ export function PlacedFurniture(): React.ReactElement {
           }
         />
       ))}
+    </group>
     </group>
   );
 }

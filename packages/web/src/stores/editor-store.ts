@@ -35,6 +35,7 @@ import { createActionEmitter } from "../lib/action-log.js";
 import { plannerActionContext } from "./planner-action-log.js";
 import { flushActionLog } from "./action-log-sync.js";
 import { postActionBatch } from "../api/action-log.js";
+import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -573,6 +574,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   addObject: (assetId, positionX, positionY, positionZ) => {
+    if (isLayoutTimelineMutationLocked()) return;
     // Loaded legacy rows still enter through loadConfiguration above. This
     // guard applies only to new imperative additions: dressing catalogue
     // entries are contextual actions, never standalone editor objects.
@@ -595,6 +597,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   updateObject: (objectId, transform) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const after = s.objects.map((o) => o.id === objectId ? { ...o, ...transform } : o);
     set({
@@ -605,6 +608,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   moveObjectsByDelta: (ids, dx, dz) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     if (dx === 0 && dz === 0) return;
     const s = get();
@@ -621,6 +625,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setObjectNotes: (objectId, notes) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const after = s.objects.map((o) => o.id === objectId ? { ...o, notes } : o);
     set({
@@ -631,6 +636,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   removeObject: (objectId) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const after = s.objects.filter((o) => o.id !== objectId);
     const selectionAfter = captureSelection(s.selectedObjectId).filter((id) => id !== objectId);
@@ -646,6 +652,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   deselectObject: () => { set({ selectedObjectId: null }); },
 
   saveToServer: async (isAuthenticated) => {
+    if (isLayoutTimelineMutationLocked()) return false;
     const { configId, configRevision, objects, isSaving, isPublicPreview } = get();
     if (configId === null || isSaving) return false;
     // G4: a save is a gesture boundary — seal the open gesture into the log.
@@ -782,6 +789,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   replaceObjectsFromScene: (objects) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const history = recordedHistory(s.history, s.selectedObjectId, s.objects, objects);
     if (history === null) return;
@@ -789,6 +797,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   undo: () => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const step = performUndo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
@@ -800,6 +809,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   redo: () => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const step = performRedo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
@@ -811,6 +821,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   bumpHistoryEpoch: () => {
+    if (isLayoutTimelineMutationLocked()) return;
     interactionEpoch++;
   },
 }));

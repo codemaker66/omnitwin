@@ -20,6 +20,7 @@ import { useChairDialogStore } from "./stores/chair-dialog-store.js";
 import { useCatalogueStore } from "./stores/catalogue-store.js";
 import { useEditorStore } from "./stores/editor-store.js";
 import { useRoomDimensionsStore } from "./stores/room-dimensions-store.js";
+import { useLayoutTimelinePreviewStore } from "./stores/layout-timeline-preview-store.js";
 import { computeBoundingBox, resolveRoomGeometry } from "./data/room-geometries.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "./hooks/use-media-query.js";
 import "./App.css";
@@ -65,6 +66,7 @@ export function App(): React.ReactElement {
   const isTouch = useIsCoarsePointer();
   const mobileChrome = isNarrow || isTouch;
   const dimensions = useRoomDimensions();
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
 
   const { width: dimW, length: dimL, height: dimH } = dimensions;
   useEffect(() => {
@@ -100,26 +102,26 @@ export function App(): React.ReactElement {
 
       {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
       <MarkupPersistence />
-      <VerticalToolbox />
-      {!mobileChrome && (
+      {!timelinePreviewActive && <VerticalToolbox />}
+      {!timelinePreviewActive && !mobileChrome && (
         <>
           <PlannerSpatialHud />
           <PlannerCommandDeck />
         </>
       )}
 
-      {!mobileChrome && (
+      {!timelinePreviewActive && !mobileChrome && (
         <div className="planner-section-slider-dock">
           <SectionSlider />
         </div>
       )}
 
-      <MeasurementOverlay />
-      <PlacementHint />
-      <CameraReferenceComposer />
-      <CameraReferenceHeightSwitch />
+      {!timelinePreviewActive && <MeasurementOverlay />}
+      {!timelinePreviewActive && <PlacementHint />}
+      {!timelinePreviewActive && <CameraReferenceComposer />}
+      {!timelinePreviewActive && <CameraReferenceHeightSwitch />}
 
-      <ChairCountDialog
+      {!timelinePreviewActive && <ChairCountDialog
         request={chairRequest}
         onConfirm={(count) => {
           const editId = useChairDialogStore.getState().editTableId;
@@ -153,7 +155,7 @@ export function App(): React.ReactElement {
         onCancel={() => {
           useChairDialogStore.getState().clearDialog();
         }}
-      />
+      />}
       {import.meta.env.DEV && <PerfOverlay />}
     </div>
   );
