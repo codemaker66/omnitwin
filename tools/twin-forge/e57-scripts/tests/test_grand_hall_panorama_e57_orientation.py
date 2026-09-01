@@ -69,6 +69,22 @@ def _fast_thresholds() -> core.OrientationThresholds:
 
 
 class GrandHallPanoramaE57OrientationTests(unittest.TestCase):
+    def test_float32_panorama_keypoints_produce_strict_unit_rays(self) -> None:
+        pixels = np.asarray(
+            [[0.125, 0.25], [1023.75, 511.5], [2047.875, 1023.75]],
+            dtype=np.float32,
+        )
+
+        rays = core.equirectangular_pixels_to_rays(pixels, 2048, 1024)
+
+        self.assertEqual(rays.dtype, np.float64)
+        self.assertLessEqual(
+            float(np.max(np.abs(np.linalg.norm(rays, axis=1) - 1.0))),
+            1e-12,
+        )
+        validated = core._rays(rays, "panorama")
+        np.testing.assert_allclose(validated, rays, atol=1e-15, rtol=0.0)
+
     def test_identity_partition_is_order_independent_and_face_balanced(self) -> None:
         source, _target, faces, original = _synthetic_matches(outlier_count=0)
         permutation = np.random.default_rng(19).permutation(len(source))

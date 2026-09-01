@@ -1216,7 +1216,17 @@ def _pair_correspondences(
         face_points = backend._points(face.feature)[queries]
         panorama_points = backend._points(panorama_feature.feature)[trains]
         source_parts.append(backend._cubemap_rays(face_points, face))
-        target_parts.append(backend._panorama_rays(panorama_points, panorama_feature.feature))
+        # OpenCV keypoints are float32.  T560's inherited diagnostic helper
+        # preserves that dtype through trigonometry, which is accurate enough
+        # for matching but not for this pack's 1e-9 unit-ray provenance gate.
+        # Recompute the identical spherical convention in the reviewed T565
+        # float64 implementation so real pixels do not fail on representation
+        # noise before the geometric evidence gates run.
+        target_parts.append(orientation_core.equirectangular_pixels_to_rays(
+            panorama_points,
+            panorama_feature.feature.width,
+            panorama_feature.feature.height,
+        ))
         panorama_point_parts.append(panorama_points)
         face_point_parts.append(face_points)
         face_indices.extend([face.face_index] * len(matches))
