@@ -30,6 +30,7 @@ import { RoomLayoutTimelineLocalDateSchema } from "@omnitwin/types";
 import { useSearchParams } from "react-router-dom";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
+import { stepSpring, isSpringSettled, type SpringState } from "../../../lib/springs.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import type { LayoutTimelinePreviewFrameMetadata } from "../../../stores/layout-timeline-preview-store.js";
@@ -77,8 +78,9 @@ export function isValidTimelineDeepLinkDate(value: string | null): value is stri
 type TimelineScope = RoomLayoutTimelineScope;
 
 const FULL_PLAYBACK_MS = 20_000;
-const KEYFRAME_ANIMATION_MS = 680;
-const REDUCED_MOTION_KEYFRAME_MS = 120;
+/** The spring's hard settle bound: motion never exceeds this, so a paused
+ *  tab or a giant frame gap lands cleanly instead of replaying. */
+const KEYFRAME_SPRING_MAX_MS = 900;
 export const MAX_MOUNTED_TIMELINE_THUMBNAILS = 7;
 const EMPTY_FRAMES: readonly RoomLayoutTimelineFrame[] = [];
 
@@ -607,17 +609,34 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
       reducedMotion,
       spatialMorphAllowed: framesAllowFrozenSpatialMorph(frames, fromIndex, targetIndex),
     });
-    const startedAt = performance.now();
+    // House motion law: springs, never tweens (lib/springs.ts header). The
+    // ported dock drove progress with a cubic ease-out; the spring keeps the
+    // same 0->1 contract but stays interruptible with real velocity, and
+    // reduced motion settles in one step (checked here, per the cockpit's
+    // CSS-zeroing rule that JS motion must honour itself).
+    const spring: SpringState = { value: 0, velocity: 0 };
+    const SPRING_CONFIG = { stiffness: 170, damping: 26 };
+    let lastNow = performance.now();
+    let elapsedMs = 0;
     const fromVisualIndex = activeIndex;
     const fromCursor = cursorRef.current;
     const fromMs = playheadMsRef.current;
     const toMs = Date.parse(targetFrame.startsAt);
     const animate = (now: number): void => {
       if (animationGenerationRef.current !== generation) return;
-      const duration = reducedMotion ? REDUCED_MOTION_KEYFRAME_MS : KEYFRAME_ANIMATION_MS;
-      const linear = Math.min(1, (now - startedAt) / duration);
-      const eased = 1 - (1 - linear) ** 3;
-      useLayoutTimelinePreviewStore.getState().setProgress(eased);
+      const frameMs = now - lastNow;
+      const dt = Math.min(frameMs / 1000, 0.25);
+      lastNow = now;
+      elapsedMs += frameMs;
+      if (reducedMotion || elapsedMs >= KEYFRAME_SPRING_MAX_MS) {
+        spring.value = 1;
+        spring.velocity = 0;
+      } else {
+        stepSpring(spring, 1, dt, SPRING_CONFIG);
+      }
+      const eased = Math.min(1, Math.max(0, spring.value));
+      const settled = reducedMotion || elapsedMs >= KEYFRAME_SPRING_MAX_MS || isSpringSettled(spring, 1, 0.001);
+      useLayoutTimelinePreviewStore.getState().setProgress(settled ? 1 : eased);
       const visualIndex = eased < 0.5 ? fromVisualIndex : targetIndex;
       if (visualFrameIndexRef.current !== visualIndex) {
         visualFrameIndexRef.current = visualIndex;
@@ -628,7 +647,7 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
       }
       cursorRef.current = fromCursor + (targetIndex - fromCursor) * eased;
       updatePlayhead(fromMs + (toMs - fromMs) * eased);
-      if (linear < 1) {
+      if (!settled) {
         selectionAnimationRef.current = requestAnimationFrame(animate);
       } else {
         if (animationGenerationRef.current !== generation) return;
