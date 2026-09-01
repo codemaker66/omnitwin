@@ -268,6 +268,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
         contained: window.__roomCamera?.contained ?? null,
         gates: window.__walkDebug ?? null,
       }));
+      // eslint-disable-next-line no-console -- deliberate: walk-gate evidence in the runner output
       console.log(`[walk:${String(sample)}] ${walkState}`);
       if (walkState.includes('"contained":true')) break;
       await page.waitForTimeout(750);

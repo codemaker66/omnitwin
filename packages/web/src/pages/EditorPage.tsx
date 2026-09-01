@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { EvidenceChip } from "../components/evidence/EvidenceChip.js";
-import { App as Editor3D } from "../App.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
+import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
@@ -371,6 +372,10 @@ function PlannerCommsLayer(): React.ReactElement {
   const saveConflict = useEditorStore((s) => s.saveConflict);
   const placedObjectCount = useEditorStore((s) => s.objects.length);
   const authState = useAuthStore((s) => s.isAuthenticated);
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
+  const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const timelinePreviewPhaseId = useLayoutTimelinePreviewStore((state) => state.activeFrame?.phaseId ?? null);
+  const timelinePreviewObjectCount = useLayoutTimelinePreviewStore((state) => state.currentItems.length);
   const truthModeEnabled = isTruthModeUiEnabled(searchParams, import.meta.env.DEV);
   const truthSummary = useMemo(
     () => buildProceduralTruthSummary({
@@ -387,13 +392,25 @@ function PlannerCommsLayer(): React.ReactElement {
   // ever opens in that state (defense-in-depth).
   const canEditEventDetails = configId !== null && !isPublicPreview;
   const mobile = isNarrow || isTouch;
-  const showStandaloneTruthIndicator = truthModeEnabled && (mobile || viewMode !== "3d");
+  const showStandaloneTruthIndicator = !timelinePreviewActive
+    && truthModeEnabled
+    && (mobile || viewMode !== "3d");
+  const changeViewMode = useCallback((nextMode: "3d" | "2d"): void => {
+    if (timelinePreviewActive && nextMode === "2d") return;
+    setViewMode(nextMode);
+  }, [timelinePreviewActive]);
   return (
     <>
       <EditorBridge />
       <div
         data-testid="planner-3d-shell"
         data-planner-config-id={configId ?? undefined}
+        data-layout-timeline-preview={timelinePreviewMode}
+        data-layout-timeline-preview-phase-id={timelinePreviewPhaseId ?? undefined}
+        data-layout-timeline-preview-object-count={String(timelinePreviewObjectCount)}
+        data-layout-timeline-mutation-locked={String(
+          timelinePreviewActive && isLayoutTimelineMutationLocked(),
+        )}
         style={{
           height: "100dvh",
           minHeight: "100dvh",
@@ -407,17 +424,22 @@ function PlannerCommsLayer(): React.ReactElement {
         }}
       >
         {viewMode === "3d" ? (
-          mobile ? <Editor3D /> : <PlannerCockpit />
+          <PlannerCockpit mobile={mobile} />
         ) : (
           <BlueprintPage source="editor-store" />
         )}
       </div>
       {mobile ? (
-        <MobilePlannerTopBar mode={viewMode} onModeChange={setViewMode} />
+        <MobilePlannerTopBar mode={viewMode} onModeChange={changeViewMode} />
       ) : (
-        <ViewModeToggle mode={viewMode} onChange={setViewMode} isMobile={mobile} />
+        <ViewModeToggle
+          mode={viewMode}
+          onChange={changeViewMode}
+          isMobile={mobile}
+          previewLocked={timelinePreviewActive}
+        />
       )}
-      {canEditEventDetails && viewMode === "3d" && (
+      {canEditEventDetails && viewMode === "3d" && !timelinePreviewActive && (
         <button
           type="button"
           onClick={() => { setEventDetailsOpen(true); }}
@@ -455,7 +477,7 @@ function PlannerCommsLayer(): React.ReactElement {
  * overlap the SaveSendPanel (bottom-right). Provides an inline retry
  * (re-fires saveToServer) and a dismiss. The 3D Canvas above stays
  * mounted — the user's in-progress layout is preserved. */
-function SaveErrorToast({
+export function SaveErrorToast({
   message,
   isAuthenticated,
   conflict,
@@ -464,11 +486,14 @@ function SaveErrorToast({
   isAuthenticated: boolean;
   conflict: { readonly expectedRevision: number; readonly currentRevision: number } | null;
 }): React.ReactElement {
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const retry = (): void => {
+    if (isLayoutTimelineMutationLocked()) return;
     useEditorStore.getState().clearSaveError();
     void useEditorStore.getState().saveToServer(isAuthenticated);
   };
   const reload = (): void => {
+    if (isLayoutTimelineMutationLocked()) return;
     void useEditorStore.getState().reloadAfterConflict(isAuthenticated);
   };
   const dismiss = (): void => { useEditorStore.getState().clearSaveError(); };
@@ -500,25 +525,31 @@ function SaveErrorToast({
         <button
           type="button"
           onClick={retry}
+          disabled={timelinePreviewActive}
+          title={timelinePreviewActive ? "Exit the room timeline preview before retrying this save." : undefined}
           style={{
             padding: "4px 12px", fontSize: 12, fontWeight: 600,
             background: "#c9a84c", color: "#141311", border: "none",
-            borderRadius: 4, cursor: "pointer",
+            borderRadius: 4, cursor: timelinePreviewActive ? "default" : "pointer",
+            opacity: timelinePreviewActive ? 0.6 : 1,
           }}
         >
-          Retry
+          {timelinePreviewActive ? "Exit preview to retry" : "Retry"}
         </button>
       ) : (
         <button
           type="button"
           onClick={reload}
+          disabled={timelinePreviewActive}
+          title={timelinePreviewActive ? "Exit the room timeline preview before reloading this layout." : undefined}
           style={{
             padding: "4px 12px", fontSize: 12, fontWeight: 600,
             background: "#c9a84c", color: "#141311", border: "none",
-            borderRadius: 4, cursor: "pointer",
+            borderRadius: 4, cursor: timelinePreviewActive ? "default" : "pointer",
+            opacity: timelinePreviewActive ? 0.6 : 1,
           }}
         >
-          Reload
+          {timelinePreviewActive ? "Exit preview to reload" : "Reload"}
         </button>
       )}
       <button
@@ -541,10 +572,12 @@ function ViewModeToggle({
   mode,
   onChange,
   isMobile,
+  previewLocked,
 }: {
   mode: "3d" | "2d";
   onChange: (m: "3d" | "2d") => void;
   isMobile: boolean;
+  previewLocked: boolean;
 }): React.ReactElement {
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const avoidSelectors = isMobile
@@ -555,10 +588,14 @@ function ViewModeToggle({
       ] as const;
   const btn = (label: string, value: "3d" | "2d"): React.ReactElement => {
     const active = mode === value;
+    const disabled = previewLocked && value === "2d";
     return (
       <button
         type="button"
-        onClick={() => { onChange(value); }}
+        onClick={() => { if (!disabled) onChange(value); }}
+        disabled={disabled}
+        title={disabled ? "Exit the room timeline preview to view 2D." : undefined}
+        aria-pressed={active}
         style={{
           padding: "6px 14px",
           fontSize: 12,
@@ -566,7 +603,8 @@ function ViewModeToggle({
           letterSpacing: 0,
           border: "none",
           borderRadius: 6,
-          cursor: "pointer",
+          cursor: disabled ? "default" : "pointer",
+          opacity: disabled ? 0.52 : 1,
           background: active ? "#c9a84c" : "transparent",
           color: active ? "#141311" : "#c9a84c",
           fontFamily: "'Inter', system-ui, sans-serif",

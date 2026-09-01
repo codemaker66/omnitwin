@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactElement } from "react";
 import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "react-router-dom";
+import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
 // Static like ProtectedRoute: the canonical evidence chip renders inside the
@@ -166,6 +167,20 @@ function withClerk(node: ReactElement): ReactElement {
   return withSuspense(<ClerkRouteProvider>{node}</ClerkRouteProvider>);
 }
 
+// Planner routes stay Clerk-free for guests (no script cost) but mount the
+// provider for returning signed-in users, whose staff surfaces (the
+// layout-timeline dock, phase-snapshot freeze, review submit) call
+// authenticated endpoints. Detection is cookie-only — see
+// lib/clerk-session-hint.ts for the full rationale.
+function PlannerAuthBoundary({ children }: { readonly children: ReactElement }): ReactElement {
+  if (!hasLikelyClerkSession()) return children;
+  return <ClerkRouteProvider>{children}</ClerkRouteProvider>;
+}
+
+function withPlannerAuth(node: ReactElement): ReactElement {
+  return withSuspense(<PlannerAuthBoundary>{node}</PlannerAuthBoundary>);
+}
+
 // ---------------------------------------------------------------------------
 // Dev-only fixture routes.
 //
@@ -293,7 +308,7 @@ export const router = createBrowserRouter([
     // here; it now renders the landing page. Takes optional configId for
     // deep-link.
     path: "/plan",
-    element: withSuspense(<EditorPage />),
+    element: withPlannerAuth(<EditorPage />),
   },
   {
     // The `:code` param matches either a legacy UUID or a guest shortcode.
@@ -305,7 +320,7 @@ export const router = createBrowserRouter([
     // (they don't mock /api/layouts/resolve) and removes a single point
     // of failure when the API is unreachable.
     path: "/plan/:code",
-    element: withSuspense(<EditorPage />),
+    element: withPlannerAuth(<EditorPage />),
   },
   {
     // 2D top-down blueprint editor. Mounted alongside the 3D planner — both
@@ -327,7 +342,7 @@ export const router = createBrowserRouter([
     // the primary URL; `/plan` stays as the single-tenant shortcut for the
     // flagship customer.
     path: "/v/:venueSlug/plan",
-    element: withSuspense(<EditorPage />),
+    element: withPlannerAuth(<EditorPage />),
   },
   {
     // The Day Board (Day Board S1): the hallkeeper's live view of today —

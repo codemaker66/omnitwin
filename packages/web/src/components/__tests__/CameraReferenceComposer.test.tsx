@@ -51,7 +51,7 @@ function resetStores(): void {
       y: 0.45,
       z: -0.4,
       rotationY: 0.25,
-      clothed: false, clothStyle: null, tableSetting: null,
+      clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null,
       groupId: null,
     }],
     ghostPosition: null,

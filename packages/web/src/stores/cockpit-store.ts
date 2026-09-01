@@ -82,6 +82,7 @@ interface CockpitState {
   readonly setBeam: (beam: CockpitBeam | null) => void;
   readonly clearBeam: () => void;
   readonly requestFocus: (x: number, z: number) => void;
+  readonly clearFocus: () => void;
   readonly setCameraInteractionActive: (active: boolean) => void;
   /**
    * Walk mode: the planner camera stands in the captured room at eye level.
@@ -142,6 +143,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   requestFocus: (x, z) => {
     set((state) => ({ focusRequest: { x, z, nonce: (state.focusRequest?.nonce ?? 0) + 1 } }));
   },
+  clearFocus: () => { set({ focusRequest: null }); },
   setCameraInteractionActive: (active) => {
     set({ cameraInteractionActive: active });
   },

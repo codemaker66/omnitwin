@@ -20,6 +20,9 @@ import { usePlacementStore } from "../stores/placement-store.js";
 import { useSelectionStore } from "../stores/selection-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useRoomDimensionsStore } from "../stores/room-dimensions-store.js";
+import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
+import { TimelinePreviewFurniture } from "./editor/TimelinePreviewFurniture.js";
+import { SAVED_LAYOUT_FURNITURE_GROUP } from "../lib/layout-timeline-capture.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { useFurnitureInspectionStore } from "../stores/furniture-inspection-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
@@ -32,6 +35,8 @@ import {
 } from "../lib/furniture-semantics.js";
 import { toRenderSpace } from "../constants/scale.js";
 import { SELECTION_COLOR } from "../lib/selection.js";
+import { CIRCULATION_AISLE } from "../lib/circulation.js";
+import { Html } from "@react-three/drei";
 import { FurnitureProxy } from "./FurnitureProxy.js";
 import { InstancedFurnitureLayer } from "./editor/InstancedFurnitureLayer.js";
 import { TableClothMesh } from "./meshes/TableClothMesh.js";
@@ -885,6 +890,66 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
         </mesh>
       )}
 
+      {/* Clearance ring (C2): the circulation band around the selected
+          piece, in real metres. Radius follows the dinner-rounds engine
+          (footprint circumradius = max(width, depth)/2); the band is the
+          circulation module's comfortable aisle — planning rules of
+          thumb, never regulatory egress. The label carries the figure so
+          the colour never carries the meaning alone. */}
+      {isSelected && (() => {
+        const innerM =
+          (Math.max(toRenderSpace(catalogueItem.width), toRenderSpace(catalogueItem.depth)) / 2) *
+          presentationScale;
+        const bandM = CIRCULATION_AISLE.comfortableM;
+        return (
+          <group position={[placed.x, placed.y + 0.015, placed.z]}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[innerM, innerM + bandM, 48]} />
+              <meshBasicMaterial
+                color="#c6a15b"
+                transparent
+                opacity={0.22}
+                depthWrite={false}
+                clippingPlanes={sectionClipPlanes}
+              />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[innerM + bandM - 0.02, innerM + bandM, 48]} />
+              <meshBasicMaterial
+                color="#d9b96b"
+                transparent
+                opacity={0.7}
+                depthWrite={false}
+                clippingPlanes={sectionClipPlanes}
+              />
+            </mesh>
+            <Html
+              position={[0, 0.02, innerM + bandM]}
+              center
+              style={{ pointerEvents: "none" }}
+              zIndexRange={[20, 0]}
+            >
+              <span
+                className="clearance-ring-label"
+                title="Comfortable circulation band — planning rules of thumb, not regulatory egress widths."
+                style={{
+                  fontFamily: '"Geist Mono", ui-monospace, monospace',
+                  fontSize: "11px",
+                  color: "#f4efe6",
+                  background: "rgba(22, 18, 13, 0.85)",
+                  border: "1px solid rgba(198, 161, 91, 0.5)",
+                  borderRadius: "4px",
+                  padding: "1px 6px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {bandM.toFixed(1)} m clearance
+              </span>
+            </Html>
+          </group>
+        );
+      })()}
+
       {renderNamePlate && displayLabel.length > 0 && (
         <FurnitureNamePlate
           label={displayLabel}
@@ -912,6 +977,11 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
 
 export function PlacedFurniture(): React.ReactElement {
   const { invalidate, size } = useThree();
+  // C2 Run of Show: while a phase preview holds the stage, the SAVED plan
+  // rests and the frozen keyframe renders instead. This mount lives here
+  // (not PlannerScene) deliberately — the scene file is the walk-mode
+  // lane's surface (docs/handoffs/COMMAND-CENTRE-LANES.md).
+  const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
   const placedItems = usePlacementStore((s) => s.placedItems);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
@@ -1067,7 +1137,16 @@ export function PlacedFurniture(): React.ReactElement {
     [inspectedPlacedItemId, placedItems],
   );
 
+  if (timelinePreviewMode !== "inactive") {
+    return (
+      <group name="timeline-preview-furniture">
+        <TimelinePreviewFurniture />
+      </group>
+    );
+  }
+
   return (
+    <group name={SAVED_LAYOUT_FURNITURE_GROUP}>
     <group name="placed-furniture">
       {useLeanFurniture ? (
         <LeanFurnitureLayer items={leanItems} />
@@ -1104,6 +1183,7 @@ export function PlacedFurniture(): React.ReactElement {
           }
         />
       ))}
+    </group>
     </group>
   );
 }

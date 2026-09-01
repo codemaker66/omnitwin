@@ -712,6 +712,7 @@ function eventDayBoardFixture(taskStatus: OpsTask["status"] = "todo"): EventDayO
       {
         id: "00000000-0000-4000-8000-000000004011",
         eventId: EVENT_ID,
+        spaceId: null,
         templateKey: "arrival",
         name: "Arrival",
         sortOrder: 0,

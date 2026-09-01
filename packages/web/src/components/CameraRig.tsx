@@ -152,22 +152,34 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
   // the box. Desktop wheel remains owned by the custom inertial handler.
   const isTouchDevice = useIsTouchDevice();
 
-  const limits = computeDistanceLimits(dimensions);
-  const bounds = computePanBounds(dimensions);
+  // Parents may select a new immutable snapshot object at a timeline midpoint
+  // even when its numeric room envelope is unchanged. Stabilise the bounds so
+  // that identity-only endpoint changes do not reset the planning camera.
+  const stableDimensions = useMemo<SpaceDimensions>(() => ({
+    width: dimensions.width,
+    length: dimensions.length,
+    height: dimensions.height,
+  }), [dimensions.height, dimensions.length, dimensions.width]);
+
+  const limits = computeDistanceLimits(stableDimensions);
+  const bounds = computePanBounds(stableDimensions);
 
   // Aspect-aware camera pose: portrait phones (aspect < 1.2) get a 3/4
   // elevated "dollhouse" hero shot outside the room; landscape/desktop
   // keep the existing interior eye-level pose. useThree().size re-renders
   // on resize, so this effect re-fires when the user rotates their phone.
   const aspect = size.width / Math.max(size.height, 1);
-  const target = useMemo(() => computeCameraTarget(dimensions, aspect), [dimensions, aspect]);
+  const target = useMemo(
+    () => computeCameraTarget(stableDimensions, aspect),
+    [stableDimensions, aspect],
+  );
   useEffect(() => {
     if (humanPovActiveRef.current || walkActiveRef.current) return;
-    const [x, y, z] = computeDefaultCameraPosition(dimensions, aspect);
+    const [x, y, z] = computeDefaultCameraPosition(stableDimensions, aspect);
     camera.position.set(x, y, z);
     camera.lookAt(target[0], target[1], target[2]);
     invalidate();
-  }, [camera, dimensions, target, aspect, invalidate]);
+  }, [camera, stableDimensions, target, aspect, invalidate]);
 
   // Keyboard input — single keydown handler tracks state AND wakes demand-mode frame loop.
   // Uses stable ref to invalidate so the effect runs only once (mount/unmount).

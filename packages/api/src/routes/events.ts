@@ -34,10 +34,11 @@ import {
   events,
   layoutVariants,
   phaseLayoutSnapshots,
+  spaces,
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessResource, canWriteEvents, isEventWriteRole } from "../utils/query.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 
 type EventRow = typeof events.$inferSelect;
@@ -92,6 +93,7 @@ function serializePhase(row: EventPhaseRow): EventPhase {
   return EventPhaseSchema.parse({
     id: row.id,
     eventId: row.eventId,
+    spaceId: row.spaceId,
     templateKey: row.templateKey,
     name: row.name,
     sortOrder: row.sortOrder,
@@ -198,6 +200,10 @@ async function buildPhaseGraph(db: Database, eventRow: EventRow): Promise<EventP
   });
 }
 
+function forbidden(reply: FastifyReply): FastifyReply {
+  return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+}
+
 async function requireEventAccess(
   db: Database,
   request: FastifyRequest,
@@ -210,7 +216,32 @@ async function requireEventAccess(
     return null;
   }
   if (!canAccessResource(request.user, eventRow.createdBy, eventRow.venueId)) {
-    void reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    void forbidden(reply);
+    return null;
+  }
+  return eventRow;
+}
+
+function requireEventWriteRole(request: FastifyRequest, reply: FastifyReply): boolean {
+  if (isEventWriteRole(request.user)) return true;
+  void forbidden(reply);
+  return false;
+}
+
+/** Load an event first, then authorize against its persisted venue. */
+async function requireEventWriteAccess(
+  db: Database,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  eventId: string,
+): Promise<EventRow | null> {
+  const eventRow = await loadEvent(db, eventId);
+  if (eventRow === null) {
+    void reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
+    return null;
+  }
+  if (!canWriteEvents(request.user, eventRow.venueId)) {
+    void forbidden(reply);
     return null;
   }
   return eventRow;
@@ -237,11 +268,13 @@ function requiresHallkeeperAcknowledgement(surfaces: readonly EventPlanChangeSur
     surface === "service_notes" ||
     surface === "ops_tasks" ||
     surface === "room_flip"
+    || surface === "layout"
   ));
 }
 
 function changedSurfacesForPhasePatch(input: z.infer<typeof UpdateEventPhaseSchema>): EventPlanChangeSurface[] {
   const surfaces = new Set<EventPlanChangeSurface>();
+  if (input.spaceId !== undefined) surfaces.add("layout");
   if (input.startsAt !== undefined || input.durationMinutes !== undefined) surfaces.add("timings");
   if (input.guestCount !== undefined) surfaces.add("guest_count");
   if (input.opsTasksCount !== undefined) surfaces.add("ops_tasks");
@@ -252,12 +285,40 @@ function changedSurfacesForPhasePatch(input: z.infer<typeof UpdateEventPhaseSche
   return [...surfaces];
 }
 
+async function eventVenueContainsSpace(
+  db: Database,
+  venueId: string,
+  spaceId: string,
+): Promise<boolean> {
+  const [space] = await db.select({ id: spaces.id }).from(spaces).where(and(
+    eq(spaces.id, spaceId),
+    eq(spaces.venueId, venueId),
+    isNull(spaces.deletedAt),
+  )).limit(1);
+  return space !== undefined;
+}
+
+function eventPhaseSpaceMismatch(reply: FastifyReply): FastifyReply {
+  return reply.status(422).send({
+    error: "Event phase room must be an active room at the event venue",
+    code: "EVENT_PHASE_SPACE_MISMATCH",
+  });
+}
+
 export async function eventRoutes(server: FastifyInstance, opts: { db: Database }): Promise<void> {
   const { db } = opts;
 
   server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = CreateEventSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
+
+    if (!canWriteEvents(request.user, parsed.data.venueId)) {
+      return reply.status(403).send({
+        error: "This session is scoped to another venue",
+        code: "VENUE_SCOPE_MISMATCH",
+      });
+    }
 
     const created = await db.transaction(async (tx) => {
       const [eventRow] = await tx.insert(events).values({
@@ -313,9 +374,10 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = UpdateEventSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    const eventRow = await requireEventAccess(db, request, reply, params.data.id);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
     const [updated] = await db.update(events).set({
@@ -361,10 +423,18 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   server.post("/:id/phases", { preHandler: [authenticate] }, async (request, reply) => {
     const params = EventIdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = CreateEventPhaseSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    const eventRow = await requireEventAccess(db, request, reply, params.data.id);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
+    if (
+      parsed.data.spaceId !== undefined
+      && parsed.data.spaceId !== null
+      && !await eventVenueContainsSpace(db, eventRow.venueId, parsed.data.spaceId)
+    ) {
+      return eventPhaseSpaceMismatch(reply);
+    }
 
     const [lastPhase] = await db
       .select({ sortOrder: eventPhases.sortOrder })
@@ -375,6 +445,7 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
 
     const [phase] = await db.insert(eventPhases).values({
       eventId: eventRow.id,
+      spaceId: parsed.data.spaceId ?? null,
       templateKey: parsed.data.templateKey ?? null,
       name: parsed.data.name,
       sortOrder: (lastPhase?.sortOrder ?? -1) + 1,
@@ -399,9 +470,10 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   server.post("/:id/scenarios", { preHandler: [authenticate] }, async (request, reply) => {
     const params = EventIdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = CreateEventScenarioSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    const eventRow = await requireEventAccess(db, request, reply, params.data.id);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
     if (parsed.data.phaseId !== undefined && parsed.data.phaseId !== null) {
@@ -438,9 +510,10 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
   server.post("/:id/layout-variants", { preHandler: [authenticate] }, async (request, reply) => {
     const params = EventIdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = CreateLayoutVariantSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    const eventRow = await requireEventAccess(db, request, reply, params.data.id);
+    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
     if (eventRow === null) return;
 
     if (parsed.data.configurationId !== undefined && parsed.data.configurationId !== null) {
@@ -504,6 +577,7 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
   server.patch("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.issues);
+    if (!requireEventWriteRole(request, reply)) return;
     const parsed = UpdateEventPhaseSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
 
@@ -517,11 +591,19 @@ export async function eventPhaseRoutes(server: FastifyInstance, opts: { db: Data
     if (joined === undefined) {
       return reply.status(404).send({ error: "Event phase not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, joined.event.createdBy, joined.event.venueId)) {
-      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    if (!canWriteEvents(request.user, joined.event.venueId)) {
+      return forbidden(reply);
+    }
+    if (
+      parsed.data.spaceId !== undefined
+      && parsed.data.spaceId !== null
+      && !await eventVenueContainsSpace(db, joined.event.venueId, parsed.data.spaceId)
+    ) {
+      return eventPhaseSpaceMismatch(reply);
     }
 
     const [updated] = await db.update(eventPhases).set({
+      spaceId: parsed.data.spaceId === undefined ? joined.phase.spaceId : parsed.data.spaceId,
       name: parsed.data.name ?? joined.phase.name,
       startsAt: parsed.data.startsAt === undefined ? joined.phase.startsAt : dateOrNull(parsed.data.startsAt),
       durationMinutes: parsed.data.durationMinutes ?? joined.phase.durationMinutes,

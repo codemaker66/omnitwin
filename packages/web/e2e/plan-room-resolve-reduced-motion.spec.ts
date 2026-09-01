@@ -32,8 +32,10 @@ test.describe("CARD A2 reduced motion", () => {
 
   test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, baseURL }) => {
     test.setTimeout(240_000);
+    // eslint-disable-next-line no-console -- deliberate: CARD-A2 failure evidence in the runner output
     page.on("pageerror", (error) => { console.log(`[rm-pageerror] ${error.message.slice(0, 300)}`); });
     page.on("console", (message) => {
+      // eslint-disable-next-line no-console -- deliberate: CARD-A2 failure evidence in the runner output
       if (message.type() === "error") console.log(`[rm-console] ${message.text().slice(0, 200)}`);
     });
     const origin = baseURL ?? "http://localhost:5173";

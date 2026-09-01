@@ -21,7 +21,7 @@ function place(item: CatalogueItem, n: number): PlacedItem[] {
     id: `${item.slug}-${String(index)}`,
     catalogueItemId: item.id,
     x: 0, y: 0, z: 0, rotationY: 0,
-    clothed: false, clothStyle: null, tableSetting: null, groupId: null,
+    clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null, groupId: null,
   }));
 }
 const withChairs = (chairs: number): PlacedItem[] => [...place(roundTable(), 8), ...place(chair(), chairs)];

@@ -789,3 +789,26 @@ describe("autoArrangeBanquet", () => {
     expect(usePlacementStore.getState().placedItems).toHaveLength(0);
   });
 });
+
+describe("clearTableSetting", () => {
+  it("removes the tableware from a dressed dining table", () => {
+    usePlacementStore.getState().placeItem(tableId, 0, 0);
+    const id = usePlacementStore.getState().placedItems[0]?.id ?? "";
+    usePlacementStore.getState().applyTableSetting(new Set([id]), "dinner");
+    expect(usePlacementStore.getState().placedItems[0]?.tableSetting).toBe("dinner");
+
+    usePlacementStore.getState().clearTableSetting(id);
+
+    expect(usePlacementStore.getState().placedItems[0]?.tableSetting).toBeNull();
+  });
+
+  it("is an identity no-op when the table has no setting", () => {
+    usePlacementStore.getState().placeItem(tableId, 0, 0);
+    const before = usePlacementStore.getState().placedItems;
+    const id = before[0]?.id ?? "";
+
+    usePlacementStore.getState().clearTableSetting(id);
+
+    expect(usePlacementStore.getState().placedItems).toBe(before);
+  });
+});

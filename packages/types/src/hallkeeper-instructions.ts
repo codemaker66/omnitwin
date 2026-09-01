@@ -139,6 +139,10 @@ export const PlacedObjectMetadataSchema = z.object({
   clothed: z.boolean().optional(),
   clothStyle: z.enum(["black", "white"]).nullable().optional(),
   tableSetting: z.enum(["dinner"]).nullable().optional(),
+  /** DRESSING (C2): the chair style dressed around this table ("Victoria"). */
+  chairStyle: z.string().max(40).nullable().optional(),
+  /** DRESSING (C2): the centrepiece on this table ("Grand Flora"). */
+  centerpiece: z.string().max(80).nullable().optional(),
   groupId: z.string().nullable().optional(),
   displayLabel: z.string().max(80).optional(),
   notes: z.string().max(500).optional(),

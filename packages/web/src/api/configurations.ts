@@ -26,6 +26,10 @@ export interface ObjectMetadata {
   readonly clothed?: boolean;
   readonly clothStyle?: "black" | "white" | null;
   readonly tableSetting?: "dinner" | null;
+  /** DRESSING (C2): chair style dressed around this table. */
+  readonly chairStyle?: string | null;
+  /** DRESSING (C2): the centrepiece on this table. */
+  readonly centerpiece?: string | null;
   readonly groupId?: string | null;
   /** Hallkeeper-visible seat/table label rendered in the planner. */
   readonly displayLabel?: string;
@@ -37,6 +41,8 @@ const ObjectMetadataResponseSchema = z.object({
   clothed: z.boolean().optional(),
   clothStyle: z.enum(["black", "white"]).nullable().optional(),
   tableSetting: z.enum(["dinner"]).nullable().optional(),
+  chairStyle: z.string().nullable().optional(),
+  centerpiece: z.string().nullable().optional(),
   groupId: z.string().nullable().optional(),
   displayLabel: z.string().optional(),
   notes: z.string().optional(),

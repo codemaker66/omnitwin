@@ -71,7 +71,7 @@ describe("SaveSendPanel visibility", () => {
   });
 
   it("requires configId", () => {
-    useEditorStore.setState({ objects: [{ id: "o1", assetDefinitionId: "a1", positionX: 0, positionY: 0, positionZ: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scale: 1, sortOrder: 0, clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "" }] });
+    useEditorStore.setState({ objects: [{ id: "o1", assetDefinitionId: "a1", positionX: 0, positionY: 0, positionZ: 0, rotationX: 0, rotationY: 0, rotationZ: 0, scale: 1, sortOrder: 0, clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null, groupId: null, notes: "" }] });
     // Still no configId — panel should return null
     expect(useEditorStore.getState().configId).toBeNull();
   });
@@ -176,7 +176,9 @@ describe("SaveSendPanel flush-before-send (#32) — source-grep", () => {
     const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
     // Positive: flushAutoSave is called somewhere in the click handler
     expect(codeOnly).toContain("await flushAutoSave()");
-    expect(codeOnly).toContain("if (!saved) return false");
+    // C2 widened the guard: an unsaved flush OR an active timeline preview
+    // both refuse to open the modal. The flush-before-send law is unchanged.
+    expect(codeOnly).toContain("if (!saved || isLayoutTimelineMutationLocked()) return false");
   });
 
   it("SaveSendPanel does not use the old direct-open click handler", async () => {

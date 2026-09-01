@@ -35,6 +35,7 @@ import { createActionEmitter } from "../lib/action-log.js";
 import { plannerActionContext } from "./planner-action-log.js";
 import { flushActionLog } from "./action-log-sync.js";
 import { postActionBatch } from "../api/action-log.js";
+import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 
 // ---------------------------------------------------------------------------
 // Editor object — local representation with numeric transforms
@@ -57,6 +58,10 @@ export interface EditorObject {
   readonly clothStyle: TableClothStyle | null;
   /** Tableware style placed on this table. Persisted in metadata. */
   readonly tableSetting: TableSettingStyle | null;
+  /** DRESSING (C2): chair style dressed around this table. Persisted in metadata. */
+  readonly chairStyle: string | null;
+  /** DRESSING (C2): the centrepiece on this table. Persisted in metadata. */
+  readonly centerpiece: string | null;
   /** Group ID — items sharing a groupId move together. Persisted in metadata. */
   readonly groupId: string | null;
   /**
@@ -104,6 +109,14 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
     clothed: meta.clothed === true,
     clothStyle,
     tableSetting,
+    chairStyle:
+      typeof meta.chairStyle === "string" && meta.chairStyle.trim().length > 0
+        ? meta.chairStyle.trim().slice(0, 40)
+        : null,
+    centerpiece:
+      typeof meta.centerpiece === "string" && meta.centerpiece.trim().length > 0
+        ? meta.centerpiece.trim().slice(0, 80)
+        : null,
     groupId: typeof meta.groupId === "string" ? meta.groupId : null,
     notes: typeof meta.notes === "string" ? meta.notes : "",
   };
@@ -138,6 +151,8 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
       clothed: o.clothed,
       clothStyle: o.clothed ? o.clothStyle ?? "black" : null,
       tableSetting: o.tableSetting,
+      chairStyle: o.chairStyle,
+      centerpiece: o.centerpiece,
       groupId: o.groupId,
       ...((o.label ?? "").trim().length > 0 ? { displayLabel: (o.label ?? "").trim() } : {}),
       ...(o.notes.length > 0 ? { notes: o.notes } : {}),
@@ -217,6 +232,12 @@ interface EditorActions {
    * and rounds it through metadata.notes.
    */
   readonly setObjectNotes: (objectId: string, notes: string) => void;
+  /** DRESSING (C2): set the chair style and/or centrepiece on a placement.
+   *  Empty strings clear. Same undo/dirty semantics as setObjectNotes. */
+  readonly setObjectDressing: (
+    objectId: string,
+    patch: { readonly chairStyle?: string | null; readonly centerpiece?: string | null },
+  ) => void;
   readonly removeObject: (objectId: string) => void;
   readonly selectObject: (id: string) => void;
   readonly deselectObject: () => void;
@@ -573,6 +594,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   addObject: (assetId, positionX, positionY, positionZ) => {
+    if (isLayoutTimelineMutationLocked()) return;
     // Loaded legacy rows still enter through loadConfiguration above. This
     // guard applies only to new imperative additions: dressing catalogue
     // entries are contextual actions, never standalone editor objects.
@@ -584,7 +606,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       positionX, positionY, positionZ,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: s.objects.length,
-      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
+      clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null, groupId: null, notes: "",
     };
     const after = [...s.objects, obj];
     set({
@@ -595,6 +617,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   updateObject: (objectId, transform) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const after = s.objects.map((o) => o.id === objectId ? { ...o, ...transform } : o);
     set({
@@ -605,6 +628,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   moveObjectsByDelta: (ids, dx, dz) => {
+    if (isLayoutTimelineMutationLocked()) return;
     if (ids.size === 0) return;
     if (dx === 0 && dz === 0) return;
     const s = get();
@@ -621,6 +645,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   setObjectNotes: (objectId, notes) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const after = s.objects.map((o) => o.id === objectId ? { ...o, notes } : o);
     set({
@@ -628,9 +653,43 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       isDirty: true,
       history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
     });
+    // Notes never touch the placement store, so the bridge's scene
+    // subscription cannot schedule the save — request it here, like
+    // undo/redo do, or the note sits dirty until the next drag.
+    autosaveRequester?.();
+  },
+
+  setObjectDressing: (objectId, patch) => {
+    if (isLayoutTimelineMutationLocked()) return;
+    const s = get();
+    const normalize = (value: string | null, max: number): string | null => {
+      const trimmed = (value ?? "").trim();
+      return trimmed.length === 0 ? null : trimmed.slice(0, max);
+    };
+    const after = s.objects.map((o) => {
+      if (o.id !== objectId) return o;
+      return {
+        ...o,
+        ...(patch.chairStyle !== undefined
+          ? { chairStyle: normalize(patch.chairStyle, 40) }
+          : {}),
+        ...(patch.centerpiece !== undefined
+          ? { centerpiece: normalize(patch.centerpiece, 80) }
+          : {}),
+      };
+    });
+    set({
+      objects: after,
+      isDirty: true,
+      history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
+    });
+    // Same as setObjectNotes: dressing text edits are editor-store-only
+    // mutations; the scene bridge never sees them, so ask for the save.
+    autosaveRequester?.();
   },
 
   removeObject: (objectId) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const after = s.objects.filter((o) => o.id !== objectId);
     const selectionAfter = captureSelection(s.selectedObjectId).filter((id) => id !== objectId);
@@ -646,6 +705,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   deselectObject: () => { set({ selectedObjectId: null }); },
 
   saveToServer: async (isAuthenticated) => {
+    if (isLayoutTimelineMutationLocked()) return false;
     const { configId, configRevision, objects, isSaving, isPublicPreview } = get();
     if (configId === null || isSaving) return false;
     // G4: a save is a gesture boundary — seal the open gesture into the log.
@@ -782,6 +842,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   replaceObjectsFromScene: (objects) => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const history = recordedHistory(s.history, s.selectedObjectId, s.objects, objects);
     if (history === null) return;
@@ -789,6 +850,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   undo: () => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const step = performUndo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
@@ -800,6 +862,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   redo: () => {
+    if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const step = performRedo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
@@ -811,6 +874,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   bumpHistoryEpoch: () => {
+    if (isLayoutTimelineMutationLocked()) return;
     interactionEpoch++;
   },
 }));
