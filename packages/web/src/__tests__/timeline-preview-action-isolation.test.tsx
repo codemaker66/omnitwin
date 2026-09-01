@@ -71,7 +71,7 @@ const object: EditorObject = {
   sortOrder: 0,
   clothed: false,
   clothStyle: null,
-  tableSetting: null,
+  tableSetting: null, chairStyle: null, centerpiece: null,
   groupId: null,
   notes: "",
 };

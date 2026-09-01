@@ -58,6 +58,10 @@ export interface EditorObject {
   readonly clothStyle: TableClothStyle | null;
   /** Tableware style placed on this table. Persisted in metadata. */
   readonly tableSetting: TableSettingStyle | null;
+  /** DRESSING (C2): chair style dressed around this table. Persisted in metadata. */
+  readonly chairStyle: string | null;
+  /** DRESSING (C2): the centrepiece on this table. Persisted in metadata. */
+  readonly centerpiece: string | null;
   /** Group ID — items sharing a groupId move together. Persisted in metadata. */
   readonly groupId: string | null;
   /**
@@ -105,6 +109,14 @@ export function placedObjectToEditor(p: PlacedObject): EditorObject {
     clothed: meta.clothed === true,
     clothStyle,
     tableSetting,
+    chairStyle:
+      typeof meta.chairStyle === "string" && meta.chairStyle.trim().length > 0
+        ? meta.chairStyle.trim().slice(0, 40)
+        : null,
+    centerpiece:
+      typeof meta.centerpiece === "string" && meta.centerpiece.trim().length > 0
+        ? meta.centerpiece.trim().slice(0, 80)
+        : null,
     groupId: typeof meta.groupId === "string" ? meta.groupId : null,
     notes: typeof meta.notes === "string" ? meta.notes : "",
   };
@@ -139,6 +151,8 @@ export function editorToBatch(o: EditorObject): BatchObjectInput {
       clothed: o.clothed,
       clothStyle: o.clothed ? o.clothStyle ?? "black" : null,
       tableSetting: o.tableSetting,
+      chairStyle: o.chairStyle,
+      centerpiece: o.centerpiece,
       groupId: o.groupId,
       ...((o.label ?? "").trim().length > 0 ? { displayLabel: (o.label ?? "").trim() } : {}),
       ...(o.notes.length > 0 ? { notes: o.notes } : {}),
@@ -218,6 +232,12 @@ interface EditorActions {
    * and rounds it through metadata.notes.
    */
   readonly setObjectNotes: (objectId: string, notes: string) => void;
+  /** DRESSING (C2): set the chair style and/or centrepiece on a placement.
+   *  Empty strings clear. Same undo/dirty semantics as setObjectNotes. */
+  readonly setObjectDressing: (
+    objectId: string,
+    patch: { readonly chairStyle?: string | null; readonly centerpiece?: string | null },
+  ) => void;
   readonly removeObject: (objectId: string) => void;
   readonly selectObject: (id: string) => void;
   readonly deselectObject: () => void;
@@ -586,7 +606,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       positionX, positionY, positionZ,
       rotationX: 0, rotationY: 0, rotationZ: 0,
       scale: 1, sortOrder: s.objects.length,
-      clothed: false, clothStyle: null, tableSetting: null, groupId: null, notes: "",
+      clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null, groupId: null, notes: "",
     };
     const after = [...s.objects, obj];
     set({
@@ -628,6 +648,32 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return;
     const s = get();
     const after = s.objects.map((o) => o.id === objectId ? { ...o, notes } : o);
+    set({
+      objects: after,
+      isDirty: true,
+      history: recordedHistory(s.history, s.selectedObjectId, s.objects, after) ?? s.history,
+    });
+  },
+
+  setObjectDressing: (objectId, patch) => {
+    if (isLayoutTimelineMutationLocked()) return;
+    const s = get();
+    const normalize = (value: string | null, max: number): string | null => {
+      const trimmed = (value ?? "").trim();
+      return trimmed.length === 0 ? null : trimmed.slice(0, max);
+    };
+    const after = s.objects.map((o) => {
+      if (o.id !== objectId) return o;
+      return {
+        ...o,
+        ...(patch.chairStyle !== undefined
+          ? { chairStyle: normalize(patch.chairStyle, 40) }
+          : {}),
+        ...(patch.centerpiece !== undefined
+          ? { centerpiece: normalize(patch.centerpiece, 80) }
+          : {}),
+      };
+    });
     set({
       objects: after,
       isDirty: true,

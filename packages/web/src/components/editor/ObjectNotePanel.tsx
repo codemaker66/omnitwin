@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useEditorStore } from "../../stores/editor-store.js";
+import { usePlacementStore } from "../../stores/placement-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
+import { getCatalogueItem } from "../../lib/catalogue.js";
+import { canApplyTableLinenToItem, isDiningTableItem } from "../../lib/furniture-semantics.js";
 import { GOLD, BORDER, CARD_BG, TEXT_SEC, TEXT_MUT } from "../../constants/ui-palette.js";
 
 // ---------------------------------------------------------------------------
@@ -18,6 +21,154 @@ import { GOLD, BORDER, CARD_BG, TEXT_SEC, TEXT_MUT } from "../../constants/ui-pa
 // ---------------------------------------------------------------------------
 
 const MAX_NOTE = 500;
+const MAX_CHAIR_STYLE = 40;
+const MAX_CENTERPIECE = 80;
+
+const segmentStyle = (active: boolean): React.CSSProperties => ({
+  padding: "5px 10px", fontSize: 11, fontWeight: active ? 700 : 500,
+  background: active ? "rgba(201,168,76,0.16)" : "transparent",
+  color: active ? GOLD : TEXT_SEC,
+  border: `1px solid ${active ? GOLD : BORDER}`, borderRadius: 6,
+  cursor: "pointer", fontFamily: "inherit",
+});
+
+const dressingInputStyle: React.CSSProperties = {
+  width: "100%", boxSizing: "border-box",
+  padding: "6px 8px", borderRadius: 6,
+  background: "#111", color: "#eee",
+  border: `1px solid ${BORDER}`,
+  fontSize: 12, fontFamily: "inherit",
+};
+
+const rowLabelStyle: React.CSSProperties = {
+  fontSize: 10, fontWeight: 600, letterSpacing: "0.06em",
+  color: TEXT_SEC, textTransform: "uppercase",
+};
+
+/**
+ * DRESSING (C2) — segmented linen / place-setting controls plus free-text
+ * chair style and centrepiece for the selected table. Linen and tableware
+ * write through the placement store (the single catalogue-gated path the
+ * command deck already uses); chair style and centrepiece are placement
+ * metadata written through the editor store, so all four reach the
+ * hallkeeper sheet through the same auto-save batch as the note below.
+ */
+function DressingSection({ objectId }: { readonly objectId: string }): React.ReactElement | null {
+  const assetDefinitionId = useEditorStore((s) => {
+    const o = s.objects.find((x) => x.id === objectId);
+    return o === undefined ? null : o.assetDefinitionId;
+  });
+  const clothed = useEditorStore((s) => s.objects.find((x) => x.id === objectId)?.clothed ?? false);
+  const clothStyle = useEditorStore((s) => s.objects.find((x) => x.id === objectId)?.clothStyle ?? null);
+  const tableSetting = useEditorStore((s) => s.objects.find((x) => x.id === objectId)?.tableSetting ?? null);
+  const savedChairStyle = useEditorStore((s) => s.objects.find((x) => x.id === objectId)?.chairStyle ?? null);
+  const savedCenterpiece = useEditorStore((s) => s.objects.find((x) => x.id === objectId)?.centerpiece ?? null);
+  const setObjectDressing = useEditorStore((s) => s.setObjectDressing);
+
+  const [chairDraft, setChairDraft] = useState("");
+  const [centerpieceDraft, setCenterpieceDraft] = useState("");
+
+  // Same draft law as the note below: re-seed ONLY on selection change so an
+  // in-progress draft survives autosave/drag store ticks.
+  useEffect(() => {
+    const current = useEditorStore.getState().objects.find((o) => o.id === objectId);
+    setChairDraft(current?.chairStyle ?? "");
+    setCenterpieceDraft(current?.centerpiece ?? "");
+  }, [objectId]);
+
+  const catalogueItem = assetDefinitionId === null ? undefined : getCatalogueItem(assetDefinitionId);
+  if (catalogueItem === undefined || !canApplyTableLinenToItem(catalogueItem)) return null;
+  const dining = isDiningTableItem(catalogueItem);
+
+  const commitChair = (): void => {
+    if (chairDraft.trim() !== (savedChairStyle ?? "")) {
+      setObjectDressing(objectId, { chairStyle: chairDraft });
+    }
+  };
+  const commitCenterpiece = (): void => {
+    if (centerpieceDraft.trim() !== (savedCenterpiece ?? "")) {
+      setObjectDressing(objectId, { centerpiece: centerpieceDraft });
+    }
+  };
+  const onEnterBlur = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === "Enter") e.currentTarget.blur();
+  };
+
+  const linen: "none" | "white" | "black" = clothed ? (clothStyle === "white" ? "white" : "black") : "none";
+  const placement = usePlacementStore.getState;
+
+  return (
+    <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${BORDER}` }}>
+      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase", marginBottom: 8 }}>
+        Dressing
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: dining ? 8 : 0 }}>
+        <span style={rowLabelStyle}>Linen</span>
+        <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Table linen">
+          <button type="button" aria-pressed={linen === "none"} style={segmentStyle(linen === "none")}
+            onClick={() => { if (clothed) placement().toggleCloth(objectId); }}>
+            None
+          </button>
+          <button type="button" aria-pressed={linen === "white"} style={segmentStyle(linen === "white")}
+            onClick={() => { placement().applyTableCloth(new Set([objectId]), "white"); }}>
+            White
+          </button>
+          <button type="button" aria-pressed={linen === "black"} style={segmentStyle(linen === "black")}
+            onClick={() => { placement().applyTableCloth(new Set([objectId]), "black"); }}>
+            Black
+          </button>
+        </div>
+      </div>
+
+      {dining && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={rowLabelStyle}>Place setting</span>
+            <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Place setting">
+              <button type="button" aria-pressed={tableSetting === null} style={segmentStyle(tableSetting === null)}
+                onClick={() => { placement().clearTableSetting(objectId); }}>
+                None
+              </button>
+              <button type="button" aria-pressed={tableSetting === "dinner"} style={segmentStyle(tableSetting === "dinner")}
+                onClick={() => { placement().applyTableSetting(new Set([objectId]), "dinner"); }}>
+                Dinner
+              </button>
+            </div>
+          </div>
+
+          <label style={{ display: "block", marginBottom: 8 }}>
+            <span style={{ ...rowLabelStyle, display: "block", marginBottom: 3 }}>Chair style</span>
+            <input
+              type="text"
+              value={chairDraft}
+              maxLength={MAX_CHAIR_STYLE}
+              placeholder="e.g. Chiavari gold, house banquet"
+              onChange={(e) => { setChairDraft(e.target.value); }}
+              onBlur={commitChair}
+              onKeyDown={onEnterBlur}
+              style={dressingInputStyle}
+            />
+          </label>
+
+          <label style={{ display: "block" }}>
+            <span style={{ ...rowLabelStyle, display: "block", marginBottom: 3 }}>Centrepiece</span>
+            <input
+              type="text"
+              value={centerpieceDraft}
+              maxLength={MAX_CENTERPIECE}
+              placeholder="e.g. low white florals, candelabra"
+              onChange={(e) => { setCenterpieceDraft(e.target.value); }}
+              onBlur={commitCenterpiece}
+              onKeyDown={onEnterBlur}
+              style={dressingInputStyle}
+            />
+          </label>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function ObjectNotePanel(): React.ReactElement | null {
   const selectedId = useEditorStore((s) => s.selectedObjectId);
@@ -74,7 +225,7 @@ export function ObjectNotePanel(): React.ReactElement | null {
   return (
     <section
       role="region"
-      aria-label="Object note editor"
+      aria-label="Selected object dressing and note"
       style={{
         position: "fixed",
         bottom: 20, right: 20,
@@ -88,6 +239,8 @@ export function ObjectNotePanel(): React.ReactElement | null {
         fontFamily: "'Inter', system-ui, sans-serif",
       }}
     >
+      <DressingSection objectId={selectedId} />
+
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <div>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>

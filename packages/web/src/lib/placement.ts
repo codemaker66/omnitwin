@@ -503,6 +503,10 @@ export interface PlacedItem {
   readonly clothStyle: TableClothStyle | null;
   /** Tableware placed on this table. Null when no table setting is applied. */
   readonly tableSetting: TableSettingStyle | null;
+  /** DRESSING (C2): chair style dressed around this table. */
+  readonly chairStyle?: string | null;
+  /** DRESSING (C2): the centrepiece on this table. */
+  readonly centerpiece?: string | null;
   /** Group ID — items sharing a groupId move together (e.g. table + its chairs). */
   readonly groupId: string | null;
 }

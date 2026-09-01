@@ -62,7 +62,7 @@ function editorObj(id: string, over: Partial<EditorObject> = {}): EditorObject {
     sortOrder: objSeq++,
     clothed: false,
     clothStyle: null,
-    tableSetting: null,
+    tableSetting: null, chairStyle: null, centerpiece: null,
     groupId: null,
     notes: "",
     ...over,

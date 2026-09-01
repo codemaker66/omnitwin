@@ -55,7 +55,7 @@ function makeObj(
     rotationZ: 0,
     scale: 1,
     sortOrder: 0,
-    clothed: false, clothStyle: null, tableSetting: null,
+    clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null,
     groupId,
     notes: "",
   };

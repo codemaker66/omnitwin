@@ -141,7 +141,7 @@ describe("EditorBridge component", () => {
     // Push directly into placement-store to simulate a user interaction.
     usePlacementStore.setState({
       placedItems: [
-        { id: "p1", catalogueItemId: "round-table", x: 1, y: 0, z: 2, rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, groupId: null },
+        { id: "p1", catalogueItemId: "round-table", x: 1, y: 0, z: 2, rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null, groupId: null },
       ],
     });
 
@@ -181,7 +181,7 @@ describe("EditorBridge component", () => {
 
     usePlacementStore.setState({
       placedItems: [
-        { id: "p1", catalogueItemId: "round-table", x: 1, y: 0, z: 2, rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, groupId: null },
+        { id: "p1", catalogueItemId: "round-table", x: 1, y: 0, z: 2, rotationY: 0, clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null, groupId: null },
       ],
     });
     await new Promise((r) => { setTimeout(r, 0); });
@@ -270,5 +270,31 @@ describe("keyboard-driven actions", () => {
     useEditorStore.getState().updateObject(id, { rotationY: current + Math.PI / 4 });
 
     expect(useEditorStore.getState().objects[0]?.rotationY).toBeCloseTo(Math.PI / 4);
+  });
+});
+
+describe("dressing metadata bridge roundtrip (C2)", () => {
+  it("carries chair style and centrepiece both ways across the bridge", async () => {
+    const { editorToPlacedItem, placedItemToEditor } = await import("../components/editor/EditorBridge.js");
+    const { getCatalogueItemBySlug } = await import("../lib/catalogue.js");
+    const { createPlacedItem } = await import("../lib/placement.js");
+    const tableId = getCatalogueItemBySlug("round-table-6ft")?.id;
+    expect(tableId).toBeDefined();
+    if (tableId === undefined) return;
+
+    const placed = {
+      ...createPlacedItem(tableId, 1, -2, 0),
+      id: "dressed-table",
+      chairStyle: "Chiavari gold",
+      centerpiece: "candelabra",
+    };
+
+    const editor = placedItemToEditor(placed, undefined);
+    expect(editor.chairStyle).toBe("Chiavari gold");
+    expect(editor.centerpiece).toBe("candelabra");
+
+    const restored = editorToPlacedItem(editor);
+    expect(restored.chairStyle).toBe("Chiavari gold");
+    expect(restored.centerpiece).toBe("candelabra");
   });
 });

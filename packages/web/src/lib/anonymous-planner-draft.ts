@@ -21,6 +21,9 @@ const EditorObjectDraftSchema = z.object({
   clothed: z.boolean(),
   clothStyle: z.enum(["black", "white"]).nullable().default(null),
   tableSetting: z.enum(["dinner"]).nullable().default(null),
+  // DRESSING (C2) fields default so pre-C2 drafts still restore.
+  chairStyle: z.string().max(40).nullable().default(null),
+  centerpiece: z.string().max(80).nullable().default(null),
   groupId: z.string().nullable(),
   label: z.string().max(80).optional(),
   notes: z.string(),

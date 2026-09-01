@@ -22,7 +22,7 @@ function item(id: string, x: number): PlacedItem {
     rotationY: 0,
     clothed: false,
     clothStyle: null,
-    tableSetting: null,
+    tableSetting: null, chairStyle: null, centerpiece: null,
     groupId: null,
   };
 }
@@ -428,8 +428,10 @@ describe("layout timeline preview store", () => {
     useEditorStore.getState().removeObject(editorBefore[0]?.id ?? "missing");
     useEditorStore.getState().undo();
     useEditorStore.getState().redo();
+    useEditorStore.getState().setObjectDressing(editorBefore[0]?.id ?? "missing", { chairStyle: "blocked" });
     usePlacementStore.getState().moveItem("saved-chair", 4, 0);
     usePlacementStore.getState().removeItem("saved-chair");
+    usePlacementStore.getState().clearTableSetting("saved-chair");
     usePlacementStore.getState().clearAll();
 
     expect(useEditorStore.getState().objects).toBe(editorBefore);

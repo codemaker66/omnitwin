@@ -92,6 +92,8 @@ export interface PlacementState {
   readonly applyTableCloth: (ids: ReadonlySet<string>, style: TableClothStyle) => void;
   /** Apply dinner tableware to one or more placed tables. */
   readonly applyTableSetting: (ids: ReadonlySet<string>, setting: TableSettingStyle) => void;
+  /** Remove the tableware from a placed dining table. */
+  readonly clearTableSetting: (id: string) => void;
   /** Set the hallkeeper-visible label for a placed chair/table. Empty clears. */
   readonly setItemLabel: (id: string, label: string) => void;
   /** Toggle grid snap. */
@@ -396,6 +398,18 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
       return { ...item, tableSetting: setting };
     });
     set({ placedItems });
+  },
+
+  clearTableSetting: (id: string) => {
+    if (isLayoutTimelineMutationLocked()) return;
+    const state = get();
+    const target = state.placedItems.find((item) => item.id === id);
+    if (target === undefined || target.tableSetting === null) return;
+    set({
+      placedItems: state.placedItems.map((item) =>
+        item.id === id ? { ...item, tableSetting: null } : item,
+      ),
+    });
   },
 
   setItemLabel: (id: string, label: string) => {

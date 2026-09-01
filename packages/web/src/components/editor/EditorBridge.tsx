@@ -67,6 +67,10 @@ export function editorToPlacedItem(obj: EditorObject): PlacedItem {
     clothed: obj.clothed,
     clothStyle: obj.clothStyle,
     tableSetting: obj.tableSetting,
+    // Dressing keys are omitted (not stamped null) so bridge output stays
+    // deep-equal to createPlacedItem shapes for undressed items.
+    ...(obj.chairStyle !== null ? { chairStyle: obj.chairStyle } : {}),
+    ...(obj.centerpiece !== null ? { centerpiece: obj.centerpiece } : {}),
     groupId: obj.groupId,
   };
 }
@@ -104,6 +108,8 @@ export function placedItemToEditor(item: PlacedItem, existing: EditorObject | un
     clothed: item.clothed,
     clothStyle: item.clothStyle,
     tableSetting: item.tableSetting,
+    chairStyle: item.chairStyle ?? null,
+    centerpiece: item.centerpiece ?? null,
     groupId: item.groupId,
     notes: existing?.notes ?? "",
   };
@@ -128,6 +134,8 @@ function itemsMatch(a: readonly PlacedItem[], b: readonly EditorObject[]): boole
     if (pa.clothed !== eb.clothed) return false;
     if (pa.clothStyle !== eb.clothStyle) return false;
     if (pa.tableSetting !== eb.tableSetting) return false;
+    if ((pa.chairStyle ?? null) !== (eb.chairStyle ?? null)) return false;
+    if ((pa.centerpiece ?? null) !== (eb.centerpiece ?? null)) return false;
     if (pa.groupId !== eb.groupId) return false;
     if ((pa.label ?? "") !== (eb.label ?? "")) return false;
   }

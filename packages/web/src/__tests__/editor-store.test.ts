@@ -98,7 +98,7 @@ describe("loadConfiguration", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: true, clothStyle: "black", tableSetting: null,
+      clothed: true, clothStyle: "black", tableSetting: null, chairStyle: null, centerpiece: null,
       groupId: "group-draft",
       notes: "Head table",
     };
@@ -135,7 +135,7 @@ describe("loadConfiguration", () => {
       sortOrder: 0,
       clothed: true,
       clothStyle: "black",
-      tableSetting: null,
+      tableSetting: null, chairStyle: null, centerpiece: null,
       groupId: "group-draft",
       notes: "Stale head table",
     };
@@ -242,7 +242,7 @@ describe("editorToBatch", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: false, clothStyle: null, tableSetting: null,
+      clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null,
       groupId: null,
       notes: "",
     });
@@ -263,7 +263,7 @@ describe("editorToBatch", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: false, clothStyle: null, tableSetting: null,
+      clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null,
       groupId: null,
       notes: "",
     });
@@ -284,7 +284,7 @@ describe("editorToBatch", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: false, clothStyle: null, tableSetting: null,
+      clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null,
       groupId: null,
       label: "Bride",
       notes: "",
@@ -307,7 +307,7 @@ describe("editorToBatch", () => {
       rotationZ: 0,
       scale: 1,
       sortOrder: 0,
-      clothed: true, clothStyle: "black", tableSetting: null,
+      clothed: true, clothStyle: "black", tableSetting: null, chairStyle: null, centerpiece: null,
       groupId: "group-1",
       notes: "",
     });
@@ -361,6 +361,82 @@ describe("setObjectNotes", () => {
 
     expect(useEditorStore.getState().objects[0]?.notes).toBe("");
     expect(useEditorStore.getState().objects).toHaveLength(initialObjects.length);
+  });
+});
+
+describe("setObjectDressing", () => {
+  it("sets chair style and centrepiece and marks dirty", () => {
+    useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+    const id = useEditorStore.getState().objects[0]?.id ?? "";
+
+    useEditorStore.getState().setObjectDressing(id, {
+      chairStyle: "Chiavari gold",
+      centerpiece: "low white florals",
+    });
+
+    const obj = useEditorStore.getState().objects[0];
+    expect(obj?.chairStyle).toBe("Chiavari gold");
+    expect(obj?.centerpiece).toBe("low white florals");
+    expect(useEditorStore.getState().isDirty).toBe(true);
+  });
+
+  it("applies a partial patch without touching the other field", () => {
+    useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+    const id = useEditorStore.getState().objects[0]?.id ?? "";
+    useEditorStore.getState().setObjectDressing(id, { chairStyle: "house banquet" });
+
+    useEditorStore.getState().setObjectDressing(id, { centerpiece: "candelabra" });
+
+    const obj = useEditorStore.getState().objects[0];
+    expect(obj?.chairStyle).toBe("house banquet");
+    expect(obj?.centerpiece).toBe("candelabra");
+  });
+
+  it("trims whitespace and caps at the metadata limits (40/80)", () => {
+    useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+    const id = useEditorStore.getState().objects[0]?.id ?? "";
+
+    useEditorStore.getState().setObjectDressing(id, {
+      chairStyle: "  " + "c".repeat(60) + "  ",
+      centerpiece: "  " + "p".repeat(100) + "  ",
+    });
+
+    const obj = useEditorStore.getState().objects[0];
+    expect(obj?.chairStyle).toBe("c".repeat(40));
+    expect(obj?.centerpiece).toBe("p".repeat(80));
+  });
+
+  it("clears a field when passed an empty or whitespace-only string", () => {
+    useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+    const id = useEditorStore.getState().objects[0]?.id ?? "";
+    useEditorStore.getState().setObjectDressing(id, { chairStyle: "Victoria", centerpiece: "Grand Flora" });
+
+    useEditorStore.getState().setObjectDressing(id, { chairStyle: "", centerpiece: "   " });
+
+    const obj = useEditorStore.getState().objects[0];
+    expect(obj?.chairStyle).toBeNull();
+    expect(obj?.centerpiece).toBeNull();
+  });
+
+  it("is a no-op for unknown object ids (defensive)", () => {
+    useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+
+    useEditorStore.getState().setObjectDressing("not-a-real-id", { chairStyle: "ghost" });
+
+    expect(useEditorStore.getState().objects[0]?.chairStyle).toBeNull();
+  });
+
+  it("lands on the undo timeline", () => {
+    useEditorStore.getState().addObject("asset-1", 0, 0, 0);
+    const id = useEditorStore.getState().objects[0]?.id ?? "";
+
+    useEditorStore.getState().setObjectDressing(id, { chairStyle: "Chiavari gold" });
+    useEditorStore.getState().undo();
+
+    expect(useEditorStore.getState().objects[0]?.chairStyle).toBeNull();
+
+    useEditorStore.getState().redo();
+    expect(useEditorStore.getState().objects[0]?.chairStyle).toBe("Chiavari gold");
   });
 });
 
@@ -582,7 +658,7 @@ function fixtureObj(
     rotationZ: 0,
     scale: 1,
     sortOrder: 0,
-    clothed: false, clothStyle: null, tableSetting: null,
+    clothed: false, clothStyle: null, tableSetting: null, chairStyle: null, centerpiece: null,
     groupId,
     notes: "",
   };
