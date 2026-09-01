@@ -4,6 +4,7 @@ export * from "./grand-hall-xgrids-lcc-preflight-cli.js";
 export * from "./grand-hall-xgrids-lcc-windows.js";
 export * from "./grand-hall-xgrids-lcc-pose-lineage-contract.js";
 export * from "./grand-hall-xgrids-lcc-pose-lineage.js";
+export * from "./grand-hall-xgrids-xbag-camera-calibration.js";
 export * from "./grand-hall-authority-none-icp-seed-adapter.js";
 export * from "./grand-hall-processed-big-inventory.js";
 export * from "./grand-hall-coordinate-free-nomination-checkpoint.js";

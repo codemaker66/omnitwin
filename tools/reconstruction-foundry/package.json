@@ -27,6 +27,7 @@
     "grand-hall-matterport-boundary-contact-sheet": "tsx src/grand-hall-matterport-boundary-contact-sheet-entry.ts",
     "grand-hall-lcc-preflight": "tsx src/grand-hall-xgrids-lcc-preflight-entry.ts",
     "grand-hall-xgrids-lcc-pose-lineage": "tsx src/grand-hall-xgrids-lcc-pose-lineage-entry.ts",
+    "grand-hall-xgrids-xbag-camera-calibration": "tsx src/grand-hall-xgrids-xbag-camera-calibration-entry.ts",
     "grand-hall-t554-acceptance": "tsx src/grand-hall-t554-acceptance-entry.ts",
     "grand-hall-t554-boundary-review": "tsx src/grand-hall-t554-boundary-review-entry.mts",
     "grand-hall-t554-cleanup-marker-evidence-v2": "tsx src/grand-hall-t554-cleanup-marker-evidence-entry.ts",
