@@ -165,7 +165,7 @@ curl.exe -s https://api.venviewer.com/health/version
 # {"version":"0.0.4","gitSha":"<the SHA you pushed>","builtAt":"<ISO timestamp>","nodeEnv":"production"}
 ```
 
-`gitSha` matching the pushed SHA is conclusive proof the new image is serving. If it reads `dev`, you either skipped §5's stamp or the deploy did not land — check which before concluding anything.
+`gitSha` matching the pushed SHA is conclusive proof the new image is serving. If it reads `dev`, you either skipped §5's stamp or the deploy did not land — check which before concluding anything. Since 4cf535d5 a GitHub-triggered deploy reports its own commit via `RAILWAY_GIT_COMMIT_SHA` without any stamp; `builtAt` on such a deploy is still whatever `BUILD_TIMESTAMP` was last set to by hand, so treat it as advisory and `gitSha` as the truth. Verified 2026-09-02: deployment 0fc821c8 served ~120 s after the push, `gitSha` 4cf535d5.
 
 **Always also run the behaviour probes.** They are what caught the truth for months while the SHA lied, and they verify the app rather than its label:
 
