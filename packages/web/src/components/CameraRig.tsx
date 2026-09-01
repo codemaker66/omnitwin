@@ -174,7 +174,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     [stableDimensions, aspect],
   );
   useEffect(() => {
-    if (humanPovActiveRef.current) return;
+    if (humanPovActiveRef.current || walkActiveRef.current) return;
     const [x, y, z] = computeDefaultCameraPosition(stableDimensions, aspect);
     camera.position.set(x, y, z);
     camera.lookAt(target[0], target[1], target[2]);
@@ -252,6 +252,57 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     useBookmarkStore.setState({ activeReferenceId: null });
     invalidate();
   }, [camera, invalidate]);
+
+  // ── Walk mode ──────────────────────────────────────────────────────────
+  // The cockpit's walk toggle puts InteriorCamera in charge of the default
+  // camera. The rig yields exactly the way it does for human POV: controls
+  // disabled, keyboard state cleared, planner pose saved on entry and restored
+  // on exit. Entering walk exits human POV first — two eye-level owners at
+  // once would fight over the same camera.
+  const walkActiveRef = useRef(false);
+  const walkRestorePoseRef = useRef<{ position: Vector3; target: Vector3 } | null>(null);
+
+  const applyWalkMode = useCallback((walk: boolean): void => {
+    if (walk === walkActiveRef.current) return;
+    const controls = controlsRef.current;
+    if (walk && humanPovActiveRef.current) leaveHumanPovMode(false);
+    walkActiveRef.current = walk;
+    keyboardKeys.clear();
+    if (walk) {
+      if (controls !== null) {
+        if (walkRestorePoseRef.current === null) {
+          walkRestorePoseRef.current = {
+            position: camera.position.clone(),
+            target: controls.target.clone(),
+          };
+        }
+        controls.enabled = false;
+      }
+      return;
+    }
+    if (controls !== null) {
+      controls.enabled = true;
+      const pose = walkRestorePoseRef.current;
+      if (pose !== null) {
+        camera.position.copy(pose.position);
+        controls.target.copy(pose.target);
+        controls.update();
+      }
+    }
+    walkRestorePoseRef.current = null;
+    invalidate();
+  }, [camera, invalidate, leaveHumanPovMode]);
+
+  useEffect(() => {
+    applyWalkMode(useCockpitStore.getState().walkMode);
+    const unsubscribe = useCockpitStore.subscribe((state) => { applyWalkMode(state.walkMode); });
+    return () => {
+      unsubscribe();
+      // Unmounting mid-walk must not leave the store claiming a mode that no
+      // longer has a camera behind it.
+      applyWalkMode(false);
+    };
+  }, [applyWalkMode]);
 
   useEffect(() => {
     return useBookmarkStore.subscribe((state, previousState) => {
@@ -386,7 +437,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
 
     function onWheel(event: WheelEvent): void {
       event.preventDefault();
-      if (humanPovActiveRef.current) return;
+      if (humanPovActiveRef.current || walkActiveRef.current) return;
       const raw = event.deltaY;
       const delta = Math.sign(raw) * Math.min(Math.abs(raw), 150);
       const normalizedDelta = delta / 100;
@@ -504,6 +555,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
       const bookmark = store.bookmarks.find((b) => b.id === store.pendingNavigationId);
       if (bookmark !== undefined) {
         if (bookmark.kind === "reference") {
+          if (walkActiveRef.current) useCockpitStore.getState().setWalkMode(false);
           if (!humanPovActiveRef.current) savePlannerPoseBeforeHumanPov();
         } else if (humanPovActiveRef.current || humanPovRestorePoseRef.current !== null) {
           leaveHumanPovMode(false);
@@ -521,7 +573,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     }
 
     if (store.transition === null) {
-      if (humanPovActiveRef.current) {
+      if (humanPovActiveRef.current || walkActiveRef.current) {
         if (controls.enabled) controls.enabled = false;
         return;
       }

@@ -5,6 +5,9 @@ import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
 import type { AdaptiveResolutionOptions } from "../AdaptiveResolution.js";
 import { CameraRig } from "../CameraRig.js";
+import { InteriorCamera } from "../rooms/InteriorCamera.js";
+import { roomSplatBundle } from "../../data/room-splat-bundles.js";
+import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { GrandHallRoom } from "../GrandHallRoom.js";
 import { RoomMesh } from "./RoomMesh.js";
 import { SectionPlane } from "../SectionPlane.js";
@@ -53,6 +56,8 @@ const CAMERA_INTERACTION_SETTLE_MS = 420;
 export interface PlannerCanvasGlOptions {
   readonly antialias: boolean;
   readonly powerPreference: "high-performance";
+  /** Dev-only capture aid; see plannerCanvasGlForViewportWidth. */
+  readonly preserveDrawingBuffer: boolean;
 }
 
 export function plannerCanvasDprForViewportWidth(viewportWidth: number): [number, number] {
@@ -68,6 +73,14 @@ export function plannerCanvasGlForViewportWidth(viewportWidth: number): PlannerC
   return {
     antialias: viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH,
     powerPreference: "high-performance",
+    // Dev-only capture aid (?capture=1): keep the drawing buffer so evidence
+    // harnesses can read the canvas back with toDataURL. A settled demand-loop
+    // splat canvas gives the compositor no frames, and page.screenshot waits
+    // on one forever — in-page readback is the only capture path that returns
+    // (see .claude/gotchas/splat-camera-and-capture.md). Never on in
+    // production: the preserved buffer costs a fullscreen copy per frame.
+    preserveDrawingBuffer:
+      import.meta.env.DEV && new URLSearchParams(window.location.search).has("capture"),
   };
 }
 
@@ -103,6 +116,18 @@ function usePlannerViewportWidth(): number {
   }, []);
 
   return viewportWidth;
+}
+
+declare global {
+  interface Window {
+    __walkDebug?: {
+      walkMode: boolean;
+      roomSlug: string | null;
+      hasAsset: boolean;
+      hasWalkData: boolean;
+    };
+    __setWalkMode?: (value: boolean) => void;
+  }
 }
 
 function isCameraNavigationPointer(event: PointerEvent<HTMLDivElement>): boolean {
@@ -181,6 +206,36 @@ function useRoomDimensions(): SpaceDimensions {
 }
 
 /**
+ * Trades resolution for smoothness while the camera is being driven.
+ *
+ * Spark re-sorts every gaussian whenever the camera moves, so with a captured
+ * room mounted the expensive frames are exactly the ones during orbit, pan and
+ * wheel zoom. Motion hides softness; stillness is when detail gets looked at —
+ * so drop to `motionDpr` while the cockpit reports camera interaction and
+ * restore `settledDpr` when it stops. Walk mode manages its own budget in
+ * InteriorCamera, and a mesh-only scene is cheap enough not to bother.
+ */
+function PlannerAdaptiveResolution({ active }: { readonly active: boolean }): null {
+  const gl = useThree((state) => state.gl);
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    gl.setPixelRatio(active ? PLANNER_MOTION_DPR : PLANNER_SETTLED_DPR);
+    invalidate();
+    return () => {
+      gl.setPixelRatio(PLANNER_SETTLED_DPR);
+    };
+  }, [gl, invalidate, active]);
+  return null;
+}
+
+const PLANNER_SETTLED_DPR = 0.75;
+const PLANNER_MOTION_DPR = 0.5;
+
+/** How long after the last wheel tick the camera counts as still driving —
+ *  long enough to cover the rig's inertial zoom coast. */
+const WHEEL_INTERACTION_SETTLE_MS = 450;
+
+/**
  * The live editable planner scene — the single R3F canvas plus every editing
  * system (room geometry, furniture, selection, markup, circulation, camera).
  * Extracted from App so the planner cockpit can host it in its stage cell.
@@ -207,7 +262,56 @@ export function PlannerScene(): ReactElement {
   // splat is mounted AND the user has switched to pure Splat. The splat fades
   // in over the mesh (Hybrid / first load) — the captured room melting in.
   const layerMode = useCockpitStore((s) => s.layerMode);
-  const { splatUrls, transform, hasAsset, status: splatStatus } = useRoomRuntimeSplat();
+  const { splatUrls, transform, hasAsset, status: splatStatus, roomSlug } = useRoomRuntimeSplat();
+
+  // Walk mode — stand in the captured room at eye level. Available only when
+  // the mounted capture carries walk data (where the scanner stood and how far
+  // it went); a capture without it has no honest spawn point, so the toggle
+  // stays off rather than guessing one.
+  const walkMode = useCockpitStore((s) => s.walkMode);
+  const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
+  const walkBundle = useMemo(
+    () => (roomSlug !== null ? roomSplatBundle(roomSlug) : null),
+    [roomSlug],
+  );
+  const walkData = useMemo(() => {
+    const spawn = walkBundle?.spawn ?? null;
+    const walkBounds = walkBundle?.bounds ?? null;
+    if (!hasAsset || spawn === null || walkBounds === null) return null;
+    return {
+      spawn: { position: [...spawn.position] as [number, number, number], yaw: spawn.yaw },
+      bounds: {
+        min: [...walkBounds.min] as [number, number, number],
+        max: [...walkBounds.max] as [number, number, number],
+      },
+      roomHeightM: walkBundle?.extentM[1],
+    };
+  }, [hasAsset, walkBundle]);
+  // If the room changes to one with no walk data, the mode cannot stand.
+  useEffect(() => {
+    if (walkMode && walkData === null) useCockpitStore.getState().setWalkMode(false);
+  }, [walkMode, walkData]);
+
+  // DEV bridge for the walk mount conditions — the e2e reads this to say WHICH
+  // gate refused, instead of inferring it from a silent camera. __setWalkMode
+  // lets a probe flip the mode without a click, isolating input handling from
+  // the mount path.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    window.__walkDebug = {
+      walkMode,
+      roomSlug,
+      hasAsset,
+      hasWalkData: walkData !== null,
+    };
+    window.__setWalkMode = (value: boolean) => { useCockpitStore.getState().setWalkMode(value); };
+  }, [walkMode, roomSlug, hasAsset, walkData]);
+
+  // DEV bisect flag: ?walkNoCam=1 keeps walk mode's state transitions (the
+  // CameraRig yield included) but skips mounting InteriorCamera, so a hang can
+  // be attributed to one side or the other.
+  const walkCameraDisabled = import.meta.env.DEV
+    && new URLSearchParams(window.location.search).has("walkNoCam");
   const meshVisible = !hasAsset || layerMode !== "splat";
   const splatActive = hasAsset && layerMode !== "mesh";
 
@@ -241,6 +345,18 @@ export function PlannerScene(): ReactElement {
     useCockpitStore.getState().setCameraInteractionActive(true);
   }, [clearCameraInteractionTimer]);
 
+  // Pointer capture below never sees wheel zoom — the sort-heaviest
+  // interaction of all — so the wheel marks interaction itself, with a settle
+  // window sized to the rig's inertial coast.
+  const markWheelInteraction = useCallback((): void => {
+    clearCameraInteractionTimer();
+    useCockpitStore.getState().setCameraInteractionActive(true);
+    cameraInteractionClearTimer.current = window.setTimeout(() => {
+      cameraInteractionClearTimer.current = null;
+      useCockpitStore.getState().setCameraInteractionActive(false);
+    }, WHEEL_INTERACTION_SETTLE_MS);
+  }, [clearCameraInteractionTimer]);
+
   const markCameraInteractionSettling = useCallback((): void => {
     clearCameraInteractionTimer();
     cameraInteractionClearTimer.current = window.setTimeout(() => {
@@ -259,6 +375,7 @@ export function PlannerScene(): ReactElement {
       <div
         className="planner-scene-canvas-host"
         onPointerDownCapture={markCameraInteractionActive}
+        onWheelCapture={markWheelInteraction}
         onPointerUpCapture={markCameraInteractionSettling}
         onPointerCancelCapture={markCameraInteractionSettling}
         onPointerLeave={markCameraInteractionSettling}
@@ -310,7 +427,28 @@ export function PlannerScene(): ReactElement {
           <PlacementGhost />
           <SelectionSystem />
           <PlannerMotionOverlayLayers renderSceneOverlays={renderSceneOverlays} />
+          <PlannerAdaptiveResolution
+            active={cameraInteractionActive && splatActive && !walkMode}
+          />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} />
+          {walkMode && walkData !== null && !walkCameraDisabled && (
+            <InteriorCamera
+              key={roomSlug ?? "walk"}
+              spawn={walkData.spawn}
+              bounds={walkData.bounds}
+              roomHeightM={walkData.roomHeightM}
+              reducedMotion={prefersReducedMotion()}
+              // Walk holds the planner's own 0.75 budget on BOTH sides:
+              // raising resolution at walk entry means a drawing-buffer resize
+              // racing Spark's first walk frame, which intermittently wedges
+              // the GL thread on slow GPUs (observed as an evaluate-starving
+              // native hang; the store-driven bisect without the resize passed
+              // repeatedly). The /room walkthrough keeps its raise — its
+              // canvas is created at that size, so it never resizes mid-scene.
+              settledDpr={0.75}
+              motionDpr={0.75}
+            />
+          )}
           {import.meta.env.DEV && <PerfMonitor />}
         </Canvas>
       </div>

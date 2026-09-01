@@ -71,6 +71,16 @@ export interface InteriorCameraProps {
   readonly bounds: Bounds;
   /** Ceiling height above the floor, so the pitch limit can suit the room. */
   readonly roomHeightM?: number;
+  /**
+   * Pixel ratio while the view is settled / in motion.
+   *
+   * The walkthrough page keeps the defaults (full detail at rest, 1 while
+   * driving). The planner passes its own budget: its canvas normally runs at
+   * 0.75 and must get that exact value back when walk mode ends — which the
+   * unmount restore below guarantees.
+   */
+  readonly settledDpr?: number;
+  readonly motionDpr?: number;
   /** Skip the settling entirely for people who asked for less motion. */
   readonly reducedMotion?: boolean;
 }
@@ -80,6 +90,8 @@ export function InteriorCamera({
   bounds,
   roomHeightM,
   reducedMotion = false,
+  settledDpr,
+  motionDpr = 1,
 }: InteriorCameraProps): ReactElement {
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
@@ -93,6 +105,19 @@ export function InteriorCamera({
       : Math.max(0.2, roomHeightM - spawn.position[1]);
     return maxPitchUpFor(headroom);
   }, [roomHeightM, spawn]);
+
+  useEffect(() => {
+    const mountDpr = gl.getPixelRatio();
+    return () => { gl.setPixelRatio(mountDpr); };
+  }, [gl]);
+
+  // Wake the demand loop the moment this camera takes over. Its useFrame is
+  // what teleports the view to the spawn — and useFrame cannot run while the
+  // loop is idle, which it is whenever this mounts into an already-settled
+  // scene (the planner's walk toggle, exactly). Without this the frame stays
+  // frozen on the plan view until the first drag. The walkthrough page never
+  // showed it because tile loads kept invalidating around mount.
+  useEffect(() => { invalidate(); }, [invalidate, spawn, bounds]);
 
   const start = useMemo<CameraState>(() => ({
     position: containPosition(spawn.position, bounds),
@@ -272,7 +297,9 @@ export function InteriorCamera({
     // moves continuously turns an occasional cost into a per-frame one. Drop
     // resolution while the viewer is driving and restore it once they stop:
     // motion hides the softness, and stillness is when detail gets looked at.
-    const wantedDpr = settled ? Math.min(window.devicePixelRatio, 2) : 1;
+    const wantedDpr = settled
+      ? (settledDpr ?? Math.min(window.devicePixelRatio, 2))
+      : motionDpr;
     if (gl.getPixelRatio() !== wantedDpr) gl.setPixelRatio(wantedDpr);
 
     // Sustain the loop while anything is resolving, and let it stop when

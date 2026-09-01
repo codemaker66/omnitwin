@@ -22,7 +22,15 @@ function webServerCommand(): string {
   if (IS_PREVIEW_MODE) {
     return "pnpm exec vite preview --host 127.0.0.1 --port 4176";
   }
-  return "pnpm dev";
+  // E2E_PORT pins the dev server to a port nothing else squats: vite's
+  // default 5173 is contested on shared dev machines, and reuseExistingServer
+  // then attaches the run to whatever code the squatter serves. --host
+  // 127.0.0.1 on both sides because Windows resolves localhost to ::1 first
+  // while vite binds v4, which times out the readiness poll against a
+  // healthy server.
+  const port = process.env["E2E_PORT"];
+  if (port === undefined) return "pnpm dev";
+  return `pnpm dev --host 127.0.0.1 --port ${port} --strictPort`;
 }
 
 export default defineConfig({
@@ -59,6 +67,8 @@ export default defineConfig({
     command: webServerCommand(),
     url: BASE_URL,
     reuseExistingServer: !process.env["CI"],
-    timeout: IS_PREVIEW_MODE ? 60_000 : 30_000,
+    // 120s: a cold vite boot on a loaded machine can exceed 30s, and a boot
+    // timeout reads as a mysterious run failure rather than what it is.
+    timeout: IS_PREVIEW_MODE ? 60_000 : 120_000,
   } : undefined,
 });

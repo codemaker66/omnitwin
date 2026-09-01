@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
 
 type Vector3Tuple = readonly [number, number, number];
@@ -31,6 +31,16 @@ export interface SparkSplatLayerProps {
   readonly url: string;
   readonly visible?: boolean;
   readonly opacity?: number;
+  /**
+   * Per-frame opacity source, for animated dissolves.
+   *
+   * When present it is polled inside useFrame and written straight onto the
+   * SplatMesh — no React state, props, or reconciliation in the loop. The
+   * caller owns invalidation (keep the demand loop awake while easing) and
+   * MUST keep this function identity-stable: it is deliberately excluded from
+   * the load effect, but churning it defeats the point of having it.
+   */
+  readonly opacityFn?: () => number;
   readonly position?: Vector3Tuple;
   readonly rotation?: Vector3Tuple;
   readonly scale?: ScaleValue;
@@ -106,8 +116,24 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
     rotation = DEFAULT_ROTATION,
     scale = DEFAULT_SCALE,
     includeRendererHost = true,
+    opacityFn,
   } = props;
   const invalidate = useThree((state) => state.invalidate);
+  const opacityFnRef = useRef<(() => number) | undefined>(opacityFn);
+  useEffect(() => { opacityFnRef.current = opacityFn; }, [opacityFn]);
+
+  // Animated opacity bypasses React entirely: poll the source and write the
+  // mesh. Visibility follows so a fully-dissolved splat costs no sort.
+  useFrame(() => {
+    const fn = opacityFnRef.current;
+    const current = meshRef.current;
+    if (fn === undefined || current === null) return;
+    const next = fn();
+    if (current.opacity !== next) {
+      current.opacity = next;
+      current.visible = latestLayerPropsRef.current.visible && next > 0.002;
+    }
+  });
   const [mesh, setMesh] = useState<SplatMesh | null>(null);
   const meshRef = useRef<SplatMesh | null>(null);
   const layerProps = useMemo<LayerVisualProps>(() => ({

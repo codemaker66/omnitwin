@@ -43,3 +43,17 @@
   border-color: rgba(255, 239, 177, 0.6);
   box-shadow: 0 6px 16px rgba(201, 168, 76, 0.24);
 }
+
+/* Separates the render-layer choice from the camera-mode action beside it —
+   they answer different questions and should not read as one radio group. */
+.cockpit-layer-controls__divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 4px;
+  background: rgba(245, 240, 232, 0.14);
+}
+
+.cockpit-layer-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
