@@ -3,6 +3,7 @@ import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { runtimeAssetCameraViewForRoom } from "../lib/runtime-package-resolution.js";
+import { roomSplatBundle, roomSplatServedTileCount } from "../data/room-splat-bundles.js";
 import type { EventPhaseGraph, EvidenceTargetType, RuntimePackage, TruthModeSummary } from "@omnitwin/types";
 
 type OrbitControlsMockProps = Readonly<Record<string, unknown>>;
@@ -602,7 +603,7 @@ describe("TradesHallVisualPage", () => {
     expect(runtimeControlsProps?.["onStart"]).toEqual(expect.any(Function));
   });
 
-  it("mounts one layer per staged tile when an operator asks with ?staged=1", async () => {
+  it("mounts one layer per served tile when an operator asks with ?staged=1", async () => {
     mount("/dev/trades-hall-visual?venue=trades-hall&room=reception-room&staged=1");
     await waitFor(() => {
       expect(screen.getAllByTestId("spark-splat-layer").length).toBeGreaterThan(0);
@@ -610,8 +611,16 @@ describe("TradesHallVisualPage", () => {
     const urls = screen.getAllByTestId("spark-splat-layer").map((node) => node.textContent ?? "");
     // Real captured tiles, served under this room's own namespace.
     expect(urls.every((url) => url.startsWith("/splats/trades-hall/reception-room/"))).toBe(true);
-    // Coarsest tile first, so the room resolves from a rough whole into detail.
-    expect(urls[0]).toBe("/splats/trades-hall/reception-room/0_0.sog");
+    // One level only: an LCC2 level is a whole-room copy, so the staged
+    // bundle's finest level plus the sky shell is what reaches the renderer.
+    expect(urls).toHaveLength(roomSplatServedTileCount("reception-room"));
+    const bundle = roomSplatBundle("reception-room");
+    const byFile = new Map((bundle?.tiles ?? []).map((tile) => [tile.file, tile]));
+    for (const url of urls) {
+      const tile = byFile.get(url.split("/").pop() ?? "");
+      expect(tile, url).toBeDefined();
+      if (tile !== undefined && !tile.isEnvironment) expect(tile.lodLevel, url).toBe(bundle?.finestLevel);
+    }
   });
 
   it("says a staged capture is unregistered rather than letting it read as reviewed", async () => {
