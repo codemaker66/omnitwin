@@ -1,0 +1,186 @@
+{
+  "authority": "none",
+  "baseRuntime": {
+    "determinismScope": "same_host_same_binary_only",
+    "numpy": {
+      "version": "1.26.4",
+      "wheelFile": "numpy-1.26.4-cp312-cp312-win_amd64.whl",
+      "wheelSha256": "08beddf13648eb95f8d867350f6a018a4be2e5ad54c8d8caed89ebca558b2818"
+    },
+    "opencvPythonHeadless": {
+      "version": "4.10.0.84",
+      "wheelFile": "opencv_python_headless-4.10.0.84-cp37-abi3-win_amd64.whl",
+      "wheelSha256": "afcf28bd1209dd58810d33defb622b325d3cbe49dcd7a43a902982c33e5fad05"
+    },
+    "pythonDistributionArchiveSha256": "93bf8e8c05ede0077b197a29c99ebdaf253497f27190097494265150b4e70ba8",
+    "pythonExecutableSha256": "711df14e4ef9f0890c5c84330faba821839f3f6757dbe27cbf69ac3de6852446",
+    "pythonTag": "cp312-win_amd64",
+    "pythonVersion": "3.12.12",
+    "reuseSource": "D:/venviewer-tools/t560-crosswalk-hermetic-py312-v2",
+    "sourceLock": {
+      "relativePath": "tools/twin-forge/e57-scripts/requirements-panorama-image2d-crosswalk.lock.json",
+      "sha256": "639797f9047bd3022c2f04df1b6825a6082c81b4bc4bc4b8723abc6bdeb9dc10",
+      "sizeBytes": 5740
+    }
+  },
+  "bootstrapRequired": false,
+  "environmentControls": {
+    "MKL_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "evidenceGradeBuildPermitted": true,
+  "additionalPackages": [
+    {
+      "artifactSha256": "ec415dac94f66832d8f8709ef33eb43b1a5a002ac63c02af5458229c8d29e3a2",
+      "artifactSizeBytes": 1130762,
+      "name": "pye57",
+      "requiredNativeMembers": [
+        "pye57/libe57.cp312-win_amd64.pyd",
+        "pye57/xerces-c_3_2.dll"
+      ],
+      "status": "exact_local_wheel_identity_and_installed_tree_attested",
+      "version": "0.4.19",
+      "wheelFile": "pye57-0.4.19-cp312-cp312-win_amd64.whl"
+    },
+    {
+      "artifactSha256": "e65f6e3f7b1fdf1a9e23f82434334a1ae84f14223eee835190cd2e841f8172ec",
+      "artifactSizeBytes": 14361,
+      "name": "pyquaternion",
+      "requiredNativeMembers": [],
+      "status": "exact_local_wheel_identity_and_installed_tree_attested",
+      "version": "0.9.9",
+      "wheelFile": "pyquaternion-0.9.9-py3-none-any.whl"
+    }
+  ],
+  "policy": {
+    "artifactHashesFilled": true,
+    "decoder": "opencv.imdecode_color_then_bgr_to_rgb",
+    "downloadsPermittedByThisContract": false,
+    "mutableUserSitePermitted": false,
+    "pillowRequired": false,
+    "runtimeTreeAndNativeFilesMustBeHashedBeforeActivation": true
+  },
+  "runtimeCandidate": {
+    "generatedPycCountRequired": 0,
+    "path": "D:/venviewer-tools/t564-e57-cubeface-hermetic-py312-v1",
+    "state": "frozen_runtime_tree_and_native_attestation_complete"
+  },
+  "requiredRuntimeAttestation": {
+    "completeTree": [
+      "fileCount",
+      "sha256"
+    ],
+    "environmentControls": [
+      "MKL_NUM_THREADS",
+      "NUMEXPR_NUM_THREADS",
+      "OMP_NUM_THREADS",
+      "OPENBLAS_NUM_THREADS",
+      "PYTHONDONTWRITEBYTECODE"
+    ],
+    "installedDistributions": [
+      "name",
+      "version",
+      "wheelSha256",
+      "installedFileCount",
+      "installedTreeSha256"
+    ],
+    "nativeFiles": [
+      "relativePath",
+      "sizeBytes",
+      "sha256"
+    ],
+    "opencv": [
+      "buildInformationSha256",
+      "openClEnabled",
+      "threadCount"
+    ],
+    "pythonExecutable": [
+      "relativePath",
+      "sizeBytes",
+      "sha256"
+    ],
+    "runtimeRoot": "D:/venviewer-tools/t564-e57-cubeface-hermetic-py312-v1"
+  },
+  "runtimeAttestation": {
+    "completeTree": {
+      "fileCount": 930,
+      "sha256": "02892b5dcecea27f224c95042d148d69ae7411f170ba02ef0e0c12d6c7c856d7"
+    },
+    "installedDistributions": [
+      {
+        "installedFileCount": 810,
+        "installedTreeSha256": "e5c5f17ea8b69bfaa2a3ba79a66621aacc845f86b39bfb677e0e30d3597d7d48",
+        "name": "numpy",
+        "version": "1.26.4",
+        "wheelSha256": "08beddf13648eb95f8d867350f6a018a4be2e5ad54c8d8caed89ebca558b2818"
+      },
+      {
+        "installedFileCount": 88,
+        "installedTreeSha256": "cca82c5cadba7c1ea6de93ee92dff230f193d3673c3ab48641120901e58cb441",
+        "name": "opencv-python-headless",
+        "version": "4.10.0.84",
+        "wheelSha256": "afcf28bd1209dd58810d33defb622b325d3cbe49dcd7a43a902982c33e5fad05"
+      },
+      {
+        "installedFileCount": 15,
+        "installedTreeSha256": "7715ec8839dba360a566eba4a2c83ee3968ad8a919523f2c91ec2132550c5390",
+        "name": "pye57",
+        "version": "0.4.19",
+        "wheelSha256": "ec415dac94f66832d8f8709ef33eb43b1a5a002ac63c02af5458229c8d29e3a2"
+      },
+      {
+        "installedFileCount": 9,
+        "installedTreeSha256": "c99e69f9cd312e3174fd9ce126a72ad627582bc35c5443347f48146d7723d1cc",
+        "name": "pyquaternion",
+        "version": "0.9.9",
+        "wheelSha256": "e65f6e3f7b1fdf1a9e23f82434334a1ae84f14223eee835190cd2e841f8172ec"
+      }
+    ],
+    "nativeFiles": [
+      {
+        "relativePath": "Lib/site-packages/cv2/cv2.pyd",
+        "sha256": "4705689bc8cbe47b57e95560c648cbabdba43de1615d62a85ff21437285ee1b7",
+        "sizeBytes": 74215424
+      },
+      {
+        "relativePath": "Lib/site-packages/numpy/core/_multiarray_umath.cp312-win_amd64.pyd",
+        "sha256": "5d4f44389d1b4e9aa62af63b716a0d4266dbb56fefa9bf27831f85b695994da5",
+        "sizeBytes": 2842624
+      },
+      {
+        "relativePath": "Lib/site-packages/numpy/linalg/_umath_linalg.cp312-win_amd64.pyd",
+        "sha256": "7652e82c6c53249b911dde9822b71a7ecbecbc699c79475862e779a51d7f1d0f",
+        "sizeBytes": 106496
+      },
+      {
+        "relativePath": "Lib/site-packages/numpy.libs/libopenblas64__v0.3.23-293-gc2f4bdbb-gcc_10_3_0-2bde3a66a51006b2b53eb373ff767a3f.dll",
+        "sha256": "57b87772bf676b5c2d718c79dddc9f039d79ec3319fee1398cc305adff7b69e5",
+        "sizeBytes": 38168576
+      },
+      {
+        "relativePath": "Lib/site-packages/pye57/libe57.cp312-win_amd64.pyd",
+        "sha256": "bd3a02bc33df26b56fc8dbbffb3fe018a1c3de4bf715cfe95a4ed311c5e07b98",
+        "sizeBytes": 781824
+      },
+      {
+        "relativePath": "Lib/site-packages/pye57/xerces-c_3_2.dll",
+        "sha256": "7af1375b748ed58b8d5ff316a11fac6f4ec2742e572a099bf891523ceb5d5134",
+        "sizeBytes": 2793984
+      }
+    ],
+    "opencv": {
+      "buildInformationSha256": "c12aff2ff928a5dcaca93118a4953c10d94d61b689d3f9f52b3a6804552127a7",
+      "openClEnabled": false,
+      "threadCount": 1
+    },
+    "pythonExecutable": {
+      "relativePath": "Scripts/python.exe",
+      "sha256": "711df14e4ef9f0890c5c84330faba821839f3f6757dbe27cbf69ac3de6852446",
+      "sizeBytes": 262144
+    }
+  },
+  "schemaVersion": "venviewer.e57-cubeface-extrinsics-dependency-bootstrap-authority-none.v1"
+}
