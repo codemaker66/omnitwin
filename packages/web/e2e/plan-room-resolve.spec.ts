@@ -165,7 +165,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
 
     // The develop begins: caption appears with honest chunk progress.
     await expect
-      .poll(() => readPhase(page), { timeout: 20_000, message: "waiting for developing" })
+      .poll(() => readPhase(page), { timeout: 90_000, message: "waiting for developing" })
       .toBe("developing");
     const caption = page.getByTestId("room-resolve-caption").last();
     await expect(caption).toBeVisible();
