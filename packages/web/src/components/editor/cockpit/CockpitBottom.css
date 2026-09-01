@@ -21,6 +21,20 @@
 }
 
 .cockpit-bottom {
+  /* Command Centre materiality (C2): the transport shares the diary sheet's
+     tokens — leather ground, ONE cached grain tile (an image paint, never a
+     live filter), brass/gilt, paper holds, wax. Kept in sync by eye with
+     diary-board.css; both derive from docs/plan/reference/day-board/. */
+  --dock-paper: #efe7d6;
+  --dock-paper-2: #e4d9c2;
+  --dock-paper-ink: #2b241b;
+  --dock-wax: #8f2f2a;
+  --dock-leather: #16120d;
+  --dock-leather-2: #201a12;
+  --dock-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+  --dock-hand: "Fraunces", Georgia, "Times New Roman", serif;
+  --dock-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
   grid-area: bottom;
   position: relative;
   display: grid;
@@ -29,10 +43,10 @@
   min-width: 0;
   min-height: 0;
   padding: 8px 12px 10px;
-  border-top: 1px solid color-mix(in srgb, var(--house-accent-brass, #c6a15b) 30%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--house-accent-brass, #c6a15b) 42%, transparent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--house-bg-1, #131110) 94%, var(--house-status-cyan, #6fb7c9)), var(--house-bg-0, #0b0a09)),
-    var(--house-bg-0, #0b0a09);
+    var(--dock-grain),
+    linear-gradient(180deg, var(--dock-leather-2), var(--dock-leather));
   color: var(--house-text-1, #f4efe6);
   font-family: "Inter", system-ui, sans-serif;
   box-shadow: 0 -18px 38px rgba(0, 0, 0, 0.28);
@@ -83,10 +97,11 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--house-text-1, #f4efe6);
-  font-size: 10px;
-  font-weight: 830;
-  letter-spacing: 0.13em;
+  color: var(--house-accent-brass, #c6a15b);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
   line-height: 1;
   text-transform: uppercase;
 }
@@ -95,8 +110,10 @@
 
 .layout-timeline__truth {
   color: color-mix(in srgb, var(--house-text-1, #f4efe6) 45%, transparent);
-  font-size: 9px;
-  font-weight: 570;
+  font-family: var(--dock-hand);
+  font-style: italic;
+  font-size: 9.5px;
+  font-weight: 460;
   letter-spacing: 0.015em;
   white-space: nowrap;
 }
@@ -376,13 +393,17 @@
   max-width: none;
   min-height: 18px;
   padding: 4px 5px 4px 8px;
-  border: 1px solid var(--house-hairline, rgba(245, 240, 232, 0.08));
-  border-radius: 8px;
-  background: linear-gradient(150deg, var(--house-bg-2, #1b1917), var(--house-bg-1, #131110));
+  border: 1px solid color-mix(in srgb, var(--house-accent-brass, #c6a15b) 22%, transparent);
+  border-radius: 7px;
+  background: linear-gradient(168deg, #23201c, #161311 58%, #12100e);
   color: var(--house-text-1, #f4efe6);
   cursor: pointer;
   overflow: hidden;
   text-align: left;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--house-accent-brass, #c6a15b) 26%, transparent),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.32);
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
@@ -402,9 +423,12 @@
 }
 
 .layout-phase.is-active {
-  border-color: color-mix(in srgb, var(--house-accent-brass, #c6a15b) 72%, transparent);
-  background: linear-gradient(150deg, color-mix(in srgb, var(--house-accent-brass, #c6a15b) 18%, var(--house-bg-2, #1b1917)), var(--house-bg-1, #131110));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--house-accent-brass, #c6a15b) 12%, transparent), 0 7px 18px rgba(0, 0, 0, 0.24);
+  border-color: color-mix(in srgb, var(--house-accent-brass, #c6a15b) 78%, transparent);
+  background: linear-gradient(168deg, color-mix(in srgb, var(--house-accent-brass, #c6a15b) 20%, #23201c), #161311 62%, #12100e);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--house-accent-brass, #c6a15b) 55%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--house-accent-brass, #c6a15b) 14%, transparent),
+    0 7px 18px rgba(0, 0, 0, 0.3);
 }
 
 .layout-phase.is-active::before { background: var(--house-accent-brass, #c6a15b); box-shadow: 0 0 8px color-mix(in srgb, var(--house-accent-brass, #c6a15b) 44%, transparent); }
@@ -418,12 +442,43 @@
   cursor: help;
 }
 
-.layout-phase.is-missing { border-style: dashed; }
-.layout-phase.is-invalid { border-color: color-mix(in srgb, var(--house-status-oxblood, #b25454) 72%, transparent); }
+.layout-phase.is-missing,
+.layout-phase.is-draft {
+  border: 1px dashed color-mix(in srgb, var(--dock-paper-ink) 42%, var(--dock-paper));
+  background:
+    linear-gradient(172deg, var(--dock-paper), var(--dock-paper-2));
+  color: var(--dock-paper-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 252, 244, 0.6),
+    0 2px 5px rgba(0, 0, 0, 0.35);
+}
+
+.layout-phase.is-missing .layout-phase__time,
+.layout-phase.is-draft .layout-phase__time,
+.layout-phase.is-missing .layout-phase__event,
+.layout-phase.is-draft .layout-phase__event {
+  color: color-mix(in srgb, var(--dock-paper-ink) 72%, var(--dock-paper));
+}
+
+.layout-phase.is-missing .layout-phase__name,
+.layout-phase.is-draft .layout-phase__name {
+  color: var(--dock-paper-ink);
+  font-family: var(--dock-hand);
+  font-style: italic;
+  font-weight: 560;
+}
+
+.layout-phase.is-missing:disabled .layout-phase__name,
+.layout-phase.is-draft:disabled .layout-phase__name {
+  color: color-mix(in srgb, var(--dock-paper-ink) 80%, var(--dock-paper));
+}
+
+.layout-phase.is-invalid { border-color: color-mix(in srgb, var(--dock-wax) 78%, transparent); }
 
 .layout-phase.is-gap {
-  border-style: dashed;
-  background: var(--house-bg-1, #131110);
+  border: 1px dashed color-mix(in srgb, var(--house-accent-brass, #c6a15b) 38%, transparent);
+  background: color-mix(in srgb, var(--dock-leather-2) 72%, transparent);
+  box-shadow: none;
 }
 
 .layout-phase.is-missing::before { background: var(--house-status-grey, rgba(244, 239, 230, 0.38)); }
@@ -434,9 +489,10 @@
   grid-area: time;
   min-width: 0;
   color: var(--house-text-2, rgba(244, 239, 230, 0.62));
+  font-family: var(--dock-mono);
   font-size: 8px;
   font-variant-numeric: tabular-nums;
-  font-weight: 660;
+  font-weight: 560;
   letter-spacing: 0.04em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -511,11 +567,11 @@
   font-size: 8px;
 }
 
-.layout-phase.is-missing .layout-phase__state { color: var(--house-status-grey, rgba(244, 239, 230, 0.38)); }
+.layout-phase.is-missing .layout-phase__state { color: color-mix(in srgb, var(--dock-paper-ink) 66%, var(--dock-paper)); }
+.layout-phase.is-draft .layout-phase__state { color: color-mix(in srgb, var(--dock-wax) 82%, var(--dock-paper-ink)); }
 .layout-phase.is-invalid .layout-phase__state { color: var(--house-status-oxblood, #b25454); }
 .layout-phase.is-gap .layout-phase__state { color: var(--house-status-amber, #c99a5b); }
 .layout-phase.is-frozen .layout-phase__state { color: var(--house-status-sage, #8fae8b); }
-.layout-phase.is-draft .layout-phase__state { color: var(--house-status-amber, #c99a5b); }
 .layout-phase.is-stale .layout-phase__state,
 .layout-phase.is-superseded .layout-phase__state { color: var(--house-status-grey, rgba(244, 239, 230, 0.38)); }
 
@@ -557,20 +613,36 @@
   bottom: 0;
   z-index: 2;
   width: 1px;
-  background: var(--house-accent-brass, #c6a15b);
+  background: linear-gradient(180deg, var(--house-accent-brass, #c6a15b), color-mix(in srgb, var(--house-accent-brass, #c6a15b) 55%, transparent));
   box-shadow: 0 0 7px color-mix(in srgb, var(--house-accent-brass, #c6a15b) 45%, transparent);
   pointer-events: none;
 }
 
+/* The hanging brass plaque threading the ruler — kin to the board's NOW
+   plaque: bevelled brass face over its thread, with the pin below. */
 .layout-ruler__playhead::before {
   content: "";
   position: absolute;
-  top: -1px;
-  left: -4px;
-  width: 9px;
-  height: 5px;
-  border-radius: 3px 3px 1px 1px;
-  background: var(--house-accent-brass, #c6a15b);
+  top: -2px;
+  left: -6px;
+  width: 13px;
+  height: 7px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--house-accent-brass-bright, #d9b96b), var(--house-accent-brass, #c6a15b) 55%, var(--house-accent-brass-deep, #a37f3c));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 214, 0.65),
+    0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.layout-ruler__playhead::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: -1.5px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--house-accent-brass-bright, #d9b96b), var(--house-accent-brass-deep, #a37f3c));
 }
 
 .layout-ruler__input {
@@ -617,17 +689,27 @@
 }
 
 .layout-play-button {
-  border-color: color-mix(in srgb, var(--house-accent-brass, #c6a15b) 36%, transparent);
-  background: color-mix(in srgb, var(--house-accent-brass, #c6a15b) 12%, var(--house-bg-1, #131110));
-  color: var(--house-accent-brass, #c6a15b);
+  border-color: var(--house-accent-brass-deep, #a37f3c);
+  background: linear-gradient(180deg, var(--house-accent-brass-bright, #d9b96b), var(--house-accent-brass, #c6a15b) 60%, var(--house-accent-brass-deep, #a37f3c));
+  color: #1c1710;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 214, 0.6),
+    0 2px 5px rgba(0, 0, 0, 0.4);
+}
+
+.layout-play-button:disabled {
+  background: color-mix(in srgb, var(--house-accent-brass, #c6a15b) 14%, var(--house-bg-1, #131110));
+  color: color-mix(in srgb, var(--house-accent-brass, #c6a15b) 55%, transparent);
+  box-shadow: none;
 }
 
 .layout-playback-controls__duration {
   grid-column: 1 / -1;
   align-self: end;
   color: var(--house-text-3, rgba(244, 239, 230, 0.38));
+  font-family: var(--dock-mono);
   font-size: 7px;
-  font-weight: 700;
+  font-weight: 560;
   letter-spacing: 0.04em;
   text-align: center;
   text-transform: uppercase;
