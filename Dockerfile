@@ -23,6 +23,12 @@ ARG PNPM_VERSION=9.15.4
 # Stage 1 — dependencies
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION}-alpine AS deps
+# An ARG declared before the first FROM is visible only to FROM lines; inside a
+# stage it is EMPTY unless re-declared. Without this line the install below ran
+# `npm install -g pnpm@` — the latest pnpm, whatever that was on the day — and
+# broke on 2026-09-02 when pnpm 11 began verifying its identity against a
+# lockfile written by 9.15.4. See .claude/gotchas/dockerfile-arg-scope.md.
+ARG PNPM_VERSION
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
@@ -54,6 +60,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 # Stage 2 — build
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION}-alpine AS build
+ARG PNPM_VERSION
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 

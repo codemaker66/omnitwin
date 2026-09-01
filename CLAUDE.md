@@ -267,6 +267,11 @@ matches what you're about to do.
   capturing stills of a splat scene offline, or deciding where to put a
   viewer inside a captured room.
 
+- `.claude/gotchas/dockerfile-arg-scope.md`
+  Read this when: editing the Dockerfile, changing the pnpm or Node version
+  the API image uses, or a Railway build fails inside pnpm install with an
+  error the pinned pnpm cannot produce.
+
 - `.claude/gotchas/xgrids-lcc2-lod-levels-are-copies.md`
   Read this when: loading, staging, counting, or budgeting XGRIDS LCC2 splat
   tiles, adding a room to the walk or planner, or explaining why an on-screen
