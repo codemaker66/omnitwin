@@ -11,7 +11,14 @@ docstring; the evidence is `docs/reports/xbag-frame-decode-2026-09-02.md`.
   as raw H.264, optionally decode it to PNG (needs `pip install av pillow`).
 - `xbag_colmap.py` — CLI: the XBAG-to-COLMAP bridge for a bounded zone of a
   capture (`select`, `extract`, `features`, `pairs`, `match`, `score`, `write`,
-  `triangulate`, `refine`). It takes the keyframe index,
+  `triangulate`, `refine`), the whole-hall additions (`select` with motion
+  keyframing, `extract --workers`, the GPU path `gpu-features`, `gpu-match`,
+  `gpu-import` with kornia DISK + LightGlue for the pinholes, `pairs-lens` and
+  `features --only-lens fisheye` for COLMAP SIFT on the fisheyes, `rig` as an
+  experiment), and `package`, which turns the refined model into the T-502
+  trainer's PINHOLE-only layout (undistorted pinholes, five virtual views per
+  fisheye with the operator masked, half-size copies, `splits.json`, sparse
+  depth samples, `colmap_input.json`). It takes the keyframe index,
   `project_data/poses.csv` and the T-566 calibration receipt, and resolves the
   receipt's open questions (which stored lens is which calibration camera, the
   direction of every extrinsic matrix, the pose file's quaternion convention)

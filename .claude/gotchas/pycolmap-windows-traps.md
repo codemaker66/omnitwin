@@ -52,4 +52,32 @@ must load next to a database (the `tools/xgrids-xbag/xbag_colmap.py` bridge).
    is `(N, 6)` with x, y first; pybind functions have no `inspect.signature`,
    read `__doc__`.
 
-Diagnosis notes live in `docs/reports/xbag-colmap-zone-2026-09-02.md`.
+6. **Learned matchers see no fisheye.** kornia DISK + LightGlue (torch 2.9,
+   RTX 4090) verified 1,084 pinhole-to-pinhole pairs on the zone and ZERO
+   fisheye pairs, while COLMAP SIFT verified 1,882 fisheye pairs on the same
+   frames. The 200-degree kb4 frames need SIFT; the bridge's hybrid path runs
+   DISK + LightGlue for the pinholes (`gpu-features`, `gpu-match --only-lens
+   rectilinear`, `gpu-import --only-lens rectilinear`) and pycolmap SIFT for
+   the fisheyes (`features --only-lens fisheye`, `pairs-lens`, `match`) into
+   one database. Learned keypoints at 1,600 px are also coarser: strict
+   triangulation kept half the points SIFT did.
+
+7. **Rig bundle adjustment with position priors drifts in 4.2.0.** Declaring
+   the four cameras as one rig (`apply_rig_config`, `refine_sensor_from_rig
+   = False`) and adjusting with pose priors produced a 6-7 % scale change and
+   27 cm median moves on the zone, against 0.02 % and 12 cm for the per-image
+   path; priors on the reference sensor only did not help. Keep `rig` as an
+   experiment on a database copy; ship the per-image refinement.
+
+8. **The machine's commit limit is 48 GB.** Four PyAV decoders, a package
+   builder, a Ceres adjustment and a mesh check together exhausted it twice
+   (`av.error.MemoryError: Cannot allocate memory`, numpy `_ArrayMemoryError`).
+   Run one heavy stage at a time (`D:\claude\colmap-gh\run_serial.sh`), three
+   decoder workers, and measure sharpness on a reduced copy.
+
+9. **Git Bash process substitution breaks pycolmap paths.** `<(python -c ...)`
+   hands the tool `/proc/<pid>/fd/63`, which Windows Python cannot open; write
+   the JSON to a real file first (the driver's `hypothesis-established.json`).
+
+Diagnosis notes live in `docs/reports/xbag-colmap-zone-2026-09-02.md` and the
+whole-hall report that follows it.

@@ -400,12 +400,42 @@ def select_zone_instants(groups: Iterable[Sequence[FrameRecord]], poses: np.ndar
         if zone.contains(position):
             inside.append(ZoneInstant(seq=group[0].seq, ts_us=ts_us, records=tuple(group), position=position, quat_raw=quat))
     inside.sort(key=lambda instant: instant.ts_us)
+    return spread_to_budget(inside, budget)
+
+
+def spread_to_budget(instants: Sequence[ZoneInstant], budget: int) -> list[ZoneInstant]:
+    """At most ``budget`` instants, spread evenly over the sequence (first and last always kept)."""
     if budget <= 0:
         raise ValueError("budget must be positive")
-    if len(inside) <= budget:
-        return inside
-    picks = np.unique(np.round(np.linspace(0, len(inside) - 1, budget)).astype(int))
-    return [inside[i] for i in picks]
+    if len(instants) <= budget:
+        return list(instants)
+    picks = np.unique(np.round(np.linspace(0, len(instants) - 1, budget)).astype(int))
+    return [instants[i] for i in picks]
+
+
+def select_keyframes(instants: Sequence[ZoneInstant], *, min_distance_m: float, min_angle_deg: float) -> list[ZoneInstant]:
+    """Motion keyframing: keep an instant once the scanner has moved ``min_distance_m`` or turned ``min_angle_deg`` since the last kept one.
+
+    The pose file's quaternion is read as ``xyzw`` body-to-world (the reading
+    the T-571 scoring settled); a wrong reading would only change which
+    instants count as a turn, never drop the first instant.
+    """
+    kept: list[ZoneInstant] = []
+    last_position: np.ndarray | None = None
+    last_rotation: np.ndarray | None = None
+    for instant in instants:
+        rotation = quat_xyzw_to_matrix(instant.quat_raw)
+        if last_position is None or last_rotation is None:
+            keep = True
+        else:
+            moved = float(np.linalg.norm(instant.position - last_position))
+            cosine = np.clip((np.trace(last_rotation.T @ rotation) - 1.0) / 2.0, -1.0, 1.0)
+            turned = math.degrees(math.acos(cosine))
+            keep = moved >= min_distance_m or turned >= min_angle_deg
+        if keep:
+            kept.append(instant)
+            last_position, last_rotation = instant.position, rotation
+    return kept
 
 
 # --------------------------------------------------------------------------- COLMAP text model
@@ -527,20 +557,40 @@ def outside_circle_ratio(gray: np.ndarray, circle: tuple[float, float, float], *
     return float((sample[outer].mean() + 1e-3) / (sample[inner].mean() + 1e-3))
 
 
-def classes_from_circle_ratios(ratios: Sequence[float]) -> list[str]:
-    """Optical class per slot of a co-timed group: the two lowest ratios are the fisheyes, and the split must be clear."""
+def classes_from_circle_ratios(ratios: Sequence[float], *, strict: bool = True) -> list[str]:
+    """Optical class per slot of a co-timed group: the two lowest ratios are the fisheyes.
+
+    ``strict`` also demands a clear split (fisheyes under ``FISHEYE_RATIO_MAX``,
+    pinholes at least ``PINHOLE_GAP_FACTOR`` times brighter outside the circle).
+    Rank-only mode keeps the fisheye bound but drops the gap: in the hall's
+    darkest corners the gap shrinks below 2 (seq 2217: 0.096 vs 0.051) while
+    the order never flips; ``check_slot_pattern`` then guards the whole run.
+    """
     if len(ratios) != 4:
         raise ValueError(f"a co-timed group has four slots, got {len(ratios)} ratios")
     order = sorted(range(4), key=lambda i: ratios[i])
     fisheyes = set(order[:2])
     darkest_pinhole = min(ratios[i] for i in order[2:])
     brightest_fisheye = max(ratios[i] for i in fisheyes)
-    if brightest_fisheye >= FISHEYE_RATIO_MAX or darkest_pinhole < PINHOLE_GAP_FACTOR * brightest_fisheye:
+    if brightest_fisheye >= FISHEYE_RATIO_MAX or (strict and darkest_pinhole < PINHOLE_GAP_FACTOR * brightest_fisheye):
         raise ValueError(
             f"lens-circle ratios {[round(float(r), 3) for r in ratios]} do not split into two fisheye (< {FISHEYE_RATIO_MAX}) "
-            f"and two rectilinear frames at least {PINHOLE_GAP_FACTOR:g}x brighter outside the circle"
+            f"and two rectilinear frames{f' at least {PINHOLE_GAP_FACTOR:g}x brighter outside the circle' if strict else ''}"
         )
     return [OpticalClass.FISHEYE.value if i in fisheyes else OpticalClass.RECTILINEAR.value for i in range(4)]
+
+
+def check_slot_pattern(instants: Sequence[dict]) -> list[str]:
+    """The optical-class pattern every instant must share; raises naming the instants that disagree with the majority."""
+    from collections import Counter
+
+    patterns = Counter(tuple(slot["optical_class"] for slot in instant["slots"]) for instant in instants)
+    majority = list(patterns.most_common(1)[0][0])
+    odd = [instant for instant in instants if [slot["optical_class"] for slot in instant["slots"]] != majority]
+    if odd:
+        described = ", ".join(f"seq {instant['seq']} {[slot['optical_class'][0] for slot in instant['slots']]} ratios {[slot.get('circle_ratio') for slot in instant['slots']]}" for instant in odd[:5])
+        raise ValueError(f"{len(odd)} instant(s) order their cameras unlike the majority {[c[0] for c in majority]}: {described}")
+    return majority
 
 
 # --------------------------------------------------------------------------- pose deltas
@@ -618,10 +668,17 @@ def run_select(args: argparse.Namespace) -> int:
     records = load_index_records(args.index)
     zone = ZoneBox(*args.zone)
     groups = list(group_cotimed(records))
-    instants = select_zone_instants(groups, poses, zone, args.budget)
+    inside = select_zone_instants(groups, poses, zone, budget=10**9)
+    keyframed = select_keyframes(inside, min_distance_m=args.keyframe_distance_m, min_angle_deg=args.keyframe_angle_deg) if args.keyframe_distance_m > 0 or args.keyframe_angle_deg > 0 else inside
+    instants = spread_to_budget(keyframed, args.budget)
     complete = sum(1 for g in groups if len(g) == 4)
-    write_manifest(args.out, zone=zone, instants=instants, sources={"index_csv": str(args.index), "poses_csv": str(args.poses), "capture": str(args.capture) if args.capture else None})
-    print(f"{complete} complete instants; {len(instants)} selected inside {zone} (budget {args.budget}) -> {args.out}")
+    write_manifest(
+        args.out,
+        zone=zone,
+        instants=instants,
+        sources={"index_csv": str(args.index), "poses_csv": str(args.poses), "capture": str(args.capture) if args.capture else None, "keyframe_distance_m": args.keyframe_distance_m, "keyframe_angle_deg": args.keyframe_angle_deg, "budget": args.budget},
+    )
+    print(f"{complete} complete instants; {len(inside)} inside {zone}; {len(keyframed)} after keyframing (>= {args.keyframe_distance_m} m or {args.keyframe_angle_deg} deg); {len(instants)} selected (budget {args.budget}) -> {args.out}")
     return 0
 
 
@@ -634,40 +691,69 @@ def decode_frame(payload: bytes) -> "Image.Image":
     raise ValueError("the decoder produced no picture")
 
 
+_WORKER_BUF: mmap.mmap | None = None
+
+
+def _extract_worker_init(capture: str) -> None:
+    global _WORKER_BUF
+    handle = open(capture, "rb")
+    _WORKER_BUF = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
+
+
+def _extract_instant(task: tuple[dict, str, tuple[float, float, float], int, bool]) -> tuple[int, list[float], list[tuple[int, int]], int]:
+    """Decode one instant's four frames (in a worker): returns (seq, circle ratios, sizes, frames written)."""
+    instant, images_dir, circle, quality, overwrite = task
+    assert _WORKER_BUF is not None
+    ratios: list[float] = []
+    sizes: list[tuple[int, int]] = []
+    written = 0
+    for slot in instant["slots"]:
+        out = Path(images_dir) / slot["image"]
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if out.exists() and not overwrite:
+            from PIL import Image
+
+            picture = Image.open(out)   # already written by an earlier run: classify from the JPEG instead of decoding again
+            picture.load()
+        else:
+            payload = bytes(_WORKER_BUF[slot["payload_offset"] : slot["payload_offset"] + slot["payload_length"]])
+            picture = decode_frame(payload)
+            picture.save(out, quality=quality, subsampling=0)
+            written += 1
+        ratios.append(outside_circle_ratio(np.asarray(picture.convert("L")), circle))
+        sizes.append((picture.width, picture.height))
+    return instant["seq"], ratios, sizes, written
+
+
 def run_extract(args: argparse.Namespace) -> int:
+    from concurrent.futures import ProcessPoolExecutor
+
     manifest = read_manifest(args.manifest)
     calibration = load_calibration(args.calibration)
     circle = fisheye_circle(calibration.cameras[FISHEYE_IDS[0]], args.fov_degrees)
-    images_dir = Path(args.images)
     started = time.time()
     written = 0
-    with open(args.capture, "rb") as handle:
-        buf = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
-        try:
-            for instant in manifest["instants"]:
-                ratios = []
-                for slot in instant["slots"]:
-                    out = images_dir / slot["image"]
-                    out.parent.mkdir(parents=True, exist_ok=True)
-                    payload = bytes(buf[slot["payload_offset"] : slot["payload_offset"] + slot["payload_length"]])
-                    picture = decode_frame(payload)
-                    ratios.append(outside_circle_ratio(np.asarray(picture.convert("L")), circle))
-                    slot["width"], slot["height"] = picture.width, picture.height
-                    if not out.exists() or args.overwrite:
-                        picture.save(out, quality=args.quality, subsampling=0)
-                        written += 1
-                try:
-                    classes = classes_from_circle_ratios(ratios)
-                except ValueError as error:
-                    raise ValueError(f"seq {instant['seq']}: {error}") from error
-                for slot, optical, ratio in zip(instant["slots"], classes, ratios):
-                    slot["optical_class"] = optical
-                    slot["circle_ratio"] = round(ratio, 4)
-        finally:
-            buf.close()
+    tasks = [(instant, str(args.images), circle, args.quality, args.overwrite) for instant in manifest["instants"]]
+    by_seq = {instant["seq"]: instant for instant in manifest["instants"]}
+    workers = max(1, args.workers)
+    with ProcessPoolExecutor(max_workers=workers, initializer=_extract_worker_init, initargs=(str(args.capture),)) as pool:
+        for done, (seq, ratios, sizes, count) in enumerate(pool.map(_extract_instant, tasks, chunksize=4), start=1):
+            instant = by_seq[seq]
+            try:
+                classes = classes_from_circle_ratios(ratios, strict=False)
+            except ValueError as error:
+                raise ValueError(f"seq {seq}: {error}") from error
+            for slot, optical, ratio, (width, height) in zip(instant["slots"], classes, ratios, sizes):
+                slot["optical_class"] = optical
+                slot["circle_ratio"] = round(ratio, 4)
+                slot["width"], slot["height"] = width, height
+            written += count
+            if done % 250 == 0:
+                print(f"  {done}/{len(tasks)} instants, {time.time() - started:.0f}s", flush=True)
+    pattern = check_slot_pattern(manifest["instants"])
     with open(args.manifest, "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=1)
-    print(f"{written} frames written under {images_dir} in {time.time() - started:.0f}s; optical classes recorded in {args.manifest}")
+    print(f"{written} frames written under {args.images} in {time.time() - started:.0f}s with {workers} workers; slot pattern {[c[0] for c in pattern]} at every instant; recorded in {args.manifest}")
     return 0
 
 
@@ -715,6 +801,32 @@ def assign_database_cameras(db: "pycolmap.Database", manifest: dict, calibration
     return assigned
 
 
+def import_keypoints(db: "pycolmap.Database", image_id: int, keypoints: np.ndarray, *, scale: float) -> int:
+    """Store detector keypoints (x, y in the detection image) as COLMAP keypoints in full-resolution pixels; returns the count.
+
+    Detectors index pixel centres at integers; COLMAP puts the first pixel's
+    centre at (0.5, 0.5), so half a pixel is added after scaling.
+    """
+    points = np.asarray(keypoints, dtype=np.float64).reshape(-1, 2) * float(scale) + 0.5
+    if len(points) == 0:
+        raise ValueError(f"image {image_id}: no keypoints to import")
+    db.write_keypoints(image_id, points.astype(np.float32))
+    return len(points)
+
+
+def import_image_matches(db: "pycolmap.Database", image_id1: int, image_id2: int, matches: np.ndarray) -> int:
+    """Store raw index matches between two images' stored keypoints; COLMAP's verification builds the geometry later. Returns the count."""
+    pairs = np.asarray(matches, dtype=np.int64).reshape(-1, 2)
+    if len(pairs) == 0:
+        return 0
+    n1 = db.num_keypoints_for_image(image_id1)
+    n2 = db.num_keypoints_for_image(image_id2)
+    if pairs.min() < 0 or pairs[:, 0].max() >= n1 or pairs[:, 1].max() >= n2:
+        raise ValueError(f"matches between images {image_id1} and {image_id2} index beyond their {n1} and {n2} keypoints")
+    db.write_matches(image_id1, image_id2, pairs.astype(np.uint32))
+    return len(pairs)
+
+
 def run_features(args: argparse.Namespace) -> int:
     """SIFT for every selected frame in ONE extraction pass, then the per-folder cameras are corrected.
 
@@ -729,7 +841,7 @@ def run_features(args: argparse.Namespace) -> int:
 
     manifest = read_manifest(args.manifest)
     calibration = load_calibration(args.calibration)
-    expected = [slot["image"] for instant in manifest["instants"] for slot in instant["slots"]]
+    expected = names_of_lens(manifest, args.only_lens) if args.only_lens else [slot["image"] for instant in manifest["instants"] for slot in instant["slots"]]
     extraction = pycolmap.FeatureExtractionOptions()
     extraction.num_threads = args.threads
     extraction.max_image_size = args.max_image_size
@@ -779,6 +891,216 @@ def run_pairs(args: argparse.Namespace) -> int:
         for a, b in pairs:
             handle.write(f"{a} {b}\n")
     print(f"{len(pairs)} pairs -> {args.out}")
+    return 0
+
+
+def pairs_for_matcher(pairs: Sequence[tuple[str, str]], manifest: dict, *, cross_lens: bool) -> list[tuple[str, str]]:
+    """Pairs the learned matcher should run: every same-instant pair, and cross-instant pairs of the same lens class unless ``cross_lens``."""
+    lens = {slot["image"]: slot["optical_class"] for instant in manifest["instants"] for slot in instant["slots"]}
+    instant_of = {slot["image"]: i for i, instant in enumerate(manifest["instants"]) for slot in instant["slots"]}
+    kept = []
+    for a, b in pairs:
+        if cross_lens or instant_of[a] == instant_of[b] or lens[a] == lens[b]:
+            kept.append((a, b))
+    return kept
+
+
+def _check_lens(lens: str) -> str:
+    if lens not in (OpticalClass.FISHEYE.value, OpticalClass.RECTILINEAR.value):
+        raise ValueError(f"unknown lens class {lens!r}")
+    return lens
+
+
+def names_of_lens(manifest: dict, lens: str) -> list[str]:
+    """Image names of one lens class, in manifest order."""
+    _check_lens(lens)
+    return [slot["image"] for instant in manifest["instants"] for slot in instant["slots"] if slot["optical_class"] == lens]
+
+
+def pairs_of_lens(pairs: Sequence[tuple[str, str]], manifest: dict, lens: str) -> list[tuple[str, str]]:
+    """Pairs whose two images are both of one lens class."""
+    wanted = set(names_of_lens(manifest, lens))
+    return [(a, b) for a, b in pairs if a in wanted and b in wanted]
+
+
+def shard(items: Sequence, index: int, *, count: int) -> list:
+    """Items ``index`` of ``count`` interleaved shards (sizes differ by at most one)."""
+    if count < 1 or not 0 <= index < count:
+        raise ValueError(f"shard index {index} is not within 0..{count - 1}")
+    return [item for k, item in enumerate(items) if k % count == index]
+
+
+def _load_for_detector(path: str | Path, width: int):
+    """RGB tensor (1,3,H,W) in [0,1] resized to ``width`` pixels wide, and the factor back to full resolution."""
+    import cv2
+    import torch
+
+    image = cv2.imread(str(path))
+    if image is None:
+        raise ValueError(f"cannot read {path}")
+    h, w = image.shape[:2]
+    scale = width / w
+    resized = cv2.resize(image, (width, int(round(h * scale))), interpolation=cv2.INTER_AREA)
+    tensor = torch.from_numpy(cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float().div(255)[None]
+    return tensor, 1.0 / scale
+
+
+def feature_path(features_dir: str | Path, image_name: str) -> Path:
+    return Path(features_dir) / (image_name.rsplit(".", 1)[0] + ".npz")
+
+
+def run_gpu_features(args: argparse.Namespace) -> int:
+    """DISK keypoints + descriptors per frame on the GPU, one .npz per image (keypoints in full-resolution pixels). Restartable."""
+    import kornia.feature as KF
+    import torch
+
+    manifest = read_manifest(args.manifest)
+    names = [slot["image"] for instant in manifest["instants"] for slot in instant["slots"]]
+    todo = [name for name in names if not feature_path(args.features, name).exists()]
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    detector = KF.DISK.from_pretrained("depth").to(device).eval()
+    started = time.time()
+    with torch.inference_mode():
+        for done, name in enumerate(todo, start=1):
+            tensor, back = _load_for_detector(Path(args.images) / name, args.width)
+            features = detector(tensor.to(device), n=args.max_keypoints, pad_if_not_divisible=True)[0]
+            out = feature_path(args.features, name)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            np.savez(
+                out,
+                keypoints=(features.keypoints.cpu().numpy() * back).astype(np.float32),
+                descriptors=features.descriptors.cpu().numpy().astype(np.float16),
+                detect_size=np.array([tensor.shape[-1], tensor.shape[-2]], dtype=np.int32),
+            )
+            if done % 500 == 0:
+                print(f"  {done}/{len(todo)} images, {time.time() - started:.0f}s", flush=True)
+    print(f"{len(todo)} images detected ({len(names) - len(todo)} already present) in {time.time() - started:.0f}s -> {args.features}")
+    return 0
+
+
+def run_gpu_match(args: argparse.Namespace) -> int:
+    """LightGlue over this shard of the pair list; matches go to part files, imported by ``gpu-import``. Restartable per part."""
+    import kornia.feature as KF
+    import torch
+
+    manifest = read_manifest(args.manifest)
+    with open(args.pairs, encoding="utf-8") as handle:
+        all_pairs = [tuple(line.split()) for line in handle if line.strip()]
+    planned = pairs_for_matcher(all_pairs, manifest, cross_lens=args.cross_lens)  # type: ignore[arg-type]
+    if args.only_lens:
+        planned = pairs_of_lens(planned, manifest, args.only_lens)
+    pairs = shard(planned, args.shard, count=args.shards)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    matcher = KF.LightGlue("disk").to(device).eval()
+    parts_dir = Path(args.matches)
+    parts_dir.mkdir(parents=True, exist_ok=True)
+    cache: dict[str, tuple] = {}
+
+    def load(name: str):
+        if name not in cache:
+            if len(cache) > args.cache_images:
+                cache.clear()
+            data = np.load(feature_path(args.features, name))
+            width, height = (int(v) for v in data["detect_size"])
+            back = 4000.0 / width if width else 1.0
+            keypoints = torch.from_numpy(data["keypoints"] / back).to(device)          # back to detector pixels for LightGlue
+            descriptors = torch.from_numpy(data["descriptors"].astype(np.float32)).to(device)
+            cache[name] = (keypoints, descriptors, torch.tensor([[width, height]], device=device, dtype=torch.float))
+        return cache[name]
+
+    started = time.time()
+    part_size = args.part_size
+    written = 0
+    with torch.inference_mode():
+        for start in range(0, len(pairs), part_size):
+            part_path = parts_dir / f"shard{args.shard:02d}-part{start // part_size:05d}.npz"
+            if part_path.exists():
+                continue
+            names_a, names_b, matches = [], [], []
+            for a, b in pairs[start : start + part_size]:
+                ka, da, sa = load(a)
+                kb, db_, sb = load(b)
+                result = matcher({"image0": {"keypoints": ka[None], "descriptors": da[None], "image_size": sa}, "image1": {"keypoints": kb[None], "descriptors": db_[None], "image_size": sb}})
+                index_pairs = result["matches"][0].cpu().numpy().astype(np.uint32)
+                names_a.append(a)
+                names_b.append(b)
+                matches.append(index_pairs)
+            np.savez(part_path, names_a=np.array(names_a), names_b=np.array(names_b), matches=np.array(matches, dtype=object), allow_pickle=True)
+            written += len(names_a)
+            print(f"  shard {args.shard}: {min(start + part_size, len(pairs))}/{len(pairs)} pairs, {time.time() - started:.0f}s", flush=True)
+    print(f"shard {args.shard} of {args.shards}: {written} pairs matched in {time.time() - started:.0f}s -> {parts_dir}")
+    return 0
+
+
+def run_gpu_import(args: argparse.Namespace) -> int:
+    """Create the database (images, provisional cameras), import keypoints and all part files' matches, then run COLMAP's verification."""
+    import pycolmap
+
+    manifest = read_manifest(args.manifest)
+    calibration = load_calibration(args.calibration)
+    names = [slot["image"] for instant in manifest["instants"] for slot in instant["slots"]]
+    with_features = set(names_of_lens(manifest, args.only_lens)) if args.only_lens else set(names)
+    provisional = calibration.cameras[PINHOLE_IDS[0]]
+    reader = pycolmap.ImageReaderOptions()
+    reader.camera_model = provisional.colmap_model
+    reader.camera_params = ",".join(_fmt(v) for v in (*provisional.intrinsics, *provisional.distortion))
+    pycolmap.Database.open(args.db).close()  # import_images needs the database file to exist
+    pycolmap.import_images(args.db, args.images, camera_mode=pycolmap.CameraMode.PER_FOLDER, image_names=names, options=reader)
+    started = time.time()
+    db = pycolmap.Database.open(args.db)
+    try:
+        ids = {image.name: image.image_id for image in db.read_all_images()}
+        missing = [name for name in names if name not in ids]
+        if missing:
+            raise RuntimeError(f"{len(missing)} frames were not imported, first {missing[:3]}")
+        assign_database_cameras(db, manifest, calibration)
+        keypoint_counts = 0
+        for name in names:
+            if name not in with_features or db.exists_keypoints(ids[name]):
+                continue
+            data = np.load(feature_path(args.features, name))
+            keypoint_counts += import_keypoints(db, ids[name], data["keypoints"], scale=1.0)
+        imported = 0
+        verify_pairs = set()
+        for part in sorted(Path(args.matches).glob("shard*-part*.npz")) if Path(args.matches).exists() else []:
+            data = np.load(part, allow_pickle=True)
+            for a, b, matches in zip(data["names_a"], data["names_b"], data["matches"]):
+                if str(a) not in with_features or str(b) not in with_features:
+                    continue
+                id_a, id_b = ids[str(a)], ids[str(b)]
+                if len(matches) < args.min_matches or db.exists_matches(id_a, id_b):
+                    continue
+                imported += import_image_matches(db, id_a, id_b, np.asarray(matches))
+                verify_pairs.add((str(a), str(b)))
+    finally:
+        db.close()
+    if verify_pairs:
+        verify_list = Path(args.db).with_suffix(".verify-pairs.txt")
+        with open(verify_list, "w", encoding="utf-8", newline="\n") as handle:
+            for a, b in sorted(verify_pairs):
+                handle.write(f"{a} {b}\n")
+        options = pycolmap.TwoViewGeometryOptions()
+        options.ransac.max_error = args.max_error
+        options.min_num_inliers = args.min_inliers
+        pycolmap.verify_matches(args.db, verify_list, options)
+    db = pycolmap.Database.open(args.db)
+    try:
+        print(f"{db.num_images()} images, {keypoint_counts} keypoints imported, {imported} matches over {len(verify_pairs)} pairs, {db.num_verified_image_pairs()} verified, in {time.time() - started:.0f}s -> {args.db}")
+    finally:
+        db.close()
+    return 0
+
+
+def run_pairs_lens(args: argparse.Namespace) -> int:
+    """The pairs of one lens class, for a matcher that handles only that lens (COLMAP SIFT for the fisheyes)."""
+    manifest = read_manifest(args.manifest)
+    with open(args.pairs, encoding="utf-8") as handle:
+        pairs = [tuple(line.split()) for line in handle if line.strip()]
+    kept = pairs_of_lens(pairs, manifest, args.lens)  # type: ignore[arg-type]
+    with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
+        for a, b in kept:
+            handle.write(f"{a} {b}\n")
+    print(f"{len(kept)} {args.lens} pairs of {len(pairs)} -> {args.out}")
     return 0
 
 
@@ -1029,6 +1351,396 @@ def run_triangulate(args: argparse.Namespace) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------- trainer package (T-502 contract: PINHOLE cameras)
+
+
+class VirtualView(NamedTuple):
+    suffix: str
+    R_view_from_camera: np.ndarray  # rotation taking fisheye-camera coordinates to the virtual pinhole's coordinates
+    focal: float
+    width: int
+    height: int
+
+    @property
+    def K(self) -> np.ndarray:
+        return np.array([[self.focal, 0.0, self.width / 2.0], [0.0, self.focal, self.height / 2.0], [0.0, 0.0, 1.0]])
+
+
+def _rotation_about(axis: np.ndarray, degrees: float) -> np.ndarray:
+    axis = np.asarray(axis, dtype=float) / np.linalg.norm(axis)
+    angle = math.radians(degrees)
+    K = _skew(axis)
+    return np.eye(3) + math.sin(angle) * K + (1 - math.cos(angle)) * (K @ K)
+
+
+def fisheye_virtual_views(*, size: int, fov_deg: float, tilt_deg: float) -> list[VirtualView]:
+    """Five square pinhole views that cover a sideways 200-degree fisheye: centre, up, down, fore, aft.
+
+    Each view is ``fov_deg`` wide; the four tilted views turn the optical axis
+    by ``tilt_deg`` towards -y (up), +y (down), +x (fore) and -x (aft) of the
+    fisheye's OpenCV frame. ``R_view_from_camera`` maps fisheye rays into the
+    view's frame, so a view's optical axis in fisheye coordinates is its
+    transpose applied to (0, 0, 1).
+    """
+    focal = size / (2.0 * math.tan(math.radians(fov_deg) / 2.0))
+    # rotating the camera frame by +tilt about +x turns the z axis towards -y (up in OpenCV axes)
+    plan = [("c", np.eye(3)), ("u", _rotation_about([1, 0, 0], tilt_deg)), ("d", _rotation_about([1, 0, 0], -tilt_deg)), ("f", _rotation_about([0, 1, 0], -tilt_deg)), ("a", _rotation_about([0, 1, 0], tilt_deg))]
+    return [VirtualView(suffix, R.T, focal, size, size) for suffix, R in plan]
+
+
+class PinholeCamera(NamedTuple):
+    colmap_model: str
+    width: int
+    height: int
+    params: tuple[float, float, float, float]  # fx fy cx cy
+
+    @property
+    def K(self) -> np.ndarray:
+        fx, fy, cx, cy = self.params
+        return np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])
+
+
+def rectified_pinhole(camera: CalibratedCamera) -> PinholeCamera:
+    """The PINHOLE camera of an OPENCV frame undistorted at the same size with no cropping (OpenCV's alpha = 0 new matrix)."""
+    import cv2
+
+    if camera.is_fisheye:
+        raise ValueError("rectified_pinhole is for the OPENCV pinhole cameras; fisheyes become virtual views")
+    K = camera.K if hasattr(camera, "K") else np.array([[camera.intrinsics[0], 0, camera.intrinsics[2]], [0, camera.intrinsics[1], camera.intrinsics[3]], [0, 0, 1]], dtype=float)
+    new_K, _ = cv2.getOptimalNewCameraMatrix(K, np.array(camera.distortion[:4], dtype=float), (camera.width, camera.height), 0, (camera.width, camera.height))
+    return PinholeCamera("PINHOLE", camera.width, camera.height, (float(new_K[0, 0]), float(new_K[1, 1]), float(new_K[0, 2]), float(new_K[1, 2])))
+
+
+def splits_from_names(names: Sequence[str], *, test_every: int) -> dict[str, list[str]]:
+    """gsplat's hold-out rule: every ``test_every``-th image of the name-sorted list is held out."""
+    ordered = sorted(names)
+    heldout = [name for index, name in enumerate(ordered) if index % test_every == 0]
+    train = [name for index, name in enumerate(ordered) if index % test_every != 0]
+    return {"train": train, "heldout": heldout}
+
+
+def depth_samples(points_world: np.ndarray, T_world_cam: np.ndarray, K: np.ndarray, *, width: int, height: int) -> tuple[np.ndarray, np.ndarray]:
+    """Project world points into a pinhole view: (uv float32 in pixels, depth_m float32) for the points in front and inside the frame."""
+    points = np.asarray(points_world, dtype=float).reshape(-1, 3)
+    if len(points) == 0:
+        return np.zeros((0, 2), np.float32), np.zeros(0, np.float32)
+    T_cam_world = np.linalg.inv(np.asarray(T_world_cam, dtype=float))
+    cam = (T_cam_world[:3, :3] @ points.T).T + T_cam_world[:3, 3]
+    depth = cam[:, 2]
+    ahead = depth > 1e-6
+    uv = np.full((len(points), 2), np.nan)
+    uv[ahead] = (K[:2, :2] @ (cam[ahead, :2] / depth[ahead, None]).T).T + K[:2, 2]
+    inside = ahead & (uv[:, 0] >= 0) & (uv[:, 0] < width) & (uv[:, 1] >= 0) & (uv[:, 1] < height)
+    return uv[inside].astype(np.float32), depth[inside].astype(np.float32)
+
+
+def sharpness(gray: np.ndarray, *, width: int = 1000) -> float:
+    """Variance of the Laplacian on a ``width``-pixel-wide copy: a blur gate for the trainer package (higher is sharper).
+
+    Measured on a reduced copy so a 12 MP frame costs a few megabytes rather
+    than a 96 MB float64 buffer per worker.
+    """
+    import cv2
+
+    array = np.asarray(gray, dtype=np.uint8)
+    h, w = array.shape[:2]
+    if w > width:
+        array = cv2.resize(array, (width, max(1, int(round(h * width / w)))), interpolation=cv2.INTER_AREA)
+    return float(cv2.Laplacian(array, cv2.CV_32F).var())
+
+
+def _fisheye_view_maps(camera: CalibratedCamera, view: VirtualView) -> tuple[np.ndarray, np.ndarray]:
+    """cv2.remap maps that render one virtual pinhole view out of a kb4 fisheye frame (exact forward model)."""
+    import cv2
+
+    fx, fy, cx, cy = camera.intrinsics
+    K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=float)
+    D = np.array(camera.distortion[:4], dtype=float)
+    # R maps view rays into fisheye-camera rays: view -> camera = R_view_from_camera^T
+    R = view.R_view_from_camera.T
+    map1, map2 = cv2.fisheye.initUndistortRectifyMap(K, D, R.T, view.K, (view.width, view.height), cv2.CV_32FC1)
+    return map1, map2
+
+
+_PACKAGE_CTX: dict = {}
+
+
+def _package_worker_init(context: dict) -> None:
+    global _PACKAGE_CTX
+    _PACKAGE_CTX = context
+
+
+def _package_image(task: tuple) -> dict:
+    """Render one source frame into its package images (full + half) in a worker; returns per-output records."""
+    import cv2
+
+    name, kind, source, outputs = task   # outputs: list of (relative name, map1, map2 | None, size)
+    ctx = _PACKAGE_CTX
+    image = cv2.imread(str(source))
+    if image is None:
+        raise ValueError(f"cannot read {source}")
+    records = []
+    for rel_name, maps, size in outputs:
+        if maps is None:
+            rendered = image
+        else:
+            rendered = cv2.remap(image, maps[0], maps[1], interpolation=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_CONSTANT)
+        if kind == "fisheye" and ctx.get("mask") is not None and maps is not None:
+            mask = cv2.remap(ctx["mask"], maps[0], maps[1], interpolation=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT)
+            rendered = rendered.copy()
+            rendered[mask > 0] = 0
+        full = Path(ctx["dataset"]) / "images" / rel_name
+        half = Path(ctx["dataset"]) / "images_2" / rel_name
+        full.parent.mkdir(parents=True, exist_ok=True)
+        half.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(full), rendered, [cv2.IMWRITE_JPEG_QUALITY, ctx["quality"]])
+        h, w = rendered.shape[:2]
+        cv2.imwrite(str(half), cv2.resize(rendered, (w // 2, h // 2), interpolation=cv2.INTER_AREA), [cv2.IMWRITE_JPEG_QUALITY, ctx["quality"]])
+        gray = cv2.cvtColor(rendered, cv2.COLOR_BGR2GRAY)
+        records.append({"name": rel_name, "source": name, "width": w, "height": h, "sharpness": sharpness(gray)})
+    return {"source": name, "outputs": records}
+
+
+def run_package(args: argparse.Namespace) -> int:
+    """Build the T-502 trainer package from the refined model: PINHOLE cameras only.
+
+    Pinhole frames are undistorted at full size; each fisheye frame becomes
+    five virtual pinhole views (centre, up, down, fore, aft) rendered through
+    the exact kb4 model, with the static operator mask blacked out. Every
+    output gets a full-size and an exact half-size copy, a sharpness score, a
+    pose derived from the refined model, and sparse depth samples from the
+    refined points. Layout: ``dataset/{images,images_2,sparse/0/*.bin,splits.json}``,
+    ``depths/*.npz`` (training images only), ``colmap_input.json``,
+    ``package-receipt.json``.
+    """
+    import cv2
+    import pycolmap
+    from concurrent.futures import ProcessPoolExecutor
+
+    manifest = read_manifest(args.manifest)
+    calibration = load_calibration(args.calibration)
+    with open(Path(args.hypothesis_model) / "hypothesis.json", encoding="utf-8") as handle:
+        slot_assignment = json.load(handle)["slot_assignment"]
+    refined = pycolmap.Reconstruction(args.model)
+    refined_by_name = {image.name: image for image in refined.images.values()}
+    points_xyz = np.array([point.xyz for point in refined.points3D.values()]) if refined.num_points3D() else np.zeros((0, 3))
+    points_rgb = np.array([point.color for point in refined.points3D.values()], dtype=np.uint8) if refined.num_points3D() else np.zeros((0, 3), np.uint8)
+    views = fisheye_virtual_views(size=args.view_size, fov_deg=args.view_fov_deg, tilt_deg=args.view_tilt_deg)
+    # the down view is tilted less so it stops short of the operator at the bottom rim
+    views = [view._replace(R_view_from_camera=_rotation_about([1, 0, 0], -args.down_tilt_deg).T) if view.suffix == "d" else view for view in views]
+
+    # cameras of the package: one undistorted PINHOLE per physical pinhole camera, one shared PINHOLE for the virtual views
+    package_cameras: dict[str, PinholeCamera] = {}
+    maps_by_source: dict[str, list] = {}
+    for folder, camera_id in slot_assignment.items():
+        camera = calibration.cameras[camera_id]
+        if camera.is_fisheye:
+            for view in views:
+                key = f"view-{view.suffix}"
+                package_cameras.setdefault(key, PinholeCamera("PINHOLE", view.width, view.height, (view.focal, view.focal, view.width / 2.0, view.height / 2.0)))
+            maps_by_source[folder] = [(view.suffix, _fisheye_view_maps(camera, view), (view.width, view.height)) for view in views]
+        else:
+            new_camera = rectified_pinhole(camera)
+            package_cameras[camera_id] = new_camera
+            K = np.array([[camera.intrinsics[0], 0, camera.intrinsics[2]], [0, camera.intrinsics[1], camera.intrinsics[3]], [0, 0, 1]], dtype=float)
+            map1, map2 = cv2.initUndistortRectifyMap(K, np.array(camera.distortion[:4], dtype=float), None, new_camera.K, (camera.width, camera.height), cv2.CV_32FC1)
+            maps_by_source[folder] = [(None, (map1, map2), (camera.width, camera.height))]
+
+    masks = {}
+    if args.operator_masks:
+        for folder, camera_id in slot_assignment.items():
+            if calibration.cameras[camera_id].is_fisheye:
+                mask_path = Path(args.operator_masks) / f"operator-mask-{folder}.png"
+                if mask_path.exists():
+                    masks[folder] = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+
+    dataset = Path(args.out) / "dataset"
+    dataset.mkdir(parents=True, exist_ok=True)
+    tasks = []
+    poses: dict[str, tuple[str, np.ndarray]] = {}   # package image name -> (package camera key, T_world_view)
+    for instant in manifest["instants"]:
+        for slot in instant["slots"]:
+            name = slot["image"]
+            if name not in refined_by_name:
+                continue
+            folder = name.split("/")[0]
+            camera_id = slot_assignment[folder]
+            camera = calibration.cameras[camera_id]
+            image = refined_by_name[name]
+            cam_from_world = np.eye(4)
+            cam_from_world[:3, :4] = np.asarray(image.cam_from_world().matrix() if callable(image.cam_from_world) else image.cam_from_world.matrix())[:3, :4]
+            T_world_cam = np.linalg.inv(cam_from_world)
+            stem = f"inst{instant['seq']:05d}"
+            outputs = []
+            for suffix, maps, size in maps_by_source[folder]:
+                if suffix is None:
+                    rel = f"{stem}_{camera_id}.jpg"
+                    poses[rel] = (camera_id, T_world_cam)
+                else:
+                    rel = f"{stem}_{camera_id}_{suffix}.jpg"
+                    view = next(v for v in views if v.suffix == suffix)
+                    T_world_view = T_world_cam.copy()
+                    T_world_view[:3, :3] = T_world_cam[:3, :3] @ view.R_view_from_camera.T
+                    poses[rel] = (f"view-{suffix}", T_world_view)
+                outputs.append((rel, maps, size))
+            tasks.append((name, "fisheye" if camera.is_fisheye else "pinhole", str(Path(args.images) / name), outputs))
+
+    started = time.time()
+    records: dict[str, dict] = {}
+    context_by_kind = {"dataset": str(dataset), "quality": args.quality}
+    # one worker pool per fisheye folder mask is overkill: the mask is looked up by folder inside the worker context
+    with ProcessPoolExecutor(max_workers=max(1, args.workers), initializer=_package_worker_init, initargs=({**context_by_kind, "mask": None},)) as pool:
+        pinhole_tasks = [t for t in tasks if t[1] == "pinhole"]
+        for done, result in enumerate(pool.map(_package_image, pinhole_tasks, chunksize=2), start=1):
+            for record in result["outputs"]:
+                records[record["name"]] = record
+            if done % 500 == 0:
+                print(f"  pinholes {done}/{len(pinhole_tasks)}, {time.time() - started:.0f}s", flush=True)
+    for folder, mask in ({f: masks.get(f) for f in maps_by_source if any(calibration.cameras[slot_assignment[f]].is_fisheye for _ in [0])}).items():
+        folder_tasks = [t for t in tasks if t[1] == "fisheye" and t[0].startswith(folder + "/")]
+        with ProcessPoolExecutor(max_workers=max(1, args.workers), initializer=_package_worker_init, initargs=({**context_by_kind, "mask": mask},)) as pool:
+            for done, result in enumerate(pool.map(_package_image, folder_tasks, chunksize=2), start=1):
+                for record in result["outputs"]:
+                    records[record["name"]] = record
+                if done % 500 == 0:
+                    print(f"  {folder} views {done}/{len(folder_tasks)}, {time.time() - started:.0f}s", flush=True)
+
+    # blur gate: drop outputs below a fraction of their camera's median sharpness
+    by_camera: dict[str, list[float]] = {}
+    for rel, record in records.items():
+        by_camera.setdefault(poses[rel][0], []).append(record["sharpness"])
+    threshold = {key: args.blur_fraction * float(np.median(values)) for key, values in by_camera.items()}
+    kept = sorted(rel for rel, record in records.items() if record["sharpness"] >= threshold[poses[rel][0]])
+    dropped = sorted(set(records) - set(kept))
+    for rel in dropped:
+        for sub in ("images", "images_2"):
+            (dataset / sub / rel).unlink(missing_ok=True)
+
+    # the COLMAP model of the package, written by pycolmap for consistency
+    model = pycolmap.Reconstruction()
+    camera_ids: dict[str, int] = {}
+    for index, (key, camera) in enumerate(sorted(package_cameras.items()), start=1):
+        model.add_camera_with_trivial_rig(pycolmap.Camera(model="PINHOLE", width=camera.width, height=camera.height, params=list(camera.params), camera_id=index))
+        camera_ids[key] = index
+    point_ids: dict[int, int] = {}
+    for index, xyz in enumerate(points_xyz):
+        point_ids[index] = model.add_point3D(xyz, pycolmap.Track(), points_rgb[index])
+    splits = splits_from_names(kept, test_every=args.test_every)
+    heldout = set(splits["heldout"])
+    depths_dir = Path(args.out) / "depths"
+    depths_dir.mkdir(parents=True, exist_ok=True)
+    observation_count = 0
+    for image_id, rel in enumerate(kept, start=1):
+        key, T_world_view = poses[rel]
+        camera = package_cameras[key]
+        cam_from_world = np.linalg.inv(T_world_view)
+        uv, depth = depth_samples(points_xyz, T_world_view, camera.K, width=camera.width, height=camera.height)
+        visible = _visible_point_indices(points_xyz, T_world_view, camera.K, camera.width, camera.height)
+        image = pycolmap.Image(name=rel, keypoints=uv.astype(np.float64).reshape(-1, 2), camera_id=camera_ids[key], image_id=image_id)
+        model.add_image_with_trivial_frame(image)
+        frame = model.frame(model.image(image_id).frame_id)
+        frame.rig_from_world = pycolmap.Rigid3d(np.ascontiguousarray(cam_from_world[:3, :4]))
+        model.register_frame(frame.frame_id)
+        for k in range(len(visible)):
+            model.add_observation(point_ids[int(visible[k])], pycolmap.TrackElement(image_id, k))
+            observation_count += 1
+        if rel not in heldout and len(uv):
+            np.savez(depths_dir / (Path(rel).stem + ".npz"), uv=uv.astype(np.float32), depth_m=depth.astype(np.float32), width=np.int32(camera.width), height=np.int32(camera.height))
+    sparse_dir = dataset / "sparse" / "0"
+    sparse_dir.mkdir(parents=True, exist_ok=True)
+    model.write_binary(sparse_dir)
+    with open(dataset / "splits.json", "w", encoding="utf-8") as handle:
+        json.dump(splits, handle, indent=1)
+    bbox = points_xyz.min(axis=0).tolist() if len(points_xyz) else None, points_xyz.max(axis=0).tolist() if len(points_xyz) else None
+    summary = {
+        "n_cameras": model.num_cameras(), "n_images": model.num_images(), "n_points3D": model.num_points3D(), "n_observations": observation_count,
+        "image_sizes": sorted({(c.width, c.height) for c in package_cameras.values()}), "points_bbox_min": bbox[0], "points_bbox_max": bbox[1],
+        "frame": "the LCC2 export's SLAM frame (poses.csv); train with normalize_world_space False",
+    }
+    with open(Path(args.out) / "colmap_input.json", "w", encoding="utf-8") as handle:
+        json.dump(summary, handle, indent=1)
+    receipt = {
+        "schema": "xbag-colmap-trainer-package/1", "source_model": str(args.model), "slot_assignment": slot_assignment,
+        "virtual_views": [{"suffix": v.suffix, "fov_deg": args.view_fov_deg, "size": v.width} for v in views], "down_tilt_deg": args.down_tilt_deg, "view_tilt_deg": args.view_tilt_deg,
+        "operator_masks": sorted(masks), "blur_fraction_of_median": args.blur_fraction, "sharpness_threshold_by_camera": threshold,
+        "images_kept": len(kept), "images_dropped_for_blur": len(dropped), "dropped": dropped[:50], "test_every": args.test_every, "heldout": len(heldout),
+        "depth_priors": "sparse points of the refined model projected into each training view (uv, depth_m); none for held-out images",
+        "seconds": round(time.time() - started, 1), **summary,
+    }
+    with open(Path(args.out) / "package-receipt.json", "w", encoding="utf-8") as handle:
+        json.dump(receipt, handle, indent=1)
+    print(json.dumps({k: receipt[k] for k in ("images_kept", "images_dropped_for_blur", "n_cameras", "n_points3D", "n_observations", "heldout", "seconds")}))
+    return 0
+
+
+def _visible_point_indices(points_world: np.ndarray, T_world_cam: np.ndarray, K: np.ndarray, width: int, height: int) -> np.ndarray:
+    """Indices of the points that ``depth_samples`` keeps, in the same order."""
+    if len(points_world) == 0:
+        return np.zeros(0, dtype=int)
+    T_cam_world = np.linalg.inv(T_world_cam)
+    cam = (T_cam_world[:3, :3] @ np.asarray(points_world, dtype=float).T).T + T_cam_world[:3, 3]
+    depth = cam[:, 2]
+    ahead = depth > 1e-6
+    uv = np.full((len(points_world), 2), np.nan)
+    uv[ahead] = (K[:2, :2] @ (cam[ahead, :2] / depth[ahead, None]).T).T + K[:2, 2]
+    inside = ahead & (uv[:, 0] >= 0) & (uv[:, 0] < width) & (uv[:, 1] >= 0) & (uv[:, 1] < height)
+    return np.nonzero(inside)[0]
+
+
+def rig_config_entries(calibration: Calibration, slot_assignment: dict[str, str]) -> list[dict]:
+    """COLMAP rig-config camera entries for the four-camera rig: the camera_0 slot is the reference sensor.
+
+    ``slot_assignment`` maps a slot folder (``slot0``) to a calibration id. COLMAP
+    wants ``cam_from_rig``; the receipt gives each camera's pose IN camera_0's
+    frame (camera -> camera_0), so cam_from_rig is its inverse. Rotations are
+    written w x y z as ``read_rig_config`` expects.
+    """
+    entries = []
+    for folder, camera_id in sorted(slot_assignment.items(), key=lambda item: (item[1] != FISHEYE_IDS[0], item[0])):
+        camera = calibration.cameras[camera_id]
+        entry: dict = {
+            "image_prefix": f"{folder}/",
+            "ref_sensor": camera_id == FISHEYE_IDS[0],
+            "camera_model_name": camera.colmap_model,
+            "camera_params": [float(v) for v in (*camera.intrinsics, *camera.distortion)],
+        }
+        if not entry["ref_sensor"]:
+            cam_from_rig = np.linalg.inv(camera.pose)
+            qw, qx, qy, qz = matrix_to_quat_wxyz(cam_from_rig[:3, :3])
+            entry["cam_from_rig_rotation"] = [qw, qx, qy, qz]
+            entry["cam_from_rig_translation"] = [float(v) for v in cam_from_rig[:3, 3]]
+        entries.append(entry)
+    if not entries or not entries[0]["ref_sensor"]:
+        raise ValueError(f"no slot is assigned {FISHEYE_IDS[0]}, the rig's reference sensor: {slot_assignment}")
+    return entries
+
+
+def run_rig(args: argparse.Namespace) -> int:
+    """Declare the four cameras as one rig in the database and the model (frames = instants), so refinement moves one pose per instant."""
+    import pycolmap
+
+    manifest = read_manifest(args.manifest)
+    calibration = load_calibration(args.calibration)
+    with open(Path(args.model) / "hypothesis.json", encoding="utf-8") as handle:
+        slot_assignment = json.load(handle)["slot_assignment"]
+    entries = rig_config_entries(calibration, slot_assignment)
+    config_path = Path(args.out) / "rig-config.json"
+    Path(args.out).mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w", encoding="utf-8") as handle:
+        json.dump([{"cameras": entries}], handle, indent=1)
+    configs = pycolmap.read_rig_config(config_path)
+    reconstruction = pycolmap.Reconstruction(args.model)
+    db = pycolmap.Database.open(args.db)
+    try:
+        pycolmap.apply_rig_config(configs, db, reconstruction)
+        rigs, frames = db.num_rigs(), db.num_frames()
+    finally:
+        db.close()
+    reconstruction.write_text(args.out)
+    print(f"rig applied: {rigs} rig(s), {frames} frames in the database; model {reconstruction.num_rigs()} rig(s), {reconstruction.num_frames()} frames, {reconstruction.num_images()} images -> {args.out}")
+    return 0
+
+
 def _camera_world_poses(reconstruction: "pycolmap.Reconstruction") -> dict[int, np.ndarray]:
     poses = {}
     for image_id, image in reconstruction.images.items():
@@ -1060,6 +1772,7 @@ def run_refine(args: argparse.Namespace) -> int:
     options.refine_principal_point = False
     options.refine_extra_params = False
     options.refine_rig_from_world = True
+    options.refine_sensor_from_rig = False   # the receipt's camera-to-camera_0 offsets stay fixed when the model carries a rig
     options.refine_points3D = True
     options.print_summary = False
     options.ceres.solver_options.max_num_iterations = args.iterations
@@ -1074,8 +1787,12 @@ def run_refine(args: argparse.Namespace) -> int:
         # every camera keeps a soft tie to its pose-file position: that is the gauge, the metric
         # scale and the frame, and the deltas below say how far the pictures pulled it away
         priors = []
+        # with a rig, a frame has one pose: the prior belongs to the reference sensor's image only
+        ref_sensor_ids = {rig.ref_sensor_id.id for rig in reconstruction.rigs.values() if rig.num_sensors() > 1}
         for image_id, image in reconstruction.images.items():
             if not image.has_pose:
+                continue
+            if ref_sensor_ids and image.camera_id not in ref_sensor_ids:
                 continue
             prior = pycolmap.PosePrior()
             prior.position = np.asarray(reference.images[image_id].projection_center(), dtype=float)
@@ -1132,6 +1849,8 @@ def main(argv: list[str] | None = None) -> int:
     select.add_argument("--poses", required=True, help="project_data/poses.csv")
     select.add_argument("--zone", nargs=4, type=float, metavar=("XMIN", "XMAX", "YMIN", "YMAX"), required=True)
     select.add_argument("--budget", type=int, default=150)
+    select.add_argument("--keyframe-distance-m", type=float, default=0.0, help="motion keyframing: keep an instant after this much travel (0 = off)")
+    select.add_argument("--keyframe-angle-deg", type=float, default=0.0, help="motion keyframing: keep an instant after this much turning (0 = off)")
     select.add_argument("--capture", help="capture path, recorded in the manifest")
     select.add_argument("--out", required=True)
     select.set_defaults(func=run_select)
@@ -1143,6 +1862,7 @@ def main(argv: list[str] | None = None) -> int:
     extract.add_argument("--images", required=True)
     extract.add_argument("--fov-degrees", type=float, default=200.0)
     extract.add_argument("--quality", type=int, default=95)
+    extract.add_argument("--workers", type=int, default=1, help="decoder processes; each maps the capture read-only")
     extract.add_argument("--overwrite", action="store_true")
     extract.set_defaults(func=run_extract)
 
@@ -1154,7 +1874,15 @@ def main(argv: list[str] | None = None) -> int:
     features.add_argument("--threads", type=int, default=8)
     features.add_argument("--max-image-size", type=int, default=3200)
     features.add_argument("--max-features", type=int, default=8192)
+    features.add_argument("--only-lens", choices=["fisheye", "rectilinear"], help="extract only this lens class (the hybrid path: SIFT for fisheyes, GPU features for pinholes)")
     features.set_defaults(func=run_features)
+
+    pairs_lens = sub.add_parser("pairs-lens", help="filter a pair list to one lens class")
+    pairs_lens.add_argument("--manifest", required=True)
+    pairs_lens.add_argument("--pairs", required=True)
+    pairs_lens.add_argument("--lens", choices=["fisheye", "rectilinear"], required=True)
+    pairs_lens.add_argument("--out", required=True)
+    pairs_lens.set_defaults(func=run_pairs_lens)
 
     pairs = sub.add_parser("pairs", help="pose-guided pair list")
     pairs.add_argument("--manifest", required=True)
@@ -1169,6 +1897,40 @@ def main(argv: list[str] | None = None) -> int:
     match.add_argument("--threads", type=int, default=-1)
     match.add_argument("--block-size", type=int, default=1225)
     match.set_defaults(func=run_match)
+
+    gpu_features = sub.add_parser("gpu-features", help="DISK keypoints per frame on the GPU (kornia), one .npz per image")
+    gpu_features.add_argument("--manifest", required=True)
+    gpu_features.add_argument("--images", required=True)
+    gpu_features.add_argument("--features", required=True, help="output directory of per-image .npz files")
+    gpu_features.add_argument("--width", type=int, default=1600, help="detection width in pixels")
+    gpu_features.add_argument("--max-keypoints", type=int, default=4096)
+    gpu_features.set_defaults(func=run_gpu_features)
+
+    gpu_match = sub.add_parser("gpu-match", help="LightGlue over one shard of the pair list (kornia), to part files")
+    gpu_match.add_argument("--manifest", required=True)
+    gpu_match.add_argument("--pairs", required=True)
+    gpu_match.add_argument("--features", required=True)
+    gpu_match.add_argument("--matches", required=True, help="output directory of part files")
+    gpu_match.add_argument("--shard", type=int, default=0)
+    gpu_match.add_argument("--shards", type=int, default=1)
+    gpu_match.add_argument("--part-size", type=int, default=2000)
+    gpu_match.add_argument("--cache-images", type=int, default=3000, help="feature files held on the GPU before the cache is cleared")
+    gpu_match.add_argument("--cross-lens", action="store_true", help="also match fisheye-to-pinhole pairs across instants")
+    gpu_match.add_argument("--only-lens", choices=["fisheye", "rectilinear"], help="match only pairs of this lens class")
+    gpu_match.set_defaults(func=run_gpu_match)
+
+    gpu_import = sub.add_parser("gpu-import", help="build the database from the GPU features and matches, then verify with COLMAP")
+    gpu_import.add_argument("--manifest", required=True)
+    gpu_import.add_argument("--calibration", required=True)
+    gpu_import.add_argument("--images", required=True)
+    gpu_import.add_argument("--features", required=True)
+    gpu_import.add_argument("--matches", required=True)
+    gpu_import.add_argument("--db", required=True)
+    gpu_import.add_argument("--min-matches", type=int, default=15)
+    gpu_import.add_argument("--max-error", type=float, default=4.0, help="pixels; RANSAC threshold of the verification")
+    gpu_import.add_argument("--min-inliers", type=int, default=15)
+    gpu_import.add_argument("--only-lens", choices=["fisheye", "rectilinear"], help="import keypoints and matches only for this lens class")
+    gpu_import.set_defaults(func=run_gpu_import)
 
     score = sub.add_parser("score", help="rank every hypothesis by epipolar consistency")
     score.add_argument("--manifest", required=True)
@@ -1199,6 +1961,32 @@ def main(argv: list[str] | None = None) -> int:
     triangulate.add_argument("--max-angle-error", type=float, default=2.0, help="degrees; loosen (e.g. 5) for unrefined pose-file poses")
     triangulate.add_argument("--ply")
     triangulate.set_defaults(func=run_triangulate)
+
+    rig = sub.add_parser("rig", help="declare the four cameras as one rig (frames = instants) in the database and a copy of the model")
+    rig.add_argument("--manifest", required=True)
+    rig.add_argument("--calibration", required=True)
+    rig.add_argument("--model", required=True, help="sparse/0 written by `write` (its hypothesis.json gives the slot assignment)")
+    rig.add_argument("--db", required=True)
+    rig.add_argument("--out", required=True)
+    rig.set_defaults(func=run_rig)
+
+    package = sub.add_parser("package", help="the T-502 trainer package (PINHOLE only) from the refined model")
+    package.add_argument("--manifest", required=True)
+    package.add_argument("--calibration", required=True)
+    package.add_argument("--images", required=True, help="source frames (slot folders)")
+    package.add_argument("--model", required=True, help="the refined model (sparse/4-final)")
+    package.add_argument("--hypothesis-model", required=True, help="the model directory holding hypothesis.json (sparse/0)")
+    package.add_argument("--operator-masks", help="directory with operator-mask-slot{k}.png for the fisheye slots")
+    package.add_argument("--out", required=True)
+    package.add_argument("--view-size", type=int, default=1400)
+    package.add_argument("--view-fov-deg", type=float, default=90.0)
+    package.add_argument("--view-tilt-deg", type=float, default=50.0)
+    package.add_argument("--down-tilt-deg", type=float, default=35.0)
+    package.add_argument("--blur-fraction", type=float, default=0.35, help="drop images sharper than this fraction of their camera's median Laplacian variance")
+    package.add_argument("--test-every", type=int, default=8)
+    package.add_argument("--quality", type=int, default=95)
+    package.add_argument("--workers", type=int, default=6)
+    package.set_defaults(func=run_package)
 
     refine = sub.add_parser("refine", help="bundle adjustment with the calibration fixed; reports how far the poses moved")
     refine.add_argument("--model", required=True, help="a triangulated model (sparse/0-triangulated)")

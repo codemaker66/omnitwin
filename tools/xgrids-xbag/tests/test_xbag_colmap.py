@@ -346,6 +346,29 @@ class SelectZoneInstants(unittest.TestCase):
         self.assertGreater(three[2].seq, three[1].seq)
         self.assertEqual(len(three[0].records), 4)
 
+    def test_motion_keyframing_keeps_an_instant_only_after_enough_travel_or_turn(self) -> None:
+        from xbag_colmap import select_keyframes
+
+        # walk along x at 0.1 m per instant for 30 instants, then turn 20 degrees on the spot, then walk on
+        ts = np.arange(0, 20.01, 0.1)
+        poses = np.c_[ts, -20 + ts, np.zeros_like(ts), np.zeros_like(ts), np.tile(quat_about_z(0), (len(ts), 1))]
+        groups = []
+        for seq, t in enumerate(np.arange(0.15, 19.9, 0.3)):
+            ts_us = int(round(t * 1e6))
+            groups.append(tuple(FrameRecord(record_offset=seq * 4 + slot, seq=seq, ts_us=ts_us + slot, codec_tag=3, width=4000, height=3000, payload_offset=1000 + seq * 4 + slot, payload_length=10) for slot in range(4)))
+        zone = ZoneBox(xmin=-25, xmax=5, ymin=-1, ymax=1)
+        every = select_zone_instants(groups, poses, zone, budget=10_000)
+        # 0.3 s apart at 1 m/s = 0.3 m per instant: a 1.0 m rule keeps roughly every fourth instant
+        kept = select_keyframes(every, min_distance_m=1.0, min_angle_deg=15.0)
+        self.assertEqual(kept[0].seq, every[0].seq)
+        gaps = np.diff([k.position[0] for k in kept])
+        self.assertTrue(np.all(gaps >= 1.0 - 1e-9))
+        self.assertTrue(len(every) // 5 <= len(kept) <= len(every) // 3)
+        # a turn alone also earns a keyframe
+        turned = [i._replace(quat_raw=quat_about_z(20.0)) if n == 5 else i for n, i in enumerate(every[:8])]
+        kept_turn = select_keyframes(turned, min_distance_m=100.0, min_angle_deg=15.0)
+        self.assertEqual([k.seq for k in kept_turn], [every[0].seq, every[5].seq, every[6].seq])
+
     def test_refuses_a_box_whose_bounds_are_swapped(self) -> None:
         poses = np.array([[5.0, -10, 0, 0, *quat_about_z(0)], [6.0, -10, 0, 0, *quat_about_z(0)]])
         group = tuple(FrameRecord(record_offset=slot, seq=0, ts_us=5_500_000 + slot, codec_tag=3, width=4000, height=3000, payload_offset=100 + slot, payload_length=10) for slot in range(4))
@@ -428,6 +451,173 @@ class BuildPairs(unittest.TestCase):
 
         pairs = build_pairs(self.manifest([[0, 0, 0], [10, 0, 0]]), neighbours=6, radius=3.0)
         self.assertEqual(len(pairs), 2 * 6)
+
+
+class ImportedMatches(unittest.TestCase):
+    """Learned GPU matches are imported as keypoints + raw matches; COLMAP's own verification then builds the two-view geometries."""
+
+    def test_keypoints_and_matches_land_under_the_right_image_ids_in_full_resolution_pixels(self) -> None:
+        try:
+            import pycolmap
+        except ImportError:
+            self.skipTest("pycolmap not installed")
+        from xbag_colmap import import_image_matches, import_keypoints
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "database.db")
+            db = pycolmap.Database.open(db_path)
+            try:
+                camera = pycolmap.Camera(model="OPENCV", width=4000, height=3000, params=[1930, 1931, 1940, 1727, 0, 0, 0, 0], camera_id=1)
+                db.write_camera(camera, use_camera_id=True)
+                ids = {name: db.write_image(pycolmap.Image(name=name, camera_id=1)) for name in ("slot0/seq00005.jpg", "slot0/seq00009.jpg")}
+                # keypoints detected on a 2000-px-wide copy: scale 2.0 back to the 4000 x 3000 frame
+                import_keypoints(db, ids["slot0/seq00005.jpg"], np.array([[10.0, 20.0], [100.0, 200.0]]), scale=2.0)
+                import_keypoints(db, ids["slot0/seq00009.jpg"], np.array([[11.0, 21.0], [101.0, 201.0], [5.0, 5.0]]), scale=2.0)
+                count = import_image_matches(db, ids["slot0/seq00005.jpg"], ids["slot0/seq00009.jpg"], np.array([[0, 0], [1, 1]]))
+                stored = db.read_keypoints(ids["slot0/seq00005.jpg"])
+                matches = db.read_matches(ids["slot0/seq00005.jpg"], ids["slot0/seq00009.jpg"])
+            finally:
+                db.close()
+        self.assertEqual(count, 2)
+        np.testing.assert_allclose(np.asarray(stored)[:, :2], [[20.5, 40.5], [200.5, 400.5]])  # COLMAP pixel centres sit at +0.5
+        self.assertEqual(np.asarray(matches).tolist(), [[0, 0], [1, 1]])
+
+    def test_refuses_matches_that_index_beyond_the_keypoints(self) -> None:
+        try:
+            import pycolmap
+        except ImportError:
+            self.skipTest("pycolmap not installed")
+        from xbag_colmap import import_image_matches, import_keypoints
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = pycolmap.Database.open(os.path.join(tmp, "database.db"))
+            try:
+                db.write_camera(pycolmap.Camera(model="OPENCV", width=4000, height=3000, params=[1930, 1931, 1940, 1727, 0, 0, 0, 0], camera_id=1), use_camera_id=True)
+                a = db.write_image(pycolmap.Image(name="slot0/seq00005.jpg", camera_id=1))
+                b = db.write_image(pycolmap.Image(name="slot0/seq00009.jpg", camera_id=1))
+                import_keypoints(db, a, np.array([[10.0, 20.0]]), scale=1.0)
+                import_keypoints(db, b, np.array([[11.0, 21.0]]), scale=1.0)
+                with self.assertRaises(ValueError):
+                    import_image_matches(db, a, b, np.array([[0, 3]]))
+            finally:
+                db.close()
+
+
+class GpuPairPlanning(unittest.TestCase):
+    """Which pairs the learned matcher runs, and how they are split across matcher processes."""
+
+    def manifest(self) -> dict:
+        classes = ["rectilinear", "rectilinear", "fisheye", "fisheye"]
+        return {"instants": [{"seq": k, "position": [k, 0, 0], "quat_raw": [0, 0, 0, 1], "slots": [{"slot": s, "image": f"slot{s}/seq{k:05d}.jpg", "optical_class": classes[s]} for s in range(4)]} for k in range(2)]}
+
+    def test_cross_instant_pairs_between_different_lenses_are_dropped_by_default(self) -> None:
+        from xbag_colmap import build_pairs, pairs_for_matcher
+
+        pairs = build_pairs(self.manifest(), neighbours=6, radius=3.0)
+        kept = pairs_for_matcher(pairs, self.manifest(), cross_lens=False)
+        self.assertEqual(len(pairs), 12 + 16)
+        self.assertEqual(len(kept), 12 + 8)           # same-instant pairs all kept, cross-instant only pin-pin and fish-fish
+        self.assertIn(("slot0/seq00000.jpg", "slot1/seq00001.jpg"), kept)
+        self.assertNotIn(("slot0/seq00000.jpg", "slot2/seq00001.jpg"), kept)
+        self.assertIn(("slot0/seq00000.jpg", "slot2/seq00000.jpg"), kept)
+        self.assertEqual(pairs_for_matcher(pairs, self.manifest(), cross_lens=True), pairs)
+
+    def test_lens_filter_keeps_only_pairs_and_names_of_one_lens(self) -> None:
+        from xbag_colmap import build_pairs, names_of_lens, pairs_of_lens
+
+        manifest = self.manifest()
+        pairs = build_pairs(manifest, neighbours=6, radius=3.0)
+        fisheye_pairs = pairs_of_lens(pairs, manifest, "fisheye")
+        self.assertTrue(all(a.startswith(("slot2", "slot3")) and b.startswith(("slot2", "slot3")) for a, b in fisheye_pairs))
+        self.assertEqual(len(fisheye_pairs), 2 + 4)   # one same-instant pair per instant, four cross-instant combinations
+        self.assertEqual(names_of_lens(manifest, "rectilinear"), ["slot0/seq00000.jpg", "slot1/seq00000.jpg", "slot0/seq00001.jpg", "slot1/seq00001.jpg"])
+        with self.assertRaises(ValueError):
+            names_of_lens(manifest, "telephoto")
+
+    def test_shards_split_the_pairs_evenly_and_cover_them_all(self) -> None:
+        from xbag_colmap import shard
+
+        items = list(range(10))
+        parts = [shard(items, index, count=3) for index in range(3)]
+        self.assertEqual(sorted(sum(parts, [])), items)
+        self.assertEqual([len(p) for p in parts], [4, 3, 3])
+        with self.assertRaises(ValueError):
+            shard(items, 3, count=3)
+
+
+class RigConfiguration(unittest.TestCase):
+    """The four cameras are one rigid rig: COLMAP's rig config wants each sensor's pose FROM the rig frame (camera_0's frame)."""
+
+    def test_config_lists_the_reference_camera_first_with_cam_from_rig_from_the_receipt(self) -> None:
+        from xbag_colmap import rig_config_entries
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cal = load_calibration(write_calibration(tmp))
+        assignment = {"slot0": "camera_3", "slot1": "camera_2", "slot2": "camera_1", "slot3": "camera_0"}
+        entries = rig_config_entries(cal, assignment)
+        self.assertEqual([e["image_prefix"] for e in entries], ["slot3/", "slot0/", "slot1/", "slot2/"])
+        self.assertTrue(entries[0]["ref_sensor"])
+        self.assertNotIn("cam_from_rig_rotation", entries[0])
+        cam1 = next(e for e in entries if e["image_prefix"] == "slot2/")
+        # camera_1 sits 0.09 m behind camera_0 facing backwards: cam_from_rig = inverse of the receipt's camera_1 pose
+        T = np.eye(4)
+        T[:3, :3] = quat_xyzw_to_matrix(np.array([cam1["cam_from_rig_rotation"][1], cam1["cam_from_rig_rotation"][2], cam1["cam_from_rig_rotation"][3], cam1["cam_from_rig_rotation"][0]]))
+        T[:3, 3] = cam1["cam_from_rig_translation"]
+        np.testing.assert_allclose(T @ cal.cameras["camera_1"].pose, np.eye(4), atol=1e-9)
+        self.assertEqual(cam1["camera_model_name"], "OPENCV_FISHEYE")
+        np.testing.assert_allclose(cam1["camera_params"], [790, 791, 1995, 1501, 0.09, -0.02, 0.007, -0.003])
+
+
+class TrainerPackage(unittest.TestCase):
+    """The T-502 trainer contract wants PINHOLE cameras, half-resolution copies, a splits.json and sparse depth samples."""
+
+    def test_fisheye_virtual_views_cover_the_lens_with_ninety_degree_pinholes(self) -> None:
+        from xbag_colmap import fisheye_virtual_views
+
+        views = fisheye_virtual_views(size=1400, fov_deg=90.0, tilt_deg=50.0)
+        self.assertEqual([v.suffix for v in views], ["c", "u", "d", "f", "a"])
+        centre = views[0]
+        np.testing.assert_allclose(centre.R_view_from_camera, np.eye(3))
+        self.assertAlmostEqual(centre.focal, 700.0)
+        self.assertEqual((centre.width, centre.height), (1400, 1400))
+        up = views[1]
+        # the up view's optical axis (its z in the fisheye frame) tilts 50 degrees towards the fisheye's -y (up in OpenCV axes)
+        axis = up.R_view_from_camera.T @ np.array([0, 0, 1.0])
+        self.assertAlmostEqual(float(axis[1]), -math.sin(math.radians(50)), places=9)
+        self.assertAlmostEqual(float(axis[2]), math.cos(math.radians(50)), places=9)
+
+    def test_rectified_pinhole_keeps_the_frame_size_and_drops_the_distortion(self) -> None:
+        from xbag_colmap import rectified_pinhole
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cal = load_calibration(write_calibration(tmp))
+        camera = cal.cameras["camera_2"]
+        new_camera = rectified_pinhole(camera)
+        self.assertEqual(new_camera.colmap_model, "PINHOLE")
+        self.assertEqual((new_camera.width, new_camera.height), (4000, 3000))
+        self.assertEqual(len(new_camera.params), 4)
+        self.assertLess(abs(new_camera.params[0] - 1930), 60)  # focal length stays close to the original
+
+    def test_splits_follow_the_sorted_index_rule(self) -> None:
+        from xbag_colmap import splits_from_names
+
+        names = [f"b/{k}.png" for k in range(5)] + [f"a/{k}.png" for k in range(12)]
+        splits = splits_from_names(names, test_every=8)
+        ordered = sorted(names)
+        self.assertEqual(splits["heldout"], [ordered[0], ordered[8], ordered[16]])
+        self.assertEqual(len(splits["train"]) + len(splits["heldout"]), 17)
+        self.assertEqual(sorted(splits["train"] + splits["heldout"]), ordered)
+
+    def test_depth_samples_project_visible_points_in_full_resolution_pixels(self) -> None:
+        from xbag_colmap import depth_samples
+
+        K = np.array([[700.0, 0, 700.0], [0, 700.0, 700.0], [0, 0, 1]])
+        T_world_cam = np.eye(4)
+        points = np.array([[0.0, 0.0, 5.0], [1.0, 0.0, 5.0], [0.0, 0.0, -2.0], [20.0, 0.0, 1.0]])  # ahead, ahead-right, behind, outside the frame
+        uv, depth = depth_samples(points, T_world_cam, K, width=1400, height=1400)
+        np.testing.assert_allclose(uv, [[700, 700], [840, 700]])
+        np.testing.assert_allclose(depth, [5.0, 5.0])
+        self.assertEqual(uv.dtype, np.float32)
 
 
 class DatabaseCameras(unittest.TestCase):
@@ -537,6 +727,24 @@ class LensCircle(unittest.TestCase):
             classes_from_circle_ratios([0.03, 0.02, 0.04, 0.9])       # three dark surrounds
         with self.assertRaises(ValueError):
             classes_from_circle_ratios([0.10, 0.12, 0.07, 0.06])      # no clear gap between the pairs
+
+    def test_rank_only_mode_still_orders_by_ratio_when_the_gap_is_thin(self) -> None:
+        # Grand Hall seq 2217: pinholes in the dark at 0.096/0.097, fisheyes 0.051/0.041 (gap 1.9x)
+        from xbag_colmap import classes_from_circle_ratios
+
+        self.assertEqual(classes_from_circle_ratios([0.096, 0.097, 0.051, 0.041], strict=False), ["rectilinear", "rectilinear", "fisheye", "fisheye"])
+        with self.assertRaises(ValueError):
+            classes_from_circle_ratios([0.5, 0.5, 0.5, 0.5], strict=False)  # nothing dark at all is still refused
+
+    def test_majority_pattern_check_names_the_instants_that_disagree(self) -> None:
+        from xbag_colmap import check_slot_pattern
+
+        instants = [{"seq": k, "slots": [{"optical_class": c} for c in ("rectilinear", "rectilinear", "fisheye", "fisheye")]} for k in range(5)]
+        self.assertEqual(check_slot_pattern(instants), ["rectilinear", "rectilinear", "fisheye", "fisheye"])
+        instants[3]["slots"] = [{"optical_class": c} for c in ("fisheye", "rectilinear", "rectilinear", "fisheye")]
+        with self.assertRaises(ValueError) as caught:
+            check_slot_pattern(instants)
+        self.assertIn("seq 3", str(caught.exception))
 
 
 if __name__ == "__main__":
