@@ -1490,12 +1490,12 @@ def _package_image(task: tuple) -> dict:
             rendered = rendered.copy()
             rendered[mask > 0] = 0
         full = Path(ctx["dataset"]) / "images" / rel_name
-        half = Path(ctx["dataset"]) / "images_2" / rel_name
+        half = (Path(ctx["dataset"]) / "images_2" / rel_name).with_suffix(".png")   # the trainer contract refuses a JPEG runtime folder
         full.parent.mkdir(parents=True, exist_ok=True)
         half.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(full), rendered, [cv2.IMWRITE_JPEG_QUALITY, ctx["quality"]])
         h, w = rendered.shape[:2]
-        cv2.imwrite(str(half), cv2.resize(rendered, (w // 2, h // 2), interpolation=cv2.INTER_AREA), [cv2.IMWRITE_JPEG_QUALITY, ctx["quality"]])
+        cv2.imwrite(str(half), cv2.resize(rendered, (w // 2, h // 2), interpolation=cv2.INTER_AREA), [cv2.IMWRITE_PNG_COMPRESSION, 1])
         gray = cv2.cvtColor(rendered, cv2.COLOR_BGR2GRAY)
         records.append({"name": rel_name, "source": name, "width": w, "height": h, "sharpness": sharpness(gray)})
     return {"source": name, "outputs": records}
@@ -1523,8 +1523,14 @@ def run_package(args: argparse.Namespace) -> int:
         slot_assignment = json.load(handle)["slot_assignment"]
     refined = pycolmap.Reconstruction(args.model)
     refined_by_name = {image.name: image for image in refined.images.values()}
-    points_xyz = np.array([point.xyz for point in refined.points3D.values()]) if refined.num_points3D() else np.zeros((0, 3))
-    points_rgb = np.array([point.color for point in refined.points3D.values()], dtype=np.uint8) if refined.num_points3D() else np.zeros((0, 3), np.uint8)
+    point_index = {point_id: index for index, point_id in enumerate(sorted(refined.points3D))}
+    points_xyz = np.array([refined.points3D[point_id].xyz for point_id in sorted(refined.points3D)]) if refined.num_points3D() else np.zeros((0, 3))
+    points_rgb = np.array([refined.points3D[point_id].color for point_id in sorted(refined.points3D)], dtype=np.uint8) if refined.num_points3D() else np.zeros((0, 3), np.uint8)
+    # the refined model's REAL tracks: which points each source frame observed (frustum visibility ignores occlusion)
+    observed: dict[str, np.ndarray] = {}
+    for name, image in refined_by_name.items():
+        ids = [point2D.point3D_id for point2D in image.points2D if point2D.has_point3D()]
+        observed[name] = np.array([point_index[point_id] for point_id in ids], dtype=int)
     views = fisheye_virtual_views(size=args.view_size, fov_deg=args.view_fov_deg, tilt_deg=args.view_tilt_deg)
     # the down view is tilted less so it stops short of the operator at the bottom rim
     views = [view._replace(R_view_from_camera=_rotation_about([1, 0, 0], -args.down_tilt_deg).T) if view.suffix == "d" else view for view in views]
@@ -1558,6 +1564,7 @@ def run_package(args: argparse.Namespace) -> int:
     dataset.mkdir(parents=True, exist_ok=True)
     tasks = []
     poses: dict[str, tuple[str, np.ndarray]] = {}   # package image name -> (package camera key, T_world_view)
+    source_of: dict[str, str] = {}                  # package image name -> source frame name
     for instant in manifest["instants"]:
         for slot in instant["slots"]:
             name = slot["image"]
@@ -1582,6 +1589,7 @@ def run_package(args: argparse.Namespace) -> int:
                     T_world_view = T_world_cam.copy()
                     T_world_view[:3, :3] = T_world_cam[:3, :3] @ view.R_view_from_camera.T
                     poses[rel] = (f"view-{suffix}", T_world_view)
+                source_of[rel] = name
                 outputs.append((rel, maps, size))
             tasks.append((name, "fisheye" if camera.is_fisheye else "pinhole", str(Path(args.images) / name), outputs))
 
@@ -1610,11 +1618,25 @@ def run_package(args: argparse.Namespace) -> int:
     for rel, record in records.items():
         by_camera.setdefault(poses[rel][0], []).append(record["sharpness"])
     threshold = {key: args.blur_fraction * float(np.median(values)) for key, values in by_camera.items()}
-    kept = sorted(rel for rel, record in records.items() if record["sharpness"] >= threshold[poses[rel][0]])
-    dropped = sorted(set(records) - set(kept))
-    for rel in dropped:
-        for sub in ("images", "images_2"):
-            (dataset / sub / rel).unlink(missing_ok=True)
+    sharp = sorted(rel for rel, record in records.items() if record["sharpness"] >= threshold[poses[rel][0]])
+    dropped = sorted(set(records) - set(sharp))
+    # sparse support per view from the source frame's real observations; a view with too few is dropped
+    samples: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+    unsupported = []
+    for rel in sharp:
+        key, T_world_view = poses[rel]
+        camera = package_cameras[key]
+        tracked = observed[source_of[rel]]
+        uv, depth = depth_samples(points_xyz[tracked], T_world_view, camera.K, width=camera.width, height=camera.height)
+        visible = tracked[_visible_point_indices(points_xyz[tracked], T_world_view, camera.K, camera.width, camera.height)]
+        if len(uv) < args.min_depth_samples:
+            unsupported.append(rel)
+            continue
+        samples[rel] = (uv, depth, visible)
+    kept = sorted(samples)
+    for rel in dropped + unsupported:
+        (dataset / "images" / rel).unlink(missing_ok=True)
+        (dataset / "images_2" / rel).with_suffix(".png").unlink(missing_ok=True)
 
     # the COLMAP model of the package, written by pycolmap for consistency
     model = pycolmap.Reconstruction()
@@ -1634,8 +1656,7 @@ def run_package(args: argparse.Namespace) -> int:
         key, T_world_view = poses[rel]
         camera = package_cameras[key]
         cam_from_world = np.linalg.inv(T_world_view)
-        uv, depth = depth_samples(points_xyz, T_world_view, camera.K, width=camera.width, height=camera.height)
-        visible = _visible_point_indices(points_xyz, T_world_view, camera.K, camera.width, camera.height)
+        uv, depth, visible = samples[rel]
         image = pycolmap.Image(name=rel, keypoints=uv.astype(np.float64).reshape(-1, 2), camera_id=camera_ids[key], image_id=image_id)
         model.add_image_with_trivial_frame(image)
         frame = model.frame(model.image(image_id).frame_id)
@@ -1648,6 +1669,10 @@ def run_package(args: argparse.Namespace) -> int:
             np.savez(depths_dir / (Path(rel).stem + ".npz"), uv=uv.astype(np.float32), depth_m=depth.astype(np.float32), width=np.int32(camera.width), height=np.int32(camera.height))
     sparse_dir = dataset / "sparse" / "0"
     sparse_dir.mkdir(parents=True, exist_ok=True)
+    orphaned = [point_id for point_id, point in model.points3D.items() if point.track.length() == 0]
+    for point_id in orphaned:           # observed only outside every rendered view: the contract refuses empty tracks
+        model.delete_point3D(point_id)
+    model.update_point_3d_errors()   # points were added without an error; the contract refuses the -1 default
     model.write_binary(sparse_dir)
     with open(dataset / "splits.json", "w", encoding="utf-8") as handle:
         json.dump(splits, handle, indent=1)
@@ -1663,7 +1688,7 @@ def run_package(args: argparse.Namespace) -> int:
         "schema": "xbag-colmap-trainer-package/1", "source_model": str(args.model), "slot_assignment": slot_assignment,
         "virtual_views": [{"suffix": v.suffix, "fov_deg": args.view_fov_deg, "size": v.width} for v in views], "down_tilt_deg": args.down_tilt_deg, "view_tilt_deg": args.view_tilt_deg,
         "operator_masks": sorted(masks), "blur_fraction_of_median": args.blur_fraction, "sharpness_threshold_by_camera": threshold,
-        "images_kept": len(kept), "images_dropped_for_blur": len(dropped), "dropped": dropped[:50], "test_every": args.test_every, "heldout": len(heldout),
+        "images_kept": len(kept), "images_dropped_for_blur": len(dropped), "images_dropped_for_no_sparse_support": len(unsupported), "min_depth_samples": args.min_depth_samples, "dropped": (dropped + unsupported)[:50], "test_every": args.test_every, "heldout": len(heldout),
         "depth_priors": "sparse points of the refined model projected into each training view (uv, depth_m); none for held-out images",
         "seconds": round(time.time() - started, 1), **summary,
     }
@@ -1982,7 +2007,8 @@ def main(argv: list[str] | None = None) -> int:
     package.add_argument("--view-fov-deg", type=float, default=90.0)
     package.add_argument("--view-tilt-deg", type=float, default=50.0)
     package.add_argument("--down-tilt-deg", type=float, default=35.0)
-    package.add_argument("--blur-fraction", type=float, default=0.35, help="drop images sharper than this fraction of their camera's median Laplacian variance")
+    package.add_argument("--blur-fraction", type=float, default=0.35, help="drop images below this fraction of their camera's median Laplacian variance")
+    package.add_argument("--min-depth-samples", type=int, default=10, help="drop views with fewer projected sparse observations than this")
     package.add_argument("--test-every", type=int, default=8)
     package.add_argument("--quality", type=int, default=95)
     package.add_argument("--workers", type=int, default=6)
