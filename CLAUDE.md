@@ -277,6 +277,12 @@ matches what you're about to do.
   tiles, adding a room to the walk or planner, or explaining why an on-screen
   splat count disagrees with the XGRIDS build report.
 
+- `.claude/gotchas/pycolmap-windows-traps.md`
+  Read this when: calling pycolmap (feature extraction, matching,
+  triangulation, `Database`) on this Windows machine, building or
+  reading a COLMAP `database.db`, or writing a `sparse/0` model COLMAP
+  must load next to a database.
+
 - `.claude/gotchas/spark-render-target-effects.md`
   Read this when: adding any effect that renders the scene to an
   off-screen target (drei `ContactShadows`, `Environment` probes,
