@@ -246,8 +246,8 @@ importers:
         specifier: 10.42.0
         version: 10.42.0(react@18.3.1)
       '@sparkjsdev/spark':
-        specifier: 2.0.0
-        version: 2.0.0(three@0.180.0)
+        specifier: 2.1.0
+        version: 2.1.0(three@0.180.0)
       '@zip.js/zip.js':
         specifier: 2.8.26
         version: 2.8.26
@@ -2053,10 +2053,10 @@ packages:
   '@socket.io/component-emitter@3.1.2':
     resolution: {integrity: sha512-9BCxFwvbGg/RsZK9tjXd8s4UcwR0MWeFQ1XEKIQVVvAGJyINdrqKMcTRyLoK8Rse1GjzLV9cwjWV1olXRWEXVA==}
 
-  '@sparkjsdev/spark@2.0.0':
-    resolution: {integrity: sha512-W1p7NM4xXcUAVVcVus2mIFwcAC3VckyE0l4wXJuSmhcOgb6hHpqhQ/Ks9MK9ts7j23K+UwbCBwe+aTc/zgGygw==}
+  '@sparkjsdev/spark@2.1.0':
+    resolution: {integrity: sha512-BRw+MuMzx0B3K8fDLQygt2OHEhYUV+41RX7btq9pZ3rCVrq42o57jW34VAIvC7JO/84DJh/1AutACV9ym6BfVg==}
     peerDependencies:
-      three: ^0.180.0
+      three: '>=0.180.0'
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
@@ -6303,7 +6303,7 @@ snapshots:
 
   '@socket.io/component-emitter@3.1.2': {}
 
-  '@sparkjsdev/spark@2.0.0(three@0.180.0)':
+  '@sparkjsdev/spark@2.1.0(three@0.180.0)':
     dependencies:
       fflate: 0.8.2
       three: 0.180.0

@@ -53,7 +53,7 @@ Your strategic council personas are in .claude/council/.
 - Vitest for testing
 - Zod for runtime validation
 - pnpm workspaces monorepo
-- Spark 2.0 (@sparkjsdev/spark) for Gaussian splat rendering — NEVER drei's <Splat />
+- Spark 2.1 (@sparkjsdev/spark, bumped from 2.0 on 2026-09-03) for Gaussian splat rendering — NEVER drei's <Splat />
 - Three.js ≥ 0.180.0 required for Spark compatibility; the web package is on 0.180 after T-087
 
 ## Quality Bar

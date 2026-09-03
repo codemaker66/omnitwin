@@ -15,7 +15,7 @@ import { splatStagingPlugin } from "./src/lib/splat-staging-plugin";
 // out of every other route's initial download:
 //   - react-vendor: react/dom/router (every route needs it; cacheable)
 //   - three:        three.js + R3F + drei + stdlib (3D routes only)
-//   - spark:        Spark 2.0 splat renderer (splat routes only)
+//   - spark:        Spark 2.1 splat renderer (splat routes only)
 //   - clerk:        @clerk/react (login, register, dashboard need it;
 //                   anonymous /hallkeeper/:id and /editor guests do NOT)
 //
