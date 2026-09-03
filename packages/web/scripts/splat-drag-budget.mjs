@@ -62,6 +62,16 @@ const TREE_DIR = process.env.SPLAT_BUDGET_TREE_DIR ?? "";
 /** Emulate a connection: download throughput in megabits per second (0 = none). */
 const THROTTLE_MBPS = Number(process.env.SPLAT_BUDGET_THROTTLE_MBPS ?? "0");
 const THROTTLE_LATENCY_MS = Number(process.env.SPLAT_BUDGET_THROTTLE_LATENCY_MS ?? "20");
+/**
+ * Another route than the walk (for example `/plan?space=grand-hall`, the
+ * planner over the captured room). Such a route has no `__roomWalk` ledger,
+ * so readiness is a canvas plus SPLAT_BUDGET_READY_MS of settling, and the
+ * drag uses the planner's orbit button (right) instead of the walk's look
+ * (left).
+ */
+const PATH = process.env.SPLAT_BUDGET_PATH ?? "";
+const READY_MS = Number(process.env.SPLAT_BUDGET_READY_MS ?? "25000");
+const DRAG_BUTTON = process.env.SPLAT_BUDGET_DRAG_BUTTON ?? (PATH.length > 0 ? "right" : "left");
 
 /** Two 60 Hz frames: one late frame is a hiccup, a run of them is a stutter. */
 const DROPPED_FRAME_MS = 33.4;
@@ -208,7 +218,7 @@ async function readPageFacts(page) {
 async function dragFor(page, durationMs, centre) {
   const start = Date.now();
   await page.mouse.move(centre.x, centre.y);
-  await page.mouse.down();
+  await page.mouse.down({ button: DRAG_BUTTON });
   let step = 0;
   while (Date.now() - start < durationMs) {
     const t = (Date.now() - start) / 1000;
@@ -218,11 +228,16 @@ async function dragFor(page, durationMs, centre) {
     step += 1;
     await new Promise((resolve) => { setTimeout(resolve, 12); });
   }
-  await page.mouse.up();
+  await page.mouse.up({ button: DRAG_BUTTON });
   return step;
 }
 
 async function waitForRoom(page) {
+  if (PATH.length > 0) {
+    await page.waitForSelector("canvas", { timeout: LOAD_TIMEOUT_MS });
+    await page.waitForTimeout(READY_MS);
+    return;
+  }
   const closed = await page.getByTestId("room-walk-closed").count();
   if (closed > 0) {
     throw new Error(`room ${ROOM} renders a closed door on this route; nothing to measure`);
@@ -248,8 +263,10 @@ async function saveCanvasReadback(page, file) {
 }
 
 async function run() {
-  const query = [QUERY, SHOT ? "bare=1" : ""].filter((part) => part.length > 0).join("&");
-  const url = `${BASE_URL}/room/${ROOM}${query.length > 0 ? `?${query}` : ""}`;
+  const query = [QUERY, SHOT && PATH.length === 0 ? "bare=1" : ""].filter((part) => part.length > 0).join("&");
+  const path = PATH.length > 0 ? PATH : `/room/${ROOM}`;
+  const joiner = path.includes("?") ? "&" : "?";
+  const url = `${BASE_URL}${path}${query.length > 0 ? `${joiner}${query}` : ""}`;
   const browser = await chromium.launch({
     headless: HEADLESS,
     args: ["--ignore-gpu-blocklist", "--disable-background-timer-throttling"],
