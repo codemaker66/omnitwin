@@ -8,6 +8,7 @@ import {
 import { roomSplatBundle, roomSplatTileUrls } from "../../data/room-splat-bundles.js";
 import { RoomClipBox } from "./RoomClipBox.js";
 import { InteriorCamera } from "./InteriorCamera.js";
+import { useSplatRuntimeProfile } from "../../hooks/use-splat-runtime-profile.js";
 import {
   runtimeAssetCameraViewForRoom,
   runtimeAssetViewTransformForRoom,
@@ -92,6 +93,28 @@ export function RoomSplatScene({
     [],
   );
 
+  // How hard this device may work: sort cadence, tail radius and the
+  // level-of-detail budget go to the renderer; the pixel ratios go to the
+  // camera, which drops resolution while the view moves. The settled ratio is
+  // a cap, never an upscale: a 1x display rests at 1 whatever the profile says.
+  const profile = useSplatRuntimeProfile();
+  const deviceDpr = typeof window === "undefined" ? 1 : window.devicePixelRatio;
+  const settledDpr = Math.min(deviceDpr, profile.settledDpr);
+
+  // The motion budget. The camera says when the view is moving; the renderer
+  // host polls this each frame and scales the level-of-detail budget down to
+  // the profile's motion budget while it is. Refs and stable callbacks, so
+  // neither the camera nor the tiles ever re-render for a flag that flips on
+  // every drag.
+  const movingRef = useRef(false);
+  const handleMotionChange = useCallback((moving: boolean) => {
+    movingRef.current = moving;
+  }, []);
+  const lodScaleFn = useCallback(
+    () => (movingRef.current ? profile.motionLodSplatCount / profile.lodSplatCount : 1),
+    [profile],
+  );
+
   const loadedRef = useRef<Map<string, number>>(new Map());
   const failedRef = useRef<Set<string>>(new Set());
 
@@ -149,13 +172,18 @@ export function RoomSplatScene({
       {extentM !== null && (
         <RoomClipBox extentM={extentM} keepHeightFraction={1} />
       )}
-      {urls.map((url) => (
+      {urls.map((url, index) => (
         <SparkSplatLayer
           key={url}
           url={url}
           position={[...transform.position] as [number, number, number]}
           rotation={[...transform.rotation] as [number, number, number]}
           scale={transform.scale}
+          runtime={profile}
+          // One renderer host per scene, as every other mount does. Each host
+          // is a SparkRenderer of its own, and a room is one scene.
+          includeRendererHost={index === 0}
+          lodScaleFn={lodScaleFn}
           onLoad={handleLoad}
           onError={handleError}
         />
@@ -169,6 +197,9 @@ export function RoomSplatScene({
           }}
           roomHeightM={extentM?.[1]}
           reducedMotion={prefersReducedMotion}
+          motionDpr={profile.motionDpr}
+          settledDpr={settledDpr}
+          onMotionChange={handleMotionChange}
         />
       )}
     </Canvas>

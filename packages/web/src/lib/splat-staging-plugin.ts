@@ -17,8 +17,12 @@ import type { Plugin } from "vite";
 /** URL prefix the web app requests tiles under. */
 const SPLAT_URL_PREFIX = "/splats/";
 
-/** Extensions this middleware will serve. Nothing else is readable through it. */
-const SERVABLE_EXTENSIONS = [".sog", ".spz", ".ply", ".splat", ".ksplat"] as const;
+/**
+ * Extensions this middleware will serve. Nothing else is readable through it.
+ * `.rad` is Spark's prebuilt level-of-detail tree and `.radc` its streamed
+ * chunk; both are staged next to the tiles they were built from.
+ */
+const SERVABLE_EXTENSIONS = [".sog", ".spz", ".ply", ".splat", ".ksplat", ".rad", ".radc"] as const;
 
 const CONTENT_TYPE = "application/octet-stream";
 

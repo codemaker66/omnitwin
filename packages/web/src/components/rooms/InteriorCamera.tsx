@@ -83,6 +83,12 @@ export interface InteriorCameraProps {
   readonly motionDpr?: number;
   /** Skip the settling entirely for people who asked for less motion. */
   readonly reducedMotion?: boolean;
+  /**
+   * Told once each time the view starts or stops moving. "Moving" is the
+   * look or the position still resolving toward its target, or a walk key
+   * held. The renderer trades detail for frame rate on exactly this signal.
+   */
+  readonly onMotionChange?: (moving: boolean) => void;
 }
 
 export function InteriorCamera({
@@ -92,10 +98,17 @@ export function InteriorCamera({
   reducedMotion = false,
   settledDpr,
   motionDpr = 1,
+  onMotionChange,
 }: InteriorCameraProps): ReactElement {
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
+
+  // The listener lives in a ref so a caller passing a fresh function per
+  // render does not re-run any effect; the report itself is change-only.
+  const onMotionChangeRef = useRef(onMotionChange);
+  useEffect(() => { onMotionChangeRef.current = onMotionChange; }, [onMotionChange]);
+  const reportedMoving = useRef<boolean | null>(null);
 
   // How far up this room allows. A 2.18 m ceiling and a dome are not the same
   // room, and a single constant serves neither.
@@ -276,6 +289,11 @@ export function InteriorCamera({
     camera.rotation.set(now.pitch, now.yaw, 0);
 
     const settled = isSettled(now, want);
+    const moving = !settled || forward !== 0 || strafe !== 0;
+    if (reportedMoving.current !== moving) {
+      reportedMoving.current = moving;
+      onMotionChangeRef.current?.(moving);
+    }
 
     // Land exactly on target on the frame it settles. Stopping at the epsilon
     // freezes a sub-pixel error into the last frame, and the loop is about to
@@ -304,7 +322,7 @@ export function InteriorCamera({
 
     // Sustain the loop while anything is resolving, and let it stop when
     // nothing is — which is what keeps an idle room off the GPU entirely.
-    if (!settled || forward !== 0 || strafe !== 0) invalidate();
+    if (moving) invalidate();
   });
 
   return <></>;

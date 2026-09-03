@@ -44,8 +44,8 @@ describe("resolveStagedSplatPath", () => {
     expect(resolveStagedSplatPath(ROOT, "/splats/%E0%A4%A.sog")).toBeNull();
   });
 
-  it("accepts every extension the runtime can actually render", () => {
-    for (const extension of [".sog", ".spz", ".ply", ".splat", ".ksplat"]) {
+  it("accepts every extension the runtime can actually render, the level-of-detail tree files included", () => {
+    for (const extension of [".sog", ".spz", ".ply", ".splat", ".ksplat", ".rad", ".radc"]) {
       expect(resolveStagedSplatPath(ROOT, `/splats/a/b/tile${extension}`)).not.toBeNull();
     }
   });

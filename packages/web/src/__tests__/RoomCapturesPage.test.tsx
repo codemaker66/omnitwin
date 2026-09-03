@@ -23,15 +23,17 @@ vi.mock("@react-three/drei", () => ({
 }));
 
 vi.mock("../components/scene/SparkSplatLayer.js", () => ({
-  SparkSplatLayer: ({ url, position, scale }: {
+  SparkSplatLayer: ({ url, position, scale, includeRendererHost }: {
     readonly url: string;
     readonly position?: readonly number[];
     readonly scale?: number;
+    readonly includeRendererHost?: boolean;
   }) => (
     <div
       data-testid="spark-splat-layer"
       data-position={JSON.stringify(position)}
       data-scale={String(scale)}
+      data-host={String(includeRendererHost)}
     >
       {url}
     </div>
@@ -75,6 +77,15 @@ describe("RoomCapturesPage", () => {
     const urls = mountedUrls();
     expect(urls.length).toBeGreaterThan(0);
     expect(urls.every((url) => url.includes("/trades-hall/reception-room/"))).toBe(true);
+  });
+
+  it("mounts exactly one renderer host, on the first tile: a host per tile is a renderer per tile", () => {
+    mount("/captures/grand-hall");
+    const hosts = [...document.querySelectorAll('[data-testid="spark-splat-layer"]')]
+      .map((layer) => layer.getAttribute("data-host"));
+    expect(hosts.length).toBeGreaterThan(1);
+    expect(hosts[0]).toBe("true");
+    expect(hosts.slice(1).every((host) => host === "false")).toBe(true);
   });
 
   it("mounts only the finest level, never a stack of every level", () => {

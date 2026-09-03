@@ -209,7 +209,7 @@ export function SplatFixturePage(): React.ReactElement {
           Spark fixture
         </div>
         <div style={{ fontSize: 15, lineHeight: 1.45 }}>
-          Three.js 0.180 + Spark 2.0 smoke route.
+          Three.js 0.180 + Spark 2.1 smoke route.
         </div>
       </div>
       {truthModeEnabled && <TruthModeIndicator summary={truthSummary} />}

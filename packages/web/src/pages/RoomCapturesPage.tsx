@@ -86,13 +86,16 @@ function CaptureScene({ room, urls, onTileLoad, onTileError }: SceneProps): Reac
       data-testid="room-captures-canvas"
     >
       <ambientLight intensity={1} />
-      {urls.map((url) => (
+      {urls.map((url, index) => (
         <SparkSplatLayer
           key={url}
           url={url}
           position={[...transform.position] as [number, number, number]}
           rotation={[...transform.rotation] as [number, number, number]}
           scale={transform.scale}
+          // One renderer host per scene: a host per tile is a renderer per
+          // tile, measured at 14 fps against 176 on the same room (T-574).
+          includeRendererHost={index === 0}
           onLoad={onTileLoad}
           onError={onTileError}
         />

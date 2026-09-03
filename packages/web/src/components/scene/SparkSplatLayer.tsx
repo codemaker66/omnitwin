@@ -1,8 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+import type { SplatRuntimeSettings } from "../../lib/splat-runtime-profile.js";
 
 type Vector3Tuple = readonly [number, number, number];
+
+/**
+ * The part of a runtime profile the renderer and the mesh consume.
+ *
+ * Absent, Spark's own defaults apply everywhere, which is what every mount
+ * that predates the profile gets. Present, the renderer host is created with
+ * the sort interval, tail radius and level-of-detail budget, and each mesh
+ * loads through the tree or not as the profile says.
+ */
+export type SparkSplatRuntime = Pick<
+  SplatRuntimeSettings,
+  "minSortIntervalMs" | "maxStdDev" | "lod" | "lodSplatCount"
+> & Partial<Pick<SplatRuntimeSettings, "maxSh">>;
 type ScaleValue = number | Vector3Tuple;
 type LayerVisualProps = Required<Pick<
   SparkSplatLayerProps,
@@ -45,6 +59,19 @@ export interface SparkSplatLayerProps {
   readonly rotation?: Vector3Tuple;
   readonly scale?: ScaleValue;
   readonly includeRendererHost?: boolean;
+  /**
+   * Device runtime settings. Omitted, Spark's defaults apply; see
+   * SparkSplatRuntime. Only the host mount's value reaches the renderer.
+   */
+  readonly runtime?: SparkSplatRuntime;
+  /**
+   * Per-frame level-of-detail scale for the renderer host, relative to the
+   * runtime's resting budget: 1 shows the resting budget, 0.125 an eighth of
+   * it. Polled inside useFrame like opacityFn, written to the renderer only
+   * when it changes, and only honoured on the mount that includes the host.
+   * Keep the identity stable.
+   */
+  readonly lodScaleFn?: () => number;
   readonly onLoad?: (event: SparkSplatLoadEvent) => void;
   readonly onError?: (event: SparkSplatErrorEvent) => void;
 }
@@ -83,18 +110,43 @@ function applyLayerProps(
   }
 }
 
-function SparkRendererHost(): ReactElement {
+function SparkRendererHost({
+  runtime,
+  lodScaleFn,
+}: {
+  readonly runtime?: SparkSplatRuntime;
+  readonly lodScaleFn?: () => number;
+}): ReactElement {
   const gl = useThree((state) => state.gl);
   const invalidate = useThree((state) => state.invalidate);
+  const lodScaleFnRef = useRef<(() => number) | undefined>(lodScaleFn);
+  useEffect(() => { lodScaleFnRef.current = lodScaleFn; }, [lodScaleFn]);
+  // Primitive dependencies, deliberately: an equal profile arriving as a new
+  // object must not tear the renderer down and rebuild it mid-scene.
+  const minSortIntervalMs = runtime?.minSortIntervalMs;
+  const maxStdDev = runtime?.maxStdDev;
+  const lodSplatCount = runtime?.lodSplatCount;
   const sparkRenderer = useMemo(
     () => new SparkRenderer({
       renderer: gl,
       onDirty: invalidate,
       transparent: true,
       depthWrite: false,
+      ...(minSortIntervalMs === undefined ? {} : { minSortIntervalMs }),
+      ...(maxStdDev === undefined ? {} : { maxStdDev }),
+      ...(lodSplatCount === undefined ? {} : { lodSplatCount }),
     }),
-    [gl, invalidate],
+    [gl, invalidate, minSortIntervalMs, maxStdDev, lodSplatCount],
   );
+
+  // The motion budget, applied as a scale on the resting budget. The tree
+  // re-traverses on the next update, so the write is only made on a change.
+  useFrame(() => {
+    const fn = lodScaleFnRef.current;
+    if (fn === undefined) return;
+    const scale = fn();
+    if (sparkRenderer.lodSplatScale !== scale) sparkRenderer.lodSplatScale = scale;
+  });
 
   useEffect(() => {
     return () => {
@@ -116,8 +168,16 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
     rotation = DEFAULT_ROTATION,
     scale = DEFAULT_SCALE,
     includeRendererHost = true,
+    runtime,
+    lodScaleFn,
     opacityFn,
   } = props;
+  // Whether this mesh loads through the level-of-detail tree. A change means a
+  // different mesh, so it joins the load effect's dependencies as a primitive.
+  const lod = runtime?.lod;
+  // The harmonic cap is a property of the live mesh: applied at creation and
+  // again on change, without reloading anything.
+  const maxSh = runtime?.maxSh;
   const invalidate = useThree((state) => state.invalidate);
   const opacityFnRef = useRef<(() => number) | undefined>(opacityFn);
   useEffect(() => { opacityFnRef.current = opacityFn; }, [opacityFn]);
@@ -155,12 +215,22 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
   }, [invalidate, layerProps]);
 
   useEffect(() => {
+    const current = meshRef.current;
+    if (current !== null && maxSh !== undefined && current.maxSh !== maxSh) {
+      current.maxSh = maxSh;
+      invalidate();
+    }
+  }, [invalidate, maxSh]);
+
+  useEffect(() => {
     let disposed = false;
     const splatMesh = new SplatMesh({
       url,
       editable: false,
       raycastable: false,
+      ...(lod === undefined ? {} : { lod }),
     });
+    if (maxSh !== undefined) splatMesh.maxSh = maxSh;
     applyLayerProps(splatMesh, latestLayerPropsRef.current);
     meshRef.current = splatMesh;
     setMesh(splatMesh);
@@ -197,11 +267,12 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
       }
       splatMesh.dispose();
     };
-  }, [invalidate, onError, onLoad, url]);
+    // maxSh is deliberately absent: it is applied by its own effect above.
+  }, [invalidate, lod, onError, onLoad, url]);
 
   return (
     <>
-      {includeRendererHost && <SparkRendererHost />}
+      {includeRendererHost && <SparkRendererHost runtime={runtime} lodScaleFn={lodScaleFn} />}
       {mesh !== null && <primitive object={mesh} />}
     </>
   );
