@@ -794,9 +794,12 @@ def assign_database_cameras(db: "pycolmap.Database", manifest: dict, calibration
             raise ValueError(f"folder {folder} has no images in the database")
         camera_id = provisional_camera_for_slot(manifest, slot)
         camera = calibration.cameras[camera_id]
-        db.update_camera(
-            pycolmap.Camera(model=camera.colmap_model, width=camera.width, height=camera.height, params=[*camera.intrinsics, *camera.distortion], camera_id=folder_camera_ids[folder])
-        )
+        rewritten = pycolmap.Camera(model=camera.colmap_model, width=camera.width, height=camera.height, params=[*camera.intrinsics, *camera.distortion], camera_id=folder_camera_ids[folder])
+        # COLMAP verifies a pair with a calibrated essential matrix only when both cameras carry a prior focal
+        # length; without the flag it falls back to a fundamental matrix, which cannot fit a 200-degree fisheye
+        # (every fisheye pair of the first whole-hall run verified to nothing for exactly this reason)
+        rewritten.has_prior_focal_length = True
+        db.update_camera(rewritten)
         assigned[folder] = camera_id
     return assigned
 

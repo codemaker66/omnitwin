@@ -75,7 +75,20 @@ must load next to a database (the `tools/xgrids-xbag/xbag_colmap.py` bridge).
    Run one heavy stage at a time (`D:\claude\colmap-gh\run_serial.sh`), three
    decoder workers, and measure sharpness on a reduced copy.
 
-9. **Git Bash process substitution breaks pycolmap paths.** `<(python -c ...)`
+9. **A camera you write yourself has no prior focal length, and then no
+   fisheye pair verifies.** COLMAP's geometric verification uses a calibrated
+   essential matrix only when BOTH cameras carry `has_prior_focal_length`;
+   otherwise it fits a fundamental matrix, which cannot fit a 200-degree
+   fisheye, so every fisheye pair ends with config 0 and zero inliers while
+   the raw matches look fine (the first whole-hall run lost all 41,277 fisheye
+   pairs this way, and the refined model held zero fisheye observations).
+   Cameras created by the feature reader from explicit `camera_params` carry
+   the flag; cameras rewritten with `db.update_camera(pycolmap.Camera(...))`
+   do not unless you set `camera.has_prior_focal_length = True`
+   (`assign_database_cameras` does now). Repair without re-matching:
+   rewrite the cameras, then `pycolmap.verify_matches(db, pairs)`.
+
+10. **Git Bash process substitution breaks pycolmap paths.** `<(python -c ...)`
    hands the tool `/proc/<pid>/fd/63`, which Windows Python cannot open; write
    the JSON to a real file first (the driver's `hypothesis-established.json`).
 

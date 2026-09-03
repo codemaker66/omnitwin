@@ -649,6 +649,7 @@ class DatabaseCameras(unittest.TestCase):
         self.assertEqual(assigned, {"slot0": "camera_2", "slot1": "camera_3", "slot2": "camera_0", "slot3": "camera_1"})
         self.assertEqual(cameras[3].model.name, "OPENCV_FISHEYE")
         np.testing.assert_allclose(list(cameras[3].params), [800, 801, 2000, 1500, 0.08, -0.002, -0.016, 0.004])
+        self.assertTrue(all(camera.has_prior_focal_length for camera in cameras.values()), "verification needs the prior-focal flag to use a calibrated essential matrix")
         self.assertEqual(cameras[2].model.name, "OPENCV")
         np.testing.assert_allclose(list(cameras[2].params)[:4], [1928, 1931, 1942, 1725])
 
