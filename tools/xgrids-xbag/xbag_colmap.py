@@ -691,19 +691,48 @@ def decode_frame(payload: bytes) -> "Image.Image":
     raise ValueError("the decoder produced no picture")
 
 
+def payload_path(payloads_dir: str | Path, image_name: str) -> Path:
+    """Where a frame's raw H.264 access unit lives when the selected frames are shipped as payloads: ``slotK/seqN.h264``."""
+    return Path(payloads_dir) / (image_name.rsplit(".", 1)[0] + ".h264")
+
+
+def export_payloads(buf: bytes | memoryview | mmap.mmap, manifest: dict, payloads_dir: str | Path) -> int:
+    """Copy every selected frame's access unit out of the capture into ``payloads_dir``; returns the count.
+
+    About half a megabyte per frame against eight for a decoded JPEG: the way to
+    move a selection to a machine that cannot hold the 41 GB capture or wait for
+    the decoded pictures over a slow link. ``read_payload`` is the inverse and
+    ``extract --payloads`` decodes from these instead of the capture.
+    """
+    count = 0
+    for instant in manifest["instants"]:
+        for slot in instant["slots"]:
+            out = payload_path(payloads_dir, slot["image"])
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(bytes(buf[slot["payload_offset"] : slot["payload_offset"] + slot["payload_length"]]))
+            count += 1
+    return count
+
+
+def read_payload(payloads_dir: str | Path, image_name: str) -> bytes:
+    return payload_path(payloads_dir, image_name).read_bytes()
+
+
 _WORKER_BUF: mmap.mmap | None = None
+_WORKER_PAYLOADS: str | None = None
 
 
-def _extract_worker_init(capture: str) -> None:
-    global _WORKER_BUF
-    handle = open(capture, "rb")
-    _WORKER_BUF = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
+def _extract_worker_init(capture: str | None, payloads_dir: str | None = None) -> None:
+    global _WORKER_BUF, _WORKER_PAYLOADS
+    _WORKER_PAYLOADS = payloads_dir
+    if capture:
+        handle = open(capture, "rb")
+        _WORKER_BUF = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
 
 
 def _extract_instant(task: tuple[dict, str, tuple[float, float, float], int, bool]) -> tuple[int, list[float], list[tuple[int, int]], int]:
     """Decode one instant's four frames (in a worker): returns (seq, circle ratios, sizes, frames written)."""
     instant, images_dir, circle, quality, overwrite = task
-    assert _WORKER_BUF is not None
     ratios: list[float] = []
     sizes: list[tuple[int, int]] = []
     written = 0
@@ -716,13 +745,31 @@ def _extract_instant(task: tuple[dict, str, tuple[float, float, float], int, boo
             picture = Image.open(out)   # already written by an earlier run: classify from the JPEG instead of decoding again
             picture.load()
         else:
-            payload = bytes(_WORKER_BUF[slot["payload_offset"] : slot["payload_offset"] + slot["payload_length"]])
+            if _WORKER_PAYLOADS:
+                payload = read_payload(_WORKER_PAYLOADS, slot["image"])
+            else:
+                assert _WORKER_BUF is not None
+                payload = bytes(_WORKER_BUF[slot["payload_offset"] : slot["payload_offset"] + slot["payload_length"]])
             picture = decode_frame(payload)
             picture.save(out, quality=quality, subsampling=0)
             written += 1
         ratios.append(outside_circle_ratio(np.asarray(picture.convert("L")), circle))
         sizes.append((picture.width, picture.height))
     return instant["seq"], ratios, sizes, written
+
+
+def run_export_payloads(args: argparse.Namespace) -> int:
+    manifest = read_manifest(args.manifest)
+    started = time.time()
+    with open(args.capture, "rb") as handle:
+        buf = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
+        try:
+            count = export_payloads(buf, manifest, args.out)
+        finally:
+            buf.close()
+    total = sum(slot["payload_length"] for instant in manifest["instants"] for slot in instant["slots"])
+    print(f"{count} access units, {total / 1e9:.2f} GB, exported in {time.time() - started:.0f}s -> {args.out}")
+    return 0
 
 
 def run_extract(args: argparse.Namespace) -> int:
@@ -736,7 +783,9 @@ def run_extract(args: argparse.Namespace) -> int:
     tasks = [(instant, str(args.images), circle, args.quality, args.overwrite) for instant in manifest["instants"]]
     by_seq = {instant["seq"]: instant for instant in manifest["instants"]}
     workers = max(1, args.workers)
-    with ProcessPoolExecutor(max_workers=workers, initializer=_extract_worker_init, initargs=(str(args.capture),)) as pool:
+    if not args.capture and not args.payloads:
+        raise ValueError("extract needs --capture (the .xbin) or --payloads (a directory written by export-payloads)")
+    with ProcessPoolExecutor(max_workers=workers, initializer=_extract_worker_init, initargs=(str(args.capture) if args.capture else None, str(args.payloads) if args.payloads else None)) as pool:
         for done, (seq, ratios, sizes, count) in enumerate(pool.map(_extract_instant, tasks, chunksize=4), start=1):
             instant = by_seq[seq]
             try:
@@ -1886,13 +1935,20 @@ def main(argv: list[str] | None = None) -> int:
     select.set_defaults(func=run_select)
 
     extract = sub.add_parser("extract", help="decode the selected frames to JPEG")
-    extract.add_argument("--capture", required=True)
+    extract.add_argument("--capture", help="the .xbin capture (or use --payloads)")
     extract.add_argument("--manifest", required=True)
     extract.add_argument("--calibration", required=True, help="T-566 receipt; its kb4 model places the lens circle that tells the two lens types apart")
     extract.add_argument("--images", required=True)
     extract.add_argument("--fov-degrees", type=float, default=200.0)
     extract.add_argument("--quality", type=int, default=95)
     extract.add_argument("--workers", type=int, default=1, help="decoder processes; each maps the capture read-only")
+    extract.add_argument("--payloads", help="decode from a directory of exported access units instead of the capture")
+
+    export = sub.add_parser("export-payloads", help="copy the selected frames' raw H.264 access units out of the capture (about 0.5 MB each)")
+    export.add_argument("--capture", required=True)
+    export.add_argument("--manifest", required=True)
+    export.add_argument("--out", required=True)
+    export.set_defaults(func=run_export_payloads)
     extract.add_argument("--overwrite", action="store_true")
     extract.set_defaults(func=run_extract)
 

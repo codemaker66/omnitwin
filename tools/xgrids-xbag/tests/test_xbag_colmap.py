@@ -11,6 +11,7 @@ import math
 import os
 import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -618,6 +619,35 @@ class TrainerPackage(unittest.TestCase):
         np.testing.assert_allclose(uv, [[700, 700], [840, 700]])
         np.testing.assert_allclose(depth, [5.0, 5.0])
         self.assertEqual(uv.dtype, np.float32)
+
+
+class PayloadExport(unittest.TestCase):
+    """Shipping the selected raw H.264 access units (about 0.5 MB each) instead of decoded pictures: the same frames at a fifteenth of the bytes."""
+
+    def test_payload_path_mirrors_the_image_name(self) -> None:
+        from xbag_colmap import payload_path
+
+        self.assertEqual(payload_path("D:/payloads", "slot2/seq01264.jpg"), Path("D:/payloads/slot2/seq01264.h264"))
+
+    def test_export_writes_each_selected_access_unit_and_a_decoder_reads_it_back(self) -> None:
+        from xbag_colmap import export_payloads, read_payload
+
+        # a synthetic capture: two instants, four slots, each payload distinct
+        blobs = {(seq, slot): bytes([seq * 4 + slot]) * (100 + slot) for seq in (5, 9) for slot in range(4)}
+        buf = bytearray()
+        manifest = {"instants": []}
+        for seq in (5, 9):
+            slots = []
+            for slot in range(4):
+                offset = len(buf)
+                buf += blobs[(seq, slot)]
+                slots.append({"slot": slot, "image": f"slot{slot}/seq{seq:05d}.jpg", "payload_offset": offset, "payload_length": len(blobs[(seq, slot)])})
+            manifest["instants"].append({"seq": seq, "slots": slots})
+        with tempfile.TemporaryDirectory() as tmp:
+            count = export_payloads(bytes(buf), manifest, tmp)
+            self.assertEqual(count, 8)
+            self.assertEqual(read_payload(tmp, "slot3/seq00009.jpg"), blobs[(9, 3)])
+            self.assertTrue((Path(tmp) / "slot0" / "seq00005.h264").exists())
 
 
 class DatabaseCameras(unittest.TestCase):
