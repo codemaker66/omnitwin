@@ -58,6 +58,8 @@ The cheapest phase and the one everything else stands on. Gate: `STATE.md` regen
 
 The first independent training proof, then the first own room that beats the vendor build in the app. Gate G-B: at the four frozen viewpoints, the own-trained Grand Hall scores at least the vendor build on PSNR, SSIM and LPIPS against held-out photographs, at a runtime budget the laptop meets; and it is served on venviewer.com from a registered, signed bundle.
 
+The method behind slices 1.3 and 1.6, the fusion recipe and the per-device viewer budget ladder, is written out in `docs/plan/11-FUSED-TWIN-2026-09-03.md` (2026-09-03): lag and beauty are two problems with two fixes, and only one of them is research.
+
 | slice | what | depends |
 |---|---|---|
 | 1.1 RunPod live | upload the whole-hall dataset and package to the volume; CUDA COLMAP re-run to confirm the laptop result in an hour; the $0.20 smoke; a `training_runs.jsonl` schema and writer | your five setup steps (key and volume done) |
@@ -111,6 +113,8 @@ Gate: one homepage at the root with the Arrival, a real enquiry that reaches a h
 ### Phase 5 · Verified twin and the Foundry (weeks 8 to 20)
 
 Gate: every served room carries a certification tier with measurement evidence; one room captured by us with an independent control and our own protocol, trained and served; the Foundry's contracts have moved one asset end to end.
+
+Slices 5.3 and 5.5 take their composition and repair method from `docs/plan/11-FUSED-TWIN-2026-09-03.md` §3 steps 7 and 8 and §5 (the licence position).
 
 | slice | what | depends |
 |---|---|---|
