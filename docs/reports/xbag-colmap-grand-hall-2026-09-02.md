@@ -16,15 +16,20 @@ The whole hall means 12,158 four-camera instants inside the T-568 hall box. Moti
 |---|---|---|
 | select | motion keyframing 0.4 m / 15° over the hall box | 3,761 instants of 12,158 |
 | extract | four decoder processes (later three: memory) | 15,044 frames, slot pattern pinhole, pinhole, fisheye, fisheye at every instant |
-| pairs | same instant + 8 nearest instants within 3 m | `[pending]` pairs |
-| gpu-features | DISK, 1,600 px, 4,096 keypoints per frame | `[pending]` |
-| gpu-match | LightGlue, pinhole pairs only, one shard | `[pending]` |
-| features / match (fisheye) | COLMAP SIFT and matching, fisheye pairs only | `[pending]` |
-| score | 256 receipt readings | `[pending]` (the established reading is pinned for `write`) |
-| triangulate | known poses, strict | `[pending]` |
-| refine × 2 | position priors 0.1 m, intrinsics fixed, tight re-triangulation between | `[pending]` |
-| mesh check | distance to the LCC2 mesh, pose-file vs refined | `[pending]` |
-| package | the T-502 layout | `[pending]` |
+| pairs | pinholes: same instant + 8 nearest instants within 3 m; fisheyes: 4 nearest | 76,237 pinhole pairs, 41,277 fisheye pairs |
+| gpu-features | DISK, 1,600 px, 4,096 keypoints per frame | 15,044 frames in 41 min |
+| gpu-match | LightGlue, pinhole pairs only, one shard | 76,237 pairs in 43 min; 46,823 verified at 907 inliers on average |
+| features / match (fisheye) | COLMAP SIFT (8,192 keypoints) and matching, fisheye pairs only | 7,522 frames in 2.7 h; 41,277 pairs in 3.5 h; 38,237 verified at 188 inliers on average |
+| score | 256 receipt readings over 85,060 verified pairs, 49.7 M matches | the established reading wins again (0.397; its imu_lidar twin 0.365; the swapped fisheye order 0.354; everything else under 0.20) |
+| triangulate | known poses, strict | 1,481,154 points, mean 1.58 px, mean track 2.8, 279 observations per image, 35 min |
+| refine × 2 | position priors 0.1 m, intrinsics fixed, loose 16 px pass then tight re-triangulation at 4 px | 3,380,296 loose points → refined median 3.05 px; re-triangulated 2,489,685 points → refined median 1.36 px (p90 2.33 px, 28 points over 16 px); scale kept to 0.01 % |
+| cameras moved (15,044, against the pose file) | | median 0.40°, 2.3 cm; p95 1.30°, 7.9 cm; max 8.5°, 45 cm |
+| mesh check | distance to the LCC2 mesh, pose-file vs refined (20,000 sampled points with 3+ views) | median 31.6 cm → 27.5 cm; within 20 cm 36.9 % → 41.4 %; within 5 cm 11.5 % → 13.1 % |
+| package | the T-502 layout | 41,737 images kept of 45,132 rendered (1,913 dropped for blur, 1,482 fisheye views for no sparse support), 7 PINHOLE cameras, 2,477,228 points, 10,872,283 observations, 5,218 held out; 50 min |
+
+![the refined whole-hall model against the T-568 crop box: plan and side views, cameras in red at three heights](assets/xbag-colmap-2026-09-02/grand-hall-final-model-vs-crop-box.jpg)
+
+Two readings of these numbers. First, the pose file is better than the zone run suggested: with 85,060 verified pairs constraining 15,044 frames, the refinement moved the median camera only 2.3 cm and 0.4°, against 11.9 cm and 1.4° on the sparser zone, so most of the zone's deltas were the freedom of a thinly connected set, not error in the trajectory; the worst cameras (45 cm, 8.5°) are real outliers that refinement fixes. Second, the mesh distance floor is high (27 cm median) because the hall's points are dominated by the coffered ceiling, the chandeliers and the mouldings that the 60k-face LCC2 mesh smooths over; the direction of change is again what the check establishes.
 
 ## The walk's three heights, and why the pole matters for the budget
 
@@ -39,6 +44,7 @@ The zone rule (lens-circle ratio with a 2× gap) failed at instant 2217 where th
 - Pinholes: DISK at 1,600 px (4,096 keypoints, half a pixel added on import for COLMAP's pixel-centre convention), LightGlue per pair, 73 ms per pair on the 4090, matches written to part files and imported with `write_keypoints` / `write_matches`, then COLMAP's own geometric verification (`verify_matches`). About 1,200 matches per consecutive pinhole pair against 750 for SIFT; strict triangulation keeps fewer points because 1,600 px keypoints are coarser, which the loose-then-tight refinement rounds absorb.
 - Fisheyes: one COLMAP SIFT pass over the 7,522 fisheye frames (never a second pass in the same process, never two COLMAP processes at once), matched over the fisheye pairs only.
 - Fisheye-to-pinhole pairs across instants are dropped (54 inliers on average, and the rig calibration already ties the lenses); same-instant pairs are kept for the pinholes.
+- The first whole-hall pass lost every fisheye pair to a one-bit defect: cameras rewritten into the database by the bridge lacked COLMAP's prior-focal-length flag, so verification fitted a fundamental matrix, which cannot fit a 200-degree lens, and all 41,277 fisheye pairs came back empty while their raw matches (650 to 900 per pair) were fine. The refined model of that pass carried zero fisheye observations and its package dropped 36,037 fisheye views for lacking sparse support. Setting the flag and re-verifying the stored matches (no re-matching: clear the stale geometry rows first, since the batch verifier skips pairs that already have one) recovered 38,237 verified fisheye pairs at 188 inliers on average, next to 46,823 pinhole pairs at 907.
 
 ## Memory, the constraint that shaped the schedule
 
@@ -57,7 +63,7 @@ The branch contract (T-514, `feature/diary-p0-slice-3`) accepts PINHOLE cameras 
 
 ![one instant's five virtual pinhole views of a fisheye: centre, up, down, fore, aft](assets/xbag-colmap-2026-09-02/fisheye-virtual-views-inst05590_camera_1.jpg)
 - poses composed from the refined camera pose and the view rotation; sparse depth samples from the refined points projected into each training view (`uv`, `depth_m`, `width`, `height`), none for held-out views;
-- `splits.json`, `colmap_input.json`, `package-receipt.json`; images named `inst{seq}_{camera}[_{view}].jpg` so an instant's twelve outputs sort together.
+- `splits.json`, `colmap_input.json`, `package-receipt.json`; images named `i{seq}_c{k}[_{view}].jpg` so an instant's twelve outputs sort together (short on purpose: the checker caps `splits.json` at 1 MB, which 41,737 longer names exceeded).
 
 The zone package (`D:\claude\colmap-gh\zone-sw-t502\`): 1,678 images kept from 1,800 rendered (20 dropped for blur, 102 fisheye views dropped for having fewer than ten sparse observations), 7 PINHOLE cameras, 49,671 points, 244,740 observations, 210 views held out, `images/` JPEG and `images_2/` PNG. The T-514 preflight from a worktree at 9c98b293 **passes** (exit 0) and writes `preflight-receipt.json` with the compiled canonical argv (`mcmc --max-steps 30000 ... --with-ut --with-eval3d --no-pose-opt --data-factor 2`), `actualTraining: false`, `authority: none`, and the decision `contract_valid_runtime_blocked`, the branch's designed terminal state, naming seven runtime blockers: bilateral-grid serialisation undefined under D-014, E57 depth not wired into the upstream runner, the legacy RunPod runner disabled by execution policy, the dependency closure not fully pinned or proven, metrics and hold-out bundle production not proven, a trusted job-spec with rights confirmation and compute approval required, and the tyro runtime translation never run in the pinned image. Reaching that took six contract corrections in a row, each a real defect in the package builder (all-frustum observations instead of real tracks, an `images.bin` over 256 MB, the −1 default point error, empty tracks, JPEG in the runtime folder, training views without a depth prior). The whole-hall package: `[pending]`.
 

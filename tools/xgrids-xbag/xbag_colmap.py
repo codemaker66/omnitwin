@@ -1580,14 +1580,16 @@ def run_package(args: argparse.Namespace) -> int:
             cam_from_world = np.eye(4)
             cam_from_world[:3, :4] = np.asarray(image.cam_from_world().matrix() if callable(image.cam_from_world) else image.cam_from_world.matrix())[:3, :4]
             T_world_cam = np.linalg.inv(cam_from_world)
-            stem = f"inst{instant['seq']:05d}"
+            # short names: the T-514 checker caps splits.json at 1 MB, which 41,737 long names exceed
+            stem = f"i{instant['seq']:05d}"
+            short_camera = "c" + camera_id.rsplit("_", 1)[-1]
             outputs = []
             for suffix, maps, size in maps_by_source[folder]:
                 if suffix is None:
-                    rel = f"{stem}_{camera_id}.jpg"
+                    rel = f"{stem}_{short_camera}.jpg"
                     poses[rel] = (camera_id, T_world_cam)
                 else:
-                    rel = f"{stem}_{camera_id}_{suffix}.jpg"
+                    rel = f"{stem}_{short_camera}_{suffix}.jpg"
                     view = next(v for v in views if v.suffix == suffix)
                     T_world_view = T_world_cam.copy()
                     T_world_view[:3, :3] = T_world_cam[:3, :3] @ view.R_view_from_camera.T
