@@ -1,0 +1,46 @@
+{
+  "schema": "venviewer.owner-rights-record/1",
+  "subject": {
+    "venueSlug": "trades-hall",
+    "roomSlug": "grand-hall",
+    "inputs": [
+      "raw XGRIDS PortalCam XBAG capture (2026-05-31-101837.xbin) and every frame decoded from it",
+      "project_data/poses.csv and the T-566 header calibration recovered from the capture",
+      "the LCC2 export's mesh, point cloud and splat tiles for the Grand Hall and the other seven rooms",
+      "the Matterport E57 and native panoramas of the venue",
+      "every derivative the agent produces from these (COLMAP datasets, trainer packages, trained splats, bundles)"
+    ]
+  },
+  "ownerStatement": {
+    "by": "Blake (project owner)",
+    "date": "2026-09-03",
+    "channel": "Claude Code chat, written",
+    "verbatim": [
+      "I don't want you to restrict yourself with anything, we have full rights to do anything with your data, creative, destructive, literally everything that could ever be done we have the permission to do so",
+      "regarding The rights record (D:\\claude\\colmap-gh\\rights-record-DRAFT.json), the governing policy for dispatch (runbook path or Foundry gate) -- you have full rights for absolutely everything, it has all been sorted at great time and care by me",
+      "use as much as you need and ask for more money when you want more money"
+    ],
+    "earlierGrants": [
+      "2026-09-01: full permission to use all our data in whatever way we want including reverse engineering where appropriate if we can improve the quality of our project",
+      "2026-09-01: we have full license and permission to do so for this project"
+    ]
+  },
+  "decisions": {
+    "modelTrainingUse": "allowed",
+    "reverseEngineeringOfRawCapture": "allowed",
+    "lcc2MeshForDepthSupervision": "allowed",
+    "lcc2MeshAsIndependentJudge": "allowed",
+    "dispatchPolicy": "agent-driven RunPod path (network volume + API key) now; the Foundry gate remains the target and reads this record",
+    "d006a": "treated as accepted for this work by the owner's grant; the ADR status is updated separately",
+    "spendAuthority": "owner-loaded credits ($200 on 2026-09-03), agent reports spend per run and asks before exceeding the balance",
+    "localCudaTraining": "not used; RunPod remains the training environment (D-016)"
+  },
+  "termsReviewedAt": "2026-09-03",
+  "reviewedBy": "the owner states the terms position has been sorted with time and care; the agent records the statement and does not independently verify vendor terms",
+  "supersedes": "D:\\claude\\colmap-gh\\rights-record-DRAFT.json (unsigned template of 2026-09-02)",
+  "referencedBy": [
+    "docs/plan/10-COMPLETION-PROGRAMME-2026-09-03.md (phase 0.4, 0.6)",
+    "docs/reports/xbag-colmap-grand-hall-2026-09-02.md (decisions only the owner can make)",
+    "docs/state/tasks.md rows T-572, T-573"
+  ]
+}
