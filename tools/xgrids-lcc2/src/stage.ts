@@ -16,12 +16,31 @@ import type { RoomBundle } from "./room-bundle.js";
 // only ever reads the source and writes to the staging root.
 // ---------------------------------------------------------------------------
 
+/** A staged file named relative to the room's staged directory. */
+export interface StagedFile {
+  readonly file: string;
+  readonly bytes: number;
+  readonly sha256: string;
+}
+
+/**
+ * A prebuilt level-of-detail tree for one tile: the header (`file`) and the
+ * chunks the viewer pages in, all under `lod/`. `splats` is the tree's own
+ * count, leaves and interior nodes together.
+ */
+export interface StagedLodTree extends StagedFile {
+  readonly splats: number;
+  readonly chunks: readonly StagedFile[];
+}
+
 export interface StagedTile {
   readonly file: string;
   readonly bytes: number;
   readonly sha256: string;
   readonly lodLevel: number | null;
   readonly isEnvironment: boolean;
+  /** Present once `lcc2 lod` has built this tile's tree. */
+  readonly lod?: StagedLodTree;
 }
 
 export interface StageResult {
@@ -146,6 +165,24 @@ export function writeRoomManifest(outPath: string, entries: readonly RoomManifes
     "// here is the descriptor - tile names, sizes, digests, and the room-local",
     "// transform derived from each capture's own room mesh.",
     "",
+    "/** A staged file, named relative to the room's directory. */",
+    "export interface GeneratedSplatFile {",
+    "  readonly file: string;",
+    "  readonly bytes: number;",
+    "  readonly sha256: string;",
+    "}",
+    "",
+    "/**",
+    " * A prebuilt Spark level-of-detail tree for one tile: the header (`file`)",
+    " * and the chunks the viewer pages in, all under `lod/`. Loaded with",
+    " * `paged: true` and WITHOUT the `lod` flag, which would rebuild the tree",
+    " * the file already carries. `splats` counts leaves and interior nodes.",
+    " */",
+    "export interface GeneratedSplatLod extends GeneratedSplatFile {",
+    "  readonly splats: number;",
+    "  readonly chunks: readonly GeneratedSplatFile[];",
+    "}",
+    "",
     "export interface GeneratedSplatTile {",
     "  readonly file: string;",
     "  readonly bytes: number;",
@@ -154,6 +191,8 @@ export function writeRoomManifest(outPath: string, entries: readonly RoomManifes
     "  readonly lodLevel: number | null;",
     "  /** The environment sphere, which is not room geometry. */",
     "  readonly isEnvironment: boolean;",
+    "  /** The tile's prebuilt tree, once `lcc2 lod` has built it. */",
+    "  readonly lod?: GeneratedSplatLod;",
     "}",
     "",
     "export interface GeneratedRoomSplatBundle {",

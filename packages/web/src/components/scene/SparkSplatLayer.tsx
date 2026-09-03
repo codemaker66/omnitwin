@@ -72,6 +72,12 @@ export interface SparkSplatLayerProps {
    * Keep the identity stable.
    */
   readonly lodScaleFn?: () => number;
+  /**
+   * The url is a prebuilt, chunked Spark tree (`.rad` with `.radc` chunks):
+   * stream it page by page. Such a mesh never gets the runtime's `lod` flag,
+   * which would rebuild in a worker the tree the file already carries.
+   */
+  readonly paged?: boolean;
   readonly onLoad?: (event: SparkSplatLoadEvent) => void;
   readonly onError?: (event: SparkSplatErrorEvent) => void;
 }
@@ -170,11 +176,13 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
     includeRendererHost = true,
     runtime,
     lodScaleFn,
+    paged = false,
     opacityFn,
   } = props;
   // Whether this mesh loads through the level-of-detail tree. A change means a
   // different mesh, so it joins the load effect's dependencies as a primitive.
-  const lod = runtime?.lod;
+  // A paged tree already is one, and must not be asked to build another.
+  const lod = paged ? undefined : runtime?.lod;
   // The harmonic cap is a property of the live mesh: applied at creation and
   // again on change, without reloading anything.
   const maxSh = runtime?.maxSh;
@@ -229,6 +237,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
       editable: false,
       raycastable: false,
       ...(lod === undefined ? {} : { lod }),
+      ...(paged ? { paged: true } : {}),
     });
     if (maxSh !== undefined) splatMesh.maxSh = maxSh;
     applyLayerProps(splatMesh, latestLayerPropsRef.current);
@@ -268,7 +277,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
       splatMesh.dispose();
     };
     // maxSh is deliberately absent: it is applied by its own effect above.
-  }, [invalidate, lod, onError, onLoad, url]);
+  }, [invalidate, lod, onError, onLoad, paged, url]);
 
   return (
     <>

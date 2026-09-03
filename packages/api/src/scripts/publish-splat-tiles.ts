@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { S3Client, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // ---------------------------------------------------------------------------
@@ -61,16 +62,31 @@ function readR2Config(envPath: string): R2Config | string {
 /** Splat tiles are immutable: a tile is fixed by the capture it came from. */
 const CACHE_CONTROL = "public, max-age=31536000, immutable";
 const CONTENT_TYPE = "application/octet-stream";
-const SERVABLE = [".sog", ".spz", ".ply", ".splat", ".ksplat"];
+/** Tiles, plus Spark's prebuilt level-of-detail trees (`.rad` header, `.radc` chunks). */
+const SERVABLE = [".sog", ".spz", ".ply", ".splat", ".ksplat", ".rad", ".radc"];
+/** Where `lcc2 lod` puts a room's prebuilt trees, beside its tiles. */
+const LOD_DIR = "lod";
 
-interface Tile {
+export interface Tile {
   readonly room: string;
+  /** Path relative to the room: `0_0.sog`, or `lod/0_0-lod.rad`. */
   readonly file: string;
   readonly path: string;
   readonly bytes: number;
 }
 
-function collectTiles(stagedRoot: string, venue: string): Tile[] {
+function servable(file: string): boolean {
+  const lower = file.toLowerCase();
+  return SERVABLE.some((ext) => lower.endsWith(ext));
+}
+
+/**
+ * Everything under a venue's staging root that the viewer can load: the tiles
+ * in each room, and the prebuilt trees one level down in `lod/`. A tree's
+ * header names its chunks relative to itself, so both go up under the same
+ * `lod/` prefix and resolve on the bucket exactly as they do on disk.
+ */
+export function collectTiles(stagedRoot: string, venue: string): Tile[] {
   const venueRoot = join(stagedRoot, venue);
   if (!existsSync(venueRoot)) return [];
   const tiles: Tile[] = [];
@@ -78,8 +94,16 @@ function collectTiles(stagedRoot: string, venue: string): Tile[] {
     const roomDir = join(venueRoot, room);
     if (!statSync(roomDir).isDirectory()) continue;
     for (const file of readdirSync(roomDir)) {
-      if (!SERVABLE.some((ext) => file.toLowerCase().endsWith(ext))) continue;
       const path = join(roomDir, file);
+      if (file === LOD_DIR && statSync(path).isDirectory()) {
+        for (const tree of readdirSync(path)) {
+          if (!servable(tree)) continue;
+          const treePath = join(path, tree);
+          tiles.push({ room, file: `${LOD_DIR}/${tree}`, path: treePath, bytes: statSync(treePath).size });
+        }
+        continue;
+      }
+      if (!servable(file)) continue;
       tiles.push({ room, file, path, bytes: statSync(path).size });
     }
   }
@@ -182,4 +206,8 @@ async function main(): Promise<void> {
   if (failures.length > 0) process.exitCode = 1;
 }
 
-void main();
+// Run only when invoked directly; importing the module (as its test does)
+// must not start an upload or touch the exit code.
+const invokedDirectly = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invokedDirectly) void main();

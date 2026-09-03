@@ -64,6 +64,48 @@ function servedTiles(bundle: GeneratedRoomSplatBundle): readonly GeneratedSplatT
   );
 }
 
+/** One thing the scene mounts for one served tile: the tile, or its prebuilt tree. */
+export interface RoomSplatSource {
+  readonly url: string;
+  /** True when `url` is a paged Spark level-of-detail tree rather than the tile. */
+  readonly tree: boolean;
+  /** The tile this source stands for, for counting load progress per tile. */
+  readonly file: string;
+}
+
+/**
+ * The sources for a bundle under a room base URL.
+ *
+ * With `preferTrees`, a tile that has a prebuilt tree (built by `lcc2 lod`)
+ * is served as that tree, paged, so the viewer neither downloads the whole
+ * tile nor rebuilds a tree in the browser; a tile without one is served as
+ * itself. Order is the served order: finest level, then the sky shell.
+ */
+export function splatSourcesForBundle(
+  bundle: GeneratedRoomSplatBundle,
+  roomBaseUrl: string,
+  preferTrees: boolean,
+): readonly RoomSplatSource[] {
+  return servedTiles(bundle).map((tile) => {
+    const tree = preferTrees ? tile.lod : undefined;
+    return tree === undefined
+      ? { url: `${roomBaseUrl}/${tile.file}`, tree: false, file: tile.file }
+      : { url: `${roomBaseUrl}/${tree.file}`, tree: true, file: tile.file };
+  });
+}
+
+/** The sources for a room, environment shell last; empty for an unknown room. */
+export function roomSplatTileSources(
+  roomSlug: string,
+  configuredBaseUrl: string | undefined,
+  preferTrees: boolean,
+): readonly RoomSplatSource[] {
+  const bundle = roomSplatBundle(roomSlug);
+  if (bundle === null) return [];
+  const base = `${splatBaseUrl(configuredBaseUrl)}/${GENERATED_VENUE_SLUG}/${roomSlug}`;
+  return splatSourcesForBundle(bundle, base, preferTrees);
+}
+
 /**
  * Tile URLs for a room, environment shell last.
  *
@@ -76,10 +118,7 @@ export function roomSplatTileUrls(
   roomSlug: string,
   configuredBaseUrl: string | undefined,
 ): readonly string[] {
-  const bundle = roomSplatBundle(roomSlug);
-  if (bundle === null) return [];
-  const base = `${splatBaseUrl(configuredBaseUrl)}/${GENERATED_VENUE_SLUG}/${roomSlug}`;
-  return servedTiles(bundle).map((tile) => `${base}/${tile.file}`);
+  return roomSplatTileSources(roomSlug, configuredBaseUrl, false).map((source) => source.url);
 }
 
 /** Splats the served level draws: the reconstruction's true count. */

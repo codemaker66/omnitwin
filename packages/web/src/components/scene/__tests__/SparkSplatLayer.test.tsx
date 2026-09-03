@@ -203,6 +203,19 @@ describe("SparkSplatLayer runtime wiring", () => {
     expect(spark.rendererInstances[0]?.lodSplatScale).toBe(1);
   });
 
+  it("loads a paged prebuilt tree WITHOUT the lod flag, whatever the runtime says", () => {
+    render(
+      <SparkSplatLayer
+        url="/splats/trades-hall/grand-hall/lod/0_0-lod.rad"
+        paged
+        runtime={{ minSortIntervalMs: 0, maxStdDev: Math.sqrt(8), lod: true, lodSplatCount: 8_000_000 }}
+      />,
+    );
+
+    expect(spark.meshOptions[0]).toMatchObject({ paged: true });
+    expect(spark.meshOptions[0]).not.toHaveProperty("lod");
+  });
+
   it("does not re-create the renderer when an equal runtime object is passed again", () => {
     const runtime = { minSortIntervalMs: 33, maxStdDev: 2.236, lod: true, lodSplatCount: 1_500_000 };
     const { rerender } = render(<SparkSplatLayer url={URL} runtime={runtime} />);

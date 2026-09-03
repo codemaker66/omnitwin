@@ -52,6 +52,25 @@ Readback screenshots at rest (`D:\claude\splat-perf\shot-*.png`, `defaults-v1.pn
 
 Tests: 91 across the touched files; typecheck and lint clean.
 
+## 4a. The same evening: prebuilt, paged trees (T-575)
+
+The seven seconds the tree cost at load are gone. `lcc2 lod` (tools/xgrids-lcc2) builds a chunked Spark tree for every served tile already in the staging root with `build-lod --quality --rad-chunked`, keeps the header and its chunks together under `lod/`, and writes the manifest back with a descriptor per tree (`lod: { file, bytes, sha256, splats, chunks[] }`). It needs no capture drive: it reads the generated module the stage command wrote. The scene serves a tile's tree when the profile wants the tree and the bundle has one, loaded `paged: true` and without the `lod` flag; a tile without one is served as itself. The publish script walks `lod/` and serves `.rad` and `.radc`; so does the dev middleware.
+
+| label | what loads | fps | p95 ms | load ms | heap MB |
+|---|---|---|---|---|---|
+| lodoff-singlehost | the twelve tiles, no tree | 176.2 | 12.4 | 4402 | 434 |
+| defaults-v1 | the tiles, tree built in the browser | 239.0 | 4.3 | 12624 | 637 |
+| **defaults-trees-paged** | **twelve prebuilt chunked trees, paged** | **238.0** | **4.3** | **1901** | **971** |
+
+The Grand Hall's trees are 143 files and 381 MB against 107 MB of tiles, and the resting screenshot (`defaults-trees-paged.png`) is complete with the name boards legible. Then the byte meter (added to the harness the same hour) measured what the room costs on the wire, and the answer decided the default:
+
+| label | what loads | wire at load | wire by end of drags | requests |
+|---|---|---|---|---|
+| wire-tiles | the twelve tiles | 101.9 MB | 101.9 MB | 12 |
+| wire-trees | twelve prebuilt trees, paged | 298.7 MB | 347.8 MB | 130 |
+
+A complete resting view needs every leaf, so paging fetches nearly the whole tree, and the tree format is 3.5 times the tile's bytes; the compact `--csplat` encoding produced 378 MB against 381, so the encoding is not the lever. At 100 Mbps that is roughly 28 s of download against 8 s of tiles with the browser building the tree underneath; prebuilt trees win only above about 250 Mbps. The decision, from these numbers: the high tier runs the tiles as they are, no tree (176 fps at full detail, 4.4 s load, 434 MB heap, all measured); the three weaker tiers keep the tree on and build it in the browser from the tiles, which keeps the wire at 102 MB; the prebuilt trees stay in the manifest and on disk as an opt-in (`?splat=trees:on`) for fast connections and for the harness, and are not published to R2 tonight. The cheaper protection for weak devices, not yet built, is the vendor's own coarser levels that the staged bundle already holds: serve level four of the Grand Hall's five to a medium device and no tree is needed at all.
+
 ## 5. What this changes in the plan
 
 docs/plan/11 §2 is corrected in place. The ladder written that afternoon assumed the renderer was the cost; the renderer was being run twelve times. The tree stays as protection and as the path to streaming; the measurements for the other three tiers have to be made on their own devices; the prebuilt, chunked tree is the next slice.

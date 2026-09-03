@@ -13,6 +13,7 @@ import { parseObjVertices, roomFrameFromVertices } from "./obj-bounds.js";
 import { parseLcc2Manifest } from "./lcc2-manifest.js";
 import { roomBundleFromManifest } from "./room-bundle.js";
 import { stageRoomTiles, writeRoomManifest, type RoomManifestEntry } from "./stage.js";
+import { buildLodRunner, buildRoomLodTrees, readGeneratedManifest } from "./lod-trees.js";
 
 // ---------------------------------------------------------------------------
 // Read-only operator entrypoint for XGRIDS LCC2 captures.
@@ -31,6 +32,8 @@ interface Args {
   readonly out: string | null;
   readonly manifest: string | null;
   readonly room: string | null;
+  /** Path to Spark's build-lod executable, for the `lod` command. */
+  readonly buildLod: string | null;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -50,6 +53,7 @@ function parseArgs(argv: readonly string[]): Args {
     out: flag("out"),
     manifest: flag("manifest"),
     room: flag("room"),
+    buildLod: flag("build-lod"),
   };
 }
 
@@ -314,6 +318,50 @@ function stage(args: Args): number {
   return failures > 0 ? 1 : 0;
 }
 
+/**
+ * Builds a prebuilt level-of-detail tree for every served tile already in the
+ * staging root, and writes the manifest back with a descriptor per tree.
+ * Works without the capture drive: it reads the generated module, not the
+ * captures. Re-running is cheap; existing trees are described, not rebuilt.
+ */
+function lod(args: Args): number {
+  if (args.out === null) {
+    process.stderr.write("Provide --out <staging root the tiles were staged into>.\n");
+    return 1;
+  }
+  if (args.manifest === null) {
+    process.stderr.write("Provide --manifest <path to the generated module>.\n");
+    return 1;
+  }
+  if (args.buildLod === null) {
+    process.stderr.write("Provide --build-lod <path to Spark's build-lod executable>.\n");
+    return 1;
+  }
+
+  const entries = readGeneratedManifest(args.manifest);
+  const run = buildLodRunner(args.buildLod);
+  let failures = 0;
+  const updated = entries.map((entry) => {
+    if (args.room !== null && entry.roomSlug !== args.room) return entry;
+    const result = buildRoomLodTrees(entry, join(args.out ?? "", VENUE_SLUG, entry.roomSlug), run);
+    for (const failure of result.failures) process.stderr.write(`  ${entry.roomSlug}: ${failure}\n`);
+    failures += result.failures.length;
+    const treeBytes = result.entry.tiles.reduce(
+      (sum, tile) => sum + (tile.lod?.bytes ?? 0) + (tile.lod?.chunks.reduce((s, c) => s + c.bytes, 0) ?? 0),
+      0,
+    );
+    process.stdout.write(
+      `${entry.roomSlug}: ${String(result.built)} trees built, ${String(result.reused)} reused, ` +
+      `${(treeBytes / 1024 / 1024).toFixed(0)} MB under lod/, ${String(result.failures.length)} failures\n`,
+    );
+    return result.entry;
+  });
+
+  writeRoomManifest(args.manifest, updated);
+  process.stdout.write(`\nWrote ${String(updated.length)} rooms to ${args.manifest}\n`);
+  return failures > 0 ? 1 : 0;
+}
+
 function main(): void {
   const args = parseArgs(process.argv);
   switch (args.command) {
@@ -323,12 +371,16 @@ function main(): void {
     case "stage":
       process.exitCode = stage(args);
       return;
+    case "lod":
+      process.exitCode = lod(args);
+      return;
     default:
       process.stderr.write(
         [
           "Usage:",
           "  lcc2 measure --scans <dir> [--grand-hall <dir>] [--room <slug>]",
           "  lcc2 stage   --scans <dir> [--grand-hall <dir>] --out <staging root> --manifest <json path>",
+          "  lcc2 lod     --out <staging root> --manifest <generated module> --build-lod <exe> [--room <slug>]",
           "",
         ].join("\n"),
       );

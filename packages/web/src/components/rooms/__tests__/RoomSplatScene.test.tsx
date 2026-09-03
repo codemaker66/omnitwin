@@ -30,6 +30,20 @@ vi.mock("../InteriorCamera.js", () => ({
   },
 }));
 vi.mock("../RoomClipBox.js", () => ({ RoomClipBox: () => null }));
+// The generated manifest carries no prebuilt trees until `lcc2 lod` has run on
+// the staging root, so the first served tile is given one here: the scene must
+// load it paged and leave the rest as tiles.
+vi.mock("../../../data/room-splat-bundles.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../data/room-splat-bundles.js")>();
+  return {
+    ...actual,
+    roomSplatTileSources: (room: string, base: string | undefined, preferTrees: boolean) =>
+      actual.roomSplatTileSources(room, base, false).map((source, index) =>
+        preferTrees && index === 0
+          ? { ...source, url: source.url.replace(/\/([^/]+)\.sog$/u, "/lod/$1-lod.rad"), tree: true }
+          : source),
+  };
+});
 
 const PROFILE: SplatRuntimeProfile = {
   tier: "high",
@@ -40,6 +54,7 @@ const PROFILE: SplatRuntimeProfile = {
   lodSplatCount: 1_500_000,
   motionLodSplatCount: 600_000,
   maxSh: 3,
+  preferTrees: true,
   motionDpr: 0.5,
   settledDpr: 1.5,
 };
@@ -102,6 +117,15 @@ describe("RoomSplatScene runtime wiring", () => {
     const hosts = recorded.layers.map((layer) => layer["includeRendererHost"]);
     expect(hosts[0]).toBe(true);
     expect(hosts.slice(1).every((host) => host === false)).toBe(true);
+  });
+
+  it("loads a tile's prebuilt tree paged when the profile wants the tree, and the plain tile otherwise", () => {
+    render(<RoomSplatScene room={ROOM} />);
+
+    expect(recorded.layers[0]?.["url"]).toMatch(/\/lod\/[^/]+-lod\.rad$/u);
+    expect(recorded.layers[0]?.["paged"]).toBe(true);
+    expect(recorded.layers[1]?.["url"]).toMatch(/\.sog$/u);
+    expect(recorded.layers[1]?.["paged"]).toBe(false);
   });
 
   it("scales the renderer's budget down to the motion budget while the camera reports motion", () => {

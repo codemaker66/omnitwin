@@ -10,6 +10,8 @@ import {
   roomSplatTotalBytes,
   roomsWithSplatBundles,
   splatBaseUrl,
+  splatSourcesForBundle,
+  type GeneratedRoomSplatBundle,
 } from "../room-splat-bundles.js";
 
 const NO_BASE_URL: string | undefined = undefined;
@@ -227,5 +229,62 @@ describe("roomAlignmentIsConfident", () => {
 
   it("is not confident about a room it has never heard of", () => {
     expect(roomAlignmentIsConfident("no-such-room")).toBe(false);
+  });
+});
+
+describe("splatSourcesForBundle", () => {
+  const base = "/splats/trades-hall/saloon";
+  const real = roomSplatBundle("grand-hall");
+  if (real === null) throw new Error("the Grand Hall bundle is the fixture's template");
+  const bundle: GeneratedRoomSplatBundle = {
+    ...real,
+    roomSlug: "saloon",
+    finestLevel: 2,
+    tiles: [
+      { file: "0_0.sog", bytes: 1, sha256: "a".repeat(64), lodLevel: 1, isEnvironment: false },
+      {
+        file: "0_1_0.sog",
+        bytes: 2,
+        sha256: "b".repeat(64),
+        lodLevel: 2,
+        isEnvironment: false,
+        lod: {
+          file: "lod/0_1_0-lod.rad",
+          bytes: 3,
+          sha256: "c".repeat(64),
+          splats: 9,
+          chunks: [{ file: "lod/0_1_0-lod-0.radc", bytes: 4, sha256: "d".repeat(64) }],
+        },
+      },
+      { file: "0_1_1.sog", bytes: 2, sha256: "e".repeat(64), lodLevel: 2, isEnvironment: false },
+      { file: "env.sog", bytes: 1, sha256: "f".repeat(64), lodLevel: null, isEnvironment: true },
+    ],
+  };
+
+  it("serves the tiles themselves when trees are not wanted", () => {
+    const sources = splatSourcesForBundle(bundle, base, false);
+    expect(sources.map((source) => source.url)).toEqual([
+      `${base}/0_1_0.sog`,
+      `${base}/0_1_1.sog`,
+      `${base}/env.sog`,
+    ]);
+    expect(sources.every((source) => !source.tree)).toBe(true);
+  });
+
+  it("serves a tile's prebuilt tree when wanted and present, and the tile itself when absent", () => {
+    const sources = splatSourcesForBundle(bundle, base, true);
+    expect(sources.map((source) => [source.url, source.tree])).toEqual([
+      [`${base}/lod/0_1_0-lod.rad`, true],
+      [`${base}/0_1_1.sog`, false],
+      [`${base}/env.sog`, false],
+    ]);
+  });
+
+  it("names the tile each source stands for, so load progress can be counted per tile", () => {
+    expect(splatSourcesForBundle(bundle, base, true).map((source) => source.file)).toEqual([
+      "0_1_0.sog",
+      "0_1_1.sog",
+      "env.sog",
+    ]);
   });
 });

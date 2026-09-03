@@ -53,6 +53,15 @@ const SHOT = process.env.SPLAT_BUDGET_SHOT === "true";
  * manifest change.
  */
 const RAD = process.env.SPLAT_BUDGET_RAD === "true";
+/**
+ * Serve the trees from a sibling directory instead of `lod/` (for an A/B of
+ * encodings): requests for <room>/lod/<file> are redirected to
+ * <room>/<dir>/<file>, header and chunks alike.
+ */
+const TREE_DIR = process.env.SPLAT_BUDGET_TREE_DIR ?? "";
+/** Emulate a connection: download throughput in megabits per second (0 = none). */
+const THROTTLE_MBPS = Number(process.env.SPLAT_BUDGET_THROTTLE_MBPS ?? "0");
+const THROTTLE_LATENCY_MS = Number(process.env.SPLAT_BUDGET_THROTTLE_LATENCY_MS ?? "20");
 
 /** Two 60 Hz frames: one late frame is a hiccup, a run of them is a stutter. */
 const DROPPED_FRAME_MS = 33.4;
@@ -267,6 +276,21 @@ async function run() {
       deviceScaleFactor: DEVICE_SCALE,
     });
     const page = await context.newPage();
+    // What the room costs on the wire: every response under /splats/, by
+    // Playwright's own sizes (Resource Timing under-counts cross-origin).
+    const wire = { requests: 0, bytes: 0, pending: [] };
+    page.on("response", (response) => {
+      const request = response.request();
+      if (!request.url().includes("/splats/")) return;
+      wire.pending.push(request.sizes().then((sizes) => {
+        wire.requests += 1;
+        wire.bytes += sizes.responseBodySize + sizes.responseHeadersSize;
+      }).catch(() => undefined));
+    });
+    const wireSnapshot = async () => {
+      await Promise.all([...wire.pending]);
+      return { requests: wire.requests, megabytes: round(wire.bytes / 1048576, 1) };
+    };
     page.on("pageerror", (error) => { record.pageErrors.push(error.message); });
     page.on("console", (message) => {
       if (message.type() === "error") record.pageErrors.push(message.text());
@@ -290,6 +314,23 @@ async function run() {
         return route.continue({ url: rewritten });
       });
     }
+    if (TREE_DIR.length > 0) {
+      await page.route(/\/splats\/.*\/lod\/[^/]+\.radc?(\?.*)?$/u, (route) => {
+        const rewritten = route.request().url().replace(/\/lod\/([^/]+)$/u, `/${TREE_DIR}/$1`);
+        return route.continue({ url: rewritten });
+      });
+    }
+    if (THROTTLE_MBPS > 0) {
+      const throttle = await context.newCDPSession(page);
+      await throttle.send("Network.enable");
+      await throttle.send("Network.emulateNetworkConditions", {
+        offline: false,
+        latency: THROTTLE_LATENCY_MS,
+        downloadThroughput: (THROTTLE_MBPS * 1_000_000) / 8,
+        uploadThroughput: (THROTTLE_MBPS * 1_000_000) / 8,
+      });
+      record.throttleMbps = THROTTLE_MBPS;
+    }
 
     const loadStart = Date.now();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
@@ -297,6 +338,7 @@ async function run() {
     record.loadMs = Date.now() - loadStart;
     await page.waitForTimeout(SETTLE_MS);
     await takeLongTasks(page);
+    record.wireAtLoad = await wireSnapshot();
 
     const canvas = page.locator("canvas").first();
     const box = await canvas.boundingBox();
@@ -347,6 +389,7 @@ async function run() {
       longestTaskMs: Math.max(...record.runs.map((r) => r.longestTaskMs)),
       cameraMoved: record.runs.every((r) => r.yawTravel > 0.05),
     };
+    record.wireAtEnd = await wireSnapshot();
     await context.close();
   } finally {
     await browser.close();
@@ -360,6 +403,8 @@ async function run() {
     `${LABEL}: ${String(s.medianFps)} fps median (p95 ${String(s.medianP95Ms)} ms, worst p95 ${String(s.worstP95Ms)} ms, `
     + `dropped ${String(s.totalDropped)}, stall ${String(s.worstStall)}, long task ${String(s.longestTaskMs)} ms) `
     + `load ${String(record.loadMs)} ms, heap ${String(record.runs.at(-1)?.heapMB)} MB, `
+    + `wire ${String(record.wireAtLoad?.megabytes)} MB/${String(record.wireAtLoad?.requests)} req at load, `
+    + `${String(record.wireAtEnd?.megabytes)} MB/${String(record.wireAtEnd?.requests)} req by end, `
     + `gpu ${String(record.facts?.gpu)}, buffer ${JSON.stringify(record.facts?.canvasBuffer)}, `
     + `errors ${String(record.pageErrors.length)}, moved ${String(s.cameraMoved)} -> ${file}`,
   );

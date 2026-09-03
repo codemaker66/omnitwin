@@ -5,7 +5,7 @@ import {
   type SparkSplatErrorEvent,
   type SparkSplatLoadEvent,
 } from "../scene/SparkSplatLayer.js";
-import { roomSplatBundle, roomSplatTileUrls } from "../../data/room-splat-bundles.js";
+import { roomSplatBundle, roomSplatTileSources } from "../../data/room-splat-bundles.js";
 import { RoomClipBox } from "./RoomClipBox.js";
 import { InteriorCamera } from "./InteriorCamera.js";
 import { useSplatRuntimeProfile } from "../../hooks/use-splat-runtime-profile.js";
@@ -66,10 +66,6 @@ export function RoomSplatScene({
   onProgress,
   captureReadback = false,
 }: RoomSplatSceneProps): ReactElement {
-  const urls = useMemo(
-    () => roomSplatTileUrls(room, import.meta.env.VITE_SPLAT_BASE_URL),
-    [room],
-  );
   const transform = runtimeAssetViewTransformForRoom(room, "staged");
   const camera = runtimeAssetCameraViewForRoom(room, "staged");
   const extentM = roomSplatBundle(room)?.extentM ?? null;
@@ -100,6 +96,16 @@ export function RoomSplatScene({
   const profile = useSplatRuntimeProfile();
   const deviceDpr = typeof window === "undefined" ? 1 : window.devicePixelRatio;
   const settledDpr = Math.min(deviceDpr, profile.settledDpr);
+
+  // What to mount for each served tile: its prebuilt, paged tree when the
+  // profile wants the tree and the bundle has one, otherwise the tile itself
+  // (which Spark then trees in a worker if the profile asks).
+  const preferTrees = profile.lod && profile.preferTrees;
+  const sources = useMemo(
+    () => roomSplatTileSources(room, import.meta.env.VITE_SPLAT_BASE_URL, preferTrees),
+    [room, preferTrees],
+  );
+  const urls = useMemo(() => sources.map((source) => source.url), [sources]);
 
   // The motion budget. The camera says when the view is moving; the renderer
   // host polls this each frame and scales the level-of-detail budget down to
@@ -172,10 +178,11 @@ export function RoomSplatScene({
       {extentM !== null && (
         <RoomClipBox extentM={extentM} keepHeightFraction={1} />
       )}
-      {urls.map((url, index) => (
+      {sources.map((source, index) => (
         <SparkSplatLayer
-          key={url}
-          url={url}
+          key={source.url}
+          url={source.url}
+          paged={source.tree}
           position={[...transform.position] as [number, number, number]}
           rotation={[...transform.rotation] as [number, number, number]}
           scale={transform.scale}

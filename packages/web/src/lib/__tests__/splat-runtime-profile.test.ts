@@ -21,6 +21,7 @@ function expectWellFormed(profile: SplatRuntimeProfile): void {
   expect(Number.isInteger(profile.maxSh)).toBe(true);
   expect(profile.maxSh).toBeGreaterThanOrEqual(0);
   expect(profile.maxSh).toBeLessThanOrEqual(3);
+  expect(typeof profile.preferTrees).toBe("boolean");
   expect(profile.motionDpr).toBeGreaterThan(0);
   expect(profile.settledDpr).toBeGreaterThanOrEqual(profile.motionDpr);
 }
@@ -55,6 +56,12 @@ describe("parseSplatOverrides", () => {
     expect(parseSplatOverrides("?splat=sh:1.6")).toEqual({ maxSh: 2 });
     expect(parseSplatOverrides("?splat=sh:0")).toEqual({ maxSh: 0 });
     expect(parseSplatOverrides("?splat=sh:-1")).toEqual({});
+  });
+
+  it("reads the prebuilt-tree preference", () => {
+    expect(parseSplatOverrides("?splat=trees:off")).toEqual({ preferTrees: false });
+    expect(parseSplatOverrides("?splat=trees:on")).toEqual({ preferTrees: true });
+    expect(parseSplatOverrides("?splat=trees:maybe")).toEqual({});
   });
 
   it("understands lod:on (tier budget) and lod:off", () => {

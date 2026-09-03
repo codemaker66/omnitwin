@@ -50,4 +50,35 @@ describe("writeRoomManifest", () => {
     expect(text).toMatch(/"splatsByLevel": \[\s*260867,\s*522118,\s*1045287,\s*2105298\s*\]/);
     expect(text).toContain('"finestLevelSplats": 2105298');
   });
+
+  it("emits the prebuilt tree descriptor type and a tile's tree when one has been built", () => {
+    dir = mkdtempSync(join(tmpdir(), "lcc2-manifest-"));
+    const out = join(dir, "bundles.ts");
+    const withTree = entry();
+    const tile = withTree.tiles[0];
+    if (tile === undefined) throw new Error("fixture has no tile");
+    writeRoomManifest(out, [{
+      ...withTree,
+      tiles: [
+        {
+          ...tile,
+          lod: {
+            file: "lod/0_0-lod.rad",
+            bytes: 1416,
+            sha256: "c".repeat(64),
+            splats: 16706,
+            chunks: [{ file: "lod/0_0-lod-0.radc", bytes: 858256, sha256: "d".repeat(64) }],
+          },
+        },
+        ...withTree.tiles.slice(1),
+      ],
+    }]);
+    const text = readFileSync(out, "utf8");
+    expect(text).toContain("export interface GeneratedSplatFile {");
+    expect(text).toContain("export interface GeneratedSplatLod extends GeneratedSplatFile {");
+    expect(text).toContain("readonly chunks: readonly GeneratedSplatFile[];");
+    expect(text).toContain("readonly lod?: GeneratedSplatLod;");
+    expect(text).toContain('"file": "lod/0_0-lod.rad"');
+    expect(text).toContain('"file": "lod/0_0-lod-0.radc"');
+  });
 });

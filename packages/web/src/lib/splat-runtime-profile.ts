@@ -41,6 +41,13 @@ export interface SplatRuntimeSettings {
   readonly motionLodSplatCount: number;
   /** Highest spherical-harmonic degree evaluated per Gaussian, 0 to 3. */
   readonly maxSh: number;
+  /**
+   * When the tree is on and a tile has a prebuilt tree, load that (paged)
+   * instead of the tile. A prebuilt tree spares the browser the build but
+   * costs about 3.4 times the tile's bytes on the wire, so this is a
+   * bandwidth decision, not a quality one.
+   */
+  readonly preferTrees: boolean;
   /** Pixel ratio while the view is moving. */
   readonly motionDpr: number;
   /** Pixel ratio cap once the view is still (the device's own ratio if lower). */
@@ -77,10 +84,19 @@ const TIERS: readonly DeviceTier[] = ["poster", "low", "medium", "high"];
  * budgets measured with twelve hosts still order the devices (35.6 fps at
  * 2.5 M, 56.8 at 1.5 M, 75.7 at 1.0 M, 125 at 0.5 M), so they remain the
  * shape of the protection for weaker GPUs. The sort interval and the tail
- * radius stay at Spark's defaults because they measured as nothing; the tree
- * is on; the budget is split: the complete room while the view is still, a
- * bounded budget while it moves. The tree costs about seven seconds of load
- * on this room until the prebuilt trees ship.
+ * radius stay at Spark's defaults because they measured as nothing.
+ *
+ * The tree is not free, and the measurements say where it pays. Built in the
+ * browser it costs about twelve seconds of load on this room; prebuilt and
+ * paged it loads in two seconds but fetches 348 MB where the tiles are 102,
+ * because a complete resting view needs every leaf and the tree format is
+ * 3.5 times the tile's bytes (the compact encoding changes nothing). So the
+ * high tier, which needs no protection on the measured GPU, runs the tiles
+ * as they are; the three weaker tiers build the tree in the browser, which
+ * keeps the wire at the tiles' bytes; and the prebuilt trees stay in the
+ * manifest as an opt-in (`trees:on`) for fast connections and for the
+ * harness. The cheaper protection for weak devices is the vendor's own
+ * coarser levels, which the staged bundle already holds: the next slice.
  *
  * Only the high tier was measured. The other three are scaled from it by
  * the usual gap between GPU classes and are marked so; each is replaced by
@@ -95,6 +111,7 @@ export const SPLAT_RUNTIME_PROFILES: Readonly<Record<DeviceTier, SplatRuntimeSet
     lodSplatCount: 600_000,
     motionLodSplatCount: 150_000,
     maxSh: 3,
+    preferTrees: false,
     motionDpr: 1,
     settledDpr: 1,
   },
@@ -106,6 +123,7 @@ export const SPLAT_RUNTIME_PROFILES: Readonly<Record<DeviceTier, SplatRuntimeSet
     lodSplatCount: 1_500_000,
     motionLodSplatCount: 300_000,
     maxSh: 3,
+    preferTrees: false,
     motionDpr: 1,
     settledDpr: 1.5,
   },
@@ -117,22 +135,24 @@ export const SPLAT_RUNTIME_PROFILES: Readonly<Record<DeviceTier, SplatRuntimeSet
     lodSplatCount: 3_000_000,
     motionLodSplatCount: 500_000,
     maxSh: 3,
+    preferTrees: false,
     motionDpr: 1,
     settledDpr: 2,
   },
   high: {
-    // Measured (RTX 4090 laptop, 1600x900, one host): 1.0 M and 2.5 M in
-    // motion both hold the 240 Hz ceiling with a p95 of 4.3 ms, and the full
-    // 6.0 M without the tree holds 176 fps. 2.5 M is Spark's own desktop
-    // default and the smallest visual loss that still bounds the tier's weak
-    // end (a GTX 1050, a flagship phone). The resting budget exceeds every
-    // room's leaf count, so a still view is complete.
+    // Measured (RTX 4090 laptop, 1600x900, one host): the full 6.0 M without
+    // the tree drags at 176 fps (p95 12.4 ms, heap 434 MB, 4.4 s load), so
+    // this tier runs the tiles as they are; the tree would cost twelve
+    // seconds of load for a frame rate already far past the display. The
+    // budgets are kept for the day a device in this tier measures otherwise:
+    // 2.5 M is Spark's own desktop default.
     minSortIntervalMs: 0,
     maxStdDev: SPARK_DEFAULT_MAX_STD_DEV,
-    lod: true,
+    lod: false,
     lodSplatCount: 8_000_000,
     motionLodSplatCount: 2_500_000,
     maxSh: 3,
+    preferTrees: false,
     motionDpr: 1,
     settledDpr: 2,
   },
@@ -187,7 +207,8 @@ const NUMERIC_KEYS: Readonly<Record<string, NumericField>> = {
  * The grammar is one parameter, `splat`, holding comma-separated `key:value`
  * pairs: `?splat=sort:50,std:2.236,dpr:0.5,rest:1.5,lod:1500000,motion:750000,sh:1,tier:medium`.
  * `lod` takes the resting budget, or `on` for the tier's budget, or `off`;
- * `motion` is the budget while the view moves; `sh` caps the harmonic degree. Unknown keys
+ * `motion` is the budget while the view moves; `sh` caps the harmonic degree;
+ * `trees` is `on` or `off` for the prebuilt trees. Unknown keys
  * and malformed or out-of-domain values are ignored individually; a later
  * valid value for the same key wins. Numbers are clamped to sane ranges so a
  * typo cannot allocate sixteen gigabytes of paged splats.
@@ -210,6 +231,11 @@ export function parseSplatOverrides(search: string): SplatRuntimeOverrides {
 
     if (key === "tier") {
       if (isDeviceTier(raw)) overrides.tier = raw;
+      continue;
+    }
+    if (key === "trees") {
+      if (raw === "on") overrides.preferTrees = true;
+      else if (raw === "off") overrides.preferTrees = false;
       continue;
     }
     if (key === "lod") {
