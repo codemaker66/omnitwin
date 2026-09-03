@@ -88,7 +88,7 @@ describe("direct dependency reproducibility", () => {
   it("keeps the Spark/Three renderer matrix pinned together", async () => {
     const web = await readManifest("packages/web/package.json");
 
-    expect(web.dependencies?.["@sparkjsdev/spark"]).toBe("2.0.0");
+    expect(web.dependencies?.["@sparkjsdev/spark"]).toBe("2.1.0");
     expect(web.dependencies?.["three"]).toBe("0.180.0");
     expect(web.devDependencies?.["@types/three"]).toBe("0.180.0");
     expect(web.dependencies?.["@react-three/fiber"]).toBe("8.18.0");
