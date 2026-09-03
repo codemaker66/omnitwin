@@ -283,6 +283,11 @@ matches what you're about to do.
   reading a COLMAP `database.db`, or writing a `sparse/0` model COLMAP
   must load next to a database.
 
+- `.claude/gotchas/browser-pane-splat-streaming.md`
+  Read this when: verifying any splat route in the embedded Browser pane, or
+  reading a black splat canvas or a stuck "Streaming the room" pill there as
+  evidence about the site.
+
 - `.claude/gotchas/spark-render-target-effects.md`
   Read this when: adding any effect that renders the scene to an
   off-screen target (drei `ContactShadows`, `Environment` probes,
