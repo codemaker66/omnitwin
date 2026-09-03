@@ -120,8 +120,9 @@ describe("RoomShowcasePage", () => {
       .toBe("/venues/trades-hall/rooms/grand-hall");
     expect(screen.getByRole("link", { name: /Open The North Gallery room preview/i }).getAttribute("href"))
       .toBe("/venues/trades-hall/rooms/north-gallery");
+    // The enquiry composer lives on /fresh; the front door has no #contact.
     expect(screen.getByRole("link", { name: /Enquire about Deacon Convener's Room/i }).getAttribute("href"))
-      .toBe("/?room=deacon-convener-room#contact");
+      .toBe("/fresh#enquire");
   });
 
   it("renders the runtime visual state through the client-safe visual payload", async () => {

@@ -64,6 +64,50 @@ function servedTiles(bundle: GeneratedRoomSplatBundle): readonly GeneratedSplatT
   );
 }
 
+/**
+ * Where a standing person's eyes are, in metres above the floor. The walk is
+ * shown from here whatever height the scanner was carried at: the Grand Hall
+ * capture records its pole at 3 m, which is a stepladder, not a visitor.
+ */
+export const WALK_EYE_HEIGHT_M = 1.6;
+/** Vertical freedom either side of eye height: a crouch and a tiptoe. */
+const WALK_EYE_BAND_M = 0.25;
+
+export interface RoomWalkPose {
+  readonly spawn: {
+    readonly position: readonly [number, number, number];
+    readonly yaw: number;
+  };
+  readonly bounds: {
+    readonly min: readonly [number, number, number];
+    readonly max: readonly [number, number, number];
+  };
+}
+
+/**
+ * The pose a visitor walks from: the scanner's floor plan and heading, at a
+ * person's eye height. The captured walk box keeps its x and z extent (the
+ * operator's path is the only honest limit on where a visitor may stand) and
+ * takes a narrow band around eye height instead of the scanner's; under a low
+ * ceiling the eye drops so the head stays clear of it. Null for a capture that
+ * shipped no walk.
+ */
+export function walkPoseForBundle(bundle: GeneratedRoomSplatBundle): RoomWalkPose | null {
+  const { spawn, bounds } = bundle;
+  if (spawn === null || bounds === null) return null;
+  const ceiling = Math.max(bundle.extentM[1], 1);
+  const eye = Math.min(WALK_EYE_HEIGHT_M, ceiling - 0.5);
+  const low = Math.max(0.3, eye - WALK_EYE_BAND_M);
+  const high = Math.min(ceiling - 0.2, eye + WALK_EYE_BAND_M);
+  return {
+    spawn: { position: [spawn.position[0], eye, spawn.position[2]], yaw: spawn.yaw },
+    bounds: {
+      min: [bounds.min[0], low, bounds.min[2]],
+      max: [bounds.max[0], high, bounds.max[2]],
+    },
+  };
+}
+
 /** One thing the scene mounts for one served tile: the tile, or its prebuilt tree. */
 export interface RoomSplatSource {
   readonly url: string;

@@ -105,13 +105,21 @@ describe("BookingDrawer — floor plan section", () => {
     expect(screen.queryByRole("link", { name: "Open the plan" })).toBeNull();
   });
 
-  it("links an attached plan into the planner at the id the planner reads", () => {
+  it("links an attached plan into the planner at the id the planner reads, in the booking's own room", () => {
     renderEdit(booking({ eventId: EVENT_ID }));
     const link = screen.getByRole("link", { name: "Open the plan" });
-    // /plan?eventId= is precisely what use-linked-event.ts binds from.
-    expect(link.getAttribute("href")).toBe(`/plan?eventId=${EVENT_ID}`);
+    // /plan?eventId= is precisely what use-linked-event.ts binds from, and
+    // &space= is what EditorPage's bootstrap opens; without it the planner
+    // opens its default room, not the booking's.
+    expect(link.getAttribute("href")).toBe(`/plan?eventId=${EVENT_ID}&space=grand-hall`);
     expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
     expect(screen.getByRole("button", { name: "Detach" })).toBeTruthy();
+  });
+
+  it("omits the room from the plan link when the booking's space is not on the board", () => {
+    renderEdit(booking({ eventId: EVENT_ID, spaceId: "00000000-0000-4000-8000-0000000000ff" }));
+    const link = screen.getByRole("link", { name: "Open the plan" });
+    expect(link.getAttribute("href")).toBe(`/plan?eventId=${EVENT_ID}`);
   });
 
   it("seeds the new event from the booking, then links the two", async () => {

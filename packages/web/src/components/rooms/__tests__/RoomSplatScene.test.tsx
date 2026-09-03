@@ -111,6 +111,17 @@ describe("RoomSplatScene runtime wiring", () => {
     expect(recorded.cameras[0]?.["settledDpr"]).toBe(1.5);
   });
 
+  it("stands the camera at eye height inside the captured walk, never at the scanner's pole height", () => {
+    render(<RoomSplatScene room={ROOM} />);
+
+    const spawn = recorded.cameras[0]?.["spawn"] as { position: [number, number, number] };
+    const bounds = recorded.cameras[0]?.["bounds"] as { min: [number, number, number]; max: [number, number, number] };
+    expect(spawn.position[1]).toBeLessThan(2);
+    expect(spawn.position[1]).toBeGreaterThan(1.2);
+    expect(bounds.min[1]).toBeLessThanOrEqual(spawn.position[1]);
+    expect(bounds.max[1]).toBeGreaterThanOrEqual(spawn.position[1]);
+  });
+
   it("mounts exactly one renderer host for the room, on the first tile", () => {
     render(<RoomSplatScene room={ROOM} />);
 

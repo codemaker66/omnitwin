@@ -231,13 +231,18 @@ export function EditorPage(): React.ReactElement {
           ?? spaces[0];
         if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
         setOpeningRoomName(space.name);
+        // The rest of the query rides along: a booking arrives as
+        // /plan?eventId=…&space=…, and the ribbon and Run of Show bind from
+        // that eventId on the plan's own route.
+        const carried = searchParams.toString();
+        const search = carried.length === 0 ? "" : `?${carried}`;
         const reusableConfigId = await findReusablePublicConfigId(space.id);
         if (reusableConfigId !== null) {
-          void navigate(`/plan/${reusableConfigId}`, { replace: true });
+          void navigate({ pathname: `/plan/${reusableConfigId}`, search }, { replace: true });
           return;
         }
         const newConfigId = await useEditorStore.getState().createPublicConfig(space.id);
-        void navigate(`/plan/${newConfigId}`, { replace: true });
+        void navigate({ pathname: `/plan/${newConfigId}`, search }, { replace: true });
       } catch {
         setAutoCreateBlocker({ kind: "network" });
       }

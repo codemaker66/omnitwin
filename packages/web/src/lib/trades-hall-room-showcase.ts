@@ -66,7 +66,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     ],
     planningHref: "/plan?space=grand-hall",
     requestLayoutHref: "/plan?space=grand-hall&intent=request-layout",
-    enquiryHref: "/?room=grand-hall#contact",
+    enquiryHref: "/fresh#enquire",
   },
   "reception-room": {
     slug: "reception-room",
@@ -85,7 +85,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     ],
     planningHref: "/plan?space=reception-room",
     requestLayoutHref: "/plan?space=reception-room&intent=request-layout",
-    enquiryHref: "/?room=reception-room#contact",
+    enquiryHref: "/fresh#enquire",
   },
   "robert-adam-room": {
     slug: "robert-adam-room",
@@ -104,7 +104,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     ],
     planningHref: "/plan?space=robert-adam-room",
     requestLayoutHref: "/plan?space=robert-adam-room&intent=request-layout",
-    enquiryHref: "/?room=robert-adam-room#contact",
+    enquiryHref: "/fresh#enquire",
   },
   saloon: {
     slug: "saloon",
@@ -123,7 +123,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     ],
     planningHref: "/plan?space=saloon",
     requestLayoutHref: "/plan?space=saloon&intent=request-layout",
-    enquiryHref: "/?room=saloon#contact",
+    enquiryHref: "/fresh#enquire",
   },
   "lady-convenors-room": {
     slug: "lady-convenors-room",
@@ -142,7 +142,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     ],
     planningHref: null,
     requestLayoutHref: "/plan?space=lady-convenors-room&intent=request-layout",
-    enquiryHref: "/?room=lady-convenors-room#contact",
+    enquiryHref: "/fresh#enquire",
   },
   "deacon-conveners-room": {
     slug: "deacon-conveners-room",
@@ -161,7 +161,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     ],
     planningHref: null,
     requestLayoutHref: "/plan?space=deacon-conveners-room&intent=request-layout",
-    enquiryHref: "/?room=deacon-conveners-room#contact",
+    enquiryHref: "/fresh#enquire",
   },
   "north-gallery": {
     slug: "north-gallery",
@@ -180,7 +180,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     ],
     planningHref: null,
     requestLayoutHref: "/plan?space=north-gallery&intent=request-layout",
-    enquiryHref: "/?room=north-gallery#contact",
+    enquiryHref: "/fresh#enquire",
   },
   "south-gallery": {
     slug: "south-gallery",
@@ -199,7 +199,7 @@ export const TRADES_HALL_ROOM_SHOWCASE_PROFILES = {
     ],
     planningHref: null,
     requestLayoutHref: "/plan?space=south-gallery&intent=request-layout",
-    enquiryHref: "/?room=south-gallery#contact",
+    enquiryHref: "/fresh#enquire",
   },
 } as const satisfies Record<TradesHallRuntimeRoomSlug, RoomShowcaseProfile>;
 
@@ -244,7 +244,7 @@ export const publicRoomSelectionCards: readonly PublicRoomSelectionCard[] = [
     statusCopy: "Enquiry-only room selection. No public runtime package is exposed.",
     routeHref: null,
     requestLayoutHref: null,
-    enquiryHref: "/?room=deacon-convener-room#contact",
+    enquiryHref: "/fresh#enquire",
   },
   {
     id: "lady-conveners-room",

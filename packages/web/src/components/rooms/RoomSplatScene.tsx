@@ -5,7 +5,7 @@ import {
   type SparkSplatErrorEvent,
   type SparkSplatLoadEvent,
 } from "../scene/SparkSplatLayer.js";
-import { roomSplatBundle, roomSplatTileSources } from "../../data/room-splat-bundles.js";
+import { roomSplatBundle, roomSplatTileSources, walkPoseForBundle } from "../../data/room-splat-bundles.js";
 import { RoomClipBox } from "./RoomClipBox.js";
 import { InteriorCamera } from "./InteriorCamera.js";
 import { useSplatRuntimeProfile } from "../../hooks/use-splat-runtime-profile.js";
@@ -76,9 +76,12 @@ export function RoomSplatScene({
   // outside, and going no further than they did cannot reach the uncaptured
   // exterior. Rooms whose capture shipped no trajectory fall back to the frame
   // derived from geometry.
+  // At a person's eye height, though: the capture records where the SCANNER
+  // was, and the Grand Hall's was a 3 m pole.
   const bundle = roomSplatBundle(room);
-  const spawn = bundle?.spawn ?? null;
-  const walkBounds = bundle?.bounds ?? null;
+  const pose = bundle === null ? null : walkPoseForBundle(bundle);
+  const spawn = pose?.spawn ?? null;
+  const walkBounds = pose?.bounds ?? null;
   const startPosition: [number, number, number] = spawn === null
     ? [...camera.position] as [number, number, number]
     : [...spawn.position] as [number, number, number];

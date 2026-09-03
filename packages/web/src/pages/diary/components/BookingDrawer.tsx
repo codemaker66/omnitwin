@@ -10,6 +10,18 @@ import {
 } from "../../../api/diary.js";
 import { createEvent } from "../../../api/events.js";
 import { BOARD_COPY } from "../board-copy.js";
+
+/**
+ * The planner link for an attached plan: the event the planner binds from,
+ * and the booking's own room, because the planner's bootstrap opens its
+ * default room when no `space` is given. A room the board does not know
+ * (a space row the calendar lacks) is simply left to the planner's default.
+ */
+function planHref(eventId: string, spaceId: string, rooms: readonly CalendarRoom[]): string {
+  const base = `/plan?eventId=${encodeURIComponent(eventId)}`;
+  const slug = rooms.find((room) => room.id === spaceId)?.slug;
+  return slug === undefined ? base : `${base}&space=${encodeURIComponent(slug)}`;
+}
 import {
   allowedTransitionTargets,
   formToConvertPayload,
@@ -466,7 +478,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
                     this drawer testable without a router. */}
                 <a
                   className="diary-button is-primary"
-                  href={`/plan?eventId=${encodeURIComponent(mode.booking.eventId)}`}
+                  href={planHref(mode.booking.eventId, mode.booking.spaceId, rooms)}
                 >
                   {BOARD_COPY.drawer.planOpen}
                 </a>

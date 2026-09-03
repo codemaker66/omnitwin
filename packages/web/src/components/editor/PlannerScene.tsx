@@ -6,7 +6,7 @@ import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
 import type { AdaptiveResolutionOptions } from "../AdaptiveResolution.js";
 import { CameraRig } from "../CameraRig.js";
 import { InteriorCamera } from "../rooms/InteriorCamera.js";
-import { roomSplatBundle } from "../../data/room-splat-bundles.js";
+import { roomSplatBundle, walkPoseForBundle } from "../../data/room-splat-bundles.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { GrandHallRoom } from "../GrandHallRoom.js";
 import { RoomMesh } from "./RoomMesh.js";
@@ -287,9 +287,10 @@ export function PlannerScene(): ReactElement {
     [roomSlug],
   );
   const walkData = useMemo(() => {
-    const spawn = walkBundle?.spawn ?? null;
-    const walkBounds = walkBundle?.bounds ?? null;
-    if (!hasAsset || spawn === null || walkBounds === null) return null;
+    // The scanner's path at a person's eye height, as the room walk does.
+    const pose = walkBundle === null ? null : walkPoseForBundle(walkBundle);
+    if (!hasAsset || pose === null) return null;
+    const { spawn, bounds: walkBounds } = pose;
     return {
       spawn: { position: [...spawn.position] as [number, number, number], yaw: spawn.yaw },
       bounds: {

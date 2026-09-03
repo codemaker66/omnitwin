@@ -17,6 +17,14 @@ function mount(): void {
 }
 
 describe("RoomsHomePage", () => {
+  it("leads from the footer to the whole-building twin and to the enquiry composer, never to a dead anchor", () => {
+    mount();
+    expect(screen.getByRole("link", { name: /Walk the whole building/i }).getAttribute("href"))
+      .toBe("/venues/trades-hall/twin");
+    expect(screen.getByRole("link", { name: /^Enquire/i }).getAttribute("href")).toBe("/fresh#enquire");
+    expect(screen.queryByRole("link", { name: /Walkable tour/i })).toBeNull();
+  });
+
   it("offers every captured room", () => {
     mount();
     // The hero is one room; the rail carries the rest.

@@ -11,6 +11,8 @@ import {
   roomsWithSplatBundles,
   splatBaseUrl,
   splatSourcesForBundle,
+  walkPoseForBundle,
+  WALK_EYE_HEIGHT_M,
   type GeneratedRoomSplatBundle,
 } from "../room-splat-bundles.js";
 
@@ -229,6 +231,43 @@ describe("roomAlignmentIsConfident", () => {
 
   it("is not confident about a room it has never heard of", () => {
     expect(roomAlignmentIsConfident("no-such-room")).toBe(false);
+  });
+});
+
+describe("walkPoseForBundle", () => {
+  const grandHall = roomSplatBundle("grand-hall");
+  if (grandHall === null) throw new Error("the Grand Hall bundle is the fixture");
+
+  it("stands the visitor at eye height where the scanner walked, not at the scanner's pole height", () => {
+    // The capture records the pole: spawn y 3 m in a 2.4-3.6 m band.
+    expect(grandHall.spawn?.position[1]).toBe(3);
+    const pose = walkPoseForBundle(grandHall);
+    expect(pose).not.toBeNull();
+    expect(pose?.spawn.position[1]).toBe(WALK_EYE_HEIGHT_M);
+    expect(pose?.bounds.min[1]).toBeLessThan(WALK_EYE_HEIGHT_M);
+    expect(pose?.bounds.max[1]).toBeGreaterThan(WALK_EYE_HEIGHT_M);
+    expect((pose?.bounds.max[1] ?? 0) - (pose?.bounds.min[1] ?? 0)).toBeLessThanOrEqual(0.6);
+  });
+
+  it("keeps the walk's floor plan and heading exactly as captured", () => {
+    const pose = walkPoseForBundle(grandHall);
+    expect(pose?.spawn.position[0]).toBe(grandHall.spawn?.position[0]);
+    expect(pose?.spawn.position[2]).toBe(grandHall.spawn?.position[2]);
+    expect(pose?.spawn.yaw).toBe(grandHall.spawn?.yaw);
+    expect(pose?.bounds.min[0]).toBe(grandHall.bounds?.min[0]);
+    expect(pose?.bounds.max[2]).toBe(grandHall.bounds?.max[2]);
+  });
+
+  it("lowers the eye under a low ceiling rather than putting the visitor's head in it", () => {
+    const low: GeneratedRoomSplatBundle = { ...grandHall, extentM: [9.7, 1.9, 5.6] };
+    const pose = walkPoseForBundle(low);
+    expect(pose?.spawn.position[1]).toBeLessThan(WALK_EYE_HEIGHT_M);
+    expect(pose?.spawn.position[1]).toBeGreaterThan(0.5);
+    expect(pose?.bounds.max[1]).toBeLessThan(1.9);
+  });
+
+  it("is null for a capture that shipped no walk", () => {
+    expect(walkPoseForBundle({ ...grandHall, spawn: null, bounds: null })).toBeNull();
   });
 });
 

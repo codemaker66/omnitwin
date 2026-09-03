@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import type { ReactElement } from "react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Configuration } from "../api/configurations.js";
 import type { Space, Venue } from "../api/spaces.js";
@@ -134,6 +135,12 @@ function publicConfigFor(space: Space, id: string): Configuration {
     revision: 1,
     objects: [],
   };
+}
+
+/** The created-plan route, exposing what query it was reached with. */
+function CreatedRouteWithSearch(): ReactElement {
+  const location = useLocation();
+  return <div data-testid="created-route" data-search={location.search} />;
 }
 
 function renderEditor(initialEntry: string): void {
@@ -273,6 +280,25 @@ describe("EditorPage default /plan bootstrap", () => {
     renderEditor("/plan");
 
     expect(await screen.findByRole("heading", { name: "Opening the Reception Room planner" })).toBeTruthy();
+  });
+
+  it("carries the rest of the query (the booking's eventId) through to the created plan", async () => {
+    spacesMock.listVenues.mockResolvedValue([tradesHall]);
+    spacesMock.listSpaces.mockResolvedValue([grandHall, receptionRoom]);
+    configMock.createPublicConfig.mockResolvedValue(publicConfigFor(grandHall, "cfg-grand"));
+
+    render(
+      <MemoryRouter initialEntries={["/plan?space=grand-hall&eventId=evt-1"]}>
+        <Routes>
+          <Route path="/plan/:code" element={<CreatedRouteWithSearch />} />
+          <Route path="/plan" element={<EditorPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const created = await screen.findByTestId("created-route");
+    expect(configMock.createPublicConfig).toHaveBeenCalledWith(grandHall.id);
+    expect(created.getAttribute("data-search")).toContain("eventId=evt-1");
   });
 
   it("still honours an explicit ?space= override", async () => {

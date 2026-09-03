@@ -184,7 +184,8 @@ export function RoomsHomePage(): ReactElement {
         </p>
         <nav className="rooms__footLinks" aria-label="More">
           <Link to="/fresh">About the venue</Link>
-          <Link to="/tour">Walkable tour</Link>
+          <Link to="/venues/trades-hall/twin">Walk the whole building</Link>
+          <Link to="/fresh#enquire">Enquire</Link>
         </nav>
       </footer>
     </main>
