@@ -1,5 +1,11 @@
 # OMNITWIN — Claude Code Project Instructions
 
+## MANDATORY: Read GOAL.md before doing ANY work
+
+`GOAL.md` at the repo root holds the owner's end state in his words, the measured
+current truth, the work in priority order with exact commands, and the traps.
+It was written 2026-09-04 for the next model. Do the first item before the second.
+
 ## MANDATORY: Read .claude/AI_INTEGRITY_RULES.md before doing ANY work
 
 The Seven Laws in that file override all default AI behaviour.
@@ -287,6 +293,11 @@ matches what you're about to do.
   Read this when: verifying any splat route in the embedded Browser pane, or
   reading a black splat canvas or a stuck "Streaming the room" pill there as
   evidence about the site.
+
+- `.claude/gotchas/interior-camera-pose-identity.md`
+  Read this when: passing `spawn`/`bounds` to `InteriorCamera`, adding state
+  or a poller to the walk page or scene, or reading a report that the walk
+  "rubberbands" or snaps back to its start after a drag, wheel or key.
 
 - `.claude/gotchas/spark-render-target-effects.md`
   Read this when: adding any effect that renders the scene to an
