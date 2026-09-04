@@ -222,11 +222,18 @@ export function RoomSplatScene({
       const coarseShowing = ladder.coarse.some((source) => loadedRef.current.has(source.url));
       const coarseSettled = ladder.coarse.every((source) => isSettled(source.url));
       const settled = ladder.sharp.filter((source) => isSettled(source.url)).length;
+      const loaded = ladder.sharp.filter((source) => loadedRef.current.has(source.url)).length;
       const failed = ladder.sharp.filter((source) => failedRef.current.has(source.url)).length;
+      // Nothing more is coming. Not the same as: the room is covered.
       const complete = total > 0 && settled >= total;
+      // The coarse room is cover, not a placeholder — it is the only thing
+      // drawing the geometry a missing tile would have drawn. So it is dropped
+      // only when every tile of the finest level actually arrived; one failure
+      // and it stays underneath for the rest of the visit, filling the hole.
+      const covered = total > 0 && loaded >= total;
 
       let stage: DeliveryStage = "coarse";
-      if (complete) {
+      if (covered) {
         stage = "sharp";
       } else if (
         deliveryRef.current.stage !== "coarse"
@@ -241,9 +248,15 @@ export function RoomSplatScene({
         ? previous
         : { stage, coarseShowing }));
 
-      const drawn = stage === "sharp" ? ladder.sharp : ladder.coarse;
+      // What is drawn right now: the sky, plus the coarse room until it is
+      // dropped, plus however much of the finest level has arrived.
+      const drawn = stage === "coarse"
+        ? [...ladder.environment, ...ladder.coarse]
+        : stage === "sharp"
+          ? [...ladder.environment, ...ladder.sharp]
+          : [...ladder.environment, ...ladder.coarse, ...ladder.sharp];
       let splats = 0;
-      for (const source of [...ladder.environment, ...drawn]) {
+      for (const source of drawn) {
         splats += loadedRef.current.get(source.url) ?? 0;
       }
 
@@ -253,7 +266,8 @@ export function RoomSplatScene({
         splats,
         failed,
         complete,
-        firstView: coarseShowing || settled > 0,
+        // A tile that failed put nothing on screen, so it is not a first view.
+        firstView: coarseShowing || loaded > 0,
       });
       // The last report is the last: a poller that keeps ticking re-renders
       // the page 2.5 times a second for the rest of the visit.

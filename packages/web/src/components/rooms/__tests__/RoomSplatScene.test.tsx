@@ -114,6 +114,11 @@ const LADDER = roomSplatLadder(ROOM, undefined, false);
 const SHARP_URLS = new Set(LADDER.sharp.map((source) => source.url));
 const SHARP = { test: (url: string): boolean => SHARP_URLS.has(url) };
 
+/** The coarse rung: whatever is mounted that is neither the finest level nor the sky. */
+function coarseUrls(): string[] {
+  return mountedUrls().filter((url) => !SHARP.test(url) && !url.endsWith("env.sog"));
+}
+
 function sharpUrls(): string[] {
   return mountedUrls().filter((url) => SHARP.test(url));
 }
@@ -374,5 +379,90 @@ describe("RoomSplatScene coarse-first ladder", () => {
     act(() => { vi.advanceTimersByTime(20_000); });
 
     expect(sharpUrls()).toHaveLength(11);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What the coarse room is for (found by review, 2026-09-04).
+//
+// The coarse room is not a placeholder, it is cover: it is the only thing
+// drawing the geometry a finest-level tile would have drawn. Dropping it
+// because the finest level stopped arriving leaves a hole where a room was.
+// ---------------------------------------------------------------------------
+describe("RoomSplatScene keeps cover when the finest level fails", () => {
+  beforeEach(() => {
+    recorded.layers.length = 0;
+    recorded.cameras.length = 0;
+    recorded.hosts.length = 0;
+    recorded.mounted.clear();
+    if (typeof window.matchMedia !== "function") {
+      Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
+    }
+    setDevicePixelRatio(1);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  function failEveryMountedSharpTile(): void {
+    for (const layer of mountedLayers()) {
+      const url = String(layer["url"]);
+      if (!SHARP.test(url)) continue;
+      (layer["onError"] as (e: { url: string; error: Error }) => void)({ url, error: new Error("gone") });
+    }
+  }
+
+  it("keeps the coarse room when the whole finest level fails, rather than emptying the canvas", () => {
+    vi.useFakeTimers();
+    const onProgress = vi.fn();
+    render(<RoomSplatScene room={ROOM} onProgress={onProgress} />);
+    act(() => { loadEveryMountedLayer(); });
+    act(() => { vi.advanceTimersByTime(450); });
+    act(() => { failEveryMountedSharpTile(); });
+    act(() => { vi.advanceTimersByTime(450); });
+
+    expect(coarseUrls()).toHaveLength(1);
+    const report = onProgress.mock.lastCall?.[0] as { complete: boolean; failed: number };
+    expect(report.failed).toBe(11);
+    expect(report.complete).toBe(true);
+  });
+
+  it("keeps the coarse room when a single finest-level tile fails, so no hole opens where it would have drawn", () => {
+    vi.useFakeTimers();
+    render(<RoomSplatScene room={ROOM} onProgress={() => undefined} />);
+    act(() => { loadEveryMountedLayer(); });
+    act(() => { vi.advanceTimersByTime(450); });
+    act(() => {
+      const sharp = mountedLayers().filter((l) => SHARP.test(String(l["url"])));
+      const [first, ...rest] = sharp;
+      (first?.["onError"] as (e: { url: string; error: Error }) => void)({ url: String(first?.["url"]), error: new Error("gone") });
+      for (const layer of rest) {
+        (layer["onLoad"] as (e: { url: string; splatCount: number }) => void)({ url: String(layer["url"]), splatCount: 1000 });
+      }
+    });
+    act(() => { vi.advanceTimersByTime(450); });
+
+    expect(coarseUrls()).toHaveLength(1);
+    expect(sharpUrls()).toHaveLength(11);
+  });
+
+  it("does not call a failed tile a first view: nothing is on screen yet", () => {
+    vi.useFakeTimers();
+    const onProgress = vi.fn();
+    render(<RoomSplatScene room={ROOM} onProgress={onProgress} />);
+    act(() => {
+      for (const layer of mountedLayers()) {
+        const url = String(layer["url"]);
+        (layer["onError"] as (e: { url: string; error: Error }) => void)({ url, error: new Error("gone") });
+      }
+    });
+    act(() => { vi.advanceTimersByTime(450); });
+    act(() => { failEveryMountedSharpTile(); });
+    act(() => { vi.advanceTimersByTime(450); });
+
+    const report = onProgress.mock.lastCall?.[0] as { firstView: boolean };
+    expect(report.firstView).toBe(false);
   });
 });
