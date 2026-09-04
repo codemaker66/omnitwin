@@ -39,11 +39,22 @@ export interface CaptureSource {
    * capture is measured as-is.
    */
   readonly roomCropM: { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] } | null;
+  /**
+   * How far the served Gaussians' floor slab sits above the mesh floor, in
+   * metres: the densest 2 cm slab of the finest level's centres in scene space,
+   * measured by FLOOR_OFFSET_INSTRUMENT. The frame's floor is lifted by it, so a
+   * visitor stands on the floor the viewer draws, not on the mesh's lowest edge.
+   */
+  readonly floorOffsetM: number;
 }
+
+/** Where and when every `floorOffsetM` below was measured. */
+export const FLOOR_OFFSET_INSTRUMENT = "scripts/sog-floor-census.py, 2026-09-04";
 
 export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
   {
     roomSlug: "grand-hall",
+    floorOffsetM: 0.55,
     captureDir: "scans_BIG_MODEL_TH_GH_2",
     root: "grand-hall",
     assetBaseName: "Grand_Hall",
@@ -61,6 +72,7 @@ export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
   },
   {
     roomSlug: "reception-room",
+    floorOffsetM: 0.51,
     captureDir: "scan_output_1_reception",
     root: "scans",
     assetBaseName: "Reception_Room",
@@ -70,6 +82,7 @@ export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
   },
   {
     roomSlug: "saloon",
+    floorOffsetM: 0.05,
     captureDir: "scan_output_1_saloon",
     root: "scans",
     assetBaseName: "The Saloon",
@@ -79,6 +92,7 @@ export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
   },
   {
     roomSlug: "robert-adam-room",
+    floorOffsetM: 0.01,
     captureDir: "scan_output_1_robertadam",
     root: "scans",
     assetBaseName: "The Robert Adam Room",
@@ -88,6 +102,7 @@ export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
   },
   {
     roomSlug: "lady-convenors-room",
+    floorOffsetM: 0.05,
     captureDir: "scan_output_1_lady",
     root: "scans",
     assetBaseName: "Lady_Conveynor",
@@ -97,6 +112,7 @@ export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
   },
   {
     roomSlug: "north-gallery",
+    floorOffsetM: 0.61,
     captureDir: "scan_output_1_north",
     root: "scans",
     assetBaseName: "North Gallery",
@@ -106,6 +122,7 @@ export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
   },
   {
     roomSlug: "south-gallery",
+    floorOffsetM: 0.47,
     captureDir: "scan_output_1_south",
     root: "scans",
     assetBaseName: "South Gallery",
@@ -115,6 +132,7 @@ export const TRADES_HALL_CAPTURE_SOURCES: readonly CaptureSource[] = [
   },
   {
     roomSlug: "deacon-conveners-room",
+    floorOffsetM: 0.07,
     captureDir: "scan_output_1_DC",
     root: "scans",
     assetBaseName: "DC_Room",

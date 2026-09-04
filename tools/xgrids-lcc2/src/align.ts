@@ -213,6 +213,29 @@ export function walkAlignedFrame(
 }
 
 /**
+ * The frame with its floor lifted to where the served Gaussians put it.
+ *
+ * The mesh's lowest dense edge is not always the floor: in five rooms it sat
+ * 0.5-0.6 m under the boards (2026-09-04), so visitors stood knee-deep and
+ * furniture sank. The viewer draws Gaussians, and their densest slab is the
+ * floor a visitor stands on; the offset is that slab's height above the mesh
+ * floor, measured by scripts/sog-floor-census.py. The ceiling stays where the
+ * mesh saw it; the horizontal frame is untouched.
+ */
+export function withFloorOffset(frame: RoomFrame, offsetM: number): RoomFrame {
+  if (offsetM === 0) return frame;
+  const floorZ = frame.floorZ + offsetM;
+  const min: Vec3 = [frame.min[0], frame.min[1], floorZ];
+  return {
+    ...frame,
+    min,
+    center: [frame.center[0], frame.center[1], (floorZ + frame.max[2]) / 2],
+    extent: [frame.extent[0], frame.extent[1], frame.max[2] - floorZ],
+    floorZ,
+  };
+}
+
+/**
  * The transform that places a capture so the walked room is centred and its
  * floor rests on zero. Still never a scale.
  */

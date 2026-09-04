@@ -1045,7 +1045,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "transform": {
         "position": [
           4.911651,
-          2.7753407083333332,
+          2.2253407083333334,
           -8.571432999999999
         ],
         "rotation": [
@@ -1057,13 +1057,13 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         10.087102,
-        7.43706525,
+        6.88706525,
         19.867694
       ],
       "spawn": {
         "position": [
           0.4139999999999997,
-          3,
+          2.6515027083333336,
           -1.0642519999999989
         ],
         "yaw": 0
@@ -1071,18 +1071,18 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "bounds": {
         "min": [
           -5.043551,
-          2.4,
+          2.0515027083333335,
           -9.933846999999998
         ],
         "max": [
           5.043551,
-          3.6,
+          3.2515027083333337,
           9.933847
         ]
       },
-      "eyeHeightM": 3,
+      "eyeHeightM": 2.6515027083333336,
       "alignmentConfidence": "confident",
-      "alignmentNote": "Derived from scans_BIG_MODEL_TH_GH_2: floor from the room mesh, room from the scanner's own walk. Derived 11.3x21.1x7.4 m agrees with published 21.0x10.0x7.0 m (worst axis 13%)."
+      "alignmentNote": "Derived from scans_BIG_MODEL_TH_GH_2: floor from the room mesh lifted 0.55 m to the served Gaussians' floor slab (scripts/sog-floor-census.py, 2026-09-04), room from the scanner's own walk. Derived 11.3x21.1x6.9 m agrees with published 21.0x10.0x7.0 m (worst axis 13%)."
     },
     {
       "roomSlug": "reception-room",
@@ -1442,7 +1442,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "transform": {
         "position": [
           1.2141755000000003,
-          1.9456600000000002,
+          1.4356600000000002,
           -5.645894
         ],
         "rotation": [
@@ -1454,13 +1454,13 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         9.661757,
-        3.6612683333333336,
+        3.1512683333333333,
         12.410764
       ],
       "spawn": {
         "position": [
           -0.3882574999999997,
-          1.873571,
+          1.363571,
           -0.42241700000000026
         ],
         "yaw": 0
@@ -1468,18 +1468,18 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "bounds": {
         "min": [
           -4.8308785,
-          1.273571,
+          0.7635710000000001,
           -6.205382
         ],
         "max": [
           4.8308785,
-          2.473571,
+          1.963571,
           6.205382
         ]
       },
-      "eyeHeightM": 1.873571,
+      "eyeHeightM": 1.363571,
       "alignmentConfidence": "confident",
-      "alignmentNote": "Derived from scan_output_1_reception: floor from the room mesh, room from the scanner's own walk. Derived 11.2x14.7x3.7 m agrees with published 13.4x11.2x3.2 m (worst axis 14%)."
+      "alignmentNote": "Derived from scan_output_1_reception: floor from the room mesh lifted 0.51 m to the served Gaussians' floor slab (scripts/sog-floor-census.py, 2026-09-04), room from the scanner's own walk. Derived 11.2x14.7x3.2 m agrees with published 13.4x11.2x3.2 m (worst axis 10%)."
     },
     {
       "roomSlug": "saloon",
@@ -2451,7 +2451,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "transform": {
         "position": [
           1.280121,
-          1.5,
+          1.45,
           -5.831064
         ],
         "rotation": [
@@ -2463,13 +2463,13 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         7.480898,
-        5.883291614583333,
+        5.833291614583334,
         11.15992
       ],
       "spawn": {
         "position": [
           0.795637,
-          1.619101,
+          1.5691009999999999,
           0.2028150000000002
         ],
         "yaw": 0
@@ -2477,18 +2477,18 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "bounds": {
         "min": [
           -3.740449,
-          1.019101,
+          0.9691009999999999,
           -5.57996
         ],
         "max": [
           3.740449,
-          2.2191009999999998,
+          2.169101,
           5.57996
         ]
       },
-      "eyeHeightM": 1.619101,
+      "eyeHeightM": 1.5691009999999999,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scan_output_1_saloon: floor from the room mesh, room from the scanner's own walk. Derived 9.9x13.5x5.9 m disagrees with published 12.0x7.0x5.4 m (worst axis 41%). Check the capture-to-room mapping before wiring this room."
+      "alignmentNote": "Derived from scan_output_1_saloon: floor from the room mesh lifted 0.05 m to the served Gaussians' floor slab (scripts/sog-floor-census.py, 2026-09-04), room from the scanner's own walk. Derived 9.9x13.5x5.8 m disagrees with published 12.0x7.0x5.4 m (worst axis 41%). Check the capture-to-room mapping before wiring this room."
     },
     {
       "roomSlug": "robert-adam-room",
@@ -3219,7 +3219,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "transform": {
         "position": [
           6.3165155,
-          1.475265,
+          1.465265,
           -2.2251945
         ],
         "rotation": [
@@ -3231,13 +3231,13 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         19.365833000000002,
-        14.4535075625,
+        14.4435075625,
         17.978921
       ],
       "spawn": {
         "position": [
           1.9611145000000008,
-          1.6083640000000001,
+          1.5983640000000001,
           1.5553494999999997
         ],
         "yaw": 1.5707963267948966
@@ -3245,18 +3245,18 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "bounds": {
         "min": [
           -9.682916500000001,
-          1.0083640000000003,
+          0.9983640000000001,
           -8.9894605
         ],
         "max": [
           9.682916500000001,
-          2.208364,
+          2.198364,
           8.9894605
         ]
       },
-      "eyeHeightM": 1.6083640000000001,
+      "eyeHeightM": 1.5983640000000001,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scan_output_1_robertadam: floor from the room mesh, room from the scanner's own walk. Derived 33.6x17.1x14.5 m disagrees with published 9.7x5.6x2.2 m (worst axis 563%). Check the capture-to-room mapping before wiring this room."
+      "alignmentNote": "Derived from scan_output_1_robertadam: floor from the room mesh lifted 0.01 m to the served Gaussians' floor slab (scripts/sog-floor-census.py, 2026-09-04), room from the scanner's own walk. Derived 33.6x17.1x14.4 m disagrees with published 9.7x5.6x2.2 m (worst axis 563%). Check the capture-to-room mapping before wiring this room."
     },
     {
       "roomSlug": "lady-convenors-room",
@@ -3661,7 +3661,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "transform": {
         "position": [
           0.85182,
-          1.384441,
+          1.334441,
           -1.9216425
         ],
         "rotation": [
@@ -3673,13 +3673,13 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         3.97504,
-        4.781301,
+        4.731301,
         3.865063
       ],
       "spawn": {
         "position": [
           -0.18703000000000003,
-          1.420404,
+          1.370404,
           -0.3152554999999999
         ],
         "yaw": 1.5707963267948966
@@ -3687,18 +3687,18 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "bounds": {
         "min": [
           -1.98752,
-          0.820404,
+          0.770404,
           -1.9325314999999998
         ],
         "max": [
           1.98752,
-          2.020404,
+          1.9704039999999998,
           1.9325315
         ]
       },
-      "eyeHeightM": 1.420404,
+      "eyeHeightM": 1.370404,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scan_output_1_lady: floor from the room mesh, room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
+      "alignmentNote": "Derived from scan_output_1_lady: floor from the room mesh lifted 0.05 m to the served Gaussians' floor slab (scripts/sog-floor-census.py, 2026-09-04), room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
     },
     {
       "roomSlug": "north-gallery",
@@ -4197,7 +4197,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "transform": {
         "position": [
           2.3850154999999997,
-          2.0359374999999997,
+          1.4259374999999999,
           -4.801727
         ],
         "rotation": [
@@ -4209,13 +4209,13 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         8.997021,
-        3.4765625,
+        2.8665625,
         9.60558
       ],
       "spawn": {
         "position": [
           0.05008649999999992,
-          1.9172004999999996,
+          1.3072004999999998,
           0.1720940000000004
         ],
         "yaw": 0
@@ -4223,18 +4223,18 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "bounds": {
         "min": [
           -4.4985105,
-          1.3172004999999998,
+          0.7072004999999998,
           -4.80279
         ],
         "max": [
           4.4985105,
-          2.5172004999999995,
+          1.9072004999999996,
           4.80279
         ]
       },
-      "eyeHeightM": 1.9172004999999996,
+      "eyeHeightM": 1.3072004999999998,
       "alignmentConfidence": "review",
-      "alignmentNote": "Derived from scan_output_1_north: floor from the room mesh, room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
+      "alignmentNote": "Derived from scan_output_1_north: floor from the room mesh lifted 0.61 m to the served Gaussians' floor slab (scripts/sog-floor-census.py, 2026-09-04), room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
     },
     {
       "roomSlug": "south-gallery",
@@ -4703,7 +4703,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "transform": {
         "position": [
           1.2855400000000001,
-          1.882192,
+          1.4121920000000001,
           -5.021098500000001
         ],
         "rotation": [
@@ -4715,13 +4715,13 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         5.059118,
-        3.4443495000000004,
+        2.9743495000000006,
         10.427301
       ],
       "spawn": {
         "position": [
           0.6730700000000002,
-          1.836213,
+          1.3662130000000001,
           -1.196351500000001
         ],
         "yaw": 0
@@ -4729,18 +4729,18 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "bounds": {
         "min": [
           -2.529559,
-          1.2362130000000002,
+          0.7662130000000001,
           -5.213650500000001
         ],
         "max": [
           2.529559,
-          2.436213,
+          1.9662130000000002,
           5.2136505
         ]
       },
-      "eyeHeightM": 1.836213,
+      "eyeHeightM": 1.3662130000000001,
       "alignmentConfidence": "confident",
-      "alignmentNote": "Derived from scan_output_1_south: floor from the room mesh, room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
+      "alignmentNote": "Derived from scan_output_1_south: floor from the room mesh lifted 0.47 m to the served Gaussians' floor slab (scripts/sog-floor-census.py, 2026-09-04), room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
     },
     {
       "roomSlug": "deacon-conveners-room",
@@ -5409,7 +5409,7 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "transform": {
         "position": [
           0.4372404999999999,
-          1.4861708229166664,
+          1.4161708229166663,
           -2.973467
         ],
         "rotation": [
@@ -5421,13 +5421,13 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       },
       "extentM": [
         5.3077950000000005,
-        4.796947822916666,
+        4.726947822916666,
         6.2467999999999995
       ],
       "spawn": {
         "position": [
           0.3492844999999999,
-          1.4407078229166663,
+          1.3707078229166663,
           -0.06135399999999969
         ],
         "yaw": 0
@@ -5435,17 +5435,17 @@ export const GENERATED_ROOM_SPLAT_BUNDLES: readonly GeneratedRoomSplatBundle[] =
       "bounds": {
         "min": [
           -2.6538975000000002,
-          0.8407078229166663,
+          0.7707078229166663,
           -3.1233999999999997
         ],
         "max": [
           2.6538975000000002,
-          2.040707822916666,
+          1.9707078229166664,
           3.1233999999999997
         ]
       },
-      "eyeHeightM": 1.4407078229166663,
+      "eyeHeightM": 1.3707078229166663,
       "alignmentConfidence": "confident",
-      "alignmentNote": "Derived from scan_output_1_DC: floor from the room mesh, room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
+      "alignmentNote": "Derived from scan_output_1_DC: floor from the room mesh lifted 0.07 m to the served Gaussians' floor slab (scripts/sog-floor-census.py, 2026-09-04), room from the scanner's own walk. No published dimensions for this room; derived extent stands unchecked."
     }
   ] as const;

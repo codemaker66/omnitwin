@@ -3,6 +3,7 @@ import {
   checkAgainstPublished,
   sceneExtentForRoomFrame,
   sceneTransformForRoomFrame,
+  withFloorOffset,
   Z_UP_TO_Y_UP_ROTATION_X,
 } from "../align.js";
 import type { RoomFrame } from "../obj-bounds.js";
@@ -72,5 +73,38 @@ describe("checkAgainstPublished", () => {
     const check = checkAgainstPublished(frame(), null);
     expect(check.verdict).toBe("unpublished");
     expect(check.worstRelativeError).toBeNull();
+  });
+});
+
+describe("withFloorOffset", () => {
+  // The mesh's lowest dense edge sat half a metre under the boards in five rooms
+  // (2026-09-04), while the viewer draws the Gaussians, whose floor slab is what
+  // a visitor stands on. The measured offset lifts the frame's floor to it.
+  it("raises the floor and the frame's low edge by the measured offset, leaving the ceiling where the mesh saw it", () => {
+    const lifted = withFloorOffset(frame(), 0.55);
+    expect(lifted.floorZ).toBeCloseTo(2.55, 6);
+    expect(lifted.min[2]).toBeCloseTo(2.55, 6);
+    expect(lifted.ceilingZ).toBe(7.4);
+    expect(lifted.max[2]).toBe(7.4);
+    expect(lifted.extent[2]).toBeCloseTo(4.85, 6);
+    expect(lifted.center[2]).toBeCloseTo((2.55 + 7.4) / 2, 6);
+    expect(lifted.retainedFraction).toBe(0.97);
+  });
+
+  it("leaves the horizontal frame untouched", () => {
+    const lifted = withFloorOffset(frame(), 0.55);
+    expect(lifted.min[0]).toBe(4);
+    expect(lifted.max[1]).toBe(-13);
+    expect(lifted.center[0]).toBe(10);
+  });
+
+  it("lowers the placed room by exactly the offset, so the Gaussian floor slab lands on the stage floor", () => {
+    const before = sceneTransformForRoomFrame(frame()).position[1];
+    const after = sceneTransformForRoomFrame(withFloorOffset(frame(), 0.55)).position[1];
+    expect(before - after).toBeCloseTo(0.55, 6);
+  });
+
+  it("is the identity at zero, so rooms whose Gaussian floor already matches the mesh are unchanged", () => {
+    expect(withFloorOffset(frame(), 0)).toEqual(frame());
   });
 });

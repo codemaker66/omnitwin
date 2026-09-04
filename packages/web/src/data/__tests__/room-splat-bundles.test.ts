@@ -239,8 +239,9 @@ describe("walkPoseForBundle", () => {
   if (grandHall === null) throw new Error("the Grand Hall bundle is the fixture");
 
   it("stands the visitor at eye height where the scanner walked, not at the scanner's pole height", () => {
-    // The capture records the pole: spawn y 3 m in a 2.4-3.6 m band.
-    expect(grandHall.spawn?.position[1]).toBe(3);
+    // The capture records the pole, well above any person's eye (2.65 m above the
+    // floor the viewer draws, since the 2026-09-04 datum fix lifted the floor to it).
+    expect(grandHall.spawn?.position[1]).toBeGreaterThan(2.2);
     const pose = walkPoseForBundle(grandHall);
     expect(pose).not.toBeNull();
     expect(pose?.spawn.position[1]).toBe(WALK_EYE_HEIGHT_M);

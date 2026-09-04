@@ -6,9 +6,10 @@ import {
   sceneTransformForRoomFrame,
   walkAlignedFrame,
   walkAlignedTransform,
+  withFloorOffset,
 } from "./align.js";
 import { decimateWalk, denseWalkRegion, medoidPose, parseWalkPoses, walkEyeHeight } from "./walk-path.js";
-import { TRADES_HALL_CAPTURE_SOURCES, type CaptureSource } from "./capture-sources.js";
+import { FLOOR_OFFSET_INSTRUMENT, TRADES_HALL_CAPTURE_SOURCES, type CaptureSource } from "./capture-sources.js";
 import { parseObjVertices, roomFrameFromVertices } from "./obj-bounds.js";
 import { parseLcc2Manifest } from "./lcc2-manifest.js";
 import { roomBundleFromManifest } from "./room-bundle.js";
@@ -174,6 +175,11 @@ function measure(args: Args): number {
       `${pad(confidence, 11)} ${check.verdict}\n`,
     );
     if (check.verdict === "disagrees") process.stdout.write(`${" ".repeat(23)}   ${check.detail}\n`);
+    process.stdout.write(
+      `${" ".repeat(23)}   floor: mesh z ${frame.floorZ.toFixed(2)}, gaussian slab +${source.floorOffsetM.toFixed(2)} m, ` +
+      `used z ${withFloorOffset(frame, source.floorOffsetM).floorZ.toFixed(2)}
+`,
+    );
     // Only offer the crop remedy when low retention is what flagged the room;
     // a published-dimension disagreement at high retention means something
     // else is wrong, and cropping would not address it.
@@ -238,7 +244,9 @@ function stage(args: Args): number {
           v[0] >= crop.min[0] && v[0] <= crop.max[0] &&
           v[1] >= crop.min[1] && v[1] <= crop.max[1] &&
           v[2] >= crop.min[2] && v[2] <= crop.max[2]);
-    const frame = roomFrameFromVertices(vertices);
+    const measured = roomFrameFromVertices(vertices);
+    // The floor the viewer draws, not the mesh's lowest dense edge (CaptureSource.floorOffsetM).
+    const frame = measured === null ? null : withFloorOffset(measured, source.floorOffsetM);
     if (frame === null) {
       failures += 1;
       process.stdout.write(`${source.roomSlug}: MESH REFUSED, too sparse to measure
@@ -303,8 +311,8 @@ function stage(args: Args): number {
       alignmentNote: walkFrame === null
         ? `Derived from ${source.captureDir} geometry alone, with no recorded walk; ` +
           `${(frame.retainedFraction * 100).toFixed(0)}% of the capture sits inside the frame. ${check.detail}`
-        : `Derived from ${source.captureDir}: floor from the room mesh, room from the ` +
-          `scanner's own walk. ${check.detail}`,
+        : `Derived from ${source.captureDir}: floor from the room mesh lifted ${source.floorOffsetM.toFixed(2)} m to the ` +
+          `served Gaussians' floor slab (${FLOOR_OFFSET_INSTRUMENT}), room from the scanner's own walk. ${check.detail}`,
     });
 
     process.stdout.write(
