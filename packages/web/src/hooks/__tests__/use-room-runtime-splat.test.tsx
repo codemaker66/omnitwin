@@ -94,6 +94,8 @@ describe("useRoomRuntimeSplat", () => {
     expect(result.current.hasAsset).toBe(true);
     expect(result.current.splatUrls.length).toBeGreaterThan(0);
     expect(result.current.splatUrls[0]).toContain("/splats/trades-hall/grand-hall/");
+    expect(result.current.ladder?.coarse.length).toBeGreaterThan(0);
+    expect([...(result.current.ladder?.sharp ?? []), ...(result.current.ladder?.environment ?? [])].map((s) => s.url)).toEqual(result.current.splatUrls);
     // The staged transform is the derived room-local one, never a fudge.
     expect(result.current.transform.scale).toBe(1);
     expect(result.current.transform.rotation[0]).toBeCloseTo(-Math.PI / 2);
@@ -146,6 +148,7 @@ describe("useRoomRuntimeSplat", () => {
     await waitFor(() => { expect(result.current.status).toBe("loaded"); });
     expect(result.current.hasAsset).toBe(true);
     expect(result.current.splatUrls).toEqual([RECEPTION_SPLAT_URL]);
+    expect(result.current.ladder).toBeNull();
     expect(useCockpitStore.getState().runtimeAssetStatus).toBe(
       "Runtime asset loaded, not yet verified/signed.",
     );

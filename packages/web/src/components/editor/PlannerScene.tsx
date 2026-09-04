@@ -274,7 +274,7 @@ export function PlannerScene(): ReactElement {
   // splat is mounted AND the user has switched to pure Splat. The splat fades
   // in over the mesh (Hybrid / first load) — the captured room melting in.
   const layerMode = useCockpitStore((s) => s.layerMode);
-  const { splatUrls, transform, hasAsset, status: splatStatus, roomSlug } = useRoomRuntimeSplat();
+  const { splatUrls, ladder, transform, hasAsset, status: splatStatus, roomSlug } = useRoomRuntimeSplat();
 
   // Walk mode — stand in the captured room at eye level. Available only when
   // the mounted capture carries walk data (where the scanner stood and how far
@@ -450,6 +450,7 @@ export function PlannerScene(): ReactElement {
           {hasAsset && (
             <CockpitSplatLayer
               urls={splatUrls}
+              ladder={ladder}
               transform={transform}
               active={splatActive}
               onChunkLoaded={arrivals.markLoaded}
