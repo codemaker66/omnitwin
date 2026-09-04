@@ -16,19 +16,21 @@ The renderer host moved off the first tile to a mount of its own. It had to: the
 
 ## 2. What it bought, measured
 
-Production, throttled to 20 Mbps with 40 ms latency, timed from the page's own ledger rather than from pixels. Two runs before, three after.
+Production, throttled to 20 Mbps with 40 ms latency, timed from the page's own ledger rather than from pixels. Two runs before, six after (medians, with the spread, because a home line's own variance is wide).
 
-| | before | after | change |
+| | before (2 runs) | after (6 runs) | change |
 |---|---|---|---|
-| First view (something of the room on screen) | 20.9 s | 7.6 s | **2.7x faster, 13.3 s saved** |
-| Full sharpness | 67.3 s | 76.5 s | 9.2 s slower |
+| First view (something of the room on screen) | 20.9 s (20.7–21.1) | 8.0 s (7.0–8.7) | **2.6x faster, about 13 s saved** |
+| Full sharpness | 67.3 s (62.8–71.8) | 72.9 s (62.8–78.5) | within the line's noise |
 | Bytes | 101.9 MB | 109.5 MB | +7.5 % |
 | Requests | 12 | 13 | +1 |
 | Frame rate under drag, RTX 4090 | 168.3 fps | 171.6 fps | unchanged |
 
-A second A/B on one dev server, the same instrument both sides (`git stash` for the before arm), agrees on the shape: first view 26.5 s to 13.3 s, full sharpness 69.4 s to 78.5 s. Absolute numbers there are inflated by the dev server's unminified bundle, which both arms carry equally.
+The first-view figure is unambiguous: six runs after span 7.0 to 8.7 s, two before span 20.7 to 21.1, and the ranges do not come close to touching.
 
-The nine seconds on full sharpness are the price of the ladder: 7.6 MB of extra bytes (about 3 s) plus the wait for the coarse tile to decode before the eleven start. It buys a room a visitor can look at, and move in, thirteen seconds sooner.
+Full sharpness is not: the ranges overlap almost entirely, so this line cannot resolve the difference. What is certain is arithmetic — the ladder adds 7.6 MB, which is about 3 s of wire at 20 Mbps, plus however long the coarse tile takes to decode before the eleven start. An earlier three-run sample put that at 9 s; six runs do not support it, and the honest reading is "a few seconds at most, hidden in the noise". A quieter line would be needed to say more.
+
+A second A/B on one dev server, the same instrument both sides (`git stash` for the before arm), agrees on the shape: first view 26.5 s to 13.3 s, full sharpness 69.4 s to 78.5 s. Absolute numbers there are inflated by the dev server's unminified bundle, which both arms carry equally.
 
 **How much softer the first view is** (Laplacian variance at the spawn pose, first view against the settled room):
 
