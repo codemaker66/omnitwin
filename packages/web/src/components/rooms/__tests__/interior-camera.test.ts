@@ -16,6 +16,7 @@ import {
   WALL_INSET_M,
   type Bounds,
   type Vec3,
+  wheelStepMetres,
 } from "../interior-camera.js";
 
 /** Reception's real walked region, scene metres. */
@@ -212,5 +213,44 @@ describe("lookTarget", () => {
   it("raises the look when pitched up, without moving the eye", () => {
     const target = lookTarget({ position: [0, 1.9, 0], yaw: 0, pitch: 0.5 });
     expect(target[1]).toBeGreaterThan(1.9);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The wheel.
+//
+// It used to step a fixed 0.55 m per EVENT, whatever the event said. A mouse
+// notch is one event, so a mouse felt right; a trackpad sends a stream of tiny
+// ones, so a single flick sent 25 events and carried the viewer 11.3 m across
+// the room into the far corner (measured on the live walk, 2026-09-04).
+// ---------------------------------------------------------------------------
+describe("wheelStepMetres", () => {
+  const STEP = 0.55;
+
+  it("moves one step forward for one mouse notch, which is what a notch always did", () => {
+    expect(wheelStepMetres(-100, 0, STEP)).toBeCloseTo(STEP, 6);
+    expect(wheelStepMetres(100, 0, STEP)).toBeCloseTo(-STEP, 6);
+  });
+
+  it("moves a trackpad's flick in proportion, so twenty-five tiny events are one notch, not twenty-five", () => {
+    const flick = Array.from({ length: 25 }, () => wheelStepMetres(-4, 0, STEP));
+    const travelled = flick.reduce((sum, step) => sum + step, 0);
+    expect(travelled).toBeCloseTo(STEP, 6);
+    expect(travelled).toBeLessThan(1);
+  });
+
+  it("never lets one event move more than a notch, however large the delta claims to be", () => {
+    expect(wheelStepMetres(-4000, 0, STEP)).toBeCloseTo(STEP, 6);
+    expect(wheelStepMetres(4000, 0, STEP)).toBeCloseTo(-STEP, 6);
+  });
+
+  it("reads the delta in the units the event declares: lines and pages, not only pixels", () => {
+    expect(wheelStepMetres(-3, 1, STEP)).toBeCloseTo(STEP, 6);
+    expect(wheelStepMetres(-1.5, 1, STEP)).toBeCloseTo(STEP / 2, 6);
+    expect(wheelStepMetres(-1, 2, STEP)).toBeCloseTo(STEP, 6);
+  });
+
+  it("stands still for a sideways or empty scroll", () => {
+    expect(wheelStepMetres(0, 0, STEP)).toBe(0);
   });
 });

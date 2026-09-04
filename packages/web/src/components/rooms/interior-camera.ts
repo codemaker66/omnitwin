@@ -134,6 +134,29 @@ export function containPosition(position: Vec3, bounds: Bounds): Vec3 {
   ];
 }
 
+/**
+ * One wheel event, in metres along the heading.
+ *
+ * A mouse notch and a trackpad flick are the same gesture reported differently:
+ * the notch is one event of about 100 px, the flick is twenty-five events of a
+ * few pixels each. Stepping a fixed distance per EVENT therefore moved a
+ * trackpad user twenty-five times too far - measured on the live walk, a single
+ * flick carried the viewer 11.3 m into the far corner of the room.
+ *
+ * So the delta is read in the units the event declares and converted to
+ * notches, and a notch is the step. One event may never move more than one
+ * notch, which is what keeps a coarse or synthetic event from teleporting
+ * anyone; a real flick sums to about one notch across its whole stream.
+ */
+export function wheelStepMetres(deltaY: number, deltaMode: number, stepM: number): number {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return 0;
+  // Pixels, lines, pages: a notch in each, as browsers report them.
+  const perNotch = deltaMode === 1 ? 3 : deltaMode === 2 ? 1 : 100;
+  const notches = Math.max(-1, Math.min(1, deltaY / perNotch));
+  // Scrolling away from the viewer (negative delta) walks forward.
+  return -notches * stepM;
+}
+
 /** Whether a point is already inside the room, inset included. */
 export function isContained(position: Vec3, bounds: Bounds): boolean {
   const contained = containPosition(position, bounds);

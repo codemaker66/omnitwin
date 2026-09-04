@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
+  wheelStepMetres,
   clampPitch,
   containPosition,
   lookSensitivity,
@@ -41,7 +42,7 @@ import {
 const LOOK_TAU = 0.075;
 /** Movement carries more weight than the look, so it settles more slowly. */
 const MOVE_TAU = 0.16;
-/** Metres per wheel notch. */
+/** Metres per wheel notch. A trackpad flick is one notch spread over many events. */
 const WHEEL_STEP_M = 0.55;
 /** Metres per second on the keyboard. */
 const WALK_SPEED = 2.4;
@@ -216,7 +217,7 @@ export function InteriorCamera({
 
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      const step = Math.sign(event.deltaY) * -WHEEL_STEP_M;
+      const step = wheelStepMetres(event.deltaY, event.deltaMode, WHEEL_STEP_M);
       target.current.position = containPosition(
         moveOnFloorPlane(target.current.position, target.current.yaw, step, 0),
         bounds,

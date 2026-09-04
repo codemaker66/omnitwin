@@ -152,3 +152,41 @@ describe("InteriorCamera keeps the viewer's place", () => {
     expect(window.__roomCamera?.position[0]).toBeCloseTo(2, 6);
   });
 });
+
+describe("InteriorCamera wheel", () => {
+  beforeEach(() => { fiber.frames.length = 0; });
+  afterEach(() => { cleanup(); });
+
+  function wheel(deltaY: number, deltaMode = 0): void {
+    const event = new Event("wheel", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "deltaY", { value: deltaY });
+    Object.defineProperty(event, "deltaMode", { value: deltaMode });
+    fiber.canvas.dispatchEvent(event);
+  }
+
+  it("walks a mouse notch forward, as it always did", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} />);
+    frame();
+    const before = window.__roomCamera?.position[2] ?? 0;
+
+    wheel(-100);
+    frame(240);
+
+    expect((window.__roomCamera?.position[2] ?? 0) - before).toBeCloseTo(-0.55, 2);
+  });
+
+  // A trackpad flick is one gesture reported as a stream of tiny events. Stepping
+  // a fixed distance per event sent the viewer 11.3 m across the live room.
+  it("walks a trackpad flick about one notch in total, not one notch per event", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} />);
+    frame();
+    const before = window.__roomCamera?.position[2] ?? 0;
+
+    for (let i = 0; i < 25; i += 1) wheel(-4);
+    frame(240);
+
+    const travelled = Math.abs((window.__roomCamera?.position[2] ?? 0) - before);
+    expect(travelled).toBeGreaterThan(0.3);
+    expect(travelled).toBeLessThan(1);
+  });
+});
