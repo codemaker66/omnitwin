@@ -162,13 +162,17 @@ export function RoomSplatScene({
       let splats = 0;
       for (const count of loadedRef.current.values()) splats += count;
       const settled = loadedRef.current.size + failedRef.current.size;
+      const complete = total > 0 && settled >= total;
       onProgressRef.current?.({
         settled,
         total,
         splats,
         failed: failedRef.current.size,
-        complete: total > 0 && settled >= total,
+        complete,
       });
+      // The last report is the last: a poller that keeps ticking re-renders
+      // the page 2.5 times a second for the rest of the visit.
+      if (complete) clearInterval(timer);
     }, 400);
     return () => { clearInterval(timer); };
   }, [urls]);

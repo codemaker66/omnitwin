@@ -162,4 +162,27 @@ describe("RoomSplatScene runtime wiring", () => {
     expect(recorded.cameras[1]?.["spawn"]).toBe(recorded.cameras[0]?.["spawn"]);
     expect(recorded.cameras[1]?.["bounds"]).toBe(recorded.cameras[0]?.["bounds"]);
   });
+  // The poller re-rendered the page 2.5 times a second for the whole visit
+  // (2026-09-04): every tick was a fresh progress object, so the page and the
+  // scene re-rendered forever after the room had finished loading.
+  it("stops reporting progress once every tile has settled", () => {
+    vi.useFakeTimers();
+    try {
+      const onProgress = vi.fn();
+      render(<RoomSplatScene room={ROOM} onProgress={onProgress} />);
+      for (const layer of recorded.layers) {
+        const onLoad = layer["onLoad"] as (event: { url: string; splatCount: number }) => void;
+        onLoad({ url: layer["url"] as string, splatCount: 1000 });
+      }
+      vi.advanceTimersByTime(450);
+      const complete = onProgress.mock.calls.filter(([report]) => (report as { complete: boolean }).complete);
+      expect(complete).toHaveLength(1);
+
+      onProgress.mockClear();
+      vi.advanceTimersByTime(5000);
+      expect(onProgress).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
