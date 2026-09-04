@@ -79,6 +79,16 @@ BODY_FRAMES = (
 )
 FISHEYE_IDS = ("camera_0", "camera_1")
 PINHOLE_IDS = ("camera_2", "camera_3")
+# The receipt's advice to the launch. The first Grand Hall run (2026-09-03) trained un-normalised on this note's
+# predecessor and reached PSNR 13 at step 7,000: it was starved (0.17 passes over 41,737 images), not misled by the
+# frame, but the zone test that settled it (1,023 frames, 7,000 steps) also showed the normalised world ahead
+# (20.44 dB against 20.13) with gsplat's schedules tuned for a unit scene. So: normalise, write gsplat's
+# Parser.transform beside the run, and apply its inverse to the exported splat to land back in the SLAM frame.
+TRAINING_FRAME_NOTE = (
+    "the LCC2 export's SLAM frame (poses.csv), metres; train with normalize_world_space True (gsplat's schedules are tuned "
+    "for a unit scene; the Grand Hall zone test put the normalised world 0.3 dB ahead), save gsplat's Parser.transform "
+    "beside the run, and apply its inverse to the exported splat to return to the SLAM frame"
+)
 _OPENGL_TO_OPENCV = np.diag([1.0, -1.0, -1.0, 1.0])
 
 
@@ -1734,7 +1744,7 @@ def run_package(args: argparse.Namespace) -> int:
     summary = {
         "n_cameras": model.num_cameras(), "n_images": model.num_images(), "n_points3D": model.num_points3D(), "n_observations": observation_count,
         "image_sizes": sorted({(c.width, c.height) for c in package_cameras.values()}), "points_bbox_min": bbox[0], "points_bbox_max": bbox[1],
-        "frame": "the LCC2 export's SLAM frame (poses.csv); train with normalize_world_space False",
+        "frame": TRAINING_FRAME_NOTE,
     }
     with open(Path(args.out) / "colmap_input.json", "w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=1)

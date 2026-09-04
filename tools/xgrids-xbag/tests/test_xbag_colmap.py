@@ -780,3 +780,18 @@ class LensCircle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrainingFrameNoteTest(unittest.TestCase):
+    """The package's receipt tells the launch how to treat the world frame; the first Grand Hall run (2026-09-03)
+    followed the old advice, trained un-normalised, and dissolved: gsplat's MCMC position noise scales with the
+    scene scale cubed. The note must send the trainer the other way and name the un-normalising step."""
+
+    def test_note_demands_a_normalised_world_and_names_the_way_back(self) -> None:
+        from xbag_colmap import TRAINING_FRAME_NOTE
+
+        self.assertIn("normalize_world_space True", TRAINING_FRAME_NOTE)
+        self.assertNotIn("normalize_world_space False", TRAINING_FRAME_NOTE)
+        self.assertIn("Parser.transform", TRAINING_FRAME_NOTE)
+        self.assertIn("inverse", TRAINING_FRAME_NOTE)
+        self.assertIn("SLAM frame", TRAINING_FRAME_NOTE)
