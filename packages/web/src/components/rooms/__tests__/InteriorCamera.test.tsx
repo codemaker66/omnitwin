@@ -98,3 +98,57 @@ describe("InteriorCamera motion report", () => {
     }).not.toThrow();
   });
 });
+
+describe("InteriorCamera keeps the viewer's place", () => {
+  beforeEach(() => {
+    fiber.frames.length = 0;
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  // The live Grand Hall walk "rubberbanded back to the starting view" on every
+  // move (2026-09-04): the scene re-rendered on a progress tick, handed the
+  // camera a fresh-but-equal spawn object, and the re-seat effect fired on the
+  // new identity. Equal values must mean the same place.
+  it("does not return to the spawn when re-rendered with an equal but new spawn and bounds", () => {
+    const { rerender } = render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} />);
+    frame();
+    pointer("pointerdown", 800, 450);
+    pointer("pointermove", 400, 450);
+    pointer("pointerup", 400, 450);
+    frame(240);
+    const turned = window.__roomCamera?.yaw ?? 0;
+    expect(Math.abs(turned)).toBeGreaterThan(0.1);
+
+    rerender(
+      <InteriorCamera
+        spawn={{ position: [...SPAWN.position] as [number, number, number], yaw: SPAWN.yaw }}
+        bounds={{
+          min: [...BOUNDS.min] as [number, number, number],
+          max: [...BOUNDS.max] as [number, number, number],
+        }}
+      />,
+    );
+    frame(240);
+
+    expect(window.__roomCamera?.yaw).toBeCloseTo(turned, 6);
+  });
+
+  it("re-seats the view when the spawn genuinely changes, as it does on a new room", () => {
+    const { rerender } = render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} />);
+    frame();
+    pointer("pointerdown", 800, 450);
+    pointer("pointermove", 400, 450);
+    pointer("pointerup", 400, 450);
+    frame(240);
+    expect(Math.abs(window.__roomCamera?.yaw ?? 0)).toBeGreaterThan(0.1);
+
+    rerender(<InteriorCamera spawn={{ position: [2, 1.6, -1], yaw: 1 }} bounds={BOUNDS} />);
+    frame(240);
+
+    expect(window.__roomCamera?.yaw).toBeCloseTo(1, 6);
+    expect(window.__roomCamera?.position[0]).toBeCloseTo(2, 6);
+  });
+});

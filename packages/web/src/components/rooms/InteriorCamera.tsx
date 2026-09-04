@@ -66,6 +66,22 @@ declare global {
   }
 }
 
+/**
+ * The same object for as long as its values are the same.
+ *
+ * Callers build the spawn and bounds as literals per render (the scene does;
+ * the planner's walk toggle does). Keying the re-seat effect on their identity
+ * turned every parent re-render — a tile's progress tick, the motion signal —
+ * into a teleport back to the spawn: the live Grand Hall "rubberbanded" on
+ * every move (2026-09-04). Equal values must mean the same place; only a
+ * genuinely different spawn (a new room) may re-seat the view.
+ */
+function useKeyed<T>(value: T, key: string): T {
+  const kept = useRef({ key, value });
+  if (kept.current.key !== key) kept.current = { key, value };
+  return kept.current.value;
+}
+
 export interface InteriorCameraProps {
   readonly spawn: { readonly position: Vec3; readonly yaw: number };
   readonly bounds: Bounds;
@@ -92,8 +108,8 @@ export interface InteriorCameraProps {
 }
 
 export function InteriorCamera({
-  spawn,
-  bounds,
+  spawn: spawnProp,
+  bounds: boundsProp,
   roomHeightM,
   reducedMotion = false,
   settledDpr,
@@ -109,6 +125,9 @@ export function InteriorCamera({
   const onMotionChangeRef = useRef(onMotionChange);
   useEffect(() => { onMotionChangeRef.current = onMotionChange; }, [onMotionChange]);
   const reportedMoving = useRef<boolean | null>(null);
+
+  const spawn = useKeyed(spawnProp, `${spawnProp.position.join(",")}|${String(spawnProp.yaw)}`);
+  const bounds = useKeyed(boundsProp, `${boundsProp.min.join(",")}|${boundsProp.max.join(",")}`);
 
   // How far up this room allows. A 2.18 m ceiling and a dome are not the same
   // room, and a single constant serves neither.

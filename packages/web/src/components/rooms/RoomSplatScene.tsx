@@ -79,7 +79,20 @@ export function RoomSplatScene({
   // At a person's eye height, though: the capture records where the SCANNER
   // was, and the Grand Hall's was a 3 m pole.
   const bundle = roomSplatBundle(room);
-  const pose = bundle === null ? null : walkPoseForBundle(bundle);
+  // Memoised on the bundle: the camera re-seats the view when its spawn changes,
+  // so the spawn must only change when the room does, never per render.
+  const pose = useMemo(() => {
+    if (bundle === null) return null;
+    const walk = walkPoseForBundle(bundle);
+    if (walk === null) return null;
+    return {
+      spawn: { position: [...walk.spawn.position] as [number, number, number], yaw: walk.spawn.yaw },
+      bounds: {
+        min: [...walk.bounds.min] as [number, number, number],
+        max: [...walk.bounds.max] as [number, number, number],
+      },
+    };
+  }, [bundle]);
   const spawn = pose?.spawn ?? null;
   const walkBounds = pose?.bounds ?? null;
   const startPosition: [number, number, number] = spawn === null
@@ -200,11 +213,8 @@ export function RoomSplatScene({
       ))}
       {spawn !== null && walkBounds !== null && (
         <InteriorCamera
-          spawn={{ position: [...spawn.position] as [number, number, number], yaw: spawn.yaw }}
-          bounds={{
-            min: [...walkBounds.min] as [number, number, number],
-            max: [...walkBounds.max] as [number, number, number],
-          }}
+          spawn={spawn}
+          bounds={walkBounds}
           roomHeightM={extentM?.[1]}
           reducedMotion={prefersReducedMotion}
           motionDpr={profile.motionDpr}

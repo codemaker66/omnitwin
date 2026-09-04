@@ -154,4 +154,12 @@ describe("RoomSplatScene runtime wiring", () => {
     onMotionChange(false);
     expect(scale?.()).toBe(1);
   });
+  it("hands the camera the same spawn and bounds objects across re-renders, so a progress tick cannot re-seat the view", () => {
+    const { rerender } = render(<RoomSplatScene room={ROOM} />);
+    rerender(<RoomSplatScene room={ROOM} />);
+
+    expect(recorded.cameras.length).toBeGreaterThanOrEqual(2);
+    expect(recorded.cameras[1]?.["spawn"]).toBe(recorded.cameras[0]?.["spawn"]);
+    expect(recorded.cameras[1]?.["bounds"]).toBe(recorded.cameras[0]?.["bounds"]);
+  });
 });
