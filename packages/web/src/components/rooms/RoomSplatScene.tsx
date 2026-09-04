@@ -10,6 +10,7 @@ import { roomSplatBundle, roomSplatLadder, walkPoseForBundle } from "../../data/
 import { RoomClipBox } from "./RoomClipBox.js";
 import { InteriorCamera } from "./InteriorCamera.js";
 import { useSplatRuntimeProfile } from "../../hooks/use-splat-runtime-profile.js";
+import { settledPixelRatio } from "../../lib/splat-runtime-profile.js";
 import {
   runtimeAssetCameraViewForRoom,
   runtimeAssetViewTransformForRoom,
@@ -143,11 +144,20 @@ export function RoomSplatScene({
 
   // How hard this device may work: sort cadence, tail radius and the
   // level-of-detail budget go to the renderer; the pixel ratios go to the
-  // camera, which drops resolution while the view moves. The settled ratio is
-  // a cap, never an upscale: a 1x display rests at 1 whatever the profile says.
+  // camera, which drops resolution while the view moves.
+  //
+  // The settled ratio is the profile's, NOT the display's. A 1x laptop
+  // rendering at 2 and presenting at 1 is supersampling, and on this room it
+  // is worth a great deal — the name boards measured 100% sharper, the
+  // panelling 75% (2026-09-04) — for no frame rate, because the demand loop
+  // draws the settled frame once and sleeps. Only memory bounds it, which is
+  // what settledPixelRatio's budget is for.
   const profile = useSplatRuntimeProfile();
-  const deviceDpr = typeof window === "undefined" ? 1 : window.devicePixelRatio;
-  const settledDpr = Math.min(deviceDpr, profile.settledDpr);
+  const settledDpr = settledPixelRatio(
+    profile.settledDpr,
+    typeof window === "undefined" ? 0 : window.innerWidth,
+    typeof window === "undefined" ? 0 : window.innerHeight,
+  );
 
   // What to mount, in two stages plus the sky that outlives both. Each tile is
   // served as its prebuilt, paged tree when the profile wants the tree and the

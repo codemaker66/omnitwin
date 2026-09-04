@@ -102,6 +102,40 @@ const TIERS: readonly DeviceTier[] = ["poster", "low", "medium", "high"];
  * the usual gap between GPU classes and are marked so; each is replaced by
  * its own measurement the first time the drag budget runs on such a device.
  */
+/**
+ * The largest settled drawing buffer worth asking a device for, in pixels.
+ *
+ * Four times a 1600x900 canvas, which is what a 1x laptop supersampled to 2
+ * costs. Beyond it the gain is invisible and the memory is not: the Grand Hall
+ * at 3200x1800 already holds 529 MB against 434 MB at 1600x900.
+ */
+const SETTLED_PIXEL_BUDGET = 8_300_000;
+
+/**
+ * The pixel ratio to rest at, given what the profile wants and how large the
+ * canvas is.
+ *
+ * The display's own ratio is deliberately NOT a ceiling. A 1x laptop rendering
+ * at 2 and presenting at 1 is supersampling, and on this room it is worth a
+ * great deal: measured on the Grand Hall (2026-09-04) the name boards came out
+ * 100% sharper by Laplacian variance, the panelling 75% and the frieze 48%,
+ * with no cost to the frame rate under drag — the loop draws the settled frame
+ * once and then sleeps, so the extra pixels are paid for at a standstill.
+ *
+ * What does bound it is memory, hence the budget: a 4K canvas already has more
+ * pixels than the budget allows, so it renders at its own ratio and no more.
+ */
+export function settledPixelRatio(
+  profileSettledDpr: number,
+  cssWidth: number,
+  cssHeight: number,
+): number {
+  const pixels = cssWidth * cssHeight;
+  if (!Number.isFinite(pixels) || pixels <= 0) return 1;
+  const affordable = Math.sqrt(SETTLED_PIXEL_BUDGET / pixels);
+  return Math.max(1, Math.min(profileSettledDpr, affordable));
+}
+
 export const SPLAT_RUNTIME_PROFILES: Readonly<Record<DeviceTier, SplatRuntimeSettings>> = {
   poster: {
     // Extrapolated, not measured: software renderers should not be here at all.

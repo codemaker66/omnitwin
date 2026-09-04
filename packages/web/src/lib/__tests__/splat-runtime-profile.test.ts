@@ -4,6 +4,7 @@ import {
   resolveSplatRuntimeProfile,
   SPLAT_RUNTIME_PROFILES,
   type SplatRuntimeProfile,
+  settledPixelRatio,
 } from "../splat-runtime-profile.js";
 import type { DeviceTier } from "../device-tier.js";
 
@@ -149,5 +150,44 @@ describe("resolveSplatRuntimeProfile", () => {
   it("marks a query with only ignorable overrides as untouched", () => {
     const profile = resolveSplatRuntimeProfile("medium", "?splat=foo:1", true);
     expect(profile.source).toBe("tier");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Supersampling at rest.
+//
+// The settled ratio used to be capped by the display's own, so a 1x screen
+// rested at 1 whatever the profile asked for. Measured on the Grand Hall
+// (2026-09-04, dev server, 1600x900): rendering at 2 and letting a 1x display
+// present it makes the name boards 100% sharper by Laplacian variance, the
+// panelling 75% and the frieze 48%, at no cost to the frame rate under drag,
+// because a demand loop draws the settled frame once and then sleeps.
+// ---------------------------------------------------------------------------
+describe("settledPixelRatio", () => {
+  it("gives a 1x laptop the profile's ratio, which is the whole point of supersampling", () => {
+    expect(settledPixelRatio(2, 1600, 900)).toBe(2);
+  });
+
+  it("never asks for more than the profile wants, however small the canvas", () => {
+    expect(settledPixelRatio(1.5, 640, 360)).toBe(1.5);
+    expect(settledPixelRatio(1, 640, 360)).toBe(1);
+  });
+
+  it("holds a 4K canvas to its own pixels rather than rendering four times them", () => {
+    expect(settledPixelRatio(2, 3840, 2160)).toBeCloseTo(1, 2);
+  });
+
+  it("scales the ratio down as the canvas grows, so the buffer stays inside the budget", () => {
+    const budgetPixels = 8_300_000;
+    for (const [w, h] of [[1600, 900], [2560, 1440], [3440, 1440]] as const) {
+      const ratio = settledPixelRatio(2, w, h);
+      expect(w * h * ratio * ratio).toBeLessThanOrEqual(budgetPixels * 1.01);
+    }
+  });
+
+  it("never drops below one, whatever nonsense the canvas reports", () => {
+    expect(settledPixelRatio(2, 0, 0)).toBe(1);
+    expect(settledPixelRatio(2, Number.NaN, 900)).toBe(1);
+    expect(settledPixelRatio(0.2, 1600, 900)).toBe(1);
   });
 });
