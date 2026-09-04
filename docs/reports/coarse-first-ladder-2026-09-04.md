@@ -84,6 +84,21 @@ Four independent checks were run over the shipped code — the ladder on all eig
 - **The Vercel proxy.** Every tile is still a cache MISS through the rewrite. An R2 custom domain is the owner's action and worth more than any further work on the ladder.
 - **Tile chunking.** Tiles are 8 to 11 MB, so the four-worker pool still delivers the finest level in three waves. Re-chunking to 4 MB would smooth the sharpening, at the cost of a re-encode and a republish.
 
+## 5a. What followed the same day
+
+**The trackpad (26bade2e).** The wheel stepped a fixed 0.55 m per *event*. A mouse notch is one event; a trackpad reports the same gesture as a stream of tiny ones, so one flick fired twenty-five and carried the viewer 11.3 m across the live room in about four tenths of a second. `wheelStepMetres` now reads the delta in the units the event declares — pixels, lines or pages — converts it to notches and clamps one event to one notch. A mouse moves exactly what it always did; a flick sums to about one notch. Both the room walk and the planner's walk toggle get it, since both mount the same camera.
+
+**Supersampling at rest (35a6784e).** The settled pixel ratio was capped by the display's own, so a 1x screen rested at 1 whatever the profile asked for. That cap cost the room its finest detail for nothing: a demand loop draws the settled frame once and then sleeps, so the extra pixels are paid for at a standstill rather than every frame. Measured before deciding, and again on production after deploying, at 1600×900 on a 1x context:
+
+| region | before | after | change |
+|---|---|---|---|
+| Name boards | 1595 | 3185 | +100 % |
+| Panelling | 109 | 191 | +75 % |
+| Frieze | 95 | 140 | +48 % |
+| Floor | 34 | 14 | −59 % |
+
+Frame rate under drag is unchanged at 167 to 170 fps, because motion still renders at the motion ratio. The production buffer is now 3200×1800 from a 1600×900 canvas, verified in the harness's own record. The floor moving the other way is aliasing lost rather than detail: it is made of large translucent discs, and supersampling averages their edges instead of stair-stepping them. A pixel budget bounds the ratio, so a 4K canvas renders at its own pixels and no more.
+
 ## 6. Files
 
 Instrument `D:\claude\fused-twin-2026-09-04\ladder-load.mjs`; records and pictures under `D:\claude\fused-twin-2026-09-04\ladder\`; the drag budget's own record at `D:\claude\splat-perf\ladder-live.json` and `ladder-live.png`. Code: `packages/web/src/data/room-splat-bundles.ts` (the ladder), `packages/web/src/components/rooms/RoomSplatScene.tsx` (the stages), `packages/web/src/components/scene/SparkSplatLayer.tsx` (`SparkRendererMount`), `packages/web/src/pages/RoomWalkPage.tsx` (the copy and the ledger).
