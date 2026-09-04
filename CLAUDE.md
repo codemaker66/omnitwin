@@ -299,6 +299,12 @@ matches what you're about to do.
   or a poller to the walk page or scene, or reading a report that the walk
   "rubberbands" or snaps back to its start after a drag, wheel or key.
 
+- `.claude/gotchas/spark-invisible-splat-load.md`
+  Read this when: hiding a Spark splat layer to reveal it later (a level swap,
+  a cross-fade, a preloaded tier), setting `visible={false}` or `opacity={0}`
+  on a SparkSplatLayer, or seeing a splat scene render as unsorted colour
+  blobs that a camera move repairs one tile at a time.
+
 - `.claude/gotchas/spark-render-target-effects.md`
   Read this when: adding any effect that renders the scene to an
   off-screen target (drei `ContactShadows`, `Environment` probes,

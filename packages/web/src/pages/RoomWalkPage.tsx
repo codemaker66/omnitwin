@@ -45,7 +45,13 @@ function isCapturedRoom(slug: string | undefined): slug is TradesHallRuntimeRoom
  */
 declare global {
   interface Window {
-    __roomWalk?: { settled: number; total: number; complete: boolean };
+    __roomWalk?: {
+      settled: number;
+      total: number;
+      complete: boolean;
+      /** The coarse first view is up. On a slow line the two moments are far apart. */
+      firstView: boolean;
+    };
   }
 }
 
@@ -60,11 +66,16 @@ export function RoomWalkPage(): ReactElement {
   // Frame the room from outside. Only honest because the scene clips the
   // capture to the room's measured box first.
   const [progress, setProgress] = useState<RoomSplatProgress>({
-    settled: 0, total: 0, splats: 0, failed: 0, complete: false,
+    settled: 0, total: 0, splats: 0, failed: 0, complete: false, firstView: false,
   });
   const onProgress = useCallback((next: RoomSplatProgress) => {
     setProgress(next);
-    window.__roomWalk = { settled: next.settled, total: next.total, complete: next.complete };
+    window.__roomWalk = {
+      settled: next.settled,
+      total: next.total,
+      complete: next.complete,
+      firstView: next.firstView,
+    };
   }, []);
 
   const room = isCapturedRoom(params.roomSlug) ? params.roomSlug : null;
@@ -127,9 +138,14 @@ export function RoomWalkPage(): ReactElement {
         </p>
       </header>}
 
+      {/* The room arrives twice: a coarse view in seconds, then the full
+          reconstruction. Saying "streaming" through both would call a room
+          that is already on screen absent. */}
       {!bare && !progress.complete && (
         <p className="walk__loading" role="status" data-testid="walk-loading">
-          Streaming the room — {String(pct)}%
+          {progress.firstView
+            ? `Sharpening the room — ${String(pct)}%`
+            : "Streaming the room"}
         </p>
       )}
 

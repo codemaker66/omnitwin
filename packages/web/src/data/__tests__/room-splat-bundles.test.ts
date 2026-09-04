@@ -10,6 +10,8 @@ import {
   roomSplatTotalBytes,
   roomsWithSplatBundles,
   splatBaseUrl,
+  roomSplatLadder,
+  splatLadderForBundle,
   splatSourcesForBundle,
   walkPoseForBundle,
   WALK_EYE_HEIGHT_M,
@@ -326,5 +328,120 @@ describe("splatSourcesForBundle", () => {
       "0_1_1.sog",
       "env.sog",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The coarse-first ladder.
+//
+// An XGRIDS level is the whole room at one density, so the coarsest level is a
+// complete room in one 6-8 MB request while the finest is 75-111 MB across
+// eight to eleven. Showing the coarse room first is the difference between a
+// picture in seconds and a blank canvas for a quarter of a minute on a 20 Mbps
+// line (measured 2026-09-04: first pixels at 17.3 s, pill gone at 45.9 s).
+// ---------------------------------------------------------------------------
+
+describe("splatLadderForBundle", () => {
+  const grandHall = roomSplatBundle("grand-hall");
+  if (grandHall === null) throw new Error("the Grand Hall bundle is the fixture");
+
+  it("shows the coarsest level first: one small tile, not the finest level's eleven", () => {
+    const ladder = splatLadderForBundle(grandHall, "/base", false);
+
+    expect(ladder.coarse.map((source) => source.file)).toEqual(["0_0.sog"]);
+    const coarseTile = grandHall.tiles.find((tile) => tile.file === "0_0.sog");
+    expect(coarseTile?.lodLevel).toBe(1);
+    expect(coarseTile?.bytes).toBeLessThan(8_000_000);
+  });
+
+  it("keeps the sharp stage exactly the finest level, with no environment shell in it", () => {
+    const ladder = splatLadderForBundle(grandHall, "/base", false);
+    const finest = grandHall.tiles.filter(
+      (tile) => !tile.isEnvironment && tile.lodLevel === grandHall.finestLevel,
+    );
+
+    expect(ladder.sharp.map((source) => source.file)).toEqual(finest.map((tile) => tile.file));
+    expect(ladder.sharp).toHaveLength(11);
+  });
+
+  it("mounts the sky shell as its own stage, so swapping the room never takes the sky with it", () => {
+    const ladder = splatLadderForBundle(grandHall, "/base", false);
+
+    expect(ladder.environment.map((source) => source.file)).toEqual(["env.sog"]);
+    for (const stage of [ladder.coarse, ladder.sharp]) {
+      expect(stage.some((source) => source.file === "env.sog")).toBe(false);
+    }
+  });
+
+  it("puts a first view of every room inside ten megabytes", () => {
+    for (const room of roomsWithSplatBundles()) {
+      const bundle = roomSplatBundle(room);
+      if (bundle === null) throw new Error(room);
+      const ladder = splatLadderForBundle(bundle, "/base", false);
+      const bytesOf = (files: readonly { readonly file: string }[]): number => files.reduce(
+        (sum, source) => sum + (bundle.tiles.find((tile) => tile.file === source.file)?.bytes ?? 0),
+        0,
+      );
+      const firstView = bytesOf(ladder.coarse) + bytesOf(ladder.environment);
+      expect(firstView).toBeGreaterThan(0);
+      expect(firstView).toBeLessThan(10_000_000);
+      expect(firstView).toBeLessThan(bytesOf(ladder.sharp) / 4);
+    }
+  });
+
+  it("names only files the bundle actually staged", () => {
+    const staged = new Set(grandHall.tiles.map((tile) => tile.file));
+    const ladder = splatLadderForBundle(grandHall, "/base", false);
+    for (const source of [...ladder.environment, ...ladder.coarse, ...ladder.sharp]) {
+      expect(staged.has(source.file)).toBe(true);
+      expect(source.url.startsWith("/base/")).toBe(true);
+    }
+  });
+
+  it("has no coarse stage for a capture whose only level is its finest", () => {
+    const single: GeneratedRoomSplatBundle = {
+      ...grandHall,
+      finestLevel: 1,
+      tiles: grandHall.tiles.filter((tile) => tile.isEnvironment || tile.lodLevel === 1),
+    };
+    const ladder = splatLadderForBundle(single, "/base", false);
+
+    expect(ladder.coarse).toEqual([]);
+    expect(ladder.sharp).toHaveLength(1);
+    expect(ladder.environment).toHaveLength(1);
+  });
+
+  it("serves each stage's prebuilt trees when the profile asks for them", () => {
+    const withTree: GeneratedRoomSplatBundle = {
+      ...grandHall,
+      tiles: grandHall.tiles.map((tile) => (tile.file === "0_0.sog"
+        ? {
+          ...tile,
+          lod: { file: "lod/0_0-lod.rad", bytes: 1, sha256: "x", splats: 1, chunks: [] },
+        }
+        : tile)),
+    };
+    const ladder = splatLadderForBundle(withTree, "/base", true);
+
+    expect(ladder.coarse[0]?.url).toBe("/base/lod/0_0-lod.rad");
+    expect(ladder.coarse[0]?.tree).toBe(true);
+    expect(ladder.coarse[0]?.file).toBe("0_0.sog");
+  });
+});
+
+describe("roomSplatLadder", () => {
+  it("prefixes the venue and room path, as the tile urls do", () => {
+    const ladder = roomSplatLadder("grand-hall", NO_BASE_URL, false);
+
+    expect(ladder.coarse[0]?.url).toBe("/splats/trades-hall/grand-hall/0_0.sog");
+    expect(ladder.sharp.every((source) => source.url.startsWith("/splats/trades-hall/grand-hall/"))).toBe(true);
+  });
+
+  it("is empty for a room with no capture", () => {
+    const ladder = roomSplatLadder("no-such-room", NO_BASE_URL, false);
+
+    expect(ladder.environment).toEqual([]);
+    expect(ladder.coarse).toEqual([]);
+    expect(ladder.sharp).toEqual([]);
   });
 });

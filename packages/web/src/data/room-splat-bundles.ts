@@ -125,17 +125,88 @@ export interface RoomSplatSource {
  * tile nor rebuilds a tree in the browser; a tile without one is served as
  * itself. Order is the served order: finest level, then the sky shell.
  */
+function sourceForTile(
+  tile: GeneratedSplatTile,
+  roomBaseUrl: string,
+  preferTrees: boolean,
+): RoomSplatSource {
+  const tree = preferTrees ? tile.lod : undefined;
+  return tree === undefined
+    ? { url: `${roomBaseUrl}/${tile.file}`, tree: false, file: tile.file }
+    : { url: `${roomBaseUrl}/${tree.file}`, tree: true, file: tile.file };
+}
+
 export function splatSourcesForBundle(
   bundle: GeneratedRoomSplatBundle,
   roomBaseUrl: string,
   preferTrees: boolean,
 ): readonly RoomSplatSource[] {
-  return servedTiles(bundle).map((tile) => {
-    const tree = preferTrees ? tile.lod : undefined;
-    return tree === undefined
-      ? { url: `${roomBaseUrl}/${tile.file}`, tree: false, file: tile.file }
-      : { url: `${roomBaseUrl}/${tree.file}`, tree: true, file: tile.file };
-  });
+  return servedTiles(bundle).map((tile) => sourceForTile(tile, roomBaseUrl, preferTrees));
+}
+
+/**
+ * The two stages a room is delivered in, plus the sky that outlives both.
+ *
+ * Every XGRIDS level is the WHOLE room at one density, which is what makes a
+ * ladder possible: the coarsest level is a complete, soft room in a single
+ * 6-8 MB request, where the finest is 75-111 MB over eight to eleven. Serving
+ * the coarse room first turns a blank canvas into a picture in seconds — the
+ * finest level alone left the Grand Hall empty for 17.3 s and unfinished for
+ * 45.9 s on a 20 Mbps line (measured 2026-09-04).
+ *
+ * The stages are mounted, never merged: two levels on screen at once draw the
+ * same surfaces twice and haze the room, so the scene shows one and swaps.
+ */
+export interface RoomSplatLadder {
+  /** The sky shell. Mounted once and kept: it does not get sharper. */
+  readonly environment: readonly RoomSplatSource[];
+  /** The coarse room, shown first. Empty when the capture has one level only. */
+  readonly coarse: readonly RoomSplatSource[];
+  /** The full reconstruction: the finest level, and what the visitor keeps. */
+  readonly sharp: readonly RoomSplatSource[];
+}
+
+/** The coarsest level a capture staged, or null when it staged only one. */
+function coarsestRoomLevel(bundle: GeneratedRoomSplatBundle): number | null {
+  const levels = bundle.tiles
+    .filter((tile) => !tile.isEnvironment && tile.lodLevel !== null)
+    .map((tile) => tile.lodLevel as number);
+  if (levels.length === 0) return null;
+  const coarsest = Math.min(...levels);
+  return coarsest < bundle.finestLevel ? coarsest : null;
+}
+
+/** A bundle's delivery ladder under a room base URL. */
+export function splatLadderForBundle(
+  bundle: GeneratedRoomSplatBundle,
+  roomBaseUrl: string,
+  preferTrees: boolean,
+): RoomSplatLadder {
+  const coarsest = coarsestRoomLevel(bundle);
+  const atLevel = (level: number | null): readonly RoomSplatSource[] => (level === null
+    ? []
+    : bundle.tiles
+      .filter((tile) => !tile.isEnvironment && tile.lodLevel === level)
+      .map((tile) => sourceForTile(tile, roomBaseUrl, preferTrees)));
+  return {
+    environment: bundle.tiles
+      .filter((tile) => tile.isEnvironment)
+      .map((tile) => sourceForTile(tile, roomBaseUrl, preferTrees)),
+    coarse: atLevel(coarsest),
+    sharp: atLevel(bundle.finestLevel),
+  };
+}
+
+/** The delivery ladder for a room; every stage empty for an unknown room. */
+export function roomSplatLadder(
+  roomSlug: string,
+  configuredBaseUrl: string | undefined,
+  preferTrees: boolean,
+): RoomSplatLadder {
+  const bundle = roomSplatBundle(roomSlug);
+  if (bundle === null) return { environment: [], coarse: [], sharp: [] };
+  const base = `${splatBaseUrl(configuredBaseUrl)}/${GENERATED_VENUE_SLUG}/${roomSlug}`;
+  return splatLadderForBundle(bundle, base, preferTrees);
 }
 
 /** The sources for a room, environment shell last; empty for an unknown room. */

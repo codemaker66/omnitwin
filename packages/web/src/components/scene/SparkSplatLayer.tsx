@@ -116,7 +116,15 @@ function applyLayerProps(
   }
 }
 
-function SparkRendererHost({
+/**
+ * A SparkRenderer of its own, mounted on nothing.
+ *
+ * One host per scene is the rule (twelve hosts on twelve tiles cost the Grand
+ * Hall 162 fps under drag, T-574). A scene that swaps its tiles — the
+ * coarse-first ladder drops the coarse room when the finest level lands — must
+ * mount the host here rather than on a tile, or the renderer leaves with it.
+ */
+export function SparkRendererMount({
   runtime,
   lodScaleFn,
 }: {
@@ -281,7 +289,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
 
   return (
     <>
-      {includeRendererHost && <SparkRendererHost runtime={runtime} lodScaleFn={lodScaleFn} />}
+      {includeRendererHost && <SparkRendererMount runtime={runtime} lodScaleFn={lodScaleFn} />}
       {mesh !== null && <primitive object={mesh} />}
     </>
   );
