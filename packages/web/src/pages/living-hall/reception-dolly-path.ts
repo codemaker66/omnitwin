@@ -44,14 +44,22 @@ export const MIN_GAZE_DISTANCE_M = 2.5;
 /** The Reception Room runtime tiles as staged under /splats/reception/
  *  (dev-local; production serves the same names from R2 — P4). Sizes are
  *  bytes-on-disk from the LCC export, for load-progress display. */
+// The deepest octree tiles only, plus the sky.
+//
+// Every level of an XGRIDS octree is the whole room at a different density, so
+// mounting two levels draws the room twice — the trap written up in
+// .claude/gotchas/xgrids-lcc2-lod-levels-are-copies.md. This hand-picked set
+// carried depths 2, 3 and 4 at once and cost 62.8 MB. Decoding all seven room
+// tiles (2026-09-04) put 3,491,322 splats on screen where the four depth-4
+// tiles hold 2,002,009; voxelised at 25 cm those four cover 99.0% of the
+// occupied space of all seven, and the 1% they do not is scattered fringe
+// rather than any wall or floor. So the three shallower tiles were 27.0 MB
+// spent redrawing what was already there, and they are gone.
 export const RECEPTION_TILE_MANIFEST = [
-  { file: "0_0.sog", bytes: 9017864 },
-  { file: "0_1_0.sog", bytes: 9845814 },
   { file: "0_1_0_5.sog", bytes: 10047085 },
   { file: "0_6_0_0.sog", bytes: 10368228 },
   { file: "0_7_0_0.sog", bytes: 5040628 },
   { file: "0_15_0_0.sog", bytes: 10279160 },
-  { file: "0_20_0.sog", bytes: 8106037 },
   { file: "env.sog", bytes: 129565 },
 ] as const;
 

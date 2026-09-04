@@ -97,3 +97,25 @@ describe("tile manifest", () => {
     }
   });
 });
+
+// Every level of an XGRIDS octree is the WHOLE room at a different density, so
+// mounting two levels draws the room twice. This manifest was hand-picked and
+// carried three depths at once: measured 2026-09-04, the four deepest tiles
+// alone cover 99.0% of the occupied 25 cm voxels of all seven, so the three
+// shallower ones were 27.0 MB of 62.8 MB spent redrawing what was already there.
+describe("RECEPTION_TILE_MANIFEST holds one octree depth", () => {
+  const roomTiles = RECEPTION_TILE_MANIFEST.filter((tile) => tile.file !== "env.sog");
+
+  it("draws the room once, not once per level", () => {
+    const depths = new Set(roomTiles.map((tile) => tile.file.split("_").length));
+    expect([...depths]).toHaveLength(1);
+  });
+
+  it("keeps the deepest tiles, which are the densest reconstruction", () => {
+    for (const tile of roomTiles) expect(tile.file.split("_")).toHaveLength(4);
+  });
+
+  it("still carries the sky shell", () => {
+    expect(RECEPTION_TILE_MANIFEST.some((tile) => tile.file === "env.sog")).toBe(true);
+  });
+});
