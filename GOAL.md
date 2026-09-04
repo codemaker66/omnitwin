@@ -42,7 +42,7 @@ ecords\prod-shot-dpr1-settled.png (before); (b) open the planner on the Grand Ha
 - Read CLAUDE.md and .claude/AI_INTEGRITY_RULES.md; the S+ bar; the Handoff Protocol; the Blake Clause.
 - Test first (a failing test, then the code); typecheck + tests + lint before any commit; commit with an explicit pathspec always; never stage everything.
 - Measure before claiming: the harness and Playwright from packages/web (a script outside the package cannot resolve @playwright/test; import it by absolute file URL). The embedded Browser pane cannot stream splats (.claude/gotchas/browser-pane-splat-streaming.md).
-- Never edit packages/web source while an e2e or harness run is in progress. Windows-green is not Linux-green (CI's audit job is red and gates nothing; the rest must pass).
+- Never edit packages/web source while an e2e or harness run is in progress. Windows-green is not Linux-green. CI's audit job is red and gates nothing. CI's E2E job also never finishes: it is killed by its own 30-minute timeout, verified 2026-09-04 on several commits including a docs-only one (T-583), so it looks like pushes cancelling each other but is not. What must pass is Lint, Typecheck, Build and Test — check those four by name rather than the run's overall conclusion, which the audit job makes red regardless.
 - Secrets only in C:\Users\blake\deploy-secrets and packages/api/.env; never print them. Rotate the R2 token after the Trades Hall trip.
 - Generated/bulk files go under D:\claude\<task>\, never C: (37 GB free).
 - Spark, not drei's Splat; Three >= 0.180; Fastify; Drizzle; Zustand; Vitest; Zod; pnpm. PATH needs C:\Users\blake\AppData\Roaming\npm for pnpm.

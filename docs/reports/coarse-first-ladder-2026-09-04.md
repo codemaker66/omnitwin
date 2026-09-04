@@ -82,6 +82,7 @@ Four independent checks were run over the shipped code — the ladder on all eig
 - **Medium and low tiers.** Nobody has measured an integrated-GPU laptop. Plan 13 week 1 item 5 stands: those tiers should serve a coarser vendor level as their sharp layer, which the ladder now makes a one-line change.
 - **The transient first sort.** A mesh entering the scene draws unsorted until Spark's first sort lands. Unchanged by this work and present before it, but not measured on a real visitor's first view, only through screenshots that stall the GPU.
 - **The Vercel proxy.** Every tile is still a cache MISS through the rewrite. An R2 custom domain is the owner's action and worth more than any further work on the ladder.
+- **CI has no end-to-end signal.** Lint, typecheck, build and the unit suite pass on Linux for everything shipped here. The end-to-end job does not: it is killed by its own 30-minute timeout, and has been for some time — a docs-only commit fails the same way. It looks like pushes cancelling each other, and some were, but a run left alone still dies at thirty minutes. Recorded as T-583.
 - **Tile chunking.** Tiles are 8 to 11 MB, so the four-worker pool still delivers the finest level in three waves. Re-chunking to 4 MB would smooth the sharpening, at the cost of a re-encode and a republish.
 
 ## 5a. What followed the same day
