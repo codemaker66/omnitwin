@@ -57,6 +57,26 @@ The gilt lettering is already legible at the first view (`D:\claude\fused-twin-2
 
 "Streaming the room" until the first view, then "Sharpening the room — N%" over a room that is already there, then nothing. The percentage counts the finest level's tiles, so it means what it says. A coarse tile that fails is not reported as a failed part of the room, and does not stop the finest level: the room simply arrives the old way.
 
+## 4a. What a review of the shipped ladder found
+
+Four independent checks were run over the shipped code — the ladder on all eight rooms, every other splat mount in the web package, the planner and captures console, and an adversarial read of the implementation — and every serious claim was then handed to a separate skeptic to refute. Seven survived, four did not.
+
+**Fixed the same afternoon (dbc9ec62), both real, both mine from this morning:**
+
+- **A failed tile took the cover away.** `complete` counted a *failed* finest-level tile as settled, and `complete` was what dropped the coarse room. On a flaky connection the room arrived in seconds, the pill climbed, and then at the moment a tile's fetch died the coarse room covering that geometry was discarded, leaving a black void over the forward view. Every tile failing emptied the canvas completely, pill removed, nothing said. The two ideas are now separate: `complete` still means nothing more is coming, but the coarse room is dropped only when every tile actually *loaded*.
+- **`firstView` counted a failure as a first view**, so the pill could read "Sharpening the room — 9%" over a blank canvas.
+
+**Real, recorded, not fixed today** (task rows carry the detail):
+
+- `/living-hall` and `/fresh` mount **three complete levels of the Reception Room at once** — 3,494,926 splats and 62.8 MB where the finest level plus sky is 2,005,613 and 35.9 MB, so 43 % of what they fetch is lower-density copies of surfaces already delivered. Both paths serve in production (verified, HTTP 206). `/fresh` is reachable from the front door's Enquire links. The remedy is to keep only the four deepest tiles plus `env.sog` in `RECEPTION_TILE_MANIFEST`; it is not shipped today because those pages cannot render locally (their `/splats/reception` tiles are not in the staging root), so the visual result could not be looked at before deploying.
+- The **planner and the captures console never got the ladder**, and pass no runtime profile, so they still fetch the finest level only and draw it with no level-of-detail budget.
+- The **poller never stops if a tile's fetch hangs**: `complete` never arrives, so the page keeps re-rendering every 400 ms for the rest of the visit. Pre-existing, and milder since the coarse room now stays.
+- The **served level is chosen per capture, not per room**, so a small room pays a large room's bandwidth.
+
+**Refuted by the skeptics** (worth recording so they are not re-raised): a south-gallery run that missed the coarse deadline (the visitor still got the coarse room first); the renderer host riding on layer index 0 in the planner and visual console (that path needs platform-admin authorization, verified live, so no visitor reaches it); the planner's chunks mounting hidden (a chunk has no splat data while it downloads, so hiding it costs nothing); and multi-second main-thread stalls through sharpening (on production with a real GPU, not one block over 300 ms).
+
+**One claim I could neither confirm nor refute.** The review reported the room going black or blobby for three to eight seconds after the pill disappears. Six readbacks of that same state gave Laplacian variances of 304, 33, 472, 403, 276 and 7 — a spread that is the signature of an unreliable instrument, not of a page. The walk enables `preserveDrawingBuffer` only under `?bare=1`, so an ordinary `page.screenshot` of it returns whatever happens to be in the buffer. The repo's own harness, which reads back the way the page supports and has produced consistent sharp images all day, shows 171.6 fps and a correct settled room after the ladder against 168.3 before. Settling it properly needs a real browser watched by a person, or a video capture (no ffmpeg on this machine).
+
 ## 5. Still open
 
 - **Medium and low tiers.** Nobody has measured an integrated-GPU laptop. Plan 13 week 1 item 5 stands: those tiers should serve a coarser vendor level as their sharp layer, which the ladder now makes a one-line change.
