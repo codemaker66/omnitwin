@@ -480,3 +480,74 @@ describe("RoomSplatScene keeps cover when the finest level fails", () => {
     expect(report.firstView).toBe(false);
   });
 });
+
+// A tile whose fetch hangs never loads and never errors, so completion never
+// arrives and the poller keeps ticking. Before this it also kept REPORTING,
+// which re-rendered the page 2.5 times a second for the rest of the visit.
+describe("RoomSplatScene when a tile's fetch hangs", () => {
+  beforeEach(() => {
+    recorded.layers.length = 0;
+    recorded.cameras.length = 0;
+    recorded.hosts.length = 0;
+    recorded.mounted.clear();
+    if (typeof window.matchMedia !== "function") {
+      Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
+    }
+    setDevicePixelRatio(1);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("says nothing new while nothing changes, so the page stops re-rendering", () => {
+    vi.useFakeTimers();
+    const onProgress = vi.fn();
+    render(<RoomSplatScene room={ROOM} onProgress={onProgress} />);
+    act(() => { loadEveryMountedLayer(); });
+    act(() => { vi.advanceTimersByTime(450); });
+    act(() => {
+      // Ten of the eleven land; the eleventh hangs for ever.
+      const sharp = mountedLayers().filter((l) => SHARP.test(String(l["url"])));
+      for (const layer of sharp.slice(1)) {
+        (layer["onLoad"] as (e: { url: string; splatCount: number }) => void)({ url: String(layer["url"]), splatCount: 1000 });
+      }
+    });
+    act(() => { vi.advanceTimersByTime(450); });
+
+    const settled = onProgress.mock.lastCall?.[0] as { settled: number; complete: boolean };
+    expect(settled.settled).toBe(10);
+    expect(settled.complete).toBe(false);
+
+    onProgress.mockClear();
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(onProgress).not.toHaveBeenCalled();
+  });
+
+  it("still reports the moment the straggler arrives", () => {
+    vi.useFakeTimers();
+    const onProgress = vi.fn();
+    render(<RoomSplatScene room={ROOM} onProgress={onProgress} />);
+    act(() => { loadEveryMountedLayer(); });
+    act(() => { vi.advanceTimersByTime(450); });
+    act(() => {
+      const sharp = mountedLayers().filter((l) => SHARP.test(String(l["url"])));
+      for (const layer of sharp.slice(1)) {
+        (layer["onLoad"] as (e: { url: string; splatCount: number }) => void)({ url: String(layer["url"]), splatCount: 1000 });
+      }
+    });
+    act(() => { vi.advanceTimersByTime(10_000); });
+    onProgress.mockClear();
+
+    act(() => {
+      const straggler = mountedLayers().filter((l) => SHARP.test(String(l["url"])))[0];
+      (straggler?.["onLoad"] as (e: { url: string; splatCount: number }) => void)({ url: String(straggler?.["url"]), splatCount: 1000 });
+    });
+    act(() => { vi.advanceTimersByTime(450); });
+
+    const done = onProgress.mock.lastCall?.[0] as { settled: number; complete: boolean };
+    expect(done.settled).toBe(11);
+    expect(done.complete).toBe(true);
+  });
+});

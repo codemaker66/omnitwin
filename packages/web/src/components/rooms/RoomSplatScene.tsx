@@ -194,6 +194,8 @@ export function RoomSplatScene({
   useEffect(() => { deliveryRef.current = delivery; }, [delivery]);
   const ladderRef = useRef(ladder);
 
+  /** The last report handed out, so an unchanged one is not repeated. */
+  const lastReportRef = useRef<RoomSplatProgress | null>(null);
   const loadedRef = useRef<Map<string, number>>(new Map());
   const failedRef = useRef<Set<string>>(new Set());
 
@@ -213,6 +215,7 @@ export function RoomSplatScene({
   useEffect(() => {
     loadedRef.current = new Map();
     failedRef.current = new Set();
+    lastReportRef.current = null;
     // Only a genuinely new ladder re-seats the delivery: setting state on mount
     // would render the scene twice for nothing.
     if (ladderRef.current !== ladder) {
@@ -270,7 +273,7 @@ export function RoomSplatScene({
         splats += loadedRef.current.get(source.url) ?? 0;
       }
 
-      onProgressRef.current?.({
+      const report: RoomSplatProgress = {
         settled,
         total,
         splats,
@@ -278,7 +281,23 @@ export function RoomSplatScene({
         complete,
         // A tile that failed put nothing on screen, so it is not a first view.
         firstView: coarseShowing || loaded > 0,
-      });
+      };
+      // Only say something when there is something to say. A tile whose fetch
+      // hangs never loads and never errors, so completion never arrives and
+      // this timer runs for the rest of the visit; reporting an unchanged
+      // number every 400 ms re-rendered the whole page with it.
+      const last = lastReportRef.current;
+      const changed = last === null
+        || last.settled !== report.settled
+        || last.total !== report.total
+        || last.splats !== report.splats
+        || last.failed !== report.failed
+        || last.complete !== report.complete
+        || last.firstView !== report.firstView;
+      if (changed) {
+        lastReportRef.current = report;
+        onProgressRef.current?.(report);
+      }
       // The last report is the last: a poller that keeps ticking re-renders
       // the page 2.5 times a second for the rest of the visit.
       if (complete) clearInterval(timer);
