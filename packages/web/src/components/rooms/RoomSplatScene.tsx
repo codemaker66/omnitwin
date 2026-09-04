@@ -48,14 +48,16 @@ const PROGRESS_INTERVAL_MS = 400;
  * wire lands in about three seconds on a 20 Mbps line, where sharing the pipe
  * with the finest level's eleven would take four times that.
  *
- * It ends on a deadline as well as on the tile, because the tile's own signal
- * arrives late: Spark reports a tile when it has been decoded and treed, not
- * when its bytes are in, and the wire is idle for that whole stretch. Eight
- * seconds is a pessimistic 8 Mbps line clearing the largest coarse tile any
- * room has (7.6 MB), so on a slower line the finest level starts during the
- * decode rather than after it, and on a stuck one the room is never stranded.
+ * The deadline is a guard against a stuck fetch, not a tuning knob. Spark
+ * reports a tile once it is decoded rather than once its bytes are in, so a
+ * shorter deadline looks like a way to overlap the decode with the wire; it is
+ * not. Measured at 20 Mbps, eight seconds and fifteen finished within noise of
+ * each other (78.5 s both), because the tile settles before either fires. What
+ * a short deadline does change is the slow line the ladder exists for: at
+ * 5 Mbps it would start eleven competing fetches while the coarse tile is still
+ * coming, and delay the very first view it was meant to bring forward.
  */
-const COARSE_WAIT_MS = 8_000;
+const COARSE_WAIT_MS = 15_000;
 
 /** Which rung of the ladder the room is standing on. */
 type DeliveryStage = "coarse" | "sharpening" | "sharp";
