@@ -13,13 +13,33 @@ const FOCUSABLE_SELECTOR = [
   "input:not([disabled])",
   "select:not([disabled])",
   "textarea:not([disabled])",
+  "summary",
   "[tabindex]:not([tabindex='-1'])",
 ].join(", ");
+
+function firstDirectSummary(details: Element): Element | undefined {
+  return Array.from(details.children).find((child) => child.tagName === "SUMMARY");
+}
+
+function isExposedByDisclosure(node: HTMLElement): boolean {
+  // Only the first direct summary receives native disclosure keyboard behaviour.
+  if (node.tagName === "SUMMARY" && (node.parentElement?.tagName !== "DETAILS" ||
+      firstDirectSummary(node.parentElement) !== node)) return false;
+  let ancestor = node.parentElement;
+  while (ancestor !== null) {
+    if (ancestor.tagName === "DETAILS" && !ancestor.hasAttribute("open") &&
+        firstDirectSummary(ancestor)?.contains(node) !== true) return false;
+    ancestor = ancestor.parentElement;
+  }
+  return true;
+}
 
 function visibleFocusableNodes(container: HTMLElement): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
     .filter((node) => !node.hasAttribute("disabled"))
+    .filter((node) => node.getAttribute("tabindex") !== "-1")
     .filter((node) => node.closest("[hidden], [aria-hidden='true']") === null)
+    .filter(isExposedByDisclosure)
     .filter((node) => {
       const style = window.getComputedStyle(node);
       return style.display !== "none" && style.visibility !== "hidden";

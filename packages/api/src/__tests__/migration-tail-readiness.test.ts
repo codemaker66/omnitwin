@@ -30,10 +30,15 @@ import {
   reconstructionReleaseReviews,
   reconstructionReleases,
   reconstructionReviewEvidenceArtifacts,
+  venueInventoryStock,
+  venueInventoryReceipts,
 } from "../db/schema.js";
 import {
   compareMigrationJournals,
   coordinateMigrationApprovalSatisfied,
+  extractTargetTableNames,
+  extractTargetConstraintNames,
+  extractTargetIndexNames,
   parseCliOptions,
   writeReportAtomic,
 } from "../scripts/verify-migration-tail-readiness.js";
@@ -106,6 +111,7 @@ const EXPECTED_TAIL = [
   "0062_quiz_runs",
   "0063_phase_layout_snapshot_immutability",
   "0064_manual_layout_evidence",
+  "0065_venue_inventory",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {
@@ -140,6 +146,43 @@ async function readMigration(tag: string): Promise<string> {
 }
 
 describe("migration tail rollout readiness", () => {
+  it("discovers inventory tables, checks and indexes from migration 0065's unquoted identifiers", async () => {
+    const migrations = [{ sql: await readMigration("0065_venue_inventory") }];
+    expect(extractTargetTableNames(migrations)).toEqual(["venue_inventory_receipts", "venue_inventory_stock"]);
+    const checks = [venueInventoryStock, venueInventoryReceipts].flatMap((table) =>
+      getTableConfig(table).checks.map((constraint) => constraint.name));
+    expect(extractTargetConstraintNames(migrations)).toEqual([...checks].sort());
+    expect(extractTargetIndexNames(migrations)).toEqual(["venue_inventory_receipts_revision_unique"]);
+  });
+
+  it("preserves quoted identifier case and folds unquoted identifier case like PostgreSQL", () => {
+    const migrations = [{ sql: 'CREATE TABLE "MixedCaseTable" (); CREATE TABLE Other_Table (); CREATE UNIQUE INDEX "MixedCaseIndex" ON "MixedCaseTable" (id); CREATE INDEX Other_Index ON Other_Table (id); ALTER TABLE Other_Table ADD CONSTRAINT Other_Check CHECK (true); ALTER TABLE "MixedCaseTable" ADD CONSTRAINT "MixedCaseCheck" CHECK (true);' }];
+    expect(extractTargetTableNames(migrations)).toEqual(["MixedCaseTable", "other_table"]);
+    expect(extractTargetIndexNames(migrations)).toEqual(["MixedCaseIndex", "other_index"]);
+    expect(extractTargetConstraintNames(migrations)).toEqual(["MixedCaseCheck", "other_check"]);
+  });
+
+  it("ignores existing migration comments and CREATE CONSTRAINT TRIGGER syntax", async () => {
+    const [indexSql, executionSql, immutabilitySql] = await Promise.all([
+      readMigration("0014_snapshot_approved_partial_index"),
+      readMigration("0053_foundry_execution_control"),
+      readMigration("0063_phase_layout_snapshot_immutability"),
+    ]);
+    expect(extractTargetIndexNames([{ sql: indexSql }])).toEqual(["config_sheet_snapshots_approved_idx"]);
+    expect(extractTargetConstraintNames([{ sql: executionSql }])).not.toContain("trigger");
+    expect(extractTargetConstraintNames([{ sql: immutabilitySql }])).toEqual(["configuration_layout_revisions_source_check"]);
+  });
+
+  it("ignores line/block comments while preserving comment markers inside quoted identifiers", () => {
+    const migrations = [{ sql: `-- CREATE TABLE false_table (); CONSTRAINT false_check CHECK (true);
+/* CREATE INDEX false_index ON false_table(id); CREATE TABLE "FalseQuoted" (); */
+CREATE TABLE "Inventory--stock" (id int CONSTRAINT "trigger" CHECK (id > 0));
+CREATE CONSTRAINT TRIGGER deferred_inventory AFTER INSERT ON "Inventory--stock" EXECUTE FUNCTION check_inventory();` }];
+    expect(extractTargetTableNames(migrations)).toEqual(["Inventory--stock"]);
+    expect(extractTargetConstraintNames(migrations)).toEqual(["trigger"]);
+    expect(extractTargetIndexNames(migrations)).toEqual([]);
+  });
+
   it("keeps every SQL migration journaled once with contiguous order and an increasing timestamp", async () => {
     const [journalText, drizzleFiles] = await Promise.all([
       readFile(resolve("drizzle/meta/_journal.json"), "utf8"),

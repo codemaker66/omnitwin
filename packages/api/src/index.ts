@@ -7,6 +7,7 @@ import { validateEnv, type Env } from "./env.js";
 import { createDb } from "./db/client.js";
 import { setAuthDb } from "./middleware/auth.js";
 import { venueRoutes } from "./routes/venues.js";
+import { venueInventoryRoutes } from "./routes/venue-inventory.js";
 import { spaceRoutes } from "./routes/spaces.js";
 import { configurationRoutes } from "./routes/configurations.js";
 import { placedObjectRoutes } from "./routes/placed-objects.js";
@@ -336,6 +337,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
 
   // --- Routes ---
   await server.register(venueRoutes, { db, prefix: "/venues" });
+  await server.register(venueInventoryRoutes, { db, prefix: "/venues" });
   await server.register(spaceRoutes, { db, prefix: "/venues/:venueId/spaces" });
   await server.register(configurationRoutes, { db, prefix: "/configurations" });
   await server.register(placedObjectRoutes, { db, prefix: "/configurations/:configId/objects" });

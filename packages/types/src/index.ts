@@ -2445,5 +2445,6 @@ export * from "./action-log-batch.js";
 export * from "./ai-action-adapter.js";
 export * from "./quiz-run.js";
 export * from "./venue-inventory.js";
+export * from "./venue-inventory-api.js";
 export * from "./venue-inventory-availability.js";
 export * from "./venue-inventory-adjustment.js";

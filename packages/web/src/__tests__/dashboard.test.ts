@@ -407,6 +407,11 @@ describe("DashboardPage", () => {
     expect(canOpenDashboardView("analytics", "supplier")).toBe(false);
     expect(canOpenDashboardView("settings", "hallkeeper")).toBe(true);
     expect(canOpenDashboardView("settings", null)).toBe(false);
+    expect(canOpenDashboardView("inventory", "admin", "none")).toBe(true);
+    expect(canOpenDashboardView("inventory", "staff", "admin")).toBe(false);
+    expect(canOpenDashboardView("inventory", "hallkeeper", "admin")).toBe(false);
+    expect(canOpenDashboardView("inventory", "planner", "admin")).toBe(false);
+    expect(canOpenDashboardView("inventory", null, "admin")).toBe(false);
   });
 
   it("uses a permitted default dashboard surface for restricted roles", async () => {

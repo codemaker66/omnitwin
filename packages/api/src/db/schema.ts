@@ -20,6 +20,7 @@ import {
   foreignKey,
   primaryKey,
   customType,
+  check,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type {
@@ -38,6 +39,8 @@ import type {
   GuestFlowReplayInput,
   GuestFlowReplayMetrics,
   IntegrationConfig,
+  InventoryHire,
+  VenueInventoryReceipt,
   EventPlanAudienceRole,
   EventPlanChangeSurface,
   EventPlanRiskLevel,
@@ -339,6 +342,44 @@ export const assetDefinitions = pgTable("asset_definitions", {
   collisionType: varchar("collision_type", { length: 20 }).default("box").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Venue-owned physical stock remains separate from the global visual catalogue.
+export const venueInventoryStock = pgTable("venue_inventory_stock", {
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  assetDefinitionId: uuid("asset_definition_id").notNull().references(() => assetDefinitions.id),
+  revision: bigint("revision", { mode: "number" }).notNull(),
+  ownedQuantity: bigint("owned_quantity", { mode: "number" }).notNull(),
+  damagedQuantity: bigint("damaged_quantity", { mode: "number" }).notNull(),
+  unavailableQuantity: bigint("unavailable_quantity", { mode: "number" }).notNull(),
+  hires: jsonb("hires").$type<InventoryHire[]>().notNull(),
+  storageLocation: varchar("storage_location", { length: 240 }),
+  status: varchar("status", { length: 20 }).notNull(),
+  effectiveAt: timestamp("effective_at", { withTimezone: true }).notNull(),
+  updatedBy: uuid("updated_by").notNull().references(() => users.id),
+}, (table) => [
+  primaryKey({ columns: [table.venueId, table.assetDefinitionId] }),
+  check("venue_inventory_stock_revision", sql`${table.revision} BETWEEN 1 AND 9007199254740991`),
+  check("venue_inventory_stock_counts", sql`${table.ownedQuantity} BETWEEN 0 AND 9007199254740991 AND ${table.damagedQuantity} >= 0 AND ${table.unavailableQuantity} >= 0 AND ${table.damagedQuantity} <= ${table.ownedQuantity} AND ${table.unavailableQuantity} <= ${table.ownedQuantity} - ${table.damagedQuantity}`),
+  check("venue_inventory_stock_status", sql`${table.status} IN ('active', 'retired')`),
+  check("venue_inventory_stock_storage", sql`${table.storageLocation} IS NULL OR length(btrim(${table.storageLocation})) > 0`),
+  check("venue_inventory_stock_hires", sql`jsonb_typeof(${table.hires}) = 'array' AND jsonb_array_length(${table.hires}) <= 2000`),
+]);
+
+export const venueInventoryReceipts = pgTable("venue_inventory_receipts", {
+  venueId: uuid("venue_id").notNull().references(() => venues.id),
+  commandId: uuid("command_id").notNull(),
+  assetDefinitionId: uuid("asset_definition_id").notNull().references(() => assetDefinitions.id),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id),
+  revision: bigint("revision", { mode: "number" }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  payload: jsonb("payload").$type<VenueInventoryReceipt>().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.venueId, table.commandId] }),
+  foreignKey({ columns: [table.venueId, table.assetDefinitionId], foreignColumns: [venueInventoryStock.venueId, venueInventoryStock.assetDefinitionId] }),
+  uniqueIndex("venue_inventory_receipts_revision_unique").on(table.venueId, table.assetDefinitionId, table.revision),
+  check("venue_inventory_receipts_revision", sql`${table.revision} BETWEEN 1 AND 9007199254740991`),
+  check("venue_inventory_receipts_object", sql`jsonb_typeof(${table.payload}) = 'object'`),
+]);
 
 // ---------------------------------------------------------------------------
 // 4b. asset_accessories — implied items for the hallkeeper sheet

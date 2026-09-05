@@ -3,7 +3,10 @@ import { z } from "zod";
 // Venue stock is separate from the global visual catalogue. These contracts
 // calculate availability from a complete, trusted set of commitments; they do
 // not themselves persist stock, reserve a booking or grant a user's authority.
-const Id = z.string().uuid();
+// PostgreSQL UUID identity is case-insensitive and serializes in lowercase.
+// Normalize before constructing command identities or comparing audit snapshots.
+export const InventoryIdSchema = z.string().uuid().transform((value) => value.toLowerCase());
+const Id = InventoryIdSchema;
 export const InventoryQuantitySchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 export const InventoryInstantSchema = z.string().datetime({ offset: true })
   .transform((value) => new Date(value).toISOString());
@@ -35,7 +38,7 @@ const StockFields = {
   status: z.enum(["active", "retired"]),
 };
 
-function validateStockCounts(
+export function validateInventoryStockCounts(
   value: { ownedQuantity: number; damagedQuantity: number; unavailableQuantity: number; hires: InventoryHire[] },
   context: z.RefinementCtx,
 ): void {
@@ -57,7 +60,7 @@ export const InventoryStockSchema = z.object({
   // This snapshot describes stock from this instant onward. Earlier forecasts
   // require historical stock, not an application of today's counts to the past.
   effectiveAt: InventoryInstantSchema,
-}).strict().superRefine(validateStockCounts);
+}).strict().superRefine(validateInventoryStockCounts);
 export type InventoryStock = z.infer<typeof InventoryStockSchema>;
 
 export const InventoryCommitmentSchema = z.object({
@@ -88,7 +91,7 @@ export const InventoryAdjustmentCommandSchema = z.object({
   expectedRevision: InventoryQuantitySchema,
   reason: z.string().trim().min(1).max(1000),
   ...StockFields,
-}).strict().superRefine(validateStockCounts);
+}).strict().superRefine(validateInventoryStockCounts);
 export type InventoryAdjustmentCommand = z.infer<typeof InventoryAdjustmentCommandSchema>;
 
 export const InventoryAdjustmentReceiptSchema = z.object({
