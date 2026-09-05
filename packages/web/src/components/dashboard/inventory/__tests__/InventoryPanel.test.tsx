@@ -13,11 +13,13 @@ const actorId = "00000000-0000-4000-8000-000000000003";
 const mocks = vi.hoisted(() => ({ list: vi.fn(), write: vi.fn(), history: vi.fn() }));
 vi.mock("../../../../api/venue-inventory.js", () => ({ listVenueInventory: mocks.list,
   writeVenueInventory: mocks.write, recentVenueInventoryHistory: mocks.history }));
+vi.mock("../InventoryDemand.js", () => ({ InventoryDemand: ({ refreshKey }: { readonly refreshKey: string | number }) =>
+  <div data-testid="demand-assessment" data-refresh={refreshKey}>Demand assessment</div> }));
 const stock: InventoryStock = { venueId, assetDefinitionId: assetId, revision: 3,
   ownedQuantity: 200, damagedQuantity: 20, unavailableQuantity: 0, hires: [],
   storageLocation: "East store", status: "active", effectiveAt: "2026-09-05T09:00:00.000Z" };
 const data: VenueInventoryData = { items: [{ catalogue: { id: assetId, name: "Chiavari chair", category: "chair" }, stock }],
-  availability: { status: "unavailable", reason: "RESERVATIONS_NOT_CONNECTED" } };
+  availability: { status: "requires_assessment", reason: "TIME_WINDOW_REQUIRED" } };
 
 function success(input: VenueInventoryWriteInput): { stock: InventoryStock; receipt: VenueInventoryReceipt; replayed: boolean } {
   const after: InventoryStock = { ...stock, ownedQuantity: input.ownedQuantity, revision: 4,
@@ -44,10 +46,10 @@ beforeEach(() => {
 afterEach(() => { cleanup(); useAuthStore.getState().logout(); });
 
 describe("InventoryPanel", () => {
-  it("shows physical stock and explicitly unknown booking availability", async () => {
+  it("shows physical stock separately from the dated demand assessment", async () => {
     render(<InventoryPanel />);
     expect(await screen.findByRole("button", { name: "Adjust Chiavari chair" })).toBeTruthy();
-    expect(screen.getByText(/Booking availability is not connected/u)).toBeTruthy();
+    expect(screen.getByTestId("demand-assessment")).toBeTruthy();
     expect(screen.queryByText(/200 available/u)).toBeNull();
   });
 
@@ -76,6 +78,7 @@ describe("InventoryPanel", () => {
     expect(screen.getByText("Stock count")).toBeTruthy();
     expect(mocks.write).toHaveBeenCalledWith(venueId, assetId, expect.objectContaining({
       ownedQuantity: 210, damagedQuantity: 20, expectedRevision: 3, reason: "Stock count" }));
+    expect(screen.getByTestId("demand-assessment").getAttribute("data-refresh")).toBe(`${assetId}:4`);
   });
 
   it("retries an ambiguous write with the same immutable command", async () => {

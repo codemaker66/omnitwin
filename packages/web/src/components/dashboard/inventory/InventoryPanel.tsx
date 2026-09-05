@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { ArrowUpRight, Info, Plus, Search } from "lucide-react";
+import { ArrowUpRight, Plus, Search } from "lucide-react";
 import type { InventoryStock } from "@omnitwin/types";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { listVenueInventory, type VenueInventoryData, type VenueInventoryItem } from "../../../api/venue-inventory.js";
 import { InventoryEditor } from "./InventoryEditor.js";
+import { InventoryDemand } from "./InventoryDemand.js";
+import { ActivityStatus } from "../../shared/Activity.js";
 import { inventoryErrorMessage } from "./inventory-form.js";
 import "./InventoryPanel.css";
 
@@ -28,17 +30,18 @@ function InventoryLedger({ items, onSelect }: { readonly items: readonly VenueIn
 function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; readonly venueId: string }): ReactElement {
   const [data, setData] = useState<VenueInventoryData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   const [query, setQuery] = useState("");
   const [unrecordedOnly, setUnrecordedOnly] = useState(false);
   const [selected, setSelected] = useState<VenueInventoryItem | null>(null);
   useEffect(() => {
-    const controller = new AbortController(); setError(null);
+    const controller = new AbortController(); setError(null); setLoading(true);
     void listVenueInventory(venueId, controller.signal).then((result) => {
       if (!controller.signal.aborted) setData(result);
     }).catch((failure: unknown) => {
       if (!controller.signal.aborted) setError(inventoryErrorMessage(failure));
-    });
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); };
   }, [venueId, retry]);
   const items = useMemo(() => (data?.items ?? []).filter((item) =>
@@ -59,8 +62,9 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
     </header>
     {error !== null ? <section className="inventory-state" role="alert"><h2>Inventory could not be loaded</h2>
       <p>{error}</p><button type="button" className="inventory-button" onClick={() => { setRetry((value) => value + 1); }}>Try again</button></section> :
-      data === null ? <div className="inventory-state" role="status"><span className="inventory-loading-line" /><h2>Opening inventory</h2>
+      data === null ? <div className="inventory-state"><ActivityStatus variant="panel">Opening inventory</ActivityStatus>
         <p>Reading your venue’s recorded furniture and equipment.</p></div> : <>
+        {loading ? <ActivityStatus>Refreshing stock…</ActivityStatus> : null}
         <div className="inventory-tools"><label className="inventory-search"><Search size={18} strokeWidth={1.5} />
           <span className="inventory-sr-only">Find furniture or equipment</span><input type="search" value={query}
             placeholder="Find furniture or equipment" onChange={(event) => { setQuery(event.target.value); }} /></label>
@@ -71,8 +75,7 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
         {items.length === 0 ? <section className="inventory-state"><h2>{data.items.length === 0 ? "Your catalogue is empty" : "No matching items"}</h2>
           <p>{data.items.length === 0 ? "Furniture and equipment must be added to your venue’s catalogue before stock can be recorded." :
             "Try another item name, category or storage location."}</p></section> : <InventoryLedger items={items} onSelect={setSelected} />}
-        <aside className="inventory-availability-note"><Info size={19} strokeWidth={1.5} /><p>Booking availability is not connected.
-          These are physical stock counts. Event shortages cannot yet be assessed here.</p></aside>
+        <InventoryDemand actorId={actorId} venueId={venueId} refreshKey={data.items.map((item) => `${item.catalogue.id}:${String(item.stock?.revision ?? "unrecorded")}`).join("|")} />
       </>}
     {selected !== null ? <InventoryEditor key={selected.catalogue.id} actorId={actorId} venueId={venueId} item={selected}
       onClose={() => { setSelected(null); setRetry((value) => value + 1); }} onSaved={onSaved} /> : null}

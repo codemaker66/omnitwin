@@ -32,6 +32,9 @@ import {
   reconstructionReviewEvidenceArtifacts,
   venueInventoryStock,
   venueInventoryReceipts,
+  inventoryReservationReleases,
+  inventoryRemedyRequests,
+  inventoryDecisionCommands,
 } from "../db/schema.js";
 import {
   compareMigrationJournals,
@@ -112,6 +115,7 @@ const EXPECTED_TAIL = [
   "0063_phase_layout_snapshot_immutability",
   "0064_manual_layout_evidence",
   "0065_venue_inventory",
+  "0066_inventory_reservations",
 ] as const;
 
 function extractCreatedTableColumns(sql: string, tableName: string): string[] {
@@ -146,6 +150,19 @@ async function readMigration(tag: string): Promise<string> {
 }
 
 describe("migration tail rollout readiness", () => {
+  it("registers reservation decision tables and immutable history in migration 0066", async () => {
+    const sql = await readMigration("0066_inventory_reservations");
+    const migrations = [{ sql }];
+    const tables = [inventoryReservationReleases, inventoryRemedyRequests, inventoryDecisionCommands];
+    expect(extractTargetTableNames(migrations)).toEqual(tables.map((table) => getTableConfig(table).name).sort());
+    const checks = tables.flatMap((table) => getTableConfig(table).checks.map((constraint) => constraint.name));
+    const foreignKeys = getTableConfig(inventoryReservationReleases).foreignKeys.map((constraint) => constraint.getName());
+    expect(extractTargetConstraintNames(migrations)).toEqual([...checks, ...foreignKeys.filter((name) => name.startsWith("inventory_release_"))].sort());
+    expect(extractTargetIndexNames(migrations)).toEqual(["inventory_release_scope_revision", "inventory_remedy_venue"]);
+    expect(sql).toContain("BEFORE UPDATE OR DELETE ON inventory_reservation_releases");
+    expect(sql).toContain("BEFORE UPDATE OR DELETE ON inventory_decision_commands");
+    expect(sql).not.toContain("REFERENCES phase_layout_snapshots");
+  });
   it("discovers inventory tables, checks and indexes from migration 0065's unquoted identifiers", async () => {
     const migrations = [{ sql: await readMigration("0065_venue_inventory") }];
     expect(extractTargetTableNames(migrations)).toEqual(["venue_inventory_receipts", "venue_inventory_stock"]);

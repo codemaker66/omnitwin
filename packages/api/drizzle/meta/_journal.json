@@ -449,6 +449,13 @@
       "when": 1788717700000,
       "tag": "0065_venue_inventory",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1788717800000,
+      "tag": "0066_inventory_reservations",
+      "breakpoints": true
     }
   ]
 }

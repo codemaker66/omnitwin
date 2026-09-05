@@ -15,14 +15,14 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe("inventory API response boundary", () => {
   it("unwraps the shared list envelope without turning unknown stock into zero", async () => {
     const data = { items: [{ catalogue: { id: assetId, name: "Chair", category: "chair" }, stock: null }],
-      availability: { status: "unavailable", reason: "RESERVATIONS_NOT_CONNECTED" } };
+      availability: { status: "requires_assessment", reason: "TIME_WINDOW_REQUIRED" } };
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ data }), { status: 200 }));
     await expect(listVenueInventory(venueId)).resolves.toEqual(data);
   });
 
   it("rejects drifted stock data at the response boundary", async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: { items: [{ catalogue: { id: assetId, name: "Chair", category: "chair" }, stock: 0 }],
-      availability: { status: "unavailable", reason: "RESERVATIONS_NOT_CONNECTED" } } }), { status: 200 }));
+      availability: { status: "requires_assessment", reason: "TIME_WINDOW_REQUIRED" } } }), { status: 200 }));
     await expect(listVenueInventory(venueId)).rejects.toMatchObject({ code: "RESPONSE_VALIDATION_ERROR" });
   });
 
