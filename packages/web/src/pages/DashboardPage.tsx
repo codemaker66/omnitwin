@@ -8,6 +8,7 @@ import { ClientProfile } from "../components/dashboard/ClientProfile.js";
 import { LoadoutsView } from "../components/dashboard/LoadoutsView.js";
 import { VenueSettings } from "../components/dashboard/VenueSettings.js";
 import { AdminPanel } from "../components/dashboard/AdminPanel.js";
+import { InventoryPanel } from "../components/dashboard/inventory/InventoryPanel.js";
 import { ExecutiveAnalyticsView } from "../components/dashboard/ExecutiveAnalyticsView.js";
 import { ProposalsView } from "../components/dashboard/ProposalsView.js";
 import { CommercialPipelineView } from "../components/dashboard/CommercialPipelineView.js";
@@ -47,6 +48,7 @@ const DASHBOARD_VIEW_VALUES: readonly DashboardView[] = [
   "search",
   "loadouts",
   "settings",
+  "inventory",
   "onboarding",
   "admin",
 ];
@@ -63,6 +65,7 @@ export function dashboardViewFromSearchValue(value: string | null): DashboardVie
 export function canOpenDashboardView(view: DashboardView, role: string | null, platformRole: PlatformRole = "none"): boolean {
   if (role === "supplier") return false;
   if (role === "executive") return view === "analytics";
+  if (view === "inventory") return role === "admin";
   if (ADMIN_ONLY_VIEWS.has(view)) return platformRole === "admin";
   if (STAFF_ONLY_VIEWS.has(view)) return platformRole === "admin" || role === "admin" || role === "staff";
   return role !== null;
@@ -230,6 +233,8 @@ export function DashboardPage(): React.ReactElement {
         return <LoadoutsView />;
       case "settings":
         return <VenueSettings />;
+      case "inventory":
+        return <InventoryPanel />;
       case "onboarding":
         return <OnboardingView />;
       case "admin":

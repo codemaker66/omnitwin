@@ -28,6 +28,19 @@ function Harness(): ReactElement {
   );
 }
 
+function DisclosureDialog(): ReactElement {
+  const trapRef = useFocusTrap<HTMLDivElement>();
+  return <div ref={trapRef} role="dialog" aria-label="Inventory disclosures">
+    <button type="button">First field</button>
+    <button type="button">Done</button>
+    <details data-testid="history"><summary>Recent adjustments</summary>
+      <button type="button">Read receipt</button>
+      <details data-testid="audit"><summary>Audit identifiers</summary><button type="button">Copy receipt</button></details>
+      <summary>Secondary summary</summary>
+    </details>
+  </div>;
+}
+
 afterEach(() => {
   cleanup();
 });
@@ -69,5 +82,37 @@ describe("useFocusTrap", () => {
     first.focus();
     fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(last);
+  });
+
+  it("leaves native Tab free to reach a closed disclosure summary after Done", async () => {
+    render(<DisclosureDialog />);
+    const first = screen.getByRole("button", { name: "First field" });
+    await waitFor(() => { expect(document.activeElement).toBe(first); });
+    const done = screen.getByRole("button", { name: "Done" });
+    done.focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    done.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(false);
+    first.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByText("Recent adjustments"));
+  });
+
+  it("excludes closed nested content and secondary summaries from the focus cycle", async () => {
+    render(<DisclosureDialog />);
+    const first = screen.getByRole("button", { name: "First field" });
+    await waitFor(() => { expect(document.activeElement).toBe(first); });
+    screen.getByTestId("history").setAttribute("open", "");
+    first.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByText("Audit identifiers"));
+    screen.getByTestId("audit").setAttribute("open", "");
+    first.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Copy receipt" }));
+    screen.getByTestId("history").removeAttribute("open");
+    first.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(screen.getByText("Recent adjustments"));
   });
 });

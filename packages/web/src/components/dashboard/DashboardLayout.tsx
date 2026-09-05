@@ -12,7 +12,7 @@ import "./DashboardLayout.css";
 // DashboardLayout — sidebar nav + top bar + main content
 // ---------------------------------------------------------------------------
 
-type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "onboarding" | "admin";
+type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "inventory" | "onboarding" | "admin";
 
 interface DashboardLayoutProps {
   /** Present only on /dashboard, which owns the view switch itself. Every
@@ -29,7 +29,7 @@ interface DashboardLayoutProps {
   readonly children: ReactNode;
 }
 
-const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: boolean; staffOnly?: boolean }[] = [
+const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: boolean; staffOnly?: boolean; venueAdminOnly?: boolean }[] = [
   { view: "enquiries", label: "Enquiries" },
   { view: "pipeline", label: "Pipeline", staffOnly: true },
   { view: "reviews", label: "Pending Reviews" },
@@ -41,6 +41,7 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: bool
   { view: "search", label: "Client Search" },
   { view: "loadouts", label: "Reference Loadouts" },
   { view: "settings", label: "Venue Settings" },
+  { view: "inventory", label: "Inventory", venueAdminOnly: true },
   { view: "onboarding", label: "Onboarding", adminOnly: true },
   { view: "admin", label: "Admin", adminOnly: true },
 ];
@@ -52,6 +53,7 @@ function canShowNavItem(
 ): boolean {
   if (role === "supplier") return false;
   if (role === "executive") return item.view === "analytics";
+  if (item.venueAdminOnly === true) return role === "admin";
   if (item.adminOnly === true) return platformRole === "admin";
   if (item.staffOnly === true) return platformRole === "admin" || role === "admin" || role === "staff";
   return role !== null && role !== undefined;

@@ -40,6 +40,7 @@ const REQUIRED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   users: ["id"],
   configurations: ["id"],
   spaces: ["id"],
+  asset_definitions: ["id"],
 };
 
 const JournalSchema = z.object({
@@ -190,26 +191,34 @@ export function compareMigrationJournals(
   };
 }
 
-function extractNamedObjects(migrations: readonly LocalMigration[], pattern: RegExp): string[] {
+/** Preserve quoted SQL text while excluding line/block comments from the
+ * repository migration DDL scan. Quoted names can contain comment markers. */
+function withoutSqlComments(source: string): string {
+  return source.replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|--[^\r\n]*|\/\*[\s\S]*?\*\//g, (token) => (
+    token.startsWith("--") || token.startsWith("/*") ? token.replace(/[^\r\n]/g, " ") : token
+  ));
+}
+
+function extractNamedObjects(migrations: readonly Pick<LocalMigration, "sql">[], pattern: RegExp): string[] {
   return sortedUnique(migrations.flatMap((migration) => (
-    [...migration.sql.matchAll(pattern)].map((match) => match[1] ?? "")
+    [...withoutSqlComments(migration.sql).matchAll(pattern)].map((match) => match[1] ?? match[2]?.toLowerCase() ?? "")
   )).filter((name) => name.length > 0));
 }
 
-function extractTargetTableNames(migrations: readonly LocalMigration[]): string[] {
-  return extractNamedObjects(migrations, /CREATE TABLE(?: IF NOT EXISTS)? "([^"]+)"/g);
+export function extractTargetTableNames(migrations: readonly Pick<LocalMigration, "sql">[]): string[] {
+  return extractNamedObjects(migrations, /\bCREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:"([^"]+)"|([a-z_][a-z0-9_$]*))/gi);
 }
 
-function extractTargetConstraintNames(migrations: readonly LocalMigration[]): string[] {
-  const declared = extractNamedObjects(migrations, /CONSTRAINT "([^"]+)"/g);
+export function extractTargetConstraintNames(migrations: readonly Pick<LocalMigration, "sql">[]): string[] {
+  const declared = extractNamedObjects(migrations, /\bCONSTRAINT\s+(?:"([^"]+)"|([a-z_][a-z0-9_$]*))(?=\s+(?:CHECK|UNIQUE|PRIMARY\s+KEY|FOREIGN\s+KEY|EXCLUDE|REFERENCES|NOT\s+NULL|NULL)\b)/gi);
   const guarded = extractNamedObjects(migrations, /conname\s*=\s*'([^']+)'/g);
   return sortedUnique([...declared, ...guarded]);
 }
 
-function extractTargetIndexNames(migrations: readonly LocalMigration[]): string[] {
+export function extractTargetIndexNames(migrations: readonly Pick<LocalMigration, "sql">[]): string[] {
   return extractNamedObjects(
     migrations,
-    /CREATE (?:UNIQUE )?INDEX(?: IF NOT EXISTS)? "([^"]+)"/g,
+    /\bCREATE\s+(?:UNIQUE\s+)?INDEX(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:"([^"]+)"|([a-z_][a-z0-9_$]*))/gi,
   );
 }
 
