@@ -40,6 +40,8 @@ import type {
   GuestFlowReplayMetrics,
   IntegrationConfig,
   InventoryHire,
+  InventoryReservationRelease,
+  InventoryRemedy,
   VenueInventoryReceipt,
   EventPlanAudienceRole,
   EventPlanChangeSurface,
@@ -382,6 +384,39 @@ export const venueInventoryReceipts = pgTable("venue_inventory_receipts", {
 ]);
 
 // ---------------------------------------------------------------------------
+// Inventory decision facts do not reference pruneable snapshot rows. Their
+// immutable payloads retain the exact approved catalogue mapping and timing.
+export const inventoryReservationReleases = pgTable("inventory_reservation_releases", {
+  id: uuid("id").primaryKey(), venueId: uuid("venue_id").notNull().references(() => venues.id),
+  eventId: uuid("event_id").notNull(), spaceId: uuid("space_id").notNull(),
+  revision: bigint("revision", { mode: "number" }).notNull(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  payload: jsonb("payload").$type<InventoryReservationRelease>().notNull(),
+}, (table) => [
+  uniqueIndex("inventory_release_scope_revision").on(table.venueId, table.eventId, table.spaceId, table.revision),
+  foreignKey({ columns: [table.eventId, table.venueId], foreignColumns: [events.id, events.venueId], name: "inventory_release_event_venue" }),
+  foreignKey({ columns: [table.spaceId, table.venueId], foreignColumns: [spaces.id, spaces.venueId], name: "inventory_release_space_venue" }),
+  check("inventory_release_revision", sql`${table.revision} BETWEEN 1 AND 9007199254740991`),
+  check("inventory_release_payload", sql`jsonb_typeof(${table.payload}) = 'object'`),
+]);
+export const inventoryRemedyRequests = pgTable("inventory_remedy_requests", {
+  id: uuid("id").primaryKey(), venueId: uuid("venue_id").notNull().references(() => venues.id),
+  preparedBy: uuid("prepared_by").notNull().references(() => users.id),
+  preparedAt: timestamp("prepared_at", { withTimezone: true }).notNull(),
+  payload: jsonb("payload").$type<InventoryRemedy>().notNull(),
+}, (table) => [index("inventory_remedy_venue").on(table.venueId, table.preparedAt),
+  check("inventory_remedy_payload", sql`jsonb_typeof(${table.payload}) = 'object'`)]);
+export const inventoryDecisionCommands = pgTable("inventory_decision_commands", {
+  venueId: uuid("venue_id").notNull().references(() => venues.id), commandId: uuid("command_id").notNull(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id), operation: varchar("operation", { length: 40 }).notNull(),
+  command: jsonb("command").$type<Record<string, unknown>>().notNull(),
+  result: jsonb("result").$type<Record<string, unknown>>().notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+}, (table) => [primaryKey({ columns: [table.venueId, table.commandId] }),
+  check("inventory_decision_operation", sql`${table.operation} IN ('reservation_approve', 'reservation_revoke', 'remedy_prepare', 'remedy_approve')`),
+  check("inventory_decision_objects", sql`jsonb_typeof(${table.command}) = 'object' AND jsonb_typeof(${table.result}) = 'object'`)]);
+
 // 4b. asset_accessories — implied items for the hallkeeper sheet
 //
 // When a 6ft Round Table is placed, the hallkeeper needs to set up a

@@ -46,8 +46,8 @@ export type VenueInventoryWriteResponse = z.infer<typeof VenueInventoryWriteResp
 export const VenueInventoryListResponseSchema = z.object({ data: z.object({
   items: z.array(z.object({ catalogue: z.object({ id: InventoryIdSchema, name: z.string(), category: z.string() }).strict(),
     stock: InventoryStockSchema.nullable() }).strict()),
-  // This slice has no authoritative reservation ledger. Unknown is never zero.
-  availability: z.object({ status: z.literal("unavailable"), reason: z.literal("RESERVATIONS_NOT_CONNECTED") }).strict(),
+  // Dated commitments are assessed separately; an undated stock count is not availability.
+  availability: z.object({ status: z.literal("requires_assessment"), reason: z.literal("TIME_WINDOW_REQUIRED") }).strict(),
 }).strict() }).strict();
 export type VenueInventoryListResponse = z.infer<typeof VenueInventoryListResponseSchema>;
 

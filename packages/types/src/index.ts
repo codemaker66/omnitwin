@@ -2446,3 +2446,4 @@ export * from "./venue-inventory.js";
 export * from "./venue-inventory-api.js";
 export * from "./venue-inventory-availability.js";
 export * from "./venue-inventory-adjustment.js";
+export * from "./inventory-reservations.js";

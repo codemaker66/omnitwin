@@ -51,7 +51,7 @@ export async function listVenueInventory(db: Database, actor: InventoryActor, ve
     .orderBy(asc(assetDefinitions.category), asc(assetDefinitions.name), asc(assetDefinitions.id));
   return VenueInventoryListResponseSchema.parse({ data: { items: rows.map((row) => ({
     catalogue: row.catalogue, stock: row.stock === null ? null : stockFromRow(row.stock),
-  })), availability: { status: "unavailable", reason: "RESERVATIONS_NOT_CONNECTED" } } });
+  })), availability: { status: "requires_assessment", reason: "TIME_WINDOW_REQUIRED" } } });
 }
 
 export async function readVenueInventoryHistory(db: Database, actor: InventoryActor, venueId: string,
@@ -130,8 +130,12 @@ export async function writeVenueInventory(db: Database, actor: InventoryActor,
   const normalizedActor = InventoryActorSchema.parse(actor);
   assertAdmin(normalizedActor, command.venueId);
   return db.transaction(async (tx) => {
-    const [venue] = await tx.select({ id: venues.id }).from(venues)
-      .where(and(eq(venues.id, command.venueId), isNull(venues.deletedAt))).for("update");
+    // A real row-version write makes a SERIALIZABLE decision waiting behind
+    // this READ COMMITTED correction retry with a fresh snapshot. FOR UPDATE
+    // alone locks without changing the tuple and permits a stale stock read.
+    // Preserve the user-visible timestamp; this is the shared lock version.
+    const [venue] = await tx.update(venues).set({ updatedAt: sql`${venues.updatedAt}` })
+      .where(and(eq(venues.id, command.venueId), isNull(venues.deletedAt))).returning({ id: venues.id });
     if (venue === undefined) throw new VenueInventoryError(404, "NOT_FOUND", "Venue not found");
     const [recorded] = await tx.select({ payload: venueInventoryReceipts.payload }).from(venueInventoryReceipts)
       .where(and(eq(venueInventoryReceipts.venueId, command.venueId), eq(venueInventoryReceipts.commandId, command.commandId))).limit(1);

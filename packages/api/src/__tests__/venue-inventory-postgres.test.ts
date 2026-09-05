@@ -83,7 +83,7 @@ describe.skipIf(databaseUrl === undefined)("venue inventory real PostgreSQL tran
     const before = VenueInventoryListResponseSchema.parse((await server.inject({ method: "GET",
       url: `/venues/${venueId}/inventory`, headers: headers() })).json());
     expect(before.data.items.find((item) => item.catalogue.id === assetId)?.stock).toBeNull();
-    expect(before.data.availability.status).toBe("unavailable");
+    expect(before.data.availability).toEqual({ status: "requires_assessment", reason: "TIME_WINDOW_REQUIRED" });
     const response = await write(input());
     expect(response.statusCode).toBe(200);
     const result = VenueInventoryWriteResponseSchema.parse(response.json()).data;

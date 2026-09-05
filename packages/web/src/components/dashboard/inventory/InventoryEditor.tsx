@@ -10,6 +10,7 @@ import { useFocusTrap } from "../../../lib/use-focus-trap.js";
 import { inventoryDraft, inventoryErrorMessage, inventoryWriteInput, rebaseInventoryDraft, type InventoryDraft } from "./inventory-form.js";
 import { InventoryReceipt } from "./InventoryReceipt.js";
 import { inventoryPendingKey, readInventoryPending, writeInventoryPending } from "./inventory-pending.js";
+import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 
 interface EditorProps {
   readonly actorId: string;
@@ -32,22 +33,24 @@ function RecentHistory({ venueId, assetId, refresh }: { readonly venueId: string
   readonly refresh: string | null }): ReactElement {
   const [receipts, setReceipts] = useState<VenueInventoryReceipt[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [retry, setRetry] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    setError(null);
+    setError(null); setLoading(true);
     void recentVenueInventoryHistory(venueId, assetId, controller.signal).then((result) => {
       if (!controller.signal.aborted) setReceipts(result);
     }).catch((failure: unknown) => {
       if (!controller.signal.aborted) setError(inventoryErrorMessage(failure));
-    });
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); };
   }, [venueId, assetId, refresh, retry]);
   return <details className="inventory-history"><summary>Recent adjustments</summary>
     <p className="inventory-muted">The latest 20 recorded changes.</p>
+    {loading ? <ActivityStatus>Loading history…</ActivityStatus> : null}
     {error !== null ? <div role="alert"><p>{error}</p><button type="button" className="inventory-button"
       onClick={() => { setRetry((value) => value + 1); }}>Retry history</button></div> :
-      receipts === null ? <p role="status">Loading history…</p> : receipts.length === 0 ?
+      receipts === null ? null : receipts.length === 0 ?
         <p>No adjustments recorded.</p> : receipts.map((receipt) => <InventoryReceipt
           key={receipt.command.commandId} receipt={receipt} />)}
   </details>;
@@ -162,7 +165,7 @@ export function InventoryEditor({ actorId, venueId, item, onClose, onSaved }: Ed
         {error !== null ? <p className="inventory-error" role="alert">{error}</p> : null}
         {notice !== null ? <p className="inventory-notice" role="status">{notice}</p> : null}
         <footer className="inventory-editor-actions"><button type="submit" className="inventory-button inventory-button--primary"
-          disabled={busy || conflict !== null}>{busy ? "Saving…" : pending !== null ? "Retry this save" :
+          disabled={busy || conflict !== null} aria-busy={busy}>{busy ? <ActivityIndicator size={18} /> : null}{busy ? "Saving…" : pending !== null ? "Retry this save" :
             base === null ? "Save stock record" : "Save adjustment"}</button>
           <button type="button" className="inventory-button" onClick={close} disabled={busy}>{pending !== null ? "Close and check later" : saved === null ? "Cancel" : "Done"}</button></footer>
       </form>

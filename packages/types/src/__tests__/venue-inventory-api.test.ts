@@ -38,8 +38,8 @@ describe("venue inventory persisted contracts", () => {
   it("keeps absent stock and unknown reservation knowledge explicit", () => {
     const result = VenueInventoryListResponseSchema.parse({ data: { items: [
       { catalogue: { id: assetDefinitionId, name: "Banquet chair", category: "chair" }, stock: null }],
-    availability: { status: "unavailable", reason: "RESERVATIONS_NOT_CONNECTED" } } });
+    availability: { status: "requires_assessment", reason: "TIME_WINDOW_REQUIRED" } } });
     expect(result.data.items[0]?.stock).toBeNull();
-    expect(result.data.availability.status).toBe("unavailable");
+    expect(result.data.availability.status).toBe("requires_assessment");
   });
 });

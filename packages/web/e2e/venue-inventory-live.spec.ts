@@ -161,7 +161,7 @@ for (const viewport of [{ name: "desktop", width: 1600, height: 1000 },
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await open(page);
-    await expect(page.getByText(/Booking availability is not connected/u)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Demand & decisions", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`${viewport.name}-inventory.png`), fullPage: true });
     const opener = page.getByRole("button", { name: "Adjust Chiavari chair", exact: true });
