@@ -2,6 +2,28 @@
 
 Added 11 Jul 2026. Read this when two planning documents seem to disagree.
 
+## Latest founder amendment — 4 September 2026
+
+[Programme 16](../plan/16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md)
+records Blake's direct instruction to rebuild every active UI/design around the
+philosophical sublime. Existing supplied reference images are acceptable interim
+targets; existing House palette, component forms, navigation and decorative rules
+are historical/interim guidance, not a veto on this redesign. Functional readability,
+accessibility, correct domain behaviour and truth/evidence requirements continue.
+The older material/glass rulings below remain interim guidance for existing surfaces;
+new treatments are judged against the new brief and usability evidence.
+
+Venue admins own final approval of event changes and timings; intelligence prepares
+feasible decisions and can ultimately execute within revocable admin delegation.
+Current broad staff/hallkeeper management capabilities do not establish final-approval
+authority. Admin-editable venue stock and one unchanged visual-quality target across
+current iPhones/iPads and ordinary office computers are explicit requirements.
+
+The same day's direct messaging request also supersedes the Diary's old no-chat
+restriction and extends the internal-only Day Board plan with separately permissioned
+client conversations. These are owner instructions already given; do not ask for
+repeat confirmation. The domain ownership rules below otherwise remain applicable.
+
 This repo carries two approved planning universes, produced in parallel:
 
 1. **The Diary canon** (`docs/strategy/the-diary-research-canon.md`) — governs the **booking/calendar domain**: bookings, holds, the option ladder, conflict engine, yield, client comms/drip, payments, Day Sheets, ops run surface, and the calendar timeline UI. Within that domain it overrides everything except the two universal laws below.

@@ -2,6 +2,14 @@
 
 v1.0 · July 2026 · applies to every surface; the Floor (01) is its deepest application
 
+**Authority update, 4 September 2026:** Blake requires every active UI/design to be
+rebuilt around the philosophical sublime. Read
+[programme 16](16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md) before new design
+work. House's existing aesthetic prescriptions are historical/interim references,
+not final acceptance or a requirement to preserve this palette, forms or navigation.
+Supplied reference images may be used as interim targets. Functional correctness,
+readability, accessibility and user control remain required.
+
 ---
 
 ## 1. The idea

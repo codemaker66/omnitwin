@@ -7,6 +7,64 @@ per ADR D-018. Tier 1 done work, T-010, and lower-priority Tier 2/4/5/6
 tasks live in `docs/state/tasks.md` and are not visualised here.
 Regenerate after each `tasks.md` change.
 
+## September 4 goal programme supplement
+
+T-584 records the completed planning review at
+[`15-VENVIEWER-GOAL-PROGRAMME-2026-09-04.md`](../plan/15-VENVIEWER-GOAL-PROGRAMME-2026-09-04.md).
+The programme goals below are outcomes, not additional T-number tasks or completion claims.
+T-586 amends their requirements through
+[`programme 16`](../plan/16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md): sublime
+redesign, editable inventory, unchanged quality across devices and admin-governed intelligence.
+Arrows show contributions and product progression, not full-programme dependency
+gates; usable slices can advance before a whole research programme finishes. G8 starts
+alongside the product work after its benchmark.
+The first execution batch is complete in [goals/EXECUTION.md](../../goals/EXECUTION.md):
+T-581's planner slice passed local code, visual and hardware-browser checks (console
+and production qualification remain); T-588's tested inventory domain is complete on its isolated
+branch (persistence/API/UI remain); T-589's three-direction visual study is complete
+(selection and implemented surfaces remain). T-587 supplies the shared goal cards.
+The earlier backlog graph below retains its historical scope and was not re-certified
+by this documentation review. The current W0–W8 ladder still governs immediate work.
+
+```mermaid
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#f4ede0',
+    'primaryTextColor': '#1a2e3b',
+    'primaryBorderColor': '#1a2e3b',
+    'lineColor': '#3a3a3a',
+    'secondaryColor': '#b8965a',
+    'tertiaryColor': '#7d9579',
+    'fontFamily': 'Georgia, serif'
+  }
+}}%%
+flowchart TD
+    G1(["G1 · Demo and current truth"])
+    G2(["G2 · Beautiful, fast rooms"])
+    G3(["G3 · Sublime interfaces and planning"])
+    G4(["G4 · Connected commercial event"])
+    G5(["G5 · Useful communication"])
+    G6(["G6 · Hallkeeper's working day"])
+    G7(["G7 · One real event proved"])
+    G8(["G8 · Owned Foundry"])
+    G9(["G9 · Intelligence and learning"])
+    G10(["G10 · Repeatable platform and frontier"])
+    G1 --> G2
+    G1 --> G4
+    G1 --> G3
+    G2 -->|benchmark| G8
+    G4 --> G5
+    G5 --> G6
+    G3 --> G7
+    G4 --> G7
+    G6 --> G7
+    G7 --> G9
+    G7 --> G10
+    G8 --> G10
+    G9 --> G10
+```
+
 ## Subgraph index
 
 - **A1** — this week, RunPod foundation
