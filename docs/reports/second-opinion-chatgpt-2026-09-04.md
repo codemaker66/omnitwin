@@ -1,4 +1,4 @@
-<!-- ChatGPT review of the fused-twin brief (D:audeused-twin-2026-09-04atgpt-brief-2026-09-04.md), pasted by Blake 2026-09-04 late evening; kept verbatim for provenance. -->
+<!-- ChatGPT review of the fused-twin brief (D:/claude/fused-twin-2026-09-04/chatgpt-brief-2026-09-04.md), pasted by Blake 2026-09-04 late evening; kept verbatim for provenance. The path in this line was mangled by a printf escape when first written and corrected on 2026-09-05. -->
 **Venviewer: second opinion on Claude's fused-room brief**
 
 4 September 2026. Prepared for Blake and Claude. This is advice on the supplied brief, not an instruction to start its jobs. I reviewed the brief, project policies, current plans, relevant source code and primary technical sources. I did not independently reproduce the capture measurements, run training, modify application code or spend money. Proposed settings, budgets and acceptance thresholds below are experiments, not predicted results.
