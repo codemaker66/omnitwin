@@ -8,12 +8,23 @@ Ship the Trades Hall of Glasgow as the best captured room on the web: the Grand 
 
 ## 1. The end state Blake wants (his words)
 
+Latest founder amendment, 2026-09-04 (summary; full directive and acceptance in
+`docs/plan/16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md`): rebuild all active
+UI/design around the philosophical sublime; supplied reference images are acceptable
+interim targets. Admins must edit venue inventory quantities. Support latest iPhones
+and iPads, including entry models, and standard office computers without lowering
+visual quality. Venue admins approve changes and timings; intelligence prepares
+feasible choices and complete consequences, with an architecture for eventual full
+operation under revocable admin delegation. These requirements supersede preserving
+the old look or treating visibly reduced device tiers as the final solution. They do
+not cancel the existing Monday freeze or claim any new implementation is complete.
+
 - "we need our platform to aim for 60fps when moving around the viewer of the halls ... a super-combined-something-new of all data ... beautiful and functional without any lag" (2026-09-03).
 - "if we can make a new kind of technology that combines the best of everthing in one viewer, creative problem solving and the invention of new technology and workflows to make the viewer as pretty as possible ... we have full permission to do anything we want with our data, including reconstruction, we need it looking beautiful psnr 50 is a goal and 60fps with a fast load" (2026-09-04).
 - His per-source verdict: the Matterport OBJ "had much clearer view of the floor"; XGRIDS did "the windows and chandelier" better and "captured the gilded gold writing of names on the walls much nicer"; a splat "using only the panoramic images from the matterport capture" "gave us clearer walls" (that splat is probably deleted; rebuild it from the 148 native 8K panoramas). The Matterport E57's Grand Hall is sweeps 0-48 only.
 - "I have a goal of having an impressive workable demo to show elaine (trade's hall venue admin) on monday" (2026-09-03). Plan: docs/plan/12-MONDAY-DEMO-2026-09-07.md (three acts; section 3 breaks and fixes; section 4 the weekend; section 5 never click).
 - Standing mandate: maximally ambitious; ask for money/accounts when needed; he wrote "yes write anything you want" for the production database (2026-09-03) - used for the venue fix, turnaround rules and the demo week; do not widen it beyond the demo without asking.
-- PSNR 50 cannot be a held-out novel-view number (the best published indoor result anywhere is about 25 dB on ScanNet++). Treat it as a fixed-viewpoint re-photograph fidelity target and say so plainly whenever the number comes up.
+- Retain PSNR 50+ as the founder's target. Report fixed-pose reproduction, held-out reconstruction and delivery loss under separate declared protocols; one cannot stand in for another. Existing benchmark results do not establish a universal achievable ceiling. See programme 16 for the current quality mandate.
 
 ## 2. What is true right now (measured, 2026-09-04)
 
@@ -29,17 +40,12 @@ Ship the Trades Hall of Glasgow as the best captured room on the web: the Grand 
 
 ## 3. The work, in order: the ladder in docs/plan/14-OPUS-WORK-LADDER-2026-09-04.md
 
+The runnable goals deck at goals/README.md (T-587, 2026-09-04 23:00) is the whole programme as pasteable /goal cards: goal 00 is W0, goal 02 is W1–W8, and goals 01 and 03–10 carry the sublime rebuild, messaging, the hallkeeper's day, one real event, the Foundry, intelligence and the platform. Codex's goals/EXECUTION.md records which lanes are claimed. Take the first unowned slice there after the first card not marked done here.
+
 Designed by the Fable session on 2026-09-04 for the Opus worker; every card there carries its decisions, its measured done-when, its verify commands and its forbidden list. Do the first card not marked done. Mark a card done here with the date, the commit and one line of evidence.
 
 - W0 Protect Monday (Saturday, before the 18:00 freeze). PART DONE 2026-09-04 evening. (a) The verification workflow ran (17 agents, 38 findings, 13 judged): both blockers and three majors were STALE, cached agents judging 13:25 code that dbc9ec62 fixed at 14:04 - re-ran the skeptic's own reproduction against HEAD with all eleven sharp tiles failing and the whole hall is still drawn (D:/claude/ladder-sweep/verify-after-fix-C-plus10s.png); four more were refuted by the skeptics as dev-server artefacts or unreachable code. LESSON: a resumed workflow replays cached results that describe the code as it was, so check a finding's line numbers against the current file before acting. (b) T-580 DONE (a6743830, CI green): the legacy Reception set is not a level stack, so it was measured rather than inferred - four depth-4 tiles cover 99.0% of the occupied 25 cm voxels of all seven, /living-hall now fetches 5 tiles and 35.9 MB against 8 and 62.8. (d) demo-smoke DONE (ff19558d): packages/web/scripts/demo-smoke.mjs, five checks, non-zero exit on failure, all green against production. STILL OPEN: (c) T-581 - measured the planner on production at 20 Mbps (D:/claude/ladder-sweep/planner-load.mjs), first captured tile 22.5 s, last 53.3 s, 106.9 MB, no coarse rung, so the card's 15 s trigger fires and the ladder goes into CockpitSplatLayer on SATURDAY with the smoke script as its gate; and running the smoke Sat/Sun/Mon at 08:00.
-- W1 The court (offline, alongside W0): the fixed-viewpoint measurement of docs/plan/13 §6, six photographed poses, PSNR/SSIM/LPIPS by region, baseline for the vendor build. Nothing beautiful is decided without it. INPUTS CHECKED 2026-09-04: use the T-502 package, NOT hall/sparse/4-final as the card says - D:/claude/colmap-gh/hall/images holds raw slot folders and its model is text, whereas D:/claude/colmap-gh/hall-t502/dataset has 7,178 UNDISTORTED pinhole frames (i#####_c2.jpg and _c3.jpg) with PINHOLE cameras in sparse/0 (binary), which makes the ground-truth crop honest arithmetic instead of a distortion model. Its pinhole geometry was verified on 2026-09-04 by reprojecting each frame's own points onto it.
-- W2 The sources land on the pod (after the R2 upload completes, cap $5): rclone every prefix to the volume, check, stop the pod, record.
-- W3 Bright Walls registered to the served frame (local, Open3D; alongside W1).
-- W4 The Matterport E57 and its 49 sweep poses registered (after W3).
-- W5 The floor from photographs behind `?splat=floor:bake` (after W1 and W3; Tuesday onward), judged at the court.
-- W6 Delivery levers, measured (Tuesday onward): tiles re-chunked to 4 MB, a coarser sharp layer for weak tiers, CI's e2e job made to finish (T-583).
-- W7 The fused training, run 1 (after W1, W3, W4; cap $25 a run, two runs): normalised, transform saved and inverted, 300k steps, judged at the court, served behind `?twin=fused` on a preview.
-- W8 The other seven rooms, once Blake prefers a Grand Hall at the court.
+- REVISED late on 2026-09-04 after ChatGPT's review (docs/reports/second-opinion-chatgpt-2026-09-04.md) and my own three critics: the order and the recipes changed; read the REVISED section at the top of docs/plan/14 first. The new order: V0 protect Monday (no Saturday planner push; pre-warm the demo laptop Sunday; Blake sets the R2 custom domain); V1 the floor patch this weekend, offline, with the floor Gaussians erased by an SDF slab and four candidates judged in stills and motion; V2 the court made valid (full pose with roll, judged frames excluded from training, raw and colour-fitted scores apart); V3 free proofs before any pod hour (the frame round-trip on the zone PLY with SH rotation; LCC Studio 2.3 Creator Data against our package); V4 delivery levers (a 3-4 MB first rung, the coarser level for weak tiers, re-chunking last); V5 training proven on the zone first, warm-started from the vendor's own 6.02 M Gaussians, with masks in the loss, dense depth from the vendor splat and the floor plane, the bilateral grid, a source-balanced subset, and `--steps-scaler` on the 30k base (never `--max-steps 300000` alone: gsplat 1.5.3 stops refining at 25k unless the scaler moves it); V6 registrations only when a court verdict asks, accepted on reprojection pixels not ICP RMSE; V7 the other rooms. Nothing starts the pod before V3.
 
 DONE before the ladder (2026-09-04): T-578 the datum (ab244e1c); T-579 the coarse-first ladder (09a74df0, first view 20.9 s → 8.0 s at 20 Mbps); settled supersampling; the wheel scaled by its delta; the poller stopping on completion; a failed tile no longer discards the room (T-582); CI green on 76fa83d0.
 
