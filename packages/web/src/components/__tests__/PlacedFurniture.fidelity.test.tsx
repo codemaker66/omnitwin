@@ -181,4 +181,66 @@ describe("saved furniture fidelity", () => {
     expect(reasons[0]?.textContent).toContain("0.90 m single-file");
     expect(container.querySelectorAll('[name="clearance-rings"] lineLoop')).toHaveLength(1);
   });
+
+  it("shows only actual selected footprints and withdraws them during timeline preview", () => {
+    const items = usePlacementStore.getState().placedItems.slice(0, 18);
+    const first = items.slice(0, 9);
+    const chair = first[1];
+    if (chair === undefined) throw new Error("missing chair");
+    usePlacementStore.setState({ placedItems: items });
+    useSelectionStore.getState().selectMultiple(first.map(({ id }) => id));
+    const { container } = render(<PlacedFurniture />);
+    const loops = () => container.querySelectorAll('[name="selection-footprints"] lineLoop');
+    expect(loops()).toHaveLength(1);
+    expect(container.querySelectorAll('[name="item-pick-proxy"]')).toHaveLength(18);
+    for (const { id } of items) expect(container.querySelector(`[name="furniture-${id}"]`)).not.toBeNull();
+    act(() => { useSelectionStore.getState().toggleSelect(chair.id); });
+    expect(loops()).toHaveLength(8);
+    act(() => { useSelectionStore.getState().select(chair.id); });
+    expect(loops()).toHaveLength(1);
+    act(() => { useSelectionStore.getState().selectMultiple(items.map(({ id }) => id)); });
+    expect(loops()).toHaveLength(2);
+    act(() => { usePlacementStore.setState({ placedItems: items.map((item) => item.id === chair.id ? { ...item, groupId: null } : item) }); });
+    expect(loops()).toHaveLength(3);
+    const selection = useSelectionStore.getState().selectedIds;
+    act(() => { useLayoutTimelinePreviewStore.setState({ mode: "keyframe" }); });
+    expect(loops()).toHaveLength(0);
+    expect(screen.getByTestId("timeline-preview")).not.toBeNull();
+    expect(useSelectionStore.getState().selectedIds).toBe(selection);
+  });
+
+  it("retains the selected individual model's invisible box hit area", () => {
+    const chair = { ...createPlacedItem(catalogueId("banquet-chair"), 2, -3, .4), scale: 1.3 };
+    usePlacementStore.setState({ placedItems: [chair] });
+    scene.failedVariants = new Set([chair.catalogueItemId]);
+    const { container } = render(<PlacedFurniture />);
+    expect(screen.getAllByTestId("individual-model")).toHaveLength(1);
+    expect(container.querySelector('[name="item-pick-proxy"]')).toBeNull();
+    act(() => { useSelectionStore.getState().select(chair.id); });
+    const root = container.querySelector(`[name="furniture-${chair.id}"]`);
+    // The DOM host drops R3F boolean props; real invisible-mesh raycasting is
+    // exercised separately in furniture-selection-outline.test.ts.
+    expect(root?.querySelector('[name="item-pick-proxy"] boxGeometry')).not.toBeNull();
+    expect(root?.querySelector('[name="item-pick-proxy"]')?.getAttribute("rotation")).toBe("0,0.4,0");
+    expect(root?.querySelector("lineLoop")).toBeNull();
+    expect(container.querySelectorAll('[name="selection-footprints"] lineLoop')).toHaveLength(1);
+  });
+
+  it("retains outline geometry during uniform drag but replaces its cached bounds after a shape change", () => {
+    const group = usePlacementStore.getState().placedItems.slice(0, 9);
+    usePlacementStore.setState({ placedItems: group });
+    useSelectionStore.getState().selectMultiple(group.map(({ id }) => id));
+    const { container } = render(<PlacedFurniture />);
+    const geometry = () => container.querySelector('[name="selection-footprints"] bufferGeometry');
+    const original = geometry();
+    expect(original).not.toBeNull();
+    const moved = group.map((item) => ({ ...item, x: item.x + 4, z: item.z - 6 }));
+    act(() => { usePlacementStore.setState({ placedItems: moved }); });
+    expect(geometry()).toBe(original);
+    act(() => { usePlacementStore.setState({ placedItems: moved.map((item, index) => index === 1 ? { ...item, scale: 4 } : item) }); });
+    // R3F must construct fresh geometry so Three recomputes its cached sphere.
+    // Replacing only the attribute on the old geometry preserves stale culling.
+    expect(geometry()).not.toBeNull();
+    expect(geometry()).not.toBe(original);
+  });
 });

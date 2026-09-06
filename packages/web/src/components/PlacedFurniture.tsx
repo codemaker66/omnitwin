@@ -26,9 +26,9 @@ import {
   isPoseurTableItem,
 } from "../lib/furniture-semantics.js";
 import { toRenderSpace } from "../constants/scale.js";
-import { SELECTION_COLOR } from "../lib/selection.js";
 import { FurnitureProxy } from "./FurnitureProxy.js";
 import { InstancedFurnitureLayer } from "./editor/InstancedFurnitureLayer.js";
+import { FurnitureSelectionOutlines } from "./editor/FurnitureSelectionOutlines.js";
 import { TableClothMesh } from "./meshes/TableClothMesh.js";
 import { AnimatedTableCloth } from "./meshes/AnimatedTableCloth.js";
 import { TableSettingMesh } from "./meshes/TableSettingMesh.js";
@@ -616,9 +616,10 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
           generatedSelectedPartId={generatedInspectionActive ? generatedSelectedPartId : null}
           onGeneratedPartSelect={generatedInspectionActive ? onGeneratedPartSelect : undefined}
         />
-      ) : (
-        // Model is drawn by InstancedFurnitureLayer; this invisible box keeps
-        // the item pickable/draggable. The raycaster hits invisible meshes, and
+      ) : null}
+      {(!renderModel || isSelected) && (
+        // Keep instanced picking and the selected model's former box hit area.
+        // The raycaster hits invisible meshes, and
         // its neutral name lets findFurnitureItemId resolve to the parent
         // `furniture-{id}` group exactly as the real model did.
         <mesh
@@ -679,27 +680,6 @@ const PlacedFurnitureItem = memo(function PlacedFurnitureItem({
         >
           <TableSettingMesh tableItem={catalogueItem} settingsCount={tableSettingCount} />
         </group>
-      )}
-
-      {/* Selection wireframe */}
-      {isSelected && (
-        <mesh
-          position={[
-            placed.x,
-            placed.y + (catalogueItem.height * presentationScale) / 2,
-            placed.z,
-          ]}
-          rotation={[0, placed.rotationY, 0]}
-        >
-          <boxGeometry args={memoizedSelectionArgs} />
-          <meshBasicMaterial
-            color={SELECTION_COLOR}
-            wireframe
-            transparent
-            opacity={0.8}
-            clippingPlanes={sectionClipPlanes}
-          />
-        </mesh>
       )}
 
       {renderNamePlate && displayLabel.length > 0 && (
@@ -929,6 +909,7 @@ export function PlacedFurniture(): React.ReactElement {
           }
         />
       ))}
+      <FurnitureSelectionOutlines items={placedItems} selectedIds={selectedIds} />
     </group>
     </group>
   );
