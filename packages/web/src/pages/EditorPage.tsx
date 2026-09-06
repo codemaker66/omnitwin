@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { EvidenceChip } from "../components/evidence/EvidenceChip.js";
 import { useEditorStore } from "../stores/editor-store.js";
@@ -8,6 +8,7 @@ import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview
 import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 import { SaveSendPanel } from "../components/editor/SaveSendPanel.js";
 import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
+import { EventLinkedPlannerBootstrap } from "../components/editor/EventLinkedPlannerBootstrap.js";
 import { SubmitForReviewPanel } from "../components/editor/SubmitForReviewPanel.js";
 import { EditorBridge } from "../components/editor/EditorBridge.js";
 import { PlannerCockpit } from "../components/editor/cockpit/PlannerCockpit.js";
@@ -119,11 +120,13 @@ function readReusableConfigCandidates(): readonly string[] {
     .map((entry) => entry.configId);
 }
 
-async function findReusablePublicConfigId(spaceId: string): Promise<string | null> {
+async function findReusablePublicConfigId(spaceId: string, isCurrent: () => boolean): Promise<string | null> {
   const candidates = readReusableConfigCandidates();
   for (const configId of candidates) {
+    if (!isCurrent()) return null;
     try {
       const config = await getPublicConfig(configId);
+      if (!isCurrent()) return null;
       if (config.isPublicPreview && config.spaceId === spaceId) return config.id;
     } catch {
       // Ignore stale, claimed, or unreachable local entries.
@@ -147,6 +150,8 @@ export function EditorPage(): React.ReactElement {
   const urlConfigId = params.configId ?? params.code;
   const routeVenueSlug = params.venueSlug;
   const [searchParams] = useSearchParams();
+  const requestedEventId = searchParams.get("eventId");
+  const carriedSearch = searchParams.toString();
   const navigate = useNavigate();
   const storeConfigId = useEditorStore((s) => s.configId);
   const isLoading = useEditorStore((s) => s.isLoading);
@@ -154,6 +159,7 @@ export function EditorPage(): React.ReactElement {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authLoading = useAuthStore((s) => s.isLoading);
   const authRole = useAuthStore((s) => s.user?.role ?? null);
+  const authUserId = useAuthStore((s) => s.user?.id ?? null);
   const authVenueId = useAuthStore((s) => s.user?.venueId ?? null);
   const [autoCreateBlocker, setAutoCreateBlocker] = useState<PlannerBootstrapBlocker | null>(null);
   // Name of the space the bootstrap has ACTUALLY resolved (from the venue's
@@ -169,6 +175,15 @@ export function EditorPage(): React.ReactElement {
   const requestedConfigIsPending = urlConfigId !== undefined
     && urlConfigId !== storeConfigId
     && error === null;
+  const bootstrapContextKey = JSON.stringify([urlConfigId, routeVenueSlug, carriedSearch,
+    authLoading, isAuthenticated, authUserId, authRole, authVenueId]);
+  const bootstrapContext = useRef(bootstrapContextKey);
+  const bootstrapMounted = useRef(false);
+  useLayoutEffect(() => { bootstrapContext.current = bootstrapContextKey; }, [bootstrapContextKey]);
+  useEffect(() => {
+    bootstrapMounted.current = true;
+    return () => { bootstrapMounted.current = false; };
+  }, []);
 
   // Load config from URL on mount. The first load uses the current
   // isAuthenticated value (false before Clerk resolves). For public configs
@@ -194,21 +209,31 @@ export function EditorPage(): React.ReactElement {
   // configId anywhere. `/plan` keeps the single-tenant shortcut by choosing the
   // first active venue; `/v/:venueSlug/plan` is explicit and fail-closed.
   useEffect(() => {
-    if (urlConfigId !== undefined || storeConfigId !== null) return;
-    if (routeVenueSlug !== undefined && authLoading) return;
+    if (urlConfigId !== undefined || storeConfigId !== null || requestedEventId !== null) return;
+    if (authLoading) return;
     const bootstrapKey = [
       routeVenueSlug ?? "",
       wantedSpaceSlug,
       isAuthenticated ? authRole ?? "" : "anonymous",
       authVenueId ?? "",
+      authUserId ?? "",
     ].join("|");
     if (autoCreateAttemptedFor.current === bootstrapKey) return;
     autoCreateAttemptedFor.current = bootstrapKey;
+    let cancelled = false;
+    const ownsRoute = (): boolean => bootstrapMounted.current && bootstrapContext.current === bootstrapContextKey
+      && !useAuthStore.getState().isLoading
+      && useAuthStore.getState().user?.id === (authUserId ?? undefined)
+      && (useAuthStore.getState().user?.role ?? null) === authRole
+      && (useAuthStore.getState().user?.venueId ?? null) === authVenueId
+      && useAuthStore.getState().isAuthenticated === isAuthenticated;
+    const isCurrent = (): boolean => !cancelled && ownsRoute();
     setAutoCreateBlocker(null);
     setOpeningRoomName(null);
     void (async () => {
       try {
         const venues = await spacesApi.listVenues();
+        if (!isCurrent()) return;
         const venueResolution = resolvePlannerVenue(venues, routeVenueSlug, venueAccessUser);
         if (venueResolution.status !== "resolved") {
           const blocker: PlannerBootstrapBlocker =
@@ -226,6 +251,7 @@ export function EditorPage(): React.ReactElement {
         }
 
         const spaces = await spacesApi.listSpaces(venueResolution.venue.id);
+        if (!isCurrent()) return;
         const space =
           spaces.find((s) => s.slug === wantedSpaceSlug)
           ?? spaces.find((s) => s.slug === DEFAULT_SPACE_SLUG)
@@ -233,34 +259,51 @@ export function EditorPage(): React.ReactElement {
           ?? spaces[0];
         if (space === undefined) { setAutoCreateBlocker({ kind: "empty" }); return; }
         setOpeningRoomName(space.name);
-        // The rest of the query rides along: a booking arrives as
-        // /plan?eventId=…&space=…, and the ribbon and Run of Show bind from
-        // that eventId on the plan's own route.
-        const carried = searchParams.toString();
+        // Preserve generic planner options on the canonical draft route.
+        // Event-linked entry is resolved separately above.
+        const carried = carriedSearch;
         const search = carried.length === 0 ? "" : `?${carried}`;
-        const reusableConfigId = await findReusablePublicConfigId(space.id);
+        const reusableConfigId = await findReusablePublicConfigId(space.id, isCurrent);
+        if (!isCurrent()) return;
         if (reusableConfigId !== null) {
           void navigate({ pathname: `/plan/${reusableConfigId}`, search }, { replace: true });
           return;
         }
-        const newConfigId = await useEditorStore.getState().createPublicConfig(space.id);
+        const newConfigId = await useEditorStore.getState().createPublicConfig(space.id, isCurrent);
+        // Committing this draft changes storeConfigId and cleans up the effect.
+        // That self-settlement may still navigate, but only for the same route,
+        // account and exact created document; superseding contexts cannot.
+        if (!ownsRoute() || useEditorStore.getState().configId !== newConfigId) return;
         void navigate({ pathname: `/plan/${newConfigId}`, search }, { replace: true });
       } catch {
-        setAutoCreateBlocker({ kind: "network" });
+        if (isCurrent()) setAutoCreateBlocker({ kind: "network" });
       }
     })();
+    return () => {
+      cancelled = true;
+      if (autoCreateAttemptedFor.current === bootstrapKey) autoCreateAttemptedFor.current = null;
+    };
   }, [
     authLoading,
     authRole,
+    authUserId,
     authVenueId,
+    bootstrapContextKey,
+    carriedSearch,
     isAuthenticated,
     navigate,
     routeVenueSlug,
+    requestedEventId,
     storeConfigId,
     urlConfigId,
     venueAccessUser,
     wantedSpaceSlug,
   ]);
+
+  if (urlConfigId === undefined && requestedEventId !== null) {
+    return <EventLinkedPlannerBootstrap eventId={requestedEventId} venueSlug={routeVenueSlug}
+      spaceSlug={searchParams.get("space")} carriedSearch={carriedSearch} />;
+  }
 
   // Auto-create failed → show a minimal retry screen instead of the
   // legacy SpacePicker splash. The SpacePicker was the old entry flow
