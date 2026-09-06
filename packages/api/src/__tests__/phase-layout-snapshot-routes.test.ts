@@ -96,7 +96,7 @@ describe("phase layout snapshot route source contract", () => {
     expect(source).not.toContain("canAccessResource(");
     expect(source).toContain("eq(eventPhases.eventId, event.id)");
     expect(source.match(/eq\(configurations\.venueId, event\.venueId\)/gu)).toHaveLength(2);
-    expect(source).toContain("verifyFreezablePhaseLayoutSnapshot({");
+    expect(source).toContain("ensureSavedLayoutEvidence(tx, {");
     expect(source).toContain('postgresErrorCode(error) === "40001"');
   });
 

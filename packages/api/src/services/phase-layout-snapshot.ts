@@ -31,7 +31,8 @@ export type PhaseLayoutSnapshotConflictCode =
   | "CONFIGURATION_OBJECT_ID_MISMATCH"
   | "CONFIGURATION_OBJECT_CONTENT_MISMATCH"
   | "CONFIGURATION_PROOF_MISSING"
-  | "CONFIGURATION_PROOF_INVALID";
+  | "CONFIGURATION_PROOF_INVALID"
+  | "CONFIGURATION_PLANNING_SOURCE_INVALID";
 
 const CONFLICT_MESSAGES: Readonly<Record<PhaseLayoutSnapshotConflictCode, string>> = {
   PHASE_EVENT_MISMATCH: "The selected phase does not belong to this event.",
@@ -61,6 +62,8 @@ const CONFLICT_MESSAGES: Readonly<Record<PhaseLayoutSnapshotConflictCode, string
     "The saved plan geometry or furniture data no longer matches its canonical snapshot.",
   CONFIGURATION_PROOF_MISSING:
     "This saved plan has no planning-evidence run attached to its canonical snapshot.",
+  CONFIGURATION_PLANNING_SOURCE_INVALID:
+    "The saved plan or room source is incomplete or invalid for planning evidence.",
   CONFIGURATION_PROOF_INVALID:
     "The planning-evidence run attached to this saved plan is invalid.",
 };
@@ -183,7 +186,7 @@ export function verifiedLayoutProofDigest(
   return storedPayloadDigest;
 }
 
-function verifyProof(
+export function verifyProof(
   proof: LayoutProofSource | null,
   canonicalSnapshotId: string,
   snapshotDigest: string,
@@ -199,7 +202,7 @@ interface ComparablePersistedMetadata {
   readonly metadata: CanonicalJsonValue;
 }
 
-function comparablePersistedMetadata(value: unknown): ComparablePersistedMetadata | null {
+export function comparablePersistedMetadata(value: unknown): ComparablePersistedMetadata | null {
   const parsed = CanonicalJsonValueSchema.safeParse(value);
   if (!parsed.success) return null;
   if (parsed.data === null) return { groupId: null, metadata: null };
@@ -274,9 +277,9 @@ function verifyPersistedObjects(
  * Verifies the complete server-owned source before a phase snapshot row is
  * appended. This never accepts browser geometry or browser-computed counts.
  */
-export function verifyFreezablePhaseLayoutSnapshot(
+export function verifyCanonicalPhaseLayoutSource(
   input: VerifyFreezablePhaseLayoutSnapshotInput,
-): VerifiedPhaseLayoutSnapshotSource {
+): CanonicalLayoutSnapshotV0 {
   if (input.phase.eventId !== input.event.id) {
     throw new PhaseLayoutSnapshotConflictError("PHASE_EVENT_MISMATCH");
   }
@@ -327,6 +330,17 @@ export function verifyFreezablePhaseLayoutSnapshot(
   ) {
     throw new PhaseLayoutSnapshotConflictError("CONFIGURATION_SPACE_MISMATCH");
   }
+  return payload;
+}
+
+export function verifyFreezablePhaseLayoutSnapshot(
+  input: VerifyFreezablePhaseLayoutSnapshotInput,
+): VerifiedPhaseLayoutSnapshotSource {
+  const payload = verifyCanonicalPhaseLayoutSource(input);
+  // The canonical source helper has already rejected absence.
+  const canonical = input.canonicalSnapshot;
+  if (canonical === null) throw new PhaseLayoutSnapshotConflictError("CONFIGURATION_CANONICAL_SNAPSHOT_MISSING");
+  const digest = canonicalLayoutSnapshotDigest(payload);
   if (payload.createdFromConfigurationUpdatedAt !== input.configuration.updatedAt.toISOString()) {
     throw new PhaseLayoutSnapshotConflictError("CONFIGURATION_CANONICAL_SNAPSHOT_STALE");
   }
@@ -343,11 +357,11 @@ export function verifyFreezablePhaseLayoutSnapshot(
   verifyPersistedObjects(input.persistedObjects, payload);
   const proofDigest = verifyProof(
     input.proof,
-    input.canonicalSnapshot.id,
-    input.canonicalSnapshot.snapshotDigest,
+    canonical.id,
+    canonical.snapshotDigest,
   );
   return {
-    canonicalSnapshotId: input.canonicalSnapshot.id,
+    canonicalSnapshotId: canonical.id,
     payload,
     snapshotHash: digest,
     proofDigest,

@@ -25,8 +25,8 @@ import {
   PhaseLayoutSnapshotConflictError,
   nextPhaseLayoutSnapshotFrozenAt,
   phaseLayoutSnapshotAppendId,
-  verifyFreezablePhaseLayoutSnapshot,
 } from "../services/phase-layout-snapshot.js";
+import { ensureSavedLayoutEvidence } from "../services/saved-layout-evidence.js";
 import { canWriteEvents, isEventWriteRole } from "../utils/query.js";
 
 type FreezeRouteResult =
@@ -197,6 +197,9 @@ export async function phaseLayoutSnapshotRoutes(
             guestCount: configurations.guestCount,
             revision: configurations.revision,
             updatedAt: configurations.updatedAt,
+            userId: configurations.userId,
+            reviewStatus: configurations.reviewStatus,
+            metadata: configurations.metadata,
           }).from(configurations).where(and(
             eq(configurations.id, body.data.configurationId),
             eq(configurations.venueId, event.venueId),
@@ -212,6 +215,10 @@ export async function phaseLayoutSnapshotRoutes(
             return { state: "configuration_changed" };
           }
 
+          // Different phases can freeze the same plan concurrently. Serialize
+          // its evidence producer after observing/locking the saved revision.
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`canonical-layout:${configuration.id}`}, 0))`);
+
           const [canonical] = await tx.select({
             id: canonicalLayoutSnapshots.id,
             configurationId: canonicalLayoutSnapshots.configurationId,
@@ -221,7 +228,7 @@ export async function phaseLayoutSnapshotRoutes(
             payload: canonicalLayoutSnapshots.payload,
           }).from(canonicalLayoutSnapshots).where(
             eq(canonicalLayoutSnapshots.configurationId, configuration.id),
-          ).limit(1);
+          ).orderBy(desc(canonicalLayoutSnapshots.createdAt), desc(canonicalLayoutSnapshots.id)).limit(1);
 
           const [proof] = canonical === undefined ? [] : await tx.select({
             snapshotId: layoutValidationRuns.snapshotId,
@@ -253,7 +260,7 @@ export async function phaseLayoutSnapshotRoutes(
             assetCollisionType: assetDefinitions.collisionType,
           }).from(placedObjects)
             .innerJoin(assetDefinitions, eq(placedObjects.assetDefinitionId, assetDefinitions.id))
-            .where(eq(placedObjects.configurationId, configuration.id));
+            .where(eq(placedObjects.configurationId, configuration.id)).for("share");
           const persistedObjects = persistedObjectRows.map((object) => ({
             ...object,
             positionX: Number(object.positionX),
@@ -268,7 +275,7 @@ export async function phaseLayoutSnapshotRoutes(
             assetHeightM: Number(object.assetHeightM),
           }));
 
-          const verified = verifyFreezablePhaseLayoutSnapshot({
+          const verified = await ensureSavedLayoutEvidence(tx, {
             event,
             phase,
             configuration,

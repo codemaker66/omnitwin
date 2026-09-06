@@ -13,6 +13,7 @@ import {
   EventPhaseSchema,
   FreezePhaseLayoutSnapshotResponseSchema,
   PersistedEventArchitectRunSchema,
+  PlacedObjectSchema,
   RoomLayoutTimelineResponseSchema,
   canonicalLayoutSnapshotDigest,
   runLayoutValidator,
@@ -465,6 +466,54 @@ async function seedFixture(db: Database): Promise<void> {
   });
 }
 
+const ManualConfigurationEnvelope = z.object({ data: z.object({ id: z.string().uuid(), revision: z.number().int() }) });
+
+async function createManualPlan() {
+  // Each scenario is a separate application rehearsal, not one >100 request burst.
+  await requiredServer().close();
+  server = await requiredServerBuilder()();
+  const app = requiredServer();
+  const created = await app.inject({ method: "POST", url: "/configurations", headers: authHeaders(), payload: {
+    venueId: SNAPSHOT.venueId, spaceId: SNAPSHOT.spaceId,
+    name: `DEMO ONLY manual evidence ${randomUUID()}`, layoutStyle: "custom", guestCount: 12,
+  } });
+  expect(created.statusCode, created.body).toBe(201);
+  const configuration = ManualConfigurationEnvelope.parse(created.json()).data;
+  const inserts = SNAPSHOT.objects.map((object) => {
+    const asset = CANONICAL_ASSETS.find((candidate) => candidate.category === object.assetDefinition.category && ["box", "cylinder"].includes(candidate.collisionType));
+    if (asset === undefined) throw new Error("Canonical catalogue lacks matching furniture");
+    return {
+      assetDefinitionId: asset.id,
+      positionX: object.position.x, positionY: object.position.y, positionZ: object.position.z,
+      rotationX: object.rotation.x, rotationY: object.rotation.y, rotationZ: object.rotation.z,
+      scale: object.scale, sortOrder: object.sortOrder, metadata: object.metadata,
+    };
+  });
+  const batch = await app.inject({ method: "POST", url: `/configurations/${configuration.id}/objects/batch`, headers: authHeaders(), payload: { expectedRevision: configuration.revision, objects: inserts } });
+  expect(batch.statusCode, batch.body).toBe(200);
+  const saved = z.object({ data: z.object({ objects: z.array(PlacedObjectSchema), revision: z.number().int() }) }).parse(batch.json()).data;
+  expect(saved.objects).toHaveLength(inserts.length);
+  const objects = saved.objects.map((object) => ({ ...object, positionX: Number(object.positionX), positionY: Number(object.positionY), positionZ: Number(object.positionZ), rotationX: Number(object.rotationX), rotationY: Number(object.rotationY), rotationZ: Number(object.rotationZ), scale: Number(object.scale) }));
+  const phases: string[] = [];
+  for (const name of ["Manual dinner", "Manual dancing"]) {
+    const createdPhase = await app.inject({ method: "POST", url: `/events/${EVENT_ID}/phases`, headers: authHeaders(), payload: { name, spaceId: SNAPSHOT.spaceId, startsAt: "2026-09-07T15:00:00.000Z", durationMinutes: 45 } });
+    expect(createdPhase.statusCode, createdPhase.body).toBe(201);
+    phases.push(EventPhaseEnvelopeSchema.parse(createdPhase.json()).data.id);
+  }
+  const [phaseId, secondPhaseId] = phases;
+  if (phaseId === undefined || secondPhaseId === undefined) throw new Error("Missing manual phases");
+  return { configurationId: configuration.id, revision: saved.revision, objects, phaseId, secondPhaseId };
+}
+
+function freezeManual(plan: { readonly configurationId: string; readonly phaseId: string }, app = requiredServer()) {
+  return app.inject({ method: "POST", url: `/events/${EVENT_ID}/phases/${plan.phaseId}/layout-snapshots`, headers: authHeaders(), payload: { configurationId: plan.configurationId } });
+}
+
+async function evidenceRows(configurationId: string) {
+  return requiredDatabase().select().from(canonicalLayoutSnapshots)
+    .where(eq(canonicalLayoutSnapshots.configurationId, configurationId));
+}
+
 describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
   beforeAll(async () => {
     process.env["NODE_ENV"] = "test";
@@ -493,12 +542,13 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     // The quiz-runs migration (0062, when 1784556000000) landed between the
     // diary-commands step and the immutability trigger on master — the
     // ported tail expectation carries it.
-    expect(ledger.rows.map((entry) => entry.createdAt).slice(-5)).toEqual([
+    expect(ledger.rows.map((entry) => entry.createdAt).slice(-6)).toEqual([
       "1784376000000",
       "1784383200000",
       "1784469600000",
       "1784556000000",
       "1785672000000",
+      "1788717600000",
     ]);
 
     const migrationBytes = await readFile(new URL(
@@ -1952,4 +2002,190 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       .where(eq(phaseLayoutSnapshots.eventPhaseId, PHASE_ID));
     expect(afterRows).toHaveLength(beforeRows.length);
   });
+
+  it("freezes a real manually saved and approved plan with genuine failing/unknown witnesses", async () => {
+    const plan = await createManualPlan();
+    for (const action of ["submit", "start-review"]) {
+      const response = await requiredServer().inject({ method: "POST", url: `/configurations/${plan.configurationId}/review/${action}`, headers: authHeaders(), payload: {} });
+      expect(response.statusCode, response.body).toBe(200);
+    }
+    const submitted = await freezeManual(plan);
+    expect(submitted.statusCode, submitted.body).toBe(201);
+    const submittedRows = await evidenceRows(plan.configurationId);
+    expect(submittedRows[0]?.payload.sourceState).toBe("submitted_configuration");
+    const approved = await requiredServer().inject({ method: "POST", url: `/configurations/${plan.configurationId}/review/approve`, headers: authHeaders(), payload: {} });
+    expect(approved.statusCode, approved.body).toBe(200);
+    const response = await freezeManual(plan);
+    expect(response.statusCode, response.body).toBe(201);
+    const frozen = FreezeEnvelopeSchema.parse(response.json()).data;
+    const rows = await evidenceRows(plan.configurationId);
+    expect(rows).toHaveLength(2);
+    const row = rows.find((entry) => entry.id === frozen.canonicalSnapshotId);
+    expect(row?.payload.createdFromConfigurationUpdatedAt).toBe(submittedRows[0]?.payload.createdFromConfigurationUpdatedAt);
+    expect(rows.find((entry) => entry.id === submittedRows[0]?.id)).toEqual(submittedRows[0]);
+    if (row === undefined) throw new Error("Missing produced evidence");
+    expect(row.id).toBe(frozen.canonicalSnapshotId);
+    expect(row.sourceKind).toBe("saved_configuration");
+    expect(row.payload.sourceState).toBe("approved_configuration");
+    expect(row.payload.generatorProvenance.generatorType).toBe("human");
+    expect(row.payload.venueRuntime.floorPlanOutline).toEqual(SNAPSHOT.venueRuntime.floorPlanOutline);
+    expect(row.payload.venueRuntime.runtimePackageId).toBeNull();
+    expect(row.payload.objects.map((object) => object.objectId).sort()).toEqual(plan.objects.map((object) => object.id).sort());
+    const proofs = await requiredDatabase().select().from(layoutValidationRuns).where(eq(layoutValidationRuns.snapshotId, row.id));
+    expect(proofs).toHaveLength(1);
+    expect(proofs[0]?.payload).toEqual(runLayoutValidator(row.payload, {
+      policyBundleId: row.payload.policyBundle.policyBundleId,
+      policyBundleDigest: row.payload.policyBundle.policyBundleDigest,
+      policyBundleVersion: row.payload.policyBundle.policyBundleVersion,
+      minPrimaryFurnitureClearanceM: 1.2, clearanceWarningMarginM: 0.2, pricing: null,
+    }));
+    expect(proofs[0]?.payload.summary.fail).toBeGreaterThan(0);
+    expect(proofs[0]?.payload.summary.notChecked).toBeGreaterThan(0);
+    expect(proofs[0]?.payload.witnesses.some((witness) => witness.status === "not_checked" && witness.reviewGate !== null)).toBe(true);
+  });
+
+  it("serializes different phases sharing one manual plan and remains idempotent across server instances", async () => {
+    const plan = await createManualPlan();
+    const otherApp = await requiredServerBuilder()();
+    try {
+      const responses = await Promise.all([freezeManual(plan), freezeManual({ ...plan, phaseId: plan.secondPhaseId }, otherApp)]);
+      for (const response of responses) expect(response.statusCode, response.body).toBe(201);
+      const [first, second] = responses.map((response) => FreezeEnvelopeSchema.parse(response.json()).data);
+      expect(first?.canonicalSnapshotId).toBe(second?.canonicalSnapshotId);
+      expect(first?.proofDigest).toBe(second?.proofDigest);
+      expect(await evidenceRows(plan.configurationId)).toHaveLength(1);
+      const repeats = await Promise.all([freezeManual(plan), freezeManual(plan, otherApp)]);
+      for (const repeat of repeats) {
+        expect(repeat.statusCode, repeat.body).toBe(200);
+        expect(FreezeEnvelopeSchema.parse(repeat.json()).data.snapshotId).toBe(first?.snapshotId);
+      }
+    } finally { await otherApp.close(); }
+  });
+
+  it("appends changed saved geometry and retains old phase canonical/proof lineage", async () => {
+    const plan = await createManualPlan();
+    const initial = await freezeManual(plan);
+    expect(initial.statusCode, initial.body).toBe(201);
+    const old = FreezeEnvelopeSchema.parse(initial.json()).data;
+    const before = await evidenceRows(plan.configurationId);
+    const changedObjects = plan.objects.map((object, index) => ({ ...object, positionX: object.positionX + (index === 0 ? 0.25 : 0) }));
+    const save = await requiredServer().inject({ method: "POST", url: `/configurations/${plan.configurationId}/objects/batch`, headers: authHeaders(), payload: { expectedRevision: plan.revision, objects: changedObjects } });
+    expect(save.statusCode, save.body).toBe(200);
+    const second = await freezeManual({ ...plan, phaseId: plan.secondPhaseId });
+    expect(second.statusCode, second.body).toBe(201);
+    const current = FreezeEnvelopeSchema.parse(second.json()).data;
+    expect(current.canonicalSnapshotId).not.toBe(old.canonicalSnapshotId);
+    expect(current.proofDigest).not.toBe(old.proofDigest);
+    const after = await evidenceRows(plan.configurationId);
+    expect(after).toHaveLength(2);
+    expect(after.find((row) => row.id === old.canonicalSnapshotId)).toEqual(before[0]);
+    const originalPhase = await requiredDatabase().select().from(phaseLayoutSnapshots).where(eq(phaseLayoutSnapshots.id, old.snapshotId));
+    expect(originalPhase[0]?.canonicalSnapshotId).toBe(old.canonicalSnapshotId);
+    expect(originalPhase[0]?.proofDigest).toBe(old.proofDigest);
+    const timeline = await requiredServer().inject({ method: "GET", url: `/calendar/layout-timeline?venueId=${SNAPSHOT.venueId}&spaceId=${SNAPSHOT.spaceId}&scope=day&anchorDate=2026-09-07`, headers: authHeaders() });
+    expect(timeline.statusCode, timeline.body).toBe(200);
+    const frames = TimelineEnvelopeSchema.parse(timeline.json()).data.frames;
+    expect(frames.find((frame) => frame.phaseId === plan.secondPhaseId)?.keyframe).toMatchObject({ state: "available", canonicalSnapshotId: current.canonicalSnapshotId });
+    expect(frames.find((frame) => frame.phaseId === plan.phaseId)?.keyframe).toMatchObject({ state: "available", canonicalSnapshotId: old.canonicalSnapshotId, proofDigest: old.proofDigest, payload: before[0]?.payload });
+    const appended = await freezeManual(plan);
+    expect(appended.statusCode, appended.body).toBe(201);
+    expect(FreezeEnvelopeSchema.parse(appended.json()).data).toMatchObject({ canonicalSnapshotId: current.canonicalSnapshotId, supersedesSnapshotId: old.snapshotId });
+    expect(await evidenceRows(plan.configurationId)).toHaveLength(2);
+  });
+
+  it("rejects same-timestamp object corruption without appending replacement evidence", async () => {
+    const plan = await createManualPlan();
+    const initial = await freezeManual(plan);
+    expect(initial.statusCode, initial.body).toBe(201);
+    const before = await evidenceRows(plan.configurationId);
+    const object = plan.objects[0];
+    if (object === undefined) throw new Error("Missing stored object");
+    await requiredDatabase().update(placedObjects).set({ positionX: fixed(object.positionX + 0.1, 3), coordinateWriteToken: randomUUID() }).where(eq(placedObjects.id, object.id));
+    const response = await freezeManual(plan);
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({ code: "CONFIGURATION_OBJECT_CONTENT_MISMATCH" });
+    expect(await evidenceRows(plan.configurationId)).toEqual(before);
+  });
+
+  it("rolls back produced canonical and validation rows when the final phase append fails", async () => {
+    const plan = await createManualPlan();
+    const db = requiredDatabase();
+    await db.execute(sql.raw(`CREATE FUNCTION manual_evidence_reject_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_phase_id = '${plan.phaseId}'::uuid THEN RAISE EXCEPTION 'deliberate phase append failure'; END IF; RETURN NEW; END $$`));
+    await db.execute(sql.raw("CREATE TRIGGER manual_evidence_reject_test BEFORE INSERT ON phase_layout_snapshots FOR EACH ROW EXECUTE FUNCTION manual_evidence_reject_test()"));
+    try {
+      const response = await freezeManual(plan);
+      expect(response.statusCode, response.body).toBe(500);
+      expect(await evidenceRows(plan.configurationId)).toHaveLength(0);
+      const orphanProofs = await db.execute(sql`SELECT count(*)::int AS count FROM layout_validation_runs p LEFT JOIN canonical_layout_snapshots c ON c.id=p.snapshot_id WHERE c.id IS NULL`);
+      expect(orphanProofs.rows[0]).toEqual({ count: 0 });
+      const phases = await db.select().from(phaseLayoutSnapshots).where(eq(phaseLayoutSnapshots.eventPhaseId, plan.phaseId));
+      expect(phases).toHaveLength(0);
+    } finally {
+      await db.execute(sql.raw("DROP TRIGGER manual_evidence_reject_test ON phase_layout_snapshots"));
+      await db.execute(sql.raw("DROP FUNCTION manual_evidence_reject_test()"));
+    }
+    const retry = await freezeManual(plan);
+    expect(retry.statusCode, retry.body).toBe(201);
+  });
+
+  it("rejects invalid room sources and cross-tenant/room/manual room-flip freezes without producing evidence", async () => {
+    const plan = await createManualPlan();
+    const invalid = [
+      { phaseId: CROSS_TENANT_PHASE_ID, eventId: CROSS_TENANT_EVENT_ID, status: 403, code: "FORBIDDEN" },
+      { phaseId: SIBLING_SPACE_PHASE_ID, eventId: EVENT_ID, status: 409, code: "CONFIGURATION_SPACE_MISMATCH" },
+    ];
+    for (const entry of invalid) {
+      const response = await requiredServer().inject({ method: "POST", url: `/events/${entry.eventId}/phases/${entry.phaseId}/layout-snapshots`, headers: authHeaders(), payload: { configurationId: plan.configurationId } });
+      expect(response.statusCode, response.body).toBe(entry.status);
+      expect(response.json()).toMatchObject({ code: entry.code });
+    }
+    await requiredDatabase().update(eventPhases).set({ templateKey: "room-flip" }).where(eq(eventPhases.id, plan.phaseId));
+    const flip = await freezeManual(plan);
+    expect(flip.statusCode, flip.body).toBe(409);
+    expect(flip.json()).toMatchObject({ code: "ROOM_FLIP_NOT_LAYOUT_PHASE" });
+    await requiredDatabase().update(eventPhases).set({ templateKey: null }).where(eq(eventPhases.id, plan.phaseId));
+    await requiredDatabase().update(spaces).set({ floorPlanOutline: [] }).where(eq(spaces.id, SNAPSHOT.spaceId));
+    try {
+      const response = await freezeManual(plan);
+      expect(response.statusCode, response.body).toBe(409);
+      expect(response.json()).toMatchObject({ code: "CONFIGURATION_PLANNING_SOURCE_INVALID" });
+      expect(await evidenceRows(plan.configurationId)).toHaveLength(0);
+    } finally { await requiredDatabase().update(spaces).set({ floorPlanOutline: SNAPSHOT.venueRuntime.floorPlanOutline }).where(eq(spaces.id, SNAPSHOT.spaceId)); }
+  });
+
+  it("does not repair corrupt prior proof when a newer saved revision needs evidence", async () => {
+    const plan = await createManualPlan();
+    const first = await freezeManual(plan);
+    expect(first.statusCode, first.body).toBe(201);
+    const frozen = FreezeEnvelopeSchema.parse(first.json()).data;
+    const before = await evidenceRows(plan.configurationId);
+    // Deliberate corruption in the disposable DB tests integrity, never a fixture shortcut.
+    await requiredDatabase().update(layoutValidationRuns).set({ payload: { ...PROOF, snapshotDigest: frozen.snapshotHash } }).where(eq(layoutValidationRuns.snapshotId, frozen.canonicalSnapshotId));
+    const saved = await requiredServer().inject({ method: "PATCH", url: `/configurations/${plan.configurationId}`, headers: authHeaders(), payload: { name: "DEMO ONLY revised manual plan" } });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const response = await freezeManual(plan);
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json()).toMatchObject({ code: "CONFIGURATION_PROOF_INVALID" });
+    expect(await evidenceRows(plan.configurationId)).toEqual(before);
+  });
+
+  it("persists explicit instruction clearing through actual PATCH and a new frozen revision", async () => {
+    const plan = await createManualPlan();
+    const app = requiredServer();
+    const authored = await app.inject({ method: "PATCH", url: `/configurations/${plan.configurationId}`, headers: authHeaders(), payload: { metadata: { instructions: { specialInstructions: "Old instruction to remove" } } } });
+    expect(authored.statusCode, authored.body).toBe(200);
+    const initial = await freezeManual(plan);
+    expect(initial.statusCode, initial.body).toBe(201);
+    const old = FreezeEnvelopeSchema.parse(initial.json()).data;
+    const cleared = await app.inject({ method: "PATCH", url: `/configurations/${plan.configurationId}`, headers: authHeaders(), payload: { metadata: null } });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    const current = await freezeManual(plan);
+    expect(current.statusCode, current.body).toBe(201);
+    const frozen = FreezeEnvelopeSchema.parse(current.json()).data;
+    const rows = await evidenceRows(plan.configurationId);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.id === old.canonicalSnapshotId)?.payload.eventMetadata.specialInstructions).toBe("Old instruction to remove");
+    expect(rows.find((row) => row.id === frozen.canonicalSnapshotId)?.payload.eventMetadata.specialInstructions).toBeNull();
+  });
+
 });

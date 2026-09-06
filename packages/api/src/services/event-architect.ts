@@ -46,25 +46,10 @@ import {
   venues,
 } from "../db/schema.js";
 
+import { planningPolicyBundle, planningTolerancePolicy } from "./layout-planning-policy.js";
+
 type EventArchitectRunRow = typeof eventArchitectRuns.$inferSelect;
 type EventArchitectOpsReviewRow = typeof eventArchitectOpsReviews.$inferSelect;
-
-const POLICY_DEFINITION: CanonicalJsonValue = {
-  policyBundleId: "venviewer.internal-planning-policy.v0",
-  policyBundleVersion: "0.1.0",
-  minPrimaryFurnitureClearanceM: 1.2,
-  clearanceWarningMarginM: 0.2,
-  status: "internal_planning_defaults_requires_human_review",
-  humanReviewRequiredFor: [
-    "accessibility route",
-    "door and obstruction state",
-    "egress route",
-    "guest-flow simulation",
-    "pricing approval",
-  ],
-};
-
-const POLICY_DIGEST = sha256Hex(stableCanonicalJson(POLICY_DEFINITION));
 
 export interface EventArchitectActor {
   readonly userId: string;
@@ -195,30 +180,8 @@ async function buildFrozenRequest(
         : sha256Hex(stableCanonicalJson(toCanonicalJson(runtime.manifestJson))),
       runtimePackageId: runtime?.id ?? null,
     },
-    policyBundle: {
-      policyBundleId: "venviewer.internal-planning-policy.v0",
-      policyBundleDigest: POLICY_DIGEST,
-      policyBundleVersion: "0.1.0",
-      effectiveFrom: null,
-      effectiveTo: null,
-      jurisdiction: "Internal venue planning context",
-      venueRuleSet: "Venviewer conservative planning defaults v0",
-      humanReviewRequiredFor: [
-        "accessibility route",
-        "door and obstruction state",
-        "egress route",
-        "guest-flow simulation",
-        "pricing approval",
-      ],
-    },
-    tolerancePolicy: {
-      positionPrecisionM: 0.001,
-      rotationPrecisionRad: 0.00001,
-      scalePrecision: 0.001,
-      floorContainmentToleranceM: 0.01,
-      clearanceToleranceM: 0.01,
-      currencyPrecisionMinorUnit: 1,
-    },
+    policyBundle: planningPolicyBundle(),
+    tolerancePolicy: planningTolerancePolicy(),
     validatorPolicy: {
       minPrimaryFurnitureClearanceM: 1.2,
       clearanceWarningMarginM: 0.2,

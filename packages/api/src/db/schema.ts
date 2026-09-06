@@ -2721,7 +2721,7 @@ export const canonicalLayoutSnapshots = pgTable("canonical_layout_snapshots", {
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  unique("canonical_layout_snapshots_config_unique").on(table.configurationId),
+  index("canonical_layout_snapshots_config_created_idx").on(table.configurationId, table.createdAt, table.id),
   unique("canonical_layout_snapshots_digest_unique").on(table.snapshotDigest),
   index("canonical_layout_snapshots_venue_created_idx").on(table.venueId, table.createdAt),
   index("canonical_layout_snapshots_space_created_idx").on(table.spaceId, table.createdAt),

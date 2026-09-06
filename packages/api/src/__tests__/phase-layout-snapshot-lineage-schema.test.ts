@@ -51,7 +51,7 @@ describe("phase layout snapshot lineage migration", () => {
       idx: 59,
       tag: "0061_diary_commands",
     }));
-    expect(journal.entries.at(-1)).toEqual(expect.objectContaining({
+    expect(journal.entries.find((entry) => entry.tag === "0063_phase_layout_snapshot_immutability")).toEqual(expect.objectContaining({
       idx: 61,
       tag: "0063_phase_layout_snapshot_immutability",
     }));
