@@ -145,6 +145,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   suspendedRef.current = suspended;
   const previouslySuspended = useRef(suspended);
   const controlsRef = useRef<OrbitControlsImpl>(null);
+  const tourNeedsFirstFrame = useRef(true);
   const humanPovActiveRef = useRef(false);
   const humanPovRestorePoseRef = useRef<PlannerCameraPose | null>(null);
   const humanPovDragRef = useRef<HumanPovDragState | null>(null);
@@ -291,9 +292,12 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       return;
     }
     if (controls !== null) {
-      controls.enabled = true;
+      // A tour is already the next owner when PlannerScene yields Walk.
+      // Restoring the old orbit pose here flashes it before the first frame.
+      const tourOwnsCamera = useBookmarkStore.getState().tour !== null;
+      controls.enabled = !tourOwnsCamera;
       const pose = walkRestorePoseRef.current;
-      if (pose !== null) {
+      if (!tourOwnsCamera && pose !== null) {
         camera.position.copy(pose.position);
         controls.target.copy(pose.target);
         controls.update();
@@ -321,6 +325,10 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   }, [suspended, applyWalkMode]);
 
   useEffect(() => {
+    if (useBookmarkStore.getState().tour !== null) {
+      if (controlsRef.current !== null) controlsRef.current.enabled = false;
+      invalidateRef.current();
+    }
     return useBookmarkStore.subscribe((state, previousState) => {
       if (
         state.pendingNavigationId !== null &&
@@ -328,8 +336,16 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       ) {
         invalidateRef.current();
       }
-      // Wake the demand-mode frame loop when a cinematic tour begins.
-      if (state.tour !== null && previousState.tour === null) {
+      // A demand-loop delta includes idle time before playback began. The
+      // first rendered tour frame establishes its own clock; a new path or
+      // an explicit rewind also starts a fresh first-frame boundary.
+      if (state.tour === null) tourNeedsFirstFrame.current = true;
+      if (state.tour !== null && (previousState.tour === null
+        || state.tour.legs !== previousState.tour.legs
+        || state.tour.elapsedSec < previousState.tour.elapsedSec)) {
+        tourNeedsFirstFrame.current = true;
+        if (controlsRef.current !== null) controlsRef.current.enabled = false;
+        keyboardKeys.clear();
         invalidateRef.current();
       }
     });
@@ -592,7 +608,9 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
         finishPlannerShowcaseTour(store.tour);
         controls.enabled = !useCockpitStore.getState().walkMode;
       } else {
-        store.updateTour(frameDelta);
+        const playbackDelta = tourNeedsFirstFrame.current ? 0 : frameDelta;
+        tourNeedsFirstFrame.current = false;
+        store.updateTour(playbackDelta);
         invalidate();
       }
       return;

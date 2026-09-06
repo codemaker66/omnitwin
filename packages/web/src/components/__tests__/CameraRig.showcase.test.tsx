@@ -96,6 +96,77 @@ function startCapturedTour() {
 }
 
 describe("CameraRig Showcase owner handoff", () => {
+  it("starts a cold captured tour at zero instead of consuming the demand loop's 20-second idle delta", () => {
+    render(<CameraRig dimensions={dimensions} />);
+    const tour = startCapturedTour();
+    tick(20);
+    expect(useBookmarkStore.getState().tour?.elapsedSec).toBe(0);
+    for (const axis of [0, 1, 2] as const) expect(harness.camera?.position.getComponent(axis)).toBeCloseTo(GRAND_HALL_ARRIVAL.position[axis], 10);
+    for (let frame = 0; frame < 120; frame++) tick(1 / 60);
+    expect(useBookmarkStore.getState().tour?.elapsedSec).toBeCloseTo(2, 10);
+    expect(harness.camera?.position.z).toBeLessThan(GRAND_HALL_ARRIVAL.position[2] - 1);
+    expect(harness.camera?.position.z).toBeGreaterThan(GRAND_HALL_ARRIVAL.position[2] - 2.5);
+    expect(useBookmarkStore.getState().tour?.totalSec).toBe(tour.totalSec);
+    for (let frame = 0; frame < 680; frame++) tick(1 / 60);
+    expect(useBookmarkStore.getState().tour).toBeNull();
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+  });
+
+  it("does not flash the saved orbit pose when the existing planner yields Walk to a tour", () => {
+    render(<CameraRig dimensions={dimensions} />);
+    const camera = harness.camera;
+    if (camera === null) throw new Error("Missing camera");
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    camera.position.fromArray(GRAND_HALL_ARRIVAL.position);
+    camera.rotation.set(GRAND_HALL_ARRIVAL.pitch, GRAND_HALL_ARRIVAL.yaw, 0, "YXZ");
+    const interior = camera.clone();
+    // PlannerScene's actual synchronous ownership handoff, before the next frame.
+    const unsubscribe = useBookmarkStore.subscribe((state) => {
+      if (state.tour !== null && useCockpitStore.getState().walkMode) useCockpitStore.getState().setWalkMode(false);
+    });
+    try {
+      startCapturedTour();
+      expect(camera.position.distanceTo(interior.position)).toBeLessThan(1e-10);
+      expect(camera.quaternion.angleTo(interior.quaternion)).toBeLessThan(1e-7);
+      expect(harness.controls?.enabled).toBe(false);
+      tick(25);
+      expect(useBookmarkStore.getState().tour?.elapsedSec).toBe(0);
+      expect(camera.position.distanceTo(interior.position)).toBeLessThan(1e-10);
+    } finally { unsubscribe(); }
+  });
+
+  it("owns a fresh first-frame clock after Escape and a restart before any idle frame", () => {
+    render(<CameraRig dimensions={dimensions} />);
+    startCapturedTour();
+    tick();
+    tick(1);
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape", bubbles: true })); });
+    startCapturedTour();
+    tick(30);
+    expect(useBookmarkStore.getState().tour?.elapsedSec).toBe(0);
+    tick(0.25);
+    expect(useBookmarkStore.getState().tour?.elapsedSec).toBe(0.25);
+  });
+
+  it("resets the frame boundary for a replacement tour and explicit rewind without slowing ordinary playback", () => {
+    render(<CameraRig dimensions={dimensions} />);
+    startCapturedTour();
+    tick(20);
+    tick(1);
+    expect(useBookmarkStore.getState().tour?.elapsedSec).toBe(1);
+    const replacement = startCapturedTour();
+    tick(25);
+    expect(useBookmarkStore.getState().tour?.elapsedSec).toBe(0);
+    tick(0.5);
+    tick(0.5);
+    expect(useBookmarkStore.getState().tour?.elapsedSec).toBe(1);
+    act(() => { useBookmarkStore.getState().startTour(replacement); });
+    tick(30);
+    expect(useBookmarkStore.getState().tour?.elapsedSec).toBe(0);
+    tick(0.75);
+    expect(useBookmarkStore.getState().tour?.elapsedSec).toBe(0.75);
+  });
+
   it("suspends live input and stale commands, fits frozen bounds, then restores the live lens and pose", () => {
     const view = render(<><CameraRig dimensions={dimensions} /><FrozenLayoutPreviewCamera active={false} room={null} /></>);
     const camera = harness.camera;
