@@ -1,4 +1,5 @@
 import { Navigate } from "react-router-dom";
+import { ActivityIndicator } from "../shared/Activity.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { ReactNode } from "react";
 
@@ -20,6 +21,7 @@ export function ProtectedRoute({ children, allowedRoles, requiredPlatformRole }:
       <main className="vv-route-state" aria-label="Workspace access check">
         <section className="vv-state-panel" role="status" aria-live="polite">
           <p className="vv-state-kicker">Checking access</p>
+          <ActivityIndicator size={56} />
           <h1>Opening your workspace</h1>
           <p>We are confirming your Venviewer session before loading this internal route.</p>
         </section>

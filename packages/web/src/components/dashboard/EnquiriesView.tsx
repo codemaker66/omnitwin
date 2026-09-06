@@ -4,6 +4,7 @@ import type { Enquiry, StatusHistoryEntry } from "../../api/enquiries.js";
 import { createOpportunityFromEnquiry } from "../../api/crm.js";
 import { StatusBadge } from "../shared/StatusBadge.js";
 import { ConfirmModal } from "../shared/ConfirmModal.js";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { AIDraftPanel } from "../ai/AIDraftPanel.js";
 
@@ -60,6 +61,9 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
   const [history, setHistory] = useState<StatusHistoryEntry[]>([]);
   const [historyVersion, setHistoryVersion] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [preselectionLoading, setPreselectionLoading] = useState(initialSelectedId !== null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [transitionSaving, setTransitionSaving] = useState(false);
   const [transition, setTransition] = useState<{ id: string; status: string } | null>(null);
   const [creatingOpportunity, setCreatingOpportunity] = useState(false);
   const addToast = useToastStore((s) => s.addToast);
@@ -86,8 +90,12 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
   // When pre-selected via initialSelectedId, fetch the enquiry directly so
   // the detail view can render regardless of the active status filter.
   useEffect(() => {
-    if (initialSelectedId === null) return;
+    if (initialSelectedId === null) {
+      setPreselectionLoading(false);
+      return;
+    }
     const controller = new AbortController();
+    setPreselectionLoading(true);
     setSelectedId(initialSelectedId);
     void enquiriesApi.getEnquiry(initialSelectedId, controller.signal)
       .then((enquiry) => {
@@ -95,6 +103,9 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
       })
       .catch(() => {
         if (!controller.signal.aborted) addToast("Failed to load enquiry", "error");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPreselectionLoading(false);
       });
     return () => { controller.abort(); };
   }, [initialSelectedId, addToast]);
@@ -118,19 +129,27 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
 
   useEffect(() => {
     setHistory([]);
-    if (selectedId === null) return;
+    if (selectedId === null) {
+      setHistoryLoading(false);
+      return;
+    }
 
     const controller = new AbortController();
+    setHistoryLoading(true);
     void enquiriesApi.getEnquiryHistory(selectedId, controller.signal)
       .then((entries) => {
         if (!controller.signal.aborted) setHistory(entries);
       })
-      .catch(() => { /* An absent timeline does not block enquiry review. */ });
+      .catch(() => { /* An absent timeline does not block enquiry review. */ })
+      .finally(() => {
+        if (!controller.signal.aborted) setHistoryLoading(false);
+      });
     return () => { controller.abort(); };
   }, [selectedId, historyVersion]);
 
   const handleTransition = async (note?: string): Promise<void> => {
-    if (transition === null) return;
+    if (transition === null || transitionSaving) return;
+    setTransitionSaving(true);
     try {
       const updated = await enquiriesApi.transitionEnquiry(transition.id, transition.status, note);
       setEnquiries((prev) => prev.map((e) => e.id === updated.id ? updated : e));
@@ -144,6 +163,8 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
     } catch {
       addToast("Failed to update status", "error");
       setTransition(null);
+    } finally {
+      setTransitionSaving(false);
     }
   };
 
@@ -173,6 +194,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
         </button>
 
         <div style={{ background: "#fff", borderRadius: 12, padding: 24, border: "1px solid #e5e7eb" }}>
+          {preselectionLoading && <ActivityStatus>Opening enquiry…</ActivityStatus>}
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
             <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{selected.name}</h2>
             <StatusBadge status={selected.state} />
@@ -229,9 +251,10 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
               data-testid="create-opportunity-from-enquiry"
               onClick={() => { void handleCreateOpportunity(selected); }}
               disabled={creatingOpportunity}
+              aria-busy={creatingOpportunity}
               style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#1a1a2e", color: "#fff", border: "none", borderRadius: 6, cursor: creatingOpportunity ? "default" : "pointer", opacity: creatingOpportunity ? 0.6 : 1 }}
             >
-              Create Opportunity
+              {creatingOpportunity && <ActivityIndicator size={16} />} Create Opportunity
             </button>
             {selected.state === "submitted" && (
               <button type="button" onClick={() => { setTransition({ id: selected.id, status: "under_review" }); }}
@@ -262,6 +285,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
                 (see Phase 3 for the dashboard-embedded entry point). */}
           </div>
 
+          {historyLoading && <ActivityStatus>Loading enquiry history…</ActivityStatus>}
           {history.length > 0 && (
             <div>
               <h3 style={{ fontSize: 14, fontWeight: 600, color: "#333", marginBottom: 8 }}>Status Timeline</h3>
@@ -283,6 +307,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
             confirmLabel={transition.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
             confirmColor={transition.status === "approved" ? "#22c55e" : transition.status === "rejected" ? "#ef4444" : "#f59e0b"}
             showNoteField
+            inFlight={transitionSaving}
             onConfirm={(note) => { void handleTransition(note); }}
             onCancel={() => { setTransition(null); }}
           />
@@ -302,9 +327,10 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
         ))}
       </div>
 
-      {loading && <p style={{ color: "#999", fontSize: 14 }}>Loading...</p>}
+      {loading && <ActivityStatus style={{ color: "#999", fontSize: 14 }}>Loading...</ActivityStatus>}
+      {preselectionLoading && <ActivityStatus>Opening enquiry…</ActivityStatus>}
 
-      {!loading && enquiries.length === 0 && (
+      {!loading && !preselectionLoading && enquiries.length === 0 && (
         <p style={{ color: "#999", fontSize: 14 }}>No enquiries found.</p>
       )}
 

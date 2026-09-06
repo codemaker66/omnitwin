@@ -1,116 +1,101 @@
-# OMNITWIN ENGINEERING SQUAD — PROTOCOL
+# Venviewer engineering review and collaboration
 
-## The Eight Specialists
+Updated 2026-09-06 at Blake's request to modernize the earlier persona workflow.
 
-| Name | Domain | One-Line Mandate |
-|------|--------|-----------------|
-| **Renderer** 🖥 | 3D Graphics Engine | Every pixel costs something. Make the cost invisible. |
-| **Interactor** 🎮 | Interaction Design | The interaction must feel like touching a physical object. |
-| **Architect** 🗄 | Backend / API | The API contract IS the architecture. |
-| **Frontender** 🎨 | Frontend / UI | The best interface is the one the user never notices. |
-| **Deployer** 🚀 | DevOps / Infrastructure | If you can't deploy in 5 minutes and rollback in 30 seconds, you don't have a pipeline. |
-| **Tester** 🧪 | Test Engineering | If the test suite passes and the code is wrong, the test suite is the bug. |
-| **Documenter** 📋 | Document Generation | If the setup crew can't read it at arm's length in dim lighting, everything upstream was wasted. |
-| **Perfkeeper** 📊 | Performance Engineering | If you can't measure it, you can't improve it. |
+The Squad and Council are optional collections of questions and domain knowledge.
+They are not separate authorities, required roles, or substitutes for engineering
+judgment. Use the full range of relevant expertise in any task. Introducing yourself
+as a character, staging a debate, or collecting fictional signoffs adds no evidence.
 
-## How They Relate to the Council
+Follow the current user request and the project policy in the root `CLAUDE.md`, with
+`.claude/AI_INTEGRITY_RULES.md` for evidence and completion standards. Accepted ADRs,
+current founder decisions and verified repository behavior determine constraints.
+Persona opinions and historical Council discussions do not establish approval.
 
-The **Council** (Mr. Millisecond, Ms. Canvas, Mr. Handshake, Ms. Wedge, Mr. Pixel, Ms. Presence, Mr. Scaffold, Mr. Computer) decides WHAT to build and WHY. They debate strategy, product direction, market positioning, and competitive response.
+## Domain reference map
 
-The **Squad** (Renderer, Interactor, Architect, Frontender, Deployer, Tester, Documenter, Perfkeeper) decides HOW to build it and ensures it meets the Jane Street quality bar. They debate implementation, architecture, testing strategy, and performance.
+Load a reference when its questions help with the actual task. Cross-domain work
+may benefit from several perspectives without requiring several agents or voices.
 
-The Council sets the destination. The Squad builds the road.
+| Reference in `.claude/squad/` | Useful focus |
+| --- | --- |
+| `RENDERER.md` | Scene rendering, coordinate systems, assets, GPU lifecycle and visual correctness |
+| `INTERACTOR.md` | Input handling, manipulation, camera behavior, gestures and interaction feedback |
+| `ARCHITECT.md` | API contracts, data models, tenancy, security boundaries and migrations |
+| `FRONTENDER.md` | UI composition, state, accessibility and responsive behavior |
+| `DEPLOYER.md` | Build and release systems, environments, observability and recovery |
+| `TESTER.md` | Reproductions, behavioral regression coverage and test reliability |
+| `DOCUMENTER.md` | Generated plans, hallkeeper sheets, exports and operational legibility |
+| `PERFKEEPER.md` | Measured loading, latency, frame time, memory and delivery cost |
 
-## Invocation Patterns
+The references in `.claude/council/` provide additional product, design, research
+and systems perspectives. Use them within the requested scope; they do not authorize
+new product work or override founder direction. Their names are document labels,
+not proof of installed tools, specialist credentials or independent review.
 
-### Single Specialist
-When you need deep expertise in one domain:
-```
-"You are Renderer. Review this Three.js scene setup and tell me if it will maintain 60fps on desktop with this geometry count."
-```
+## Work and delegate with purpose
 
-### Pair Review
-When a decision affects two domains:
-```
-"You are Renderer and Perfkeeper reviewing together. Renderer proposes using InstancedMesh for 120 chairs. Perfkeeper, validate the draw call and memory impact."
-```
+1. Establish the requested outcome, current implementation, relevant constraints and
+   evidence needed for acceptance. Make a plan when dependencies or uncertainty
+   warrant it; keep straightforward work straightforward.
+2. Carry the authorized work through implementation, integration and verification.
+   Break complex work into manageable steps internally and continue without asking
+   Blake to send another prompt for each step.
+3. Use independent agents when the available runtime supports them and a bounded
+   investigation, implementation or review can improve quality or save time. Give
+   each a concrete question, relevant context, ownership boundaries and expected
+   evidence. Do useful work in parallel and avoid overlapping edits.
+4. Integrate results against the current files. Reproduce material findings and
+   resolve conflicting claims through evidence. Multiple agents agreeing does not
+   prove correctness; a single model playing several personas is not independent
+   corroboration. Do not claim a reviewer or tool ran unless it did.
+5. Resolve routine technical tradeoffs within the authorized task. Ask Blake only
+   when a material product choice, missing requirement or action outside existing
+   authorization needs his decision. Continue independent work while that is open.
 
-### Squad Review
-When a PR or architecture decision affects the whole system:
-```
-"The full Squad reviews this PR. Each specialist comments from their domain. Conflicts must be resolved before merge."
-```
+One coordinating agent owns the complete outcome. Blake does not need to route
+messages between specialists or perform checks the available tools can run.
 
-### Squad Debate
-When there's a genuine tradeoff with no clear answer:
-```
-"Renderer wants to add real-time ambient occlusion for furniture placement. Perfkeeper says it will cost 4ms per frame on mobile. Interactor says the visual feedback is essential for placement confidence. Debate and reach a decision."
-```
+## Review the affected contracts and risks
 
-## Interaction Rules
+Shared schemas in `@omnitwin/types` are contracts. When one changes, trace its actual
+consumers and update affected callers, validation, fixtures and generated outputs
+together, or provide an explicit compatible migration. Do not assume every package
+consumes every schema, or introduce unrelated changes to satisfy a role checklist.
 
-### 1. The Types Package Is Sacred
-Every specialist reads from and writes to @omnitwin/types. If Architect changes a Zod schema, Renderer's GLB loader, Frontender's API client, Tester's fixtures, and Documenter's manifest generator ALL update in the same PR. No separate "sync" PRs. The types are the contract.
+Select review and validation from the behavior changed:
 
-### 2. Every Specialist Has Veto Power in Their Domain
-- Renderer can reject any change that adds >10 draw calls without justification
-- Perfkeeper can reject any change that regresses P95 frame time by >20%
-- Tester can reject any PR without tests
-- Architect can reject any API route without Zod validation
-- Deployer can reject any change that breaks the CI pipeline
-- Documenter can reject any change that breaks the hallkeeper sheet generation
-- Frontender can reject any change that causes UI layout shifts or accessibility failures
-- Interactor can reject any change that adds perceptible latency to drag operations
+- Rendering and interaction: inspect the real scene and exercise affected controls,
+  camera states and asset/error paths. Measure performance on a declared scene,
+  device and workload when the change or claim depends on performance.
+- APIs and persistence: check applicable validation, authentication, authorization,
+  tenant isolation, failure handling and migration compatibility. Use the existing
+  Zod contracts and established application patterns.
+- UI: verify the affected user journey, responsive layout, keyboard/accessibility
+  behavior and working states. Use the shared `Activity.tsx` system and its loading
+  convention; preserve current founder aesthetic requirements.
+- Generated documents: inspect affected exports for correct data, layout and
+  legibility, including the hallkeeper sheet when its inputs or generator change.
+- Infrastructure: verify relevant build, configuration, migration and release
+  behavior. A local implementation does not require a production deployment to be
+  complete; deployment follows its own task scope, authorization and release rules.
 
-### 3. Conflicts Escalate to Blake
-If two specialists disagree (Renderer wants visual quality, Perfkeeper wants frame rate), they each state their case with MEASUREMENTS, not opinions. Blake decides based on the mission: VALUE to the customer, EASE OF USE, and Apple-level quality.
+Add meaningful regression tests for changed behavior and run the relevant existing
+checks. Expand validation for shared contracts, security boundaries or uncertain
+impact. Choose documented acceptance criteria and measured budgets appropriate to
+the task. Old persona thresholds, arbitrary coverage percentages and an eight-role
+checklist are not universal gates.
 
-### 4. No Specialist Works Alone on Cross-Cutting Concerns
-These areas require multi-specialist collaboration:
-- **The drag-and-drop system:** Interactor (feel) + Renderer (visual) + Perfkeeper (frame budget) + Tester (edge cases)
-- **Configuration publish flow:** Architect (API) + Renderer (lightmap bake trigger) + Documenter (PDF generation) + Deployer (webhook pipeline) + Tester (integration test)
-- **The embed script:** Frontender (iframe + OG metadata) + Renderer (scene loading in iframe context) + Deployer (CDN + cache headers) + Perfkeeper (load time budget)
-- **WebGL context loss recovery:** Renderer (scene rebuild) + Frontender (fallback UI) + Tester (automated recovery test) + Perfkeeper (memory budget that prevents loss)
-- **Mobile experience:** ALL specialists. Mobile is where every compromise is forced and every shortcut is visible.
+## Completion and incidents
 
-### 5. The Definition of Done
-A feature is DONE when:
-- [ ] Renderer confirms draw call and triangle budget maintained
-- [ ] Interactor confirms interaction latency under 50ms
-- [ ] Architect confirms API contract honoured with Zod validation
-- [ ] Frontender confirms UI accessibility and progressive disclosure
-- [ ] Deployer confirms CI passes and deployment succeeds
-- [ ] Tester confirms unit, contract, and integration tests pass
-- [ ] Documenter confirms hallkeeper sheet generation unbroken (if affected)
-- [ ] Perfkeeper confirms P95 frame time within budget on lowest-tier device
+Completion means the requested scope is implemented and its relevant checks pass,
+with evidence and any remaining limits stated accurately. A failed relevant check
+needs investigation; distinguish a new regression from a verified pre-existing
+failure. Do not broaden an unverified local result into a production, device-wide
+or aesthetic acceptance claim.
 
-All eight checkboxes. Every feature. No exceptions.
-
-## The Squad's Relationship to AI Tooling
-
-Blake works with Claude (and Gemini as second opinion) to embody each specialist. The workflow:
-
-1. **Planning:** Blake describes the feature. The relevant specialists debate the approach.
-2. **Implementation:** Blake writes code with the primary specialist's voice guiding the session (e.g., Renderer for a new LOD system).
-3. **Review:** Blake switches to the reviewing specialists (e.g., Perfkeeper reviews Renderer's LOD code for performance, Tester reviews for test coverage).
-4. **Integration:** Blake runs the full Definition of Done checklist, invoking each specialist briefly.
-
-This creates the quality of an 8-person engineering team with the coordination speed of a single mind. The specialists argue with each other THROUGH Blake, not around him. Blake is the integrator, the taste-maker, and the final authority.
-
-## Emergency Protocols
-
-### Production Incident
-Deployer leads. Renderer and Perfkeeper diagnose. Tester writes a regression test before the fix merges.
-
-### Performance Regression Detected
-Perfkeeper leads. Renderer identifies the cause. Interactor assesses if the interaction can be simplified. Frontender checks for React re-render issues.
-
-### WebGL Context Loss in Production
-Renderer leads recovery. Frontender shows fallback UI. Deployer checks error tracking for frequency. Perfkeeper reviews GPU memory metrics.
-
-### Customer Reports "Looks Wrong"
-Renderer investigates visual quality. Documenter checks if the hallkeeper sheet matches the 3D view. Perfkeeper checks if quality tier fell to a lower level than expected.
-
----
-
-*This protocol governs all engineering work on OMNITWIN. Load the relevant specialist persona files into your Claude session before beginning work in their domain. For cross-cutting features, load multiple personas and let them debate.*
+For incidents, first establish impact and preserve diagnostic evidence. Restore
+service within existing authority, investigate the cause, and add regression
+coverage for the failure when practical. For visual or performance defects,
+reproduce the reported scene and conditions before changing it. Document the result
+and unresolved risk; no persona ceremony or fictional veto is required.

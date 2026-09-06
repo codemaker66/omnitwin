@@ -17,7 +17,6 @@ import {
   ChevronUp,
   CircleAlert,
   Clock3,
-  LoaderCircle,
   Pause,
   Play,
   RotateCcw,
@@ -28,6 +27,7 @@ import {
 } from "../../../api/room-layout-timeline.js";
 import { RoomLayoutTimelineLocalDateSchema } from "@omnitwin/types";
 import { useSearchParams } from "react-router-dom";
+import { ActivityIndicator } from "../../shared/Activity.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { stepSpring, isSpringSettled, type SpringState } from "../../../lib/springs.js";
@@ -734,11 +734,11 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     if (!timelineResponseMatchesSelection) {
       resetMotion();
       if (prePreviewPhaseRef.current.captured) {
-        useLayoutTimelinePreviewStore.getState().showPending(
-          timeline.status === "error"
-            ? "The requested room timeline could not be loaded."
-            : "Loading the authoritative room timeline…",
-        );
+        if (timeline.status === "error") {
+          useLayoutTimelinePreviewStore.getState().showUnavailable(null, "The requested room timeline could not be loaded.");
+        } else {
+          useLayoutTimelinePreviewStore.getState().showPending("Loading the authoritative room timeline…");
+        }
       } else {
         useLayoutTimelinePreviewStore.getState().clear();
       }
@@ -1282,7 +1282,7 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
 
         {effectiveCollapsed ? (
           <div className={`layout-compact-state is-${compact.tone}`} role={compact.tone === "error" ? "alert" : "status"}>
-            {compact.tone === "loading" ? <LoaderCircle className="is-spinning" size={14} aria-hidden="true" /> : null}
+            {compact.tone === "loading" ? <ActivityIndicator size={20} /> : null}
             {compact.tone === "error" ? <CircleAlert size={14} aria-hidden="true" /> : null}
             <strong>{canExpand && collapsed ? activeFrame?.phaseName ?? "Room timeline" : compact.title}</strong>
             <span>{canExpand && collapsed ? activeFrame === undefined ? "" : `${frameTime(activeFrame, timeZone)} · ${frameStateLabel(activeFrame)}` : compact.detail}</span>

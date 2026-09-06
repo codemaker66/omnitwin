@@ -2,7 +2,7 @@
 
 ## The /goal block
 
-Own the reconstruction of the Grand Hall and then every room: land the sources on the pod (W2) and run the training (W7) exactly as docs/plan/14 writes them, within the money caps, judged at the court; register every source to the served frame (Bright Walls, the E57 with its 49 sweeps, the 148 native 8K panoramas as pinhole crops); produce the first real Trades Hall chair and table through the Item Foundry; then run the research frontier one decisive experiment at a time, each with a pinned baseline, a falsifiable hypothesis, a compute estimate, a stop condition and a verdict of adopt, revise or park. Every technology from NVIDIA or a research lab is verified from its primary source and its licence before it is used; a name in the vision's register is a candidate, never a dependency. Generated detail is labelled generated, with lineage, and never becomes heritage fact.
+Own the reconstruction of the Grand Hall and then every room under docs/plan/17-GRAND-HALL-RECONSTRUCTION-DIRECTION-2026-09-06.md. Combine useful observations from both PortalCam captures, E57, native panoramas and photographs in a fixed metric frame, without prescribing the remembered OBJ floor as the final asset. Finish and validate the active court repair with its owner; implement the free import/export proofs and capped SH-only pilot from plan 14 ROUND TWO; compare conventional and learned multi-source reconstruction one decisive experiment at a time. Do not execute the superseded 300k-step W7 recipe. Each experiment needs a pinned baseline, falsifiable hypothesis, compute estimate, stop condition and a verdict of adopt, revise or park. Produce the first real Trades Hall chair and table through the Item Foundry. Every technology from NVIDIA or a research lab is verified from its primary source and its licence before it is used; a name in the vision's register is a candidate, never a dependency. Generated detail is labelled generated, with lineage, and never becomes heritage fact.
 
 ## Outcome, in Blake's words
 
@@ -14,7 +14,7 @@ The RunPod H100 pod trmciz4jo6yf6m is stopped ($3.49 an hour running); the volum
 
 ## Decided (docs/plan/13 and 14 §1)
 
-Train normalised, save Parser.transform, invert on export; at least seven passes over the images; a held-out set of a few hundred views; panoramas enter as pinhole crops; Bright Walls is evidence, not a blend; the court judges; a candidate is called "fused" only when its receipt proves more than one source was trained on; "PSNR 50" is stated with its protocol every time (goal 02 D6). The data authority is owner-stated and project-specific (the vision §46); third-party code and weight licences are checked separately.
+Direction 17 and plan 14 ROUND TWO supersede older recipes here. Preserve the declared metric frame and every normalization/export transform; the first vendor SH-only pilot may keep the vendor frame with cameras transformed into it. Panorama crops retain their parent rig. Freeze evaluation membership before selection, projection or learning; distinguish refinement exclusions from genuinely unused observations. Both PortalCam captures may contribute to calibrated source selection, blending or learning. A candidate is called multi-source only when its receipt proves actual contribution from more than one source and names the method; training is not the only way to combine evidence. State the PSNR protocol every time (goal 02 D6). The data authority is owner-stated and project-specific (the vision §46); third-party code and weight licences are checked separately.
 
 ## The research register, with gates
 
@@ -35,13 +35,13 @@ Each row is a candidate until its gate is passed: the primary source read, the l
 
 ## The work, in slices
 
-F1 W2: the sources on the pod (after the upload plateaus; one pod hour; cap $5), checked with rclone, the pod stopped, recorded in docs/operations.
+F1 Free readiness: verify the current repaired image/depth package, exclusions and registration with the court owner; complete same-model import/export proofs and a curated input manifest. Inspect persistent-volume artifacts when the next justified pod session starts, transfer only required inputs, record the interval and stop at its end. Do not start a paid session only to discover that an unimplemented adapter cannot run.
 
-F2 W7 run 1 (cap $25): XGRIDS pinholes only, named honestly (gh-owned-run1), normalised, 300k steps, the transform saved and inverted, judged at the court, served behind `?twin=fused` on a preview. The first row in state/training_runs.jsonl: run id, date, source package and its hash, steps, passes, cost, PSNR with its protocol, artifact path.
+F2 Vendor baseline pilot (cap $25, within the ladder allowance): exact finest-level vendor import followed by the plan 14 ROUND TWO SH-only experiment, 500–1,000 updates with geometry, opacity and cameras frozen. Record step zero and intermediate exports, raster conventions, freeze assertions, input hashes and measured costs. The adapter must exist and pass before launch; old `--ckpt`/300k-step commands are not substitutes. Reconcile historical records without inventing billing or successful outcomes.
 
-F3 Run 2 with depth from the registered E57 (after goal 02's W4), cap $25.
+F3 Multi-source reconstruction: direction 17's architectural-bay deterministic and confidence-weighted baselines first, learned residual arm next when ready. Keep measured E57 supervision, sparse SfM priors and frozen vendor depth teachers separate. Choose the next capped GPU experiment from its result; cap $25 within the existing ladder allowance, and no unreviewed long full-room run.
 
-F4 The panoramas as pinhole crops (after W4), and the panorama-only walls Blake remembered, rebuilt and judged.
+F4 Native panorama recovery is complete: 148 original 8192 × 4096 JPEGs are verified at `D:/claude/founder-direction-20260906/sources/panoramas-8k/`. The recovered Brush splat is a separate comparison source; the exact earlier model Blake remembers is not identified. Prepare panorama/cubeface rigs and invalid-region masks while calibration is repaired. After the current calibration and scoring-exclusion receipts pass, compare native-image reconstruction and panorama-only appearance with the strongest individual source and the joint direction 17 candidates. Do not assume panorama walls win or copy an evaluation image into its own scored candidate.
 
 F5 The Item Foundry's first two items (R4): one chair and one table from HUMAN.md 2's photographs or a phone capture, reconstructed (RealityScan or Metashape, or a verified AI candidate), cleaned in Blender, exported as GLB with measured footprint, pivot, materials and levels of detail; instanced in a 180-seat layout on the device matrix; recognised by Elaine.
 

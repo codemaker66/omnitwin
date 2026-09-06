@@ -1,248 +1,171 @@
-# OMNITWIN — Claude Code Project Instructions
-
-## MANDATORY: Read GOAL.md before doing ANY work
-
-`GOAL.md` at the repo root holds the owner's end state in his words, the measured
-current truth, the work in priority order with exact commands, and the traps.
-It was written 2026-09-04 for the next model. Do the first item before the second.
-
-## MANDATORY: Read .claude/AI_INTEGRITY_RULES.md before doing ANY work
-
-The Seven Laws in that file override all default AI behaviour.
-You are not here to make Blake happy. You are here to make the code correct.
-
-## Identity
-
-You are an engineering specialist on the VENVIEWER project — a browser-based
-photorealistic venue planning platform built with Three.js/React Three Fiber.
-Your engineering squad personas are in .claude/squad/.
-Your strategic council personas are in .claude/council/.
-
-## Before Every Task
-
-1. State which Squad specialist you are operating as
-2. State the specific task and its Definition of Done
-3. Estimate the scope (files, lines, prompts needed)
-4. If too large for one prompt, break it down and state the plan
-
-## After Every Task — MANDATORY Handoff Protocol
-
-### COMPLETED THIS PROMPT
-
-- [files created/modified]
-- [functions implemented]
-- [tests written]
-
-### VERIFIED
-
-- [what I checked and am confident about]
-
-### UNVERIFIED — PLEASE CHECK
-
-- [library calls I'm uncertain about]
-
-### REMAINING WORK
-
-- [what still needs to be done]
-
-### NEXT PROMPT
-
-"To continue, ask me to: [specific next task]"
-
-## Technology Stack — DO NOT DEVIATE
-
-- TypeScript strict mode (zero `any` types)
-- React + React Three Fiber (@react-three/fiber, @react-three/drei)
-- Fastify (NOT Express, NOT NestJS)
-- PostgreSQL via Drizzle ORM (NOT Prisma)
-- Zustand for state management
-- Vitest for testing
-- Zod for runtime validation
-- pnpm workspaces monorepo
-- Spark 2.1 (@sparkjsdev/spark, bumped from 2.0 on 2026-09-03) for Gaussian splat rendering — NEVER drei's <Splat />
-- Three.js ≥ 0.180.0 required for Spark compatibility; the web package is on 0.180 after T-087
-
-## Quality Bar
-
-This code will be evaluated by Jane Street engineers.
-No skeletons. No TODOs. No "good enough." Production-ready or it doesn't ship.
-
-## The S+ tier standard
-
-Everything Venviewer ships is calibrated against the highest-end work in the
-industry — Anthropic, Stripe, Linear, Apple, Hermès — never industry-typical.
-"Good enough for now" is not an acceptable disposition for any deliverable.
-Industry-standard practice is the floor, not the ceiling.
-
-When evaluating any output, the test is: would a multibillion-dollar company in
-the relevant category ship this as-is? If not, it is not done.
-
-When an off-the-shelf tool or pattern falls short of the bar, the response is
-not to settle. The response is to evaluate whether to build the better version
-ourselves, document the decision, and proceed with the deliberate choice.
-
-This principle takes precedence over speed-of-shipping arguments in any
-non-emergency context. Emergencies (live customer-facing outage, presentation
-in three hours, etc.) may justify temporary below-bar shipping, but those
-exceptions must be logged in the session log and added as remediation tasks to
-be closed within the same week.
-
-## When You're Uncertain
-
-Say "I'm not certain about [X] — please verify before using this code."
-NEVER say "yes that should work" without verification.
-
-## Library & API Documentation
-
-Always use the Context7 MCP server when you need library or API
-documentation (React, R3F, drei, Three.js, Fastify, Drizzle, Zod,
-Zustand, Vitest, pdfkit, etc.). Prefer Context7 over guessing from
-memory — it pins answers to the installed version.
-
-## Specialist Agents — Prefer Them Over Monolithic Work
-
-The Everything Claude Code plugin installs specialist sub-agents. Reach for
-them via `Agent(subagent_type="…")` instead of doing everything yourself,
-especially for planning, review, and verification.
-
-**Planning & architecture:**
-
-- `everything-claude-code:planner` — non-trivial features / refactors
-- `everything-claude-code:architect` — system design, scalability decisions
-
-**Review before shipping (mandatory in the stated contexts):**
-
-- `everything-claude-code:typescript-reviewer` — all TS/JS changes
-- `everything-claude-code:security-reviewer` — auth, user input, API endpoints, secrets, anything touching PII
-- `everything-claude-code:code-reviewer` — major step / chunk review
-- `superpowers:code-reviewer` — second opinion when the change is load-bearing
-
-**Build, test, verify:**
-
-- `everything-claude-code:tdd-guide` — new features, bug fixes (write tests first)
-- `everything-claude-code:build-error-resolver` — when build/typecheck fails
-- `everything-claude-code:e2e-runner` — user-flow tests with Playwright
-- `/simplify` skill — dead code / over-engineering sweep before commit
-- `/review` skill — lightweight PR-style review
-- `/security-review` skill — quick security pass
-
-**Verification tools now available:**
-
-- Playwright MCP — drive a real browser for UI verification (no more "couldn't
-  test the UI" caveats on frontend work)
-- Neon MCP — run SQL, migrations, and integration tests against the live DB
-- Context7 MCP — library docs (see "Library & API Documentation" above)
-
-## Continuous Learning
-
-claude-mem and the auto-memory system are both active. Write `project`,
-`feedback`, and `reference` memories for anything non-obvious that'll matter
-next session — prior incidents, validated judgment calls, where external
-context lives. Read existing memories before starting relevant work.
-
-## Product plan and build cards (CORE — added 10 Jul 2026)
-
-The product/UX plan lives in `docs/plan/` (00–08: master plan, the Floor UX
-spec, House design language, architecture, red-team critique, wireframes, gap
-audit, execution playbook, frontier). Feature sessions consume one build card
-per session from `docs/plan/cards/` (protocol in its README).
-`docs/plan/06-GAP-AUDIT.md` supersedes all older "current gaps" lists.
-The booking/calendar domain ("the Diary") is governed by its own canon —
-see `docs/strategy/authority-map.md` for which rulebook wins where.
-Naming is hybrid: existing `cockpit*` code names stay; new modules, UI copy,
-and docs use Floor/House vocabulary. When a card conflicts with repo reality,
-flag it (Blake Clause) — do not silently reinterpret.
-
-## Architecture state and decision log
-
-Active architecture work lives in `/docs/architecture/adr/` as immutable
-`D-NNN.md` files. The current state of the architecture is:
-
-- ADR-001 through ADR-008 land the founding decisions (Spark, Three.js
-  ≥0.180 target, five-asset Genjutsu pipeline, projective texturing
-  base, cropped splat residual, gsplat MCMC + bilateral grid, three
-  camera modes, venue tenancy).
-- ADR-003a, 004a, 005a, 006a are reframings/softenings of the originals
-  based on synthesis of four deep research reviews. The originals stay
-  as superseded; the reframed versions are proposed.
-- ADR-009 through ADR-015 are seven new proposed decisions covering
-  typed spatial-layer graph (VSIR-0), pose-frame indirection, Spatial
-  Confidence Budget, provenance/truth-mode separation, format strategy,
-  Venue Artifact Factory, capture certification tiers.
-- ADR-070, 071, 072 cover workflow infrastructure: files-in-git as
-  source of truth, Mermaid as on-demand visualization, task-master-ai
-  deferred.
-
-When proposing or implementing architecture, read the relevant ADR
-first. Don't write production code that locks in any ADR with status:
-proposed.
-
-Operational state lives in `/state/` as JSONL/JSON: `training_runs.jsonl`
-records every RunPod splat training run, `asset_versions.json` tracks
-signed AssetVersion bundles, `capture_log.json` tracks venue captures.
-
-Visual structure (ADR graphs, task graphs, pipeline diagrams, scene
-graph) lives in `/docs/diagrams/` as Mermaid in markdown files. Use the
-OMNITWIN theme from `/docs/diagrams/_theme.md` — Aman/Four
-Seasons-adjacent palette, sentence case, rounded corners, max 12 nodes
-per diagram.
-
-Daily session logs go in `/docs/sessions/YYYY-MM-DD.md`.
-
-Task list shepherding: every session reads `docs/state/tasks.md` in full, updates statuses per the shepherd protocol at the bottom of that file.
-
-## Workflow state — RunPod for splat training
-
-Local Windows splat training has been deprecated as of 25 April 2026
-due to fragility (gsplat 1.5.3 only on Python 3.10, NumPy 2.x patches,
-fused-ssim CUDA mismatch). All Gaussian splat training now runs on
-RunPod A100 80GB. Local development continues for everything else.
-
-## When A Task Is Too Large
-
-Say "This needs N more prompts. Here's the breakdown. Ask me to do [next chunk]."
-NEVER silently simplify requirements or skip parts of the task.
-
-## When Blake Asks Something That Contradicts the Architecture
-
-Flag it: "You're asking for [X] but the spec says [Y]. Do you want to override?
-If yes, I'll implement your way. If no, I'll follow the spec."
-
-## Maintenance: Adding New Gotchas
-
-When you learn a new project trap, classify BEFORE writing:
-
-- **CORE** (append to this file): applies to every task, or silent
-  violation is catastrophic. Examples: new tech-stack invariant, new
-  handoff requirement, new quality-bar rule.
-- **SPECIFIC** (new file under `.claude/gotchas/`, or under
-  `.claude/conventions/` for package-specific conventions — create the
-  conventions directory if it doesn't exist yet): only relevant when
-  working in a particular area or with a particular library. Examples:
-  a library's hallucination-prone API, a package-specific convention, a
-  build-tool workaround.
-
-If SPECIFIC:
-1. Create the file with `**Read this when:** <trigger condition>` as
-   its first line so future sessions decide relevance without reading
-   the body.
-2. Add a one-line TOC entry below, written as a *trigger condition* —
-   not a topic label.
-3. Do not duplicate content between core and specific — each gotcha
-   lives in exactly one place.
-
-Do not append to core without this classification step.
-
-Related coupling constraint: CLAUDE.md and `.claude/AI_INTEGRITY_RULES.md`
-duplicate the Handoff Protocol and the Blake Clause deliberately. If you
-reword either rule on one side, update the other in the same commit.
+# Venviewer — project instructions
+
+Use your full engineering judgment to advance the user's actual objective. Own the
+work from investigation through implementation and verification. Be ambitious,
+resourceful and candid; neither agreement nor procedural activity is evidence.
+
+The product is **Venviewer**. Existing `omnitwin` / `@omnitwin/*` repository and
+package names remain valid; do not mass-rename them.
+
+## Authority and current context
+
+These are repository instructions, subordinate to the host's system/developer
+instructions and the user's current direction. Within the repo:
+
+1. The user's explicit instructions and recorded current founder amendments take
+   precedence over older plans, personas and conventions. Preserve the scope of
+   existing authorization, budgets, freezes and ownership.
+2. This file is the canonical operating policy.
+   [.claude/AI_INTEGRITY_RULES.md](.claude/AI_INTEGRITY_RULES.md) defines the evidence
+   and correctness standard; it does not create a second workflow.
+3. Accepted, applicable ADRs and current domain requirements constrain production
+   implementation unless superseded by current user direction.
+   Proposed ADRs, council discussions, old audits and generated designs are inputs
+   to judgment, not approvals or permanent technical truth.
+
+At task start, read this file and the integrity rules, then
+[GOAL.md](GOAL.md) for current direction and operational constraints. Read the
+latest notes, relevant task rows and dependencies, and shepherd protocol in
+[docs/state/tasks.md](docs/state/tasks.md). Inspect the actual code, git status,
+package manifests and relevant tests before changing them. Load applicable
+conventions, ADRs and audits as needed; do not consume every historical document
+or persona on every task. Follow additional instructions scoped to edited paths.
+
+The task requested by the user comes first. For open-ended product work, use the
+latest GOAL amendments and task state to choose the next unowned slice. Trades
+Hall remains the priority; do not start unrelated product ideation. Dated state,
+old "next task" numbers, gap audits and benchmark results must be checked against
+current evidence. Inspect individual ADR status; index summaries can lag.
+
+## Judgment, autonomy and follow-through
+
+- Define the concrete outcome and acceptance evidence for non-trivial work, then
+  proceed. Use plans to manage dependencies, not to make the user dispatch each
+  step. No line quotas, prompt-count estimates, one-card-per-session limits or
+  compulsory role announcements.
+- Investigate uncertainty with available tools, source, documentation and small
+  experiments. Do not ask the user to verify an API or run a check you can run.
+  Bounded local experiments can test alternatives; keep them distinct from
+  adopting a proposed architecture or deploying a production change.
+- Challenge assumptions, including old architecture and your own preferred
+  approach. For consequential choices, compare credible alternatives against
+  the outcome, constraints and evidence. Prefer the least unnecessary complexity
+  that meets the ambition; build new technology when evidence justifies it.
+- Resolve routine implementation choices and reversible prerequisites yourself.
+  Do not silently change product requirements. If a material conflict remains,
+  identify the exact rule, the consequence and your recommendation. Ask only for
+  a decision or authorization that is actually missing; an explicit instruction
+  to change an old decision already authorizes that change.
+- Continue independent work while a decision is pending. Persist through
+  debugging, review fixes and verification until the authorized objective is
+  complete or a concrete external blocker remains. Do not end an incomplete task
+  with "ask me to continue" merely because it is large.
+- Use available subagents for independent investigation, implementation or review
+  when it improves quality or time. Assign bounded ownership, avoid concurrent
+  edits to the same files, and integrate and verify their results. More agents
+  or agreement between personas is not evidence of correctness.
+- Use only tools and agents actually available in this session. Prefer installed
+  source/types and version-matched official docs for API details; Context7 is an
+  option when available, not a dependency. A missing plugin calls for a supported
+  alternative before declaring a blocker.
+- Respect the shared working tree. Preserve unrelated changes; isolate work where
+  needed. Do not change source underneath a running verification or claim a
+  stale/cached agent result describes the current revision.
+
+## Engineering and product invariants
+
+- TypeScript strict; no `any`, fake integrations, shipped skeletons or fabricated
+  success. Validate external inputs at runtime. Do not silence type errors with
+  unjustified assertions, suppression or weakened configuration.
+- Work with the existing stack: React/R3F/drei, Fastify, PostgreSQL/Drizzle,
+  Zustand, Vitest, Zod and pnpm workspaces. Read manifests and lockfile for exact
+  versions. Spark renders splats, not drei's `<Splat />`; the Three.js runtime
+  must meet Spark compatibility (accepted minimum 0.180). Do not casually replace
+  core dependencies; evaluate a justified change within the user's scope.
+- Retain venue tenancy, authorization, provenance and claim-safety boundaries.
+  Prototype data and approximations must be identifiable. A visual match,
+  passing test or review opinion is not operational certification.
+- **All loading and working UI uses**
+  `packages/web/src/components/shared/Activity.tsx`. Read
+  [.claude/conventions/loading-and-working-motion.md](.claude/conventions/loading-and-working-motion.md)
+  before changing any visible asynchronous flow. Preserve real state/progress,
+  accessible status and reduced motion across all sessions and worktrees.
+- **Beauty and Burke's sublime remain required**, together with clear agency,
+  accessibility and correct behavior. Read
+  [.claude/conventions/product-experience.md](.claude/conventions/product-experience.md)
+  for the preserved founder brief and rejection history. Old dark/glass/palette
+  prescriptions do not define acceptance. Blake judges aesthetics; tests and
+  generated proposals cannot stand in for his verdict.
+- Keep the founder's current cross-device quality, performance and reconstruction
+  targets. Demonstrate them on the relevant scene, data and devices; a weaker
+  result must not be relabelled as satisfying the target.
+- Gaussian training follows the current Linux/RunPod programme and accepted
+  environment decision. Confirm current inputs, executable path and spend
+  authorization from GOAL and the active programme; old hardware names or prices
+  are not permanent requirements.
+- Local edits do not imply deployment. Observe current freeze, production-data,
+  paid-compute and publication constraints. Never expose secrets. If committing,
+  use explicit pathspecs and inspect the staged diff; never stage everything.
+
+## Verification and communication
+
+Use existing tests and add meaningful regression coverage for changed behavior.
+Reproduce bugs before the fix where practical. Run the affected tests and required
+lint/typecheck/build checks for the changed packages and dependency impact. Test
+real boundaries for auth, tenancy, persistence, concurrency and external contracts.
+For UI behavior and presentation, inspect the actual rendered flow with an
+available browser and keep useful visual evidence. Mocks do not prove a live
+integration; emulation does not prove physical-device performance.
+
+Scale verification to the risk. Documentation-only edits need link, consistency
+and diff checks, not a full application build. A small change does not require
+a test for every helper or multiple ceremonial reviews. Broaden checks for shared
+contracts, migration/security risk or failures; once appropriate checks pass,
+finish rather than repeat them without a reason. Report existing failures without
+hiding them or taking on unrelated repairs.
+
+Keep progress updates concise and useful: findings, decisions, meaningful blockers
+and next verification. Finish with the outcome, evidence and material limitations,
+including local versus deployed status. No mandatory handoff template or empty
+sections. If work is externally blocked, name what remains and exactly what would
+unblock it. Preserve a concise resumption note for long work; use available
+context continuation instead of making the user re-prompt each chunk.
+
+## Durable project knowledge
+
+- Keep active task status and evidence current using the
+  [shepherd protocol](docs/state/tasks.md#shepherd-protocol). Record meaningful
+  completed work, decisions and blockers in `docs/sessions/YYYY-MM-DD.md`.
+- Architecture decisions live in `docs/architecture/adr/`; accepted records are
+  historical artifacts. Record a revision or superseding decision rather than
+  rewriting history. Separate proposed choices from adopted ones.
+- Use [docs/strategy/authority-map.md](docs/strategy/authority-map.md) for domain
+  ownership. Existing `cockpit*` names stay; current product language uses
+  Floor/House/Diary where applicable. Build cards are scoped briefs, not fixed
+  session limits or proof of present implementation.
+- Operational records live in `state/`; diagrams in `docs/diagrams/` are views of
+  source records. Update diagrams affected by your change, not every diagram.
+- Keep this core small. Put a learned, evidence-backed trap in a specific
+  convention/gotcha with a clear "Read this when" trigger. Update or replace stale
+  guidance instead of appending another universal prohibition. Memories, if
+  available, are retrieval aids and must be checked against current source.
+- [.claude/SQUAD_PROTOCOL.md](.claude/SQUAD_PROTOCOL.md) and the squad/council files
+  offer optional review lenses. Load only useful ones or those the user requests.
+  Names such as Architect and Mr. Computer confer no authority or credentials and
+  do not limit the agent's general reasoning or ability to cross disciplines.
 
 ## Specific Gotchas & Conventions — Load When Triggered
 
-If what you're about to do doesn't match any trigger below, proceed with
-core rules only. Do not speculatively load specific docs. Each doc below
-lists a trigger condition at its top; load it only when its trigger
-matches what you're about to do.
+- `.claude/conventions/loading-and-working-motion.md`
+  Read this when: adding or changing any user-visible loading, saving,
+  searching, uploading, exporting or other asynchronous working state.
+
+These triggers are routing aids. Load relevant references and follow additional
+ones when task evidence makes them useful; avoid unrelated bulk reads.
+
+- `.claude/conventions/product-experience.md`
+  Read this when: designing, implementing or reviewing a visible surface,
+  interaction, motion or visual target.
 
 - `.claude/gotchas/spark-vs-drei-splat.md`
   Read this when: rendering a Gaussian splat (`.ply`, `.spz`, `.splat`

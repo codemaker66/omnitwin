@@ -1,29 +1,22 @@
-# AGENTS.md — Codex Instructions for Venviewer
+# AGENTS.md — Venviewer
 
-The company/product is Venviewer.
-The repository/package codename may still use omnitwin / @omnitwin/*.
+Read [CLAUDE.md](CLAUDE.md) as the canonical project policy, then
+[.claude/AI_INTEGRITY_RULES.md](.claude/AI_INTEGRITY_RULES.md) and
+[GOAL.md](GOAL.md). Follow CLAUDE's selective task, ADR, audit and convention loading
+instructions; use current task evidence rather than frozen priority numbers here.
 
-Read first:
-- CLAUDE.md
-- .claude/AI_INTEGRITY_RULES.md
-- docs/state/tasks.md
-- docs/architecture/adr/
-- docs/audits/
+The company/product is Venviewer; existing `omnitwin` / `@omnitwin/*` package names
+remain valid. Do not mass-rename them.
 
-Do not invent .Codex paths.
-Do not invent Codex-specific subagents.
-Do not blindly rename omnitwin package names.
-Treat CLAUDE.md as the canonical project policy unless this file explicitly overrides it.
+Use the tools and delegation capabilities actually provided by the current host.
+Do not invent `.Codex` paths, plugin commands or named runtime agents. The squad
+and council files are optional domain lenses, not required identities or limits on
+reasoning. Complete authorized work and resolve routine choices without asking the
+user to dispatch each step.
 
-Current priority:
-- T-091: make Trades Hall real.
-- T-087 Spark/Three runtime is prerequisite.
-- Avoid new product ideation unless explicitly requested.
-
-Engineering rules:
-- TypeScript strict.
-- No any types.
-- No skeleton code.
-- No fake integrations.
-- No public claims ahead of evidence.
-- Use existing tests and add regression tests for changed behavior.
+Durable engineering requirements: TypeScript strict, no `any`, no skeletons or fake
+integrations, no claims ahead of evidence, and regression tests for changed behavior.
+All loading/working UI uses `packages/web/src/components/shared/Activity.tsx`; read
+[.claude/conventions/loading-and-working-motion.md](.claude/conventions/loading-and-working-motion.md).
+Read [the product experience convention](.claude/conventions/product-experience.md)
+for visible work. These founder requirements apply in every session and worktree.

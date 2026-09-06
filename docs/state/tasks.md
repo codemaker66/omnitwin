@@ -2,9 +2,23 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-09-01.
+Updated: 2026-09-06.
 
 ## Latest task notes
+
+- 2026-09-06 T-598 complete locally: modernized CLAUDE/AGENTS, integrity, all 17 personas and active workflow pointers for judgment, autonomous completion and proportionate verification. Current Activity/aesthetic requirements, GOAL amendments, freeze/spend limits and prior task rows preserved. Independent review and documentation checks passed. Review: [AI instructions audit](../audits/2026-09-06-ai-instructions-review.md). No runtime/model changes, deployment or model-performance claim.
+
+- 2026-09-06 T-597 begins: founder requested a Blender reconstruction of the Trades Hall Grand Hall using the available panoramas, splats and other capture evidence, retaining the real hall with Baldur's Gate 3 material and lighting richness. This is local scene-authoring work alongside T-596; preserve source masters, record inferred or presentation-enhanced detail, and verify architecture against multiple references. Faithful identity, final visual quality and founder acceptance remain open; no delivery or production claim.
+
+- 2026-09-06 T-596 in progress: founder put Codex in charge; direction 17 replaces fixed OBJ/panorama prescriptions with joint multi-source reconstruction and capped Linux experiments. Recovered/verified 148 native 8K panoramas; actual guest rehearsal placed 18 tables/144 chairs, dressed one table, saved/reopened and exercised undo/redo. Furniture-lighting fix `ae1accae` passed 125 tests and a paired real-GPU check locally; seating-count correction is in progress. Current identity receives invitation-required 403; full admin journey, arrival/control issues, reconstruction, physical-device 60fps and photographic PSNR50 remain open. Claude retains active court repair. No deployment or new GPU spend. Evidence: docs/reports/t596-direction-and-demo-status-2026-09-06.md.
+
+- 2026-09-05 T-585 extended: section 15, the world that answers you, spliced into the magnificent-quiz spec from the reactivity fan-out `wf_6592ad07-fd3` (sixteen agents), every code citation re-verified against the tree, the 48-line consequence table rewritten until it passes the 25-word, lexicon and lure checks, the completeness critic's 22 gaps applied (Appendix F), rulings 1–15; artifact cf9b0271 republished; commit 615d52d5. Planning only: nothing built, no voice generated, no production change. Three decisions now sit with Blake in §15.10.
+
+- 2026-09-05 T-594 complete locally: supplied video translated into shared particle motion in `packages/web/src/components/shared/Activity.tsx` / `Activity.css`, used by 69 TSX consumers plus first-paint HTML. Reduced-motion, honest progress/lifecycle and branch-aware regression enforcement included. Full web 391 files / 5,204 tests passed; final strengthened convention tests 10/10; typecheck, lint, production build and seven desktop/mobile Chromium checks passed. CLAUDE/AGENTS/convention mandate updated; both other active project tasks notified and T-593 confirmed adoption. Preview/evidence: `D:/claude/venviewer-loading-20260905/`. Not deployed; physical-device and wider design acceptance remain separate.
+
+- 2026-09-05 T-593 complete locally: implementation `e6bc73e6` on `codex/inventory-reservations-and-remedies` connects exact approved event reservations, signed shortages and affected events to editable stock, with separate preparation and approval of internal hire/inspection requests. Real PostgreSQL 27/27 and browser 9/9 passed; full types 2,201, API 2,807 and web 5,201 tests passed, plus typecheck/lint/build and independent review. Verification: `docs/reports/t593-reservations-remedies-verification-2026-09-05.md`. Temporary services stopped; branch remains isolated, unmerged, unpushed and undeployed. Requests do not count as confirmed supply. T-591's rejected presentation, the wider sublime rebuild and physical-device targets remain open.
+
+- 2026-09-05 T-592 begins: founder clarified the preferred floor is the original textured Matterport OBJ, preferred walls came from a Matterport panorama splat, chandeliers from the large PortalCam capture, and a second smaller PortalCam capture also has useful detail. Codex is recovering and comparing those actual sources under D:/claude/grand-hall-source-comparison-20260905. This bounded local evidence slice retains the larger goals of 60 fps, PSNR 50+, architectural fidelity, furniture placement, fast loading and sublime presentation; it does not certify them. T-590 court remains Claude-owned. No paid compute or production changes.
 
 - 2026-09-04 T-587 complete: the runnable goals deck at `goals/` (README, HUMAN, 00–10) turns the vision, plan 15 and plan 16 into pasteable /goal cards with decisions, done-when and verify commands; Codex began executing lanes 00/T-581, the sublime study and the inventory foundation the same night (`goals/EXECUTION.md`).
 
@@ -61,12 +75,20 @@ Updated: 2026-09-01.
 
 | ID | Title | Status | I | E | Depends | Source | Notes |
 |---|---|---|---|---|---|---|---|
+| T-598 | Modernize repository AI instructions and specialist lenses. | done | 4 | 0.5 | — | USER-2026-09-06 (review outdated CLAUDE, integrity and personas) | Updated core/entry policies, all 17 squad/council lenses, workflow guides and active policy pointers. Evidence: docs/audits/2026-09-06-ai-instructions-review.md. Independent policy/workflow review and 32-file documentation validation passed (41 local links, founder constraints, 551 prior task rows, git diff check). Local and uncommitted; no application behavior or model capability benchmarked. |
+| T-597 | Reconstruct the real Grand Hall in Blender with rich game-quality materials and lighting. | in-progress | 5 | 3-5 | T-592 | USER-2026-09-06 (faithful real hall; Baldur's Gate 3 richness) | Local Blender authoring from original panoramas, splats, photographs and geometry references. Definition of done: saved editable scene, source-linked architectural comparison, inspected render and explicit evidence/inference record, then founder visual acceptance. Preserve original captures and existing scene work. Bulk artifacts belong under D:/claude. No exact-identity, measured-reconstruction, runtime-performance or production qualification is claimed. T-596 and Claude's active court repair remain separate. |
+| T-596 | Coordinate all-source Grand Hall reconstruction and qualify Elaine's demo. | in-progress | 5 | 2 | T-590, T-592, T-576 | USER-2026-09-06 (ambitious all-data reconstruction; Codex in charge) | Direction17/handoff and canonical amendments written. 148 native 8K panoramas recovered; bounded real planner rehearsal persisted 18 tables/144 chairs. Combined local candidate e1970973 includes visually verified lighting and passes real-browser counts, shared attendance, widget clearance and settled/mid-load renderer transitions with zero page errors. Original failed runs preserved. Admin identity/arrival/other control blockers and full signed-in journey remain. Claude owns active court repair; handoff unacknowledged. New reconstruction/60fps/PSNR50 unaccepted. No deployment or new GPU spend. |
+| T-594 | Reference-inspired loading and working motion across Venviewer. | done | 5 | 1 | T-586 | USER-2026-09-05 | Activity.tsx/CSS shared by 69 TSX consumers + first-paint HTML; real progress and completion/error/refresh lifecycle, reduced-motion support, obsolete spinner removal, ESLint and branch-aware convention guard. Full web 5,204 passed; final convention 10/10; typecheck/lint/build and seven Chromium checks pass. CLAUDE/AGENTS/convention updated; active project tasks notified. Evidence D:/claude/venviewer-loading-20260905; no deployment or physical-device/aesthetic certification. |
+| T-593 | Connect event reservations, identify shortages and prepare admin-approved remedies. | done | 5 | 2 | T-588, T-591 (functional foundation) | USER-2026-09-05 | Local bounded implementation e6bc73e6 on codex/inventory-reservations-and-remedies: exact frozen-layout demand across full occupied windows, explicit venue-admin approval, signed shortages/affected events/incomplete evidence, immutable history and prepared/approved internal hire or inspection requests. Controlled PostgreSQL stock/approval race reproduced and fixed; PG27/27, browser9/9, full types2201/API2807/web5201, builds/typechecks/lint and independent review passed. Report: docs/reports/t593-reservations-remedies-verification-2026-09-05.md. No confirmed supply invented; procurement, rollout, wider sublime redesign and physical-device qualification remain open. No merge, push or deployment. |
+| T-592 | Recover Grand Hall source candidates and build a local visual comparison. | done | 5 | 1 | T-087 | USER-2026-09-05 (source clarification and outcome mandate) | Codex owns source-faithful Matterport floor extraction, big/small PortalCam identification, older panorama-model recovery and a local inspection viewer. Registration candidates remain unverified until inspected. Source comparison does not require court training exclusions; later photograph baking does. Scratch artifacts: D:/claude/grand-hall-source-comparison-20260905. T-590 and production untouched. |
 | T-586 | Incorporate the sublime redesign, editable inventory, quality parity and decision-intelligence mandate. | done | 5 | 0.5 | T-584 | USER-2026-09-04 follow-up | Delivered programme 16; amended programme 15, GOAL, House, authority map and goal graph; primary-source research, code-seam review and independent consistency check; local links/diff verified. Planning only, no UI/inventory/approval implementation claimed. Renumbered from provisional T-585 to avoid the concurrent quiz task collision. |
+| T-591 | Venue-admin inventory persistence, API and sublime editing interface. | in-progress | 5 | 2 | T-588, T-586 | USER-2026-09-05 (continue goals; design rejected); goals/01,05–06 | PRESENTATION REOPENED: Blake rejected the screenshot as "absolutely terrible and boring". Functional implementation bdc15bc3 and evidence5234d685 remain valid: real PG9/9; types2193; web5158; API2793; browser8/8 plus viewport3/3; builds/typechecks/lint pass. No aesthetic approval is implied. Rebuild from docs/design/sublime-inventory-rebrief-2026-09-05.md and venviewer-sublime-imagegen-prompt.md; rejected screenshot is context only. Branch codex/venue-inventory-admin remains unmerged/unpushed/undeployed. |
 | T-588 | Venue inventory domain foundation: scoped adjustments, audit receipts and truthful availability. | done | 5 | 1 | T-586 | USER-2026-09-04; goals/05–06 | Delivered on codex/venue-inventory-foundation at 9cfba200154c9ff42ce3cd3cfd8172453e3f0975, D:/claude/venviewer-inventory-20260904: 28 new regressions; full types 96 files / 2,185 tests, lint, typecheck and build pass; independent review fixes included. Pure domain only; persistence, API and admin UI remain. Not merged or pushed. See goals/EXECUTION.md. |
 | T-589 | Three concrete sublime design directions for planner, admin and hallkeeper. | done | 5 | 1 | T-586 | USER-2026-09-04; goals/01 | Delivered docs/design/sublime-study-2026-09-04/study.md, prompts and provenance; Measure, Continuum and Presence PNGs at D:/claude/sublime-study-20260904. Agent and root visually reviewed; dimensions, hashes and links checked. Founder selection pending. Concepts only; no implemented UI or captured-room fidelity evidence. |
+| T-590 | The court made valid (V2): a quaternion pose parameter with roll on the walk, the T-502-to-served-frame registration, the Python judge with geometric regions and raw versus colour-fitted scores, the Playwright renderer, the ±2 s training exclusions, and the gh2-vendor baseline with six stills and a walking clip. | in-progress | 5 | 2 | T-578, T-579, T-502 | docs/plan/14 V2; USER-2026-09-05 ("run goals/02 W1, the court") | Branch claude/v2-court in the worktree D:/claude/court-v2. MEASURED 2026-09-05: with the manifest transform alone the T-502 model's floor points sit at y ≈ -0.45 and its cameras about 0.3 m low, so the court registers the T-502 frame to the served Gaussian centres (a rigid correction with reported residuals) before any pose is judged. Workflow wf_2d6dbca3-a8b builds the web pose parameter, tools/court and packages/web/scripts/court-render.mjs; the session runs the baseline. |
 | T-587 | The goals deck: eleven runnable goal cards and the founder's asks at `goals/`. | done | 5 | 0.5 | T-584, T-586 | USER-2026-09-04 ("construct ./goals for yourself and run them yourself or tell me to") | `goals/README.md` (order, laws, six Blake Clause flags, status board), `goals/HUMAN.md` (sixteen asks by leverage), `goals/00`–`goals/10` (each: a /goal block, Blake's words, measured state, decisions, slices, done-when, verify commands, forbidden, human inputs). Folds plan 16's four requirements into goals 01, 02, 05, 06 and 09. Codex's `goals/EXECUTION.md` records lane ownership. Planning only: no code, no commit, no production change. |
 | T-584 | Reconcile the complete Venviewer vision into measurable goals and founder requests. | done | 5 | 0.5 | — | USER-2026-09-04; complete vision attachment | Delivered `docs/plan/15-VENVIEWER-GOAL-PROGRAMME-2026-09-04.md` and exact source archive, session log, focused goal-graph supplement. Ten goals, quality/evidence gates, existing-task mapping, research briefs and founder requests; independent review incorporated. Source hash, links and documentation diff checked. Planning only; does not complete platform features or replace W0–W8. |
-| T-585 | The magnificent quiz: decide the stack, story, voice, worlds, sound, art pipeline, fairness gates and delivery for the Craft quiz rebuild. | proposed | 5 | 2 | — | USER-2026-09-04 /goal (Blake, verbatim in the spec) | Spec at `docs/superpowers/specs/2026-09-04-magnificent-quiz-design.md` (31,700 words: 15 sections + engineering plan + critic dispositions + verified defects + sound per scene + insider pool); page at https://claude.ai/code/artifact/cf9b0271-9f27-45aa-b8b8-00522eae682a. Nothing built. Awaits Blake's decisions in §12 (portrait route, budget tier, illustrator, House permissions). Ten defects verified in the LIVE quiz ride on Card 1 (Appendix C) and are the first quiz change after the Monday freeze lifts; none touches production before Tuesday 2026-09-08. |
+| T-585 | The magnificent quiz: decide the stack, story, voice, worlds, sound, art pipeline, fairness gates and delivery for the Craft quiz rebuild. | proposed | 5 | 2.5 | — | USER-2026-09-04 /goal (Blake, verbatim in the spec); USER-2026-09-05 second brief (Fable/Baldur's Gate reactivity, verbatim in §15) | Spec at `docs/superpowers/specs/2026-09-04-magnificent-quiz-design.md` (49,600 words: sections 0–15 + engineering plan + critic dispositions in Appendices B and F + verified defects + sound per scene + insider pool); page at https://claude.ai/code/artifact/cf9b0271-9f27-45aa-b8b8-00522eae682a, republished 2026-09-05 with §15. §15 (commit 615d52d5): the reactive world — consequences of one named choice and the wear of the night are the only signals that may change the page, the narrator or the burgh; no axis or tally state ever; the 48-line consequence table passes the lexicon and lure checks; the town you made before the arm; the fairness lint L1–L16; Cards 6b, 6c, 17b, 20a, 21b, 23 at about £23,000–33,000 over §12 and three days of Blake; the completeness critic's 22 gaps applied. Nothing built. Awaits Blake's decisions in §12 (portrait route, budget tier, illustrator, House permissions) and §15.10 (the bounded transformation, no rebuild, the Reckoning as opt-in Card 17c). Ten defects verified in the LIVE quiz ride on Card 1 (Appendix C) and are the first quiz change after the Monday freeze lifts; none touches production before Tuesday 2026-09-08. |
 | T-001 | Migrate to RunPod-only training workflow. Stage `colmap_v2` to R2. Set up A100 80GB pod template with PyTorch 2.4.1+cu124, gsplat 1.5.3, Mip-Splatting, DN-Splatter, 3DGUT. | blocked | 5 | 2 | — | D-006a, D-014, D-016, Claude-DR §4 | Implementation landed 2026-04-26 (Dockerfile, run scripts, configs, runbook). Smoke test ($0.20 mip-NeRF garden) is step 1 of using it; T-001 closes when smoke gate passes. Blocked on RunPod template + secrets being configured in the RunPod console. |
 | T-002 | Document RunPod runbook (launch, rclone in `colmap_v2`, run training, push results to R2, kill pod). | done | 4 | 1 | T-001 | D-006a, D-016 | Runbook landed at `infra/runpod/RUNBOOK.md`; covers smoke + Config B procedures, failure modes, equirect trap, cost reference. |
 | T-003 | Run Config B training: Mip-Splatting + DN-Splatter + 3DGUT + bilateral grid + MCMC, cap-max 5M, 30K steps on A100. | not-started | 5 | 1 + 3 hr GPU | T-001 | D-006a, D-016, Claude-DR §4.1.6 | Recipe locked at `configs/training/config_b.yaml`. Blocked on T-001 (smoke gate must pass first). |
@@ -263,6 +285,7 @@ Updated: 2026-09-01.
 
 | ID | Title | Status | I | E | Depends | Source | Notes |
 |---|---|---|---|---|---|---|---|
+| T-595 | Guard selected dashboard detail against stale responses. | not-started | 4 | 1 | — | T-594 independent review, 2026-09-05 | Pre-existing request ownership races: ProposalsView latest version/history/comments/refresh, AdminPanel pricing rules, CommercialPipelineView opportunity detail. A slow prior selection can overwrite the current one. Follow up with identity/abort guards and A-slow/B-fast regressions. Separate from loading animation delivery; no fix claimed. |
 | T-006 | Reframe ADR-003 → typed spatial-layer graph doctrine. | done | 5 | 0.5 | — | Prompt 2 | Landed as D-003a. |
 | T-007 | Reframe ADR-005 → view-dependent residual layer. | done | 4 | 0.5 | — | Prompt 2 | Landed as D-005a. |
 | T-008 | Soften ADR-004 → projective texturing as base behind interface. | done | 3 | 0.5 | — | Prompt 2 | Landed as D-004a. |
@@ -715,41 +738,48 @@ Updated: 2026-09-01.
 
 ## Shepherd protocol
 
-This task list is a living document. Every Claude Code session must follow this protocol.
+Updated 2026-09-06. Keep task state useful and accurate without turning each
+implementation task into a full backlog audit. CLAUDE.md owns execution policy.
 
 ### Before starting work
 
-- Read this file in full.
-- Identify the T-NNN that the current request maps to. If no T-NNN matches, propose a new T-NNN in the appropriate tier and add it to the table before starting work.
-- Update the matched task's status to `in-progress`.
+- Read the latest task notes, relevant rows and their dependencies. Search the
+  rest of the ledger when needed; a full read is appropriate for a backlog review,
+  not a prerequisite for every change.
+- Map substantive work to an existing T-NNN. If none fits, check current IDs and
+  add a clearly scoped row with the user request/source; mark it `in-progress`.
+  A question or trivial correction does not need a new project task.
+- Check concurrent ownership before changing another task's status or files.
+  Current user instructions take precedence over a stale queue.
 
 ### During work
 
-If the work becomes blocked:
-
-- Set status to `blocked`.
-- Add to Notes: what blocks the task and what would unblock it.
-- Surface the block in the session log at `docs/sessions/YYYY-MM-DD.md`.
-
-If the work reveals new tasks (subtasks, prerequisite work, follow-on work):
-
-- Add them to the appropriate tier with explicit `Depends` linkage.
-- Do not merge new work into the in-progress task scope without Blake's explicit confirmation.
+- Carry necessary prerequisites, integration and review fixes through under the
+  authorized objective. Track separate deliverables with dependency links when
+  useful; do not ask for approval merely because another file or subtask is needed.
+- Record newly discovered unrelated work separately instead of silently expanding
+  the project. Ask only for a material product decision or authorization missing
+  from the request, as described in CLAUDE.md.
+- If externally blocked, mark the relevant task `blocked` with the precise blocker
+  and what would unblock it, keep independently actionable work moving, and capture
+  a useful resumption note. Uncertainty that can be investigated is work to do,
+  not a user blocker.
 
 ### After completing work
 
-- Set the task's status to `done`.
-- Update the Notes field with the actual delivered artifact paths (e.g. "Implementation at `infra/runpod/run_training.sh`, runbook at `infra/runpod/RUNBOOK.md`").
-- Update any tasks that were `Depends`-on-this-task to surface that they're now unblocked.
-- Regenerate `docs/diagrams/task-graph.md` to reflect the new state.
-- Add a session log entry to `docs/sessions/YYYY-MM-DD.md` noting the completed task and any newly-unblocked tasks.
+- Mark the agreed scope `done` only with applicable verification. Link delivered
+  artifacts and evidence; distinguish local, merged, deployed and accepted status.
+  If the row represents a larger programme, record the completed slice without
+  declaring the entire programme done.
+- Update directly affected dependents when their readiness changes. Update
+  `docs/diagrams/task-graph.md` only when the view it depicts is affected.
+- Add a concise entry for meaningful work, decisions and blockers to
+  `docs/sessions/YYYY-MM-DD.md`. Preserve other sessions' entries.
+- Do not repeat already-passing checks solely to update a task record.
 
-### Per-session surveillance
+### Backlog reviews
 
-Each session also checks:
-
-- Any task that's been `in-progress` for >7 days: probably stuck. Surface to Blake.
-- Any task whose `Depends` are now all `done`: should be flagged as ready to start.
-- Any task whose `Depends` include a task that's been `rejected`: may need re-thinking; surface to Blake.
-
-The shepherd protocol is non-negotiable. Skipping it produces the exact failure mode this protocol was designed to prevent: tasks that quietly stay open forever because nobody updated them after the work shipped.
+When asked to review priorities, or when a relevant dependency looks stale, inspect
+old `in-progress` rows, newly satisfied dependencies and rejected prerequisites.
+Report evidence-backed issues; age alone does not prove a task is stuck. A global
+surveillance pass is not required in every session.

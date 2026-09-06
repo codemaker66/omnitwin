@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator } from "../shared/Activity.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
@@ -46,6 +47,7 @@ const sendBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
+  gap: 8,
   width: "100%",
   padding: "9px 20px",
   fontSize: 13,
@@ -129,6 +131,7 @@ export function SaveSendPanel({
             ? "Exit the room timeline preview before sending this saved plan."
             : undefined}
         >
+          {flushing && <ActivityIndicator size={18} />}
           {timelinePreviewActive ? "Exit preview to send" : "Send to Events Team"}
         </button>
       </FloatingWidgetFrame>

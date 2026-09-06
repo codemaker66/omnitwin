@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import type { ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
 import type {
@@ -90,9 +91,10 @@ export function DiaryBoardPage(): ReactElement {
   const anchorMs = anchorFromParam(searchParams.get("date"));
   const range = useMemo(() => boardRange(anchorMs, view), [anchorMs, view]);
 
-  const { data, status, error, refetch } = useCalendar(venueId, range);
+  const { data, status, error, refetch, isRefreshing } = useCalendar(venueId, range);
 
   const [showExited, setShowExited] = useState(false);
+  const [pendingMoves, setPendingMoves] = useState(0);
   const [overrides, setOverrides] = useState<ReadonlyMap<string, MoveSnapshot>>(new Map());
   const [undoStack, setUndoStack] = useState<readonly UndoEntry[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -241,6 +243,7 @@ export function DiaryBoardPage(): ReactElement {
   const applyMove = useCallback(
     (bookingId: string, patch: MoveSnapshot, undoEntry: UndoEntry | null) => {
       setOverrides((previous) => new Map(previous).set(bookingId, patch));
+      setPendingMoves((count) => count + 1);
       moveBooking(bookingId, patch)
         .then(() => {
           if (undoEntry !== null) {
@@ -268,7 +271,8 @@ export function DiaryBoardPage(): ReactElement {
             showUndo: false,
           });
           if (raced) refetch();
-        });
+        })
+        .finally(() => { setPendingMoves((count) => count - 1); });
     },
     [refetch],
   );
@@ -623,6 +627,8 @@ export function DiaryBoardPage(): ReactElement {
             </button>
           </div>
           <span className="diary-range-title">{rangeTitle(range)}</span>
+          {pendingMoves > 0 && <ActivityStatus>Saving diary changes…</ActivityStatus>}
+          {isRefreshing && <ActivityStatus>Refreshing diary…</ActivityStatus>}
           <label className="diary-toggle">
             <input
               type="checkbox"
@@ -633,7 +639,8 @@ export function DiaryBoardPage(): ReactElement {
             />
             {BOARD_COPY.showExited}
           </label>
-          <button type="button" className="diary-button" onClick={refetch}>
+          <button type="button" className="diary-button" onClick={refetch} aria-busy={isRefreshing}>
+            {isRefreshing && <ActivityIndicator size={20} />}
             {BOARD_COPY.refresh}
           </button>
           <button
@@ -690,8 +697,8 @@ export function DiaryBoardPage(): ReactElement {
           </button>
         </div>
       ) : data === null ? (
-        <div className="diary-notice" role="status">
-          {BOARD_COPY.loading}
+        <div className="diary-notice">
+          <ActivityStatus variant="panel">{BOARD_COPY.loading}</ActivityStatus>
         </div>
       ) : (
         <div className="diary-layout">

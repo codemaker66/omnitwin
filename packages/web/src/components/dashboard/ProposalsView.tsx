@@ -32,6 +32,7 @@ import {
 } from "../../lib/proposal-capacity-note.js";
 import { listSpaces, type Space } from "../../api/spaces.js";
 import { useAuthStore } from "../../stores/auth-store.js";
+import { ActivityStatus } from "../shared/Activity.js";
 
 // ---------------------------------------------------------------------------
 // ProposalsView — staff authoring surface (T-427 phase 4).
@@ -140,6 +141,8 @@ export function ProposalsView(): ReactElement {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<StaffProposalVersion | null>(null);
+  const [versionRequests, setVersionRequests] = useState(0);
+  const [detailRequests, setDetailRequests] = useState(0);
   const [comments, setComments] = useState<ProposalCommentRow[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentLoadError, setCommentLoadError] = useState<string | null>(null);
@@ -175,6 +178,7 @@ export function ProposalsView(): ReactElement {
   // Rooms power the capacity guidance block (T-429). Failure is non-fatal —
   // the guidance simply stays unavailable and the note stays hand-written.
   const [spaces, setSpaces] = useState<Space[]>([]);
+  const [spacesRequests, setSpacesRequests] = useState(0);
   const [capSpaceId, setCapSpaceId] = useState("");
   const [capGuests, setCapGuests] = useState("");
   const [capStyle, setCapStyle] = useState<LayoutStyle>("dinner-rounds");
@@ -182,12 +186,14 @@ export function ProposalsView(): ReactElement {
   useEffect(() => {
     const venueId = user?.venueId;
     if (venueId === undefined || venueId === null) return;
+    setSpacesRequests((count) => count + 1);
     listSpaces(venueId)
       .then((rows) => {
         setSpaces(rows);
         setCapSpaceId((current) => (current.length > 0 ? current : (rows[0]?.id ?? "")));
       })
-      .catch(() => { /* guidance unavailable — note stays manual */ });
+      .catch(() => { /* guidance unavailable — note stays manual */ })
+      .finally(() => { setSpacesRequests((count) => count - 1); });
   }, [user?.venueId]);
 
   const loadHistory = useCallback((id: string) => {
@@ -203,9 +209,11 @@ export function ProposalsView(): ReactElement {
   }, []);
 
   const loadLatestVersion = useCallback((id: string) => {
+    setVersionRequests((count) => count + 1);
     getLatestProposalVersion(id)
       .then(setLatestVersion)
-      .catch(() => { setLatestVersion(null); });
+      .catch(() => { setLatestVersion(null); })
+      .finally(() => { setVersionRequests((count) => count - 1); });
   }, []);
 
   const loadComments = useCallback((id: string) => {
@@ -238,6 +246,7 @@ export function ProposalsView(): ReactElement {
   }, [loadComments, loadHistory, loadLatestVersion]);
 
   const refreshSelected = useCallback((id: string) => {
+    setDetailRequests((count) => count + 1);
     getProposal(id)
       .then((proposal) => {
         setSelected(proposal);
@@ -246,7 +255,8 @@ export function ProposalsView(): ReactElement {
         loadLatestVersion(id);
         loadComments(id);
       })
-      .catch(() => { setActionError("Could not refresh the proposal. Reload the page and try again."); });
+      .catch(() => { setActionError("Could not refresh the proposal. Reload the page and try again."); })
+      .finally(() => { setDetailRequests((count) => count - 1); });
   }, [loadComments, loadHistory, loadLatestVersion, refreshList]);
 
   const handlePostReply = (): void => {
@@ -417,6 +427,7 @@ export function ProposalsView(): ReactElement {
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <section style={card} aria-label="Create proposal">
           <h2 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600 }}>New proposal</h2>
+          {busy && <ActivityStatus>Updating proposal records…</ActivityStatus>}
           {user?.venueId === null || user?.venueId === undefined ? (
             <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>
               Your account isn't linked to a venue, so proposals can't be created from here.
@@ -453,8 +464,9 @@ export function ProposalsView(): ReactElement {
 
         <section style={card} aria-label="Proposals">
           <h2 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600 }}>Proposals</h2>
+          {listLoading && proposals.length > 0 && <ActivityStatus>Refreshing proposals…</ActivityStatus>}
           {listLoading && proposals.length === 0 && (
-            <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading proposals...</p>
+            <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading proposals...</ActivityStatus>
           )}
           {listError !== null && (
             <div role="alert" data-testid="proposal-list-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
@@ -505,13 +517,15 @@ export function ProposalsView(): ReactElement {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <section style={card} aria-label="Proposal detail">
+            {detailRequests > 0 && <ActivityStatus>Refreshing proposal details…</ActivityStatus>}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff7e8" }}>{selected.title}</h2>
               <StatusPill status={selected.status} />
             </div>
             <div style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", marginTop: 6 }}>
-              Version {selected.currentVersion} {latestVersion !== null ? `— last saved ${new Date(latestVersion.createdAt).toLocaleString("en-GB")}` : "— no content saved yet"}
+              Version {selected.currentVersion} {latestVersion !== null ? `— last saved ${new Date(latestVersion.createdAt).toLocaleString("en-GB")}` : versionRequests === 0 ? "— no content saved yet" : ""}
             </div>
+            {versionRequests > 0 && <ActivityStatus>Loading saved proposal content…</ActivityStatus>}
 
             {shareUrl !== null && (
               <div style={{ marginTop: 12, fontSize: 13 }}>
@@ -578,6 +592,7 @@ export function ProposalsView(): ReactElement {
                 onChange={(e) => { setCapacityNote(e.target.value); }}
               />
 
+              {spacesRequests > 0 && <ActivityStatus>Loading room guidance…</ActivityStatus>}
               {spaces.length > 0 && (
                 <div style={{ marginTop: 10, padding: 12, background: "rgba(215, 181, 109, 0.08)", border: "1px solid rgba(215, 181, 109, 0.22)", borderRadius: 6 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#d7b56d", marginBottom: 8 }}>
@@ -738,8 +753,9 @@ export function ProposalsView(): ReactElement {
 
           <section style={card} aria-label="Client conversation" data-testid="proposal-conversation">
             <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>Conversation</h3>
+            {commentsLoading && comments.length > 0 && <ActivityStatus>Refreshing conversation…</ActivityStatus>}
             {commentsLoading && comments.length === 0 ? (
-              <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading conversation...</p>
+              <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading conversation...</ActivityStatus>
             ) : commentLoadError !== null ? (
               <div role="alert" data-testid="conversation-load-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
                 <p style={{ margin: "0 0 8px" }}>{commentLoadError}</p>
@@ -810,8 +826,9 @@ export function ProposalsView(): ReactElement {
 
           <section style={card} aria-label="Status history">
             <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>History</h3>
+            {historyLoading && history.length > 0 && <ActivityStatus>Refreshing history…</ActivityStatus>}
             {historyLoading && history.length === 0 ? (
-              <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading history...</p>
+              <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading history...</ActivityStatus>
             ) : historyError !== null ? (
               <div role="alert" data-testid="history-load-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
                 <p style={{ margin: "0 0 8px" }}>{historyError}</p>

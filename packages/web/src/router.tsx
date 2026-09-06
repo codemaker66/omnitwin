@@ -1,4 +1,5 @@
 import { lazy, Suspense, type ReactElement } from "react";
+import { ActivityIndicator } from "./components/shared/Activity.js";
 import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
@@ -149,6 +150,7 @@ function LoadingFallback(): ReactElement {
     <div className="vv-route-state">
       <section className="vv-state-panel" role="status" aria-live="polite">
         <p className="vv-state-kicker">Venviewer</p>
+        <ActivityIndicator size={64} />
         <h1>Preparing the room workspace</h1>
         <p>Loading the route shell, controls, and current planning context.</p>
         {/* CARD A4: canonical chip grammar; the SAFE wording stays verbatim

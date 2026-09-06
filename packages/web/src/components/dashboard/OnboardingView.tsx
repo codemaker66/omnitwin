@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
 import { BadgeCheck, Building2, CircleAlert, ClipboardCheck, RefreshCw, Save, Send, ShieldCheck, UserPlus } from "lucide-react";
+import { ActivityIndicator } from "../shared/Activity.js";
 import type {
   BillingProvider,
   OnboardingProject,
@@ -551,7 +552,7 @@ export function OnboardingView(): ReactElement {
     return (
       <section style={panelStyle} aria-live="polite">
         <p style={labelStyle}>Workspace onboarding</p>
-        <h2 style={{ margin: "8px 0", color: "#21190f", fontSize: 22 }}>Loading managed rollout records</h2>
+        <h2 style={{ margin: "8px 0", color: "#21190f", fontSize: 22 }}><ActivityIndicator size={28} /> Loading managed rollout records</h2>
         <p style={mutedTextStyle}>Organisation, workspace, invite, and entitlement records are loading.</p>
       </section>
     );
@@ -608,7 +609,7 @@ export function OnboardingView(): ReactElement {
               <h3 style={{ margin: 0, color: "#21190f", fontSize: 20 }}>Sales handoff package</h3>
             </div>
             <button type="submit" style={primaryButtonStyle} disabled={submitDisabled} data-testid="create-onboarding-workspace">
-              <Send size={16} aria-hidden="true" /> {submitting ? "Creating" : "Create"}
+              {submitting ? <ActivityIndicator size={16} /> : <Send size={16} aria-hidden="true" />} {submitting ? "Creating" : "Create"}
             </button>
           </div>
 
@@ -922,7 +923,7 @@ export function OnboardingView(): ReactElement {
                         disabled={action.inviteBusy || inviteCount === 0}
                         onClick={() => { void handleInviteStaff(workspace.id); }}
                       >
-                        <UserPlus size={16} aria-hidden="true" />
+                        {action.inviteBusy ? <ActivityIndicator size={16} /> : <UserPlus size={16} aria-hidden="true" />}
                         {action.inviteBusy ? "Sending invites" : `Send ${String(inviteCount)} invite(s)`}
                       </button>
                       {action.inviteError === null ? (
@@ -997,7 +998,7 @@ export function OnboardingView(): ReactElement {
                             onClick={() => { void handleSaveProjectGate(workspace.id, project); }}
                             aria-label={`Save project gate for ${workspace.name}`}
                           >
-                            <Save size={16} aria-hidden="true" />
+                            {action.projectBusy ? <ActivityIndicator size={16} /> : <Save size={16} aria-hidden="true" />}
                             {action.projectBusy ? "Saving gate" : "Save project gate"}
                           </button>
                           {action.projectError !== null ? <p role="alert" style={actionErrorStyle}>{action.projectError}</p> : null}
@@ -1103,7 +1104,7 @@ export function OnboardingView(): ReactElement {
                             onClick={() => { void handleSaveEntitlementGate(workspace.id, entitlement); }}
                             aria-label={`Save provider gate for ${workspace.name}`}
                           >
-                            <ShieldCheck size={16} aria-hidden="true" />
+                            {action.entitlementBusy ? <ActivityIndicator size={16} /> : <ShieldCheck size={16} aria-hidden="true" />}
                             {action.entitlementBusy ? "Saving provider gate" : "Save provider gate"}
                           </button>
                           {action.entitlementError !== null ? <p role="alert" style={actionErrorStyle}>{action.entitlementError}</p> : null}

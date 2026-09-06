@@ -5,6 +5,7 @@ import { boardRange, formatWallDay } from "../diary/lib/board-time.js";
 import { useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
+import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { deriveDayBoard, type DayBoardSlot } from "./lib/day-board-state.js";
 import "./day-board.css";
 
@@ -80,7 +81,7 @@ export function DayBoardPage(): ReactElement {
   // Today, venue-local; the range re-derives when the clock crosses
   // midnight, so an always-on wall tablet rolls to the new day by itself.
   const range = useMemo(() => boardRange(nowMs, "day"), [nowMs]);
-  const { data, status, error, refetch } = useCalendar(venueId, range);
+  const { data, status, error, refetch, isRefreshing } = useCalendar(venueId, range);
   const live = useDiaryLive(venueId !== null, refetch);
 
   const board = useMemo(
@@ -105,15 +106,19 @@ export function DayBoardPage(): ReactElement {
             <p className="dayboard-subtitle">{formatWallDay(nowMs)}</p>
           </div>
           <div className="dayboard-status">
-            <span
-              className={`dayboard-live-dot${live.connected ? " is-connected" : ""}`}
-              aria-hidden="true"
-            />
-            <span>{live.connected ? "Live" : "Reconnecting…"}</span>
+            {isRefreshing && <ActivityStatus>Refreshing the Day Board…</ActivityStatus>}
+            {venueId !== null && !live.connected ? <ActivityIndicator size={20} /> : (
+              <span className={`dayboard-live-dot${live.connected ? " is-connected" : ""}`} aria-hidden="true" />
+            )}
+            <span>{venueId === null ? "No venue linked" : live.connected ? "Live" : "Reconnecting…"}</span>
           </div>
         </header>
 
-        {status === "error" ? (
+        {venueId === null ? (
+          <p className="dayboard-notice">Your account needs a venue before the Day Board can load.</p>
+        ) : status === "loading" && board === null ? (
+          <ActivityStatus variant="panel" className="dayboard-notice">Loading the Day Board…</ActivityStatus>
+        ) : status === "error" ? (
           <div className="dayboard-notice" role="alert">
             <p>{error ?? "The board could not load."}</p>
             <button type="button" className="diary-button" onClick={refetch}>

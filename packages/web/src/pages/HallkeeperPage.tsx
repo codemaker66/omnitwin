@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import {
   ackProgress,
   enqueueProgress,
@@ -89,10 +90,6 @@ if (typeof document !== "undefined" && document.getElementById(PRINT_STYLE_ID) =
       h1, h2, h3 { color: #000 !important; }
       .hk-checkbox { border-color: #000 !important; }
     }
-    @keyframes hk-pulse {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 0.15; }
-    }
     @keyframes hk-celebrate {
       0% { transform: scale(0.8); opacity: 0; }
       50% { transform: scale(1.05); }
@@ -115,6 +112,8 @@ export function HallkeeperPage(): React.ReactElement {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [highlightedRowKey, setHighlightedRowKey] = useState<string | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
+  const [progressWrites, setProgressWrites] = useState(0);
+  const [syncingProgress, setSyncingProgress] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState<DownloadNotice | null>(null);
   // Count of progress toggles queued offline. Surfaces as a small
   // badge on the page so the hallkeeper sees "3 edits pending sync"
@@ -192,6 +191,7 @@ export function HallkeeperPage(): React.ReactElement {
     const desiredChecked = !wasChecked;
 
     setChecks((prev) => toggleCheck(prev, rowKey, desiredChecked));
+    setProgressWrites((count) => count + 1);
 
     void (async () => {
       let result: ReplayResult;
@@ -230,7 +230,7 @@ export function HallkeeperPage(): React.ReactElement {
         // show a check that's neither on the server nor in IDB.
         setChecks((prev) => toggleCheck(prev, rowKey, wasChecked));
       }
-    })();
+    })().finally(() => { setProgressWrites((count) => count - 1); });
   }, [configId, checks]);
 
   // Guards overlapping flushes. The mount drain and the `online` event
@@ -264,6 +264,7 @@ export function HallkeeperPage(): React.ReactElement {
             setPendingCount(0);
             return;
           }
+          setSyncingProgress(true);
 
           const token = await getAuthToken();
           const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -310,6 +311,7 @@ export function HallkeeperPage(): React.ReactElement {
           // Don't surface — flush failures are silent ops noise.
         } finally {
           flushInFlightRef.current = false;
+          setSyncingProgress(false);
         }
       })();
     };
@@ -395,26 +397,15 @@ export function HallkeeperPage(): React.ReactElement {
   const counts = useMemo(() => computeCounts(data, checks), [data, checks]);
 
   // =====================================================================
-  // LOADING SKELETON
+  // LOADING STATE
   // =====================================================================
   if (loading) {
     return (
       <main className="hk-page" style={pageStyle} aria-label="Hallkeeper sheet loading">
-        <div style={{ paddingTop: 20 }}>
-          {/* Skeleton header */}
-          <div style={{ ...skeletonBar, width: 120, height: 10, marginBottom: 8 }} />
-          <div style={{ ...skeletonBar, width: "70%", height: 24, marginBottom: 12 }} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <div style={{ ...skeletonBar, height: 14 }} />
-            <div style={{ ...skeletonBar, height: 14 }} />
-            <div style={{ ...skeletonBar, height: 14 }} />
-            <div style={{ ...skeletonBar, height: 14 }} />
-          </div>
-          <div style={{ ...skeletonBar, width: "100%", height: 160, marginTop: 16, borderRadius: 8 }} />
-          {/* Skeleton rows */}
-          {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} style={{ ...skeletonBar, height: 16, marginTop: 8, width: `${String(80 - i * 5)}%` }} />
-          ))}
+        <div style={{ minHeight: "50vh", display: "grid", placeItems: "center" }}>
+          <ActivityStatus variant="panel" style={{ color: TEXT_SEC }}>
+            Loading the hallkeeper sheet
+          </ActivityStatus>
         </div>
       </main>
     );
@@ -577,6 +568,11 @@ export function HallkeeperPage(): React.ReactElement {
 
       {/* === OFFLINE QUEUE BADGE — visible when toggles are queued === */}
       {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
+      {(progressWrites > 0 || syncingProgress) && (
+        <ActivityStatus style={{ marginBottom: 16 }}>
+          {progressWrites > 0 ? "Saving checklist changes…" : "Syncing checklist changes…"}
+        </ActivityStatus>
+      )}
 
       {/* === APPROVAL STAMP — only renders on approved sheets === */}
       {approval !== null && (
@@ -706,7 +702,9 @@ export function HallkeeperPage(): React.ReactElement {
           }}
           onClick={handleDownload}
           disabled={downloadBusy}
+          aria-busy={downloadBusy}
         >
+          {downloadBusy && <ActivityIndicator size={20} />}
           {downloadBusy ? "Preparing PDF..." : "Download PDF"}
         </button>
         <button type="button" style={actionBtnSecondary} onClick={handlePrint}>Print</button>
@@ -983,11 +981,6 @@ function formatLayoutStyle(style: string): string {
 // ---------------------------------------------------------------------------
 // Styles
 // ---------------------------------------------------------------------------
-
-const skeletonBar: React.CSSProperties = {
-  background: "#252320", borderRadius: 4,
-  animation: "hk-pulse 1.5s ease-in-out infinite",
-};
 
 const pageStyle: React.CSSProperties = {
   minHeight: "100vh", background: DARK_BG, color: "#ddd",

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityStatus } from "../../../components/shared/Activity.js";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import type { BookingKind, BookingState, CalendarRoom } from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
@@ -443,6 +444,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         ) : null}
 
         <div className="diary-drawer-actions">
+          {busy && <ActivityStatus>Saving booking changes…</ActivityStatus>}
           <button type="submit" className="diary-button is-primary" disabled={busy}>
             {BOARD_COPY.drawer.submit[mode.kind]}
           </button>

@@ -12,6 +12,10 @@ Give hallkeepers a next-generation day under the Sublime: the timetable as one l
 
 /hallkeeper/today is the Day Board S1, read-only (T-556, packages/web/src/pages/hallkeeper/DayBoardPage.tsx); S2 the When ribbon (T-557). The law: times exist only through Diary bookings; everything on the board is a calendar projection; a phase-locked epoch drives spring motion; the slot state machine and motion laws are in docs/plan/hallkeeper-day-board-plan.md §3. The hallkeeper sheet schema has five setup phases, dietary, accessibility and a door schedule; the PDF is server-side pdfkit at /hallkeeper/:configId; the Ops Compiler (packages/api/src/services/ops-compiler.ts) compiles from released snapshots. Turnaround rules ride on GET /calendar. The catalogue is a shared static list (packages/types/src/asset-catalogue.ts) and a per-scene quantity check (packages/web/src/lib/catalogue.ts); asset_definitions is a global visual catalogue; there is no venue stock record and no time-window reservation accounting (plan 16 §3). The demo week is seeded in production with fifteen bookings and one linked wedding.
 
+Local progress, 2026-09-05: T-591 implements venue stock, transactional adjustment receipts, venue-admin API routes and the inventory editing surface on `codex/venue-inventory-admin` at `bdc15bc3` (unmerged/unpushed). Real PostgreSQL, API/browser, responsive and keyboard acceptance passed; [verification report](../docs/reports/t591-admin-inventory-verification-2026-09-05.md). This supersedes the earlier “no venue stock record” statement for that local branch only. Production stock entry, hire-window editing, booking reservations, affected-event shortages and approved remedies remain open. S7 as a whole is not complete.
+
+Further local progress: T-593 at `e6bc73e6` on `codex/inventory-reservations-and-remedies` now connects explicit admin-approved reservations to exact frozen catalogue objects across full occupied windows, reports shortages and affected events, and prepares internal hire/inspection requests for separate admin approval. Real PostgreSQL 27/27 and browser 9/9 passed with full types/API/web checks; [verification report](../docs/reports/t593-reservations-remedies-verification-2026-09-05.md). This supersedes the preceding open-reservations statement for that branch only. Approved requests do not become stock or revise released sheets. Procurement confirmation, operational follow-through, production stock, hire-window editing, historical reconstruction and S7's full acceptance remain open. Blake's rejection of the inventory design remains in force; functional evidence does not accept its appearance.
+
 ## Decided
 
 - The day is one line: a horizontal band of light for the current time crossing a dark field; slots as warm slabs on room lanes; this hallkeeper's next action in one line at the top, always. Room, state, time and next action in under one second (the Hallkeeper Test).
@@ -57,6 +61,8 @@ node packages/web/scripts/splat-drag-budget.mjs --route /hallkeeper/today
 A second clock. A time set anywhere but the booking. A typed sheet. A pulse that never quiets. Colour carrying meaning alone. A card wall. Clamping stock to demand. Rewriting a released sheet in place. Per-venue forks of the visual catalogue.
 
 ## Human inputs
+
+Received 5 September 2026: the Trades Hall equipment/capacity Word document and Blake's confirmed 200 Chiavari wedding chairs. [Source review](../docs/operations/trades-hall-equipment-source-review-2026-09-05.md); [structured intake](../docs/data/trades-hall-equipment-2026-09-05.json). This supplies real inventory and capacity evidence without importing the earlier illustrative damage/reservation figures. Condition counts, duplicate-pool reconciliation, source/room identity and operational import remain to be completed.
 
 HUMAN.md 1 (the event and the people), 2 (the inventory and a current BEO or day sheet), 6 (the room tone), 8 (the people matrix).
 

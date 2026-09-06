@@ -2,6 +2,24 @@
 
 Added 11 Jul 2026. Read this when two planning documents seem to disagree.
 
+## Operating authority — updated 6 September 2026
+
+The current user's direction and recorded founder amendments supersede older plans.
+Root `CLAUDE.md` governs how agents investigate, implement, verify and resolve
+conflicts. Domain ownership below remains useful; it does not make old schedules,
+personas, aesthetics or implementation recipes immutable. An explicit user override
+does not need repeat approval. Investigate apparent conflicts and resolve routine
+implementation choices; ask only when a material unresolved user decision remains.
+
+The 5 September [Burke brief](../design/venviewer-burke-ten-directions-imagegen-prompt-2026-09-05.md)
+and [preserved product experience convention](../../.claude/conventions/product-experience.md)
+clarify the sublime requirement and rejected/unapproved targets. The shared
+[Activity convention](../../.claude/conventions/loading-and-working-motion.md) applies
+to every visible asynchronous flow. The 6 September
+[reconstruction direction](../plan/17-GRAND-HALL-RECONSTRUCTION-DIRECTION-2026-09-06.md)
+supersedes narrow per-source recipes and records current coordination. Consult
+`GOAL.md` and active task evidence for present priorities, freezes and spend limits.
+
 ## Latest founder amendment — 4 September 2026
 
 [Programme 16](../plan/16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md)
@@ -38,11 +56,14 @@ Universal laws above both: the repo's claim-safety doctrine (planning-grade lang
 - **One command rail:** the Diary's ⌘K palette (Canon §8) and the Floor's command pill (plan 01 P5) are two grammars on ONE shared command/action infrastructure. Whoever builds second reuses the first's rail.
 - **Naming:** the calendar surface is **"the Diary"** (canon name, adopted product-wide). The 3D planning surface is **"the Floor."** The phase scrubber inside the Floor is "the Timeline"; the Diary's room-lanes surface is "the Board." Existing `cockpit*` code names stay (hybrid naming decision, 10 Jul).
 - **Realtime for bookings:** Canon §9/§15 doctrine adopted (server-authoritative commands over existing websocket, exclusion constraint as final arbiter, no CRDTs for bookings). The plan's 03 §sync recommendations are superseded *for this domain*; plan doc 03 carries a matching amendment note.
-- **Conflicts not covered here:** stop and ask Blake (Blake Clause). Do not improvise a merge.
+- **Conflicts not covered here:** investigate against current user direction and evidence using CLAUDE.md. Surface consequential unresolved choices with a recommendation; continue independent work while a required decision is pending.
 
-## Current build order (owner-approved 11 Jul 2026, may be revised)
+## Historical build order (11 Jul 2026)
+
+This records the July sequence. Use current GOAL amendments and task status for
+execution; a card or slice is a work unit, not a limit of one per session.
 
 1. Diary Slice 1 (backend only — prompt at `docs/strategy/diary-slice-1-prompt.md`)
 2. Plan cards A1 → A2 (real room loads in the planner)
 3. Plan cards A3 → A4 (merged token layer per the ruling above)
-4. Then per each universe's own phasing, one session per card/slice.
+4. Then per each universe's own phasing.

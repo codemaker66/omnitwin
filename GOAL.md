@@ -1,6 +1,14 @@
-# GOAL — read this first, every session (written 2026-09-04 10:30 BST by the Fable session, for the next model)
+# GOAL — founder direction and dated operational evidence
+
+Operating-policy update, 2026-09-06: follow `CLAUDE.md` and the integrity rules for autonomy, proportionate verification and reporting. The current user request determines the task; the ladder below guides open-ended product work. Old prompt counts, named-worker instructions, mandatory handoff templates and fixed session boundaries do not limit execution. Preserve the latest founder amendments, ownership, production freeze, source protections and spending limits. Historical measurements and commands below require current-state verification before reuse.
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
+
+## Latest founder direction — 2026-09-06
+
+Blake asked Codex to take charge of the reconstruction and Elaine demo coordination. His remembered better OBJ floor and panorama walls are comparison evidence, not representation decisions. Build toward a jointly calibrated reconstruction using all useful captures, including E57, native panoramas, photographs and both independent PortalCam sources; it may exceed any individual input. The funded Linux RunPod programme remains active, subject to executable/input validation and the existing spend caps. See [the concrete direction and Claude handoff](docs/plan/17-GRAND-HALL-RECONSTRUCTION-DIRECTION-2026-09-06.md), which supersedes narrower source prescriptions below. The existing Monday freeze, PSNR 50+, furnished-scene 60 fps, architectural fidelity, fast loading and sublime requirements remain. Claude owns its active court repair; Codex owns coordination, demo qualification and reconstruction integration. Historical measurements below are dated evidence, not a current completed-demo claim.
+
+Verified today: 148 original 8K panoramas recovered; an actual 18-table/144-chair guest layout dressed in part, saved and reopened; disappearing furniture lighting fixed and visually checked locally. The combined local candidate `e1970973` also passes actual-browser seating, shared guest-target, widget clearance and settled/mid-load renderer transition checks with zero page errors. A real table-and-eight-chair drag, Undo/Redo, autosave, clean-context reopen and restoration passed against the actual demo draft. [Current evidence and blockers](docs/reports/t596-direction-and-demo-status-2026-09-06.md) replace the older readiness assumptions. These fixes are not in production. The current browser identity cannot enter the admin app, arrival/other control defects remain, and no new reconstruction or complete signed-in demo has been accepted. Nothing was deployed during the freeze and no new GPU run was started.
 
 ## 0. The /goal block (paste into /goal)
 
@@ -54,13 +62,13 @@ THE FREEZE: no push to master from Saturday 2026-09-05 18:00 BST to Monday 2026-
 
 ## 4. Rules that are not optional
 
-- Read CLAUDE.md and .claude/AI_INTEGRITY_RULES.md; the S+ bar; the Handoff Protocol; the Blake Clause.
-- Test first (a failing test, then the code); typecheck + tests + lint before any commit; commit with an explicit pathspec always; never stage everything.
+- Read CLAUDE.md and .claude/AI_INTEGRITY_RULES.md for the ambitious quality bar, evidence requirements, judgment and reporting. Flag material contradictions; resolve routine choices and follow an already-authorized override without requesting it again.
+- Use existing tests and add regression coverage for changed behavior; reproduce bugs before fixing where practical. Run applicable checks per CLAUDE.md, including documentation-only verification where appropriate. Commit with an explicit pathspec always; never stage everything.
 - Measure before claiming: the harness and Playwright from packages/web (a script outside the package cannot resolve @playwright/test; import it by absolute file URL). The embedded Browser pane cannot stream splats (.claude/gotchas/browser-pane-splat-streaming.md).
 - Never edit packages/web source while an e2e or harness run is in progress. Windows-green is not Linux-green. CI's audit job is red and gates nothing. CI's E2E job also never finishes: it is killed by its own 30-minute timeout, verified 2026-09-04 on several commits including a docs-only one (T-583), so it looks like pushes cancelling each other but is not. What must pass is Lint, Typecheck, Build and Test — check those four by name rather than the run's overall conclusion, which the audit job makes red regardless.
 - Secrets only in C:\Users\blake\deploy-secrets and packages/api/.env; never print them. Rotate the R2 token after the Trades Hall trip.
 - Generated/bulk files go under D:\claude\<task>\, never C: (37 GB free).
 - Spark, not drei's Splat; Three >= 0.180; Fastify; Drizzle; Zustand; Vitest; Zod; pnpm. PATH needs C:\Users\blake\AppData\Roaming\npm for pnpm.
 - Windows: Python wants C:/ paths; tsc needs NODE_OPTIONS=--max-old-space-size=8192; many repo files are CRLF (patch with line-ending-safe anchors).
-- Write less to Blake: lead with the answer, plain prose, no heavy formatting, long only when earned. Every session appends docs/sessions/YYYY-MM-DD.md and updates docs/state/tasks.md (T-577 is the latest row; T-576 is the Monday demo).
+- Write less to Blake: lead with the answer, plain prose, no heavy formatting, long only when earned. Record meaningful work and decisions in docs/sessions/YYYY-MM-DD.md and maintain relevant rows per the shepherd protocol in docs/state/tasks.md; find current task IDs there rather than relying on a frozen latest number here.
 - Memory: C:\Users\blake\.claude\projects\C--Users-blake-omnitwin2\memory\ (MEMORY.md is the index; project_completion_programme.md, project_beauty_asset_map.md, project_xgrids_splat_ingest.md, project_xbag_colmap_bridge.md carry the Foundry and asset facts).

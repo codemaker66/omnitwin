@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import type { ConfigurationReviewStatus } from "@omnitwin/types";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
@@ -51,6 +52,7 @@ const pill: React.CSSProperties = {
 };
 
 const primaryBtn: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
   padding: "9px 20px", fontSize: 13, fontWeight: 500, letterSpacing: 0.3,
   border: "1px solid rgba(201,168,76,0.3)", borderRadius: 6,
   cursor: "pointer", transition: "opacity 0.2s ease",
@@ -59,6 +61,7 @@ const primaryBtn: React.CSSProperties = {
 };
 
 const secondaryBtn: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
   padding: "8px 16px", fontSize: 12, fontWeight: 500,
   border: "1px solid #d0c8b0", borderRadius: 6,
   cursor: "pointer", background: "#fff", color: "#333",
@@ -224,11 +227,12 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
     configId === null
     || isPublicPreview
     || objects.length === 0
-    || loading
-    || reviewStatus === null
   ) {
     return null;
   }
+
+  if (loading) return <ActivityStatus style={panelStyle}>Loading review status…</ActivityStatus>;
+  if (reviewStatus === null) return null;
 
   const visual = STATUS_VISUALS[reviewStatus];
   const isEditable = PLANNER_EDITABLE.has(reviewStatus);
@@ -285,6 +289,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
           data-testid="submit-for-review-button"
           title={timelinePreviewActive ? TIMELINE_PREVIEW_REVIEW_MESSAGE : undefined}
         >
+          {inFlight && <ActivityIndicator size={18} />}
           {inFlight
             ? "Submitting…"
             : timelinePreviewActive ? "Exit preview to submit" : "Submit for Approval"}
@@ -302,6 +307,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
             ? TIMELINE_PREVIEW_REVIEW_MESSAGE
             : "Withdraw your submission to edit the layout"}
         >
+          {inFlight && <ActivityIndicator size={18} />}
           {inFlight ? "Withdrawing…" : timelinePreviewActive ? "Exit preview to withdraw" : "Withdraw"}
         </button>
       )}

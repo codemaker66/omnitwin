@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { DayBoardPage } from "../DayBoardPage.js";
@@ -110,6 +110,28 @@ afterEach(() => {
 });
 
 describe("DayBoardPage", () => {
+  it("shows real activity until the initial calendar resolves, then removes it", async () => {
+    let resolveCalendar: ((value: CalendarResponse) => void) | undefined;
+    getCalendarMock.mockReturnValue(new Promise<CalendarResponse>((resolve) => { resolveCalendar = resolve; }));
+    renderBoard();
+    const status = screen.getByText("Loading the Day Board…").closest('[role="status"]');
+    expect(status?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(screen.queryByText("Nothing in the diary today. A quiet house.")).toBeNull();
+    await act(() => { resolveCalendar?.(calendarFixture([])); return Promise.resolve(); });
+    expect(screen.queryByText("Loading the Day Board…")).toBeNull();
+    expect(screen.getByText("Nothing in the diary today. A quiet house.")).toBeTruthy();
+  });
+
+  it("does not imply an active fetch when the account has no venue", () => {
+    const user = useAuthStore.getState().user;
+    if (user === null) throw new Error("Expected signed-in hallkeeper fixture");
+    useAuthStore.getState().setUser({ ...user, venueId: null });
+    renderBoard();
+    expect(screen.getByText("Your account needs a venue before the Day Board can load.")).toBeTruthy();
+    expect(screen.queryByText("Loading the Day Board…")).toBeNull();
+    expect(getCalendarMock).not.toHaveBeenCalled();
+  });
+
   it("renders a lane per room with live state chips whose text carries the meaning", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     renderBoard();

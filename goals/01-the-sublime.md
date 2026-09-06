@@ -1,5 +1,7 @@
 # 01 · The Sublime — Venviewer's design philosophy and the language that replaces House v1.0
 
+**Founder correction, 2026-09-05:** Blake rejected the implemented T-591 inventory screen as "absolutely terrible and boring". Functional acceptance does not constitute visual acceptance. Beauty and the philosophical sublime remain mandatory throughout the project. This document's specific stylistic laws remain an unapproved proposal: darkness, a single accent, particular materials and fixed composition ratios must not be mistaken for Blake's requirements. Rebuild from the [new visual brief](../docs/design/sublime-inventory-rebrief-2026-09-05.md) and [image-generation prompt](../docs/design/venviewer-sublime-imagegen-prompt.md); the rejected screen is context only, never a target to preserve.
+
 This file is the brief, version 0. Blake reads it, marks it, and when he writes "approved" on it (or his edits are in) it becomes docs/plan/17-THE-SUBLIME-DESIGN-LANGUAGE.md and gates every rebuilt surface in goals 03–07. It answers the founder's mandate in docs/plan/16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md (T-586), whose §2 reads Longinus, Burke and Kant from their primary texts and sets the ambition as awe, presence, significance and agency; §1 below is consistent with that reading and adds the two tempos. Plan 16's first design deliverable, the three-role visual study, is slice 2 here.
 
 ## The /goal block

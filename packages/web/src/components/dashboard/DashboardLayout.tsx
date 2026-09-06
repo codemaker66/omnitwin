@@ -5,6 +5,7 @@ import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
 import { NotificationCenter } from "./NotificationCenter.js";
+import { ActivityStatus } from "../shared/Activity.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import "./DashboardLayout.css";
 
@@ -110,14 +111,20 @@ export function DashboardLayout({ activeView, onViewChange, mainLabel, children 
   // not the hardcoded placeholder (F28). Admin users without a venueId see
   // "Admin Dashboard" instead.
   const [venueName, setVenueName] = useState("Dashboard");
+  const [venueLoading, setVenueLoading] = useState(false);
   useEffect(() => {
     if (user?.venueId === undefined || user.venueId === null) {
       setVenueName(user?.platformRole === "admin" ? "Venviewer Platform" : "Dashboard");
+      setVenueLoading(false);
       return;
     }
+    const request = { current: true };
+    setVenueLoading(true);
     void spacesApi.getVenue(user.venueId)
-      .then((v) => { setVenueName(v.name); })
-      .catch(() => { /* non-critical — keep default */ });
+      .then((v) => { if (request.current) setVenueName(v.name); })
+      .catch(() => { /* non-critical — keep default */ })
+      .finally(() => { if (request.current) setVenueLoading(false); });
+    return () => { request.current = false; };
   }, [user?.platformRole, user?.venueId]);
 
   const handleLocalSignOut = (): void => {
@@ -211,6 +218,7 @@ export function DashboardLayout({ activeView, onViewChange, mainLabel, children 
           <h1 className="dashboard-layout-title">
             {venueName}
           </h1>
+          {venueLoading && <ActivityStatus>Opening venue…</ActivityStatus>}
           <div className="dashboard-layout-topbar-actions">
             <NotificationCenter />
             <span className="vv-status-chip" data-tone="review">{user?.name ?? "Signed in"}</span>

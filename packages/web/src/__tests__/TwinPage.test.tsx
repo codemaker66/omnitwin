@@ -171,7 +171,9 @@ describe("TwinPage — ready state", () => {
     expect(within(stage).getByTestId("r3f-canvas")).toBeTruthy();
 
     const label = within(stage).getByTestId("twin-node-label");
-    expect(label.textContent).toBe(twinNodeLabel("scan_000", validManifest.name));
+    expect(label.querySelector(".vv-twin-node-label-text")?.textContent).toBe(twinNodeLabel("scan_000", validManifest.name));
+    expect(within(label).getByRole("status").textContent).toContain("Opening view…");
+    expect(label.querySelector("[data-activity-indicator]")).not.toBeNull();
     expect(screen.getByText(TWIN_DISCLOSURE)).toBeTruthy();
   });
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 import { useParams } from "react-router-dom";
 import {
   acknowledgeSupplierShare,
@@ -131,6 +132,7 @@ export function SupplierPortalPage(): ReactElement {
     return (
       <main className="supplier-portal" aria-label="Supplier handoff">
         <section className="supplier-portal__state" role="status" aria-live="polite">
+          <ActivityIndicator size={64} />
           <h1>Loading supplier handoff</h1>
           <p>Preparing the supplier-scoped pack and acknowledgement state.</p>
         </section>
@@ -353,7 +355,9 @@ export function SupplierPortalPage(): ReactElement {
                     type="button"
                     onClick={submitAcknowledgement}
                     disabled={submitDisabled}
+                    aria-busy={submitting}
                   >
+                    {submitting && <ActivityIndicator size={20} />}
                     {ackStatus === "acknowledged" ? "Acknowledge handoff" : "Send clarification request"}
                   </button>
 

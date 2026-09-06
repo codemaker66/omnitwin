@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import { ShieldQuestion } from "lucide-react";
+import { ActivityStatus } from "../../shared/Activity.js";
 import type { TruthModeSummary } from "@omnitwin/types";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { getTruthModeSummary } from "../../../api/truth-mode.js";
@@ -63,7 +64,7 @@ export function CockpitTruthRail(): ReactElement {
           <span className="cockpit-truth__eyebrow">Truth Mode</span>
           <span className="cockpit-truth__title">Layout evidence</span>
         </span>
-        <span className="cockpit-truth__source">{sourceNote(status)}</span>
+        <span className="cockpit-truth__source">{status === "loading" ? <ActivityStatus>{sourceNote(status)}</ActivityStatus> : sourceNote(status)}</span>
       </header>
 
       <div className="cockpit-truth__rows">

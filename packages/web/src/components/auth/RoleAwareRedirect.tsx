@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { ActivityStatus } from "../shared/Activity.js";
 import { Navigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { getDefaultRoute } from "../../lib/role-routing.js";
@@ -26,7 +27,7 @@ function LoadingView(): ReactElement {
       minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
       fontFamily: "'Inter', sans-serif", color: "#999", background: "#f5f5f0",
     }}>
-      Loading...
+      <ActivityStatus variant="panel">Loading...</ActivityStatus>
     </div>
   );
 }

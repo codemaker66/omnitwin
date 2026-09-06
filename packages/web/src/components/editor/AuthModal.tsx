@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { SignIn } from "@clerk/react";
+import { ActivityStatus } from "../shared/Activity.js";
 import { isClerkGoogleSignInEnabled, VENVIEWER_CLERK_APPEARANCE } from "../auth/clerk-appearance.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
@@ -54,7 +55,9 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
         <h2 id="auth-modal-title" className="auth-modal__title">
           Sign In to Save
         </h2>
-        <SignIn appearance={VENVIEWER_CLERK_APPEARANCE} routing="hash" />
+        {isAuthenticated && configId !== null && isPublicPreview
+          ? <ActivityStatus variant="panel">Saving this layout to your account…</ActivityStatus>
+          : <SignIn appearance={VENVIEWER_CLERK_APPEARANCE} routing="hash" />}
       </div>
     </div>,
     document.body,

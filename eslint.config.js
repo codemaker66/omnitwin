@@ -13,6 +13,13 @@ export default tseslint.config(
     },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
+      "no-restricted-imports": ["error", {
+        paths: [{
+          name: "lucide-react",
+          importNames: ["Loader", "Loader2", "LoaderCircle", "LoaderPinwheel"],
+          message: "Use ActivityIndicator or ActivityStatus from components/shared/Activity.js for Venviewer loading/work feedback (T-594).",
+        }],
+      }],
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },

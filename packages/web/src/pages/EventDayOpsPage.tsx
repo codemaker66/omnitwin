@@ -14,6 +14,7 @@ import {
 import { EventMissionControl } from "../components/mission-control/EventMissionControl.js";
 import "./EventDayOpsPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
+import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -133,6 +134,8 @@ export function EventDayOpsPage(): ReactElement {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [pendingCount, setPendingCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [pendingWrites, setPendingWrites] = useState(0);
+  const [pendingIssues, setPendingIssues] = useState(0);
   const [issueDraft, setIssueDraft] = useState<IssueDraft>(EMPTY_ISSUE_DRAFT);
   const [notice, setNotice] = useState<string | null>(null);
   const [changeFeed, setChangeFeed] = useState<readonly ChangeFeedItem[]>([]);
@@ -230,6 +233,7 @@ export function EventDayOpsPage(): ReactElement {
     const optimistic = { ...task, status, updatedAt: new Date().toISOString() };
     setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, optimistic) } : prev);
     const input = { status, idempotencyKey: makeIdempotencyKey(task.id, status) };
+    setPendingWrites((count) => count + 1);
     void updateOpsTaskStatus(task.id, input)
       .then((updated) => {
         setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, updated) } : prev);
@@ -237,16 +241,20 @@ export function EventDayOpsPage(): ReactElement {
       })
       .catch((err: unknown) => {
         if (isRetriableError(err)) {
-          void enqueueEventDayTaskStatus(task.id, input)
+          return enqueueEventDayTaskStatus(task.id, input)
             .then(() => {
               refreshPendingCount();
               setNotice("Task saved on this device and will sync when the connection returns.");
             });
-          return;
         }
         setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, task) } : prev);
         setNotice("Task update was rejected by the server.");
-      });
+      })
+      .catch(() => {
+        setState((prev) => prev.kind === "ready" ? { kind: "ready", board: updateTaskInBoard(prev.board, task) } : prev);
+        setNotice("Task could not be saved on this device. Please try again.");
+      })
+      .finally(() => { setPendingWrites((count) => count - 1); });
   }, [refreshPendingCount]);
 
   const submitIssue = useCallback((event: FormEvent<HTMLFormElement>) => {
@@ -257,6 +265,7 @@ export function EventDayOpsPage(): ReactElement {
       detail: issueDraft.detail,
       severity: issueDraft.severity,
     };
+    setPendingIssues((count) => count + 1);
     void createEventDayIssue(eventId, input)
       .then((issue) => {
         setIssueDraft(EMPTY_ISSUE_DRAFT);
@@ -267,7 +276,7 @@ export function EventDayOpsPage(): ReactElement {
       })
       .catch((err: unknown) => {
         if (isRetriableError(err)) {
-          void enqueueEventDayIssueCreate(eventId, input)
+          return enqueueEventDayIssueCreate(eventId, input)
             .then(() => {
               setIssueDraft(EMPTY_ISSUE_DRAFT);
               refreshPendingCount();
@@ -276,7 +285,9 @@ export function EventDayOpsPage(): ReactElement {
         } else {
           setNotice("Issue could not be logged. Check the wording and try again.");
         }
-      });
+      })
+      .catch(() => { setNotice("Issue could not be saved on this device. Please try again."); })
+      .finally(() => { setPendingIssues((count) => count - 1); });
   }, [eventId, issueDraft, refreshPendingCount]);
 
   const acknowledgeChange = useCallback((change: ChangeFeedItem) => {
@@ -295,8 +306,8 @@ export function EventDayOpsPage(): ReactElement {
     return (
       <DashboardLayout>
 
-        <div className="event-day-page event-day-centered">
-        <RefreshCw aria-hidden="true" className="event-day-spin" />
+        <div className="event-day-page event-day-centered" role="status">
+        <ActivityIndicator size={64} />
         <h1>Loading event-day board</h1>
         <p>Preparing the latest internal operations view.</p>
         </div>
@@ -337,13 +348,14 @@ export function EventDayOpsPage(): ReactElement {
         </div>
         <div className="event-day-sync">
           <span data-pending={pendingCount > 0}>{syncLabel}</span>
-          <button type="button" className="event-day-icon-button" onClick={flushQueue} aria-label="Sync pending event-day changes">
-            <RefreshCw aria-hidden="true" className={syncing ? "event-day-spin" : undefined} />
+          <button type="button" className="event-day-icon-button" onClick={flushQueue} aria-label="Sync pending event-day changes" aria-busy={syncing}>
+            {syncing ? <ActivityIndicator /> : <RefreshCw aria-hidden="true" />}
           </button>
         </div>
       </header>
 
       {notice !== null && <p className="event-day-notice">{notice}</p>}
+      {pendingWrites > 0 && <ActivityStatus>Saving event-day changes…</ActivityStatus>}
 
       <EventMissionControl
         eventId={readyBoard.event.id}
@@ -379,9 +391,10 @@ export function EventDayOpsPage(): ReactElement {
                   type="button"
                   className="event-day-button secondary"
                   disabled={ackBusyId === change.id}
+                  aria-busy={ackBusyId === change.id}
                   onClick={() => { acknowledgeChange(change); }}
                 >
-                  <Check aria-hidden="true" />
+                  {ackBusyId === change.id ? <ActivityIndicator size={20} /> : <Check aria-hidden="true" />}
                   Acknowledge change
                 </button>
               </article>
@@ -494,8 +507,8 @@ export function EventDayOpsPage(): ReactElement {
               <option value="urgent">Urgent</option>
             </select>
           </label>
-          <button type="submit" className="event-day-button primary">
-            <Send aria-hidden="true" />
+          <button type="submit" className="event-day-button primary" aria-busy={pendingIssues > 0}>
+            {pendingIssues > 0 ? <ActivityIndicator /> : <Send aria-hidden="true" />}
             Log issue
           </button>
         </form>

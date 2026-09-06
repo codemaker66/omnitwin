@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { PricingRule } from "../../../api/pricing.js";
 import type { CreateSpaceInput, Space, Venue, VenueDetail } from "../../../api/spaces.js";
 import { AdminPanel } from "../AdminPanel.js";
@@ -136,6 +136,18 @@ afterEach(() => {
 });
 
 describe("AdminPanel", () => {
+  it("keeps pricing activity visible until the rules request settles", async () => {
+    let resolveRules: ((rules: PricingRule[]) => void) | undefined;
+    const response = new Promise<PricingRule[]>((resolve) => { resolveRules = resolve; });
+    mocks.listPricingRules.mockReturnValue(response);
+    await renderOpenedVenue();
+    expect(screen.getByText("Loading pricing rules…")).toBeDefined();
+    expect(screen.queryByText("No pricing rules configured.")).toBeNull();
+    await act(async () => { resolveRules?.([]); await response; });
+    expect(screen.queryByText("Loading pricing rules…")).toBeNull();
+    expect(screen.getByText("No pricing rules configured.")).toBeDefined();
+  });
+
   it("loads venues and opens a venue detail through a real button", async () => {
     await renderOpenedVenue();
 

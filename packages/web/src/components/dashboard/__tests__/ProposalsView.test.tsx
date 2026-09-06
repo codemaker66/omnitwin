@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ProposalsView } from "../ProposalsView.js";
 
 const mocks = vi.hoisted(() => ({
@@ -112,6 +112,26 @@ async function selectFirstProposal(id: string): Promise<void> {
 }
 
 describe("ProposalsView", () => {
+  it("shows pending saved content and room guidance without inventing an empty result", async () => {
+    let resolveSpaces: ((spaces: []) => void) | undefined;
+    let rejectVersion: ((reason: Error) => void) | undefined;
+    const spaces = new Promise<[]>((resolve) => { resolveSpaces = resolve; });
+    const version = new Promise<never>((_resolve, reject) => { rejectVersion = reject; });
+    mocks.listSpaces.mockReturnValue(spaces);
+    mocks.getLatestProposalVersion.mockReturnValue(version);
+    mocks.listProposals.mockResolvedValue([draftProposal()]);
+    render(<ProposalsView />);
+    fireEvent.click(await screen.findByTestId("proposal-row-p1"));
+
+    expect(screen.getByText("Loading saved proposal content…")).toBeDefined();
+    expect(screen.getByText("Loading room guidance…")).toBeDefined();
+    expect(screen.queryByText(/no content saved yet/u)).toBeNull();
+    await act(async () => { resolveSpaces?.([]); rejectVersion?.(new Error("404")); await spaces; });
+    await waitFor(() => { expect(screen.queryByText("Loading saved proposal content…")).toBeNull(); });
+    expect(screen.queryByText("Loading room guidance…")).toBeNull();
+    expect(screen.getByText(/no content saved yet/u)).toBeDefined();
+  });
+
   it("lists proposals and shows the empty state when none exist", async () => {
     mocks.listProposals.mockResolvedValue([draftProposal()]);
     render(<ProposalsView />);

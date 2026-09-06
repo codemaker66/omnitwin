@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CommercialPipelineView } from "../CommercialPipelineView.js";
 
 const mocks = vi.hoisted(() => ({
@@ -136,6 +136,22 @@ afterEach(() => {
 });
 
 describe("CommercialPipelineView", () => {
+  it("shows opportunity activity until the selected detail request settles", async () => {
+    let resolveDetail: ((value: unknown) => void) | undefined;
+    const response = new Promise<unknown>((resolve) => { resolveDetail = resolve; });
+    mocks.getOpportunity.mockReturnValue(response);
+    render(<CommercialPipelineView />);
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+
+    expect(screen.getByText("Opening opportunity…")).toBeDefined();
+    await act(async () => {
+      resolveDetail?.({ opportunity: opportunity(), activities: [], tasks: [], proposals: [] });
+      await response;
+    });
+    expect(screen.queryByText("Opening opportunity…")).toBeNull();
+    expect(screen.getByLabelText("Opportunity detail")).toBeDefined();
+  });
+
   it("renders the commercial pipeline board with next action and safe planning language", async () => {
     render(<CommercialPipelineView />);
 
@@ -224,6 +240,7 @@ describe("CommercialPipelineView", () => {
 
     const error = await screen.findByTestId("opportunity-detail-error");
     expect(error.textContent).toContain("Could not load that opportunity");
+    expect(screen.queryByText("Opening opportunity…")).toBeNull();
   });
 
   it("opens opportunity detail, updates stage, completes tasks, and creates a proposal draft", async () => {

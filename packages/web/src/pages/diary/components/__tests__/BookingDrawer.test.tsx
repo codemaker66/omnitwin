@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
 import { BookingDrawer } from "../BookingDrawer.js";
 
@@ -99,6 +99,19 @@ afterEach(() => {
 });
 
 describe("BookingDrawer — floor plan section", () => {
+  it("keeps activity visible through the plan request and clears it after failure", async () => {
+    let rejectCreate: ((reason: Error) => void) | undefined;
+    createEventMock.mockReturnValue(new Promise<never>((_resolve, reject) => { rejectCreate = reject; }));
+    renderEdit(booking());
+    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Start a floor plan" }).hasAttribute("disabled")).toBe(true);
+    await act(() => { rejectCreate?.(new Error("request failed")); return Promise.resolve(); });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("could not be started");
+    expect(screen.getByRole("button", { name: "Start a floor plan" }).hasAttribute("disabled")).toBe(false);
+  });
+
   it("offers to start a plan when the booking has none", () => {
     renderEdit(booking());
     expect(screen.getByRole("button", { name: "Start a floor plan" })).toBeTruthy();

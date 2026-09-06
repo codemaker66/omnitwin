@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ClerkFailed, ClerkLoaded, ClerkLoading, SignIn } from "@clerk/react";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 import { isClerkGoogleSignInEnabled, VENVIEWER_CLERK_APPEARANCE } from "../components/auth/clerk-appearance.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { getDefaultRoute } from "../lib/role-routing.js";
@@ -45,6 +46,7 @@ export function LoginPage(): React.ReactElement {
       <section className="auth-page__form-shell" aria-label="Secure sign in form">
         <ClerkLoading>
           <div className="auth-page__loading" role="status">
+            <ActivityIndicator size={48} />
             <div>Loading secure sign-in.</div>
             <p>Keep this page open while the account form connects.</p>
           </div>

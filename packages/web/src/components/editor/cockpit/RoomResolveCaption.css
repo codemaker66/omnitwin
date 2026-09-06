@@ -6,6 +6,9 @@
    the floating Visual Layer / View Mode widgets). visibility flips after the
    fade so the hidden caption is truly gone for hit-testing and AT. */
 .room-resolve-caption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   position: absolute;
   top: 14px;
   left: 16px;

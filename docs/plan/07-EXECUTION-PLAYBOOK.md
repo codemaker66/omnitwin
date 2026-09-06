@@ -1,5 +1,16 @@
 # 07 · Execution Playbook — how the Floor actually gets built
 
+**Historical playbook, not current operating policy (6 September 2026).** Follow
+[CLAUDE.md](../../CLAUDE.md), current [GOAL.md](../../GOAL.md) amendments and the
+[build-card protocol](cards/README.md) when using these briefs. The old division
+between strategy and implementation tools, one-card/session limit, mandatory
+handoffs, assumed plugins and pinned upgrade sequence below are superseded.
+Agents may reason across disciplines and complete authorized work using available
+tools. Supplied images can be implementation references under the current founder
+brief; old House tokens are not a veto on the sublime redesign. Verify present
+source, dependencies, acceptance evidence, ownership and spend limits before
+reusing any command, schedule or prescription from this July record.
+
 10 July 2026 · Answers: "how do we get you / Claude Code / a mixture of applications to build this?" · Assumes 06's G-series gap list.
 
 ---

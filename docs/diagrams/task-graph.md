@@ -5,9 +5,16 @@ audit-driven cluster (T-080–T-099), the Tier 3 Geass cluster, ops/doc
 follow-on, and the deferred Product Vision capabilities (T-100–T-110)
 per ADR D-018. Tier 1 done work, T-010, and lower-priority Tier 2/4/5/6
 tasks live in `docs/state/tasks.md` and are not visualised here.
-Regenerate after each `tasks.md` change.
+Update this view when task changes affect the dependencies or status it depicts.
+The task ledger is authoritative; unrelated task-note edits do not require regeneration.
 
 ## September 4 goal programme supplement
+
+September 5 inventory integration completes **T-593 locally**: T-588 and T-591's functional foundation → approved event reservations → shortages and admin-approved internal remedy requests → contributions to G6 and G9. PostgreSQL 27/27 and browser 9/9 passed with full types/API/web checks; implementation `e6bc73e6`, evidence in `docs/reports/t593-reservations-remedies-verification-2026-09-05.md`. Procurement confirmation, operational follow-through, rollout, the rejected inventory design and physical-device qualification remain open.
+
+September 5 loading mandate adds completed **T-594**: T-586 → shared particle activity system → consistent route, room, admin, editor and working-state feedback. Full web 5,204 tests, final convention 10/10, typecheck/lint/build and seven desktop/mobile Chromium checks pass locally. `CLAUDE.md`, `AGENTS.md` and `.claude/conventions/loading-and-working-motion.md` require the same components in future work. This does not certify the wider sublime redesign or a production deployment. Independent review recorded pre-existing selected-detail response races as **T-595** (not started; no dependency on T-594).
+
+September 5 source clarification adds **T-592** (local comparison slice complete): T-087 → local Grand Hall source recovery/comparison → evidence for G2/T-579. T-590 remains a separate dependency before photo-baked or trained candidates receive court scores. Recovering original source textures does not itself consume evaluation photographs or certify the product quality targets.
 
 T-584 records the completed planning review at
 [`15-VENVIEWER-GOAL-PROGRAMME-2026-09-04.md`](../plan/15-VENVIEWER-GOAL-PROGRAMME-2026-09-04.md).
@@ -43,6 +50,11 @@ flowchart TD
     G1(["G1 · Demo and current truth"])
     G2(["G2 · Beautiful, fast rooms"])
     G3(["G3 · Sublime interfaces and planning"])
+    T588(["T-588 · Inventory domain"])
+    T591F(["T-591 · Functional stock foundation"])
+    T593(["T-593 · Reservations, shortages, internal remedy approval"])
+    T594(["T-594 · Shared loading and working motion"])
+    T595(["T-595 · Stale detail response guards"])
     G4(["G4 · Connected commercial event"])
     G5(["G5 · Useful communication"])
     G6(["G6 · Hallkeeper's working day"])
@@ -53,6 +65,13 @@ flowchart TD
     G1 --> G2
     G1 --> G4
     G1 --> G3
+    T588 --> T591F
+    T591F --> T593
+    T593 --> G6
+    T593 --> G9
+    T594 --> G3
+    T594 --> G6
+    T595 --> G3
     G2 -->|benchmark| G8
     G4 --> G5
     G5 --> G6

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { DiaryBoardPage } from "../DiaryBoardPage.js";
@@ -274,6 +274,49 @@ describe("DiaryBoardPage", () => {
     expect(screen.getByRole("button", { name: "Undo" })).toBeDefined();
   });
 
+  it("keeps the current board usable while a real refresh is pending", async () => {
+    renderPage();
+    await screen.findByText("Chamber dinner");
+    let resolveRefresh: ((value: CalendarResponse) => void) | undefined;
+    getCalendarMock.mockReturnValue(new Promise<CalendarResponse>((resolve) => { resolveRefresh = resolve; }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(screen.getByText("Refreshing diary…").closest('[role="status"]')?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(screen.getByText("Chamber dinner")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Refresh" }).getAttribute("aria-busy")).toBe("true");
+    await act(() => { resolveRefresh?.(fixture()); return Promise.resolve(); });
+    expect(screen.queryByText("Refreshing diary…")).toBeNull();
+    expect(screen.getByRole("button", { name: "Refresh" }).getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("does not let a superseded refresh hide the current request's activity", async () => {
+    renderPage();
+    await screen.findByText("Chamber dinner");
+    let resolveOlder: ((value: CalendarResponse) => void) | undefined;
+    let resolveCurrent: ((value: CalendarResponse) => void) | undefined;
+    getCalendarMock.mockReturnValueOnce(new Promise<CalendarResponse>((resolve) => { resolveOlder = resolve; }));
+    getCalendarMock.mockReturnValueOnce(new Promise<CalendarResponse>((resolve) => { resolveCurrent = resolve; }));
+    const refresh = screen.getByRole("button", { name: "Refresh" });
+    fireEvent.click(refresh);
+    fireEvent.click(refresh);
+    await act(() => { resolveOlder?.({ ...fixture(), entries: [] }); return Promise.resolve(); });
+    expect(screen.getByText("Refreshing diary…")).toBeTruthy();
+    expect(screen.getByText("Chamber dinner")).toBeTruthy();
+    await act(() => { resolveCurrent?.(fixture()); return Promise.resolve(); });
+    expect(screen.queryByText("Refreshing diary…")).toBeNull();
+  });
+
+  it("retires refresh activity after failure and exposes the existing retry state", async () => {
+    renderPage();
+    await screen.findByText("Chamber dinner");
+    let rejectRefresh: ((reason: Error) => void) | undefined;
+    getCalendarMock.mockReturnValue(new Promise<never>((_resolve, reject) => { rejectRefresh = reject; }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(screen.getByText("Refreshing diary…")).toBeTruthy();
+    await act(() => { rejectRefresh?.(new Error("request unavailable")); return Promise.resolve(); });
+    expect(screen.queryByText("Refreshing diary…")).toBeNull();
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
   it("restores the board and says so when a move fails to save", async () => {
     moveBookingMock.mockRejectedValue(new Error("boom"));
     renderPage();
@@ -282,6 +325,20 @@ describe("DiaryBoardPage", () => {
     fireEvent.keyDown(block, { key: "ArrowRight" });
     fireEvent.keyDown(block, { key: " " });
     expect(await screen.findByText(/could not be saved/)).toBeDefined();
+  });
+
+  it("shows shared activity for a pending move and removes it when the server rejects the move", async () => {
+    let rejectMove: ((reason: Error) => void) | undefined;
+    moveBookingMock.mockReturnValue(new Promise<never>((_resolve, reject) => { rejectMove = reject; }));
+    renderPage();
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    fireEvent.keyDown(block, { key: " " });
+    fireEvent.keyDown(block, { key: "ArrowRight" });
+    fireEvent.keyDown(block, { key: " " });
+    expect(screen.getByText("Saving diary changes…").closest('[role="status"]')?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    await act(() => { rejectMove?.(new Error("server unavailable")); return Promise.resolve(); });
+    expect(screen.queryByText("Saving diary changes…")).toBeNull();
+    expect(screen.getByText(/could not be saved/)).toBeTruthy();
   });
 
   it("Enter opens the booking drawer prefilled from the block (T-495)", async () => {

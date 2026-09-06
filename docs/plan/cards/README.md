@@ -1,25 +1,52 @@
-# Build Cards — protocol
+# Build cards — working protocol
 
-One card = one Claude Code session. Paste the card as the session's opening instruction (after the repo's standard CLAUDE.md preamble). Cards are generated from the plan docs in `docs/plan/` (00–08); when a card conflicts with repo reality, flag it back per the Blake Clause — do not silently reinterpret.
+Cards are scoped briefs and acceptance checklists. They do not limit a session to
+one card or require the user to prompt each implementation stage. Complete the
+authorized outcome, including necessary prerequisites and integration.
 
-Reading order for new sessions: `06-GAP-AUDIT.md` (current truth) → `01-PLANNER-UX-SPEC.md` (the Floor) → `02-DESIGN-LANGUAGE.md` (House) → this deck.
+Read root [CLAUDE.md](../../../CLAUDE.md), the latest [GOAL.md](../../../GOAL.md)
+amendments and relevant [task state](../../state/tasks.md) first. Then load the
+applicable card, domain requirements and source. The July plan and gap audit are
+dated inputs; check their assumptions against current implementation and founder
+direction. Use [the authority map](../../strategy/authority-map.md) for domain
+ownership and CLAUDE for resolving conflicts.
 
-Rules that bind every card:
+## Requirements for active work
 
-- Repo CLAUDE.md gates stay absolute: typecheck, lint, tests, handoff protocol, no TODOs, no `any`.
-- Claim-safe lexicon applies to ALL surfaces, internal included (estimates say "assumption" until actuals exist).
-- Every UI card's handoff includes Playwright screenshots.
-- No card may regress `sspp-performance-budget.test.ts` or the loading budgets in 01 §17.
-- Naming: **Hybrid** (decided 10 Jul 2026) — existing `cockpit*` code names stay; new modules, UI copy, and docs use Floor/House vocabulary. No mass renames.
-- Supersedence: `06-GAP-AUDIT.md` §2 replaces any older "current gaps" list (including the project bible's) — regenerate 06 after each wave rather than editing old lists.
+- Preserve strict TypeScript, real implementations, runtime validation and honest
+  claims. Use the applicable verification requirements in CLAUDE, including
+  regression tests for changed behavior and actual browser evidence for UI work.
+- Read the [product experience convention](../../../.claude/conventions/product-experience.md)
+  for visible work. Blake's newer sublime brief supersedes old fixed House visual
+  prescriptions. Generated proposals and earlier rejected designs are not approval.
+- All visible asynchronous flows use the shared
+  [Activity system](../../../.claude/conventions/loading-and-working-motion.md).
+- Preserve planning-grade language and distinguish assumptions from measured
+  actuals. Existing performance tests and applicable budgets remain checks; do
+  not silently weaken them or replace current device targets with old tiers.
+- Existing `cockpit*` code names stay. Use current Floor/House/Diary vocabulary
+  where appropriate without mass renames.
+- Check current task status, dependencies and ownership before claiming a slice.
+  Coordinate overlapping edits. Update the relevant task and durable evidence
+  when work is completed or externally blocked.
+- Check current production and spending constraints before external actions.
+  Historical approvals below do not authorize new spending or bypass later gates.
 
-Waves: A (golden loop) → B (foundation) → C (altitude + perf) → D (ghosts + live numbers) → E (timeline) → F (command + FOH + polish) → M (Event Cinema, first moonshot). G10 (room training on RunPod) runs parallel to all waves. Presence/multiplayer (T-105) stays deferred until after F.
+## Historical plan context — July 2026
 
-Decisions of 10 Jul 2026:
+The original waves were A (golden loop), B (foundation), C (altitude/performance),
+D (ghosts/live numbers), E (timeline), F (command/front of house/polish), and M
+(Event Cinema), with G10 training in parallel. This is plan history, not a current
+queue. Check the task ledger for completed, changed or deferred work.
 
-- **Not a demo — Trades Hall is client №1.** The weekly Friday run is a *delivery check* against Beverly's real events, on real venue hardware. Ops depth ranks equal to cinema polish; expansion waits until Trades Hall is complete.
-- **GPU spend approved**: start the G10 training queue immediately (RunPod/Lambda, ~£100–200/room); log every run to `state/training_runs.jsonl` (currently empty — fix as part of the first run).
-- **Fonts licensed now**: Söhne + Söhne Mono (Klim) and Canela (Commercial Type) become the primary faces; Geist/Geist Mono/Fraunces remain the fallback stack in tokens. Card A3 includes wiring the licensed files.
-- **Wave M = Event Cinema** (see `wave-M.md`).
-- 11 Jul: the Diary (calendar/booking) universe installed under `docs/strategy/` with its own canon; authority split + translucency ruling + shared command rail recorded in `docs/strategy/authority-map.md`. Cards A3/A4 implement the MERGED token layer (House + Ink & Gilt additions) per that ruling. Build order: Diary Slice 1 → A1/A2 → A3/A4.
-- A playable interaction prototype of the Floor lives at `docs/plan/prototypes/floor-v0.html` — reference for feel (altitude, ghosts, timeline morph, live numbers, command); it is NOT product code and says so in its own evidence drawer.
+The July decisions included treating Trades Hall as client number one, pursuing
+RunPod training, selecting Söhne/Söhne Mono/Canela with existing fallback fonts,
+and aligning the Diary and spatial product around shared infrastructure.
+Verify actual licensed assets and installed dependencies before implementing.
+The July £100–200/room training allowance and immediate-start wording are
+superseded by the current programme's validation gates and explicit spend caps.
+
+The [Floor prototype](../prototypes/floor-v0.html) is an interaction reference,
+not product implementation or current visual acceptance. The July gap audit can
+help explain the original cards; update current state and evidence rather than
+treating that audit as permanently current.

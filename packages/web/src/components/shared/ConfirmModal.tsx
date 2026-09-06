@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ActivityIndicator } from "./Activity.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
@@ -102,7 +103,9 @@ export function ConfirmModal({
             style={{ ...btnBase, background: confirmColor, color: "#fff", opacity: inFlight ? 0.7 : 1 }}
             disabled={inFlight}
             onClick={() => { onConfirm(showNoteField ? note : undefined); }}
+            aria-busy={inFlight}
           >
+            {inFlight && <ActivityIndicator size={18} />}
             {inFlight ? "Working..." : confirmLabel}
           </button>
         </div>

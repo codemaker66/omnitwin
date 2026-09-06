@@ -1,211 +1,124 @@
-# HOW TO USE THE OMNITWIN SQUAD IN CLAUDE CODE
+# Working with coding agents on Venviewer
 
-## Setup: The Project File Structure
+Updated 2026-09-06. This guide applies across coding agents; the filename is retained
+for existing references. Its purpose is to help an agent complete the requested
+work with sound judgment, useful tools and verifiable results.
 
-In your OMNITWIN project root, create a `.claude/` directory:
+## Use the existing project instructions
 
-```
-omnitwin/
-├── .claude/
-│   ├── AI_INTEGRITY_RULES.md      ← Loaded in EVERY session (non-negotiable)
-│   ├── SQUAD_PROTOCOL.md           ← Loaded for any engineering work
-│   ├── squad/
-│   │   ├── RENDERER.md
-│   │   ├── INTERACTOR.md
-│   │   ├── ARCHITECT.md
-│   │   ├── FRONTENDER.md
-│   │   ├── DEPLOYER.md
-│   │   ├── TESTER.md
-│   │   ├── DOCUMENTER.md
-│   │   └── PERFKEEPER.md
-│   ├── council/
-│   │   ├── MR_MILLISECOND.md
-│   │   ├── MS_CANVAS.md
-│   │   ├── MR_HANDSHAKE.md
-│   │   ├── MS_WEDGE.md
-│   │   ├── MR_PIXEL.md
-│   │   ├── MS_PRESENCE.md
-│   │   ├── MR_SCAFFOLD.md
-│   │   └── MR_COMPUTER.md
-│   └── CLAUDE.md                   ← Claude Code project instructions (see below)
-├── packages/
-│   ├── types/
-│   ├── web/
-│   ├── api/
-│   └── pdf/
-└── ...
-```
+The canonical project policy is the repository-root `CLAUDE.md`. `AGENTS.md` is the
+entry point for agents that use it. Follow their current reading and precedence
+rules, including `GOAL.md`, `.claude/AI_INTEGRITY_RULES.md`, current task state and
+relevant architecture/audit records. Use dated state as a starting point and verify
+facts that the task depends on against current files and available runtime evidence.
 
-## The CLAUDE.md File (Claude Code Project Instructions)
+Keep policy in those existing locations. Do not create another `.claude/CLAUDE.md`
+or copy the root instructions into a competing template. Package names may remain
+`omnitwin` or `@omnitwin/*`; the company and product are Venviewer.
 
-Create this file at `.claude/CLAUDE.md` — Claude Code reads this automatically:
+## Ask for an outcome; let the agent carry it through
 
-```markdown
-# OMNITWIN — Claude Code Instructions
+A useful request describes the desired result, concrete inputs and any meaningful
+constraints or acceptance criteria. For example:
 
-## Identity
-You are an engineering specialist on the OMNITWIN project. You MUST read and follow
-AI_INTEGRITY_RULES.md before doing any work. This is non-negotiable.
+> Fix the reported camera reset when the room poller updates. Find the cause in the
+> current implementation, add a regression test, and verify camera movement in the
+> real room. Follow the existing rendering and release constraints.
 
-## Before Every Task
-1. Confirm which Squad specialist you are operating as
-2. State the specific task and its Definition of Done
-3. Estimate the scope (files, lines, prompts needed)
-4. If the task is too large for one prompt, break it down and state the plan
+The agent should investigate, make reasonable implementation decisions, apply the
+change, run checks and fix failures within that scope. Nontrivial work benefits
+from a short plan and progress updates. Plans can evolve as evidence changes; there
+is no fixed limit on files, function length, features or prompts per task.
 
-## During Every Task
-- Follow the Seven Laws from AI_INTEGRITY_RULES.md
-- Use the Anti-Patterns Checklist before claiming completion
-- Write tests alongside implementation, not after
-- If uncertain about any library API, flag it with // VERIFY:
+Do not stop authorized work at an arbitrary chunk boundary or require Blake to
+re-prompt for tests, integration or remaining implementation. If a real blocker
+requires his input, describe the concrete decision and why it cannot be resolved
+from existing authorization or evidence. Continue work that does not depend on it.
+Respect current production, spending and deployment boundaries.
 
-## After Every Task
-- Use the Handoff Protocol (COMPLETED / VERIFIED / UNVERIFIED / REMAINING / NEXT)
-- If REMAINING is not empty, explicitly tell Blake what to prompt next
-- Never let a session end with unfinished work unacknowledged
+## Use references, skills and tools accurately
 
-## Technology Stack (DO NOT DEVIATE)
-- TypeScript strict mode (no `any`, no `as unknown as`)
-- React + React Three Fiber (@react-three/fiber, @react-three/drei)
-- Fastify (NOT Express, NOT NestJS)
-- PostgreSQL via Drizzle ORM (NOT Prisma)
-- Zustand for state management
-- Vitest for testing
-- Zod for runtime validation
-- pnpm workspaces monorepo
+`.claude/SQUAD_PROTOCOL.md` maps optional engineering perspectives. The files in
+`.claude/squad/` and `.claude/council/` are reference material, not installed agents
+or mandatory identities. Read the useful ones; apply broad expertise without acting
+out a conversation or treating a character's preference as an accepted decision.
 
-## Quality Bar
-This code will be evaluated by Jane Street engineers.
-Every function, every type, every test must reflect that standard.
-```
+The repository also vendors four design/motion skills under `.claude/skills/`:
 
-## How to Start a Claude Code Session
+| Skill | Intended use |
+| --- | --- |
+| `emil-design-eng` | Component polish and animation decisions |
+| `apple-design` | Fluid interaction, gesture behavior and design foundations |
+| `animation-vocabulary` | Naming a described motion effect |
+| `review-animations` | Requested animation review; metadata sets `disable-model-invocation: true` |
 
-### For Renderer work (3D engine, shaders, LOD):
-```
-Read .claude/AI_INTEGRITY_RULES.md and .claude/squad/RENDERER.md.
-You are Renderer. Today we're implementing [specific task].
+See `.claude/skills/README.md` for provenance and project-specific context. Skill
+files present in the repository do not prove that a particular host has loaded
+them. Discover capabilities through the current environment, read a relevant skill
+when applying it, and follow current user direction and project constraints when
+generic examples or old aesthetic defaults conflict. Neither roleplay nor a longer
+prompt raises a model's inherent capability; focused context, investigation and
+independent checks help it use its capability well.
+
+Use available independent agents for concrete parallel work or reviews that improve
+the result. Give them clear file ownership and evidence requirements; integrate and
+check their findings. Do not invent a specialist tool, assume a named plugin is
+installed, or block on a missing preferred tool when a suitable supported path is
+available. Establish actual connectivity before claiming an integration works.
+
+For library/API uncertainty, inspect the installed package, types, source and
+version-matched official documentation using available tools. Investigate the
+uncertainty instead of leaving a speculative API call and asking Blake to check it.
+Use current `package.json` scripts and the repository's runtime instructions rather
+than assuming commands from a remembered toolchain.
+
+## Verify what changed
+
+Choose checks by the affected behavior and risk, while honoring required repository
+checks. This monorepo defines root `typecheck`, `lint`, `test` and `build` scripts;
+package-level scripts can focus iteration on the affected workspace. For example,
+after checking the package's scripts:
+
+```powershell
+pnpm --filter @omnitwin/web typecheck
+pnpm --filter @omnitwin/web lint
+pnpm --filter @omnitwin/web test
 ```
 
-### For a cross-cutting feature (e.g., configuration publish flow):
-```
-Read .claude/AI_INTEGRITY_RULES.md and .claude/SQUAD_PROTOCOL.md.
-Today involves Architect, Renderer, Documenter, and Deployer.
-We're implementing the configuration publish pipeline.
-Start with Architect's perspective on the API route.
-```
+Read `.claude/gotchas/windows-v8-heap.md` when its trigger applies. Add regression
+coverage for changed behavior. Prefer a failing reproduction before fixing a bug;
+tests should detect a plausible defect, not mirror each function mechanically.
+Expand to dependent packages or broader checks when contracts or impact warrant it.
+For documentation-only changes, validate the diff, references and consistency;
+unrelated runtime suites do not establish that instructions are useful or correct.
 
-### For a code review:
-```
-Read .claude/AI_INTEGRITY_RULES.md and all squad files.
-Full Squad review of [file/feature]. Each specialist comments from their domain.
-```
+For UI and 3D changes, inspect and exercise the actual rendered result with the
+available browser tools. Use the shared activity convention for all affected
+loading/working states and respect the splat verification gotchas. Report the
+tested browser, device or environment when relevant; passing types or tests alone
+does not establish visual quality or founder aesthetic acceptance.
 
-## The Multi-Prompt Workflow for Large Tasks
+Investigate relevant failures and rerun checks after fixing them. Identify verified
+pre-existing failures separately. Source scans with `rg` can locate suspicious
+patterns, but a keyword match is a lead to inspect, not proof of a defect. Enforce
+TypeScript strictness and no `any`; reject fake integrations and incomplete behavior.
+Use real acceptance criteria and configured budgets instead of inventing universal
+coverage, bundle-size, line-count or per-function test quotas.
 
-Large features (like the drag-and-drop system) will take many prompts. Here's the workflow:
+## Keep work recoverable and handoffs useful
 
-### Prompt 1: Planning
-```
-You are Interactor. We need to build the drag-and-drop furniture placement system.
-DON'T write code yet. Break this into implementable chunks that each fit in one prompt.
-List every function, every file, every test. Estimate prompt count.
-```
+Inspect the working tree before editing and preserve unrelated or concurrent work.
+Coordinate ownership if other agents share files. Commit coherent, verified work
+when it is appropriate and authorized, with explicit pathspecs; a completed prompt
+does not itself require a commit, push or deployment.
 
-### Prompt 2-N: Implementation (one chunk per prompt)
-```
-You are Interactor. Implementing chunk 2 of 8: the snap-to-floor raycasting system.
-Here's the current code state: [paste relevant files or let Claude Code read them].
-Implement this chunk fully with tests. Use the Handoff Protocol at the end.
-```
+Keep durable decisions, task status and useful evidence in the established project
+records as required by the canonical workflow. Save enough context to resume a long
+task: objective, decisions, changed files, checks, blockers and next concrete action.
+Use available context continuation rather than forcing a new conversation because
+the task is long. Memory can aid retrieval but does not override current evidence.
 
-### Prompt N+1: Integration Review
-```
-You are Perfkeeper reviewing Interactor's drag-and-drop system.
-Read [all relevant files]. Check draw call impact, frame time budget, memory usage.
-Flag any performance concerns.
-```
-
-### Prompt N+2: Test Review
-```
-You are Tester reviewing the drag-and-drop system.
-Are all interaction paths tested? Are edge cases covered?
-Write any missing tests.
-```
-
-## Guardrails That Catch AI Failure Modes
-
-### Guardrail 1: The Compilation Check
-After every code generation prompt, run:
-```bash
-pnpm typecheck    # TypeScript strict compilation
-pnpm lint         # ESLint with strict rules
-pnpm test         # Vitest test suite
-```
-If ANY of these fail, the code is not complete. Show the error to Claude and ask for the fix.
-DO NOT accept "that should work" — run it and verify.
-
-### Guardrail 2: The TODO Scan
-Periodically run:
-```bash
-grep -r "TODO\|FIXME\|HACK\|XXX\|PLACEHOLDER\|implement\|skeleton" --include="*.ts" --include="*.tsx" packages/
-```
-Any result in non-test files is unfinished work. Don't let it accumulate.
-
-### Guardrail 3: The Any Scan
-```bash
-grep -r ": any\|as any\|<any>" --include="*.ts" --include="*.tsx" packages/
-```
-Zero results. No exceptions. If TypeScript needs `any`, the types are wrong.
-
-### Guardrail 4: The Coverage Check
-```bash
-pnpm test -- --coverage
-```
-Review coverage report. Any file below 70% needs more tests.
-State machine files (@omnitwin/types) must be 95%+.
-
-### Guardrail 5: The Bundle Size Check
-```bash
-pnpm build && du -sh packages/web/dist/
-```
-Track this number. If it grows by >500KB without a new feature, investigate.
-
-### Guardrail 6: The Visual Verification
-For ANY 3D or UI change, actually look at it in a browser.
-Screenshot or describe what you see. Don't trust that the code is correct
-just because it compiles — rendering bugs are logic bugs that pass type checks.
-
-## When Things Go Wrong
-
-### "The AI said it was done but the code doesn't compile"
-1. Paste the EXACT error message into the next prompt
-2. Say: "This code from the previous prompt doesn't compile. Here's the error. Fix it — don't rewrite from scratch, fix the specific issue."
-3. Run the compilation check again after the fix
-
-### "The AI generated skeleton code"
-1. Paste the file with the skeleton functions
-2. Say: "These functions are skeletons. Implement them fully per AI_INTEGRITY_RULES.md Law 1. Each function must have a complete implementation and a test."
-3. Verify by reading the output — look for actual logic, not just type signatures
-
-### "The AI changed the architecture without asking"
-1. Say: "You changed [X] to [Y] without asking. The spec says [X]. Revert to the specified approach. If you believe [Y] is better, explain why and let me decide."
-2. This is enforced by Law 7 of the Integrity Rules
-
-### "The AI is getting confused in a long conversation"
-1. Start a new Claude Code session
-2. Load the integrity rules and relevant squad persona
-3. Paste the specific files being worked on
-4. State the specific remaining task
-5. Continue from where you left off
-
-## Session Hygiene
-
-- **One feature per session.** Don't try to build the entire drag-and-drop system AND the hallkeeper PDF in the same conversation.
-- **Load only relevant personas.** If you're doing Architect work, you don't need Renderer loaded (unless it's a cross-cutting task).
-- **Save working code frequently.** After each successful prompt, commit to git. If a subsequent prompt breaks things, you can revert.
-- **Trust but verify.** Claude is brilliant but fallible. Run the code. Check the output. Read the tests. The guardrails exist because they're needed.
-
----
-
-*This guide should be updated as you develop patterns for what works and what doesn't in practice.*
+Finish with the outcome, meaningful changes, checks actually run and any material
+limitations. Say exactly what remains when blocked. A concise, accurate report is
+more useful than a fixed multi-heading ceremony or a request to prompt again for
+work the agent can already complete.

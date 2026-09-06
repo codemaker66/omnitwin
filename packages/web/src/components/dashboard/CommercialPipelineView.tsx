@@ -17,6 +17,7 @@ import { createProposal, type StaffProposal } from "../../api/proposals.js";
 import { parsePoundsToMinor } from "../../lib/money-input.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
+import { ActivityStatus } from "../shared/Activity.js";
 
 const STAGES = [
   "new",
@@ -141,6 +142,7 @@ export function CommercialPipelineView(): ReactElement {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [tasks, setTasks] = useState<FollowUpTask[]>([]);
   const [selected, setSelected] = useState<DetailState | null>(null);
+  const [detailRequests, setDetailRequests] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [enquiryId, setEnquiryId] = useState("");
@@ -174,13 +176,15 @@ export function CommercialPipelineView(): ReactElement {
 
   const reloadSelected = useCallback((id: string) => {
     setDetailError(null);
+    setDetailRequests((count) => count + 1);
     getOpportunity(id)
       .then((detail) => { setSelected(toDetailState(detail)); })
       .catch(() => {
         setSelected(null);
         setDetailError("Could not load that opportunity. Retry from the stage card or refresh the pipeline.");
         addToast("Could not load opportunity detail", "error");
-      });
+      })
+      .finally(() => { setDetailRequests((count) => count - 1); });
   }, [addToast]);
 
   const pipelineValue = useMemo(
@@ -351,6 +355,7 @@ export function CommercialPipelineView(): ReactElement {
         <section style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 20, color: "#fff7e8" }}>Commercial pipeline</h2>
+            {busy && <ActivityStatus>Updating the commercial pipeline…</ActivityStatus>}
             <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>
               Enquiries become opportunities, proposals, quotes, and client share links. Planning assumptions stay visible.
             </p>
@@ -402,7 +407,7 @@ export function CommercialPipelineView(): ReactElement {
           </div>
         </section>
 
-        {loading && <section style={card}>Loading pipeline...</section>}
+        {loading && <ActivityStatus variant="panel" style={card}>Loading pipeline...</ActivityStatus>}
         {error !== null && (
           <section role="alert" style={{ ...card, color: "#ffb4a2" }}>
             <p style={{ margin: "0 0 10px" }}>{error}</p>
@@ -464,6 +469,7 @@ export function CommercialPipelineView(): ReactElement {
       </div>
 
       <aside style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {detailRequests > 0 && <ActivityStatus>Opening opportunity…</ActivityStatus>}
         <section style={card}>
           <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Today's follow-ups</h3>
           {tasks.length === 0 ? (

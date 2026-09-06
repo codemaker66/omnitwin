@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { ApiError } from "../../../../api/client.js";
@@ -135,6 +135,59 @@ afterEach(() => {
 });
 
 describe("WhenRibbon", () => {
+  it("shows activity during the calendar request", () => {
+    getCalendarMock.mockReturnValue(new Promise(() => {}));
+    renderRibbon();
+    expect(screen.getByRole("status").textContent).toContain("Loading event times");
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
+  });
+
+  it.each(["success", "failure"] as const)("keeps refresh activity visible with a loaded day until %s", async (outcome) => {
+    const loaded = calendarFixture([
+      booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT, kind: "hold", state: "hold" }),
+    ]);
+    let resolveRefresh: ((value: CalendarResponse) => void) | undefined;
+    let rejectRefresh: ((reason: Error) => void) | undefined;
+    const refresh = new Promise<CalendarResponse>((resolve, reject) => {
+      resolveRefresh = resolve;
+      rejectRefresh = reject;
+    });
+    getCalendarMock.mockResolvedValueOnce(loaded).mockReturnValueOnce(refresh);
+    moveBookingMock.mockResolvedValue({});
+    renderRibbon();
+    const ingot = await screen.findByTestId("when-ribbon-ingot");
+    fireEvent.keyDown(ingot, { key: "ArrowRight" });
+    fireEvent.keyDown(ingot, { key: "Enter" });
+
+    const activity = await screen.findByText("Refreshing event times…");
+    expect(activity.closest('[role="status"]')?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(screen.getByTestId("when-ribbon-ingot")).toBe(ingot);
+
+    await act(() => {
+      if (outcome === "success") resolveRefresh?.(loaded);
+      else rejectRefresh?.(new Error("Calendar unavailable"));
+      return Promise.resolve();
+    });
+    expect(screen.queryByText("Refreshing event times…")).toBeNull();
+    expect(screen.getByTestId("when-ribbon-ingot")).toBeTruthy();
+  });
+
+  it("ends save activity when a booking update fails", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([
+      booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT, kind: "hold", state: "hold" }),
+    ]));
+    let rejectMove: ((reason: Error) => void) | undefined;
+    moveBookingMock.mockReturnValue(new Promise((_resolve, reject) => { rejectMove = reject; }));
+    renderRibbon();
+    const ingot = await screen.findByTestId("when-ribbon-ingot");
+    fireEvent.keyDown(ingot, { key: "ArrowRight" });
+    fireEvent.keyDown(ingot, { key: "Enter" });
+    expect(screen.getByText("Saving event times…").closest('[role="status"]')?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    rejectMove?.(new Error("Network unavailable"));
+    await screen.findByRole("alert");
+    expect(screen.queryByText("Saving event times…")).toBeNull();
+  });
+
   it("renders the ingot, ink ghosts and hatched guideline buffers on the day strip", async () => {
     getCalendarMock.mockResolvedValue(
       calendarFixture([

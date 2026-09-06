@@ -40,7 +40,7 @@ describe("PlannerCockpit", () => {
   });
 
   // CARD A2: the stage exposes the resolve phase as an honesty attribute and
-  // hosts the quiet caption while the captured room develops. No spinner.
+  // hosts the shared activity alongside real chunk progress while the room develops.
   it("exposes the resolve phase on the stage and shows the quiet caption while developing", () => {
     useCockpitStore.getState().setRoomResolve({ phase: "developing", loadedChunks: 2, totalChunks: 7 });
     const { container } = render(<PlannerCockpit />);
@@ -50,6 +50,7 @@ describe("PlannerCockpit", () => {
     expect(caption.getAttribute("data-visible")).toBe("true");
     expect(caption.textContent).toContain("Loading captured room");
     expect(caption.textContent).toContain("2 of 7 chunks");
+    expect(caption.querySelector("[data-activity-indicator]")).not.toBeNull();
     expect(container.querySelector('[role="progressbar"]')).toBeNull();
   });
 
@@ -59,5 +60,6 @@ describe("PlannerCockpit", () => {
 
     expect(container.querySelector(".cockpit-stage")?.getAttribute("data-resolve-phase")).toBe("fallback");
     expect(screen.getByTestId("room-resolve-caption").getAttribute("data-visible")).toBe("false");
+    expect(screen.getByTestId("room-resolve-caption").querySelector("[data-activity-indicator]")).toBeNull();
   });
 });

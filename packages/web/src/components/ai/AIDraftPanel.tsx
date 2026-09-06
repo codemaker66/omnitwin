@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactElement } from "react";
-import { Bot, RefreshCw, ShieldCheck } from "lucide-react";
+import { Bot, ShieldCheck } from "lucide-react";
+import { ActivityIndicator } from "../shared/Activity.js";
 import type { AIDraft, AIDraftUseCase, CanonicalJsonValue } from "@omnitwin/types";
 import { createAIDraft, getAIAssistantStatus } from "../../api/ai-assistant.js";
 import "./AIDraftPanel.css";
@@ -80,7 +81,7 @@ export function AIDraftPanel({
       </div>
 
       <div className="ai-draft-panel__status" role="status">
-        <ShieldCheck aria-hidden="true" size={16} />
+        {status.kind === "loading" ? <ActivityIndicator size={20} /> : <ShieldCheck aria-hidden="true" size={16} />}
         <span>
           {status.kind === "loading" ? "Checking AI draft configuration." : status.message}
         </span>
@@ -92,7 +93,7 @@ export function AIDraftPanel({
         disabled={disabled}
         onClick={handleGenerate}
       >
-        {draftState.kind === "loading" && <RefreshCw aria-hidden="true" size={16} className="ai-draft-panel__spin" />}
+        {draftState.kind === "loading" && <ActivityIndicator size={20} />}
         {draftState.kind === "loading" ? "Generating draft" : actionLabel}
       </button>
 
