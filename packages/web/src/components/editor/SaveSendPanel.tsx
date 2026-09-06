@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator } from "../shared/Activity.js";
-import { useEditorStore } from "../../stores/editor-store.js";
+import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "../../stores/editor-store.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
 import { prepareLayoutForGuestEnquiry } from "./send-layout-flow.js";
@@ -87,12 +87,13 @@ export function SaveSendPanel({
 
   const handleSend = (): void => {
     if (timelinePreviewActive) return;
+    const session = captureEditorSession();
     setFlushing(true);
     void prepareLayoutForGuestEnquiry(configId)
       .then((readyToSend) => {
         if (!mountedRef.current) return;
         setFlushing(false);
-        if (readyToSend) {
+        if (readyToSend && isCurrentEditorSession(session)) {
           setShowEnquiry(true);
         }
       })

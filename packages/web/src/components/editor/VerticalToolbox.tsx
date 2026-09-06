@@ -27,7 +27,6 @@ import type { FurnitureCategory } from "@omnitwin/types";
 import {
   copyForEditorSaveStatus,
   deriveEditorSaveStatus,
-  type EditorSaveStatus,
 } from "../../lib/editor-save-status.js";
 import {
   PLANNER_TOOLBAR_COMMAND_EVENT,
@@ -1453,7 +1452,6 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [focusedCategory, setFocusedCategory] = useState<FurnitureCategory>(CATALOGUE_CATEGORIES[0] ?? "table");
-  const [saveFlash, setSaveFlash] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [catalogueDragPreview, setCatalogueDragPreview] = useState<CatalogueDragPreview | null>(null);
@@ -1485,9 +1483,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
   const wallMode = useVisibilityStore((s) => s.mode);
   const allWallsUp = wallMode === "manual";
   const saveStatus = deriveEditorSaveStatus({ configId: savedConfigId, isDirty, isSaving, saveError, lastSavedAt });
-  const displayedSaveStatus: EditorSaveStatus =
-    saveFlash && saveStatus !== "failed" && saveStatus !== "saving" ? "saved" : saveStatus;
-  const baseSaveCopy = copyForEditorSaveStatus(displayedSaveStatus);
+  const baseSaveCopy = copyForEditorSaveStatus(saveStatus);
   const saveCopy = saveConflict === null
     ? baseSaveCopy
     : {
@@ -1699,11 +1695,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
       void useEditorStore.getState().reloadAfterConflict(authed);
       return;
     }
-    void useEditorStore.getState().saveToServer(authed).then((saved) => {
-      if (!saved) return;
-      setSaveFlash(true);
-      window.setTimeout(() => { setSaveFlash(false); }, 2000);
-    });
+    void useEditorStore.getState().saveToServer(authed);
   }, []);
 
   const queueCatalogueDragPreview = useCallback((item: CatalogueItem, x: number, y: number, active: boolean): void => {
@@ -1991,7 +1983,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <RotateCw size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={displayedSaveStatus === "saved"} compact={isNarrow} subLabel={saveCopy.shortLabel} disabled={isSaving} label={saveCopy.label} description={saveCopy.description} tooltipEnabled={showDesktopHints} onClick={handleSave}>
+        <ToolBtn active={saveStatus === "saved"} compact={isNarrow} subLabel={saveCopy.shortLabel} disabled={isSaving} label={saveCopy.label} description={saveCopy.description} tooltipEnabled={showDesktopHints} onClick={handleSave}>
           <Save size={ICON_SIZE} />
         </ToolBtn>
 

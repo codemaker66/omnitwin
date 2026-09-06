@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as configurationApi from "../../../api/configurations.js";
 import { VerticalToolbox } from "../VerticalToolbox.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -30,6 +31,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   useEditorStore.getState().reset();
 });
 
@@ -42,6 +44,25 @@ function renderToolbox(): void {
 }
 
 describe("VerticalToolbox undo buttons", () => {
+  it("shows newer dirty, busy, failed and conflicted state immediately after a successful save", async () => {
+    useEditorStore.setState({ configId: "saved", configRevision: 1, isPublicPreview: true, isDirty: true });
+    vi.spyOn(configurationApi, "publicBatchSave").mockResolvedValue({ objects: [], revision: 2 });
+    renderToolbox();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Unsaved changes" }));
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("button", { name: "Layout saved" })).toBeTruthy();
+    act(() => { useEditorStore.getState().addObject("a1", 1, 0, 2); });
+    expect(screen.getByRole("button", { name: "Unsaved changes" })).toBeTruthy();
+    act(() => { useEditorStore.setState({ isSaving: true }); });
+    expect(screen.getByRole("button", { name: "Saving…" })).toBeTruthy();
+    act(() => { useEditorStore.setState({ isSaving: false, saveError: "Network failed" }); });
+    expect(screen.getByRole("button", { name: "Save failed - retry" })).toBeTruthy();
+    act(() => { useEditorStore.setState({ saveConflict: { expectedRevision: 2, currentRevision: 3, message: "Changed" } }); });
+    expect(screen.getByRole("button", { name: "Reload layout" })).toBeTruthy();
+  });
+
   it("renders the first-visit planner coach as a movable widget with a real catalogue action", async () => {
     renderToolbox();
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useEditorStore, setEditorAutosaveRequester, type EditorObject } from "../../stores/editor-store.js";
+import { captureEditorSession, isCurrentEditorSession, useEditorStore, setEditorAutosaveRequester, type EditorObject, type EditorSession } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
@@ -308,11 +308,11 @@ function attemptAutoSave(isAuthenticated: boolean): void {
 }
 
 /** Resolve once no save is in flight. */
-async function settleInFlightSave(): Promise<void> {
+async function settleInFlightSave(session: EditorSession): Promise<void> {
   if (!useEditorStore.getState().isSaving) return;
   await new Promise<void>((resolve) => {
     const unsubscribe = useEditorStore.subscribe((state) => {
-      if (!state.isSaving) {
+      if (!state.isSaving || !isCurrentEditorSession(session)) {
         unsubscribe();
         resolve();
       }
@@ -340,10 +340,13 @@ export async function flushAutoSave(): Promise<boolean> {
     clearTimeout(bridgeSaveTimer);
     bridgeSaveTimer = null;
   }
-  await settleInFlightSave();
+  const session = captureEditorSession();
+  await settleInFlightSave(session);
+  if (!isCurrentEditorSession(session)) return false;
   const state = useEditorStore.getState();
   if (state.isDirty && state.configId !== null) {
-    return await state.saveToServer(useAuthStore.getState().isAuthenticated);
+    const saved = await state.saveToServer(useAuthStore.getState().isAuthenticated);
+    return saved && isCurrentEditorSession(session);
   }
   return true;
 }
