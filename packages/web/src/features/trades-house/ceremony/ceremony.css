@@ -1,0 +1,387 @@
+/* -----------------------------------------------------------------------------
+   ceremony.css — the choice ceremony's paper: the option panel, the held card,
+   the seal, the reply panel, the ledger strip and the latch line.
+
+   Laws: no `transition` or `animation` on `transform` anywhere here (every
+   movement is a spring in a rAF loop writing element.style); no `filter` on
+   anything large; the seal's glow is a ::after opacity, never a box-shadow;
+   no drop shadows, glowing text, knotwork or tartan (the art direction). The
+   paper is translucent so the tableau reads through it. Fonts: Cormorant
+   Garamond and EB Garamond are loaded by TradesHouseCraftQuizPage.css; Georgia
+   is the fallback stack.
+   -------------------------------------------------------------------------- */
+
+.ceremony-options,
+.ceremony-held,
+.ceremony-reply {
+  --ceremony-paper: rgba(236, 226, 205, 0.86);
+  --ceremony-paper-edge: rgba(74, 58, 36, 0.28);
+  --ceremony-ink: #2a2118;
+  --ceremony-ink-soft: rgba(42, 33, 24, 0.74);
+  --ceremony-cost-ink: #3a2b19;
+  --ceremony-gold: #b8924a;
+  --ceremony-gold-bright: #c9a04f;
+  --ceremony-lantern: #e39b3a;
+}
+
+/* ---- the option panel ------------------------------------------------- */
+
+.ceremony-options {
+  background:
+    linear-gradient(180deg, rgba(255, 250, 238, 0.32), rgba(255, 250, 238, 0) 42%),
+    var(--ceremony-paper);
+  border: 1px solid var(--ceremony-paper-edge);
+  box-sizing: border-box;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.ceremony-options.is-column {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(400px, 36vw);
+}
+
+.ceremony-options.is-grid {
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 10px;
+  width: 100%;
+}
+
+.ceremony-option {
+  align-items: start;
+  appearance: none;
+  background: rgba(255, 252, 244, 0.42);
+  border: 1px solid rgba(74, 58, 36, 0.26);
+  border-radius: 2px;
+  box-sizing: border-box;
+  color: var(--ceremony-ink);
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  gap: 12px;
+  grid-template-columns: 40px minmax(0, 1fr);
+  margin: 0;
+  min-height: 0;
+  padding: 12px 14px;
+  text-align: left;
+  transform-origin: 50% 50%;
+  transition: background-color 160ms ease, border-color 160ms ease;
+  will-change: transform, opacity;
+}
+
+.ceremony-options.is-grid .ceremony-option {
+  align-items: center;
+  gap: 8px;
+  grid-template-columns: 30px minmax(0, 1fr);
+  min-height: 56px;
+  padding: 10px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ceremony-option:not([aria-disabled="true"]):hover {
+    background: rgba(255, 252, 244, 0.7);
+    border-color: var(--ceremony-gold);
+  }
+}
+
+.ceremony-option[data-pressed="true"] {
+  background: rgba(255, 252, 244, 0.82);
+}
+
+.ceremony-option[aria-disabled="true"] {
+  cursor: default;
+}
+
+.ceremony-option:focus-visible {
+  outline: 2px solid var(--ceremony-cost-ink);
+  outline-offset: 2px;
+}
+
+.ceremony-option.is-chosen {
+  border-color: var(--ceremony-gold);
+}
+
+.ceremony-option.is-held {
+  border-color: var(--ceremony-gold);
+}
+
+/* Phone, after focus has moved to Continue: gone from the eye and the tab
+   order, still in the DOM for the screen reader's narrative. */
+.ceremony-option.is-retired {
+  border-bottom-width: 0;
+  border-top-width: 0;
+  height: 0;
+  margin: 0;
+  min-height: 0;
+  overflow: clip;
+  padding-bottom: 0;
+  padding-top: 0;
+  visibility: hidden;
+}
+
+.ceremony-option-text {
+  display: block;
+  min-width: 0;
+}
+
+.ceremony-option-lead {
+  color: var(--ceremony-ink);
+  display: block;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(16px, 1.15vw, 19px);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+}
+
+.ceremony-options.is-grid .ceremony-option-lead {
+  font-size: 15px;
+}
+
+.ceremony-option-body {
+  color: var(--ceremony-ink-soft);
+  display: block;
+  font-family: "EB Garamond", Georgia, serif;
+  font-size: clamp(13.5px, 0.95vw, 15.5px);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+/* The cost line: ≥ 12 px, alpha ≥ 0.9, contrast ≥ 4.5:1 at every viewport
+   (the shipped 9–10.5 px uppercase is the thing this replaces). */
+.ceremony-option-cost,
+.ceremony-held-cost {
+  color: var(--ceremony-cost-ink);
+  display: block;
+  font-family: "EB Garamond", Georgia, serif;
+  font-size: clamp(12px, 0.95vw, 14px);
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.35;
+  margin-top: 6px;
+  opacity: 0.92;
+}
+
+/* ---- the seal ----------------------------------------------------------- */
+
+.ceremony-seal {
+  display: block;
+  height: 40px;
+  isolation: isolate;
+  position: relative;
+  transform-origin: 50% 50%;
+  width: 40px;
+  will-change: transform;
+}
+
+.ceremony-options.is-grid .ceremony-seal {
+  height: 30px;
+  width: 30px;
+}
+
+.ceremony-seal .craft-option-seal {
+  display: block;
+  filter: none;
+  height: 100%;
+  width: 100%;
+}
+
+/* The glow: a ::after whose opacity the strike spring drives (--seal-glow),
+   behind the wax. Never a box-shadow; an animated shadow repaints. */
+.ceremony-seal::after {
+  background: radial-gradient(
+    circle,
+    rgba(227, 155, 58, 0.55) 0%,
+    rgba(227, 155, 58, 0.18) 42%,
+    rgba(227, 155, 58, 0) 70%
+  );
+  border-radius: 50%;
+  content: "";
+  inset: -12px;
+  opacity: var(--seal-glow, 0);
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+}
+
+/* ---- the held card (phone) --------------------------------------------- */
+
+.ceremony-held {
+  inset: 0;
+  position: absolute;
+  z-index: 30;
+}
+
+.ceremony-held-backdrop {
+  background: rgba(8, 10, 18, 0.5);
+  inset: 0;
+  position: absolute;
+}
+
+.ceremony-held-card {
+  background:
+    linear-gradient(180deg, rgba(255, 250, 238, 0.32), rgba(255, 250, 238, 0) 42%),
+    var(--ceremony-paper);
+  border: 1px solid var(--ceremony-paper-edge);
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  left: 12px;
+  position: absolute;
+  right: 12px;
+}
+
+.ceremony-held-tap {
+  appearance: none;
+  background: none;
+  border: 0;
+  box-sizing: border-box;
+  color: var(--ceremony-ink);
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  margin: 0;
+  padding: 16px 16px 14px;
+  text-align: left;
+  transform-origin: 50% 50%;
+  width: 100%;
+  will-change: transform;
+}
+
+.ceremony-held-tap:focus-visible {
+  outline: 2px solid var(--ceremony-cost-ink);
+  outline-offset: -4px;
+}
+
+.ceremony-held-lead {
+  display: block;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.ceremony-held-body {
+  color: var(--ceremony-ink-soft);
+  display: block;
+  font-family: "EB Garamond", Georgia, serif;
+  font-size: 15px;
+  line-height: 1.4;
+  margin-top: 6px;
+}
+
+.ceremony-held-hint {
+  color: var(--ceremony-gold);
+  display: block;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  margin-top: 10px;
+  text-transform: uppercase;
+}
+
+/* ---- the reply panel ---------------------------------------------------- */
+
+.ceremony-reply {
+  background:
+    linear-gradient(180deg, rgba(255, 250, 238, 0.32), rgba(255, 250, 238, 0) 42%),
+    var(--ceremony-paper);
+  border: 1px solid var(--ceremony-paper-edge);
+  box-sizing: border-box;
+  padding: 14px 18px 16px;
+  text-align: left;
+  will-change: transform, opacity;
+}
+
+.ceremony-reply.is-hidden {
+  visibility: hidden;
+}
+
+.ceremony-reply-who {
+  color: var(--ceremony-gold);
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  line-height: 1;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.ceremony-reply-text {
+  color: var(--ceremony-ink);
+  font-family: "EB Garamond", Georgia, serif;
+  font-size: clamp(15px, 1.2vw, 18px);
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.ceremony-reply-text > p {
+  margin: 0;
+}
+
+.ceremony-reply-latch:empty {
+  display: none;
+}
+
+.ceremony-latch {
+  color: var(--ceremony-ink-soft);
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(14px, 1.05vw, 16px);
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 12px 0 0;
+}
+
+.ceremony-continue {
+  appearance: none;
+  background: linear-gradient(180deg, #e9d59d, #c9a457);
+  border: 1px solid #7a5c25;
+  border-radius: 3px;
+  color: #2a1c08;
+  cursor: pointer;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  margin-top: 14px;
+  min-height: 44px;
+  padding: 10px 22px;
+  text-transform: uppercase;
+  transform-origin: 50% 50%;
+  transition: background-color 160ms ease;
+  will-change: transform;
+}
+
+.ceremony-continue[data-pressed="true"] {
+  background: linear-gradient(180deg, #dcc58a, #b8924a);
+}
+
+.ceremony-continue:focus-visible {
+  outline: 2px solid var(--ceremony-cost-ink);
+  outline-offset: 3px;
+}
+
+/* ---- the ledger strip --------------------------------------------------- */
+
+.ceremony-ledger {
+  display: block;
+  height: auto;
+  width: 18px;
+}
+
+.ceremony-ledger-slot {
+  fill: none;
+  stroke: rgba(42, 33, 24, 0.16);
+  stroke-width: 1;
+}
+
+.ceremony-ledger-stroke {
+  fill: none;
+  stroke: var(--ceremony-gold-bright, #c9a04f);
+  stroke-linecap: round;
+  stroke-width: 1.6;
+}

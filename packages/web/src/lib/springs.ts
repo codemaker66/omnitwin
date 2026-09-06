@@ -35,6 +35,12 @@ export const SPRING_PRESETS = {
   camera: { stiffness: 120, damping: 14 },
   /** Heavy stage equipment — weighty, deliberate, overdamped. */
   heavy: { stiffness: 280, damping: 120 },
+  /**
+   * The seal strike (the quiz's commit): damping ratio 0.78, one tiny
+   * overshoot, settled within 0.25 s. `heavy` at ratio 3.6 is a sigh, not a
+   * strike (magnificent-quiz spec §5).
+   */
+  strike: { stiffness: 420, damping: 32 },
 } as const satisfies Record<string, SpringConfig>;
 
 /**

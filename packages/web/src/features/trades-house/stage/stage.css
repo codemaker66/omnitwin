@@ -1,0 +1,347 @@
+/* -----------------------------------------------------------------------------
+   stage.css — every style of the stage engine.
+
+   Laws held by stage/__tests__/stage-isolation.test.ts: no `transition` or
+   `animation` on transform anywhere in this file (springs move things; CSS
+   only paints them), and no `filter` at all (the plan forbids filter on any
+   element over a quarter of the viewport, and every stage layer is that
+   size). The fonts are the quiz's Cormorant Garamond and EB Garamond, loaded
+   by TradesHouseCraftQuizPage.css. Colours: paper and ink for the frame, the
+   scene's one hue (`--stage-hue`, set by Stage.tsx) for the light and the
+   marks, near-black for the tableau's ground.
+   -------------------------------------------------------------------------- */
+
+html.stage-mounted,
+html.stage-mounted body {
+  overscroll-behavior-y: none;
+}
+
+.stage-root {
+  --stage-paper: #e8dcc2;
+  --stage-paper-rgb: 232 220 194;
+  --stage-ink: #2b2118;
+  --stage-ink-rgb: 43 33 24;
+  --stage-hue: #e39b3a;
+  --stage-hue-rgb: 227 155 58;
+  --stage-margin: clamp(14px, 2.2vw, 30px);
+  --stage-margin-left: clamp(36px, 4.4vw, 64px);
+  --light-x: 50vw;
+  --light-y: 58vh;
+  --light-on: 0.35;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: clip;
+  color: var(--stage-ink);
+  font-family: "EB Garamond", "Cormorant Garamond", Georgia, serif;
+  background:
+    radial-gradient(ellipse at 28% 18%, rgb(255 250 238 / 0.5), transparent 58%),
+    repeating-linear-gradient(97deg, transparent 0 7px, rgb(var(--stage-ink-rgb) / 0.022) 7px 8px),
+    linear-gradient(160deg, #eadfc6, #dccbaa 68%, #d3c09c);
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+}
+
+/* ---- the tableau: the paper's inner rectangle, where the scene lives ---- */
+
+.stage-tableau {
+  position: absolute;
+  inset: var(--stage-margin) var(--stage-margin) var(--stage-margin) var(--stage-margin-left);
+  overflow: clip;
+  background: #06070c;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.stage-planes {
+  position: absolute;
+  inset: 0;
+}
+
+/* Planes bleed 8 px past the tableau so the 7 px parallax never shows an edge. */
+.stage-plane {
+  position: absolute;
+  inset: -8px;
+  will-change: transform;
+}
+
+.stage-root[data-reduced-motion="true"] .stage-plane {
+  will-change: auto;
+}
+
+.stage-plane > svg,
+.stage-plane > img,
+.stage-plane > canvas,
+.stage-plane > div {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.stage-plane-image {
+  object-fit: cover;
+}
+
+.stage-plane--lantern {
+  pointer-events: none;
+}
+
+.stage-ink {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ---- the carried light: warms what it passes by about 4% ---- */
+
+.stage-light {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 110vmax;
+  height: 110vmax;
+  margin: -55vmax 0 0 -55vmax;
+  pointer-events: none;
+  opacity: var(--light-on);
+  mix-blend-mode: screen;
+  will-change: transform;
+  transform: translate3d(
+    calc(var(--light-x) - var(--stage-margin-left)),
+    calc(var(--light-y) - var(--stage-margin)),
+    0
+  );
+  background: radial-gradient(
+    circle,
+    rgb(var(--stage-hue-rgb) / 0.09) 0%,
+    rgb(var(--stage-hue-rgb) / 0.045) 18%,
+    rgb(var(--stage-hue-rgb) / 0.012) 34%,
+    transparent 52%
+  );
+}
+
+/* ---- the "In the room" toolbar: real buttons over the tableau ---- */
+
+.stage-toolbar {
+  position: absolute;
+  inset: var(--stage-margin) var(--stage-margin) var(--stage-margin) var(--stage-margin-left);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.stage-prop {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.stage-prop-button {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  will-change: transform;
+}
+
+.stage-prop-button[aria-disabled="true"],
+.stage-root[data-speaking="true"] .stage-prop-button {
+  cursor: default;
+}
+
+/* The accessible name: read, never seen. The object is drawn by the planes. */
+.stage-prop-name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A hand-drawn ring, seen only on hover (fine pointers) and on focus. */
+.stage-prop-mark {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(var(--stage-hue-rgb) / 0.55);
+  border-radius: 42% 58% 54% 46% / 56% 44% 58% 42%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stage-prop-button:not([aria-disabled="true"]):hover .stage-prop-mark {
+    opacity: 0.45;
+  }
+}
+
+.stage-prop-button:focus-visible {
+  outline: none;
+}
+
+.stage-prop-button:focus-visible .stage-prop-mark {
+  opacity: 0.85;
+  border-style: dashed;
+}
+
+/* Reduced motion: the lift is a colour step, never a transform. */
+.stage-prop-button[data-lift="1"] .stage-prop-mark {
+  opacity: 0.45;
+  border-color: var(--stage-prop-step, rgb(var(--stage-hue-rgb) / 0.8));
+}
+
+.stage-prop-caption {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: max-content;
+  max-width: min(46ch, 70vw);
+  padding: 2px 8px 3px;
+  border-radius: 2px;
+  transform: translate(-50%, 4px);
+  font-family: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: clamp(12px, 1.15vw, 15px);
+  line-height: 1.25;
+  text-align: center;
+  color: rgb(var(--stage-paper-rgb) / 0.92);
+  background: rgb(6 7 12 / 0.62);
+  pointer-events: none;
+}
+
+.stage-prop[data-caption-side="above"] .stage-prop-caption {
+  top: auto;
+  bottom: 100%;
+  transform: translate(-50%, -4px);
+}
+
+/* ---- the document frame: paper, a hand-ruled border, the cartouche, the rose, the ledger margin ---- */
+
+.stage-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  color: var(--stage-ink);
+  pointer-events: none;
+}
+
+.stage-frame-rule {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.stage-frame-cartouche {
+  position: absolute;
+  top: calc(var(--stage-margin) + 12px);
+  left: calc(var(--stage-margin-left) + 14px);
+  margin: 0;
+  padding: 5px 12px 6px;
+  border: 1px solid rgb(var(--stage-ink-rgb) / 0.55);
+  outline: 1px solid rgb(var(--stage-ink-rgb) / 0.28);
+  outline-offset: -4px;
+  background: rgb(var(--stage-paper-rgb) / 0.94);
+  color: var(--stage-ink);
+  font-family: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  font-size: clamp(13px, 1.25vw, 17px);
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.stage-frame-title {
+  margin-right: 0.5em;
+  font-variant: small-caps;
+  font-weight: 600;
+}
+
+.stage-frame-quarter {
+  font-style: italic;
+}
+
+.stage-frame-compass {
+  position: absolute;
+  right: calc(var(--stage-margin) + 14px);
+  bottom: calc(var(--stage-margin) + 14px);
+  width: clamp(44px, 5.2vw, 84px);
+  height: auto;
+  color: rgb(var(--stage-paper-rgb) / 0.55);
+}
+
+.stage-frame-compass-north {
+  font-family: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  font-weight: 600;
+}
+
+.stage-frame-ledger {
+  position: absolute;
+  top: var(--stage-margin);
+  bottom: var(--stage-margin);
+  left: 0;
+  width: var(--stage-margin-left);
+  pointer-events: none;
+}
+
+.stage-frame-ledger > * {
+  pointer-events: auto;
+}
+
+/* ---- the narrative: the page's children, inside 100dvh, never scrolling ---- */
+
+.stage-narrative {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  height: 100dvh;
+  overflow: clip;
+  pointer-events: none;
+}
+
+.stage-narrative > * {
+  pointer-events: auto;
+}
+
+/* ---- phones: a 6 to 8 px paper edge, the cartouche at the top ---- */
+
+@media (max-width: 699px), ((pointer: coarse) and (max-width: 900px)) {
+  .stage-root {
+    --stage-margin: 7px;
+    --stage-margin-left: 7px;
+  }
+
+  .stage-frame-cartouche {
+    top: 14px;
+    left: 50%;
+    padding: 3px 10px 4px;
+    transform: translateX(-50%);
+    font-size: 12px;
+  }
+
+  .stage-frame-compass {
+    right: 12px;
+    bottom: 12px;
+    width: 38px;
+    opacity: 0.7;
+  }
+
+  .stage-prop-caption {
+    font-size: 12px;
+    max-width: 78vw;
+  }
+}
