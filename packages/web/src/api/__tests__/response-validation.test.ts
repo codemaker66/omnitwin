@@ -181,6 +181,14 @@ describe("configurations response validation", () => {
     expect(result.revision).toBe(1);
   });
 
+  it("preserves the server save timestamp and rejects malformed dates", async () => {
+    const updatedAt = "2026-09-04T10:30:00.000Z";
+    fetchMock.mockResolvedValue(jsonResponse({ data: { ...validConfiguration, updatedAt } }));
+    expect(await configurations.getPublicConfig("c1")).toHaveProperty("updatedAt", updatedAt);
+    fetchMock.mockResolvedValue(jsonResponse({ data: { ...validConfiguration, updatedAt: "not a date" } }));
+    await expectValidationError(configurations.getPublicConfig("c1"));
+  });
+
   it("rejects a configuration whose revision token is missing", async () => {
     const { revision: _omit, ...broken } = validConfiguration;
     fetchMock.mockResolvedValue(jsonResponse({ data: broken }));

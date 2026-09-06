@@ -1481,9 +1481,10 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
   const saveError = useEditorStore((s) => s.saveError);
   const saveConflict = useEditorStore((s) => s.saveConflict);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
+  const savedConfigId = useEditorStore((s) => s.configId);
   const wallMode = useVisibilityStore((s) => s.mode);
   const allWallsUp = wallMode === "manual";
-  const saveStatus = deriveEditorSaveStatus({ isDirty, isSaving, saveError, lastSavedAt });
+  const saveStatus = deriveEditorSaveStatus({ configId: savedConfigId, isDirty, isSaving, saveError, lastSavedAt });
   const displayedSaveStatus: EditorSaveStatus =
     saveFlash && saveStatus !== "failed" && saveStatus !== "saving" ? "saved" : saveStatus;
   const baseSaveCopy = copyForEditorSaveStatus(displayedSaveStatus);

@@ -5,6 +5,8 @@ export interface EditorSaveStatusInput {
   readonly isSaving: boolean;
   readonly saveError: string | null;
   readonly lastSavedAt: Date | null;
+  /** Present only after a configuration has been loaded or created on the server. */
+  readonly configId?: string | null;
   readonly isOnline?: boolean;
 }
 
@@ -20,6 +22,7 @@ export function deriveEditorSaveStatus(input: EditorSaveStatusInput): EditorSave
   if (input.isOnline === false) return "offline";
   if (input.isDirty) return "unsaved";
   if (input.lastSavedAt !== null) return "saved";
+  if (input.configId !== undefined && input.configId !== null) return "saved";
   return "idle";
 }
 
@@ -51,7 +54,7 @@ export function copyForEditorSaveStatus(status: EditorSaveStatus): EditorSaveSta
       };
     case "saved":
       return {
-        label: "Saved just now",
+        label: "Layout saved",
         shortLabel: "Saved",
         description: "The current layout has been saved.",
       };

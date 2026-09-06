@@ -73,6 +73,9 @@ const ConfigurationResponseSchema = z.object({
   name: z.string(),
   isPublicPreview: z.boolean(),
   revision: z.number().int().min(1),
+  // Keep the server timestamp for saved-state display after a clean reopen.
+  // Older responses may omit it; never substitute the browser's load time.
+  updatedAt: z.string().datetime({ offset: true }).optional(),
   objects: z.array(PlacedObjectResponseSchema).optional(),
   // Event-level metadata (special instructions, day-of contact, phase
   // deadlines, access notes). Absent on legacy rows, null on cleared rows,

@@ -68,8 +68,14 @@ describe("editor save status", () => {
     expect(copy.description).not.toMatch(/instantly/i);
   });
 
-  it("uses an honest post-save label", () => {
-    expect(copyForEditorSaveStatus("saved").label).toBe("Saved just now");
+  it("recognises a clean server configuration even if a legacy response omitted its timestamp", () => {
+    expect(deriveEditorSaveStatus({ configId: "existing", isDirty: false, isSaving: false, saveError: null, lastSavedAt: null })).toBe("saved");
+    expect(deriveEditorSaveStatus({ configId: null, isDirty: false, isSaving: false, saveError: null, lastSavedAt: null })).toBe("idle");
+    expect(deriveEditorSaveStatus({ configId: "existing", isDirty: true, isSaving: false, saveError: null, lastSavedAt: null })).toBe("unsaved");
+  });
+
+  it("uses an age-neutral saved label for both newly saved and reopened layouts", () => {
+    expect(copyForEditorSaveStatus("saved").label).toBe("Layout saved");
   });
 
   it("does not claim offline changes are server-saved", () => {

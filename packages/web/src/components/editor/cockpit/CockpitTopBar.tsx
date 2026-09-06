@@ -41,6 +41,7 @@ function eventCell(linked: LinkedEvent, phaseName: string | null): EventCell {
  */
 export function CockpitTopBar(): ReactElement {
   const space = useEditorStore((s) => s.space);
+  const configId = useEditorStore((s) => s.configId);
   const venueId = useEditorStore((s) => s.venueId);
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const savedObjectCount = useEditorStore((s) => s.objects.length);
@@ -67,7 +68,7 @@ export function CockpitTopBar(): ReactElement {
     isPublicPreview,
     objectCount,
     userName: user?.name ?? null,
-    save: { isDirty, isSaving, saveError, lastSavedAt },
+    save: { configId, isDirty, isSaving, saveError, lastSavedAt },
     runtimeAssetStatus,
   });
 

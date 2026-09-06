@@ -44,6 +44,8 @@ import {
 } from "../lib/blueprint/adapt.js";
 import { canRedo, canUndo } from "../lib/editor-history.js";
 import { useEditorStore } from "../stores/editor-store.js";
+import { copyForEditorSaveStatus, deriveEditorSaveStatus } from "../lib/editor-save-status.js";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { MAX_GUEST_FLOW_AGENTS } from "../lib/guest-flow-layout-input.js";
 import {
@@ -725,6 +727,11 @@ function BlueprintFromStore(): ReactElement {
   const space = useEditorStore((s) => s.space);
   const objects = useEditorStore((s) => s.objects);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
+  const configId = useEditorStore((s) => s.configId);
+  const isDirty = useEditorStore((s) => s.isDirty);
+  const isSaving = useEditorStore((s) => s.isSaving);
+  const saveError = useEditorStore((s) => s.saveError);
+  const saveConflict = useEditorStore((s) => s.saveConflict);
   const selectedObjectId = useEditorStore((s) => s.selectedObjectId);
   const history = useEditorStore((s) => s.history);
   const plannedGuestCount = useCockpitStore((s) => s.plannedGuestCount);
@@ -742,6 +749,12 @@ function BlueprintFromStore(): ReactElement {
   const scene = useMemo<BlueprintScene>(() => adaptEditorStateToBlueprintScene({
     space, objects, lastSavedAt, eventType, guestCount, status: "draft",
   }), [space, objects, lastSavedAt, eventType, guestCount]);
+  const saveStatus = deriveEditorSaveStatus({ configId, isDirty, isSaving, saveError, lastSavedAt });
+  const savedLabel = saveStatus === "failed" && saveConflict !== null
+    ? "Save conflict - reload"
+    : saveStatus === "saved" && scene.lastSavedAtMs !== null
+      ? `Saved ${relativeTimeShort(scene.lastSavedAtMs, nowMs)}`
+      : copyForEditorSaveStatus(saveStatus).label;
 
   const selectedItem = useMemo<BlueprintItem | null>(() => {
     if (selectedObjectId === null) return null;
@@ -790,7 +803,7 @@ function BlueprintFromStore(): ReactElement {
 
   return (
     <div className="bp-root" style={shell}>
-      <Chrome scene={scene} savedLabel={`Saved ${relativeTimeShort(scene.lastSavedAtMs, nowMs)}`} dirty={false} />
+      <Chrome scene={scene} savedLabel={savedLabel} dirty={saveStatus === "unsaved" || saveStatus === "failed"} saving={isSaving} />
       <div className="bp-body" style={body}>
         <LeftSidebar
           scene={scene}
@@ -856,7 +869,7 @@ const EMPTY_IDS: readonly string[] = [];
 // Chrome
 // ---------------------------------------------------------------------------
 
-function Chrome({ scene, savedLabel, dirty }: { scene: BlueprintScene; savedLabel: string; dirty: boolean }): ReactElement {
+function Chrome({ scene, savedLabel, dirty, saving = false }: { scene: BlueprintScene; savedLabel: string; dirty: boolean; saving?: boolean }): ReactElement {
   return (
     <div className="bp-chrome" style={chrome}>
       <div style={{ display: "flex", gap: 6 }}>
@@ -871,13 +884,14 @@ function Chrome({ scene, savedLabel, dirty }: { scene: BlueprintScene; savedLabe
         <span style={{ color: INK_FAINT, margin: "0 8px" }}>·</span>
         <span style={{ color: INK_FAINT, textTransform: "capitalize" }}>{scene.status}</span>
       </div>
-      <div style={{
+      <div role="status" aria-live="polite" style={{
         color: dirty ? ACCENT_RED : INK_FAINT,
         fontSize: 11,
         letterSpacing: 0.8,
         textTransform: "uppercase",
         whiteSpace: "nowrap",
       }}>
+        {saving && <ActivityIndicator size={16} style={{ verticalAlign: "middle", marginRight: 4 }} />}
         {dirty ? "● " : ""}{savedLabel}
       </div>
     </div>

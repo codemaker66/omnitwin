@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { RENDER_SCALE } from "../constants/scale.js";
+import { deriveEditorSaveStatus } from "../lib/editor-save-status.js";
 
 // ---------------------------------------------------------------------------
 // Editor store tests — mock API modules
@@ -102,6 +103,21 @@ describe("guest target configuration lifecycle", () => {
 });
 
 describe("loadConfiguration", () => {
+  it("loads the server save time without claiming that an old layout was saved now", async () => {
+    const updatedAt = "2026-09-04T10:30:00.000Z";
+    configMock.getPublicConfig.mockResolvedValue({ ...mockConfig, updatedAt });
+    await useEditorStore.getState().loadConfiguration("cfg-1");
+    expect(useEditorStore.getState().lastSavedAt?.toISOString()).toBe(updatedAt);
+    expect(useEditorStore.getState().isDirty).toBe(false);
+  });
+
+  it("does not borrow a previous configuration's save time when a legacy response has none", async () => {
+    useEditorStore.setState({ lastSavedAt: new Date("2026-09-04T10:30:00.000Z") });
+    configMock.getPublicConfig.mockResolvedValue(mockConfig);
+    await useEditorStore.getState().loadConfiguration("cfg-1");
+    expect(useEditorStore.getState().lastSavedAt).toBeNull();
+  });
+
   it("populates state from API", async () => {
     configMock.getPublicConfig.mockResolvedValue(mockConfig);
 
@@ -121,7 +137,8 @@ describe("loadConfiguration", () => {
   });
 
   it("restores unsaved anonymous public-preview draft over stale server objects", async () => {
-    configMock.getPublicConfig.mockResolvedValue(mockConfig);
+    const updatedAt = "2026-09-04T10:30:00.000Z";
+    configMock.getPublicConfig.mockResolvedValue({ ...mockConfig, updatedAt });
     const localDraftObject = {
       id: "local-draft-1",
       assetDefinitionId: ROUND_TABLE_ID,
@@ -153,6 +170,8 @@ describe("loadConfiguration", () => {
     const s = useEditorStore.getState();
     expect(s.objects).toEqual([localDraftObject]);
     expect(s.isDirty).toBe(true);
+    expect(s.lastSavedAt?.toISOString()).toBe(updatedAt);
+    expect(deriveEditorSaveStatus(s)).toBe("unsaved");
   });
 
   it("rejects an anonymous draft based on an older server revision", async () => {

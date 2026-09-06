@@ -181,6 +181,7 @@ export function MobilePlannerTopBar({
   }, []);
 
   const status = deriveEditorSaveStatus({
+    configId,
     isDirty,
     isSaving,
     saveError,

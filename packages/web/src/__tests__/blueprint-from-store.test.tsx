@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { CANONICAL_ASSETS } from "@omnitwin/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BlueprintPage } from "../pages/BlueprintPage.js";
+import { MobilePlannerTopBar } from "../components/editor/MobilePlannerTopBar.js";
 import { useEditorStore, type EditorObject } from "../stores/editor-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { GuestsLensPanel } from "../components/editor/cockpit/GuestsLensPanel.js";
@@ -49,6 +50,33 @@ function furnishedHall(): EditorObject[] {
 function guestDisplay(): string | null | undefined {
   return screen.getByLabelText("Increase guest count").parentElement?.querySelector("span")?.textContent;
 }
+
+describe("BlueprintFromStore save status", () => {
+  it("tracks saved, dirty, in-flight, failed and conflicted state instead of always claiming clean", () => {
+    useEditorStore.setState({ configId: "saved-layout", lastSavedAt: new Date(Date.now() - 120_000) });
+    const { container } = render(<><BlueprintPage source="editor-store" /><MobilePlannerTopBar mode="2d" onModeChange={() => undefined} /></>);
+    const chrome = (): string => container.querySelector(".bp-chrome")?.textContent ?? "";
+    const mobile = (): string => screen.getByTestId("mobile-planner-topbar").textContent ?? "";
+    expect(chrome()).toContain("Saved 2m ago");
+    expect(mobile()).toContain("Layout saved");
+    act(() => { useEditorStore.setState({ isDirty: true }); });
+    expect(chrome()).toContain("Unsaved changes");
+    expect(mobile()).toContain("Unsaved changes");
+    act(() => { useEditorStore.setState({ isSaving: true }); });
+    expect(chrome()).toContain("Saving…");
+    expect(mobile()).toContain("Saving…");
+    act(() => { useEditorStore.setState({ isSaving: false, saveError: "Failed" }); });
+    expect(chrome()).toContain("Save failed - retry");
+    expect(mobile()).toContain("Save failed - retry");
+    act(() => { useEditorStore.setState({ saveConflict: { expectedRevision: 1, currentRevision: 2, message: "Changed elsewhere" } }); });
+    expect(chrome()).toContain("Save conflict - reload");
+    expect(mobile()).toContain("Reload layout");
+    act(() => { useEditorStore.setState({ isDirty: false, saveError: null, saveConflict: null, lastSavedAt: null }); });
+    expect(chrome()).toContain("Layout saved");
+    expect(mobile()).toContain("Layout saved");
+    expect(chrome()).not.toContain("Not saved");
+  });
+});
 
 describe("BlueprintFromStore seating and guests", () => {
   it("reports 144 placed seats for 18 tables and 144 chairs without inventing attendance", () => {
