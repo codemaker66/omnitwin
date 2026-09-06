@@ -2,9 +2,11 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-09-01.
+Updated: 2026-09-06.
 
 ## Latest task notes
+
+- 2026-09-06 T-596/T-600 release integration: the isolated `codex/trades-hall-demo-release` candidate combines the qualified reference viewer and T-599 dependency graph with real inventory corrections/reservations/remedies, selected-style navigation and Docker prerequisites. Migration 0064 remains manual-layout evidence; inventory is appended as 0065/0066 with increasing timestamps. Retained private venue source documents and detailed reconciliation are excluded from release history. [Integration decisions and required combined checks](../reports/trades-hall-demo-release-integration-2026-09-06.md). No production write, push or deployment is claimed by this integration.
 
 - 2026-09-04 T-587 complete: the runnable goals deck at `goals/` (README, HUMAN, 00–10) turns the vision, plan 15 and plan 16 into pasteable /goal cards with decisions, done-when and verify commands; Codex began executing lanes 00/T-581, the sublime study and the inventory foundation the same night (`goals/EXECUTION.md`).
 

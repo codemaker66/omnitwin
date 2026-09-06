@@ -1,6 +1,16 @@
-# GOAL — read this first, every session (written 2026-09-04 10:30 BST by the Fable session, for the next model)
+# GOAL — founder direction and dated operational evidence
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
+
+## Latest founder direction — 2026-09-06
+
+Blake now asks for inventory and the completed project work to be live and ready for the Monday 7 September Trades Hall demo. The parent release coordinator owns production preparation and publication. This newer request supersedes the older freeze only for the reviewed demo release; it does not authorize unrelated production changes, publication of retained private source documents or new paid compute. Prepared, verified, deployed and accepted remain distinct states.
+
+For T-600, Blake selected the [ivory, forest-green and copper inventory composition](docs/design/references/venviewer-selected-inventory-2026-09-06.png) and requested it as the new style. The [product experience brief](.claude/conventions/product-experience.md) preserves that selection and the continuing beauty/Burke requirement. Real stock corrections, reservations, shortage evidence and admin-approved internal remedy requests are integrated into the private demo candidate. Generated illustrations and reference quantities remain presentation-only; retained equipment source intake is not imported by this release.
+
+The current combined demo base is `fffae64d`, the documentation follow-up to `b0477037`, preserving T-596's reference viewer, immutable manual-plan evidence, event-linked layouts, frozen room/camera behavior, hallkeeper footprints and T-599's security/correctness work. [Its recorded qualification](docs/reports/t596-final-combined-demo-2026-09-06.md) remains dated evidence. The [release integration report](docs/reports/trades-hall-demo-release-integration-2026-09-06.md) identifies the new inventory and packaging delta and its remaining combined checks. The active viewer coordinator still owns the forthcoming Capture-placement/coach follow-up; integrate its tested commit separately.
+
+Codex continues to coordinate the all-source Grand Hall reconstruction; Claude retains its active court ownership. Joint calibration, architectural fidelity, photographic PSNR 50+, furnished-scene 60 fps on the declared devices, fast loading and founder sublime acceptance remain required and open. Optional panorama reflections remain an opt-in, unaccepted experiment. Do not reinterpret historical measurements below as completed physical-device or production qualification. Existing source protections and spend caps remain in force.
 
 ## 0. The /goal block (paste into /goal)
 
