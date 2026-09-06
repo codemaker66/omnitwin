@@ -1,6 +1,6 @@
 # T-596: persistent planner furniture lighting
 
-Status: code and CPU checks complete; real furnished GPU comparison pending with the coordinating agent. This is a demo lighting fix, not reconstruction completion or a 60 fps/PSNR qualification.
+Status: code, CPU checks and the coordinator's real furnished GPU comparison complete locally. Not deployed. This is a demo lighting fix, not reconstruction completion or a 60 fps/PSNR qualification.
 
 Worktree: `D:/claude/venviewer-demo-lighting-20260906`
 
@@ -21,7 +21,7 @@ Preserved values:
 | Polygon room (`RoomMesh`, including named Grand Hall) | Hemisphere `#f0f0ff` / `#d0c8c0`, intensity 1.2; ambient intensity 0.3 |
 | `GrandHallRoom` fallback | Existing device-tier hemisphere; ambient `#f7ead0`, 0.38; directional `[12,5.5,9]`, `#f7dfae`, 0.52; directional `[-10,6,-8]`, `#e5edf4`, 0.16; both directional shadows disabled |
 
-The former room groups have no transforms, so extraction does not alter light positions. No splat shader, exposure, source asset, opacity, camera, or delivery setting changed. Installed Spark 2.1 creates its renderer `ShaderMaterial` without enabling scene lights; Three's `ShaderMaterial.lights` defaults to `false`. That supports the expectation of unchanged captured appearance; it is not a substitute for the pending visual comparison.
+The former room groups have no transforms, so extraction does not alter light positions. No splat shader, exposure, source asset, opacity, camera, or delivery setting changed. Installed Spark 2.1 creates its renderer `ShaderMaterial` without enabling scene lights; Three's `ShaderMaterial.lights` defaults to `false`. The visual comparison below checks the resulting appearance; it does not claim exact pixel identity.
 
 No asynchronous UI changed, so the shared Activity convention required no new UI work.
 
@@ -46,6 +46,12 @@ Results: **125 tests passed** across four files; both TypeScript checks passed; 
 An independent read-only code review found no material issues. `git diff --check` passed (Windows line-ending notices only).
 
 ## Local visual handoff
+
+The coordinator completed paired captures at baseline `dbdcdec037fb995ac0d94cae3d4c04550048483b` and implementation `ae1accae57f44aee55371535e28000133ffbac41`. Fresh browser contexts loaded the same real 162-item saved draft at the same Splat + Walk camera, with GET-only production API passthrough, zero attempted writes, zero page errors and twelve completed HTTP 200 capture bodies in each run. Previously black furniture became visibly illuminated. A top-of-image background rectangle excluding furniture retained 99.3941% identical pixels, maximum channel difference 2/255 and mean absolute channel difference 0.002511/255; the small variation is unattributed. This is a lighting comparison, not photographic PSNR.
+
+Actual canvas1200×750 inside viewport1600×1000 (the existing0.75 ratio), RTX4090 through ANGLE/D3D11, capture buffer enabled. No FPS or full-resolution device qualification was performed. Evidence: `D:/claude/demo-rehearsal-20260906/lighting-comparison/result.json`, untouched before/after PNGs and `pixel-comparison.json`. The coordinator stopped both owned comparison Vite servers afterwards. The complete demo still has other blockers recorded in the main repository's `docs/reports/t596-direction-and-demo-status-2026-09-06.md`.
+
+The original reproduction instructions follow; they are not a claim that the servers remain running.
 
 No browser or GPU session was started by the implementing agent. The coordinator owns the single real-GPU comparison using the actual 162-item furnished draft, read-only API passthrough, and captured assets.
 
