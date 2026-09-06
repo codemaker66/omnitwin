@@ -13,14 +13,16 @@ function roomChildren(children: ReactNode): ReactNode {
     if (!isValidElement<{ children?: ReactNode }>(child)) return null;
     if (child.type === Fragment) return roomChildren(child.props.children);
     if (typeof child.type !== "function") return null;
-    return ["RoomMesh", "GrandHallRoom", "RoomLighting"].includes(child.type.name)
+    return ["RoomMesh", "GrandHallRoom", "RoomLighting", "FurnitureLightingExperiment"].includes(child.type.name)
       ? child
       : null;
   });
 }
 
 vi.mock("@react-three/fiber", () => ({
-  Canvas: ({ children }: { children?: ReactNode }) => <div>{roomChildren(children)}</div>,
+  Canvas: ({ children, shadows }: { children?: ReactNode; shadows?: string | boolean }) => (
+    <div data-testid="lighting-canvas" data-shadows={String(shadows)}>{roomChildren(children)}</div>
+  ),
   useThree: () => ({ size: { width: sceneState.width, height: 900 } }),
   useFrame: vi.fn(),
 }));
@@ -37,6 +39,7 @@ vi.mock("../../../hooks/use-room-runtime-splat.js", () => ({
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, note: "identity" },
     hasAsset: sceneState.hasAsset,
     status: sceneState.hasAsset ? "loaded" : "none",
+    roomSlug: "grand-hall",
   }),
 }));
 
@@ -80,6 +83,7 @@ function expectLightCount(container: HTMLElement, directionalCount: number): voi
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/");
   useCockpitStore.getState().reset();
   useCockpitStore.getState().setLayerMode("mesh");
   useEditorStore.setState({ space: null });
@@ -102,9 +106,33 @@ afterEach(() => {
   useEditorStore.setState({ space: null });
   useCockpitStore.getState().reset();
   vi.restoreAllMocks();
+  window.history.replaceState({}, "", "/");
 });
 
 describe("planner lighting ownership", () => {
+  it.each(["panorama", "panorama-shadow"])("isolates local %s lighting to the captured room and restores baseline on mode changes", (choice) => {
+    window.history.replaceState({}, "", `/?furniture-lighting=${choice}`);
+    useEditorStore.setState({ space: spaceNamed("Grand Hall") });
+    useCockpitStore.getState().setLayerMode("splat");
+    const { container } = render(<PlannerScene />);
+    expect(container.querySelectorAll('[name="furniture-lighting-panorama-experiment"]')).toHaveLength(1);
+    expect(container.querySelectorAll("hemisphereLight, ambientLight")).toHaveLength(0);
+    expect(container.querySelectorAll("directionalLight")).toHaveLength(1);
+    expect(container.querySelector('[data-testid="lighting-canvas"]')?.getAttribute("data-shadows"))
+      .toBe(choice === "panorama-shadow" ? "percentage" : "false");
+    for (const mode of ["hybrid", "mesh"] as const) {
+      act(() => { useCockpitStore.getState().setLayerMode(mode); });
+      expect(container.querySelector('[name="furniture-lighting-panorama-experiment"]')).toBeNull();
+      expectLightCount(container, 0);
+      expect(container.querySelector('[data-testid="lighting-canvas"]')?.getAttribute("data-shadows")).toBe("false");
+    }
+    act(() => { useCockpitStore.getState().setLayerMode("splat"); });
+    expect(container.querySelectorAll('[name="furniture-lighting-panorama-experiment"]')).toHaveLength(1);
+    sceneState.hasAsset = false;
+    act(() => { useCockpitStore.getState().setLayerMode("mesh"); });
+    expectLightCount(container, 0);
+    expect(container.querySelector('[name="furniture-lighting-panorama-experiment"]')).toBeNull();
+  });
   for (const width of [768, 1440]) {
     for (const name of ["Grand Hall", "Custom room", null]) {
       it(`keeps one unchanged light rig through mode switches at ${String(width)}px for ${name ?? "fallback"}`, () => {

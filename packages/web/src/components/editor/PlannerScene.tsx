@@ -9,6 +9,9 @@ import { roomSplatBundle, walkPoseForBundle } from "../../data/room-splat-bundle
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { GrandHallRoom } from "../GrandHallRoom.js";
 import { RoomLighting } from "../RoomLighting.js";
+import { FurnitureLightingExperiment } from "./FurnitureLightingExperiment.js";
+import { resolveFurnitureLightingExperiment } from "../../lib/furniture-lighting-experiment.js";
+import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { RoomMesh } from "./RoomMesh.js";
 import { SectionPlane } from "../SectionPlane.js";
 import { InvalidateOnToggle, AutoWallSelector } from "../WallTogglePanel.js";
@@ -353,6 +356,15 @@ export function PlannerScene(): ReactElement {
   const captureFailed = totalChunks > 0 && failedChunks === totalChunks;
   const meshVisible = !hasAsset || captureFailed || layerMode !== "splat";
   const splatActive = hasAsset && !captureFailed && layerMode !== "mesh";
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
+  const furnitureLighting = resolveFurnitureLightingExperiment({
+    search: typeof window === "undefined" ? "" : window.location.search,
+    development: import.meta.env.DEV,
+    roomSlug,
+    layerMode,
+    splatActive,
+    timelinePreviewActive,
+  });
   const resolvePhase = roomResolvePhase({ splatStatus, hasAsset: hasAsset && !captureFailed, totalChunks, loadedChunks, failedChunks });
   useEffect(() => {
     if (captureFailed && walkMode) useCockpitStore.getState().setWalkMode(false);
@@ -425,6 +437,7 @@ export function PlannerScene(): ReactElement {
         onPointerLeave={markCameraInteractionSettling}
       >
         <Canvas
+          shadows={furnitureLighting === "panorama-shadow" ? "percentage" : false}
           frameloop="demand"
           dpr={canvasDpr}
           gl={canvasGl}
@@ -439,7 +452,11 @@ export function PlannerScene(): ReactElement {
           <InvalidateOnToggle />
           {/* Furniture needs scene lighting even when the captured layer hides
               the procedural shell or camera motion selects its lean version. */}
-          <RoomLighting variant={roomGeometry === null ? "grand-hall" : "polygon"} />
+          {furnitureLighting === "baseline" ? (
+            <RoomLighting variant={roomGeometry === null ? "grand-hall" : "polygon"} />
+          ) : (
+            <FurnitureLightingExperiment shadows={furnitureLighting === "panorama-shadow"} />
+          )}
           {meshVisible && (roomGeometry !== null ? (
             <RoomMesh geometry={roomGeometry} variant={roomVariant} includeLighting={false} />
           ) : (
