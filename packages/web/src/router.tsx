@@ -3,9 +3,7 @@ import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "re
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
-// Static like ProtectedRoute: the canonical evidence chip renders inside the
-// route-loading fallback itself, and it's tiny (per-icon lucide + one CSS page).
-import { EvidenceChip } from "./components/evidence/EvidenceChip.js";
+import { RouteArrival } from "./components/shared/RouteArrival.js";
 
 // ---------------------------------------------------------------------------
 // Application routes — punch list #16: every page is lazy-loaded so the
@@ -145,18 +143,7 @@ const DiaryBoardPage = lazy(() =>
 );
 
 function LoadingFallback(): ReactElement {
-  return (
-    <div className="vv-route-state">
-      <section className="vv-state-panel" role="status" aria-live="polite">
-        <p className="vv-state-kicker">Venviewer</p>
-        <h1>Preparing the room workspace</h1>
-        <p>Loading the route shell, controls, and current planning context.</p>
-        {/* CARD A4: canonical chip grammar; the SAFE wording stays verbatim
-            as the chip detail. */}
-        <EvidenceChip state="review-required" detail="Human review required for operational decisions" />
-      </section>
-    </div>
-  );
+  return <RouteArrival />;
 }
 
 function withSuspense(node: ReactElement): ReactElement {
