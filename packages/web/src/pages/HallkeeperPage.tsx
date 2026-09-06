@@ -642,6 +642,7 @@ export function HallkeeperPage(): React.ReactElement {
       {/* === DIAGRAM — interactive floor plan with row↔marker link === */}
       <section ref={diagramRef} style={{ margin: "14px 0" }}>
         <InteractiveFloorPlan
+          floorPlan={data.floorPlan}
           room={data.space}
           phases={data.phases}
           highlightedRowKey={highlightedRowKey}

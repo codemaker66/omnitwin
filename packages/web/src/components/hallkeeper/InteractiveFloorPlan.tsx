@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import type { Phase } from "@omnitwin/types";
 import { GOLD } from "../../constants/ui-palette.js";
+import { prepareFrozenPlan } from "../../lib/hallkeeper-frozen-plan.js";
+import { SavedFloorPlan } from "./SavedFloorPlan.js";
 import {
   collectFloorPlanMarkers,
   markerColourFor,
@@ -33,6 +35,8 @@ const DIM_INK = "rgba(255,255,255,0.15)";
 const SVG_W = 1000;
 
 export interface InteractiveFloorPlanProps {
+  /** Runtime-validated saved geometry. Only older sheets omit this field. */
+  readonly floorPlan?: unknown;
   readonly room: RoomDims;
   readonly phases: readonly Phase[];
   readonly highlightedRowKey: string | null;
@@ -40,8 +44,17 @@ export interface InteractiveFloorPlanProps {
 }
 
 export function InteractiveFloorPlan({
-  room, phases, highlightedRowKey, onMarkerClick,
+  floorPlan, room, phases, highlightedRowKey, onMarkerClick,
 }: InteractiveFloorPlanProps): React.ReactElement {
+  const saved = useMemo(() => prepareFrozenPlan(floorPlan), [floorPlan]);
+  if (saved.kind === "invalid") return <div role="alert" style={{ padding: 20, border: "1px solid #675841", borderRadius: 10 }}>
+    <strong>Saved floor plan unavailable</strong><p>The saved geometry could not be read. The manifest remains available below.</p>
+  </div>;
+  if (saved.kind === "saved") return <SavedFloorPlan plan={saved.plan} phases={phases} highlightedRowKey={highlightedRowKey} onMarkerClick={onMarkerClick} />;
+  return <LegacyFloorPlan room={room} phases={phases} highlightedRowKey={highlightedRowKey} onMarkerClick={onMarkerClick} />;
+}
+
+function LegacyFloorPlan({ room, phases, highlightedRowKey, onMarkerClick }: InteractiveFloorPlanProps): React.ReactElement {
   const markers = useMemo(() => collectFloorPlanMarkers(phases, room), [phases, room]);
   const aspect = svgAspectRatio(room);
   const svgH = SVG_W / aspect;
