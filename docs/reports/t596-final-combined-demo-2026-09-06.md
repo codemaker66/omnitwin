@@ -57,13 +57,16 @@ the final furnished scene; no app source was edited during inspection.
 
 ## Remaining delivery work
 
-The interactive synthetic fallback and release packaging are being prepared
+The subsequent interactive fallback found and repaired Capture floor placement
+and covered seating-dialog controls; see the [actual placement/save/reopen
+report](t596-capture-placement-2026-09-06.md). Release packaging is prepared
 separately. This bounded traversal does not qualify a complete real-account
 enquiry/review/email journey. The intended owner identity was repaired earlier,
 but the new local build does not use production Clerk credentials. The current
-production freeze ends Monday 7 September, 18:00 BST, after the confirmed 16:00 demo.
-Any earlier production publication requires an explicit exception and a concrete
-reviewed release; this report grants none.
+founder release instruction now authorizes the narrow T601 combined release for
+the confirmed Monday 7 September, 16:00 BST demo after its gates. The task Build
+next-gen venue platform is the sole production release owner. This earlier
+bounded local traversal alone does not satisfy those release gates.
 
 The existing pale floor, proxy furniture, unaccepted registration and photographic
 reconstruction remain quality gaps. The direct offline input validator passed,

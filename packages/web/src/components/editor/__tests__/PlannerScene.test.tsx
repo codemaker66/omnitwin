@@ -166,6 +166,19 @@ describe("PlannerScene", () => {
 // runtime-splat state plus chunk arrivals and publishes it to the cockpit
 // store for the caption and the stage's honesty attribute.
 describe("PlannerScene resolve phase wiring", () => {
+  it("keeps the planning floor available independently of captured or visible room layers", () => {
+    chooseGrandHall(); readyGrandHall();
+    render(<PlannerScene />);
+    for (const mode of ["splat", "mesh", "hybrid"] as const) {
+      act(() => { useCockpitStore.getState().setLayerMode(mode); });
+      expect(sceneComponent("PlannerInteractionFloor"), mode).toBeDefined();
+    }
+    act(() => { useLayoutTimelinePreviewStore.getState().showScheduleGap("Room flip"); });
+    expect(sceneComponent("PlannerInteractionFloor")).toBeUndefined();
+    act(() => { useLayoutTimelinePreviewStore.getState().clear(); });
+    expect(sceneComponent("PlannerInteractionFloor")).toBeDefined();
+  });
+
   it("replaces current architecture with the frozen coordinate frame and restores the live scene on exit", () => {
     chooseGrandHall(); readyGrandHall();
     arrivals.loadedCount = 1;

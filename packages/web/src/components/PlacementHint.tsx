@@ -24,6 +24,11 @@ const DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
 };
 
 const AVOID_SELECTORS = [
+  ".reference-left-dock",
+  ".reference-inspector-dock",
+  ".reference-viewer > .cockpit-panel",
+  ".reference-viewer > .cockpit-truth",
+  ".cockpit-preview-lock",
   ".planner-status-header",
   ".cockpit-layer-controls",
   "[data-testid='planner-toolbar']",

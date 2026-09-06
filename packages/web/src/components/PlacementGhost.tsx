@@ -34,6 +34,7 @@ import {
   tableSettingForCatalogueItem,
 } from "../lib/table-dressing.js";
 import { computeChairBrushSummary, type ChairBrushPoint } from "../lib/chair-brush.js";
+import { findPlacementFloor } from "../lib/planner-interaction-floor.js";
 
 // ---------------------------------------------------------------------------
 // PlacementGhost — ghost mesh following cursor during drag-and-drop placement
@@ -79,14 +80,10 @@ export function PlacementGhost(): React.ReactElement | null {
 
     canvasEl.style.cursor = "crosshair";
 
-    // Cache the floor mesh for the duration of this placement session
-    let floorMesh = scene.getObjectByName("floor") ?? null;
-
     function raycastToFloor(clientX: number, clientY: number): { x: number; z: number } | null {
-      if (floorMesh === null) {
-        floorMesh = scene.getObjectByName("floor") ?? null;
-        if (floorMesh === null) return null;
-      }
+      // A visible shell may unmount or change while placement remains selected.
+      const floorMesh = findPlacementFloor(scene);
+      if (floorMesh === null) return null;
       const topElement = document.elementFromPoint(clientX, clientY);
       if (topElement !== canvasEl) return null;
       const rect = canvasEl.getBoundingClientRect();
@@ -242,12 +239,14 @@ export function PlacementGhost(): React.ReactElement | null {
         chairBrushStartRef.current !== null &&
         chairBrushEndRef.current !== null
       ) {
-        const newIds = usePlacementStore.getState().placeChairBrush(
+        // The release must still hit the floor, and may arrive without a final move.
+        const hit = raycastToFloor(clientX, clientY);
+        const newIds = hit === null ? [] : usePlacementStore.getState().placeChairBrush(
           itemId,
           chairBrushStartRef.current.x,
           chairBrushStartRef.current.z,
-          chairBrushEndRef.current.x,
-          chairBrushEndRef.current.z,
+          hit.x,
+          hit.z,
           usePlacementStore.getState().ghostRotation,
         );
         if (newIds.length > 0) {
@@ -267,8 +266,8 @@ export function PlacementGhost(): React.ReactElement | null {
       const hit = raycastToFloor(clientX, clientY);
       if (hit !== null && itemId !== null) {
         usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
+        placeAtGhost();
       }
-      placeAtGhost();
       useCatalogueStore.getState().endDrag();
       usePlacementStore.getState().clearGhost();
       useSelectionStore.getState().setActiveGuides([]);
@@ -292,6 +291,14 @@ export function PlacementGhost(): React.ReactElement | null {
       }
       // Click-to-place only when NOT in drag mode
       if (useCatalogueStore.getState().dragActive) return;
+      const itemId = useCatalogueStore.getState().selectedItemId;
+      const hit = raycastToFloor(event.clientX, event.clientY);
+      if (itemId === null || hit === null) {
+        usePlacementStore.getState().clearGhost();
+        return;
+      }
+      // Touch taps and a direct click need not have a preceding pointer move.
+      usePlacementStore.getState().updateGhost(hit.x, hit.z, itemId);
       placeAtGhost();
     }
 

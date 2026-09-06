@@ -24,6 +24,7 @@ import { XrayToggle } from "../XrayToggle.js";
 import { MeasurementTool } from "../MeasurementTool.js";
 import { TapeMeasure } from "../TapeMeasure.js";
 import { PlacementGhost } from "../PlacementGhost.js";
+import { PlannerInteractionFloor } from "./PlannerInteractionFloor.js";
 import { DiagramLabels } from "../DiagramLabels.js";
 import { PlacedFurniture } from "../PlacedFurniture.js";
 import { SelectionSystem } from "../SelectionSystem.js";
@@ -510,6 +511,7 @@ export function PlannerScene(): ReactElement {
             </group>
           )}
           {!timelinePreviewActive && <>
+            <PlannerInteractionFloor geometry={roomGeometry} dimensions={dimensions} />
             <CockpitCameraFocus />
             <CockpitPlanningCamera />
             <XrayToggle />

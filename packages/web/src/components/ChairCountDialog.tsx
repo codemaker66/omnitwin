@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { seatCapacity } from "../lib/table-group.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
@@ -81,6 +82,10 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       100% { transform: scaleX(1); opacity: 1; }
     }
     @media (prefers-reduced-motion: reduce) {
+      .omni-chair-modal, .omni-chair-modal * {
+        animation: none !important;
+        transition: none !important;
+      }
       @keyframes omni-v2-panel {
         0% { opacity: 0; }
         100% { opacity: 1; }
@@ -189,16 +194,16 @@ export function ChairCountDialog({
 
   const shapeLabel = request.tableShape === "round" ? "Round Table" : "Rectangular Table";
 
-  return (
-    /* Overlay */
+  // Escape the transformed planner stage so scene controls cannot cover the modal.
+  return createPortal(
     <div
       data-testid="chair-count-dialog"
+      className="omni-chair-modal"
       style={{
-        position: "absolute", inset: 0,
+        position: "fixed", inset: 0,
         display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 100, pointerEvents: "auto",
+        zIndex: 1000, pointerEvents: "auto", padding: 16, boxSizing: "border-box",
         background: "rgba(0, 0, 0, 0.55)",
-        backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
         animation: "omni-v2-overlay 0.4s ease-out",
       }}
       onClick={onCancel}
@@ -212,13 +217,14 @@ export function ChairCountDialog({
         style={{
           background: "rgba(16, 16, 16, 0.97)",
           borderRadius: 24,
-          padding: "52px 64px 44px",
+          padding: "clamp(24px, 5vw, 52px) clamp(24px, 6vw, 64px) clamp(24px, 4vw, 44px)",
           display: "flex", flexDirection: "column", alignItems: "center",
-          gap: 36,
+          gap: "clamp(24px, 4vw, 36px)",
           boxShadow: "0 32px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(201,168,76,0.12), inset 0 1px 0 rgba(255,255,255,0.05)",
           fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
           color: "#fff",
-          minWidth: 380,
+          width: "min(508px, 100%)", minWidth: 0, boxSizing: "border-box",
+          maxHeight: "100%", overflowY: "auto",
           border: "1px solid rgba(201, 168, 76, 0.15)",
           animation: "omni-v2-panel 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
@@ -242,7 +248,7 @@ export function ChairCountDialog({
             {shapeLabel}
           </div>
           <div id="chair-dialog-title" style={{
-            fontSize: 28, fontWeight: 700, letterSpacing: -0.5,
+            fontSize: "clamp(22px, 4.5vw, 28px)", fontWeight: 700, letterSpacing: -0.5,
             color: "#f5f5f5",
             fontFamily: "'Playfair Display', serif",
           }}>
@@ -396,6 +402,7 @@ export function ChairCountDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
