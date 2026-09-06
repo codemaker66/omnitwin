@@ -24,6 +24,26 @@ describe("initialChairCountForCapacity", () => {
 });
 
 describe("ChairCountDialog scaled capacity", () => {
+  it("escapes the planner stacking context while retaining confirmation and cancellation", () => {
+    const table = getCatalogueItemBySlug("round-table-6ft");
+    if (table === undefined) throw new Error("Round table fixture missing");
+    const onConfirm = vi.fn<(count: number) => void>();
+    const onCancel = vi.fn<() => void>();
+    const { container, rerender } = render(<div className="cockpit-stage" style={{ transform: "translateZ(0)" }}>
+      <ChairCountDialog request={{ catalogueItemId: table.id, x: 0, z: 0, rotationY: 0, tableShape: "round" }} onConfirm={onConfirm} onCancel={onCancel} />
+    </div>);
+    const dialog = screen.getByRole("dialog", { name: "Seating Arrangement" });
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.parentElement).toBe(document.body);
+    fireEvent.change(screen.getByLabelText("Chair count"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Place 8 Chairs" }));
+    expect(onConfirm).toHaveBeenCalledExactlyOnceWith(8);
+    fireEvent.keyDown(window, { code: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    rerender(<ChairCountDialog request={null} onConfirm={onConfirm} onCancel={onCancel} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("submits table-only instead of inventing a seat for a tiny scaled table", () => {
     vi.useFakeTimers();
     const table = getCatalogueItemBySlug("trestle-6ft");
