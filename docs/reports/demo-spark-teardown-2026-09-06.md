@@ -1,6 +1,6 @@
 # Demo Spark renderer teardown
 
-Status: isolated implementation and CPU/build qualification complete; the coordinating agent owns the final furnished-planner browser check. No deployment performed.
+Status: isolated implementation, CPU/build qualification and the coordinating agent's bounded furnished-planner browser check passed. No deployment performed. Full signed-in demo, visual acceptance and device qualification remain open.
 
 Worktree: `D:/claude/venviewer-demo-spark-teardown-20260906`
 
@@ -65,4 +65,28 @@ $env:SPLAT_STAGING_ROOT='D:/claude/splats'
 
 Use `/plan/3b18bfc3-4a40-4723-8130-13134c80e16e?space=grand-hall&capture=1` with the existing GET-only actual API passthrough and blocked writes. Remove the previous Truth Mode **Minimize** workaround; use the exposed 2D guest stepper. Recheck actual seating, shared guest target, settled 2D/3D switches, a short switch while the capture is loading, and refresh, while retaining page-error collection.
 
-Browser acceptance remains pending. This demo reliability fix does not establish device-wide performance, completed reconstruction, PSNR, or the broader all-source Grand Hall quality targets. No push, deployment, paid job, raw asset edit, or reconstruction acceptance occurred.
+## Coordinator browser verification
+
+Frozen implementation: `e1970973a26ced396c92e8dd4d0579f51d05c6e4`. The coordinator ran the candidate at `http://127.0.0.1:5202` using the command above with port 5202, private Vite cache and the private patched Spark package. Vite's dependency metadata resolves Spark to `packages/web/node_modules/@sparkjsdev/spark/dist/spark.module.js`; its SHA-256 matches the patched ESM hash above. The application worktree was clean at the tested commit, and no source changed during the browser run. The resolved package path and hashes are also recorded in `combined-demo-check/source-provenance.json`.
+
+The actual saved demo draft passed from **13:44:25 to 13:45:02 UTC on 6 September**:
+
+- 144 actual chairs in both views, 18 round tables, shared target 150→155 and an 11-seat shortfall.
+- Refresh preserves saved furniture and clears the session-only attendance target.
+- Truth Mode clears the left blueprint sidebar; its rectangle begins at x=280, after the sidebar ending at x=260. The normal guest stepper works without minimizing the widget or forcing clicks. Screenshots were inspected. Other floating controls still crowd the planner; this does not establish overall design acceptance.
+- Switching after capture readiness produces no teardown error. A fresh load was also switched to 2D in the `fallback` phase, before readiness; returning to 3D created a fresh renderer that reached `resolved`.
+- **Zero page errors and zero attempted writes.** GET-only real API passthrough was used; the expected anonymous 401 responses remain recorded. No fake saved state or API data was supplied.
+
+Evidence: `D:/claude/demo-rehearsal-20260906/combined-demo-check/result.json` and the three untouched screenshots in that directory. Harness: `D:/claude/demo-rehearsal-20260906/seating-check.mjs`, SHA-256 `4afd119bde4af20c23b12e4c1d20a68193f7a7165fa239fdca792e139983ad8b`. Original failed seating/teardown receipts remain under `seating-check/`.
+
+This demo reliability fix does not establish device-wide performance, completed reconstruction, photographic PSNR, a complete signed-in demo or the broader all-source Grand Hall quality targets. No push, deployment, paid job, raw asset edit or reconstruction acceptance occurred.
+
+## Bounded furniture movement rehearsal
+
+On the same unchanged implementation, the coordinator also passed a real round-table group drag, single-gesture Undo/Redo, actual autosave, clean-context reopen and UI restoration from **13:51:27 to 13:51:58 UTC**. Server readback showed the table and eight chairs moving uniformly by 0.462 m / 0.294 m, the other 153 objects unchanged, and original positions restored at draft revision 9. Only two writes were allowed in the successful run, both HTTP 200 to the exact labelled demo draft's batch-save endpoint. Zero page errors and attempted out-of-scope writes occurred. Expected anonymous 401s remain recorded.
+
+The earlier run also saved and restored, but its save-boundary SVG comparison was tighter than PostgreSQL's `numeric(8,3)` coordinate precision. Original failures are preserved. A harness-only correction permits the half-millimetre rounding bound at that boundary, while unsaved Undo/Redo, radius and clean-reopen checks remain strict. The successful rerun recorded actual rounding of 0.2711 mm / 0.1727 mm; no application code was changed. Across both runs, four additional saves affected only this demo draft, and all original object content was restored.
+
+Evidence: `D:/claude/demo-rehearsal-20260906/group-drag-combined-precision/`, including whitelisted original/moved/restored object snapshots, observed SVG comparison receipts, screenshots and `result.json`. Earlier failure: `group-drag-combined/`. Harness: `group-drag-rehearsal.mjs`, SHA-256 `e25004b708641a2264a0291ce5324ffa7de9aa5a01932b095daeba8e65a67faf`.
+
+This covers one round-table group gesture in 2D and its persisted state, not all object types, 3D dragging or metric survey accuracy. Both test harnesses closed their browsers. The coordinator stopped the verified owned Vite process on port 5202 after the final run; other sessions were not stopped.

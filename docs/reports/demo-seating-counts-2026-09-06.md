@@ -51,7 +51,7 @@ Both TypeScript checks and changed-file ESLint passed. The test-mode bundle buil
 
 Independent read-only review identified the unset-target inspector denominator; the correction and missing-capacity handling received a focused final review with no remaining blocker. `git diff --check` passed.
 
-The coordinating agent will run one actual-draft browser qualification. The implementation agent ran no browser or GPU sessions. No asynchronous UI changed, so no Activity component work was required.
+The implementation agent ran no browser or GPU sessions. The coordinator's initial run passed the count assertions but failed overall on widget obstruction and Spark teardown; those original receipts remain preserved. The combined candidate `e1970973` subsequently passed the actual-draft count, shared-target, refresh, widget and renderer-transition checks with zero page errors and attempted writes. See [the combined browser receipt and limits](demo-spark-teardown-2026-09-06.md#coordinator-browser-verification). No asynchronous UI changed here, so no Activity component work was required.
 
 ## Local browser handoff
 
