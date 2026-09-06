@@ -33,6 +33,9 @@ const fiber = vi.hoisted(() => {
 vi.mock("@react-three/fiber", () => ({ useThree: fiber.useThree, useFrame: fiber.useFrame }));
 
 import { InteriorCamera } from "../InteriorCamera.js";
+import { plannerKeyboardNavigationEnabled } from "../../../lib/planner-room-arrival.js";
+import { useMarkupStore } from "../../../stores/markup-store.js";
+import { useSelectionStore } from "../../../stores/selection-store.js";
 
 const SPAWN = { position: [0, 1.6, 0] as [number, number, number], yaw: 0 };
 const BOUNDS = {
@@ -46,8 +49,8 @@ function frame(count = 1): void {
   }
 }
 
-function pointer(type: string, x: number, y: number): void {
-  const event = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
+function pointer(type: string, x: number, y: number, button = 0): void {
+  const event = new MouseEvent(type, { clientX: x, clientY: y, button, bubbles: true });
   Object.defineProperty(event, "pointerId", { value: 1 });
   fiber.canvas.dispatchEvent(event);
 }
@@ -188,5 +191,187 @@ describe("InteriorCamera wheel", () => {
     const travelled = Math.abs((window.__roomCamera?.position[2] ?? 0) - before);
     expect(travelled).toBeGreaterThan(0.3);
     expect(travelled).toBeLessThan(1);
+  });
+});
+
+describe("editable planner interior", () => {
+  beforeEach(() => { fiber.frames.length = 0; });
+  afterEach(() => { cleanup(); document.body.replaceChildren(); });
+
+  it("reserves left drag for furniture and uses right drag to look", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner" />);
+    frame();
+    pointer("pointerdown", 800, 450);
+    pointer("pointermove", 1100, 450);
+    pointer("pointerup", 1100, 450);
+    frame(200);
+    expect(window.__roomCamera?.yaw).toBe(0);
+    const button = document.createElement("button");
+    document.body.append(button);
+    button.focus();
+    pointer("pointerdown", 800, 450, 2);
+    pointer("pointermove", 1100, 450, 2);
+    pointer("pointerup", 1100, 450, 2);
+    frame(200);
+    expect(Math.abs(window.__roomCamera?.yaw ?? 0)).toBeGreaterThan(0.1);
+    expect(window.__roomCamera?.position).toEqual(SPAWN.position);
+  });
+
+  it("ignores typing and stops an already-held movement key when an input gains focus", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner" />);
+    frame();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "w" }));
+    frame(3);
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.focus();
+    const before = window.__roomCamera?.position;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    frame(200);
+    expect(window.__roomCamera?.position).toEqual(before);
+  });
+
+  it("does not move or look behind an open modal", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner" />);
+    frame();
+    const modal = document.createElement("div");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    document.body.append(modal);
+    pointer("pointerdown", 800, 450, 2);
+    pointer("pointermove", 1100, 450, 2);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "w" }));
+    frame(200);
+    expect(window.__roomCamera?.position).toEqual(SPAWN.position);
+    expect(window.__roomCamera?.yaw).toBe(0);
+  });
+
+  it("leaves modified editing shortcuts with the editor", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner" />);
+    frame();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", ctrlKey: true }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "d", metaKey: true }));
+    frame(100);
+    expect(window.__roomCamera?.position).toEqual(SPAWN.position);
+  });
+
+  it("preserves pitch through equal-value rerenders and restores it with Home", () => {
+    const spawn = { ...SPAWN, pitch: 0.0784 };
+    const { rerender } = render(<InteriorCamera spawn={spawn} bounds={BOUNDS} inputPolicy="planner" />);
+    frame();
+    expect(window.__roomCamera?.pitch).toBeCloseTo(0.0784);
+    pointer("pointerdown", 800, 450, 2);
+    pointer("pointermove", 900, 600, 2);
+    pointer("pointerup", 900, 600, 2);
+    frame(200);
+    const turned = window.__roomCamera?.pitch;
+    expect(turned).not.toBeCloseTo(0.0784);
+    rerender(<InteriorCamera spawn={{ ...spawn, position: [...spawn.position] }} bounds={BOUNDS} inputPolicy="planner" />);
+    frame(200);
+    expect(window.__roomCamera?.pitch).toBe(turned);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Home" }));
+    frame(200);
+    expect(window.__roomCamera?.pitch).toBeCloseTo(0.0784);
+  });
+
+  it("yields all camera writes immediately when another owner takes over", () => {
+    let owns = true;
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner" ownsCamera={() => owns} />);
+    frame();
+    const before = window.__roomCamera;
+    owns = false;
+    pointer("pointerdown", 800, 450, 2);
+    pointer("pointermove", 1200, 450, 2);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "w" }));
+    frame(200);
+    expect(window.__roomCamera).toBe(before);
+  });
+
+  function touch(type: string, x: number, y: number, pointerId = 42, isPrimary = true): void {
+    const event = new MouseEvent(type, { clientX: x, clientY: y, button: 0, buttons: 1, bubbles: true });
+    Object.defineProperties(event, {
+      pointerId: { value: pointerId }, pointerType: { value: "touch" }, isPrimary: { value: isPrimary },
+    });
+    fiber.canvas.dispatchEvent(event);
+  }
+
+  it("preserves touch taps for selection and consumes moved touch gestures as looking", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner" />);
+    const selectionUp = vi.fn();
+    const selectionMove = vi.fn();
+    fiber.canvas.addEventListener("pointerup", selectionUp);
+    fiber.canvas.addEventListener("pointermove", selectionMove);
+    try {
+      frame();
+      touch("pointerdown", 800, 450);
+      touch("pointerup", 800, 450);
+      expect(selectionUp).toHaveBeenCalledTimes(1);
+      touch("pointerdown", 800, 450);
+      touch("pointermove", 1000, 450);
+      touch("pointermove", 1100, 450);
+      touch("pointerup", 1100, 450);
+      frame(200);
+      expect(Math.abs(window.__roomCamera?.yaw ?? 0)).toBeGreaterThan(0.1);
+      expect(selectionMove).not.toHaveBeenCalled();
+      expect(selectionUp).toHaveBeenCalledTimes(1);
+    } finally {
+      fiber.canvas.removeEventListener("pointerup", selectionUp);
+      fiber.canvas.removeEventListener("pointermove", selectionMove);
+    }
+  });
+
+  it("leaves touch gestures to an active placement or drawing tool", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner" touchLookEnabled={() => false} />);
+    frame();
+    touch("pointerdown", 800, 450);
+    touch("pointermove", 1100, 450);
+    touch("pointerup", 1100, 450);
+    frame(200);
+    expect(window.__roomCamera?.yaw).toBe(0);
+  });
+
+  it("suppresses the second finger's release even after the navigation finger lifts", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner" />);
+    const selectionUp = vi.fn();
+    fiber.canvas.addEventListener("pointerup", selectionUp);
+    try {
+      frame();
+      touch("pointerdown", 800, 450);
+      touch("pointerdown", 1000, 450, 43, false);
+      touch("pointermove", 1100, 450);
+      touch("pointerup", 1100, 450);
+      touch("pointerup", 1000, 450, 43, false);
+      expect(selectionUp).not.toHaveBeenCalled();
+    } finally { fiber.canvas.removeEventListener("pointerup", selectionUp); }
+  });
+
+  it("cancels queued and held movement when D opens drawing or a furniture edit takes ownership", () => {
+    render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} inputPolicy="planner"
+      keyboardNavigationEnabled={plannerKeyboardNavigationEnabled} />);
+    // Register after the camera deliberately: even if it receives D first,
+    // the frame must observe the drawing shortcut's actual store transition.
+    const drawingShortcut = (event: KeyboardEvent): void => {
+      if (event.code === "KeyD") useMarkupStore.getState().setActive(true);
+    };
+    window.addEventListener("keydown", drawingShortcut);
+    try {
+      frame();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "d", code: "KeyD" }));
+      frame(100);
+      expect(useMarkupStore.getState().active).toBe(true);
+      expect(window.__roomCamera?.position).toEqual(SPAWN.position);
+      useMarkupStore.getState().setActive(false);
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "w", code: "KeyW" }));
+      frame(3);
+      const before = window.__roomCamera?.position;
+      useSelectionStore.getState().select("editing-fixture");
+      frame(100);
+      expect(window.__roomCamera?.position).toEqual(before);
+    } finally {
+      window.removeEventListener("keydown", drawingShortcut);
+      useMarkupStore.getState().setActive(false);
+      useSelectionStore.getState().clearSelection();
+    }
   });
 });

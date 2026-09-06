@@ -95,4 +95,42 @@ describe("CockpitCameraFocus", () => {
     }).not.toThrow();
     expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
   });
+
+  it("drops an outstanding focus when the interior camera takes ownership", () => {
+    render(<CockpitCameraFocus />);
+    act(() => { useCockpitStore.getState().requestFocus(5, -5); });
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(r3fMock.cameraPosition).toEqual({ x: 10, z: 20 });
+    expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("hands back from interior before moving to a newly requested focus", () => {
+    useCockpitStore.getState().setWalkMode(true);
+    render(<CockpitCameraFocus />);
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    act(() => { useCockpitStore.getState().requestFocus(5, -5); });
+    expect(useCockpitStore.getState().walkMode).toBe(false);
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(r3fMock.cameraPosition.x).toBeCloseTo(10.8, 5);
+    expect(r3fMock.controlsUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay a consumed focus over Interior on a Canvas remount", () => {
+    const { unmount } = render(<CockpitCameraFocus />);
+    act(() => { useCockpitStore.getState().requestFocus(5, -5); });
+    expect(useCockpitStore.getState().focusRequest).toBeNull();
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    unmount();
+    r3fMock.frameCallbacks.length = 0;
+    r3fMock.controlsUpdate.mockClear();
+    render(<CockpitCameraFocus />);
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
+  });
 });

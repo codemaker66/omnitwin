@@ -106,4 +106,41 @@ describe("CockpitPlanningCamera", () => {
     }).not.toThrow();
     expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
   });
+
+  it("drops an outstanding Flow move when the interior camera takes ownership", () => {
+    render(<CockpitPlanningCamera />);
+    act(() => { useCockpitStore.getState().setMode("flow"); });
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(r3fMock.cameraPosition.y).toBe(2);
+    expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
+  });
+
+  it("hands back from interior before an explicit Flow entry lifts the camera", () => {
+    useCockpitStore.getState().setWalkMode(true);
+    render(<CockpitPlanningCamera />);
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    act(() => { useCockpitStore.getState().setMode("flow"); });
+    expect(useCockpitStore.getState().walkMode).toBe(false);
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(r3fMock.cameraPosition.y).toBeGreaterThan(2);
+    expect(r3fMock.controlsUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay the current Flow lens over Interior on a Canvas remount", () => {
+    const { unmount } = render(<CockpitPlanningCamera />);
+    act(() => { useCockpitStore.getState().setMode("flow"); });
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    unmount();
+    r3fMock.frameCallbacks.length = 0;
+    r3fMock.controlsUpdate.mockClear();
+    render(<CockpitPlanningCamera />);
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
+  });
 });

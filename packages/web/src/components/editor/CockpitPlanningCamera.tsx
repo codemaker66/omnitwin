@@ -6,6 +6,7 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { planningCameraGoal, type CameraPose } from "../../lib/cockpit-planning-camera.js";
 import type { CockpitMode } from "../../lib/cockpit-modes.js";
+import { beginPlannerOrbitAction, plannerOrbitOwnsCamera } from "../../lib/planner-room-arrival.js";
 
 // ---------------------------------------------------------------------------
 // CockpitPlanningCamera — eases the planner camera to a gentle, elevated
@@ -78,6 +79,10 @@ export function CockpitPlanningCamera({
     const previousMode = prevModeRef.current;
     prevModeRef.current = activeMode;
     if (activeMode !== FLOW_LENS || previousMode === FLOW_LENS) return;
+    // The current lens survives 2D/3D remounts. An already-active Interior
+    // owner wins on mount; only a new Flow entry asks it to hand back.
+    if (previousMode === null && useCockpitStore.getState().walkMode) return;
+    if (!beginPlannerOrbitAction()) { goalRef.current = null; return; }
     if (!isOrbitLikeControls(controls)) return;
     const aspect = size.width / Math.max(size.height, 1);
     goalRef.current = planningCameraGoal(
@@ -91,6 +96,7 @@ export function CockpitPlanningCamera({
   }, [activeMode, dimensions, camera, controls, size, invalidate]);
 
   useFrame(() => {
+    if (!plannerOrbitOwnsCamera()) { goalRef.current = null; return; }
     const goal = goalRef.current;
     if (goal === null) return;
     if (!isOrbitLikeControls(controls)) {

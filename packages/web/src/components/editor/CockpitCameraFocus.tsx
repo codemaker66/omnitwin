@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import type { EventDispatcher, Vector3 } from "three";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { beginPlannerOrbitAction, plannerOrbitOwnsCamera } from "../../lib/planner-room-arrival.js";
 
 // ---------------------------------------------------------------------------
 // CockpitCameraFocus — eases the planner camera so it frames a floor point
@@ -46,11 +47,16 @@ export function CockpitCameraFocus(): null {
 
   useEffect(() => {
     if (focusRequest === null) return;
+    // A focus request is a command. Consume it before handing off so a later
+    // Canvas remount cannot replay it over the user's new Interior choice.
+    useCockpitStore.getState().clearFocus();
+    if (!beginPlannerOrbitAction()) { goalRef.current = null; return; }
     goalRef.current = { x: focusRequest.x, z: focusRequest.z };
     invalidate();
   }, [focusRequest, invalidate]);
 
   useFrame(() => {
+    if (!plannerOrbitOwnsCamera()) { goalRef.current = null; return; }
     const goal = goalRef.current;
     if (goal === null) return;
     if (!isOrbitLikeControls(controls)) return;

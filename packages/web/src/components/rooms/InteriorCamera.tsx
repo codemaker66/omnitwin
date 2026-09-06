@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, type ReactElement } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { interiorInputBlocked, interiorLookButton, interiorMovementKey, type InteriorCameraInputPolicy } from "./interior-camera-input.js";
+import { DRAG_THRESHOLD_PX } from "../../lib/selection.js";
 import {
   wheelStepMetres,
   clampPitch,
@@ -84,7 +86,15 @@ function useKeyed<T>(value: T, key: string): T {
 }
 
 export interface InteriorCameraProps {
-  readonly spawn: { readonly position: Vec3; readonly yaw: number };
+  readonly spawn: { readonly position: Vec3; readonly yaw: number; readonly pitch?: number };
+  /** Standalone walk keeps grab-to-look; planner reserves left drag for edits. */
+  readonly inputPolicy?: InteriorCameraInputPolicy;
+  /** Synchronous ownership check prevents a last frame racing a bookmark/tour. */
+  readonly ownsCamera?: () => boolean;
+  /** Planner placement/drawing tools retain their existing touch gestures. */
+  readonly touchLookEnabled?: () => boolean;
+  /** Editing tools can reserve keyboard navigation independently of looking. */
+  readonly keyboardNavigationEnabled?: () => boolean;
   readonly bounds: Bounds;
   /** Ceiling height above the floor, so the pitch limit can suit the room. */
   readonly roomHeightM?: number;
@@ -116,6 +126,10 @@ export function InteriorCamera({
   settledDpr,
   motionDpr = 1,
   onMotionChange,
+  inputPolicy = "walk",
+  ownsCamera,
+  touchLookEnabled,
+  keyboardNavigationEnabled,
 }: InteriorCameraProps): ReactElement {
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
@@ -127,7 +141,7 @@ export function InteriorCamera({
   useEffect(() => { onMotionChangeRef.current = onMotionChange; }, [onMotionChange]);
   const reportedMoving = useRef<boolean | null>(null);
 
-  const spawn = useKeyed(spawnProp, `${spawnProp.position.join(",")}|${String(spawnProp.yaw)}`);
+  const spawn = useKeyed(spawnProp, `${spawnProp.position.join(",")}|${String(spawnProp.yaw)}|${String(spawnProp.pitch ?? 0)}`);
   const bounds = useKeyed(boundsProp, `${boundsProp.min.join(",")}|${boundsProp.max.join(",")}`);
 
   // How far up this room allows. A 2.18 m ceiling and a dome are not the same
@@ -155,8 +169,8 @@ export function InteriorCamera({
   const start = useMemo<CameraState>(() => ({
     position: containPosition(spawn.position, bounds),
     yaw: spawn.yaw,
-    pitch: 0,
-  }), [spawn, bounds]);
+    pitch: clampPitch(spawn.pitch ?? 0, maxPitchUp),
+  }), [spawn, bounds, maxPitchUp]);
 
   const current = useRef<CameraState>({ ...start, position: [...start.position] as Vec3 });
   const target = useRef<CameraState>({ ...start, position: [...start.position] as Vec3 });
@@ -179,8 +193,31 @@ export function InteriorCamera({
     // Every handler wakes the demand loop. Without this the scene simply does
     // not redraw, because useFrame is not running to notice the input at all.
     const wake = (): void => { invalidate(); };
+    const blocked = (eventTarget: EventTarget | null): boolean =>
+      ownsCamera?.() === false || interiorInputBlocked(inputPolicy, eventTarget);
+    let touchStart: { x: number; y: number; pointerId: number } | null = null;
+    let touchLookMoved = false;
+    const suppressedTouches = new Set<number>();
 
     const onPointerDown = (event: PointerEvent): void => {
+      if (!interiorLookButton(inputPolicy, event.button, event.pointerType) || blocked(event.target)) return;
+      if (inputPolicy === "planner" && event.pointerType === "touch") {
+        if (!event.isPrimary) {
+          if (touchStart !== null) {
+            suppressedTouches.add(event.pointerId);
+            event.stopImmediatePropagation();
+          }
+          return;
+        }
+        suppressedTouches.delete(event.pointerId);
+        if (touchLookEnabled?.() === false) return;
+        touchStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+        touchLookMoved = false;
+      }
+      if (inputPolicy === "planner") {
+        // Clicking the canvas returns keyboard ownership from a toolbar button.
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      }
       dragging.current = true;
       lastPointer.current = { x: event.clientX, y: event.clientY };
       canvas.setPointerCapture(event.pointerId);
@@ -188,7 +225,17 @@ export function InteriorCamera({
     };
 
     const onPointerMove = (event: PointerEvent): void => {
+      if (suppressedTouches.has(event.pointerId)) { event.stopImmediatePropagation(); return; }
       if (!dragging.current) return;
+      if (blocked(document.activeElement)) { dragging.current = false; return; }
+      if (inputPolicy === "planner" && event.pointerType === "touch") {
+        if (touchStart?.pointerId !== event.pointerId || touchLookEnabled?.() === false) return;
+        if (!touchLookMoved && Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y) <= DRAG_THRESHOLD_PX) return;
+        touchLookMoved = true;
+        // A touch drag belongs to navigation. Keep SelectionSystem's tap
+        // candidate from turning into a marquee on a later move event.
+        event.stopImmediatePropagation();
+      }
       const last = lastPointer.current;
       if (last === null) return;
       const dx = event.clientX - last.x;
@@ -209,6 +256,15 @@ export function InteriorCamera({
     };
 
     const onPointerUp = (event: PointerEvent): void => {
+      if (suppressedTouches.delete(event.pointerId)) {
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (inputPolicy === "planner" && event.pointerType === "touch" && touchStart?.pointerId === event.pointerId) {
+        if (touchLookMoved) event.stopImmediatePropagation();
+        touchStart = null;
+        touchLookMoved = false;
+      }
       dragging.current = false;
       lastPointer.current = null;
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
@@ -216,6 +272,7 @@ export function InteriorCamera({
     };
 
     const onWheel = (event: WheelEvent): void => {
+      if (blocked(document.activeElement)) return;
       event.preventDefault();
       const step = wheelStepMetres(event.deltaY, event.deltaMode, WHEEL_STEP_M);
       target.current.position = containPosition(
@@ -226,13 +283,19 @@ export function InteriorCamera({
     };
 
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (blocked(event.target)) { keys.current.clear(); return; }
+      if (keyboardNavigationEnabled?.() === false) { keys.current.clear(); return; }
+      if (inputPolicy === "planner" && (event.ctrlKey || event.metaKey || event.altKey)) return;
       if (event.key === "Home") {
+        if (inputPolicy === "planner") event.preventDefault();
         target.current.position = [...start.position] as Vec3;
         target.current.yaw = start.yaw;
-        target.current.pitch = 0;
+        target.current.pitch = start.pitch;
         wake();
         return;
       }
+      if (inputPolicy === "planner" && !interiorMovementKey(event.key)) return;
+      if (inputPolicy === "planner") event.preventDefault();
       keys.current.add(event.key.toLowerCase());
       wake();
     };
@@ -240,27 +303,47 @@ export function InteriorCamera({
       keys.current.delete(event.key.toLowerCase());
       wake();
     };
+    const onBlur = (): void => { keys.current.clear(); dragging.current = false; wake(); };
+    const onContextMenu = (event: MouseEvent): void => {
+      if (inputPolicy === "planner" && !blocked(document.activeElement)) event.preventDefault();
+    };
 
-    canvas.addEventListener("pointerdown", onPointerDown);
-    canvas.addEventListener("pointermove", onPointerMove);
-    canvas.addEventListener("pointerup", onPointerUp);
-    canvas.addEventListener("pointercancel", onPointerUp);
+    const capturePlannerPointers = inputPolicy === "planner";
+    canvas.addEventListener("pointerdown", onPointerDown, capturePlannerPointers);
+    canvas.addEventListener("pointermove", onPointerMove, capturePlannerPointers);
+    canvas.addEventListener("pointerup", onPointerUp, capturePlannerPointers);
+    canvas.addEventListener("pointercancel", onPointerUp, capturePlannerPointers);
     canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("contextmenu", onContextMenu);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
 
     return () => {
-      canvas.removeEventListener("pointerdown", onPointerDown);
-      canvas.removeEventListener("pointermove", onPointerMove);
-      canvas.removeEventListener("pointerup", onPointerUp);
-      canvas.removeEventListener("pointercancel", onPointerUp);
+      canvas.removeEventListener("pointerdown", onPointerDown, capturePlannerPointers);
+      canvas.removeEventListener("pointermove", onPointerMove, capturePlannerPointers);
+      canvas.removeEventListener("pointerup", onPointerUp, capturePlannerPointers);
+      canvas.removeEventListener("pointercancel", onPointerUp, capturePlannerPointers);
       canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("contextmenu", onContextMenu);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
     };
-  }, [gl, invalidate, bounds, camera, maxPitchUp, start]);
+  }, [gl, invalidate, bounds, camera, maxPitchUp, start, inputPolicy, ownsCamera, touchLookEnabled, keyboardNavigationEnabled]);
 
   useFrame((_state, delta) => {
+    if (ownsCamera?.() === false) { keys.current.clear(); dragging.current = false; return; }
+    if (keyboardNavigationEnabled?.() === false) {
+      keys.current.clear();
+      target.current.position = [...current.current.position];
+    }
+    if (interiorInputBlocked(inputPolicy, document.activeElement)) {
+      keys.current.clear();
+      dragging.current = false;
+      // Discard a held key's outstanding easing when an editor/modal takes focus.
+      target.current = { ...current.current, position: [...current.current.position] };
+    }
     // A stalled tab can hand back a delta of seconds; clamping stops one long
     // frame teleporting the viewer across the room.
     const dt = Math.min(delta, 1 / 20);

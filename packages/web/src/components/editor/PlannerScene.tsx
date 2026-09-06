@@ -30,9 +30,15 @@ import { SceneProvider } from "../SceneProvider.js";
 import { PerfMonitor } from "../PerfMonitor.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { useBookmarkStore } from "../../stores/bookmark-store.js";
+import { hasPlannerBookmarkCamera, plannerArrivalKey, plannerArrivalPolicy, plannerInteriorOwnsCamera, plannerInteriorSpawn, plannerKeyboardNavigationEnabled } from "../../lib/planner-room-arrival.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
 import { useToolStore } from "../../stores/tool-store.js";
+import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { useMarkupStore } from "../../stores/markup-store.js";
+import { useMeasurementStore } from "../../stores/measurement-store.js";
+import { useGuidelineStore } from "../../stores/guideline-store.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { computeBoundingBox, resolveRoomGeometry } from "../../data/room-geometries.js";
 import { useChunkArrivals } from "../../hooks/use-chunk-arrivals.js";
@@ -146,6 +152,11 @@ function isCameraNavigationPointer(event: PointerEvent<HTMLDivElement>): boolean
   return event.pointerType === "touch" || event.button === 1 || event.button === 2;
 }
 
+function plannerTouchLookEnabled(): boolean {
+  return !useMarkupStore.getState().active && useCatalogueStore.getState().selectedItemId === null
+    && !useMeasurementStore.getState().active && !useGuidelineStore.getState().active;
+}
+
 function PlannerMotionOverlayLayers({
   renderSceneOverlays,
 }: {
@@ -256,6 +267,8 @@ const WHEEL_INTERACTION_SETTLE_MS = 450;
 export function PlannerScene(): ReactElement {
   const space = useEditorStore((s) => s.space);
   const dimensions = useRoomDimensions();
+  const configId = useEditorStore((s) => s.configId);
+  const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
   const viewportWidth = usePlannerViewportWidth();
   const canvasDpr = useMemo(() => plannerCanvasDprForViewportWidth(viewportWidth), [viewportWidth]);
   const canvasGl = useMemo(() => plannerCanvasGlForViewportWidth(viewportWidth), [viewportWidth]);
@@ -271,9 +284,8 @@ export function PlannerScene(): ReactElement {
   );
   const roomVariant = space?.name === "Grand Hall" ? "grand-hall" : "generic";
 
-  // Mesh ↔ Splat ↔ Hybrid: the procedural room stays visible unless a measured
-  // splat is mounted AND the user has switched to pure Splat. The splat fades
-  // in over the mesh (Hybrid / first load) — the captured room melting in.
+  // Captured interior keeps the procedural shell out of the source image.
+  // Explicit Mesh/Hybrid choices and unavailable captures retain the shell.
   const layerMode = useCockpitStore((s) => s.layerMode);
   const { splatUrls, transform, hasAsset, status: splatStatus, roomSlug } = useRoomRuntimeSplat();
 
@@ -288,19 +300,49 @@ export function PlannerScene(): ReactElement {
     [roomSlug],
   );
   const walkData = useMemo(() => {
-    // The scanner's path at a person's eye height, as the room walk does.
+    // Retain the captured walk bounds. The Grand Hall has an authored arrival
+    // within those bounds; other rooms keep the scanner-derived starting point.
     const pose = walkBundle === null ? null : walkPoseForBundle(walkBundle);
     if (!hasAsset || pose === null) return null;
-    const { spawn, bounds: walkBounds } = pose;
+    const { bounds: walkBounds } = pose;
     return {
-      spawn: { position: [...spawn.position] as [number, number, number], yaw: spawn.yaw },
+      spawn: plannerInteriorSpawn(roomSlug, pose),
       bounds: {
         min: [...walkBounds.min] as [number, number, number],
         max: [...walkBounds.max] as [number, number, number],
       },
       roomHeightM: walkBundle?.extentM[1],
     };
-  }, [hasAsset, walkBundle]);
+  }, [hasAsset, walkBundle, roomSlug]);
+
+  useEffect(() => {
+    const initial = useCockpitStore.getState();
+    if (initial.walkMode || initial.layerMode !== "hybrid" || initial.activeMode !== "design"
+      || initial.focusRequest !== null || initial.cameraInteractionActive || hasPlannerBookmarkCamera()) {
+      plannerArrivalPolicy.choose(arrivalKey);
+    }
+    const unsubscribeCockpit = useCockpitStore.subscribe((state, previous) => {
+      if (state.walkMode !== previous.walkMode || state.layerMode !== previous.layerMode
+        || state.activeMode !== previous.activeMode
+        || state.focusRequest !== previous.focusRequest
+        || (state.cameraInteractionActive && !previous.cameraInteractionActive)) {
+        plannerArrivalPolicy.choose(arrivalKey);
+      }
+    });
+    const unsubscribeBookmarks = useBookmarkStore.subscribe(() => {
+      if (!hasPlannerBookmarkCamera()) return;
+      plannerArrivalPolicy.choose(arrivalKey);
+      // Ordinary bookmarks and tours must exit the interior owner too, not
+      // only saved human POVs. The synchronous guard also covers this frame.
+      if (useCockpitStore.getState().walkMode) useCockpitStore.getState().setWalkMode(false);
+    });
+    return () => { unsubscribeCockpit(); unsubscribeBookmarks(); };
+  }, [arrivalKey]);
+
+  useEffect(() => {
+    if (!plannerArrivalPolicy.claim(arrivalKey, roomSlug === "grand-hall" && walkData !== null)) return;
+    useCockpitStore.setState({ layerMode: "splat", walkMode: true });
+  }, [arrivalKey, roomSlug, walkData]);
   // If the room changes to one with no walk data, the mode cannot stand.
   useEffect(() => {
     if (walkMode && walkData === null) useCockpitStore.getState().setWalkMode(false);
@@ -351,8 +393,6 @@ export function PlannerScene(): ReactElement {
   // be attributed to one side or the other.
   const walkCameraDisabled = import.meta.env.DEV
     && new URLSearchParams(window.location.search).has("walkNoCam");
-  const meshVisible = !hasAsset || layerMode !== "splat";
-  const splatActive = hasAsset && layerMode !== "mesh";
 
   // CARD A2 — "the room resolves": count chunk arrivals, derive the resolve
   // phase, and publish it for the quiet caption + the stage's honesty
@@ -362,7 +402,13 @@ export function PlannerScene(): ReactElement {
   const totalChunks = splatUrls.length;
   const loadedChunks = Math.min(arrivals.loadedCount, totalChunks);
   const failedChunks = Math.min(arrivals.failedCount, totalChunks - loadedChunks);
-  const resolvePhase = roomResolvePhase({ splatStatus, hasAsset, totalChunks, loadedChunks, failedChunks });
+  const captureFailed = totalChunks > 0 && failedChunks === totalChunks;
+  const meshVisible = !hasAsset || captureFailed || layerMode !== "splat";
+  const splatActive = hasAsset && !captureFailed && layerMode !== "mesh";
+  const resolvePhase = roomResolvePhase({ splatStatus, hasAsset: hasAsset && !captureFailed, totalChunks, loadedChunks, failedChunks });
+  useEffect(() => {
+    if (captureFailed && walkMode) useCockpitStore.getState().setWalkMode(false);
+  }, [captureFailed, walkMode]);
   useEffect(() => {
     useCockpitStore.getState().setRoomResolve({ phase: resolvePhase, loadedChunks, totalChunks });
   }, [loadedChunks, resolvePhase, totalChunks]);
@@ -474,12 +520,16 @@ export function PlannerScene(): ReactElement {
             active={cameraInteractionActive && splatActive && !walkMode}
           />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} />
-          {walkMode && walkData !== null && !walkCameraDisabled && (
+          {walkMode && walkData !== null && !walkCameraDisabled && !captureFailed && (
             <InteriorCamera
               key={roomSlug ?? "walk"}
               spawn={walkData.spawn}
               bounds={walkData.bounds}
               roomHeightM={walkData.roomHeightM}
+              inputPolicy="planner"
+              ownsCamera={plannerInteriorOwnsCamera}
+              touchLookEnabled={plannerTouchLookEnabled}
+              keyboardNavigationEnabled={plannerKeyboardNavigationEnabled}
               reducedMotion={prefersReducedMotion()}
               // Walk holds the planner's own 0.75 budget on BOTH sides:
               // raising resolution at walk entry means a drawing-buffer resize
