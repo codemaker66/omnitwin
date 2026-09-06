@@ -2188,4 +2188,65 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
     expect(rows.find((row) => row.id === frozen.canonicalSnapshotId)?.payload.eventMetadata.specialInstructions).toBeNull();
   });
 
+
+  it("linearizes phase-room reassignment after the active freeze and withdraws mismatched historical evidence", async () => {
+    const plan = await createManualPlan();
+    const db = requiredDatabase();
+    const siblingId = randomUUID();
+    await db.insert(spaces).values({ id: siblingId, venueId: SNAPSHOT.venueId, name: "Manual race sibling", slug: `race-${siblingId}`, widthM: "20", lengthM: "10", heightM: "4", floorPlanOutline: SNAPSHOT.venueRuntime.floorPlanOutline });
+    const freezeApp = await requiredServerBuilder()();
+    const locker = new Client({ connectionString: DATABASE_URL });
+    const observer = new Client({ connectionString: DATABASE_URL });
+    await Promise.all([locker.connect(), observer.connect()]);
+    const pending: Promise<unknown>[] = [];
+    let released = false;
+    async function waitForBlocked(pattern: RegExp, blockedBy?: number): Promise<number> {
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const rows = (await observer.query<{ pid: number; query: string; blockers: number[] }>("SELECT pid,query,pg_blocking_pids(pid) blockers FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'")).rows;
+        const match = rows.find((row) => pattern.test(row.query) && (blockedBy === undefined || row.blockers.includes(blockedBy)));
+        if (match !== undefined) return match.pid;
+        await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error(`No actual blocked statement matching ${pattern.source}`);
+    }
+    try {
+      await locker.query("BEGIN");
+      await locker.query("SELECT id FROM configurations WHERE id=$1 FOR UPDATE", [plan.configurationId]);
+      const lockerPid = (await locker.query<{ pid: number }>("SELECT pg_backend_pid()::int pid")).rows[0]?.pid;
+      if (lockerPid === undefined) throw new Error("No locker backend");
+      const freezing = freezeManual(plan, freezeApp).then((response) => response);
+      pending.push(freezing);
+      const freezePid = await waitForBlocked(/from\s+"configurations"[\s\S]*for share/iu, lockerPid);
+      const moving = requiredServer().inject({ method: "PATCH", url: `/event-phases/${plan.phaseId}`, headers: authHeaders(), payload: { spaceId: siblingId } }).then((response) => response);
+      pending.push(moving);
+      const blockedOrFinished = await Promise.race([
+        waitForBlocked(/update\s+"event_phases"/iu, freezePid).then(() => null),
+        moving,
+      ]);
+      expect(blockedOrFinished, "The real phase PATCH must wait for the freezing transaction's phase read lock").toBeNull();
+      await locker.query("COMMIT"); released = true;
+      const [frozenResponse, movedResponse] = await Promise.all([freezing, moving]);
+      expect(frozenResponse.statusCode, frozenResponse.body).toBe(201);
+      expect(movedResponse.statusCode, movedResponse.body).toBe(200);
+      const frozen = FreezeEnvelopeSchema.parse(frozenResponse.json()).data;
+      const rows = await evidenceRows(plan.configurationId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.spaceId).toBe(SNAPSHOT.spaceId);
+      const immutable = await db.select().from(phaseLayoutSnapshots).where(eq(phaseLayoutSnapshots.id, frozen.snapshotId));
+      expect(immutable[0]?.canonicalSnapshotId).toBe(frozen.canonicalSnapshotId);
+      const url = (spaceId: string) => `/calendar/layout-timeline?venueId=${SNAPSHOT.venueId}&spaceId=${spaceId}&scope=day&anchorDate=2026-09-07`;
+      const oldRoom = await requiredServer().inject({ method: "GET", url: url(SNAPSHOT.spaceId), headers: authHeaders() });
+      const newRoom = await requiredServer().inject({ method: "GET", url: url(siblingId), headers: authHeaders() });
+      expect(oldRoom.statusCode, oldRoom.body).toBe(200);
+      expect(newRoom.statusCode, newRoom.body).toBe(200);
+      expect(TimelineEnvelopeSchema.parse(oldRoom.json()).data.frames.some((frame) => frame.phaseId === plan.phaseId)).toBe(false);
+      expect(TimelineEnvelopeSchema.parse(newRoom.json()).data.frames.find((frame) => frame.phaseId === plan.phaseId)?.keyframe.state).toBe("invalid");
+    } finally {
+      if (!released) await locker.query("ROLLBACK");
+      await Promise.allSettled(pending);
+      await Promise.all([locker.end(), observer.end(), freezeApp.close()]);
+    }
+  });
+
 });

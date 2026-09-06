@@ -33,6 +33,13 @@ observed-revision/FOR SHARE sequence rejects queued edits that advance the saved
 revision. Any failed source, validator exception, proof verification or phase
 append rolls back the transaction. Old canonical/proof/phase IDs remain intact.
 
+Authoritative event and phase reads also hold `FOR SHARE` row locks, in that order,
+before the configuration read. The phase-update API does not use the freeze
+advisory key, so its actual room reassignment must wait for an active freeze to
+commit. A deliberate reassignment after commit remains allowed: the old room no
+longer lists the moved phase, and the new room marks its old room-bound keyframe
+invalid until a matching plan is frozen. Historical evidence is not rewritten.
+
 A genuine validator run can contain failed, unknown and human-review witnesses.
 Freezing proves its authenticated lineage, not that every witness passes and not
 that a plan is safe, approved or ready for external delivery. Source-state records
@@ -58,9 +65,13 @@ append rollback, room-flip and tenant/room denials. Receipts remain under
 `D:/claude/demo-platform-local-20260906`; passing these checks qualifies the local
 API behavior only.
 
-Verified locally at 18:31 UTC: 67 focused tests passed, including 25 actual
+Verified locally at 18:42 UTC: 68 focused tests passed, including 26 actual
 PostgreSQL lifecycle cases against a new explicitly named disposable database.
-Receipt: `manual-evidence-tests-1788719468339.json` in the directory above.
+Receipt: `manual-evidence-tests-1788720143057.json` in the directory above.
 Changed-file lint passed. API typecheck retains 52 existing errors and build
 retains eight, normalized exactly to the prior baseline; none are in this slice.
 The full API typecheck/build therefore remain blocked, not claimed green.
+
+The phase-reassignment regression first failed against `643aa310` (receipt
+`manual-evidence-tests-1788719989242.json`), where an actual PATCH completed
+before the blocked freeze. It passes with the event/phase row locks.

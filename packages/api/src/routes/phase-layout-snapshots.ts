@@ -150,7 +150,7 @@ export async function phaseLayoutSnapshotRoutes(
           }).from(events).where(and(
             eq(events.id, params.data.eventId),
             isNull(events.deletedAt),
-          )).limit(1);
+          )).for("share", { of: events }).limit(1);
           if (event === undefined) return { state: "not_found", resource: "event" };
           if (!canWriteEvents(request.user, event.venueId)) {
             return { state: "forbidden" };
@@ -165,8 +165,11 @@ export async function phaseLayoutSnapshotRoutes(
           }).from(eventPhases).where(and(
             eq(eventPhases.id, params.data.phaseId),
             eq(eventPhases.eventId, event.id),
-          )).limit(1);
+          )).for("share", { of: eventPhases }).limit(1);
           if (phase === undefined) return { state: "not_found", resource: "phase" };
+
+          // Phase PATCH uses a normal UPDATE, not our advisory key. Keep this
+          // room/event identity stable until the evidence append commits.
 
           // A non-locking revision observation lets a queued optimistic edit
           // complete ahead of the authoritative FOR SHARE read. If the lock
