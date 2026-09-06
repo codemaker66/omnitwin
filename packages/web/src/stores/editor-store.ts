@@ -266,6 +266,8 @@ interface EditorActions {
   readonly beginHistoryGesture: () => symbol | null;
   readonly endHistoryGesture: (token: symbol) => void;
   readonly isHistoryGestureCurrent: (token: symbol) => boolean;
+  /** Accepted save-response ID remaps for this still-owned pointer gesture. */
+  readonly historyGestureIdMap: (token: symbol) => ReadonlyMap<string, string> | null;
 }
 
 type EditorStore = EditorState & EditorActions;
@@ -334,11 +336,14 @@ let activeHistoryGesture: {
   readonly configId: string | null;
   readonly spaceId: string | null;
   readonly venueId: string | null;
+  readonly session: number;
+  readonly objectIds: ReadonlyMap<string, string>;
 } | null = null;
 
 function gestureOwnsCurrentDocument(): boolean {
   const current = useEditorStore.getState();
   return activeHistoryGesture !== null
+    && activeHistoryGesture.session === configurationSession
     && activeHistoryGesture.configId === current.configId
     && activeHistoryGesture.spaceId === current.spaceId
     && activeHistoryGesture.venueId === current.venueId;
@@ -832,6 +837,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // The user may have kept editing while the request was in flight —
       // remap the latest state, not the snapshot captured before the await.
       const latest = get();
+      if (activeHistoryGesture !== null && gestureOwnsCurrentDocument()) {
+        if (aligned) {
+          const objectIds = new Map(activeHistoryGesture.objectIds);
+          for (const [original, current] of objectIds) objectIds.set(original, idMap.get(current) ?? current);
+          for (const [localId, serverId] of idMap) objectIds.set(localId, serverId);
+          activeHistoryGesture = { ...activeHistoryGesture, objectIds };
+        } else {
+          // An unalignable response cannot safely identify captured objects.
+          activeHistoryGesture = null;
+        }
+      }
       const selection = useSelectionStore.getState();
       if ([...selection.selectedIds].some((id) => idMap.has(id))) {
         selection.selectMultiple([...selection.selectedIds].map((id) => idMap.get(id) ?? id));
@@ -968,7 +984,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     interactionEpoch++;
     const token = Symbol("pointer-history-gesture");
     const { configId, spaceId, venueId } = get();
-    activeHistoryGesture = { token, epoch: interactionEpoch, configId, spaceId, venueId };
+    activeHistoryGesture = { token, epoch: interactionEpoch, configId, spaceId, venueId,
+      session: configurationSession, objectIds: new Map() };
     return token;
   },
 
@@ -985,6 +1002,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   isHistoryGestureCurrent: (token) => activeHistoryGesture?.token === token
     && gestureOwnsCurrentDocument() && !isLayoutTimelineMutationLocked(),
+
+  historyGestureIdMap: (token) => activeHistoryGesture?.token === token
+    && gestureOwnsCurrentDocument() && !isLayoutTimelineMutationLocked()
+    ? activeHistoryGesture.objectIds : null,
 }));
 
 useEditorStore.subscribe((state, previous) => {

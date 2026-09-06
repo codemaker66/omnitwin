@@ -160,6 +160,7 @@ export function SelectionSystem(): null {
   const marqueeRafId = useRef<number>(0);
   const touchTapCandidate = useRef(false);
   const historyGesture = useRef<symbol | null>(null);
+  const gestureIdMap = useRef<ReadonlyMap<string, string> | null>(null);
   const dragPointerId = useRef<number | null>(null);
   const cancelPointerGesture = useRef<() => void>(() => undefined);
   // floorCache removed — drag uses math plane intersection
@@ -325,6 +326,7 @@ export function SelectionSystem(): null {
       cancelAnimationFrame(marqueeRafId.current);
       const token = historyGesture.current;
       historyGesture.current = null;
+      gestureIdMap.current = null;
       if (token !== null) useEditorStore.getState().endHistoryGesture(token);
       const pointer = dragPointerId.current;
       dragPointerId.current = null;
@@ -382,6 +384,11 @@ export function SelectionSystem(): null {
       wallClickKey.current = found.wallKey;
       dragGrabOffset.current = { x: 0, z: 0 };
       if (found.itemId !== null) {
+        // Track accepted INSERT IDs from the press, including the interval
+        // before movement crosses the drag threshold. No history is recorded
+        // until a real transform occurs; every release closes this token.
+        historyGesture.current = useEditorStore.getState().beginHistoryGesture();
+        if (historyGesture.current === null) { closePointerGesture(); return; }
         const placedItems = usePlacementStore.getState().placedItems;
         // Grab-interrupt: a mid-settle object is visually offset from store
         // truth; drop its springs BEFORE measuring the grab so the drag maths
@@ -528,7 +535,6 @@ export function SelectionSystem(): null {
       if (!isDragging.current && !isMarquee.current) {
         if (dragItemId.current !== null) {
           // Furniture was clicked — start drag-move
-          historyGesture.current = useEditorStore.getState().beginHistoryGesture();
           if (historyGesture.current === null) return;
           isDragging.current = true;
           try {
@@ -823,9 +829,10 @@ export function SelectionSystem(): null {
         } else {
           useToolStore.getState().setLiveValue(null);
         }
-        // Grid settle above belongs to the same transaction as pointer frames.
-        closePointerGesture();
       }
+      // Clicks close the pending token too; grid settle above belongs to the
+      // same transaction as pointer frames when an actual drag occurred.
+      closePointerGesture();
       isDragging.current = false;
       isMarquee.current = false;
       dragItemId.current = null;
@@ -837,7 +844,9 @@ export function SelectionSystem(): null {
     }
 
     function onOutsidePointerUp(event: PointerEvent): void {
-      if (isDragging.current && event.target !== canvasEl) onPointerUp(event);
+      if (event.target === canvasEl || event.pointerId !== dragPointerId.current) return;
+      if (isDragging.current) onPointerUp(event);
+      else closePointerGesture();
     }
 
     function onPointerCancel(event: PointerEvent): void {
@@ -903,8 +912,18 @@ export function SelectionSystem(): null {
     canvasEl.addEventListener("mouseup", onMouseUp);
     canvasEl.addEventListener("contextmenu", onContextMenu);
     canvasEl.addEventListener("dblclick", onDblClick);
-    const unsubscribeEditor = useEditorStore.subscribe(() => {
-      if (historyGesture.current !== null && !useEditorStore.getState().isHistoryGestureCurrent(historyGesture.current)) closePointerGesture();
+    const unsubscribeEditor = useEditorStore.subscribe((state) => {
+      const token = historyGesture.current;
+      if (token === null) return;
+      const ids = state.historyGestureIdMap(token);
+      if (ids === null) { closePointerGesture(); return; }
+      if (ids === gestureIdMap.current) return;
+      gestureIdMap.current = ids;
+      // Only the accepted save's map can identify the same captured objects.
+      // Preserve grab offsets/initial values: an INSERT ACK is not a new drag.
+      if (dragItemId.current !== null) dragItemId.current = ids.get(dragItemId.current) ?? dragItemId.current;
+      lastMovingIds.current = new Set([...lastMovingIds.current].map((id) => ids.get(id) ?? id));
+      gestureInitial.current = new Map([...gestureInitial.current].map(([id, value]) => [ids.get(id) ?? id, value]));
     });
     const unsubscribePreview = useLayoutTimelinePreviewStore.subscribe((state) => {
       if (state.mode !== "inactive") closePointerGesture();
