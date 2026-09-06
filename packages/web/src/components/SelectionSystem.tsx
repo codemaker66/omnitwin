@@ -13,6 +13,7 @@ import { useVisibilityStore, type WallKey } from "../stores/visibility-store.js"
 import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
+import { useLayoutTimelinePreviewStore } from "../stores/layout-timeline-preview-store.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
 import { isDiningTableItem } from "../lib/furniture-semantics.js";
 import { expandIdsToGroupMembers, getGroupMemberIds, snapPositionToGrid } from "../lib/placement.js";
@@ -158,6 +159,9 @@ export function SelectionSystem(): null {
   const suppressNextContextMenu = useRef(false);
   const marqueeRafId = useRef<number>(0);
   const touchTapCandidate = useRef(false);
+  const historyGesture = useRef<symbol | null>(null);
+  const dragPointerId = useRef<number | null>(null);
+  const cancelPointerGesture = useRef<() => void>(() => undefined);
   // floorCache removed — drag uses math plane intersection
 
   // Stable ref for invalidate — avoids effect teardown when invalidate ref changes
@@ -190,6 +194,7 @@ export function SelectionSystem(): null {
       // Delete / Backspace — remove selected items
       if (event.code === "Delete" || event.code === "Backspace") {
         if (selectedIds.size === 0) return;
+        cancelPointerGesture.current();
         usePlacementStore.getState().removeItems(selectedIds);
         useSelectionStore.getState().clearSelection();
         invalidateRef.current();
@@ -201,6 +206,7 @@ export function SelectionSystem(): null {
       // defers to MeasurementTool's pending-point cancel, then puts the tape
       // away.
       if (event.code === "Escape") {
+        cancelPointerGesture.current();
         const toolStore = useToolStore.getState();
         if (toolStore.activeTool === "measure") {
           if (useMeasurementStore.getState().pendingPoint === null) {
@@ -224,6 +230,7 @@ export function SelectionSystem(): null {
       // N separate React batches for N selected items.
       if ((event.code === "KeyQ" || event.code === "KeyE" || event.code === "KeyR") && !event.ctrlKey && !event.metaKey) {
         if (selectedIds.size === 0) return;
+        cancelPointerGesture.current();
         const delta = event.code === "KeyR" ? ROTATION_SNAP_RAD : -ROTATION_SNAP_RAD;
         const store = usePlacementStore.getState();
         usePlacementStore.setState({
@@ -239,6 +246,7 @@ export function SelectionSystem(): null {
       // Ctrl/Cmd+G — group selected items, or ungroup a complete selected group.
       if (event.code === "KeyG" && (event.ctrlKey || event.metaKey)) {
         if (selectedIds.size < 2) return;
+        cancelPointerGesture.current();
         event.preventDefault();
         const placement = usePlacementStore.getState();
         const expandedIds = expandIdsToGroupMembers(selectedIds, placement.placedItems);
@@ -261,6 +269,7 @@ export function SelectionSystem(): null {
       // C — toggle cloth on selected tables
       if (event.code === "KeyC" && !event.ctrlKey && !event.metaKey) {
         if (selectedIds.size === 0) return;
+        cancelPointerGesture.current();
         for (const id of selectedIds) {
           usePlacementStore.getState().toggleCloth(id);
         }
@@ -310,6 +319,28 @@ export function SelectionSystem(): null {
         !useGuidelineStore.getState().active;
     }
 
+    // Cancellation retains the last real placement as one undoable gesture.
+    // No synthetic snap is introduced on blur, pointer cancellation or preview.
+    function closePointerGesture(): void {
+      cancelAnimationFrame(marqueeRafId.current);
+      const token = historyGesture.current;
+      historyGesture.current = null;
+      if (token !== null) useEditorStore.getState().endHistoryGesture(token);
+      const pointer = dragPointerId.current;
+      dragPointerId.current = null;
+      if (pointer !== null && canvasEl.hasPointerCapture(pointer)) canvasEl.releasePointerCapture(pointer);
+      isDragging.current = false;
+      if (isMarquee.current) useSelectionStore.getState().endMarquee();
+      isMarquee.current = false;
+      dragItemId.current = null;
+      lastMovingIds.current = new Set();
+      gestureInitial.current = new Map();
+      touchTapCandidate.current = false;
+      useToolStore.getState().setLiveValue(null);
+      useSelectionStore.getState().setActiveGuides([]);
+    }
+    cancelPointerGesture.current = closePointerGesture;
+
     function onPointerDown(event: PointerEvent): void {
       touchTapCandidate.current = false;
       if (event.button === 2) {
@@ -324,6 +355,9 @@ export function SelectionSystem(): null {
       if (useCatalogueStore.getState().selectedItemId !== null) return;
       // Don't interfere with measurement or guideline tools
       if (useMeasurementStore.getState().active || useGuidelineStore.getState().active) return;
+
+      closePointerGesture();
+      dragPointerId.current = event.pointerId;
 
       dragStartScreen.current = { x: event.clientX, y: event.clientY };
       isDragging.current = false;
@@ -452,6 +486,12 @@ export function SelectionSystem(): null {
     }
 
     function onPointerMove(event: PointerEvent): void {
+      const token = historyGesture.current;
+      if (token !== null && (!useEditorStore.getState().isHistoryGestureCurrent(token) || !selectionToolsAreIdle())) {
+        closePointerGesture();
+        return;
+      }
+      if (token !== null && event.pointerId !== dragPointerId.current) return;
       if (useMarkupStore.getState().active) return;
       if (event.pointerType === "touch" && touchTapCandidate.current) {
         if (
@@ -488,10 +528,16 @@ export function SelectionSystem(): null {
       if (!isDragging.current && !isMarquee.current) {
         if (dragItemId.current !== null) {
           // Furniture was clicked — start drag-move
+          historyGesture.current = useEditorStore.getState().beginHistoryGesture();
+          if (historyGesture.current === null) return;
           isDragging.current = true;
-          // Fence the undo timeline: this drag's frames coalesce into one
-          // entry, separate from anything recorded just before the drag.
-          useEditorStore.getState().bumpHistoryEpoch();
+          try {
+            canvasEl.setPointerCapture(event.pointerId);
+          } catch {
+            // The browser may have cancelled this pointer before capture.
+            closePointerGesture();
+            return;
+          }
           if (!useSelectionStore.getState().selectedIds.has(dragItemId.current)) {
             useSelectionStore.getState().select(dragItemId.current);
           }
@@ -691,6 +737,13 @@ export function SelectionSystem(): null {
     }
 
     function onPointerUp(event: PointerEvent): void {
+      if (historyGesture.current !== null) {
+        if (event.pointerId !== dragPointerId.current) return;
+        if (!selectionToolsAreIdle() || !useEditorStore.getState().isHistoryGestureCurrent(historyGesture.current)) {
+          closePointerGesture();
+          return;
+        }
+      }
       if (useMarkupStore.getState().active) return;
       if (handleRightButtonRelease(event)) return;
       if (useCatalogueStore.getState().selectedItemId !== null) return;
@@ -770,9 +823,8 @@ export function SelectionSystem(): null {
         } else {
           useToolStore.getState().setLiveValue(null);
         }
-        // Close the drag's coalescing epoch so the next gesture starts a
-        // fresh undo entry even when it begins within the time window.
-        useEditorStore.getState().bumpHistoryEpoch();
+        // Grid settle above belongs to the same transaction as pointer frames.
+        closePointerGesture();
       }
       isDragging.current = false;
       isMarquee.current = false;
@@ -782,6 +834,14 @@ export function SelectionSystem(): null {
     function onMouseUp(event: MouseEvent): void {
       if (useMarkupStore.getState().active) return;
       handleRightButtonRelease(event);
+    }
+
+    function onOutsidePointerUp(event: PointerEvent): void {
+      if (isDragging.current && event.target !== canvasEl) onPointerUp(event);
+    }
+
+    function onPointerCancel(event: PointerEvent): void {
+      if (event.pointerId === dragPointerId.current) closePointerGesture();
     }
 
     function onDblClick(event: MouseEvent): void {
@@ -836,11 +896,25 @@ export function SelectionSystem(): null {
     canvasEl.addEventListener("pointermove", onPointerMove);
     window.addEventListener("mousemove", onMouseMove);
     canvasEl.addEventListener("pointerup", onPointerUp);
+    canvasEl.addEventListener("pointercancel", onPointerCancel);
+    canvasEl.addEventListener("lostpointercapture", onPointerCancel);
+    window.addEventListener("pointerup", onOutsidePointerUp);
+    window.addEventListener("blur", closePointerGesture);
     canvasEl.addEventListener("mouseup", onMouseUp);
     canvasEl.addEventListener("contextmenu", onContextMenu);
     canvasEl.addEventListener("dblclick", onDblClick);
+    const unsubscribeEditor = useEditorStore.subscribe(() => {
+      if (historyGesture.current !== null && !useEditorStore.getState().isHistoryGestureCurrent(historyGesture.current)) closePointerGesture();
+    });
+    const unsubscribePreview = useLayoutTimelinePreviewStore.subscribe((state) => {
+      if (state.mode !== "inactive") closePointerGesture();
+    });
 
     return () => {
+      unsubscribeEditor();
+      unsubscribePreview();
+      closePointerGesture();
+      cancelPointerGesture.current = () => undefined;
       cancelAnimationFrame(marqueeRafId.current);
       touchTapCandidate.current = false;
       canvasEl.removeEventListener("pointerdown", onPointerDown);
@@ -848,6 +922,10 @@ export function SelectionSystem(): null {
       canvasEl.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("mousemove", onMouseMove);
       canvasEl.removeEventListener("pointerup", onPointerUp);
+      canvasEl.removeEventListener("pointercancel", onPointerCancel);
+      canvasEl.removeEventListener("lostpointercapture", onPointerCancel);
+      window.removeEventListener("pointerup", onOutsidePointerUp);
+      window.removeEventListener("blur", closePointerGesture);
       canvasEl.removeEventListener("mouseup", onMouseUp);
       canvasEl.removeEventListener("contextmenu", onContextMenu);
       canvasEl.removeEventListener("dblclick", onDblClick);

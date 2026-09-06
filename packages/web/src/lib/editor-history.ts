@@ -67,6 +67,8 @@ export interface RecordChangeInput<T extends HistoryObject> {
   readonly epoch: number;
   readonly selectionBefore: readonly string[];
   readonly selectionAfter: readonly string[];
+  /** The caller owns an explicit pointer transaction, not a timed edit burst. */
+  readonly coalesceGesture?: boolean;
 }
 
 export function emptyHistory<T extends HistoryObject>(): EditorHistory<T> {
@@ -283,10 +285,12 @@ function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
 function canCoalesce<T extends HistoryObject>(
   top: HistoryEntry<T>,
   next: HistoryEntry<T>,
+  gesture: boolean,
 ): boolean {
   if (top.epoch !== next.epoch || !isUpdateOnly(top) || !isUpdateOnly(next)) {
     return false;
   }
+  if (gesture) return true;
   if (top.updated.length !== next.updated.length) {
     return false;
   }
@@ -301,14 +305,20 @@ function coalesceEntries<T extends HistoryObject>(
   top: HistoryEntry<T>,
   next: HistoryEntry<T>,
 ): HistoryEntry<T> {
-  const topById = new Map(top.updated.map((patch) => [patch.id, patch]));
+  const mergedById = new Map(top.updated.map((patch) => [patch.id, patch]));
+  for (const patch of next.updated) {
+    const prior = mergedById.get(patch.id);
+    mergedById.set(patch.id, prior === undefined ? patch : {
+      id: patch.id,
+      // A held drag can change X, then Z, then both (and surface height).
+      // Keep each field's first value and its latest value independently.
+      before: { ...patch.before, ...prior.before },
+      after: { ...prior.after, ...patch.after },
+    });
+  }
   return {
     ...top,
-    updated: next.updated.map((patch) => ({
-      id: patch.id,
-      before: topById.get(patch.id)?.before ?? patch.before,
-      after: patch.after,
-    })),
+    updated: [...mergedById.values()],
     selectionAfter: next.selectionAfter,
     label: next.label,
   };
@@ -397,7 +407,7 @@ export function recordChange<T extends HistoryObject>(
     selectionAfter: input.selectionAfter,
   };
   const top = history.future.length === 0 ? history.past.at(-1) : undefined;
-  if (top !== undefined && canCoalesce(top, entry)) {
+  if (top !== undefined && canCoalesce(top, entry, input.coalesceGesture === true)) {
     const merged = coalesceEntries(top, entry);
     const past = isIdentityEntry(merged)
       ? history.past.slice(0, -1)
