@@ -21,7 +21,7 @@ function generatedPlacedItems(): ReturnType<typeof createPlacedItem>[] {
 }
 
 describe("plannerFurnitureRenderPartition", () => {
-  it("keeps an inspected generated hierarchy out of instanced and lean batches", () => {
+  it("keeps an inspected generated hierarchy out of the instanced batch", () => {
     const generated = generatedPlacedItems();
     const inspected = generated[2];
     if (inspected === undefined) throw new Error("missing generated inspection fixture");
@@ -32,7 +32,6 @@ describe("plannerFurnitureRenderPartition", () => {
 
     expect(partition.instancedItems.map((item) => item.id)).toEqual(expectedIds);
     expect([...partition.instancedIds]).toEqual(expectedIds);
-    expect(partition.leanItems.map((item) => item.id)).toEqual(expectedIds);
   });
 
   it("keeps all non-inspected procedural furniture eligible for instancing", () => {
@@ -40,7 +39,6 @@ describe("plannerFurnitureRenderPartition", () => {
     const partition = plannerFurnitureRenderPartition(generated, null);
 
     expect([...partition.instancedIds]).toEqual(generated.map((item) => item.id));
-    expect(partition.leanItems).toHaveLength(GENERATED_FURNITURE_SLUGS.length);
   });
 
   it("retains leaked dressing rows in state but excludes them from every model batch", () => {
@@ -56,14 +54,12 @@ describe("plannerFurnitureRenderPartition", () => {
     expect(input).toHaveLength(4);
     expect(partition.instancedItems).toEqual([table]);
     expect([...partition.instancedIds]).toEqual([table.id]);
-    expect(partition.leanItems).toEqual([table]);
   });
 });
 
 describe("shouldRenderIndividualFurnitureModel", () => {
   it("renders a visible per-item fallback when instancing fails", () => {
     expect(shouldRenderIndividualFurnitureModel({
-      leanRendering: false,
       inspected: false,
       instanced: true,
       instancingFailed: true,
@@ -72,7 +68,6 @@ describe("shouldRenderIndividualFurnitureModel", () => {
 
   it("always keeps the inspected hierarchy detailed, including during camera motion", () => {
     expect(shouldRenderIndividualFurnitureModel({
-      leanRendering: true,
       inspected: true,
       instanced: false,
       instancingFailed: false,

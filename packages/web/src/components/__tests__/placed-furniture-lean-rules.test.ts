@@ -12,15 +12,14 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH,
+  COMPACT_PLANNER_OVERLAY_MIN_VIEWPORT_WIDTH,
   MAX_LEAN_CONSTRAINT_VIOLATION_SKINS,
   cameraReferenceGlowRadius,
   furnitureNamePlateYOffset,
-  leanFurniturePresentationTransform,
   leanSweepCandidates,
   placementViolationIds,
   shouldRenderIndividualFurnitureModel,
-  shouldUseLeanPlannerFurniture,
+  shouldLimitPlannerFurnitureOverlays,
   visibleConstraintViolationIds,
 } from "../PlacedFurniture.js";
 import { CATALOGUE_ITEMS } from "../../lib/catalogue.js";
@@ -33,43 +32,24 @@ function catalogueIdAt(index: number): string {
   return item.id;
 }
 
-describe("shouldUseLeanPlannerFurniture", () => {
-  it("engages the lean path strictly below the viewport threshold", () => {
-    expect(shouldUseLeanPlannerFurniture(LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH - 1)).toBe(true);
-    expect(shouldUseLeanPlannerFurniture(LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH)).toBe(false);
-    expect(shouldUseLeanPlannerFurniture(LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH + 1)).toBe(false);
+describe("shouldLimitPlannerFurnitureOverlays", () => {
+  it("limits overlay work strictly below the viewport threshold", () => {
+    expect(shouldLimitPlannerFurnitureOverlays(COMPACT_PLANNER_OVERLAY_MIN_VIEWPORT_WIDTH - 1)).toBe(true);
+    expect(shouldLimitPlannerFurnitureOverlays(COMPACT_PLANNER_OVERLAY_MIN_VIEWPORT_WIDTH)).toBe(false);
+    expect(shouldLimitPlannerFurnitureOverlays(COMPACT_PLANNER_OVERLAY_MIN_VIEWPORT_WIDTH + 1)).toBe(false);
   });
 
-  it("drops even a wide desktop canvas to the lean path while the camera moves", () => {
-    expect(shouldUseLeanPlannerFurniture(2560, true)).toBe(true);
+  it("limits overlay work on a wide canvas while the camera moves", () => {
+    expect(shouldLimitPlannerFurnitureOverlays(2560, true)).toBe(true);
   });
 
   it("treats camera interaction as inactive when the caller omits it", () => {
-    expect(shouldUseLeanPlannerFurniture(2560)).toBe(false);
+    expect(shouldLimitPlannerFurnitureOverlays(2560)).toBe(false);
   });
 
   it("keeps a zero-width canvas on the lean path rather than the full one", () => {
-    expect(shouldUseLeanPlannerFurniture(0)).toBe(true);
+    expect(shouldLimitPlannerFurnitureOverlays(0)).toBe(true);
   });
-});
-
-describe("leanFurniturePresentationTransform", () => {
-  it("applies persisted uniform scale while keeping the model on its base Y", () => {
-    expect(leanFurniturePresentationTransform(3, 0.8, 2)).toEqual({
-      centerY: 3.8,
-      scale: 2,
-    });
-  });
-
-  it.each([undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
-    "uses the shared scale-1 fallback for %s",
-    (scale) => {
-      expect(leanFurniturePresentationTransform(3, 0.8, scale)).toEqual({
-        centerY: 3.4,
-        scale: 1,
-      });
-    },
-  );
 });
 
 describe("cameraReferenceGlowRadius", () => {
@@ -202,37 +182,23 @@ describe("placementViolationIds", () => {
 });
 
 describe("shouldRenderIndividualFurnitureModel — full decision table", () => {
-  // [leanRendering, inspected, instanced, instancingFailed] -> renders own model.
-  // Hand-written expectations on purpose: deriving them from the predicate's own
-  // formula would make this table incapable of catching an inverted condition.
-  const CASES: ReadonlyArray<readonly [boolean, boolean, boolean, boolean, boolean]> = [
-    [false, false, false, false, true],
-    [false, false, false, true, true],
-    [false, false, true, false, false],
-    [false, false, true, true, true],
-    [false, true, false, false, true],
-    [false, true, false, true, true],
-    [false, true, true, false, true],
-    [false, true, true, true, true],
-    [true, false, false, false, false],
-    [true, false, false, true, false],
-    [true, false, true, false, false],
-    [true, false, true, true, false],
-    [true, true, false, false, true],
-    [true, true, false, true, true],
-    [true, true, true, false, true],
-    [true, true, true, true, true],
+  // Inspected, imported and failed-harvest models keep their individual path.
+  const CASES: ReadonlyArray<readonly [boolean, boolean, boolean, boolean]> = [
+    [false, false, false, true],
+    [false, false, true, true],
+    [false, true, false, false],
+    [false, true, true, true],
+    [true, false, false, true],
+    [true, false, true, true],
+    [true, true, false, true],
+    [true, true, true, true],
   ];
 
   it.each(CASES)(
-    "lean=%s inspected=%s instanced=%s failed=%s renders=%s",
-    (leanRendering, inspected, instanced, instancingFailed, expected) => {
-      expect(shouldRenderIndividualFurnitureModel({
-        leanRendering,
-        inspected,
-        instanced,
-        instancingFailed,
-      })).toBe(expected);
+    "inspected=%s instanced=%s failed=%s renders=%s",
+    (inspected, instanced, instancingFailed, expected) => {
+      expect(shouldRenderIndividualFurnitureModel({ inspected, instanced, instancingFailed }))
+        .toBe(expected);
     },
   );
 });

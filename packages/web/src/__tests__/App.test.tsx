@@ -61,6 +61,7 @@ function catalogueId(slug: string): string {
 describe("App", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.stubGlobal("devicePixelRatio", 2);
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       writable: true,
@@ -73,6 +74,7 @@ describe("App", () => {
     usePlacementStore.setState({ placedItems: [] });
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("renders without crashing", () => {
@@ -93,11 +95,11 @@ describe("App", () => {
     expect(props["frameloop"]).toBe("demand");
   });
 
-  it("caps DPR at [0.75, 0.75] to preserve the 60fps desktop frame budget", () => {
+  it("passes native device resolution to the first planner canvas frame", () => {
     CanvasMock.mockClear();
     render(<App />);
     const props = getCanvasProps();
-    expect(props["dpr"]).toEqual([0.75, 0.75]);
+    expect(props["dpr"]).toBe(2);
   });
 
   it("renders the generated-stand-in disclosure outside the Canvas for instanced furniture", () => {
@@ -111,14 +113,12 @@ describe("App", () => {
       .toBe("AI-generated furniture proxy · visual stand-in · not measured");
   });
 
-  it("keeps R3F performance regression metadata available without changing the fixed canvas DPR", () => {
+  it("does not install a performance override that reduces planner resolution", () => {
     CanvasMock.mockClear();
     render(<App />);
     const props = getCanvasProps();
-    const performance = props["performance"] as Record<string, unknown>;
-    expect(typeof performance["min"]).toBe("number");
-    expect(performance["min"] as number).toBeGreaterThan(0);
-    expect(performance["min"] as number).toBeLessThan(1);
+    expect(props["performance"]).toBeUndefined();
+    expect(props["dpr"]).toBe(2);
   });
 
   it("requests high-performance GPU preference", () => {

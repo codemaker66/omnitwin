@@ -18,7 +18,7 @@
 // those (see #11/#12/#13/#14).
 //
 // It is NOT the pattern for render DECISIONS. Those are exported pure
-// predicates — shouldUseLeanPlannerFurniture, visibleConstraintViolationIds,
+// predicates — shouldLimitPlannerFurnitureOverlays, visibleConstraintViolationIds,
 // plannerFurnitureRenderPartition, shouldRenderIndividualFurnitureModel — and
 // are executed for real in placed-furniture-lean-rules.test.ts and
 // PlacedFurniture.generated-proxy.test.ts. Assertions in this file should pin
@@ -116,31 +116,12 @@ describe("PlacedFurniture (#15) — memoization tripwire", () => {
     expect(codeOnly).toContain("if (prev !== null && newlyClothed !== null)");
   });
 
-  it("uses a lean instanced furniture layer for mobile and tablet planner canvases", async () => {
+  it("keeps compact/motion annotation budgeting separate from model and dressing fidelity", async () => {
     const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toContain("shouldUseLeanPlannerFurniture");
-    expect(codeOnly).toContain("LEAN_PLANNER_FURNITURE_MIN_VIEWPORT_WIDTH");
-    expect(codeOnly).toContain("function LeanFurnitureLayer");
-    // Wiring only — the decisions themselves are unit-tested against the
-    // exported predicates in placed-furniture-lean-rules.test.ts. The lean
-    // layer must receive the PARTITIONED list: `placedItems` would redraw the
-    // inspected hierarchy that plannerFurnitureRenderPartition just excluded.
-    expect(codeOnly).toMatch(/<LeanFurnitureLayer\s+items=\{leanItems\}/);
+    expect(codeOnly).toContain("shouldLimitPlannerFurnitureOverlays");
+    expect(codeOnly).toContain("renderNamePlate={canRenderNameplate(placed.id)}");
     expect(codeOnly).toMatch(/renderModel=\{\s*shouldRenderIndividualFurnitureModel\(/);
-  });
-
-  it("keeps the lean mobile/tablet furniture path on unlit materials", async () => {
-    const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toContain("new MeshBasicMaterial");
-    expect(codeOnly).not.toContain("new MeshStandardMaterial");
-  });
-
-  it("limits lean mobile/tablet detail layers and nameplates to focused items", async () => {
-    const { codeOnly } = await readSource(SRC);
-    expect(codeOnly).toContain("canRenderLeanItemDetail");
-    expect(codeOnly).toContain("!useLeanFurniture || selectedIds.has(placedId) || cameraReferenceItemIds.has(placedId)");
-    expect(codeOnly).toContain("renderDetailLayers={canRenderLeanItemDetail(placed.id)}");
-    expect(codeOnly).toContain("renderNamePlate={canRenderLeanItemDetail(placed.id)}");
+    // Mount/width/motion behavior is exercised by PlacedFurniture.fidelity.test.tsx.
   });
 
   it("caps mobile/tablet constraint warning skins while preserving selected warnings first", async () => {
