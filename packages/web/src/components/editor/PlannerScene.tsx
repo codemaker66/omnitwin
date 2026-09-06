@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactElement } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { GRAND_HALL_RENDER_DIMENSIONS, scaleForRendering } from "../../constants/scale.js";
 import { PlannerCanvasBoundary } from "../PlannerCanvasBoundary.js";
-import type { AdaptiveResolutionOptions } from "../AdaptiveResolution.js";
 import { CameraRig } from "../CameraRig.js";
 import { InteriorCamera } from "../rooms/InteriorCamera.js";
 import { roomSplatBundle, walkPoseForBundle } from "../../data/room-splat-bundles.js";
@@ -51,40 +50,25 @@ import { CockpitSceneOverlays } from "./CockpitSceneOverlays.js";
 import { CockpitEvidenceBeam } from "./CockpitEvidenceBeam.js";
 import { CockpitCameraFocus } from "./CockpitCameraFocus.js";
 import { CockpitPlanningCamera } from "./CockpitPlanningCamera.js";
+import { readNativePlannerPixelRatio, serverPlannerPixelRatio, subscribeNativePlannerPixelRatio } from "../../lib/planner-resolution-policy.js";
 
 /**
  * Computes render dimensions from room geometry polygon data.
  * Falls back to Grand Hall dimensions if no space is loaded.
  */
-export const LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH = 1099;
-export const PHONE_PLANNER_DPR = 0.75;
-export const TABLET_PLANNER_DPR = 0.75;
-export const DESKTOP_PLANNER_DPR = 0.75;
-export const PLANNER_CANVAS_PERFORMANCE = {
-  min: 0.25,
-  debounce: 180,
-} as const;
+const COMPACT_PLANNER_MAX_VIEWPORT_WIDTH = 1099;
 const CAMERA_INTERACTION_SETTLE_MS = 420;
 
 export interface PlannerCanvasGlOptions {
   readonly antialias: boolean;
   readonly powerPreference: "high-performance";
-  /** Dev-only capture aid; see plannerCanvasGlForViewportWidth. */
+  /** Dev-only capture aid; see plannerCanvasGlOptions. */
   readonly preserveDrawingBuffer: boolean;
 }
 
-export function plannerCanvasDprForViewportWidth(viewportWidth: number): [number, number] {
-  if (viewportWidth > 480 && viewportWidth <= LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH) {
-    return [TABLET_PLANNER_DPR, TABLET_PLANNER_DPR];
-  }
-  return viewportWidth <= LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH
-    ? [PHONE_PLANNER_DPR, PHONE_PLANNER_DPR]
-    : [DESKTOP_PLANNER_DPR, DESKTOP_PLANNER_DPR];
-}
-
-export function plannerCanvasGlForViewportWidth(viewportWidth: number): PlannerCanvasGlOptions {
+export function plannerCanvasGlOptions(): PlannerCanvasGlOptions {
   return {
-    antialias: viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH,
+    antialias: true,
     powerPreference: "high-performance",
     // Dev-only capture aid (?capture=1): keep the drawing buffer so evidence
     // harnesses can read the canvas back with toDataURL. A settled demand-loop
@@ -97,21 +81,12 @@ export function plannerCanvasGlForViewportWidth(viewportWidth: number): PlannerC
   };
 }
 
-export function plannerAdaptiveResolutionForViewportWidth(viewportWidth: number): AdaptiveResolutionOptions {
-  const [minDpr, maxDpr] = plannerCanvasDprForViewportWidth(viewportWidth);
-  return {
-    enabled: false,
-    minDpr,
-    maxDpr,
-  };
-}
-
 export function shouldUseSmoothPlannerControls(viewportWidth: number): boolean {
-  return viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH;
+  return viewportWidth > COMPACT_PLANNER_MAX_VIEWPORT_WIDTH;
 }
 
 export function shouldRenderPlannerSceneOverlays(viewportWidth: number): boolean {
-  return viewportWidth > LEAN_PLANNER_DPR_MAX_VIEWPORT_WIDTH;
+  return viewportWidth > COMPACT_PLANNER_MAX_VIEWPORT_WIDTH;
 }
 
 function readViewportWidth(): number {
@@ -229,32 +204,6 @@ function useRoomDimensions(): SpaceDimensions {
   }, [space]);
 }
 
-/**
- * Trades resolution for smoothness while the camera is being driven.
- *
- * Spark re-sorts every gaussian whenever the camera moves, so with a captured
- * room mounted the expensive frames are exactly the ones during orbit, pan and
- * wheel zoom. Motion hides softness; stillness is when detail gets looked at —
- * so drop to `motionDpr` while the cockpit reports camera interaction and
- * restore `settledDpr` when it stops. Walk mode manages its own budget in
- * InteriorCamera, and a mesh-only scene is cheap enough not to bother.
- */
-function PlannerAdaptiveResolution({ active }: { readonly active: boolean }): null {
-  const gl = useThree((state) => state.gl);
-  const invalidate = useThree((state) => state.invalidate);
-  useEffect(() => {
-    gl.setPixelRatio(active ? PLANNER_MOTION_DPR : PLANNER_SETTLED_DPR);
-    invalidate();
-    return () => {
-      gl.setPixelRatio(PLANNER_SETTLED_DPR);
-    };
-  }, [gl, invalidate, active]);
-  return null;
-}
-
-const PLANNER_SETTLED_DPR = 0.75;
-const PLANNER_MOTION_DPR = 0.5;
-
 /** How long after the last wheel tick the camera counts as still driving —
  *  long enough to cover the rig's inertial zoom coast. */
 const WHEEL_INTERACTION_SETTLE_MS = 450;
@@ -270,8 +219,8 @@ export function PlannerScene(): ReactElement {
   const configId = useEditorStore((s) => s.configId);
   const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
   const viewportWidth = usePlannerViewportWidth();
-  const canvasDpr = useMemo(() => plannerCanvasDprForViewportWidth(viewportWidth), [viewportWidth]);
-  const canvasGl = useMemo(() => plannerCanvasGlForViewportWidth(viewportWidth), [viewportWidth]);
+  const canvasDpr = useSyncExternalStore(subscribeNativePlannerPixelRatio, readNativePlannerPixelRatio, serverPlannerPixelRatio);
+  const canvasGl = useMemo(plannerCanvasGlOptions, []);
   const smoothCameraControls = shouldUseSmoothPlannerControls(viewportWidth);
   const renderSceneOverlays = shouldRenderPlannerSceneOverlays(viewportWidth);
   // Memoized like useRoomDimensions above: the generic floorPlanOutline path
@@ -294,7 +243,6 @@ export function PlannerScene(): ReactElement {
   // it went); a capture without it has no honest spawn point, so the toggle
   // stays off rather than guessing one.
   const walkMode = useCockpitStore((s) => s.walkMode);
-  const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
   const walkBundle = useMemo(
     () => (roomSlug !== null ? roomSplatBundle(roomSlug) : null),
     [roomSlug],
@@ -468,7 +416,6 @@ export function PlannerScene(): ReactElement {
         <Canvas
           frameloop="demand"
           dpr={canvasDpr}
-          performance={PLANNER_CANVAS_PERFORMANCE}
           gl={canvasGl}
           camera={{ fov: 55, near: 0.1, far: 200 }}
           style={{ width: "100%", height: "100%" }}
@@ -516,9 +463,6 @@ export function PlannerScene(): ReactElement {
           <SelectionSystem />
           <FurnitureMotion />
           <PlannerMotionOverlayLayers renderSceneOverlays={renderSceneOverlays} />
-          <PlannerAdaptiveResolution
-            active={cameraInteractionActive && splatActive && !walkMode}
-          />
           <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} />
           {walkMode && walkData !== null && !walkCameraDisabled && !captureFailed && (
             <InteriorCamera
@@ -531,15 +475,9 @@ export function PlannerScene(): ReactElement {
               touchLookEnabled={plannerTouchLookEnabled}
               keyboardNavigationEnabled={plannerKeyboardNavigationEnabled}
               reducedMotion={prefersReducedMotion()}
-              // Walk holds the planner's own 0.75 budget on BOTH sides:
-              // raising resolution at walk entry means a drawing-buffer resize
-              // racing Spark's first walk frame, which intermittently wedges
-              // the GL thread on slow GPUs (observed as an evaluate-starving
-              // native hang; the store-driven bisect without the resize passed
-              // repeatedly). The /room walkthrough keeps its raise — its
-              // canvas is created at that size, so it never resizes mid-scene.
-              settledDpr={0.75}
-              motionDpr={0.75}
+              // Canvas owns native resolution from its first frame. Switching
+              // camera modes must not resize or restore an older drawing buffer.
+              managePixelRatio={false}
             />
           )}
           {import.meta.env.DEV && <PerfMonitor />}

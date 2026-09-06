@@ -19,11 +19,17 @@ const fiber = vi.hoisted(() => {
     position: { set: () => undefined },
     rotation: { order: "XYZ", set: () => undefined },
   };
-  const gl = { domElement: canvas, getPixelRatio: () => 1, setPixelRatio: () => undefined };
+  let pixelRatio = 1;
+  const gl = {
+    domElement: canvas,
+    getPixelRatio: () => pixelRatio,
+    setPixelRatio: vi.fn((value: number) => { pixelRatio = value; }),
+  };
   const state = { camera, gl, invalidate: () => undefined };
   return {
     frames,
     canvas,
+    gl,
     useThree: (selector: (s: typeof state) => unknown) => selector(state),
     useFrame: (callback: (state: unknown, delta: number) => void) => {
       frames.push(callback);
@@ -191,6 +197,44 @@ describe("InteriorCamera wheel", () => {
     const travelled = Math.abs((window.__roomCamera?.position[2] ?? 0) - before);
     expect(travelled).toBeGreaterThan(0.3);
     expect(travelled).toBeLessThan(1);
+  });
+});
+
+describe("InteriorCamera canvas-owned resolution", () => {
+  beforeEach(() => {
+    fiber.frames.length = 0;
+    fiber.gl.setPixelRatio(2);
+    fiber.gl.setPixelRatio.mockClear();
+  });
+  afterEach(() => { cleanup(); });
+
+  it("never resizes the canvas at rest, in motion, or after a display change and unmount", () => {
+    const { unmount } = render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} managePixelRatio={false} />);
+    frame();
+    pointer("pointerdown", 800, 450);
+    pointer("pointermove", 1000, 450);
+    frame(2);
+    pointer("pointerup", 1000, 450);
+    frame(240);
+    expect(fiber.gl.setPixelRatio).not.toHaveBeenCalled();
+
+    // Model the sole Canvas owner reacting to a different native display DPR.
+    fiber.gl.setPixelRatio(3);
+    fiber.gl.setPixelRatio.mockClear();
+    unmount();
+    expect(fiber.gl.getPixelRatio()).toBe(3);
+    expect(fiber.gl.setPixelRatio).not.toHaveBeenCalled();
+  });
+
+  it("preserves standalone camera resolution changes and restores its mount value", () => {
+    const { unmount } = render(<InteriorCamera spawn={SPAWN} bounds={BOUNDS} settledDpr={2} motionDpr={1} />);
+    frame();
+    pointer("pointerdown", 800, 450);
+    pointer("pointermove", 1000, 450);
+    frame();
+    expect(fiber.gl.getPixelRatio()).toBe(1);
+    unmount();
+    expect(fiber.gl.getPixelRatio()).toBe(2);
   });
 });
 

@@ -59,9 +59,7 @@ function mockSplat(overrides: {
 
 const {
   PlannerScene,
-  plannerAdaptiveResolutionForViewportWidth,
-  plannerCanvasDprForViewportWidth,
-  plannerCanvasGlForViewportWidth,
+  plannerCanvasGlOptions,
   shouldRenderPlannerSceneOverlays,
   shouldUseSmoothPlannerControls,
 } = await import("../PlannerScene.js");
@@ -85,56 +83,30 @@ afterEach(() => {
 });
 
 describe("PlannerScene", () => {
+  it("starts at native device resolution on a compact viewport", () => {
+    const oldDpr = window.devicePixelRatio;
+    const oldWidth = window.innerWidth;
+    Object.defineProperty(window, "devicePixelRatio", { value: 3, configurable: true });
+    Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
+    try {
+      const { getByTestId } = render(<PlannerScene />);
+      expect(getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("3");
+    } finally {
+      Object.defineProperty(window, "devicePixelRatio", { value: oldDpr, configurable: true });
+      Object.defineProperty(window, "innerWidth", { value: oldWidth, configurable: true });
+    }
+  });
+
   it("mounts an R3F canvas host", () => {
     const { container, getByTestId } = render(<PlannerScene />);
     expect(container.querySelector(".planner-scene-canvas-host")).not.toBeNull();
     expect(getByTestId("r3f-canvas")).toBeTruthy();
   });
 
-  it("caps planner canvas DPR across mobile, tablet, and desktop viewports", () => {
-    expect(plannerCanvasDprForViewportWidth(390)).toEqual([0.75, 0.75]);
-    expect(plannerCanvasDprForViewportWidth(768)).toEqual([0.75, 0.75]);
-    expect(plannerCanvasDprForViewportWidth(1024)).toEqual([0.75, 0.75]);
-    expect(plannerCanvasDprForViewportWidth(1440)).toEqual([0.75, 0.75]);
-  });
-
-  it("keeps adaptive DPR disabled during planner camera movement to avoid renderer resize stalls", () => {
-    expect(plannerAdaptiveResolutionForViewportWidth(390)).toEqual({
-      enabled: false,
-      minDpr: 0.75,
-      maxDpr: 0.75,
-    });
-    expect(plannerAdaptiveResolutionForViewportWidth(768)).toEqual({
-      enabled: false,
-      minDpr: 0.75,
-      maxDpr: 0.75,
-    });
-    expect(plannerAdaptiveResolutionForViewportWidth(1440)).toEqual({
-      enabled: false,
-      minDpr: 0.75,
-      maxDpr: 0.75,
-    });
-  });
-
-  it("disables planner canvas antialiasing on mobile and tablet viewports", () => {
+  it("enables planner canvas antialiasing independent of viewport width", () => {
     // preserveDrawingBuffer is the C2 dev-only capture aid (?capture=1);
     // outside that flag it is always the explicit false below.
-    expect(plannerCanvasGlForViewportWidth(390)).toEqual({
-      antialias: false,
-      powerPreference: "high-performance",
-      preserveDrawingBuffer: false,
-    });
-    expect(plannerCanvasGlForViewportWidth(768)).toEqual({
-      antialias: false,
-      powerPreference: "high-performance",
-      preserveDrawingBuffer: false,
-    });
-    expect(plannerCanvasGlForViewportWidth(1024)).toEqual({
-      antialias: false,
-      powerPreference: "high-performance",
-      preserveDrawingBuffer: false,
-    });
-    expect(plannerCanvasGlForViewportWidth(1440)).toEqual({
+    expect(plannerCanvasGlOptions()).toEqual({
       antialias: true,
       powerPreference: "high-performance",
       preserveDrawingBuffer: false,
@@ -217,6 +189,33 @@ function readyGrandHall(): void {
 }
 
 describe("PlannerScene interior arrival", () => {
+  it("keeps native resolution across camera motion, layer changes, progress and remount", () => {
+    const oldDpr = window.devicePixelRatio;
+    Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
+    try {
+      chooseGrandHall(); readyGrandHall();
+      const mounted = render(<PlannerScene />);
+      expect(mounted.getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("2");
+      act(() => { useCockpitStore.getState().setWalkMode(false); });
+      act(() => { useCockpitStore.getState().setCameraInteractionActive(true); });
+      act(() => { useCockpitStore.getState().setLayerMode("hybrid"); });
+      arrivals.loadedCount = 1;
+      mounted.rerender(<PlannerScene />);
+      expect(mounted.getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("2");
+      mounted.unmount();
+      const remounted = render(<PlannerScene />);
+      expect(remounted.getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("2");
+      // A display-density change is deliberate and is distinct from a camera transition.
+      act(() => {
+        Object.defineProperty(window, "devicePixelRatio", { value: 1.25, configurable: true });
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(remounted.getByTestId("r3f-canvas").getAttribute("data-dpr")).toBe("1.25");
+    } finally {
+      Object.defineProperty(window, "devicePixelRatio", { value: oldDpr, configurable: true });
+    }
+  });
+
   it("enters captured interior once after capability, preserving explicit choice through progress/remount", () => {
     chooseGrandHall();
     mockSplat({ roomSlug: "grand-hall", status: "loading" });

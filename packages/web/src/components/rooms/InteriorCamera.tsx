@@ -95,16 +95,17 @@ export interface InteriorCameraProps {
   readonly touchLookEnabled?: () => boolean;
   /** Editing tools can reserve keyboard navigation independently of looking. */
   readonly keyboardNavigationEnabled?: () => boolean;
+  /** Disable when the host Canvas owns resolution throughout camera changes. */
+  readonly managePixelRatio?: boolean;
   readonly bounds: Bounds;
   /** Ceiling height above the floor, so the pitch limit can suit the room. */
   readonly roomHeightM?: number;
   /**
    * Pixel ratio while the view is settled / in motion.
    *
-   * The walkthrough page keeps the defaults (full detail at rest, 1 while
-   * driving). The planner passes its own budget: its canvas normally runs at
-   * 0.75 and must get that exact value back when walk mode ends — which the
-   * unmount restore below guarantees.
+   * The standalone walkthrough keeps its existing defaults (full detail at
+   * rest, 1 while driving). These values apply only with managePixelRatio=true;
+   * the planner's host Canvas owns resolution instead.
    */
   readonly settledDpr?: number;
   readonly motionDpr?: number;
@@ -130,6 +131,7 @@ export function InteriorCamera({
   ownsCamera,
   touchLookEnabled,
   keyboardNavigationEnabled,
+  managePixelRatio = true,
 }: InteriorCameraProps): ReactElement {
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
@@ -154,9 +156,10 @@ export function InteriorCamera({
   }, [roomHeightM, spawn]);
 
   useEffect(() => {
+    if (!managePixelRatio) return undefined;
     const mountDpr = gl.getPixelRatio();
     return () => { gl.setPixelRatio(mountDpr); };
-  }, [gl]);
+  }, [gl, managePixelRatio]);
 
   // Wake the demand loop the moment this camera takes over. Its useFrame is
   // what teleports the view to the spawn — and useFrame cannot run while the
@@ -418,10 +421,12 @@ export function InteriorCamera({
     // moves continuously turns an occasional cost into a per-frame one. Drop
     // resolution while the viewer is driving and restore it once they stop:
     // motion hides the softness, and stillness is when detail gets looked at.
-    const wantedDpr = settled
-      ? (settledDpr ?? Math.min(window.devicePixelRatio, 2))
-      : motionDpr;
-    if (gl.getPixelRatio() !== wantedDpr) gl.setPixelRatio(wantedDpr);
+    if (managePixelRatio) {
+      const wantedDpr = settled
+        ? (settledDpr ?? Math.min(window.devicePixelRatio, 2))
+        : motionDpr;
+      if (gl.getPixelRatio() !== wantedDpr) gl.setPixelRatio(wantedDpr);
+    }
 
     // Sustain the loop while anything is resolving, and let it stop when
     // nothing is — which is what keeps an idle room off the GPU entirely.
