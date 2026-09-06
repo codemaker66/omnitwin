@@ -1,0 +1,11 @@
+# Demo Truth Mode widget: keep blueprint controls accessible
+
+Base: `63150e0601427c877f91c36cda5e5d73b445ddcf`. Branch: `codex/demo-widget-placement`. Worktree: `D:/claude/venviewer-demo-widget-placement-20260906`.
+
+The real 1600 × 1000 planner rehearsal found the Truth Mode widget covering the 2D guest-increase button. Playwright's real click was intercepted; no forced click was used. Minimizing the widget through its visible control proved the seat/guest logic worked, but that workaround did not qualify the placement.
+
+The Truth Mode widget now includes the existing blueprint header, left and right sidebars, and status footer in its measured avoidance list. `FloatingWidgetFrame` already clamps default and stored positions against these visible rectangles, including its existing padding. No new positioning algorithm, arbitrary fixed offset, loading UI, or persistent preference reset was introduced. Outside the blueprint these absent selectors have no effect.
+
+Two regressions exercise the actual frame with the recorded desktop geometry, for both default placement and the stored overlapping location. Both failed before the four-selector change (expected192 to be at least272); both pass after it. The Truth Mode and FloatingWidgetFrame suites pass **21/21**. Web TypeScript and changed-file ESLint pass. Independent review found no blocker. Combined bundle build and real-browser acceptance belong to the coordinating renderer follow-up; they are not claimed by these CPU checks.
+
+The original browser failure and screenshot remain under `D:/claude/demo-rehearsal-20260906/seating-check/`. This is a bounded control-access fix; it does not close the other overlapping controls, mobile/device qualification, complete demo journey or founder visual acceptance. Nothing was merged, pushed or deployed.

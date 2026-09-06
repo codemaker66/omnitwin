@@ -27,6 +27,10 @@ const DEFAULT_PLACEMENT: FloatingWidgetPlacement = {
 };
 
 const AVOID_SELECTORS = [
+  ".bp-chrome",
+  ".bp-left",
+  ".bp-right",
+  ".bp-status-bar",
   ".planner-status-header",
   ".cockpit-layer-controls",
   "[data-testid='planner-toolbar']",

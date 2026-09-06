@@ -171,6 +171,60 @@ describe("TruthModeIndicator", () => {
     expect(screen.getByText(/Open the Evidence lens/i)).toBeTruthy();
   });
 
+  it.each(["default", "stored"] as const)("keeps %s desktop placement clear of the live blueprint guest controls", async (placement) => {
+    const storageKey = "venviewer:floating-widget:truth-mode-indicator:planner-truth-mode-v1:v2";
+    const originalRect = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "getBoundingClientRect");
+    const originalWidth = Object.getOwnPropertyDescriptor(window, "innerWidth");
+    const originalHeight = Object.getOwnPropertyDescriptor(window, "innerHeight");
+    window.localStorage.removeItem(storageKey);
+    if (placement === "stored") {
+      window.localStorage.setItem(storageKey, JSON.stringify({ left: 192, top: 245, minimized: false }));
+    }
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1600 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: function getBoundingClientRect(this: HTMLElement): DOMRect {
+        if (this.classList.contains("bp-left")) return new DOMRect(0, 36, 260, 902);
+        if (this.classList.contains("bp-right")) return new DOMRect(1340, 36, 260, 902);
+        if (this.classList.contains("bp-chrome")) return new DOMRect(0, 0, 1600, 36);
+        if (this.classList.contains("bp-status-bar")) return new DOMRect(0, 938, 1600, 62);
+        if (this.dataset["floatingWidgetId"] === "truth-mode-indicator") {
+          return new DOMRect(0, 0, 342, 109);
+        }
+        return new DOMRect(0, 0, 0, 0);
+      },
+    });
+    try {
+      render(
+        <>
+          <div className="bp-chrome">Grand Hall</div>
+          <aside className="bp-left"><button type="button">Increase guest count</button></aside>
+          <aside className="bp-right">Selected table</aside>
+          <div className="bp-status-bar">Seats placed 144</div>
+          <TruthModeIndicator summary={buildProceduralTruthSummary({ surface: "planner_2d", placedObjectCount: 162, measuredRuntimeAssetsLoaded: false })} />
+        </>,
+      );
+      await waitFor(() => {
+        const transform = screen.getByTestId("truth-mode-indicator").style.transform;
+        const match = transform.match(/translate3d\(([\d.-]+)px,\s*([\d.-]+)px,/);
+        expect(match).not.toBeNull();
+        const left = Number(match?.[1]);
+        const top = Number(match?.[2]);
+        expect(left).toBeGreaterThanOrEqual(272);
+        expect(left + 342).toBeLessThanOrEqual(1328);
+        expect(top).toBeGreaterThanOrEqual(48);
+        expect(top + 109).toBeLessThanOrEqual(926);
+      });
+    } finally {
+      cleanup();
+      window.localStorage.removeItem(storageKey);
+      if (originalRect !== undefined) Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", originalRect);
+      if (originalWidth !== undefined) Object.defineProperty(window, "innerWidth", originalWidth);
+      if (originalHeight !== undefined) Object.defineProperty(window, "innerHeight", originalHeight);
+    }
+  });
+
   it("is gated in production unless the query param is present", () => {
     expect(isTruthModeUiEnabled(new URLSearchParams(), false)).toBe(false);
     expect(isTruthModeUiEnabled(new URLSearchParams("truth=1"), false)).toBe(true);
