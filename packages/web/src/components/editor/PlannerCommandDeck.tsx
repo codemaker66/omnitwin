@@ -18,7 +18,7 @@ import {
   Utensils,
 } from "lucide-react";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../lib/catalogue.js";
-import { buildShowcaseTour } from "../../lib/camera-tour.js";
+import { buildPlannerShowcaseTour } from "../../lib/planner-showcase.js";
 import { canRedo, canUndo, redoLabel, undoLabel, type EditorHistory } from "../../lib/editor-history.js";
 import { dispatchPlannerToolbarCommand } from "../../lib/planner-toolbar-events.js";
 import { useBookmarkStore } from "../../stores/bookmark-store.js";
@@ -146,6 +146,14 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
   const snapEnabled = usePlacementStore((s) => s.snapEnabled);
   const history = useEditorStore((s) => s.history);
   const plannedGuestCount = useCockpitStore((s) => s.plannedGuestCount);
+  const sceneSource = useCockpitStore((s) => s.sceneSource);
+  const layerMode = useCockpitStore((s) => s.layerMode);
+  const space = useEditorStore((s) => s.space);
+  const configId = useEditorStore((s) => s.configId);
+  const dimensions = useRoomDimensionsStore((s) => s.dimensions);
+  const showcaseTour = useMemo(() => buildPlannerShowcaseTour({
+    dimensions, configId, spaceId: space?.id ?? null, roomSlug: space?.slug ?? null, layerMode, sceneSource,
+  }), [dimensions, configId, space?.id, space?.slug, layerMode, sceneSource]);
 
   const selectedItems = useMemo(
     () => placedItems.filter((item) => selectedIds.has(item.id)),
@@ -374,11 +382,11 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
       {
         id: "showcase",
         label: "Showcase",
-        ariaLabel: "Play a cinematic fly-through of the room",
+        ariaLabel: showcaseTour === null ? "Showcase is unavailable for this room view" : "Play a cinematic fly-through of the room",
         icon: <Clapperboard size={16} aria-hidden="true" />,
+        disabled: showcaseTour === null,
         onClick: () => {
-          const dimensions = useRoomDimensionsStore.getState().dimensions;
-          useBookmarkStore.getState().startTour(buildShowcaseTour(dimensions));
+          if (showcaseTour !== null) useBookmarkStore.getState().startTour(showcaseTour);
         },
       },
     ];
@@ -439,6 +447,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     selectedLinenTableIds,
     selectedTableIds,
     snapEnabled,
+    showcaseTour,
     tableCount,
   ]);
 

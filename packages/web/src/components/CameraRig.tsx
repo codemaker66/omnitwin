@@ -14,6 +14,8 @@ import { useSelectionStore } from "../stores/selection-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
 import { sampleTransition } from "../lib/camera-animation.js";
 import { sampleCameraTour } from "../lib/camera-tour.js";
+import { applyCameraTourPose } from "../lib/camera-tour-controls.js";
+import { finishPlannerShowcaseTour, plannerShowcaseStillCurrent } from "../lib/planner-showcase.js";
 import {
   HUMAN_POV_TARGET_DISTANCE_M,
   computeHumanPovLookAngles,
@@ -174,7 +176,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     [stableDimensions, aspect],
   );
   useEffect(() => {
-    if (humanPovActiveRef.current || walkActiveRef.current) return;
+    if (humanPovActiveRef.current || walkActiveRef.current || useBookmarkStore.getState().tour !== null) return;
     const [x, y, z] = computeDefaultCameraPosition(stableDimensions, aspect);
     camera.position.set(x, y, z);
     camera.lookAt(target[0], target[1], target[2]);
@@ -326,7 +328,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
       // Escape cancels a cinematic tour and hands control straight back.
       if (event.code === "Escape" && store.tour !== null) {
         event.preventDefault();
-        store.clearTour();
+        finishPlannerShowcaseTour(store.tour);
         invalidateRef.current();
         return;
       }
@@ -535,14 +537,16 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     // a bookmark transition). It samples the eased multi-keyframe path each
     // frame and hands control back when the tour completes.
     if (store.tour !== null) {
-      controls.enabled = false;
+      if (!plannerShowcaseStillCurrent(store.tour)) {
+        finishPlannerShowcaseTour(store.tour);
+        invalidate();
+        return;
+      }
       const { position, target, done } = sampleCameraTour(store.tour);
-      camera.position.set(position[0], position[1], position[2]);
-      controls.target.set(target[0], target[1], target[2]);
-      controls.update();
+      applyCameraTourPose(camera, controls, { position, target });
       if (done) {
-        store.clearTour();
-        controls.enabled = true;
+        finishPlannerShowcaseTour(store.tour);
+        controls.enabled = !useCockpitStore.getState().walkMode;
       } else {
         store.updateTour(frameDelta);
         invalidate();
