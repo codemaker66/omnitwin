@@ -76,7 +76,9 @@ describe("RoomMesh", () => {
     expect(source).toContain("useLeanRoomShell ? (");
     expect(source).toContain("<meshBasicMaterial");
     expect(source).toContain("{!useLeanRoomShell && geometry.features.map");
-    expect(source).toContain("{!useLeanRoomShell && (");
+    // Room-owned lights moved into RoomLighting; the planner's independently
+    // owned lighting is covered by PlannerSceneLighting.test.tsx.
+    expect(source).toContain('{includeLighting && !useLeanRoomShell && <RoomLighting variant="polygon" />}');
   });
 });
 

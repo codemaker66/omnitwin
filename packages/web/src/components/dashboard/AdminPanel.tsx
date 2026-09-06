@@ -7,8 +7,10 @@ import type { PricingRule } from "../../api/pricing.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { ConfirmModal } from "../shared/ConfirmModal.js";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { PolygonEditor } from "./PolygonEditor.js";
 import "./AdminPanel.css";
+import { useLatestRequest } from "../../hooks/use-latest-request.js";
 
 const MIN_POLYGON_POINTS = 3;
 
@@ -151,15 +153,16 @@ function SelectField({ label, value, onChange, children }: SelectFieldProps): Re
 interface StatusPanelProps {
   readonly title: string;
   readonly body: string;
+  readonly active?: boolean;
   readonly actionLabel?: string;
   readonly onAction?: () => void;
 }
 
-function StatusPanel({ title, body, actionLabel, onAction }: StatusPanelProps): ReactElement {
+function StatusPanel({ title, body, active = false, actionLabel, onAction }: StatusPanelProps): ReactElement {
   return (
     <section className="admin-panel-state" role={onAction === undefined ? "status" : "alert"}>
       <p className="admin-panel-kicker">Admin registry</p>
-      <h2>{title}</h2>
+      <h2>{active && <ActivityIndicator size={28} />} {title}</h2>
       <p>{body}</p>
       {actionLabel !== undefined && onAction !== undefined ? (
         <button type="button" className="admin-panel-button admin-panel-button--primary" onClick={onAction}>
@@ -202,6 +205,7 @@ export function AdminPanel(): ReactElement {
   const [deletingSpace, setDeletingSpace] = useState(false);
 
   const [pricingRules, setPricingRules] = useState<PricingRule[]>([]);
+  const [pricingRequests, setPricingRequests] = useState(0);
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [showCreateRule, setShowCreateRule] = useState(false);
   const [creatingRule, setCreatingRule] = useState(false);
@@ -222,6 +226,8 @@ export function AdminPanel(): ReactElement {
     editSpaceHeight.trim() === "" ||
     editSpaceOutline.length < MIN_POLYGON_POINTS;
   const createRuleDisabled = creatingRule || ruleName.trim() === "" || ruleAmount.trim() === "";
+  const venueMutationPending = creatingSpace || updatingSpace || deletingSpace
+    || deletingVenue || creatingRule || deletingRuleId !== null;
 
   const loadVenues = useCallback((): void => {
     setLoading(true);
@@ -239,40 +245,52 @@ export function AdminPanel(): ReactElement {
       });
   }, []);
 
+  const pricingRequest = useLatestRequest();
+  const venueRequest = useLatestRequest();
   const loadPricingRules = useCallback((venueId: string): void => {
+    const ownsRequest = pricingRequest.begin();
     setPricingError(null);
+    setPricingRequests(1);
     void pricingApi.listPricingRules(venueId)
       .then((rules) => {
+        if (!ownsRequest()) return;
         setPricingRules(rules);
       })
       .catch((error: unknown) => {
+        if (!ownsRequest()) return;
         setPricingError(actionError(error, "Pricing rules could not be loaded."));
-      });
-  }, []);
+      })
+      .finally(() => { if (ownsRequest()) setPricingRequests(0); });
+  }, [pricingRequest]);
 
   useEffect(() => {
     loadVenues();
   }, [loadVenues]);
 
   const handleSelectVenue = useCallback((venueId: string): void => {
+    const ownsRequest = venueRequest.begin();
+    pricingRequest.invalidate();
+    setPricingRequests(0);
     setVenueDetailError(null);
     setLoadingVenueId(venueId);
     setPricingRules([]);
     setPricingError(null);
     void spacesApi.getVenue(venueId)
       .then((venue) => {
+        if (!ownsRequest()) return;
         setSelectedVenue(venue);
         loadPricingRules(venue.id);
       })
       .catch((error: unknown) => {
+        if (!ownsRequest()) return;
         const message = actionError(error, "Failed to load venue");
         setVenueDetailError(message);
         addToast(message, "error");
       })
       .finally(() => {
-        setLoadingVenueId(null);
+        if (ownsRequest()) setLoadingVenueId(null);
       });
-  }, [addToast, loadPricingRules]);
+  }, [addToast, loadPricingRules, pricingRequest, venueRequest]);
 
   const handleCreateVenue = async (): Promise<void> => {
     if (createVenueDisabled) return;
@@ -328,6 +346,12 @@ export function AdminPanel(): ReactElement {
     setDeletingVenue(true);
     try {
       await spacesApi.deleteVenue(selectedVenue.id);
+      venueRequest.invalidate();
+      pricingRequest.invalidate();
+      setLoadingVenueId(null);
+      setPricingRequests(0);
+      setPricingRules([]);
+      setPricingError(null);
       addToast("Venue deleted", "success");
       setSelectedVenue(null);
       setShowDeleteVenue(false);
@@ -429,7 +453,7 @@ export function AdminPanel(): ReactElement {
   };
 
   if (loading) {
-    return <StatusPanel title="Loading venues" body="Venue, room, and pricing registry records are loading." />;
+    return <StatusPanel active title="Loading venues" body="Venue, room, and pricing registry records are loading." />;
   }
 
   if (loadError !== null) {
@@ -449,7 +473,12 @@ export function AdminPanel(): ReactElement {
         <button
           type="button"
           className="admin-panel-link"
+          disabled={venueMutationPending}
           onClick={() => {
+            venueRequest.invalidate();
+            pricingRequest.invalidate();
+            setLoadingVenueId(null);
+            setPricingRequests(0);
             setSelectedVenue(null);
           }}
         >
@@ -576,8 +605,9 @@ export function AdminPanel(): ReactElement {
             </div>
           ) : null}
 
+          {pricingRequests > 0 && <ActivityStatus>Loading pricing rules…</ActivityStatus>}
           {pricingRules.length === 0 ? (
-            <div className="admin-panel-empty">No pricing rules configured.</div>
+            pricingRequests === 0 && <div className="admin-panel-empty">No pricing rules configured.</div>
           ) : (
             <div className="admin-panel-table-wrap">
               <table className="admin-panel-table">
@@ -607,11 +637,12 @@ export function AdminPanel(): ReactElement {
                           className="admin-panel-button admin-panel-button--danger-subtle"
                           aria-label={`Delete pricing rule ${rule.name}`}
                           disabled={deletingRuleId !== null}
+                          aria-busy={deletingRuleId === rule.id}
                           onClick={() => {
                             void handleDeleteRule(rule.id);
                           }}
                         >
-                          {deletingRuleId === rule.id ? "Deleting" : "Delete"}
+                          {deletingRuleId === rule.id && <ActivityIndicator size={16} />} {deletingRuleId === rule.id ? "Deleting" : "Delete"}
                         </button>
                       </td>
                     </tr>
@@ -653,7 +684,7 @@ export function AdminPanel(): ReactElement {
                     void handleCreateSpace();
                   }}
                 >
-                  {creatingSpace ? "Creating Space" : "Create Space"}
+                  {creatingSpace && <ActivityIndicator size={18} />} {creatingSpace ? "Creating Space" : "Create Space"}
                 </button>
               </>
             )}
@@ -694,7 +725,7 @@ export function AdminPanel(): ReactElement {
                     void handleCreateRule();
                   }}
                 >
-                  {creatingRule ? "Creating Rule" : "Create Rule"}
+                  {creatingRule && <ActivityIndicator size={18} />} {creatingRule ? "Creating Rule" : "Create Rule"}
                 </button>
               </>
             )}
@@ -727,6 +758,7 @@ export function AdminPanel(): ReactElement {
             title="Delete Venue"
             message={`Delete "${selectedVenue.name}"? Spaces, pricing rules, configurations, and linked loadout references will be permanently removed.`}
             confirmLabel={deletingVenue ? "Deleting" : "Delete"}
+            inFlight={deletingVenue}
             onConfirm={() => {
               void handleDeleteVenue();
             }}
@@ -741,6 +773,7 @@ export function AdminPanel(): ReactElement {
             title="Delete Space"
             message="Delete this space? Associated configurations and loadouts will be removed."
             confirmLabel={deletingSpace ? "Deleting" : "Delete"}
+            inFlight={deletingSpace}
             onConfirm={() => {
               void handleDeleteSpace(deletingSpaceId);
             }}
@@ -778,7 +811,7 @@ export function AdminPanel(): ReactElement {
                     void handleEditSpace();
                   }}
                 >
-                  {updatingSpace ? "Saving Changes" : "Save Changes"}
+                  {updatingSpace && <ActivityIndicator size={18} />} {updatingSpace ? "Saving Changes" : "Save Changes"}
                 </button>
               </>
             )}
@@ -838,7 +871,7 @@ export function AdminPanel(): ReactElement {
               <span className="admin-panel-venue-meta">{venue.address}</span>
               <span className="admin-panel-venue-slug">/{venue.slug}</span>
               <span className="admin-panel-venue-action">
-                {loadingVenueId === venue.id ? "Loading" : "Open venue"}
+                {loadingVenueId === venue.id && <ActivityIndicator size={18} />} {loadingVenueId === venue.id ? "Loading" : "Open venue"}
               </span>
             </button>
           ))}
@@ -872,7 +905,7 @@ export function AdminPanel(): ReactElement {
                   void handleCreateVenue();
                 }}
               >
-                {creatingVenue ? "Creating Venue" : "Create Venue"}
+                {creatingVenue && <ActivityIndicator size={18} />} {creatingVenue ? "Creating Venue" : "Create Venue"}
               </button>
             </>
           )}

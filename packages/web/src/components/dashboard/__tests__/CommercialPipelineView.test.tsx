@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CommercialPipelineView } from "../CommercialPipelineView.js";
 
 const mocks = vi.hoisted(() => ({
@@ -136,6 +136,77 @@ afterEach(() => {
 });
 
 describe("CommercialPipelineView", () => {
+  it("keeps the newest repeated selection loading when an earlier request for that same record settles", async () => {
+    let resolveOld: ((value: unknown) => void) | undefined;
+    let resolveNew: ((value: unknown) => void) | undefined;
+    const oldResponse = new Promise<unknown>((resolve) => { resolveOld = resolve; });
+    const newResponse = new Promise<unknown>((resolve) => { resolveNew = resolve; });
+    mocks.getOpportunity.mockReturnValueOnce(oldResponse).mockReturnValueOnce(newResponse);
+    render(<CommercialPipelineView />);
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+    fireEvent.click(screen.getByTestId("opportunity-opp1"));
+    await act(async () => { resolveOld?.({ opportunity: opportunity({ title: "Outdated record" }), activities: [], tasks: [], proposals: [] }); await oldResponse; });
+    expect(screen.queryByLabelText("Opportunity detail")).toBeNull();
+    expect(screen.getByText("Opening opportunity…")).toBeTruthy();
+    await act(async () => { resolveNew?.({ opportunity: opportunity({ title: "Current record" }), activities: [], tasks: [], proposals: [] }); await newResponse; });
+    expect(screen.getByRole("heading", { name: "Current record" })).toBeTruthy();
+    expect(screen.queryByText("Opening opportunity…")).toBeNull();
+  });
+
+  it.each(["resolve", "reject"] as const)("keeps the latest opportunity when an older request later %ss", async (settlement) => {
+    let resolveOld: ((value: unknown) => void) | undefined;
+    let rejectOld: ((reason: Error) => void) | undefined;
+    const oldResponse = new Promise<unknown>((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    mocks.getPipeline.mockResolvedValue({ opportunities: [opportunity(), opportunity({ id: "opp2", title: "Winter dinner" })], todayTasks: [] });
+    mocks.getOpportunity.mockImplementation((id: string) => id === "opp1" ? oldResponse : Promise.resolve({ opportunity: opportunity({ id: "opp2", title: "Winter dinner" }), activities: [], tasks: [], proposals: [] }));
+    render(<CommercialPipelineView />);
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+    fireEvent.click(screen.getByTestId("opportunity-opp2"));
+    await screen.findByRole("heading", { name: "Winter dinner" });
+    expect(screen.queryByText("Opening opportunity…")).toBeNull();
+    await act(async () => {
+      if (settlement === "resolve") resolveOld?.({ opportunity: opportunity(), activities: [], tasks: [], proposals: [] });
+      else rejectOld?.(new Error("old request failed"));
+      await oldResponse.catch(() => undefined);
+    });
+    expect(screen.getByRole("heading", { name: "Winter dinner" })).toBeTruthy();
+    expect(screen.queryByTestId("opportunity-detail-error")).toBeNull();
+    expect(mocks.addToast).not.toHaveBeenCalled();
+  });
+
+  it("removes the prior opportunity's editable detail while another selection loads", async () => {
+    let resolveNext: ((value: unknown) => void) | undefined;
+    const nextResponse = new Promise<unknown>((resolve) => { resolveNext = resolve; });
+    mocks.getPipeline.mockResolvedValue({ opportunities: [opportunity(), opportunity({ id: "opp2", title: "Winter dinner" })], todayTasks: [] });
+    mocks.getOpportunity.mockResolvedValueOnce({ opportunity: opportunity(), activities: [], tasks: [], proposals: [] }).mockReturnValueOnce(nextResponse);
+    render(<CommercialPipelineView />);
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+    await screen.findByLabelText("Opportunity detail");
+    fireEvent.change(screen.getByLabelText("Activity note"), { target: { value: "A private draft for the first client" } });
+    fireEvent.click(screen.getByTestId("opportunity-opp2"));
+    expect(screen.queryByLabelText("Opportunity detail")).toBeNull();
+    expect(screen.queryByTestId("opportunity-stage")).toBeNull();
+    await act(async () => { resolveNext?.({ opportunity: opportunity({ id: "opp2", title: "Winter dinner" }), activities: [], tasks: [], proposals: [] }); await nextResponse; });
+    expect(screen.getByLabelText<HTMLTextAreaElement>("Activity note").value).toBe("");
+    expect(mocks.updateOpportunity).not.toHaveBeenCalled();
+  });
+
+  it("shows opportunity activity until the selected detail request settles", async () => {
+    let resolveDetail: ((value: unknown) => void) | undefined;
+    const response = new Promise<unknown>((resolve) => { resolveDetail = resolve; });
+    mocks.getOpportunity.mockReturnValue(response);
+    render(<CommercialPipelineView />);
+    fireEvent.click(await screen.findByTestId("opportunity-opp1"));
+
+    expect(screen.getByText("Opening opportunity…")).toBeDefined();
+    await act(async () => {
+      resolveDetail?.({ opportunity: opportunity(), activities: [], tasks: [], proposals: [] });
+      await response;
+    });
+    expect(screen.queryByText("Opening opportunity…")).toBeNull();
+    expect(screen.getByLabelText("Opportunity detail")).toBeDefined();
+  });
+
   it("renders the commercial pipeline board with next action and safe planning language", async () => {
     render(<CommercialPipelineView />);
 
@@ -224,6 +295,7 @@ describe("CommercialPipelineView", () => {
 
     const error = await screen.findByTestId("opportunity-detail-error");
     expect(error.textContent).toContain("Could not load that opportunity");
+    expect(screen.queryByText("Opening opportunity…")).toBeNull();
   });
 
   it("opens opportunity detail, updates stage, completes tasks, and creates a proposal draft", async () => {

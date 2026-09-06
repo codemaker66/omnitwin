@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ProposalsView } from "../ProposalsView.js";
 
 const mocks = vi.hoisted(() => ({
@@ -112,6 +112,102 @@ async function selectFirstProposal(id: string): Promise<void> {
 }
 
 describe("ProposalsView", () => {
+  it("keeps a reply and its destination together until the server confirms the mutation", async () => {
+    let resolveReply: ((value: unknown) => void) | undefined;
+    const response = new Promise<unknown>((resolve) => { resolveReply = resolve; });
+    mocks.listProposals.mockResolvedValue([draftProposal(), draftProposal({ id: "p2", title: "Winter dinner" })]);
+    mocks.postProposalComment.mockReturnValue(response);
+    render(<ProposalsView />);
+    fireEvent.click(await screen.findByTestId("proposal-row-p1"));
+    fireEvent.change(screen.getByTestId("reply-input"), { target: { value: "Reply for the first client" } });
+    fireEvent.click(screen.getByTestId("reply-submit"));
+    expect(screen.getByTestId<HTMLButtonElement>("proposal-row-p2").disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("proposal-row-p2"));
+    expect(screen.getByRole("heading", { name: "Autumn gala" })).toBeTruthy();
+    await act(async () => { resolveReply?.(clientComment({ body: "Reply for the first client" })); await response; });
+    expect(mocks.postProposalComment).toHaveBeenCalledWith("p1", "Reply for the first client");
+    expect(screen.getByTestId<HTMLButtonElement>("proposal-row-p2").disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("proposal-row-p2"));
+    expect(screen.getByRole("heading", { name: "Winter dinner" })).toBeTruthy();
+  });
+
+  it.each(["resolve", "reject"] as const)("keeps proposal B detail when proposal A requests later %ss", async (settlement) => {
+    let resolveOld: ((value: unknown[]) => void) | undefined;
+    let rejectOld: ((reason: Error) => void) | undefined;
+    const oldResponse = new Promise<unknown[]>((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    mocks.listProposals.mockResolvedValue([draftProposal(), draftProposal({ id: "p2", title: "Winter dinner" })]);
+    mocks.getProposalComments.mockImplementation((id: string) => id === "p1" ? oldResponse : Promise.resolve([clientComment({ id: "b-comment", body: "The second client's conversation" })]));
+    mocks.getProposalHistory.mockImplementation((id: string) => id === "p1" ? oldResponse : Promise.resolve([historyEntry({ id: "b-history", proposalId: "p2", note: "Second proposal history" })]));
+    const version = (id: string): Record<string, unknown> => ({
+      id: `version-${id}`, proposalId: id, version: 1, sourceHash: "fixture", createdBy: "u1", createdAt: NOW,
+      payload: { schemaVersion: "venviewer.proposal-version.v1", title: "Proposal version", clientMessage: null, configurationId: null, layoutRevision: null, capacityNote: null, quote: null },
+    });
+    mocks.getLatestProposalVersion.mockImplementation((id: string) => id === "p1" ? oldResponse.then(() => version("p1")) : Promise.resolve(version("p2")));
+    render(<ProposalsView />);
+    fireEvent.click(await screen.findByTestId("proposal-row-p1"));
+    fireEvent.click(screen.getByTestId("proposal-row-p2"));
+    await screen.findByText("The second client's conversation");
+    expect(screen.queryByText("Loading saved proposal content…")).toBeNull();
+    await act(async () => {
+      if (settlement === "resolve") resolveOld?.([]);
+      else rejectOld?.(new Error("Old proposal failed"));
+      await oldResponse.catch(() => undefined);
+    });
+    expect(screen.getByText("The second client's conversation")).toBeTruthy();
+    expect(screen.getByText("Second proposal history")).toBeTruthy();
+    expect(screen.queryByTestId("proposal-history-error")).toBeNull();
+    expect(screen.queryByText("Couldn't load the client conversation.")).toBeNull();
+  });
+
+  it("clears old proposal content immediately while the new selection is loading", async () => {
+    mocks.listProposals.mockResolvedValue([draftProposal(), draftProposal({ id: "p2", title: "Winter dinner" })]);
+    mocks.getProposalComments.mockResolvedValueOnce([clientComment()]).mockReturnValueOnce(new Promise(() => undefined));
+    mocks.getProposalHistory.mockResolvedValueOnce([historyEntry()]).mockReturnValueOnce(new Promise(() => undefined));
+    render(<ProposalsView />);
+    fireEvent.click(await screen.findByTestId("proposal-row-p1"));
+    await screen.findByText("Could we review a later finish time?");
+    fireEvent.click(screen.getByTestId("proposal-row-p2"));
+    expect(screen.queryByText("Could we review a later finish time?")).toBeNull();
+    expect(screen.queryByText("Shared with the client")).toBeNull();
+  });
+
+  it("does not reopen a proposal when its delayed refresh completes after selecting another", async () => {
+    let resolveRefresh: ((value: unknown) => void) | undefined;
+    const response = new Promise<unknown>((resolve) => { resolveRefresh = resolve; });
+    mocks.listProposals.mockResolvedValue([draftProposal(), draftProposal({ id: "p2", title: "Winter dinner" })]);
+    mocks.transitionProposal.mockResolvedValue(draftProposal({ status: "withdrawn" }));
+    mocks.getProposal.mockReturnValue(response);
+    render(<ProposalsView />);
+    fireEvent.click(await screen.findByTestId("proposal-row-p1"));
+    fireEvent.click(screen.getByTestId("withdraw-button"));
+    await waitFor(() => { expect(mocks.getProposal).toHaveBeenCalledWith("p1"); });
+    await waitFor(() => { expect(screen.getByTestId<HTMLButtonElement>("proposal-row-p2").disabled).toBe(false); });
+    fireEvent.click(screen.getByTestId("proposal-row-p2"));
+    await act(async () => { resolveRefresh?.(draftProposal({ status: "withdrawn" })); await response; });
+    expect(screen.getByRole("heading", { name: "Winter dinner" })).toBeTruthy();
+    expect(screen.queryByText("Refreshing proposal details…")).toBeNull();
+  });
+
+  it("shows pending saved content and room guidance without inventing an empty result", async () => {
+    let resolveSpaces: ((spaces: []) => void) | undefined;
+    let rejectVersion: ((reason: Error) => void) | undefined;
+    const spaces = new Promise<[]>((resolve) => { resolveSpaces = resolve; });
+    const version = new Promise<never>((_resolve, reject) => { rejectVersion = reject; });
+    mocks.listSpaces.mockReturnValue(spaces);
+    mocks.getLatestProposalVersion.mockReturnValue(version);
+    mocks.listProposals.mockResolvedValue([draftProposal()]);
+    render(<ProposalsView />);
+    fireEvent.click(await screen.findByTestId("proposal-row-p1"));
+
+    expect(screen.getByText("Loading saved proposal content…")).toBeDefined();
+    expect(screen.getByText("Loading room guidance…")).toBeDefined();
+    expect(screen.queryByText(/no content saved yet/u)).toBeNull();
+    await act(async () => { resolveSpaces?.([]); rejectVersion?.(new Error("404")); await spaces; });
+    await waitFor(() => { expect(screen.queryByText("Loading saved proposal content…")).toBeNull(); });
+    expect(screen.queryByText("Loading room guidance…")).toBeNull();
+    expect(screen.getByText(/no content saved yet/u)).toBeDefined();
+  });
+
   it("lists proposals and shows the empty state when none exist", async () => {
     mocks.listProposals.mockResolvedValue([draftProposal()]);
     render(<ProposalsView />);

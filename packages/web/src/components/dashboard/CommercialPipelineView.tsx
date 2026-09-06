@@ -17,6 +17,8 @@ import { createProposal, type StaffProposal } from "../../api/proposals.js";
 import { parsePoundsToMinor } from "../../lib/money-input.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
+import { ActivityStatus } from "../shared/Activity.js";
+import { useLatestRequest } from "../../hooks/use-latest-request.js";
 
 const STAGES = [
   "new",
@@ -141,6 +143,7 @@ export function CommercialPipelineView(): ReactElement {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [tasks, setTasks] = useState<FollowUpTask[]>([]);
   const [selected, setSelected] = useState<DetailState | null>(null);
+  const [detailRequests, setDetailRequests] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [enquiryId, setEnquiryId] = useState("");
@@ -156,32 +159,47 @@ export function CommercialPipelineView(): ReactElement {
   const [activityError, setActivityError] = useState<string | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const detailRequest = useLatestRequest();
+  const pipelineRequest = useLatestRequest();
 
   const refresh = useCallback(() => {
+    const ownsRequest = pipelineRequest.begin();
     setLoading(true);
     setError(null);
     getPipeline()
       .then((summary) => {
+        if (!ownsRequest()) return;
         setOpportunities(summary.opportunities);
         setTasks(summary.todayTasks);
         setError(null);
       })
-      .catch(() => { setError("Could not load the commercial pipeline. Refresh or try again later."); })
-      .finally(() => { setLoading(false); });
-  }, []);
+      .catch(() => { if (ownsRequest()) setError("Could not load the commercial pipeline. Refresh or try again later."); })
+      .finally(() => { if (ownsRequest()) setLoading(false); });
+  }, [pipelineRequest]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   const reloadSelected = useCallback((id: string) => {
+    const ownsRequest = detailRequest.begin();
+    setSelected(null);
+    setActivityText("");
+    setTaskTitle("");
+    setStageError(null);
+    setTaskError(null);
+    setActivityError(null);
+    setProposalError(null);
     setDetailError(null);
+    setDetailRequests(1);
     getOpportunity(id)
-      .then((detail) => { setSelected(toDetailState(detail)); })
+      .then((detail) => { if (ownsRequest()) setSelected(toDetailState(detail)); })
       .catch(() => {
+        if (!ownsRequest()) return;
         setSelected(null);
         setDetailError("Could not load that opportunity. Retry from the stage card or refresh the pipeline.");
         addToast("Could not load opportunity detail", "error");
-      });
-  }, [addToast]);
+      })
+      .finally(() => { if (ownsRequest()) setDetailRequests(0); });
+  }, [addToast, detailRequest]);
 
   const pipelineValue = useMemo(
     () => opportunities.reduce((sum, opportunity) => sum + opportunity.estimatedValueMinor, 0),
@@ -351,6 +369,7 @@ export function CommercialPipelineView(): ReactElement {
         <section style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 20, color: "#fff7e8" }}>Commercial pipeline</h2>
+            {busy && <ActivityStatus>Updating the commercial pipeline…</ActivityStatus>}
             <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>
               Enquiries become opportunities, proposals, quotes, and client share links. Planning assumptions stay visible.
             </p>
@@ -402,7 +421,7 @@ export function CommercialPipelineView(): ReactElement {
           </div>
         </section>
 
-        {loading && <section style={card}>Loading pipeline...</section>}
+        {loading && <ActivityStatus variant="panel" style={card}>Loading pipeline...</ActivityStatus>}
         {error !== null && (
           <section role="alert" style={{ ...card, color: "#ffb4a2" }}>
             <p style={{ margin: "0 0 10px" }}>{error}</p>
@@ -464,6 +483,7 @@ export function CommercialPipelineView(): ReactElement {
       </div>
 
       <aside style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {detailRequests > 0 && <ActivityStatus>Opening opportunity…</ActivityStatus>}
         <section style={card}>
           <h3 style={{ margin: "0 0 10px", fontSize: 15 }}>Today's follow-ups</h3>
           {tasks.length === 0 ? (

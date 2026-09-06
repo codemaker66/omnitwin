@@ -7,7 +7,7 @@ import type { BoardRange } from "../lib/board-time.js";
 // ---------------------------------------------------------------------------
 // useCalendar (T-493) — fetches the shared read model for the visible range.
 // Aborts stale requests on range change/unmount; background refetches keep
-// the board on screen instead of flashing a skeleton.
+// the current board on screen while reporting the real request separately.
 // ---------------------------------------------------------------------------
 
 export type CalendarStatus = "loading" | "ready" | "error";
@@ -16,6 +16,7 @@ export interface UseCalendarResult {
   readonly data: CalendarResponse | null;
   readonly status: CalendarStatus;
   readonly error: string | null;
+  readonly isRefreshing: boolean;
   readonly refetch: () => void;
 }
 
@@ -24,11 +25,13 @@ export function useCalendar(venueId: string | null, range: BoardRange): UseCalen
   const [status, setStatus] = useState<CalendarStatus>("loading");
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const [fetching, setFetching] = useState(false);
 
   useEffect(() => {
     if (venueId === null) return;
     const controller = new AbortController();
     let cancelled = false;
+    setFetching(true);
     // Keep showing the current board during background refreshes.
     setStatus((previous) => (previous === "ready" ? "ready" : "loading"));
     getCalendar(
@@ -47,6 +50,10 @@ export function useCalendar(venueId: string | null, range: BoardRange): UseCalen
         if (cancelled || controller.signal.aborted) return;
         setError(caught instanceof ApiError ? caught.message : "Unexpected error");
         setStatus("error");
+      })
+      .finally(() => {
+        // A superseded request must not retire the new request's indicator.
+        if (!cancelled) setFetching(false);
       });
     return () => {
       cancelled = true;
@@ -58,5 +65,5 @@ export function useCalendar(venueId: string | null, range: BoardRange): UseCalen
     setRevision((value) => value + 1);
   }, []);
 
-  return { data, status, error, refetch };
+  return { data, status, error, refetch, isRefreshing: fetching && data !== null && venueId !== null };
 }

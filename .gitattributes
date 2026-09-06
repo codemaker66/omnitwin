@@ -14,3 +14,6 @@ docs/specs/omnitwin-foundry-activation-v1-authenticated-evidence-byte-vectors.js
 # on the Linux checkout Vercel builds from, not on the Windows machine that
 # committed them — the failure would be invisible until the audio was live.
 packages/web/public/trades-house-media/voice/*.mp3 -text
+# pnpm's lockfile records dependency patch hashes; keep the same patch bytes
+# on Windows and Linux checkouts.
+patches/**/*.patch text eol=lf

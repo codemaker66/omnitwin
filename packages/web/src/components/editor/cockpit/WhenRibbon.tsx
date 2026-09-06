@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { useSearchParams } from "react-router-dom";
+import { ActivityStatus } from "../../shared/Activity.js";
 import { ApiError } from "../../../api/client.js";
 import { moveBooking } from "../../../api/diary.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
@@ -111,7 +112,7 @@ export function WhenRibbon(): ReactElement | null {
     }),
     [anchorMs, windowDays],
   );
-  const { data, status, refetch } = useCalendar(venueId, range);
+  const { data, status, isRefreshing, refetch } = useCalendar(venueId, range);
   useDiaryLive(venueId !== null, refetch);
 
   const day = useMemo(
@@ -122,6 +123,14 @@ export function WhenRibbon(): ReactElement | null {
     if (data !== null && day === null && windowDays === 7) setWindowDays(90);
   }, [data, day, windowDays]);
 
+  // useCalendar retains the previous response while a new range starts. An
+  // empty narrow response cannot establish that the expanded search is empty.
+  const expandedSearchComplete = windowDays === 90 && data !== null &&
+    data.venueId === venueId &&
+    Date.parse(data.range.from) === range.fromMs &&
+    Date.parse(data.range.to) === range.toMs;
+  const searching = day === null && status !== "error" && !expandedSearchComplete;
+
   if (eventId === null || linked.status !== "loaded" || venueId === null) return null;
 
   return (
@@ -129,6 +138,7 @@ export function WhenRibbon(): ReactElement | null {
       key={eventId}
       day={day}
       calendarStatus={status}
+      calendarRefreshing={isRefreshing || searching}
       writable={writable}
       refetch={refetch}
     />
@@ -139,11 +149,13 @@ export function WhenRibbon(): ReactElement | null {
 function RibbonBody({
   day,
   calendarStatus,
+  calendarRefreshing,
   writable,
   refetch,
 }: {
   readonly day: RibbonDay | null;
   readonly calendarStatus: "loading" | "ready" | "error";
+  readonly calendarRefreshing: boolean;
   readonly writable: boolean;
   readonly refetch: () => void;
 }): ReactElement | null {
@@ -176,6 +188,7 @@ function RibbonBody({
   const [undoable, setUndoable] = useState<UndoState | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [pendingRequests, setPendingRequests] = useState(0);
   const [keyboardDrag, setKeyboardDrag] = useState<RibbonDrag | null>(null);
 
   const sessionRef = useRef<PointerSession | null>(null);
@@ -257,6 +270,7 @@ function RibbonBody({
       springRef.current.state = { value: 0, velocity: 0 };
       setPending(null);
       setNotice(warning === null ? null : { kind: "warning", text: warning });
+      setPendingRequests((count) => count + 1);
       void moveBooking(day.self.id, { startsAt, endsAt })
         .then(() => {
           setUndoable(before);
@@ -276,7 +290,8 @@ function RibbonBody({
             return;
           }
           setNotice({ kind: "error", text: RIBBON_COPY.moveFailed });
-        });
+        })
+        .finally(() => { setPendingRequests((count) => count - 1); });
     },
     [day, refetch, setOffsetPx],
   );
@@ -287,12 +302,14 @@ function RibbonBody({
     setUndoable(null);
     setNotice(null);
     setOverride({ startMs: Date.parse(back.startsAt), endMs: Date.parse(back.endsAt) });
+    setPendingRequests((count) => count + 1);
     void moveBooking(day.self.id, { startsAt: back.startsAt, endsAt: back.endsAt })
       .then(() => { refetch(); })
       .catch(() => {
         setOverride(null);
         setNotice({ kind: "error", text: RIBBON_COPY.moveFailed });
-      });
+      })
+      .finally(() => { setPendingRequests((count) => count - 1); });
   }, [day, refetch, undoable]);
 
   const settleDrop = useCallback(
@@ -455,12 +472,11 @@ function RibbonBody({
   );
 
   if (day === null) {
-    if (calendarStatus === "loading") return null;
     return (
       <aside className="when-ribbon" data-testid="when-ribbon" aria-label="When">
         <div className="when-ribbon__row">
           <span className="when-ribbon__eyebrow">{RIBBON_COPY.heading}</span>
-          {calendarStatus === "error" ? (
+          {calendarStatus === "loading" || calendarRefreshing ? <ActivityStatus>Loading event times…</ActivityStatus> : calendarStatus === "error" ? (
             <span className="when-ribbon__note" role="note">
               {RIBBON_COPY.loadFailed}{" "}
               <button type="button" className="when-ribbon__link" onClick={refetch}>
@@ -504,6 +520,9 @@ function RibbonBody({
       <div className="when-ribbon__row">
         <span className="when-ribbon__eyebrow">{RIBBON_COPY.heading}</span>
         <span className="when-ribbon__day">{formatWallDay(day.range.fromMs)}</span>
+        {pendingRequests > 0
+          ? <ActivityStatus>Saving event times…</ActivityStatus>
+          : calendarRefreshing ? <ActivityStatus>Refreshing event times…</ActivityStatus> : null}
         <span className="when-ribbon__note">
           {writable ? RIBBON_COPY.dragHint : RIBBON_COPY.readOnly}
         </span>

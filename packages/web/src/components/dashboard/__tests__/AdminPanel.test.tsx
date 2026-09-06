@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PricingRule } from "../../../api/pricing.js";
 import type { CreateSpaceInput, Space, Venue, VenueDetail } from "../../../api/spaces.js";
 import { AdminPanel } from "../AdminPanel.js";
@@ -136,6 +136,88 @@ afterEach(() => {
 });
 
 describe("AdminPanel", () => {
+  it.each(["resolve", "reject"] as const)("does not reopen a deleted venue or report stale errors when its earlier refresh %ss", async (settlement) => {
+    let resolveRefresh: ((value: VenueDetail) => void) | undefined;
+    let rejectRefresh: ((reason: Error) => void) | undefined;
+    let rejectPricing: ((reason: Error) => void) | undefined;
+    const refreshResponse = new Promise<VenueDetail>((resolve, reject) => { resolveRefresh = resolve; rejectRefresh = reject; });
+    const pricingResponse = new Promise<PricingRule[]>((_resolve, reject) => { rejectPricing = reject; });
+    mocks.getVenue.mockResolvedValueOnce(venueDetailFixture()).mockReturnValueOnce(refreshResponse);
+    mocks.listPricingRules.mockReturnValue(pricingResponse);
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Edit space Grand Hall" }));
+    fireEvent.change(screen.getByLabelText("Height (m)"), { target: { value: "7.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => { expect(mocks.getVenue).toHaveBeenCalledTimes(2); });
+    mocks.listVenues.mockResolvedValue([]);
+    fireEvent.click(screen.getByRole("button", { name: "Delete Venue" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Delete Venue" })).getByRole("button", { name: "Delete" }));
+    await screen.findByRole("heading", { name: "Venue Registry" });
+    mocks.addToast.mockClear();
+    await act(async () => {
+      if (settlement === "resolve") resolveRefresh?.(venueDetailFixture());
+      else rejectRefresh?.(new Error("Stale reload failed"));
+      rejectPricing?.(new Error("Stale pricing failed"));
+      await Promise.allSettled([refreshResponse, pricingResponse]);
+    });
+    expect(screen.getByRole("heading", { name: "Venue Registry" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Trades Hall Glasgow" })).toBeNull();
+    expect(screen.queryByText("Stale reload failed")).toBeNull();
+    expect(screen.queryByText("Stale pricing failed")).toBeNull();
+    expect(mocks.listPricingRules).toHaveBeenCalledTimes(1);
+    expect(mocks.addToast).not.toHaveBeenCalled();
+  });
+
+  it("keeps a pricing mutation attached to its venue until it settles", async () => {
+    let rejectDelete: ((reason: Error) => void) | undefined;
+    const response = new Promise<void>((_resolve, reject) => { rejectDelete = reject; });
+    mocks.deletePricingRule.mockReturnValue(response);
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Delete pricing rule Grand Hall Half Day" }));
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Back to venues" }).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Back to venues" }));
+    expect(screen.getByRole("heading", { name: "Trades Hall Glasgow" })).toBeTruthy();
+    await act(async () => { rejectDelete?.(new Error("Delete rejected")); await response.catch(() => undefined); });
+    expect(mocks.addToast).toHaveBeenCalledWith("Delete rejected", "error");
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Back to venues" }).disabled).toBe(false);
+    expect(screen.getByText("Grand Hall Half Day")).toBeTruthy();
+  });
+
+  it.each(["resolve", "reject"] as const)("keeps the current venue pricing when prior venue pricing later %ss", async (settlement) => {
+    let resolveOld: ((value: PricingRule[]) => void) | undefined;
+    let rejectOld: ((reason: Error) => void) | undefined;
+    const oldResponse = new Promise<PricingRule[]>((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    const secondVenue = venueFixture({ id: "venue-two", name: "Second venue" });
+    mocks.listVenues.mockResolvedValue([venueFixture(), secondVenue]);
+    mocks.getVenue.mockImplementation((id: string) => Promise.resolve(id === VENUE_ID ? venueDetailFixture() : { ...secondVenue, spaces: [] }));
+    mocks.listPricingRules.mockImplementation((id: string) => id === VENUE_ID ? oldResponse : Promise.resolve([pricingRuleFixture({ id: "rule-two", venueId: "venue-two", name: "Second venue rate" })]));
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Back to venues" }));
+    fireEvent.click(screen.getByRole("button", { name: /Second venue/u }));
+    await screen.findByText("Second venue rate");
+    expect(screen.queryByText("Loading pricing rules…")).toBeNull();
+    await act(async () => {
+      if (settlement === "resolve") resolveOld?.([pricingRuleFixture()]);
+      else rejectOld?.(new Error("First venue pricing failed"));
+      await oldResponse.catch(() => undefined);
+    });
+    expect(screen.getByText("Second venue rate")).toBeTruthy();
+    expect(screen.queryByText("Grand Hall Half Day")).toBeNull();
+    expect(screen.queryByText("First venue pricing failed")).toBeNull();
+  });
+
+  it("keeps pricing activity visible until the rules request settles", async () => {
+    let resolveRules: ((rules: PricingRule[]) => void) | undefined;
+    const response = new Promise<PricingRule[]>((resolve) => { resolveRules = resolve; });
+    mocks.listPricingRules.mockReturnValue(response);
+    await renderOpenedVenue();
+    expect(screen.getByText("Loading pricing rules…")).toBeDefined();
+    expect(screen.queryByText("No pricing rules configured.")).toBeNull();
+    await act(async () => { resolveRules?.([]); await response; });
+    expect(screen.queryByText("Loading pricing rules…")).toBeNull();
+    expect(screen.getByText("No pricing rules configured.")).toBeDefined();
+  });
+
   it("loads venues and opens a venue detail through a real button", async () => {
     await renderOpenedVenue();
 

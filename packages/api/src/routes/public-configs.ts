@@ -371,12 +371,18 @@ export async function publicConfigRoutes(
 
     const [updated] = await db.update(configurations)
       .set({ thumbnailUrl: parsed.data.thumbnailUrl, updatedAt: new Date() })
-      .where(eq(configurations.id, params.data.configId))
+      .where(and(
+        eq(configurations.id, params.data.configId),
+        eq(configurations.isPublicPreview, true),
+        isNull(configurations.userId),
+        isNull(configurations.deletedAt),
+      ))
       .returning();
 
-    if (updated !== undefined) {
-      reply.header("ETag", configurationRevisionEtag(updated.revision));
+    if (updated === undefined) {
+      return reply.status(404).send({ error: "Public preview configuration not found", code: "NOT_FOUND" });
     }
+    reply.header("ETag", configurationRevisionEtag(updated.revision));
     return { data: updated };
   });
 

@@ -32,6 +32,8 @@ import {
 } from "../../lib/proposal-capacity-note.js";
 import { listSpaces, type Space } from "../../api/spaces.js";
 import { useAuthStore } from "../../stores/auth-store.js";
+import { ActivityStatus } from "../shared/Activity.js";
+import { useLatestRequest } from "../../hooks/use-latest-request.js";
 
 // ---------------------------------------------------------------------------
 // ProposalsView — staff authoring surface (T-427 phase 4).
@@ -140,6 +142,8 @@ export function ProposalsView(): ReactElement {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<StaffProposalVersion | null>(null);
+  const [versionRequests, setVersionRequests] = useState(0);
+  const [detailRequests, setDetailRequests] = useState(0);
   const [comments, setComments] = useState<ProposalCommentRow[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentLoadError, setCommentLoadError] = useState<string | null>(null);
@@ -155,26 +159,35 @@ export function ProposalsView(): ReactElement {
   const [actionError, setActionError] = useState<string | null>(null);
   const [latestShareUrl, setLatestShareUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const listRequest = useLatestRequest();
+  const historyRequest = useLatestRequest();
+  const versionRequest = useLatestRequest();
+  const commentsRequest = useLatestRequest();
+  const detailRequest = useLatestRequest();
 
   const refreshList = useCallback(() => {
+    const ownsRequest = listRequest.begin();
     setListLoading(true);
     setListError(null);
     listProposals()
       .then((rows) => {
+        if (!ownsRequest()) return;
         setProposals(rows);
         setListError(null);
       })
       .catch(() => {
+        if (!ownsRequest()) return;
         setListError("Couldn't load proposals. Check the connection and retry.");
       })
-      .finally(() => { setListLoading(false); });
-  }, []);
+      .finally(() => { if (ownsRequest()) setListLoading(false); });
+  }, [listRequest]);
 
   useEffect(() => { refreshList(); }, [refreshList]);
 
   // Rooms power the capacity guidance block (T-429). Failure is non-fatal —
   // the guidance simply stays unavailable and the note stays hand-written.
   const [spaces, setSpaces] = useState<Space[]>([]);
+  const [spacesRequests, setSpacesRequests] = useState(0);
   const [capSpaceId, setCapSpaceId] = useState("");
   const [capGuests, setCapGuests] = useState("");
   const [capStyle, setCapStyle] = useState<LayoutStyle>("dinner-rounds");
@@ -182,46 +195,60 @@ export function ProposalsView(): ReactElement {
   useEffect(() => {
     const venueId = user?.venueId;
     if (venueId === undefined || venueId === null) return;
+    setSpacesRequests((count) => count + 1);
     listSpaces(venueId)
       .then((rows) => {
         setSpaces(rows);
         setCapSpaceId((current) => (current.length > 0 ? current : (rows[0]?.id ?? "")));
       })
-      .catch(() => { /* guidance unavailable — note stays manual */ });
+      .catch(() => { /* guidance unavailable — note stays manual */ })
+      .finally(() => { setSpacesRequests((count) => count - 1); });
   }, [user?.venueId]);
 
   const loadHistory = useCallback((id: string) => {
+    const ownsRequest = historyRequest.begin();
     setHistoryLoading(true);
     setHistoryError(null);
     getProposalHistory(id)
-      .then(setHistory)
+      .then((rows) => { if (ownsRequest()) setHistory(rows); })
       .catch(() => {
+        if (!ownsRequest()) return;
         setHistory([]);
         setHistoryError("Couldn't load this proposal's status history.");
       })
-      .finally(() => { setHistoryLoading(false); });
-  }, []);
+      .finally(() => { if (ownsRequest()) setHistoryLoading(false); });
+  }, [historyRequest]);
 
   const loadLatestVersion = useCallback((id: string) => {
+    const ownsRequest = versionRequest.begin();
+    setVersionRequests(1);
     getLatestProposalVersion(id)
-      .then(setLatestVersion)
-      .catch(() => { setLatestVersion(null); });
-  }, []);
+      .then((version) => { if (ownsRequest()) setLatestVersion(version); })
+      .catch(() => { if (ownsRequest()) setLatestVersion(null); })
+      .finally(() => { if (ownsRequest()) setVersionRequests(0); });
+  }, [versionRequest]);
 
   const loadComments = useCallback((id: string) => {
+    const ownsRequest = commentsRequest.begin();
     setCommentsLoading(true);
     setCommentLoadError(null);
     getProposalComments(id)
-      .then(setComments)
+      .then((rows) => { if (ownsRequest()) setComments(rows); })
       .catch(() => {
+        if (!ownsRequest()) return;
         setComments([]);
         setCommentLoadError("Couldn't load the client conversation.");
       })
-      .finally(() => { setCommentsLoading(false); });
-  }, []);
+      .finally(() => { if (ownsRequest()) setCommentsLoading(false); });
+  }, [commentsRequest]);
 
   const selectProposal = useCallback((proposal: StaffProposal) => {
+    detailRequest.invalidate();
+    setDetailRequests(0);
     setSelected(proposal);
+    setHistory([]);
+    setLatestVersion(null);
+    setComments([]);
     setComposerError(null);
     setActionError(null);
     setCommentError(null);
@@ -235,19 +262,23 @@ export function ProposalsView(): ReactElement {
     loadHistory(proposal.id);
     loadLatestVersion(proposal.id);
     loadComments(proposal.id);
-  }, [loadComments, loadHistory, loadLatestVersion]);
+  }, [detailRequest, loadComments, loadHistory, loadLatestVersion]);
 
   const refreshSelected = useCallback((id: string) => {
+    const ownsRequest = detailRequest.begin();
+    setDetailRequests(1);
     getProposal(id)
       .then((proposal) => {
+        if (!ownsRequest()) return;
         setSelected(proposal);
         refreshList();
         loadHistory(id);
         loadLatestVersion(id);
         loadComments(id);
       })
-      .catch(() => { setActionError("Could not refresh the proposal. Reload the page and try again."); });
-  }, [loadComments, loadHistory, loadLatestVersion, refreshList]);
+      .catch(() => { if (ownsRequest()) setActionError("Could not refresh the proposal. Reload the page and try again."); })
+      .finally(() => { if (ownsRequest()) setDetailRequests(0); });
+  }, [detailRequest, loadComments, loadHistory, loadLatestVersion, refreshList]);
 
   const handlePostReply = (): void => {
     if (selected === null || busy || replyText.trim().length === 0) return;
@@ -417,6 +448,7 @@ export function ProposalsView(): ReactElement {
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <section style={card} aria-label="Create proposal">
           <h2 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600 }}>New proposal</h2>
+          {busy && <ActivityStatus>Updating proposal records…</ActivityStatus>}
           {user?.venueId === null || user?.venueId === undefined ? (
             <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>
               Your account isn't linked to a venue, so proposals can't be created from here.
@@ -453,8 +485,9 @@ export function ProposalsView(): ReactElement {
 
         <section style={card} aria-label="Proposals">
           <h2 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 600 }}>Proposals</h2>
+          {listLoading && proposals.length > 0 && <ActivityStatus>Refreshing proposals…</ActivityStatus>}
           {listLoading && proposals.length === 0 && (
-            <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading proposals...</p>
+            <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading proposals...</ActivityStatus>
           )}
           {listError !== null && (
             <div role="alert" data-testid="proposal-list-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
@@ -480,6 +513,7 @@ export function ProposalsView(): ReactElement {
                 <button
                   type="button"
                   data-testid={`proposal-row-${proposal.id}`}
+                  disabled={busy}
                   onClick={() => { selectProposal(proposal); }}
                   style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
@@ -505,13 +539,15 @@ export function ProposalsView(): ReactElement {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <section style={card} aria-label="Proposal detail">
+            {detailRequests > 0 && <ActivityStatus>Refreshing proposal details…</ActivityStatus>}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#fff7e8" }}>{selected.title}</h2>
               <StatusPill status={selected.status} />
             </div>
             <div style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", marginTop: 6 }}>
-              Version {selected.currentVersion} {latestVersion !== null ? `— last saved ${new Date(latestVersion.createdAt).toLocaleString("en-GB")}` : "— no content saved yet"}
+              Version {selected.currentVersion} {latestVersion !== null ? `— last saved ${new Date(latestVersion.createdAt).toLocaleString("en-GB")}` : versionRequests === 0 ? "— no content saved yet" : ""}
             </div>
+            {versionRequests > 0 && <ActivityStatus>Loading saved proposal content…</ActivityStatus>}
 
             {shareUrl !== null && (
               <div style={{ marginTop: 12, fontSize: 13 }}>
@@ -578,6 +614,7 @@ export function ProposalsView(): ReactElement {
                 onChange={(e) => { setCapacityNote(e.target.value); }}
               />
 
+              {spacesRequests > 0 && <ActivityStatus>Loading room guidance…</ActivityStatus>}
               {spaces.length > 0 && (
                 <div style={{ marginTop: 10, padding: 12, background: "rgba(215, 181, 109, 0.08)", border: "1px solid rgba(215, 181, 109, 0.22)", borderRadius: 6 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#d7b56d", marginBottom: 8 }}>
@@ -738,8 +775,9 @@ export function ProposalsView(): ReactElement {
 
           <section style={card} aria-label="Client conversation" data-testid="proposal-conversation">
             <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>Conversation</h3>
+            {commentsLoading && comments.length > 0 && <ActivityStatus>Refreshing conversation…</ActivityStatus>}
             {commentsLoading && comments.length === 0 ? (
-              <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading conversation...</p>
+              <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading conversation...</ActivityStatus>
             ) : commentLoadError !== null ? (
               <div role="alert" data-testid="conversation-load-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
                 <p style={{ margin: "0 0 8px" }}>{commentLoadError}</p>
@@ -810,8 +848,9 @@ export function ProposalsView(): ReactElement {
 
           <section style={card} aria-label="Status history">
             <h3 style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>History</h3>
+            {historyLoading && history.length > 0 && <ActivityStatus>Refreshing history…</ActivityStatus>}
             {historyLoading && history.length === 0 ? (
-              <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading history...</p>
+              <ActivityStatus style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>Loading history...</ActivityStatus>
             ) : historyError !== null ? (
               <div role="alert" data-testid="history-load-error" style={{ fontSize: 13, color: "#ffb4a2" }}>
                 <p style={{ margin: "0 0 8px" }}>{historyError}</p>
