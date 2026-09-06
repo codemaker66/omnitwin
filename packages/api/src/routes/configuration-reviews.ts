@@ -38,6 +38,7 @@ import {
   SnapshotNotFoundError,
 } from "../services/sheet-snapshot.js";
 import { schedulePrerender } from "../services/pdf-prerender.js";
+import { internalDemoReviewScope, InternalDemoReviewForbiddenError, recordSuppressedReviewNotifications } from "../services/internal-demo-review.js";
 import { incrementCounter } from "../observability/metrics.js";
 import type { Env } from "../env.js";
 import { emit as emitEvent } from "../observability/event-bus.js";
@@ -80,6 +81,8 @@ const OptionalNoteBody = z.object({
   note: z.string().max(2000).optional(),
 });
 
+const ReviewNotificationBody = OptionalNoteBody.extend({ notifyTeam: z.boolean().default(true) });
+
 const RequiredNoteBody = z.object({
   note: z.string().trim().min(1, "note is required").max(2000),
 });
@@ -95,23 +98,29 @@ interface ConfigLookup {
   readonly spaceId: string;
   readonly reviewStatus: ConfigurationReviewStatus;
   readonly name: string;
+  readonly isPublicPreview: boolean;
+  readonly visibility: string;
 }
 
 async function loadConfig(
   db: Database,
   configId: string,
+  lock = false,
 ): Promise<ConfigLookup | null> {
-  const [row] = await db.select({
+  const query = db.select({
     id: configurations.id,
     userId: configurations.userId,
     venueId: configurations.venueId,
     spaceId: configurations.spaceId,
     reviewStatus: configurations.reviewStatus,
     name: configurations.name,
+    isPublicPreview: configurations.isPublicPreview,
+    visibility: configurations.visibility,
   })
     .from(configurations)
     .where(and(eq(configurations.id, configId), isNull(configurations.deletedAt)))
     .limit(1);
+  const [row] = lock ? await query.for("update") : await query;
   if (row === undefined) return null;
   return {
     id: row.id,
@@ -120,6 +129,8 @@ async function loadConfig(
     spaceId: row.spaceId,
     reviewStatus: row.reviewStatus as ConfigurationReviewStatus,
     name: row.name,
+    isPublicPreview: row.isPublicPreview,
+    visibility: row.visibility,
   };
 }
 
@@ -309,6 +320,7 @@ interface ExecuteTransitionInput {
   readonly changedBy: string | null;
   readonly note: string | null;
   readonly extraColumns?: Partial<typeof configurations.$inferInsert>;
+  readonly deferCounter?: boolean;
 }
 
 async function executeTransition(input: ExecuteTransitionInput): Promise<void> {
@@ -343,7 +355,7 @@ async function executeTransition(input: ExecuteTransitionInput): Promise<void> {
   // counter for a transition that was rolled back by the transaction.
   // Labels are low-cardinality (8×8 possible combinations, bounded by
   // the state machine) so Prometheus won't time-series-explode.
-  incrementCounter("configuration_review_transition_total", {
+  if (input.deferCounter !== true) incrementCounter("configuration_review_transition_total", {
     from: input.config.reviewStatus,
     to: input.toStatus,
   });
@@ -381,7 +393,7 @@ export async function configurationReviewRoutes(
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
-    const body = OptionalNoteBody.safeParse(request.body ?? {});
+    const body = ReviewNotificationBody.safeParse(request.body ?? {});
     if (!body.success) {
       return reply.status(400).send({ error: "Invalid body", code: "VALIDATION_ERROR", details: body.error.issues });
     }
@@ -408,14 +420,30 @@ export async function configurationReviewRoutes(
     let snapshot;
     let created: boolean;
     try {
-      const result = await createSnapshot(db, {
-        configId: config.id,
-        createdBy: request.user.id,
-        baseUrl,
+      const result = await db.transaction(async tx => {
+        const current = await loadConfig(tx, config.id, true);
+        if (current === null) throw new ConfigurationNotFoundError(config.id);
+        if (current.reviewStatus !== config.reviewStatus) throw new SnapshotConflictError(config.id);
+        const scope = body.data.notifyTeam ? null : await internalDemoReviewScope(tx, current, request.user, true);
+        if (!body.data.notifyTeam && scope === null) throw new InternalDemoReviewForbiddenError();
+        const result = await createSnapshot(tx, { configId: config.id, createdBy: request.user.id, baseUrl });
+        if (result.created) {
+          const note = body.data.note?.trim();
+          await executeTransition({ db: tx, config: current, toStatus: "submitted",
+            changedBy: request.user.id,
+            note: note !== undefined && note.length > 0 ? note : null,
+            extraColumns: { submittedAt: new Date() }, deferCounter: true });
+          if (scope !== null) await recordSuppressedReviewNotifications(tx, {
+            configurationId: config.id, snapshotId: result.snapshot.id,
+            actorUserId: request.user.id, eventIds: scope, transition: "submitted",
+          });
+        }
+        return result;
       });
       snapshot = result.snapshot;
       created = result.created;
     } catch (err) {
+      if (err instanceof InternalDemoReviewForbiddenError) return reply.status(403).send({ error: err.message, code: "INTERNAL_DEMO_REVIEW_REQUIRED" });
       if (err instanceof ConfigurationNotFoundError) {
         return reply.status(404).send({ error: "Configuration not found", code: "NOT_FOUND" });
       }
@@ -433,22 +461,15 @@ export async function configurationReviewRoutes(
     }
 
     if (!created) {
-      return { data: { created: false, snapshot, reviewStatus: config.reviewStatus } };
+      return { data: { created: false, snapshot, reviewStatus: config.reviewStatus, notificationPolicy: "not_sent_no_change" } };
     }
 
-    const note = body.data.note?.trim();
-    await executeTransition({
-      db,
-      config,
-      toStatus: "submitted",
-      changedBy: request.user.id,
-      note: note !== undefined && note.length > 0 ? note : null,
-      extraColumns: { submittedAt: new Date() },
-    });
+    incrementCounter("configuration_review_transition_total", { from: config.reviewStatus, to: "submitted" });
 
     // Notify venue staff — one email per staff member, idempotent per
     // (snapshot, recipient) so a retried submit doesn't double-send.
     const baseFeUrl = frontendUrl ?? `${request.protocol}://${request.hostname}`;
+    if (body.data.notifyTeam) {
     const ctx = await loadReviewEmailContext(db, config, request.user);
     const reviewUrl = `${baseFeUrl}/dashboard/reviews/${config.id}`;
     for (const recipient of ctx.staff) {
@@ -468,7 +489,9 @@ export async function configurationReviewRoutes(
       );
     }
 
-    return { data: { created: true, snapshot, reviewStatus: "submitted" as const } };
+    }
+    return { data: { created: true, snapshot, reviewStatus: "submitted" as const,
+      notificationPolicy: body.data.notifyTeam ? "team_requested" : "suppressed_demo" } };
   });
 
   // -------------------------------------------------------------------------
@@ -521,7 +544,7 @@ export async function configurationReviewRoutes(
       return reply.status(400).send({ error: "Invalid config ID", code: "VALIDATION_ERROR" });
     }
 
-    const body = OptionalNoteBody.safeParse(request.body ?? {});
+    const body = ReviewNotificationBody.safeParse(request.body ?? {});
     if (!body.success) {
       return reply.status(400).send({ error: "Invalid body", code: "VALIDATION_ERROR", details: body.error.issues });
     }
@@ -551,10 +574,29 @@ export async function configurationReviewRoutes(
       });
     }
 
+    const note = body.data.note?.trim();
+    const trimmedNote = note !== undefined && note.length > 0 ? note : null;
     let approved;
     try {
-      approved = await approveSnapshot(db, latest.id, request.user.id);
+      approved = await db.transaction(async tx => {
+        const current = await loadConfig(tx, config.id, true);
+        if (current === null || current.reviewStatus !== config.reviewStatus) throw new SnapshotConflictError(config.id);
+        const scope = body.data.notifyTeam ? null : await internalDemoReviewScope(tx, current, request.user, true);
+        if (!body.data.notifyTeam && scope === null) throw new InternalDemoReviewForbiddenError();
+        const stillLatest = await getLatestSnapshot(tx, config.id);
+        if (stillLatest?.id !== latest.id) throw new SnapshotConflictError(config.id);
+        const result = await approveSnapshot(tx, latest.id, request.user.id);
+        await appendReviewHistory(tx, { configurationId: config.id, fromStatus: current.reviewStatus,
+          toStatus: "approved", changedBy: request.user.id, note: trimmedNote });
+        if (scope !== null) await recordSuppressedReviewNotifications(tx, {
+          configurationId: config.id, snapshotId: result.id, actorUserId: request.user.id,
+          eventIds: scope, transition: "approved",
+        });
+        return result;
+      });
     } catch (err) {
+      if (err instanceof InternalDemoReviewForbiddenError) return reply.status(403).send({ error: err.message, code: "INTERNAL_DEMO_REVIEW_REQUIRED" });
+      if (err instanceof SnapshotConflictError) return reply.status(409).send({ error: "The review changed. Refresh before approving.", code: "SNAPSHOT_CONFLICT" });
       if (err instanceof SnapshotNotFoundError) {
         return reply.status(404).send({ error: "Snapshot not found", code: "SNAPSHOT_NOT_FOUND" });
       }
@@ -575,16 +617,6 @@ export async function configurationReviewRoutes(
       version: approved.version,
       sourceHash: approved.sourceHash,
       payload: approved.payload,
-    });
-
-    const note = body.data.note?.trim();
-    const trimmedNote = note !== undefined && note.length > 0 ? note : null;
-    await appendReviewHistory(db, {
-      configurationId: config.id,
-      fromStatus: config.reviewStatus,
-      toStatus: "approved",
-      changedBy: request.user.id,
-      note: trimmedNote,
     });
 
     // Notify planner + every hallkeeper on duty at the venue. The two
@@ -614,7 +646,7 @@ export async function configurationReviewRoutes(
       payload: approved.payload,
     });
 
-    if (ctx.planner !== null) {
+    if (body.data.notifyTeam && ctx.planner !== null) {
       fireEmail(
         db,
         request.log,
@@ -634,7 +666,7 @@ export async function configurationReviewRoutes(
       );
     }
 
-    for (const hk of ctx.hallkeepers) {
+    for (const hk of body.data.notifyTeam ? ctx.hallkeepers : []) {
       fireEmail(
         db,
         request.log,
@@ -651,7 +683,8 @@ export async function configurationReviewRoutes(
       );
     }
 
-    return { data: { reviewStatus: "approved" as const, snapshot: approved } };
+    return { data: { reviewStatus: "approved" as const, snapshot: approved,
+      notificationPolicy: body.data.notifyTeam ? "team_requested" : "suppressed_demo" } };
   });
 
   // -------------------------------------------------------------------------
@@ -963,6 +996,7 @@ export async function configurationReviewRoutes(
         configurationId: config.id,
         currentStatus: config.reviewStatus,
         availableTransitions: available,
+        internalDemoReviewEligible: await internalDemoReviewScope(db, config, request.user) !== null,
       },
     };
   });

@@ -275,6 +275,8 @@ interface DetailViewProps {
 
 function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.ReactElement {
   const addToast = useToastStore((s) => s.addToast);
+  const [demoEligible, setDemoEligible] = useState(false);
+  const [notifyTeam, setNotifyTeam] = useState(true);
   const [history, setHistory] = useState<ReviewHistoryEntry[]>([]);
   const [availableTransitions, setAvailableTransitions] = useState<readonly ConfigurationReviewStatus[]>([]);
   const [contextState, setContextState] = useState<ReviewContextState>({ status: "loading" });
@@ -288,6 +290,8 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
 
   const loadContext = useCallback((): void => {
     setContextState({ status: "loading" });
+    setDemoEligible(false);
+    setNotifyTeam(true);
     setActionError(null);
     void (async () => {
       try {
@@ -297,6 +301,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
         ]);
         setHistory([...hist]);
         setAvailableTransitions(trans.availableTransitions);
+        setDemoEligible(trans.internalDemoReviewEligible);
         setContextState({ status: "ready" });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Review context unavailable.";
@@ -337,8 +342,11 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
     setActionError(null);
     void (async () => {
       try {
-        const { reviewStatus } = await approveLayout(entry.id);
-        addToast("Layout approved — planner + hallkeepers notified", "success");
+        const { reviewStatus, notificationPolicy } = demoEligible
+          ? await approveLayout(entry.id, undefined, notifyTeam) : await approveLayout(entry.id);
+        addToast(notificationPolicy === "suppressed_demo"
+          ? "Layout approved for internal demo. Team notifications were suppressed."
+          : "Layout approved — team notifications requested", "success");
         onStatusChange(entry.id, reviewStatus);
       } catch {
         setActionError("Approval did not save. The layout has not been approved.");
@@ -470,6 +478,13 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
               <button type="button" style={buttonSecondary} onClick={handleStartReview} disabled={inFlight}>
                 Start Review
               </button>
+            )}
+            {can("approved") && demoEligible && (
+              <label style={{ flexBasis: "100%", fontSize: 13 }}>
+                <input type="checkbox" checked={notifyTeam} disabled={inFlight}
+                  onChange={event => { setNotifyTeam(event.target.checked); }} /> Notify team
+                <span style={{ display: "block" }}>DEMO ONLY: uncheck to approve internally without planner or hallkeeper emails.</span>
+              </label>
             )}
             {can("approved") && (
               <button type="button" style={buttonPrimary} onClick={handleApprove} disabled={inFlight}>

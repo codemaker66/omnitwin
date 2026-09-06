@@ -133,6 +133,55 @@ afterEach(() => {
 });
 
 describe("timeline preview action isolation", () => {
+  it("submits an eligible internal demo using the explicit unchecked choice", async () => {
+    mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "draft", availableTransitions: ["submitted"], internalDemoReviewEligible: true });
+    mocks.submitForReview.mockResolvedValue({ reviewStatus: "submitted", notificationPolicy: "suppressed_demo" });
+    render(<SubmitForReviewPanel />);
+    const choice = await screen.findByRole("checkbox", { name: /Notify team/u });
+    expect(choice).toHaveProperty("checked", true);
+    fireEvent.click(choice);
+    fireEvent.click(screen.getByRole("button", { name: "Submit for Approval" }));
+    await waitFor(() => { expect(mocks.submitForReview).toHaveBeenCalledWith(CONFIG_ID, undefined, false); });
+    expect(screen.getByRole("status").textContent).toContain("notifications were suppressed");
+  });
+
+  it("does not claim suppression when the server did not confirm it", async () => {
+    mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "draft", availableTransitions: ["submitted"], internalDemoReviewEligible: true });
+    render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Notify team/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit for Approval" }));
+    await waitFor(() => { expect(mocks.submitForReview).toHaveBeenCalled(); });
+    expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
+  });
+
+  it("does not submit into a replacement editing session after saving", async () => {
+    const saving = deferred<boolean>();
+    mocks.flushAutoSave.mockReturnValueOnce(saving.promise);
+    const submitting = submitConfigurationForReview(CONFIG_ID, false);
+    useEditorStore.getState().reset();
+    useEditorStore.setState({ configId: CONFIG_ID, objects: [object], isPublicPreview: false });
+    saving.resolve(true);
+    await expect(submitting).rejects.toThrow(/open layout changed/u);
+    expect(mocks.submitForReview).not.toHaveBeenCalled();
+  });
+
+  it("releases its busy state after a same-ID reload supersedes a pending submission", async () => {
+    const pending = deferred<{ reviewStatus: string; notificationPolicy: string }>();
+    mocks.submitForReview.mockReturnValueOnce(pending.promise);
+    render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "Submit for Approval" }));
+    await waitFor(() => { expect(mocks.submitForReview).toHaveBeenCalled(); });
+    await act(async () => {
+      useEditorStore.getState().reset();
+      useEditorStore.setState({ configId: CONFIG_ID, objects: [object], isPublicPreview: false });
+      pending.resolve({ reviewStatus: "submitted", notificationPolicy: "suppressed_demo" });
+      await pending.promise;
+    });
+    expect(screen.getByRole("button", { name: "Submit for Approval" })).toHaveProperty("disabled", false);
+    expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it.each(["desktop", "mobile"] as const)("does not open the %s enquiry modal after the original editor session was replaced", async (surface) => {
     const save = deferred<boolean>();
     mocks.flushAutoSave.mockReturnValueOnce(save.promise);

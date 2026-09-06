@@ -77,13 +77,18 @@ const ReviewStatusSchema = z.enum(CONFIGURATION_REVIEW_STATUSES);
 // Transition response shapes (mirrored from the route-side returns)
 // ---------------------------------------------------------------------------
 
+const NotificationPolicySchema = z.enum(["team_requested", "suppressed_demo", "not_sent_no_change"]);
+export type ReviewNotificationPolicy = z.infer<typeof NotificationPolicySchema>;
+
 const SubmitResponseSchema = z.object({
+  notificationPolicy: NotificationPolicySchema.optional(),
   created: z.boolean(),
   snapshot: SnapshotEnvelopeSchema,
   reviewStatus: ReviewStatusSchema,
 });
 
 const ApproveResponseSchema = z.object({
+  notificationPolicy: NotificationPolicySchema.optional(),
   reviewStatus: z.literal("approved"),
   snapshot: SnapshotEnvelopeSchema,
 });
@@ -115,6 +120,7 @@ const AvailableTransitionsResponseSchema = z.object({
   configurationId: z.string().uuid(),
   currentStatus: ReviewStatusSchema,
   availableTransitions: z.array(ReviewStatusSchema),
+  internalDemoReviewEligible: z.boolean().default(false),
 });
 
 const SnapshotResponseSchema = SnapshotEnvelopeSchema;
@@ -152,12 +158,15 @@ const HeartbeatResponseSchema = z.object({
 export async function submitForReview(
   configId: string,
   note?: string,
+  notifyTeam?: boolean,
 ): Promise<{
+  notificationPolicy?: ReviewNotificationPolicy;
   created: boolean;
   snapshot: SnapshotEnvelope;
   reviewStatus: ConfigurationReviewStatus;
 }> {
-  const body = note !== undefined && note.trim().length > 0 ? { note: note.trim() } : {};
+  const body = { ...(note !== undefined && note.trim().length > 0 ? { note: note.trim() } : {}),
+    ...(notifyTeam !== undefined ? { notifyTeam } : {}) };
   const res = await api.post(
     `/configurations/${configId}/review/submit`,
     body,
@@ -180,8 +189,10 @@ export async function startReview(configId: string): Promise<ConfigurationReview
 export async function approveLayout(
   configId: string,
   note?: string,
-): Promise<{ reviewStatus: "approved"; snapshot: SnapshotEnvelope }> {
-  const body = note !== undefined && note.trim().length > 0 ? { note: note.trim() } : {};
+  notifyTeam?: boolean,
+): Promise<{ notificationPolicy?: ReviewNotificationPolicy; reviewStatus: "approved"; snapshot: SnapshotEnvelope }> {
+  const body = { ...(note !== undefined && note.trim().length > 0 ? { note: note.trim() } : {}),
+    ...(notifyTeam !== undefined ? { notifyTeam } : {}) };
   const res = await api.post(
     `/configurations/${configId}/review/approve`,
     body,
@@ -268,6 +279,7 @@ export async function getAvailableTransitions(
 ): Promise<{
   currentStatus: ConfigurationReviewStatus;
   availableTransitions: readonly ConfigurationReviewStatus[];
+  internalDemoReviewEligible: boolean;
 }> {
   const res = await api.get(
     `/configurations/${configId}/review/available-transitions`,
@@ -276,6 +288,7 @@ export async function getAvailableTransitions(
   return {
     currentStatus: res.currentStatus,
     availableTransitions: res.availableTransitions,
+    internalDemoReviewEligible: res.internalDemoReviewEligible,
   };
 }
 

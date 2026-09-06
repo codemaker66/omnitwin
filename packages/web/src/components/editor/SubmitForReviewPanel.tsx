@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ConfigurationReviewStatus } from "@omnitwin/types";
+import { ActivityIndicator } from "../shared/Activity.js";
+import { captureEditorSession, isCurrentEditorSession } from "../../stores/editor-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
 import { captureOrthographic } from "../../lib/ortho-capture.js";
@@ -124,10 +126,22 @@ function assertReviewMutationAllowed(): void {
  */
 export async function submitConfigurationForReview(
   configId: string,
+  notifyTeam?: boolean,
 ): Promise<ConfigurationReviewStatus> {
-  assertReviewMutationAllowed();
+  return (await submitReviewWithNotifications(configId, notifyTeam)).reviewStatus;
+}
+
+async function submitReviewWithNotifications(configId: string, notifyTeam?: boolean): ReturnType<typeof submitForReview> {
+  const session = captureEditorSession();
+  const assertCurrent = (): void => {
+    assertReviewMutationAllowed();
+    if (useEditorStore.getState().configId !== configId || !isCurrentEditorSession(session)) {
+      throw new Error("The open layout changed. Submit from the current layout.");
+    }
+  };
+  assertCurrent();
   const saved = await flushAutoSave();
-  assertReviewMutationAllowed();
+  assertCurrent();
   if (!saved) {
     throw new Error("Save failed. Retry before submitting the layout.");
   }
@@ -151,10 +165,10 @@ export async function submitConfigurationForReview(
     // Capture/upload failure is non-blocking for the review submission.
   }
 
-  assertReviewMutationAllowed();
-  const result = await submitForReview(configId);
-  assertReviewMutationAllowed();
-  return result.reviewStatus;
+  assertCurrent();
+  const result = notifyTeam === undefined ? await submitForReview(configId) : await submitForReview(configId, undefined, notifyTeam);
+  assertCurrent();
+  return result;
 }
 
 export async function withdrawConfigurationReview(
@@ -180,6 +194,11 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   const isPublicPreview = useEditorStore((s) => s.isPublicPreview);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
 
+  const [eligibilityConfigId, setEligibilityConfigId] = useState<string | null>(null);
+  const [demoEligible, setDemoEligible] = useState(false);
+  const [notifyTeam, setNotifyTeam] = useState(true);
+  const [completion, setCompletion] = useState<string | null>(null);
+  const submitOperation = useRef(0);
   const [reviewStatus, setReviewStatus] = useState<ConfigurationReviewStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [inFlight, setInFlight] = useState(false);
@@ -190,6 +209,12 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   // status AND the transitions the role can perform — lets us render
   // the right CTA without a second request.
   useEffect(() => {
+    submitOperation.current += 1;
+    setEligibilityConfigId(null);
+    setDemoEligible(false);
+    setNotifyTeam(true);
+    setInFlight(false);
+    setCompletion(null);
     if (configId === null || isPublicPreview) {
       setReviewStatus(null);
       return;
@@ -203,9 +228,9 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
     setError(null);
     void (async () => {
       try {
-        const { currentStatus } = await getAvailableTransitions(configId);
+        const { currentStatus, internalDemoReviewEligible } = await getAvailableTransitions(configId);
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated by cleanup closure
-        if (!cancelled) setReviewStatus(currentStatus);
+        if (!cancelled) { setReviewStatus(currentStatus); setDemoEligible(internalDemoReviewEligible); setEligibilityConfigId(configId); }
       } catch {
         // Silent — the panel degrades to "not available" state instead
         // of blocking the editor on a transient network hiccup. User can
@@ -230,6 +255,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
     return null;
   }
 
+  const eligibleHere = demoEligible && eligibilityConfigId === configId;
   const visual = STATUS_VISUALS[reviewStatus];
   const isEditable = PLANNER_EDITABLE.has(reviewStatus);
   const isLocked = reviewStatus === "submitted" || reviewStatus === "under_review";
@@ -239,16 +265,20 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   // -------------------------------------------------------------------------
 
   const handleSubmit = (): void => {
+    const session = captureEditorSession();
+    const operation = ++submitOperation.current;
     setInFlight(true);
     setError(null);
     void (async () => {
       try {
-        const next = await submitConfigurationForReview(configId);
-        setReviewStatus(next);
+        const result = await submitReviewWithNotifications(configId, eligibleHere ? notifyTeam : undefined);
+        if (!isCurrentEditorSession(session) || submitOperation.current !== operation) return;
+        setReviewStatus(result.reviewStatus);
+        if (result.notificationPolicy === "suppressed_demo") setCompletion("Submitted for internal demo review. Team notifications were suppressed.");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to submit for review");
+        if (isCurrentEditorSession(session)) setError(err instanceof Error ? err.message : "Failed to submit for review");
       } finally {
-        setInFlight(false);
+        if (submitOperation.current === operation) setInFlight(false);
       }
     })();
   };
@@ -276,6 +306,14 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
     <div style={panelStyle} data-testid="submit-for-review-panel" data-status={reviewStatus}>
       <span style={pillStyle(visual)}>{timelinePreviewActive ? `Saved plan: ${visual.label}` : visual.label}</span>
 
+      {isEditable && eligibleHere && (
+        <label style={{ fontSize: 12, maxWidth: 240 }}>
+          <input type="checkbox" checked={notifyTeam} disabled={inFlight || timelinePreviewActive}
+            onChange={event => { setNotifyTeam(event.target.checked); }} /> Notify team
+          <span style={{ display: "block" }}>DEMO ONLY: uncheck to record an internal review without team emails.</span>
+        </label>
+      )}
+      {completion !== null && <span role="status">{completion}</span>}
       {isEditable && (
         <button
           type="button"
@@ -285,6 +323,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
           data-testid="submit-for-review-button"
           title={timelinePreviewActive ? TIMELINE_PREVIEW_REVIEW_MESSAGE : undefined}
         >
+          {inFlight && <ActivityIndicator size={16} />}
           {inFlight
             ? "Submitting…"
             : timelinePreviewActive ? "Exit preview to submit" : "Submit for Approval"}
@@ -302,6 +341,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
             ? TIMELINE_PREVIEW_REVIEW_MESSAGE
             : "Withdraw your submission to edit the layout"}
         >
+          {inFlight && <ActivityIndicator size={16} />}
           {inFlight ? "Withdrawing…" : timelinePreviewActive ? "Exit preview to withdraw" : "Withdraw"}
         </button>
       )}

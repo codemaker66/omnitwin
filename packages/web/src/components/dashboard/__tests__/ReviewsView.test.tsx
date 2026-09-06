@@ -108,6 +108,26 @@ afterEach(() => {
 });
 
 describe("ReviewsView", () => {
+  it("offers notification choice only for server-eligible demos and reports actual suppression", async () => {
+    mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "under_review", availableTransitions: ["approved"], internalDemoReviewEligible: true });
+    mocks.approveLayout.mockResolvedValue({ reviewStatus: "approved", notificationPolicy: "suppressed_demo" });
+    render(<ReviewsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open review for Reception Room review pack" }));
+    const choice = await screen.findByRole("checkbox", { name: /Notify team/u });
+    expect(choice).toHaveProperty("checked", true);
+    fireEvent.click(choice);
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => { expect(mocks.approveLayout).toHaveBeenCalledWith(CONFIG_ID, undefined, false); });
+    expect(mocks.addToast).toHaveBeenCalledWith("Layout approved for internal demo. Team notifications were suppressed.", "success");
+  });
+
+  it("does not offer a silent-review choice for ordinary plans", async () => {
+    render(<ReviewsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open review for Reception Room review pack" }));
+    await screen.findByRole("button", { name: "Approve" });
+    expect(screen.queryByRole("checkbox", { name: /Notify team/u })).toBeNull();
+  });
+
   it("surfaces pending-review list failures with a retry path", async () => {
     mocks.listPendingReviews
       .mockRejectedValueOnce(new Error("review registry offline"))
