@@ -52,3 +52,10 @@ Updated 6 September 2026. This is an iteration record, not an accepted design or
 Finish mobile browser verification and a clean build after the corrected CSS brace; freeze and commit the coherent reference UI. Qualify the event-linked local workflow once manual evidence production passes real PostgreSQL tests. Compare the isolated source-derived furniture-lighting experiment at an identical camera and scene. Continue room/material/arrival/overhead work toward founder acceptance; the remaining full-view image-quality gaps cannot justify a pass.
 
 Physical iPhone/iPad/office-device 60 fps, photographic PSNR 50+, cross-source registration, full live account workflow, deployment and founder aesthetic acceptance are not certified by this report.
+
+
+## 21:06 BST integration update — still blocked for final acceptance
+
+Real browser qualification now verifies correct frozen-phase room/furniture ownership, an empty room-flip gap, original Interior camera restoration, and expanded-timeline control clearance. Scoped review status and preview fog corrections follow that first run and await final visual recheck. The actual browser has changed to1016x571 CSS at DPR2.52/native2560x1440, so its images cannot be treated as the earlier1672x941 comparison. The visible source still has material/floor/fidelity gaps; no design acceptance is claimed.
+
+Brass group selection is integrated and no longer the earlier blue-box candidate. Saved/session ownership, actual event-linked choices, pointer-held history and authoritative hallkeeper footprints are integrated. Nine hallkeeper regression failures identified an old main types dependency in the private web tree; the link is now local and the unchanged private types were rebuilt.154integrated tests/types/test-modebuild then passed. Actual tour after long idle failed and is retained in `captured-tour-observation-2056.json`; a separate clock/handoff repair is integrated for renewed browser testing. No FPS claim follows from idle rAF intervals or that failed trace. See `docs/reports/t596-frozen-scene-2026-09-06.md`.

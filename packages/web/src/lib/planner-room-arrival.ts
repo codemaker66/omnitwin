@@ -9,6 +9,7 @@ import { useCameraReferenceStore } from "../stores/camera-reference-store.js";
 import { useMarkupStore } from "../stores/markup-store.js";
 import { useMeasurementStore } from "../stores/measurement-store.js";
 import { useGuidelineStore } from "../stores/guideline-store.js";
+import { isLayoutTimelineMutationLocked } from "./layout-timeline-preview-lock.js";
 
 /** Served Three coordinates, within the Grand Hall capture's walk bounds.
  * The framing is a presentation choice, not a surveyed camera observation. */
@@ -50,16 +51,16 @@ export function hasPlannerBookmarkCamera(): boolean {
 }
 
 export function plannerInteriorOwnsCamera(): boolean {
-  return useCockpitStore.getState().walkMode && !hasPlannerBookmarkCamera();
+  return !isLayoutTimelineMutationLocked() && useCockpitStore.getState().walkMode && !hasPlannerBookmarkCamera();
 }
 
 export function plannerOrbitOwnsCamera(): boolean {
-  return !useCockpitStore.getState().walkMode && !hasPlannerBookmarkCamera();
+  return !isLayoutTimelineMutationLocked() && !useCockpitStore.getState().walkMode && !hasPlannerBookmarkCamera();
 }
 
 /** Explicit planning actions hand back to orbit before calculating their goal. */
 export function beginPlannerOrbitAction(): boolean {
-  if (hasPlannerBookmarkCamera()) return false;
+  if (isLayoutTimelineMutationLocked() || hasPlannerBookmarkCamera()) return false;
   recordPlannerArrivalChoice();
   if (useCockpitStore.getState().walkMode) useCockpitStore.getState().setWalkMode(false);
   return true;

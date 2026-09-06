@@ -274,7 +274,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
 
   return (
     <div style={panelStyle} data-testid="submit-for-review-panel" data-status={reviewStatus}>
-      <span style={pillStyle(visual)}>{visual.label}</span>
+      <span style={pillStyle(visual)}>{timelinePreviewActive ? `Saved plan: ${visual.label}` : visual.label}</span>
 
       {isEditable && (
         <button

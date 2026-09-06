@@ -1,25 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
-import { SpaceSchema } from "@omnitwin/types";
+import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE, SpaceSchema } from "@omnitwin/types";
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 
 type CanvasMockProps = Readonly<{
   dpr?: unknown;
   frameloop?: unknown;
+  children?: ReactNode;
 }>;
+const canvasChildren = vi.hoisted(() => ({ current: null as ReactNode }));
 
 // Mock the R3F Canvas to render an empty host div: the scene children are
 // constructed as React elements but never mounted, so their useThree/useFrame
 // hooks don't run outside a real Canvas. This keeps the test a structural
 // smoke test that PlannerScene mounts its canvas host.
 vi.mock("@react-three/fiber", () => ({
-  Canvas: ({ dpr, frameloop }: CanvasMockProps) => (
+  Canvas: ({ dpr, frameloop, children }: CanvasMockProps) => {
+    canvasChildren.current = children;
+    return (
     <div
       data-testid="r3f-canvas"
       data-dpr={JSON.stringify(dpr)}
       data-frameloop={typeof frameloop === "string" ? frameloop : ""}
     />
-  ),
+    );
+  },
 }));
 
 // CockpitSplatLayer pulls in @sparkjsdev/spark, which instantiates a WASM
@@ -69,11 +75,27 @@ const { useCockpitStore } = await import("../../../stores/cockpit-store.js");
 const { useEditorStore } = await import("../../../stores/editor-store.js");
 const { useBookmarkStore } = await import("../../../stores/bookmark-store.js");
 const { recordPlannerArrivalChoice } = await import("../../../lib/planner-room-arrival.js");
+const { useLayoutTimelinePreviewStore } = await import("../../../stores/layout-timeline-preview-store.js");
+const { frozenLayoutRoomModel } = await import("../../../lib/frozen-layout-room.js");
+
+function sceneElements(children: ReactNode = canvasChildren.current): ReactElement<Record<string, unknown>>[] {
+  return Children.toArray(children).flatMap((child) => {
+    if (!isValidElement<Record<string, unknown>>(child)) return [];
+    return [child, ...sceneElements((child.props.children ?? null) as ReactNode)];
+  });
+}
+function sceneComponent(name: string): ReactElement<Record<string, unknown>> | undefined {
+  return sceneElements().find((child) => typeof child.type === "function" && child.type.name === name);
+}
+function namedSceneNode(name: string): ReactElement<Record<string, unknown>> | undefined {
+  return sceneElements().find((child) => child.props.name === name);
+}
 
 beforeEach(() => {
   useCockpitStore.getState().reset();
   useEditorStore.setState({ space: null, configId: null });
   useBookmarkStore.setState({ pendingNavigationId: null, activeReferenceId: null, transition: null, tour: null });
+  useLayoutTimelinePreviewStore.getState().clear();
   arrivals.loadedCount = 0;
   arrivals.failedCount = 0;
   mockSplat();
@@ -144,6 +166,49 @@ describe("PlannerScene", () => {
 // runtime-splat state plus chunk arrivals and publishes it to the cockpit
 // store for the caption and the stage's honesty attribute.
 describe("PlannerScene resolve phase wiring", () => {
+  it("replaces current architecture with the frozen coordinate frame and restores the live scene on exit", () => {
+    chooseGrandHall(); readyGrandHall();
+    arrivals.loadedCount = 1;
+    render(<PlannerScene />);
+    const originalSpace = useEditorStore.getState().space;
+    const runtime = CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE.venueRuntime;
+    const frame = { id: "frozen", eventId: "event", eventName: "Event", phaseId: "phase", phaseName: "Ceremony", startsAt: null, endsAt: null, venueRuntime: runtime };
+    expect(namedSceneNode("live-room-capture")?.props.visible).toBe(true);
+    act(() => { useLayoutTimelinePreviewStore.getState().settle(frame, []); });
+    expect(sceneComponent("FrozenLayoutRoom")?.props.room).toEqual(frozenLayoutRoomModel(runtime));
+    expect(namedSceneNode("planner-furniture-frame")?.props.position).toEqual([-10.5, 0, -5.25]);
+    expect(namedSceneNode("live-room-capture")?.props.visible).toBe(false);
+    expect(sceneComponent("CockpitSplatLayer")?.props.active).toBe(false);
+    expect(sceneComponent("CameraRig")?.props.suspended).toBe(true);
+    expect(sceneComponent("FrozenLayoutPreviewCamera")?.props).toMatchObject({ active: true, room: frozenLayoutRoomModel(runtime) });
+    for (const name of ["RoomMesh", "GrandHallRoom", "InkArchitectureLayer", "SectionPlane", "SelectionSystem", "PlannerMotionOverlayLayers", "PlacementGhost", "CockpitCameraFocus", "CockpitPlanningCamera"]) {
+      expect(sceneComponent(name), name).toBeUndefined();
+    }
+    expect(useCockpitStore.getState().sceneSource).toMatchObject({ captureSource: "none", loadedChunks: 0, totalChunks: 0, proceduralGeometryVisible: true });
+    expect(useEditorStore.getState().space).toBe(originalSpace);
+    act(() => { useLayoutTimelinePreviewStore.getState().clear(); });
+    expect(sceneComponent("FrozenLayoutRoom")).toBeUndefined();
+    expect(sceneComponent("CameraRig")?.props.suspended).toBe(false);
+    expect(namedSceneNode("planner-furniture-frame")?.props.position).toEqual([0, 0, 0]);
+    expect(namedSceneNode("live-room-capture")?.props.visible).toBe(true);
+    expect(sceneComponent("SelectionSystem")).toBeDefined();
+    expect(useCockpitStore.getState().sceneSource).toMatchObject({ captureSource: "staged", loadedChunks: 1 });
+  });
+
+  it.each(["schedule-gap", "unavailable"])("shows no current or frozen room for a %s", (mode) => {
+    chooseGrandHall(); readyGrandHall();
+    render(<PlannerScene />);
+    act(() => {
+      if (mode === "schedule-gap") useLayoutTimelinePreviewStore.getState().showScheduleGap("Room flip");
+      else useLayoutTimelinePreviewStore.getState().showPending("Frozen layout unavailable");
+    });
+    expect(sceneComponent("FrozenLayoutRoom")).toBeUndefined();
+    expect(sceneComponent("RoomMesh")).toBeUndefined();
+    expect(sceneComponent("InkArchitectureLayer")).toBeUndefined();
+    expect(namedSceneNode("live-room-capture")?.props.visible).toBe(false);
+    expect(useCockpitStore.getState().sceneSource).toMatchObject({ captureSource: "none", loadedChunks: 0, totalChunks: 0, proceduralGeometryVisible: false });
+  });
+
   it("publishes current capture visibility only after arrival, withdraws hidden/failed layers, and clears on canvas unmount", () => {
     mockSplat({ status: "loaded", hasAsset: true, splatUrls: ["/a.sog", "/b.sog"], source: "staged" });
     useEditorStore.setState({ configId: "demo-source" });

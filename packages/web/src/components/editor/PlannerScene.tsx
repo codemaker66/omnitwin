@@ -13,6 +13,9 @@ import { FurnitureLightingExperiment } from "./FurnitureLightingExperiment.js";
 import { resolveFurnitureLightingExperiment } from "../../lib/furniture-lighting-experiment.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { RoomMesh } from "./RoomMesh.js";
+import { FrozenLayoutRoom } from "./FrozenLayoutRoom.js";
+import { FrozenLayoutPreviewCamera } from "./FrozenLayoutPreviewCamera.js";
+import { retainFrozenLayoutRoomModel, type FrozenLayoutRoomModel } from "../../lib/frozen-layout-room.js";
 import { SectionPlane } from "../SectionPlane.js";
 import { InvalidateOnToggle, AutoWallSelector } from "../WallTogglePanel.js";
 import { XrayToggle } from "../XrayToggle.js";
@@ -218,6 +221,13 @@ const WHEEL_INTERACTION_SETTLE_MS = 450;
  */
 export function PlannerScene(): ReactElement {
   const space = useEditorStore((s) => s.space);
+  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
+  const previewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
+  const frozenRoomRef = useRef<FrozenLayoutRoomModel | null>(null);
+  const frozenRoom = useMemo(() => {
+    frozenRoomRef.current = retainFrozenLayoutRoomModel(frozenRoomRef.current, timelinePreviewActive ? previewRuntime : null);
+    return frozenRoomRef.current;
+  }, [previewRuntime, timelinePreviewActive]);
   const dimensions = useRoomDimensions();
   const configId = useEditorStore((s) => s.configId);
   const arrivalKey = plannerArrivalKey(configId, space?.id ?? null);
@@ -281,6 +291,7 @@ export function PlannerScene(): ReactElement {
       }
     });
     const unsubscribeBookmarks = useBookmarkStore.subscribe(() => {
+      if (useLayoutTimelinePreviewStore.getState().mode !== "inactive") return;
       if (!hasPlannerBookmarkCamera()) return;
       plannerArrivalPolicy.choose(arrivalKey);
       // Ordinary bookmarks and tours must exit the interior owner too, not
@@ -291,9 +302,10 @@ export function PlannerScene(): ReactElement {
   }, [arrivalKey]);
 
   useEffect(() => {
+    if (timelinePreviewActive) return;
     if (!plannerArrivalPolicy.claim(arrivalKey, roomSlug === "grand-hall" && walkData !== null)) return;
     useCockpitStore.setState({ layerMode: "splat", walkMode: true });
-  }, [arrivalKey, roomSlug, walkData]);
+  }, [arrivalKey, roomSlug, timelinePreviewActive, walkData]);
   // If the room changes to one with no walk data, the mode cannot stand.
   useEffect(() => {
     if (walkMode && walkData === null) useCockpitStore.getState().setWalkMode(false);
@@ -354,9 +366,8 @@ export function PlannerScene(): ReactElement {
   const loadedChunks = Math.min(arrivals.loadedCount, totalChunks);
   const failedChunks = Math.min(arrivals.failedCount, totalChunks - loadedChunks);
   const captureFailed = totalChunks > 0 && failedChunks === totalChunks;
-  const meshVisible = !hasAsset || captureFailed || layerMode !== "splat";
-  const splatActive = hasAsset && !captureFailed && layerMode !== "mesh";
-  const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
+  const meshVisible = !timelinePreviewActive && (!hasAsset || captureFailed || layerMode !== "splat");
+  const splatActive = !timelinePreviewActive && hasAsset && !captureFailed && layerMode !== "mesh";
   const furnitureLighting = resolveFurnitureLightingExperiment({
     search: typeof window === "undefined" ? "" : window.location.search,
     development: import.meta.env.DEV,
@@ -379,15 +390,18 @@ export function PlannerScene(): ReactElement {
     const source = {
       configId, spaceId: space?.id ?? null, layerMode,
       captureSource: hasAsset && splatActive ? captureSource : "none" as const,
-      loadedChunks, totalChunks,
-      proceduralGeometryVisible: meshVisible || (roomGeometry !== null && inkOpacity > 0),
+      loadedChunks: timelinePreviewActive ? 0 : loadedChunks,
+      totalChunks: timelinePreviewActive ? 0 : totalChunks,
+      proceduralGeometryVisible: timelinePreviewActive ? frozenRoom !== null : meshVisible || (roomGeometry !== null && inkOpacity > 0),
     };
     useCockpitStore.getState().setSceneSource(source);
     // A previous canvas must not withdraw a newer canvas's evidence.
     return () => { useCockpitStore.getState().clearSceneSource(source); };
-  }, [captureSource, configId, hasAsset, inkOpacity, layerMode, loadedChunks, meshVisible, roomGeometry, space?.id, splatActive, totalChunks]);
+  }, [captureSource, configId, frozenRoom, hasAsset, inkOpacity, layerMode, loadedChunks, meshVisible, roomGeometry, space?.id, splatActive, timelinePreviewActive, totalChunks]);
   const cameraInteractionClearTimer = useRef<number | null>(null);
-  const sceneWarmupSignature = `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}`;
+  const sceneWarmupSignature = timelinePreviewActive
+    ? `frozen:${frozenRoom?.envelopeKey ?? "unavailable"}`
+    : `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}`;
 
   const clearCameraInteractionTimer = useCallback((): void => {
     if (cameraInteractionClearTimer.current === null) return;
@@ -445,15 +459,15 @@ export function PlannerScene(): ReactElement {
           style={{ width: "100%", height: "100%" }}
         >
           <color attach="background" args={["#eee9de"]} />
-          <fog attach="fog" args={["#efe9dc", 54, 138]} />
+          {!timelinePreviewActive && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
           <PlannerScenePrecompiler signature={sceneWarmupSignature} />
-          <SectionPlane />
-          <InvalidateOnToggle />
+          {!timelinePreviewActive && <SectionPlane />}
+          {!timelinePreviewActive && <InvalidateOnToggle />}
           {/* Furniture needs scene lighting even when the captured layer hides
               the procedural shell or camera motion selects its lean version. */}
           {furnitureLighting === "baseline" ? (
-            <RoomLighting variant={roomGeometry === null ? "grand-hall" : "polygon"} />
+            <RoomLighting variant={!timelinePreviewActive && roomGeometry === null ? "grand-hall" : "polygon"} />
           ) : (
             <FurnitureLightingExperiment shadows={furnitureLighting === "panorama-shadow"} />
           )}
@@ -465,7 +479,8 @@ export function PlannerScene(): ReactElement {
               <GrandHallRoom includeLighting={false} />
             </>
           ))}
-          {roomGeometry !== null && (
+          {timelinePreviewActive && frozenRoom !== null && <FrozenLayoutRoom room={frozenRoom} />}
+          {!timelinePreviewActive && roomGeometry !== null && (
             <InkArchitectureLayer
               polygon={roomGeometry.wallPolygon}
               ceilingHeightM={roomGeometry.ceilingHeight}
@@ -473,25 +488,34 @@ export function PlannerScene(): ReactElement {
             />
           )}
           {hasAsset && (
-            <CockpitSplatLayer
-              urls={splatUrls}
-              transform={transform}
-              active={splatActive}
-              onChunkLoaded={arrivals.markLoaded}
-              onChunkFailed={arrivals.markFailed}
-            />
+            // Keep decoded meshes and their renderer host, but hide the whole
+            // capture immediately: a layer dissolve would leak today's room
+            // behind an immutable historical plan for several frames.
+            <group name="live-room-capture" visible={!timelinePreviewActive}>
+              <CockpitSplatLayer
+                urls={splatUrls}
+                transform={transform}
+                active={splatActive}
+                onChunkLoaded={arrivals.markLoaded}
+                onChunkFailed={arrivals.markFailed}
+              />
+            </group>
           )}
-          <CockpitCameraFocus />
-          <CockpitPlanningCamera />
-          <XrayToggle />
-          <MeasurementTool />
-          <TapeMeasure />
-          <PlacedFurniture />
-          <PlacementGhost />
-          <SelectionSystem />
-          <FurnitureMotion />
-          <PlannerMotionOverlayLayers renderSceneOverlays={renderSceneOverlays} />
-          <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} />
+          {!timelinePreviewActive && <>
+            <CockpitCameraFocus />
+            <CockpitPlanningCamera />
+            <XrayToggle />
+            <MeasurementTool />
+            <TapeMeasure />
+            <PlacementGhost />
+            <SelectionSystem />
+            <FurnitureMotion />
+            <PlannerMotionOverlayLayers renderSceneOverlays={renderSceneOverlays} />
+          </>}
+          <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
+            <PlacedFurniture />
+          </group>
+          <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive} />
           {walkMode && walkData !== null && !walkCameraDisabled && !captureFailed && (
             <InteriorCamera
               key={roomSlug ?? "walk"}
@@ -508,6 +532,7 @@ export function PlannerScene(): ReactElement {
               managePixelRatio={false}
             />
           )}
+          <FrozenLayoutPreviewCamera active={timelinePreviewActive} room={frozenRoom} />
           {import.meta.env.DEV && <PerfMonitor />}
         </Canvas>
       </div>

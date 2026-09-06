@@ -116,16 +116,25 @@
 .reference-when-ribbon .when-ribbon { margin: 0; }
 .reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-when-ribbon { bottom: 311px; }
 .reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-left-dock { bottom: 326px; }
-.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-inspector-dock { bottom: 390px; }
+.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) > :is(.reference-inspector-dock, .cockpit-panel, .cockpit-truth) { bottom: 390px; }
 .reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-layer-controls { bottom: 376px; }
 .reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .planner-command-deck.is-reference-compact { bottom: 326px; }
 .reference-viewer .room-resolve-caption { top: auto; bottom: 211px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; color: #e7d2a7; font: 400 12px/1.5 "Inter", sans-serif; }
 .reference-viewer .cockpit-preview-lock { padding: 18px; box-sizing: border-box; }
+.reference-viewer .layout-timeline-preview-caption {
+  inset-inline-start: calc(var(--reference-left) + 26px); bottom: 102px;
+  max-width: calc(100% - var(--reference-left) - var(--reference-right) - 66px);
+  box-sizing: border-box; font-weight: 450; line-height: 1.5; letter-spacing: 0;
+}
+.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .layout-timeline-preview-caption { bottom: 316px; }
 .reference-view-switch { position: fixed; z-index: 30; right: 14px; bottom: 134px; width: 248px; display: flex; justify-content: center; gap: 4px; }
 .reference-view-switch button { flex: 1; }
 .reference-handoff-action { position: fixed; z-index: 30; right: 14px; bottom: 98px; width: 248px; }
 .reference-event-details { position: fixed !important; top: auto !important; bottom: 134px !important; right: 14px !important; width: 132px; min-height: 32px; font-size: 10px !important; }
 body:has(.reference-event-details) .reference-view-switch { width: 108px; right: 154px; }
+body:has(.reference-viewer > .cockpit-bottom:not(.is-collapsed)) .reference-view-switch { bottom: 352px; }
+body:has(.reference-viewer > .cockpit-bottom:not(.is-collapsed)) .reference-handoff-action { bottom: 316px; }
+body:has(.reference-viewer > .cockpit-bottom:not(.is-collapsed)) .reference-event-details { bottom: 352px !important; }
 .reference-viewer input, .reference-viewer textarea { user-select: text; }
 .reference-viewer button:focus-visible, .reference-viewer a:focus-visible, .reference-viewer summary:focus-visible { outline: 2px solid #d4b574; outline-offset: 3px; }
 @media (max-width: 1200px) {

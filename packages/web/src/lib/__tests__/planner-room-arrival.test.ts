@@ -2,8 +2,25 @@ import { describe, expect, it } from "vitest";
 import { createPlannerArrivalPolicy, GRAND_HALL_ARRIVAL, plannerArrivalKey, plannerInteriorSpawn } from "../planner-room-arrival.js";
 import { roomSplatBundle, walkPoseForBundle } from "../../data/room-splat-bundles.js";
 import { isContained } from "../../components/rooms/interior-camera.js";
+import { beginPlannerOrbitAction, plannerInteriorOwnsCamera, plannerOrbitOwnsCamera } from "../planner-room-arrival.js";
+import { setLayoutTimelineMutationLock } from "../layout-timeline-preview-lock.js";
+import { useCockpitStore } from "../../stores/cockpit-store.js";
 
 describe("room-scoped planner arrival", () => {
+  it("yields both live camera owners while a frozen preview is locked without changing walk mode", () => {
+    useCockpitStore.getState().reset();
+    useCockpitStore.getState().setWalkMode(true);
+    setLayoutTimelineMutationLock(true);
+    try {
+      expect(plannerInteriorOwnsCamera()).toBe(false);
+      expect(plannerOrbitOwnsCamera()).toBe(false);
+      expect(beginPlannerOrbitAction()).toBe(false);
+      expect(useCockpitStore.getState().walkMode).toBe(true);
+    } finally {
+      setLayoutTimelineMutationLock(false);
+      useCockpitStore.getState().reset();
+    }
+  });
   it("waits for capability and applies once through progress and canvas remounts", () => {
     const policy = createPlannerArrivalPolicy();
     const key = plannerArrivalKey("draft", "grand-hall");

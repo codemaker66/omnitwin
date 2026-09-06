@@ -276,4 +276,17 @@ describe("timeline preview action isolation", () => {
         .toBe(true);
     });
   });
+
+  it("scopes the saved plan's approval instead of approving a different phase preview", async () => {
+    mocks.getAvailableTransitions.mockResolvedValueOnce({
+      configurationId: CONFIG_ID,
+      currentStatus: "approved",
+      availableTransitions: [],
+    });
+    render(<SubmitForReviewPanel />);
+    await screen.findByText("Approved");
+    act(() => { enterCrossPhasePreview(); });
+    expect(screen.queryByText("Approved")).toBeNull();
+    expect(screen.getByText("Saved plan: Approved")).toBeTruthy();
+  });
 });
