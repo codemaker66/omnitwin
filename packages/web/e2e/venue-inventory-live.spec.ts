@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as waitForQuota } from "node:timers/promises";
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { VenueInventoryListResponseSchema, VenueInventoryWriteResponseSchema } from "@omnitwin/types";
 
@@ -15,6 +16,26 @@ const admin = { id: "59100000-0000-4000-8000-000000000011", name: "Elaine · loc
 const headers = { authorization: `Bearer ${JSON.stringify(admin)}` };
 test.skip(!enabled, "Requires the isolated inventory PostgreSQL/API fixture on loopback.");
 test.describe.configure({ mode: "serial" });
+
+test.beforeEach(async ({ request }, testInfo) => {
+  // Pace separate workflows against the actual shared API quota. Mutations
+  // are never retried here and the application limiter is left unchanged.
+  const probe = await request.get(`${API}/venues/${venueId}/inventory`, { headers });
+  expect([200, 429]).toContain(probe.status());
+  const remaining = Number(probe.headers()["x-ratelimit-remaining"]);
+  expect(Number.isInteger(remaining) && remaining >= 0).toBe(true);
+  if (probe.status() === 429 || remaining < 50) {
+    const resetSeconds = Number(probe.headers()[probe.status() === 429 ? "retry-after" : "x-ratelimit-reset"]);
+    expect(Number.isInteger(resetSeconds) && resetSeconds >= 0 && resetSeconds <= 60).toBe(true);
+    const waitMs = resetSeconds * 1000 + 500;
+    testInfo.setTimeout(testInfo.timeout + waitMs + 5000);
+    await testInfo.attach("quota-pacing", { body: JSON.stringify({ remaining, resetSeconds, waitMs }), contentType: "application/json" });
+    await waitForQuota(waitMs);
+    const refreshed = await request.get(`${API}/venues/${venueId}/inventory`, { headers });
+    expect(refreshed.status(), await refreshed.text()).toBe(200);
+    expect(Number(refreshed.headers()["x-ratelimit-remaining"])).toBeGreaterThanOrEqual(50);
+  }
+});
 
 async function identity(page: Page, role = "admin", platformRole = "none"): Promise<void> {
   await page.addInitScript((user) => {
@@ -51,20 +72,21 @@ test.beforeAll(async ({ request }) => {
 
 test("unrecorded stock can become an explicit zero and survives a new page load", async ({ page, request }) => {
   await open(page);
-  const row = page.getByRole("row").filter({ has: page.getByText("Round table", { exact: true }) });
-  await expect(row).toContainText("Not recorded");
-  await page.getByRole("button", { name: "Record Round table", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Owned", { exact: true }).fill("0");
-  await dialog.getByLabel("Damaged", { exact: true }).fill("0");
-  await dialog.getByLabel("Other unavailable", { exact: true }).fill("0");
-  await dialog.getByLabel("Reason", { exact: true }).fill("Zero count verification");
-  await dialog.getByRole("button", { name: "Save stock record", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "Stock saved" })).toBeVisible();
-  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  const unrecordedItem = page.getByRole("button", { name: "Record Round table", exact: true });
+  await expect(unrecordedItem).toContainText("Not recorded");
+  await unrecordedItem.click();
+  const editor = page.getByRole("region", { name: /^(?:Correct|Record) stock$/u });
+  await editor.getByLabel("Owned", { exact: true }).fill("0");
+  await editor.getByLabel("Damaged", { exact: true }).fill("0");
+  await editor.getByLabel("Other unavailable", { exact: true }).fill("0");
+  await editor.getByLabel("Reason", { exact: true }).fill("Zero count verification");
+  await editor.getByRole("button", { name: "Save stock record", exact: true }).click();
+  await expect(editor.getByRole("heading", { name: "Stock saved" })).toBeVisible();
+  await editor.getByRole("button", { name: "Done", exact: true }).click();
   await page.reload();
   await expect(page.getByRole("button", { name: "Adjust Round table", exact: true })).toBeVisible();
-  await expect(row).not.toContainText("Not recorded");
+  await expect(page.getByRole("button", { name: "Adjust Round table", exact: true })).toContainText("0 owned");
+  await expect(page.getByRole("button", { name: "Record Round table", exact: true })).toHaveCount(0);
   const persisted = (await inventory(request)).items.find((item) => item.catalogue.id === tableId)?.stock;
   expect(persisted?.ownedQuantity).toBe(0);
   await write(request, tableId, 24, "Local browser table count");
@@ -73,21 +95,25 @@ test("unrecorded stock can become an explicit zero and survives a new page load"
 test("count corrections persist with a readable audit receipt", async ({ page, request }) => {
   await open(page);
   await page.getByRole("button", { name: "Adjust Chiavari chair", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Owned", { exact: true }).fill("190");
-  await dialog.getByLabel("Reason", { exact: true }).fill("Ten chairs removed after the stock count");
-  await dialog.getByRole("button", { name: "Save adjustment", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "Stock saved" })).toBeVisible();
-  await dialog.locator(".inventory-success > .inventory-receipt > summary").click();
-  await expect(dialog.locator(".inventory-success")).toContainText("200 → 190");
-  await expect(dialog.locator(".inventory-success")).toContainText("Ten chairs removed after the stock count");
-  await dialog.getByRole("button", { name: "Done", exact: true }).focus();
+  const editor = page.getByRole("region", { name: /^(?:Correct|Record) stock$/u });
+  await editor.getByLabel("Owned", { exact: true }).fill("190");
+  await editor.getByLabel("Reason", { exact: true }).fill("Ten chairs removed after the stock count");
+  await editor.getByRole("button", { name: "Save stock correction", exact: true }).click();
+  await expect(editor.getByRole("heading", { name: "Stock saved" })).toBeVisible();
+  await editor.locator(".inventory-success > .inventory-receipt > summary").click();
+  await expect(editor.locator(".inventory-success")).toContainText("200 → 190");
+  await expect(editor.locator(".inventory-success")).toContainText("Ten chairs removed after the stock count");
+  // The inline editor places history after the fields, before remedies and
+  // the save footer. Keyboard order follows that document order.
+  await editor.locator(".inventory-history > summary").focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(editor.locator(".inventory-stock-details > summary")).toBeFocused();
   await page.keyboard.press("Tab");
-  await expect(dialog.locator(".inventory-history > summary")).toBeFocused();
-  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(editor.locator(".inventory-history > summary")).toBeFocused();
+  await editor.getByRole("button", { name: "Done", exact: true }).click();
   await page.reload();
   await page.getByRole("button", { name: "Adjust Chiavari chair", exact: true }).click();
-  await expect(page.getByRole("dialog").getByLabel("Owned", { exact: true })).toHaveValue("190");
+  await expect(page.getByRole("region", { name: /^(?:Correct|Record) stock$/u }).getByLabel("Owned", { exact: true })).toHaveValue("190");
   expect((await inventory(request)).items.find((item) => item.catalogue.id === chairId)?.stock?.ownedQuantity).toBe(190);
 });
 
@@ -95,17 +121,17 @@ test("a concurrent update is shown and explicit review preserves the editor's in
   await write(request, chairId, 200, "Concurrent test baseline");
   await open(page);
   await page.getByRole("button", { name: "Adjust Chiavari chair", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Owned", { exact: true }).fill("220");
-  await dialog.getByLabel("Reason", { exact: true }).fill("Reviewed count after concurrent correction");
+  const editor = page.getByRole("region", { name: /^(?:Correct|Record) stock$/u });
+  await editor.getByLabel("Owned", { exact: true }).fill("220");
+  await editor.getByLabel("Reason", { exact: true }).fill("Reviewed count after concurrent correction");
   await write(request, chairId, 210, "Another administrator's correction");
-  await dialog.getByRole("button", { name: "Save adjustment", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "This stock record changed" })).toBeVisible();
-  await expect(dialog.getByLabel("Owned", { exact: true })).toHaveValue("220");
-  await expect(dialog.getByText(/Latest: 210 owned/u)).toBeVisible();
-  await dialog.getByRole("button", { name: "Keep my edits against latest record", exact: true }).click();
-  await dialog.getByRole("button", { name: "Save adjustment", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "Stock saved" })).toBeVisible();
+  await editor.getByRole("button", { name: "Save stock correction", exact: true }).click();
+  await expect(editor.getByRole("heading", { name: "This stock record changed" })).toBeVisible();
+  await expect(editor.getByLabel("Owned", { exact: true })).toHaveValue("220");
+  await expect(editor.getByText(/Latest: 210 owned/u)).toBeVisible();
+  await editor.getByRole("button", { name: "Keep my edits against latest record", exact: true }).click();
+  await editor.getByRole("button", { name: "Save stock correction", exact: true }).click();
+  await expect(editor.getByRole("heading", { name: "Stock saved" })).toBeVisible();
   expect((await inventory(request)).items.find((item) => item.catalogue.id === chairId)?.stock?.ownedQuantity).toBe(220);
 });
 
@@ -113,7 +139,7 @@ test("a lost response can be closed and retried after reopening without another 
   await write(request, chairId, 200, "Lost-response baseline");
   await open(page);
   await page.getByRole("button", { name: "Adjust Chiavari chair", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const editor = page.getByRole("region", { name: /^(?:Correct|Record) stock$/u });
   const adjustmentUrl = `${API}/venues/${venueId}/inventory/${chairId}/adjustments`;
   // Fault injection only: the real server commits, then its response is lost.
   await page.route(adjustmentUrl, async (route) => {
@@ -121,18 +147,18 @@ test("a lost response can be closed and retried after reopening without another 
     expect(response.ok()).toBe(true);
     await route.abort("failed");
   }, { times: 1 });
-  await dialog.getByLabel("Owned", { exact: true }).fill("215");
-  await dialog.getByLabel("Reason", { exact: true }).fill("Response-loss verification");
-  await dialog.getByRole("button", { name: "Save adjustment", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Retry this save", exact: true })).toBeVisible();
+  await editor.getByLabel("Owned", { exact: true }).fill("215");
+  await editor.getByLabel("Reason", { exact: true }).fill("Response-loss verification");
+  await editor.getByRole("button", { name: "Save stock correction", exact: true }).click();
+  await expect(editor.getByRole("button", { name: "Retry this save", exact: true })).toBeVisible();
   const committed = (await inventory(request)).items.find((item) => item.catalogue.id === chairId)?.stock;
   expect(committed?.ownedQuantity).toBe(215);
-  await dialog.getByRole("button", { name: "Close and check later", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
+  await editor.getByRole("button", { name: "Close and check later", exact: true }).click();
+  await expect(editor).toHaveCount(0);
   await page.getByRole("button", { name: "Adjust Chiavari chair", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Retry this save", exact: true })).toBeVisible();
-  await dialog.getByRole("button", { name: "Retry this save", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "Stock saved" })).toBeVisible();
+  await expect(editor.getByRole("button", { name: "Retry this save", exact: true })).toBeVisible();
+  await editor.getByRole("button", { name: "Retry this save", exact: true }).click();
+  await expect(editor.getByRole("heading", { name: "Stock saved" })).toBeVisible();
   const retried = (await inventory(request)).items.find((item) => item.catalogue.id === chairId)?.stock;
   expect(retried?.revision).toBe(committed?.revision);
 });
@@ -166,21 +192,27 @@ for (const viewport of [{ name: "desktop", width: 1600, height: 1000 },
     await page.screenshot({ path: test.info().outputPath(`${viewport.name}-inventory.png`), fullPage: true });
     const opener = page.getByRole("button", { name: "Adjust Chiavari chair", exact: true });
     await opener.click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog.getByLabel("Owned", { exact: true })).toBeVisible();
+    const editor = page.getByRole("region", { name: /^(?:Correct|Record) stock$/u });
+    const owned = editor.getByLabel("Owned", { exact: true });
+    await expect(owned).toBeVisible();
+    await expect(owned).toBeFocused();
     await page.keyboard.press("Tab");
-    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).focus();
+    await expect(editor.getByLabel("Damaged", { exact: true })).toBeFocused();
     await page.keyboard.press("Tab");
-    await expect(dialog.locator(".inventory-history > summary")).toBeFocused();
-    await page.keyboard.press("Shift+Tab");
-    await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
+    await expect(editor.getByLabel("Other unavailable", { exact: true })).toBeFocused();
     await page.keyboard.press("Tab");
+    await expect(editor.getByLabel("Storage location", { exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(editor.getByLabel("Reason", { exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(editor.locator(".inventory-stock-details > summary")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(editor.locator(".inventory-history > summary")).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(dialog.locator(".inventory-history")).toHaveAttribute("open", "");
+    await expect(editor.locator(".inventory-history")).toHaveAttribute("open", "");
+    const firstReceipt = editor.locator(".inventory-history > .inventory-receipt").first();
+    await expect(firstReceipt.locator(":scope > summary")).toBeVisible();
     await page.keyboard.press("Tab");
-    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-    const firstReceipt = dialog.locator(".inventory-history > .inventory-receipt").first();
     await expect(firstReceipt.locator(":scope > summary")).toBeFocused();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Tab");
@@ -188,26 +220,42 @@ for (const viewport of [{ name: "desktop", width: 1600, height: 1000 },
     await page.keyboard.press("Enter");
     await expect(firstReceipt.locator("details")).toHaveAttribute("open", "");
     await page.keyboard.press("Tab");
-    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-    const closeButton = dialog.getByRole("button", { name: "Close inventory adjustment", exact: true });
+    expect(await editor.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+    const closeButton = editor.getByRole("button", { name: "Close inventory adjustment", exact: true });
     await closeButton.focus();
     await page.keyboard.press("Shift+Tab");
-    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-    await page.keyboard.press("Tab");
-    await expect(closeButton).toBeFocused();
-    await dialog.evaluate(async (element) => {
+    // This is part of the page, not a modal: reverse traversal can leave the
+    // editor and reach the real navigation without a focus trap.
+    expect(await editor.evaluate((element) => element.contains(document.activeElement))).toBe(false);
+    const navigation = page.getByRole("navigation", { name: "Staff dashboard", exact: true });
+    let reachedNavigation = await navigation.evaluate((element) => element.contains(document.activeElement));
+    for (let step = 0; step < 40 && !reachedNavigation; step += 1) {
+      await page.keyboard.press("Shift+Tab");
+      reachedNavigation = await navigation.evaluate((element) => element.contains(document.activeElement));
+    }
+    expect(reachedNavigation).toBe(true);
+    await owned.focus();
+    await page.keyboard.press("Escape");
+    await expect(editor).toBeVisible();
+    await expect(owned).toBeFocused();
+    await editor.evaluate(async (element) => {
       await Promise.all(element.getAnimations({ subtree: true }).map(async (animation) => {
         await animation.finished.catch(() => undefined);
       }));
       element.scrollTop = 0;
     });
-    expect(await dialog.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
-    expect(await dialog.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(29, 32, 30)");
+    expect(await editor.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
+    expect(await editor.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+    await expect(page.getByRole("complementary", { name: "Stock correction workspace", exact: true }))
+      .toHaveCSS("background-color", "rgb(38, 67, 55)");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
     await page.screenshot({ path: test.info().outputPath(`${viewport.name}-adjustment.png`), fullPage: false });
-    await page.keyboard.press("Escape");
-    await expect(dialog).toHaveCount(0);
-    await expect(opener).toBeFocused();
+    await closeButton.focus();
+    await page.keyboard.press("Enter");
+    await expect(editor).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Everything in its place", exact: true })).toBeVisible();
+    await opener.click();
+    await expect(editor.getByLabel("Owned", { exact: true })).toBeFocused();
     expect(errors).toEqual([]);
   });
 }

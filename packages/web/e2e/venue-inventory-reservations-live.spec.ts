@@ -75,6 +75,7 @@ async function open(page: Page): Promise<void> {
   }, admin());
   await page.goto("/dashboard?view=inventory");
   await expect(page.getByRole("heading", { name: "Inventory", exact: true })).toBeVisible();
+  await page.getByText("Choose period", { exact: true }).click();
   await page.getByLabel("From", { exact: true }).fill(browserDate(requiredFixture().window.startsAt));
   await page.getByLabel("Until", { exact: true }).fill(browserDate(requiredFixture().window.endsAt));
   await page.getByRole("button", { name: "Assess demand", exact: true }).click();
@@ -182,10 +183,10 @@ test("an honest stock correction refreshes shortages without changing approved e
   const before = await recordedHistory(request, 0);
   await open(page);
   await page.getByRole("button", { name: "Adjust Chiavari chair", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("region", { name: "Correct stock", exact: true });
   await dialog.getByLabel("Owned", { exact: true }).fill("190");
   await dialog.getByLabel("Reason", { exact: true }).fill("Ten chairs removed following physical inspection");
-  await dialog.getByRole("button", { name: "Save adjustment", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save stock correction", exact: true }).click();
   await expect(dialog.getByRole("heading", { name: "Stock saved", exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Done", exact: true }).click();
   await expect(page.locator(".inventory-demand-item").filter({ has: page.getByRole("heading", { name: "Chiavari chair", exact: true }) }).locator(".inventory-shortage")).toHaveText("-20");

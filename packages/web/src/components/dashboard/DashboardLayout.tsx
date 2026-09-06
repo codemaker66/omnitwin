@@ -1,15 +1,18 @@
-import { type ReactNode, useState, useEffect } from "react";
+import { type ReactNode, useState, useEffect, useId, useRef } from "react";
 import { useClerk } from "@clerk/react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ChevronDown } from "lucide-react";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ToastContainer } from "../shared/ToastContainer.js";
 import * as spacesApi from "../../api/spaces.js";
 import { NotificationCenter } from "./NotificationCenter.js";
+import { ActivityStatus } from "../shared/Activity.js";
+import { InventoryExitBoundary, useInventoryExit } from "./inventory/InventoryNavigationGuard.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import "./DashboardLayout.css";
 
 // ---------------------------------------------------------------------------
-// DashboardLayout — sidebar nav + top bar + main content
+// DashboardLayout — shared venue navigation and a single workspace landmark
 // ---------------------------------------------------------------------------
 
 type DashboardView = "enquiries" | "pipeline" | "reviews" | "analytics" | "proposals" | "search" | "loadouts" | "settings" | "inventory" | "onboarding" | "admin";
@@ -61,9 +64,9 @@ function canShowNavItem(
 
 function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
   const { signOut } = useClerk();
+  const requestExit = useInventoryExit();
   const handleSignOut = (): void => {
-    props.onLocalSignOut();
-    void signOut();
+    requestExit(() => { props.onLocalSignOut(); void signOut(); });
   };
 
   return (
@@ -74,22 +77,53 @@ function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): Rea
 }
 
 function LocalSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
+  const requestExit = useInventoryExit();
   return (
-    <button type="button" onClick={props.onLocalSignOut} className="dashboard-layout-signout">
+    <button type="button" onClick={() => { requestExit(props.onLocalSignOut); }} className="dashboard-layout-signout">
       Sign Out
     </button>
   );
 }
 
-export function DashboardLayout({ activeView, onViewChange, mainLabel, children }: DashboardLayoutProps): React.ReactElement {
+function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }: DashboardLayoutProps): React.ReactElement {
   const user = useAuthStore((s) => s.user);
   const logoutLocal = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
   const location = useLocation();
+  const [openMenu, setOpenMenu] = useState<"more" | "account" | null>(null);
+  const menuId = useId();
+  const moreRef = useRef<HTMLDivElement>(null);
+  const accountRef = useRef<HTMLDivElement>(null);
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const accountButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => { setOpenMenu(null); }, [location.key, activeView, user?.id, user?.venueId]);
+  useEffect(() => {
+    if (openMenu === null) return;
+    const currentRef = openMenu === "more" ? moreRef : accountRef;
+    const dismissOutside = (event: Event): void => {
+      if (event.target instanceof Node && currentRef.current?.contains(event.target) !== true) setOpenMenu(null);
+    };
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setOpenMenu(null);
+      (openMenu === "more" ? moreButtonRef : accountButtonRef).current?.focus();
+    };
+    document.addEventListener("pointerdown", dismissOutside);
+    document.addEventListener("focusin", dismissOutside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside);
+      document.removeEventListener("focusin", dismissOutside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [openMenu]);
 
   // Worn by a page that is not /dashboard: the view buttons cannot call back,
   // so they route instead. Same element, same label, same selector.
   const selectView = (view: DashboardView): void => {
+    setOpenMenu(null);
     if (onViewChange !== undefined) {
       onViewChange(view);
       return;
@@ -112,113 +146,103 @@ export function DashboardLayout({ activeView, onViewChange, mainLabel, children 
   // not the hardcoded placeholder (F28). Admin users without a venueId see
   // "Admin Dashboard" instead.
   const [venueName, setVenueName] = useState("Dashboard");
+  const [venueLoading, setVenueLoading] = useState(false);
   useEffect(() => {
     if (user?.venueId === undefined || user.venueId === null) {
       setVenueName(user?.platformRole === "admin" ? "Venviewer Platform" : "Dashboard");
+      setVenueLoading(false);
       return;
     }
+    const request = { current: true };
+    setVenueName("Your venue");
+    setVenueLoading(true);
     void spacesApi.getVenue(user.venueId)
-      .then((v) => { setVenueName(v.name); })
-      .catch(() => { /* non-critical — keep default */ });
+      .then((v) => { if (request.current) setVenueName(v.name); })
+      .catch(() => { /* non-critical — keep default */ })
+      .finally(() => { if (request.current) setVenueLoading(false); });
+    return () => { request.current = false; };
   }, [user?.platformRole, user?.venueId]);
 
   const handleLocalSignOut = (): void => {
+    setOpenMenu(null);
     logoutLocal();
   };
 
+  const platformRole = user?.platformRole ?? "none";
+  const canPlan = platformRole === "admin" || ["admin", "staff", "planner"].includes(user?.role ?? "");
+  const canSchedule = platformRole === "admin" || ["admin", "staff", "hallkeeper"].includes(user?.role ?? "");
+  const canArchitect = platformRole === "admin" || ["admin", "staff", "hallkeeper", "planner"].includes(user?.role ?? "");
+  const moreItems = NAV_ITEMS.filter((item) => item.view !== "inventory" && canShowNavItem(item, user?.role, platformRole));
+  const moreActive = moreItems.some((item) => item.view === activeView) ||
+    isRouteActive("/hallkeeper/today") || isRouteActive("/event-architect") || isRouteActive("/dev/capture-intake");
+  const nameInitials = user?.name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("") ?? "";
+  const initials = (nameInitials.length > 0 ? nameInitials : "V").toLocaleUpperCase("en-GB");
+  const roleLabel = user?.role === "admin" ? "Venue admin" : platformRole === "admin" ? "Platform admin" :
+    user?.role === "hallkeeper" ? "Hallkeeper" : user?.role === "staff" ? "Venue team" :
+      user?.role === "executive" ? "Executive" : user?.role === "planner" ? "Planner" : "Workspace member";
+
   return (
     <>
-      <nav className="dashboard-layout-sidebar" aria-label="Staff dashboard">
-        <div className="dashboard-layout-brand">
-          <div className="dashboard-layout-brand-name">
-            Venviewer
-          </div>
-          <div className="dashboard-layout-brand-kicker">
-            Venue command
+      <a className="dashboard-layout-skip" href="#dashboard-main">Skip to workspace</a>
+      <header className="dashboard-layout-header">
+        <div className="dashboard-layout-identity">
+          <Link className="dashboard-layout-brand-name" to="/dashboard">Venviewer</Link>
+          <div className="dashboard-layout-venue">
+            <p className="dashboard-layout-title" title={venueName}>{venueName}</p>
+            {venueLoading && <ActivityStatus>Opening venue…</ActivityStatus>}
           </div>
         </div>
-        {NAV_ITEMS.map((item) => {
-          if (!canShowNavItem(item, user?.role, user?.platformRole ?? "none")) return null;
-          return (
-            <button
-              key={item.view}
-              type="button"
-              className={`dashboard-layout-nav-item${activeView === item.view ? " dashboard-layout-nav-item--active" : ""}`}
-              aria-current={activeView === item.view ? "page" : undefined}
-              onClick={() => { selectView(item.view); }}
-            >
-              {item.label}
+        <nav className="dashboard-layout-navigation" aria-label="Staff dashboard">
+          {canPlan && <Link className={routeLinkClass("/plan")} to="/plan"
+            aria-current={isRouteActive("/plan") ? "page" : undefined}>Plan</Link>}
+          {canSchedule && <Link className={routeLinkClass("/diary")} to="/diary"
+            aria-current={isRouteActive("/diary") ? "page" : undefined}>Schedule</Link>}
+          {user?.role === "admin" && <button type="button"
+            className={`dashboard-layout-nav-item${activeView === "inventory" ? " dashboard-layout-nav-item--active" : ""}`}
+            aria-current={activeView === "inventory" ? "page" : undefined}
+            onClick={() => { selectView("inventory"); }}>Inventory</button>}
+          <div className="dashboard-layout-disclosure" ref={moreRef}>
+            <button type="button" ref={moreButtonRef} className={`dashboard-layout-nav-item${moreActive ? " dashboard-layout-nav-item--active" : ""}`}
+              aria-expanded={openMenu === "more"} aria-controls={`${menuId}-more`}
+              onClick={() => { setOpenMenu((current) => current === "more" ? null : "more"); }}>
+              More <ChevronDown aria-hidden="true" size={16} />
             </button>
-          );
-        })}
-        {/* The Diary is the venue's booking calendar and, until now, was linked
-            from nowhere in the entire app — reachable only by typing the URL.
-            Read roles mirror the ws door: staff, admin, hallkeeper. */}
-        {(user?.platformRole === "admin" || ["admin", "staff", "hallkeeper"].includes(user?.role ?? "")) && (
-          <Link
-            className={routeLinkClass("/diary")}
-            aria-current={isRouteActive("/diary") ? "page" : undefined}
-            to="/diary"
-          >
-            The Diary
-          </Link>
-        )}
-        {(user?.platformRole === "admin" || ["admin", "staff", "hallkeeper"].includes(user?.role ?? "")) && (
-          <Link
-            className={routeLinkClass("/hallkeeper/today")}
-            aria-current={isRouteActive("/hallkeeper/today") ? "page" : undefined}
-            to="/hallkeeper/today"
-          >
-            Day Board
-          </Link>
-        )}
-        {(user?.platformRole === "admin" || ["admin", "staff", "planner"].includes(user?.role ?? "")) && (
-          <Link
-            className={routeLinkClass("/plan")}
-            aria-current={isRouteActive("/plan") ? "page" : undefined}
-            to="/plan"
-          >
-            Planner
-          </Link>
-        )}
-        {(user?.platformRole === "admin" || ["admin", "staff", "hallkeeper", "planner"].includes(user?.role ?? "")) && (
-          <Link
-            className={routeLinkClass("/event-architect")}
-            aria-current={isRouteActive("/event-architect") ? "page" : undefined}
-            to="/event-architect"
-          >
-            Event Architect
-          </Link>
-        )}
-        {user?.platformRole === "admin" && (
-          <Link
-            className={routeLinkClass("/dev/capture-intake")}
-            aria-current={isRouteActive("/dev/capture-intake") ? "page" : undefined}
-            to="/dev/capture-intake"
-          >
-            Capture Factory
-          </Link>
-        )}
-        <div className="dashboard-layout-spacer" />
-        <div className="dashboard-layout-account">
-          {user?.email ?? ""}
-          {isE2EAuthBypassEnabled()
-            ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} />
-            : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} />}
-        </div>
-      </nav>
-
-      <div className="dashboard-layout-main">
-        <header className="dashboard-layout-topbar">
-          <h1 className="dashboard-layout-title">
-            {venueName}
-          </h1>
-          <div className="dashboard-layout-topbar-actions">
-            <NotificationCenter />
-            <span className="vv-status-chip" data-tone="review">{user?.name ?? "Signed in"}</span>
+            <div className="dashboard-layout-popover" id={`${menuId}-more`} hidden={openMenu !== "more"}>
+              <p className="dashboard-layout-menu-label">Your workspace</p>
+              <div className="dashboard-layout-more-links">
+                {moreItems.map((item) => <button key={item.view} type="button"
+                  className={`dashboard-layout-menu-link${activeView === item.view ? " dashboard-layout-menu-link--active" : ""}`}
+                  aria-current={activeView === item.view ? "page" : undefined}
+                  onClick={() => { selectView(item.view); }}>{item.label}</button>)}
+                {canSchedule && <Link className="dashboard-layout-menu-link" to="/hallkeeper/today"
+                  aria-current={isRouteActive("/hallkeeper/today") ? "page" : undefined}>Day Board</Link>}
+                {canArchitect && <Link className="dashboard-layout-menu-link" to="/event-architect"
+                  aria-current={isRouteActive("/event-architect") ? "page" : undefined}>Event Architect</Link>}
+                {platformRole === "admin" && <Link className="dashboard-layout-menu-link" to="/dev/capture-intake"
+                  aria-current={isRouteActive("/dev/capture-intake") ? "page" : undefined}>Capture Factory</Link>}
+              </div>
+              <div className="dashboard-layout-notifications"><p className="dashboard-layout-menu-label">Notifications</p><NotificationCenter /></div>
+            </div>
           </div>
-        </header>
-        <main className="dashboard-layout-content" id="dashboard-main" aria-label={mainLabel ?? "Dashboard workspace"}>
+        </nav>
+        <div className="dashboard-layout-disclosure dashboard-layout-account" ref={accountRef}>
+          <button className="dashboard-layout-account-button" type="button" ref={accountButtonRef}
+            aria-label={`Account: ${user?.name ?? "Signed in"}`} aria-expanded={openMenu === "account"} aria-controls={`${menuId}-account`}
+            onClick={() => { setOpenMenu((current) => current === "account" ? null : "account"); }}>
+            <span className="dashboard-layout-avatar" aria-hidden="true">{initials}</span>
+            <span className="dashboard-layout-account-name"><strong>{user?.name ?? "Signed in"}</strong><span>{roleLabel}</span></span>
+            <ChevronDown aria-hidden="true" size={18} />
+          </button>
+          <div className="dashboard-layout-popover dashboard-layout-account-panel" id={`${menuId}-account`} hidden={openMenu !== "account"}>
+            <p className="dashboard-layout-menu-label">Signed in as</p><p className="dashboard-layout-account-email">{user?.email ?? ""}</p>
+            {isE2EAuthBypassEnabled()
+              ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} />
+              : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} />}
+          </div>
+        </div>
+      </header>
+      <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}`}>
+        <main className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={mainLabel ?? "Dashboard workspace"}>
           {children}
         </main>
       </div>
@@ -226,6 +250,10 @@ export function DashboardLayout({ activeView, onViewChange, mainLabel, children 
       <ToastContainer />
     </>
   );
+}
+
+export function DashboardLayout(props: DashboardLayoutProps): React.ReactElement {
+  return <InventoryExitBoundary><DashboardLayoutShell {...props} /></InventoryExitBoundary>;
 }
 
 export type { DashboardView };

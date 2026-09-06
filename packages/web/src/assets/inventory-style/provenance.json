@@ -1,0 +1,197 @@
+{
+  "schemaVersion": "venviewer.inventory-style-illustrations.v1",
+  "createdOn": "2026-09-06",
+  "generator": "native image_gen.imagegen",
+  "purpose": "presentation-only",
+  "verifiedVenuePhotographs": false,
+  "measuredGeometry": false,
+  "catalogueIdentityAssigned": false,
+  "founderIndividualAssetAcceptance": "not-yet-reviewed",
+  "reference": {
+    "path": "../../../../../docs/design/references/venviewer-selected-inventory-2026-09-06.png",
+    "width": 1586,
+    "height": 992,
+    "sha256": "50d0620dcf2180512bd33d90e522ab3a00c243446a3251e0b063fdd2f740acae",
+    "role": "founder-selected-interface-composition"
+  },
+  "delivery": {
+    "mimeType": "image/webp",
+    "encoding": "lossless WebP",
+    "entryFileRole": "retained native-generated PNG original; the entry delivery object identifies the imported WebP",
+    "originalsRetained": true,
+    "decodedPixelsIdenticalToPng": true,
+    "pixelEqualityEvidence": "Private inventory style verification archive; digest below",
+    "pixelEqualityEvidenceSha256": "d1349b26d92f6ef84272587e1e971ef3d22319e453c94637778340cf1c55acf6",
+    "pixelFormat": "RGB24",
+    "hasAlpha": false,
+    "background": "visually white matte; measured samples range 253-255, not exact flat white",
+    "imageEditing": "native image generation and edits; original PNG files retained byte-for-byte; delivery re-encoded as lossless WebP with identical decoded RGB pixels according to the linked evidence",
+    "intendedCompositing": "CSS mix-blend-mode:multiply against the ivory inventory surface; root browser verification required"
+  },
+  "limitations": [
+    "Generated reference illustrations are not photographs, exact models or measurements of Trades Hall equipment.",
+    "No count, condition, storage location, catalogue identity or reservation is inferred from these files.",
+    "The dressed table illustration does not establish that linen is available, included or allocated.",
+    "Two chair transparency requests returned RGB checkerboards and are retained as failed evidence. The initial table/projector files actually contain valid RGBA transparency; direct pixel inspection corrected their misleading dark tool previews. Consistent white-matte variants were selected for the current project filenames.",
+    "New individual illustrations still await founder aesthetic review; the selected interface was the visual source."
+  ],
+  "verifiedTransparentAlternatives": [
+    {
+      "file": "round-table-transparent.png",
+      "width": 1536,
+      "height": 1024,
+      "pixelFormat": "RGBA32",
+      "bytes": 1886057,
+      "sha256": "d32272112082b8e22446dbbf763801dd212797b229923912c95e047e7e026055",
+      "sampledCornerAlpha": 0,
+      "sampledSubjectAlpha": 253,
+      "status": "available for root compositing review; not the current imported filename"
+    },
+    {
+      "file": "projector-transparent.png",
+      "width": 1536,
+      "height": 1024,
+      "pixelFormat": "RGBA32",
+      "bytes": 1531928,
+      "sha256": "c62ada744335ea1b0f02b477ffbd710a54c38f60b368dffbf1f723a4f432cb37",
+      "sampledCornerAlpha": 0,
+      "sampledSubjectAlpha": 253,
+      "status": "available for root compositing review; not the current imported filename"
+    }
+  ],
+  "entries": [
+    {
+      "file": "./chiavari-chair.png",
+      "label": "Gold Chiavari chair with ivory cushion",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 1251263,
+      "sha256": "c0e44670ed601b5b403fb58dd9a1dab35adf272a252b983b90bd95fd45cd3aee",
+      "delivery": {
+        "file": "./chiavari-chair.webp",
+        "mimeType": "image/webp",
+        "encoding": "lossless",
+        "bytes": 747662,
+        "sha256": "d5be789be38c6b752c1420206b571f5bcc37b516337b199482d2ea73945f1257",
+        "decodedPixelsIdenticalToOriginal": true,
+        "width": 1024,
+        "height": 1536
+      },
+      "sourceKind": "ai-generated-illustration",
+      "sourceIntakeRecordId": "chiavari-wedding-chair",
+      "catalogueAssetIds": [],
+      "identityStatus": "concept-only",
+      "presentationVariant": "bare-chair-with-reference-cushion",
+      "backgroundSampleLocations": [
+        "0,0",
+        "50,50",
+        "width-1,0",
+        "0,height-1",
+        "width-1,height-1"
+      ],
+      "backgroundSamples": [
+        "#fefffe",
+        "#fefefe",
+        "#ffffff",
+        "#fefefd",
+        "#fdfdfd"
+      ],
+      "acceptedForImplementation": "visually inspected clean matte; final composition verification remains with root",
+      "nativePrompts": {
+        "initial": [
+          "Use case: background-extraction. Asset type: transparent inventory product cutout for Venviewer. Input image 1 is the user-selected UI composition reference. Create one isolated, high-resolution version of ONLY the GOLD CHIAVARI CHAIR visible on the left of this image. Preserve its recognisable slender turned-spindle silhouette, warm antique-gold finish, ivory upholstered seat cushion, quiet three-quarter front angle and soft upper-left lighting. Exclude all interface text, metrics, shapes, table, projector and background. Portrait PNG 1024 × 1536, entire chair visible, about 85% of canvas height, all four feet with clear margins. Actual alpha transparency outside the chair and through every gap between spindles/rails/legs; only a delicate semitransparent contact shadow. No opaque backdrop, floor rectangle, checkerboard graphic, white halo, extra objects, text, watermark or ornate redesign. Keep fine spindle joints and cushion edges sharply resolved. This is a generated presentation illustration matching a design reference, not a verified photograph or measurement of real venue stock. Output one chair asset only.",
+          "Use case: background-extraction. Edit target: attached gold Chiavari product image. Fix ONLY the background and file transparency. Preserve the chair silhouette, all thin spindles, gold material, ivory cushion, exact viewpoint, scale and complete feet unchanged. Remove ALL background pixels and the painted grey-and-white square pattern, both outside the chair and in the holes between its spindles, rails and legs. Deliver a PNG with a real RGBA alpha channel: empty regions must have alpha 0, edge pixels partial alpha, chair pixels opaque. Do not draw a replacement background or a transparency preview pattern. This is an isolated object cutout file for compositing over arbitrary website backgrounds. Preserve 1024×1536 framing. Output one image."
+        ],
+        "finalMatteEdit": "Edit this product illustration. Change ONLY the background to pure solid white #ffffff. Remove the existing grey square pattern everywhere around the chair and in every hole between spindles, rails and legs. Preserve the gold Chiavari chair, ivory cushion, all thin spindles, exact viewpoint, framing and complete feet. Keep the subject crisply defined with neutral soft studio light. The entire image background must be uniform pure white, with no grey gradient, no spotlight halo, no pattern, no floor, no frame. A tiny subtle neutral contact shadow beneath the feet is permitted; keep it tightly local. Output one 1024×1536 RGB PNG of the chair on pure white. This matte illustration will be multiplied over a cream UI surface. No transparency request; pure white background is essential. No text or other objects."
+      }
+    },
+    {
+      "file": "./round-table.png",
+      "label": "Round table styled with ivory linen",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1539219,
+      "sha256": "42a1ac952a0199b586e031cd134eb76fda8cb276295e3bdccdba093098560c96",
+      "delivery": {
+        "file": "./round-table.webp",
+        "mimeType": "image/webp",
+        "encoding": "lossless",
+        "bytes": 854842,
+        "sha256": "f8e18862d082b30c3b94fae15677e35dd033a7581839239d2c991b38840797c6",
+        "decodedPixelsIdenticalToOriginal": true,
+        "width": 1536,
+        "height": 1024
+      },
+      "sourceKind": "ai-generated-illustration",
+      "sourceIntakeRecordId": "round-6ft",
+      "catalogueAssetIds": [],
+      "identityStatus": "concept-only",
+      "presentationVariant": "styled-with-ivory-linen-not-an-included-stock-accessory",
+      "backgroundSampleLocations": [
+        "0,0",
+        "50,50",
+        "width-1,0",
+        "0,height-1",
+        "width-1,height-1"
+      ],
+      "backgroundSamples": [
+        "#fefdff",
+        "#fefefe",
+        "#feffff",
+        "#fefefe",
+        "#fefefe"
+      ],
+      "acceptedForImplementation": "visually inspected clean matte; final composition verification remains with root",
+      "nativePrompts": {
+        "initial": [
+          "Use case: background-extraction. Asset type: an isolated transparent inventory product image for Venviewer. The attached UI design is the visual reference. Create ONLY its little round table with ivory floor-length linen, enlarged into a carefully rendered product cutout. Preserve the restrained elevated three-quarter angle, plain circular top, natural soft vertical folds, warm ivory cloth and soft upper-left light. Entire table inside landscape 1536×1024 with clear margins. The background must be genuinely empty alpha transparency in the PNG file, including beneath its hem; only a delicate semitransparent contact shadow may remain. No interface, chair, projector, labels, scenery, floor surface, background pattern, props or text. Keep enough tonal detail in the ivory fabric to read on a cream interface. No excessive folds, shiny satin or ornate dressing. This is a generated concept illustration of a dressed table, not a verified photograph, physical dimension, stock count or claim that linen is included. Output just one transparent table asset."
+        ],
+        "finalMatteEdit": "Edit this product illustration. Change ONLY the background and studio light. Replace the dark backdrop and bright halo with a uniform pure solid white #ffffff background. Preserve the round table's full silhouette, modest elevated three-quarter angle, warm ivory floor-length linen, fabric details and complete hem. Neutral soft studio light, gently defined folds so the pale subject remains visible on white. No dark background, gradient, vignette, spotlight glow, floor line, frame or pattern. A tiny subtle neutral contact shadow beneath the table is permitted; keep it tightly local. Output one 1536×1024 RGB PNG of the dressed table on pure white. This matte illustration will be multiplied over a cream UI surface. No transparency request; pure white background is essential. No text, chairs or props."
+      }
+    },
+    {
+      "file": "./projector.png",
+      "label": "Generic white event projector",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1418923,
+      "sha256": "87a04910e685430a057e40c9eb3ed180a8962c3cb46aa2d36c11bcdf35578db0",
+      "delivery": {
+        "file": "./projector.webp",
+        "mimeType": "image/webp",
+        "encoding": "lossless",
+        "bytes": 800012,
+        "sha256": "7faeb688ce633b51eba3dd7f8253354dffb42395d8f97d4973ce58fff5dd02bb",
+        "decodedPixelsIdenticalToOriginal": true,
+        "width": 1536,
+        "height": 1024
+      },
+      "sourceKind": "ai-generated-illustration",
+      "sourceIntakeRecordId": "projector",
+      "catalogueAssetIds": [],
+      "identityStatus": "concept-only",
+      "presentationVariant": "generic-white-reference-projector",
+      "backgroundSampleLocations": [
+        "0,0",
+        "50,50",
+        "width-1,0",
+        "0,height-1",
+        "width-1,height-1"
+      ],
+      "backgroundSamples": [
+        "#feffff",
+        "#fefefe",
+        "#fffffe",
+        "#fefdfe",
+        "#fefdfe"
+      ],
+      "acceptedForImplementation": "visually inspected clean matte; final composition verification remains with root",
+      "nativePrompts": {
+        "initial": [
+          "Use case: background-extraction. Asset type: an isolated transparent inventory product image for Venviewer. The attached UI design is the visual reference. Create ONLY its small WHITE PROJECTOR, enlarged into a detailed product cutout with the same restrained three-quarter front angle, off-white casing, round glass lens, credible vents, subtle feet and soft upper-left studio lighting. Preserve the reference's calm material rendering and colour. Entire projector inside landscape 1536×1024 with clear margins. Output PNG with genuinely empty alpha transparency outside the object and under its feet, and only a delicate semitransparent contact shadow. No interface, chair, table, floor rectangle, backdrop, background pattern, screen, projected beam, cables, text, logos or watermark. This is a generic generated illustration matching a design reference, not a manufacturer/model identification or verified photograph of actual venue stock. Output just one transparent projector asset."
+        ],
+        "finalMatteEdit": "Edit this product illustration. Change ONLY the background and studio light. Replace the black background and luminous halo with a uniform pure solid white #ffffff background. Preserve the compact white projector's silhouette, three-quarter front angle, vents, glass lens, off-white casing and complete feet. Use neutral soft studio light with subtle surface detail that reads clearly on white. No dark background, grey gradient, vignette, glow, floor line, frame or pattern. A tiny subtle neutral contact shadow beneath the feet is permitted; keep it tightly local. Output one 1536×1024 RGB PNG of the projector on pure white. This matte illustration will be multiplied over a cream UI surface. No transparency request; pure white background is essential. No text, logos, cables or other objects."
+      }
+    }
+  ]
+}

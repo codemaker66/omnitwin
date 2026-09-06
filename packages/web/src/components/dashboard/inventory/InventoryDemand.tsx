@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { InventoryAssessment, InventoryAssessmentItem, InventoryRemedy, InventoryReservationRelease, InventoryReservationSource, InventoryWindow } from "@omnitwin/types";
 import { ApiError } from "../../../api/client.js";
 import { ActivityStatus } from "../../shared/Activity.js";
@@ -31,8 +31,18 @@ function reviewTitle(review: Review): string {
   }
 }
 
-export function InventoryDemand({ actorId, venueId, refreshKey }: {
+export interface InventoryDemandContext {
+  readonly assessment: InventoryAssessment | null;
+  readonly assessmentCurrent: boolean;
+  readonly loading: boolean;
+  readonly canAct: boolean;
+  readonly windowForm: ReactNode;
+  readonly onRemedy: (item: InventoryAssessmentItem) => void;
+}
+
+export function InventoryDemand({ actorId, venueId, refreshKey, children }: {
   readonly actorId: string; readonly venueId: string; readonly refreshKey: string | number;
+  readonly children?: (context: InventoryDemandContext) => ReactNode;
 }): ReactElement {
   const key = inventoryActionKey(actorId, venueId);
   const [pending, setPending] = useState(() => readInventoryAction(key));
@@ -154,7 +164,12 @@ export function InventoryDemand({ actorId, venueId, refreshKey }: {
   };
   const onAction = (action: InventoryPendingAction): void => { if (pending === null && assessmentUsable) void perform(action); };
 
-  return <section className="inventory-demand" aria-labelledby="inventory-demand-title">
+  const windowForm = <InventoryWindowForm initial={initial} disabled={pending !== null || busy} busy={loading}
+    onChange={() => { setWindow(null); setNotice(null); }} onAssess={(value) => { setWindow(value); setNotice(null); }} />;
+  const canAct = !busy && pending === null && !loading && assessmentUsable;
+  return <>{children?.({ assessment, assessmentCurrent: assessmentUsable, loading, canAct, windowForm,
+    onRemedy: (item) => { if (canAct) setView({ kind: "prepare", item }); } })}
+  <section className="inventory-demand" id="inventory-decisions" aria-labelledby="inventory-demand-title">
     <div className="inventory-section-heading"><h2 id="inventory-demand-title">Demand & decisions</h2>
       <p>Review event allocations, see shortages and prepare the next action.</p></div>
     {pending !== null && view?.kind !== "pending" ? <section className="inventory-notice" role="status"><h3>An earlier action is not confirmed</h3>
@@ -162,8 +177,7 @@ export function InventoryDemand({ actorId, venueId, refreshKey }: {
       <button type="button" className="inventory-button" disabled={busy} onClick={() => {
         if (identityConflict) setView({ kind: "pending" }); else void perform(pending);
       }}>{identityConflict ? "Review command conflict" : "Check recorded result"}</button></section> : null}
-    <InventoryWindowForm initial={initial} disabled={pending !== null || busy} busy={loading}
-      onChange={() => { setWindow(null); setNotice(null); }} onAssess={(value) => { setWindow(value); setNotice(null); }} />
+    {children === undefined ? windowForm : null}
     {notice !== null ? <p className="inventory-notice" role="status">{notice}</p> : null}
     {error !== null && view?.kind !== "pending" ? <p className="inventory-error" role="alert">{error}</p> : null}
     {loading ? <ActivityStatus className="inventory-muted">Assessing recorded demand and stock…</ActivityStatus> : null}
@@ -204,5 +218,5 @@ export function InventoryDemand({ actorId, venueId, refreshKey }: {
         <p>{view.original.quantity.toLocaleString("en-GB")} × {view.original.assetName} · {view.original.reason}</p>
         <code>{view.original.id}</code><code>{view.original.assessmentDigest}</code></details> : null}
     </InventoryActionDialog> : null}
-  </section>;
+  </section></>;
 }

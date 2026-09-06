@@ -146,12 +146,15 @@ export function DashboardPage(): React.ReactElement {
     : null;
 
   const handleViewChange = (newView: DashboardView): void => {
-    setView(newView);
-    setProfileUserId(null);
-    setProfileLeadId(null);
-    // Switching views from the sidebar is a deliberate user action — drop
-    // the cross-view return context so it doesn't bleed into the next view.
-    setEnquiryReturnContext(null);
+    // Inventory may hold this router transition while a correction is dirty.
+    // Its accepted URL effect must own unmounting the editor. Other subviews
+    // retain their existing local profile/return-context navigation behaviour.
+    if (view !== "inventory" || newView === "inventory") {
+      setView(newView);
+      setProfileUserId(null);
+      setProfileLeadId(null);
+      setEnquiryReturnContext(null);
+    }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set("view", newView);
     setSearchParams(nextParams);

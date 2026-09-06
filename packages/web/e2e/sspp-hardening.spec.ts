@@ -557,6 +557,7 @@ test.describe("SS++ hardening visual regression", () => {
     await mockDashboardRoutes(page);
 
     await page.goto("/dashboard");
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Executive Analytics" }).click();
     await expect(page.getByRole("heading", { name: "Commercial planning dashboard" })).toBeVisible();
     await expect(page.getByText("Pipeline value")).toBeVisible();

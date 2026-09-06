@@ -2142,6 +2142,7 @@ test.describe("SS++ representative button behavior", () => {
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
 
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: /unread notification/i }).click();
     await expect(page.getByRole("heading", { name: "Change feed" })).toBeVisible();
     await page.getByRole("button", { name: "Refresh notifications" }).click();
@@ -2267,6 +2268,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await expect(page.getByRole("button", { name: "Pipeline" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Proposals" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Onboarding" })).toHaveCount(0);
@@ -2295,6 +2297,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "Commercial planning dashboard" })).toBeVisible();
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await expect(page.getByRole("button", { name: "Executive Analytics" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Pipeline" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Proposals" })).toHaveCount(0);
@@ -2334,6 +2337,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await expect(page.getByRole("button", { name: "Pipeline" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Proposals" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Onboarding" })).toBeVisible();
@@ -2417,6 +2421,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: /unread notification/i }).click();
     await page.getByRole("button", { name: "View Guest count updated" }).click();
     await expect(page).toHaveURL(new RegExp(`/ops/events/${EVENT_ID}$`, "u"));
@@ -2602,6 +2607,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Pending Reviews" }).click();
     await expect(page.getByRole("heading", { name: /Pending Reviews/u })).toBeVisible();
 
@@ -2653,6 +2659,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Reference Loadouts" }).click();
     await expect(page.getByRole("heading", { name: "Reference Loadouts" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open reference loadout Ceremony reference setup" })).toBeVisible();
@@ -2718,6 +2725,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Reference Loadouts" }).click();
     await page.getByRole("button", { name: "Open reference loadout Ceremony reference setup" }).click();
     await expect(page.getByRole("heading", { name: "Ceremony reference setup" })).toBeVisible();
@@ -2765,6 +2773,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Proposals" }).click();
     await page.getByTestId(`proposal-row-${PROPOSAL_ID}`).click();
     await expect(page.getByRole("heading", { name: "Reception Room wedding proposal" })).toBeVisible();
@@ -2864,6 +2873,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Onboarding" }).click();
     await expect(page.getByRole("heading", { name: "Workspace onboarding" })).toBeVisible();
 
@@ -2888,6 +2898,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Onboarding" }).click();
     await expect(page.getByRole("heading", { name: "Operator action board" })).toBeVisible();
 
@@ -2920,6 +2931,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
+    await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Onboarding" }).click();
     await expect(page.getByRole("heading", { name: "Operator action board" })).toBeVisible();
 
