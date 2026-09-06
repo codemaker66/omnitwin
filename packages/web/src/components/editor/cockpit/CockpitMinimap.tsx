@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type MouseEvent, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -153,7 +153,27 @@ export function timelinePreviewMinimapPoint(
   );
 }
 
-export function CockpitMinimap(): ReactElement {
+function MinimapFrame({ embedded, cameraInteractionActive, children }: {
+  readonly embedded: boolean;
+  readonly cameraInteractionActive: boolean;
+  readonly children: ReactNode;
+}): ReactElement {
+  if (embedded) return <div className="cockpit-minimap-embedded" data-testid="cockpit-minimap-embedded">{children}</div>;
+  return <FloatingWidgetFrame
+    id="cockpit-minimap"
+    title="Plan view"
+    compactLabel="Plan"
+    className="cockpit-minimap-widget"
+    bodyClassName="cockpit-minimap-widget__body"
+    defaultPlacement={MINIMAP_DEFAULT_PLACEMENT}
+    avoidSelectors={MINIMAP_AVOID_SELECTORS}
+    avoidPaddingPx={MINIMAP_AVOID_PADDING_PX}
+    zIndex={36}
+    autoCompact={cameraInteractionActive}
+  >{children}</FloatingWidgetFrame>;
+}
+
+export function CockpitMinimap({ embedded = false }: { readonly embedded?: boolean }): ReactElement {
   const placedItems = usePlacementStore((state) => state.placedItems);
   const sceneItems = useMemo(() => sceneFurniturePlacements(placedItems), [placedItems]);
   const liveDimensions = useRoomDimensionsStore((state) => state.dimensions);
@@ -207,7 +227,11 @@ export function CockpitMinimap(): ReactElement {
 
   const handleClick = (event: MouseEvent<HTMLButtonElement>): void => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const { x, z } = minimapToWorld(event.clientX - rect.left, event.clientY - rect.top, layout);
+    // Keyboard activation has no pointer location: recentre the room instead
+    // of treating the synthetic (0,0) coordinates as an off-map point.
+    const { x, z } = event.detail === 0
+      ? { x: 0, z: 0 }
+      : minimapToWorld(event.clientX - rect.left, event.clientY - rect.top, layout);
     requestFocus(x, z);
   };
 
@@ -219,41 +243,19 @@ export function CockpitMinimap(): ReactElement {
 
   if (timelinePreviewActive && frozenRoom === null) {
     return (
-      <FloatingWidgetFrame
-        id="cockpit-minimap"
-        title="Plan view"
-        compactLabel="Plan"
-        className="cockpit-minimap-widget"
-        bodyClassName="cockpit-minimap-widget__body"
-        defaultPlacement={MINIMAP_DEFAULT_PLACEMENT}
-        avoidSelectors={MINIMAP_AVOID_SELECTORS}
-        avoidPaddingPx={MINIMAP_AVOID_PADDING_PX}
-        zIndex={36}
-        autoCompact={cameraInteractionActive}
-      >
+      <MinimapFrame embedded={embedded} cameraInteractionActive={cameraInteractionActive}>
         <aside className="cockpit-minimap" aria-label="Plan view minimap">
           <p className="cockpit-minimap__unavailable" data-testid="cockpit-minimap-unavailable" role="status">
             No room preview available
           </p>
           <p className="cockpit-minimap__note">No room shell or saved layout shown</p>
         </aside>
-      </FloatingWidgetFrame>
+      </MinimapFrame>
     );
   }
 
   return (
-    <FloatingWidgetFrame
-      id="cockpit-minimap"
-      title="Plan view"
-      compactLabel="Plan"
-      className="cockpit-minimap-widget"
-      bodyClassName="cockpit-minimap-widget__body"
-      defaultPlacement={MINIMAP_DEFAULT_PLACEMENT}
-      avoidSelectors={MINIMAP_AVOID_SELECTORS}
-      avoidPaddingPx={MINIMAP_AVOID_PADDING_PX}
-      zIndex={36}
-      autoCompact={cameraInteractionActive}
-    >
+    <MinimapFrame embedded={embedded} cameraInteractionActive={cameraInteractionActive}>
       <aside className="cockpit-minimap" aria-label="Plan view minimap">
         <button
           type="button"
@@ -303,6 +305,6 @@ export function CockpitMinimap(): ReactElement {
         </button>
         <p className="cockpit-minimap__note">{note}</p>
       </aside>
-    </FloatingWidgetFrame>
+    </MinimapFrame>
   );
 }

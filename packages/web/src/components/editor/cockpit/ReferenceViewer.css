@@ -1,0 +1,157 @@
+.cockpit-shell.reference-viewer {
+  --reference-left: 260px;
+  --reference-right: 248px;
+  --reference-inset: 14px;
+  --cockpit-rail-width: 54px;
+  --cockpit-topbar-height: 0px;
+  --cockpit-right-width: 248px;
+  --cockpit-smoke: rgba(19, 18, 16, .92);
+  --cockpit-hairline: rgba(213, 189, 143, .23);
+  --cockpit-amber: #d0ad68;
+  display: block;
+  background: #11100e;
+  font-weight: 400;
+}
+.reference-viewer .cockpit-stage { position: absolute; inset: 0; }
+.reference-left-dock {
+  position: absolute; z-index: 20; top: 14px; left: 12px; bottom: 106px;
+  width: var(--reference-left); display: grid; grid-template-columns: 54px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+  border: 1px solid var(--cockpit-hairline); border-radius: 7px;
+  background: rgba(18, 17, 15, .91); overflow: hidden;
+  box-shadow: 0 12px 38px rgba(0, 0, 0, .16);
+}
+.reference-left-content { grid-column: 2; grid-row: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.reference-left-content .reference-scene-outliner { border: 0; border-radius: 0; background: transparent; flex: 1; min-height: 0; }
+.reference-viewer .cockpit-rail {
+  display: flex;
+  grid-area: auto; grid-column: 1; grid-row: 1;
+  margin: 0; padding: 12px 0; border: 0; border-right: 1px solid rgba(224, 211, 188, .1);
+  border-radius: 0; background: rgba(9, 9, 8, .22); min-height: 0;
+}
+.reference-viewer .cockpit-rail__list { gap: 9px; }
+.reference-viewer .cockpit-rail__button {
+  width: 40px; min-height: 42px; padding: 0; border: 0; border-radius: 5px;
+  background: transparent; color: #b3afa7; box-shadow: none;
+}
+.reference-viewer .cockpit-rail__button span { display: none; }
+.reference-viewer .cockpit-rail__button svg { width: 17px; height: 17px; stroke-width: 1.45; }
+.reference-viewer .cockpit-rail__button.is-active { color: #dfb968; background: rgba(202, 167, 99, .1); }
+.reference-viewer .cockpit-rail__button:hover { color: #f2d79f; background: rgba(255, 255, 255, .04); }
+.reference-room-header {
+  display: grid; grid-template-columns: minmax(0, 1fr) 26px; align-items: center;
+  gap: 9px 5px; padding: 18px 12px 13px; border-bottom: 1px solid rgba(224, 211, 188, .09);
+}
+.reference-wordmark { display: flex; align-items: center; gap: 9px; color: #f2e8d5; text-decoration: none; font-size: 10px; letter-spacing: .15em; }
+.reference-wordmark img { object-fit: contain; flex-shrink: 0; }
+.reference-wordmark small { display: block; color: #a6a095; font-size: 9px; letter-spacing: .02em; line-height: 1.5; margin-top: 5px; }
+.reference-save { width: 26px; height: 30px; display: grid; place-items: center; border: 0; background: transparent; color: #c4b085; cursor: pointer; border-radius: 4px; }
+.reference-save:disabled { opacity: .5; cursor: default; }
+.reference-save-status { grid-column: 1 / -1; font-size: 9px; color: #929087; letter-spacing: .03em; }
+.reference-left-content .generated-furniture-proxy-badge { position: static; width: auto; max-width: none; border: 0; border-top: 1px solid rgba(224, 211, 188, .1); border-radius: 0; padding: 9px 12px; background: transparent; font-size: 9px; font-weight: 400; line-height: 1.5; text-align: left; text-transform: none; letter-spacing: 0; }
+.reference-inspector-dock,
+.reference-viewer > .cockpit-panel,
+.reference-viewer > .cockpit-truth {
+  position: absolute; top: 14px; right: 14px; bottom: 178px; width: var(--reference-right);
+  z-index: 20; margin: 0; border: 1px solid var(--cockpit-hairline); border-radius: 7px;
+  background: rgba(18, 17, 15, .91); overflow: auto; scrollbar-width: thin;
+  scrollbar-color: #66583d transparent;
+}
+.reference-inspector-dock .reference-furniture-inspector { border: 0; border-radius: 0; background: transparent; }
+.reference-model-provenance { padding: 12px 14px; border-top: 1px solid rgba(224, 211, 188, .1); font-size: 10px; color: #bdb7aa; }
+.reference-model-provenance summary { cursor: pointer; }
+.reference-model-provenance .cockpit-panel { position: static; width: auto; margin: 12px 0 0; border: 0; padding: 0; background: transparent; }
+.reference-viewer .planner-tool-pill {
+  top: 21px; min-height: 48px; box-sizing: border-box; padding: 6px 11px;
+  border-radius: 28px; gap: 3px; z-index: 25; border-color: rgba(214, 201, 180, .26);
+  background: rgba(27, 26, 24, .94); box-shadow: 0 12px 36px rgba(0, 0, 0, .22);
+}
+.reference-viewer .planner-tool-pill__btn { font-size: 11px; font-weight: 450; padding: 8px 9px; gap: 6px; color: #d3cec5; }
+.reference-viewer .planner-tool-pill__btn[aria-pressed="true"] { background: transparent; color: #e2bc70; }
+.reference-viewer .planner-tool-pill__label { display: inline; }
+.reference-more-tools {
+  position: fixed; z-index: 26; top: 28px; left: calc(50% + 226px);
+  width: 32px; height: 34px; display: grid; place-items: center;
+  border: 1px solid rgba(214, 201, 180, .22); border-radius: 50%;
+  background: #20201d; color: #d3cec5; cursor: pointer;
+}
+.reference-viewer [data-testid="planner-toolbar"].reference-extra-tools {
+  left: auto !important; right: calc(var(--reference-right) + 28px) !important;
+  top: 82px !important; bottom: auto !important; width: 238px !important; height: auto !important;
+  max-height: calc(100dvh - 200px); overflow-y: auto;
+  display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 9px !important; gap: 7px !important; border: 1px solid var(--cockpit-hairline) !important;
+  border-radius: 8px !important; background: #1c1b18 !important;
+}
+.reference-viewer [data-testid="planner-toolbar"].reference-extra-tools > div:empty { display: none; }
+.reference-viewer [data-testid="furniture-panel"] { left: calc(var(--reference-left) + 26px) !important; top: 82px !important; max-height: calc(100dvh - 202px); }
+.reference-viewer .planner-command-deck.is-reference-compact {
+  position: absolute; left: 50%; right: auto; bottom: 103px; width: auto; max-width: calc(100% - 580px);
+  transform: translateX(-50%); padding: 5px; border: 1px solid var(--cockpit-hairline);
+  border-radius: 8px; background: rgba(22, 21, 18, .92); box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  display: block; min-height: 0;
+}
+.reference-viewer .is-reference-compact .planner-command-deck__copy,
+.reference-viewer .is-reference-compact .planner-command-deck__meta,
+.reference-viewer .is-reference-compact .planner-command-deck__glow { display: none; }
+.reference-viewer .is-reference-compact .planner-command-deck__actions { display: flex; gap: 3px; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: thin; }
+.reference-viewer .is-reference-compact .planner-command-deck__actions > button { flex-shrink: 0; white-space: nowrap; }
+.reference-viewer .is-reference-compact .planner-command-deck__button { min-height: 32px; padding: 6px 10px; border: 0; border-radius: 4px; background: transparent; color: #c7c2b9; font-size: 10px; font-weight: 450; box-shadow: none; }
+.reference-viewer .is-reference-compact .planner-command-deck__button--primary { color: #e1bf7c; background: rgba(204, 166, 89, .1); }
+.reference-layer-controls { position: absolute; bottom: 154px; left: 50%; transform: translateX(-50%); z-index: 24; border: 1px solid var(--cockpit-hairline); border-radius: 6px; background: rgba(20, 19, 17, .92); padding: 3px; }
+.reference-layer-controls .cockpit-layer-btn { padding: 7px 10px; font-size: 10px; font-weight: 450; background: transparent; border: 0; color: #c6c0b5; box-shadow: none; }
+.reference-layer-controls .cockpit-layer-btn.is-active { color: #deb971; background: rgba(204, 166, 89, .11); }
+.reference-viewer > .cockpit-bottom {
+  position: absolute; bottom: 14px; left: 12px; right: 14px; width: auto; height: 292px;
+  margin: 0; border-radius: 7px; border: 1px solid var(--cockpit-hairline); background: rgba(20, 19, 17, .95);
+  box-shadow: none; --dock-grain: none; --dock-hand: "Inter", system-ui, sans-serif;
+}
+.reference-viewer > .cockpit-bottom.is-collapsed { height: 74px; padding: 12px 15px; }
+.reference-viewer .layout-timeline__title { font-family: "Inter", system-ui, sans-serif; font-size: 10px; font-weight: 500; letter-spacing: .1em; }
+.reference-viewer .layout-timeline__truth { font-family: "Inter", system-ui, sans-serif; font-size: 9px; font-style: normal; }
+.reference-viewer > .cockpit-bottom.is-collapsed .layout-timeline__header { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-rows: auto; }
+.reference-viewer > .cockpit-bottom.is-collapsed .layout-compact-state { grid-column: auto; grid-row: auto; }
+.reference-viewer .reference-when-ribbon { position: absolute; z-index: 26; left: calc(var(--reference-left) + 26px); bottom: 102px; max-width: calc(100% - 580px); border: 1px solid var(--cockpit-hairline); border-radius: 6px; background: #171612; font-size: 11px; }
+.reference-when-ribbon > summary { padding: 9px 12px; cursor: pointer; color: #d4c5a7; }
+.reference-when-ribbon[open] { min-width: min(680px, calc(100% - 580px)); }
+.reference-when-ribbon .when-ribbon { margin: 0; }
+.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-when-ribbon { bottom: 311px; }
+.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-left-dock { bottom: 326px; }
+.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-inspector-dock { bottom: 390px; }
+.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .reference-layer-controls { bottom: 376px; }
+.reference-viewer:has(> .cockpit-bottom:not(.is-collapsed)) .planner-command-deck.is-reference-compact { bottom: 326px; }
+.reference-viewer .room-resolve-caption { top: auto; bottom: 211px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 9px; color: #e7d2a7; font: 400 12px/1.5 "Inter", sans-serif; }
+.reference-viewer .cockpit-preview-lock { padding: 18px; box-sizing: border-box; }
+.reference-view-switch { position: fixed; z-index: 30; right: 14px; bottom: 134px; width: 248px; display: flex; justify-content: center; gap: 4px; }
+.reference-view-switch button { flex: 1; }
+.reference-handoff-action { position: fixed; z-index: 30; right: 14px; bottom: 98px; width: 248px; }
+.reference-event-details { position: fixed !important; top: auto !important; bottom: 134px !important; right: 14px !important; width: 132px; min-height: 32px; font-size: 10px !important; }
+body:has(.reference-event-details) .reference-view-switch { width: 108px; right: 154px; }
+.reference-viewer input, .reference-viewer textarea { user-select: text; }
+.reference-viewer button:focus-visible, .reference-viewer a:focus-visible, .reference-viewer summary:focus-visible { outline: 2px solid #d4b574; outline-offset: 3px; }
+@media (max-width: 1200px) {
+  .cockpit-shell.reference-viewer { --reference-left: 226px; --reference-right: 230px; }
+  .reference-left-dock { grid-template-columns: 45px minmax(0, 1fr); }
+  .reference-viewer .cockpit-rail__button { width: 35px; }
+  .reference-viewer .planner-tool-pill__label { display: none; }
+  .reference-more-tools { left: calc(50% + 112px); }
+  .reference-viewer .planner-command-deck.is-reference-compact { max-width: calc(100% - 510px); }
+  .reference-layer-controls .cockpit-layer-btn { padding: 7px; }
+  .reference-view-switch, .reference-handoff-action { width: 230px; }
+  .reference-viewer .reference-when-ribbon { top: 82px; bottom: auto; }
+}
+@media (max-width: 1240px) {
+  .reference-viewer > .cockpit-bottom.is-collapsed .layout-timeline__header { grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; }
+  .reference-viewer > .cockpit-bottom.is-collapsed .layout-compact-state { grid-column: 2; grid-row: 1; display: grid; gap: 3px; }
+  .reference-viewer > .cockpit-bottom.is-collapsed .layout-compact-state strong { white-space: normal; font-size: 10px; }
+  .reference-viewer > .cockpit-bottom.is-collapsed .layout-timeline__dock-actions { grid-column: 3; }
+}
+@media (max-width: 980px) {
+  .cockpit-shell.reference-viewer { --reference-left: 205px; --reference-right: 205px; }
+  .reference-view-switch, .reference-handoff-action { width: 205px; }
+  .reference-viewer .planner-command-deck.is-reference-compact { max-width: calc(100% - 458px); }
+}
+@media (max-height: 760px) {
+  .reference-viewer .cockpit-rail__list { gap: 2px; }
+  .reference-viewer .cockpit-rail__button { min-height: 36px; }
+  .reference-viewer .reference-room-header { padding-top: 12px; padding-bottom: 10px; }
+}

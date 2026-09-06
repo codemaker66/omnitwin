@@ -236,7 +236,7 @@ export function PlannerScene(): ReactElement {
   // Captured interior keeps the procedural shell out of the source image.
   // Explicit Mesh/Hybrid choices and unavailable captures retain the shell.
   const layerMode = useCockpitStore((s) => s.layerMode);
-  const { splatUrls, transform, hasAsset, status: splatStatus, roomSlug } = useRoomRuntimeSplat();
+  const { splatUrls, transform, hasAsset, status: splatStatus, roomSlug, source: captureSource } = useRoomRuntimeSplat();
 
   // Walk mode — stand in the captured room at eye level. Available only when
   // the mounted capture carries walk data (where the scanner stood and how far
@@ -363,6 +363,17 @@ export function PlannerScene(): ReactElement {
   // Ink recedes only where captured chunks actually arrived — it honestly
   // persists over any region whose chunk failed.
   const inkOpacity = inkTargetOpacity({ splatActive, loadedChunks, totalChunks });
+  useEffect(() => {
+    const source = {
+      configId, spaceId: space?.id ?? null, layerMode,
+      captureSource: hasAsset && splatActive ? captureSource : "none" as const,
+      loadedChunks, totalChunks,
+      proceduralGeometryVisible: meshVisible || (roomGeometry !== null && inkOpacity > 0),
+    };
+    useCockpitStore.getState().setSceneSource(source);
+    // A previous canvas must not withdraw a newer canvas's evidence.
+    return () => { useCockpitStore.getState().clearSceneSource(source); };
+  }, [captureSource, configId, hasAsset, inkOpacity, layerMode, loadedChunks, meshVisible, roomGeometry, space?.id, splatActive, totalChunks]);
   const cameraInteractionClearTimer = useRef<number | null>(null);
   const sceneWarmupSignature = `${space?.id ?? "fallback-grand-hall"}:${roomVariant}:${layerMode}:${String(hasAsset)}`;
 

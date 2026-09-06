@@ -1,6 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
+import { useSelectionStore } from "../../stores/selection-store.js";
+import { useCatalogueStore } from "../../stores/catalogue-store.js";
+import { isLayoutTimelineMutationLocked } from "../../lib/layout-timeline-preview-lock.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import { canApplyTableLinenToItem, isDiningTableItem } from "../../lib/furniture-semantics.js";
@@ -170,9 +175,26 @@ function DressingSection({ objectId }: { readonly objectId: string }): React.Rea
   );
 }
 
-export function ObjectNotePanel(): React.ReactElement | null {
-  const selectedId = useEditorStore((s) => s.selectedObjectId);
+export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "3d" }: {
+  readonly embedded?: boolean;
+  readonly mobile?: boolean;
+  readonly viewMode?: "3d" | "2d";
+}): React.ReactElement | null {
+  const selectedIds = useSelectionStore((s) => s.selectedIds);
+  // Group selection order is not its semantic primary: saved batches may
+  // list a chair first. The mobile table sheet and its note use the table.
+  const selectedId = useEditorStore((s) => mobile
+    ? s.objects.find((object) => selectedIds.has(object.id) && getCatalogueItem(object.assetDefinitionId)?.category === "table")?.id ?? s.selectedObjectId
+    : s.selectedObjectId);
+  const activeMode = useCockpitStore((s) => s.activeMode);
+  const placingItemId = useCatalogueStore((s) => mobile ? s.selectedItemId : null);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
+  const [dockHost, setDockHost] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    setDockHost(mobile && viewMode === "3d"
+      ? document.getElementById("mobile-object-notes")
+      : embedded ? document.getElementById("reference-object-notes") : null);
+  }, [embedded, mobile, viewMode, selectedId, activeMode, timelinePreviewActive, placingItemId]);
   // Subscribe to the notes primitive only, not the whole object. `.find()`
   // returns a fresh reference on every mutation to the selected object
   // (drag, rotate, autosave round-trip that replaces `objects` wholesale),
@@ -209,11 +231,13 @@ export function ObjectNotePanel(): React.ReactElement | null {
   if (timelinePreviewActive || selectedId === null || savedNotes === null) return null;
 
   const handleSave = (): void => {
+    if (isLayoutTimelineMutationLocked()) return;
     setObjectNotes(selectedId, draft.trim());
     setDirty(false);
   };
 
   const handleClear = (): void => {
+    if (isLayoutTimelineMutationLocked()) return;
     setDraft("");
     setObjectNotes(selectedId, "");
     setDirty(false);
@@ -221,19 +245,20 @@ export function ObjectNotePanel(): React.ReactElement | null {
 
   const hasNote = savedNotes.length > 0;
   const charsLeft = MAX_NOTE - draft.length;
+  const inDisclosure = embedded || mobile;
 
-  return (
+  const content = (
     <section
       role="region"
       aria-label="Selected object dressing and note"
       style={{
-        position: "fixed",
+        position: inDisclosure ? "static" : "fixed",
         bottom: 20, right: 20,
-        width: 320, maxWidth: "calc(100vw - 40px)",
-        padding: 14, borderRadius: 12,
-        background: CARD_BG,
-        border: `1px solid ${BORDER}`,
-        boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+        width: inDisclosure ? "auto" : 320, maxWidth: "calc(100vw - 40px)",
+        padding: inDisclosure ? "14px 0 0" : 14, borderRadius: inDisclosure ? 0 : 12,
+        background: inDisclosure ? "transparent" : CARD_BG,
+        border: inDisclosure ? 0 : `1px solid ${BORDER}`,
+        boxShadow: inDisclosure ? "none" : "0 10px 30px rgba(0,0,0,0.5)",
         zIndex: 40,
         color: "#ddd",
         fontFamily: "'Inter', system-ui, sans-serif",
@@ -261,6 +286,7 @@ export function ObjectNotePanel(): React.ReactElement | null {
       </div>
 
       <textarea
+        aria-label="Planner note"
         value={draft}
         onChange={(e) => {
           const next = e.target.value.slice(0, MAX_NOTE);
@@ -316,5 +342,17 @@ export function ObjectNotePanel(): React.ReactElement | null {
         </div>
       </div>
     </section>
+  );
+  if (mobile) {
+    const disclosure = <details className="mobile-object-notes"><summary>Notes and styling details{dirty ? " · unsaved" : ""}</summary>{content}</details>;
+    // The component remains mounted through view changes, preserving its
+    // draft. The 2D view has no 3D action sheet, so it owns a compact fallback.
+    if (viewMode === "2d") return <div className="mobile-object-notes-fallback">{disclosure}</div>;
+    return dockHost === null ? null : createPortal(disclosure, dockHost);
+  }
+  if (!embedded) return content;
+  return dockHost === null || activeMode !== "design" ? null : createPortal(
+    <details className="reference-model-provenance"><summary>Notes and styling details</summary>{content}</details>,
+    dockHost,
   );
 }

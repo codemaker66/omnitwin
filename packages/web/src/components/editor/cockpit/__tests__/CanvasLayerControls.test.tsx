@@ -60,4 +60,25 @@ describe("CanvasLayerControls", () => {
     fireEvent.keyDown(window, { code: "Escape" });
     expect(useCockpitStore.getState().walkMode).toBe(false);
   });
+
+  it("keeps Interior active when Escape belongs to an input or modal", () => {
+    useEditorStore.setState({ space: spaceWith("reception-room") });
+    useCockpitStore.getState().setWalkMode(true);
+    const view = render(<><CanvasLayerControls embedded /><input aria-label="Furniture name" /></>);
+    fireEvent.keyDown(screen.getByRole("textbox"), { code: "Escape" });
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    view.rerender(<><CanvasLayerControls embedded /><div role="dialog" aria-modal="true">Event details</div></>);
+    fireEvent.keyDown(window, { code: "Escape" });
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+  });
+
+  it("drives the same capture and interior state from the embedded controls", () => {
+    useEditorStore.setState({ space: spaceWith("reception-room") });
+    render(<CanvasLayerControls embedded />);
+    fireEvent.click(screen.getByRole("button", { name: "Capture" }));
+    expect(useCockpitStore.getState().layerMode).toBe("splat");
+    fireEvent.click(screen.getByRole("button", { name: "Interior" }));
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    expect(screen.getByRole("button", { name: "Capture" }).getAttribute("aria-pressed")).toBe("true");
+  });
 });

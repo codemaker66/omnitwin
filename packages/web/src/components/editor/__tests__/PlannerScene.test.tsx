@@ -47,6 +47,7 @@ function mockSplat(overrides: {
   hasAsset?: boolean;
   status?: "none" | "loading" | "loaded";
   roomSlug?: string;
+  source?: "staged" | "package" | "none";
 } = {}): void {
   splatHookMock.useRoomRuntimeSplat.mockReturnValue({
     splatUrls: overrides.splatUrls ?? [],
@@ -54,6 +55,7 @@ function mockSplat(overrides: {
     hasAsset: overrides.hasAsset ?? false,
     status: overrides.status ?? "none",
     roomSlug: overrides.roomSlug ?? null,
+    source: overrides.source ?? (overrides.hasAsset === true ? "staged" : "none"),
   });
 }
 
@@ -142,6 +144,26 @@ describe("PlannerScene", () => {
 // runtime-splat state plus chunk arrivals and publishes it to the cockpit
 // store for the caption and the stage's honesty attribute.
 describe("PlannerScene resolve phase wiring", () => {
+  it("publishes current capture visibility only after arrival, withdraws hidden/failed layers, and clears on canvas unmount", () => {
+    mockSplat({ status: "loaded", hasAsset: true, splatUrls: ["/a.sog", "/b.sog"], source: "staged" });
+    useEditorStore.setState({ configId: "demo-source" });
+    useCockpitStore.getState().setLayerMode("splat");
+    const { rerender, unmount } = render(<PlannerScene />);
+    expect(useCockpitStore.getState().sceneSource?.loadedChunks).toBe(0);
+    arrivals.loadedCount = 1;
+    rerender(<PlannerScene />);
+    expect(useCockpitStore.getState().sceneSource).toMatchObject({ configId: "demo-source", captureSource: "staged", loadedChunks: 1 });
+    act(() => { useCockpitStore.getState().setLayerMode("mesh"); });
+    expect(useCockpitStore.getState().sceneSource).toMatchObject({ captureSource: "none", proceduralGeometryVisible: true });
+    act(() => { useCockpitStore.getState().setLayerMode("splat"); });
+    arrivals.loadedCount = 0;
+    arrivals.failedCount = 2;
+    rerender(<PlannerScene />);
+    expect(useCockpitStore.getState().sceneSource).toMatchObject({ captureSource: "none", loadedChunks: 0, proceduralGeometryVisible: true });
+    unmount();
+    expect(useCockpitStore.getState().sceneSource).toBeNull();
+  });
+
   it("publishes 'ink' while the runtime package registry is resolving", async () => {
     mockSplat({ status: "loading" });
     render(<PlannerScene />);

@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useSectionStore } from "../stores/section-store.js";
+import { isLayoutTimelineMutationLocked } from "../lib/layout-timeline-preview-lock.js";
 
 // ---------------------------------------------------------------------------
 // Pure helpers — testable without React
@@ -35,7 +36,7 @@ export function heightToSliderPercent(height: number, maxHeight: number): number
  * The slider is oriented so that the top position = full height (all walls)
  * and bottom position = floor only.
  */
-export function SectionSlider(): React.ReactElement {
+export function SectionSlider({ embedded = false }: { readonly embedded?: boolean }): React.ReactElement {
   const height = useSectionStore((s) => s.height);
   const maxHeight = useSectionStore((s) => s.maxHeight);
   const setHeight = useSectionStore((s) => s.setHeight);
@@ -44,6 +45,7 @@ export function SectionSlider(): React.ReactElement {
 
   const handleChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (isLayoutTimelineMutationLocked()) return;
       const newPercent = Number(event.target.value);
       setHeight(sliderPercentToHeight(newPercent, maxHeight));
     },
@@ -51,6 +53,19 @@ export function SectionSlider(): React.ReactElement {
   );
 
   const displayHeight = height.toFixed(1);
+
+  if (embedded) return (
+    <div style={{ display: "grid", gap: 9, minWidth: 0 }}>
+      <span style={{ color: "#c9b993", fontVariantNumeric: "tabular-nums" }}>{displayHeight} m / {maxHeight.toFixed(1)} m</span>
+      <input type="range" min={0} max={100} step={0.5} value={percent} onChange={handleChange}
+        aria-label="Section plane height" aria-valuetext={`${displayHeight} metres of ${maxHeight.toFixed(1)} metres`}
+        style={{ width: "100%", margin: 0, accentColor: "#c8a464", cursor: "ew-resize" }} />
+      <button type="button" onClick={() => { if (!isLayoutTimelineMutationLocked()) setHeight(maxHeight); }}
+        style={{ padding: "6px 8px", borderRadius: 4, background: "#29251e", border: "1px solid #514633", color: "#e5d5b5", font: "inherit", cursor: "pointer" }}>
+        Show full model height
+      </button>
+    </div>
+  );
 
   return (
     <div

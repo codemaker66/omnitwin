@@ -83,10 +83,13 @@ describe("ToolPill", () => {
     expect(useMeasurementStore.getState().active).toBe(true);
   });
 
-  it("walk mode hides the pill — the hands belong to the plan view", () => {
+  it("keeps editing tools usable in the planner interior", () => {
     useCockpitStore.setState({ walkMode: true });
     render(<ToolPill />);
-    expect(screen.queryByTestId("planner-tool-pill")).toBeNull();
+    expect(screen.getByTestId("planner-tool-pill")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("planner-tool-measure"));
+    expect(useMeasurementStore.getState().active).toBe(true);
+    expect(useCockpitStore.getState().walkMode).toBe(true);
   });
 
   it("no chip without a value to show", () => {

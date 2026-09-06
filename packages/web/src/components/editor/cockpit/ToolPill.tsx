@@ -12,7 +12,6 @@ import { useSelectionStore } from "../../../stores/selection-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useMeasurementStore } from "../../../stores/measurement-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
-import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import {
   PLANNER_TOOLS,
   formatDegrees,
@@ -81,7 +80,6 @@ export function ToolPill(): ReactElement | null {
   const activeTool = useToolStore((s) => s.activeTool);
   const liveValue = useToolStore((s) => s.liveValue);
   const setTool = useToolStore((s) => s.setTool);
-  const walkMode = useCockpitStore((s) => s.walkMode);
   // Subscribed so the idle chip re-renders as selection / placement change.
   const selectedIds = useSelectionStore((s) => s.selectedIds);
   const placedItems = usePlacementStore((s) => s.placedItems);
@@ -99,7 +97,6 @@ export function ToolPill(): ReactElement | null {
 
   const scrubbable = (activeTool === "rotate" || activeTool === "scale") && chipValue !== null;
 
-  if (walkMode) return null;
 
   const scrubTargets = (): ReadonlyMap<string, number> => {
     const ids = useSelectionStore.getState().selectedIds;

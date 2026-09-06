@@ -22,6 +22,7 @@ import { useMarkupStore, MARKUP_COLOR_VALUES, type MarkupColor } from "../../sto
 import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useGuidelineStore } from "../../stores/guideline-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
+import { ReferenceSceneSettings } from "./cockpit/ReferenceSceneSettings.js";
 import type { FurnitureCategory } from "@omnitwin/types";
 import {
   copyForEditorSaveStatus,
@@ -1207,7 +1208,7 @@ const mobileDockWrapperStyle: React.CSSProperties = {
   position: "fixed",
   left: "max(12px, env(safe-area-inset-left))",
   right: "max(12px, env(safe-area-inset-right))",
-  bottom: "calc(env(safe-area-inset-bottom) + 10px)",
+  bottom: "calc(var(--cockpit-bottom-height, 0px) + env(safe-area-inset-bottom) + 10px)",
   zIndex: 64,
   display: "flex",
   flexDirection: "column",
@@ -1368,7 +1369,7 @@ function MobilePlannerDock({
         : idleActions;
 
   return (
-    <div data-testid="planner-toolbar" style={mobileDockWrapperStyle}>
+    <div data-testid="planner-toolbar" className="mobile-planner-dock" style={mobileDockWrapperStyle}>
       {mode === "placing" ? (
         <div data-testid="mobile-planner-sheet" style={mobileSheetStyle}>
           <div style={mobileSheetTitleStyle}>Tap to place {placingName ?? "item"}</div>
@@ -1382,6 +1383,7 @@ function MobilePlannerDock({
         <div data-testid="mobile-object-sheet" style={mobileSheetStyle}>
           <div style={mobileSheetTitleStyle}>{selectedName ?? "Selected item"}</div>
           <div style={mobileSheetDetailStyle}>{selectedDetail ?? "Drag in the scene to move. Use Done when placed."}</div>
+          <div id="mobile-object-notes" />
         </div>
       ) : null}
 
@@ -1416,7 +1418,8 @@ function shouldRenderDesktopToolbar(mobileChrome: boolean): boolean {
   return !mobileChrome;
 }
 
-export function VerticalToolbox(): React.ReactElement {
+export function VerticalToolbox({ compactDesktop = false }: { readonly compactDesktop?: boolean }): React.ReactElement {
+  const [desktopMoreOpen, setDesktopMoreOpen] = useState(false);
   const navigate = useNavigate();
   // Narrow-viewport flag: ≤640 CSS px. Drives the bottom-rail layout AND
   // publishes CSS vars that App.tsx consumes to pad the Canvas correctly.
@@ -1493,14 +1496,19 @@ export function VerticalToolbox(): React.ReactElement {
     };
   const placedItems = usePlacementStore((s) => s.placedItems);
   const selectedIds = useSelectionStore((s) => s.selectedIds);
-  const selectedItem = placedItems.find(
+  const selectedFurniture = placedItems.filter(
     (item) => selectedIds.has(item.id) && isSceneFurniturePlacement(item),
   );
+  const selectedTables = selectedFurniture.filter((item) => getCatalogueItem(item.catalogueItemId)?.category === "table");
+  const selectedChairs = selectedFurniture.filter((item) => getCatalogueItem(item.catalogueItemId)?.category === "chair");
+  const selectedItem = selectedTables[0] ?? selectedFurniture[0];
   const selectedCatalogueItem = selectedItem !== undefined
     ? getCatalogueItem(selectedItem.catalogueItemId)
     : undefined;
-  const selectedName = selectedCatalogueItem?.name ?? null;
-  const selectedDetail = selectedCatalogueItem !== undefined
+  const selectedName = selectedTables.length > 1 ? `${String(selectedTables.length)} tables selected` : selectedCatalogueItem?.name ?? null;
+  const selectedDetail = selectedFurniture.length > 1
+    ? `${String(selectedChairs.length)} chairs placed · ${String(selectedFurniture.length)} objects selected`
+    : selectedCatalogueItem !== undefined
     ? `${selectedCatalogueItem.subtitle} · ${selectedCatalogueItem.width.toFixed(1)}m × ${selectedCatalogueItem.depth.toFixed(1)}m`
     : null;
   const placingItemId = useCatalogueStore((s) => s.selectedItemId);
@@ -1905,11 +1913,11 @@ export function VerticalToolbox(): React.ReactElement {
     ? "Rotate the selected item with touch-friendly controls."
     : "Twist any selected item 15° at a time. Perfect for angling tables toward the stage or lining up rows.";
 
-  const desktopToolbarVisible = shouldRenderDesktopToolbar(mobileChrome);
+  const desktopToolbarVisible = shouldRenderDesktopToolbar(mobileChrome) && (!compactDesktop || desktopMoreOpen);
 
   return (
     <>
-      {showOnboarding && (
+      {showOnboarding && !compactDesktop && (
         <OnboardingHint onDismiss={dismissOnboarding} onOpenFurniture={openFurniturePanel} />
       )}
 
@@ -1947,8 +1955,11 @@ export function VerticalToolbox(): React.ReactElement {
         />
       ) : null}
 
+      {compactDesktop && !mobileChrome && <button type="button" className="reference-more-tools"
+        aria-label="More planner tools" aria-expanded={desktopMoreOpen} aria-controls="reference-extra-tools"
+        onClick={() => { setDesktopMoreOpen((open) => !open); }}><MoreHorizontal size={19} aria-hidden /></button>}
       {desktopToolbarVisible && (
-      <div data-testid="planner-toolbar" style={isNarrow ? {
+      <div id={compactDesktop ? "reference-extra-tools" : undefined} data-testid="planner-toolbar" className={compactDesktop ? "reference-extra-tools" : undefined} style={isNarrow ? {
         // Bottom rail on phone portrait: fixed bottom, horizontal flex,
         // horizontal scroll if the tool set doesn't fit. The same buttons
         // as desktop — no progressive disclosure needed; we have ~8 primary
@@ -2024,6 +2035,7 @@ export function VerticalToolbox(): React.ReactElement {
         <ToolBtn active={false} compact={isNarrow} subLabel={isAuthenticated ? "Account" : "Sign In"} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} tooltipEnabled={showDesktopHints} onClick={() => { if (isAuthenticated) { void navigate("/dashboard"); } else { setShowAuth(true); } }}>
           <User size={ICON_SIZE} />
         </ToolBtn>
+        {compactDesktop && <ReferenceSceneSettings />}
       </div>
       )}
 

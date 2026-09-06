@@ -14,6 +14,7 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 
 export interface TruthModeIndicatorProps {
   readonly summary: TruthModeSceneSummary;
+  readonly embedded?: boolean;
 }
 
 const shellToken = TRUTH_MODE_TOKENS["known-unknown"];
@@ -185,15 +186,36 @@ function SummaryRow({ label, children }: { readonly label: string; readonly chil
   );
 }
 
-export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): ReactElement {
+function TruthModeFrame({ embedded, issueLabel, cameraInteractionActive, children }: {
+  readonly embedded: boolean;
+  readonly issueLabel: string;
+  readonly cameraInteractionActive: boolean;
+  readonly children: ReactNode;
+}): ReactElement {
+  if (embedded) return <div className="truth-mode-embedded" data-testid="truth-mode-indicator">{children}</div>;
+  return <FloatingWidgetFrame
+    id="truth-mode-indicator" title="Truth Mode" compactLabel={issueLabel}
+    className="truth-mode-widget" bodyClassName="truth-mode-widget__body"
+    strategy="fixed" testId="truth-mode-indicator" defaultPlacement={DEFAULT_PLACEMENT}
+    avoidSelectors={AVOID_SELECTORS} avoidPaddingPx={12} storageScope="planner-truth-mode-v1"
+    zIndex={38} autoCompact={cameraInteractionActive}
+  >{children}</FloatingWidgetFrame>;
+}
+
+export function TruthModeIndicator({ summary, embedded = false }: TruthModeIndicatorProps): ReactElement {
   const [open, setOpen] = useState(false);
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const detailsId = useId();
   const issueCount = summary.knownIssues.length;
-  const collapsedSourceLabel = summary.generatedOrProceduralContent ? "Procedural" : "Measured";
-  const collapsedRuntimeLabel = summary.measuredRuntimeAssetsLoaded ? "Runtime loaded" : "Runtime not loaded";
+  const collapsedSourceLabel = summary.displayedCaptureSource === "staged" ? "Staged capture"
+    : summary.displayedCaptureSource === "package" ? "Packaged capture"
+      : summary.generatedOrProceduralContent ? "Procedural" : "Source not established";
+  const collapsedRuntimeLabel = summary.measuredRuntimeAssetsLoaded ? "Runtime loaded"
+    : summary.displayedCaptureSource !== null ? "No signed runtime" : "Runtime not loaded";
   const collapsedIssueLabel = issueCount > 0 ? `${String(issueCount)} issues` : "No issues";
-  const fullSourceLabel = summary.generatedOrProceduralContent ? "Procedural content present" : "Measured source only";
+  const fullSourceLabel = summary.displayedCaptureSource === "staged" ? "Staged capture displayed; alignment unverified"
+    : summary.displayedCaptureSource === "package" ? "Packaged capture displayed; verification not established"
+      : summary.generatedOrProceduralContent ? "Procedural content present" : "Source not established";
   const fullRuntimeLabel = summary.measuredRuntimeAssetsLoaded ? "Measured runtime loaded" : "Measured runtime not loaded";
   const fullIssueLabel = issueCount > 0 ? `${String(issueCount)} known issues` : "No known issues";
 
@@ -211,22 +233,8 @@ export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): ReactE
   }, [open]);
 
   return (
-    <FloatingWidgetFrame
-      id="truth-mode-indicator"
-      title="Truth Mode"
-      compactLabel={collapsedIssueLabel}
-      className="truth-mode-widget"
-      bodyClassName="truth-mode-widget__body"
-      strategy="fixed"
-      testId="truth-mode-indicator"
-      defaultPlacement={DEFAULT_PLACEMENT}
-      avoidSelectors={AVOID_SELECTORS}
-      avoidPaddingPx={12}
-      storageScope="planner-truth-mode-v1"
-      zIndex={38}
-      autoCompact={cameraInteractionActive}
-    >
-      <div style={contentStyle}>
+    <TruthModeFrame embedded={embedded} issueLabel={collapsedIssueLabel} cameraInteractionActive={cameraInteractionActive}>
+      <div style={embedded ? { ...contentStyle, width: "100%" } : contentStyle}>
         <button
           type="button"
           data-testid="truth-mode-toggle"
@@ -234,11 +242,14 @@ export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): ReactE
           aria-expanded={open}
           aria-controls={detailsId}
           onClick={() => { setOpen((value) => !value); }}
-          style={indicatorButtonStyle}
+          style={embedded ? { ...indicatorButtonStyle, minHeight: 44, padding: "7px 10px" } : indicatorButtonStyle}
         >
           <ShieldQuestion size={18} aria-hidden="true" style={{ color: shellToken.border, flex: "0 0 auto" }} />
           <StatusDot summary={summary} />
-          <span style={{ flex: 1, minWidth: 0 }}>
+          {embedded ? <span style={{ flex: 1, minWidth: 0 }}>
+            <strong style={{ display: "block", fontSize: 11 }}>Planning provenance</strong>
+            <span style={{ display: "block", marginTop: 2, fontSize: 10 }}>{summary.truthStatusLabel} · {collapsedIssueLabel}</span>
+          </span> : <span style={{ flex: 1, minWidth: 0 }}>
             <span style={{ display: "block", color: "#d8ad4a", fontSize: 10, fontWeight: 820, letterSpacing: "0.1em", textTransform: "uppercase" }}>
               Truth Mode L1
             </span>
@@ -254,7 +265,7 @@ export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): ReactE
               <CompactStatusItem>{collapsedRuntimeLabel}</CompactStatusItem>
               <CompactStatusItem>{collapsedIssueLabel}</CompactStatusItem>
             </span>
-          </span>
+          </span>}
         </button>
 
         {open && (
@@ -335,6 +346,6 @@ export function TruthModeIndicator({ summary }: TruthModeIndicatorProps): ReactE
           </div>
         )}
       </div>
-    </FloatingWidgetFrame>
+    </TruthModeFrame>
   );
 }

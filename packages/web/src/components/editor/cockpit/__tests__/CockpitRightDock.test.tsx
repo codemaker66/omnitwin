@@ -53,10 +53,11 @@ describe("panelForMode (registry)", () => {
 });
 
 describe("CockpitRightDock", () => {
-  it("falls back to the Truth rail when the active lens has no panel", () => {
+  it("shows the real furniture inspector in the Design lens", () => {
     useCockpitStore.getState().setMode("design");
     render(<CockpitRightDock />);
-    expect(screen.getByTestId("truth-rail-mock")).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "Furniture inspector" })).toBeTruthy();
+    expect(screen.queryByTestId("truth-rail-mock")).toBeNull();
     expect(screen.queryByTestId("flow-panel-mock")).toBeNull();
   });
 

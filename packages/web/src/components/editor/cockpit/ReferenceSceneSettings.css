@@ -1,0 +1,34 @@
+.reference-scene-settings {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: #d0c9bd;
+  font: 400 11px/1.5 "Inter", system-ui, sans-serif;
+  text-align: left;
+  border-top: 1px solid rgba(224, 211, 188, .12);
+}
+.reference-scene-settings > details { border-bottom: 1px solid rgba(224, 211, 188, .09); }
+.reference-scene-settings > details > summary { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 5px 3px; cursor: pointer; list-style: none; box-sizing: border-box; }
+.reference-scene-settings > details > summary::-webkit-details-marker { display: none; }
+.reference-scene-settings > details > summary svg { flex-shrink: 0; color: #b6a27e; }
+.reference-scene-settings > details > summary svg:last-child { margin-left: auto; }
+.reference-scene-settings > details[open] > summary svg:last-child { transform: rotate(180deg); }
+.reference-scene-settings__body { padding: 4px 3px 10px; }
+.reference-scene-settings__overlay { display: flex; align-items: center; gap: 9px; min-height: 32px; cursor: pointer; }
+.reference-scene-settings__overlay input { accent-color: #c8a464; width: 15px; height: 15px; margin: 0; }
+.reference-scene-settings__note { color: #a49c8f; font-size: 10px; margin: 10px 0 0; line-height: 1.5; }
+.reference-scene-settings summary:focus-visible, .reference-scene-settings button:focus-visible, .reference-scene-settings input:focus-visible { outline: 2px solid #d4b574; outline-offset: 3px; }
+.reference-scene-settings .cockpit-truth { position: static; inset: auto; grid-area: auto; width: auto; max-width: none; height: auto; padding: 8px 0 12px; margin: 0; border: 0; background: transparent; overflow: visible; box-shadow: none; animation: none; }
+.reference-scene-settings .cockpit-truth__head { grid-template-columns: minmax(0, 1fr); gap: 7px; padding-bottom: 9px; }
+.reference-scene-settings .cockpit-truth__head-icon { display: none; }
+.reference-scene-settings .cockpit-truth__eyebrow { font-size: 10px; font-weight: 500; }
+.reference-scene-settings .cockpit-truth__title { font: 500 13px/1.4 "Inter", system-ui, sans-serif; }
+.reference-scene-settings .cockpit-truth__source { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px; font-size: 10px; font-weight: 400; white-space: normal; }
+.reference-scene-settings .cockpit-truth__row { grid-template-columns: minmax(0, 1fr); padding: 9px; gap: 4px; border-radius: 4px; box-shadow: none; }
+.reference-scene-settings .cockpit-truth__label { font-size: 10px; font-weight: 500; }
+.reference-scene-settings .cockpit-truth__value { font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.reference-scene-settings .cockpit-truth__chip-slot { grid-column: 1; grid-row: auto; justify-self: start; }
+.reference-scene-settings .cockpit-truth__counts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.reference-scene-settings .cockpit-truth__count { border-radius: 4px; padding: 8px 4px; box-shadow: none; }
+.reference-scene-settings .cockpit-truth__count strong { font-size: 16px; font-weight: 500; }
+.reference-scene-settings .cockpit-truth__count small { font-size: 10px; font-weight: 400; }
+.reference-scene-settings .cockpit-truth__footer { font-size: 11px; font-weight: 400; line-height: 1.5; }

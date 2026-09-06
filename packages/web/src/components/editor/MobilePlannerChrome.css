@@ -1,0 +1,134 @@
+/* Mobile-only composition. The real timeline reserves its measured layout
+ * height above the safe area; the editing actions sit above it. Desktop and
+ * standalone floating widgets keep their original ownership and placement. */
+.cockpit-shell.is-mobile:has(> .cockpit-bottom.is-collapsed) {
+  --cockpit-bottom-height: 96px;
+}
+
+.cockpit-shell.is-mobile > .cockpit-bottom.is-collapsed {
+  height: var(--cockpit-bottom-height);
+  padding: 7px 10px;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.cockpit-shell.is-mobile > .cockpit-bottom.is-collapsed .layout-timeline__header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 34px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.cockpit-shell.is-mobile > .cockpit-bottom.is-collapsed .layout-range-controls {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.cockpit-shell.is-mobile > .cockpit-bottom.is-collapsed .layout-timeline__dock-actions {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.cockpit-shell.is-mobile > .cockpit-bottom.is-collapsed .layout-compact-state {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  flex-wrap: wrap;
+  gap: 3px 7px;
+  overflow: auto;
+  align-content: center;
+}
+
+.cockpit-shell.is-mobile > .cockpit-bottom.is-collapsed .layout-compact-state span {
+  white-space: normal;
+  overflow: visible;
+}
+
+.mobile-planner-dock > [data-testid="mobile-object-sheet"],
+.mobile-planner-dock > [data-testid="mobile-more-sheet"] {
+  max-height: max(100px, calc(100dvh - var(--cockpit-bottom-height, 0px) - 290px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mobile-object-notes {
+  margin-top: 7px;
+  border-top: 1px solid rgba(74, 44, 28, 0.14);
+  color: #352b22;
+}
+
+.mobile-object-notes > summary {
+  min-height: 36px;
+  padding: 9px 0 2px;
+  box-sizing: border-box;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.mobile-object-notes > section {
+  --mobile-notes-surface: #161310;
+  background: var(--mobile-notes-surface) !important;
+  margin-top: 6px;
+  padding: 12px !important;
+  border-radius: 12px !important;
+  max-width: 100% !important;
+}
+
+.mobile-object-notes textarea,
+.mobile-object-notes input {
+  font-size: 16px !important;
+}
+
+.mobile-object-notes button { min-height: 36px; }
+
+.mobile-object-notes-fallback {
+  position: fixed;
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(92px + env(safe-area-inset-bottom));
+  z-index: 40;
+  max-height: 48dvh;
+  overflow-y: auto;
+  padding: 2px 14px 10px;
+  border-radius: 16px;
+  background: rgba(248, 242, 230, 0.97);
+}
+
+.mobile-planner-utilities {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 119px);
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 38;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.mobile-planner-utilities > * { pointer-events: auto; }
+.mobile-planner-utilities > button { min-height: 44px; flex: 0 0 auto; }
+.truth-mode-embedded { position: relative; flex: 1; min-width: 0; }
+.truth-mode-embedded [data-testid="truth-mode-popover"] {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: min(366px, calc(100vw - 24px));
+  max-height: min(420px, calc(100dvh - 260px));
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+}
+
+.cockpit-shell.is-mobile .generated-furniture-proxy-badge {
+  top: calc(env(safe-area-inset-top) + 83px);
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  width: auto;
+  max-width: none;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-transform: none;
+}

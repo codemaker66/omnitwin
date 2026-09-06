@@ -1,23 +1,23 @@
 import { type ReactElement } from "react";
 import { App as Editor3D } from "../../../App.js";
 import { CockpitNavRail } from "./CockpitNavRail.js";
-import { CockpitTopBar } from "./CockpitTopBar.js";
 import { CockpitRightDock } from "./CockpitRightDock.js";
 import { WhenRibbon } from "./WhenRibbon.js";
 import { CockpitBottom } from "./CockpitBottom.js";
 import { CanvasLayerControls } from "./CanvasLayerControls.js";
 import { ToolPill } from "./ToolPill.js";
-import { CockpitMinimap } from "./CockpitMinimap.js";
 import { RoomResolveCaption } from "./RoomResolveCaption.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
+import { SceneOutliner } from "./SceneOutliner.js";
+import { ReferenceRoomHeader } from "./ReferenceRoomHeader.js";
+import { GeneratedFurnitureProxyBadge } from "./FurnitureInspectionDock.js";
 import "./PlannerCockpit.css";
+import "./ReferenceViewer.css";
 
 /**
- * The planner cockpit shell: a CSS grid that frames the live editable editor
- * (stage cell) with the navigation rail. In Phase 1 the top bar / Truth rail /
- * phase strip are labeled placeholders that Phase 2 replaces with real,
- * data-bound chrome.
+ * Frames the live editor with the desktop room/layers dock, inspector and
+ * actual room timeline. Narrow mobile layouts retain their existing controls.
  *
  * The stage hosts the full editor (App) so every editing surface — toolbox,
  * command deck, section slider, chair dialog, markup, measurement — stays
@@ -26,7 +26,7 @@ import "./PlannerCockpit.css";
  * lens is exposed as `data-cockpit-mode` so CSS shows the editing toolbar in
  * the Design lens only.
  */
-export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }): ReactElement {
+export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { readonly mobile?: boolean; readonly hasLinkedEvent?: boolean }): ReactElement {
   const activeMode = useCockpitStore((s) => s.activeMode);
   const resolvePhase = useCockpitStore((s) => s.roomResolve.phase);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
@@ -34,12 +34,14 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
   const timelineUnavailableMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
   return (
     <div
-      className={`cockpit-shell${mobile ? " is-mobile" : ""}`}
+      className={`cockpit-shell${mobile ? " is-mobile" : " reference-viewer"}`}
       data-testid="cockpit-shell"
       data-layout-timeline-preview={String(timelinePreviewActive)}
     >
-      {mobile ? null : <CockpitTopBar key="topbar" />}
-      {mobile ? null : <CockpitNavRail key="rail" />}
+      {mobile ? null : <div className="reference-left-dock" key="left-dock">
+        <CockpitNavRail />
+        <div className="reference-left-content"><ReferenceRoomHeader /><SceneOutliner /><GeneratedFurnitureProxyBadge /></div>
+      </div>}
       <section
         key="stage"
         className="cockpit-stage"
@@ -48,7 +50,7 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
         data-layout-timeline-preview={String(timelinePreviewActive)}
         aria-label="Planner scene"
       >
-        <Editor3D />
+        <Editor3D compactDesktop={!mobile} />
         {mobile || timelinePreviewActive ? null : <RoomResolveCaption />}
         {timelinePreviewActive && (
           <p
@@ -64,8 +66,7 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
           </p>
         )}
         {mobile || timelinePreviewActive ? null : <ToolPill />}
-        {mobile || timelinePreviewActive ? null : <CanvasLayerControls />}
-        {mobile ? null : <CockpitMinimap />}
+        {mobile || timelinePreviewActive ? null : <CanvasLayerControls embedded />}
       </section>
       {mobile ? null : timelinePreviewActive ? (
         <aside
@@ -81,8 +82,8 @@ export function PlannerCockpit({ mobile = false }: { readonly mobile?: boolean }
       ) : <CockpitRightDock key="right-dock" />}
       {/* The When ribbon (S2) shares the transport's clock and booking; it
           rests while a phase preview holds the stage. */}
-      {mobile || timelinePreviewActive ? null : <WhenRibbon />}
-      <CockpitBottom key="room-layout-timeline" />
+      {mobile || timelinePreviewActive || !hasLinkedEvent ? null : <details className="reference-when-ribbon"><summary>Booking time</summary><WhenRibbon /></details>}
+      <CockpitBottom key="room-layout-timeline" initiallyCollapsed={!mobile} />
     </div>
   );
 }

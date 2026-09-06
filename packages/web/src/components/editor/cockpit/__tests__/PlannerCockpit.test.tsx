@@ -6,7 +6,7 @@ import { useCockpitStore } from "../../../../stores/cockpit-store.js";
 // so the test stays a structural shell test (no WebGL). The top bar reads
 // router + store context of its own, so mock it too for this shell test.
 vi.mock("../../../../App.js", () => ({ App: () => <div data-testid="mock-editor-3d" /> }));
-vi.mock("../CockpitTopBar.js", () => ({ CockpitTopBar: () => <header data-testid="cockpit-topbar-mock" /> }));
+vi.mock("../ReferenceRoomHeader.js", () => ({ ReferenceRoomHeader: () => <header data-testid="reference-room-header-mock" /> }));
 vi.mock("../CockpitRightDock.js", () => ({ CockpitRightDock: () => <aside data-testid="cockpit-dock-mock" /> }));
 vi.mock("../CockpitBottom.js", () => ({ CockpitBottom: () => <footer data-testid="cockpit-bottom-mock" /> }));
 // The When ribbon reads router search params (its ?eventId corridor) and
@@ -18,6 +18,15 @@ const { PlannerCockpit } = await import("../PlannerCockpit.js");
 afterEach(() => { cleanup(); useCockpitStore.getState().reset(); });
 
 describe("PlannerCockpit", () => {
+  it("keeps booking controls reachable independently of the layout timeline's expansion", () => {
+    const { container, rerender } = render(<PlannerCockpit hasLinkedEvent />);
+    const disclosure = screen.getByText("Booking time").closest("details");
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.querySelector('[data-testid="when-ribbon-mock"]')).not.toBeNull();
+    expect(container.querySelector(".reference-when-ribbon")?.parentElement).toBe(screen.getByTestId("cockpit-shell"));
+    rerender(<PlannerCockpit hasLinkedEvent={false} />);
+    expect(screen.queryByText("Booking time")).toBeNull();
+  });
   it("renders the grid regions, the live editor, and the nav rail", () => {
     render(<PlannerCockpit />);
     expect(screen.getByTestId("cockpit-shell")).toBeTruthy();

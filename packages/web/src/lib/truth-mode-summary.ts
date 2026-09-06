@@ -4,6 +4,8 @@ import type {
   TruthStalenessState,
   TruthVerificationState,
 } from "@omnitwin/types";
+import type { RuntimeAssetSource } from "./runtime-package-resolution.js";
+import type { CockpitLayerMode } from "./cockpit-modes.js";
 
 export type TruthModeSurface = "planner_2d" | "planner_3d" | "spark_fixture";
 
@@ -24,10 +26,22 @@ export interface TruthModeSceneSummary {
   readonly stalenessState: TruthStalenessState | null;
   readonly generatedOrProceduralContent: boolean;
   readonly measuredRuntimeAssetsLoaded: boolean;
+  readonly displayedCaptureSource: "staged" | "package" | null;
   readonly knownIssues: readonly TruthModeKnownIssue[];
   readonly evidenceSummary: string;
   readonly verificationSummary: string;
   readonly confidenceSummary: string;
+}
+
+/** Renderer-owned visibility evidence, not a registration or QA certificate. */
+export interface PlannerSceneSourceEvidence {
+  readonly configId: string | null;
+  readonly spaceId: string | null;
+  readonly layerMode: CockpitLayerMode;
+  readonly captureSource: RuntimeAssetSource;
+  readonly loadedChunks: number;
+  readonly totalChunks: number;
+  readonly proceduralGeometryVisible: boolean;
 }
 
 export interface BuildProceduralTruthSummaryInput {
@@ -93,12 +107,59 @@ export function buildProceduralTruthSummary(input: BuildProceduralTruthSummaryIn
     stalenessState: null,
     generatedOrProceduralContent: true,
     measuredRuntimeAssetsLoaded,
+    displayedCaptureSource: null,
     knownIssues,
     evidenceSummary: measuredRuntimeAssetsLoaded
       ? "Measured runtime assets are present, but this foundation view has not loaded detailed provenance yet."
       : "Current venue visuals come from procedural runtime geometry. No measured capture-derived runtime asset is loaded here.",
     verificationSummary: "No review record or signed QA certificate is loaded for this scene.",
     confidenceSummary: "No confidence band is available for this scene yet.",
+  };
+}
+
+/** Preserve the existing measured-runtime path; staged tiles never promote it. */
+export function buildPlannerTruthSummary(input: BuildProceduralTruthSummaryInput & {
+  readonly configId: string | null;
+  readonly spaceId: string | null;
+  readonly layerMode: CockpitLayerMode;
+  readonly sceneSource: PlannerSceneSourceEvidence | null;
+}): TruthModeSceneSummary {
+  const base = buildProceduralTruthSummary(input);
+  if (input.measuredRuntimeAssetsLoaded === true || input.surface === "spark_fixture") return base;
+  const reported = input.sceneSource;
+  const source = input.surface === "planner_3d" && reported !== null
+    && reported.configId === input.configId && reported.spaceId === input.spaceId
+    && reported.layerMode === input.layerMode ? reported : null;
+  const capture = source !== null && source.layerMode !== "mesh"
+    && (source.captureSource === "staged" || source.captureSource === "package") && source.loadedChunks > 0 && source.totalChunks > 0
+    ? source.captureSource : null;
+  const procedural = source?.proceduralGeometryVisible === true || input.surface === "planner_2d";
+  const authored = input.placedObjectCount > 0;
+  const sourceStates: TruthEvidenceSourceState[] = [];
+  if (capture !== null || !procedural) sourceStates.push("known_unknown");
+  if (procedural) sourceStates.push("procedural_runtime");
+  if (authored) sourceStates.push("human_edited");
+  const knownIssues = base.knownIssues.filter((issue) => issue.id !== "procedural-shell");
+  if (capture !== null) knownIssues.unshift({
+    id: "capture-alignment-unverified", severity: "warning",
+    message: "Capture-to-plan alignment and measurement accuracy are not established by evidence loaded in this view.",
+  });
+  const evidenceSummary = input.surface === "planner_2d"
+    ? "This view displays 2D planning geometry and planner-authored objects. Captured room imagery is not displayed in this view."
+    : capture !== null
+      ? `${capture === "staged" ? "Staged capture-derived room imagery" : "Room imagery from a stored capture package"} is displayed${procedural ? " alongside procedural planning geometry" : ""}. ${authored ? "Placed furniture is planner-authored content, not capture evidence. " : ""}Displaying the capture does not establish accepted alignment, measurement accuracy or certification.`
+      : procedural
+        ? "This view displays procedural planning geometry. Captured room imagery is not currently displayed."
+        : "The current 3D view has not reported any displayed capture chunks or procedural venue geometry. Asset availability alone does not establish what is displayed.";
+  return {
+    ...base,
+    truthStatusLabel: input.surface === "planner_2d" ? "2D planning geometry"
+      : capture === "staged" ? "Staged capture · unverified"
+        : capture === "package" ? "Packaged capture · unverified"
+          : procedural ? "Procedural preview" : "Venue source not displayed",
+    sourceStates, knownIssues, evidenceSummary,
+    generatedOrProceduralContent: procedural || authored,
+    displayedCaptureSource: capture,
   };
 }
 

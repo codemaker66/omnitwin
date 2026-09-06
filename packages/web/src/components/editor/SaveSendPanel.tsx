@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator } from "../shared/Activity.js";
 import { useEditorStore } from "../../stores/editor-store.js";
 import { GuestEnquiryModal } from "./GuestEnquiryModal.js";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
@@ -13,6 +14,7 @@ const COCKPIT_DOCK_CLEARANCE_PX = 24;
 
 interface SaveSendPanelProps {
   readonly avoidRightDock?: boolean;
+  readonly embedded?: boolean;
 }
 
 export function saveSendPanelPlacement(avoidRightDock: boolean): FloatingWidgetPlacement {
@@ -61,6 +63,7 @@ const sendBtn: React.CSSProperties = {
 
 export function SaveSendPanel({
   avoidRightDock = false,
+  embedded = false,
 }: SaveSendPanelProps = {}): React.ReactElement | null {
   const objects = useEditorStore((s) => s.objects);
   const configId = useEditorStore((s) => s.configId);
@@ -100,9 +103,16 @@ export function SaveSendPanel({
       });
   };
 
+  const sendAction = <button type="button" aria-label="Send to Events Team"
+    style={{ ...sendBtn, opacity: flushing || timelinePreviewActive ? 0.6 : 1 }}
+    onClick={handleSend} disabled={flushing || timelinePreviewActive} aria-busy={flushing}
+    title={timelinePreviewActive ? "Exit the room timeline preview before sending this saved plan." : undefined}>
+    {flushing && <ActivityIndicator size={18} />}
+    {flushing ? "Preparing layout" : timelinePreviewActive ? "Exit preview to send" : "Send to Events Team"}
+  </button>;
   return (
     <>
-      <FloatingWidgetFrame
+      {embedded ? <div className="reference-handoff-action" data-testid="save-send-panel">{sendAction}</div> : <FloatingWidgetFrame
         id="save-send-panel"
         title="Client handoff"
         compactLabel="Send"
@@ -116,22 +126,8 @@ export function SaveSendPanel({
         storageScope={avoidRightDock ? "cockpit" : "planner"}
         autoCompact={cameraInteractionActive}
       >
-        <button
-          type="button"
-          aria-label="Send to Events Team"
-          style={{
-            ...sendBtn,
-            opacity: flushing || timelinePreviewActive ? 0.6 : 1,
-          }}
-          onClick={handleSend}
-          disabled={flushing || timelinePreviewActive}
-          title={timelinePreviewActive
-            ? "Exit the room timeline preview before sending this saved plan."
-            : undefined}
-        >
-          {timelinePreviewActive ? "Exit preview to send" : "Send to Events Team"}
-        </button>
-      </FloatingWidgetFrame>
+        {sendAction}
+      </FloatingWidgetFrame>}
 
       {showEnquiry && (
         <GuestEnquiryModal

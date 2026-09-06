@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { TruthModeIndicator } from "../TruthModeIndicator.js";
 import {
   buildProceduralTruthSummary,
+  buildPlannerTruthSummary,
   formatConfidenceTier,
   isTruthModeUiEnabled,
 } from "../../../lib/truth-mode-summary.js";
@@ -24,6 +25,40 @@ function renderProceduralIndicator(): void {
 }
 
 describe("TruthModeIndicator", () => {
+  it("shows staged capture provenance without a procedural-venue claim or a measured-runtime promotion", () => {
+    const summary = buildPlannerTruthSummary({
+      surface: "planner_3d", placedObjectCount: 162, configId: "demo", spaceId: "hall", layerMode: "splat",
+      sceneSource: { configId: "demo", spaceId: "hall", layerMode: "splat", captureSource: "staged", loadedChunks: 12, totalChunks: 12, proceduralGeometryVisible: false },
+    });
+    render(<TruthModeIndicator summary={summary} embedded />);
+    expect(screen.getByText(/Staged capture · unverified/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("truth-mode-toggle"));
+    expect(screen.getByText(/Staged capture-derived room imagery is displayed/)).toBeTruthy();
+    expect(screen.queryByText(/procedural placeholder venue geometry/)).toBeNull();
+    expect(screen.queryByText(/Current venue visuals come from procedural/)).toBeNull();
+    expect(screen.getByText(/No signed measured RuntimeVenueManifest/)).toBeTruthy();
+    expect(screen.getByText(/Capture-to-plan alignment and measurement accuracy are not established/)).toBeTruthy();
+  });
+
+  it("embeds a compact provenance disclosure while retaining every evidence section and honest runtime state", () => {
+    const summary = buildProceduralTruthSummary({ surface: "planner_3d", placedObjectCount: 162, measuredRuntimeAssetsLoaded: false });
+    const { container } = render(<TruthModeIndicator summary={summary} embedded />);
+    expect(screen.getByText("Planning provenance")).toBeTruthy();
+    expect(screen.getByTestId("truth-mode-toggle").getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("[data-floating-widget-id]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Move Truth Mode" })).toBeNull();
+    fireEvent.click(screen.getByTestId("truth-mode-toggle"));
+    expect(screen.getByRole("dialog", { name: "Truth Mode summary" })).toBeTruthy();
+    for (const label of ["Source / evidence", "Verification", "Confidence", "Freshness", "Known issues", "Next action"]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+    expect(screen.getByText(summary.evidenceSummary)).toBeTruthy();
+    expect(screen.getByText(summary.verificationSummary)).toBeTruthy();
+    for (const issue of summary.knownIssues) expect(screen.getByText(issue.message)).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Truth Mode summary" })).toBeNull();
+  });
+
   it("renders the persistent L1 indicator", () => {
     renderProceduralIndicator();
     expect(screen.getByTestId("truth-mode-indicator")).toBeTruthy();

@@ -8,6 +8,25 @@
   padding: 10px;
 }
 
+.cockpit-minimap-embedded {
+  position: static;
+  min-width: 0;
+  padding: 4px 3px 10px;
+}
+
+.cockpit-minimap-embedded .cockpit-minimap {
+  justify-items: center;
+  gap: 9px;
+}
+
+.cockpit-minimap-embedded .cockpit-minimap__note {
+  max-width: 190px;
+  text-align: center;
+  color: #aaa293;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .cockpit-minimap {
   display: grid;
   gap: 6px;

@@ -1,4 +1,5 @@
 import { useRef, type ReactElement } from "react";
+import { ActivityIndicator } from "../../shared/Activity.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { roomResolveCaption } from "../../../lib/room-resolve-model.js";
@@ -28,6 +29,7 @@ export function RoomResolveCaption(): ReactElement {
       role="status"
       aria-live="polite"
     >
+      {visible && <ActivityIndicator size={24} />}
       {visible ? caption : lastCaptionRef.current}
     </p>
   );

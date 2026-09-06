@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RoomLayoutTimelineResponse } from "../../api/room-layout-timeline.js";
+import { ApiError } from "../../api/client.js";
 
 vi.mock("../../api/room-layout-timeline.js", () => ({
   getRoomLayoutTimeline: vi.fn(),
@@ -57,6 +58,16 @@ afterEach(() => {
 });
 
 describe("useRoomLayoutTimeline", () => {
+  it("distinguishes an expired or absent sign-in from a broken schedule", async () => {
+    timelineApi.getRoomLayoutTimeline.mockRejectedValue(new ApiError(401, "Session expired", "UNAUTHORIZED"));
+    const { result } = renderHook(() => useRoomLayoutTimeline(VENUE_ID, SPACE_ID, { scope: "day", anchorDate: "2026-07-18" }));
+    await waitFor(() => { expect(result.current.status).toBe("sign-in-required"); });
+    expect(result.current.data).toBeNull();
+    timelineApi.getRoomLayoutTimeline.mockRejectedValue(new ApiError(500, "Schedule failed", "INTERNAL_ERROR"));
+    act(() => { result.current.refresh(); });
+    await waitFor(() => { expect(result.current.status).toBe("error"); });
+    expect(result.current.data).toBeNull();
+  });
   it("aborts the superseded request and ignores its late response", async () => {
     const first = deferred<RoomLayoutTimelineResponse>();
     const second = deferred<RoomLayoutTimelineResponse>();

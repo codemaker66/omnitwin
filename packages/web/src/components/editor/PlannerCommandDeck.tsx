@@ -131,7 +131,7 @@ function historyActions(history: EditorHistory<EditorObject>): readonly CommandA
   ];
 }
 
-export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.ReactElement {
+export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = false }: { readonly compact?: boolean }): React.ReactElement {
   const catalogueSelectedId = useCatalogueStore((s) => s.selectedItemId);
   const drawerOpen = useCatalogueStore((s) => s.drawerOpen);
   const markupActive = useMarkupStore((s) => s.active);
@@ -444,7 +444,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck(): React.Reac
 
   return (
     <section
-      className="planner-command-deck"
+      className={`planner-command-deck${compact ? " is-reference-compact" : ""}`}
       data-testid="planner-command-deck"
       aria-label="Planner command deck"
     >

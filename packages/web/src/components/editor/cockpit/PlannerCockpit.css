@@ -299,6 +299,7 @@
     bottom: 10px;
     max-width: min(72vw, 320px);
   }
+}
 /* Numbers are instruments (02 §4): the top bar's stated values render in the
    data mono with tabular figures, so a changing count never shimmies. */
 .cockpit-topbar__value {

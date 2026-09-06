@@ -13,6 +13,7 @@ import { LightingLensPanel } from "./LightingLensPanel.js";
 import { PowerLensPanel } from "./PowerLensPanel.js";
 import { RiggingLensPanel } from "./RiggingLensPanel.js";
 import { AVLensPanel } from "./AVLensPanel.js";
+import { SelectedFurnitureInspector } from "./SelectedFurnitureInspector.js";
 import {
   FurnitureInspectionDock,
   useSelectedGeneratedFurniture,
@@ -70,8 +71,15 @@ export function CockpitRightDock(): ReactElement {
       </aside>
     );
   }
-  if (activeMode === "design" && generatedFurnitureSelection !== null) {
-    return <FurnitureInspectionDock selection={generatedFurnitureSelection} />;
+  if (activeMode === "design") {
+    return <div className="reference-inspector-dock">
+      <SelectedFurnitureInspector />
+      <div id="reference-object-notes" />
+      {generatedFurnitureSelection !== null && <details className="reference-model-provenance">
+        <summary>Furniture model provenance</summary>
+        <FurnitureInspectionDock selection={generatedFurnitureSelection} />
+      </details>}
+    </div>;
   }
   const Panel = panelForMode(activeMode);
   return Panel !== null ? <Panel /> : <CockpitTruthRail />;

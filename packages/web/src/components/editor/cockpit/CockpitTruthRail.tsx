@@ -6,6 +6,7 @@ import { getTruthModeSummary } from "../../../api/truth-mode.js";
 import { buildTruthRailRows } from "../../../lib/cockpit-truth-rail-model.js";
 import { evidenceChipStateFromTruthTone } from "../../../lib/evidence-chip-model.js";
 import { EvidenceChip } from "../../evidence/EvidenceChip.js";
+import { ActivityIndicator } from "../../shared/Activity.js";
 import "./CockpitTruthRail.css";
 
 type SummaryStatus = "idle" | "loading" | "loaded" | "fallback";
@@ -63,7 +64,7 @@ export function CockpitTruthRail(): ReactElement {
           <span className="cockpit-truth__eyebrow">Truth Mode</span>
           <span className="cockpit-truth__title">Layout evidence</span>
         </span>
-        <span className="cockpit-truth__source">{sourceNote(status)}</span>
+        <span className="cockpit-truth__source">{status === "loading" && <ActivityIndicator size={18} />}{sourceNote(status)}</span>
       </header>
 
       <div className="cockpit-truth__rows">

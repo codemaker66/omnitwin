@@ -17,7 +17,6 @@ import {
   ChevronUp,
   CircleAlert,
   Clock3,
-  LoaderCircle,
   Pause,
   Play,
   RotateCcw,
@@ -29,6 +28,7 @@ import {
 import { RoomLayoutTimelineLocalDateSchema } from "@omnitwin/types";
 import { useSearchParams } from "react-router-dom";
 import { useEditorStore } from "../../../stores/editor-store.js";
+import { ActivityIndicator } from "../../shared/Activity.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { stepSpring, isSpringSettled, type SpringState } from "../../../lib/springs.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -312,11 +312,14 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 function compactMessage(
-  status: "idle" | "loading" | "loaded" | "error",
+  status: "idle" | "loading" | "loaded" | "error" | "sign-in-required",
   frames: readonly RoomLayoutTimelineFrame[],
   hasLinkedEvent: boolean,
   scope: TimelineScope,
 ): { readonly title: string; readonly detail: string; readonly tone: "neutral" | "error" | "loading" } {
+  if (status === "sign-in-required") {
+    return { title: "Sign in to view the room schedule", detail: "Your current layout is available to edit.", tone: "neutral" };
+  }
   if (status === "idle") {
     return { title: "Room timeline unavailable", detail: "Open a saved room configuration to load its schedule.", tone: "neutral" };
   }
@@ -344,7 +347,7 @@ function compactMessage(
     : { title: `No room phases this ${period}`, detail: `Move to another ${period} to browse saved layouts.`, tone: "neutral" };
 }
 
-export function RoomLayoutTimelineDock(): ReactElement | null {
+export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonly initiallyCollapsed?: boolean }): ReactElement | null {
   const venueId = useEditorStore((state) => state.venueId);
   const spaceId = useEditorStore((state) => state.spaceId);
   const configurationId = useEditorStore((state) => state.configId);
@@ -414,7 +417,7 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
     && !isPublicPreview
     && canFreezePhaseLayoutForVenue(user, venueId);
   const availableIndices = useMemo(() => availableFrameIndices(frames), [frames]);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(initiallyCollapsed);
   const [activeIndex, setActiveIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const previewMode = useLayoutTimelinePreviewStore((state) => state.mode);
@@ -1282,7 +1285,7 @@ export function RoomLayoutTimelineDock(): ReactElement | null {
 
         {effectiveCollapsed ? (
           <div className={`layout-compact-state is-${compact.tone}`} role={compact.tone === "error" ? "alert" : "status"}>
-            {compact.tone === "loading" ? <LoaderCircle className="is-spinning" size={14} aria-hidden="true" /> : null}
+            {compact.tone === "loading" ? <ActivityIndicator size={18} /> : null}
             {compact.tone === "error" ? <CircleAlert size={14} aria-hidden="true" /> : null}
             <strong>{canExpand && collapsed ? activeFrame?.phaseName ?? "Room timeline" : compact.title}</strong>
             <span>{canExpand && collapsed ? activeFrame === undefined ? "" : `${frameTime(activeFrame, timeZone)} · ${frameStateLabel(activeFrame)}` : compact.detail}</span>

@@ -7,6 +7,7 @@ import {
 } from "../lib/cockpit-modes.js";
 import { CAPTURED_LAYER_FALLBACK_STATUS } from "../lib/runtime-package-resolution.js";
 import type { RoomResolvePhase } from "../lib/room-resolve-model.js";
+import type { PlannerSceneSourceEvidence } from "../lib/truth-mode-summary.js";
 
 type OverlayVisibility = Record<CockpitOverlayKey, boolean>;
 
@@ -60,6 +61,7 @@ interface CockpitState {
   readonly selectedPhaseId: string | null;
   readonly runtimeAssetStatus: string;
   readonly roomResolve: CockpitRoomResolve;
+  readonly sceneSource: PlannerSceneSourceEvidence | null;
   readonly layersOpen: boolean;
   readonly beam: CockpitBeam | null;
   readonly focusRequest: CockpitFocusRequest | null;
@@ -77,6 +79,8 @@ interface CockpitState {
   readonly setFlowArrivalMinutes: (minutes: number) => void;
   readonly setRuntimeAssetStatus: (status: string) => void;
   readonly setRoomResolve: (resolve: CockpitRoomResolve) => void;
+  readonly setSceneSource: (source: PlannerSceneSourceEvidence) => void;
+  readonly clearSceneSource: (owner: PlannerSceneSourceEvidence) => void;
   readonly toggleLayers: () => void;
   readonly setLayersOpen: (open: boolean) => void;
   readonly setBeam: (beam: CockpitBeam | null) => void;
@@ -103,6 +107,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   selectedPhaseId: null,
   runtimeAssetStatus: DEFAULT_RUNTIME_ASSET_STATUS,
   roomResolve: DEFAULT_ROOM_RESOLVE,
+  sceneSource: null,
   layersOpen: false,
   beam: null,
   focusRequest: null,
@@ -127,6 +132,8 @@ export const useCockpitStore = create<CockpitState>((set) => ({
   setFlowArrivalMinutes: (minutes) => { set({ flowArrivalMinutes: minutes }); },
   setRuntimeAssetStatus: (status) => { set({ runtimeAssetStatus: status }); },
   setWalkMode: (active) => { set({ walkMode: active }); },
+  setSceneSource: (source) => { set({ sceneSource: source }); },
+  clearSceneSource: (owner) => { set((state) => state.sceneSource === owner ? { sceneSource: null } : state); },
   setRoomResolve: (resolve) => {
     set((state) => (
       state.roomResolve.phase === resolve.phase
@@ -155,6 +162,7 @@ export const useCockpitStore = create<CockpitState>((set) => ({
       selectedPhaseId: null,
       runtimeAssetStatus: DEFAULT_RUNTIME_ASSET_STATUS,
       roomResolve: DEFAULT_ROOM_RESOLVE,
+      sceneSource: null,
       walkMode: false,
       layersOpen: false,
       beam: null,

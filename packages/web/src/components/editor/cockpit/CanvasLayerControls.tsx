@@ -8,6 +8,8 @@ import { roomSplatBundle } from "../../../data/room-splat-bundles.js";
 import { TRADES_HALL_RUNTIME_ROOMS } from "../../../lib/runtime-package-resolution.js";
 import { FloatingWidgetFrame, type FloatingWidgetPlacement } from "../../shared/FloatingWidgetFrame.js";
 import "./CanvasLayerControls.css";
+import { recordPlannerArrivalChoice } from "../../../lib/planner-room-arrival.js";
+import { interiorInputBlocked } from "../../rooms/interior-camera-input.js";
 
 const LAYER_META: Readonly<Record<CockpitLayerMode, { readonly label: string; readonly Icon: LucideIcon }>> = {
   mesh: { label: "Mesh", Icon: Cuboid },
@@ -55,7 +57,7 @@ function walkAvailableForSlug(spaceSlug: string | null): boolean {
   return bundle !== null && bundle.spawn !== null && bundle.bounds !== null;
 }
 
-export function CanvasLayerControls(): ReactElement {
+export function CanvasLayerControls({ embedded = false }: { readonly embedded?: boolean }): ReactElement {
   const layerMode = useCockpitStore((s) => s.layerMode);
   const cameraInteractionActive = useCockpitStore((s) => s.cameraInteractionActive);
   const walkMode = useCockpitStore((s) => s.walkMode);
@@ -70,14 +72,37 @@ export function CanvasLayerControls(): ReactElement {
   useEffect(() => {
     if (!walkMode) return;
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.code !== "Escape") return;
+      if (event.code !== "Escape" || event.defaultPrevented || interiorInputBlocked("planner", event.target)) return;
       event.preventDefault();
+      recordPlannerArrivalChoice();
       useCockpitStore.getState().setWalkMode(false);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => { window.removeEventListener("keydown", onKeyDown); };
   }, [walkMode]);
 
+  const controls = (
+    <div className="cockpit-layer-controls" role="group" aria-label="Room view">
+      {COCKPIT_LAYER_MODES.map((mode) => {
+        const meta = LAYER_META[mode];
+        const Icon = meta.Icon;
+        const label = embedded ? ({ mesh: "Model", splat: "Capture", hybrid: "Combined" } as const)[mode] : meta.label;
+        return <button key={mode} type="button" aria-pressed={mode === layerMode}
+          className={mode === layerMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
+          onClick={() => { recordPlannerArrivalChoice(); useCockpitStore.getState().setLayerMode(mode); }}>
+          <Icon size={14} aria-hidden />{label}
+        </button>;
+      })}
+      <span className="cockpit-layer-controls__divider" aria-hidden />
+      <button type="button" aria-pressed={walkMode} className={walkMode ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
+        disabled={walkDisabled} data-testid="planner-walk-toggle"
+        title={walkDisabled ? "This room has no available interior view, or a saved viewpoint is active" : "Switch between interior and orbit navigation"}
+        onClick={() => { recordPlannerArrivalChoice(); useCockpitStore.getState().setWalkMode(!walkMode); }}>
+        <Footprints size={14} aria-hidden />{embedded ? "Interior" : "Walk"}
+      </button>
+    </div>
+  );
+  if (embedded) return <div className="reference-layer-controls" data-testid="planner-layer-controls">{controls}</div>;
   return (
     <FloatingWidgetFrame
       id="planner-layer-controls"
@@ -105,7 +130,7 @@ export function CanvasLayerControls(): ReactElement {
               type="button"
               aria-pressed={active}
               className={active ? "cockpit-layer-btn is-active" : "cockpit-layer-btn"}
-              onClick={() => { useCockpitStore.getState().setLayerMode(mode); }}
+              onClick={() => { recordPlannerArrivalChoice(); useCockpitStore.getState().setLayerMode(mode); }}
             >
               <Icon size={14} aria-hidden="true" />
               {meta.label}
@@ -131,6 +156,7 @@ export function CanvasLayerControls(): ReactElement {
             // proved this exact mount path healthy, and wrapping the flip in
             // startTransition made R3F's first walk frame wedge intermittently
             // (a transition-committed Canvas subtree meeting the demand loop).
+            recordPlannerArrivalChoice();
             useCockpitStore.getState().setWalkMode(!walkMode);
           }}
         >

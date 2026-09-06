@@ -17,7 +17,7 @@ import { TruthModeIndicator } from "../components/truth/TruthModeIndicator.js";
 import { FloatingWidgetFrame } from "../components/shared/FloatingWidgetFrame.js";
 import { BlueprintPage } from "./BlueprintPage.js";
 import {
-  buildProceduralTruthSummary,
+  buildPlannerTruthSummary,
   isTruthModeUiEnabled,
 } from "../lib/truth-mode-summary.js";
 import { getPublicConfig } from "../api/configurations.js";
@@ -29,6 +29,8 @@ import {
   type PlannerVenueAccessUser,
 } from "../lib/planner-venue-resolution.js";
 import * as spacesApi from "../api/spaces.js";
+import { recordPlannerArrivalChoice } from "../lib/planner-room-arrival.js";
+import "../components/editor/MobilePlannerChrome.css";
 
 // CARD A1 (G1a): the Reception Room owns the default /plan experience — it is
 // the one room with a built runtime package (splat), so first-visit planners
@@ -376,6 +378,9 @@ function PlannerCommsLayer(): React.ReactElement {
   const saveError = useEditorStore((s) => s.saveError);
   const saveConflict = useEditorStore((s) => s.saveConflict);
   const placedObjectCount = useEditorStore((s) => s.objects.length);
+  const truthSpaceId = useEditorStore((s) => s.space?.id ?? null);
+  const sceneSource = useCockpitStore((s) => s.sceneSource);
+  const truthLayerMode = useCockpitStore((s) => s.layerMode);
   const authState = useAuthStore((s) => s.isAuthenticated);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const timelinePreviewMode = useLayoutTimelinePreviewStore((state) => state.mode);
@@ -383,12 +388,13 @@ function PlannerCommsLayer(): React.ReactElement {
   const timelinePreviewObjectCount = useLayoutTimelinePreviewStore((state) => state.currentItems.length);
   const truthModeEnabled = isTruthModeUiEnabled(searchParams, import.meta.env.DEV);
   const truthSummary = useMemo(
-    () => buildProceduralTruthSummary({
+    () => buildPlannerTruthSummary({
       surface: viewMode === "3d" ? "planner_3d" : "planner_2d",
       placedObjectCount,
       measuredRuntimeAssetsLoaded: false,
+      configId, spaceId: truthSpaceId, layerMode: truthLayerMode, sceneSource,
     }),
-    [placedObjectCount, viewMode],
+    [configId, placedObjectCount, sceneSource, truthLayerMode, truthSpaceId, viewMode],
   );
   // The Event Details panel writes to the auth-only PATCH endpoint. Showing
   // it on unclaimed public-preview configs would 401 on every save and
@@ -402,6 +408,7 @@ function PlannerCommsLayer(): React.ReactElement {
     && (mobile || viewMode !== "3d");
   const changeViewMode = useCallback((nextMode: "3d" | "2d"): void => {
     if (timelinePreviewActive && nextMode === "2d") return;
+    recordPlannerArrivalChoice();
     setViewMode(nextMode);
   }, [timelinePreviewActive]);
   return (
@@ -429,7 +436,7 @@ function PlannerCommsLayer(): React.ReactElement {
         }}
       >
         {viewMode === "3d" ? (
-          <PlannerCockpit mobile={mobile} />
+          <PlannerCockpit mobile={mobile} hasLinkedEvent={(searchParams.get("eventId")?.trim().length ?? 0) > 0} />
         ) : (
           <BlueprintPage source="editor-store" />
         )}
@@ -444,12 +451,15 @@ function PlannerCommsLayer(): React.ReactElement {
           previewLocked={timelinePreviewActive}
         />
       )}
+      <div className={mobile ? "mobile-planner-utilities" : undefined}>
+      {mobile && showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} embedded />}
       {canEditEventDetails && viewMode === "3d" && !timelinePreviewActive && (
         <button
           type="button"
           onClick={() => { setEventDetailsOpen(true); }}
+          className={!mobile ? "reference-event-details" : undefined}
           style={{
-            position: "fixed",
+            position: mobile ? "static" : "fixed",
             top: mobile ? "calc(env(safe-area-inset-top) + 84px)" : 16,
             right: 16,
             zIndex: 30,
@@ -462,14 +472,15 @@ function PlannerCommsLayer(): React.ReactElement {
             letterSpacing: "0.04em",
           }}
         >
-          ★ EVENT DETAILS
+          Event details
         </button>
       )}
+      </div>
       <EventDetailsPanel open={eventDetailsOpen} onClose={() => { setEventDetailsOpen(false); }} />
-      <ObjectNotePanel />
-      <SaveSendPanel avoidRightDock={viewMode === "3d" && !mobile} />
+      <ObjectNotePanel embedded={viewMode === "3d" && !mobile} mobile={mobile} viewMode={viewMode} />
+      <SaveSendPanel avoidRightDock={viewMode === "3d" && !mobile} embedded={viewMode === "3d" && !mobile} />
       <SubmitForReviewPanel />
-      {showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} />}
+      {!mobile && showStandaloneTruthIndicator && <TruthModeIndicator summary={truthSummary} />}
       {saveError !== null ? (
         <SaveErrorToast message={saveError} isAuthenticated={authState} conflict={saveConflict} />
       ) : null}
@@ -619,6 +630,7 @@ function ViewModeToggle({
       </button>
     );
   };
+  if (!isMobile && mode === "3d") return <div className="reference-view-switch" role="group" aria-label="View mode">{btn("3D", "3d")}{btn("2D", "2d")}</div>;
   return (
     <FloatingWidgetFrame
       id="planner-view-mode"

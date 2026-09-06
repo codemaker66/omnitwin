@@ -4,6 +4,17 @@ import { useCockpitStore } from "../cockpit-store.js";
 afterEach(() => { useCockpitStore.getState().reset(); });
 
 describe("cockpit-store", () => {
+  it("does not let an old canvas clear the replacement canvas's source evidence", () => {
+    const oldSource = { configId: "old", spaceId: "room-a", layerMode: "splat" as const, captureSource: "staged" as const, loadedChunks: 1, totalChunks: 1, proceduralGeometryVisible: false };
+    const nextSource = { ...oldSource, configId: "new", spaceId: "room-b" };
+    useCockpitStore.getState().setSceneSource(oldSource);
+    useCockpitStore.getState().setSceneSource(nextSource);
+    useCockpitStore.getState().clearSceneSource(oldSource);
+    expect(useCockpitStore.getState().sceneSource).toBe(nextSource);
+    useCockpitStore.getState().clearSceneSource(nextSource);
+    expect(useCockpitStore.getState().sceneSource).toBeNull();
+  });
+
   it("defaults to design lens, hybrid layer, all overlays on, no phase", () => {
     const s = useCockpitStore.getState();
     expect(s.activeMode).toBe("design");

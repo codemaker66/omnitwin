@@ -9,6 +9,7 @@ import {
   runtimeAssetViewTransformForRoom,
   TRADES_HALL_RUNTIME_ROOMS,
   type RuntimeAssetViewTransform,
+  type RuntimeAssetSource,
   type TradesHallRuntimeRoomSlug,
 } from "../lib/runtime-package-resolution.js";
 
@@ -36,6 +37,7 @@ export interface RoomRuntimeSplat {
   readonly status: RoomRuntimeSplatStatus;
   /** The canonical runtime room slug for the loaded space, when it has one. */
   readonly roomSlug: TradesHallRuntimeRoomSlug | null;
+  readonly source: RuntimeAssetSource;
 }
 
 function runtimeRoomSlug(slug: string | null): TradesHallRuntimeRoomSlug | null {
@@ -92,5 +94,5 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
     useCockpitStore.getState().setRuntimeAssetStatus(runtimeLabel);
   }, [runtimeLabel]);
 
-  return { splatUrls: decision.splatUrls, transform, hasAsset, status, roomSlug };
+  return { splatUrls: decision.splatUrls, transform, hasAsset, status, roomSlug, source: decision.source };
 }

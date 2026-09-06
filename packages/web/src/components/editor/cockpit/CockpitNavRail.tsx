@@ -35,6 +35,8 @@ export function CockpitNavRail(): ReactElement {
               type="button"
               className={active ? "cockpit-rail__button is-active" : "cockpit-rail__button"}
               aria-pressed={active}
+              aria-label={mode.label}
+              title={mode.label}
               onClick={() => { setMode(mode.id); }}
             >
               <Icon size={20} aria-hidden="true" />

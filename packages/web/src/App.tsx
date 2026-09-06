@@ -60,7 +60,7 @@ function useRoomDimensions(): SpaceDimensions {
   }, [space]);
 }
 
-export function App(): React.ReactElement {
+export function App({ compactDesktop = false }: { readonly compactDesktop?: boolean }): React.ReactElement {
   const chairRequest = useChairDialogStore((s) => s.pending);
   const isNarrow = useIsNarrowViewport();
   const isTouch = useIsCoarsePointer();
@@ -98,19 +98,19 @@ export function App(): React.ReactElement {
         <PlannerScene />
       </div>
 
-      <GeneratedFurnitureProxyBadge />
+      {!compactDesktop && <GeneratedFurnitureProxyBadge />}
 
       {/* Vertical icon toolbox — left edge (≥641px) or bottom rail (≤640px) */}
       <MarkupPersistence />
-      {!timelinePreviewActive && <VerticalToolbox />}
+      {!timelinePreviewActive && <VerticalToolbox compactDesktop={compactDesktop} />}
       {!timelinePreviewActive && !mobileChrome && (
         <>
-          <PlannerSpatialHud />
-          <PlannerCommandDeck />
+          {!compactDesktop && <PlannerSpatialHud />}
+          <PlannerCommandDeck compact={compactDesktop} />
         </>
       )}
 
-      {!timelinePreviewActive && !mobileChrome && (
+      {!timelinePreviewActive && !mobileChrome && !compactDesktop && (
         <div className="planner-section-slider-dock">
           <SectionSlider />
         </div>

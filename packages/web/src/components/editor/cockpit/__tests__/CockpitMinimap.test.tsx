@@ -10,6 +10,8 @@ import { getCatalogueItemBySlug } from "../../../../lib/catalogue.js";
 import { createPlacedItem } from "../../../../lib/placement.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { useRoomDimensionsStore } from "../../../../stores/room-dimensions-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 import { TRADES_HALL_GUEST_FLOW_REPLAY_INPUT } from "../../../../lib/trades-hall-visual-demo-state.js";
 import { useCockpitReplay } from "../../../../hooks/use-cockpit-replay.js";
 import { CockpitMinimap } from "../CockpitMinimap.js";
@@ -37,6 +39,7 @@ function reviewConflict(): RouteConflict {
 function resetStores(): void {
   usePlacementStore.setState({ placedItems: [] });
   useCockpitStore.getState().reset();
+  useLayoutTimelinePreviewStore.getState().clear();
 }
 
 beforeEach(() => {
@@ -70,12 +73,40 @@ describe("CockpitMinimap", () => {
   it("requests a camera recentre when the plan is clicked", () => {
     render(<CockpitMinimap />);
     expect(useCockpitStore.getState().focusRequest).toBeNull();
-    fireEvent.click(screen.getByLabelText(/Recentre the planner camera/), { clientX: 10, clientY: 12 });
+    fireEvent.click(screen.getByLabelText(/Recentre the planner camera/), { clientX: 10, clientY: 12, detail: 1 });
     const focus = useCockpitStore.getState().focusRequest;
     expect(focus).not.toBeNull();
     expect(focus?.nonce).toBe(1);
     expect(Number.isFinite(focus?.x ?? NaN)).toBe(true);
     expect(Number.isFinite(focus?.z ?? NaN)).toBe(true);
+  });
+
+  it("embeds actual navigation without a floating widget and maps the clicked room point", () => {
+    const { container } = render(<CockpitMinimap embedded />);
+    expect(screen.getByTestId("cockpit-minimap-embedded")).toBeTruthy();
+    expect(container.querySelector("[data-floating-widget-id='cockpit-minimap']")).toBeNull();
+    const plate = screen.getByRole("button", { name: /Recentre the planner camera/ });
+    const width = Number.parseFloat(plate.style.width);
+    const height = Number.parseFloat(plate.style.height);
+    vi.spyOn(plate, "getBoundingClientRect").mockReturnValue({
+      x: 100, y: 150, left: 100, top: 150, right: 100+width, bottom: 150+height,
+      width, height, toJSON: () => ({}),
+    });
+    fireEvent.click(plate, { clientX: 100+width*.75, clientY: 150+height*.25, detail: 1 });
+    const dimensions = useRoomDimensionsStore.getState().dimensions;
+    expect(useCockpitStore.getState().focusRequest?.x).toBeCloseTo(dimensions.width/4);
+    expect(useCockpitStore.getState().focusRequest?.z).toBeCloseTo(-dimensions.length/4);
+    fireEvent.click(plate, { detail: 0 });
+    expect(useCockpitStore.getState().focusRequest).toMatchObject({ x: 0, z: 0 });
+  });
+
+  it("preserves the unavailable frozen-preview guard in embedded form", () => {
+    useLayoutTimelinePreviewStore.getState().showPending("Opening frozen phase");
+    const { container } = render(<CockpitMinimap embedded />);
+    expect(screen.getByTestId("cockpit-minimap-unavailable").textContent).toBe("No room preview available");
+    expect(screen.queryByRole("button", { name: /Recentre the planner camera/ })).toBeNull();
+    expect(container.querySelectorAll(".cockpit-minimap__dot")).toHaveLength(0);
+    expect(useCockpitStore.getState().focusRequest).toBeNull();
   });
 
   it("shows no review markers in the Design lens", () => {

@@ -7,8 +7,9 @@ import {
 } from "../api/room-layout-timeline.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { timelineScopedRequestRange } from "../lib/room-layout-timeline-ui.js";
+import { ApiError } from "../api/client.js";
 
-export type RoomLayoutTimelineStatus = "idle" | "loading" | "loaded" | "error";
+export type RoomLayoutTimelineStatus = "idle" | "loading" | "loaded" | "error" | "sign-in-required";
 
 export interface RoomLayoutTimelineResult {
   readonly status: RoomLayoutTimelineStatus;
@@ -121,7 +122,7 @@ export function useRoomLayoutTimeline(
       .catch((error: unknown) => {
         if (cancelled || requestGenerationRef.current !== generation) return;
         const message = error instanceof Error ? error.message : "Room timeline unavailable";
-        setResult({ requestKey, status: "error", data: null, error: message });
+        setResult({ requestKey, status: error instanceof ApiError && error.status === 401 ? "sign-in-required" : "error", data: null, error: message });
       });
 
     return () => {
