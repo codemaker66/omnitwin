@@ -16,7 +16,7 @@
 # 10-second default grace.
 # -----------------------------------------------------------------------------
 
-ARG NODE_VERSION=22.12.0
+ARG NODE_VERSION=22.18.0
 ARG PNPM_VERSION=9.15.4
 
 # -----------------------------------------------------------------------------
@@ -37,6 +37,8 @@ RUN npm install -g pnpm@${PNPM_VERSION}
 # Copy only the files needed for `pnpm install` first — this layer is
 # cache-hit whenever the lockfile hasn't changed.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# pnpm hashes every declared patch even during a frozen, scripts-disabled install.
+COPY patches ./patches
 COPY packages/types/package.json ./packages/types/
 COPY packages/api/package.json ./packages/api/
 # Every workspace member's manifest must be present for a frozen install —
@@ -73,6 +75,8 @@ COPY --from=deps /app/packages/reconstruction-foundry/node_modules ./packages/re
 COPY --from=deps /app/tools/reconstruction-foundry/node_modules ./tools/reconstruction-foundry/node_modules
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+# Keep patched-dependency inputs available when pnpm creates the deploy closure.
+COPY patches ./patches
 COPY packages/types ./packages/types
 COPY packages/api ./packages/api
 COPY packages/reconstruction-foundry ./packages/reconstruction-foundry
