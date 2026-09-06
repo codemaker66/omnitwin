@@ -34,6 +34,16 @@ const round = (id: string, x: number, y: number, seats = 10): RoundTableItem => 
   centrepiece: "Low floral",
 });
 
+describe("placed seating metrics", () => {
+  it("prefers the actual chair tally over nominal table capacity, including zero", () => {
+    const items = Array.from({ length: 18 }, (_unused, index) => round(String(index), 0, 0));
+    expect(totalSeats(items)).toBe(180);
+    expect(computeStatusMetrics({ ...DEMO_SCENE, items, placedChairCount: 144 }).totalSeats).toBe(144);
+    expect(computeStatusMetrics({ ...DEMO_SCENE, items, placedChairCount: 0 }).totalSeats).toBe(0);
+    expect(computeStatusMetrics({ ...DEMO_SCENE, items }).totalSeats).toBe(180);
+  });
+});
+
 describe("metresToPixels / pixelsToMetres", () => {
   it("round-trips a value", () => {
     const m = 3.5;

@@ -78,7 +78,7 @@ export function itemAreaM2(item: BlueprintItem): number {
   return item.widthM * item.lengthM;
 }
 
-/** Sum seats across all seated items (rounds + rect tables with a seats field). */
+/** Sum authored seats/table capacities. Live chair totals come from the scene. */
 export function totalSeats(items: readonly BlueprintItem[]): number {
   let sum = 0;
   for (const item of items) {
@@ -147,7 +147,8 @@ export function distanceToItemM(p: Point, item: BlueprintItem): number {
 /** Build the status chip metrics in one pass. */
 export function computeStatusMetrics(scene: BlueprintScene): StatusMetrics {
   return {
-    totalSeats: totalSeats(scene.items),
+    totalSeats: scene.placedChairCount ?? totalSeats(scene.items),
+    seatsArePlaced: scene.placedChairCount !== undefined,
     roundCount: roundCount(scene.items),
     floorUsedPercent: floorUsedPercent(scene),
     fireEgressClear: fireEgressClear(scene),
@@ -194,18 +195,21 @@ export function relativeTimeShort(tsMs: number | null, nowMs: number): string {
 }
 
 /** Inspector title — "ROUND TABLE · 10", "STAGE · 8×3m", etc. */
-export function inspectorTitle(item: BlueprintItem): string {
+export function inspectorTitle(item: BlueprintItem, catalogueCapacity = false): string {
+  const capacityPrefix = catalogueCapacity ? "CAPACITY " : "";
   if (item.kind === "round-table") {
-    return `ROUND TABLE · ${String(item.seats)}`;
+    return `ROUND TABLE · ${capacityPrefix}${String(item.seats)}`;
   }
   if (item.kind === "poseur-table") {
     return `POSEUR TABLE · ${formatDimensions(item)}`;
   }
   if (item.kind === "long-table") {
-    return `LONG TABLE · ${String(item.seats ?? 0)}`;
+    if (catalogueCapacity && item.seats === undefined) return `LONG TABLE · ${formatDimensions(item)}`;
+    return `LONG TABLE · ${capacityPrefix}${String(item.seats ?? 0)}`;
   }
   if (item.kind === "top-table") {
-    return `TOP TABLE · ${String(item.seats ?? 0)}`;
+    if (catalogueCapacity && item.seats === undefined) return `TOP TABLE · ${formatDimensions(item)}`;
+    return `TOP TABLE · ${capacityPrefix}${String(item.seats ?? 0)}`;
   }
   if (item.kind === "stage") {
     return `STAGE · ${formatDimensions(item)}`;
@@ -264,7 +268,7 @@ export function getLayerRows(
     rows.push({
       id: item.id,
       kind: item.kind,
-      label: layerLabel(item),
+      label: layerLabel(item, scene.placedChairCount !== undefined),
       locked: item.locked === true,
       selected: selected.has(item.id),
     });
@@ -272,16 +276,19 @@ export function getLayerRows(
   return rows;
 }
 
-function layerLabel(item: BlueprintItem): string {
+function layerLabel(item: BlueprintItem, catalogueCapacity: boolean): string {
+  const seatLabel = catalogueCapacity ? "capacity" : "seats";
   switch (item.kind) {
     case "round-table":
-      return `Round table · seats ${String(item.seats)}`;
+      return `Round table · ${seatLabel} ${String(item.seats)}`;
     case "poseur-table":
       return `Poseur table · ${formatDimensions(item)}`;
     case "long-table":
-      return `Long table · seats ${String(item.seats ?? 0)}`;
+      if (catalogueCapacity && item.seats === undefined) return `Long table · ${formatDimensions(item)}`;
+      return `Long table · ${seatLabel} ${String(item.seats ?? 0)}`;
     case "top-table":
-      return `Top table · seats ${String(item.seats ?? 0)}`;
+      if (catalogueCapacity && item.seats === undefined) return `Top table · ${formatDimensions(item)}`;
+      return `Top table · ${seatLabel} ${String(item.seats ?? 0)}`;
     case "stage":
       return `Stage · ${formatDimensions(item)}`;
     case "mic-stand":

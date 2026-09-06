@@ -76,13 +76,15 @@ export interface RoundTableItem extends BaseItem {
   /** Centre of the table in metres. */
   readonly center: Point;
   readonly diameterM: number;
+  /** Authored seats in standalone plans; catalogue table capacity in live views. */
   readonly seats: number;
   readonly linen?: string;
   readonly centrepiece?: string;
   /**
    * Actual chair positions (in metre-space, blueprint convention with
    * top-left origin) when the table is grouped with chairs in the 3D
-   * scene. When omitted, renderers fall back to a uniform algorithmic
+   * scene. An empty array means no grouped chairs, not a capacity estimate.
+   * When omitted, renderers fall back to a uniform algorithmic
    * ring derived from `seats`. Real positions are required so the 2D
    * view reflects what 3D shows — including wall-clearance offsets the
    * 3D auto-arrange has applied.
@@ -108,7 +110,7 @@ export interface RectItem extends BaseItem {
   readonly topLeft: Point;
   readonly widthM: number;
   readonly lengthM: number;
-  /** If a table, how many seats along the length. */
+  /** Authored seats in standalone plans; catalogue table capacity in live views. */
   readonly seats?: number;
   readonly linen?: string;
   readonly centrepiece?: string;
@@ -150,6 +152,9 @@ export interface BlueprintScene {
   readonly status: "draft" | "submitted" | "approved";
   readonly eventType: EventType;
   readonly guestCount: number;
+  /** Actual chair tally from the live editor, including loose/rect-table chairs.
+   * Omitted for standalone blueprint plans whose `seats` are authored plans. */
+  readonly placedChairCount?: number;
   readonly room: RoomDimensions;
   readonly items: readonly BlueprintItem[];
   /** Last save timestamp (epoch ms); null if never saved. */
@@ -180,6 +185,7 @@ export const DEFAULT_CATALOGUE: readonly CatalogueChip[] = [
 
 export interface StatusMetrics {
   readonly totalSeats: number;
+  readonly seatsArePlaced: boolean;
   readonly roundCount: number;
   readonly floorUsedPercent: number;
   readonly fireEgressClear: boolean;

@@ -44,6 +44,8 @@ import {
 } from "../lib/blueprint/adapt.js";
 import { canRedo, canUndo } from "../lib/editor-history.js";
 import { useEditorStore } from "../stores/editor-store.js";
+import { useCockpitStore } from "../stores/cockpit-store.js";
+import { MAX_GUEST_FLOW_AGENTS } from "../lib/guest-flow-layout-input.js";
 import {
   NUDGE_STEP_BIG_M,
   NUDGE_STEP_M,
@@ -625,7 +627,7 @@ function Minimap(props: {
  * grouped to the table in the 3D scene), each circle is drawn at its
  * actual metre-space position so the 2D view reflects the 3D auto-
  * arrange's wall-clearance offsets exactly. When `item.chairs` is
- * absent (BlueprintDemo mode, or a table without grouped chairs),
+ * absent (BlueprintDemo mode),
  * we fall back to a uniform algorithmic ring derived from `seats`.
  *
  * Visual only — not selectable — purely so a planner can see how each
@@ -636,7 +638,7 @@ function ChairRing({ item, pxPerM }: { item: RoundTableItem; pxPerM: number }): 
   const chairR = Math.max(4, tableR * 0.18);
   const chairs: ReactElement[] = [];
 
-  if (item.chairs !== undefined && item.chairs.length > 0) {
+  if (item.chairs !== undefined) {
     item.chairs.forEach((p, i) => {
       const x = metresToPixels(p.x, pxPerM);
       const y = metresToPixels(p.y, pxPerM);
@@ -725,9 +727,10 @@ function BlueprintFromStore(): ReactElement {
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
   const selectedObjectId = useEditorStore((s) => s.selectedObjectId);
   const history = useEditorStore((s) => s.history);
+  const plannedGuestCount = useCockpitStore((s) => s.plannedGuestCount);
 
   const [eventType, setEventType] = useState<EventType>("wedding");
-  const [guestCount, setGuestCount] = useState<number>(() => Math.max(0, objects.length * 10));
+  const guestCount = plannedGuestCount ?? 0;
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
 
@@ -792,7 +795,12 @@ function BlueprintFromStore(): ReactElement {
         <LeftSidebar
           scene={scene}
           onEventType={setEventType}
-          onGuestsDelta={(d) => { setGuestCount((n) => Math.max(0, n + d)); }}
+          guestCountLabel={plannedGuestCount === null ? "Not set" : String(plannedGuestCount)}
+          onGuestsDelta={(d) => {
+            const cockpit = useCockpitStore.getState();
+            const next = Math.max(0, Math.min(MAX_GUEST_FLOW_AGENTS, (cockpit.plannedGuestCount ?? 0) + d));
+            cockpit.setPlannedGuestCount(next > 0 ? next : null);
+          }}
           onTapAdd={null}
           onApplyTemplate={null}
           onClear={null}
@@ -886,6 +894,7 @@ function Dot({ color }: { color: string }): ReactElement {
 
 function LeftSidebar(props: {
   scene: BlueprintScene;
+  guestCountLabel?: string;
   onEventType: (t: EventType) => void;
   onGuestsDelta: (d: number) => void;
   onTapAdd: ((chip: CatalogueChip) => void) | null;
@@ -893,7 +902,7 @@ function LeftSidebar(props: {
   onClear: (() => void) | null;
   onOpenHelp: (() => void) | null;
 }): ReactElement {
-  const { scene, onEventType, onGuestsDelta, onTapAdd, onApplyTemplate, onClear, onOpenHelp } = props;
+  const { scene, guestCountLabel, onEventType, onGuestsDelta, onTapAdd, onApplyTemplate, onClear, onOpenHelp } = props;
   return (
     <aside className="bp-left" style={leftPane}>
       <Section label="Room">
@@ -914,7 +923,7 @@ function LeftSidebar(props: {
       <Section label="Guests">
         <div style={stepper}>
           <button type="button" className="bp-stepper-btn" onClick={() => { onGuestsDelta(-5); }} style={stepperBtn} aria-label="Decrease guest count">−</button>
-          <span style={{ fontWeight: 500 }}>{String(scene.guestCount)}</span>
+          <span style={{ fontWeight: 500 }}>{guestCountLabel ?? String(scene.guestCount)}</span>
           <button type="button" className="bp-stepper-btn" onClick={() => { onGuestsDelta(5); }} style={stepperBtn} aria-label="Increase guest count">+</button>
         </div>
       </Section>
@@ -1484,6 +1493,7 @@ function CanvasPane(props: CanvasPaneProps): ReactElement {
             <ItemShape
               key={item.id}
               item={item}
+              catalogueCapacity={scene.placedChairCount !== undefined}
               selected={selectedIds.includes(item.id)}
               dragging={dragState?.id === item.id}
               onSelect={() => { onSelect(item.id); }}
@@ -1740,6 +1750,7 @@ function CoordReadout({ cursor }: { cursor: { x: number; y: number } | null }): 
 
 interface ItemShapeProps {
   readonly item: BlueprintItem;
+  readonly catalogueCapacity: boolean;
   readonly selected: boolean;
   readonly dragging: boolean;
   readonly onSelect: () => void;
@@ -1783,7 +1794,7 @@ function LockGlyph({ item, pxPerM }: { item: BlueprintItem; pxPerM: number }): R
 }
 
 function ItemShape(props: ItemShapeProps): ReactElement {
-  const { item, selected, dragging, onSelect, onPointerDown, onPointerMove, onPointerUp, pxPerM } = props;
+  const { item, catalogueCapacity, selected, dragging, onSelect, onPointerDown, onPointerMove, onPointerUp, pxPerM } = props;
   const groupStyle: CSSProperties = {
     cursor: dragging ? "grabbing" : "grab",
     opacity: dragging ? 0.9 : 1,
@@ -1806,7 +1817,7 @@ function ItemShape(props: ItemShapeProps): ReactElement {
         {selected ? <circle cx={cx} cy={cy} r={r + 3} fill="none" stroke={ACCENT_RED} strokeWidth={2.5} /> : null}
         <circle cx={cx} cy={cy} r={r} fill={SHAPE_FILL} stroke={SHAPE_OUTLINE} strokeWidth={1} />
         <text x={cx} y={cy + 4} textAnchor="middle" fontFamily={FONT_MONO} fontSize={11} fill={INK}>
-          {item.kind === "round-table" ? String(item.seats) : "P"}
+          {item.kind === "round-table" ? `${String(item.seats)}${catalogueCapacity ? " cap." : ""}` : "P"}
         </text>
       </g>
     );
@@ -1820,7 +1831,7 @@ function ItemShape(props: ItemShapeProps): ReactElement {
   const fill = isDancefloor ? INK : SHAPE_FILL;
   const textColor = isDancefloor ? PAPER : INK;
   const tagBg = isDancefloor ? ACCENT_RED_DEEP : INK;
-  const label = getRectLabel(item);
+  const label = getRectLabel(item, catalogueCapacity);
   const rotationDeg = item.rotationDeg ?? 0;
   const transform = rotationDeg === 0 ? undefined : `rotate(${String(rotationDeg)} ${String(x + w / 2)} ${String(y + h / 2)})`;
 
@@ -1849,18 +1860,21 @@ function ItemShape(props: ItemShapeProps): ReactElement {
   );
 }
 
-function getRectLabel(item: BlueprintItem): string {
+function getRectLabel(item: BlueprintItem, catalogueCapacity: boolean): string {
+  const capacityPrefix = catalogueCapacity ? "CAPACITY " : "";
   if (item.kind === "stage") return `STAGE · ${formatDimensions(item)}`;
   if (item.kind === "mic-stand") return `MIC STAND · ${formatDimensions(item)}`;
   if (item.kind === "top-table") {
+    if (catalogueCapacity && item.seats === undefined) return `TOP TABLE · ${formatDimensions(item)}`;
     const seats = item.shape === "rect" && typeof item.seats === "number" ? item.seats : 0;
-    return `TOP TABLE · ${String(seats)}`;
+    return `TOP TABLE · ${capacityPrefix}${String(seats)}`;
   }
   if (item.kind === "dancefloor") return `DANCEFLOOR · ${formatDimensions(item)}`;
   if (item.kind === "bar") return `BAR · ${formatM(item.widthM)}m`;
   if (item.kind === "long-table") {
+    if (catalogueCapacity && item.seats === undefined) return `LONG · ${formatDimensions(item)}`;
     const seats = item.shape === "rect" && typeof item.seats === "number" ? item.seats : 0;
-    return `LONG · ${String(seats)}`;
+    return `LONG · ${capacityPrefix}${String(seats)}`;
   }
   return item.kind;
 }
@@ -1908,7 +1922,7 @@ function RightInspector(props: {
         <span style={{ color: INK_FAINT, fontSize: 12 }}>Select an item to inspect its details.</span>
       ) : (
         <>
-          <span style={inspectorTitleStyle}>{inspectorTitle(selected)}</span>
+          <span style={inspectorTitleStyle}>{inspectorTitle(selected, scene.placedChairCount !== undefined)}</span>
           {isRoundTable(selected) ? (
             <>
               {editable ? (
@@ -1933,7 +1947,7 @@ function RightInspector(props: {
                   onCommit={(v) => { onPatchItem({ ...selected, seats: Math.round(v) }); }}
                 />
               ) : (
-                <InspectorRow label="Seats" value={String(selected.seats)} />
+                <InspectorRow label={scene.placedChairCount === undefined ? "Seats" : "Table capacity"} value={String(selected.seats)} />
               )}
               {editable ? (
                 <EditableTextRow
@@ -1971,7 +1985,7 @@ function RightInspector(props: {
                     onCommit={(v) => { onPatchItem({ ...selected, seats: Math.round(v) }); }}
                   />
                 ) : (
-                  <InspectorRow label="Seats" value={String(selected.seats)} />
+                  <InspectorRow label={scene.placedChairCount === undefined ? "Seats" : "Table capacity"} value={String(selected.seats)} />
                 )
               ) : null}
               {isMetadataRectItem(selected) && selected.linen !== undefined ? (
@@ -1999,7 +2013,10 @@ function RightInspector(props: {
             </>
           )}
           <span style={{ marginTop: 16, color: INK_FAINT, fontSize: 11, letterSpacing: 1 }}>
-            {String(countByKind(scene.items, selected.kind))} / {String(estimateTargetForKind(scene, selected.kind))} placed
+            {String(countByKind(scene.items, selected.kind))}
+            {scene.placedChairCount !== undefined && scene.guestCount === 0
+              ? ""
+              : ` / ${String(estimateTargetForKind(scene, selected.kind))}`} placed
           </span>
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
             <button type="button" className="bp-inspector-btn" onClick={onRotate} style={inspectorBtn} aria-label="Rotate 90°" disabled={isLocked}>Rotate 90°</button>
@@ -2239,7 +2256,7 @@ function estimateTargetForKind(scene: BlueprintScene, kind: BlueprintItem["kind"
 function StatusBar({ metrics, onSendForQuote, onExportPng }: { metrics: ReturnType<typeof computeStatusMetrics>; onSendForQuote: () => void; onExportPng: (() => void) | null }): ReactElement {
   return (
     <div className="bp-status-bar" style={statusBar}>
-      <StatusChip label="Seats" value={String(metrics.totalSeats)} />
+      <StatusChip label={metrics.seatsArePlaced ? "Seats placed" : "Seats"} value={String(metrics.totalSeats)} />
       <StatusChip label="Rounds" value={String(metrics.roundCount)} />
       <StatusChip label="Floor used" value={`${String(metrics.floorUsedPercent)}%`} />
       <StatusChip

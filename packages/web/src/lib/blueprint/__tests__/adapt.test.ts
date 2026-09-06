@@ -8,6 +8,9 @@ import {
   itemKindForAsset,
 } from "../adapt.js";
 import type { EditorObject } from "../../../stores/editor-store.js";
+import { computeStatusMetrics } from "../geometry.js";
+import { seatingCountsFromPlacedItems } from "../../seating-counts.js";
+import { createPlacedItem } from "../../placement.js";
 
 // ---------------------------------------------------------------------------
 // adapt — chair grouping regression tests
@@ -62,6 +65,24 @@ function makeObj(
 }
 
 describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
+  it("counts all placed chairs once, including loose chairs and groups shared by tables", () => {
+    if (ROUND_TABLE === undefined || CHAIR === undefined) throw new Error("Missing seating fixtures");
+    const trestle = CANONICAL_ASSETS.find((asset) => asset.slug === "trestle-6ft");
+    if (trestle === undefined) throw new Error("Missing trestle fixture");
+    const objects = [
+      makeObj("round-1", ROUND_TABLE.id, 0, 0, "shared"),
+      makeObj("round-2", ROUND_TABLE.id, 2, 0, "shared"),
+      makeObj("trestle", trestle.id, 4, 0, "trestle"),
+      makeObj("chair-shared", CHAIR.id, 1, 0, "shared"),
+      makeObj("chair-rect", CHAIR.id, 4, 1, "trestle"),
+      makeObj("chair-loose", CHAIR.id, 5, 1, null),
+      makeObj("unknown", "unknown-id", 0, 0),
+    ];
+    const scene = adaptEditorStateToBlueprintScene({ space: SPACE, objects, lastSavedAt: null });
+    const placed = objects.map((item) => createPlacedItem(item.assetDefinitionId, item.positionX, 0, item.positionZ));
+    expect(computeStatusMetrics(scene).totalSeats).toBe(3);
+    expect(computeStatusMetrics(scene).totalSeats).toBe(seatingCountsFromPlacedItems(placed).chairs);
+  });
   it("omits a retained dressing applicator from Blueprint items", () => {
     expect(BLACK_TABLE_CLOTH).toBeDefined();
     if (BLACK_TABLE_CLOTH === undefined) return;
@@ -131,7 +152,7 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
     expect(scene.room).toEqual({ widthM: 21, lengthM: 10.5 });
   });
 
-  it("leaves chairs undefined when the table has no group", () => {
+  it("supplies an empty actual-chair list when the table has no group", () => {
     expect(ROUND_TABLE).toBeDefined();
     if (ROUND_TABLE === undefined) return;
     const objects: readonly EditorObject[] = [makeObj("table-1", ROUND_TABLE.id, 0, 0, null)];
@@ -142,7 +163,7 @@ describe("adaptEditorStateToBlueprintScene — chair grouping", () => {
     });
     const table = scene.items.find((i) => i.id === "table-1");
     if (table === undefined || table.kind !== "round-table") return;
-    expect(table.chairs).toBeUndefined();
+    expect(table.chairs).toEqual([]);
   });
 
   it("excludes chairs that don't share the table's groupId", () => {

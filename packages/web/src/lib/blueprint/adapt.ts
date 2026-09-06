@@ -10,6 +10,7 @@ import {
   isPoseurTableItem,
 } from "../furniture-semantics.js";
 import { isTableDressingApplicatorSlug } from "../table-dressing.js";
+import { seatingCountsFromCatalogueIds } from "../seating-counts.js";
 import type {
   BlueprintItem,
   BlueprintScene,
@@ -140,10 +141,11 @@ export function editorObjectToBlueprintItem(
 
   if (kind === "round-table") {
     const diameterM = asset.widthM * scale;
-    const chairs =
-      chairsByGroupId !== undefined && o.groupId !== null
-        ? chairsByGroupId.get(o.groupId)
-        : undefined;
+    // A supplied lookup is authoritative, including no placed chairs. Only
+    // standalone authored blueprint items may use a synthetic capacity ring.
+    const chairs = chairsByGroupId === undefined
+      ? undefined
+      : o.groupId === null ? [] : chairsByGroupId.get(o.groupId) ?? [];
     return {
       id: o.id,
       kind: "round-table",
@@ -300,6 +302,7 @@ export function adaptEditorStateToBlueprintScene(input: AdaptInput): BlueprintSc
     status: input.status ?? "draft",
     eventType: input.eventType ?? "wedding",
     guestCount: input.guestCount ?? 0,
+    placedChairCount: seatingCountsFromCatalogueIds(input.objects.map((object) => object.assetDefinitionId)).chairs,
     room,
     items,
     lastSavedAtMs: input.lastSavedAt !== null ? input.lastSavedAt.getTime() : null,

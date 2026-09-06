@@ -19,13 +19,19 @@ import { isSceneFurniturePlacement } from "./table-dressing.js";
 export function seatingCountsFromPlacedItems(
   placedItems: readonly PlacedItem[],
 ): SeatingCounts {
+  return seatingCountsFromCatalogueIds(
+    placedItems.filter(isSceneFurniturePlacement).map((placed) => placed.catalogueItemId),
+  );
+}
+
+/** Shared tally for placement-store and editor-store objects with canonical IDs. */
+export function seatingCountsFromCatalogueIds(catalogueIds: Iterable<string>): SeatingCounts {
   let roundTables = 0;
   let banquetTables = 0;
   let chairs = 0;
 
-  for (const placed of placedItems) {
-    if (!isSceneFurniturePlacement(placed)) continue;
-    const item = getCatalogueItem(placed.catalogueItemId);
+  for (const catalogueId of catalogueIds) {
+    const item = getCatalogueItem(catalogueId);
     if (item === undefined) continue;
 
     if (item.category === "chair") chairs += 1;

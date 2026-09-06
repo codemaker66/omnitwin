@@ -34,6 +34,7 @@ vi.mock("../api/action-log.js", () => ({
 const configMock = vi.mocked(await import("../api/configurations.js"));
 
 const { useEditorStore, editorToBatch } = await import("../stores/editor-store.js");
+const { useCockpitStore } = await import("../stores/cockpit-store.js");
 const { getCatalogueItemBySlug } = await import("../lib/catalogue.js");
 const { anonymousPlannerDraftKey } = await import("../lib/anonymous-planner-draft.js");
 
@@ -64,6 +65,40 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   useEditorStore.getState().reset();
+  useCockpitStore.getState().reset();
+});
+
+describe("guest target configuration lifecycle", () => {
+  it("preserves the target through same-config reload and clears it only after a different config commits", async () => {
+    configMock.getPublicConfig.mockResolvedValue(mockConfig);
+    await useEditorStore.getState().loadConfiguration(mockConfig.id);
+    useCockpitStore.getState().setPlannedGuestCount(144);
+    await useEditorStore.getState().loadConfiguration(mockConfig.id);
+    expect(useCockpitStore.getState().plannedGuestCount).toBe(144);
+    configMock.getPublicConfig.mockRejectedValueOnce(new Error("load failed"));
+    await useEditorStore.getState().loadConfiguration("unavailable");
+    expect(useCockpitStore.getState().plannedGuestCount).toBe(144);
+    configMock.getPublicConfig.mockResolvedValue({ ...mockConfig, id: "different-config" });
+    await useEditorStore.getState().loadConfiguration("different-config");
+    expect(useCockpitStore.getState().plannedGuestCount).toBeNull();
+  });
+
+  it("clears only the guest target on successful new draft and explicit editor reset", async () => {
+    useCockpitStore.getState().setPlannedGuestCount(144);
+    useCockpitStore.getState().setLayerMode("splat");
+    configMock.createPublicConfig.mockRejectedValueOnce(new Error("create failed"));
+    await expect(useEditorStore.getState().createPublicConfig("s-1")).rejects.toThrow("create failed");
+    expect(useCockpitStore.getState().plannedGuestCount).toBe(144);
+    configMock.createPublicConfig.mockResolvedValue(mockConfig);
+    await useEditorStore.getState().createPublicConfig("s-1");
+    expect(useCockpitStore.getState().plannedGuestCount).toBeNull();
+    expect(useCockpitStore.getState().layerMode).toBe("splat");
+    useEditorStore.getState().reset();
+    useCockpitStore.getState().setPlannedGuestCount(50);
+    useEditorStore.getState().reset();
+    expect(useCockpitStore.getState().plannedGuestCount).toBeNull();
+    expect(useCockpitStore.getState().layerMode).toBe("splat");
+  });
 });
 
 describe("loadConfiguration", () => {

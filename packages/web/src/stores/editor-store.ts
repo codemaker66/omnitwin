@@ -30,6 +30,7 @@ import type {
   ObjectFieldPatch,
 } from "../lib/editor-history.js";
 import { useSelectionStore } from "./selection-store.js";
+import { useCockpitStore } from "./cockpit-store.js";
 import { useActionLogStore } from "./action-log-store.js";
 import { createActionEmitter } from "../lib/action-log.js";
 import { plannerActionContext } from "./planner-action-log.js";
@@ -831,6 +832,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   clearSaveError: () => { set({ saveError: null, saveConflict: null }); },
 
   reset: () => {
+    useCockpitStore.getState().setPlannedGuestCount(null);
     // Preserve the scene ref — reset clears editor data but the Three.js
     // scene is still alive in the Canvas. SceneProvider manages the ref.
     set({ ...INITIAL_STATE, scene: get().scene });
@@ -880,6 +882,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 }));
 
 useEditorStore.subscribe((state, previous) => {
+  // Attendance is session-only and belongs to the committed configuration.
+  // View changes, failed loads, same-config reloads and furniture history must
+  // preserve it; a different committed draft must not inherit the old target.
+  if (state.configId !== previous.configId) {
+    useCockpitStore.getState().setPlannedGuestCount(null);
+  }
   if (
     state.configId === previous.configId
     && state.spaceId === previous.spaceId
