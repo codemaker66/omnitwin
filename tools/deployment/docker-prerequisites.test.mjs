@@ -35,10 +35,16 @@ function copiedBy(stage, beforeCommand, requiredPath) {
   return false;
 }
 
-test('the Docker default matches the verified repository Node minimum', () => {
+test('the Docker default satisfies the repository minimum within supported Node 22', () => {
   const minimum = /^>=(\d+\.\d+\.\d+)$/.exec(manifest.engines.node)?.[1];
   assert(minimum, 'Review a changed Node engine range explicitly');
-  assert.equal(/^ARG NODE_VERSION=(.+)$/m.exec(dockerfile)?.[1].trim(), minimum);
+  const pinned = /^ARG NODE_VERSION=(\d+\.\d+\.\d+)\s*$/m.exec(dockerfile)?.[1];
+  assert(pinned, 'Keep an explicit reviewed Node patch version');
+  const actualParts = pinned.split('.').map(Number);
+  const minimumParts = minimum.split('.').map(Number);
+  assert.equal(actualParts[0], 22, 'A new Node major requires separate qualification');
+  const firstDifference = actualParts.map((value, index) => value - minimumParts[index]).find(value => value !== 0) ?? 0;
+  assert(firstDifference >= 0, 'The Docker image cannot be older than the repository minimum');
   assert.equal([...dockerfile.matchAll(/^FROM node:\$\{NODE_VERSION\}-alpine AS /gm)].length, 3);
 });
 
