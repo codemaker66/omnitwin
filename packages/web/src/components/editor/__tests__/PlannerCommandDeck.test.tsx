@@ -16,6 +16,8 @@ import { useMarkupStore } from "../../../stores/markup-store.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../stores/selection-store.js";
 import { PlannerCommandDeck } from "../PlannerCommandDeck.js";
+import { GRAND_HALL_ARRIVAL } from "../../../lib/planner-room-arrival.js";
+import { sampleCameraTour } from "../../../lib/camera-tour.js";
 
 function resetPlannerStores(): void {
   useEditorStore.getState().reset();
@@ -208,6 +210,32 @@ describe("PlannerCommandDeck", () => {
     const tour = useBookmarkStore.getState().tour;
     expect(tour).not.toBeNull();
     expect(tour?.legs.length).toBeGreaterThan(0);
+  });
+
+  it("launches the actual staged hall path and withdraws it for stale or unknown capture frames", () => {
+    useEditorStore.setState({ configId: "demo", space: {
+      id: "hall", venueId: "venue", name: "Grand Hall", slug: "grand-hall",
+      widthM: "21", lengthM: "10.5", heightM: "7", floorPlanOutline: [],
+    } });
+    useRoomDimensionsStore.setState({ dimensions: { width: 21, length: 10.5, height: 7 } });
+    const source = { configId: "demo", spaceId: "hall", layerMode: "splat" as const,
+      captureSource: "staged" as const, loadedChunks: 12, totalChunks: 12, proceduralGeometryVisible: false };
+    useCockpitStore.setState({ sceneSource: source, layerMode: "splat" });
+    const view = render(<PlannerCommandDeck />);
+    fireEvent.click(screen.getByTestId("planner-command-action-showcase"));
+    const tour = useBookmarkStore.getState().tour;
+    if (tour === null) throw new Error("No staged hall tour");
+    expect(sampleCameraTour(tour).position).toEqual(GRAND_HALL_ARRIVAL.position);
+    expect(tour.interiorOwner?.spaceId).toBe("hall");
+    useBookmarkStore.getState().clearTour();
+    useCockpitStore.setState({ sceneSource: { ...source, captureSource: "package" } });
+    view.rerender(<PlannerCommandDeck />);
+    expect(screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase").disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("planner-command-action-showcase"));
+    expect(useBookmarkStore.getState().tour).toBeNull();
+    useCockpitStore.setState({ sceneSource: { ...source, configId: "another" } });
+    view.rerender(<PlannerCommandDeck />);
+    expect(screen.getByTestId<HTMLButtonElement>("planner-command-action-showcase").disabled).toBe(true);
   });
 
   it("offers undo and redo in the browse state, disabled with no history", () => {

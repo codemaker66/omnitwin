@@ -32,6 +32,12 @@ export interface CameraTourLeg {
 }
 
 export interface CameraTour {
+  /** A captured path returns to its editable interior owner, if still current. */
+  readonly interiorOwner?: {
+    readonly configId: string | null;
+    readonly spaceId: string;
+    readonly roomSlug: "grand-hall";
+  };
   readonly legs: readonly CameraTourLeg[];
   /** Total elapsed time across the whole tour, seconds. */
   readonly elapsedSec: number;
