@@ -127,10 +127,6 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
     requestTimeout: 60_000,
     keepAliveTimeout: 5_000,
     trustProxy: true,
-    // `genReqId` is overridden by the request-id middleware below, but
-    // setting a safer default here protects the window between server
-    // boot and route registration.
-    disableRequestLogging: false,
   });
 
   // --- Plugins ---

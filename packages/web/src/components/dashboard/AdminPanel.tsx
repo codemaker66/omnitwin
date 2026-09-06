@@ -10,6 +10,7 @@ import { ConfirmModal } from "../shared/ConfirmModal.js";
 import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { PolygonEditor } from "./PolygonEditor.js";
 import "./AdminPanel.css";
+import { useLatestRequest } from "../../hooks/use-latest-request.js";
 
 const MIN_POLYGON_POINTS = 3;
 
@@ -225,6 +226,8 @@ export function AdminPanel(): ReactElement {
     editSpaceHeight.trim() === "" ||
     editSpaceOutline.length < MIN_POLYGON_POINTS;
   const createRuleDisabled = creatingRule || ruleName.trim() === "" || ruleAmount.trim() === "";
+  const venueMutationPending = creatingSpace || updatingSpace || deletingSpace
+    || deletingVenue || creatingRule || deletingRuleId !== null;
 
   const loadVenues = useCallback((): void => {
     setLoading(true);
@@ -242,42 +245,52 @@ export function AdminPanel(): ReactElement {
       });
   }, []);
 
+  const pricingRequest = useLatestRequest();
+  const venueRequest = useLatestRequest();
   const loadPricingRules = useCallback((venueId: string): void => {
+    const ownsRequest = pricingRequest.begin();
     setPricingError(null);
-    setPricingRequests((count) => count + 1);
+    setPricingRequests(1);
     void pricingApi.listPricingRules(venueId)
       .then((rules) => {
+        if (!ownsRequest()) return;
         setPricingRules(rules);
       })
       .catch((error: unknown) => {
+        if (!ownsRequest()) return;
         setPricingError(actionError(error, "Pricing rules could not be loaded."));
       })
-      .finally(() => { setPricingRequests((count) => count - 1); });
-  }, []);
+      .finally(() => { if (ownsRequest()) setPricingRequests(0); });
+  }, [pricingRequest]);
 
   useEffect(() => {
     loadVenues();
   }, [loadVenues]);
 
   const handleSelectVenue = useCallback((venueId: string): void => {
+    const ownsRequest = venueRequest.begin();
+    pricingRequest.invalidate();
+    setPricingRequests(0);
     setVenueDetailError(null);
     setLoadingVenueId(venueId);
     setPricingRules([]);
     setPricingError(null);
     void spacesApi.getVenue(venueId)
       .then((venue) => {
+        if (!ownsRequest()) return;
         setSelectedVenue(venue);
         loadPricingRules(venue.id);
       })
       .catch((error: unknown) => {
+        if (!ownsRequest()) return;
         const message = actionError(error, "Failed to load venue");
         setVenueDetailError(message);
         addToast(message, "error");
       })
       .finally(() => {
-        setLoadingVenueId(null);
+        if (ownsRequest()) setLoadingVenueId(null);
       });
-  }, [addToast, loadPricingRules]);
+  }, [addToast, loadPricingRules, pricingRequest, venueRequest]);
 
   const handleCreateVenue = async (): Promise<void> => {
     if (createVenueDisabled) return;
@@ -333,6 +346,12 @@ export function AdminPanel(): ReactElement {
     setDeletingVenue(true);
     try {
       await spacesApi.deleteVenue(selectedVenue.id);
+      venueRequest.invalidate();
+      pricingRequest.invalidate();
+      setLoadingVenueId(null);
+      setPricingRequests(0);
+      setPricingRules([]);
+      setPricingError(null);
       addToast("Venue deleted", "success");
       setSelectedVenue(null);
       setShowDeleteVenue(false);
@@ -454,7 +473,12 @@ export function AdminPanel(): ReactElement {
         <button
           type="button"
           className="admin-panel-link"
+          disabled={venueMutationPending}
           onClick={() => {
+            venueRequest.invalidate();
+            pricingRequest.invalidate();
+            setLoadingVenueId(null);
+            setPricingRequests(0);
             setSelectedVenue(null);
           }}
         >

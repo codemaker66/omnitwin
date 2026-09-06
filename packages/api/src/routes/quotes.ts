@@ -270,10 +270,30 @@ export async function quoteRoutes(
     if (parsed.data.notes !== undefined) updateData["notes"] = parsed.data.notes;
     if (parsed.data.validUntil !== undefined) updateData["validUntil"] = parsed.data.validUntil;
 
+    const isAdmin = isPlatformAdmin(request.user);
     const [updated] = await db.update(quotes)
       .set(updateData)
-      .where(eq(quotes.id, params.data.id))
+      // Recheck eligibility if issuance/deletion wins the row lock first.
+      .where(and(
+        eq(quotes.id, params.data.id),
+        isNull(quotes.deletedAt),
+        isAdmin ? undefined : eq(quotes.status, "draft"),
+        isAdmin ? undefined : eq(quotes.venueId, quote.venueId),
+      ))
       .returning();
+
+    if (updated === undefined) {
+      const [current] = await db.select({ venueId: quotes.venueId }).from(quotes)
+        .where(and(eq(quotes.id, params.data.id), isNull(quotes.deletedAt)))
+        .limit(1);
+      if (current === undefined) {
+        return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
+      }
+      if (!canManageVenueQuotes(request.user, current.venueId)) {
+        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      }
+      return reply.status(422).send({ error: "Only draft quotes can be edited — supersede an issued quote instead", code: "NOT_EDITABLE" });
+    }
 
     return { data: updated };
   });
@@ -303,6 +323,15 @@ export async function quoteRoutes(
     }
 
     const created = await db.transaction(async (tx) => {
+      // Serialize appenders before reading the lines used for totals/order.
+      // A concurrent issue/delete may have completed since the initial lookup.
+      const [current] = await tx.select().from(quotes)
+        .where(and(eq(quotes.id, quote.id), isNull(quotes.deletedAt)))
+        .for("update");
+      if (current === undefined) return "QUOTE_NOT_FOUND" as const;
+      if (!canManageVenueQuotes(request.user, current.venueId)) return "QUOTE_FORBIDDEN" as const;
+      if (!isPlatformAdmin(request.user) && current.status !== "draft") return "QUOTE_NOT_EDITABLE" as const;
+
       const existingLines = await tx.select().from(quoteLineItems)
         .where(eq(quoteLineItems.quoteId, quote.id))
         .orderBy(quoteLineItems.sortOrder);
@@ -336,6 +365,15 @@ export async function quoteRoutes(
 
     if (created === "QUOTE_TOTAL_EXCEEDS_LIMIT") {
       return reply.status(422).send({ error: "Quote total exceeds the supported ceiling", code: "QUOTE_TOTAL_EXCEEDS_LIMIT" });
+    }
+    if (created === "QUOTE_NOT_FOUND") {
+      return reply.status(404).send({ error: "Quote not found", code: "NOT_FOUND" });
+    }
+    if (created === "QUOTE_FORBIDDEN") {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    if (created === "QUOTE_NOT_EDITABLE") {
+      return reply.status(422).send({ error: "Only draft quotes can be edited — supersede an issued quote instead", code: "NOT_EDITABLE" });
     }
 
     return reply.status(201).send({ data: { ...created.quote, lineItems: created.lineItems } });

@@ -834,23 +834,50 @@ export async function proposalRoutes(
 
     const sourceHash = proposalVersionPayloadDigest(payload);
 
-    // Atomically claim the next version number, then write the snapshot.
-    // The unique (proposal_id, version) constraint backstops any race.
-    const [claimed] = await db.update(proposals)
-      .set({ currentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() })
-      .where(eq(proposals.id, params.data.id))
-      .returning({ version: proposals.currentVersion });
-    if (claimed === undefined) {
+    // The head and snapshot commit together. Lock before rechecking editability
+    // so a delayed request cannot create content after the proposal is frozen.
+    const result = await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(proposals)
+        .where(and(eq(proposals.id, params.data.id), isNull(proposals.deletedAt)))
+        .for("update");
+      if (current === undefined) return "PROPOSAL_NOT_FOUND" as const;
+      if (!canManageVenueProposals(request.user, current.venueId)) return "PROPOSAL_FORBIDDEN" as const;
+      if (!isPlatformAdmin(request.user) && !isProposalEditable(current.status as ProposalStatus)) {
+        return "PROPOSAL_NOT_EDITABLE" as const;
+      }
+      // The prepared snapshot must still belong to the linked configuration.
+      if (current.configurationId !== proposal.configurationId) return "PROPOSAL_CHANGED" as const;
+
+      const [claimed] = await tx.update(proposals)
+        .set({ currentVersion: sql`${proposals.currentVersion} + 1`, updatedAt: new Date() })
+        .where(eq(proposals.id, current.id))
+        .returning({ version: proposals.currentVersion });
+      if (claimed === undefined) throw new Error("Proposal version allocation returned no row");
+
+      const [version] = await tx.insert(proposalVersions).values({
+        proposalId: current.id,
+        version: claimed.version,
+        payload,
+        sourceHash,
+        createdBy: request.user.id,
+      }).returning();
+      if (version === undefined) throw new Error("Proposal version insert returned no row");
+      return { version };
+    });
+
+    if (result === "PROPOSAL_NOT_FOUND") {
       return reply.status(404).send({ error: "Proposal not found", code: "NOT_FOUND" });
     }
-
-    const [version] = await db.insert(proposalVersions).values({
-      proposalId: params.data.id,
-      version: claimed.version,
-      payload,
-      sourceHash,
-      createdBy: request.user.id,
-    }).returning();
+    if (result === "PROPOSAL_FORBIDDEN") {
+      return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+    if (result === "PROPOSAL_NOT_EDITABLE") {
+      return reply.status(422).send({ error: "Proposal content is frozen in its current status", code: "NOT_EDITABLE" });
+    }
+    if (result === "PROPOSAL_CHANGED") {
+      return reply.status(409).send({ error: "Proposal configuration changed; reload before creating a version", code: "REVISION_CONFLICT" });
+    }
+    const { version } = result;
 
     if (version !== undefined) {
       await recordProposalLifecycleChange(db, proposal, {

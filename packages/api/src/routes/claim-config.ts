@@ -61,8 +61,17 @@ export async function claimConfigRoutes(
           visibility: "private",
           updatedAt: new Date(),
         })
-        .where(eq(configurations.id, params.data.configId))
+        .where(and(
+          eq(configurations.id, params.data.configId),
+          eq(configurations.isPublicPreview, true),
+          isNull(configurations.userId),
+          isNull(configurations.deletedAt),
+        ))
         .returning();
+
+      // Eligibility can change while this request waits for the row lock.
+      // Only the transaction that actually claims the row may link enquiries.
+      if (claimed === undefined) return null;
 
       const linkedEnquiries = await tx.update(enquiries)
         .set({ userId: request.user.id, updatedAt: new Date() })
@@ -74,6 +83,10 @@ export async function claimConfigRoutes(
 
       return { claimed, linkedEnquiryCount: linkedEnquiries.length };
     });
+
+    if (result === null) {
+      return reply.status(409).send({ error: "Configuration is already claimed", code: "ALREADY_CLAIMED" });
+    }
 
     // Audit log — visible in production logs so ops can verify the scope
     // hasn't drifted again. If `linkedEnquiryCount` is ever surprisingly

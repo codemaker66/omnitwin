@@ -33,6 +33,7 @@ import {
 import { listSpaces, type Space } from "../../api/spaces.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { ActivityStatus } from "../shared/Activity.js";
+import { useLatestRequest } from "../../hooks/use-latest-request.js";
 
 // ---------------------------------------------------------------------------
 // ProposalsView — staff authoring surface (T-427 phase 4).
@@ -158,20 +159,28 @@ export function ProposalsView(): ReactElement {
   const [actionError, setActionError] = useState<string | null>(null);
   const [latestShareUrl, setLatestShareUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const listRequest = useLatestRequest();
+  const historyRequest = useLatestRequest();
+  const versionRequest = useLatestRequest();
+  const commentsRequest = useLatestRequest();
+  const detailRequest = useLatestRequest();
 
   const refreshList = useCallback(() => {
+    const ownsRequest = listRequest.begin();
     setListLoading(true);
     setListError(null);
     listProposals()
       .then((rows) => {
+        if (!ownsRequest()) return;
         setProposals(rows);
         setListError(null);
       })
       .catch(() => {
+        if (!ownsRequest()) return;
         setListError("Couldn't load proposals. Check the connection and retry.");
       })
-      .finally(() => { setListLoading(false); });
-  }, []);
+      .finally(() => { if (ownsRequest()) setListLoading(false); });
+  }, [listRequest]);
 
   useEffect(() => { refreshList(); }, [refreshList]);
 
@@ -197,39 +206,49 @@ export function ProposalsView(): ReactElement {
   }, [user?.venueId]);
 
   const loadHistory = useCallback((id: string) => {
+    const ownsRequest = historyRequest.begin();
     setHistoryLoading(true);
     setHistoryError(null);
     getProposalHistory(id)
-      .then(setHistory)
+      .then((rows) => { if (ownsRequest()) setHistory(rows); })
       .catch(() => {
+        if (!ownsRequest()) return;
         setHistory([]);
         setHistoryError("Couldn't load this proposal's status history.");
       })
-      .finally(() => { setHistoryLoading(false); });
-  }, []);
+      .finally(() => { if (ownsRequest()) setHistoryLoading(false); });
+  }, [historyRequest]);
 
   const loadLatestVersion = useCallback((id: string) => {
-    setVersionRequests((count) => count + 1);
+    const ownsRequest = versionRequest.begin();
+    setVersionRequests(1);
     getLatestProposalVersion(id)
-      .then(setLatestVersion)
-      .catch(() => { setLatestVersion(null); })
-      .finally(() => { setVersionRequests((count) => count - 1); });
-  }, []);
+      .then((version) => { if (ownsRequest()) setLatestVersion(version); })
+      .catch(() => { if (ownsRequest()) setLatestVersion(null); })
+      .finally(() => { if (ownsRequest()) setVersionRequests(0); });
+  }, [versionRequest]);
 
   const loadComments = useCallback((id: string) => {
+    const ownsRequest = commentsRequest.begin();
     setCommentsLoading(true);
     setCommentLoadError(null);
     getProposalComments(id)
-      .then(setComments)
+      .then((rows) => { if (ownsRequest()) setComments(rows); })
       .catch(() => {
+        if (!ownsRequest()) return;
         setComments([]);
         setCommentLoadError("Couldn't load the client conversation.");
       })
-      .finally(() => { setCommentsLoading(false); });
-  }, []);
+      .finally(() => { if (ownsRequest()) setCommentsLoading(false); });
+  }, [commentsRequest]);
 
   const selectProposal = useCallback((proposal: StaffProposal) => {
+    detailRequest.invalidate();
+    setDetailRequests(0);
     setSelected(proposal);
+    setHistory([]);
+    setLatestVersion(null);
+    setComments([]);
     setComposerError(null);
     setActionError(null);
     setCommentError(null);
@@ -243,21 +262,23 @@ export function ProposalsView(): ReactElement {
     loadHistory(proposal.id);
     loadLatestVersion(proposal.id);
     loadComments(proposal.id);
-  }, [loadComments, loadHistory, loadLatestVersion]);
+  }, [detailRequest, loadComments, loadHistory, loadLatestVersion]);
 
   const refreshSelected = useCallback((id: string) => {
-    setDetailRequests((count) => count + 1);
+    const ownsRequest = detailRequest.begin();
+    setDetailRequests(1);
     getProposal(id)
       .then((proposal) => {
+        if (!ownsRequest()) return;
         setSelected(proposal);
         refreshList();
         loadHistory(id);
         loadLatestVersion(id);
         loadComments(id);
       })
-      .catch(() => { setActionError("Could not refresh the proposal. Reload the page and try again."); })
-      .finally(() => { setDetailRequests((count) => count - 1); });
-  }, [loadComments, loadHistory, loadLatestVersion, refreshList]);
+      .catch(() => { if (ownsRequest()) setActionError("Could not refresh the proposal. Reload the page and try again."); })
+      .finally(() => { if (ownsRequest()) setDetailRequests(0); });
+  }, [detailRequest, loadComments, loadHistory, loadLatestVersion, refreshList]);
 
   const handlePostReply = (): void => {
     if (selected === null || busy || replyText.trim().length === 0) return;
@@ -492,6 +513,7 @@ export function ProposalsView(): ReactElement {
                 <button
                   type="button"
                   data-testid={`proposal-row-${proposal.id}`}
+                  disabled={busy}
                   onClick={() => { selectProposal(proposal); }}
                   style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,

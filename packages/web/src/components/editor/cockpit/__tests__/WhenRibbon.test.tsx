@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { Profiler } from "react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { ApiError } from "../../../../api/client.js";
@@ -205,7 +206,10 @@ describe("WhenRibbon", () => {
   });
 
   it("says so plainly when the plan has no booking, and links to the Diary", async () => {
-    getCalendarMock.mockResolvedValue(calendarFixture([booking(GHOST, NOON, NOON + 60 * MIN)]));
+    getCalendarMock.mockImplementation((_venueId: string, from: string, to: string) => Promise.resolve({
+      ...calendarFixture([booking(GHOST, NOON, NOON + 60 * MIN)]),
+      range: { from, to },
+    }));
     renderRibbon();
 
     await waitFor(() => {
@@ -215,6 +219,54 @@ describe("WhenRibbon", () => {
     expect(link.getAttribute("href")).toBe("/diary?view=day");
     // The empty conclusion is only reached after the widened 90-day search.
     expect(getCalendarMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each(["empty", "found", "error"] as const)("waits for the expanded calendar search before its %s conclusion", async (outcome) => {
+    let resolveWide: ((response: CalendarResponse) => void) | undefined;
+    let rejectWide: ((error: Error) => void) | undefined;
+    const wideResponse = new Promise<CalendarResponse>((resolve, reject) => {
+      resolveWide = resolve;
+      rejectWide = reject;
+    });
+    const narrowResponse = calendarFixture([booking(GHOST, NOON, NOON + 60 * MIN)]);
+    const from = new Date(NOON - 90 * 24 * 60 * MIN).toISOString();
+    const to = new Date(NOON + 90 * 24 * 60 * MIN).toISOString();
+    getCalendarMock.mockResolvedValueOnce(narrowResponse).mockReturnValueOnce(wideResponse);
+    const committedStates: string[] = [];
+    render(
+      <Profiler id="when-ribbon" onRender={() => { committedStates.push(document.body.textContent ?? ""); }}>
+        <MemoryRouter initialEntries={[`/plan?eventId=${EVENT}`]}>
+          <WhenRibbon />
+        </MemoryRouter>
+      </Profiler>,
+    );
+    await waitFor(() => {
+      expect(getCalendarMock).toHaveBeenCalledWith(VENUE, from, to, expect.anything());
+    });
+    // Observe committed DOM, including the short transition before the next
+    // effect starts. Awaiting only the eventual loading state misses that flash.
+    expect(committedStates.some((text) => text.includes("isn't in the Diary yet"))).toBe(false);
+    expect(screen.getByRole("status").textContent).toContain("Loading event times");
+    expect(screen.queryByRole("link", { name: "Open the Diary" })).toBeNull();
+    await act(async () => {
+      if (outcome === "error") rejectWide?.(new Error("Wide calendar unavailable"));
+      else resolveWide?.({
+        ...calendarFixture(outcome === "found"
+          ? [booking(SELF, NOON + 30 * 24 * 60 * MIN, NOON + 30 * 24 * 60 * MIN + 120 * MIN, { eventId: EVENT })]
+          : []),
+        range: { from, to },
+      });
+      await wideResponse.catch(() => undefined);
+    });
+    expect(screen.queryByText("Loading event times…")).toBeNull();
+    if (outcome === "empty") {
+      expect(screen.getByText(/isn't in the Diary yet/u)).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Open the Diary" }).getAttribute("href")).toBe("/diary?view=day");
+    } else {
+      expect(screen.queryByText(/isn't in the Diary yet/u)).toBeNull();
+      if (outcome === "found") expect(screen.getByTestId("when-ribbon-ingot")).toBeTruthy();
+      else expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    }
   });
 
   it("a non-staff viewer gets a read-only strip: no handles, no drag affordance", async () => {

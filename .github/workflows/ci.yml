@@ -1,18 +1,19 @@
 # =============================================================================
 # OMNITWIN — Continuous Integration
 # =============================================================================
-# Five jobs run in parallel against every push to master and every pull
+# Six jobs run in parallel against every push to master and every pull
 # request targeting master:
 #
 #   audit      - pnpm audit at moderate severity and above
 #   lint       — ESLint v9 across all packages, zero errors required
 #   typecheck  — `tsc --noEmit` across all packages, zero errors required
+#   build      — production builds across all packages
 #   test       — Vitest across all packages, all tests must pass
 #   e2e        — Playwright E2E against a Vite dev server (Chromium only)
 #
 # Each job is fully isolated and reproducible: pnpm version is pinned to
 # match the local development environment, the lockfile is enforced via
-# --frozen-lockfile, and Node 22 (current LTS) is the only supported runtime.
+# --frozen-lockfile, and Node 22 is the supported runtime.
 #
 # E2E notes:
 #   - All API calls are intercepted with page.route() — no backend required
@@ -147,6 +148,20 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    services:
+      route-postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: venviewer_route_atomicity_test
+        ports:
+          - 55476:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d venviewer_route_atomicity_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -195,13 +210,14 @@ jobs:
         run: python3 -m pip install numpy scipy Pillow pye57
 
       - name: Test (Vitest)
-        # --no-bail: without it, pnpm stops at the FIRST failing package, so a
-        # red package hides every package after it. That is how three latent
-        # Linux-only defects in @omnitwin/reconstruction-foundry stayed
-        # invisible for nine days behind packages/web, then surfaced together.
-        # Failures still fail the job (verified: exit code 1 with --no-bail);
-        # this only ensures every package reports on the day it breaks.
-        run: pnpm -r --no-bail test
+        # Use the same execution policy locally and in CI: serial workspaces
+        # avoid contention between heavy suites, while --no-bail ensures a
+        # failed package does not hide later failures. Any failure still
+        # produces a non-zero exit code.
+        env:
+          # Ephemeral local fixture only; never load or override DATABASE_URL.
+          VENVIEWER_ROUTE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55476/venviewer_route_atomicity_test
+        run: pnpm test
 
   e2e:
     name: E2E

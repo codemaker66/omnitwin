@@ -123,6 +123,14 @@ export function WhenRibbon(): ReactElement | null {
     if (data !== null && day === null && windowDays === 7) setWindowDays(90);
   }, [data, day, windowDays]);
 
+  // useCalendar retains the previous response while a new range starts. An
+  // empty narrow response cannot establish that the expanded search is empty.
+  const expandedSearchComplete = windowDays === 90 && data !== null &&
+    data.venueId === venueId &&
+    Date.parse(data.range.from) === range.fromMs &&
+    Date.parse(data.range.to) === range.toMs;
+  const searching = day === null && status !== "error" && !expandedSearchComplete;
+
   if (eventId === null || linked.status !== "loaded" || venueId === null) return null;
 
   return (
@@ -130,7 +138,7 @@ export function WhenRibbon(): ReactElement | null {
       key={eventId}
       day={day}
       calendarStatus={status}
-      calendarRefreshing={isRefreshing}
+      calendarRefreshing={isRefreshing || searching}
       writable={writable}
       refetch={refetch}
     />

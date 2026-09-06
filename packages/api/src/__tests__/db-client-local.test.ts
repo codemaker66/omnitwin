@@ -39,8 +39,8 @@ describe("createDb local proxy branch", () => {
     // An idle pooled client's 'error' event is fatal without a listener
     // (observed live in Slice 4). Pin the handler's presence in source.
     const { readFile } = await import("node:fs/promises");
-    const { resolve } = await import("node:path");
-    const source = await readFile(resolve("src/db/client.ts"), "utf-8");
+    const path = await import("node:path");
+    const source = await readFile(path.resolve("src/db/client.ts"), "utf-8");
     expect(source).toContain('pool.on("error"');
   });
 

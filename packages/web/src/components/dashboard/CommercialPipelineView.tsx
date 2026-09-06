@@ -18,6 +18,7 @@ import { parsePoundsToMinor } from "../../lib/money-input.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { ActivityStatus } from "../shared/Activity.js";
+import { useLatestRequest } from "../../hooks/use-latest-request.js";
 
 const STAGES = [
   "new",
@@ -158,34 +159,47 @@ export function CommercialPipelineView(): ReactElement {
   const [activityError, setActivityError] = useState<string | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const detailRequest = useLatestRequest();
+  const pipelineRequest = useLatestRequest();
 
   const refresh = useCallback(() => {
+    const ownsRequest = pipelineRequest.begin();
     setLoading(true);
     setError(null);
     getPipeline()
       .then((summary) => {
+        if (!ownsRequest()) return;
         setOpportunities(summary.opportunities);
         setTasks(summary.todayTasks);
         setError(null);
       })
-      .catch(() => { setError("Could not load the commercial pipeline. Refresh or try again later."); })
-      .finally(() => { setLoading(false); });
-  }, []);
+      .catch(() => { if (ownsRequest()) setError("Could not load the commercial pipeline. Refresh or try again later."); })
+      .finally(() => { if (ownsRequest()) setLoading(false); });
+  }, [pipelineRequest]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   const reloadSelected = useCallback((id: string) => {
+    const ownsRequest = detailRequest.begin();
+    setSelected(null);
+    setActivityText("");
+    setTaskTitle("");
+    setStageError(null);
+    setTaskError(null);
+    setActivityError(null);
+    setProposalError(null);
     setDetailError(null);
-    setDetailRequests((count) => count + 1);
+    setDetailRequests(1);
     getOpportunity(id)
-      .then((detail) => { setSelected(toDetailState(detail)); })
+      .then((detail) => { if (ownsRequest()) setSelected(toDetailState(detail)); })
       .catch(() => {
+        if (!ownsRequest()) return;
         setSelected(null);
         setDetailError("Could not load that opportunity. Retry from the stage card or refresh the pipeline.");
         addToast("Could not load opportunity detail", "error");
       })
-      .finally(() => { setDetailRequests((count) => count - 1); });
-  }, [addToast]);
+      .finally(() => { if (ownsRequest()) setDetailRequests(0); });
+  }, [addToast, detailRequest]);
 
   const pipelineValue = useMemo(
     () => opportunities.reduce((sum, opportunity) => sum + opportunity.estimatedValueMinor, 0),
