@@ -539,17 +539,24 @@ describe.runIf(RUN_ENABLED)("phase layout PostgreSQL rehearsal", () => {
       (entry) => entry.createdAt === "1784383200000",
     );
     expect(migration0060Entries).toHaveLength(1);
-    // The quiz-runs migration (0062, when 1784556000000) landed between the
-    // diary-commands step and the immutability trigger on master — the
-    // ported tail expectation carries it.
-    expect(ledger.rows.map((entry) => entry.createdAt).slice(-6)).toEqual([
+    // Keep the complete contiguous lineage and inventory segment pinned without
+    // assuming that no later migration can ever be appended to the journal.
+    const expectedLineageTimestamps = [
       "1784376000000",
       "1784383200000",
       "1784469600000",
       "1784556000000",
       "1785672000000",
       "1788717600000",
-    ]);
+      "1788717700000",
+      "1788717800000",
+    ];
+    const lineageStart = ledger.rows.findIndex(
+      (entry) => entry.createdAt === expectedLineageTimestamps[0],
+    );
+    expect(lineageStart).toBeGreaterThanOrEqual(0);
+    expect(ledger.rows.slice(lineageStart, lineageStart + expectedLineageTimestamps.length)
+      .map((entry) => entry.createdAt)).toEqual(expectedLineageTimestamps);
 
     const migrationBytes = await readFile(new URL(
       "../../drizzle/0060_phase_layout_snapshot_lineage.sql",
