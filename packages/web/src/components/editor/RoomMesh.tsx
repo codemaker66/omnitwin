@@ -10,6 +10,7 @@ import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { BrickWall } from "../BrickWall.js";
 import { GrandHallOrnaments } from "../GrandHallOrnaments.js";
 import { GrandHallDome } from "../GrandHallDome.js";
+import { RoomLighting } from "../RoomLighting.js";
 import {
   createDomeInteriorTexture,
   createParquetFloorTexture,
@@ -246,6 +247,8 @@ interface RoomMeshProps {
   readonly geometry: RoomGeometry;
   readonly variant?: "grand-hall" | "generic";
   readonly detail?: RoomMeshDetail;
+  /** Disable when the parent scene owns lighting independently of this shell. */
+  readonly includeLighting?: boolean;
 }
 
 export function shouldUseRoomMeshLeanShell(
@@ -259,7 +262,7 @@ export function shouldUseRoomMeshLeanShell(
   return shouldUseLeanPlannerRoomShell(viewportWidth);
 }
 
-export function RoomMesh({ geometry, variant = "generic", detail = "auto" }: RoomMeshProps): React.ReactElement {
+export function RoomMesh({ geometry, variant = "generic", detail = "auto", includeLighting = true }: RoomMeshProps): React.ReactElement {
   const { size } = useThree();
   const cameraInteractionActive = useCockpitStore((state) => state.cameraInteractionActive);
   const floorShape = useMemo(() => polygonToShape(geometry.wallPolygon), [geometry.wallPolygon]);
@@ -294,13 +297,7 @@ export function RoomMesh({ geometry, variant = "generic", detail = "auto" }: Roo
 
   return (
     <group name="room-mesh">
-      {/* Lighting */}
-      {!useLeanRoomShell && (
-        <>
-          <hemisphereLight args={["#f0f0ff", "#d0c8c0", 1.2]} />
-          <ambientLight intensity={0.3} />
-        </>
-      )}
+      {includeLighting && !useLeanRoomShell && <RoomLighting variant="polygon" />}
 
       {/* Camera-driven wall auto-fade */}
       {!useLeanRoomShell && <CameraWallDriver />}

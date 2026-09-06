@@ -24,7 +24,6 @@ import {
 } from "../constants/colors.js";
 import { useDeviceStore } from "../stores/device-store.js";
 import {
-  getHemisphereLightConfig,
   createPlaceholderLightmapData,
   shouldUseLightmap,
   LIGHTMAP_SIZE,
@@ -42,6 +41,7 @@ import { applyXrayOpacity } from "../lib/xray.js";
 import { BrickWall } from "./BrickWall.js";
 import { GrandHallOrnaments } from "./GrandHallOrnaments.js";
 import { GrandHallDome, domeRiseForRadius } from "./GrandHallDome.js";
+import { RoomLighting } from "./RoomLighting.js";
 
 // ---------------------------------------------------------------------------
 // Room surface geometry — pure data, fully testable without WebGL
@@ -262,9 +262,11 @@ export const DOME_RECESS_DEPTH = domeRiseForRadius(DOME_RADIUS);
  * - Per-surface opacity driven imperatively in useFrame (bypasses React batching)
  * - NO PointLight, NO runtime shadows (per Renderer rules)
  */
-export function GrandHallRoom(): React.ReactElement {
+export function GrandHallRoom({ includeLighting = true }: {
+  /** Disable when the parent scene owns lighting independently of this shell. */
+  readonly includeLighting?: boolean;
+}): React.ReactElement {
   const tier = useDeviceStore((s) => s.tier);
-  const lightConfig = getHemisphereLightConfig(tier);
   const useLightmap = shouldUseLightmap(tier);
   const groupRef = useRef<Group>(null);
 
@@ -364,28 +366,7 @@ export function GrandHallRoom(): React.ReactElement {
 
   return (
     <group name="grand-hall-room" ref={groupRef}>
-      {/* Lighting — warm Georgian interior. Hemisphere supplies sky + ground
-          gradient; a soft directional from the long-wall window direction
-          gives the chandelier-lit room a hint of late-afternoon side-light.
-          No shadows (renderer rule); directional is here for ambient warmth
-          only. Ambient floor of 0.32 keeps the lower walls and skirting
-          legible without flattening the lit surfaces. */}
-      <hemisphereLight
-        args={[lightConfig.skyColor, lightConfig.groundColor, lightConfig.intensity]}
-      />
-      <ambientLight intensity={0.38} color="#f7ead0" />
-      <directionalLight
-        position={[12, 5.5, 9]}
-        intensity={0.52}
-        color="#f7dfae"
-        castShadow={false}
-      />
-      <directionalLight
-        position={[-10, 6, -8]}
-        intensity={0.16}
-        color="#e5edf4"
-        castShadow={false}
-      />
+      {includeLighting && <RoomLighting variant="grand-hall" />}
       {/*
         Floor grid — 1m intervals, rectangular, fits the room exactly.
         Positioned just above the floor to avoid z-fighting.

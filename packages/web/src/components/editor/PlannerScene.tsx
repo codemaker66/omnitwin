@@ -9,6 +9,7 @@ import { InteriorCamera } from "../rooms/InteriorCamera.js";
 import { roomSplatBundle, walkPoseForBundle } from "../../data/room-splat-bundles.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
 import { GrandHallRoom } from "../GrandHallRoom.js";
+import { RoomLighting } from "../RoomLighting.js";
 import { RoomMesh } from "./RoomMesh.js";
 import { SectionPlane } from "../SectionPlane.js";
 import { InvalidateOnToggle, AutoWallSelector } from "../WallTogglePanel.js";
@@ -432,12 +433,15 @@ export function PlannerScene(): ReactElement {
           <PlannerScenePrecompiler signature={sceneWarmupSignature} />
           <SectionPlane />
           <InvalidateOnToggle />
+          {/* Furniture needs scene lighting even when the captured layer hides
+              the procedural shell or camera motion selects its lean version. */}
+          <RoomLighting variant={roomGeometry === null ? "grand-hall" : "polygon"} />
           {meshVisible && (roomGeometry !== null ? (
-            <RoomMesh geometry={roomGeometry} variant={roomVariant} />
+            <RoomMesh geometry={roomGeometry} variant={roomVariant} includeLighting={false} />
           ) : (
             <>
               <AutoWallSelector />
-              <GrandHallRoom />
+              <GrandHallRoom includeLighting={false} />
             </>
           ))}
           {roomGeometry !== null && (
