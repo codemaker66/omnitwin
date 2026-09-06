@@ -64,8 +64,21 @@ All writes used the new local rehearsal configuration
 `23f634e4-d147-4326-8ca8-88c0fb40b4e6`, synthetic DEMO ONLY Owner, loopback API
 3009 and isolated PostgreSQL 54339. No existing approved fixture or production
 record was changed. External delivery was blocked. Source stayed frozen during
-browser and automated verification. Mobile modal qualification is separately
-owned and must be reported from its actual result.
+browser and automated verification.
+
+A subsequent headed Chromium check at 390×844 CSS pixels, DPR 1 and reduced
+motion opened the actual catalogue, chose a round table, selected Overhead View
+and tapped the floor. The seating dialog and all its buttons fit the viewport:
+the panel was 358×367 pixels at x16/y238.5, and the Place button's centre hit the
+button itself. The document stayed 390 pixels wide, with no active dialog
+animations or page errors. Cancel closed it; no placement/save request occurred.
+This used separate empty local configuration
+`55289b4d-66d7-423b-aaf8-5e53249f5492`. The browser then closed.
+
+`mobile-chair-dialog-390x844.png` and `mobile-chair-receipt.json` retain this
+result. An earlier headless capture stalled, and a font-wait screenshot attempt
+timed out; both remain recorded. The successful check is mobile browser emulation
+on this desktop, not a physical phone or a frame-rate qualification.
 
 The latest founder request authorizes T601's narrow combined demo release after
 its gates. The task Build next-gen venue platform is the sole production release
