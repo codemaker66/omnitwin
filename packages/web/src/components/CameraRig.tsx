@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useCallback, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { Euler, Vector3 } from "three";
@@ -106,6 +106,8 @@ function onBlur(): void {
 export interface CameraRigProps {
   readonly dimensions: SpaceDimensions;
   readonly smoothControls?: boolean;
+  /** A frozen timeline camera owns the canvas without changing the live rig. */
+  readonly suspended?: boolean;
 }
 
 interface PlannerCameraPose {
@@ -137,8 +139,11 @@ interface HumanPovDragState {
  * Pan speed scales with zoom distance (closer = slower, further = faster).
  * Camera target is clamped to room bounds with a small margin.
  */
-export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps): React.ReactElement {
+export function CameraRig({ dimensions, smoothControls = true, suspended = false }: CameraRigProps): React.ReactElement {
   const { camera, gl, invalidate, size } = useThree();
+  const suspendedRef = useRef(suspended);
+  suspendedRef.current = suspended;
+  const previouslySuspended = useRef(suspended);
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const humanPovActiveRef = useRef(false);
   const humanPovRestorePoseRef = useRef<PlannerCameraPose | null>(null);
@@ -176,12 +181,14 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     [stableDimensions, aspect],
   );
   useEffect(() => {
+    if (suspendedRef.current || previouslySuspended.current) return;
     if (humanPovActiveRef.current || walkActiveRef.current || useBookmarkStore.getState().tour !== null) return;
     const [x, y, z] = computeDefaultCameraPosition(stableDimensions, aspect);
     camera.position.set(x, y, z);
     camera.lookAt(target[0], target[1], target[2]);
     invalidate();
   }, [camera, stableDimensions, target, aspect, invalidate]);
+  useEffect(() => { previouslySuspended.current = suspended; }, [suspended]);
 
   // Keyboard input — single keydown handler tracks state AND wakes demand-mode frame loop.
   // Uses stable ref to invalidate so the effect runs only once (mount/unmount).
@@ -265,6 +272,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
   const walkRestorePoseRef = useRef<{ position: Vector3; target: Vector3 } | null>(null);
 
   const applyWalkMode = useCallback((walk: boolean): void => {
+    if (suspendedRef.current) return;
     if (walk === walkActiveRef.current) return;
     const controls = controlsRef.current;
     if (walk && humanPovActiveRef.current) leaveHumanPovMode(false);
@@ -306,6 +314,12 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     };
   }, [applyWalkMode]);
 
+  // Capture failure or explicit room state can change the live owner while
+  // preview holds the camera. Reconcile after preview's layout-effect restore.
+  useEffect(() => {
+    if (!suspended) applyWalkMode(useCockpitStore.getState().walkMode);
+  }, [suspended, applyWalkMode]);
+
   useEffect(() => {
     return useBookmarkStore.subscribe((state, previousState) => {
       if (
@@ -323,6 +337,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
+      if (suspendedRef.current) return;
       const store = useBookmarkStore.getState();
 
       // Escape cancels a cinematic tour and hands control straight back.
@@ -403,11 +418,13 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
   }, []);
 
   const markCameraInteractionActive = useCallback((): void => {
+    if (suspendedRef.current) return;
     clearCameraInteractionTimer();
     useCockpitStore.getState().setCameraInteractionActive(true);
   }, [clearCameraInteractionTimer]);
 
   const markCameraInteractionSettling = useCallback((): void => {
+    if (suspendedRef.current) return;
     clearCameraInteractionTimer();
     cameraInteractionClearTimer.current = window.setTimeout(() => {
       cameraInteractionClearTimer.current = null;
@@ -416,6 +433,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
   }, [clearCameraInteractionTimer]);
 
   const onControlsChange = useCallback(() => {
+    if (suspendedRef.current) return;
     dampingFrames.current = smoothControls ? DAMPING_SETTLE_FRAMES : 0;
     invalidate();
   }, [invalidate, smoothControls]);
@@ -428,6 +446,27 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
   // Custom inertial zoom — scroll ticks add velocity, friction decays it
   const zoomVelocity = useRef(0);
 
+  useLayoutEffect(() => {
+    if (!suspended) return;
+    const controls = controlsRef.current;
+    if (controls !== null) controls.enabled = false;
+    keyboardKeys.clear();
+    humanPovDragRef.current = null;
+    zoomVelocity.current = 0;
+    dampingFrames.current = 0;
+    clearCameraInteractionTimer();
+    useCockpitStore.getState().setCameraInteractionActive(false);
+    const clearPendingCamera = (): void => {
+      const state = useBookmarkStore.getState();
+      if (state.tour !== null || state.transition !== null || state.pendingNavigationId !== null) {
+        useBookmarkStore.setState({ tour: null, transition: null, pendingNavigationId: null });
+      }
+    };
+    clearPendingCamera();
+    // Late async navigation cannot queue a live-camera replay behind preview.
+    return useBookmarkStore.subscribe(clearPendingCamera);
+  }, [suspended, clearCameraInteractionTimer]);
+
   // Use ref for invalidate to avoid re-registering wheel listener every render.
   // invalidate is a new function from useThree() each render, but its behavior
   // is stable, so capturing via ref prevents event listener thrashing.
@@ -439,6 +478,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
 
     function onWheel(event: WheelEvent): void {
       event.preventDefault();
+      if (suspendedRef.current) return;
       if (humanPovActiveRef.current || walkActiveRef.current) return;
       const raw = event.deltaY;
       const delta = Math.sign(raw) * Math.min(Math.abs(raw), 150);
@@ -464,6 +504,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     }
 
     function onPointerDown(event: PointerEvent): void {
+      if (suspendedRef.current) return;
       if (!humanPovActiveRef.current || !isHumanPovPointerButton(event.button)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -482,6 +523,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     }
 
     function onPointerMove(event: PointerEvent): void {
+      if (suspendedRef.current) return;
       const drag = humanPovDragRef.current;
       if (!humanPovActiveRef.current || drag === null || drag.pointerId !== event.pointerId) return;
       event.preventDefault();
@@ -495,6 +537,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
     }
 
     function onPointerUp(event: PointerEvent): void {
+      if (suspendedRef.current) return;
       const drag = humanPovDragRef.current;
       if (drag === null || drag.pointerId !== event.pointerId) return;
       event.preventDefault();
@@ -529,6 +572,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
   useFrame((_state, frameDelta) => {
     const controls = controlsRef.current;
     if (controls === null) return;
+    if (suspendedRef.current) { controls.enabled = false; return; }
 
     const store = useBookmarkStore.getState();
 
@@ -615,6 +659,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
   useFrame((_state, delta) => {
     const controls = controlsRef.current;
     if (controls === null) return;
+    if (suspendedRef.current) { controls.enabled = false; return; }
 
     // Skip normal camera controls while a bookmark transition is active.
     // Drop banked/coasting zoom velocity while something else owns the
@@ -716,6 +761,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
       ref={controlsRef}
       makeDefault
       regress={false}
+      enabled={suspended ? false : undefined}
       enableDamping={smoothControls}
       dampingFactor={DAMPING_FACTOR}
       enableZoom={isTouchDevice}
@@ -723,7 +769,7 @@ export function CameraRig({ dimensions, smoothControls = true }: CameraRigProps)
       maxPolarAngle={MAX_POLAR_ANGLE}
       minDistance={limits.minDistance}
       maxDistance={limits.maxDistance}
-      target={[target[0], target[1], target[2]]}
+      target={suspended ? undefined : [target[0], target[1], target[2]]}
       enableRotate
       enablePan
       mouseButtons={{
