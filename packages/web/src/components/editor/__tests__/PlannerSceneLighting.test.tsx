@@ -3,7 +3,7 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SpaceSchema } from "@omnitwin/types";
 
-const sceneState = vi.hoisted(() => ({ width: 1440, hasAsset: true }));
+const sceneState = vi.hoisted(() => ({ width: 1440, hasAsset: true, roomSlug: "grand-hall", source: "staged" }));
 
 // Mount the real room and lighting components selected by PlannerScene. Other
 // Canvas children need a WebGL renderer; filtering them keeps this a CPU-only
@@ -13,7 +13,7 @@ function roomChildren(children: ReactNode): ReactNode {
     if (!isValidElement<{ children?: ReactNode }>(child)) return null;
     if (child.type === Fragment) return roomChildren(child.props.children);
     if (typeof child.type !== "function") return null;
-    return ["RoomMesh", "GrandHallRoom", "RoomLighting", "FurnitureLightingExperiment"].includes(child.type.name)
+    return ["RoomMesh", "GrandHallRoom", "RoomLighting", "FurnitureLightingExperiment", "FurnitureReflectionExperiment"].includes(child.type.name)
       ? child
       : null;
   });
@@ -33,13 +33,17 @@ vi.mock("../../GrandHallDome.js", async (importOriginal) => ({
   GrandHallDome: () => null,
 }));
 vi.mock("../CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
+vi.mock("../FurnitureReflectionExperiment.js", () => ({
+  FurnitureReflectionExperiment: function FurnitureReflectionExperiment() { return <div data-testid="reflection-experiment" />; },
+}));
 vi.mock("../../../hooks/use-room-runtime-splat.js", () => ({
   useRoomRuntimeSplat: () => ({
     splatUrls: sceneState.hasAsset ? ["/lighting-regression.sog"] : [],
     transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, note: "identity" },
     hasAsset: sceneState.hasAsset,
     status: sceneState.hasAsset ? "loaded" : "none",
-    roomSlug: "grand-hall",
+    roomSlug: sceneState.roomSlug,
+    source: sceneState.source,
   }),
 }));
 
@@ -49,6 +53,7 @@ const { GrandHallRoom } = await import("../../GrandHallRoom.js");
 const { useCockpitStore } = await import("../../../stores/cockpit-store.js");
 const { useEditorStore } = await import("../../../stores/editor-store.js");
 const { useDeviceStore } = await import("../../../stores/device-store.js");
+const { useLayoutTimelinePreviewStore } = await import("../../../stores/layout-timeline-preview-store.js");
 const { resolveRoomGeometry } = await import("../../../data/room-geometries.js");
 
 function spaceNamed(name: string) {
@@ -90,6 +95,9 @@ beforeEach(() => {
   useDeviceStore.getState().override("low");
   sceneState.width = 1440;
   sceneState.hasAsset = true;
+  sceneState.roomSlug = "grand-hall";
+  sceneState.source = "staged";
+  useLayoutTimelinePreviewStore.setState({ mode: "inactive", activeVenueRuntime: null });
   // R3F host nodes intentionally reach happy-dom in this test. Suppress only
   // React's DOM-only diagnostics for those nodes; preserve all other errors.
   // eslint-disable-next-line no-console -- forward unexpected diagnostics unchanged
@@ -105,11 +113,47 @@ afterEach(() => {
   cleanup();
   useEditorStore.setState({ space: null });
   useCockpitStore.getState().reset();
+  useLayoutTimelinePreviewStore.setState({ mode: "inactive", activeVenueRuntime: null });
   vi.restoreAllMocks();
   window.history.replaceState({}, "", "/");
 });
 
 describe("planner lighting ownership", () => {
+  it("mounts the reflection experiment only inside the opted-in staged capture and removes it for every preview state", () => {
+    useEditorStore.setState({ space: spaceNamed("Grand Hall") });
+    useCockpitStore.getState().setLayerMode("splat");
+    const { container, rerender } = render(<PlannerScene />);
+    const baseline = lightSignature(container);
+    expect(container.querySelector('[data-testid="reflection-experiment"]')).toBeNull();
+    window.history.replaceState({}, "", "/?furniture-reflections=panorama");
+    rerender(<PlannerScene />);
+    expect(container.querySelector('[data-testid="reflection-experiment"]')).not.toBeNull();
+    expect(lightSignature(container)).toEqual(baseline);
+    for (const mode of ["hybrid", "mesh"] as const) {
+      act(() => { useCockpitStore.getState().setLayerMode(mode); });
+      expect(container.querySelector('[data-testid="reflection-experiment"]')).toBeNull();
+    }
+    act(() => { useCockpitStore.getState().setLayerMode("splat"); });
+    for (const mode of ["keyframe", "transition", "schedule-gap", "unavailable"] as const) {
+      act(() => { useLayoutTimelinePreviewStore.setState({ mode }); });
+      expect(container.querySelector('[data-testid="reflection-experiment"]')).toBeNull();
+    }
+    act(() => { useLayoutTimelinePreviewStore.setState({ mode: "inactive" }); });
+    expect(container.querySelector('[data-testid="reflection-experiment"]')).not.toBeNull();
+    for (const source of ["package", "none"]) {
+      sceneState.source = source;
+      rerender(<PlannerScene />);
+      expect(container.querySelector('[data-testid="reflection-experiment"]')).toBeNull();
+    }
+    sceneState.source = "staged";
+    sceneState.roomSlug = "saloon";
+    rerender(<PlannerScene />);
+    expect(container.querySelector('[data-testid="reflection-experiment"]')).toBeNull();
+    sceneState.roomSlug = "grand-hall";
+    sceneState.hasAsset = false;
+    rerender(<PlannerScene />);
+    expect(container.querySelector('[data-testid="reflection-experiment"]')).toBeNull();
+  });
   it.each(["panorama", "panorama-shadow"])("isolates local %s lighting to the captured room and restores baseline on mode changes", (choice) => {
     window.history.replaceState({}, "", `/?furniture-lighting=${choice}`);
     useEditorStore.setState({ space: spaceNamed("Grand Hall") });

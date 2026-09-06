@@ -11,6 +11,8 @@ import { GrandHallRoom } from "../GrandHallRoom.js";
 import { RoomLighting } from "../RoomLighting.js";
 import { FurnitureLightingExperiment } from "./FurnitureLightingExperiment.js";
 import { resolveFurnitureLightingExperiment } from "../../lib/furniture-lighting-experiment.js";
+import { FurnitureReflectionExperiment } from "./FurnitureReflectionExperiment.js";
+import { resolveFurnitureReflectionExperiment } from "../../lib/furniture-reflection-experiment.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { RoomMesh } from "./RoomMesh.js";
 import { FrozenLayoutRoom } from "./FrozenLayoutRoom.js";
@@ -376,6 +378,11 @@ export function PlannerScene(): ReactElement {
     splatActive,
     timelinePreviewActive,
   });
+  const furnitureReflections = resolveFurnitureReflectionExperiment({
+    search: typeof window === "undefined" ? "" : window.location.search,
+    development: import.meta.env.DEV,
+    roomSlug, captureSource, layerMode, splatActive, timelinePreviewActive,
+  });
   const resolvePhase = roomResolvePhase({ splatStatus, hasAsset: hasAsset && !captureFailed, totalChunks, loadedChunks, failedChunks });
   useEffect(() => {
     if (captureFailed && walkMode) useCockpitStore.getState().setWalkMode(false);
@@ -461,6 +468,7 @@ export function PlannerScene(): ReactElement {
           <color attach="background" args={["#eee9de"]} />
           {!timelinePreviewActive && <fog attach="fog" args={["#efe9dc", 54, 138]} />}
           <SceneProvider />
+          {furnitureReflections && <FurnitureReflectionExperiment />}
           <PlannerScenePrecompiler signature={sceneWarmupSignature} />
           {!timelinePreviewActive && <SectionPlane />}
           {!timelinePreviewActive && <InvalidateOnToggle />}
