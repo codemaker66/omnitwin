@@ -153,6 +153,31 @@ export type SheetApproval = z.infer<typeof SheetApprovalSchema>;
 // HallkeeperSheetV2 — full payload consumed by the web view / PDF renderer
 // ---------------------------------------------------------------------------
 
+/** Frozen, real-metre catalogue footprints. Every placed object is retained,
+ * including chairs folded into their table's operational manifest row. */
+export const HallkeeperFloorPlanSchema = z.object({
+  coordinateSpace: z.literal("real_m_v1"),
+  outline: z.array(z.object({ x: z.number().finite(), z: z.number().finite() })).min(3),
+  objects: z.array(z.object({
+    objectId: z.string().uuid(),
+    assetDefinitionId: z.string().uuid(),
+    name: z.string(),
+    category: z.string(),
+    x: z.number().finite(),
+    z: z.number().finite(),
+    rotationY: z.number().finite(),
+    scale: z.number().finite().positive(),
+    widthM: z.number().finite().positive(),
+    depthM: z.number().finite().positive(),
+    collisionType: z.enum(["box", "cylinder"]),
+  })),
+}).refine((plan) => {
+  const xs = plan.outline.map((point) => point.x);
+  const zs = plan.outline.map((point) => point.z);
+  return Math.max(...xs) > Math.min(...xs) && Math.max(...zs) > Math.min(...zs);
+}, "Floor plan outline must have positive width and depth");
+export type HallkeeperFloorPlan = z.infer<typeof HallkeeperFloorPlanSchema>;
+
 export const HallkeeperSheetV2Schema = z.object({
   config: z.object({
     id: ConfigurationIdSchema,
@@ -201,6 +226,8 @@ export const HallkeeperSheetV2Schema = z.object({
     totalItems: z.number().int().nonnegative(),
   }),
   diagramUrl: z.string().nullable(),
+  /** Absent in legacy snapshots; never reconstruct approved geometry from live rows. */
+  floorPlan: HallkeeperFloorPlanSchema.nullable().optional(),
   webViewUrl: z.string(),
   generatedAt: z.string().datetime(),
   /**

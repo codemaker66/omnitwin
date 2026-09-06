@@ -15,6 +15,7 @@ import type { Database } from "../db/client.js";
 import { REAL_METRE_COORDINATE_SPACE, type LayoutCoordinateSpace } from "../db/coordinate-space.js";
 import { generateManifestV2, type ManifestObjectV2, type AccessoryRule } from "./manifest-generator-v2.js";
 import { parseHallkeeperSnapshotPayload } from "./layout-coordinate-space.js";
+import { buildHallkeeperFloorPlan, type FloorPlanAsset } from "./hallkeeper-floor-plan.js";
 
 // ---------------------------------------------------------------------------
 // Hallkeeper Sheet V2 — data assembly
@@ -85,6 +86,7 @@ export async function assembleSheetDataV2(
       positionY: placedObjects.positionY,
       positionZ: placedObjects.positionZ,
       rotationY: placedObjects.rotationY,
+      scale: placedObjects.scale,
       metadata: placedObjects.metadata,
     }).from(placedObjects).where(eq(placedObjects.configurationId, configId)),
     // JOIN asset_definitions to key by parent-asset NAME (what the
@@ -129,15 +131,18 @@ export async function assembleSheetDataV2(
   // placed objects (second DB fan-out — only runs when we aren't
   // serving from a snapshot).
   const uniqueAssetIds = [...new Set(objects.map((o) => o.assetDefinitionId))];
-  const assetCache = new Map<string, { name: string; category: string }>();
+  const assetCache = new Map<string, FloorPlanAsset>();
   if (uniqueAssetIds.length > 0) {
     const assetRows = await db.select({
       id: assetDefinitions.id,
       name: assetDefinitions.name,
       category: assetDefinitions.category,
+      widthM: assetDefinitions.widthM,
+      depthM: assetDefinitions.depthM,
+      collisionType: assetDefinitions.collisionType,
     }).from(assetDefinitions).where(inArray(assetDefinitions.id, uniqueAssetIds));
     for (const a of assetRows) {
-      assetCache.set(a.id, { name: a.name, category: a.category });
+      assetCache.set(a.id, a);
     }
   }
 
@@ -226,6 +231,7 @@ export async function assembleSheetDataV2(
     phases: manifest.phases,
     totals: manifest.totals,
     diagramUrl: config.thumbnailUrl,
+    floorPlan: buildHallkeeperFloorPlan(space.floorPlanOutline, objects, assetCache),
     webViewUrl,
     generatedAt: nowIso,
     approval,

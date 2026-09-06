@@ -16,6 +16,7 @@ import {
   type SheetApproval,
 } from "@omnitwin/types";
 import { incrementCounter, observeHistogram } from "../observability/metrics.js";
+import { renderHallkeeperFloorPlan } from "./hallkeeper-floor-plan-pdf.js";
 
 // `PDFKit` comes from the global namespace declared in @types/pdfkit.
 type Doc = PDFKit.PDFDocument;
@@ -159,9 +160,9 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
     doc.text(fmtLayout(data.config.layoutStyle), col1X, gridY + 36);
 
     doc.font("Helvetica").fontSize(8).fillColor(INK_FAINT);
-    doc.text("Items", col2X, gridY + 26);
+    doc.text("Setup manifest (bundles counted once)", col2X, gridY + 26);
     doc.font("Helvetica-Bold").fontSize(9).fillColor(INK);
-    doc.text(`${String(data.totals.totalItems)} items across ${String(data.totals.totalRows)} rows`, col2X, gridY + 36);
+    doc.text(`${String(data.totals.totalItems)} listed units across ${String(data.totals.totalRows)} rows`, col2X, gridY + 36);
 
     // Timing callout box (if timing is available)
     let headerBottom = gridY + 52;
@@ -258,7 +259,9 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
     // =================================================================
     // DIAGRAM
     // =================================================================
-    const diagH = 160;
+    const hasFloorPlan = data.floorPlan !== null && data.floorPlan !== undefined;
+    const diagH = diagramBuffer === null && hasFloorPlan ? 240 : 160;
+    ensureSpace(doc, diagH + 14);
     const diagY = doc.y;
 
     if (diagramBuffer !== null) {
@@ -270,12 +273,14 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
       doc.rect(MARGIN, diagY, CONTENT_W, diagH)
         .strokeColor("#e0e0e0").lineWidth(0.5).stroke();
       doc.restore();
+    } else if (data.floorPlan !== null && data.floorPlan !== undefined) {
+      renderHallkeeperFloorPlan(doc, data.floorPlan, { x: MARGIN, y: diagY, width: CONTENT_W, height: diagH });
     } else {
       doc.save();
       doc.rect(MARGIN, diagY, CONTENT_W, diagH)
         .strokeColor(RULE).lineWidth(0.5).stroke();
       doc.font("Helvetica").fontSize(9).fillColor(INK_FAINT);
-      doc.text("Floor plan diagram — generate from the 3D editor", MARGIN, diagY + diagH / 2 - 5, { width: CONTENT_W, align: "center" });
+      doc.text("No floor plan was stored with this sheet", MARGIN, diagY + diagH / 2 - 5, { width: CONTENT_W, align: "center" });
       doc.restore();
     }
     doc.y = diagY + diagH + 14;
@@ -283,13 +288,24 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
     // =================================================================
     // PHASES
     // =================================================================
-    for (const phase of data.phases) {
+    const totalsText = data.totals.entries.map((entry) => `${String(entry.qty)}× ${entry.name}`).join("   ·   ");
+    doc.font("Helvetica").fontSize(7.5);
+    const totalsHeight = data.totals.entries.length === 0 ? 0 : 37 + doc.heightOfString(totalsText, { width: CONTENT_W });
+    const closingHeight = totalsHeight + 75;
+    const populatedPhases = data.phases.filter((phase) => phase.zones.length > 0);
+    const lastPhase = populatedPhases.at(-1);
+    const lastZone = lastPhase?.zones.at(-1);
+    for (const phase of populatedPhases) {
       if (phase.zones.length === 0) continue;
       const meta = PHASE_METADATA[phase.phase];
       const phaseItemCount = phase.zones.reduce((s, z) => z.rows.reduce((ss, r) => ss + r.qty, s), 0);
       const phaseRowCount = phase.zones.reduce((s, z) => s + z.rows.length, 0);
 
-      ensureSpace(doc, 50);
+      const phaseHeight = 36 + phase.zones.reduce((sum, zone) => sum + 23 + zone.rows.reduce((height, row) => height + rowHeightFor(doc, row), 0), 0);
+      // Keep a short final phase with totals/sign-off. Large manifests continue
+      // naturally, reserving their final two rows with the closing block below.
+      ensureSpace(doc, phase === lastPhase && phaseHeight + closingHeight < A4_H - FOOTER_H - MARGIN * 2
+        ? phaseHeight + closingHeight : 50);
 
       // Phase header — bold with item count
       doc.save();
@@ -300,8 +316,8 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
       doc.text(`Phase ${String(meta.order)} — ${meta.label}`, MARGIN + 6, phaseHeaderY + 4);
       doc.font("Helvetica").fontSize(8).fillColor(INK_DIM);
       doc.text(
-        `${String(phaseItemCount)} items · ${String(phaseRowCount)} rows`,
-        A4_W - MARGIN - 120, phaseHeaderY + 5, { width: 114, align: "right" },
+        `${String(phaseItemCount)} listed units · ${String(phaseRowCount)} rows`,
+        A4_W - MARGIN - 165, phaseHeaderY + 5, { width: 159, align: "right" },
       );
       doc.y = phaseHeaderY + 28;
 
@@ -316,7 +332,10 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
         let rowIdx = 0;
         for (const row of zoneGroup.rows) {
           const rowHeight = rowHeightFor(doc, row);
-          ensureSpace(doc, rowHeight);
+          const tailHeight = zoneGroup === lastZone && rowIdx >= zoneGroup.rows.length - 2
+            ? zoneGroup.rows.slice(rowIdx).reduce((sum, tail) => sum + rowHeightFor(doc, tail), 0) + 11 + closingHeight
+            : rowHeight;
+          ensureSpace(doc, tailHeight < A4_H - FOOTER_H - MARGIN * 2 ? tailHeight : rowHeight);
           const rowY = doc.y;
           const indent = row.afterDepth > 0 ? 16 : 0;
 
@@ -369,20 +388,19 @@ export async function generateSheetPdfV2(data: HallkeeperSheetV2): Promise<Buffe
     // TOTALS
     // =================================================================
     if (data.totals.entries.length > 0) {
-      ensureSpace(doc, 36);
+      ensureSpace(doc, closingHeight);
       doc.save();
       doc.rect(MARGIN, doc.y, CONTENT_W, 0.5).fill(GOLD);
       doc.restore();
       doc.y += 6;
       doc.font("Helvetica-Bold").fontSize(9).fillColor(INK);
       doc.text(
-        `TOTALS  —  ${String(data.totals.totalItems)} items · ${String(data.totals.totalRows)} rows`,
+        `MANIFEST TOTALS  —  ${String(data.totals.totalItems)} listed units · ${String(data.totals.totalRows)} rows`,
         MARGIN, doc.y,
       );
       doc.y += 13;
       doc.font("Helvetica").fontSize(7.5).fillColor(INK_DIM);
-      const parts = data.totals.entries.map((e) => `${String(e.qty)}× ${e.name}`).join("   ·   ");
-      doc.text(parts, MARGIN, doc.y, { width: CONTENT_W });
+      doc.text(totalsText, MARGIN, doc.y, { width: CONTENT_W });
       doc.y += 14;
     }
 

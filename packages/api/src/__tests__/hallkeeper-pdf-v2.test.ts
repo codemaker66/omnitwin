@@ -142,6 +142,23 @@ describe("PDF output layout regressions", () => {
 });
 
 describe("generateSheetPdfV2 — baseline", () => {
+  it("renders frozen footprints with actual chair counts instead of a generation placeholder", async () => {
+    const floorPlan = {
+      coordinateSpace: "real_m_v1" as const,
+      outline: [{ x: -2, z: -2 }, { x: 2, z: -2 }, { x: 2, z: 2 }, { x: -2, z: 2 }],
+      objects: [{ objectId: "11111111-1111-4111-8111-111111111111", assetDefinitionId: "22222222-2222-4222-8222-222222222222", name: "Chair", category: "chair", x: 0, z: 0, rotationY: 0, scale: 1, widthM: 0.45, depthM: 0.45, collisionType: "box" as const }],
+    };
+    const text = pdfPages(await generateSheetPdfV2({ ...BASE_SHEET, floorPlan })).flat().map((line) => line.text).join("\n");
+    expect(text).toContain("CATALOGUE FOOTPRINTS");
+    expect(text).toContain("0 tables · 1 chairs");
+    expect(text).toContain("Room coordinates: +X right, +Z down");
+    expect(text).not.toContain("No floor plan");
+    expect(text).not.toContain("generate from");
+    const supplied = pdfPages(await generateSheetPdfV2({ ...BASE_SHEET, floorPlan,
+      diagramUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/RZkAAAAASUVORK5CYII=",
+    })).flat().map((line) => line.text).join("\n");
+    expect(supplied).not.toContain("CATALOGUE FOOTPRINTS");
+  });
   it("produces a valid PDF with magic bytes %PDF", async () => {
     const buf = await generateSheetPdfV2(BASE_SHEET);
     expect(hasPdfMagic(buf)).toBe(true);
@@ -222,6 +239,11 @@ describe("generateSheetPdfV2 — approval stamp", () => {
     expect(buf.length).toBeGreaterThan(5000);
     const pages = pdfPages(buf);
     expect(pages.length).toBeGreaterThan(1);
+    const lastPageText = (pages.at(-1) ?? []).map((line) => line.text).join("\n");
+    expect(lastPageText).toContain("Chair 39");
+    expect(lastPageText).toContain("Chair 40");
+    expect(lastPageText).toContain("MANIFEST TOTALS");
+    expect(lastPageText).toContain("Setup verified by:");
     for (const [index, page] of pages.entries()) {
       expect(page.some((line) => line.text === `Page ${String(index + 1)} of ${String(pages.length)}`)).toBe(true);
       expect(page.some((line) => line.text.includes("Approved v5"))).toBe(true);

@@ -281,7 +281,9 @@ export async function createSnapshot(
     throw new ConfigurationNotFoundError(input.configId);
   }
 
-  const extraction = extractEventSheet(extractionInputs);
+  // Hash the same geometry that is frozen in the payload, including catalogue
+  // footprints and every grouped chair; a catalogue/outline/scale edit is material.
+  const extraction = extractEventSheet({ ...extractionInputs, floorPlan: payloadResult.payload.floorPlan });
 
   const [latest] = await db.select()
     .from(configurationSheetSnapshots)

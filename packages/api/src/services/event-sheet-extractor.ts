@@ -14,6 +14,7 @@ import {
   type DoorScheduleSummary,
   type EquipmentTag,
   type Phase,
+  type HallkeeperFloorPlan,
   type Zone,
 } from "@omnitwin/types";
 import {
@@ -69,6 +70,7 @@ export interface ExtractionInput {
   readonly accessoryMap: AccessoryMap;
   readonly metadata: ConfigurationMetadata | null;
   readonly room: RoomDimensions;
+  readonly floorPlan?: HallkeeperFloorPlan | null;
 }
 
 export interface ImplicitRequirementSource {
@@ -171,6 +173,10 @@ function canonicalisePlacements(
 
 function canonicalise(input: ExtractionInput): string {
   const canonical = {
+    ...(input.floorPlan === null || input.floorPlan === undefined ? {} : { floorPlan: {
+      ...input.floorPlan,
+      objects: [...input.floorPlan.objects].sort((a, b) => a.objectId.localeCompare(b.objectId)),
+    } }),
     placements: canonicalisePlacements(input.placements),
     metadata: input.metadata ?? null,
     room: {

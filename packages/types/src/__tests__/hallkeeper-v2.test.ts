@@ -8,6 +8,7 @@ import {
   PhaseSchema,
   TimingSchema,
   HallkeeperSheetV2Schema,
+  HallkeeperFloorPlanSchema,
 } from "../hallkeeper-v2.js";
 
 const SAMPLE_ROW = {
@@ -20,6 +21,20 @@ const SAMPLE_ROW = {
   notes: "",
   positions: [],
 } as const;
+
+describe("frozen floor plan geometry", () => {
+  const plan = { coordinateSpace: "real_m_v1", outline: [{ x: -2, z: -1 }, { x: 2, z: -1 }, { x: 2, z: 1 }], objects: [] };
+  it("retains real-metre outline without synthesizing furniture", () => {
+    expect(HallkeeperFloorPlanSchema.parse(plan)).toEqual(plan);
+  });
+  it.each([
+    { ...plan, coordinateSpace: "legacy_render_v0" },
+    { ...plan, outline: [{ x: 0, z: 0 }, { x: 0, z: 1 }, { x: 0, z: 2 }] },
+    { ...plan, outline: [{ x: Infinity, z: 0 }, { x: 2, z: 1 }, { x: 0, z: 2 }] },
+  ])("rejects unsupported or degenerate geometry", (value) => {
+    expect(HallkeeperFloorPlanSchema.safeParse(value).success).toBe(false);
+  });
+});
 
 describe("ZoneSchema", () => {
   it("accepts all 7 declared zones", () => {

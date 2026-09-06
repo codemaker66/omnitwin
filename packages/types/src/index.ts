@@ -1374,6 +1374,7 @@ export {
   PhaseSchema,
   TimingSchema,
   SheetApprovalSchema,
+  HallkeeperFloorPlanSchema,
   HallkeeperSheetV2Schema,
   type Zone,
   type ManifestRowV2,
@@ -1382,6 +1383,7 @@ export {
   type Phase,
   type Timing,
   type SheetApproval,
+  type HallkeeperFloorPlan,
   type HallkeeperSheetV2,
 } from "./hallkeeper-v2.js";
 
