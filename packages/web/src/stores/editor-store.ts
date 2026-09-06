@@ -217,7 +217,7 @@ interface EditorActions {
    */
   readonly loadConfiguration: (configId: string, isAuthenticated?: boolean) => Promise<void>;
   readonly loadSpace: (venueId: string, spaceId: string) => Promise<void>;
-  readonly createPublicConfig: (spaceId: string) => Promise<string>;
+  readonly createPublicConfig: (spaceId: string, shouldOpen?: () => boolean) => Promise<string>;
   readonly addObject: (assetId: string, positionX: number, positionY: number, positionZ: number) => void;
   readonly updateObject: (objectId: string, transform: Partial<Pick<EditorObject, "positionX" | "positionY" | "positionZ" | "rotationX" | "rotationY" | "rotationZ" | "scale">>) => void;
   /**
@@ -600,7 +600,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
   },
 
-  createPublicConfig: async (spaceId) => {
+  createPublicConfig: async (spaceId, shouldOpen) => {
     const request = ++configurationLoadRequest;
     set({ isLoading: true, error: null });
     try {
@@ -618,7 +618,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       } catch {
         // Tracking is best-effort, including private browsing and quota limits.
       }
-      if (request !== configurationLoadRequest) throw new Error("A different layout was opened while this draft was being created.");
+      if (request !== configurationLoadRequest || shouldOpen?.() === false) throw new Error("A different layout was opened while this draft was being created.");
       configurationSession += 1;
       set({
         configId: config.id,
@@ -652,6 +652,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       return config.id;
     } catch (err) {
       if (request !== configurationLoadRequest) throw err;
+      if (shouldOpen?.() === false) {
+        set({ isLoading: false });
+        throw err;
+      }
       const message = err instanceof Error ? err.message : "Failed to create configuration";
       set({ isLoading: false, error: message });
       throw err;
