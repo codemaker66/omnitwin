@@ -116,6 +116,7 @@ function serializePhase(row: EventPhaseRow): EventPhase {
   return EventPhaseSchema.parse({
     id: row.id,
     eventId: row.eventId,
+    spaceId: row.spaceId,
     templateKey: row.templateKey,
     name: row.name,
     sortOrder: row.sortOrder,
