@@ -49,13 +49,21 @@ Updated 6 September 2026. This is an iteration record, not an accepted design or
 
 ## Next implementation and evidence
 
-Finish mobile browser verification and a clean build after the corrected CSS brace; freeze and commit the coherent reference UI. Qualify the event-linked local workflow once manual evidence production passes real PostgreSQL tests. Compare the isolated source-derived furniture-lighting experiment at an identical camera and scene. Continue room/material/arrival/overhead work toward founder acceptance; the remaining full-view image-quality gaps cannot justify a pass.
+Continue the room/material/arrival/overhead work toward founder acceptance. The final browser qualification below supersedes the older pending event-entry, phase, drag and hallkeeper checks. Compare the next opt-in panorama reflection experiment at the same pose, viewport, furniture and lighting. Source registration, full live-account workflow and physical-device performance remain open.
 
 Physical iPhone/iPad/office-device 60 fps, photographic PSNR 50+, cross-source registration, full live account workflow, deployment and founder aesthetic acceptance are not certified by this report.
 
 
-## 21:06 BST integration update — still blocked for final acceptance
+## 21:06 BST integration checkpoint — superseded by final browser update below
 
 Real browser qualification now verifies correct frozen-phase room/furniture ownership, an empty room-flip gap, original Interior camera restoration, and expanded-timeline control clearance. Scoped review status and preview fog corrections follow that first run and await final visual recheck. The actual browser has changed to1016x571 CSS at DPR2.52/native2560x1440, so its images cannot be treated as the earlier1672x941 comparison. The visible source still has material/floor/fidelity gaps; no design acceptance is claimed.
 
 Brass group selection is integrated and no longer the earlier blue-box candidate. Saved/session ownership, actual event-linked choices, pointer-held history and authoritative hallkeeper footprints are integrated. Nine hallkeeper regression failures identified an old main types dependency in the private web tree; the link is now local and the unchanged private types were rebuilt.154integrated tests/types/test-modebuild then passed. Actual tour after long idle failed and is retained in `captured-tour-observation-2056.json`; a separate clock/handoff repair is integrated for renewed browser testing. No FPS claim follows from idle rAF intervals or that failed trace. See `docs/reports/t596-frozen-scene-2026-09-06.md`.
+
+## 21:26 BST final browser update — visual acceptance remains open
+
+Actual Diary → booking details → Open the plan now reaches the four real linked saved choices. Frozen dinner, empty room-flip gap, scoped approval label, fog removal, expanded-panel clearance and exact Interior camera restoration pass. The hallkeeper sheet renders all162 saved footprints, with18 actual table links and correct one-table/six-table manifest highlighting. One paused3D group gesture moves9objects, leaves153 unchanged and one Undo restores all objects and selection exactly. Its deliberately blocked save shows readable error text; the existing recoverable draft remains dirty. Details and original failures are in the frozen-scene report.
+
+The repaired cold-idle tour runs through the furnished hall without the old orbit flash. At1016×571 CSS/DPR2.52/native2560×1440 on RTX4090/ANGLE, 1,317 camera-changing rendered observations span11.95s: approximately110/second, median8.3ms and p95 16.7ms interval. The local CPU validator ran concurrently. This is bounded observed render cadence, not physical presentation or target-device acceptance. The actual moving image is `captured-tour-active-final.jpg`; the full trace and hardware receipt are retained. Root's final121-test integration batch, web/E2E types and test-mode build pass; final build28.32s without reported warnings.
+
+The above does not accept the pale floor, dark proxy materials, rough scan roof visible from overhead, or the small outline-only historical preview as the requested visual standard. A source-derived furniture reflection A/B is now isolated for implementation. Founder aesthetic judgment, faithful reconstruction, PSNR50+, physical phone/office-device performance and polished arrival remain required. Nothing was deployed or charged to new paid compute.
