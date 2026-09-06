@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { EditorObject } from "../stores/editor-store.js";
 import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE } from "@omnitwin/types";
 
@@ -133,6 +133,22 @@ afterEach(() => {
 });
 
 describe("timeline preview action isolation", () => {
+  it.each(["desktop", "mobile"] as const)("does not open the %s enquiry modal after the original editor session was replaced", async (surface) => {
+    const save = deferred<boolean>();
+    mocks.flushAutoSave.mockReturnValueOnce(save.promise);
+    render(surface === "desktop" ? <SaveSendPanel /> : <MobilePlannerTopBar mode="3d" onModeChange={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Send to Events Team" }));
+    await act(async () => {
+      useEditorStore.getState().reset();
+      // Returning to the same ID is still a new editing session.
+      useEditorStore.setState({ configId: CONFIG_ID, objects: [object], isPublicPreview: false });
+      save.resolve(true);
+      await save.promise;
+    });
+    expect(screen.queryByTestId("guest-enquiry-modal")).toBeNull();
+    expect(screen.getByRole("button", { name: "Send to Events Team" }).hasAttribute("disabled")).toBe(false);
+  });
+
   it("guest enquiry fails closed before autosave, capture, upload, or handoff", async () => {
     enterCrossPhasePreview();
 

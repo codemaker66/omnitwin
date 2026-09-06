@@ -474,15 +474,45 @@ const INITIAL_STATE: EditorState = {
   history: emptyHistory<EditorObject>(),
 };
 
+// A configuration ID alone cannot own an async result: A → B → A opens a
+// different editing session for A. Loads compete by request; saves/room reads
+// belong to the last committed session. A failed load leaves that session live.
+let configurationLoadRequest = 0;
+let configurationSession = 0;
+
+export interface EditorSession {
+  readonly configId: string | null;
+  readonly generation: number;
+}
+
+/** Read-only ownership for async editor callers; survives neither reload nor A → B → A. */
+export function captureEditorSession(): EditorSession {
+  return { configId: useEditorStore.getState().configId, generation: configurationSession };
+}
+
+export function isCurrentEditorSession(session: EditorSession): boolean {
+  return session.generation === configurationSession && session.configId === useEditorStore.getState().configId;
+}
+
 export const useEditorStore = create<EditorStore>((set, get) => ({
   ...INITIAL_STATE,
 
   loadConfiguration: async (configId, isAuthenticated) => {
+    const request = ++configurationLoadRequest;
     set({ isLoading: true, error: null });
     try {
       const config = isAuthenticated === true
         ? await configApi.getConfig(configId)
         : await configApi.getPublicConfig(configId);
+      if (request !== configurationLoadRequest) return;
+      // A GET may have captured its row before a concurrent save was accepted.
+      // Reloading cannot roll an acknowledged revision (or newer local edits)
+      // backwards, even when this is the newest load request for the same ID.
+      const current = get();
+      if (current.configId === config.id && current.configRevision !== null && config.revision < current.configRevision) {
+        set({ isLoading: false });
+        return;
+      }
       const serverObjects = (config.objects ?? []).map(placedObjectToEditor);
       const localDraft = config.isPublicPreview
         ? readAnonymousPlannerDraft(config.id, {
@@ -499,6 +529,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       const previousHistory = get().history;
       const previousRevision = get().configRevision;
       const previousWasPublic = get().isPublicPreview;
+      configurationSession += 1;
       set({
         configId: config.id,
         spaceId: config.spaceId,
@@ -507,7 +538,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         isPublicPreview: config.isPublicPreview,
         objects,
         isDirty: restoredAnonymousDraft,
+        isSaving: false,
+        saveError: null,
         lastSavedAt: config.updatedAt === undefined ? null : new Date(config.updatedAt),
+        space: get().space?.id === config.spaceId && get().space?.venueId === config.venueId ? get().space : null,
         isLoading: false,
         saveConflict: null,
         history: emptyHistory<EditorObject>(),
@@ -525,14 +559,17 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
     } catch (err) {
+      if (request !== configurationLoadRequest) return;
       const message = err instanceof Error ? err.message : "Failed to load configuration";
       set({ isLoading: false, error: message });
     }
   },
 
   loadSpace: async (venueId, spaceId) => {
+    const session = configurationSession;
     try {
       const space = await spacesApi.getSpace(venueId, spaceId);
+      if (session !== configurationSession || get().spaceId !== spaceId || get().venueId !== venueId) return;
       set({ space, spaceId, venueId });
     } catch {
       // Non-critical — space data is for display
@@ -540,9 +577,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   },
 
   createPublicConfig: async (spaceId) => {
+    const request = ++configurationLoadRequest;
     set({ isLoading: true, error: null });
     try {
       const config = await configApi.createPublicConfig(spaceId);
+      // The server created this draft even if navigation superseded the request.
+      // Keep its existing bounded recovery entry, but do not open it or return
+      // a successful navigation result to the stale caller.
+      try {
+        const stored = JSON.parse(localStorage.getItem(TRACKED_CONFIGS_KEY) ?? "[]") as { configId: string; createdAt: string }[];
+        stored.push({ configId: config.id, createdAt: new Date().toISOString() });
+        const capped = stored.length > MAX_TRACKED_CONFIGS
+          ? stored.slice(stored.length - MAX_TRACKED_CONFIGS)
+          : stored;
+        localStorage.setItem(TRACKED_CONFIGS_KEY, JSON.stringify(capped));
+      } catch {
+        // Tracking is best-effort, including private browsing and quota limits.
+      }
+      if (request !== configurationLoadRequest) throw new Error("A different layout was opened while this draft was being created.");
+      configurationSession += 1;
       set({
         configId: config.id,
         spaceId: config.spaceId,
@@ -551,7 +604,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         isPublicPreview: true,
         objects: [],
         isDirty: false,
+        isSaving: false,
+        saveError: null,
         lastSavedAt: config.updatedAt === undefined ? null : new Date(config.updatedAt),
+        space: get().space?.id === config.spaceId && get().space?.venueId === config.venueId ? get().space : null,
         isLoading: false,
         saveConflict: null,
         history: emptyHistory<EditorObject>(),
@@ -569,27 +625,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       // venueId/spaceId are non-nullable on the wire — no guard needed.
       void get().loadSpace(config.venueId, config.spaceId);
 
-      // Track in localStorage with a bounded cap (FIFO eviction). Without
-      // the cap, every public config creation appended to an unbounded
-      // array — slow JSON.parse over time, contention with other clients
-      // of the localStorage budget, and an unhandled QuotaExceededError
-      // path if the budget filled up. The try/catch also covers private-
-      // browsing modes where localStorage throws on write. Tracking is
-      // best-effort; the createPublicConfig flow must NOT fail if
-      // persistence is unavailable.
-      try {
-        const stored = JSON.parse(localStorage.getItem(TRACKED_CONFIGS_KEY) ?? "[]") as { configId: string; createdAt: string }[];
-        stored.push({ configId: config.id, createdAt: new Date().toISOString() });
-        const capped = stored.length > MAX_TRACKED_CONFIGS
-          ? stored.slice(stored.length - MAX_TRACKED_CONFIGS)
-          : stored;
-        localStorage.setItem(TRACKED_CONFIGS_KEY, JSON.stringify(capped));
-      } catch {
-        // localStorage unavailable or quota exceeded — silently skip.
-      }
-
       return config.id;
     } catch (err) {
+      if (request !== configurationLoadRequest) throw err;
       const message = err instanceof Error ? err.message : "Failed to create configuration";
       set({ isLoading: false, error: message });
       throw err;
@@ -711,6 +749,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (isLayoutTimelineMutationLocked()) return false;
     const { configId, configRevision, objects, isSaving, isPublicPreview } = get();
     if (configId === null || isSaving) return false;
+    const session = configurationSession;
     // G4: a save is a gesture boundary — seal the open gesture into the log.
     // Deliberately before the revision guard below: the local gesture
     // happened regardless of whether this save can proceed.
@@ -737,6 +776,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       } else {
         saved = await configApi.publicBatchSave(configId, batch, configRevision);
       }
+      // The server may have accepted the old document. It no longer owns this
+      // editor, its revision/history/selection, or its caller's saved feedback.
+      if (session !== configurationSession || get().configId !== configId) return false;
       const serverObjects = saved.objects.map(placedObjectToEditor);
       // Whole-history id remap: zip the local ids we sent (batch order)
       // with the rows the server inserted (echoed updates-first, then
@@ -802,6 +844,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (useAuthPath) flushActionLogToServer(saved.revision);
       return true;
     } catch (err) {
+      if (session !== configurationSession || get().configId !== configId) return false;
       const conflict = configApi.parseRevisionConflict(err);
       if (conflict !== null) {
         set({
@@ -834,6 +877,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   clearSaveError: () => { set({ saveError: null, saveConflict: null }); },
 
   reset: () => {
+    configurationLoadRequest += 1;
+    configurationSession += 1;
     useCockpitStore.getState().setPlannedGuestCount(null);
     // Preserve the scene ref — reset clears editor data but the Three.js
     // scene is still alive in the Canvas. SceneProvider manages the ref.

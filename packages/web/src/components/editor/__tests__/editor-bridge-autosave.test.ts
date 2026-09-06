@@ -84,6 +84,20 @@ describe("scheduleAutoSave coalesces instead of dropping the tick", () => {
 });
 
 describe("flushAutoSave reports only what is true", () => {
+  it.each([false, true])("does not flush another session after its awaited save is superseded (return to original ID: %s)", async (returnToOriginal) => {
+    setStore({ isSaving: true });
+    const flushing = flushAutoSave();
+    useEditorStore.getState().reset();
+    const nextSave = vi.fn(() => Promise.resolve(true));
+    setStore({ configId: "B", isDirty: true, isSaving: false, saveToServer: nextSave });
+    if (returnToOriginal) {
+      useEditorStore.getState().reset();
+      setStore({ configId: "cfg-autosave", isDirty: true, isSaving: false });
+    }
+    await expect(flushing).resolves.toBe(false);
+    expect(nextSave).not.toHaveBeenCalled();
+  });
+
   it("waits for an in-flight save and then pushes what is still dirty", async () => {
     const saveToServer = vi.fn(() => Promise.resolve(true));
     setStore({ isDirty: true, isSaving: true, saveToServer });

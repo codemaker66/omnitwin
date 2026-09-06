@@ -107,7 +107,7 @@ describe("SaveSendPanel cockpit placement", () => {
   it("enables right-dock avoidance only for the desktop 3D planner cockpit", async () => {
     const { codeOnly } = await readSource("src/pages/EditorPage.tsx");
 
-    expect(codeOnly).toContain("<SaveSendPanel avoidRightDock={viewMode === \"3d\" && !mobile} />");
+    expect(codeOnly).toMatch(/<SaveSendPanel\s+avoidRightDock=\{viewMode === "3d" && !mobile\}(?:\s|\/)/);
   });
 });
 
@@ -172,14 +172,8 @@ describe("SaveSendPanel flush-before-send (#32) — source-grep", () => {
     expect(codeOnly).toMatch(/import[\s\S]*?flushAutoSave[\s\S]*?from[\s\S]*?EditorBridge/);
   });
 
-  it("the shared send flow calls flushAutoSave before the modal can open", async () => {
-    const { codeOnly } = await readSource("src/components/editor/send-layout-flow.ts");
-    // Positive: flushAutoSave is called somewhere in the click handler
-    expect(codeOnly).toContain("await flushAutoSave()");
-    // C2 widened the guard: an unsaved flush OR an active timeline preview
-    // both refuse to open the modal. The flush-before-send law is unchanged.
-    expect(codeOnly).toContain("if (!saved || isLayoutTimelineMutationLocked()) return false");
-  });
+  // The flush gate is exercised below and by the deferred session/preview
+  // tests; its implementation spelling is not a safety guarantee.
 
   it("SaveSendPanel does not use the old direct-open click handler", async () => {
     const { codeOnly } = await readSource("src/components/editor/SaveSendPanel.tsx");

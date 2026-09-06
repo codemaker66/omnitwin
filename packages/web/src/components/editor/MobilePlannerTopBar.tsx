@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useEditorStore } from "../../stores/editor-store.js";
+import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import {
   copyForEditorSaveStatus,
@@ -202,12 +202,13 @@ export function MobilePlannerTopBar({
 
   const sendLayout = (): void => {
     if (configId === null || timelinePreviewActive) return;
+    const session = captureEditorSession();
     setSending(true);
     void prepareLayoutForGuestEnquiry(configId)
       .then((readyToSend) => {
         if (!mountedRef.current) return;
         setSending(false);
-        if (readyToSend) {
+        if (readyToSend && isCurrentEditorSession(session)) {
           setShowEnquiry(true);
         }
       })
