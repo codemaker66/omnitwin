@@ -262,6 +262,10 @@ interface EditorActions {
    * gestures never coalesce, even when they happen in quick succession.
    */
   readonly bumpHistoryEpoch: () => void;
+  /** One pointer-held transform, including pauses and its final grid settle. */
+  readonly beginHistoryGesture: () => symbol | null;
+  readonly endHistoryGesture: (token: symbol) => void;
+  readonly isHistoryGestureCurrent: (token: symbol) => boolean;
 }
 
 type EditorStore = EditorState & EditorActions;
@@ -308,6 +312,8 @@ const actionEmitter = createActionEmitter<EditorObject>({
  * (loadConfiguration uses it; store-level tests mimic the boundary with it).
  */
 export function beginActionLogForConfig(configId: string): void {
+  activeHistoryGesture = null;
+  interactionEpoch++;
   actionEmitter.reset();
   useActionLogStore.getState().beginLog(configId);
 }
@@ -322,6 +328,21 @@ function flushActionLogToServer(revision: number): void {
 let interactionEpoch = 0;
 let lastRecordAt = Number.NEGATIVE_INFINITY;
 let autosaveRequester: (() => void) | null = null;
+let activeHistoryGesture: {
+  readonly token: symbol;
+  readonly epoch: number;
+  readonly configId: string | null;
+  readonly spaceId: string | null;
+  readonly venueId: string | null;
+} | null = null;
+
+function gestureOwnsCurrentDocument(): boolean {
+  const current = useEditorStore.getState();
+  return activeHistoryGesture !== null
+    && activeHistoryGesture.configId === current.configId
+    && activeHistoryGesture.spaceId === current.spaceId
+    && activeHistoryGesture.venueId === current.venueId;
+}
 
 /**
  * Register the auto-save scheduler (owned by EditorBridge) so undo/redo
@@ -332,6 +353,8 @@ export function setEditorAutosaveRequester(requester: (() => void) | null): void
 }
 
 function currentEpoch(): number {
+  if (gestureOwnsCurrentDocument() && activeHistoryGesture !== null) return activeHistoryGesture.epoch;
+  activeHistoryGesture = null;
   const nowMs = Date.now();
   if (nowMs - lastRecordAt > HISTORY_COALESCE_WINDOW_MS) {
     interactionEpoch++;
@@ -433,6 +456,7 @@ function recordedHistory(
     after,
     label: describeDelta(delta),
     epoch: currentEpoch(),
+    coalesceGesture: activeHistoryGesture !== null,
     selectionBefore: selection,
     selectionAfter: selectionAfter ?? selection,
   });
@@ -747,6 +771,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   saveToServer: async (isAuthenticated) => {
     if (isLayoutTimelineMutationLocked()) return false;
+    // A mid-drag save would seal an incomplete action-log entry. Release or
+    // cancellation schedules the complete transaction through the same bridge.
+    if (gestureOwnsCurrentDocument()) return false;
     const { configId, configRevision, objects, isSaving, isPublicPreview } = get();
     if (configId === null || isSaving) return false;
     const session = configurationSession;
@@ -879,6 +906,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   reset: () => {
     configurationLoadRequest += 1;
     configurationSession += 1;
+    activeHistoryGesture = null;
+    interactionEpoch++;
     useCockpitStore.getState().setPlannedGuestCount(null);
     // Preserve the scene ref — reset clears editor data but the Three.js
     // scene is still alive in the Canvas. SceneProvider manages the ref.
@@ -900,6 +929,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   undo: () => {
     if (isLayoutTimelineMutationLocked()) return;
+    activeHistoryGesture = null;
     const s = get();
     const step = performUndo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
@@ -912,6 +942,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   redo: () => {
     if (isLayoutTimelineMutationLocked()) return;
+    activeHistoryGesture = null;
     const s = get();
     const step = performRedo(s.history, s.objects, EDITOR_HISTORY_IDS);
     if (step === null) return;
@@ -924,8 +955,32 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   bumpHistoryEpoch: () => {
     if (isLayoutTimelineMutationLocked()) return;
+    activeHistoryGesture = null;
     interactionEpoch++;
   },
+
+  beginHistoryGesture: () => {
+    if (isLayoutTimelineMutationLocked()) return null;
+    interactionEpoch++;
+    const token = Symbol("pointer-history-gesture");
+    const { configId, spaceId, venueId } = get();
+    activeHistoryGesture = { token, epoch: interactionEpoch, configId, spaceId, venueId };
+    return token;
+  },
+
+  endHistoryGesture: (token) => {
+    if (activeHistoryGesture?.token !== token) return;
+    const ownsDocument = gestureOwnsCurrentDocument();
+    activeHistoryGesture = null;
+    interactionEpoch++;
+    if (ownsDocument) {
+      actionEmitter.flush(get().history);
+      if (get().isDirty) autosaveRequester?.();
+    }
+  },
+
+  isHistoryGestureCurrent: (token) => activeHistoryGesture?.token === token
+    && gestureOwnsCurrentDocument() && !isLayoutTimelineMutationLocked(),
 }));
 
 useEditorStore.subscribe((state, previous) => {

@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   useEditorStore,
+  beginActionLogForConfig,
   setEditorAutosaveRequester,
   type EditorObject,
 } from "../editor-store.js";
 import { useSelectionStore } from "../selection-store.js";
+import { useActionLogStore } from "../action-log-store.js";
 import { canUndo, canRedo, undoLabel } from "../../lib/editor-history.js";
 import { getCatalogueItem } from "../../lib/catalogue.js";
 import * as configApi from "../../api/configurations.js";
@@ -311,6 +313,128 @@ describe("undo and redo", () => {
 // ---------------------------------------------------------------------------
 
 describe("coalescing", () => {
+  it.each([1, 2, 9])("keeps the next gesture independent for %i selected objects", (count) => {
+    const original = Array.from({ length: count + 1 }, (_, i) => editorObj(`item-${String(i)}`));
+    seedEditor(original);
+    const ids = new Set(original.slice(0, count).map((item) => item.id));
+    const first = store().beginHistoryGesture();
+    if (first === null) throw new Error("Expected gesture");
+    store().moveObjectsByDelta(ids, 1, 0);
+    now += 1_500;
+    store().moveObjectsByDelta(ids, 0, 2);
+    store().endHistoryGesture(first);
+    const between = store().objects;
+    const second = store().beginHistoryGesture();
+    if (second === null) throw new Error("Expected gesture");
+    store().endHistoryGesture(first); // a late callback cannot close its successor
+    expect(store().isHistoryGestureCurrent(second)).toBe(true);
+    store().moveObjectsByDelta(ids, 3, 0);
+    now += 1_500;
+    store().moveObjectsByDelta(ids, 0, 4);
+    store().endHistoryGesture(second);
+    const final = store().objects;
+    expect(final.at(-1)).toEqual(original.at(-1));
+    expect(store().history.past).toHaveLength(2);
+    store().undo();
+    expect(store().objects).toEqual(between);
+    store().undo();
+    expect(store().objects).toEqual(original);
+    store().redo();
+    store().redo();
+    expect(store().objects).toEqual(final);
+  });
+
+  it.each(["room", "config", "reload", "reset"] as const)("invalidates an old drag on %s", (boundary) => {
+    seedEditor([editorObj("a")]);
+    const first = store().beginHistoryGesture();
+    if (first === null) throw new Error("Expected gesture");
+    store().updateObject("a", { positionX: 1 });
+    if (boundary === "room") useEditorStore.setState({ spaceId: "space-2" });
+    if (boundary === "config") useEditorStore.setState({ configId: "cfg-2" });
+    if (boundary === "reload") beginActionLogForConfig("cfg-1");
+    if (boundary === "reset") store().reset();
+    expect(store().isHistoryGestureCurrent(first)).toBe(false);
+    const second = store().beginHistoryGesture();
+    if (second === null) throw new Error("Expected gesture");
+    store().endHistoryGesture(first);
+    expect(store().isHistoryGestureCurrent(second)).toBe(true);
+    store().endHistoryGesture(second);
+  });
+
+  it("defers mid-drag saves and emits one complete action before requesting autosave", async () => {
+    seedEditor([editorObj("a")]);
+    useActionLogStore.getState().reset();
+    beginActionLogForConfig("cfg-1");
+    const requester = vi.fn();
+    setEditorAutosaveRequester(requester);
+    installEchoSave();
+    const token = store().beginHistoryGesture();
+    if (token === null) throw new Error("Expected gesture");
+    store().updateObject("a", { positionX: 1 });
+    expect(await store().saveToServer()).toBe(false);
+    expect(configApi.publicBatchSave).not.toHaveBeenCalled();
+    expect(useActionLogStore.getState().entries).toHaveLength(0);
+    now += 1_500;
+    store().updateObject("a", { positionX: 2, positionZ: 3 });
+    store().endHistoryGesture(token);
+    expect(requester).toHaveBeenCalledOnce();
+    expect(useActionLogStore.getState().entries).toHaveLength(1);
+    expect(store().history.past[0]?.updated[0]).toMatchObject({
+      before: { positionX: 0, positionZ: 0 }, after: { positionX: 2, positionZ: 3 },
+    });
+    expect(await store().saveToServer()).toBe(true);
+    expect(configApi.publicBatchSave).toHaveBeenCalledOnce();
+    expect(useActionLogStore.getState().entries).toHaveLength(1);
+  });
+
+  it("preserves an open drag and its log when an earlier save remaps local IDs", async () => {
+    seedEditor([editorObj("local-a")]);
+    useActionLogStore.getState().reset();
+    beginActionLogForConfig("cfg-1");
+    let acknowledge: ((value: configApi.BatchSaveResponse) => void) | undefined;
+    vi.mocked(configApi.publicBatchSave).mockImplementation(() => new Promise((resolve) => { acknowledge = resolve; }));
+    const saving = store().saveToServer();
+    const token = store().beginHistoryGesture();
+    if (token === null) throw new Error("Expected gesture");
+    store().updateObject("local-a", { positionX: 1 });
+    const sent = vi.mocked(configApi.publicBatchSave).mock.calls[0]?.[1][0];
+    if (acknowledge === undefined || sent === undefined) throw new Error("Missing save request");
+    acknowledge({ revision: 2, objects: [toPlaced(sent, "server-a")] });
+    expect(await saving).toBe(true);
+    expect(store().isHistoryGestureCurrent(token)).toBe(true);
+    now += 1_500;
+    store().updateObject("server-a", { positionX: 2, positionZ: 3 });
+    store().endHistoryGesture(token);
+    expect(store().history.past).toHaveLength(1);
+    expect(useActionLogStore.getState().entries).toHaveLength(1);
+    const final = store().objects;
+    store().undo();
+    expect(store().objects[0]).toMatchObject({ id: "server-a", positionX: 0, positionZ: 0 });
+    store().redo();
+    expect(store().objects).toEqual(final);
+  });
+
+  it("keeps a held pointer drag, axis changes and delayed grid settle in one undo step", () => {
+    const originals = Array.from({ length: 162 }, (_, i) => editorObj(`item-${String(i)}`, { positionX: i, positionZ: i / 2 }));
+    seedEditor(originals);
+    const moving = new Set(originals.slice(0, 9).map((item) => item.id));
+    const gesture = store().beginHistoryGesture();
+    expect(gesture).not.toBeNull();
+    store().moveObjectsByDelta(moving, 0.2, 0);
+    now += 1_500;
+    store().moveObjectsByDelta(moving, 0.3, 0.4);
+    now += 1_500;
+    store().moveObjectsByDelta(moving, -0.1, 0);
+    if (gesture !== null) store().endHistoryGesture(gesture);
+    const final = store().objects;
+    expect(final.slice(9)).toEqual(originals.slice(9));
+    expect(store().history.past).toHaveLength(1);
+    store().undo();
+    expect(store().objects).toEqual(originals);
+    store().redo();
+    expect(store().objects).toEqual(final);
+  });
+
   it("coalesces rapid moves of the same items into one entry", () => {
     seedEditor([editorObj("a")]);
     store().moveObjectsByDelta(new Set(["a"]), 1, 0);
