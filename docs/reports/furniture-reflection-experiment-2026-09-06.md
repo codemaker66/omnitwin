@@ -85,11 +85,36 @@ test-fixture lint/type failures and final receipts are retained in the worktree'
 `reflections-*.log` files; the final fixture uses the established CPU renderer
 prototype seam rather than an unsafe double cast.
 
-Browser work is owned by the parent task and has not run for this slice. Compare
-the same saved 162-object layout, camera, DPR and lighting mode, first unselected,
-then chair front/back/three-quarter views and actual pan/drag. Assess brass
-readability and clipping without treating brighter as automatically better. Verify
-capture-only image parity, counts and draw calls, cold decode/filter time, frame
-time percentiles on the declared device, and texture release after mode/room/preview
-changes. Keep failed evidence. No furnished 60-fps or aesthetic-acceptance claim is
-made here.
+The parent completed a bounded visible-browser A/B at source `28ffc795`, with the
+same saved 162-object layout, camera/projection, native 2560×1440 buffer,
+1016×571 CSS viewport and DPR 2.52. Both sides retained the separate panorama
+diffuse-lighting switch. Actual painted capture geometry was checked. Both have
+107 draw calls, 12,469,192 triangles and 97 geometries; renderer texture count goes
+from 58 to 59. The B ledger reports a 768×1024 target and 227.6ms decode/filter time
+for that run. Brass becomes visibly warmer/brighter. The furniture remains a
+proxy, and this is not accepted material accuracy or exact capture-pixel parity.
+Evidence: `D:/claude/reference-viewer-20260906/reflections-{A-diffuse-only,B-environment}.{jpg,json}`.
+
+Two later 17-second observations sampled changed render counters and moving camera
+positions during the actual tour on RTX4090/ANGLE/D3D11 at the same native buffer.
+A records 1,406 moving samples over 11,987.3ms; B records 1,439 over 11,958.4ms.
+Both have 8.3ms median and 20.8ms p95 observed interval; maxima are 33.4/33.2ms.
+Other local work was concurrent. These are observed render cadence, not GPU
+duration or physical presentation measurements; neither is a 60-fps p95 pass.
+Raw traces and summaries are `reflection-tour-{A,B}-{trace,summary}.json`.
+
+The final combined candidate `b0477037` was then checked after integrating T599's
+private dependencies and combined Spark patch. Switching Model withdrew the
+environment; Capture installed a different texture UUID. A 2D/3D transition
+created a fresh renderer and reached the full painted capture again. All 162
+editor objects remained byte-identical and the existing recoverable draft's
+dirty state was preserved. The tab's collected error/warning log is empty.
+Actual anonymous schedule/runtime requests still returned expected 401s; no writes
+were attempted. Evidence: `D:/claude/venviewer-final-demo-20260906/browser-*`.
+
+The separate headless harness's initial A/B pictures did not contain the painted
+capture because its asynchronous readiness check accepted stale store state.
+Those failed pictures and its raw receipt remain preserved and are not used as
+visual/performance proof. Its renderer was SwiftShader. Full chair-angle material
+review, capture pixel parity, physical-device performance and founder acceptance
+remain open. The experiment stays development-only and opt-in.
