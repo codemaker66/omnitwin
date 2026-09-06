@@ -1,0 +1,713 @@
+diff --git a/dist/spark.module.js b/dist/spark.module.js
+index aec3d559..92cd17fe 100644
+--- a/dist/spark.module.js
++++ b/dist/spark.module.js
+@@ -2523,8 +2523,15 @@ function WorkerWrapper(options) {
+     objURL && (self.URL || self.webkitURL).revokeObjectURL(objURL);
+   }
+ }
++class SplatWorkerDisposedError extends Error {
++  constructor() {
++    super("Worker terminate");
++    this.name = "SplatWorkerDisposedError";
++  }
++}
+ const _SplatWorker = class _SplatWorker {
+   constructor() {
++    this.disposed = false;
+     this.queue = null;
+     this.messages = {};
+     this.worker = new WorkerWrapper();
+@@ -2572,6 +2579,7 @@ const _SplatWorker = class _SplatWorker {
+     }
+   }
+   async call(name, args, options = {}) {
++    if (this.disposed) throw new SplatWorkerDisposedError();
+     const id = ++_SplatWorker.currentId;
+     const promise = new Promise((resolve, reject) => {
+       this.messages[id] = { resolve, reject, onStatus: options.onStatus };
+@@ -2583,11 +2591,13 @@ const _SplatWorker = class _SplatWorker {
+     return await promise;
+   }
+   dispose() {
++    if (this.disposed) return;
++    this.disposed = true;
+     this.worker.terminate();
+     const messages = Object.values(this.messages);
+     this.messages = {};
+     for (const message of messages) {
+-      message.reject(new Error("Worker terminate"));
++      message.reject(new SplatWorkerDisposedError());
+     }
+   }
+ };
+@@ -9822,6 +9832,9 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+       allowOverride: false
+     });
+     super(geometry, material);
++    this.disposed = false;
++    this.pendingReadback = null;
++    this.cancelSortDelay = null;
+     this.renderSize = new THREE.Vector2();
+     this.lastFrame = -1;
+     this.updateTimeoutId = -1;
+@@ -10005,6 +10018,36 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+     return uniforms;
+   }
+   dispose() {
++    if (this.disposed) return;
++    this.disposed = true;
++    this.autoUpdate = false;
++    this.enableDriveLod = false;
++    this.sortDirty = false;
++    clearTimeout(this.updateTimeoutId);
++    clearTimeout(this.sortTimeoutId);
++    this.updateTimeoutId = -1;
++    this.sortTimeoutId = -1;
++    if (this.cancelSortDelay) this.cancelSortDelay();
++    if (this.sortWorker) {
++      this.sortWorker.dispose();
++      this.sortWorker = null;
++    }
++    if (this.lodWorker) {
++      this.lodWorker.dispose();
++      this.lodWorker = null;
++    }
++    // GPU readback has no AbortSignal. Keep its targets alive until it settles.
++    // The original sort promise still propagates unexpected readback failures.
++    if (this.pendingReadback) {
++      this.pendingReadback.then(
++        () => this.disposeResources(),
++        () => this.disposeResources()
++      );
++    } else {
++      this.disposeResources();
++    }
++  }
++  disposeResources() {
+     if (this.target) {
+       this.target.dispose();
+       this.target = void 0;
+@@ -10026,19 +10069,11 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+     for (const accumulator of accumulators) {
+       accumulator.dispose();
+     }
+-    const instances = this.lodInstances.values();
++    const instances = Array.from(this.lodInstances.values());
+     this.lodInstances.clear();
+     for (const instance of instances) {
+       instance.texture.dispose();
+     }
+-    if (this.sortWorker) {
+-      this.sortWorker.dispose();
+-      this.sortWorker = null;
+-    }
+-    if (this.lodWorker) {
+-      this.lodWorker.dispose();
+-      this.lodWorker = null;
+-    }
+     if (this.pager) {
+       this.pager.dispose();
+       this.pager = void 0;
+@@ -10046,6 +10081,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+   }
+   setDirty() {
+     var _a2;
++    if (this.disposed) return;
+     if (!this.dirty) {
+       this.dirty = true;
+       (_a2 = this.onDirty) == null ? void 0 : _a2.call(this);
+@@ -10054,6 +10090,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+   onBeforeRender(renderer, scene, camera) {
+     var _a2;
+     const spark = _SparkRenderer.sparkOverride ?? this;
++    if (this.disposed || spark.disposed) return;
+     const frame = renderer.info.render.frame;
+     const isNewFrame = frame !== spark.lastFrame;
+     spark.lastFrame = frame;
+@@ -10182,6 +10219,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+     camera,
+     autoUpdate
+   }) {
++    if (this.disposed) return;
+     const renderer = this.renderer;
+     const time = this.time ?? this.clock.getElapsedTime();
+     const center = camera.getWorldPosition(new THREE.Vector3());
+@@ -10241,7 +10279,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+     await this.driveSort();
+   }
+   async driveSort() {
+-    if (this.sorting || !this.sortDirty) {
++    if (this.disposed || this.sorting || !this.sortDirty) {
+       return;
+     }
+     if (this.sortTimeoutId !== -1) {
+@@ -10260,9 +10298,11 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+     this.sorting = true;
+     this.sortDirty = false;
+     this.lastSortTime = now;
++    try {
+     if (this.readPause > 0) {
+-      await new Promise((resolve) => setTimeout(resolve, this.readPause));
++      await this.waitForSortDelay(this.readPause);
+     }
++    if (this.disposed) return;
+     const current = this.current;
+     this.sortedCenter.copy(current.viewOrigin);
+     this.sortedDir.copy(current.viewDirection);
+@@ -10273,15 +10313,23 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+     const ordering = new Uint32Array(this.maxSplats);
+     const readback = Readback.ensureBuffer(maxSplats, this.readback32);
+     this.readback32 = readback;
+-    await this.readbackDepth({
++    const pendingReadback = this.readbackDepth({
+       current,
+       renderer: this.renderer,
+       numSplats,
+       readback
+     });
++    this.pendingReadback = pendingReadback;
++    try {
++      await pendingReadback;
++    } finally {
++      this.pendingReadback = null;
++    }
++    if (this.disposed) return;
+     if (this.sortPause > 0) {
+-      await new Promise((resolve) => setTimeout(resolve, this.sortPause));
++      await this.waitForSortDelay(this.sortPause);
+     }
++    if (this.disposed) return;
+     if (!this.sortWorker) {
+       this.sortWorker = new SplatWorker();
+     }
+@@ -10290,9 +10338,11 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+       readback,
+       ordering
+     });
++    if (this.disposed) return;
+     if (this.sortDelay > 0) {
+-      await new Promise((resolve) => setTimeout(resolve, this.sortDelay));
++      await this.waitForSortDelay(this.sortDelay);
+     }
++    if (this.disposed) return;
+     this.readback32 = result.readback;
+     this.activeSplats = result.activeSplats;
+     if (this.orderingTexture) {
+@@ -10348,9 +10398,26 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+         this.display = this.current;
+       }
+     }
+-    this.sorting = false;
+-    this.setDirty();
+-    this.driveSort();
++    } catch (error) {
++      if (!(this.disposed && error instanceof SplatWorkerDisposedError)) throw error;
++    } finally {
++      this.sorting = false;
++    }
++    if (!this.disposed) {
++      this.setDirty();
++      this.driveSort();
++    }
++  }
++  waitForSortDelay(milliseconds) {
++    return new Promise((resolve) => {
++      const finish = () => {
++        clearTimeout(timer);
++        this.cancelSortDelay = null;
++        resolve();
++      };
++      const timer = setTimeout(finish, milliseconds);
++      this.cancelSortDelay = finish;
++    });
+   }
+   ensureLodWorker() {
+     if (!this.lodWorker) {
+@@ -10367,6 +10434,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+     scene
+   }) {
+     var _a2, _b2;
++    if (this.disposed) return;
+     const defaultSplatCount = this.defaultSplatTarget();
+     const splatCount = this.lodSplatCount ?? defaultSplatCount;
+     const maxSplats = splatCount * this.lodSplatScale;
+@@ -10435,7 +10503,9 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+         }
+       }
+     }
+-    this.ensureLodWorker().tryExclusive(async (worker) => {
++    return this.ensureLodWorker().tryExclusive(async (worker) => {
++      if (this.disposed) return;
++      try {
+       if (hasPaged && !this.pager) {
+         this.pager = new SplatPager({
+           renderer: this.renderer,
+@@ -10446,6 +10516,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+         const { lodId } = await worker.call("newLodTree", {
+           capacity: this.pager.maxSplats
+         });
++        if (this.disposed) return;
+         this.pagerId = lodId;
+       }
+       if (this.pager) {
+@@ -10462,6 +10533,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+           const splats = lodInitQueue.shift();
+           if (splats) {
+             await this.initLodTree(worker, splats);
++            if (this.disposed) return;
+             this.lodDirty = true;
+           }
+         }
+@@ -10488,6 +10560,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+         const lodUpdates = this.lodUpdates;
+         this.lodUpdates = [];
+         await worker.call("updateLodTrees", { ranges: lodUpdates });
++        if (this.disposed) return;
+         this.lodDirty = true;
+       }
+       if (this.lodDirty) {
+@@ -10514,10 +10587,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+           viewQuat,
+           pixelScaleLimit
+         );
++        if (this.disposed) return;
+         this.currentLod = this.lastLod;
+         this.setDirty();
+       }
+       await this.cleanupLodTrees(worker);
++      } catch (error) {
++        if (!(this.disposed && error instanceof SplatWorkerDisposedError)) throw error;
++      }
+     });
+   }
+   async initLodTree(worker, splats) {
+@@ -10526,12 +10603,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+         numSplats: splats.numSplats ?? 0,
+         lodTree: splats.extra.lodTree.slice()
+       });
++      if (this.disposed) return;
+       this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
+       this.lodIdToSplats.set(lodId, splats);
+     } else {
+       const { lodId } = await worker.call("newSharedLodTree", {
+         lodId: this.pagerId
+       });
++      if (this.disposed) return;
+       this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
+       this.lodIdToSplats.set(lodId, splats);
+     }
+@@ -10581,6 +10660,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+       lastPixelLimit: this.lastPixelLimit,
+       instances
+     });
++    if (this.disposed) return;
+     this.lastTraverseTime = performance.now() - traverseStart;
+     const { keyIndices, chunks, pixelLimit } = result;
+     this.lastPixelLimit = pixelLimit;
+@@ -10633,6 +10713,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+         pixelScaleLimit,
+         instances
+       });
++      if (this.disposed) return;
+       performance.now() - traverseStart2;
+       const { keyIndices: keyIndices2 } = result2;
+       Object.values(keyIndices2).reduce(
+@@ -10757,6 +10838,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+     const layerSize = SPLAT_TEX_WIDTH * SPLAT_TEX_HEIGHT;
+     let baseIndex = 0;
+     const promises = [];
++    try {
+     while (baseIndex < numSplats) {
+       const layer = Math.floor(baseIndex / layerSize);
+       const layerBase = layer * layerSize;
+@@ -10787,8 +10869,16 @@ const _SparkRenderer = class _SparkRenderer extends THREE.Mesh {
+       }
+       baseIndex += SPLAT_TEX_WIDTH * layerYEnd;
+     }
+-    this.resetRenderState(renderer, renderState);
+-    return Promise.all(promises).then(() => readback);
++    } finally {
++      this.resetRenderState(renderer, renderState);
++      // All layers must settle before dispose releases the shared target, even
++      // when one readback rejects or scheduling a later layer throws.
++      const results = await Promise.allSettled(promises);
++      for (const result of results) {
++        if (result.status === "rejected") throw result.reason;
++      }
++    }
++    return readback;
+   }
+   saveRenderState(renderer) {
+     return {
+diff --git a/dist/spark.cjs.js b/dist/spark.cjs.js
+index 9f85cfa4..5e7219cb 100644
+--- a/dist/spark.cjs.js
++++ b/dist/spark.cjs.js
+@@ -2542,8 +2542,15 @@ function WorkerWrapper(options) {
+     objURL && (self.URL || self.webkitURL).revokeObjectURL(objURL);
+   }
+ }
++class SplatWorkerDisposedError extends Error {
++  constructor() {
++    super("Worker terminate");
++    this.name = "SplatWorkerDisposedError";
++  }
++}
+ const _SplatWorker = class _SplatWorker {
+   constructor() {
++    this.disposed = false;
+     this.queue = null;
+     this.messages = {};
+     this.worker = new WorkerWrapper();
+@@ -2591,6 +2598,7 @@ const _SplatWorker = class _SplatWorker {
+     }
+   }
+   async call(name, args, options = {}) {
++    if (this.disposed) throw new SplatWorkerDisposedError();
+     const id = ++_SplatWorker.currentId;
+     const promise = new Promise((resolve, reject) => {
+       this.messages[id] = { resolve, reject, onStatus: options.onStatus };
+@@ -2602,11 +2610,13 @@ const _SplatWorker = class _SplatWorker {
+     return await promise;
+   }
+   dispose() {
++    if (this.disposed) return;
++    this.disposed = true;
+     this.worker.terminate();
+     const messages = Object.values(this.messages);
+     this.messages = {};
+     for (const message of messages) {
+-      message.reject(new Error("Worker terminate"));
++      message.reject(new SplatWorkerDisposedError());
+     }
+   }
+ };
+@@ -9841,6 +9851,9 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+       allowOverride: false
+     });
+     super(geometry, material);
++    this.disposed = false;
++    this.pendingReadback = null;
++    this.cancelSortDelay = null;
+     this.renderSize = new THREE__namespace.Vector2();
+     this.lastFrame = -1;
+     this.updateTimeoutId = -1;
+@@ -10024,6 +10037,36 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+     return uniforms;
+   }
+   dispose() {
++    if (this.disposed) return;
++    this.disposed = true;
++    this.autoUpdate = false;
++    this.enableDriveLod = false;
++    this.sortDirty = false;
++    clearTimeout(this.updateTimeoutId);
++    clearTimeout(this.sortTimeoutId);
++    this.updateTimeoutId = -1;
++    this.sortTimeoutId = -1;
++    if (this.cancelSortDelay) this.cancelSortDelay();
++    if (this.sortWorker) {
++      this.sortWorker.dispose();
++      this.sortWorker = null;
++    }
++    if (this.lodWorker) {
++      this.lodWorker.dispose();
++      this.lodWorker = null;
++    }
++    // GPU readback has no AbortSignal. Keep its targets alive until it settles.
++    // The original sort promise still propagates unexpected readback failures.
++    if (this.pendingReadback) {
++      this.pendingReadback.then(
++        () => this.disposeResources(),
++        () => this.disposeResources()
++      );
++    } else {
++      this.disposeResources();
++    }
++  }
++  disposeResources() {
+     if (this.target) {
+       this.target.dispose();
+       this.target = void 0;
+@@ -10045,19 +10088,11 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+     for (const accumulator of accumulators) {
+       accumulator.dispose();
+     }
+-    const instances = this.lodInstances.values();
++    const instances = Array.from(this.lodInstances.values());
+     this.lodInstances.clear();
+     for (const instance of instances) {
+       instance.texture.dispose();
+     }
+-    if (this.sortWorker) {
+-      this.sortWorker.dispose();
+-      this.sortWorker = null;
+-    }
+-    if (this.lodWorker) {
+-      this.lodWorker.dispose();
+-      this.lodWorker = null;
+-    }
+     if (this.pager) {
+       this.pager.dispose();
+       this.pager = void 0;
+@@ -10065,6 +10100,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+   }
+   setDirty() {
+     var _a2;
++    if (this.disposed) return;
+     if (!this.dirty) {
+       this.dirty = true;
+       (_a2 = this.onDirty) == null ? void 0 : _a2.call(this);
+@@ -10073,6 +10109,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+   onBeforeRender(renderer, scene, camera) {
+     var _a2;
+     const spark = _SparkRenderer.sparkOverride ?? this;
++    if (this.disposed || spark.disposed) return;
+     const frame = renderer.info.render.frame;
+     const isNewFrame = frame !== spark.lastFrame;
+     spark.lastFrame = frame;
+@@ -10177,7 +10214,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+   //  * Provide additional cameras to prefetch paged splat chunks without
+   //  * affecting main LOD selection.
+   //  */
+-  // setPrefetchCameras(cameras?: THREE.Camera[], lodScaleMultiplier = 1.0) {
++  // setPrefetchCameras(cameras?: THREE__namespace.Camera[], lodScaleMultiplier = 1.0) {
+   //   const next = cameras?.filter(Boolean) ?? [];
+   //   const sameCameras =
+   //     this.prefetchCameras.length === next.length &&
+@@ -10201,6 +10238,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+     camera,
+     autoUpdate
+   }) {
++    if (this.disposed) return;
+     const renderer = this.renderer;
+     const time = this.time ?? this.clock.getElapsedTime();
+     const center = camera.getWorldPosition(new THREE__namespace.Vector3());
+@@ -10260,7 +10298,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+     await this.driveSort();
+   }
+   async driveSort() {
+-    if (this.sorting || !this.sortDirty) {
++    if (this.disposed || this.sorting || !this.sortDirty) {
+       return;
+     }
+     if (this.sortTimeoutId !== -1) {
+@@ -10279,9 +10317,11 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+     this.sorting = true;
+     this.sortDirty = false;
+     this.lastSortTime = now;
++    try {
+     if (this.readPause > 0) {
+-      await new Promise((resolve) => setTimeout(resolve, this.readPause));
++      await this.waitForSortDelay(this.readPause);
+     }
++    if (this.disposed) return;
+     const current = this.current;
+     this.sortedCenter.copy(current.viewOrigin);
+     this.sortedDir.copy(current.viewDirection);
+@@ -10292,15 +10332,23 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+     const ordering = new Uint32Array(this.maxSplats);
+     const readback = Readback.ensureBuffer(maxSplats, this.readback32);
+     this.readback32 = readback;
+-    await this.readbackDepth({
++    const pendingReadback = this.readbackDepth({
+       current,
+       renderer: this.renderer,
+       numSplats,
+       readback
+     });
++    this.pendingReadback = pendingReadback;
++    try {
++      await pendingReadback;
++    } finally {
++      this.pendingReadback = null;
++    }
++    if (this.disposed) return;
+     if (this.sortPause > 0) {
+-      await new Promise((resolve) => setTimeout(resolve, this.sortPause));
++      await this.waitForSortDelay(this.sortPause);
+     }
++    if (this.disposed) return;
+     if (!this.sortWorker) {
+       this.sortWorker = new SplatWorker();
+     }
+@@ -10309,9 +10357,11 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+       readback,
+       ordering
+     });
++    if (this.disposed) return;
+     if (this.sortDelay > 0) {
+-      await new Promise((resolve) => setTimeout(resolve, this.sortDelay));
++      await this.waitForSortDelay(this.sortDelay);
+     }
++    if (this.disposed) return;
+     this.readback32 = result.readback;
+     this.activeSplats = result.activeSplats;
+     if (this.orderingTexture) {
+@@ -10367,9 +10417,26 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+         this.display = this.current;
+       }
+     }
+-    this.sorting = false;
+-    this.setDirty();
+-    this.driveSort();
++    } catch (error) {
++      if (!(this.disposed && error instanceof SplatWorkerDisposedError)) throw error;
++    } finally {
++      this.sorting = false;
++    }
++    if (!this.disposed) {
++      this.setDirty();
++      this.driveSort();
++    }
++  }
++  waitForSortDelay(milliseconds) {
++    return new Promise((resolve) => {
++      const finish = () => {
++        clearTimeout(timer);
++        this.cancelSortDelay = null;
++        resolve();
++      };
++      const timer = setTimeout(finish, milliseconds);
++      this.cancelSortDelay = finish;
++    });
+   }
+   ensureLodWorker() {
+     if (!this.lodWorker) {
+@@ -10386,6 +10453,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+     scene
+   }) {
+     var _a2, _b2;
++    if (this.disposed) return;
+     const defaultSplatCount = this.defaultSplatTarget();
+     const splatCount = this.lodSplatCount ?? defaultSplatCount;
+     const maxSplats = splatCount * this.lodSplatScale;
+@@ -10454,7 +10522,9 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+         }
+       }
+     }
+-    this.ensureLodWorker().tryExclusive(async (worker) => {
++    return this.ensureLodWorker().tryExclusive(async (worker) => {
++      if (this.disposed) return;
++      try {
+       if (hasPaged && !this.pager) {
+         this.pager = new SplatPager({
+           renderer: this.renderer,
+@@ -10465,6 +10535,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+         const { lodId } = await worker.call("newLodTree", {
+           capacity: this.pager.maxSplats
+         });
++        if (this.disposed) return;
+         this.pagerId = lodId;
+       }
+       if (this.pager) {
+@@ -10481,6 +10552,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+           const splats = lodInitQueue.shift();
+           if (splats) {
+             await this.initLodTree(worker, splats);
++            if (this.disposed) return;
+             this.lodDirty = true;
+           }
+         }
+@@ -10507,6 +10579,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+         const lodUpdates = this.lodUpdates;
+         this.lodUpdates = [];
+         await worker.call("updateLodTrees", { ranges: lodUpdates });
++        if (this.disposed) return;
+         this.lodDirty = true;
+       }
+       if (this.lodDirty) {
+@@ -10533,10 +10606,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+           viewQuat,
+           pixelScaleLimit
+         );
++        if (this.disposed) return;
+         this.currentLod = this.lastLod;
+         this.setDirty();
+       }
+       await this.cleanupLodTrees(worker);
++      } catch (error) {
++        if (!(this.disposed && error instanceof SplatWorkerDisposedError)) throw error;
++      }
+     });
+   }
+   async initLodTree(worker, splats) {
+@@ -10545,12 +10622,14 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+         numSplats: splats.numSplats ?? 0,
+         lodTree: splats.extra.lodTree.slice()
+       });
++      if (this.disposed) return;
+       this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
+       this.lodIdToSplats.set(lodId, splats);
+     } else {
+       const { lodId } = await worker.call("newSharedLodTree", {
+         lodId: this.pagerId
+       });
++      if (this.disposed) return;
+       this.lodIds.set(splats, { lodId, lastTouched: performance.now() });
+       this.lodIdToSplats.set(lodId, splats);
+     }
+@@ -10600,6 +10679,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+       lastPixelLimit: this.lastPixelLimit,
+       instances
+     });
++    if (this.disposed) return;
+     this.lastTraverseTime = performance.now() - traverseStart;
+     const { keyIndices, chunks, pixelLimit } = result;
+     this.lastPixelLimit = pixelLimit;
+@@ -10652,6 +10732,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+         pixelScaleLimit,
+         instances
+       });
++      if (this.disposed) return;
+       performance.now() - traverseStart2;
+       const { keyIndices: keyIndices2 } = result2;
+       Object.values(keyIndices2).reduce(
+@@ -10776,6 +10857,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+     const layerSize = SPLAT_TEX_WIDTH * SPLAT_TEX_HEIGHT;
+     let baseIndex = 0;
+     const promises = [];
++    try {
+     while (baseIndex < numSplats) {
+       const layer = Math.floor(baseIndex / layerSize);
+       const layerBase = layer * layerSize;
+@@ -10806,8 +10888,16 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+       }
+       baseIndex += SPLAT_TEX_WIDTH * layerYEnd;
+     }
+-    this.resetRenderState(renderer, renderState);
+-    return Promise.all(promises).then(() => readback);
++    } finally {
++      this.resetRenderState(renderer, renderState);
++      // All layers must settle before dispose releases the shared target, even
++      // when one readback rejects or scheduling a later layer throws.
++      const results = await Promise.allSettled(promises);
++      for (const result of results) {
++        if (result.status === "rejected") throw result.reason;
++      }
++    }
++    return readback;
+   }
+   saveRenderState(renderer) {
+     return {
+@@ -10998,8 +11088,8 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+   // Renders out the scene to an environment map that can be used for
+   // Image-based lighting or similar applications. First optionally updates Gsplats,
+   // sorts them with respect to the provided worldCenter, renders 6 cube faces,
+-  // then pre-filters them using THREE.PMREMGenerator and returns a THREE.Texture
+-  // that can assigned directly to a THREE.MeshStandardMaterial.envMap property.
++  // then pre-filters them using THREE__namespace.PMREMGenerator and returns a THREE__namespace.Texture
++  // that can assigned directly to a THREE__namespace.MeshStandardMaterial.envMap property.
+   async renderEnvMap({
+     scene,
+     worldCenter,
+@@ -11026,7 +11116,7 @@ const _SparkRenderer = class _SparkRenderer extends THREE__namespace.Mesh {
+     return (_a2 = _SparkRenderer.pmrem) == null ? void 0 : _a2.fromCubemap(cubeTexture).texture;
+   }
+   // Utility function to recursively set the envMap property for any
+-  // THREE.MeshStandardMaterial within the subtree of root.
++  // THREE__namespace.MeshStandardMaterial within the subtree of root.
+   recurseSetEnvMap(root, envMap) {
+     root.traverse((node) => {
+       if (node instanceof THREE__namespace.Mesh) {
