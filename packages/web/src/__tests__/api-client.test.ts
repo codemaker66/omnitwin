@@ -81,6 +81,42 @@ describe("api.get", () => {
 });
 
 describe("error handling", () => {
+  it("reads a nested failure message without object coercion and retains its code and details", async () => {
+    const details = { expectedRevision: 1, actualRevision: 2 };
+    fetchMock.mockResolvedValue(jsonResponse({ error: { message: "This preview is read-only.", code: "READ_ONLY", details } }, 405));
+    await expect(api.post("/configurations/demo/objects/batch", {})).rejects.toMatchObject({
+      status: 405, message: "This preview is read-only.", code: "READ_ONLY", details,
+    });
+  });
+
+  it("preserves the canonical flat conflict envelope and its details", async () => {
+    const details = { expectedRevision: 1, actualRevision: 2 };
+    fetchMock.mockResolvedValue(jsonResponse({ error: "Configuration changed.", code: "CONFLICT", details }, 409));
+    await expect(api.patch("/configurations/demo", {})).rejects.toMatchObject({
+      status: 409, message: "Configuration changed.", code: "CONFLICT", details,
+    });
+  });
+
+  it("retains a top-level code and details when a nested error only supplies the message", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: { message: "Please retry." }, code: "UNAVAILABLE", details: null }, 503));
+    await expect(api.get("/test")).rejects.toMatchObject({ status: 503, message: "Please retry.", code: "UNAVAILABLE", details: null });
+  });
+
+  it.each([null, [], 42, { error: {}, code: {} }, { error: "  ", code: ["INVALID"] }])("handles malformed failure JSON without coercion: %j", async (body) => {
+    fetchMock.mockResolvedValue(jsonResponse(body, 502));
+    await expect(api.get("/test")).rejects.toMatchObject({ status: 502, message: "Request failed (HTTP 502).", code: "UNKNOWN" });
+  });
+
+  it("uses a readable top-level message when a proxy supplies no string error", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ message: "Request was rejected.", code: "REJECTED" }, 400));
+    await expect(api.get("/test")).rejects.toMatchObject({ status: 400, message: "Request was rejected.", code: "REJECTED" });
+  });
+
+  it("reports the HTTP failure when its response body is not JSON", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 502, json: () => Promise.reject(new SyntaxError("Unexpected '<'")), headers: new Headers() } as Response);
+    await expect(api.get("/test")).rejects.toMatchObject({ status: 502, message: "Request failed (HTTP 502).", code: "UNKNOWN" });
+  });
+
   it("throws ApiError on 400", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ error: "Bad input", code: "VALIDATION_ERROR" }, 400));
 

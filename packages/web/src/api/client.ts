@@ -73,6 +73,30 @@ interface RequestOptions {
 
 type ResponseSchema<T> = ZodType<T, ZodTypeDef, unknown>;
 
+function objectField(value: unknown, key: string): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return (value as Record<string, unknown>)[key];
+}
+
+function readableString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+/** Error bodies are untrusted too; never coerce an object into visible copy. */
+function responseError(status: number, body: unknown): ApiError {
+  const error = objectField(body, "error");
+  const message = readableString(error)
+    ?? readableString(objectField(error, "message"))
+    ?? readableString(objectField(body, "message"))
+    ?? `Request failed (HTTP ${String(status)}).`;
+  const code = readableString(objectField(body, "code"))
+    ?? readableString(objectField(error, "code"))
+    ?? "UNKNOWN";
+  const details = objectField(body, "details");
+  return new ApiError(status, message, code,
+    details === undefined ? objectField(error, "details") : details);
+}
+
 async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -119,16 +143,14 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
   // single caller and is typed accordingly.
   if (res.status === 204) return undefined as T;
 
-  const json = (await res.json()) as { data?: unknown; error?: string; code?: string; details?: unknown };
-
   if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      json.error ?? "Unknown error",
-      json.code ?? "UNKNOWN",
-      json.details,
-    );
+    // A proxy may return nested errors, HTML, or an empty body. Preserve the
+    // HTTP failure even when JSON parsing fails; do not expose raw body text.
+    const body: unknown = await res.json().catch(() => undefined);
+    throw responseError(res.status, body);
   }
+
+  const json = (await res.json()) as { data?: unknown };
 
   // CRUD endpoints use { data } envelope; some endpoints return raw JSON.
   const payload = json.data !== undefined ? json.data : json;
