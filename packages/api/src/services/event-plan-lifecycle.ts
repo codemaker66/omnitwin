@@ -21,6 +21,7 @@ import {
 type ChangeRow = typeof eventPlanChanges.$inferSelect;
 type NotificationRow = typeof eventPlanNotifications.$inferSelect;
 type AcknowledgementRow = typeof eventPlanChangeAcknowledgements.$inferSelect;
+type ChangeConnection = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 function toIso(value: Date): string {
   return value.toISOString();
@@ -92,49 +93,51 @@ export function serializeAcknowledgement(row: AcknowledgementRow): HallkeeperAck
 }
 
 export async function recordEventPlanChange(
-  db: Database,
+  db: ChangeConnection,
   input: RecordEventPlanChangeInput,
 ): Promise<ChangeFeedItem> {
   const parsed = RecordEventPlanChangeInputSchema.parse(input);
   const audienceRoles = uniqueRoles(parsed.audienceRoles);
 
-  const [change] = await db.insert(eventPlanChanges).values({
-    eventId: parsed.eventId,
-    venueId: parsed.venueId,
-    configurationId: parsed.configurationId ?? null,
-    proposalId: parsed.proposalId ?? null,
-    handoffPackId: parsed.handoffPackId ?? null,
-    actorUserId: parsed.actorUserId ?? null,
-    actorRole: parsed.actorRole,
-    actorLabel: parsed.actorLabel,
-    sourceKind: parsed.sourceKind,
-    sourceId: parsed.sourceId,
-    title: parsed.title,
-    summary: parsed.summary,
-    beforeSummary: parsed.beforeSummary ?? null,
-    afterSummary: parsed.afterSummary ?? null,
-    affectedSurfaces: [...parsed.affectedSurfaces],
-    audienceRoles,
-    riskLevel: parsed.riskLevel,
-    requiresHallkeeperAcknowledgement: parsed.requiresHallkeeperAcknowledgement,
-  }).returning();
+  return db.transaction(async (tx) => {
+    const [change] = await tx.insert(eventPlanChanges).values({
+      eventId: parsed.eventId,
+      venueId: parsed.venueId,
+      configurationId: parsed.configurationId ?? null,
+      proposalId: parsed.proposalId ?? null,
+      handoffPackId: parsed.handoffPackId ?? null,
+      actorUserId: parsed.actorUserId ?? null,
+      actorRole: parsed.actorRole,
+      actorLabel: parsed.actorLabel,
+      sourceKind: parsed.sourceKind,
+      sourceId: parsed.sourceId,
+      title: parsed.title,
+      summary: parsed.summary,
+      beforeSummary: parsed.beforeSummary ?? null,
+      afterSummary: parsed.afterSummary ?? null,
+      affectedSurfaces: [...parsed.affectedSurfaces],
+      audienceRoles,
+      riskLevel: parsed.riskLevel,
+      requiresHallkeeperAcknowledgement: parsed.requiresHallkeeperAcknowledgement,
+    }).returning();
 
-  if (change === undefined) {
-    throw new Error("event plan change insert returned no row");
-  }
+    if (change === undefined) {
+      throw new Error("event plan change insert returned no row");
+    }
 
-  const severity = notificationSeverityForRisk(parsed.riskLevel);
-  await db.insert(eventPlanNotifications).values(audienceRoles.map((audienceRole) => ({
-    changeId: change.id,
-    eventId: parsed.eventId,
-    venueId: parsed.venueId,
-    audienceRole,
-    recipientUserId: null,
-    title: parsed.title,
-    body: parsed.summary,
-    severity,
-    actionPath: parsed.actionPath ?? null,
-  })));
+    const severity = notificationSeverityForRisk(parsed.riskLevel);
+    await tx.insert(eventPlanNotifications).values(audienceRoles.map((audienceRole) => ({
+      changeId: change.id,
+      eventId: parsed.eventId,
+      venueId: parsed.venueId,
+      audienceRole,
+      recipientUserId: null,
+      title: parsed.title,
+      body: parsed.summary,
+      severity,
+      actionPath: parsed.actionPath ?? null,
+    })));
 
-  return serializeEventPlanChange(change);
+    return serializeEventPlanChange(change);
+  });
 }

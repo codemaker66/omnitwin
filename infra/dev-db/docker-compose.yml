@@ -6,22 +6,18 @@
 # docs/PRODUCTION.md §Neon). Non-default host ports so nothing collides with
 # a native Postgres install.
 #
-#   docker compose -f infra/dev-db/docker-compose.yml up -d
+#   docker compose -f infra/dev-db/docker-compose.yml up -d postgres
 #
 # Connection strings (dev-only fixture credentials, not secrets):
-#   TCP (drizzle-kit migrate, psql):
+#   TCP (API, seed, drizzle-kit migrate, psql):
 #     postgresql://postgres:postgres@localhost:54329/omnitwin_dev
-#   API / seed (same URL — the @neondatabase/serverless driver is WebSocket-
-#   only, so db/client.ts routes localhost URLs through the neon-proxy
-#   container on port 54331; see LOCAL_WS_PROXY_PORT in client.ts):
-#     postgresql://postgres:postgres@localhost:54329/omnitwin_dev
-#
-# The proxy image wraps Neon's own proxy pointed at a fixed local Postgres —
-# the documented recipe for running the serverless driver against local PG.
+# The API now connects directly to the URL's TCP port. The retained neon-proxy
+# service is for legacy explicit WebSocket-driver experiments only; start it
+# separately when such a client needs it.
 #
 # No Docker (or the engine won't start)? The equivalent no-Docker fallback is
-# portable Postgres binaries in .dev-db/ (gitignored) plus the byte-shovel
-# proxy `node infra/dev-db/neon-ws-bridge.mjs` on the same ports.
+# portable Postgres binaries in .dev-db/ (gitignored), listening at the explicit
+# local URL. The current API needs no bridge.
 # ---------------------------------------------------------------------------
 
 name: omnitwin-dev-db

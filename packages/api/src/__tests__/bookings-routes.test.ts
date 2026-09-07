@@ -362,7 +362,7 @@ describe("booking mutation cores — source contract (extracted T-537, invariant
 
   it("clears the ladder rank on promotion to ink", async () => {
     const source = await readFile(resolve("src/services/booking-mutations.ts"), "utf-8");
-    expect(source).toContain('rank: toState === "ink" ? null : row.rank');
+    expect(source).toContain('rank: toState === "ink" ? null : current.rank');
   });
 
   it("carries no unsupported claim language", async () => {

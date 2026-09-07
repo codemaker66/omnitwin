@@ -18,7 +18,7 @@ import { multiplyMinor, sumMinor } from "../services/money.js";
 // rounding), and the subtotal/total are exact sums. The DB CHECK
 // quote_line_items_total_exact backstops the same invariant.
 //
-// Venue scoping mirrors proposals: admin anywhere, staff within their venue.
+// Venue staff/admin manage their own venue; platform admins retain their override.
 // A replaced quote transitions to `superseded` and must point at its
 // successor; the DB CHECKs quotes_superseded_coherent / _not_self enforce
 // the referential shape.
@@ -47,10 +47,10 @@ const ListQuery = z.object({
 
 type AuthedUser = Pick<JwtUser, "id" | "role" | "platformRole" | "venueId">;
 
-/** Create/mutate policy: admin anywhere, staff within their own venue. */
+/** Venue staff/admin manage their own venue; platform admins may cross venues. */
 function canManageVenueQuotes(user: AuthedUser, venueId: string): boolean {
   if (isPlatformAdmin(user)) return true;
-  return user.role === "staff" && user.venueId === venueId;
+  return (user.role === "staff" || user.role === "admin") && user.venueId === venueId;
 }
 
 async function validateOpportunityLink(db: Database, opportunityId: string | null | undefined, venueId: string): Promise<"ok" | "missing" | "mismatch"> {
@@ -87,7 +87,7 @@ export async function quoteRoutes(
 
     if (isPlatformAdmin(user)) {
       // Admin sees all venues
-    } else if ((user.role === "staff" || user.role === "hallkeeper") && user.venueId !== null) {
+    } else if ((user.role === "staff" || user.role === "admin" || user.role === "hallkeeper") && user.venueId !== null) {
       whereConditions.push(eq(quotes.venueId, user.venueId));
     } else {
       whereConditions.push(eq(quotes.createdBy, user.id));

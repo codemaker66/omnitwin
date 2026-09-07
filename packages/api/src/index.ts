@@ -4,7 +4,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import rawBody from "fastify-raw-body";
 import { validateEnv, type Env } from "./env.js";
-import { createDb } from "./db/client.js";
+import { createDbConnection } from "./db/client.js";
 import { setAuthDb } from "./middleware/auth.js";
 import { venueRoutes } from "./routes/venues.js";
 import { venueInventoryRoutes } from "./routes/venue-inventory.js";
@@ -295,7 +295,9 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   });
 
   // --- Database ---
-  const db = createDb(env.DATABASE_URL);
+  const connection = createDbConnection(env.DATABASE_URL);
+  const db = connection.db;
+  server.addHook("onClose", async () => { await connection.close(); });
   const reconstructionFoundryService = createReconstructionFoundryService(db, env);
   const foundryDerivativeRightsCustodyService =
     new FoundryDerivativeRightsCustodyService(db);

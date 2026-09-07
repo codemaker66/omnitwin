@@ -72,6 +72,13 @@ Reproduce concurrency with held row locks and observed waiting sessions rather
 than relying on arbitrary timing sleeps. PostgreSQL statistics cache inside a
 transaction; clear its statistics snapshot when polling lock waiters.
 
+Local qualification now passes the full API suite (2,902 passed; 113 skipped),
+the mandatory 60-case PostgreSQL gate with zero skips, API lint/typecheck/build,
+dependency audit and an actual built-server HTTP/database/shutdown smoke. The
+[increment report](../reports/t605-platform-integrity-increment-2026-09-07.md)
+records failures, receipts and limits. Integration and live verification follow
+the standing shipping policy; these checks do not complete the platform goal.
+
 ## Remaining integration design
 
 Use one immutable decision revision and one immutable event-release manifest.
@@ -98,7 +105,7 @@ approved internal hire request is not confirmed stock.
 
 | Gate | Current evidence and next requirement |
 | --- | --- |
-| Complete event and three change classes | Mutation prerequisites under verification; still connect enquiry, options, exact quotes, booking, layouts, stock, release, phone/print, acknowledgement and actuals, with successful and no-fit branches |
+| Complete event and three change classes | Mutation prerequisites locally qualified; still connect enquiry, options, exact quotes, booking, layouts, stock, release, phone/print, acknowledgement and actuals, with successful and no-fit branches |
 | Two venues | A separate benchmark proposal specifies two labelled synthetic configurations and dinner/theatre arithmetic; materialized full journeys, room flip, GBP/USD and DST checks remain |
 | Integrity and recovery | Disposable migration baseline and initial concurrency/rollback tests; approval/revocation, durable execution, worker restart, tenant isolation across retrieval/artifacts/exports and backup/restore remain |
 | Intelligence | No model tuning or model-quality claim. Materialize and independently review the proposed evaluation manifest before freezing thresholds; real models, ranking, feedback and useful GPU integration remain |
