@@ -150,14 +150,24 @@ from the error screen. The load error remains a recorded reliability limitation.
 
 The independent navigation task also inspected the exact 90-object live route:
 editable catalogue, Flow → More → Scene overlays → Guest flow on/off, return to
-Design and Interior; no furniture writes. A brief 2D check shows the actual 16
-chairs but incorrectly labels imported tables with unknown nominal capacity as
-“0 cap.” A separately qualified display correction is pending; the real placed
-chair count remains correct. Isolated correction
+Design and Interior; no furniture writes. A brief 2D check found that unknown
+imported table capacity was incorrectly labelled “0 cap.”; the actual placed-chair
+count was correct. Isolated correction
 `957e3e4c00d4161fab72998f301acf61332c4074` preserves unknown versus known zero,
 shows a neutral Round/dimensions label, and passes 190 blueprint tests, full
-web/E2E typecheck and scoped lint. It has been handed to the sole release owner
-for integration; publication and the corrected live 2D check are pending.
+web/E2E typecheck and scoped lint. It shipped in web release
+`2805f78e5b94e34a95e052407180ed2ed2a9e063`, Vercel deployment 6315127880,
+module `index-KV0_vdZi.js`. API remains the unchanged 7f2 release. The furniture
+model files, shared catalogue, defaults and seating geometry are unchanged from
+7f2, so the exact published model-byte receipt remains applicable.
+
+The actual live 2805 QA view passed: two Round labels, zero “0 cap.” labels,
+round-table dimensions in Layers and the selected inspector, no invented capacity
+row, and the correct 18 placed chairs across four tables. The initial signed-in
+venue-access check exceeded the navigation tool's 10-second timeout but completed
+without retry or auth bypass. The live screenshot was inspected inline; these
+checks made no production writes. The planner was returned to the 90-object 3D
+demonstration afterward.
 
 The independent performance task's final moving-camera qualification is
 inconclusive: unsolicited trusted pointer input/capture loss interrupted all
