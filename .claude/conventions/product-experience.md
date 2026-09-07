@@ -2,7 +2,11 @@
 
 # Venviewer product experience
 
-## Selected style — 6 September 2026
+## Selected Diary direction — 7 September 2026
+
+The founder rejected the old dark Diary and selected a light ivory/forest workspace and an airy room-photo timetable as the interim direction. Preserve readable booking titles and exact times, clear status and conflict distinctions, recognizable sourced room photos, and direct access to booking details. The full-week overview and precise timeline have distinct purposes; summary-card width must not falsely imply duration. [Current scoped design QA](../../design-qa.md) records the adaptation and remaining dense-week limitations. The founder's attachment references remain private and their sample names, rooms and quantities are not operational data.
+
+## Selected inventory style — 6 September 2026
 
 Blake selected [this inventory composition](../../docs/design/references/venviewer-selected-inventory-2026-09-06.png) as the current visual direction. Preserve its warm ivory, deep forest green, pale copper and sage; substantial overlapping planes; tangible furniture illustration; editorial headings; and an adjacent correction surface. Adapt these principles to each real workflow and device. The retained 1586 × 992 reference has SHA-256 `50d0620dcf2180512bd33d90e522ab3a00c243446a3251e0b063fdd2f740acae`.
 

@@ -2,9 +2,11 @@
 
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
-Updated: 2026-09-06.
+Updated: 2026-09-07.
 
 ## Latest task notes
+
+- 2026-09-07 T-603 / T-601: the founder-selected light Diary is integrated into the single demo candidate with sourced room photos, full-week summaries and preserved precise timeline controls. 178 affected tests, web/E2E typecheck, scoped lint and actual local API/browser save, movement, confirmation, Undo and hallkeeper read-only checks passed. Final metadata contrast correction is verified. [Scoped design QA](../../design-qa.md) retains the dense-week limitation and open founder/device acceptance. Integration is complete locally; live deployment and founder rehearsal remain T-601 requirements.
 
 - 2026-09-06 T-596/T-600 release integration: the isolated `codex/trades-hall-demo-release` candidate combines the qualified reference viewer and T-599 dependency graph with real inventory corrections/reservations/remedies, selected-style navigation and Docker prerequisites. Migration 0064 remains manual-layout evidence; inventory is appended as 0065/0066 with increasing timestamps. Retained private venue source documents and detailed reconciliation are excluded from release history. [Integration decisions and required combined checks](../reports/trades-hall-demo-release-integration-2026-09-06.md). No production write, push or deployment is claimed by this integration.
 
@@ -63,6 +65,8 @@ Updated: 2026-09-06.
 
 | ID | Title | Status | I | E | Depends | Source | Notes |
 |---|---|---|---|---|---|---|---|
+| T-603 | Rebuild Diary from selected light workspace and timetable references. | in-progress | 5 | 1 | T-601 | USER-2026-09-07 | Integrated source, 178 affected tests and actual local browser flows pass; reference comparison and limits in design-qa.md. Combined live release and founder acceptance remain pending. |
+| T-601 | Publish and rehearse the combined Trades Hall demo. | in-progress | 5 | 1 | T-596, T-600, T-602, T-603 | USER-2026-09-06/07 | Sole release coordinator. Qualified viewer, inventory, review, chair/batch and selected Diary are integrated in a clean isolated release branch. Exact build, actual-target migrations, provider deployment and founder rehearsal are tracked separately. |
 | T-602 | Import supplied furniture into inventory and room planner. | done | 4 | 1 | T-600, T-601 | USER-2026-09-06/07 (supplied Rodin exports and live demo direction) | Turini integrated in 44df06a3. Bulk import verified on codex/furniture-batch-import-20260907 based 74348f9b: 17 new models plus reused Turini, 33 canonical entries, 0068 guarded registration, approximate new dimensions, 592 web/51 API cases and full-batch browser save/reload pass. Report: docs/reports/furniture-batch-import-2026-09-07.md. T-601 owns combined integration and live publication; no separate deployment here. |
 | T-586 | Incorporate the sublime redesign, editable inventory, quality parity and decision-intelligence mandate. | done | 5 | 0.5 | T-584 | USER-2026-09-04 follow-up | Delivered programme 16; amended programme 15, GOAL, House, authority map and goal graph; primary-source research, code-seam review and independent consistency check; local links/diff verified. Planning only, no UI/inventory/approval implementation claimed. Renumbered from provisional T-585 to avoid the concurrent quiz task collision. |
 | T-588 | Venue inventory domain foundation: scoped adjustments, audit receipts and truthful availability. | done | 5 | 1 | T-586 | USER-2026-09-04; goals/05–06 | Delivered on codex/venue-inventory-foundation at 9cfba200154c9ff42ce3cd3cfd8172453e3f0975, D:/claude/venviewer-inventory-20260904: 28 new regressions; full types 96 files / 2,185 tests, lint, typecheck and build pass; independent review fixes included. Pure domain only; persistence, API and admin UI remain. Not merged or pushed. See goals/EXECUTION.md. |

@@ -2,7 +2,11 @@
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
-## Latest founder direction — 2026-09-06
+## Latest founder direction — 2026-09-07
+
+Blake rejected the still-live dark Diary and selected the light workspace and airy timetable references in the 7 September attachment. T-603 now replaces that Diary and retains precise booking controls; it is included in T-601's single authorized demo release. The earlier full-UI-overhaul claim was incorrect: locally implemented, verified, live and aesthetically accepted are different states. The reference images remain private because they contain illustrative personal data. [The scoped design review](design-qa.md) records the actual render, behavior and remaining density limits. Wider sublime acceptance and physical-device targets remain open.
+
+The founder also requested the supplied furniture batch to be imported and live. [T-602's verified handoff](docs/reports/furniture-batch-import-2026-09-07.md) adds twelve identities and upgrades five existing presentations without changing physical stock or saved layouts. Model dimensions marked approximate are not measured venue evidence. Release coordination remains T-601; reconstruction work has separate ownership and does not replace the verified room asset without qualification.
 
 Blake now asks for inventory and the completed project work to be live and ready for the Monday 7 September Trades Hall demo. The parent release coordinator owns production preparation and publication. This newer request supersedes the older freeze only for the reviewed demo release; it does not authorize unrelated production changes, publication of retained private source documents or new paid compute. Prepared, verified, deployed and accepted remain distinct states.
 

@@ -1,5 +1,7 @@
 # Production release checklist — web (Vercel) + API (Railway)
 
+**7 September 2026 release override:** use the [current combined-demo procedure](trades-hall-demo-release-2026-09-07.md). The historical ledger, local secret-file target and deployment-state assertions below are not current instructions for T-601. In particular, the old local production URL file points to a different database; obtain and pin the active service target in memory. Retain the historical incident details as evidence.
+
 **Rewritten:** 2026-07-25, after driving the first real end-to-end deploy on 2026-07-20 and finding that most of the previous version was wrong. Every claim below was checked against the repo or against production; anything that cannot be checked from the repo is marked **[unverified]**.
 **Supersedes:** the T-523 Diary cutover plan. This is now the standing procedure for **any** release, not a one-off.
 **Companion:** `docs/operations/diary-production-rollout-runbook.md` (diagnostic / emergency selective-apply only).
