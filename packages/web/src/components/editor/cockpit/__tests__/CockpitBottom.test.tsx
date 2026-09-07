@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
-import type { ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
 import {
   CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE,
   type CanonicalLayoutSnapshotV0,
@@ -1688,7 +1688,48 @@ describe("CockpitBottom room layout timeline", () => {
     });
   });
 
-  it("preserves an explicit date reached through history while changing linked-event scope", async () => {
+  it("never persists the previous date when a linked-event anchor changes and its new range fails", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-18T12:00:00.000Z"));
+    const event = deferred<EventPhaseGraph>();
+    const searches: string[] = [];
+    eventsApi.getEventPhaseGraph.mockReturnValue(event.promise);
+    timelineApi.getRoomLayoutTimeline.mockImplementation((query) => {
+      if ("scope" in query && query.anchorDate === "2026-06-14") {
+        return Promise.reject(new Error("Event range offline"));
+      }
+      return Promise.resolve(responseForQuery(query, [arrival, dinner]));
+    });
+    function ObserveSearch(): ReactElement {
+      const { search } = useLocation();
+      useEffect(() => {
+        searches.push(search);
+      }, [search]);
+      return <output data-testid="location-search">{search}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={[`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day`]}>
+        <CockpitBottom />
+        <ObserveSearch />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("slider", { name: /scrub room layout/i });
+    act(() => {
+      event.resolve(linkedEventGraph("2026-06-14T16:00:00.000Z"));
+    });
+    await screen.findByText("Room timeline unavailable");
+
+    expect(timelineApi.getRoomLayoutTimeline.mock.calls.at(-1)?.[0])
+      .toMatchObject({ scope: "day", anchorDate: "2026-06-14" });
+    expect(searches.some((search) => new URLSearchParams(search).get("timelineDate") === "2026-07-18"))
+      .toBe(false);
+    expect(screen.getByTestId("location-search").textContent).not.toContain("timelineDate=2026-07-18");
+  });
+
+  it.each(["UTC", "Europe/London"])("preserves an explicit date reached through history while changing linked-event scope (browser %s)", async (browserZone) => {
+    const browserOptions = new Intl.DateTimeFormat().resolvedOptions();
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...browserOptions, timeZone: browserZone,
+    });
     eventsApi.getEventPhaseGraph.mockResolvedValue(linkedEventGraph("2026-06-14T16:00:00.000Z"));
     timelineApi.getRoomLayoutTimeline.mockImplementation((query) =>
       Promise.resolve(responseForQuery(query, [arrival, dinner])),

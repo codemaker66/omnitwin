@@ -95,6 +95,28 @@ export function HallkeeperPage(): React.ReactElement {
   // when WiFi drops mid-event-setup. The number drains to 0 when the
   // online-event flush runs on reconnect.
   const [pendingCount, setPendingCount] = useState(0);
+  const [progressWrites, setProgressWrites] = useState<ReadonlyMap<string, number>>(new Map());
+  const [syncingConfigs, setSyncingConfigs] = useState<ReadonlySet<string>>(new Set());
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  // Actual work belongs to its sheet. Persisted offline intent never keeps an
+  // indicator running, and an old sheet's settlement cannot retire new work.
+  const beginProgressWrite = useCallback((sheetId: string): (() => void) => {
+    setProgressWrites((previous) => new Map(previous).set(sheetId, (previous.get(sheetId) ?? 0) + 1));
+    return () => {
+      if (!mountedRef.current) return;
+      setProgressWrites((previous) => {
+        const next = new Map(previous);
+        const remaining = (next.get(sheetId) ?? 1) - 1;
+        if (remaining === 0) next.delete(sheetId);
+        else next.set(sheetId, remaining);
+        return next;
+      });
+    };
+  }, []);
   const diagramRef = useRef<HTMLDivElement>(null);
   const fetchCountRef = useRef(0);
   const activeConfigRef = useRef(configId);
@@ -203,6 +225,7 @@ export function HallkeeperPage(): React.ReactElement {
     setChecks(checksRef.current);
     setProgressNotice(null);
 
+    const finishWrite = beginProgressWrite(configId);
     void (async () => {
       let result: ReplayResult;
       try {
@@ -241,8 +264,8 @@ export function HallkeeperPage(): React.ReactElement {
         // show a check that's neither on the server nor in IDB.
         rollback();
       }
-    })();
-  }, [configId, progressUnavailable]);
+    })().finally(finishWrite);
+  }, [configId, progressUnavailable, beginProgressWrite]);
 
   // Serialize drains for each sheet while allowing a newly opened sheet
   // to sync even when the previous sheet still has a request in flight.
@@ -274,6 +297,7 @@ export function HallkeeperPage(): React.ReactElement {
             return;
           }
 
+          if (mountedRef.current) setSyncingConfigs((previous) => new Set(previous).add(configId));
           const token = await getAuthToken();
           const headers: Record<string, string> = { "Content-Type": "application/json" };
           if (token !== null) headers["Authorization"] = `Bearer ${token}`;
@@ -319,6 +343,11 @@ export function HallkeeperPage(): React.ReactElement {
           // Don't surface — flush failures are silent ops noise.
         } finally {
           flushingConfigsRef.current.delete(configId);
+          if (mountedRef.current) setSyncingConfigs((previous) => {
+            const next = new Set(previous);
+            next.delete(configId);
+            return next;
+          });
         }
       })();
     };
@@ -448,7 +477,7 @@ export function HallkeeperPage(): React.ReactElement {
             <div className="hk-eyebrow">{data.venue.name} <span aria-hidden="true">/</span> Hallkeeper sheet</div>
             <h1>{data.config.name}</h1>
             <p className="hk-room-name">{data.space.name} <span>· {formatLayoutStyle(data.config.layoutStyle)}</span></p>
-            <p className="hk-room-dimensions">{formatDims(data.space)} · {data.totals.totalItems} items</p>
+            <p className="hk-room-dimensions">{formatDims(data.space)} · {data.totals.totalItems} manifest items</p>
           </div>
           <div className="hk-guest-count"><strong>{data.config.guestCount}</strong><span>guests</span></div>
           <div className="hk-time-pair">
@@ -462,6 +491,8 @@ export function HallkeeperPage(): React.ReactElement {
           <HallkeeperStatusBanner configId={data.config.id} />
           {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
           {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
+          {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
+          {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
           {progressUnavailable && <div className="hk-notice" role="alert">Shared checks could not be loaded. The layout is available; reload before changing checks. <button className="hk-text-button" onClick={loadData}>Reload checks</button></div>}
           {progressNotice !== null && <div className="hk-notice" role="alert">{progressNotice}</div>}
         </div>

@@ -664,7 +664,7 @@ function ChairRing({ item, pxPerM }: { item: RoundTableItem; pxPerM: number }): 
   const cx = metresToPixels(item.center.x, pxPerM);
   const cy = metresToPixels(item.center.y, pxPerM);
   const ringR = tableR + chairR + 2;
-  const n = Math.max(0, item.seats);
+  const n = Math.max(0, item.seats ?? 0);
   for (let i = 0; i < n; i += 1) {
     const theta = (Math.PI * 2 * i) / Math.max(1, n) - Math.PI / 2;
     const x = cx + Math.cos(theta) * ringR;
@@ -1831,7 +1831,9 @@ function ItemShape(props: ItemShapeProps): ReactElement {
         {selected ? <circle cx={cx} cy={cy} r={r + 3} fill="none" stroke={ACCENT_RED} strokeWidth={2.5} /> : null}
         <circle cx={cx} cy={cy} r={r} fill={SHAPE_FILL} stroke={SHAPE_OUTLINE} strokeWidth={1} />
         <text x={cx} y={cy + 4} textAnchor="middle" fontFamily={FONT_MONO} fontSize={11} fill={INK}>
-          {item.kind === "round-table" ? `${String(item.seats)}${catalogueCapacity ? " cap." : ""}` : "P"}
+          {item.kind === "round-table"
+            ? item.seats === undefined ? "Round" : `${String(item.seats)}${catalogueCapacity ? " cap." : ""}`
+            : "P"}
         </text>
       </g>
     );
@@ -1956,15 +1958,15 @@ function RightInspector(props: {
               {editable ? (
                 <EditableNumberRow
                   label="Seats"
-                  value={selected.seats}
+                  value={selected.seats ?? 0}
                   min={0}
                   max={20}
                   step={1}
                   onCommit={(v) => { onPatchItem({ ...selected, seats: Math.round(v) }); }}
                 />
-              ) : (
+              ) : selected.seats !== undefined ? (
                 <InspectorRow label={scene.placedChairCount === undefined ? "Seats" : "Table capacity"} value={String(selected.seats)} />
-              )}
+              ) : null}
               {editable ? (
                 <EditableTextRow
                   label="Linen"

@@ -1,6 +1,7 @@
 .onboarding-shell {
   --onboarding-ink: #17382d; --onboarding-paper: #fbf8ef; --onboarding-rule: #d5d8c5;
   display: grid; gap: 26px; max-width: 1480px; margin: 0 auto; color: var(--onboarding-ink);
+  background: #f4f1e9; padding: clamp(16px, 2vw, 28px);
   font-family: Inter, sans-serif; --vv-activity-accent: #a66743;
 }
 .onboarding-shell :is(h1, h2, h3, p) { margin: 0; }

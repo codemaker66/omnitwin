@@ -82,9 +82,7 @@ export function itemAreaM2(item: BlueprintItem): number {
 export function totalSeats(items: readonly BlueprintItem[]): number {
   let sum = 0;
   for (const item of items) {
-    if (item.kind === "round-table") {
-      sum += item.seats;
-    } else if ("seats" in item && typeof item.seats === "number") {
+    if ("seats" in item && typeof item.seats === "number") {
       sum += item.seats;
     }
   }
@@ -198,6 +196,7 @@ export function relativeTimeShort(tsMs: number | null, nowMs: number): string {
 export function inspectorTitle(item: BlueprintItem, catalogueCapacity = false): string {
   const capacityPrefix = catalogueCapacity ? "CAPACITY " : "";
   if (item.kind === "round-table") {
+    if (item.seats === undefined) return `ROUND TABLE · ${formatDimensions(item)}`;
     return `ROUND TABLE · ${capacityPrefix}${String(item.seats)}`;
   }
   if (item.kind === "poseur-table") {
@@ -283,6 +282,7 @@ function layerLabel(item: BlueprintItem, catalogueCapacity: boolean): string {
   const seatLabel = catalogueCapacity ? "capacity" : "seats";
   switch (item.kind) {
     case "round-table":
+      if (item.seats === undefined) return `Round table · ${formatDimensions(item)}`;
       return `Round table · ${seatLabel} ${String(item.seats)}`;
     case "poseur-table":
       return `Poseur table · ${formatDimensions(item)}`;

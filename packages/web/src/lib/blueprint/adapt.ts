@@ -154,7 +154,7 @@ export function editorObjectToBlueprintItem(
       shape: "round",
       center: { x: cx, y: cy },
       diameterM,
-      seats: asset.seatCount ?? 0,
+      seats: asset.seatCount ?? undefined,
       linen: linenLabelForObject(asset, o),
       centrepiece: undefined,
       rotationDeg,

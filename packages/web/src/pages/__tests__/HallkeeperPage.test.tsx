@@ -35,10 +35,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void } {
+function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value: T) => void; readonly reject: (reason: Error) => void } {
   let resolvePromise: (value: T) => void = () => { throw new Error("Promise not initialized"); };
-  const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
-  return { promise, resolve: resolvePromise };
+  let rejectPromise: (reason: Error) => void = () => { throw new Error("Promise not initialized"); };
+  const promise = new Promise<T>((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject; });
+  return { promise, resolve: resolvePromise, reject: rejectPromise };
 }
 
 function sheet(configId: string, name: string): HallkeeperSheetV2 {
@@ -77,6 +78,79 @@ function mount(): void {
 }
 
 describe("HallkeeperPage request and offline queue isolation", () => {
+  it("keeps activity through overlapping check writes until success and rejection settle", async () => {
+    const first = deferred<Response>();
+    const second = deferred<Response>();
+    let writes = 0;
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.endsWith("/v2")) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "First dinner")));
+      if (url.endsWith("/progress") && init?.method === "PATCH") {
+        writes += 1;
+        return writes === 1 ? first.promise : second.promise;
+      }
+      if (url.endsWith("/progress")) return Promise.resolve(jsonResponse({ checked: {} }));
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    mount();
+    const checkbox = await screen.findByRole("checkbox", { name: /Round table/u });
+    fireEvent.click(checkbox);
+    fireEvent.click(checkbox);
+    await waitFor(() => { expect(writes).toBe(2); });
+    expect(screen.getByText("Saving shared checks…").closest("[role='status']")?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    await act(async () => { first.resolve(jsonResponse({})); await first.promise; });
+    expect(screen.getByText("Saving shared checks…")).toBeTruthy();
+    await act(async () => { second.resolve(new Response(null, { status: 403 })); await second.promise; });
+    await waitFor(() => { expect(screen.queryByText("Saving shared checks…")).toBeNull(); });
+    expect(screen.getByText(/previous check has been restored/u)).toBeTruthy();
+  });
+
+  it("shows only the current sheet's writes and ignores the old sheet's completion", async () => {
+    const first = deferred<Response>();
+    const second = deferred<Response>();
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.endsWith(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "First dinner")));
+      if (url.endsWith(`/${CONFIG_B}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_B, "Second dinner")));
+      if (url.endsWith("/progress") && init?.method === "PATCH") return url.includes(CONFIG_A) ? first.promise : second.promise;
+      if (url.endsWith("/progress")) return Promise.resolve(jsonResponse({ checked: {} }));
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    mount();
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Round table/u }));
+    expect(screen.getByText("Saving shared checks…")).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
+    await screen.findByRole("heading", { level: 1, name: "Second dinner" });
+    const checkbox = await screen.findByRole("checkbox", { name: /Round table/u });
+    expect(screen.queryByText("Saving shared checks…")).toBeNull();
+    fireEvent.click(checkbox);
+    await act(async () => { first.resolve(jsonResponse({})); await first.promise; });
+    expect(screen.getByText("Saving shared checks…")).toBeTruthy();
+    await act(async () => { second.resolve(jsonResponse({})); await second.promise; });
+    await waitFor(() => { expect(screen.queryByText("Saving shared checks…")).toBeNull(); });
+  });
+
+  it("stops replay activity on network failure while retained offline edits stay still", async () => {
+    const replay = deferred<Response>();
+    const queued: readonly QueuedProgressOp[] = [
+      { configId: CONFIG_A, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
+    ];
+    vi.mocked(listPendingProgress).mockResolvedValue(queued);
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.endsWith("/v2")) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "First dinner")));
+      if (url.endsWith("/progress") && init?.method === "PATCH") return replay.promise;
+      if (url.endsWith("/progress")) return Promise.resolve(jsonResponse({ checked: {} }));
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    mount();
+    await screen.findByText("Syncing saved checks…");
+    await act(async () => { replay.reject(new Error("Offline")); await replay.promise.catch(() => undefined); });
+    await waitFor(() => { expect(screen.queryByText("Syncing saved checks…")).toBeNull(); });
+    expect(screen.getByRole("status", { name: "1 offline edit pending sync" })).toBeTruthy();
+    expect(document.querySelector("[data-activity-indicator]")).toBeNull();
+    expect(ackProgress).not.toHaveBeenCalled();
+  });
   it("keeps the current sheet when a previous sheet's JSON finishes after navigation", async () => {
     const delayedJson = deferred<{ data: HallkeeperSheetV2 }>();
     const firstResponse = jsonResponse(null);
@@ -206,6 +280,7 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     await screen.findByRole("heading", { level: 1, name: "Second dinner" });
     await screen.findByRole("status", { name: "1 offline edit pending sync" });
     await waitFor(() => { expect(replayStarted).toHaveBeenCalledWith(CONFIG_B); });
+    expect(screen.getByText("Syncing saved checks…")).toBeTruthy();
     expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY);
 
     await act(async () => {
@@ -214,6 +289,7 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     });
     await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_B, ROW_KEY); });
     await waitFor(() => { expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull(); });
+    expect(screen.queryByText("Syncing saved checks…")).toBeNull();
     expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY);
     expect(queued).toEqual([
       { configId: CONFIG_A, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
