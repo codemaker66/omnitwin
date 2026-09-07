@@ -388,6 +388,37 @@ describe("CameraRig capture failure recovery", () => {
     expect(harness.camera?.position.y).toBeGreaterThan(dimensions.height);
     expect(harness.controls?.enabled).toBe(true);
   });
+  it("recovers Flow selected during Walk after capture failure releases Interior", () => {
+    portrait();
+    const view = render(<CameraRig dimensions={dimensions} />);
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    harness.camera?.position.fromArray(GRAND_HALL_ARRIVAL.position);
+    // Flow can be a lens over Interior without creating an orbit camera goal.
+    act(() => { useCockpitStore.setState({ activeMode: "flow" }); });
+    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    expect(harness.camera?.position.y).toBe(1.6);
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    tick();
+    assertRoomFramed();
+    expect(harness.controls?.enabled).toBe(true);
+  });
+  it.each([false, true])("respects a new Flow choice after failure was requested (initial Flow: %s)", (initialFlow) => {
+    portrait();
+    const view = render(<CameraRig dimensions={dimensions} />);
+    if (harness.camera === null || harness.controls === null) throw new Error("Missing controls");
+    harness.camera.position.set(0, 6, 15);
+    harness.controls.target.set(0, 2, 0);
+    harness.controls.update();
+    const saved = harness.camera.position.clone();
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    harness.camera.position.fromArray(GRAND_HALL_ARRIVAL.position);
+    if (initialFlow) act(() => { useCockpitStore.setState({ activeMode: "flow" }); });
+    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    if (initialFlow) act(() => { useCockpitStore.setState({ activeMode: "design" }); });
+    act(() => { useCockpitStore.setState({ activeMode: "flow" }); });
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    expect(harness.camera.position.distanceTo(saved)).toBeLessThan(1e-8);
+  });
   it("recovers in orbit once, then preserves the user's camera and target across rerenders", () => {
     portrait();
     const view = render(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);

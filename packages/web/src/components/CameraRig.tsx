@@ -147,7 +147,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
   const previouslySuspended = useRef(suspended);
-  const pendingCaptureRecovery = useRef<string | null>(null);
+  const pendingCaptureRecovery = useRef<{ readonly key: string; flowOverWalk: boolean } | null>(null);
   const recoverCapture = useRef<() => void>(() => {});
   const [recoveryLimit, setRecoveryLimit] = useState<{ readonly key: string; readonly distance: number } | null>(null);
   const recoveryActive = captureUnavailableKey !== null && recoveryLimit?.key === captureUnavailableKey;
@@ -318,7 +318,14 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
 
   useEffect(() => {
     applyWalkMode(useCockpitStore.getState().walkMode);
-    const unsubscribe = useCockpitStore.subscribe((state) => { applyWalkMode(state.walkMode); });
+    const unsubscribe = useCockpitStore.subscribe((state, previous) => {
+      // A new lens choice after failure is fresh user intent, including leaving
+      // and re-entering Flow while a frozen preview delays the handoff.
+      if (state.activeMode !== previous.activeMode && pendingCaptureRecovery.current !== null) {
+        pendingCaptureRecovery.current.flowOverWalk = false;
+      }
+      applyWalkMode(state.walkMode);
+    });
     return () => {
       unsubscribe();
       pendingCaptureRecovery.current = null;
@@ -476,12 +483,13 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
   // later effect yields the camera. Keep this callback current without changing
   // applyWalkMode's identity (which would tear down its saved-pose ownership).
   recoverCapture.current = () => {
-    const key = pendingCaptureRecovery.current;
-    if (key === null || key !== captureUnavailableKey || suspendedRef.current) return;
+    const pending = pendingCaptureRecovery.current;
+    if (pending === null || pending.key !== captureUnavailableKey || suspendedRef.current) return;
     const bookmarks = useBookmarkStore.getState();
     if (humanPovActiveRef.current || bookmarks.activeReferenceId !== null
       || bookmarks.tour !== null || bookmarks.transition !== null || bookmarks.pendingNavigationId !== null
-      || useCockpitStore.getState().layerMode === "mesh" || useCockpitStore.getState().activeMode === "flow") {
+      || useCockpitStore.getState().layerMode === "mesh"
+      || (useCockpitStore.getState().activeMode === "flow" && !pending.flowOverWalk)) {
       pendingCaptureRecovery.current = null;
       return;
     }
@@ -506,11 +514,16 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     camera.updateProjectionMatrix();
     controls.update();
     controls.enableDamping = damping;
-    setRecoveryLimit({ key, distance: maxDistance });
+    setRecoveryLimit({ key: pending.key, distance: maxDistance });
     invalidate();
   };
   useLayoutEffect(() => {
-    pendingCaptureRecovery.current = captureUnavailableKey;
+    const cockpit = useCockpitStore.getState();
+    pendingCaptureRecovery.current = captureUnavailableKey === null ? null : {
+      key: captureUnavailableKey,
+      // Flow selected over Interior has no orbit goal to preserve.
+      flowOverWalk: cockpit.walkMode && cockpit.activeMode === "flow",
+    };
   }, [captureUnavailableKey]);
   // Also covers failure in orbit and failure received during a frozen preview;
   // preview restores its camera in layout effects before this handoff runs.
