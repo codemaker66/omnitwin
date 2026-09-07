@@ -16,19 +16,17 @@ import { api } from "./client.js";
 // verified.
 // ---------------------------------------------------------------------------
 
+// api/client.ts unwraps the server's { data } envelope before validation.
 const PostResponseSchema = z.object({
-  data: z.object({
-    accepted: z.number().int().nonnegative(),
-    duplicates: z.number().int().nonnegative(),
-  }),
+  accepted: z.number().int().nonnegative(),
+  duplicates: z.number().int().nonnegative(),
 });
 
 export async function postActionBatch(
   configId: string,
   batch: ActionLogBatch,
 ): Promise<{ readonly accepted: number; readonly duplicates: number }> {
-  const response = await api.post(`/configurations/${configId}/actions`, batch, false, PostResponseSchema);
-  return response.data;
+  return api.post(`/configurations/${configId}/actions`, batch, false, PostResponseSchema);
 }
 
 /** Read-side entries parse with the DEPTH-CAPPED JsonValue (reviewer HIGH):
@@ -55,10 +53,8 @@ export const AuditEntrySchema = z.object({
 export type AuditLogEntry = z.infer<typeof AuditEntrySchema>;
 
 const GetResponseSchema = z.object({
-  data: z.object({
-    entries: z.array(AuditEntrySchema),
-    nextAfter: z.number().int().nonnegative(),
-  }),
+  entries: z.array(AuditEntrySchema),
+  nextAfter: z.number().int().nonnegative(),
 });
 
 /** Page the audit trail by server ordinal. Paging convention: when a page
@@ -69,9 +65,8 @@ export async function getActionLog(
   after = 0,
   limit = 100,
 ): Promise<{ readonly entries: readonly AuditLogEntry[]; readonly nextAfter: number }> {
-  const response = await api.get(
+  return api.get(
     `/configurations/${configId}/actions?after=${String(after)}&limit=${String(limit)}`,
     GetResponseSchema,
   );
-  return response.data;
 }

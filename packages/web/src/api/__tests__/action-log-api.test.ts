@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { AuditEntrySchema } from "../action-log.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ActionLogBatch } from "@omnitwin/types";
+import { AuditEntrySchema, getActionLog, postActionBatch } from "../action-log.js";
+import { _resetTokenGetterForTests } from "../auth-bridge.js";
+import { useActionLogStore } from "../../stores/action-log-store.js";
+import { flushActionLog } from "../../stores/action-log-sync.js";
 
 // G4 Slice 3 (reviewer HIGH): the READ side must be as bounded as the
 // write side. JsonValueSchema recurses via z.lazy; an unbounded parse of a
@@ -46,5 +50,77 @@ describe("AuditEntrySchema read bounds", () => {
     const deepInverse = { ...(entry({ ok: true }) as object), inverse: nested(5_000) };
     expect(() => AuditEntrySchema.safeParse(deepInverse)).not.toThrow();
     expect(AuditEntrySchema.safeParse(deepInverse).success).toBe(false);
+  });
+});
+
+const configId = "00000000-0000-4000-8000-000000000001";
+const batch: ActionLogBatch = {
+  batchId: "0d4d0b6e-3a63-4a5d-9c1e-2f6b8a7c5d4e",
+  revision: 3,
+  actions: [{
+    id: "6f9619ff-8b86-4d01-b42d-00cf4fc964ff",
+    actor: { kind: "operator" },
+    intent: "object.place",
+    payload: { label: "Place" },
+    inverse: { removed: [] },
+    provenance: { surface: "planner" },
+    ts: "2026-07-18T10:00:00.000Z",
+  }],
+};
+const fetchMock = vi.fn<typeof fetch>();
+
+beforeEach(() => {
+  fetchMock.mockReset();
+  vi.stubGlobal("fetch", fetchMock);
+  _resetTokenGetterForTests();
+  useActionLogStore.getState().reset();
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  useActionLogStore.getState().reset();
+});
+
+// Exercise the real api/client.ts boundary. It unwraps the API's single data
+// envelope before applying these endpoint schemas; mocking api.post/get misses it.
+describe("action-log API response boundary", () => {
+  it("returns an accepted POST acknowledgement after the shared client unwraps its envelope", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: { accepted: 1, duplicates: 0 } })));
+    await expect(postActionBatch(configId, batch)).resolves.toEqual({ accepted: 1, duplicates: 0 });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/configurations/${configId}/actions`),
+      expect.objectContaining({ method: "POST", body: JSON.stringify(batch) }));
+  });
+
+  it("returns parsed GET entries and preserves the server paging cursor", async () => {
+    const data = { entries: [entry({ label: "Place" })], nextAfter: 7 };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data })));
+    await expect(getActionLog(configId, 2, 50)).resolves.toEqual(data);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/configurations/${configId}/actions?after=2&limit=50`),
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("retains the requested cursor when the server returns an empty audit page", async () => {
+    const data = { entries: [], nextAfter: 7 };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data })));
+    await expect(getActionLog(configId, 7)).resolves.toEqual(data);
+  });
+
+  it("acknowledges the actual action-log store after a successful server append", async () => {
+    useActionLogStore.getState().beginLog(configId);
+    for (const action of batch.actions) useActionLogStore.getState().append(action);
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ data: { accepted: 1, duplicates: 0 } })));
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await flushActionLog({ revision: batch.revision, post: postActionBatch });
+    expect(useActionLogStore.getState().sentCount).toBe(1);
+    expect(errorLog).not.toHaveBeenCalled();
+  });
+
+  it("still rejects invalid acknowledgement counts and malformed audit entries", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ data: { accepted: "1", duplicates: 0 } })));
+    await expect(postActionBatch(configId, batch)).rejects.toMatchObject({ code: "RESPONSE_VALIDATION_ERROR" });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ data: { entries: [{}], nextAfter: 1 } })));
+    await expect(getActionLog(configId)).rejects.toMatchObject({ code: "RESPONSE_VALIDATION_ERROR" });
   });
 });
