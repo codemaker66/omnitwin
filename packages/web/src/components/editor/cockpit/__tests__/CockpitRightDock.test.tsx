@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { CATALOGUE_ITEMS } from "../../../../lib/catalogue.js";
 import { createPlacedItem } from "../../../../lib/placement.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
@@ -69,20 +69,42 @@ describe("CockpitRightDock", () => {
   });
 
   it("routes one selected generated proxy to the inspection dock in Design", () => {
-    const placed = createPlacedItem(catalogueId("bar-counter"), 0, 0);
+    const placed = createPlacedItem(catalogueId("lectern"), 0, 0);
+    usePlacementStore.setState({ placedItems: [placed] });
+    useSelectionStore.getState().select(placed.id);
+    useCockpitStore.getState().setMode("design");
+
+    render(<CockpitRightDock />);
+    fireEvent.click(screen.getByText("Furniture model provenance"));
+
+    const generatedDock = screen.getByTestId("furniture-inspection-dock");
+    expect(within(generatedDock).getByRole("heading", { name: "Lectern" })).toBeTruthy();
+    expect(within(generatedDock).getByRole("button", { name: "Inspect generated parts" })).toBeTruthy();
+    expect(screen.queryByTestId("truth-rail-mock")).toBeNull();
+  });
+
+  it.each([
+    { slug: "bar-counter", name: "Bar" },
+    { slug: "platform", name: "Platform" },
+  ])("keeps the ordinary inspector for imported $slug without generated-part controls", ({ slug, name }) => {
+    const placed = createPlacedItem(catalogueId(slug), 0, 0);
     usePlacementStore.setState({ placedItems: [placed] });
     useSelectionStore.getState().select(placed.id);
     useCockpitStore.getState().setMode("design");
 
     render(<CockpitRightDock />);
 
-    expect(screen.getByTestId("furniture-inspection-dock")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Bar" })).toBeTruthy();
+    const inspector = screen.getByRole("complementary", { name: "Furniture inspector" });
+    expect(within(inspector).getByText(name)).toBeTruthy();
+    expect(within(inspector).getByRole("spinbutton", { name: "X (m)" })).toBeTruthy();
+    expect(screen.queryByTestId("furniture-inspection-dock")).toBeNull();
+    expect(screen.queryByText("Furniture model provenance")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Inspect generated parts" })).toBeNull();
     expect(screen.queryByTestId("truth-rail-mock")).toBeNull();
   });
 
   it("keeps registered lens panels authoritative over generated selection", () => {
-    const placed = createPlacedItem(catalogueId("bar-counter"), 0, 0);
+    const placed = createPlacedItem(catalogueId("lectern"), 0, 0);
     usePlacementStore.setState({ placedItems: [placed] });
     useSelectionStore.getState().select(placed.id);
     useCockpitStore.getState().setMode("flow");
@@ -94,13 +116,20 @@ describe("CockpitRightDock", () => {
   });
 
   it("closes presentation-only inspection when leaving Design", () => {
-    const placed = createPlacedItem(catalogueId("platform"), 0, 0);
+    const placed = createPlacedItem(catalogueId("platform-narrow"), 0, 0);
     usePlacementStore.setState({ placedItems: [placed] });
     useSelectionStore.getState().select(placed.id);
     useCockpitStore.getState().setMode("design");
     render(<CockpitRightDock />);
+    fireEvent.click(screen.getByText("Furniture model provenance"));
     fireEvent.click(screen.getByRole("button", { name: "Inspect generated parts" }));
-    useFurnitureInspectionStore.getState().setExplodeProgress(0.7);
+    act(() => {
+      useFurnitureInspectionStore.getState().setExplodeProgress(0.7);
+    });
+    expect(useFurnitureInspectionStore.getState()).toMatchObject({
+      inspectedPlacedItemId: placed.id,
+      explodeProgress: 0.7,
+    });
 
     act(() => {
       useCockpitStore.getState().setMode("flow");

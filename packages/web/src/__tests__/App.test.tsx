@@ -104,13 +104,24 @@ describe("App", () => {
 
   it("renders the generated-stand-in disclosure outside the Canvas for instanced furniture", () => {
     usePlacementStore.setState({
-      placedItems: [createPlacedItem(catalogueId("trestle-6ft"), 0, 0)],
+      placedItems: [createPlacedItem(catalogueId("trestle-4ft"), 0, 0)],
     });
 
     render(<App />);
 
     expect(screen.getByTestId("generated-furniture-proxy-badge").textContent)
       .toBe("AI-generated furniture proxy · visual stand-in · not measured");
+  });
+
+  it("does not describe an imported furniture model as a generated component proxy", () => {
+    usePlacementStore.setState({
+      placedItems: [createPlacedItem(catalogueId("trestle-6ft"), 0, 0)],
+    });
+
+    render(<App />);
+
+    expect(screen.getByTestId("r3f-canvas")).toBeDefined();
+    expect(screen.queryByTestId("generated-furniture-proxy-badge")).toBeNull();
   });
 
   it("does not install a performance override that reduces planner resolution", () => {
