@@ -35,11 +35,16 @@ function seatPitch(chair: ChairFootprint): number {
   return Math.max(SEAT_PITCH_M, chair.width + CHAIR_GAP_M);
 }
 
-/** Seats that physically fit around a round table without overlap: the chair
- *  ring circumference divided by the seat pitch. */
+/** Conservative capacity from centre spacing and the complete chair corners. */
 function roundSeatCapacity(table: CatalogueItem, chair: ChairFootprint, scale: number): number {
-  const ringRadiusM = (table.width * scale) / 2 + chair.depth / 2 + CHAIR_GAP_M;
-  return Math.max(0, Math.floor((2 * Math.PI * ringRadiusM) / seatPitch(chair)));
+  const innerRadiusM = (table.width * scale) / 2 + CHAIR_GAP_M;
+  const ringRadiusM = innerRadiusM + chair.depth / 2;
+  const pitchCapacity = Math.floor((2 * Math.PI * ringRadiusM) / seatPitch(chair));
+  // A chair's nearest corners subtend the largest angle. Keeping its rectangle
+  // inside one angular sector prevents overlap, including for deep/scaled chairs
+  // whose centre-ring arc alone would allow their inner corners to intersect.
+  const cornerCapacity = Math.floor(Math.PI / Math.atan2(chair.width / 2, innerRadiusM));
+  return Math.max(0, Math.min(pitchCapacity, cornerCapacity));
 }
 
 /** Seats that fit around a rectangular table: both long sides plus both heads,
