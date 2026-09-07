@@ -10,10 +10,10 @@ import { beginPlannerOrbitAction, plannerOrbitOwnsCamera } from "../../lib/plann
 
 // ---------------------------------------------------------------------------
 // CockpitPlanningCamera — eases the planner camera to a gentle, elevated
-// planning pose the moment the Flow lens opens, so the floor-anchored guest-
-// flow ribbons present themselves immediately (flat floor overlays read as
-// edge-on slivers from an eye-level angle). It lifts in place — the viewer's
-// azimuth is preserved — then hands control straight back. Honours
+// planning pose when the Flow lens opens in orbit navigation, so floor-anchored
+// ribbons are readable. An active Interior view keeps its camera and capture;
+// changing a lens must not move the viewer out of the room. In orbit, the
+// viewer's azimuth is preserved, then control returns immediately. Honours
 // prefers-reduced-motion by snapping. Returns null; it only drives the camera.
 // ---------------------------------------------------------------------------
 
@@ -78,12 +78,13 @@ export function CockpitPlanningCamera({
   useEffect(() => {
     const previousMode = prevModeRef.current;
     prevModeRef.current = activeMode;
-    if (activeMode !== FLOW_LENS || previousMode === FLOW_LENS) return;
-    // The current lens survives 2D/3D remounts. An already-active Interior
-    // owner wins on mount; only a new Flow entry asks it to hand back.
-    if (previousMode === null && useCockpitStore.getState().walkMode) return;
-    if (!beginPlannerOrbitAction()) { goalRef.current = null; return; }
-    if (!isOrbitLikeControls(controls)) return;
+    if (activeMode !== FLOW_LENS) { goalRef.current = null; return; }
+    if (previousMode === FLOW_LENS) return;
+    goalRef.current = null;
+    // Interior remains the camera owner on both a fresh lens choice and a
+    // Canvas remount. Only an explicit navigation action should leave it.
+    if (useCockpitStore.getState().walkMode || !isOrbitLikeControls(controls)) return;
+    if (!beginPlannerOrbitAction()) return;
     const aspect = size.width / Math.max(size.height, 1);
     goalRef.current = planningCameraGoal(
       dimensions,
@@ -96,7 +97,11 @@ export function CockpitPlanningCamera({
   }, [activeMode, dimensions, camera, controls, size, invalidate]);
 
   useFrame(() => {
-    if (!plannerOrbitOwnsCamera()) { goalRef.current = null; return; }
+    // A lens change can reach the store before the effect above commits.
+    if (useCockpitStore.getState().activeMode !== FLOW_LENS || !plannerOrbitOwnsCamera()) {
+      goalRef.current = null;
+      return;
+    }
     const goal = goalRef.current;
     if (goal === null) return;
     if (!isOrbitLikeControls(controls)) {

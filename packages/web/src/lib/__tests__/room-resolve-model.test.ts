@@ -4,9 +4,35 @@ import {
   ROOM_RESOLVE_CAPTION_EXIT_MS,
   ROOM_RESOLVE_REDUCED_MOTION_MS,
   inkTargetOpacity,
+  captureAvailability,
   roomResolveCaption,
   roomResolvePhase,
 } from "../room-resolve-model.js";
+
+describe("captureAvailability", () => {
+  const urls = ["room-a", "room-b", "sky"];
+  const classify = (loaded: string[], failed: string[], environmentUrls = ["sky"]) => captureAvailability({
+    urls, environmentUrls, loadedUrls: new Set(loaded), failedUrls: new Set(failed),
+  });
+  it.each([false, true])("does not mistake an environment loaded=%s for a room", (loaded) => {
+    expect(classify(loaded ? ["sky"] : [], ["room-a", "room-b"])).toBe("unavailable");
+  });
+  it("keeps a partly successful room but reports the missing content", () => {
+    expect(classify(["room-a", "sky"], ["room-b"])).toBe("degraded");
+  });
+  it("keeps pending geometry distinct from settled failure", () => {
+    expect(classify(["sky"], ["room-a"])).toBe("pending");
+  });
+  it("does not downgrade complete room geometry for a failed environment", () => {
+    expect(classify(["room-a", "room-b"], ["sky"])).toBe("available");
+  });
+  it("counts unclassified package sources and ignores unrelated outcomes", () => {
+    expect(classify(["sky", "old-room"], ["room-a", "room-b", "old-room"], [])).toBe("degraded");
+  });
+  it("settles environment-only manifests as unavailable", () => {
+    expect(captureAvailability({ urls: ["sky"], environmentUrls: ["sky"], loadedUrls: new Set(["sky"]), failedUrls: new Set() })).toBe("unavailable");
+  });
+});
 
 // CARD A2 (G1b): "the room resolves" — blueprint ink first, splat develops
 // over it coarse-to-fine, quiet caption, no spinner anywhere. The phase
@@ -25,6 +51,16 @@ const FORBIDDEN_PHRASES = [
 ];
 
 describe("roomResolvePhase", () => {
+  it.each(["loaded", "loading"] as const)("reports terminal room-content failure with registry %s and environment pending", (splatStatus) => {
+    expect(roomResolvePhase({ splatStatus, hasAsset: false, totalChunks: 12,
+      loadedChunks: 0, failedChunks: 11, captureAvailability: "unavailable" })).toBe("unavailable");
+  });
+  it("settles partial content without continuing loading motion or implying completeness", () => {
+    expect(roomResolvePhase({ splatStatus: "loaded", hasAsset: true, totalChunks: 12,
+      loadedChunks: 11, failedChunks: 1, captureAvailability: "degraded" })).toBe("degraded");
+    expect(roomResolveCaption("degraded", "Grand Hall", 11, 12)).toContain("Part of the room capture could not load");
+    expect(roomResolveCaption("unavailable", "Grand Hall", 1, 12)).toContain("Model view");
+  });
   it("is 'ink' while the runtime package registry is still resolving", () => {
     expect(roomResolvePhase({
       splatStatus: "loading", hasAsset: false, totalChunks: 0, loadedChunks: 0,

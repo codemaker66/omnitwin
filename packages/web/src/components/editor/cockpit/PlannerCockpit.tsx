@@ -51,7 +51,8 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
         aria-label="Planner scene"
       >
         <Editor3D compactDesktop={!mobile} />
-        {mobile || timelinePreviewActive ? null : <RoomResolveCaption />}
+        {timelinePreviewActive || (mobile && resolvePhase !== "degraded" && resolvePhase !== "unavailable")
+          ? null : <RoomResolveCaption />}
         {timelinePreviewActive && (
           <p
             className="layout-timeline-preview-caption"

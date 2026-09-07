@@ -151,6 +151,27 @@ describe("runtimeRoomTargetFromSearchParams", () => {
 });
 
 describe("decideRuntimeAsset", () => {
+  it("carries only served staged environment sources and keeps registered env filenames ordinary", () => {
+    const staged = decideRuntimeAsset(null, null, { room: "grand-hall", allowStagedCapture: true });
+    expect(staged.source).toBe("staged");
+    expect(staged.environmentUrls).toEqual(["/splats/trades-hall/grand-hall/env.sog"]);
+    expect(staged.splatUrls).toHaveLength(12);
+    expect(staged.splatUrls.filter((url) => !staged.environmentUrls.includes(url))).toHaveLength(11);
+
+    const url = "https://assets.example/grand-hall/env.sog";
+    const registered = decideRuntimeAsset(null, makePackage({ assetUrl: url, assetFileName: "env.sog", assetFileExt: ".sog" }), {
+      room: "grand-hall", allowStagedCapture: true,
+    });
+    expect(registered.source).toBe("package");
+    expect(registered.splatUrls).toEqual([url]);
+    expect(registered.environmentUrls).toEqual([]);
+  });
+
+  it("has no environment sources when capture is unavailable or staging is not enabled", () => {
+    expect(decideRuntimeAsset(null, null, { room: "grand-hall" }).environmentUrls).toEqual([]);
+    expect(decideRuntimeAsset(null, makePackage({ assetRuntimeStatus: "rejected" })).environmentUrls).toEqual([]);
+  });
+
   it("ignores manual URLs and uses registered packages only", () => {
     const decision = decideRuntimeAsset("https://manual.example/scene.ply", makePackage());
     expect(decision.source).toBe("package");

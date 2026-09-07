@@ -18,6 +18,18 @@ const { PlannerCockpit } = await import("../PlannerCockpit.js");
 afterEach(() => { cleanup(); useCockpitStore.getState().reset(); });
 
 describe("PlannerCockpit", () => {
+  it.each([true, false])("keeps settled capture failure visible without working motion on mobile=%s", (mobile) => {
+    useCockpitStore.getState().setRoomResolve({ phase: "unavailable", loadedChunks: 1, totalChunks: 12 });
+    const { rerender } = render(<PlannerCockpit mobile={mobile} />);
+    const caption = screen.getByTestId("room-resolve-caption");
+    expect(caption.getAttribute("data-visible")).toBe("true");
+    expect(caption.textContent).toContain("Room capture could not load");
+    expect(caption.querySelector("svg")).toBeNull();
+    useCockpitStore.getState().setRoomResolve({ phase: "degraded", loadedChunks: 11, totalChunks: 12 });
+    rerender(<PlannerCockpit mobile={mobile} />);
+    expect(screen.getByTestId("room-resolve-caption").textContent).toContain("Part of the room capture");
+    expect(screen.getByTestId("room-resolve-caption").querySelector("svg")).toBeNull();
+  });
   it("keeps booking controls reachable independently of the layout timeline's expansion", () => {
     const { container, rerender } = render(<PlannerCockpit hasLinkedEvent />);
     const disclosure = screen.getByText("Booking time").closest("details");
