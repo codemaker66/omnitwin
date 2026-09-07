@@ -196,7 +196,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
           {canPlan && <Link className={routeLinkClass("/plan")} to="/plan"
             aria-current={isRouteActive("/plan") ? "page" : undefined}>Plan</Link>}
           {canSchedule && <Link className={routeLinkClass("/diary")} to="/diary"
-            aria-current={isRouteActive("/diary") ? "page" : undefined}>Schedule</Link>}
+            aria-current={isRouteActive("/diary") ? "page" : undefined}>Diary</Link>}
           {user?.role === "admin" && <button type="button"
             className={`dashboard-layout-nav-item${activeView === "inventory" ? " dashboard-layout-nav-item--active" : ""}`}
             aria-current={activeView === "inventory" ? "page" : undefined}
@@ -241,7 +241,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
           </div>
         </div>
       </header>
-      <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}`}>
+      <div className={`dashboard-layout-main${activeView === "inventory" ? " dashboard-layout-main--inventory" : ""}${isRouteActive("/diary") ? " dashboard-layout-main--diary" : ""}`}>
         <main className="dashboard-layout-content" id="dashboard-main" tabIndex={-1} aria-label={mainLabel ?? "Dashboard workspace"}>
           {children}
         </main>

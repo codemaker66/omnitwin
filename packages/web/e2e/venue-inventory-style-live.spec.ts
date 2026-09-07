@@ -23,7 +23,7 @@ async function open(page: Page): Promise<void> {
   await expect(page.getByRole("region", { name: "Correct stock", exact: true })).toBeVisible();
 }
 
-test("More and Schedule preserve a dirty correction until the chosen route is accepted", async ({ page }) => {
+test("More and Diary preserve a dirty correction until the chosen route is accepted", async ({ page }) => {
   await open(page);
   const editor = page.getByRole("region", { name: "Correct stock", exact: true });
   await editor.getByLabel("Owned", { exact: true }).fill("201");
@@ -41,7 +41,7 @@ test("More and Schedule preserve a dirty correction until the chosen route is ac
   await expect(page).toHaveURL(/#inventory-decisions$/u);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(editor.getByLabel("Owned", { exact: true })).toHaveValue("201");
-  await page.getByRole("link", { name: "Schedule", exact: true }).click();
+  await page.getByRole("link", { name: "Diary", exact: true }).click();
   await expect(leave).toBeVisible();
   await leave.getByRole("button", { name: "Discard and leave", exact: true }).click();
   await expect(page).toHaveURL(/\/diary$/u);

@@ -76,7 +76,7 @@ describe("DashboardLayout navigation", () => {
     renderShell({ onViewChange });
     expect(await screen.findByText("Trades Hall")).toBeDefined();
     expect(screen.getByRole("link", { name: "Plan" }).getAttribute("href")).toBe("/plan");
-    expect(screen.getByRole("link", { name: "Schedule" }).getAttribute("href")).toBe("/diary");
+    expect(screen.getByRole("link", { name: "Diary" }).getAttribute("href")).toBe("/diary");
     expect(screen.getByRole("button", { name: "Inventory" }).getAttribute("aria-current")).toBe("page");
     expect(screen.queryByRole("button", { name: "Enquiries" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Messages" })).toBeNull();
@@ -91,7 +91,7 @@ describe("DashboardLayout navigation", () => {
   it("routes a secondary destination when the shell is used outside DashboardPage", async () => {
     renderShell({ path: "/diary" });
     await screen.findByText("Trades Hall");
-    expect(screen.getByRole("link", { name: "Schedule" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Diary" }).getAttribute("aria-current")).toBe("page");
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     fireEvent.click(screen.getByRole("button", { name: "Enquiries" }));
     expect(screen.getByLabelText("Current route").textContent).toBe("/dashboard?view=enquiries");
