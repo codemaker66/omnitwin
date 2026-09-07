@@ -30,8 +30,6 @@ const SAMPLE_MS = Number.parseInt(process.env.FRAME_BUDGET_SAMPLE_MS ?? "1200", 
 const TARGET_FRAME_MS = 16.7;
 const PASS_P95_MS = Number.parseFloat(process.env.FRAME_BUDGET_PASS_P95_MS ?? "18.5");
 const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_SUSTAINED ?? "1", 10);
-const ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-dashboard-drawer-frame-visual-2026-06-19";
-const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
 
 type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
 type DashboardViewportName = "desktop" | "mobile";
@@ -541,10 +539,11 @@ async function recordFrameAndVisualState(
   viewport: DashboardViewportName,
   interaction: () => Promise<void>,
 ): Promise<void> {
-  const screenshotPath = `${ARTIFACT_DIR}/${viewport}-${name}.png`;
+  const screenshotPath = test.info().outputPath(`${viewport}-${name}.png`);
   await page.waitForTimeout(250);
   await assertNoRuntimeBreakage(page, problems);
   const screenshotBytes = await takeSmokeScreenshot(page, screenshotPath);
+  await test.info().attach(`${viewport}-${name}`, { path: screenshotPath, contentType: "image/png" });
   await expect(page).toHaveScreenshot(`${viewport}-${name}.png`, {
     animations: "disabled",
     fullPage: false,
@@ -618,8 +617,10 @@ async function recordAccessibilityState(
 test.describe.configure({ mode: "serial" });
 
 test.afterAll(async () => {
-  await mkdir(dirname(REPORT_PATH), { recursive: true });
-  await writeFile(REPORT_PATH, `${JSON.stringify({
+  const testInfo = test.info();
+  const reportPath = testInfo.outputPath("dashboard-state-visual-performance-report.json");
+  await mkdir(dirname(reportPath), { recursive: true });
+  await writeFile(reportPath, `${JSON.stringify({
     generatedAt: new Date().toISOString(),
     targetFrameMs: TARGET_FRAME_MS,
     passP95Ms: PASS_P95_MS,
@@ -628,6 +629,7 @@ test.afterAll(async () => {
     results,
     accessibilityResults,
   }, null, 2)}\n`, "utf8");
+  await testInfo.attach("dashboard-state-visual-performance-report", { path: reportPath, contentType: "application/json" });
 });
 
 test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
