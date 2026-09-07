@@ -144,7 +144,7 @@ export function DayBoardPage(): ReactElement {
         ) : null}
 
         {status !== "error" && board !== null && busyLanes === 0 ? (
-          <p className="dayboard-notice">{selectedDate === null ? "Nothing in the diary today. A quiet house." : "Nothing in the diary on this day."}</p>
+          <p className="dayboard-notice">{selectedDate === null ? "Nothing scheduled today." : "Nothing scheduled on this day."}</p>
         ) : null}
 
         <div className="dayboard-lanes">

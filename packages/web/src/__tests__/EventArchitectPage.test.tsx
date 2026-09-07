@@ -235,8 +235,8 @@ describe("EventArchitectPage", () => {
     // happened to resolve inside findByRole's first check.
     expect(await screen.findByLabelText("Venue")).toHaveProperty("disabled", true);
     expect(screen.getByLabelText("Room")).toHaveProperty("value", SPACE_ID);
-    expect(screen.getByRole("group", { name: "Accessibility requirements to carry into human review" })).toBeTruthy();
-    expect(screen.getByText(/does not validate an accessibility route/i)).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Accessibility requirements" })).toBeTruthy();
+    expect(screen.getByText(/accessibility routes are not validated/i)).toBeTruthy();
     expect(mockGetVenue).toHaveBeenCalledWith(VENUE_ID);
     expect(mockListVenues).not.toHaveBeenCalled();
   });
@@ -271,7 +271,7 @@ describe("EventArchitectPage", () => {
     });
     expect(createInput.idempotencyKey).toMatch(/^event-architect:create:/u);
 
-    expect(await screen.findByRole("heading", { name: "Three frozen candidate snapshots" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Three layout options" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Comfort first" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Balanced" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Capacity first" })).toBeTruthy();
@@ -343,10 +343,10 @@ describe("EventArchitectPage", () => {
 
     const plannerLink = await screen.findByRole("link", { name: /Open in planner/i });
     expect(plannerLink.getAttribute("href")).toBe(selection.plannerPath);
-    expect(screen.getByText("Exact snapshot saved to a planner configuration.")).toBeTruthy();
+    expect(screen.getByText("Layout saved as a draft.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Balanced selected" })).toHaveProperty("disabled", true);
     expect(await screen.findByRole("heading", { name: "Ops review evidence" })).toBeTruthy();
-    expect(screen.getByText("Planner access is read-only.", { exact: false })).toBeTruthy();
+    expect(screen.getByText("Only venue staff, hallkeepers or administrators can record a review.")).toBeTruthy();
     expect(mockGetEventArchitectOpsReview).toHaveBeenCalledWith(
       candidate.candidateId,
       expect.any(AbortSignal),
@@ -370,7 +370,7 @@ describe("EventArchitectPage", () => {
     mockGetEventArchitectRun.mockResolvedValue(fixture);
     renderPage(`/event-architect/runs/${fixture.run.runId}`);
 
-    expect(await screen.findByRole("heading", { name: "Three frozen candidate snapshots" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Three layout options" })).toBeTruthy();
     expect(mockGetEventArchitectRun).toHaveBeenCalledWith(
       fixture.run.runId,
       expect.any(AbortSignal),
@@ -387,7 +387,7 @@ describe("EventArchitectPage", () => {
     renderPage();
     await completeRequiredBrief();
     fireEvent.click(screen.getByRole("button", { name: "Generate three options" }));
-    await screen.findByRole("heading", { name: "Three frozen candidate snapshots" });
+    await screen.findByRole("heading", { name: "Three layout options" });
 
     const text = document.body.textContent ?? "";
     expect(text).not.toContain(planningPrompt);

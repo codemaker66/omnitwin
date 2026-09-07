@@ -126,12 +126,11 @@ export function ShareLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="Share lens"
       title="Share this plan"
       icon={<Share2 size={18} />}
       source="Proposal"
       testId="share-lens-panel"
-      footer="Creates a real, sendable client proposal from this layout. Figures are planning estimates, reviewed by a human — nothing here is a safety, occupancy, or compliance determination."
+      footer="Planning estimates require human review; no safety, occupancy, or compliance approval."
     >
       <LensPanelSection label="Event details">
         <label className="lens-panel__field">
@@ -160,7 +159,7 @@ export function ShareLensPanel(): ReactElement {
             className="lens-panel__input lens-panel__input--area"
             value={clientMessage}
             onChange={onMessage}
-            placeholder="A short personal note shown at the top of the proposal…"
+            placeholder="Add a message…"
             maxLength={4000}
             rows={3}
             data-testid="share-message"
@@ -216,7 +215,6 @@ export function ShareLensPanel(): ReactElement {
                 Open
               </a>
             </div>
-            <p className="lens-panel__note">The client can open this link and respond. Manage it under Proposals in your dashboard.</p>
           </div>
         )}
       </LensPanelSection>

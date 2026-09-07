@@ -20,15 +20,15 @@ export function InventoryAvailability({ items, sources, timeZone, onRemedy }: {
     <header><h4>{item.name}</h4>{onRemedy !== undefined ? <button type="button" className="inventory-button inventory-button--quiet"
       aria-label={`Prepare remedy · ${item.name}`} onClick={() => { onRemedy(item); }}>Prepare remedy</button> : null}</header>
     {item.availability === null ? <p className="inventory-muted">{item.unavailableReason === "historical_unsupported"
-      ? "Historical stock cannot be assessed in this window." : "Record stock before availability can be assessed."}</p> : <>
+      ? "Historical stock unavailable" : "Stock not recorded"}</p> : <>
       <div className="inventory-demand-numbers"><p><strong className={item.availability.minimumRemainingQuantity < 0 ? "inventory-shortage" : undefined}>
         {item.availability.minimumRemainingQuantity.toLocaleString("en-GB")}</strong><span>minimum remaining</span></p>
         <p><strong>{item.availability.maximumShortageQuantity.toLocaleString("en-GB")}</strong><span>maximum shortage</span></p></div>
-      <details className="inventory-evidence"><summary>Demand intervals and affected events</summary>
+      <details className="inventory-evidence"><summary>Demand by event and time</summary>
         {item.availability.segments.map((segment) => <div className="inventory-demand-segment" key={`${segment.startsAt}:${segment.endsAt}`}>
           <InventoryInterval window={segment} timeZone={timeZone} />
           <p>{segment.usableQuantity.toLocaleString("en-GB")} usable · {segment.reservedQuantity.toLocaleString("en-GB")} reserved · {segment.remainingQuantity.toLocaleString("en-GB")} remaining</p>
-          <p className="inventory-muted">{segment.eventIds.length === 0 ? "No approved event reservations in this interval." : eventNames(segment.eventIds, sources)}</p>
+          <p className="inventory-muted">{segment.eventIds.length === 0 ? "No approved reservations." : eventNames(segment.eventIds, sources)}</p>
         </div>)}
       </details>
     </>}
@@ -54,8 +54,8 @@ export function InventoryDemandEvidence({ assessment, disabled, onSource, onReme
       {assessment.issues.length > 0 ? <ul>{assessment.issues.map((issue, index) => <li key={`${issue.code}:${String(index)}`}>{issue.message}</li>)}</ul> : null}
       <p className="inventory-small">Assessment: <InventoryInterval window={assessment.window} timeZone={assessment.timeZone} /> · {assessment.timeZone}</p>
     </section>
-    <div className="inventory-section-heading"><h3>Reservations and source layouts</h3><p>Review the recorded equipment allocation for each event and room.</p></div>
-    {assessment.sources.length === 0 ? <p className="inventory-muted">No event reservation sources were found in this window.</p> :
+    <div className="inventory-section-heading"><h3>Reservations and source layouts</h3></div>
+    {assessment.sources.length === 0 ? <p className="inventory-muted">No reservation sources in this period.</p> :
       <div className="inventory-source-list">{assessment.sources.map((source) => <article className="inventory-source" key={`${source.eventId}:${source.spaceId}`}>
         <div><h4>{source.eventName}</h4><p>{source.spaceName}</p><p className="inventory-muted inventory-small">{sourceLabels[source.state]}</p>
           {source.occupiedWindow !== null ? <p className="inventory-small"><InventoryInterval window={source.occupiedWindow} timeZone={assessment.timeZone} /></p> : null}</div>
@@ -63,7 +63,7 @@ export function InventoryDemandEvidence({ assessment, disabled, onSource, onReme
           aria-label={`Review reservation · ${source.eventName} · ${source.spaceName}`} onClick={() => { onSource(source); }}>Review reservation</button>
       </article>)}</div>}
     <div className="inventory-section-heading"><h3>Stock against approved reservations</h3>
-      <p>Unapproved layouts are shown above. Remaining quantities apply only to recorded stock and approved reservations; coverage gaps can hide further demand.</p></div>
+      <p>Recorded stock and approved reservations only. Coverage gaps may hide demand.</p></div>
     <InventoryAvailability items={assessment.items} sources={assessment.sources} timeZone={assessment.timeZone}
       onRemedy={disabled || assessment.coverage === "historical_unsupported" ? undefined : onRemedy} />
     <div className="inventory-section-heading"><h3>Internal requests</h3><p>Preparing or approving a request does not add supply or resolve a shortage.</p></div>

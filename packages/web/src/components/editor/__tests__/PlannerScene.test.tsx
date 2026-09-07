@@ -137,7 +137,7 @@ describe("PlannerScene", () => {
   it.each(["button", "escape"])("lets people enter immediately via %s while capture loading continues", (method) => {
     chooseGrandHall(); readyGrandHall();
     render(<PlannerScene />);
-    if (method === "button") fireEvent.click(screen.getByRole("button", { name: /Open planner now/ }));
+    if (method === "button") fireEvent.click(screen.getByRole("button", { name: /Open planner/ }));
     else fireEvent(screen.getByRole("dialog"), new Event("cancel", { bubbles: true, cancelable: true }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(sceneComponent("CockpitSplatLayer")).toBeDefined();
@@ -151,7 +151,7 @@ describe("PlannerScene", () => {
     window.addEventListener("keydown", windowKey);
     window.addEventListener("keyup", windowKey);
     try {
-      const button = screen.getByRole("button", { name: /Open planner now/ });
+      const button = screen.getByRole("button", { name: /Open planner/ });
       for (const key of ["Delete", "Backspace", "r", "f", "Escape", "z"]) {
         fireEvent.keyDown(button, { key, ctrlKey: key === "z" });
         fireEvent.keyUp(button, { key });

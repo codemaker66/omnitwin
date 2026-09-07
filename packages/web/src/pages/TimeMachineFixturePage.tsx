@@ -141,7 +141,6 @@ export function TimeMachineFixturePage(): ReactElement {
         <section className="tm-fixture__col" data-testid="fixture-anchored">
           <h2 className="tm-fixture__col-head">Anchored — given the live room</h2>
           <LensPanel
-            eyebrow="Evidence lens"
             title="Layout evidence"
             icon={<History size={18} />}
             source="6 changes"
@@ -160,7 +159,6 @@ export function TimeMachineFixturePage(): ReactElement {
         <section className="tm-fixture__col" data-testid="fixture-unanchored">
           <h2 className="tm-fixture__col-head">Unanchored — the defect this fixes</h2>
           <LensPanel
-            eyebrow="Evidence lens"
             title="Layout evidence"
             icon={<History size={18} />}
             source="6 changes"

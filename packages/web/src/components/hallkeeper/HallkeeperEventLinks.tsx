@@ -9,10 +9,10 @@ export function HallkeeperEventLinks({ board }: { readonly board: EventDayOpsBoa
   return (
     <section className="hallkeeper-event-links" aria-label="Hallkeeper working documents">
       <div>
-        <h2>Your working documents</h2>
+        <h2>Working documents</h2>
         <p>{pack === null
-          ? "An operations pack has not been linked to this event. Ask the event office to prepare the approved handoff."
-          : `Handoff version ${String(pack.version)} · ${pack.sourceLabel}. The setup sheet opens the current sheet for that layout; the handoff retains its compiled version.`}</p>
+          ? "Ask the event office to prepare a handoff."
+          : `Handoff v${String(pack.version)} · ${pack.sourceLabel}. Setup sheet is current; handoff is a saved version.`}</p>
       </div>
       <nav aria-label="Open hallkeeper documents">
         <Link to="/hallkeeper/today">Day Board</Link>

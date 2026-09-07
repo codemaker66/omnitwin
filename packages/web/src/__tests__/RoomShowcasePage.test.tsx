@@ -93,8 +93,7 @@ describe("RoomShowcasePage", () => {
       expect(getPublicRoomRuntimeVisualMock).toHaveBeenCalledWith("trades-hall", "lady-convenors-room");
     });
     expect(screen.getAllByText(/Visual preview/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Human review is required/i)).toBeTruthy();
-    expect(screen.getByText(/Final details are confirmed by the venue team/i)).toBeTruthy();
+    expect(screen.getByText(/Venue review required before use/i)).toBeTruthy();
     expect(screen.queryByTestId("public-runtime-canvas")).toBeNull();
   });
 
@@ -110,7 +109,7 @@ describe("RoomShowcasePage", () => {
     mount("/venues/trades-hall/rooms/grand-hall");
 
     expect(await screen.findByRole("heading", { level: 1, name: "Grand Hall" })).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 2, name: /Eight room experiences/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "More rooms" })).toBeTruthy();
 
     for (const room of publicRoomSelectionCards) {
       expect(document.body.textContent).toContain(room.name);

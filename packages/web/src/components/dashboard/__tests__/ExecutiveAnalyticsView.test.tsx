@@ -70,7 +70,7 @@ describe("ExecutiveAnalyticsView", () => {
 
     expect(screen.getByText("Loading commercial planning data")).toBeDefined();
     await waitFor(() => {
-      expect(screen.getByText("Commercial planning dashboard")).toBeDefined();
+      expect(screen.getByText("Executive analytics")).toBeDefined();
     });
 
     expect(screen.getByText("GBP 12,500.00")).toBeDefined();
@@ -86,7 +86,7 @@ describe("ExecutiveAnalyticsView", () => {
     render(<ExecutiveAnalyticsView />);
 
     await waitFor(() => {
-      expect(screen.getByText("Commercial planning dashboard")).toBeDefined();
+      expect(screen.getByText("Executive analytics")).toBeDefined();
     });
 
     const bodyText = document.body.textContent ?? "";
@@ -108,7 +108,7 @@ describe("ExecutiveAnalyticsView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry analytics" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Commercial planning dashboard")).toBeDefined();
+      expect(screen.getByText("Executive analytics")).toBeDefined();
     });
     expect(getVenueDashboardAnalyticsMock).toHaveBeenCalledTimes(2);
   });

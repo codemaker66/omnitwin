@@ -176,8 +176,7 @@ function RecordedReview(props: { readonly review: ReconstructionReleaseReview })
     <section className="runtime-foundry__recorded-review" aria-labelledby="foundry-recorded-review-title">
       <header className="runtime-foundry__recorded-review-heading">
         <div>
-          <p className="runtime-foundry__micro-label">Append-only decision record</p>
-          <h4 id="foundry-recorded-review-title">Current human review binding</h4>
+          <h4 id="foundry-recorded-review-title">Current review</h4>
         </div>
         <span className="runtime-foundry__chip" data-tone={review.decision}>
           {review.decision} · {humanize(review.targetExposure)}
@@ -414,8 +413,7 @@ function EvidenceBinding(props: {
   return (
     <section className="runtime-foundry__evidence-binding" aria-labelledby="foundry-evidence-binding-title">
       <div>
-        <p className="runtime-foundry__micro-label">Human evidence binding</p>
-        <h4 id="foundry-evidence-binding-title">Bind the decision to exact artifacts</h4>
+        <h4 id="foundry-evidence-binding-title">Review evidence</h4>
         <p>Select the immutable visual records actually reviewed. Public approval also requires exact transform and scene-authority references.</p>
       </div>
       {files.length === 0 ? <p className="runtime-foundry__notice" data-kind="error" role="alert">Candidate manifest has no bounded low-resolution visual review images.</p> : (

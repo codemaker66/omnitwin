@@ -253,7 +253,7 @@ for (const viewport of [{ name: "desktop", width: 1600, height: 1000 },
     await closeButton.focus();
     await page.keyboard.press("Enter");
     await expect(editor).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Everything in its place", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Stock correction", exact: true })).toBeVisible();
     await opener.click();
     await expect(editor.getByLabel("Owned", { exact: true })).toBeFocused();
     expect(errors).toEqual([]);

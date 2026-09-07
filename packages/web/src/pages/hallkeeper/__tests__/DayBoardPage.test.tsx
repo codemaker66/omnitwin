@@ -227,7 +227,7 @@ describe("DayBoardPage", () => {
     getCalendarMock.mockResolvedValue(calendarFixture([]));
     renderBoard();
     await waitFor(() => {
-      expect(screen.getByText("Nothing in the diary today. A quiet house.")).toBeTruthy();
+      expect(screen.getByText("Nothing scheduled today.")).toBeTruthy();
     });
   });
 

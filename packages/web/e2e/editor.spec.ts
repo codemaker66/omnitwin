@@ -87,7 +87,7 @@ test.describe("Public Editor", () => {
 
     const commandDeck = page.getByTestId("planner-command-deck");
     await expect(commandDeck).toBeVisible({ timeout: 5_000 });
-    await expect(commandDeck).toContainText("Build the room from the floor");
+    await expect(commandDeck).toContainText("Arrange the room");
     await page.getByRole("button", { name: "Add Furniture" }).click();
     const furniturePanel = page.getByTestId("furniture-panel");
     await expect(furniturePanel).toBeVisible({ timeout: 5_000 });

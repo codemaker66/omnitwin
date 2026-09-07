@@ -651,7 +651,7 @@ test.describe("Editor with placed objects", () => {
 
     // Success state renders with this heading when no name was entered
     await expect(
-      page.getByRole("heading", { name: "Your layout is on its way" }),
+      page.getByRole("heading", { name: "Layout sent" }),
     ).toBeVisible({ timeout: 5_000 });
   });
 });

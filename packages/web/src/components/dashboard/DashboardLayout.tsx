@@ -210,7 +210,6 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
               More <ChevronDown aria-hidden="true" size={16} />
             </button>
             <div className="dashboard-layout-popover" id={`${menuId}-more`} hidden={openMenu !== "more"}>
-              <p className="dashboard-layout-menu-label">Your workspace</p>
               <div className="dashboard-layout-more-links">
                 {moreItems.map((item) => <button key={item.view} type="button"
                   className={`dashboard-layout-menu-link${activeView === item.view ? " dashboard-layout-menu-link--active" : ""}`}
@@ -234,7 +233,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
             <ChevronDown aria-hidden="true" size={18} />
           </button>
           <div className="dashboard-layout-popover dashboard-layout-account-panel" id={`${menuId}-account`} hidden={openMenu !== "account"}>
-            <p className="dashboard-layout-menu-label">Signed in as</p><p className="dashboard-layout-account-email">{user?.email ?? ""}</p>
+            <p className="dashboard-layout-account-email">{user?.email ?? ""}</p>
             {isE2EAuthBypassEnabled()
               ? <LocalSignOutButton onLocalSignOut={handleLocalSignOut} />
               : <ClerkSignOutButton onLocalSignOut={handleLocalSignOut} />}

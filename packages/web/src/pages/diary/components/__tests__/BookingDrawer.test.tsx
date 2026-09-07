@@ -121,7 +121,7 @@ describe("BookingDrawer — floor plan section", () => {
     });
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("false");
-    if (settlement === "reject") expect(screen.getByRole("alert").textContent).toContain("created but could not be attached");
+    if (settlement === "reject") expect(screen.getByRole("alert").textContent).toContain("created but not attached");
   });
   it("offers to start a plan when the booking has none", () => {
     renderEdit(booking());
@@ -212,7 +212,7 @@ describe("BookingDrawer — floor plan section", () => {
 
     await waitFor(() => {
       const alert = screen.getByRole("alert").textContent ?? "";
-      expect(alert).toContain("created but could not be attached");
+      expect(alert).toContain("created but not attached");
       // "the booking is unchanged" would hide the plan that now exists.
       expect(alert).not.toContain("unchanged");
     });

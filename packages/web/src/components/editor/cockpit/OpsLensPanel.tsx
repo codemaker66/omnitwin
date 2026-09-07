@@ -75,16 +75,15 @@ export function OpsLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="Ops lens"
       title="Run of show"
       icon={<BriefcaseBusiness size={18} />}
       source="Setup plan"
       testId="ops-lens-panel"
-      footer="Indicative setup estimate from the placed layout — planning-grade, not a guaranteed schedule. Confirm crew and timings with your operations team."
+      footer="Setup estimate, not a guaranteed schedule. Confirm crew and timings with operations."
     >
       <LensPanelSection label="Setup plan">
         {plan.tasks.length === 0 ? (
-          <p className="lens-panel__hint" data-testid="ops-empty">Nothing placed yet — add furniture to build the setup plan.</p>
+          <p className="lens-panel__hint" data-testid="ops-empty">Add furniture to create a setup plan.</p>
         ) : (
           plan.tasks.map((task) => (
             <div key={task.key} className="lens-panel__cost-line" data-testid={`ops-task-${task.key}`}>

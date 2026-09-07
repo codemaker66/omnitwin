@@ -171,7 +171,7 @@ function GdtfImportSection(): ReactElement {
 
   return (
     <LensPanelSection label="Import fixtures (GDTF / MVR)">
-      <p className="lens-panel__field-hint">Choose a .gdtf fixture or an .mvr rig file, or paste a fixture&apos;s description.xml, to use real DMX footprints.</p>
+      <p className="lens-panel__field-hint">Import .gdtf or .mvr, or paste description.xml.</p>
       <div className="lens-panel__file-row">
         <label className="lens-panel__chip-link" data-testid="gdtf-file-label">
           Choose .gdtf / .mvr file
@@ -252,7 +252,7 @@ function GdtfImportSection(): ReactElement {
             </select>
           </label>
           {fixture.physical.weightKg !== null && (
-            <p className="lens-panel__field-hint" data-testid="gdtf-weight">Weight {String(fixture.physical.weightKg)} kg — feeds the Rigging lens.</p>
+            <p className="lens-panel__field-hint" data-testid="gdtf-weight">Weight {String(fixture.physical.weightKg)} kg</p>
           )}
           <button type="button" className="lens-panel__button" onClick={onAdd} disabled={!canAdd} data-testid="gdtf-add">Add to rig</button>
           <p className="lens-panel__note">{GDTF_IMPORT_DISCLAIMER}</p>
@@ -336,7 +336,6 @@ export function LightingLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="Lighting lens"
       title="Lighting & DMX"
       icon={<Lightbulb size={18} />}
       source="Indicative"
@@ -344,7 +343,7 @@ export function LightingLensPanel(): ReactElement {
       footer={DMX_PLANNING_DISCLAIMER}
     >
       <LensPanelSection label="Rig (editable)">
-        <p className="lens-panel__field-hint">Starter rig — set the fixtures in your design. Channel footprints are indicative per family.</p>
+        <p className="lens-panel__field-hint">Example rig · indicative channel footprints. Edit counts for your design.</p>
         {LIGHTING_FIXTURE_FAMILIES.map((family) => (
           <RigField key={family} family={family} count={counts[family]} onCount={onCount} />
         ))}
@@ -362,7 +361,7 @@ export function LightingLensPanel(): ReactElement {
         <LensPanelMetric label="DMX channels" value={patch.totalChannels.toLocaleString("en-GB")} />
         <LensPanelMetric label="Universes" value={String(patch.universeCount)} />
         {patch.universeCount === 0 ? (
-          <p className="lens-panel__hint" data-testid="dmx-empty">Add fixtures to the rig to build a patch.</p>
+          <p className="lens-panel__hint" data-testid="dmx-empty">Add fixtures to build a patch.</p>
         ) : (
           patch.universes.map((u) => {
             const pct = Math.min(100, Math.round((u.channelsUsed / DMX_UNIVERSE_SIZE) * 100));

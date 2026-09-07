@@ -17,7 +17,6 @@ vi.mock("../components/rooms/RoomSplatScene.js", () => ({
 }));
 
 const { RoomWalkPage } = await import("../pages/RoomWalkPage.js");
-const { roomSplatBundle, roomSplatServedSplats } = await import("../data/room-splat-bundles.js");
 
 function mount(path: string): void {
   render(
@@ -59,14 +58,12 @@ describe("RoomWalkPage", () => {
     expect(screen.queryByRole("navigation")).toBeNull();
   });
 
-  it("counts the splats the visitor will actually see", () => {
+  it("keeps the room name and dimensions without capture counts", () => {
     mount("/room/grand-hall");
     const header = screen.getByRole("banner").textContent ?? "";
-    const served = roomSplatServedSplats("grand-hall");
-    const staged = roomSplatBundle("grand-hall")?.totalSplats ?? 0;
-    expect(served).toBe(6_019_684);
-    expect(header).toContain(`${served.toLocaleString("en-GB")} splats`);
-    expect(header).not.toContain(staged.toLocaleString("en-GB"));
+    expect(header).toContain("Grand Hall");
+    expect(header).toMatch(/\d+\.\d × \d+\.\d × \d+\.\d m/u);
+    expect(header).not.toMatch(/splats/u);
   });
 
   it("does not mount a room whose walk has been closed until its alignment is fixed", () => {
@@ -81,16 +78,16 @@ describe("RoomWalkPage", () => {
   it("tells a visitor of a review room how far the scan goes and withholds dimensions", () => {
     mount("/room/saloon");
     const body = document.body.textContent ?? "";
-    expect(body).toMatch(/where the scanner's operator walked/iu);
-    expect(body).toMatch(/alignment is still being checked/iu);
+    expect(body).toMatch(/Incomplete scan/iu);
+    expect(body).toMatch(/Alignment is under review/iu);
     expect(body).not.toMatch(/\d+\.\d × \d+\.\d × \d+\.\d m/u);
   });
 
   it("keeps the working-scan disclaimer and the alignment caveat for a room under review", () => {
     mount("/room/saloon");
     const body = document.body.textContent ?? "";
-    expect(body).toMatch(/working scan of the real room/iu);
-    expect(body).toMatch(/alignment is still being checked/iu);
+    expect(body).toMatch(/Incomplete scan/iu);
+    expect(body).toMatch(/Alignment is under review/iu);
   });
 });
 

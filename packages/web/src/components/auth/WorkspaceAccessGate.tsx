@@ -46,16 +46,15 @@ export function WorkspaceAccessGate({ children }: { readonly children: ReactNode
     <main className="workspace-access" aria-label="Your Venviewer account">
       <section className="workspace-access__card">
         <a className="workspace-access__brand" href="/plan">Venviewer</a>
-        <p className="workspace-access__eyebrow">Your venue workspace</p>
-        <h1>{checking ? "Finding your place." : needsVerification ? "Verify your email to continue." : pending ? "Your account is ready." : "Let’s reconnect."}</h1>
-        {accessEmail !== null && accessEmail !== "" && <p className="workspace-access__email">Signed in as <strong>{accessEmail}</strong></p>}
-        {checking ? <ActivityStatus variant="panel">Confirming your venue access…</ActivityStatus> : (
+        <h1>{checking ? "Venue access" : needsVerification ? "Verify your email" : pending ? "Venue access pending" : "Connection unavailable"}</h1>
+        {accessEmail !== null && accessEmail !== "" && <p className="workspace-access__email"><strong>{accessEmail}</strong></p>}
+        {checking ? <ActivityStatus variant="panel">Checking access…</ActivityStatus> : (
           <>
-            {needsVerification ? <p role="status">In account settings, find Email addresses, open the menu beside your email and choose Complete verification. After verifying, return here and choose Check my access.</p> : <>
+            {needsVerification ? <p role="status">In account settings, open your email menu under Email addresses and choose Complete verification. Then return here and choose Check my access.</p> : <>
               <p role={pending ? "status" : "alert"}>{pending
-                ? "Your venue access is pending. Ask your Venviewer contact to add this email address to the right venue, then check access below."
+                ? "Ask your Venviewer contact to grant this email venue access."
                 : error}</p>
-              {pending && <p>Already invited? Use the same email address as your invitation.</p>}
+              {pending && <p>Invited? Sign in with your invitation email.</p>}
             </>}
           </>
         )}

@@ -100,7 +100,7 @@ function HeroVisual({
       </div>
       <p className="room-showcase-visual-note">
         {profile.heroImageKind === "venue-context" && !canShowRuntime
-          ? "Venue context image shown while a room-specific public visual is prepared."
+          ? "Venue image; room preview pending."
           : safePublicCopy(runtimeVisual.safeCopy)}
       </p>
     </section>
@@ -114,7 +114,7 @@ function RoomNotFound(): ReactElement {
         <p className="room-showcase-kicker">Trades Hall rooms</p>
         <h1>Room preview unavailable</h1>
         <p>
-          This room route is not available for the public preview. Choose one of the prepared Trades Hall room pages.
+          Choose another room.
         </p>
         <div className="room-showcase-missing-links" aria-label="Available room routes">
           {publicRoomSelectionCards
@@ -139,11 +139,7 @@ function RoomSelectionRail({ currentRoomSlug }: RoomSelectionRailProps): ReactEl
   return (
     <section className="room-showcase-selector" aria-labelledby="room-showcase-selector-title">
       <div className="room-showcase-selector-head">
-        <p className="room-showcase-kicker">Choose another room</p>
-        <h2 id="room-showcase-selector-title">Eight room experiences, one planning conversation.</h2>
-        <p>
-          Move between room previews, request a layout, or enquire where room-specific runtime data is not yet exposed.
-        </p>
+        <h2 id="room-showcase-selector-title">More rooms</h2>
       </div>
       <div className="room-showcase-selector-grid">
         {publicRoomSelectionCards.map((room) => {
@@ -282,10 +278,6 @@ export function RoomShowcasePage(): ReactElement {
         <div className="room-showcase-copy">
           <p className="room-showcase-kicker">Trades Hall room preview</p>
           <h1>{profile.name}</h1>
-          <p className="room-showcase-lede">
-            A client-safe visual preview for planning conversations. Human review is required before final room
-            details are confirmed by the venue team.
-          </p>
 
           <div className="room-showcase-actions" aria-label={`${profile.name} actions`}>
             <Link className="room-showcase-button primary" to={profile.requestLayoutHref} onClick={handleRequestLayout}>
@@ -330,7 +322,7 @@ export function RoomShowcasePage(): ReactElement {
             <ShieldQuestion aria-hidden="true" size={20} />
             <div>
               <h2>Review state</h2>
-              <p>Planning-grade guidance only. Human review required before client or operational reliance.</p>
+              <p>Planning estimates. Venue review required before use.</p>
             </div>
           </div>
           <div className="room-showcase-guidance-item">

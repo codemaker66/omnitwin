@@ -55,7 +55,7 @@ export function AuthModal({ onClose }: AuthModalProps): React.ReactElement {
     if (isAuthenticated && configId !== null && isPublicPreview) {
       setClaimError(null);
       void claimPreview(configId, userId).catch(() => {
-        if (!cancelled) setClaimError("We couldn't add this layout to your account. Your preview is still available. Try again.");
+        if (!cancelled) setClaimError("Couldn't add this layout to your account. Your preview is still available.");
       });
     } else if (isAuthenticated) {
       closeRef.current();

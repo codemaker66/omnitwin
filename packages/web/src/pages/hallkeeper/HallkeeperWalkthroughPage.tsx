@@ -16,9 +16,8 @@ export function HallkeeperWalkthroughPage(): ReactElement {
       <section className="hk-walkthrough">
         <header className="hk-walkthrough-header">
           <div>
-            <p className="hk-walkthrough-eyebrow">Explore the working day</p>
-            <h1>The hallkeeper experience</h1>
-            <p>Fictional demonstration. Actions stay in this walkthrough and reset when you leave.</p>
+            <h1>Hallkeeper walkthrough</h1>
+            <p>Fictional demonstration · resets when you leave.</p>
           </div>
           <nav aria-label="Walkthrough controls">
             <Link to="/hallkeeper/today">Open live Day Board</Link>

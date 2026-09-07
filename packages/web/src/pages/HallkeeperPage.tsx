@@ -405,9 +405,9 @@ export function HallkeeperPage(): React.ReactElement {
   if (loading) {
     return <main className="hk-page hk-sheet-state" aria-label="Hallkeeper sheet loading">
       <SheetNavigation />
-      <div className="hk-state-card"><span className="hk-eyebrow">Your room, clearly in hand</span>
+      <div className="hk-state-card">
         <h1>Hallkeeper sheet</h1>
-        <ActivityStatus variant="panel">Loading your layout and shared checks…</ActivityStatus>
+        <ActivityStatus variant="panel">Loading sheet…</ActivityStatus>
       </div>
     </main>;
   }
@@ -417,7 +417,6 @@ export function HallkeeperPage(): React.ReactElement {
     return <main className="hk-page hk-sheet-state" aria-label="Hallkeeper sheet unavailable">
       <SheetNavigation />
       <section className="hk-state-card" aria-labelledby="hallkeeper-error-title">
-        <span className="hk-eyebrow">{isPermissionError ? "Access needed" : "Sheet unavailable"}</span>
         <h1 id="hallkeeper-error-title" role="alert">{error ?? "Configuration not found"}</h1>
         <p>{isPermissionError
           ? "Ask the event manager to share this sheet or open it with a hallkeeper-approved account."

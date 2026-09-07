@@ -35,28 +35,19 @@ export function LoginPage(): React.ReactElement {
           Venviewer
         </div>
         <h1 className="auth-page__title">
-          Sign in to your planning workspace.
+          Sign in.
         </h1>
-        <p className="auth-page__copy">
-          Pick up with your venue team, saved layouts, diary and event preparations.
-        </p>
-        <div className="auth-page__proof-grid" aria-label="Workspace capabilities">
-          <span>Your venue</span>
-          <span>Your events</span>
-          <span>Your team</span>
-        </div>
       </section>
       <section className="auth-page__form-shell" aria-label="Secure sign in form">
         <ClerkLoading>
           <div className="auth-page__loading">
             <ActivityStatus>Loading secure sign-in.</ActivityStatus>
-            <p>Keep this page open while the account form connects.</p>
           </div>
         </ClerkLoading>
         <ClerkFailed>
           <div className="auth-page__loading auth-page__loading--failed" role="alert">
             <div>Secure sign-in is unavailable.</div>
-            <p>Refresh this page and try again. If it still fails, contact your Venviewer contact.</p>
+            <p>Refresh the page to try again.</p>
           </div>
         </ClerkFailed>
         <ClerkLoaded>

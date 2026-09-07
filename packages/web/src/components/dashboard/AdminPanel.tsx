@@ -47,7 +47,7 @@ function labelize(value: string): string {
 
 interface FormModalProps {
   readonly title: string;
-  readonly description: string;
+  readonly description?: string;
   readonly onClose: () => void;
   readonly children: ReactNode;
   readonly footer: ReactNode;
@@ -65,7 +65,7 @@ function FormModal({ title, description, onClose, children, footer, wide = false
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
-      aria-describedby={descriptionId}
+      aria-describedby={description === undefined ? undefined : descriptionId}
       tabIndex={-1}
       onClick={onClose}
       onKeyDown={(event) => {
@@ -80,9 +80,8 @@ function FormModal({ title, description, onClose, children, footer, wide = false
         }}
       >
         <header className="admin-panel-modal-header">
-          <p className="admin-panel-kicker">Admin record</p>
           <h3 id={titleId}>{title}</h3>
-          <p id={descriptionId}>{description}</p>
+          {description !== undefined ? <p id={descriptionId}>{description}</p> : null}
         </header>
         <div className="admin-panel-form-grid">{children}</div>
         <footer className="admin-panel-modal-footer">{footer}</footer>
@@ -152,7 +151,7 @@ function SelectField({ label, value, onChange, children }: SelectFieldProps): Re
 
 interface StatusPanelProps {
   readonly title: string;
-  readonly body: string;
+  readonly body?: string;
   readonly active?: boolean;
   readonly actionLabel?: string;
   readonly onAction?: () => void;
@@ -161,9 +160,8 @@ interface StatusPanelProps {
 function StatusPanel({ title, body, active = false, actionLabel, onAction }: StatusPanelProps): ReactElement {
   return (
     <section className="admin-panel-state" role={onAction === undefined ? "status" : "alert"}>
-      <p className="admin-panel-kicker">Admin registry</p>
       <h2>{active && <ActivityIndicator size={28} />} {title}</h2>
-      <p>{body}</p>
+      {body !== undefined ? <p>{body}</p> : null}
       {actionLabel !== undefined && onAction !== undefined ? (
         <button type="button" className="admin-panel-button admin-panel-button--primary" onClick={onAction}>
           {actionLabel}
@@ -453,7 +451,7 @@ export function AdminPanel(): ReactElement {
   };
 
   if (loading) {
-    return <StatusPanel active title="Loading venues" body="Venue, room, and pricing registry records are loading." />;
+    return <StatusPanel active title="Loading venues" />;
   }
 
   if (loadError !== null) {
@@ -487,7 +485,6 @@ export function AdminPanel(): ReactElement {
 
         <header className="admin-panel-header">
           <div>
-            <p className="admin-panel-kicker">Admin venue record</p>
             <h2 id="admin-panel-venue-title">{selectedVenue.name}</h2>
             <p>{selectedVenue.address}</p>
           </div>
@@ -522,7 +519,6 @@ export function AdminPanel(): ReactElement {
         <section className="admin-panel-section" aria-labelledby="admin-panel-spaces-title">
           <div className="admin-panel-section-header">
             <div>
-              <p className="admin-panel-kicker">Room registry</p>
               <h3 id="admin-panel-spaces-title">Spaces</h3>
             </div>
             <button
@@ -578,7 +574,6 @@ export function AdminPanel(): ReactElement {
         <section className="admin-panel-section" aria-labelledby="admin-panel-pricing-title">
           <div className="admin-panel-section-header">
             <div>
-              <p className="admin-panel-kicker">Commercial registry</p>
               <h3 id="admin-panel-pricing-title">Room Hire Pricing</h3>
             </div>
             <button
@@ -658,7 +653,7 @@ export function AdminPanel(): ReactElement {
         {showCreateSpace ? (
           <FormModal
             title="New Space"
-            description="Create a room record with planning geometry. The polygon must describe a real floor outline before the space can be saved."
+            description="Use the room’s actual floor outline."
             wide
             onClose={() => {
               if (creatingSpace) return;
@@ -703,7 +698,6 @@ export function AdminPanel(): ReactElement {
         {showCreateRule ? (
           <FormModal
             title="New Pricing Rule"
-            description="Create an auditable room-hire rule. Proposal pricing can only be trusted when the underlying rule is explicit."
             onClose={() => {
               if (!creatingRule) setShowCreateRule(false);
             }}
@@ -788,7 +782,7 @@ export function AdminPanel(): ReactElement {
         {editingSpace !== null ? (
           <FormModal
             title="Edit Space"
-            description="Update the authoritative room record. Geometry changes should only be saved when they match the reviewed floor-plan source."
+            description="Match geometry to the reviewed floor plan."
             wide
             onClose={() => {
               if (!updatingSpace) setEditingSpace(null);
@@ -836,7 +830,6 @@ export function AdminPanel(): ReactElement {
         <div>
           <p className="admin-panel-kicker">Platform admin</p>
           <h2 id="admin-panel-title">Venue Registry</h2>
-          <p>Authoritative venue records, room geometry, and room-hire pricing.</p>
         </div>
         <button
           type="button"
@@ -883,7 +876,6 @@ export function AdminPanel(): ReactElement {
       {showCreateVenue ? (
         <FormModal
           title="New Venue"
-          description="Create the venue record that rooms, runtime packages, proposals, and staff access will attach to."
           onClose={() => {
             if (!creatingVenue) setShowCreateVenue(false);
           }}

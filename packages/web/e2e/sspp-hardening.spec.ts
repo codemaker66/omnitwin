@@ -559,7 +559,7 @@ test.describe("SS++ hardening visual regression", () => {
     await page.goto("/dashboard");
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Executive Analytics" }).click();
-    await expect(page.getByRole("heading", { name: "Commercial planning dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
     await expect(page.getByText("Pipeline value")).toBeVisible();
     await attachScreenshotSmoke(page, "sspp-dashboard-pipeline.png");
     expect(pageErrors).toEqual([]);

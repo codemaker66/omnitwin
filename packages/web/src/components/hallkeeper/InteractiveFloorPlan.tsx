@@ -48,7 +48,7 @@ export function InteractiveFloorPlan({
 }: InteractiveFloorPlanProps): React.ReactElement {
   const saved = useMemo(() => prepareFrozenPlan(floorPlan), [floorPlan]);
   if (saved.kind === "invalid") return <div role="alert" style={{ padding: 20, border: "1px solid #675841", borderRadius: 10 }}>
-    <strong>Saved floor plan unavailable</strong><p>The saved geometry could not be read. The manifest remains available below.</p>
+    <strong>Saved floor plan unavailable</strong><p>The setup checklist remains available.</p>
   </div>;
   if (saved.kind === "saved") return <SavedFloorPlan plan={saved.plan} phases={phases} highlightedRowKey={highlightedRowKey} onMarkerClick={onMarkerClick} />;
   return <LegacyFloorPlan room={room} phases={phases} highlightedRowKey={highlightedRowKey} onMarkerClick={onMarkerClick} />;

@@ -92,7 +92,7 @@ export function EventArchitectOpsReviewPanel(props: {
       .then(setGate)
       .catch((caught: unknown) => {
         if (caught instanceof DOMException && caught.name === "AbortError") return;
-        setError("The persisted Ops review gate could not be loaded.");
+        setError("Ops review could not be loaded.");
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); };
@@ -153,7 +153,6 @@ export function EventArchitectOpsReviewPanel(props: {
     <section className="event-architect-ops-review" aria-labelledby="event-architect-ops-review-title">
       <header>
         <div>
-          <p>03 / Authority</p>
           <h2 id="event-architect-ops-review-title">Ops review evidence</h2>
         </div>
         <span className={`event-architect-ops-status event-architect-ops-status--${gate?.status ?? "open"}`}>
@@ -166,7 +165,7 @@ export function EventArchitectOpsReviewPanel(props: {
         <ShieldCheck aria-hidden="true" />
         <div>
           <strong>{gate?.blockingForOpsCompilation === false ? "Ops evidence gate resolved" : "Ops compilation remains blocked"}</strong>
-          <p>Approval must bind surveyed doors, a reviewed route model, and venue operations sign-off to this candidate’s exact request, snapshot, validator proof, and simulated-flow hashes.</p>
+          <p>Approval requires surveyed doors, a reviewed route model and venue sign-off for this exact candidate and its simulated flow.</p>
         </div>
         <code>artifact {digestLabel}</code>
       </div>
@@ -203,11 +202,11 @@ export function EventArchitectOpsReviewPanel(props: {
           </div>
 
           <label className="event-architect-ops-note"><span>Review note</span><textarea value={draft.note} onChange={(event) => { setDraft((current) => ({ ...current, note: event.target.value })); }} minLength={10} maxLength={2000} rows={3} required /></label>
-          <button type="submit" disabled={submitting}>{submitting ? <ActivityIndicator size={20} /> : <ShieldCheck aria-hidden="true" />}{submitting ? "Recording immutable review" : "Record append-only review"}</button>
-          <p className="event-architect-ops-immutability"><LockKeyhole aria-hidden="true" /> Review rows cannot be edited or deleted. A later decision creates a new artifact; expiry closes the gate automatically.</p>
+          <button type="submit" disabled={submitting}>{submitting ? <ActivityIndicator size={20} /> : <ShieldCheck aria-hidden="true" />}{submitting ? "Recording review" : "Record review"}</button>
+          <p className="event-architect-ops-immutability"><LockKeyhole aria-hidden="true" /> Reviews cannot be changed or deleted. New decisions replace earlier approvals; expired approvals block Ops.</p>
         </form>
       ) : (
-        <p className="event-architect-ops-readonly"><LockKeyhole aria-hidden="true" /> Venue staff, hallkeepers, or administrators must record this review. Planner access is read-only.</p>
+        <p className="event-architect-ops-readonly"><LockKeyhole aria-hidden="true" /> Only venue staff, hallkeepers or administrators can record a review.</p>
       )}
     </section>
   );

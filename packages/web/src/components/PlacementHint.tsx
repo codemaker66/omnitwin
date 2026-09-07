@@ -79,15 +79,6 @@ const statusStyle: React.CSSProperties = {
   minWidth: 0,
 };
 
-const eyebrowStyle: React.CSSProperties = {
-  color: GOLD,
-  fontSize: 10,
-  fontWeight: 820,
-  letterSpacing: "0.14em",
-  lineHeight: 1,
-  textTransform: "uppercase",
-};
-
 const titleStyle: React.CSSProperties = {
   overflow: "hidden",
   color: "#fff7e8",
@@ -227,7 +218,7 @@ export function PlacementHint(): React.ReactElement | null {
   };
 
   const itemName = selectedItem?.name ?? "selected item";
-  const snapCopy = snapEnabled ? "Grid snap is on" : "Free placement is on";
+  const snapCopy = snapEnabled ? "Grid snap on" : "Free placement";
 
   return (
     <FloatingWidgetFrame
@@ -244,10 +235,9 @@ export function PlacementHint(): React.ReactElement | null {
     >
       <div data-testid="placement-hint" style={coachBodyStyle}>
         <div style={statusStyle}>
-          <div style={eyebrowStyle}>Placing now</div>
           <div style={titleStyle}>{itemName}</div>
           <div style={detailStyle}>
-            Click a valid floor point. {snapCopy}; use the Snap button when you need freehand placement.
+            {snapCopy}. Click the floor to place.
           </div>
         </div>
 

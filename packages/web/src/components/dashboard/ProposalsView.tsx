@@ -451,7 +451,7 @@ export function ProposalsView(): ReactElement {
           {busy && <ActivityStatus>Updating proposal records…</ActivityStatus>}
           {user?.venueId === null || user?.venueId === undefined ? (
             <p style={{ fontSize: 13, color: "rgba(246, 241, 232, 0.68)", margin: 0 }}>
-              Your account isn't linked to a venue, so proposals can't be created from here.
+              Ask an admin to assign your account to a venue.
             </p>
           ) : (
             <>
@@ -587,10 +587,9 @@ export function ProposalsView(): ReactElement {
 
           {canCompose && (
             <section style={card} aria-label="Compose version">
-              <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>Compose a new version</h3>
+              <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700, color: "#fff7e8" }}>New version</h3>
               <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "rgba(246, 241, 232, 0.68)" }}>
-                Saved versions are immutable snapshots — sending shares the latest one. Figures are
-                planning estimates; wording that claims safety or compliance certainty is rejected.
+                Sending shares the latest saved version. Figures are planning estimates, without safety or compliance assurance.
               </p>
 
               <label style={labelStyle} htmlFor="composer-message">Message to the client</label>

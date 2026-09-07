@@ -73,7 +73,6 @@ export function RiggingLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="Rigging lens"
       title="Rigging & WLL"
       icon={<Anchor size={18} />}
       source="Indicative"

@@ -27,8 +27,7 @@ export function FoundrySigningControls(props: {
   return (
     <section className="runtime-foundry__signing" aria-labelledby="foundry-signing-title">
       <div>
-        <p className="runtime-foundry__micro-label">Detached attestation</p>
-        <h4 id="foundry-signing-title">Sign outside the application boundary</h4>
+        <h4 id="foundry-signing-title">Sign release</h4>
         <p>Download the exact in-toto statement, sign its DSSE payload with the controlled Ed25519 key, then upload or paste the envelope for server verification.</p>
       </div>
       <div className="runtime-foundry__action-group">

@@ -134,7 +134,6 @@ export function SupplierPortalPage(): ReactElement {
         <section className="supplier-portal__state" role="status" aria-live="polite">
           <ActivityIndicator size={64} />
           <h1>Loading supplier handoff</h1>
-          <p>Preparing the supplier-scoped pack and acknowledgement state.</p>
         </section>
       </main>
     );
@@ -145,7 +144,7 @@ export function SupplierPortalPage(): ReactElement {
       <main className="supplier-portal" aria-label="Supplier handoff">
         <section className="supplier-portal__state">
           <h1>This supplier link is not available</h1>
-          <p>The link may have expired or been withdrawn. Please contact the venue team for the current handoff pack.</p>
+          <p>This link may have expired. Ask the venue team for the current pack.</p>
         </section>
       </main>
     );
@@ -268,7 +267,7 @@ export function SupplierPortalPage(): ReactElement {
                 {latestAcknowledgement === null ? "Awaiting supplier response" : "Latest response"}
               </h2>
               {latestAcknowledgement === null ? (
-                <p className="supplier-portal__copy">No supplier acknowledgement has been recorded for this pack yet.</p>
+                <p className="supplier-portal__copy">No acknowledgement yet.</p>
               ) : (
                 <p className="supplier-portal__copy">{latestAcknowledgement}</p>
               )}
@@ -367,7 +366,7 @@ export function SupplierPortalPage(): ReactElement {
             ) : (
               <section className="supplier-portal__panel" aria-label="Response closed">
                 <p className="supplier-portal__label">Response closed</p>
-                <p className="supplier-portal__copy">This pack is not currently awaiting a supplier response.</p>
+                <p className="supplier-portal__copy">No response requested.</p>
               </section>
             )}
           </aside>

@@ -43,8 +43,8 @@ export function AIDraftPanel({
           kind: "ready",
           configured: result.configured,
           message: result.configured
-            ? `Provider configured: ${result.provider ?? "configured"} / ${result.model ?? "model set"}`
-            : result.disabledReason ?? "AI drafts are disabled until provider environment is configured.",
+            ? "AI drafts available"
+            : result.disabledReason ?? "AI drafts are not configured.",
         });
       })
       .catch(() => {
@@ -76,14 +76,14 @@ export function AIDraftPanel({
         <span className="ai-draft-panel__icon"><Bot aria-hidden="true" size={18} /></span>
         <div>
           <h3>{title}</h3>
-          <p>Draft only. AI-generated text remains unverified and requires human review.</p>
+          <p>AI draft · unverified. Human review required.</p>
         </div>
       </div>
 
       <div className="ai-draft-panel__status" role="status">
         {status.kind === "loading" ? <ActivityIndicator size={20} /> : <ShieldCheck aria-hidden="true" size={16} />}
         <span>
-          {status.kind === "loading" ? "Checking AI draft configuration." : status.message}
+          {status.kind === "loading" ? "Checking availability…" : status.message}
         </span>
       </div>
 
@@ -107,7 +107,6 @@ export function AIDraftPanel({
           <div className="ai-draft-panel__meta">
             <span>{draftState.draft.provenance.replace(/_/gu, " ")}</span>
             <span>{draftState.draft.evidenceStatus}</span>
-            <span>Human review required</span>
           </div>
           <label>
             <span>{draftState.draft.title}</span>
@@ -115,7 +114,7 @@ export function AIDraftPanel({
           </label>
           {draftState.draft.safeLanguageApplied && (
             <p className="ai-draft-panel__note">
-              Unsafe certainty wording was replaced before this draft was shown.
+              Unsupported certainty was removed.
             </p>
           )}
         </div>

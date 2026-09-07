@@ -47,12 +47,12 @@ that boundary.
 
 ## Help a contact finish sign-in
 
-- **Verify your email to continue:** choose **Open account settings**. Under
+- **Verify your email:** choose **Open account settings**. Under
   **Email addresses**, open the menu beside the invited email and choose
   **Complete verification**. Follow the email link, then return to Venviewer and
   choose **Check my access**. Registration alone does not establish verified
   venue access.
-- **Your account is ready / access pending:** confirm the invitation email,
+- **Venue access pending:** confirm the invitation email,
   venue and role, and that the contact verified that same email. They can use
   **Check my access** after the invitation is recorded.
 - **Invitation expired:** renew it using **Manage access**, then ask the contact

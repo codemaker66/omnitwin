@@ -118,11 +118,10 @@ function IntroScreen({ onBegin }: IntroScreenProps): ReactElement {
           <span>is yours?</span>
         </h1>
         <div className="craft-quiz-divider" aria-hidden="true"><i>❖</i></div>
-        <p>{CRAFT_QUESTIONS.length} questions · four centuries · one fellowship</p>
+        <p>{CRAFT_QUESTIONS.length} questions</p>
         <button type="button" className="craft-quiz-begin" onClick={onBegin} aria-label="Begin the Craft quiz">
           Begin
         </button>
-        <p className="craft-quiz-intro-foot">Your journey into Glasgow’s living heritage</p>
       </div>
     </section>
   );
@@ -604,7 +603,6 @@ function ResultScreen({ ranking, hung, ledger, onRetake }: ResultScreenProps): R
       <a className="craft-result-introduction" href={buildCraftIntroductionMailto(winner.craftId)}>Request an introduction</a>
       <button type="button" className="craft-result-retake" onClick={onRetake}>Retake the questions</button>
       <a className="craft-result-leaflet" href="/trades-house/leaflet">View the visitor leaflet</a>
-      <p className="craft-result-signoff">Host here · belong here</p>
     </section>
   );
 }

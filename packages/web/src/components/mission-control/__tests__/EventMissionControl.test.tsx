@@ -189,7 +189,7 @@ describe("EventMissionControl", () => {
 
     await screen.findByRole("heading", { name: /mission live · phase not started/i });
     expect(mocks.startMission).toHaveBeenCalledWith(EVENT_ID, expect.objectContaining({ handoffPackId: PACK_ID }));
-    expect(screen.getByText(/operational references, not survey marks/i)).toBeTruthy();
+    expect(screen.getByText(/Planning references in metres, not survey marks/i)).toBeTruthy();
   });
 
   it("sends revision-checked phase transitions and renders spatial anchors", async () => {

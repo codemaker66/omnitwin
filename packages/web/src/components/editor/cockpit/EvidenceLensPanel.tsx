@@ -57,7 +57,6 @@ export function EvidenceLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="Evidence lens"
       title="Layout evidence"
       icon={<ShieldCheck size={18} />}
       source={source}

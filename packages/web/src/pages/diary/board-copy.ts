@@ -7,17 +7,16 @@
 
 export const BOARD_COPY = {
   title: "The Diary",
-  subtitle: "Pencil it in. Ink it. Nothing goes stale.",
-  disclosure:
-    "Planning support only — conflicts and turnaround gaps are guidance for the team's own judgement, never a ruling.",
+ disclosure:
+    "Planning support only. Venue staff review conflicts and turnaround gaps.",
 
   loading: "Opening the diary…",
   errorTitle: "The diary could not load.",
   retry: "Try again",
   refresh: "Refresh",
   noVenue: "Your account has no venue assigned — ask an administrator to link one.",
-  readOnly: "Read-only view — bookings are moved by the sales team.",
-  emptyRange: "Nothing in the diary for this range yet.",
+  readOnly: "Read-only · Sales team edits bookings.",
+  emptyRange: "No bookings in this range.",
   showExited: "Show released & cancelled",
 
   views: { day: "Day", week: "Week", "2w": "2W", month: "Month" } as const,
@@ -37,7 +36,7 @@ export const BOARD_COPY = {
     title: "Find on the board",
     placeholder: "Rooms, events, clients…",
     empty:
-      "Nothing in view matches — the search covers the visible range and open enquiries.",
+      "No matches in this range or open enquiries.",
     kinds: { room: "Room", booking: "Booking", enquiry: "Enquiry" } as const,
     roomDetail: "Jump to lane",
     enquiryDetail: "Open the pencil-in form",
@@ -46,12 +45,12 @@ export const BOARD_COPY = {
   /** Lane rail extras (C1). */
   rail: {
     utilisationNote:
-      "Booked share of the visible range — arithmetic from the diary, not advice.",
+      "Booked share of this range.",
   },
 
   /** The drawing-sheet title block (C1). Labels only — no claims. */
   titleBlock: {
-    sheet: "The Diary · booking command centre",
+    sheet: "The Diary",
     drawnBy: "Drawn from",
     drawnByValue: "the live diary",
     rangeLabel: "Sheet",
@@ -96,9 +95,9 @@ export const BOARD_COPY = {
       convert: "Pencil it in",
     } as const,
     convertNote: (name: string): string =>
-      `Turning ${name}'s enquiry into a pencil — the enquiry itself stays where it is in review.`,
+      `Pencil in ${name}. The enquiry stays in review.`,
     hygieneLegend: "Pencil hygiene",
-    ownerNote: "You become the owner of this pencil — it carries your name and its next action.",
+    ownerNote: "You will own this pencil.",
     saveFailed: "That change could not be saved — nothing was altered.",
     created: (title: string): string => `Added ${title} to the diary.`,
     saved: (title: string): string => `Saved ${title}.`,
@@ -106,8 +105,8 @@ export const BOARD_COPY = {
     transitioned: (title: string, action: string): string => `${action}: ${title}.`,
     transitionsTitle: "Lifecycle",
     planTitle: "Floor plan",
-    planNone: "No floor plan yet. Starting one creates a plan carrying this booking's name, date and times — you can open it from here afterwards.",
-    planAttached: "A floor plan is attached to this booking.",
+    planNone: "No floor plan. Start one with this booking's name and times.",
+    planAttached: "Floor plan attached.",
     planStart: "Start a floor plan",
     planOpen: "Open the plan",
     planDetach: "Detach",
@@ -118,7 +117,7 @@ export const BOARD_COPY = {
     // "the booking is unchanged" here would be true and useless; saying
     // nothing about the created plan would be dishonest. Retrying re-uses
     // the plan that was already made rather than creating a second one.
-    planLinkFailed: "The floor plan was created but could not be attached to this booking yet. Try again to finish attaching it.",
+    planLinkFailed: "Plan created but not attached. Try again to attach it.",
     fields: {
       kind: "Commitment",
       room: "Room",
@@ -168,35 +167,35 @@ export const BOARD_COPY = {
 
   confirmInk: {
     title: "Move this inked booking?",
-    body: "Ink is a confirmed commitment — moving it changes what the client has been promised.",
+    body: "This changes the client's confirmed time or room.",
     confirm: "Move the ink",
     cancel: "Keep it where it is",
   },
 
   welcome: {
-    title: "The Diary, in one minute",
+    title: "Using the Diary",
     intro:
-      "Everything the venue is committed to, on one board. Four kinds of commitment, one rule: nothing goes stale.",
+      "Bookings use four commitment types.",
     entries: [
       {
         term: "Pencil",
         detail:
-          "A ranked option. Pencils may overlap — that is the option ladder — and every pencil carries a decision date, an owner, and a next action.",
+          "A ranked option with an owner, decision date and next action. Pencils may overlap.",
       },
       {
         term: "Ink",
         detail:
-          "The confirmed commitment. The diary itself refuses two inks in the same room at the same time — if a slot was just inked elsewhere, you are told the moment you try.",
+          "Confirmed. Two inked bookings cannot overlap in one room.",
       },
       {
         term: "House block & prospect",
         detail:
-          "A house block is the venue's own time — resets, maintenance, private use. A prospect is an early conversation; it never blocks anything.",
+          "House blocks reserve venue time. Prospects never block it.",
       },
       {
         term: "The tray",
         detail:
-          "Open enquiries arrive there ready to pencil in, and any pencil whose next action is overdue is called out by name.",
+          "Open enquiries and overdue next actions.",
       },
       {
         term: "Keyboard",
@@ -205,10 +204,10 @@ export const BOARD_COPY = {
       {
         term: "Live",
         detail:
-          "Colleagues in the diary appear in the header — their changes arrive on your board by themselves.",
+          "Colleagues' changes appear automatically.",
       },
     ],
-    dismiss: "Take me to the diary",
+    dismiss: "Open Diary",
     reopen: "How the Diary works",
   },
 
@@ -222,7 +221,7 @@ export const BOARD_COPY = {
 
   tray: {
     title: "Needs attention",
-    empty: "Every pencil has a fresh next action. Nothing is going stale.",
+    empty: "No overdue next actions.",
     open: (count: number): string => `${String(count)} pencil${count === 1 ? "" : "s"} need attention`,
   },
 

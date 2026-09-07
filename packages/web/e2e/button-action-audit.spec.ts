@@ -2146,13 +2146,13 @@ test.describe("SS++ representative button behavior", () => {
 
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: /unread notification/i }).click();
-    await expect(page.getByRole("heading", { name: "Change feed" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
     await page.getByRole("button", { name: "Refresh notifications" }).click();
     await page.getByRole("button", { name: /Mark Guest count updated read/i }).click();
-    await expect(page.getByText("No unread changes for this workspace.")).toBeVisible();
+    await expect(page.getByText("No unread notifications.")).toBeVisible();
 
     await page.getByRole("button", { name: "Executive Analytics" }).click();
-    await expect(page.getByRole("heading", { name: "Commercial planning dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
     await expect(page.getByText("Pipeline value")).toBeVisible();
   });
 
@@ -2298,7 +2298,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Commercial planning dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
     await page.getByRole("button", { name: "More", exact: true }).click();
     await expect(page.getByRole("button", { name: "Executive Analytics" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Pipeline" })).toHaveCount(0);
@@ -2330,7 +2330,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page.getByRole("heading", { name: "Analytics unavailable" })).toBeVisible();
     await expect(page.getByRole("alert")).toContainText("button audit analytics failure");
     await page.getByRole("button", { name: "Retry analytics" }).click();
-    await expect(page.getByRole("heading", { name: "Commercial planning dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
   });
 
   test("dashboard admin role exposes commercial and deployment controls", async ({ page }) => {
@@ -2394,7 +2394,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.goto("/dashboard?view=settings");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: "Venue Settings" })).toBeVisible();
-    await expect(page.getByText("Venue record in sync")).toBeVisible();
+    await expect(page.getByText("Saved")).toBeVisible();
 
     const save = page.getByRole("button", { name: "Save Changes" });
     await expect(save).toBeDisabled();
@@ -2413,7 +2413,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await expect.poll(() => mock.savedVenueSettings)
       .toContain("Trades Hall Operations|85 Glassford Street, Glasgow|#68d8d2|https://assets.example/trades-hall.svg");
-    await expect(page.getByText("Venue record in sync")).toBeVisible();
+    await expect(page.getByText("Saved")).toBeVisible();
   });
 
   test("notification drawer view action navigates to the live event-day board", async ({ page }) => {
@@ -2902,7 +2902,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Onboarding" }).click();
-    await expect(page.getByRole("heading", { name: "Operator action board" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Deployment controls" })).toBeVisible();
 
     await page.getByLabel("Invite staff for Trades Hall deployment").fill("planner@tradeshall.co.uk\nops@tradeshall.co.uk\nplanner@tradeshall.co.uk");
     await page.getByRole("button", { name: "Send 2 invite(s)" }).click();
@@ -2935,7 +2935,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Onboarding" }).click();
-    await expect(page.getByRole("heading", { name: "Operator action board" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Deployment controls" })).toBeVisible();
 
     const saveProjectGate = page.getByRole("button", { name: "Save project gate for Trades Hall deployment" });
     await saveProjectGate.click();

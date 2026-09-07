@@ -92,15 +92,14 @@ export function CostsLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="Costs lens"
       title="Cost scenario"
       icon={<CircleDollarSign size={18} />}
       source="Estimate"
       testId="costs-lens-panel"
-      footer="Scenario estimate from your editable rates — not a quote or an offer. Confirm pricing with the venue."
+      footer="Estimate, not a quote. Confirm pricing with the venue."
     >
       <LensPanelSection label="Rates (editable)">
-        <p className="lens-panel__field-hint">Starting example rates — edit to your venue&apos;s pricing.</p>
+        <p className="lens-panel__field-hint">Example rates — replace with venue prices.</p>
         <RateField label="Room hire (£)" minor={roomHireMinor} onMinor={setRoomHireMinor} testId="cost-room-hire" />
         <RateField label="Catering (£/cover)" minor={cateringPerCoverMinor} onMinor={setCateringPerCoverMinor} testId="cost-catering" />
         <RateField label="Furniture (£/table)" minor={furniturePerTableMinor} onMinor={setFurniturePerTableMinor} testId="cost-furniture" />
@@ -142,7 +141,7 @@ export function CostsLensPanel(): ReactElement {
             <small>
               {model.perCoverMinor !== null
                 ? `${formatMinorAsCurrency(model.perCoverMinor)} per cover`
-                : "set a guest count for a per-cover figure"}
+                : "Set guest count for price per cover"}
             </small>
           </span>
           <span className="lens-panel__cost-line-amount">{formatMinorAsCurrency(model.totalMinor)}</span>

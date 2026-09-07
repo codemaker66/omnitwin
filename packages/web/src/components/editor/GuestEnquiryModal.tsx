@@ -192,10 +192,6 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
     if (e.key === "Escape") onClose();
   }, [onClose]);
 
-  // `split(...)[0]` is `string | undefined` under noUncheckedIndexedAccess, so
-  // coalesce to null up-front and keep the render-side check as a single
-  // is-non-null comparison.
-  const displayName: string | null = name.trim() !== "" ? (name.trim().split(/\s+/)[0] ?? null) : null;
   const layoutSummary = getLayoutSummary();
 
   // -----------------------------------------------------------------------
@@ -248,14 +244,14 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             fontSize: 26, fontWeight: 700, color: "#f5f5f5",
             fontFamily: "'Playfair Display', serif", marginBottom: 8,
           }}>
-            {displayName !== null ? `Beautiful work, ${displayName}` : "Your layout is on its way"}
+            Layout sent
           </h2>
 
           <p style={{
             fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.6,
             marginBottom: 8, maxWidth: 340, marginLeft: "auto", marginRight: "auto",
           }}>
-            The Trades Hall events team now has your layout and will be in touch at
+            Trades Hall will reply to
           </p>
           <p style={{
             fontSize: 15, fontWeight: 600, color: GOLD, marginBottom: 24,
@@ -292,7 +288,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             }}
             onClick={() => { void handleCopy(); }}
           >
-            {copied === "success" ? "Copied to clipboard" : copied === "fail" ? "Couldn\u2019t copy \u2014 try manually" : "Copy link to your layout"}
+            {copied === "success" ? "Copied to clipboard" : copied === "fail" ? "Couldn\u2019t copy \u2014 try manually" : "Copy layout link"}
           </button>
 
           {/* Close */}
@@ -311,7 +307,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 6px 28px rgba(201,168,76,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 20px rgba(201,168,76,0.25)`; e.currentTarget.style.transform = ""; }}
           >
-            Back to your layout
+            Back to layout
           </button>
         </div>
       </div>
@@ -370,12 +366,12 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             fontFamily: "'Playfair Display', serif", marginBottom: 8,
             lineHeight: 1.2,
           }}>
-            Send your layout to the events team
+            Send your layout
           </h2>
           <p style={{
             fontSize: 13, color: "rgba(255,255,255,0.4)", lineHeight: 1.5,
           }}>
-            No account needed. They&apos;ll review your setup and get back to you with availability and pricing.
+            No account needed.
           </p>
         </div>
 
@@ -565,7 +561,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               style={{ minHeight: 72, resize: "vertical" }}
               value={message}
               onChange={(e) => { setMessage(e.target.value); }}
-              placeholder="Tell us about your event — we'd love to hear the details"
+              placeholder="Event details"
             />
           </div>
 
@@ -597,7 +593,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             textAlign: "center", fontSize: 12, color: "rgba(255,255,255,0.36)",
             marginTop: 14, lineHeight: 1.4,
           }}>
-            Your details are shared only with the Trades Hall events team. No spam, ever.
+            Your details are shared only with the Trades Hall events team.
           </p>
         </form>
       </div>

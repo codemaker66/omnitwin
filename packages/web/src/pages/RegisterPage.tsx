@@ -35,28 +35,22 @@ export function RegisterPage(): React.ReactElement {
           Venviewer
         </div>
         <h1 className="auth-page__title">
-          Your venue team starts here.
+          Create an account.
         </h1>
         <p className="auth-page__copy">
-          Create your Venviewer account using the email address your venue invited. Verify your email, then open your venue workspace.
+          Use the email address your venue invited.
         </p>
-        <div className="auth-page__proof-grid" aria-label="Workspace capabilities">
-          <span>Your own account</span>
-          <span>Your venue team</span>
-          <span>One shared plan</span>
-        </div>
       </section>
       <section className="auth-page__form-shell" aria-label="Secure account creation form">
         <ClerkLoading>
           <div className="auth-page__loading">
             <ActivityStatus>Loading secure account creation.</ActivityStatus>
-            <p>Keep this page open while the account form connects.</p>
           </div>
         </ClerkLoading>
         <ClerkFailed>
           <div className="auth-page__loading auth-page__loading--failed" role="alert">
             <div>Secure account creation is unavailable.</div>
-            <p>Refresh this page and try again. If it still fails, contact your Venviewer contact.</p>
+            <p>Refresh the page to try again.</p>
           </div>
         </ClerkFailed>
         <ClerkLoaded>

@@ -156,7 +156,7 @@ describe("OnboardingView", () => {
   it("submits a managed onboarding package with owner and staff invitations", async () => {
     render(<OnboardingView />);
 
-    await screen.findByText("A venue and its first administrator.");
+    await screen.findByText("New client workspace");
     fireEvent.change(screen.getByTestId("organisation-name"), { target: { value: "Trades Hall Trust" } });
     fireEvent.change(screen.getByTestId("venue-name"), { target: { value: "Trades Hall Glasgow" } });
     fireEvent.change(screen.getByTestId("venue-address"), { target: { value: "85 Glassford Street, Glasgow G1 1UH" } });
@@ -213,7 +213,7 @@ describe("OnboardingView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
 
-    expect(await screen.findByText("A venue and its first administrator.")).toBeTruthy();
+    expect(await screen.findByText("New client workspace")).toBeTruthy();
   });
 
   it("invites additional staff from an existing workspace action card", async () => {

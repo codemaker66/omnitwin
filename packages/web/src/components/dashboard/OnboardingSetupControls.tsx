@@ -35,7 +35,7 @@ export function OnboardingSetupControls({ workspace, project, entitlement, onCha
     } catch (failure) { setError(failure instanceof Error ? failure.message : "The setup change could not be saved. Please try again."); }
     finally { lock.current = false; setBusy(null); onBusy(false); }
   };
-  return <details className="onboarding-details"><summary>Setup review and billing</summary><p className="onboarding-note">Keep commercial verification and setup review separate from a person's venue role.</p>
+  return <details className="onboarding-details"><summary>Setup review and billing</summary>
     <fieldset disabled={busy !== null} className="onboarding-fieldset"><div className="onboarding-create-grid">
       <div className="onboarding-fields"><h3>Setup review</h3>{projectDraft === undefined ? <p>No setup review is recorded.</p> : <>
         <label className="onboarding-field"><span>Project status</span><select aria-label={`Project status for ${workspace.name}`} value={projectDraft.status} onChange={(event) => {

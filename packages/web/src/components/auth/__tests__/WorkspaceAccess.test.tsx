@@ -58,7 +58,7 @@ describe("authoritative account access", () => {
     mocks.getCurrentAuthUser.mockReturnValue(request.promise);
     render(<Flow />);
     expect(screen.queryByText("Venue operations")).toBeNull();
-    expect(screen.getByRole("status").textContent).toContain("Confirming your venue access");
+    expect(screen.getByRole("status").textContent).toContain("Checking access");
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
     await act(async () => { request.resolve(venueAdmin); await request.promise; });
     expect(screen.getByText("Venue operations")).toBeDefined();
@@ -69,7 +69,7 @@ describe("authoritative account access", () => {
   it("shows pending access for an uninvited account and can accept a later grant", async () => {
     mocks.getCurrentAuthUser.mockRejectedValueOnce(new ApiError(403, "Invitation required", "INVITATION_REQUIRED"));
     render(<Flow />);
-    await screen.findByRole("heading", { name: "Your account is ready." });
+    await screen.findByRole("heading", { name: "Venue access pending" });
     expect(screen.queryByRole("button", { name: "Open account settings" })).toBeNull();
     expect(screen.getByText("elaine@example.test")).toBeDefined();
     expect(screen.queryByText("Venue operations")).toBeNull();
@@ -83,7 +83,7 @@ describe("authoritative account access", () => {
     mocks.identity.user.primaryEmailAddress.verification.status = "unverified";
     mocks.getCurrentAuthUser.mockRejectedValueOnce(new ApiError(403, "Verify your email", "EMAIL_UNVERIFIED"));
     const view = render(<Flow />);
-    await screen.findByRole("heading", { name: "Verify your email to continue." });
+    await screen.findByRole("heading", { name: "Verify your email" });
     expect(useAuthStore.getState().accessStatus).toBe("error");
     expect(screen.getByRole("status").textContent).toContain("choose Complete verification");
     expect(screen.queryByText("Venue operations")).toBeNull();
@@ -102,7 +102,7 @@ describe("authoritative account access", () => {
     mocks.getToken.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Check my access" }));
     expect(mocks.getToken).toHaveBeenCalledWith({ skipCache: true });
-    expect(screen.getByRole("status").textContent).toContain("Confirming your venue access");
+    expect(screen.getByRole("status").textContent).toContain("Checking access");
     expect(screen.getByRole("button", { name: "Use another account" })).toBeDefined();
     expect(mocks.getCurrentAuthUser).toHaveBeenCalledTimes(1);
     await act(async () => { freshToken.resolve("verified-token"); await freshToken.promise; });
@@ -136,7 +136,7 @@ describe("authoritative account access", () => {
     expect(mocks.getToken).toHaveBeenCalledWith({ skipCache: true });
     expect(mocks.getCurrentAuthUser).toHaveBeenCalledTimes(1);
     await act(async () => { freshToken.reject(new Error("Refresh unavailable")); await freshToken.promise.catch(() => undefined); });
-    await screen.findByRole("heading", { name: "Let’s reconnect." });
+    await screen.findByRole("heading", { name: "Connection unavailable" });
     expect(screen.getByRole("alert").textContent).toContain("could not confirm");
     expect(mocks.getCurrentAuthUser).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Venue operations")).toBeNull();
@@ -185,7 +185,7 @@ describe("authoritative account access", () => {
   it("reports a service failure separately from an invitation wait and recovers", async () => {
     mocks.getCurrentAuthUser.mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVER_ERROR"));
     render(<Flow />);
-    await screen.findByRole("heading", { name: "Let’s reconnect." });
+    await screen.findByRole("heading", { name: "Connection unavailable" });
     expect(screen.getByRole("alert").textContent).toContain("could not confirm");
     mocks.getCurrentAuthUser.mockResolvedValueOnce(venueAdmin);
     fireEvent.click(screen.getByRole("button", { name: "Check my access" }));

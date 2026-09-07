@@ -58,7 +58,7 @@ export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSea
     <div>
       <input
         type="text"
-        placeholder="Search by name, email, or organisation (min 2 characters)"
+        placeholder="Name, email or organisation"
         value={query}
         onChange={(e) => { handleInput(e.target.value); }}
         style={{
@@ -72,7 +72,7 @@ export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSea
       {loading && <ActivityStatus style={{ color: "#999", fontSize: 13 }}>Searching...</ActivityStatus>}
 
       {!loading && query.length < 2 && results === null && (
-        <p style={{ color: "#999", fontSize: 14 }}>Search for clients by name, email, or organisation</p>
+        <p style={{ color: "#999", fontSize: 14 }}>Enter at least 2 characters.</p>
       )}
 
       {!loading && query.length >= 2 && !hasResults && results !== null && (

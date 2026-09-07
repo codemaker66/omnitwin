@@ -25,7 +25,7 @@ describe("room card copy", () => {
     const line = measuredLine(reception, false);
     expect(line).not.toMatch(/ m(\s|·|$)/u);
     expect(line).toContain(splatLine(reception));
-    expect(stateLine(reception, false)).toMatch(/being aligned/iu);
+    expect(stateLine(reception, false)).toMatch(/alignment in review/iu);
     expect(stateLine(reception, false)).toMatch(/not yet walkable/iu);
   });
 
@@ -33,8 +33,7 @@ describe("room card copy", () => {
     const saloon = bundle("saloon");
     expect(saloon.alignmentConfidence).toBe("review");
     expect(measuredLine(saloon, true)).toBe(`${splatLine(saloon)} · alignment in review`);
-    expect(stateLine(saloon, true)).toMatch(/walkable/iu);
-    expect(stateLine(saloon, true)).toMatch(/dimensions withheld/iu);
+    expect(stateLine(saloon, true)).toBe("Dimensions under review");
   });
 
   it("has nothing to add for a room that is confident and walkable", () => {

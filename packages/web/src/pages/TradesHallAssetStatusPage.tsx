@@ -247,7 +247,6 @@ export function TradesHallAssetStatusPage(): ReactElement {
           <p className="asset-status-eyebrow">Internal asset registry</p>
           <h1>Trades Hall runtime rooms</h1>
           <p>
-            Room-level capture and runtime package state for P0 real asset intake.
             Missing packages are planning context only.
           </p>
         </div>

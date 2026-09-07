@@ -31,7 +31,7 @@ function RegistrationLink(): ReactElement {
     setState("copying");
     try { await navigator.clipboard.writeText(link); setState("copied"); } catch { setState("failed"); }
   };
-  return <div className="onboarding-registration"><div><strong>Share the account link</strong><p>Ask each person to create an account or sign in using the exact email listed above. Access is connected after their email is verified.</p></div>
+  return <div className="onboarding-registration"><div><strong>Share the account link</strong><p>Use the listed email to sign in, then verify it to connect access.</p></div>
     <div className="onboarding-link-row"><input aria-label="Account registration link" value={link} readOnly onFocus={(event) => { event.target.select(); }} />
       <button type="button" className="onboarding-button onboarding-button--secondary" disabled={state === "copying"} aria-busy={state === "copying"} onClick={() => { void copy(); }}>
         {state === "copying" ? <ActivityIndicator size={18} /> : state === "copied" ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
@@ -80,7 +80,7 @@ function CreateWorkspace({ summary, onCreated, onBusy, onCancel }: {
     finally { lock.current = false; setBusy(false); onBusy(false); }
   };
   return <section className="onboarding-panel" aria-labelledby="new-client-title">
-    <div className="onboarding-section-heading"><div><p className="onboarding-eyebrow">Welcome a client</p><h2 id="new-client-title">A venue and its first administrator.</h2></div>
+    <div className="onboarding-section-heading"><div><h2 id="new-client-title">New client workspace</h2></div>
       {summary.workspaces.length > 0 && <button type="button" className="onboarding-button onboarding-button--text" disabled={busy} onClick={onCancel}>Back to clients</button>}</div>
     <form onSubmit={(event) => { void submit(event); }}><fieldset disabled={busy} className="onboarding-fieldset">
       <div className="onboarding-create-grid"><div className="onboarding-form-section"><h3><span className="onboarding-step">1</span> Choose the venue</h3>
@@ -91,8 +91,7 @@ function CreateWorkspace({ summary, onCreated, onBusy, onCancel }: {
           setForm((current) => ({ ...current, organisationName: current.organisationName.trim() === "" || current.organisationName === selectedVenue?.name
             ? nextVenue?.name ?? "" : current.organisationName }));
         }}><option value="">Choose a venue</option>{availableVenues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}</select></label>
-          <p className="onboarding-note">This connects the client to the venue's existing rooms, bookings and inventory.</p>
-          {availableVenues.length === 0 && <p className="onboarding-empty">Every existing venue already has a client workspace, or no venues have been added. Choose a client above to manage its access, or create a new venue.</p>}
+          {availableVenues.length === 0 && <p className="onboarding-empty">No unassigned venues. Choose a client to manage access, or create a venue.</p>}
           {selectedVenue !== undefined && <div className="onboarding-venue-preview"><Building2 size={22} aria-hidden="true" /><div><strong>{selectedVenue.name}</strong><p>{selectedVenue.address}</p></div></div>}
         </> : <div className="onboarding-fields">
           <label className="onboarding-field"><span>Venue name</span><input required value={form.venueName} data-testid="venue-name" onChange={(event) => {
@@ -108,7 +107,7 @@ function CreateWorkspace({ summary, onCreated, onBusy, onCancel }: {
         <label className="onboarding-field"><span>First administrator email</span><input type="email" required value={form.contactEmail} autoComplete="off" data-testid="owner-email" onChange={(event) => { setField("contactEmail", event.target.value); }} /></label>
         <RoleSelect value={venueRole} onChange={setVenueRole} label="First contact's venue role" />
         <p className="onboarding-note"><ShieldCheck size={18} aria-hidden="true" /> {roleHelp}</p>
-        <div className="onboarding-next"><strong>They create their own account.</strong><p>After you save, share the account link. Their verified email connects them to the access you grant here.</p></div>
+        <div className="onboarding-next"><p>Share the account link after saving. Access starts after email verification.</p></div>
       </div></div>
       <details className="onboarding-details"><summary>Team, billing and setup options</summary><div className="onboarding-fields onboarding-fields--two">
         <label className="onboarding-field"><span>Workspace name (optional)</span><input value={form.workspaceName} onChange={(event) => { setField("workspaceName", event.target.value); }} /></label>
@@ -175,8 +174,8 @@ function WorkspaceAccess({ workspace, summary, onChanged, onBusy }: {
   return <section className="onboarding-panel" aria-labelledby="client-workspace-title">
     <div className="onboarding-section-heading"><div><p className="onboarding-eyebrow">{organisation?.name ?? "Client workspace"}</p><h2 id="client-workspace-title">{venue?.name ?? workspace.name}</h2><p>{workspace.name}</p></div>
       <div className="onboarding-counts"><span><strong>{members.filter((member) => member.status === "active").length}</strong> connected</span><span><strong>{members.filter((member) => membershipState(member, summary).tone === "pending").length}</strong> awaiting sign-in</span></div></div>
-    <div className="onboarding-access-grid"><div><h3>People & access</h3><p className="onboarding-note">Each role applies to this venue. New and updated access connects when the person signs in with their verified email.</p>
-      {members.length === 0 ? <p className="onboarding-empty">No people have been given access yet. Add your first venue administrator.</p> : <ul className="onboarding-members">{members.map((member) => {
+    <div className="onboarding-access-grid"><div><h3>People & access</h3><p className="onboarding-note">Venue access connects on verified sign-in.</p>
+      {members.length === 0 ? <p className="onboarding-empty">Add your first venue administrator.</p> : <ul className="onboarding-members">{members.map((member) => {
         const state = membershipState(member, summary);
         return <li key={member.id} className="onboarding-member"><div className="onboarding-member-main"><strong>{member.email}</strong><span>{ROLE_LABELS[member.venueRole]}</span><span className={`onboarding-status onboarding-status--${state.tone}`}>{state.label}</span>
           {state.expiresAt !== null && <small>{state.tone === "expired" ? "Expired" : "Sign in by"} {new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(state.expiresAt))}</small>}</div>
@@ -222,8 +221,8 @@ export function OnboardingView(): ReactElement {
       projects: [...current.projects, result.project], entitlements: [...current.entitlements, result.entitlement] });
     setCreatedEmail(result.ownerMembership.email); setSelectedId(result.workspace.id); setCreating(false); void load();
   };
-  return <div className="onboarding-shell"><header className="onboarding-hero"><div><p className="onboarding-eyebrow">Venviewer · client relationships</p><h1>A welcome that opens the right doors.</h1><p>Bring a venue into Venviewer, give its people the right access, and see who is ready to work.</p></div><div className="onboarding-hero-mark" aria-hidden="true"><Building2 strokeWidth={0.8} /><span>Places.<br />People.<br />Possibilities.</span></div></header>
-    <div className="onboarding-toolbar"><div><h2>Clients & access</h2><p>Venviewer platform administration</p></div><div className="onboarding-toolbar-actions">
+  return <div className="onboarding-shell"><header className="onboarding-hero"><div><h1>Clients & access</h1></div><div className="onboarding-hero-mark" aria-hidden="true"><Building2 strokeWidth={0.8} /></div></header>
+    <div className="onboarding-toolbar"><div><p>Venviewer platform administration</p></div><div className="onboarding-toolbar-actions">
       {summary !== null && summary.workspaces.length > 0 && <label className="onboarding-field"><span className="onboarding-sr-only">Client workspace</span><select disabled={busy} value={showCreate ? "" : workspace?.id ?? ""} onChange={(event) => { setSelectedId(event.target.value); setCreating(false); setCreatedEmail(null); }}><option value="" disabled>Choose a client</option>{summary.workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
       <button type="button" className="onboarding-button onboarding-button--secondary" disabled={loading || busy} onClick={() => { void load(); }} aria-label="Refresh clients"><RefreshCw size={17} aria-hidden="true" />Refresh</button>
       {summary !== null && !showCreate && <button type="button" className="onboarding-button" disabled={busy} onClick={() => { setCreating(true); setCreatedEmail(null); }}><Plus size={18} aria-hidden="true" />Add client</button>}

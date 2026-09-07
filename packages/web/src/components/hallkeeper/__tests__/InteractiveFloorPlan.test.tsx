@@ -47,7 +47,7 @@ describe("InteractiveFloorPlan saved geometry", () => {
     expect(container.querySelectorAll("[data-footprint-id]")).toHaveLength(162);
     expect(container.querySelectorAll("ellipse[data-footprint-shape]")).toHaveLength(18);
     expect(container.querySelectorAll("polygon[data-footprint-shape]")).toHaveLength(144);
-    expect(screen.getByText("162 furniture footprints · saved layout geometry")).toBeTruthy();
+    expect(screen.getByText("Saved layout · 162 footprints")).toBeTruthy();
     expect(container.querySelector("[data-room-outline]")?.tagName).toBe("polygon");
   });
 

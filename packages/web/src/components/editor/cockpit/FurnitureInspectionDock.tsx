@@ -80,7 +80,6 @@ export function FurnitureInspectionDock({
       aria-label="Generated furniture inspection"
     >
       <header className="furniture-inspection__header">
-        <p className="furniture-inspection__eyebrow">Generated visual stand-in</p>
         <h2>{selection.catalogueItem.name}</h2>
         <p className="furniture-inspection__status">
           AI-generated proxy — presentation only

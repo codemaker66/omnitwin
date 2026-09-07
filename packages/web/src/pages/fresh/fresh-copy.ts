@@ -27,7 +27,7 @@ export const FRESH_HEADLINE_KINETIC = "lit";
 export const FRESH_HEADLINE_AFTER = `for ${String(HALL_LIT_YEARS)} years.`;
 
 export const FRESH_LEDE =
-  "Robert Adam's guild hall on Glassford Street — home of Glasgow's trades since 1791, and still the room the city celebrates in. Dinners beneath the dome, ceremonies in candlelight, conferences with two centuries of good company.";
+  "Weddings, dinners and conferences in Robert Adam's Glasgow hall.";
 
 export const FRESH_CTA_DATES = "Ask about a date";
 export const FRESH_CTA_ROOMS = "See the rooms";
@@ -54,7 +54,7 @@ export const FRESH_TOUR_HREF = "/tour";
 export const FRESH_TOUR_ENABLED: boolean = false;
 export const FRESH_TOUR_TITLE = "Then walk the whole building";
 export const FRESH_TOUR_LINE =
-  "The full hall in the same capture — 149 viewpoints across every floor, room to room, with dollhouse and plan views.";
+  "149 viewpoints, with dollhouse and floor plan views.";
 export const FRESH_TOUR_CTA = "Open the walkthrough";
 /** The door's ground: the walkthrough's own dollhouse view — product
  *  output, not photography, so the no-repeat photo law is untouched. */
@@ -66,7 +66,7 @@ export const FRESH_TOUR_GROUND_ALT =
   "Trades Hall opened as a captured model — rooms and the spiral stair seen from above in the walkthrough's dollhouse view, viewpoints dotted across the floors";
 export const FRESH_TWIN_BASE = "/venues/trades-hall/twin";
 export const FRESH_DOSSIER_TWIN_CTA = "See this room in the walkthrough";
-export const FRESH_DOSSIER_WALK_CTA = "Step into this room on this page";
+export const FRESH_DOSSIER_WALK_CTA = "Step into this room";
 
 /** Section kickers — the page's running heads: small letterspaced marks
  *  above each heading. Written sentence case; CSS sets them uppercase. */
@@ -79,7 +79,7 @@ export const FRESH_KICKER_CONTACT = "The people";
 
 export const FRESH_ROOMS_TITLE = "Six rooms, one house";
 export const FRESH_ROOMS_LEDE =
-  "Every room is photographed as it is. Capacities are the venue's own published figures.";
+  "Venue-published capacities.";
 
 export interface FreshRoom {
   readonly slug: "grand-hall" | "saloon" | "reception-room" | "robert-adam-room";
@@ -138,7 +138,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
   {
     slug: "grand-hall",
     name: "The Grand Hall",
-    line: "Dinner beneath the dome, the silk frieze of the trades above you.",
+    line: "Dinner beneath the dome.",
     image: tradesHallVenueImages.grandHall,
     alt: "The Grand Hall dressed and candlelit beneath the dome",
     width: 1535,
@@ -149,7 +149,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
   {
     slug: "saloon",
     name: "The Saloon",
-    line: "Panelled walls and stained glass — made for speeches and toasts.",
+    line: "Panelled walls and stained glass.",
     image: tradesHallVenueImages.saloon,
     alt: "The Saloon, stained-glass windows above panelled walls",
     width: 1535,
@@ -160,7 +160,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
   {
     slug: "reception-room",
     name: "The Reception Room",
-    line: "Where an evening at Trades Hall begins.",
+    line: "Ceremonies and receptions.",
     twinLook: "node=scan_126&look=scan_126%2C-20%2C4%2C75",
     inPageWalk: true,
     image: tradesHallVenueImages.receptionRoom,
@@ -172,7 +172,7 @@ export const FRESH_ROOMS: readonly FreshRoom[] = [
   {
     slug: "robert-adam-room",
     name: "The Robert Adam Room",
-    line: "The architect's own room, at its most intimate scale.",
+    line: "An intimate ceremony room.",
     image: tradesHallVenueImages.robertAdamRoom,
     alt: "A bride mid-aisle at a ceremony in the Robert Adam Room",
     width: 1122,
@@ -197,22 +197,22 @@ export const FRESH_MOTTO = "Union is strength";
 export const FRESH_MOTTO_ATTR = "The motto of the Trades House of Glasgow";
 
 export const FRESH_GALLERIES_NOTE =
-  "The North and South Galleries seat forty each — quieter rooms for planning meetings, drinks, and green-room use.";
+  "North and South Galleries: 40 seats each.";
 
-export const FRESH_RATES_TITLE = "Weddings, plainly priced";
+export const FRESH_RATES_TITLE = "Wedding hire";
 export const FRESH_RATES_NOTE =
-  "Rates below are for exclusive wedding use of the hall. For dinners, conferences, and everything else, ask — every event is quoted on its shape.";
+  "Exclusive wedding hire. Contact the team for other events.";
 
 /** The Enquiry Composer — the page answers with published fit, then writes
  *  the email. Sentences it composes live in enquiry-fit.ts, swept there. */
 export const FRESH_ENQUIRY_TITLE = "Ask about a date";
 export const FRESH_ENQUIRY_LEDE =
-  "Tell the page your occasion and it will tell you the room, from the venue's own figures — then send the enquiry, or call.";
+  "Choose an occasion and guest count to find a room.";
 export const FRESH_ENQUIRY_EVENT_LABEL = "The occasion";
 export const FRESH_ENQUIRY_GUESTS_LABEL = "Guests";
-export const FRESH_ENQUIRY_DATE_LABEL = "The date, if you have one";
+export const FRESH_ENQUIRY_DATE_LABEL = "Date (optional)";
 export const FRESH_ENQUIRY_GUESTS_PROMPT =
-  "Tell us how many you are, and the rooms will sort themselves.";
+  "Enter a guest count to see suitable rooms.";
 export const FRESH_ENQUIRY_SEND = "Open in your email app";
 export const FRESH_ENQUIRY_COPY_ACTION = "Copy the enquiry";
 export const FRESH_ENQUIRY_COPIED = "Copied";
@@ -225,18 +225,18 @@ export const FRESH_ENQUIRY_OR_CALL = "or call";
  *  needs to reply. */
 export const FRESH_ENQUIRY_NAME_LABEL = "Your name";
 export const FRESH_ENQUIRY_EMAIL_LABEL = "Your email";
-export const FRESH_ENQUIRY_PHONE_LABEL = "Your phone, if you would like a call";
+export const FRESH_ENQUIRY_PHONE_LABEL = "Phone";
 export const FRESH_ENQUIRY_OPTIONAL = "optional";
 
 export const FRESH_ENQUIRY_SUBMIT = "Send enquiry";
 export const FRESH_ENQUIRY_SENDING = "Sending…";
-export const FRESH_ENQUIRY_EMAIL_REQUIRED = "Add an email address and the team can write back.";
-export const FRESH_ENQUIRY_EMAIL_INVALID = "That email address does not look right.";
-export const FRESH_ENQUIRY_SENT_TITLE = "Your enquiry is with the team";
+export const FRESH_ENQUIRY_EMAIL_REQUIRED = "Enter your email address.";
+export const FRESH_ENQUIRY_EMAIL_INVALID = "Enter a valid email address.";
+export const FRESH_ENQUIRY_SENT_TITLE = "Enquiry sent";
 export const FRESH_ENQUIRY_SENT_LINE =
-  "Someone at Trades Hall will read it and reply by email. If it is urgent, the phone is quicker.";
+  "The events team will reply by email.";
 export const FRESH_ENQUIRY_ERROR =
-  "That did not send — the fault is ours, not yours. Send it from your own email app instead, or call the hall.";
+  "Enquiry not sent. Try your email app or call the hall.";
 
 /** Shown at the point of collection, as UK GDPR transparency requires. */
 export const FRESH_ENQUIRY_PRIVACY_NOTE =
@@ -249,16 +249,16 @@ export const FRESH_ENQUIRY_PRIVACY_HREF = "/privacy";
  *  no-repeat law holds); the room itself loads only when invited. */
 export const FRESH_WALK_TITLE = "Walk the room";
 export const FRESH_WALK_LEDE =
-  "The Reception Room, captured — rendered live in your browser, not a photograph. Step in, look around from where the scanner stood, and move a table with your own hands.";
-export const FRESH_WALK_CHIP = "This is not a photograph.";
+  "Explore the captured Reception Room and try a table layout.";
+export const FRESH_WALK_CHIP = "Captured room";
 export const FRESH_WALK_WAKE = "Step in";
 export const FRESH_WALK_SIZE_NOTE =
   "Loads the captured room — about 60 MB, best on wifi.";
-export const FRESH_WALK_LOADING = "The room is arriving";
+export const FRESH_WALK_LOADING = "Loading room";
 export const FRESH_WALK_HINT =
   "Drag to look around · drag the gold table to move it · arrow keys nudge · Esc steps out";
 export const FRESH_WALK_FAILED =
-  "The captured room couldn't open in this browser — the photographs above still tell the truth.";
+  "The room couldn't open in this browser.";
 export const FRESH_WALK_NOTE =
   "The same capture drives Venviewer, the planning tool beneath this page.";
 export const FRESH_WALK_POSTER = "/images/venue/walk-poster-1120.webp";
@@ -277,7 +277,7 @@ export const FRESH_DOSSIER_DRAWN_NOTE = "drawn to count";
 
 export const FRESH_HERITAGE_TITLE = "The house of the trades";
 export const FRESH_HERITAGE_BODY =
-  "Trades Hall was designed by Robert Adam and has served as the meeting place of the Trades House of Glasgow — the city's fourteen incorporated crafts — since 1791. It is the oldest building in Glasgow still used for its original purpose. When you celebrate here, you are keeping its diary going.";
+  "Designed by Robert Adam, Trades Hall has been home to Glasgow's fourteen incorporated crafts since 1791.";
 
 export const FRESH_CONTACT_TITLE = "Speak with the events team";
 export const FRESH_CONTACT_TEL_LABEL = "Telephone";

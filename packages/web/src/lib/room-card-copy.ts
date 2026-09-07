@@ -54,9 +54,9 @@ export function measuredLine(bundle: GeneratedRoomSplatBundle, walkable: boolean
  * is a failure to hide: the honest line IS the product here.
  */
 export function stateLine(bundle: GeneratedRoomSplatBundle, walkable: boolean): string | null {
-  if (!walkable) return "Being aligned — not yet walkable";
+  if (!walkable) return "Not yet walkable · alignment in review";
   if (bundle.alignmentConfidence !== "confident") {
-    return "Walkable — dimensions withheld until the scan is aligned";
+    return "Dimensions under review";
   }
   return null;
 }

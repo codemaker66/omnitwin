@@ -12,11 +12,11 @@
 export const TWIN_TITLE = "The Twin — Trades Hall Glasgow";
 
 /** Loading state — the manifest is being fetched. */
-export const TWIN_LOADING_LINE = "Opening the twin. The hall is on its way.";
+export const TWIN_LOADING_LINE = "Opening the twin…";
 
 /** Error state — fetch or schema validation failed. */
 export const TWIN_ERROR_LINE =
-  "The twin could not be reached. The hall itself is unaffected.";
+  "The twin could not load.";
 export const TWIN_RETRY_LABEL = "Try again";
 
 /** Production posture while the bundle host is not yet published (Task 12). */
@@ -25,11 +25,11 @@ export const TWIN_PREPARING_LINE =
 
 /** Always visible alongside the twin — claim-safe framing of what it shows. */
 export const TWIN_DISCLOSURE =
-  "Planning-grade twin — positions and dimensions are planning estimates; final details confirmed by the venue team.";
+  "Positions and dimensions are estimates. Confirm details with the venue.";
 
 /** Ready-state placeholder stage line until the viewer lands (Task 9). */
 export function twinStageLine(nodeCount: number): string {
-  return `${String(nodeCount)} scan ${nodeCount === 1 ? "point" : "points"}, posed and waiting.`;
+  return `${String(nodeCount)} scan ${nodeCount === 1 ? "point" : "points"}.`;
 }
 
 /** 1-based viewpoint number parsed off a scan id (scan_035 → 36), or null when
@@ -108,17 +108,17 @@ export function twinEnquireTitle(venueName: string): string {
   return `Enquire about ${venueName}`;
 }
 export const TWIN_ENQUIRE_SUBHEAD =
-  "No account needed. The events team will get back to you with availability and pricing.";
+  "Ask the events team about availability and pricing.";
 export const TWIN_ENQUIRE_CTA = "Send to the events team";
 export const TWIN_ENQUIRE_SENDING = "Sending your enquiry…";
-export const TWIN_ENQUIRE_SUCCESS_TITLE = "Your enquiry is on its way";
+export const TWIN_ENQUIRE_SUCCESS_TITLE = "Enquiry sent";
 export function twinEnquireSuccessBody(venueName: string): string {
   return `The ${venueName} events team has your enquiry and will be in touch at`;
 }
 export const TWIN_ENQUIRE_TRUST =
-  "Your details are shared only with the venue's events team. No spam, ever.";
+  "Your details go only to the venue's events team.";
 export const TWIN_ENQUIRE_EMAIL_INVALID =
-  "We need a valid email so the events team can reach you.";
+  "Enter a valid email address.";
 export const TWIN_ENQUIRE_GENERIC_ERROR = "Something went wrong — please try again.";
 export const TWIN_ENQUIRE_CLOSE = "Close";
 export const TWIN_ENQUIRE_DONE = "Back to the walkthrough";

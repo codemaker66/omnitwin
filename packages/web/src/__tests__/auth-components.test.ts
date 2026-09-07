@@ -163,7 +163,7 @@ describe("ProtectedRoute", () => {
       children: "Platform surface",
     }));
 
-    expect(screen.getByRole("alert").textContent).toContain("reserved for Venviewer platform admins");
+    expect(screen.getByRole("alert").textContent).toContain("Platform access needed");
     expect(screen.queryByText("Platform surface")).toBeNull();
   });
 });
@@ -227,7 +227,7 @@ describe("OAuthConsentPage", () => {
 
     render(createElement(OAuthConsentPage));
 
-    expect(screen.getByLabelText("Venviewer OAuth consent").textContent).toContain("Review external access");
+    expect(screen.getByLabelText("Venviewer OAuth consent").textContent).toContain("Review access.");
     expect(screen.getByLabelText("OAuth consent decision").textContent).toContain("OAuthConsent");
     expect(document.title).toBe("OAuth consent - Venviewer");
   });

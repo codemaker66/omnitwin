@@ -110,7 +110,6 @@ export function OpsHandoffPage(): ReactElement {
         <div className="ops-handoff-page ops-handoff-centered" role="status">
         <ActivityIndicator size={64} />
         <h1>Loading handoff pack</h1>
-        <p>Preparing the latest compiled operations view.</p>
         </div>
       </DashboardLayout>
     );
@@ -140,7 +139,7 @@ export function OpsHandoffPage(): ReactElement {
       <div className="ops-handoff-page">
       <header className="ops-handoff-hero">
         <div>
-          <p className="ops-handoff-kicker">Internal operations handoff</p>
+          <p className="ops-handoff-kicker">Internal</p>
           <h1>Ops handoff pack</h1>
           <p>{bundle.pack.summary}</p>
         </div>
@@ -163,11 +162,11 @@ export function OpsHandoffPage(): ReactElement {
           <ClipboardCheck aria-hidden="true" />
           <div>
             <h2>Pick list</h2>
-            <p>{bundle.furniturePickList.totalItems} total item(s) from the approved snapshot.</p>
+            <p>{bundle.furniturePickList.totalItems} items · approved snapshot</p>
           </div>
         </div>
         {bundle.pickListItems.length === 0 ? (
-          <EmptyState>No pick-list rows were captured in this handoff pack.</EmptyState>
+          <EmptyState>No pick-list items.</EmptyState>
         ) : (
           <div className="ops-handoff-table" role="table" aria-label="Furniture pick list">
             <div className="ops-handoff-row ops-handoff-row-head" role="row">
@@ -191,11 +190,11 @@ export function OpsHandoffPage(): ReactElement {
           <ClipboardCheck aria-hidden="true" />
           <div>
             <h2>Setup tasks</h2>
-            <p>Checklist generated from the frozen hallkeeper snapshot.</p>
+            <p>From the approved snapshot.</p>
           </div>
         </div>
         {setupTasks.length === 0 ? (
-          <EmptyState>No setup rows were captured in this handoff pack.</EmptyState>
+          <EmptyState>No setup tasks.</EmptyState>
         ) : (
           <ol className="ops-handoff-task-list">
             {setupTasks.map((task) => (
@@ -213,11 +212,11 @@ export function OpsHandoffPage(): ReactElement {
           <RefreshCw aria-hidden="true" />
           <div>
             <h2>Room flip tasks</h2>
-            <p>Planning handoff only; event-day live execution is separate.</p>
+            <p>Planning handoff · execution tracked separately.</p>
           </div>
         </div>
         {roomFlipTasks.length === 0 && bundle.roomFlipPlans.length === 0 ? (
-          <EmptyState>No room flip phase is linked to this handoff pack.</EmptyState>
+          <EmptyState>No room flip linked.</EmptyState>
         ) : (
           <ol className="ops-handoff-task-list">
             {roomFlipTasks.map((task) => (
@@ -235,7 +234,6 @@ export function OpsHandoffPage(): ReactElement {
           <Truck aria-hidden="true" />
           <div>
             <h2>Supplier notes</h2>
-            <p>Internal dispatch notes derived from snapshot quantities and event notes.</p>
           </div>
         </div>
         <div className="ops-handoff-note-grid">
@@ -248,7 +246,7 @@ export function OpsHandoffPage(): ReactElement {
           ))}
         </div>
         {supplierTasks.length > 0 && (
-          <p className="ops-handoff-small">{supplierTasks.length} supplier task(s) are included in the checklist.</p>
+          <p className="ops-handoff-small">{supplierTasks.length} supplier tasks in the checklist.</p>
         )}
       </section>
 
@@ -293,7 +291,7 @@ export function OpsHandoffPage(): ReactElement {
           <FileText aria-hidden="true" />
           <div>
             <h2>BEO internal handoff</h2>
-            <p>Generated from the approved snapshot for staff review.</p>
+            <p>Staff review required.</p>
           </div>
         </div>
         <div className="ops-handoff-ai-draft">
@@ -347,7 +345,6 @@ export function OpsHandoffPage(): ReactElement {
             <ClipboardCheck aria-hidden="true" />
             <div>
               <h2>Breakdown tasks</h2>
-              <p>Pack-down checklist from approved snapshot totals.</p>
             </div>
           </div>
           <ol className="ops-handoff-task-list">

@@ -38,7 +38,7 @@ describe("InventoryImpact", () => {
     const demand = { ...context(), assessmentCurrent: false, canAct: false };
     render(<><InventoryImpact demand={demand} assetId={demandIds.asset} />
       <InventoryRemedyShortcut demand={demand} item={demandAssessment.items[0]} /></>);
-    expect(screen.getByText(/Previous assessment — refresh required/u)).toBeTruthy();
+    expect(screen.getByText(/Outdated assessment. Refresh required/u)).toBeTruthy();
     expect(screen.getByText(/Refresh the assessment for current shortages/u)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Prepare hire or inspection request" }).hasAttribute("disabled")).toBe(true);
   });
@@ -55,7 +55,7 @@ describe("InventoryImpact", () => {
     if (item === undefined) throw new Error("Missing test item");
     item.availability = null; item.stockRevision = null; item.unavailableReason = "stock_unrecorded";
     const { container } = render(<InventoryImpact demand={context(assessment)} assetId={demandIds.asset} />);
-    expect(screen.getByText(/Unknown counts remain unrecorded/u)).toBeTruthy();
+    expect(screen.getByText(/Record stock to assess availability/u)).toBeTruthy();
     expect(container.querySelector("dd")).toBeNull();
   });
 });

@@ -32,7 +32,7 @@ export function InventoryWindowForm({ initial, onAssess, onChange, disabled, bus
       <button className="inventory-button" type="submit" disabled={disabled || busy} aria-busy={busy}>
         {busy ? <ActivityIndicator size={18} /> : null}{busy ? "Assessing…" : "Assess demand"}</button>
     </div>
-    <p className="inventory-muted inventory-small">Dates and times use your browser clock: {inventoryClockLabel()}.</p>
+    <p className="inventory-muted inventory-small">Browser time: {inventoryClockLabel()}.</p>
     {error !== null ? <p role="alert" className="inventory-error">{error}</p> : null}
   </form>;
 }

@@ -11,7 +11,7 @@ describe("route arrival", () => {
     "uses the existing venue image only for an explicitly identified Grand Hall: %s", (route) => {
       const { container } = render(<MemoryRouter initialEntries={[route]}><RouteArrival /></MemoryRouter>);
       expect(container.querySelector("img")?.getAttribute("src")).toContain("grand-hall-room-1120.webp");
-      expect(screen.getByText("Venue photograph · event styling for inspiration")).toBeTruthy();
+      expect(screen.getByText("Venue photograph · styling inspiration")).toBeTruthy();
       expect(screen.getAllByRole("status")).toHaveLength(1);
       expect(screen.queryByRole("progressbar")).toBeNull();
       expect(container.querySelector('[data-activity-indicator="particles"]')).not.toBeNull();
@@ -22,7 +22,7 @@ describe("route arrival", () => {
     "does not infer a Grand Hall identity from another or unknown room: %s", (route) => {
       const { container } = render(<MemoryRouter initialEntries={[route]}><RouteArrival /></MemoryRouter>);
       expect(container.querySelector("img")).toBeNull();
-      expect(screen.getByRole("status").textContent).toContain("Opening your workspace");
+      expect(screen.getByRole("status").textContent).toContain("Opening…");
     },
   );
 
@@ -32,8 +32,8 @@ describe("route arrival", () => {
     expect(image).not.toBeNull();
     if (image !== null) fireEvent.error(image);
     expect(container.querySelector("img")).toBeNull();
-    expect(screen.queryByText("Venue photograph · event styling for inspiration")).toBeNull();
-    expect(screen.getByRole("status").textContent).toContain("Opening your room");
+    expect(screen.queryByText("Venue photograph · styling inspiration")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("Opening…");
     expect(screen.getByRole("link", { name: /Back to venue/ }).getAttribute("href")).toBe("/");
   });
 

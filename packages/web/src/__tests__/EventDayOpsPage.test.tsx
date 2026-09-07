@@ -353,7 +353,7 @@ describe("EventDayOpsPage", () => {
   it("does not invent a setup-sheet link when the event has no linked handoff", async () => {
     mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), handoffPack: null, sourceStatus: "missing_handoff" });
     renderPage();
-    await screen.findByText("Your working documents");
+    await screen.findByText("Working documents");
     expect(screen.queryByRole("link", { name: "Open current setup sheet" })).toBeNull();
     expect(screen.getByRole("link", { name: "Day Board" }).getAttribute("href")).toBe("/hallkeeper/today");
   });

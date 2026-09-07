@@ -27,7 +27,7 @@ export function SavedFloorPlan({ plan, phases, highlightedRowKey, onMarkerClick 
   const scaleMetres = Math.min(1, 10 ** Math.floor(Math.log10(200 / plan.pointsPerMetre)));
   return <div style={{ background: "#f8f5ee", border: "1px solid #e4dcd0", borderRadius: 10, overflow: "hidden" }}>
     <p style={{ margin: "16px 20px 0", color: "#686e5f", fontSize: 13 }}>
-      {plan.objects.length} furniture footprints · saved layout geometry
+      Saved layout · {plan.objects.length} footprints
     </p>
     <svg viewBox="0 0 1000 648" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Interactive saved floor plan"
       style={{ display: "block", width: "100%", height: "auto" }}>

@@ -178,7 +178,7 @@ describe("InventoryPanel", () => {
     expect(screen.getByText("Chiavari chair · Unsaved correction")).toBeTruthy();
     fireEvent.click(screen.getByText("Filter"));
     fireEvent.change(screen.getByLabelText("Stock status"), { target: { value: "unrecorded" } });
-    expect(screen.getByText("No matching items. Try another name, category or storage location.")).toBeTruthy();
+    expect(screen.getByText("No matching items.")).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>("Owned").value).toBe("210");
     expect(screen.getByLabelText<HTMLTextAreaElement>("Reason").value).toBe("Chair stocktake");
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));

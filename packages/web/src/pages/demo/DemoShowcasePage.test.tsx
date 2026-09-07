@@ -19,7 +19,7 @@ describe("Elaine's display-only showcase", () => {
     fireEvent.keyDown(document, { key: "ArrowLeft" });
     expectChapter("Chapter 1: The welcome");
 
-    fireEvent.click(screen.getByRole("button", { name: "Step inside the story" }));
+    fireEvent.click(screen.getByRole("button", { name: "Begin showcase" }));
     expectChapter("Chapter 2: The place");
     fireEvent.click(screen.getByRole("button", { name: "Next chapter" }));
     expectChapter("Chapter 3: The possibilities");

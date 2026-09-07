@@ -75,7 +75,7 @@ describe("TruthModeIndicator", () => {
     renderProceduralIndicator();
     fireEvent.click(screen.getByTestId("truth-mode-toggle"));
     expect(screen.getByRole("dialog", { name: /Truth Mode summary/i })).toBeTruthy();
-    expect(screen.getByText("Truth Mode L2")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Truth Mode summary" }).textContent).toContain("Truth Mode");
 
     fireEvent.click(screen.getByRole("button", { name: /Close Truth Mode summary/i }));
     expect(screen.queryByRole("dialog", { name: /Truth Mode summary/i })).toBeNull();
@@ -203,7 +203,7 @@ describe("TruthModeIndicator", () => {
     renderProceduralIndicator();
     fireEvent.click(screen.getByTestId("truth-mode-toggle"));
     expect(screen.queryByRole("button", { name: /Provenance drawer unavailable/i })).toBeNull();
-    expect(screen.getByText(/Open the Evidence lens/i)).toBeTruthy();
+    expect(screen.getByText("View sources and approvals in Evidence.")).toBeTruthy();
   });
 
   it.each(["default", "stored"] as const)("keeps %s desktop placement clear of the live blueprint guest controls", async (placement) => {

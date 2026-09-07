@@ -158,9 +158,7 @@ export function VenueSettings(): ReactElement {
     return (
       <section className="venue-settings-shell" aria-labelledby="venue-settings-title">
         <div className="venue-settings-state" role="status" aria-live="polite">
-          <p className="venue-settings-kicker">Venue record</p>
           <h2 id="venue-settings-title"><ActivityIndicator size={28} /> Loading venue settings</h2>
-          <p>Opening the current venue record and room manifest.</p>
         </div>
       </section>
     );
@@ -171,9 +169,8 @@ export function VenueSettings(): ReactElement {
       <section className="venue-settings-shell" aria-labelledby="venue-settings-title">
         <div className="venue-settings-state" role="status">
           <ShieldAlert size={24} aria-hidden="true" />
-          <p className="venue-settings-kicker">Venue record</p>
           <h2 id="venue-settings-title">No venue assigned</h2>
-          <p>Ask an admin to attach your account to a venue before editing public room details.</p>
+          <p>Ask an admin to assign your account to a venue.</p>
         </div>
       </section>
     );
@@ -184,7 +181,6 @@ export function VenueSettings(): ReactElement {
       <section className="venue-settings-shell" aria-labelledby="venue-settings-title">
         <div className="venue-settings-state venue-settings-state--error" role="alert">
           <ShieldAlert size={24} aria-hidden="true" />
-          <p className="venue-settings-kicker">Venue record</p>
           <h2 id="venue-settings-title">Venue settings unavailable</h2>
           <p>{loadError ?? "Venue settings could not be loaded."}</p>
           <button type="button" className="venue-settings-button" onClick={() => { void loadVenue(); }}>
@@ -200,15 +196,11 @@ export function VenueSettings(): ReactElement {
     <section className="venue-settings-shell" aria-labelledby="venue-settings-title">
       <header className="venue-settings-header">
         <div>
-          <p className="venue-settings-kicker">Venue record</p>
           <h2 id="venue-settings-title">Venue Settings</h2>
-          <p>
-            These fields drive staff dashboards, public room previews, proposal shells, and hallkeeper handoff headers.
-          </p>
         </div>
         <div className="venue-settings-status" data-state={isDirty ? "dirty" : "clean"} role="status" aria-live="polite">
           <BadgeCheck size={18} aria-hidden="true" />
-          {isDirty ? "Unsaved venue changes" : "Venue record in sync"}
+          {isDirty ? "Unsaved changes" : "Saved"}
         </div>
       </header>
 
@@ -310,7 +302,7 @@ export function VenueSettings(): ReactElement {
                 <span>{name.trim().slice(0, 2).toUpperCase() || "VV"}</span>
               )}
             </div>
-            <p className="venue-settings-kicker">Public identity preview</p>
+            <p className="venue-settings-kicker">Public preview</p>
             <h3>{name.trim() || venue.name}</h3>
             <p>{address.trim() || venue.address}</p>
           </div>
@@ -323,10 +315,6 @@ export function VenueSettings(): ReactElement {
             <div>
               <dt>Room records</dt>
               <dd>{venue.spaces.length}</dd>
-            </div>
-            <div>
-              <dt>Runtime exposure posture</dt>
-              <dd>Public copy remains evidence-gated.</dd>
             </div>
           </dl>
         </aside>

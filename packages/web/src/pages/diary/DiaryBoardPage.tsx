@@ -601,7 +601,6 @@ export function DiaryBoardPage(): ReactElement {
       <header className="diary-header">
         <div className="diary-heading">
           <h1 className="diary-title">{BOARD_COPY.title}</h1>
-          <p className="diary-subtitle">{BOARD_COPY.subtitle}</p>
         </div>
         <div className="diary-controls">
           <div className="diary-view-switch" role="group" aria-label="Zoom">

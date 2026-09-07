@@ -79,14 +79,13 @@ export function CaptureIntakePage(): ReactElement {
       <header className="capture-intake-hero">
         <div>
           <p className="capture-intake-kicker"><Fingerprint aria-hidden="true" /> Capture-to-Truth Factory</p>
-          <h1>Raw capture in. Verifiable candidate source bundle out.</h1>
-          <p>Read-only inventory, deterministic classification, digest-addressed copies, and an immutable source-stage ledger for Trades Hall.</p>
+          <h1>Capture intake</h1>
         </div>
         <div className="capture-intake-trust"><ShieldCheck aria-hidden="true" /><span>Platform-admin evidence surface</span></div>
       </header>
 
       {state.kind === "loading" && (
-        <section className="capture-intake-state" role="status"><ActivityIndicator size={48} /><div><h2>Reading sealed ledgers</h2><p>Checking the inspection plan and verified stage manifest.</p></div></section>
+        <section className="capture-intake-state" role="status"><ActivityIndicator size={48} /><div><h2>Reading sealed ledgers</h2></div></section>
       )}
       {state.kind === "error" && (
         <section className="capture-intake-state capture-intake-state--error" role="alert"><AlertTriangle aria-hidden="true" /><div><h2>Operator status unavailable</h2><p>{state.message}</p></div><button type="button" onClick={reload}>Retry</button></section>
@@ -108,7 +107,7 @@ function CaptureStatus(props: {
     <>
       <section className="capture-intake-command">
         <div className="capture-intake-command-head">
-          <div><p>Current boundary</p><h2>{stateLabel(props.status)}</h2></div>
+          <div><h2>{stateLabel(props.status)}</h2></div>
           <span data-status={props.status.qaStatus}>{props.status.qaStatus.replace(/_/gu, " ")}</span>
         </div>
         <div className="capture-intake-metrics">
@@ -127,23 +126,22 @@ function CaptureStatus(props: {
       </section>
 
       <section className="capture-intake-flow" aria-labelledby="capture-flow-title">
-        <div className="capture-intake-section-head"><p>Factory path</p><h2 id="capture-flow-title">A trust boundary, not a folder copy</h2></div>
+        <div className="capture-intake-section-head"><h2 id="capture-flow-title">Intake stages</h2></div>
         <ol>
-          <li data-complete={inspection !== null}><span>01</span><div><strong>Read-only inventory</strong><p>Regular files, signatures, byte sizes, timestamps, and source mutation checks.</p></div><Check aria-hidden="true" /></li>
-          <li data-complete={inspection !== null}><span>02</span><div><strong>Evidence-led classification</strong><p>Primary capture and original vendor controls are separated from later experiments.</p></div><Check aria-hidden="true" /></li>
-          <li data-complete={props.status.status === "staged"}><span>03</span><div><strong>Digest-addressed staging</strong><p>Partial copies are verified before atomic promotion; matching reruns are reused.</p></div><Check aria-hidden="true" /></li>
-          <li data-complete={props.status.status === "staged"}><span>04</span><div><strong>Immutable manifest</strong><p>The selected file list, byte total, SHA-256 values, and plan digest are sealed together.</p></div><Check aria-hidden="true" /></li>
-          <li data-complete={false}><span>05</span><div><strong>Runtime derivation + review</strong><p>Reconstruction, transform review, runtime QA, signing, and exposure remain separate gates.</p></div><ArrowRight aria-hidden="true" /></li>
+          <li data-complete={inspection !== null}><span>01</span><div><strong>Read-only inventory</strong></div><Check aria-hidden="true" /></li>
+          <li data-complete={inspection !== null}><span>02</span><div><strong>Evidence-led classification</strong></div><Check aria-hidden="true" /></li>
+          <li data-complete={props.status.status === "staged"}><span>03</span><div><strong>Digest-addressed staging</strong></div><Check aria-hidden="true" /></li>
+          <li data-complete={props.status.status === "staged"}><span>04</span><div><strong>Immutable manifest</strong></div><Check aria-hidden="true" /></li>
+          <li data-complete={false}><span>05</span><div><strong>Runtime derivation + review</strong></div><ArrowRight aria-hidden="true" /></li>
         </ol>
       </section>
 
       <section className="capture-intake-caveats" aria-labelledby="capture-caveats-title">
-        <div className="capture-intake-section-head"><p>Open gates</p><h2 id="capture-caveats-title">What this evidence does not establish</h2></div>
+        <div className="capture-intake-section-head"><h2 id="capture-caveats-title">Open gates</h2></div>
         <ul>{props.status.caveats.map((caveat) => <li key={caveat}><AlertTriangle aria-hidden="true" /><div><strong>{caveat.replace(/_/gu, " ").toLowerCase()}</strong><p>{CAVEAT_COPY[caveat]}</p></div></li>)}</ul>
       </section>
 
       <footer className="capture-intake-footer">
-        <p>The staged source can now enter the existing artifact-factory and human-review gates.</p>
         <Link to="/dev/assets/rooms">Open runtime asset registry <ArrowRight aria-hidden="true" /></Link>
       </footer>
     </>

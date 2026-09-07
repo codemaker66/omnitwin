@@ -79,7 +79,7 @@ describe("PlannerCommandDeck", () => {
     render(<PlannerCommandDeck />);
 
     expect(screen.getByTestId("planner-command-deck")).toBeDefined();
-    expect(screen.getByText("Build the room from the floor")).toBeDefined();
+    expect(screen.getByText("Arrange the room")).toBeDefined();
 
     fireEvent.click(screen.getByTestId("planner-command-action-open-catalogue"));
 
@@ -151,7 +151,7 @@ describe("PlannerCommandDeck", () => {
       expect(screen.getByText("Table selected")).toBeDefined();
       expect(screen.queryByTestId("planner-command-action-ivory-cloth")).toBeNull();
       expect(screen.queryByTestId("planner-command-action-dinner-set")).toBeNull();
-      expect(screen.queryByText(/Dress it/)).toBeNull();
+      expect(screen.queryByText(/Dress, move or group/)).toBeNull();
     },
   );
 

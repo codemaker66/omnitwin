@@ -63,8 +63,8 @@ describe("TimeMachinePanel", () => {
     expect(screen.getByTestId("tm-when").textContent).toContain("as recorded by the planner's device");
     fireEvent.change(screen.getByTestId("tm-scrubber"), { target: { value: "0" } });
     const state = screen.getByTestId("tm-restore-state").textContent ?? "";
-    expect(state).toContain("appends a reversible change");
-    expect(state).toContain("never erases history");
+    expect(state).toContain("Restoring is reversible");
+    expect(state).toContain("history is retained");
   });
 
   it("hands the caller a schema-valid restore Action, and only when travelled away", () => {
