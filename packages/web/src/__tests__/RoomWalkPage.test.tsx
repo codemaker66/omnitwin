@@ -37,6 +37,28 @@ describe("RoomWalkPage", () => {
     expect(screen.getByTestId("room-splat-scene").textContent).toBe("grand-hall");
   });
 
+  it.each(["grand-hall", "reception-room", "saloon", "south-gallery", "deacon-conveners-room"])(
+    "connects the %s tour to a fresh plan for the same room",
+    (room) => {
+      mount(`/room/${room}`);
+      expect(screen.getByRole("link", { name: "Plan this room" }).getAttribute("href"))
+        .toBe(`/plan?space=${room}`);
+    },
+  );
+
+  it("provides named dashboard, Hallkeeper and login exits from the tour", () => {
+    mount("/room/grand-hall");
+    expect(screen.getByRole("navigation", { name: "Planning and workspaces" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Dashboard" }).getAttribute("href")).toBe("/dashboard");
+    expect(screen.getByRole("link", { name: "Hallkeeper" }).getAttribute("href")).toBe("/hallkeeper/today");
+    expect(screen.getByRole("link", { name: "Log in" }).getAttribute("href")).toBe("/login");
+  });
+
+  it("keeps capture-only renders free of navigation", () => {
+    mount("/room/grand-hall?bare=1");
+    expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
   it("counts the splats the visitor will actually see", () => {
     mount("/room/grand-hall");
     const header = screen.getByRole("banner").textContent ?? "";

@@ -136,6 +136,14 @@ export function RoomWalkPage(): ReactElement {
           )}
           {roomSplatServedSplats(room).toLocaleString("en-GB")} splats
         </p>
+        <nav className="walk__navigation" aria-label="Planning and workspaces">
+          {/* A document navigation starts a fresh plan for this room even after
+              another room's configuration has been opened in the editor. */}
+          <a className="walk__plan" href={`/plan?space=${room}`}>Plan this room</a>
+          <a href="/dashboard">Dashboard</a>
+          <a href="/hallkeeper/today">Hallkeeper</a>
+          <a href="/login">Log in</a>
+        </nav>
       </header>}
 
       {/* The room arrives twice: a coarse view in seconds, then the full

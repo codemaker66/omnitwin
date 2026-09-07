@@ -695,6 +695,13 @@ export function FreshPage(): ReactElement {
             {FRESH_CTA_DATES}
           </a>
         </div>
+        <nav className="fr-primary-nav" aria-label="Primary">
+          <a className="fr-primary-plan" href="/plan?space=grand-hall">Plan an event</a>
+          <a href="/dashboard">Dashboard</a>
+          <a href="/diary">Diary</a>
+          <a href="/hallkeeper/today">Hallkeeper</a>
+          <a className="fr-primary-login" href="/login">Log in</a>
+        </nav>
       </header>
 
       <main>
