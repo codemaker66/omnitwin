@@ -95,6 +95,7 @@ describe("EditorPage cockpit", () => {
       expect(loadConfiguration).toHaveBeenCalledWith("cfg-requested", false);
     });
     expect(screen.getByText("Loading the saved layout")).toBeTruthy();
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
     expect(screen.queryByTestId("planner-cockpit")).toBeNull();
 
     await act(async () => {

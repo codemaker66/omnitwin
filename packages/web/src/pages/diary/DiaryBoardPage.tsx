@@ -99,6 +99,7 @@ export function DiaryBoardPage(): ReactElement {
 
   const [showExited, setShowExited] = useState(false);
   const [overrides, setOverrides] = useState<ReadonlyMap<string, MoveSnapshot>>(new Map());
+  const [pendingMoves, setPendingMoves] = useState(0);
   const [undoStack, setUndoStack] = useState<readonly UndoEntry[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -111,7 +112,16 @@ export function DiaryBoardPage(): ReactElement {
     drawerNonceRef.current += 1;
     setDrawer({ mode, nonce: drawerNonceRef.current });
   }, []);
-  const [openEnquiries, setOpenEnquiries] = useState<readonly Enquiry[]>([]);
+  const [enquiryState, setEnquiryState] = useState<{
+    readonly venueId: string | null;
+    readonly rows: readonly Enquiry[];
+    readonly status: "loading" | "ready" | "error";
+    readonly error: string | null;
+  }>({ venueId, rows: [], status: "loading", error: null });
+  const [enquiryRetry, setEnquiryRetry] = useState(0);
+  const openEnquiries = enquiryState.venueId === venueId ? enquiryState.rows : [];
+  const enquiriesLoading = enquiryState.venueId !== venueId || enquiryState.status === "loading";
+  const enquiryError = enquiryState.venueId === venueId ? enquiryState.error : null;
 
   // First-run welcome (T-520): greet each coordinator once per device; the
   // header's "How the Diary works" button re-opens it any time.
@@ -143,20 +153,23 @@ export function DiaryBoardPage(): ReactElement {
   useEffect(() => {
     if (venueId === null) return;
     let cancelled = false;
+    setEnquiryState((previous) => ({ venueId,
+      rows: previous.venueId === venueId ? previous.rows : [], status: "loading", error: null }));
     listEnquiries()
       .then((all) => {
         if (cancelled) return;
-        setOpenEnquiries(
-          all.filter((enquiry) => enquiry.state === "submitted" || enquiry.state === "under_review"),
-        );
+        setEnquiryState({ venueId, status: "ready", error: null,
+          rows: all.filter((enquiry) => enquiry.state === "submitted" || enquiry.state === "under_review") });
       })
       .catch(() => {
-        // The tray degrades to pencils-only; the board itself is unaffected.
+        if (cancelled) return;
+        setEnquiryState((previous) => ({ ...previous, status: "error",
+          error: "Enquiries could not be refreshed. Any previously loaded enquiries remain visible." }));
       });
     return () => {
       cancelled = true;
     };
-  }, [venueId, data]);
+  }, [venueId, data, enquiryRetry]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -245,6 +258,7 @@ export function DiaryBoardPage(): ReactElement {
 
   const applyMove = useCallback(
     (bookingId: string, patch: MoveSnapshot, undoEntry: UndoEntry | null) => {
+      setPendingMoves((count) => count + 1);
       setOverrides((previous) => new Map(previous).set(bookingId, patch));
       moveBooking(bookingId, patch)
         .then(() => {
@@ -273,7 +287,8 @@ export function DiaryBoardPage(): ReactElement {
             showUndo: false,
           });
           if (raced) refetch();
-        });
+        })
+        .finally(() => { setPendingMoves((count) => count - 1); });
     },
     [refetch],
   );
@@ -692,6 +707,7 @@ export function DiaryBoardPage(): ReactElement {
       </header>
 
       {isRefreshing ? <ActivityStatus>Refreshing the Diary…</ActivityStatus> : null}
+      {pendingMoves > 0 ? <ActivityStatus>Saving booking moves…</ActivityStatus> : null}
 
       {status === "error" ? (
         <div className="diary-notice is-error" role="alert">
@@ -729,6 +745,9 @@ export function DiaryBoardPage(): ReactElement {
                 eventType: enquiry.eventType,
                 estimatedGuests: enquiry.estimatedGuests,
               }))}
+              enquiriesLoading={enquiriesLoading}
+              enquiryError={enquiryError}
+              onRetryEnquiries={() => { setEnquiryRetry((value) => value + 1); }}
               canConvert={writable}
               onConvertEnquiry={openConvertDrawer}
               onBeginEnquiryDrag={writable && !showingOverview ? beginEnquiryDrag : undefined}

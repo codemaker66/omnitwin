@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
 import { BookingDrawer } from "../BookingDrawer.js";
 
@@ -99,6 +99,30 @@ afterEach(() => {
 });
 
 describe("BookingDrawer — floor plan section", () => {
+  it.each(["resolve", "reject"] as const)("keeps activity through both plan writes and stops when the link %ss", async (settlement) => {
+    let resolveCreate: ((value: { event: { id: string } }) => void) | undefined;
+    let resolveLink: ((value: CalendarBookingEntry) => void) | undefined;
+    let rejectLink: ((reason: Error) => void) | undefined;
+    const createResponse = new Promise<{ event: { id: string } }>((resolve) => { resolveCreate = resolve; });
+    const linkResponse = new Promise<CalendarBookingEntry>((resolve, reject) => { resolveLink = resolve; rejectLink = reject; });
+    createEventMock.mockReturnValue(createResponse);
+    updateBookingMock.mockReturnValue(linkResponse);
+    renderEdit(booking());
+    fireEvent.click(screen.getByRole("button", { name: "Start a floor plan" }));
+    expect(screen.getByRole("status").textContent).toBe("Updating this booking…");
+    expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("true");
+    await act(async () => { resolveCreate?.({ event: { id: EVENT_ID } }); await createResponse; });
+    expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, { eventId: EVENT_ID });
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
+    await act(async () => {
+      if (settlement === "resolve") resolveLink?.(booking({ eventId: EVENT_ID }));
+      else rejectLink?.(new Error("Link unavailable"));
+      await linkResponse.catch(() => undefined);
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("dialog").getAttribute("aria-busy")).toBe("false");
+    if (settlement === "reject") expect(screen.getByRole("alert").textContent).toContain("created but could not be attached");
+  });
   it("offers to start a plan when the booking has none", () => {
     renderEdit(booking());
     expect(screen.getByRole("button", { name: "Start a floor plan" })).toBeTruthy();

@@ -1,5 +1,6 @@
 import { type ReactElement } from "react";
 import { ShieldQuestion, Layers3, Eye, EyeOff } from "lucide-react";
+import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -55,6 +56,7 @@ export function CockpitTopBar(): ReactElement {
   const overlayVisibility = useCockpitStore((s) => s.overlayVisibility);
   const selectedPhaseId = useCockpitStore((s) => s.selectedPhaseId);
   const previewMode = useLayoutTimelinePreviewStore((state) => state.mode);
+  const previewLoading = useLayoutTimelinePreviewStore((state) => state.isLoading);
   const previewFrame = useLayoutTimelinePreviewStore((state) => state.activeFrame);
   const previewRuntime = useLayoutTimelinePreviewStore((state) => state.activeVenueRuntime);
   const previewMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
@@ -82,7 +84,7 @@ export function CockpitTopBar(): ReactElement {
         value: "No scheduled phase",
       } : previewFrame === null ? {
         kicker: "Phase preview",
-        value: "Loading room timeline",
+        value: previewLoading ? "Loading room timeline" : "Room timeline unavailable",
       } : {
         kicker: "Phase preview",
         value: `${previewFrame.eventName} → ${previewFrame.phaseName}`,
@@ -121,7 +123,11 @@ export function CockpitTopBar(): ReactElement {
 
       <div className="cockpit-topbar__cell">
         <span className="cockpit-topbar__kicker">{event.kicker}</span>
-        <strong className="cockpit-topbar__value cockpit-topbar__event">{event.value}</strong>
+        <strong className="cockpit-topbar__value cockpit-topbar__event">
+          {previewLoading || (!previewActive && linked.status === "loading")
+            ? <ActivityStatus>{event.value}</ActivityStatus>
+            : event.value}
+        </strong>
       </div>
 
       <span className="cockpit-topbar__badge">
@@ -130,7 +136,9 @@ export function CockpitTopBar(): ReactElement {
       </span>
 
       <div className="cockpit-topbar__cell cockpit-topbar__cell--save" data-save-status={model.saveStatus}>
-        <span className="cockpit-topbar__dot" aria-hidden="true" />
+        {model.saveStatus === "saving"
+          ? <ActivityIndicator size={18} />
+          : <span className="cockpit-topbar__dot" aria-hidden="true" />}
         <span className="cockpit-topbar__save-copy">
           <span className="cockpit-topbar__kicker">Save status</span>
           <strong className="cockpit-topbar__value">{model.saveLabel}</strong>

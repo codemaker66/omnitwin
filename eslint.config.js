@@ -36,6 +36,18 @@ export default tseslint.config(
     },
   },
   {
+    files: ["packages/web/src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        paths: [{
+          name: "lucide-react",
+          importNames: ["Loader", "Loader2", "LoaderCircle", "LoaderPinwheel"],
+          message: "Use shared/Activity.js for loading and working states; see .claude/conventions/loading-and-working-motion.md.",
+        }],
+      }],
+    },
+  },
+  {
     files: ["**/__tests__/**/*.ts", "**/*.test.ts"],
     rules: {
       "@typescript-eslint/no-unsafe-assignment": "off",

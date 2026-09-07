@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import type {
   AccessibilityRequirements,
   DietarySummary,
@@ -428,7 +429,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
               can edit them later.
             </div>
           )}
-          {!signInRequired && loading && <div style={{ fontSize: 12, color: TEXT_SEC }}>Loading…</div>}
+          {!signInRequired && loading && <ActivityStatus style={{ fontSize: 12, color: TEXT_SEC }}>Loading…</ActivityStatus>}
           {error !== null && (
             <div role="alert" style={{ fontSize: 12, color: "#ef4444", background: "rgba(239,68,68,0.1)", padding: 10, borderRadius: 6 }}>
               {error}
@@ -613,6 +614,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
                   cursor: saveBlocked ? "default" : "pointer",
                 }}
               >
+                {saving && <ActivityIndicator size={18} />}
                 {saving ? "Saving…" : "Save"}
               </button>
             )}

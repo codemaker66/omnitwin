@@ -273,6 +273,7 @@ describe("EditorPage default /plan bootstrap", () => {
     renderEditor("/plan");
 
     expect(screen.getByRole("heading", { name: "Opening the planner" })).toBeTruthy();
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
     expect(screen.queryByRole("heading", { name: /Reception Room/ })).toBeNull();
   });
 
@@ -285,6 +286,14 @@ describe("EditorPage default /plan bootstrap", () => {
     renderEditor("/plan");
 
     expect(await screen.findByRole("heading", { name: "Opening the Reception Room planner" })).toBeTruthy();
+  });
+
+  it("ends opening activity when bootstrap fails", async () => {
+    spacesMock.listVenues.mockRejectedValue(new Error("Venue lookup unavailable"));
+    renderEditor("/plan");
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
+    const failure = await screen.findByRole("alert");
+    expect(failure.querySelector("[data-activity-indicator]")).toBeNull();
   });
 
   it("carries unrelated query options through the generic draft bootstrap", async () => {

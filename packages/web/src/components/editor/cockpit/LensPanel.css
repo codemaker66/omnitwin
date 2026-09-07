@@ -279,6 +279,10 @@
 /* Action stack + primary / ghost buttons. */
 .lens-panel__actions { display: grid; gap: 10px; margin-top: 2px; }
 .lens-panel__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   appearance: none;
   width: 100%;
   padding: 12px 16px;
@@ -415,6 +419,7 @@
 
 /* GDTF fixture 3D preview — a small auto-rotating model viewer. */
 .lens-panel__model-preview {
+  position: relative;
   width: 100%;
   height: 180px;
   border-radius: 12px;
@@ -423,6 +428,14 @@
     radial-gradient(circle at 50% 35%, rgba(201, 168, 76, 0.12), transparent 60%),
     linear-gradient(180deg, rgba(20, 18, 14, 0.6), rgba(8, 8, 8, 0.55));
   overflow: hidden;
+}
+
+.lens-panel__model-loading {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  padding: 16px;
+  pointer-events: none;
 }
 
 /* MVR scene import summary — a bordered group of resolved fixture types. */

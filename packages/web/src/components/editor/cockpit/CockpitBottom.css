@@ -4,10 +4,6 @@
   100% { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes layout-spin {
-  to { transform: rotate(360deg); }
-}
-
 .cockpit-shell:has(> .cockpit-bottom:not(.is-collapsed)) {
   --cockpit-bottom-height: 292px;
 }
@@ -355,7 +351,6 @@
 .layout-compact-state.is-error,
 .layout-compact-state.is-error strong { color: var(--house-status-oxblood, #b25454); }
 .layout-compact-state.is-loading svg { color: var(--house-accent-brass, #c6a15b); }
-.layout-compact-state .is-spinning { animation: layout-spin 850ms linear infinite; }
 
 .layout-timeline__body {
   position: relative;
@@ -1006,6 +1001,5 @@
     transition: none;
   }
 
-  .layout-metric__value,
-  .layout-compact-state .is-spinning { animation: none; }
+  .layout-metric__value { animation: none; }
 }

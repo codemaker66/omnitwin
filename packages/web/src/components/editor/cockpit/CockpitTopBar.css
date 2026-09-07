@@ -116,10 +116,8 @@
   border-radius: 999px;
   background: #74d08c;
   box-shadow: 0 0 0 4px rgba(116, 208, 140, 0.14);
-  animation: cockpit-dot-pulse 2.4s ease-in-out infinite;
 }
-.cockpit-topbar__cell--save[data-save-status="unsaved"] .cockpit-topbar__dot,
-.cockpit-topbar__cell--save[data-save-status="saving"] .cockpit-topbar__dot {
+.cockpit-topbar__cell--save[data-save-status="unsaved"] .cockpit-topbar__dot {
   background: #e6c463;
   box-shadow: 0 0 0 4px rgba(230, 196, 99, 0.16);
 }
@@ -128,11 +126,6 @@
   background: #e08585;
   box-shadow: 0 0 0 4px rgba(224, 133, 133, 0.16);
 }
-@keyframes cockpit-dot-pulse {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(116, 208, 140, 0.1); }
-  50% { box-shadow: 0 0 0 5px rgba(116, 208, 140, 0.2); }
-}
-
 .cockpit-topbar__actions {
   display: flex;
   align-items: center;

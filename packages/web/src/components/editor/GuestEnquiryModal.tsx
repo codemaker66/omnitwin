@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { ActivityIndicator } from "../shared/Activity.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../stores/room-dimensions-store.js";
@@ -574,6 +575,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             disabled={isSubmitting}
             style={{
               width: "100%", padding: "14px 20px", fontSize: 15, fontWeight: 700,
+              display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
               fontFamily: "'Inter', system-ui, sans-serif",
               background: isSubmitting
                 ? "rgba(201,168,76,0.5)"
@@ -586,6 +588,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             onMouseEnter={(e) => { if (!isSubmitting) { e.currentTarget.style.boxShadow = `0 6px 32px rgba(201,168,76,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; } }}
             onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 24px rgba(201,168,76,0.25)`; e.currentTarget.style.transform = ""; }}
           >
+            {isSubmitting && <ActivityIndicator size={20} />}
             {isSubmitting ? "Sending your layout\u2026" : "Send to Events Team"}
           </button>
 
