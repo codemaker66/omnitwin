@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "createdOn": "2026-09-07",
+  "purpose": "Small Diary room-identity photographs; no claim about current furniture, booking setup or measured reconstruction quality.",
+  "provenance": "Existing supplied room photographs, mapped in room-posters.ts. Original intake recorded by repository commits 8b9cdf1240e55ddf79ae610dc3d1efb54cc61f86 (Robert Adam) and 4384f9bd9cc00cd3c3d164b10be48a0a11a5d5ca (other supplied rooms). This transformation does not independently authenticate the original capture process.",
+  "transformation": {
+    "tool": "Pillow 12.0.0",
+    "orientation": "EXIF orientation applied before resize",
+    "framing": "Full source frame; aspect ratio retained; no crop or generative edit",
+    "resize": "Lanczos, widths 240 and 480",
+    "encoding": "Lossless RGB WebP, method 6; source ICC profile retained when present",
+    "verification": "Decoded RGB bytes equal the resized source pixels. This is not a 3D PSNR or device-performance measurement."
+  },
+  "photos": [
+    {
+      "slug": "robert-adam-room",
+      "source": {
+        "path": "/images/rooms/supplied/robert-adam-room.jpg",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 711246,
+        "sha256": "0919e3c9fae9dedc0ea14d618cbde38f2837c83faff1b03ceceb879c4b77fb5e"
+      },
+      "variants": [
+        {
+          "path": "/images/rooms/diary/robert-adam-room-240.webp",
+          "width": 240,
+          "height": 160,
+          "bytes": 59098,
+          "sha256": "99e04c220bdfb3ce8ed82f7029f39271395a8edcbe6755f6036e044912dec2c8",
+          "decodedRgbEqualsResizedSource": true
+        },
+        {
+          "path": "/images/rooms/diary/robert-adam-room-480.webp",
+          "width": 480,
+          "height": 320,
+          "bytes": 219562,
+          "sha256": "d4d706b6915e0230b246ce167358cb3be76559d1d46cab5c420473235d54c6a0",
+          "decodedRgbEqualsResizedSource": true
+        }
+      ]
+    },
+    {
+      "slug": "lady-convenors-room",
+      "source": {
+        "path": "/images/rooms/supplied/lady-convenors-room.png",
+        "width": 1448,
+        "height": 1086,
+        "bytes": 2621478,
+        "sha256": "08d6259b531dddd85a8760a4202a5a7a5feaec10c4cdf7d64bde49d1186e0fd5"
+      },
+      "variants": [
+        {
+          "path": "/images/rooms/diary/lady-convenors-room-240.webp",
+          "width": 240,
+          "height": 180,
+          "bytes": 64536,
+          "sha256": "bd33d8c200ff657caa3551ed082c760617b16be400bf37e17bb8a6e20a073ac8",
+          "decodedRgbEqualsResizedSource": true
+        },
+        {
+          "path": "/images/rooms/diary/lady-convenors-room-480.webp",
+          "width": 480,
+          "height": 360,
+          "bytes": 239336,
+          "sha256": "0d136d4ec259d12a3ab4d250784e6532fb8d83fd0d8960442580b9b120fa24e4",
+          "decodedRgbEqualsResizedSource": true
+        }
+      ]
+    },
+    {
+      "slug": "deacon-conveners-room",
+      "source": {
+        "path": "/images/rooms/supplied/deacon-conveners-room.png",
+        "width": 1536,
+        "height": 1024,
+        "bytes": 2648186,
+        "sha256": "a2bf1f1d21c879031bcb1e3f709866ea93c65c750042233315117e48c49e6af5"
+      },
+      "variants": [
+        {
+          "path": "/images/rooms/diary/deacon-conveners-room-240.webp",
+          "width": 240,
+          "height": 160,
+          "bytes": 53900,
+          "sha256": "2c56ad37403c958b17f17227f335d467cf9b8afb6659ad904f72e2328a5a0e9f",
+          "decodedRgbEqualsResizedSource": true
+        },
+        {
+          "path": "/images/rooms/diary/deacon-conveners-room-480.webp",
+          "width": 480,
+          "height": 320,
+          "bytes": 192592,
+          "sha256": "58fdf2e0eaef51cb27006aaeb7c443df4c49f790b32a73e74f174b2d7e7a86fc",
+          "decodedRgbEqualsResizedSource": true
+        }
+      ]
+    },
+    {
+      "slug": "north-gallery",
+      "source": {
+        "path": "/images/rooms/supplied/north-gallery.png",
+        "width": 1496,
+        "height": 1051,
+        "bytes": 1716078,
+        "sha256": "626f4eb3cf5eac09cda6372332ad2d5d1da30547d5143e3f8f5d3a448837ebbd"
+      },
+      "variants": [
+        {
+          "path": "/images/rooms/diary/north-gallery-240.webp",
+          "width": 240,
+          "height": 169,
+          "bytes": 38706,
+          "sha256": "b11caa3650143407b6751c55a0ea2b7b8bef6f74cdc51b1e9b8d1c1e51daf731",
+          "decodedRgbEqualsResizedSource": true
+        },
+        {
+          "path": "/images/rooms/diary/north-gallery-480.webp",
+          "width": 480,
+          "height": 337,
+          "bytes": 141278,
+          "sha256": "8b142bbca11afdf45a8535fa690f2f3d0438c19ba6db33f74b93bd78659567f6",
+          "decodedRgbEqualsResizedSource": true
+        }
+      ]
+    },
+    {
+      "slug": "south-gallery",
+      "source": {
+        "path": "/images/rooms/supplied/south-gallery.png",
+        "width": 1448,
+        "height": 1086,
+        "bytes": 1834451,
+        "sha256": "da95c83c699b6ea8d460c261a306f23ed72323d36882b07c3900ae0295fbec4c"
+      },
+      "variants": [
+        {
+          "path": "/images/rooms/diary/south-gallery-240.webp",
+          "width": 240,
+          "height": 180,
+          "bytes": 44956,
+          "sha256": "0b428d3a4809887b97db0514c176b83f44d3002da931cd556767baecce19ae7e",
+          "decodedRgbEqualsResizedSource": true
+        },
+        {
+          "path": "/images/rooms/diary/south-gallery-480.webp",
+          "width": 480,
+          "height": 360,
+          "bytes": 163326,
+          "sha256": "cddedb213e2a7e7da580a08ed87a6dbc75e756aaa62a46fa0a4229cab62b29dd",
+          "decodedRgbEqualsResizedSource": true
+        }
+      ]
+    }
+  ]
+}
