@@ -168,6 +168,8 @@ export function SparkRendererMount({
   );
 
   useEffect(() => {
+    // Preserve exact callback identity for cleanup; apply below supplies its receiver.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     const previous = sparkRenderer.onAfterRender;
     let reportedTo: (() => void) | undefined;
     const afterRender: typeof previous = (...args) => {
