@@ -1,0 +1,121 @@
+{
+  "sourceKind": "User-supplied Hyper3D Rodin generated model",
+  "folder": "hyper3d_white_poseur_table",
+  "source": {
+    "filename": "base.glb",
+    "sha256": "4233ab7f9beb518fb73a9a1c6c2cf6a4a53ce25c735b6fdac2b09c6e7b55cb6f",
+    "bytes": 28527944,
+    "triangles": 1000000,
+    "vertices": 516460,
+    "bounds": {
+      "min": [
+        -0.6237402558326721,
+        0,
+        -0.6266701221466064
+      ],
+      "max": [
+        0.623736560344696,
+        1.8993861675262451,
+        0.6269292831420898
+      ],
+      "size": [
+        1.2474768161773682,
+        1.8993861675262451,
+        1.2535994052886963
+      ]
+    },
+    "materials": 1,
+    "textures": []
+  },
+  "runtime": {
+    "filename": "model.glb",
+    "sha256": "335138f9b6e25bc28941960beac9b88f73427116fba5b62c350029ec5e2601b8",
+    "bytes": 1061832,
+    "triangles": 50000,
+    "vertices": 31699,
+    "bounds": {
+      "min": [
+        -0.30000001192092896,
+        0,
+        -0.30000001192092896
+      ],
+      "max": [
+        0.30000001192092896,
+        1.0499999523162842,
+        0.30000001192092896
+      ],
+      "size": [
+        0.6000000238418579,
+        1.0499999523162842,
+        0.6000000238418579
+      ]
+    },
+    "materials": 1,
+    "textures": [],
+    "requiredExtensions": []
+  },
+  "simplification": [
+    {
+      "method": "meshoptimizer attribute-aware simplification",
+      "targetTriangles": 50000,
+      "errorLimit": 0.003,
+      "actualError": 0.0005320580676198006,
+      "actualTriangles": 50000,
+      "attributes": [
+        "NORMAL",
+        "TEXCOORD_0"
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "textureVerification": [],
+  "normalization": {
+    "description": "Generated mesh axis-calibrated to catalogue planning envelope, floor centered. Source proportions preserved in external intermediate derivatives. Not a measured scan.",
+    "dimensionsMetres": {
+      "width": 0.6,
+      "height": 1.05,
+      "depth": 0.6
+    },
+    "dimensionBasis": "Existing catalogue planning dimensions; not newly measured",
+    "rotationYRadians": 0,
+    "axisScale": [
+      0.48103510241827147,
+      0.552852350746757,
+      0.4787435775270493
+    ],
+    "translationBeforeScale": [
+      0.000034421682357788086,
+      -0.00012320280075073242,
+      -0.00013679265975952148
+    ],
+    "pivot": "centered X/Z, floor Y=0",
+    "up": "+Y"
+  },
+  "limitations": [
+    "Source export has no texture maps and a uniform gray material; material confirmation/export is incomplete.",
+    "1K runtime maps intentionally reduce close-up texture detail; source-resolution 2K derivative retained outside application."
+  ],
+  "dependencies": {
+    "gltfTransform": "4.3.0",
+    "meshoptimizer": "1.2.0",
+    "sharp": "0.35.3"
+  },
+  "runtimeTexturePolicy": "Intentionally downsampled from 2048 to 1024 pixels for GPU memory; lossless WebP encoding of the resized pixels. Source pixels are not identical after downsampling.",
+  "geometryVariant": "optimized003",
+  "asset": "Poseur Table (White)",
+  "slug": "poseur-table-white",
+  "preview": {
+    "filename": "preview.webp",
+    "width": 600,
+    "height": 600,
+    "bytes": 2488,
+    "sha256": "ea9026125f68eea2316fb5e3dfa730e27101eecbf3bccc843a77b008a830d41f",
+    "source": "Neutral Blender5.2.1 studio render of final calibrated runtime GLB;12samples,denoised,AgX."
+  }
+}

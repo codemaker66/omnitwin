@@ -527,7 +527,7 @@ function isRoundTableItem(item: BlueprintItem): item is RoundTableItem {
 }
 
 function isMetadataRectItem(item: BlueprintItem): item is RectItem {
-  return item.shape === "rect" && item.kind !== "mic-stand";
+  return item.shape === "rect" && item.kind !== "mic-stand" && item.kind !== "floor-equipment";
 }
 
 /**
@@ -1878,6 +1878,7 @@ function getRectLabel(item: BlueprintItem, catalogueCapacity: boolean): string {
   const capacityPrefix = catalogueCapacity ? "CAPACITY " : "";
   if (item.kind === "stage") return `STAGE · ${formatDimensions(item)}`;
   if (item.kind === "mic-stand") return `MIC STAND · ${formatDimensions(item)}`;
+  if (item.kind === "floor-equipment") return `${item.label.toUpperCase()} · ${formatDimensions(item)}`;
   if (item.kind === "top-table") {
     if (catalogueCapacity && item.seats === undefined) return `TOP TABLE · ${formatDimensions(item)}`;
     const seats = item.shape === "rect" && typeof item.seats === "number" ? item.seats : 0;
@@ -1896,6 +1897,7 @@ function getRectLabel(item: BlueprintItem, catalogueCapacity: boolean): string {
 function getRectBodyLabel(item: BlueprintItem): string {
   if (item.kind === "stage") return "Stage";
   if (item.kind === "mic-stand") return "Mic stand";
+  if (item.kind === "floor-equipment") return item.label;
   if (item.kind === "top-table") return "Top table";
   if (item.kind === "dancefloor") return "Parquet";
   if (item.kind === "bar") return "Bar";

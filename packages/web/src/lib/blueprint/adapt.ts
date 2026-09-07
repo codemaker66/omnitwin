@@ -6,6 +6,7 @@ import { computeBoundingBox, roomGeometries } from "../../data/room-geometries.j
 import { normalizeFurnitureScale } from "../furniture-scale.js";
 import {
   effectiveTableLinenStyle,
+  isFreestandingFloorEquipmentItem,
   isPassiveFreestandingAvFloorItem,
   isPoseurTableItem,
 } from "../furniture-semantics.js";
@@ -90,6 +91,7 @@ export function itemKindForAsset(asset: CanonicalAsset): ItemKind | null {
   const slug = asset.slug;
   if (isTableDressingApplicatorSlug(slug)) return null;
   if (isPassiveFreestandingAvFloorItem(asset)) return "mic-stand";
+  if (isFreestandingFloorEquipmentItem(asset)) return "floor-equipment";
   if (slug.includes("bar")) return "bar";
   if (slug.includes("dancefloor") || slug.includes("parquet")) return "dancefloor";
   if (asset.category === "stage") return "stage";
@@ -105,10 +107,10 @@ export function itemKindForAsset(asset: CanonicalAsset): ItemKind | null {
 function linenLabelForObject(
   asset: CanonicalAsset,
   object: EditorObject,
-): "Black" | "Ivory" | undefined {
+): "Black" | "Ivory" | "Included cloth" | undefined {
   const style = effectiveTableLinenStyle(asset, object);
   if (style === null) return undefined;
-  return style === "black" ? "Black" : "Ivory";
+  return style === "black" ? "Black" : style === "included" ? "Included cloth" : "Ivory";
 }
 
 /**
@@ -177,6 +179,13 @@ export function editorObjectToBlueprintItem(
   const widthM = asset.widthM * scale;
   const lengthM = asset.depthM * scale;
   const topLeft = { x: cx - widthM / 2, y: cy - lengthM / 2 };
+
+  if (kind === "floor-equipment") {
+    return {
+      id: o.id, kind, shape: "rect", label: asset.name,
+      topLeft, widthM, lengthM, rotationDeg,
+    };
+  }
 
   if (kind === "dancefloor") {
     return {

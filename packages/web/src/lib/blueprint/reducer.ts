@@ -4,6 +4,7 @@ import type {
   CatalogueChip,
   DancefloorItem,
   EventType,
+  FloorEquipmentItem,
   MicStandItem,
   PoseurTableItem,
   RectItem,
@@ -376,7 +377,7 @@ function moveItemTo(item: BlueprintItem, center: { x: number; y: number }): Blue
   if (item.shape === "dancefloor") {
     return { ...item, topLeft } satisfies DancefloorItem;
   }
-  return { ...item, topLeft } satisfies RectItem | MicStandItem;
+  return { ...item, topLeft } satisfies RectItem | MicStandItem | FloorEquipmentItem;
 }
 
 function moveItemDelta(item: BlueprintItem, dx: number, dy: number): BlueprintItem {
@@ -390,7 +391,7 @@ function moveItemDelta(item: BlueprintItem, dx: number, dy: number): BlueprintIt
   if (item.shape === "dancefloor") {
     return { ...item, topLeft } satisfies DancefloorItem;
   }
-  return { ...item, topLeft } satisfies RectItem | MicStandItem;
+  return { ...item, topLeft } satisfies RectItem | MicStandItem | FloorEquipmentItem;
 }
 
 function normaliseDeg(deg: number): number {
@@ -503,6 +504,12 @@ export function buildItemForChip(
         topLeft: { x: center.x - 0.25, y: center.y - 0.25 },
         widthM: 0.5, lengthM: 0.5,
       } satisfies MicStandItem;
+    case "floor-equipment":
+      return {
+        id, kind: "floor-equipment", shape: "rect", label: chip.label,
+        topLeft: { x: center.x - 0.5, y: center.y - 0.5 },
+        widthM: 1, lengthM: 1,
+      } satisfies FloorEquipmentItem;
     case "bar":
       return {
         id, kind: "bar", shape: "bar",
@@ -553,6 +560,7 @@ function halfFootprintFor(kind?: BlueprintItem["kind"]): number {
     case "stage": return 2;
     case "top-table": return 2.5;
     case "mic-stand": return 0.25;
+    case "floor-equipment": return 0.5;
     case "bar": return 1.5;
     case "dancefloor": return 2;
     default: return 1;

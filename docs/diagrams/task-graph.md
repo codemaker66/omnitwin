@@ -7,6 +7,21 @@ per ADR D-018. Tier 1 done work, T-010, and lower-priority Tier 2/4/5/6
 tasks live in `docs/state/tasks.md` and are not visualised here.
 Regenerate after each `tasks.md` change.
 
+## September 7 supplied furniture continuation
+
+```mermaid
+flowchart LR
+  T600["T-600: planner programme"] --> T602["T-602: supplied chair + furniture batch — implemented and verified"]
+  T601["T-601: combined release — in progress"] --> T602
+  T602 --> Release["T-601 production qualification and publication"]
+```
+
+T-602's bulk import is verified locally: 17 new models, one existing chair reused,
+33 total catalogue entries, guarded migration 0068, and actual saved/reopened
+browser placements. T-601 owns the combined deployment; implementation completion
+does not imply production publication. See the
+[batch report](../reports/furniture-batch-import-2026-09-07.md).
+
 ## September 4 goal programme supplement
 
 T-584 records the completed planning review at

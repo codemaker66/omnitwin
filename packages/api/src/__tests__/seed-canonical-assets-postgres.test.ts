@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { CANONICAL_ASSETS } from "@omnitwin/types";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as schema from "../db/schema.js";
@@ -53,10 +54,13 @@ describe.skipIf(databaseUrl === undefined)("canonical seed after the complete mi
 
   it("reuses the migrated Turini row and registers all missing assets through the normal seed helper", async () => {
     const before = await pool.query("SELECT row_to_json(a) AS asset FROM asset_definitions a ORDER BY id");
-    expect(before.rows).toHaveLength(1);
-    expect(before.rows[0]).toMatchObject({ asset: { id: CHAIR_ID } });
-    const journal = await pool.query("SELECT count(*)::int AS count, max(created_at)::text AS latest FROM drizzle.__drizzle_migrations");
-    expect(journal.rows).toEqual([{ count: 66, latest: "1788717900000" }]);
+    expect(before.rows).toEqual(expect.arrayContaining([{ asset: expect.objectContaining({ id: CHAIR_ID }) }]));
+    const migrations = readMigrationFiles({ migrationsFolder: fileURLToPath(new URL("../../drizzle", import.meta.url)) });
+    // Future registrations may append to this chain; every applied hash and
+    // timestamp must still match, including the original Turini registration.
+    expect(migrations[65]?.folderMillis).toBe(1788717900000);
+    const journal = await pool.query("SELECT hash, created_at::text AS timestamp FROM drizzle.__drizzle_migrations ORDER BY created_at");
+    expect(journal.rows).toEqual(migrations.map((migration) => ({ hash: migration.hash, timestamp: String(migration.folderMillis) })));
 
     // This is the previous supported seed operation: it fails after migration
     // 0067, proving the integration regression without executing the broad seed.
@@ -66,7 +70,8 @@ describe.skipIf(databaseUrl === undefined)("canonical seed after the complete mi
 
     const seeded = await seedCanonicalAssets(drizzle(pool, { schema }));
     expect(seeded.map((asset) => asset.id)).toEqual(CANONICAL_ASSETS.map((asset) => asset.id));
-    expect((await pool.query("SELECT row_to_json(a) AS asset FROM asset_definitions a WHERE id = $1", [CHAIR_ID])).rows)
+    expect((await pool.query("SELECT row_to_json(a) AS asset FROM asset_definitions a WHERE id = ANY($1::uuid[]) ORDER BY id",
+      [before.rows.map((row: { asset: { id: string } }) => row.asset.id)])).rows)
       .toEqual(before.rows);
     const allBeforeReplay = await pool.query("SELECT row_to_json(a) AS asset FROM asset_definitions a ORDER BY id");
     expect(await seedCanonicalAssets(drizzle(pool, { schema }))).toEqual(seeded);

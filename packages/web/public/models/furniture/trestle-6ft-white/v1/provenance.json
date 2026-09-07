@@ -1,0 +1,121 @@
+{
+  "sourceKind": "User-supplied Hyper3D Rodin generated model",
+  "folder": "hyper_white_tressel",
+  "source": {
+    "filename": "base.glb",
+    "sha256": "b5cb1fe977a41f17ba8e10de5e5d8097d8d128f0edfc8502033d659bd73d6c36",
+    "bytes": 28809132,
+    "triangles": 1000000,
+    "vertices": 525247,
+    "bounds": {
+      "min": [
+        -0.9500189423561096,
+        0,
+        -0.4583143889904022
+      ],
+      "max": [
+        0.9495775103569031,
+        0.7172282338142395,
+        0.45795831084251404
+      ],
+      "size": [
+        1.8995964527130127,
+        0.7172282338142395,
+        0.9162726998329163
+      ]
+    },
+    "materials": 1,
+    "textures": []
+  },
+  "runtime": {
+    "filename": "model.glb",
+    "sha256": "a1445ed2ade5322b3f39223cb58fd9852bafbbba6ff284facf751ba20b4d022f",
+    "bytes": 1145468,
+    "triangles": 50000,
+    "vertices": 35184,
+    "bounds": {
+      "min": [
+        -0.9150000214576721,
+        0,
+        -0.3799999952316284
+      ],
+      "max": [
+        0.9150000214576721,
+        0.7400000095367432,
+        0.3799999952316284
+      ],
+      "size": [
+        1.8300000429153442,
+        0.7400000095367432,
+        0.7599999904632568
+      ]
+    },
+    "materials": 1,
+    "textures": [],
+    "requiredExtensions": []
+  },
+  "simplification": [
+    {
+      "method": "meshoptimizer attribute-aware simplification",
+      "targetTriangles": 50000,
+      "errorLimit": 0.003,
+      "actualError": 0.0010918076150119305,
+      "actualTriangles": 50000,
+      "attributes": [
+        "NORMAL",
+        "TEXCOORD_0"
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "textureVerification": [],
+  "normalization": {
+    "description": "Generated mesh axis-calibrated to catalogue planning envelope, floor centered. Source proportions preserved in external intermediate derivatives. Not a measured scan.",
+    "dimensionsMetres": {
+      "width": 1.83,
+      "height": 0.74,
+      "depth": 0.76
+    },
+    "dimensionBasis": "Approximate planning dimensions; physical measurements not supplied",
+    "rotationYRadians": 0,
+    "axisScale": [
+      0.9634690717484223,
+      1.0319060973534877,
+      0.8299987882667903
+    ],
+    "translationBeforeScale": [
+      0.0001373589038848877,
+      0,
+      0.00021426379680633545
+    ],
+    "pivot": "centered X/Z, floor Y=0",
+    "up": "+Y"
+  },
+  "limitations": [
+    "Source export has no texture maps and a uniform gray material; material confirmation/export is incomplete.",
+    "1K runtime maps intentionally reduce close-up texture detail; source-resolution 2K derivative retained outside application."
+  ],
+  "dependencies": {
+    "gltfTransform": "4.3.0",
+    "meshoptimizer": "1.2.0",
+    "sharp": "0.35.3"
+  },
+  "runtimeTexturePolicy": "Intentionally downsampled from 2048 to 1024 pixels for GPU memory; lossless WebP encoding of the resized pixels. Source pixels are not identical after downsampling.",
+  "geometryVariant": "optimized003",
+  "asset": "Trestle Table (White Cloth)",
+  "slug": "trestle-6ft-white",
+  "preview": {
+    "filename": "preview.webp",
+    "width": 600,
+    "height": 600,
+    "bytes": 3026,
+    "sha256": "1cc3214e09661b28bec8a3649726e9be86af9b63d4eddb720b73e44c44a36ccc",
+    "source": "Neutral Blender5.2.1 studio render of final calibrated runtime GLB;12samples,denoised,AgX."
+  }
+}

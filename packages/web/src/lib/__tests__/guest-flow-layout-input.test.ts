@@ -203,6 +203,24 @@ describe("obstacle selection", () => {
   });
 });
 
+describe("imported floor equipment", () => {
+  it.each(["room-divider", "servery-unit"])("keeps %s solid without inventing a dining destination", (slug) => {
+    const item = itemBySlug(slug);
+    const result = buildGuestFlowReplayInputFromLayout({
+      roomWidthM: ROOM_W, roomLengthM: ROOM_L,
+      placedItems: [place(item, 0, 0, 0, 1.5)],
+    });
+    expect(result.obstacles).toHaveLength(1);
+    expect(result.obstacles[0]?.label).toBe(item.name);
+    const bounds = boundsOf(result.obstacles[0]?.polygon ?? []);
+    // Replay vertices are independently rounded to millimetres by toSim;
+    // their span can differ by up to one millimetre from the source extent.
+    expect(Math.abs(bounds.maxX - bounds.minX - item.width * 1.5)).toBeLessThanOrEqual(0.001 + 1e-9);
+    expect(Math.abs(bounds.maxY - bounds.minY - item.depth * 1.5)).toBeLessThanOrEqual(0.001 + 1e-9);
+    expect(result.destinations.some((destination) => destination.id === "dest-seating")).toBe(false);
+  });
+});
+
 describe("layout-derived destinations", () => {
   it("creates a seating destination at the table cluster centroid", () => {
     const table = itemByCategory("table");

@@ -35,9 +35,29 @@ const EXPECTED_MESH_BY_SLUG: Readonly<Record<string, FurnitureMeshKind>> = {
   "black-table-cloth": "applicator",
   "white-table-cloth": "applicator",
   "dinner-place-setting": "applicator",
+  "trestle-6ft-black": "trestle-table",
+  "trestle-6ft-white": "trestle-table",
+  "trestle-6ft-wooden": "trestle-table",
+  "round-table-6ft-black": "round-table",
+  "round-table-6ft-white": "round-table",
+  "cake-cutting-table": "round-table",
+  "ceremony-table": "trestle-table",
+  "checked-banquet-chair": "chair",
+  "room-divider": "platform",
+  "round-cafe-table-white": "round-table",
+  "square-cafe-table-white": "trestle-table",
+  "servery-unit": "platform",
 };
 
 describe("furniture mesh dispatch", () => {
+  it("uses supplied models ahead of generated or procedural fallbacks", () => {
+    const imported = CATALOGUE_ITEMS.filter((item) => item.meshUrl !== null);
+    expect(imported).toHaveLength(18);
+    for (const item of imported) {
+      expect(standaloneFurnitureMeshUrl(item), item.slug).toBe(item.meshUrl);
+      expect(item.thumbnailUrl, item.slug).toMatch(/^\/models\/furniture\/.+\/v1\/preview\.webp$/u);
+    }
+  });
   it("routes every canonical catalogue item to its intended mesh", () => {
     for (const item of CATALOGUE_ITEMS) {
       const expected = EXPECTED_MESH_BY_SLUG[item.slug];

@@ -10,6 +10,7 @@ import {
 } from "../lib/catalogue.js";
 import type { CatalogueItem } from "../lib/catalogue.js";
 import { isSceneFurniturePlacement } from "../lib/table-dressing.js";
+import { FurnitureCataloguePreview } from "./shared/FurnitureCataloguePreview.js";
 
 // ---------------------------------------------------------------------------
 // TFT-style bottom shop bar — full-width panel along the bottom
@@ -254,7 +255,7 @@ function ShopCard({
   readonly item: CatalogueItem;
   readonly onDragStart: (id: string) => void;
 }): React.ReactElement {
-  const dims = `${item.width.toFixed(1)} × ${item.depth.toFixed(1)} × ${item.height.toFixed(1)}m`;
+  const dims = `${item.dimensionStatus === "approximate" ? "Approx. " : ""}${item.width.toFixed(1)} × ${item.depth.toFixed(1)} × ${item.height.toFixed(1)}m`;
 
   return (
     <div
@@ -282,7 +283,7 @@ function ShopCard({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onDragStart(item.id); }}
     >
       <div style={previewContainerStyle} title={item.name}>
-        <ItemPreviewIcon item={item} />
+        <FurnitureCataloguePreview item={item} size={48} fallback={<ItemPreviewIcon item={item} />} />
       </div>
       <span style={cardNameStyle}>{item.name}</span>
       <span style={cardDimStyle}>{dims}</span>

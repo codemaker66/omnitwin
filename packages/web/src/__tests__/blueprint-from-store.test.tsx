@@ -52,6 +52,20 @@ function guestDisplay(): string | null | undefined {
 }
 
 describe("BlueprintFromStore save status", () => {
+  it("renders room divider and servery labels as equipment footprints", () => {
+    useEditorStore.getState().replaceObjectsFromScene([
+      object("divider", "room-divider", null), object("servery", "servery-unit", null),
+    ]);
+    render(<BlueprintPage source="editor-store" />);
+    const divider = CANONICAL_ASSETS.find((item) => item.slug === "room-divider");
+    const servery = CANONICAL_ASSETS.find((item) => item.slug === "servery-unit");
+    expect(divider).toBeDefined();
+    expect(servery).toBeDefined();
+    expect(screen.getAllByText(divider?.name ?? "Missing divider").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(servery?.name ?? "Missing servery").length).toBeGreaterThan(0);
+    expect(screen.getByText("Seats placed").parentElement?.textContent).toBe("Seats placed0");
+  });
+
   it("tracks saved, dirty, in-flight, failed and conflicted state instead of always claiming clean", () => {
     useEditorStore.setState({ configId: "saved-layout", lastSavedAt: new Date(Date.now() - 120_000) });
     const { container } = render(<><BlueprintPage source="editor-store" /><MobilePlannerTopBar mode="2d" onModeChange={() => undefined} /></>);

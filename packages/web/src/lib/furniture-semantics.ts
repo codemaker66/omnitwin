@@ -29,6 +29,11 @@ export function isPassiveFreestandingAvFloorItem(item: FurnitureSemanticSource):
   return item.category === "av" && item.slug === "mic-stand";
 }
 
+/** Imported floor fixtures that must remain obstacles even in category `other`. */
+export function isFreestandingFloorEquipmentItem(item: FurnitureSemanticSource): boolean {
+  return item.category === "other" && (item.slug === "room-divider" || item.slug === "servery-unit");
+}
+
 /**
  * Whether a candidate may rest on a placed furniture surface. Stages support
  * floor equipment and other stage units; tables support only assets whose
@@ -44,6 +49,26 @@ export function canRestOnFurnitureSurface(
 
 /** Linen colours encoded directly in a furniture variant or applied in-scene. */
 export type TableLinenStyle = "black" | "white";
+/** Imported fabric may have a finish that the scene's linen tools cannot author. */
+export type IntrinsicTableLinenStyle = TableLinenStyle | "included";
+
+const INTRINSIC_TABLE_LINEN: Readonly<Record<string, IntrinsicTableLinenStyle>> = {
+  "poseur-table-black": "black",
+  "poseur-table-white": "white",
+  "trestle-6ft-black": "black",
+  "trestle-6ft-white": "white",
+  "round-table-6ft-black": "black",
+  "round-table-6ft-white": "white",
+  "round-cafe-table-white": "white",
+  "square-cafe-table-white": "white",
+  "ceremony-table": "white",
+  // The supplied export contains cloth geometry but no texture/colour evidence.
+  "cake-cutting-table": "included",
+};
+
+const SERVICE_TABLE_SLUGS: ReadonlySet<string> = new Set([
+  "cake-cutting-table", "ceremony-table",
+]);
 
 /** The persisted, optional overlay state carried by placed/editor objects. */
 export interface TableLinenStateSource {
@@ -61,21 +86,20 @@ export function isPoseurTableItem(item: FurnitureSemanticSource): boolean {
  * groups, dinner place settings, dining-capacity counts and seating targets.
  */
 export function isDiningTableItem(item: FurnitureSemanticSource): boolean {
-  return item.category === "table" && !isPoseurTableItem(item);
+  return item.category === "table" && !isPoseurTableItem(item)
+    && !SERVICE_TABLE_SLUGS.has(item.slug);
 }
 
 /**
  * Linen authored into the catalogue variant itself, rather than added as a
- * scene overlay. Exact slugs are intentional: the bare poseur remains a linen
- * target, while the black and white variants already include their cloth.
+ * scene overlay. Exact slugs preserve linen tools for bare tables while
+ * preventing another cloth being drawn over imported dressed geometry.
  */
 export function intrinsicTableLinenStyle(
   item: FurnitureSemanticSource,
-): TableLinenStyle | null {
+): IntrinsicTableLinenStyle | null {
   if (item.category !== "table") return null;
-  if (item.slug === "poseur-table-black") return "black";
-  if (item.slug === "poseur-table-white") return "white";
-  return null;
+  return Object.hasOwn(INTRINSIC_TABLE_LINEN, item.slug) ? INTRINSIC_TABLE_LINEN[item.slug] ?? null : null;
 }
 
 /** True when a generic table-cloth overlay may be applied to this item. */
@@ -99,6 +123,6 @@ export function appliedTableLinenStyle(
 export function effectiveTableLinenStyle(
   item: FurnitureSemanticSource,
   state: TableLinenStateSource,
-): TableLinenStyle | null {
+): IntrinsicTableLinenStyle | null {
   return intrinsicTableLinenStyle(item) ?? appliedTableLinenStyle(item, state);
 }

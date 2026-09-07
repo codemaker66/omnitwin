@@ -18,6 +18,10 @@ function catalogueId(slug: string): string {
   return item.id;
 }
 
+const IMPORTED_PROXY_SLUGS: ReadonlySet<string> = new Set([
+  "trestle-6ft", "poseur-table-black", "poseur-table-white", "platform", "bar-counter",
+]);
+
 afterEach(() => {
   cleanup();
   usePlacementStore.setState({ placedItems: [] });
@@ -26,7 +30,7 @@ afterEach(() => {
 });
 
 describe("selectedGeneratedFurniture", () => {
-  it.each(GENERATED_FURNITURE_SLUGS)(
+  it.each(GENERATED_FURNITURE_SLUGS.filter((slug) => !IMPORTED_PROXY_SLUGS.has(slug)))(
     "resolves a UUID-backed selected %s proxy",
     (slug) => {
       const placed = createPlacedItem(catalogueId(slug), 1, 2);
@@ -38,6 +42,11 @@ describe("selectedGeneratedFurniture", () => {
         .toBe(slug);
     },
   );
+
+  it.each([...IMPORTED_PROXY_SLUGS])("does not offer generated-part controls for imported %s", (slug) => {
+    const placed = createPlacedItem(catalogueId(slug), 1, 2);
+    expect(selectedGeneratedFurniture([placed], new Set([placed.id]))).toBeNull();
+  });
 
   it("rejects unsupported, missing, and multi-item selections", () => {
     const chair = createPlacedItem(catalogueId("banquet-chair"), 1, 2);
@@ -80,8 +89,8 @@ describe("FurnitureInspectionDock", () => {
   });
 
   it("clears an active presentation when selection moves to another generated item", () => {
-    const first = createPlacedItem(catalogueId("platform"), 0, 0);
-    const second = createPlacedItem(catalogueId("bar-counter"), 2, 0);
+    const first = createPlacedItem(catalogueId("platform-narrow"), 0, 0);
+    const second = createPlacedItem(catalogueId("lectern"), 2, 0);
     const firstSelection = selectedGeneratedFurniture([first], new Set([first.id]));
     const secondSelection = selectedGeneratedFurniture([second], new Set([second.id]));
     if (firstSelection === null || secondSelection === null) {
@@ -104,6 +113,12 @@ describe("FurnitureInspectionDock", () => {
 });
 
 describe("GeneratedFurnitureProxyBadge", () => {
+  it("does not describe imported bar/platform models as component proxies", () => {
+    usePlacementStore.setState({ placedItems: [...IMPORTED_PROXY_SLUGS].map((slug) => createPlacedItem(catalogueId(slug), 0, 0)) });
+    render(<GeneratedFurnitureProxyBadge />);
+    expect(screen.queryByTestId("generated-furniture-proxy-badge")).toBeNull();
+  });
+
   it("stays absent when no generated proxy is placed", () => {
     usePlacementStore.setState({
       placedItems: [createPlacedItem(catalogueId("black-table-cloth"), 0, 0)],
@@ -116,7 +131,10 @@ describe("GeneratedFurnitureProxyBadge", () => {
 
   it("discloses one generated stand-in", () => {
     usePlacementStore.setState({
-      placedItems: [createPlacedItem(catalogueId("platform"), 0, 0)],
+      placedItems: [
+        createPlacedItem(catalogueId("platform-narrow"), 0, 0),
+        createPlacedItem(catalogueId("bar-counter"), 2, 0),
+      ],
     });
 
     render(<GeneratedFurnitureProxyBadge />);

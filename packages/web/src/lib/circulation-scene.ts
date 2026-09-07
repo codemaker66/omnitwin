@@ -25,7 +25,7 @@ import {
   type FurnitureFootprint,
 } from "./circulation.js";
 import { normalizeFurnitureScale } from "./furniture-scale.js";
-import { isPassiveFreestandingAvFloorItem } from "./furniture-semantics.js";
+import { isFreestandingFloorEquipmentItem, isPassiveFreestandingAvFloorItem } from "./furniture-semantics.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
 
 /** Height above the floor (render units) at which the overlay line is drawn. */
@@ -46,7 +46,7 @@ export function placedCirculationFootprints(
     const item = getCatalogueItem(placed.catalogueItemId);
     if (
       item === undefined
-      || (item.category !== "table" && !isPassiveFreestandingAvFloorItem(item))
+      || (item.category !== "table" && !isPassiveFreestandingAvFloorItem(item) && !isFreestandingFloorEquipmentItem(item))
     ) continue;
     const scale = normalizeFurnitureScale(placed.scale);
     footprints.push({

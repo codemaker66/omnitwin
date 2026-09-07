@@ -30,6 +30,8 @@ export interface CatalogueItem {
   readonly width: number;
   readonly height: number;
   readonly depth: number;
+  /** Provisional planning dimensions awaiting measurements. */
+  readonly dimensionStatus?: "approximate";
   /** Placeholder colour for the proxy cube mesh. */
   readonly color: string;
   /** Shape hint for tables (used by chair snap). Null for non-tables. */
@@ -40,6 +42,8 @@ export interface CatalogueItem {
   readonly subtitle: string;
   /** URL to a .glb model file. Null = use procedural mesh. */
   readonly meshUrl: string | null;
+  /** Rendered model preview, when supplied. */
+  readonly thumbnailUrl?: string | null;
 }
 
 function canonicalToCatalogue(a: CanonicalAsset): CatalogueItem {
@@ -51,11 +55,13 @@ function canonicalToCatalogue(a: CanonicalAsset): CatalogueItem {
     width: a.widthM,
     height: a.heightM,
     depth: a.depthM,
+    dimensionStatus: a.dimensionStatus,
     color: a.color,
     tableShape: a.tableShape,
     maxCount: a.maxCount,
     subtitle: a.subtitle,
     meshUrl: a.meshUrl ?? null,
+    thumbnailUrl: a.thumbnailUrl ?? null,
   };
 }
 

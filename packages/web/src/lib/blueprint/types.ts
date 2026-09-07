@@ -67,6 +67,7 @@ export type ItemKind =
   | "stage"
   | "top-table"
   | "mic-stand"
+  | "floor-equipment"
   | "bar"
   | "dancefloor";
 
@@ -125,6 +126,16 @@ export interface MicStandItem extends BaseItem {
   readonly lengthM: number;
 }
 
+/** A named freestanding fixture with a floor footprint, never seating. */
+export interface FloorEquipmentItem extends BaseItem {
+  readonly kind: "floor-equipment";
+  readonly shape: "rect";
+  readonly label: string;
+  readonly topLeft: Point;
+  readonly widthM: number;
+  readonly lengthM: number;
+}
+
 export interface DancefloorItem extends BaseItem {
   readonly kind: "dancefloor";
   readonly shape: "dancefloor";
@@ -138,6 +149,7 @@ export type BlueprintItem =
   | PoseurTableItem
   | RectItem
   | MicStandItem
+  | FloorEquipmentItem
   | DancefloorItem;
 
 // ---------------------------------------------------------------------------

@@ -66,7 +66,7 @@ function InspectorOverview({ primary, members }: { readonly primary: ReferenceSc
     </>}
     <NumberFact label="Group / selection" value={`${String(members.length)} ${members.length === 1 ? "object" : "objects"}`} />
     <NumberFact label="Placed chairs" value={String(members.filter((entry) => entry.category === "chair").length)} />
-  </dl></section>;
+  </dl>{catalogue?.dimensionStatus === "approximate" && <p className="reference-muted">Approximate planning dimensions · confirm before final setup.</p>}</section>;
 }
 
 function InspectorTransforms({ primary, members, ids }: {
@@ -114,7 +114,7 @@ function InspectorStyle({ primary }: { readonly primary: ReferenceSceneEntry }):
   return <section className="reference-inspector-section"><h3>Style</h3>
     {canApplyTableLinenToItem(catalogue) ? <label className="reference-select-control"><span>Linen</span><select aria-label="Table linen" value={linen ?? "none"} onChange={(event) => { setLinen(event.target.value); }}>
       <option value="none">Bare table</option><option value="white">Ivory</option><option value="black">Black</option>
-    </select></label> : <dl><NumberFact label="Linen" value={linen === "white" ? "Ivory · catalogue variant" : "Black · catalogue variant"} /></dl>}
+    </select></label> : <dl><NumberFact label="Linen" value={`${linen === "white" ? "Ivory" : linen === "included" ? "Included cloth" : "Black"} · catalogue variant`} /></dl>}
     {isDiningTableItem(catalogue) && <label className="reference-select-control"><span>Place settings</span><select aria-label="Table place settings" value={item.tableSetting ?? "none"} onChange={(event) => { const value = event.target.value; editWithHistory(() => {
       if (value === "dinner") usePlacementStore.getState().applyTableSetting(new Set([item.id]), "dinner");
       else usePlacementStore.getState().clearTableSetting(item.id);

@@ -71,7 +71,7 @@ describe("furniture planning semantics", () => {
     expect(isDiningTableItem(chair)).toBe(false);
   });
 
-  it("classifies only the two clothed poseur variants as intrinsic linen", () => {
+  it("classifies clothed poseur variants as intrinsic linen and keeps bare items bare", () => {
     expect(intrinsicTableLinenStyle(item("poseur-table-black"))).toBe("black");
     expect(intrinsicTableLinenStyle(item("poseur-table-white"))).toBe("white");
     expect(intrinsicTableLinenStyle(item("poseur-table"))).toBeNull();

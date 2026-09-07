@@ -463,6 +463,13 @@
       "when": 1788717900000,
       "tag": "0067_burgess_turini_chair",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1788718000000,
+      "tag": "0068_furniture_model_batch",
+      "breakpoints": true
     }
   ]
 }

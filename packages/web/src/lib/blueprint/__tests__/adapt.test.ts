@@ -11,6 +11,7 @@ import type { EditorObject } from "../../../stores/editor-store.js";
 import { computeStatusMetrics } from "../geometry.js";
 import { seatingCountsFromPlacedItems } from "../../seating-counts.js";
 import { createPlacedItem } from "../../placement.js";
+import { getLayerRows, inspectorTitle, itemAreaM2, totalSeats } from "../geometry.js";
 
 // ---------------------------------------------------------------------------
 // adapt — chair grouping regression tests
@@ -39,6 +40,35 @@ const PROJECTOR = CANONICAL_ASSETS.find((a) => a.slug === "projector");
 const BLACK_TABLE_CLOTH = CANONICAL_ASSETS.find((a) => a.slug === "black-table-cloth");
 
 const SPACE = { name: "Test", widthM: "10", lengthM: "10" } as const;
+
+describe("imported furniture footprints", () => {
+  it.each(["room-divider", "servery-unit"])("retains the named rotated and scaled %s footprint without seating", (slug) => {
+    const asset = CANONICAL_ASSETS.find((candidate) => candidate.slug === slug);
+    if (asset === undefined) throw new Error(`Missing ${slug}`);
+    const object = { ...makeObj(slug, asset.id, 1, -2), scale: 1.5, rotationY: Math.PI / 3 };
+    const scene = adaptEditorStateToBlueprintScene({ objects: [object], space: SPACE, lastSavedAt: null });
+    const item = scene.items[0];
+    expect(item).toMatchObject({
+      kind: "floor-equipment", shape: "rect", label: asset.name,
+      widthM: asset.widthM * 1.5, lengthM: asset.depthM * 1.5,
+      topLeft: { x: 6 - asset.widthM * 0.75, y: 3 - asset.depthM * 0.75 },
+    });
+    if (item === undefined) throw new Error("Missing footprint");
+    expect(item.rotationDeg).toBeCloseTo(60);
+    expect(item).not.toHaveProperty("seats");
+    expect(itemAreaM2(item)).toBeCloseTo(asset.widthM * asset.depthM * 2.25);
+    expect(totalSeats([item])).toBe(0);
+    expect(getLayerRows(scene)[0]?.label).toContain(asset.name);
+    expect(inspectorTitle(item)).toContain(asset.name.toUpperCase());
+  });
+
+  it("reports the cake table's included cloth without inventing a colour", () => {
+    const asset = CANONICAL_ASSETS.find((candidate) => candidate.slug === "cake-cutting-table");
+    if (asset === undefined) throw new Error("Missing cake table");
+    const item = editorObjectToBlueprintItem({ ...makeObj("cake", asset.id, 0, 0), clothed: true, clothStyle: "black" }, { widthM: 10, lengthM: 10 });
+    expect(item).toMatchObject({ linen: "Included cloth", seats: 0 });
+  });
+});
 
 function makeObj(
   id: string,

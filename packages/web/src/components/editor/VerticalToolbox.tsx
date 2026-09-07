@@ -23,6 +23,7 @@ import { useMeasurementStore } from "../../stores/measurement-store.js";
 import { useGuidelineStore } from "../../stores/guideline-store.js";
 import { useCockpitStore } from "../../stores/cockpit-store.js";
 import { ReferenceSceneSettings } from "./cockpit/ReferenceSceneSettings.js";
+import { FurnitureCataloguePreview } from "../shared/FurnitureCataloguePreview.js";
 import type { FurnitureCategory } from "@omnitwin/types";
 import {
   copyForEditorSaveStatus,
@@ -38,7 +39,6 @@ import {
   getCatalogueByCategory,
   getCatalogueItem,
   categoryLabel,
-  catalogueIcon,
 } from "../../lib/catalogue.js";
 import type { CatalogueItem } from "../../lib/catalogue.js";
 import { isSceneFurniturePlacement } from "../../lib/table-dressing.js";
@@ -2219,7 +2219,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
                     tabIndex={0}
                     onKeyDown={(e) => { if (e.key === "Enter") handleAssetClick(item); }}
                   >
-                    {/* SVG thumbnail */}
+                    {/* Supplied-model preview, with a silhouette fallback. */}
                     <div
                       style={{
                         width: 36, height: 36, borderRadius: 8, flexShrink: 0,
@@ -2231,8 +2231,9 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
                         WebkitUserSelect: "none",
                       }}
                       draggable={false}
-                      dangerouslySetInnerHTML={{ __html: catalogueIcon(item) }}
-                    />
+                    >
+                      <FurnitureCataloguePreview item={item} />
+                    </div>
                     {/* Name + subtitle */}
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: "#eee", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -2278,8 +2279,9 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
               justifyContent: "center",
               boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
             }}
-            dangerouslySetInnerHTML={{ __html: catalogueIcon(catalogueDragPreview.item) }}
-          />
+          >
+            <FurnitureCataloguePreview item={catalogueDragPreview.item} size={44} />
+          </div>
           <div style={{ minWidth: 0 }}>
             <div style={{
               width: 34,

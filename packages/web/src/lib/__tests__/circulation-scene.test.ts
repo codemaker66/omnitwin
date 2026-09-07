@@ -25,6 +25,20 @@ const laptop = getCatalogueItemBySlug("laptop");
 const microphone = getCatalogueItemBySlug("microphone");
 
 describe("placedCirculationFootprints", () => {
+  it.each(["room-divider", "servery-unit"])("includes the transformed %s footprint in clearance checks", (slug) => {
+    const item = getCatalogueItemBySlug(slug);
+    if (item === undefined || roundTable === undefined) throw new Error("Missing furniture fixture");
+    const equipment = { ...createPlacedItem(item.id, 2, -3, Math.PI / 4), scale: 1.5 };
+    const table = createPlacedItem(roundTable.id, -2, -3);
+    const footprints = placedCirculationFootprints([equipment, table]);
+    expect(footprints[0]).toMatchObject({
+      id: equipment.id, label: item.name,
+      cx: 2 / RENDER_SCALE, cz: -3 / RENDER_SCALE,
+      width: item.width * 1.5, depth: item.depth * 1.5, rotation: Math.PI / 4,
+    });
+    expect(placedItemsCirculation([equipment, table]).pairCount).toBe(1);
+  });
+
   it("keeps planning floor obstacles and converts render units back to metres", () => {
     if (roundTable === undefined || chair === undefined) {
       throw new Error("fixture catalogue items missing");

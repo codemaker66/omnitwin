@@ -12,7 +12,7 @@ import { useChairDialogStore } from "../stores/chair-dialog-store.js";
 import { getCatalogueItem, type CatalogueItem } from "../lib/catalogue.js";
 import { PLACEMENT_COLOR_VALID, PLACEMENT_COLOR_INVALID } from "../lib/placement.js";
 import type { PlacedItem } from "../lib/placement.js";
-import { isPoseurTable } from "../lib/placement-ghost.js";
+import { isDiningTableItem } from "../lib/furniture-semantics.js";
 import { ROTATION_SNAP_RAD } from "../lib/selection.js";
 import { computeSnapGuides } from "../lib/snap-guide.js";
 import {
@@ -202,12 +202,11 @@ export function PlacementGhost(): React.ReactElement | null {
         return;
       }
 
-      // Table: show chair count dialog instead of placing directly
-      // (poseur tables skip the dialog — no chairs)
+      // Seated dining tables request chairs; service/standing tables place directly.
       const item = getCatalogueItem(catState.selectedItemId);
       if (item === undefined || placeState.ghostInvalidReason === "Maximum reached for this item") return;
 
-      if (item.tableShape !== null && !isPoseurTable(catState.selectedItemId)) {
+      if (item.tableShape !== null && isDiningTableItem(item)) {
         useChairDialogStore.getState().showDialog({
           catalogueItemId: catState.selectedItemId,
           x: placeState.ghostPosition[0],

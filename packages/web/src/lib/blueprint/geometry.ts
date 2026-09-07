@@ -217,6 +217,9 @@ export function inspectorTitle(item: BlueprintItem, catalogueCapacity = false): 
   if (item.kind === "mic-stand") {
     return `MIC STAND · ${formatDimensions(item)}`;
   }
+  if (item.kind === "floor-equipment") {
+    return `${item.label.toUpperCase()} · ${formatDimensions(item)}`;
+  }
   if (item.kind === "dancefloor") {
     return `DANCEFLOOR · ${formatDimensions(item)}`;
   }
@@ -293,6 +296,8 @@ function layerLabel(item: BlueprintItem, catalogueCapacity: boolean): string {
       return `Stage · ${formatDimensions(item)}`;
     case "mic-stand":
       return `Mic stand · ${formatDimensions(item)}`;
+    case "floor-equipment":
+      return `${item.label} · ${formatDimensions(item)}`;
     case "dancefloor":
       return `Dancefloor · ${formatDimensions(item)}`;
     case "bar":

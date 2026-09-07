@@ -15,6 +15,15 @@ import { FURNITURE_CATEGORIES } from "@omnitwin/types";
 // ---------------------------------------------------------------------------
 
 describe("CATALOGUE_ITEMS", () => {
+  it("labels provisional batch dimensions without changing the measured chair", () => {
+    const approximate = CATALOGUE_ITEMS.filter((item) => item.dimensionStatus === "approximate");
+    expect(approximate).toHaveLength(12);
+    for (const item of approximate) expect(item.subtitle).toContain("Approx.");
+    expect(getCatalogueItemBySlug("burgess-turini-18-3")).toMatchObject({
+      width: 0.42, depth: 0.58, height: 0.88,
+    });
+    expect(getCatalogueItemBySlug("burgess-turini-18-3")?.dimensionStatus).toBeUndefined();
+  });
   it("has at least one item", () => {
     expect(CATALOGUE_ITEMS.length).toBeGreaterThan(0);
   });
@@ -188,7 +197,7 @@ describe("getCatalogueItem", () => {
 describe("getCatalogueByCategory", () => {
   it("returns all items in the table category", () => {
     const tables = getCatalogueByCategory("table");
-    expect(tables.length).toBe(6);
+    expect(tables.length).toBe(15);
     for (const item of tables) {
       expect(item.category).toBe("table");
     }
@@ -196,7 +205,7 @@ describe("getCatalogueByCategory", () => {
 
   it("returns all items in the chair category", () => {
     const chairs = getCatalogueByCategory("chair");
-    expect(chairs.map((chair) => chair.slug)).toEqual(["banquet-chair", "burgess-turini-18-3"]);
+    expect(chairs.map((chair) => chair.slug)).toEqual(["banquet-chair", "burgess-turini-18-3", "checked-banquet-chair"]);
     for (const item of chairs) {
       expect(item.category).toBe("chair");
     }

@@ -5,6 +5,7 @@ import { PlacementGhost } from "../PlacementGhost.js";
 import { useCatalogueStore } from "../../stores/catalogue-store.js";
 import { usePlacementStore } from "../../stores/placement-store.js";
 import { useSelectionStore } from "../../stores/selection-store.js";
+import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
 import { useLayoutTimelinePreviewStore } from "../../stores/layout-timeline-preview-store.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import { PLANNER_INTERACTION_FLOOR_NAME } from "../../lib/planner-interaction-floor.js";
@@ -29,6 +30,7 @@ if (item === undefined) throw new Error("Poseur fixture missing");
 const itemId = item.id;
 
 beforeEach(() => {
+  useChairDialogStore.getState().clearDialog();
   useLayoutTimelinePreviewStore.getState().clear();
   useSelectionStore.setState({ selectedIds: new Set() });
   useCatalogueStore.setState({ selectedItemId: itemId, dragActive: false });
@@ -62,6 +64,27 @@ it("places from a direct click without requiring an earlier pointer move", () =>
   act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
   expect(usePlacementStore.getState().placedItems).toHaveLength(1);
   expect(usePlacementStore.getState().placedItems[0]).toMatchObject({ catalogueItemId: itemId, x: 0, z: 0 });
+});
+
+it.each(["cake-cutting-table", "ceremony-table"])("places %s directly from a canvas click without requesting dining chairs", (slug) => {
+  const serviceTable = getCatalogueItemBySlug(slug);
+  if (serviceTable === undefined) throw new Error(`Missing ${slug}`);
+  useCatalogueStore.setState({ selectedItemId: serviceTable.id });
+  render(<PlacementGhost />);
+  act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+  expect(usePlacementStore.getState().placedItems).toHaveLength(1);
+  expect(usePlacementStore.getState().placedItems[0]).toMatchObject({ catalogueItemId: serviceTable.id, x: 0, z: 0 });
+  expect(useChairDialogStore.getState().pending).toBeNull();
+});
+
+it("keeps the seating dialog for an imported dining table", () => {
+  const diningTable = getCatalogueItemBySlug("round-table-6ft-white");
+  if (diningTable === undefined) throw new Error("Missing imported round table");
+  useCatalogueStore.setState({ selectedItemId: diningTable.id });
+  render(<PlacementGhost />);
+  act(() => { fireEvent.click(canvas, { clientX: 50, clientY: 50, button: 0 }); });
+  expect(usePlacementStore.getState().placedItems).toHaveLength(0);
+  expect(useChairDialogStore.getState().pending).toMatchObject({ catalogueItemId: diningTable.id, tableShape: "round" });
 });
 
 it("does not reuse a valid ghost when the release has no floor target", () => {

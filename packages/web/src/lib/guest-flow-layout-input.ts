@@ -41,6 +41,7 @@ import {
 import { getCatalogueItem, type CatalogueItem } from "./catalogue.js";
 import {
   isDiningTableItem,
+  isFreestandingFloorEquipmentItem,
   isPassiveFreestandingAvFloorItem,
 } from "./furniture-semantics.js";
 import type { PlacedItem } from "./placement.js";
@@ -193,7 +194,8 @@ function isObstacle(item: CatalogueItem, categories: ReadonlySet<FurnitureCatego
   if (item.slug === DANCEFLOOR_CATALOGUE_SLUG) return false;
   return categories.has(item.category)
     || item.slug === BAR_CATALOGUE_SLUG
-    || isPassiveFreestandingAvFloorItem(item);
+    || isPassiveFreestandingAvFloorItem(item)
+    || isFreestandingFloorEquipmentItem(item);
 }
 
 /** Render-space placed item → metre-space oriented footprint (reuses circulation). */

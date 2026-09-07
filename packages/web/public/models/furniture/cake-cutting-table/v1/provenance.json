@@ -1,0 +1,121 @@
+{
+  "sourceKind": "User-supplied Hyper3D Rodin generated model",
+  "folder": "hyper3d_cake_cutting_table",
+  "source": {
+    "filename": "base.glb",
+    "sha256": "b438d134ebadb489b309e62b148466e42a0c125fa125e60513a561c04804ee09",
+    "bytes": 29221576,
+    "triangles": 1000000,
+    "vertices": 538136,
+    "bounds": {
+      "min": [
+        -0.9484421610832214,
+        0,
+        -0.9426048994064331
+      ],
+      "max": [
+        0.9478967785835266,
+        1.2826653718948364,
+        0.9428180456161499
+      ],
+      "size": [
+        1.896338939666748,
+        1.2826653718948364,
+        1.885422945022583
+      ]
+    },
+    "materials": 1,
+    "textures": []
+  },
+  "runtime": {
+    "filename": "model.glb",
+    "sha256": "5227cba796e2127f7eae2a015b8473da79380fb9b7baac97fa98f56cc9307341",
+    "bytes": 1423976,
+    "triangles": 55470,
+    "vertices": 45421,
+    "bounds": {
+      "min": [
+        -0.550000011920929,
+        0,
+        -0.550000011920929
+      ],
+      "max": [
+        0.550000011920929,
+        0.7599999904632568,
+        0.550000011920929
+      ],
+      "size": [
+        1.100000023841858,
+        0.7599999904632568,
+        1.100000023841858
+      ]
+    },
+    "materials": 1,
+    "textures": [],
+    "requiredExtensions": []
+  },
+  "simplification": [
+    {
+      "method": "meshoptimizer attribute-aware simplification",
+      "targetTriangles": 50000,
+      "errorLimit": 0.003,
+      "actualError": 0.0029305696953088045,
+      "actualTriangles": 55470,
+      "attributes": [
+        "NORMAL",
+        "TEXCOORD_0"
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "textureVerification": [],
+  "normalization": {
+    "description": "Generated mesh axis-calibrated to catalogue planning envelope, floor centered. Source proportions preserved in external intermediate derivatives. Not a measured scan.",
+    "dimensionsMetres": {
+      "width": 1.1,
+      "height": 0.76,
+      "depth": 1.1
+    },
+    "dimensionBasis": "Approximate planning dimensions; physical measurements not supplied",
+    "rotationYRadians": 0,
+    "axisScale": [
+      0.5809670642660668,
+      0.5925729708648201,
+      0.5839903819575823
+    ],
+    "translationBeforeScale": [
+      -0.0008883774280548096,
+      -0.0001157522201538086,
+      0.0005698502063751221
+    ],
+    "pivot": "centered X/Z, floor Y=0",
+    "up": "+Y"
+  },
+  "limitations": [
+    "Source export has no texture maps and a uniform gray material; material confirmation/export is incomplete.",
+    "1K runtime maps intentionally reduce close-up texture detail; source-resolution 2K derivative retained outside application."
+  ],
+  "dependencies": {
+    "gltfTransform": "4.3.0",
+    "meshoptimizer": "1.2.0",
+    "sharp": "0.35.3"
+  },
+  "runtimeTexturePolicy": "Intentionally downsampled from 2048 to 1024 pixels for GPU memory; lossless WebP encoding of the resized pixels. Source pixels are not identical after downsampling.",
+  "geometryVariant": "optimized003",
+  "asset": "Cake Cutting Table",
+  "slug": "cake-cutting-table",
+  "preview": {
+    "filename": "preview.webp",
+    "width": 600,
+    "height": 600,
+    "bytes": 4430,
+    "sha256": "69d8e957a44c46d7a400d97424422c6d986a7e769c8cd04eaf6fff987785f843",
+    "source": "Neutral Blender5.2.1 studio render of final calibrated runtime GLB;12samples,denoised,AgX."
+  }
+}

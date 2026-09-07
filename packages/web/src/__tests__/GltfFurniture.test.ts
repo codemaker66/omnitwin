@@ -41,12 +41,15 @@ describe("CatalogueItem meshUrl field (#28)", () => {
     }
   });
 
-  it("routes the supplied Turini to its model while retaining existing procedural items", () => {
+  it("routes supplied furniture to models while retaining unsupplied procedural items", () => {
     const imported = CATALOGUE_ITEMS.filter((item) => item.meshUrl !== null);
-    expect(imported.map((item) => item.slug)).toEqual(["burgess-turini-18-3"]);
-    expect(imported[0]?.meshUrl).toBe("/models/furniture/burgess-turini-18-3/v1/chair.glb");
-    for (const item of CATALOGUE_ITEMS.filter((item) => item.slug !== "burgess-turini-18-3")) {
-      expect(item.meshUrl).toBeNull();
+    expect(imported).toHaveLength(18);
+    expect(imported.find((item) => item.slug === "burgess-turini-18-3")?.meshUrl)
+      .toBe("/models/furniture/burgess-turini-18-3/v1/chair.glb");
+    for (const slug of ["round-table-6ft", "banquet-chair", "trestle-4ft", "poseur-table"]) {
+      const item = CATALOGUE_ITEMS.find((candidate) => candidate.slug === slug);
+      expect(item).toBeDefined();
+      expect(item?.meshUrl).toBeNull();
     }
   });
 });

@@ -220,7 +220,9 @@ CREATE CONSTRAINT TRIGGER deferred_inventory AFTER INSERT ON "Inventory--stock" 
     for (let index = 1; index < journal.entries.length; index += 1) {
       expect(journal.entries[index]?.when).toBeGreaterThan(journal.entries[index - 1]?.when ?? 0);
     }
-    expect(tags.slice(-EXPECTED_TAIL.length)).toEqual(EXPECTED_TAIL);
+    // This established rollout segment retains its original journal positions;
+    // later furniture registrations append without displacing its lineage.
+    expect(tags.slice(42, 42 + EXPECTED_TAIL.length)).toEqual(EXPECTED_TAIL);
   });
 
   it("keeps migration 0046 table columns identical to the Drizzle mission schema", async () => {

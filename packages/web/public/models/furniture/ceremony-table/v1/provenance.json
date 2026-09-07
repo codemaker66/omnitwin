@@ -1,0 +1,225 @@
+{
+  "sourceKind": "User-supplied Hyper3D Rodin generated model",
+  "folder": "hyper3d_ceremony_table",
+  "source": {
+    "filename": "base_basic_pbr.glb",
+    "sha256": "fab460f5820015259672173feb00ad61bc0061554934c877c61a849bf30cc8a4",
+    "bytes": 36933020,
+    "triangles": 1000000,
+    "vertices": 569622,
+    "bounds": {
+      "min": [
+        -0.9489389061927795,
+        0,
+        -0.6045379042625427
+      ],
+      "max": [
+        0.9493855834007263,
+        0.8873664140701294,
+        0.6044914126396179
+      ],
+      "size": [
+        1.8983244895935059,
+        0.8873664140701294,
+        1.2090293169021606
+      ]
+    },
+    "materials": 1,
+    "textures": [
+      {
+        "name": "texture_normal",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2817934
+      },
+      {
+        "name": "texture_diffuse",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2290601
+      },
+      {
+        "name": "texture_metallic-texture_roughness",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 1594831
+      }
+    ]
+  },
+  "runtime": {
+    "filename": "model.glb",
+    "sha256": "935ea6b7189f55d9c527dcf3a1805cd7b385b2784dcfb3571eb04cf2d7026e72",
+    "bytes": 4125396,
+    "triangles": 70260,
+    "vertices": 71356,
+    "bounds": {
+      "min": [
+        -0.800000011920929,
+        0,
+        -0.5
+      ],
+      "max": [
+        0.800000011920929,
+        0.7400000095367432,
+        0.5
+      ],
+      "size": [
+        1.600000023841858,
+        0.7400000095367432,
+        1
+      ]
+    },
+    "materials": 1,
+    "textures": [
+      {
+        "name": "texture_normal",
+        "mimeType": "image/webp",
+        "size": [
+          1024,
+          1024
+        ],
+        "bytes": 397880
+      },
+      {
+        "name": "texture_diffuse",
+        "mimeType": "image/webp",
+        "size": [
+          1024,
+          1024
+        ],
+        "bytes": 397614
+      },
+      {
+        "name": "texture_metallic-texture_roughness",
+        "mimeType": "image/webp",
+        "size": [
+          1024,
+          1024
+        ],
+        "bytes": 201530
+      }
+    ],
+    "requiredExtensions": [
+      "EXT_texture_webp"
+    ]
+  },
+  "simplification": [
+    {
+      "method": "meshoptimizer attribute-aware simplification",
+      "targetTriangles": 50000,
+      "errorLimit": 0.003,
+      "actualError": 0.002997314790263772,
+      "actualTriangles": 70260,
+      "attributes": [
+        "NORMAL",
+        "TEXCOORD_0"
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "textureVerification": [
+    {
+      "name": "texture_normal",
+      "sourceSize": [
+        2048,
+        2048
+      ],
+      "runtimeSize": [
+        1024,
+        1024
+      ],
+      "sourcePixelsPreserved": false,
+      "resizeKernel": "Lanczos3",
+      "resizedPixelsPreserved": true,
+      "resizedRgbaSha256": "6324fd68ce49a5114e1f676baae1b1188e27cfd6ebea2d5b8e95f7143f230768"
+    },
+    {
+      "name": "texture_diffuse",
+      "sourceSize": [
+        2048,
+        2048
+      ],
+      "runtimeSize": [
+        1024,
+        1024
+      ],
+      "sourcePixelsPreserved": false,
+      "resizeKernel": "Lanczos3",
+      "resizedPixelsPreserved": true,
+      "resizedRgbaSha256": "c9d85a3c67aca0e8871f60df3495784e142c8da23e329934d331e86c1e5ebf35"
+    },
+    {
+      "name": "texture_metallic-texture_roughness",
+      "sourceSize": [
+        2048,
+        2048
+      ],
+      "runtimeSize": [
+        1024,
+        1024
+      ],
+      "sourcePixelsPreserved": false,
+      "resizeKernel": "Lanczos3",
+      "resizedPixelsPreserved": true,
+      "resizedRgbaSha256": "13a0f668f4f76c4a122279b8494365d441d8b27519765e228fb92f770807c589"
+    }
+  ],
+  "normalization": {
+    "description": "Generated mesh axis-calibrated to catalogue planning envelope, floor centered. Source proportions preserved in external intermediate derivatives. Not a measured scan.",
+    "dimensionsMetres": {
+      "width": 1.6,
+      "height": 0.74,
+      "depth": 1
+    },
+    "dimensionBasis": "Approximate planning dimensions; physical measurements not supplied",
+    "rotationYRadians": 0,
+    "axisScale": [
+      0.8431412171742896,
+      0.8343368620490444,
+      0.8277593060666867
+    ],
+    "translationBeforeScale": [
+      -0.0004948973655700684,
+      -0.000036209821701049805,
+      -0.00045108795166015625
+    ],
+    "pivot": "centered X/Z, floor Y=0",
+    "up": "+Y"
+  },
+  "limitations": [
+    "Generated source shape and source material appearance preserved; not a measured scan.",
+    "1K runtime maps intentionally reduce close-up texture detail; source-resolution 2K derivative retained outside application."
+  ],
+  "dependencies": {
+    "gltfTransform": "4.3.0",
+    "meshoptimizer": "1.2.0",
+    "sharp": "0.35.3"
+  },
+  "runtimeTexturePolicy": "Intentionally downsampled from 2048 to 1024 pixels for GPU memory; lossless WebP encoding of the resized pixels. Source pixels are not identical after downsampling.",
+  "geometryVariant": "optimized003",
+  "asset": "Ceremony Table",
+  "slug": "ceremony-table",
+  "preview": {
+    "filename": "preview.webp",
+    "width": 600,
+    "height": 600,
+    "bytes": 3162,
+    "sha256": "3b8cbd40b9008d41b2b5377fd40d7aca630a4e5753fd4adc033ed705fa3e63e3",
+    "source": "Neutral Blender5.2.1 studio render of final calibrated runtime GLB;12samples,denoised,AgX."
+  }
+}

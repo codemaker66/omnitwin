@@ -28,7 +28,7 @@ export function selectedGeneratedFurniture(
   const placed = placedItems.find((candidate) => candidate.id === selectedId);
   if (placed === undefined || !isSceneFurniturePlacement(placed)) return null;
   const catalogueItem = getCatalogueItem(placed.catalogueItemId);
-  if (catalogueItem === undefined || !isGeneratedFurnitureSlug(catalogueItem.slug)) {
+  if (catalogueItem === undefined || catalogueItem.meshUrl !== null || !isGeneratedFurnitureSlug(catalogueItem.slug)) {
     return null;
   }
   return { placed, catalogueItem, slug: catalogueItem.slug };
@@ -173,7 +173,7 @@ export function GeneratedFurnitureProxyBadge(): ReactElement | null {
   const generatedCount = placedItems.reduce((count, placed) => {
     if (!isSceneFurniturePlacement(placed)) return count;
     const item = getCatalogueItem(placed.catalogueItemId);
-    return item !== undefined && isGeneratedFurnitureSlug(item.slug) ? count + 1 : count;
+    return item !== undefined && item.meshUrl === null && isGeneratedFurnitureSlug(item.slug) ? count + 1 : count;
   }, 0);
 
   if (generatedCount === 0) return null;

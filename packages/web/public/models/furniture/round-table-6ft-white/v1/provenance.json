@@ -1,0 +1,225 @@
+{
+  "sourceKind": "User-supplied Hyper3D Rodin generated model",
+  "folder": "hyper3d_white_round_table",
+  "source": {
+    "filename": "base_basic_pbr.glb",
+    "sha256": "f3af91fa6a364dad5c9191cd36993862100389b4c5b4d0603e3489a8f9837433",
+    "bytes": 22664844,
+    "triangles": 500000,
+    "vertices": 281549,
+    "bounds": {
+      "min": [
+        -0.9496334791183472,
+        0,
+        -0.9374183416366577
+      ],
+      "max": [
+        0.9500522613525391,
+        0.6796802878379822,
+        0.9386864900588989
+      ],
+      "size": [
+        1.8996857404708862,
+        0.6796802878379822,
+        1.8761048316955566
+      ]
+    },
+    "materials": 1,
+    "textures": [
+      {
+        "name": "texture_normal",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2938550
+      },
+      {
+        "name": "texture_diffuse",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2203208
+      },
+      {
+        "name": "texture_metallic-texture_roughness",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2511775
+      }
+    ]
+  },
+  "runtime": {
+    "filename": "model.glb",
+    "sha256": "2f97027365e5af166cf3c091b21a00692fc9aa121cbb8e3e1bedcea7d14a2b5c",
+    "bytes": 2653204,
+    "triangles": 50000,
+    "vertices": 38390,
+    "bounds": {
+      "min": [
+        -0.9150000214576721,
+        0,
+        -0.9150000214576721
+      ],
+      "max": [
+        0.9150000214576721,
+        0.7599999904632568,
+        0.9150000214576721
+      ],
+      "size": [
+        1.8300000429153442,
+        0.7599999904632568,
+        1.8300000429153442
+      ]
+    },
+    "materials": 1,
+    "textures": [
+      {
+        "name": "texture_normal",
+        "mimeType": "image/webp",
+        "size": [
+          1024,
+          1024
+        ],
+        "bytes": 395474
+      },
+      {
+        "name": "texture_diffuse",
+        "mimeType": "image/webp",
+        "size": [
+          1024,
+          1024
+        ],
+        "bytes": 394034
+      },
+      {
+        "name": "texture_metallic-texture_roughness",
+        "mimeType": "image/webp",
+        "size": [
+          1024,
+          1024
+        ],
+        "bytes": 333318
+      }
+    ],
+    "requiredExtensions": [
+      "EXT_texture_webp"
+    ]
+  },
+  "simplification": [
+    {
+      "method": "meshoptimizer attribute-aware simplification",
+      "targetTriangles": 50000,
+      "errorLimit": 0.003,
+      "actualError": 0.0017263336339965463,
+      "actualTriangles": 50000,
+      "attributes": [
+        "NORMAL",
+        "TEXCOORD_0"
+      ],
+      "weights": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "textureVerification": [
+    {
+      "name": "texture_normal",
+      "sourceSize": [
+        2048,
+        2048
+      ],
+      "runtimeSize": [
+        1024,
+        1024
+      ],
+      "sourcePixelsPreserved": false,
+      "resizeKernel": "Lanczos3",
+      "resizedPixelsPreserved": true,
+      "resizedRgbaSha256": "687ee4062df8d305637c6cde1130b3171aa51c90f96bdc59ae72fdbd72aac6b9"
+    },
+    {
+      "name": "texture_diffuse",
+      "sourceSize": [
+        2048,
+        2048
+      ],
+      "runtimeSize": [
+        1024,
+        1024
+      ],
+      "sourcePixelsPreserved": false,
+      "resizeKernel": "Lanczos3",
+      "resizedPixelsPreserved": true,
+      "resizedRgbaSha256": "353c426e39c5d02c57b9c92b653e86a3b3d17572f8e4ad901d6e3626fa39abfa"
+    },
+    {
+      "name": "texture_metallic-texture_roughness",
+      "sourceSize": [
+        2048,
+        2048
+      ],
+      "runtimeSize": [
+        1024,
+        1024
+      ],
+      "sourcePixelsPreserved": false,
+      "resizeKernel": "Lanczos3",
+      "resizedPixelsPreserved": true,
+      "resizedRgbaSha256": "d6cee2a0e5064a52afdf0b3452908842c30d15245fdb81e23f40c4f44d2746b4"
+    }
+  ],
+  "normalization": {
+    "description": "Generated mesh axis-calibrated to catalogue planning envelope, floor centered. Source proportions preserved in external intermediate derivatives. Not a measured scan.",
+    "dimensionsMetres": {
+      "width": 1.83,
+      "height": 0.76,
+      "depth": 1.83
+    },
+    "dimensionBasis": "Approximate planning dimensions; physical measurements not supplied",
+    "rotationYRadians": 0,
+    "axisScale": [
+      0.9635635037333871,
+      1.118292036074253,
+      0.9761491657587624
+    ],
+    "translationBeforeScale": [
+      -0.000031828880310058594,
+      -0.00006520748138427734,
+      -0.0010326802730560303
+    ],
+    "pivot": "centered X/Z, floor Y=0",
+    "up": "+Y"
+  },
+  "limitations": [
+    "Generated source shape and source material appearance preserved; not a measured scan.",
+    "1K runtime maps intentionally reduce close-up texture detail; source-resolution 2K derivative retained outside application."
+  ],
+  "dependencies": {
+    "gltfTransform": "4.3.0",
+    "meshoptimizer": "1.2.0",
+    "sharp": "0.35.3"
+  },
+  "runtimeTexturePolicy": "Intentionally downsampled from 2048 to 1024 pixels for GPU memory; lossless WebP encoding of the resized pixels. Source pixels are not identical after downsampling.",
+  "geometryVariant": "optimized003",
+  "asset": "Round Table (White Cloth)",
+  "slug": "round-table-6ft-white",
+  "preview": {
+    "filename": "preview.webp",
+    "width": 600,
+    "height": 600,
+    "bytes": 3192,
+    "sha256": "efe97a7341583e8613f216ed1f64819aeeaf9e26483642124c770daad854390c",
+    "source": "Neutral Blender5.2.1 studio render of final calibrated runtime GLB;12samples,denoised,AgX."
+  }
+}

@@ -102,6 +102,17 @@ describe("SceneOutliner", () => {
 });
 
 describe("SelectedFurnitureInspector", () => {
+  it("shows included cake cloth without invented colour or dining controls", () => {
+    const cake = createPlacedItem(catalogueId("cake-cutting-table"), 0, 0);
+    usePlacementStore.setState({ placedItems: [cake] });
+    useSelectionStore.getState().select(cake.id);
+    render(<SelectedFurnitureInspector />);
+    expect(screen.getByText("Included cloth · catalogue variant")).toBeDefined();
+    expect(screen.getByText("Approximate planning dimensions · confirm before final setup.")).toBeDefined();
+    expect(screen.queryByRole("combobox", { name: "Table linen" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Table place settings" })).toBeNull();
+  });
+
   it("offers the existing catalogue command without inventing a selection", () => {
     fixture();
     const listener = vi.fn((event: Event) => { expect(readPlannerToolbarCommand(event)).toBe("open-furniture"); });
