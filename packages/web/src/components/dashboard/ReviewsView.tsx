@@ -15,7 +15,7 @@ import {
 import { useToastStore } from "../../stores/toast-store.js";
 import { useReviewViewers } from "../../hooks/use-review-viewers.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
-import { ActivityIndicator } from "../shared/Activity.js";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 
 // ---------------------------------------------------------------------------
 // ReviewsView — staff approval dashboard for pending configuration reviews.
@@ -256,7 +256,7 @@ function NoteModal(props: NoteModalProps): React.ReactElement {
             onClick={() => { props.onConfirm(trimmed); }}
             disabled={!canConfirm}
           >
-            {props.inFlight ? "Submitting…" : props.confirmLabel}
+            {props.inFlight && <ActivityIndicator size={16} />} {props.inFlight ? "Submitting…" : props.confirmLabel}
           </button>
         </div>
       </div>
@@ -478,6 +478,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
 
         <div style={{ borderTop: "1px solid rgba(215,181,109,0.16)", paddingTop: 16, marginBottom: 16 }}>
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1c978", margin: "0 0 8px" }}>Actions</h3>
+          {inFlight && modal === null && <ActivityStatus>Recording the review decision…</ActivityStatus>}
           {contextState.status === "loading" && (
             <div role="status" aria-live="polite" style={{ ...alertStyle, color: "rgba(246,241,232,0.72)" }}>
               <ActivityIndicator size={16} /> Loading review gates, transitions, and decision history...
@@ -663,12 +664,12 @@ export function ReviewsView(): React.ReactElement {
           )}
         </h2>
         <button type="button" style={buttonSecondary} onClick={refresh} disabled={loading}>
-          {loading ? "Refreshing…" : "Refresh"}
+          {loading && <ActivityIndicator size={16} />} {loading ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 
       {loading && entries.length === 0 && (
-        <div role="status" aria-live="polite" style={{ ...panelStyle, padding: 40, textAlign: "center", color: "rgba(246,241,232,0.72)" }}>Loading reviews...</div>
+        <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 40, textAlign: "center", color: "rgba(246,241,232,0.72)" }}>Loading reviews...</ActivityStatus>
       )}
 
       {loadError !== null && entries.length === 0 && (

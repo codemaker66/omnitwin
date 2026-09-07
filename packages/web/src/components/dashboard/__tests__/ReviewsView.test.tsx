@@ -119,6 +119,43 @@ afterEach(() => {
 });
 
 describe("ReviewsView", () => {
+  it.each(["resolve", "reject"] as const)("stops the review loading animation when the list request %s", async outcome => {
+    const request = deferred<PendingReviewEntry[]>();
+    mocks.listPendingReviews.mockReturnValueOnce(request.promise);
+    render(<ReviewsView />);
+    const activity = screen.getByRole("status");
+    expect(activity.textContent).toContain("Loading reviews...");
+    expect(activity.querySelector("svg[data-activity-indicator]")).not.toBeNull();
+    await act(async () => {
+      if (outcome === "resolve") request.resolve([pendingReview()]);
+      else request.reject(new Error("Review list unavailable"));
+      await request.promise.catch(() => undefined);
+    });
+    expect(screen.queryByText("Loading reviews...")).toBeNull();
+    expect(screen.getByRole("button", { name: "Refresh" }).querySelector("svg[data-activity-indicator]")).toBeNull();
+    if (outcome === "resolve") expect(screen.getByRole("button", { name: "Open review for Reception Room review pack" })).toBeTruthy();
+    else expect(screen.getByTestId("reviews-load-error").textContent).toContain("Review list unavailable");
+  });
+
+  it.each(["resolve", "reject"] as const)("stops the review decision animation when approval %s", async outcome => {
+    const request = deferred<{ reviewStatus: string; notificationPolicy: string }>();
+    mocks.approveLayout.mockReturnValueOnce(request.promise);
+    render(<ReviewsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open review for Reception Room review pack" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    expect(screen.getByRole("status").textContent).toContain("Recording the review decision…");
+    expect(screen.getByRole("status").querySelector("svg[data-activity-indicator]")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveProperty("disabled", true);
+    await act(async () => {
+      if (outcome === "resolve") request.resolve({ reviewStatus: "approved", notificationPolicy: "requested" });
+      else request.reject(new Error("Approval unavailable"));
+      await request.promise.catch(() => undefined);
+    });
+    expect(screen.queryByText("Recording the review decision…")).toBeNull();
+    if (outcome === "reject") expect(screen.getByTestId("review-action-error").textContent).toContain("Approval did not save");
+    expect(mocks.approveLayout).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["resolve", "reject"] as const)("keeps review B open when a pending approval for A later %s", async outcome => {
     const approval = deferred<{ reviewStatus: string; notificationPolicy: string }>();
     mocks.approveLayout.mockReturnValueOnce(approval.promise);

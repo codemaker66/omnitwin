@@ -377,15 +377,6 @@
   color: #ffe0b2;
 }
 
-.event-day-spin {
-  animation: event-day-spin 1s linear infinite;
-}
-
-@keyframes event-day-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 @media (min-width: 760px) {
   .event-day-page {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { CatmullRomCurve3, Vector3 } from "three";
 import {
@@ -144,6 +144,8 @@ export interface LivingHallSceneProps {
   /** Fires once if the scene cannot run (WebGL/tile failure) — the page
    *  reverts to the plain document styling. */
   readonly onSceneFailed?: () => void;
+  /** The real capture has arrived; the page can retire its activity status. */
+  readonly onSceneLoaded?: () => void;
 }
 
 export function LivingHallScene({
@@ -152,11 +154,15 @@ export function LivingHallScene({
   sandboxActive,
   onSandboxExit,
   onSceneFailed,
+  onSceneLoaded,
 }: LivingHallSceneProps): ReactElement {
   const [loadedTiles, setLoadedTiles] = useState(0);
   const [failed, setFailed] = useState(false);
   const urls = useMemo(() => receptionTileUrls(), []);
   const allLoaded = loadedTiles >= RECEPTION_TILE_MANIFEST.length;
+  useEffect(() => {
+    if (allLoaded && !failed) onSceneLoaded?.();
+  }, [allLoaded, failed, onSceneLoaded]);
 
   const handleLoad = useCallback(() => {
     setLoadedTiles((n) => n + 1);
@@ -210,7 +216,7 @@ export function LivingHallScene({
         </Canvas>
       )}
       {/* The room's photograph holds the frame until the capture has fully
-          arrived — the page never says "loading"; the room sharpens. */}
+          arrived; the page-level activity status reflects that real wait. */}
       <img
         className={`lh-scene-poster${allLoaded && !failed ? " is-sharpened" : ""}`}
         src={tradesHallVenueImages.receptionRoom}

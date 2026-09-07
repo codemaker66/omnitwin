@@ -1,5 +1,6 @@
 import { Download, FileJson2, KeyRound } from "lucide-react";
-import { useRef, type ChangeEvent, type ReactElement } from "react";
+import { useRef, useState, type ChangeEvent, type ReactElement } from "react";
+import { ActivityStatus } from "../../shared/Activity.js";
 
 export function FoundrySigningControls(props: {
   readonly envelopeJson: string;
@@ -10,10 +11,16 @@ export function FoundrySigningControls(props: {
   readonly onVerifyEnvelope: () => void;
 }): ReactElement {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [readingFile, setReadingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const readFile = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
     if (file === undefined) return;
-    void file.text().then(props.onEnvelopeChange);
+    setReadingFile(true);
+    setFileError(null);
+    void file.text().then(props.onEnvelopeChange)
+      .catch(() => { setFileError("The signed envelope file could not be read. Choose it again or paste its contents."); })
+      .finally(() => { setReadingFile(false); });
     event.target.value = "";
   };
 
@@ -28,18 +35,21 @@ export function FoundrySigningControls(props: {
         <button type="button" className="runtime-foundry__button" disabled={props.busy} onClick={props.onDownloadPayload}>
           <Download aria-hidden="true" /> Download signing payload
         </button>
-        <button type="button" className="runtime-foundry__button" disabled={props.busy} onClick={() => { fileInputRef.current?.click(); }}>
+        <button type="button" className="runtime-foundry__button" disabled={props.busy || readingFile} onClick={() => { fileInputRef.current?.click(); }}>
           <FileJson2 aria-hidden="true" /> Upload DSSE JSON
         </button>
-        <input ref={fileInputRef} className="vv-sr-only" type="file" accept="application/json,.json" tabIndex={-1} disabled={props.busy} onChange={readFile} />
+        <input ref={fileInputRef} className="vv-sr-only" type="file" accept="application/json,.json" tabIndex={-1} disabled={props.busy || readingFile} onChange={readFile} />
       </div>
+      {props.busy && <ActivityStatus>Working on the signed release…</ActivityStatus>}
+      {readingFile && <ActivityStatus>Reading signed envelope…</ActivityStatus>}
+      {fileError !== null && <p className="runtime-foundry__notice" data-kind="error" role="alert">{fileError}</p>}
       <label className="runtime-foundry__field">
         <span>Signed DSSE envelope JSON</span>
         <textarea
           className="runtime-foundry__signing-json runtime-foundry__mono"
           value={props.envelopeJson}
           spellCheck={false}
-          disabled={props.busy}
+          disabled={props.busy || readingFile}
           onChange={(event) => { props.onEnvelopeChange(event.target.value); }}
           placeholder="Paste the complete signed DSSE envelope object."
         />
@@ -48,7 +58,7 @@ export function FoundrySigningControls(props: {
       <button
         type="button"
         className="runtime-foundry__button runtime-foundry__button--primary"
-        disabled={props.busy || props.envelopeJson.trim() === ""}
+        disabled={props.busy || readingFile || props.envelopeJson.trim() === ""}
         onClick={props.onVerifyEnvelope}
       >
         <KeyRound aria-hidden="true" /> Verify signed envelope

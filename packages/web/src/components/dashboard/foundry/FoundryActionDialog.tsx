@@ -1,5 +1,6 @@
 import { useId, useState, type FormEvent, type ReactElement } from "react";
 import { useFocusTrap } from "../../../lib/use-focus-trap.js";
+import { ActivityIndicator } from "../../shared/Activity.js";
 
 export type FoundryAction = "approve" | "reject" | "publish" | "promote" | "rollback";
 
@@ -143,7 +144,7 @@ export function FoundryActionDialog(props: FoundryActionDialogProps): ReactEleme
             className={`runtime-foundry__button ${copy.danger ? "runtime-foundry__button--danger" : "runtime-foundry__button--primary"}`}
             disabled={props.inFlight || note.trim().length < 20}
           >
-            {props.inFlight ? "Recording…" : copy.confirmLabel}
+            {props.inFlight && <ActivityIndicator size={18} />} {props.inFlight ? "Recording…" : copy.confirmLabel}
           </button>
         </form>
       </div>

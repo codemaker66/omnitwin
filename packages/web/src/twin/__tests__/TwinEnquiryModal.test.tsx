@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
 import { TwinEnquiryModal } from "../TwinEnquiryModal.js";
 
@@ -64,5 +64,20 @@ describe("TwinEnquiryModal", () => {
     fireEvent.submit(screen.getByTestId("twin-enquiry-form"));
     expect(submitMock).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  it("shows work during submission and removes it on failure", async () => {
+    let rejectRequest: ((reason: Error) => void) | undefined;
+    submitMock.mockImplementation(() => new Promise((_resolve, reject) => { rejectRequest = reject; }));
+    renderModal();
+    fireEvent.change(screen.getByLabelText(/^email/i), { target: { value: "guest@example.com" } });
+    fireEvent.submit(screen.getByTestId("twin-enquiry-form"));
+    const working = screen.getByRole("button", { name: /sending/i });
+    expect(working.getAttribute("aria-busy")).toBe("true");
+    expect(working.querySelector("[data-activity-indicator]")).not.toBeNull();
+    await act(async () => { rejectRequest?.(new Error("Offline")); await Promise.resolve(); });
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /sending/i })).toBeNull();
+    expect(screen.getByTestId("twin-enquiry-form").querySelector("[data-activity-indicator]")).toBeNull();
   });
 });
