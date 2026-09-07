@@ -80,6 +80,8 @@ export interface SparkSplatLayerProps {
   readonly paged?: boolean;
   /** First populated draw on this Canvas camera and default framebuffer. */
   readonly onFirstFrame?: () => void;
+  /** Minimum prepared, visible sources required for the initial handover. */
+  readonly minimumDrawnSources?: number;
   readonly onLoad?: (event: SparkSplatLoadEvent) => void;
   readonly onError?: (event: SparkSplatErrorEvent) => void;
 }
@@ -130,16 +132,21 @@ export function SparkRendererMount({
   runtime,
   lodScaleFn,
   onFirstFrame,
+  minimumDrawnSources = 1,
 }: {
   readonly runtime?: SparkSplatRuntime;
   readonly lodScaleFn?: () => number;
   readonly onFirstFrame?: () => void;
+  readonly minimumDrawnSources?: number;
 }): ReactElement {
   const gl = useThree((state) => state.gl);
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
-  const firstFrameRef = useRef(onFirstFrame);
-  useEffect(() => { firstFrameRef.current = onFirstFrame; invalidate(); }, [invalidate, onFirstFrame]);
+  const firstFrameRef = useRef({ callback: onFirstFrame, minimumDrawnSources });
+  useEffect(() => {
+    firstFrameRef.current = { callback: onFirstFrame, minimumDrawnSources };
+    invalidate();
+  }, [invalidate, minimumDrawnSources, onFirstFrame]);
   const lodScaleFnRef = useRef<(() => number) | undefined>(lodScaleFn);
   useEffect(() => { lodScaleFnRef.current = lodScaleFn; }, [lodScaleFn]);
   // Primitive dependencies, deliberately: an equal profile arriving as a new
@@ -169,12 +176,20 @@ export function SparkRendererMount({
       // Decode completion precedes sorting/upload. Spark sets instanceCount
       // from the sorted display in onBeforeRender. Reflection/precompile passes
       // must not uncover the planner before the main camera has drawn it.
-      const callback = firstFrameRef.current;
+      const { callback, minimumDrawnSources: requiredSources } = firstFrameRef.current;
       const geometry = sparkRenderer.geometry;
       const count = "instanceCount" in geometry ? geometry.instanceCount : 0;
       if (callback === undefined || reportedTo === callback
         || renderer.getRenderTarget() !== null || drawCamera !== camera
         || typeof count !== "number" || !Number.isFinite(count) || count <= 0) return;
+      // A first tile can cover only one wall. Wait for every decoded source
+      // requested by the caller to reach the sorted display and finish its
+      // existing dissolve; no timer or artificial percentage drives admission.
+      const preparedSources = sparkRenderer.display.mapping.filter(({ count: sourceCount, node }) => {
+        const opacity = "opacity" in node ? node.opacity : 1;
+        return sourceCount > 0 && node.visible && typeof opacity === "number" && opacity >= 0.98;
+      }).length;
+      if (preparedSources < requiredSources || sparkRenderer.sorting || sparkRenderer.sortDirty) return;
       reportedTo = callback;
       callback();
     };
@@ -208,6 +223,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
     onLoad,
     onError,
     onFirstFrame,
+    minimumDrawnSources,
     visible = true,
     opacity = 1,
     position = DEFAULT_POSITION,
@@ -321,7 +337,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
 
   return (
     <>
-      {includeRendererHost && <SparkRendererMount runtime={runtime} lodScaleFn={lodScaleFn} onFirstFrame={onFirstFrame} />}
+      {includeRendererHost && <SparkRendererMount runtime={runtime} lodScaleFn={lodScaleFn} onFirstFrame={onFirstFrame} minimumDrawnSources={minimumDrawnSources} />}
       {mesh !== null && <primitive object={mesh} />}
     </>
   );

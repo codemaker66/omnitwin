@@ -518,7 +518,8 @@ export function PlannerScene(): ReactElement {
                 urls={splatUrls}
                 transform={transform}
                 active={splatActive}
-                onFirstFrame={enterRoom}
+                onFirstFrame={loadedChunks + failedChunks === totalChunks && loadedChunks > 0 ? enterRoom : undefined}
+                minimumDrawnSources={loadedChunks}
                 onChunkLoaded={arrivals.markLoaded}
                 onChunkFailed={arrivals.markFailed}
               />
