@@ -1,3 +1,4 @@
+import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import {
   Suspense,
   lazy,
@@ -581,7 +582,9 @@ function VenueCommandTopBar({
       </div>
       <div className="visual-runtime-cell">
         <p className="visual-field-label">Runtime asset</p>
-        <p className="visual-field-value visual-runtime-status">{runtimeLabel}</p>
+        <p className="visual-field-value visual-runtime-status">
+          {visualState.status === "loading" ? <ActivityStatus>{runtimeLabel}</ActivityStatus> : runtimeLabel}
+        </p>
       </div>
       <div className="visual-top-icon" aria-hidden="true">
         <Layers3 size={23} />
@@ -903,7 +906,7 @@ function VenueOverlayLegend({
       <div className="visual-replay-metrics" aria-label="Guest flow replay metrics">
         <p>Simulated guest flow · planning evidence</p>
         <span>{replay.disclosureLabel}</span>
-        <span>{replayStatusLabel(replayStatus)}</span>
+        <span>{replayStatus === "loading" && <ActivityIndicator size={20} />}{replayStatusLabel(replayStatus)}</span>
         <span>Agents {replayMetrics.agentCount.toLocaleString("en-GB")}</span>
         <span>Bottleneck score {Math.round(replayMetrics.bottleneckScore * 100)}%</span>
         <span>Max density {replayMetrics.maxDensity.toFixed(2)} p/m2</span>
@@ -937,7 +940,7 @@ function ReplayStatusStrip({
   return (
     <section className="visual-replay-strip" aria-label="Guest flow replay status">
       <span>Simulated guest flow</span>
-      <strong>{replayStatusLabel(replayStatus)}</strong>
+      <strong>{replayStatus === "loading" && <ActivityIndicator size={20} />}{replayStatusLabel(replayStatus)}</strong>
       <span>Planning evidence</span>
       <span>Human review required</span>
       <span>{replay.metrics.routeConflictCount} conflict marker(s) - simulated</span>
@@ -1189,7 +1192,7 @@ function RuntimeAssetPackagePanel({
         room asset.
       </p>
       <p className="visual-url-copy" style={{ color: statusTone(visualState.status) }}>
-        {displayStatus(visualState)}
+        {visualState.status === "loading" ? <ActivityStatus>{displayStatus(visualState)}</ActivityStatus> : displayStatus(visualState)}
       </p>
       <label className="visual-opacity" htmlFor="splat-opacity">
         <span>Splat opacity</span>
@@ -1269,6 +1272,7 @@ function TruthModePanel({
               <p className="visual-row-copy">{truthSummary.source}</p>
             </div>
             <span className={`visual-state-chip ${truthSummaryStatus}`}>
+              {truthSummaryStatus === "loading" && <ActivityIndicator size={20} />}
               {truthSummaryStatusLabel(truthSummaryStatus, selectedTruthTarget?.id)}
             </span>
           </div>
@@ -1411,7 +1415,7 @@ function EventPhaseGraph({
   return (
     <section className="visual-phase-graph" aria-label="Event Phase Graph">
       <h2>Event Phase Graph</h2>
-      <p className="visual-phase-source">{statusCopy}</p>
+      <p className="visual-phase-source">{loadStatus === "loading" ? <ActivityStatus>{statusCopy}</ActivityStatus> : statusCopy}</p>
       <div className="visual-phase-track">
         {phases.map((phase, index) => (
           <button

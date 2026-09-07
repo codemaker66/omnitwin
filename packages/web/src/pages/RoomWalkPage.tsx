@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, type ReactElement } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { ActivityStatus } from "../components/shared/Activity.js";
 import {
   RoomSplatScene,
   type RoomSplatProgress,
@@ -150,10 +151,12 @@ export function RoomWalkPage(): ReactElement {
           reconstruction. Saying "streaming" through both would call a room
           that is already on screen absent. */}
       {!bare && !progress.complete && (
-        <p className="walk__loading" role="status" data-testid="walk-loading">
-          {progress.firstView
-            ? `Sharpening the room — ${String(pct)}%`
-            : "Streaming the room"}
+        <p className="walk__loading" data-testid="walk-loading">
+          <ActivityStatus progress={progress.total > 0 ? pct : undefined}>
+            {progress.firstView
+              ? `Sharpening the room — ${String(pct)}%`
+              : "Streaming the room"}
+          </ActivityStatus>
         </p>
       )}
 

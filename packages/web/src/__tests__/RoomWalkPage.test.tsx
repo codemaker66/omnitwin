@@ -118,12 +118,15 @@ describe("RoomWalkPage delivery copy", () => {
     const sharpening = screen.getByTestId("walk-loading").textContent ?? "";
     expect(sharpening).toMatch(/sharpening/iu);
     expect(sharpening).toContain("36%");
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("36");
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
   });
 
   it("takes the pill away once the finest level is up", () => {
     mount("/room/grand-hall");
     report({ firstView: true, settled: 11, complete: true });
     expect(screen.queryByTestId("walk-loading")).toBeNull();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("publishes the first view in the walk ledger, so a measurement can time it", () => {

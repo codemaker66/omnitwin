@@ -70,15 +70,6 @@
   max-width: 760px;
 }
 
-.ops-handoff-spin {
-  animation: ops-handoff-spin 1.1s linear infinite;
-}
-
-@keyframes ops-handoff-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 .ops-handoff-hero {
   align-items: flex-start;
@@ -404,9 +395,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ops-handoff-spin {
-    animation: none;
-  }
 
   .ops-handoff-primary,
   .ops-handoff-secondary {
