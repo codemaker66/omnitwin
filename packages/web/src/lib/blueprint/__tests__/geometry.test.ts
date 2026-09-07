@@ -291,6 +291,23 @@ describe("inspectorTitle / formatDimensions / isRoundTable", () => {
     expect(inspectorTitle(round("t", 5, 5, 10))).toBe("ROUND TABLE · 10");
   });
 
+  it("distinguishes unknown round-table capacity from known zero and positive capacity", () => {
+    const unknown: RoundTableItem = { ...round("unknown", 5, 5), seats: undefined };
+    const zero = round("zero", 5, 5, 0);
+    const known = round("known", 5, 5, 10);
+    const items = [unknown, zero, known];
+    const scene: BlueprintScene = { ...DEMO_SCENE, items, placedChairCount: 16 };
+
+    expect(inspectorTitle(unknown, true)).toBe("ROUND TABLE · 1.8m ⌀");
+    expect(inspectorTitle(zero, true)).toBe("ROUND TABLE · CAPACITY 0");
+    expect(inspectorTitle(known, true)).toBe("ROUND TABLE · CAPACITY 10");
+    expect(getLayerRows(scene).map((row) => row.label)).toEqual([
+      "Round table · capacity 10", "Round table · capacity 0", "Round table · 1.8m ⌀",
+    ]);
+    expect(totalSeats(items)).toBe(10);
+    expect(computeStatusMetrics(scene).totalSeats).toBe(16);
+  });
+
   it("stage title includes dimensions", () => {
     const stage: BlueprintItem = {
       id: "s", kind: "stage", shape: "rect",

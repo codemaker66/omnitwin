@@ -106,6 +106,27 @@ describe("BlueprintFromStore seating and guests", () => {
     expect(screen.queryByText("18 / 0 placed")).toBeNull();
   });
 
+  it("keeps imported round-table capacity unknown while reporting its 16 placed chairs", () => {
+    const importedGroups = Array.from({ length: 2 }, (_unused, index) => {
+      const groupId = `imported-${String(index)}`;
+      return [
+        object(groupId, "round-table-6ft-white", groupId),
+        ...Array.from({ length: 8 }, (_chair, chair) =>
+          object(`${groupId}-chair-${String(chair)}`, "burgess-turini-18-3", groupId)),
+      ];
+    }).flat();
+    useEditorStore.getState().replaceObjectsFromScene(importedGroups);
+    useEditorStore.getState().selectObject("imported-0");
+    const { container } = render(<BlueprintPage source="editor-store" />);
+
+    expect(screen.getByText("Seats placed").parentElement?.textContent).toBe("Seats placed16");
+    expect(screen.getAllByText("Round")).toHaveLength(2);
+    expect(screen.queryByText("0 cap.")).toBeNull();
+    expect(screen.queryByText(/capacity/i)).toBeNull();
+    expect(container.querySelectorAll('circle[opacity="0.9"]')).toHaveLength(16);
+    expect(guestDisplay()).toBe("Not set");
+  });
+
   it("shares guest changes with the actual 3D Guests panel and survives view remounts", () => {
     const { rerender } = render(<><BlueprintPage source="editor-store" /><GuestsLensPanel /></>);
     fireEvent.change(screen.getByLabelText("Expected guests"), { target: { value: "144" } });

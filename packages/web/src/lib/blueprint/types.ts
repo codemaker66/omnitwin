@@ -77,8 +77,9 @@ export interface RoundTableItem extends BaseItem {
   /** Centre of the table in metres. */
   readonly center: Point;
   readonly diameterM: number;
-  /** Authored seats in standalone plans; catalogue table capacity in live views. */
-  readonly seats: number;
+  /** Authored seats in standalone plans; catalogue capacity in live views.
+   * Omitted when that capacity is unknown, distinct from a known zero. */
+  readonly seats?: number;
   readonly linen?: string;
   readonly centrepiece?: string;
   /**

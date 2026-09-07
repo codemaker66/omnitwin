@@ -66,7 +66,7 @@ describe("imported furniture footprints", () => {
     const asset = CANONICAL_ASSETS.find((candidate) => candidate.slug === "cake-cutting-table");
     if (asset === undefined) throw new Error("Missing cake table");
     const item = editorObjectToBlueprintItem({ ...makeObj("cake", asset.id, 0, 0), clothed: true, clothStyle: "black" }, { widthM: 10, lengthM: 10 });
-    expect(item).toMatchObject({ linen: "Included cloth", seats: 0 });
+    expect(item).toMatchObject({ linen: "Included cloth", seats: undefined });
   });
 });
 
