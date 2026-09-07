@@ -439,6 +439,11 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
   const playheadMsRef = useRef(displayRange.fromMs);
   const visualFrameIndexRef = useRef(0);
   const requestedInitialPhaseIdRef = useRef(searchParams.get("timelinePhaseId"));
+  // Loading room history must not replace the editable saved plan. Only a
+  // phase deep link or a deliberate timeline action requests a frozen preview.
+  const previewRequestedRef = useRef(requestedInitialPhaseIdRef.current !== null);
+  const previewContextKey = `${venueId ?? ""}:${spaceId ?? ""}:${configurationId ?? ""}`;
+  const previewContextKeyRef = useRef(previewContextKey);
   // One auto-engagement per timeline picture. The init layout-effect below
   // re-runs whenever any of its callback deps change identity (every dock
   // render), so without this latch "Exit preview" was immediately undone:
@@ -546,6 +551,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
   }, []);
 
   const capturePrePreviewPhase = useCallback((): void => {
+    previewRequestedRef.current = true;
     if (prePreviewPhaseRef.current.captured) return;
     prePreviewPhaseRef.current = {
       captured: true,
@@ -729,6 +735,24 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
   }, [availableIndices, displayRange, playing]);
 
   useLayoutEffect(() => {
+    if (previewContextKeyRef.current === previewContextKey) return;
+    previewContextKeyRef.current = previewContextKey;
+    const requestedPhase = new URLSearchParams(searchParamSignature).get("timelinePhaseId");
+    requestedInitialPhaseIdRef.current = requestedPhase;
+    previewRequestedRef.current = requestedPhase !== null;
+    initialEngageKeyRef.current = null;
+    // The previous plan's saved selection has no authority in a new context.
+    // A new preview captures the new plan's selection when it settles.
+    prePreviewPhaseRef.current = { captured: false, phaseId: null };
+    cancelAnimations();
+    setPlaying(false);
+    scrubTransitionRef.current = null;
+    if (!previewRequestedRef.current) {
+      useLayoutTimelinePreviewStore.getState().clear();
+    }
+  }, [cancelAnimations, previewContextKey, searchParamSignature]);
+
+  useLayoutEffect(() => {
     const resetMotion = (): void => {
       cancelAnimations();
       setPlaying(false);
@@ -780,6 +804,15 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     if (initialEngageKeyRef.current === engageKey) return;
     initialEngageKeyRef.current = engageKey;
     resetMotion();
+    if (!previewRequestedRef.current) {
+      const index = availableIndices[0] ?? 0;
+      setActiveIndex(index);
+      visualFrameIndexRef.current = index;
+      cursorRef.current = index;
+      const frame = frames[index];
+      updatePlayhead(frame === undefined ? displayRange.fromMs : Date.parse(frame.startsAt));
+      return;
+    }
     const requestedIndex = frames.findIndex((frame) =>
       frame.phaseId === requestedInitialPhaseIdRef.current,
     );
@@ -805,6 +838,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     displayRange.fromMs,
     frames,
     phaseCount,
+    previewContextKey,
     settleFrame,
     showUnavailableFrame,
     timeline.status,
@@ -844,6 +878,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
       }
       const requestedPhaseId = current.get("timelinePhaseId");
       requestedInitialPhaseIdRef.current = requestedPhaseId;
+      if (requestedPhaseId !== null) previewRequestedRef.current = true;
       const rangeChanged = requestedScope !== scope || validDate !== anchorDate;
       if (requestedScope !== scope) setScope(requestedScope);
       if (validDate !== anchorDate) setAnchorDate(validDate);
@@ -974,6 +1009,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
 
   const changeScope = useCallback((nextScope: TimelineScope): void => {
     if (nextScope === scope) return;
+    previewRequestedRef.current = true;
     setPlaying(false);
     cancelAnimations();
     requestedInitialPhaseIdRef.current = null;
@@ -993,6 +1029,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
   }, [cancelAnimations, linkedEventAnchorMs, scope, timeZone]);
 
   const shift = useCallback((direction: -1 | 1): void => {
+    previewRequestedRef.current = true;
     setPlaying(false);
     cancelAnimations();
     requestedInitialPhaseIdRef.current = null;
@@ -1006,6 +1043,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
 
   const jumpToEvent = useCallback((): void => {
     if (linkedEventAnchorMs === null) return;
+    previewRequestedRef.current = true;
     setPlaying(false);
     cancelAnimations();
     requestedInitialPhaseIdRef.current = null;
@@ -1018,6 +1056,8 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
   }, [cancelAnimations, linkedEventAnchorMs, scope, timeZone]);
 
   const exitPreview = useCallback((): void => {
+    previewRequestedRef.current = false;
+    requestedInitialPhaseIdRef.current = null;
     setPlaying(false);
     cancelAnimations();
     scrubTransitionRef.current = null;
