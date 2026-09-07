@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { DayBoardPage } from "../DayBoardPage.js";
@@ -12,14 +12,19 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 // the error/retry path — against a mocked calendar API.
 // ---------------------------------------------------------------------------
 
-const { getCalendarMock } = vi.hoisted(() => ({ getCalendarMock: vi.fn() }));
+const { getCalendarMock, liveUpdate } = vi.hoisted(() => ({
+  getCalendarMock: vi.fn(), liveUpdate: { current: null as (() => void) | null },
+}));
 
 vi.mock("../../../api/diary.js", () => ({
   getCalendar: getCalendarMock,
 }));
 
 vi.mock("../../diary/hooks/useDiaryLive.js", () => ({
-  useDiaryLive: () => ({ connected: true, presence: [] }),
+  useDiaryLive: (_enabled: boolean, onUpdate: () => void) => {
+    liveUpdate.current = onUpdate;
+    return { connected: true, presence: [] };
+  },
 }));
 
 // The page wears the app shell; stub its Clerk/venue/notification edges the
@@ -93,6 +98,8 @@ function renderBoard(): void {
 }
 
 beforeEach(() => {
+  getCalendarMock.mockReset();
+  liveUpdate.current = null;
   useAuthStore.getState().setUser({
     id: "00000000-0000-4000-8000-0000000000ff",
     email: "keeper@tradeshall.co.uk",
@@ -110,6 +117,59 @@ afterEach(() => {
 });
 
 describe("DayBoardPage", () => {
+  it("keeps an unassigned account static without starting a calendar request", async () => {
+    const user = useAuthStore.getState().user;
+    if (user === null) throw new Error("Expected test user");
+    useAuthStore.getState().setUser({ ...user, venueId: null });
+    renderBoard();
+    expect(screen.getByText(/No venue is linked to this account/u)).toBeTruthy();
+    expect(screen.queryByText("Loading the day’s bookings…")).toBeNull();
+    expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
+    await act(async () => { await Promise.resolve(); });
+    expect(getCalendarMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["resolve", "reject"] as const)("keeps the board visible during a refresh until it %ss", async (settlement) => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    let resolveRefresh: ((value: CalendarResponse) => void) | undefined;
+    let rejectRefresh: ((reason: Error) => void) | undefined;
+    const response = new Promise<CalendarResponse>((resolve, reject) => { resolveRefresh = resolve; rejectRefresh = reject; });
+    getCalendarMock.mockReturnValue(response);
+    act(() => { liveUpdate.current?.(); });
+    const activity = await screen.findByText("Refreshing the day’s bookings…");
+    expect(activity.closest("[role='status']")?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(screen.getByText("Chamber dinner")).toBeTruthy();
+    await act(async () => {
+      if (settlement === "resolve") resolveRefresh?.(calendarFixture([liveBooking()]));
+      else rejectRefresh?.(new Error("Offline"));
+      await response.catch(() => undefined);
+    });
+    expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
+    expect(screen.getByText("Chamber dinner")).toBeTruthy();
+    if (settlement === "reject") expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("does not let a superseded refresh retire the current request's activity", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    let resolveFirst: ((value: CalendarResponse) => void) | undefined;
+    let resolveSecond: ((value: CalendarResponse) => void) | undefined;
+    const first = new Promise<CalendarResponse>((resolve) => { resolveFirst = resolve; });
+    const second = new Promise<CalendarResponse>((resolve) => { resolveSecond = resolve; });
+    getCalendarMock.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    act(() => { liveUpdate.current?.(); });
+    await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(2); });
+    act(() => { liveUpdate.current?.(); });
+    await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(3); });
+    await act(async () => { resolveFirst?.(calendarFixture([])); await first; });
+    expect(screen.getByText("Refreshing the day’s bookings…")).toBeTruthy();
+    expect(screen.getByText("Chamber dinner")).toBeTruthy();
+    await act(async () => { resolveSecond?.(calendarFixture([liveBooking()])); await second; });
+    expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
+  });
   it("renders a lane per room with live state chips whose text carries the meaning", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     renderBoard();

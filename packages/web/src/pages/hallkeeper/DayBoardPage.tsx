@@ -92,7 +92,7 @@ export function DayBoardPage(): ReactElement {
   // midnight, so an always-on wall tablet rolls to the new day by itself.
   const selectedMs = selectedDate === null ? nowMs : wallInputToMs(`${selectedDate}T12:00`) ?? nowMs;
   const range = useMemo(() => boardRange(selectedMs, "day"), [selectedMs]);
-  const { data, status, error, refetch } = useCalendar(venueId, range);
+  const { data, status, error, refetch, isRefreshing } = useCalendar(venueId, range);
   const live = useDiaryLive(venueId !== null, refetch);
 
   const board = useMemo(
@@ -131,7 +131,8 @@ export function DayBoardPage(): ReactElement {
           <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/walkthrough">Workflow walkthrough</Link>
         </div>
         {venueId === null && <p className="dayboard-notice">No venue is linked to this account. Ask your venue administrator to connect your workspace.</p>}
-        {status === "loading" && <ActivityStatus variant="panel">Loading the day’s bookings…</ActivityStatus>}
+        {venueId !== null && status === "loading" && <ActivityStatus variant="panel">Loading the day’s bookings…</ActivityStatus>}
+        {venueId !== null && isRefreshing && <ActivityStatus>Refreshing the day’s bookings…</ActivityStatus>}
 
         {status === "error" ? (
           <div className="dayboard-notice" role="alert">
