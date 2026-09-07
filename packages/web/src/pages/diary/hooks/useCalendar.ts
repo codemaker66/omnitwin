@@ -35,6 +35,8 @@ export function useCalendar(venueId: string | null, range: BoardRange): UseCalen
     const controller = new AbortController();
     let cancelled = false;
     setFetching(true);
+    setError(null);
+    setErrorKey(null);
     // Keep showing the current board during background refreshes.
     setStatus((previous) => (previous === "ready" ? "ready" : "loading"));
     getCalendar(
