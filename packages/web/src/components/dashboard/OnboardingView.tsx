@@ -60,7 +60,7 @@ function CreateWorkspace({ summary, onCreated, onBusy, onCancel }: {
   const lock = useRef(false);
   const setField = (key: keyof typeof form, value: string): void => { setForm((current) => ({ ...current, [key]: value })); };
   const selectedVenue = availableVenues.find((venue) => venue.id === existingVenueId);
-  const verifiedValid = !providerVerified || billingProvider !== "none" && [form.customerRef, form.entitlementRef, form.evidenceRef].some((value) => value.trim());
+  const verifiedValid = !providerVerified || billingProvider !== "none" && [form.customerRef, form.entitlementRef, form.evidenceRef].some((value) => value.trim().length > 0);
   const complete = form.organisationName.trim() !== "" && form.contactEmail.trim() !== "" && form.planKey.trim() !== "" && verifiedValid &&
     (mode === "existing" ? selectedVenue !== undefined : [form.venueName, form.venueSlug, form.venueAddress, form.timezone].every((value) => value.trim() !== ""));
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -86,7 +86,10 @@ function CreateWorkspace({ summary, onCreated, onBusy, onCancel }: {
       <div className="onboarding-create-grid"><div className="onboarding-form-section"><h3><span className="onboarding-step">1</span> Choose the venue</h3>
         <div className="onboarding-mode" role="group" aria-label="Venue setup"><button type="button" aria-pressed={mode === "existing"} onClick={() => { setMode("existing"); }}>Use an existing venue</button><button type="button" aria-pressed={mode === "new"} onClick={() => { setMode("new"); }}>Create a new venue</button></div>
         {mode === "existing" ? <><label className="onboarding-field"><span>Existing venue</span><select value={existingVenueId} required onChange={(event) => {
-          setExistingVenueId(event.target.value); if (form.organisationName.trim() === "") setField("organisationName", availableVenues.find((venue) => venue.id === event.target.value)?.name ?? "");
+          const nextVenue = availableVenues.find((venue) => venue.id === event.target.value);
+          setExistingVenueId(event.target.value);
+          setForm((current) => ({ ...current, organisationName: current.organisationName.trim() === "" || current.organisationName === selectedVenue?.name
+            ? nextVenue?.name ?? "" : current.organisationName }));
         }}><option value="">Choose a venue</option>{availableVenues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}</select></label>
           <p className="onboarding-note">This connects the client to the venue's existing rooms, bookings and inventory.</p>
           {availableVenues.length === 0 && <p className="onboarding-empty">Every existing venue already has a client workspace, or no venues have been added. Choose a client above to manage its access, or create a new venue.</p>}
@@ -133,7 +136,9 @@ function membershipState(member: WorkspaceMembership, summary: OnboardingSummary
   if (member.status === "active") return { label: "Account connected", tone: "active", expiresAt: null };
   if (member.status === "removed" || invitation?.status === "revoked") return { label: "Invitation cancelled", tone: "muted", expiresAt: null };
   if (member.status === "suspended") return { label: "Access suspended", tone: "muted", expiresAt: null };
-  if (invitation?.status === "expired" || invitation?.expiresAt != null && new Date(invitation.expiresAt).getTime() <= Date.now()) return { label: "Invitation expired", tone: "expired", expiresAt: invitation?.expiresAt ?? null };
+  if (invitation !== undefined && (invitation.status === "expired" || invitation.expiresAt !== null && new Date(invitation.expiresAt).getTime() <= Date.now())) {
+    return { label: "Invitation expired", tone: "expired", expiresAt: invitation.expiresAt };
+  }
   return { label: "Awaiting sign-in", tone: "pending", expiresAt: invitation?.expiresAt ?? null };
 }
 
@@ -160,7 +165,11 @@ function WorkspaceAccess({ workspace, summary, onChanged, onBusy }: {
   const revoke = async (member: WorkspaceMembership): Promise<void> => {
     if (lock.current) return;
     lock.current = true; setBusy(member.id); onBusy(true); setError(null); setNotice(null);
-    try { await revokeWorkspaceInvitation(workspace.id, member.id); setNotice(`Invitation cancelled for ${member.email}.`); await onChanged(); }
+    try {
+      await revokeWorkspaceInvitation(workspace.id, member.id);
+      if (editing === member.id) { setEditing(null); setEmail(""); setRole("admin"); }
+      setNotice(`Invitation cancelled for ${member.email}.`); await onChanged();
+    }
     catch (failure) { setError(errorMessage(failure)); } finally { lock.current = false; setBusy(null); onBusy(false); }
   };
   return <section className="onboarding-panel" aria-labelledby="client-workspace-title">

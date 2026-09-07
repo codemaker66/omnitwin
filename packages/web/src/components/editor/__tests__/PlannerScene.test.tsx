@@ -122,6 +122,7 @@ describe("PlannerScene", () => {
     const { rerender, getByTestId } = render(<PlannerScene />);
     const canvas = getByTestId("r3f-canvas");
     expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(sceneComponent("CockpitSplatLayer")?.props.onFirstFrame).toBeUndefined();
     arrivals.loadedCount = 1;
     rerender(<PlannerScene />);
     expect(screen.getByRole("dialog")).toBeTruthy();
@@ -174,6 +175,7 @@ describe("PlannerScene", () => {
 
   it("cannot let a late callback from an older plan admit the new plan", () => {
     chooseGrandHall(); readyGrandHall();
+    arrivals.loadedCount = 1;
     render(<PlannerScene />);
     const stale = firstFrame();
     act(() => { useEditorStore.setState({ configId: "next-plan" }); });

@@ -880,10 +880,9 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
       requestedInitialPhaseIdRef.current = requestedPhaseId;
       previewRequestedRef.current = requestedPhaseId !== null;
       if (requestedPhaseId === null) {
-        // An external route without a preview phase owns the editable plan.
-        // Configuration and router updates can arrive in separate renders;
-        // discard a phase briefly retained from the previous route.
-        initialEngageKeyRef.current = null;
+        // Store identity can update before the router commits a new URL.
+        // A phase-free destination ends any preview started from that earlier
+        // URL; timeline-generated URL updates are handled above as self-nav.
         cancelAnimations();
         setPlaying(false);
         scrubTransitionRef.current = null;
@@ -930,9 +929,9 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     frames,
     linkedEventAnchorMs,
     linkedEventAutoAnchorPending,
-    restorePrePreviewPhase,
     scope,
     searchParamSignature,
+    restorePrePreviewPhase,
     setSearchParams,
     settleFrame,
     showUnavailableFrame,

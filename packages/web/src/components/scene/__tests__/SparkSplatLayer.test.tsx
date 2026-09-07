@@ -12,6 +12,9 @@ const spark = vi.hoisted(() => {
     readonly index: number;
     lodSplatScale = 1;
     geometry = { instanceCount: 0 };
+    display = { mapping: [{ count: 12, node: { opacity: 1, visible: true } }] };
+    sorting = false;
+    sortDirty = false;
     onAfterRender = vi.fn((_renderer: { getRenderTarget: () => unknown }, _scene: unknown, _camera: unknown) => undefined);
     constructor(options: Record<string, unknown>) {
       this.index = rendererOptions.push(options) - 1;
@@ -111,6 +114,30 @@ describe("SparkSplatLayer runtime wiring", () => {
     expect(onFirstFrame).not.toHaveBeenCalled();
     renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera);
     renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera);
+    expect(onFirstFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for all requested sources, their dissolve and the pending sort", () => {
+    const onFirstFrame = vi.fn();
+    render(<SparkSplatLayer url={URL} onFirstFrame={onFirstFrame} minimumDrawnSources={2} />);
+    const renderer = spark.rendererInstances[0]!;
+    renderer.geometry.instanceCount = 12;
+    const draw = (): void => { renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera); };
+    draw();
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    renderer.display.mapping.push({ count: 12, node: { opacity: 0.3, visible: true } });
+    draw();
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    renderer.display.mapping[1]!.node.opacity = 1;
+    renderer.sorting = true;
+    draw();
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    renderer.sorting = false;
+    renderer.sortDirty = true;
+    draw();
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    renderer.sortDirty = false;
+    draw();
     expect(onFirstFrame).toHaveBeenCalledTimes(1);
   });
 

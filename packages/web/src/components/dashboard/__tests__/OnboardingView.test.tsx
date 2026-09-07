@@ -366,4 +366,37 @@ describe("OnboardingView", () => {
     expect(await screen.findByText("The latest access state could not be loaded.")).toBeTruthy();
     expect(screen.getByText("owner@tradeshall.co.uk")).toBeTruthy();
   });
+
+  it("updates the suggested organisation when changing venue while preserving a manually entered name", async () => {
+    const data = populatedSummary(); const first = data.venues[0];
+    if (first === undefined) throw new Error("Missing venue fixture");
+    const second = { ...first, id: "00000000-0000-4000-8000-000000000013", name: "City Rooms", slug: "city-rooms" };
+    mocks.getOnboardingSummary.mockResolvedValue({ ...emptySummary(), venues: [first, second] });
+    render(<OnboardingView />);
+    const chooser = await screen.findByLabelText("Existing venue");
+    fireEvent.change(chooser, { target: { value: first.id } });
+    expect(screen.getByLabelText("Client organisation")).toHaveProperty("value", first.name);
+    fireEvent.change(chooser, { target: { value: second.id } });
+    expect(screen.getByLabelText("Client organisation")).toHaveProperty("value", second.name);
+    fireEvent.change(screen.getByLabelText("Client organisation"), { target: { value: "Shared venue operator" } });
+    fireEvent.change(chooser, { target: { value: first.id } });
+    expect(screen.getByLabelText("Client organisation")).toHaveProperty("value", "Shared venue operator");
+  });
+
+  it("clears the access editor after cancelling the invitation being edited", async () => {
+    const data = populatedSummary(); const member = data.memberships[0];
+    if (member === undefined) throw new Error("Missing membership fixture");
+    const removed = { ...member, status: "removed" as const };
+    mocks.getOnboardingSummary.mockResolvedValueOnce(data).mockResolvedValueOnce({ ...data, memberships: [removed] });
+    mocks.revokeWorkspaceInvitation.mockResolvedValue(removed);
+    render(<OnboardingView />);
+    fireEvent.click(await screen.findByRole("button", { name: `Manage access for ${member.email}` }));
+    expect(screen.getByRole("button", { name: "Save venue access" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: `Cancel invitation for ${member.email}` }));
+    await screen.findByText(`Invitation cancelled for ${member.email}.`);
+    expect(screen.getByLabelText("Email address")).toHaveProperty("value", "");
+    expect(screen.queryByRole("button", { name: "Save venue access" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Grant venue access" })).toHaveProperty("disabled", true);
+    expect(mocks.inviteWorkspaceMembers).not.toHaveBeenCalled();
+  });
 });

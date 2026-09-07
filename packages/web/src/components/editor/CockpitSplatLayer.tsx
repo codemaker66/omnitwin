@@ -9,6 +9,7 @@ export interface CockpitSplatLayerProps {
   /** Whether the splat should be shown for the current layer mode. */
   readonly active: boolean;
   readonly onFirstFrame?: () => void;
+  readonly minimumDrawnSources?: number;
   /** Fires once per chunk when its captured bytes finish decoding (CARD A2). */
   readonly onChunkLoaded?: (url: string) => void;
   /** Fires once per chunk whose decode fails permanently, so the resolve
@@ -69,6 +70,7 @@ interface RevealingSplatChunkProps {
   readonly opacityFn: () => number;
   readonly includeRendererHost: boolean;
   readonly onFirstFrame?: () => void;
+  readonly minimumDrawnSources?: number;
   readonly onLoaded: (url: string) => void;
   readonly onFailed: (url: string) => void;
 }
@@ -87,6 +89,7 @@ function RevealingSplatChunk({
   opacityFn,
   includeRendererHost,
   onFirstFrame,
+  minimumDrawnSources,
   onLoaded,
   onFailed,
 }: RevealingSplatChunkProps): ReactElement {
@@ -113,6 +116,7 @@ function RevealingSplatChunk({
       scale={transform.scale}
       includeRendererHost={includeRendererHost}
       onFirstFrame={onFirstFrame}
+      minimumDrawnSources={minimumDrawnSources}
       onLoad={handleLoad}
       onError={handleError}
     />
@@ -127,7 +131,7 @@ function RevealingSplatChunk({
  * under `frameloop="demand"`. Honours `prefers-reduced-motion` by snapping
  * instead of animating.
  */
-export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onChunkFailed, onFirstFrame }: CockpitSplatLayerProps): ReactElement | null {
+export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onChunkFailed, onFirstFrame, minimumDrawnSources }: CockpitSplatLayerProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
   const onChunkLoadedRef = useRef(onChunkLoaded);
   const onChunkFailedRef = useRef(onChunkFailed);
@@ -202,6 +206,7 @@ export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onCh
           opacityFn={opacityFnFor(url)}
           includeRendererHost={index === 0}
           onFirstFrame={onFirstFrame}
+          minimumDrawnSources={minimumDrawnSources}
           onLoaded={handleChunkLoaded}
           onFailed={handleChunkFailed}
         />
