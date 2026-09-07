@@ -83,6 +83,7 @@ function makeMockDb(options: {
   readonly domainInvitation?: InvitationRow;
   readonly createdUser?: UserRow;
   readonly invitationClaimSucceeds?: boolean;
+  readonly venueExists?: boolean;
 } = {}): { readonly db: Database; readonly state: MockDbState } {
   const state: MockDbState = { inserted: [], updated: [] };
   let userSelectCount = 0;
@@ -114,7 +115,7 @@ function makeMockDb(options: {
               return query(options.domainInvitation === undefined ? [] : [options.domainInvitation]);
             }
 
-            if (table === venues) return query([{ id: VENUE_ID }]);
+            if (table === venues) return query(options.venueExists === false ? [] : [{ id: VENUE_ID }]);
             return query([]);
         },
       }),
@@ -336,6 +337,15 @@ describe("Clerk invitation access policy", () => {
       role: "planner",
       venueId: VENUE_ID,
     });
+  });
+
+  it("does not fall back to an approved domain when an explicit invitation points to a deleted venue", async () => {
+    setEnv("VENVIEWER_APPROVED_AUTH_DOMAINS", "example.com");
+    setEnv("VENVIEWER_APPROVED_AUTH_DOMAIN_ROLE", "staff");
+    setEnv("VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID", VENUE_ID);
+    const { db, state } = makeMockDb({ emailInvitation: invitationRow(), venueExists: false });
+    expect(await getUserByClerkId(db, "clerk_deleted_venue", "invited@example.com")).toBeNull();
+    expect(state.inserted).toHaveLength(0);
   });
 
   it("creates domain-approved users only under the explicit domain policy", async () => {

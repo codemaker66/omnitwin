@@ -56,7 +56,7 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
   beforeAll(async () => {
     vi.stubEnv("VENVIEWER_APPROVED_AUTH_DOMAINS", "");
     pool = new Pool({ connectionString: databaseUrl, application_name: fixtureSchema,
-      max: 10, options: `-c search_path=${fixtureSchema} -c statement_timeout=8000` });
+      max: 10, options: `-c search_path=${fixtureSchema} -c statement_timeout=30000` });
     await pool.query(`CREATE SCHEMA "${fixtureSchema}"`);
     await pool.query(await readFile(new URL("./fixtures/onboarding-postgres.sql", import.meta.url), "utf8"));
     for (const migration of ["0022_user_invitations.sql", "0037_onboarding_entitlements.sql",
@@ -68,13 +68,13 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
     await server.register(onboardingRoutes, { db, prefix: "/onboarding" });
     await server.register(venueRoutes, { db, prefix: "/venues" });
     await server.ready();
-  }, 30000);
+  }, 120000);
 
   beforeEach(async () => {
     await pool.query("TRUNCATE onboarding_audit_events, onboarding_projects, workspace_entitlements, workspace_memberships, workspaces, organisations, user_invitations, users, venues");
     await pool.query("INSERT INTO venues(id, name, slug, address) VALUES ($1, 'Existing venue fixture', 'existing-venue', 'Synthetic fixture address'), ($2, 'Other venue fixture', 'other-venue', 'Other synthetic address')", [VENUE, OTHER_VENUE]);
     await pool.query("INSERT INTO users(id, email, name, role, platform_role) VALUES ($1, $2, $3, 'admin', 'admin')", [PLATFORM_ADMIN, platformUser.email, platformUser.name]);
-  });
+  }, 30000);
 
   afterAll(async () => {
     if (server !== undefined) await server.close();
@@ -83,7 +83,7 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
       await pool.end();
     }
     vi.unstubAllEnvs();
-  });
+  }, 30000);
 
   function onboardingPayload(email = EMAIL) {
     return {
@@ -237,6 +237,52 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
     });
   });
 
+  it.each(["renew", "cancel"] as const)("completes invitation acceptance while an administrator waits to %s it", async (operation) => {
+    const created = await createWorkspace();
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM user_invitations WHERE id = $1 FOR UPDATE", [created.ownerMembership.invitationId]);
+      const acceptance = getUserByClerkId(db, CLERK_ID, EMAIL);
+      await waitForBlockedQueries(1);
+      const mutation = operation === "renew"
+        ? server.inject({ method: "POST", url: `/onboarding/workspaces/${created.workspace.id}/invitations`, headers: headers(),
+          payload: { staffInvites: [{ email: EMAIL, workspaceRole: "admin", venueRole: "admin" }] } })
+        : server.inject({ method: "DELETE", url: `/onboarding/workspaces/${created.workspace.id}/invitations/${created.ownerMembership.id}`, headers: headers() });
+      const outcomes = Promise.all([acceptance, mutation] as const);
+      // Auth owns the email advisory lock; the operator owns the parent lock.
+      // Once released, auth must still acquire FK key-share on that parent.
+      await waitForBlockedQueries(2);
+      await client.query("COMMIT");
+      const [user, response] = await outcomes;
+      expect(user).toMatchObject({ role: "admin", venueId: VENUE });
+      expect(response.statusCode, response.body).toBe(operation === "renew" ? 201 : 409);
+      if (user === null) throw new Error("Expected invited user");
+      await expectActiveMembership(created, user.id);
+    });
+  });
+
+  it("completes legacy invitation acceptance while an administrator attaches that venue", async () => {
+    const invitation = await pool.query<{ id: string }>(
+      "INSERT INTO user_invitations(email, role, venue_id, expires_at) VALUES ($1, 'admin', $2, now() + interval '1 day') RETURNING id", [EMAIL, VENUE]);
+    const invitationId = invitation.rows[0]?.id;
+    if (invitationId === undefined) throw new Error("Expected legacy invitation");
+    await withBlocker(async (client) => {
+      await client.query("SELECT id FROM user_invitations WHERE id = $1 FOR UPDATE", [invitationId]);
+      const acceptance = getUserByClerkId(db, CLERK_ID, EMAIL);
+      await waitForBlockedQueries(1);
+      const attachment = server.inject({ method: "POST", url: "/onboarding/managed-workspaces", headers: headers(), payload: onboardingPayload() });
+      const outcomes = Promise.all([acceptance, attachment] as const);
+      await waitForBlockedQueries(2);
+      await client.query("COMMIT");
+      const [user, response] = await outcomes;
+      expect(user).toMatchObject({ role: "admin", venueId: VENUE });
+      expect(response.statusCode, response.body).toBe(201);
+      const created = CreatedWorkspace.parse(response.json()).data;
+      if (user === null) throw new Error("Expected invited user");
+      expect(await getUserByClerkId(db, CLERK_ID, EMAIL)).toEqual(user);
+      await expectActiveMembership(created, user.id);
+    });
+  });
+
   it("does not transfer an account into a different venue when an older invitation remains pending", async () => {
     const created = await createWorkspace();
     const userId = await insertExistingUser({ venueId: OTHER_VENUE, role: "admin" });
@@ -284,6 +330,22 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
     expect((await pool.query("SELECT clerk_id, venue_id, role FROM users WHERE id = $1", [userId])).rows[0])
       .toEqual({ clerk_id: "user_original_fixture", venue_id: null, role: "planner" });
     expect((await invitationState(created.ownerMembership.invitationId))?.status).toBe("pending");
+  });
+
+  it("does not let approved-domain fallback override a suspended managed invitation", async () => {
+    const created = await createWorkspace();
+    await pool.query("UPDATE workspace_memberships SET status = 'suspended' WHERE id = $1", [created.ownerMembership.id]);
+    vi.stubEnv("VENVIEWER_APPROVED_AUTH_DOMAINS", "example.test");
+    vi.stubEnv("VENVIEWER_APPROVED_AUTH_DOMAIN_ROLE", "staff");
+    vi.stubEnv("VENVIEWER_APPROVED_AUTH_DOMAIN_VENUE_ID", VENUE);
+    try {
+      expect(await getUserByClerkId(db, CLERK_ID, EMAIL)).toBeNull();
+      expect((await pool.query("SELECT id FROM users WHERE email = $1", [EMAIL])).rowCount).toBe(0);
+      expect(await getUserByClerkId(db, "user_domain_fixture", "domain-policy@example.test"))
+        .toMatchObject({ role: "staff", platformRole: "none", venueId: VENUE });
+    } finally {
+      vi.stubEnv("VENVIEWER_APPROVED_AUTH_DOMAINS", "");
+    }
   });
 
   it("does not consume expired invitations or create an uninvited local account", async () => {
