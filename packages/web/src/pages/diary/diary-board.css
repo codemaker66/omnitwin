@@ -68,7 +68,7 @@
 .diary-overview-row:last-child { border-bottom: 0; }
 .diary-overview-axis { position: sticky; top: 0; z-index: 4; background: #f2f5ec; }
 .diary-overview-room-heading { display: flex; justify-content: space-between; align-items: center; padding: 18px 15px; font-size: 13px; font-weight: 600; position: sticky; left: 0; background: #f2f5ec; z-index: 5; }
-.diary-overview-room-heading span { font-weight: 400; color: #758171; }
+.diary-overview-room-heading span { font-weight: 400; color: #4d604e; }
 .diary-overview-day { background: transparent; color: #314a3c; border: 0; border-left: 1px solid #e2e7d9; display: flex; justify-content: space-between; flex-wrap: wrap; align-content: center; align-items: center; gap: 4px; padding: 12px 10px; font-size: 12px; font-weight: 600; min-height: 56px; }
 .diary-overview-day svg { opacity: 0; }
 .diary-overview-day:hover { background: #e5eddc; }
@@ -79,7 +79,7 @@
 .diary-overview-room img { width: 65px; height: 82px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1px solid #e0ddcf; }
 .diary-overview-room div { min-width: 0; }
 .diary-overview-room h2 { font: 500 16px/1.22 var(--diary-hand); margin: 0 0 6px; color: #234232; overflow-wrap: anywhere; }
-.diary-overview-room span, .diary-overview-room small { display: block; font-size: 10px; color: #6e7c6f; margin-top: 4px; }
+.diary-overview-room span, .diary-overview-room small { display: block; font-size: 12px; color: #4d604e; margin-top: 4px; }
 .diary-overview-cell { min-width: 0; padding: 10px 6px; border-left: 1px solid #eff0e9; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
 .diary-overview-cell.is-weekend { background: #fafbf6; }
 .diary-overview-booking { width: 100%; min-height: 88px; border: 1px solid #bacbb0; border-radius: 7px; background: #d9e4cf; color: #294431; padding: 9px; text-align: left; display: flex; flex-direction: column; gap: 5px; overflow-wrap: anywhere; transition: border-color 160ms ease,box-shadow 160ms ease; }

@@ -1,6 +1,6 @@
 # T603 Diary design QA — 7 September 2026
 
-Final result: passed
+final result: passed
 
 This is an internal gate for the implemented light Diary and honest seven-day overview. It is not a claim of pixel equality, founder acceptance of the sublime, deployment, or physical-device performance qualification. The broader aesthetic and device targets remain open.
 
@@ -16,8 +16,8 @@ Private evidence root: `D:/claude/venviewer-diary-redesign-evidence-20260907`.
 
 The final comparison opened each source and its corresponding rendered screenshot together in the same tool result:
 
-- Workspace source: `C:/Users/blake/AppData/Local/Temp/codex-clipboard-f0e907f3-f358-46a7-ae9e-c81aeebdc6e4.png`; implementation: `browser/viewport-1672x941.png` under the evidence root.
-- Timetable source: `C:/Users/blake/AppData/Local/Temp/codex-clipboard-afc41923-a7b1-429c-ad35-a219b472dbcd.png`; implementation: `browser/viewport-1586x992.png` under the evidence root.
+- Workspace source: `C:/Users/blake/AppData/Local/Temp/codex-clipboard-f0e907f3-f358-46a7-ae9e-c81aeebdc6e4.png`; implementation: `browser/contrast-viewport-1672x941.png` under the evidence root.
+- Timetable source: `C:/Users/blake/AppData/Local/Temp/codex-clipboard-afc41923-a7b1-429c-ad35-a219b472dbcd.png`; implementation: `browser/contrast-viewport-1586x992.png` under the evidence root.
 
 Both implementation captures use matching CSS dimensions and DPR 1; the source pixels and implementation pixels are equal in dimension, with no density rescaling. They show the light week view with the drawer closed. Content differs deliberately: a real local API serves 17 explicitly synthetic bookings across four actual room identities. The references' sample venue, extra rooms, guest counts and multi-day booking widths are not imported as venue facts. The combined direction uses the existing compact top navigation, not a second left sidebar.
 
@@ -29,6 +29,7 @@ Focused inspection used the native-resolution card/time/photo and attention-pane
 2. **P2: room identity floated halfway down a busy row.** Photos and names now align near the first booking. Large-desktop photos increased to 72×84px and use the supplied room-specific image derivatives. Unsupported room identities retain their name without an unrelated photograph.
 3. **P2: small secondary type and an overlong attention column.** Card titles/times increased to 13/12px. Warning and check explanations now have explicit native disclosures and visible severity/counts; blocking conflicts remain expanded. The final viewport captures record the corrected state.
 4. **Read-only interaction mismatch.** Hallkeeper inspection previously exposed editable controls and Save despite API-denied writes. Fields are now disabled, Save is absent, and Close receives/restores focus. The API authorization boundary is unchanged.
+5. **P2: room metadata contrast.** Independent final review found small 10px capacity/count text at about 4.2:1 and the header count at 3.71:1. A narrow CSS follow-up uses 12px room metadata and `#4d604e` text: calculated contrast is 6.47:1 on the room surface and 6.15:1 for the header count. The `contrast-viewport-*` captures show the correction; Diary lint passed again. The three-booking row remains about 324px, with all bookings present.
 
 Root independently reviewed the final workspace comparison and requested no further source change before integration. The busy first row is still about 323px because it contains three actual same-day bookings; reference rows are about 110–125px and have different content. That remaining density difference is explicit and must not be presented as a pixel match.
 
