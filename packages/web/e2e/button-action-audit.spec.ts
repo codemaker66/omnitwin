@@ -552,7 +552,7 @@ function onboardingCreateResultFixture(): CreateManagedOnboardingResult {
       invitationId: ownerInvitationId,
       email: "owner@tradeshall.co.uk",
       role: "owner",
-      venueRole: "staff",
+      venueRole: "admin",
       status: "invited",
       invitedBy: null,
       acceptedAt: null,
@@ -1531,13 +1531,14 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   });
   await page.route(`${API}/onboarding/workspaces/${ONBOARDING_WORKSPACE_ID}/invitations`, (route) => {
     const body = route.request().postDataJSON() as InviteWorkspaceMembers;
+    const inviteOffset = invitedStaffEmails.length;
     const memberships: WorkspaceMembership[] = body.staffInvites.map((invite, index) => {
       invitedStaffEmails.push(invite.email);
       return {
-        id: syntheticInviteUuid(4_036 + index),
+        id: syntheticInviteUuid(4_036 + inviteOffset + index),
         workspaceId: ONBOARDING_WORKSPACE_ID,
         userId: null,
-        invitationId: syntheticInviteUuid(4_046 + index),
+        invitationId: syntheticInviteUuid(4_046 + inviteOffset + index),
         email: invite.email,
         role: invite.workspaceRole,
         venueRole: invite.venueRole,
@@ -2305,7 +2306,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByRole("button", { name: "More", exact: true }).click();
     await expect(page.getByRole("button", { name: "Pipeline" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Proposals" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Onboarding" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Clients & access" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Admin" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Pending Reviews" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Executive Analytics" })).toBeVisible();
@@ -2319,7 +2320,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.goto("/dashboard?view=onboarding");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: /not available for this role/u })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Workspace onboarding" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Clients & access", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Open enquiries" }).click();
     await expect(page).toHaveURL(/\/dashboard\?view=enquiries$/u);
   });
@@ -2335,7 +2336,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page.getByRole("button", { name: "Executive Analytics" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Pipeline" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Proposals" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Onboarding" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Clients & access" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Admin" })).toHaveCount(0);
 
     await page.goto("/dashboard?view=pipeline");
@@ -2374,7 +2375,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByRole("button", { name: "More", exact: true }).click();
     await expect(page.getByRole("button", { name: "Pipeline" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Proposals" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Onboarding" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Clients & access" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Staff dashboard" })
       .locator(".dashboard-layout-more-links")
       .getByRole("button", { name: "Admin", exact: true })).toBeVisible();
@@ -2910,22 +2911,37 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
-    await page.getByRole("button", { name: "Onboarding" }).click();
-    await expect(page.getByRole("heading", { name: "Workspace onboarding" })).toBeVisible();
+    await page.getByRole("button", { name: "Clients & access" }).click();
+    await expect(page.getByRole("heading", { name: "Clients & access", exact: true })).toBeVisible();
 
     const create = page.getByTestId("create-onboarding-workspace");
     await expect(create).toBeDisabled();
+    await page.getByRole("button", { name: "Create a new venue", exact: true }).click();
     await page.getByTestId("organisation-name").fill("Trades Hall Trust");
     await page.getByTestId("venue-name").fill("Trades Hall Glasgow");
     await expect(page.getByTestId("venue-slug")).toHaveValue("trades-hall-glasgow");
     await page.getByTestId("venue-address").fill("85 Glassford Street, Glasgow G1 1UH");
     await page.getByTestId("owner-email").fill("owner@tradeshall.co.uk");
-    await page.getByTestId("staff-emails").fill("events@tradeshall.co.uk\nops@tradeshall.co.uk");
+    await expect(page.getByRole("combobox", { name: "First contact's venue role", exact: true })).toHaveValue("admin");
+    await page.getByText("Team, billing and setup options", { exact: true }).click();
+    // The creation form still accepts a list; preserve duplicate-email coverage here.
+    await page.getByTestId("staff-emails").fill("events@tradeshall.co.uk\nops@tradeshall.co.uk\nevents@tradeshall.co.uk");
     await expect(create).toBeEnabled();
+    const createdRequest = page.waitForRequest((request) => request.method() === "POST"
+      && request.url() === `${API}/onboarding/managed-workspaces`);
     await create.click();
+    expect((await createdRequest).postDataJSON()).toMatchObject({
+      organisationName: "Trades Hall Trust",
+      venue: { name: "Trades Hall Glasgow", slug: "trades-hall-glasgow", address: "85 Glassford Street, Glasgow G1 1UH" },
+      ownerInvite: { email: "owner@tradeshall.co.uk", workspaceRole: "owner", venueRole: "admin" },
+      staffInvites: [
+        { email: "events@tradeshall.co.uk", workspaceRole: "staff", venueRole: "staff" },
+        { email: "ops@tradeshall.co.uk", workspaceRole: "staff", venueRole: "staff" },
+      ],
+    });
 
     await expect.poll(() => mock.createdOnboarding).toContain("Trades Hall Trust");
-    await expect(page.getByText("Workspace onboarding created")).toBeVisible();
+    await expect(page.getByText("Client workspace created. Access is recorded for owner@tradeshall.co.uk; share the account link below.", { exact: true })).toBeVisible();
   });
 
   test("admin deployment controls invite staff and save reviewed rollout gates", async ({ page }) => {
@@ -2935,22 +2951,33 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
-    await page.getByRole("button", { name: "Onboarding" }).click();
-    await expect(page.getByRole("heading", { name: "Operator action board" })).toBeVisible();
+    await page.getByRole("button", { name: "Clients & access" }).click();
+    await expect(page.getByRole("heading", { name: "People & access", exact: true })).toBeVisible();
 
-    await page.getByLabel("Invite staff for Trades Hall deployment").fill("planner@tradeshall.co.uk\nops@tradeshall.co.uk\nplanner@tradeshall.co.uk");
-    await page.getByRole("button", { name: "Send 2 invite(s)" }).click();
-    await expect.poll(() => mock.invitedStaffEmails).toContain("planner@tradeshall.co.uk");
-    await expect.poll(() => mock.invitedStaffEmails).toContain("ops@tradeshall.co.uk");
-    await expect(page.getByText("2 staff invitation(s) recorded")).toBeVisible();
+    const accessForm = page.getByRole("form", { name: "Grant venue access", exact: true });
+    const grantAccess = accessForm.getByRole("button", { name: "Grant venue access", exact: true });
+    await expect(grantAccess).toBeDisabled();
+    for (const email of ["planner@tradeshall.co.uk", "ops@tradeshall.co.uk"]) {
+      await accessForm.getByLabel("Email address", { exact: true }).fill(email);
+      await accessForm.getByRole("combobox", { name: "Venue role", exact: true }).selectOption("staff");
+      const invitationRequest = page.waitForRequest((request) => request.method() === "POST"
+        && request.url() === `${API}/onboarding/workspaces/${ONBOARDING_WORKSPACE_ID}/invitations`);
+      await grantAccess.click();
+      expect((await invitationRequest).postDataJSON()).toEqual({
+        staffInvites: [{ email, name: null, workspaceRole: "staff", venueRole: "staff" }],
+      });
+      await expect(page.getByText(`Access recorded for ${email}. It will connect on their next verified sign-in.`, { exact: true })).toBeVisible();
+    }
+    await expect.poll(() => mock.invitedStaffEmails).toEqual(["planner@tradeshall.co.uk", "ops@tradeshall.co.uk"]);
 
+    await page.getByText("Setup review and billing", { exact: true }).click();
     await page.getByLabel("Project status for Trades Hall deployment").selectOption("ready");
     await page.getByLabel("Operator review for Trades Hall deployment").selectOption("approved");
     await page.getByLabel("Current step for Trades Hall deployment").fill("Ready for staff handoff.");
     await page.getByLabel("Evidence note for Trades Hall deployment").fill("Owner accepted and staff invite list reviewed.");
     await page.getByRole("button", { name: "Save project gate for Trades Hall deployment" }).click();
     await expect.poll(() => mock.savedProjectGates).toContain("ready|approved|Ready for staff handoff.");
-    await expect(page.getByText("Deployment review gate updated")).toBeVisible();
+    await expect(page.getByText("Setup review saved.", { exact: true })).toBeVisible();
 
     await page.getByLabel("Billing provider for Trades Hall deployment").selectOption("manual_invoice");
     await page.getByLabel("Provider status for Trades Hall deployment").selectOption("provider_verified");
@@ -2958,7 +2985,7 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.getByLabel("Enforce managed access for Trades Hall deployment").check();
     await page.getByRole("button", { name: "Save provider gate for Trades Hall deployment" }).click();
     await expect.poll(() => mock.savedProviderGates).toContain("manual_invoice|provider_verified|true");
-    await expect(page.getByText("Provider verification gate updated")).toBeVisible();
+    await expect(page.getByText("Billing verification saved.", { exact: true })).toBeVisible();
   });
 
   test("admin deployment project-gate failures keep the save control retryable", async ({ page }) => {
@@ -2968,9 +2995,10 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
     await page.getByRole("button", { name: "More", exact: true }).click();
-    await page.getByRole("button", { name: "Onboarding" }).click();
-    await expect(page.getByRole("heading", { name: "Operator action board" })).toBeVisible();
+    await page.getByRole("button", { name: "Clients & access" }).click();
+    await expect(page.getByRole("heading", { name: "People & access", exact: true })).toBeVisible();
 
+    await page.getByText("Setup review and billing", { exact: true }).click();
     const saveProjectGate = page.getByRole("button", { name: "Save project gate for Trades Hall deployment" });
     await saveProjectGate.click();
     await expect(page.getByRole("alert")).toContainText("button audit project gate failure");
@@ -2978,6 +3006,6 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
 
     await saveProjectGate.click();
     await expect.poll(() => mock.savedProjectGates).toContain("admin_invite|pending_review|Workspace owner invitation is pending acceptance.");
-    await expect(page.getByText("Deployment review gate updated")).toBeVisible();
+    await expect(page.getByText("Setup review saved.", { exact: true })).toBeVisible();
   });
 });

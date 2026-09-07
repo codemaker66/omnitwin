@@ -1465,8 +1465,12 @@ test("proposal drawer and composer controls remain keyboard reachable within fra
 test("onboarding admin action forms keep focus visible across seeded operator controls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const problems = await openDashboardView(page, "platform-admin", "onboarding");
-  await expect(page.getByLabel("Trades Hall deployment deployment actions")).toBeVisible();
-  await page.getByLabel("Invite staff for Trades Hall deployment").fill("planner@venue.example\nhallkeeper@venue.example");
+  await expect(page.getByRole("heading", { name: "People & access", exact: true })).toBeVisible();
+  const accessForm = page.getByRole("form", { name: "Grant venue access", exact: true });
+  await accessForm.getByLabel("Email address", { exact: true }).fill("planner@venue.example");
+  await accessForm.getByRole("combobox", { name: "Venue role", exact: true }).selectOption("staff");
+  await page.getByText("Setup review and billing", { exact: true }).click();
+  await expect(page.getByLabel("Current step for Trades Hall deployment")).toBeVisible();
   await recordAccessibilityState(page, problems, "onboarding operator action forms", "/dashboard?view=onboarding", "desktop", 14);
 
   await recordKeyboardBudget(page, problems, "onboarding-operator-form-keyboard-traversal", "desktop", async () => {

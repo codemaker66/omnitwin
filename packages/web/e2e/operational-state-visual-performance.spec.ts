@@ -1488,7 +1488,8 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
 
     await page.goto("/dashboard?view=onboarding");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Operator action board" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "People & access", exact: true })).toBeVisible();
+    await page.getByText("Setup review and billing", { exact: true }).click();
     await page.getByRole("button", { name: "Save project gate for Trades Hall deployment" }).click();
     await expect(page.getByRole("alert")).toContainText("t469 project gate failure");
 
