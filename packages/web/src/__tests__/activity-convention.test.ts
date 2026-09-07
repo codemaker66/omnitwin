@@ -85,12 +85,13 @@ function renderedText(node: ts.Node): string | undefined {
   if (ts.isJsxText(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   if (ts.isTemplateExpression(node)) return node.head.text + node.templateSpans.map((span) => span.literal.text).join("");
   if (!ts.isIdentifier(node) || !isRenderedCopy(node)) return undefined;
+  const identifier = node.text;
   // Resolve simple copied labels in lexical scope, without mistaking another
   // component's same-named constant for this component's work label.
   for (let scope: ts.Node | undefined = node.parent; scope !== undefined; scope = scope.parent) {
     if (ts.isFunctionLike(scope) && scope.parameters.some((parameter) => {
       function binds(name: ts.BindingName): boolean {
-        return ts.isIdentifier(name) ? name.text === node.text
+        return ts.isIdentifier(name) ? name.text === identifier
           : name.elements.some((element) => ts.isBindingElement(element) && binds(element.name));
       }
       return binds(parameter.name);
