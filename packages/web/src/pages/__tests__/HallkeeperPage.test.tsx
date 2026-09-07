@@ -168,4 +168,64 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     expect(requestUrl(write[0])).toContain(`/hallkeeper/${CONFIG_A}/progress`);
     expect(write[1]?.body).toBe(JSON.stringify({ rowKey: ROW_KEY, checked: true }));
   });
+
+  it("shows and drains the next sheet's queued work while the previous sheet's replay is still pending", async () => {
+    const firstReplay = deferred<Response>();
+    const secondReplay = deferred<Response>();
+    let queued: readonly QueuedProgressOp[] = [
+      { configId: CONFIG_A, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
+      { configId: CONFIG_B, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
+    ];
+    vi.mocked(listPendingProgress).mockImplementation(() => Promise.resolve(queued));
+    vi.mocked(ackProgress).mockImplementation((configId, rowKey) => {
+      queued = queued.filter((op) => op.configId !== configId || op.rowKey !== rowKey);
+      return Promise.resolve();
+    });
+    const replayStarted = vi.fn();
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input);
+      if (url.endsWith(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_A, "First dinner")));
+      if (url.endsWith(`/${CONFIG_B}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_B, "Second dinner")));
+      if (url.endsWith("/progress") && init?.method !== "PATCH") return Promise.resolve(jsonResponse({ checked: {} }));
+      if (url.endsWith(`/${CONFIG_A}/progress`) && init?.method === "PATCH") {
+        replayStarted(CONFIG_A);
+        return firstReplay.promise;
+      }
+      if (url.endsWith(`/${CONFIG_B}/progress`) && init?.method === "PATCH") {
+        replayStarted(CONFIG_B);
+        return secondReplay.promise;
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+
+    mount();
+    await screen.findByRole("heading", { level: 1, name: "First dinner" });
+    await waitFor(() => { expect(replayStarted).toHaveBeenCalledWith(CONFIG_A); });
+    fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
+
+    await screen.findByRole("heading", { level: 1, name: "Second dinner" });
+    await screen.findByRole("status", { name: "1 offline edit pending sync" });
+    await waitFor(() => { expect(replayStarted).toHaveBeenCalledWith(CONFIG_B); });
+    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY);
+
+    await act(async () => {
+      secondReplay.resolve(jsonResponse({ configId: CONFIG_B, rowKey: ROW_KEY, checked: true }));
+      await secondReplay.promise;
+    });
+    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_B, ROW_KEY); });
+    await waitFor(() => { expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull(); });
+    expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_A, ROW_KEY);
+    expect(queued).toEqual([
+      { configId: CONFIG_A, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
+    ]);
+
+    await act(async () => {
+      firstReplay.resolve(jsonResponse({ configId: CONFIG_A, rowKey: ROW_KEY, checked: true }));
+      await firstReplay.promise;
+    });
+    await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY); });
+    expect(queued).toEqual([]);
+    expect(screen.getByRole("heading", { level: 1, name: "Second dinner" })).toBeTruthy();
+    expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull();
+  });
 });
