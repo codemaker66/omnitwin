@@ -1117,6 +1117,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const [stageLive, setStageLive] = useState(false);
   const [shimmerPhase, setShimmerPhase] = useState<TwinShimmerPhase>("loading");
   const initialNodeIdRef = useRef(walk.currentId);
+  const activePanoRef = useRef({ nodeId: walk.currentId, mode });
+  activePanoRef.current = { nodeId: walk.targetId ?? walk.currentId, mode };
+  const [panoFailure, setPanoFailure] = useState<{ nodeId: string; hasPreview: boolean } | null>(null);
+  const [panoRetries, setPanoRetries] = useState<Readonly<Record<string, number>>>({});
+  const retryingPanoRef = useRef<string | null>(null);
 
   // — the exact-view deep link (?look=): decoded ONCE from the pristine URL.
   // Applied only when it names the node the walk actually opened on (the share
@@ -1165,10 +1170,17 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
   const [usherQueue, setUsherQueue] = useState<readonly string[]>([]);
 
   const onPanoTier = useCallback((nodeId: string, tier: "preview" | "base") => {
+    if (activePanoRef.current.mode !== "walk" || activePanoRef.current.nodeId !== nodeId) return;
     setStageLive(true);
-    setShimmerPhase((phase) =>
-      shimmerPhaseAfterTier(phase, nodeId, initialNodeIdRef.current, tier),
-    );
+    if (tier === "base") setPanoFailure((failure) => failure?.nodeId === nodeId ? null : failure);
+    // A retry may immediately reapply its retained preview. It still has real
+    // work outstanding even when this is no longer the opening viewpoint.
+    if (retryingPanoRef.current !== nodeId || tier === "base") {
+      setShimmerPhase((phase) =>
+        shimmerPhaseAfterTier(phase, nodeId, initialNodeIdRef.current, tier),
+      );
+    }
+    if (tier === "base" && retryingPanoRef.current === nodeId) retryingPanoRef.current = null;
     // First Light arms only once the HERO's base tier is on stage — the
     // overture never cranes over a soft preview.
     if (tier === "base" && nodeId === initialNodeIdRef.current) {
@@ -1180,6 +1192,15 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         return "running";
       });
     }
+  }, []);
+
+  const onPanoFailure = useCallback((nodeId: string, hasPreview: boolean) => {
+    if (activePanoRef.current.mode !== "walk" || activePanoRef.current.nodeId !== nodeId) return;
+    setPanoFailure({ nodeId, hasPreview });
+    retryingPanoRef.current = null;
+    setShimmerPhase("done");
+    setFirstLight("done");
+    if (hasPreview) setStageLive(true);
   }, []);
 
   // Any interaction dismisses the overture instantly — the visitor's intent
@@ -1641,6 +1662,8 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 exposure={node.exposure}
                 imagery={manifest.imagery}
                 onTier={onPanoTier}
+                onFailure={onPanoFailure}
+                retryKey={panoRetries[node.id] ?? 0}
               />
             ))}
             {/* The moonshot: during hops the panos are projected onto the real
@@ -1805,6 +1828,21 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 : "vv-twin-load-shimmer"
             }
           ><ActivityIndicator size={24} /> Opening view…</span>
+        )}
+        {mode === "walk" && panoFailure?.nodeId === walk.currentId && (
+          <div className="vv-twin-load-error" role="status">
+            <span>{panoFailure.hasPreview
+              ? "Preview available. Full detail could not load."
+              : "This view could not load."}</span>
+            <button type="button" onClick={() => {
+              retryingPanoRef.current = walk.currentId;
+              setPanoFailure(null);
+              setShimmerPhase("loading");
+              setPanoRetries((previous) => ({
+                ...previous, [walk.currentId]: (previous[walk.currentId] ?? 0) + 1,
+              }));
+            }}>Retry view</button>
+          </div>
         )}
       </div>
       {hasMesh && (

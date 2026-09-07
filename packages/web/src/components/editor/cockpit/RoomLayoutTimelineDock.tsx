@@ -761,11 +761,11 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     if (!timelineResponseMatchesSelection) {
       resetMotion();
       if (prePreviewPhaseRef.current.captured) {
-        useLayoutTimelinePreviewStore.getState().showPending(
-          timeline.status === "error"
-            ? "The requested room timeline could not be loaded."
-            : "Loading the authoritative room timeline…",
-        );
+        if (timeline.status === "error") {
+          useLayoutTimelinePreviewStore.getState().showUnavailable(null, "The requested room timeline could not be loaded.");
+        } else {
+          useLayoutTimelinePreviewStore.getState().showPending("Loading the authoritative room timeline…");
+        }
       } else {
         useLayoutTimelinePreviewStore.getState().clear();
       }
@@ -778,7 +778,7 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
       cursorRef.current = 0;
       updatePlayhead(displayRange.fromMs);
       if (prePreviewPhaseRef.current.captured) {
-        useLayoutTimelinePreviewStore.getState().showPending(
+        useLayoutTimelinePreviewStore.getState().showUnavailable(null,
           phaseCount === 1
             ? "Only one room phase is scheduled in this range."
             : "No room phases are scheduled in this range.",

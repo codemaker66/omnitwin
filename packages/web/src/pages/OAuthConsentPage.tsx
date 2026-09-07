@@ -1,5 +1,6 @@
 import { useEffect, type ReactElement } from "react";
 import { ClerkFailed, ClerkLoaded, ClerkLoading, OAuthConsent, Show } from "@clerk/react";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 import "./OAuthConsentPage.css";
 
 const REFERRER_META_SELECTOR = 'meta[name="referrer"]';
@@ -49,6 +50,7 @@ function useStrictConsentReferrerPolicy(): void {
 function ConsentLoadingState(): ReactElement {
   return (
     <div className="oauth-consent-page__status" role="status" aria-live="polite">
+      <ActivityIndicator size={48} />
       <strong>Loading secure consent.</strong>
       <span>Keep this page open while Clerk loads the requesting application and scopes.</span>
     </div>

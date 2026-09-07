@@ -49,6 +49,13 @@ async function completeLod(lod: 512 | 4096 | 8192): Promise<void> {
   });
 }
 
+async function failLod(lod: 512 | 4096 | 8192): Promise<void> {
+  await act(async () => {
+    for (const image of imagesFor(lod)) image.onerror?.();
+    await Promise.resolve();
+  });
+}
+
 describe("useEquirectTexture", () => {
   beforeEach(() => {
     // Textures are shared module state by design (the registry) — cold-start
@@ -301,6 +308,69 @@ describe("useEquirectTexture", () => {
 
     unmount();
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles a failed base and retries without discarding the available preview", async () => {
+    const { result, rerender } = renderHook(({ retryKey }) =>
+      useEquirectTexture("scan_retry", BASE, 4096, retryKey), { initialProps: { retryKey: 0 } });
+    await completeLod(512);
+    const preview = result.current.texture;
+    expect(preview).not.toBeNull();
+    expect(result.current.settled).toBe(false);
+    await failLod(4096);
+    expect(result.current).toMatchObject({ texture: preview, lod: 512, settled: true });
+    rerender({ retryKey: 1 });
+    expect(result.current).toMatchObject({ texture: preview, lod: 512, settled: false });
+    await completeLod(4096);
+    expect(result.current.lod).toBe(4096);
+    expect(result.current.settled).toBe(true);
+  });
+
+  it("settles when every requested image fails", async () => {
+    const { result } = renderHook(() => useEquirectTexture("scan_fail", BASE));
+    await failLod(512);
+    expect(result.current.settled).toBe(false);
+    await failLod(4096);
+    expect(result.current).toEqual({ texture: null, lod: 0, settled: true });
+  });
+
+  it("recovers from a failed preview when the base succeeds", async () => {
+    const { result } = renderHook(() => useEquirectTexture("scan_base", BASE));
+    await failLod(512);
+    await completeLod(4096);
+    expect(result.current.lod).toBe(4096);
+    expect(result.current.settled).toBe(true);
+  });
+
+  it("settles the movement preview ceiling without requesting a base", async () => {
+    const { result } = renderHook(() => useEquirectTexture("scan_hold", BASE, 512));
+    await completeLod(512);
+    expect(result.current.lod).toBe(512);
+    expect(result.current.settled).toBe(true);
+    expect(imagesFor(4096)).toHaveLength(0);
+  });
+
+  it("keeps the usable base when the optional zoom tier fails", async () => {
+    const { result } = renderHook(() => useEquirectTexture("scan_zoom", BASE, 8192));
+    await completeLod(512);
+    await completeLod(4096);
+    const base = result.current.texture;
+    await failLod(8192);
+    expect(result.current).toMatchObject({ texture: base, lod: 4096, settled: true });
+  });
+
+  it("ignores late failure from a node abandoned while its base was loading", async () => {
+    const { result, rerender } = renderHook(({ nodeId }) => useEquirectTexture(nodeId, BASE),
+      { initialProps: { nodeId: "scan_old" } });
+    await completeLod(512);
+    const oldFailure = imagesFor(4096)[0]?.onerror;
+    rerender({ nodeId: "scan_new" });
+    await act(async () => { oldFailure?.(); await Promise.resolve(); });
+    expect(result.current).toEqual({ texture: null, lod: 0, settled: false });
+    await completeLod(512);
+    await completeLod(4096);
+    expect(result.current.lod).toBe(4096);
+    expect(result.current.settled).toBe(true);
   });
 
   it("stays inert when image callbacks never fire (happy-dom guard)", () => {
