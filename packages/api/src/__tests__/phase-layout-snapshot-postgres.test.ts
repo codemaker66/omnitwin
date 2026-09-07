@@ -20,6 +20,7 @@ import {
   type CanonicalLayoutSnapshotV0,
 } from "@omnitwin/types";
 import { createDb, type Database } from "../db/client.js";
+import { seedCanonicalAssets } from "../db/seed-canonical-assets.js";
 import {
   assetDefinitions,
   canonicalLayoutSnapshots,
@@ -355,16 +356,9 @@ async function seedFixture(db: Database): Promise<void> {
     seatCount: object.assetDefinition.seatCount,
     collisionType: object.assetDefinition.collisionType,
   })));
-  await db.insert(assetDefinitions).values(CANONICAL_ASSETS.map((asset) => ({
-    id: asset.id,
-    name: asset.name,
-    category: asset.category,
-    widthM: fixed(asset.widthM, 3),
-    depthM: fixed(asset.depthM, 3),
-    heightM: fixed(asset.heightM, 3),
-    seatCount: asset.seatCount,
-    collisionType: asset.collisionType,
-  })));
+  // Catalogue migrations may already own rows in this fresh database. Verify
+  // those identities and seed only missing assets without replacing them.
+  await seedCanonicalAssets(db);
   await db.insert(placedObjects).values(SNAPSHOT.objects.map((object) => ({
     id: object.objectId,
     configurationId: SNAPSHOT.configurationId,
