@@ -32,6 +32,32 @@ beforeEach(() => {
   _resetTokenGetterForTests();
 });
 
+describe("request content type", () => {
+  it.each(["GET", "POST", "DELETE"] as const)("does not declare JSON for a bodyless %s request", async (method) => {
+    setTokenGetter(() => Promise.resolve("session-token"));
+    fetchMock.mockResolvedValue(jsonResponse({ data: { ok: true } }));
+
+    if (method === "GET") await api.get("/test", OkSchema);
+    else if (method === "POST") await api.post("/test", undefined, false, OkSchema);
+    else await api.delete("/configurations/test/review/viewers/self");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe(method);
+    expect(init.body).toBeUndefined();
+    expect(new Headers(init.headers).has("Content-Type")).toBe(false);
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer session-token");
+  });
+
+  it.each([null, {}, { name: "Updated" }])("declares JSON when sending %j, preserving command identity", async (body) => {
+    fetchMock.mockResolvedValue(jsonResponse({ data: { ok: true } }));
+    await api.patch("/test", body, OkSchema, { idempotencyKey: "command-id" });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(JSON.stringify(body));
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBe("command-id");
+  });
+});
+
 describe("api.get", () => {
   it("forwards an AbortSignal to fetch", async () => {
     const controller = new AbortController();

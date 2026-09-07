@@ -98,9 +98,7 @@ function responseError(status: number, body: unknown): ApiError {
 }
 
 async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  const headers: Record<string, string> = {};
 
   if (opts.idempotencyKey !== undefined) {
     headers["Idempotency-Key"] = opts.idempotencyKey;
@@ -124,6 +122,7 @@ async function request<T>(opts: RequestOptions, schema?: ResponseSchema<T>): Pro
 
   if (opts.body !== undefined) {
     fetchOpts.body = JSON.stringify(opts.body);
+    headers["Content-Type"] = "application/json";
   }
 
   let res: Response;
