@@ -7,6 +7,10 @@ import { InteractiveFloorPlan } from "../InteractiveFloorPlan.js";
 import { HallkeeperPage } from "../../../pages/HallkeeperPage.js";
 
 vi.mock("../../../api/client.js", () => ({ getAuthToken: vi.fn().mockResolvedValue(null) }));
+vi.mock("../useHallkeeperContext.js", () => ({
+  useHallkeeperContext: () => ({ status: "idle", context: null, error: null, retry: vi.fn() }),
+}));
+vi.mock("../HallkeeperStatusBanner.js", () => ({ HallkeeperStatusBanner: () => null }));
 vi.mock("../../../lib/progress-sync-queue.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../lib/progress-sync-queue.js")>(), listPendingProgress: vi.fn().mockResolvedValue([]),
 }));
@@ -111,8 +115,10 @@ describe("InteractiveFloorPlan saved geometry", () => {
     const { container } = render(<MemoryRouter initialEntries={[`/hallkeeper/${id(3000)}`]}><Routes>
       <Route path="/hallkeeper/:configId" element={<HallkeeperPage />} />
     </Routes></MemoryRouter>);
-    await screen.findByText("162 furniture footprints · saved layout geometry");
-    expect(container.querySelectorAll("[data-footprint-id]")).toHaveLength(162);
+    const livePlan = await screen.findByRole("group", { name: "Interactive saved floor plan" });
+    expect(livePlan.querySelectorAll("[data-footprint-id]")).toHaveLength(162);
+    const printCopy = required(container.querySelector(".hk-print-only[aria-hidden='true']"));
+    expect(printCopy.querySelectorAll("[data-footprint-id]")).toHaveLength(162);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

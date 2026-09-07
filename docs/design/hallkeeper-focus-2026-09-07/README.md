@@ -1,0 +1,23 @@
+# Hallkeeper focused workspace — 7 September 2026
+
+Blake rejected the long Hallkeeper sheet and supplied populated architectural references. This is a revision to the real sheet at `/hallkeeper/:configId`, not a replacement of the fictional Hillside walkthrough.
+
+## Working surface
+
+The room is the heading. The saved event plan sits beside one working panel. Preparation, Setup, Checks, Hosting, Reset and Handback have distinct colours; selecting one is navigation, never an execution status or room-release action. Setup retains every stable row key and quantity, showing five rows per page with category, remaining and search controls. A furniture marker opens its exact category/page without changing a check. Final checks are directly available from Checks where supplied. Full paper output retains the entire manifest, plan, instructions and approval provenance.
+
+Verified event context is optional. Configuration and venue IDs establish room identity; an event query is accepted only after configuration membership is verified. A handoff pack for a different layout is excluded. Planned phase times remain planned; estimated sheet timing is labelled indicative. Issues are labelled event-wide. Existing event operations owns operational task changes and handoff review. This UI does not imply that supplier arrival, cover acceptance, escalation delivery or room release has occurred.
+
+The existing save/rollback/offline queue and per-sheet Activity behaviour remain. Runtime sheet and progress payloads are validated before use, including returned configuration identity. Production data is not changed by browser verification.
+
+## Supplied plans
+
+`/hallkeeper/rooms` has six independent room entries. North Gallery is the left room in the combined source; South Gallery is the separate supplied right-room reference. Both connected Robert Adam sections remain one room. Sources are copied byte-for-byte under `public/room-plans/originals`.
+
+Five image-generation derivatives remove obvious seating. They retain source architecture and ambiguous symbols, with regenerated linework and lettering; they are visual references, not measured geometry. The original switch and download remain available. North's two generated variants distorted proportions and are rejected, retained only as evidence. Its faithful original left-room detail is displayed through a CSS viewport; no source pixels are changed. Source annotation differences from database dimensions are not silently reconciled. No production room dimensions, saved polygons or approved layout geometry are changed.
+
+Per-room prompt, source hash and visual QA records are alongside this file. Built-in image generation was used; no API-key image workflow was used.
+
+## Verification and delivery
+
+55 focused tests across six files passed, including runtime envelope/configuration identity rejection, stale responses, auth changes, offline queues, pagination, marker navigation, venue guards and image failure recovery. Full web and e2e TypeScript checks passed; app and test lint passed, with a final test-only lint correction being checked. Desktop1440 and mobile390 browser checks exercised the actual page with mocked API data; no horizontal mobile overflow. All43 test manifest rows and162 frozen footprints were retained in four printed pages. Six library images decoded; North and South were inspected independently. White transparent original linework is shown on a dark paper background. Final source is based on releasefbc6cb9e. Production build, release and live verification remain pending. Local browser evidence lives in the isolated worktree under `output/playwright/hallkeeper-focus/`. Do not treat local checks, deployment and Blake's aesthetic acceptance as the same state.

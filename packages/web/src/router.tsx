@@ -69,6 +69,9 @@ const DashboardPage = lazy(() =>
 const HallkeeperPage = lazy(() =>
   cockpitImport(() => import("./pages/HallkeeperPage.js").then((m) => ({ default: m.HallkeeperPage }))),
 );
+const HallkeeperRoomPlansPage = lazy(() =>
+  cockpitImport(() => import("./pages/hallkeeper/HallkeeperRoomPlansPage.js").then((m) => ({ default: m.HallkeeperRoomPlansPage }))),
+);
 const DayBoardPage = lazy(() =>
   import("./pages/hallkeeper/DayBoardPage.js").then((m) => ({ default: m.DayBoardPage })),
 );
@@ -369,6 +372,14 @@ export const router = createBrowserRouter([
   {
     path: "/hallkeeper",
     element: <Navigate to="/hallkeeper/today" replace />,
+  },
+  {
+    path: "/hallkeeper/rooms",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+        <HallkeeperRoomPlansPage />
+      </ProtectedRoute>,
+    ),
   },
   {
     path: "/hallkeeper/walkthrough",

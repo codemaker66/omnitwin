@@ -1,0 +1,27 @@
+.hk-room-reference { color: #344d3e; min-width: 0; }
+.hk-room-reference-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 0 0 18px; }
+.hk-room-reference-switch { display: inline-flex; padding: 4px; border: 1px solid #dedfd4; border-radius: 10px; background: #f1f1e9; }
+.hk-room-reference-switch button { min-height: 44px; padding: 8px 20px; border: 0; border-radius: 7px; font: inherit; font-size: 14px; color: #536251; background: transparent; cursor: pointer; }
+.hk-room-reference-switch button[aria-pressed="true"] { color: #284935; background: #fffef9; box-shadow: 0 1px 4px #32482f12; }
+.hk-room-reference-switch button:disabled { opacity: .48; cursor: default; }
+.hk-room-reference-download { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: #3e5947; font-size: 14px; text-decoration: none; }
+.hk-room-reference-paper { position: relative; display: grid; place-items: center; min-height: 340px; padding: 24px; overflow: hidden; border: 1px solid #e8e6dd; border-radius: 13px; background: #faf8f2; }
+.hk-room-reference-paper[data-source-view="original"] { background: #232722; }
+.hk-room-reference-image { display: block; max-width: 100%; width: auto; height: auto; max-height: 70vh; object-fit: contain; }
+.hk-room-reference-crop { position: relative; width: min(100%, 23rem); overflow: hidden; background: #232722; }
+.hk-room-reference-cropped-image { position: absolute; display: block; max-width: none; height: auto; }
+.hk-room-reference-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 1; background: #faf8f2ed; pointer-events: none; }
+.hk-room-reference-error { padding: 30px; text-align: center; color: #81513c; }
+.hk-room-reference-error a { color: inherit; }
+.hk-room-reference-caption { padding-top: 13px; color: #72776b; font-size: 12px; line-height: 1.65; }
+.hk-room-reference-caption p { margin: 0 0 4px; }
+.hk-room-reference-caption a { display: inline-flex; align-items: center; gap: 5px; color: #385944; }
+.hk-room-reference--compact .hk-room-reference-paper { min-height: 280px; padding: 16px; }
+.hk-room-reference--compact .hk-room-reference-image { max-height: 55vh; }
+.hk-room-reference--compact .hk-room-reference-crop { width: min(100%, 18rem); }
+.hk-room-reference button:focus-visible, .hk-room-reference a:focus-visible { outline: 2px solid #54795c; outline-offset: 3px; }
+@media (max-width: 600px) {
+  .hk-room-reference-paper { padding: 12px; min-height: 260px; }
+  .hk-room-reference-tools { gap: 6px; }
+  .hk-room-reference-switch button { padding-inline: 16px; }
+}

@@ -25,10 +25,10 @@ import {
 // pixel-perfect aligned with the placement data.
 // ---------------------------------------------------------------------------
 
-const BG = "#141311";
-const GRID = "#252320";
-const WALL = "#3a3631";
-const DIM_INK = "rgba(255,255,255,0.15)";
+const BG = "#f8f5ee";
+const GRID = "#dedfd2";
+const WALL = "#8a8d7c";
+const DIM_INK = "rgba(73,87,62,0.2)";
 
 // SVG coordinate space uses 1000 units wide; height derived from room
 // aspect ratio. This keeps markers pixel-crisp at any render size.
@@ -103,13 +103,13 @@ function LegacyFloorPlan({ room, phases, highlightedRowKey, onMarkerClick }: Int
           return (
             <g
               key={`${m.rowKey}|${String(i)}|${m.objectId}`}
+              role="button" tabIndex={0} aria-label={`Find ${m.rowName} in the manifest`} aria-pressed={highlighted}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onMarkerClick(m.rowKey); } }}
               onClick={(e) => { e.stopPropagation(); onMarkerClick(m.rowKey); }}
               style={{ cursor: "pointer" }}
             >
               {highlighted && (
                 <circle cx={cx} cy={cy} r={r + 10} fill="none" stroke={GOLD} strokeWidth={2} opacity={0.6}>
-                  <animate attributeName="r" values={`${String(r + 6)};${String(r + 14)};${String(r + 6)}`} dur="1.6s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.7;0.15;0.7" dur="1.6s" repeatCount="indefinite" />
                 </circle>
               )}
               <circle cx={cx} cy={cy} r={r} fill={colour} stroke={highlighted ? GOLD : "#000"} strokeWidth={highlighted ? 2 : 1} />

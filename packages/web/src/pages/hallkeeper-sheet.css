@@ -191,3 +191,7 @@
   .hk-care-card { break-before: auto; }
   .hk-checkbox { border-color: black; }
 }
+
+.hk-page.hk-focused-page { padding: 16px; }
+.hk-focused-page .hkf-app { max-width: 1700px; margin: auto; }
+@media (max-width:640px) { .hk-page.hk-focused-page { padding: 0; } }

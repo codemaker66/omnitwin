@@ -13,6 +13,9 @@ vi.mock("../../api/client.js", () => ({ getAuthToken: vi.fn().mockResolvedValue(
 vi.mock("../../components/hallkeeper/HallkeeperStatusBanner.js", () => ({
   HallkeeperStatusBanner: () => null,
 }));
+vi.mock("../../components/hallkeeper/useHallkeeperContext.js", () => ({
+  useHallkeeperContext: () => ({ status: "idle", context: null, error: null, retry: vi.fn() }),
+}));
 vi.mock("../../lib/progress-sync-queue.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../lib/progress-sync-queue.js")>(),
   listPendingProgress: vi.fn().mockResolvedValue([]),
@@ -78,6 +81,49 @@ function mount(): void {
 }
 
 describe("HallkeeperPage request and offline queue isolation", () => {
+  it("rejects a malformed sheet before exposing checklist controls or making check writes", async () => {
+    const malformed = {
+      ...sheet(CONFIG_A, "Malformed dinner"),
+      phases: [{ phase: "furniture", zones: [{ zone: "Centre", rows: [{
+        key: ROW_KEY, name: "Round table", category: "table", qty: "twelve",
+        afterDepth: 0, isAccessory: false, notes: "",
+      }] }] }],
+    };
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      expect(init?.method ?? "GET").toBe("GET");
+      const url = requestUrl(input);
+      if (url.endsWith(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(malformed));
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    mount();
+
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("checkbox", { name: /Round table/u })).toBeNull();
+    expect(screen.queryByText("Malformed dinner", { exact: true, selector: "p" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Try Again" })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+  });
+
+  it("rejects a valid sheet for a different configuration without making check writes", async () => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      expect(init?.method ?? "GET").toBe("GET");
+      const url = requestUrl(input);
+      if (url.endsWith(`/${CONFIG_A}/v2`)) return Promise.resolve(jsonResponse(sheet(CONFIG_B, "Wrong-room dinner")));
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    mount();
+
+    const error = await screen.findByRole("alert");
+    expect(error.textContent).toContain("returned sheet does not match this layout");
+    expect(screen.queryByRole("checkbox", { name: /Round table/u })).toBeNull();
+    expect(screen.queryByText("Wrong-room dinner", { exact: true, selector: "p" })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH")).toHaveLength(0);
+  });
+
   it("keeps activity through overlapping check writes until success and rejection settle", async () => {
     const first = deferred<Response>();
     const second = deferred<Response>();
@@ -120,7 +166,7 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: /Round table/u }));
     expect(screen.getByText("Saving shared checks…")).toBeTruthy();
     fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
-    await screen.findByRole("heading", { level: 1, name: "Second dinner" });
+    await screen.findByText("Second dinner", { exact: true, selector: "p" });
     const checkbox = await screen.findByRole("checkbox", { name: /Round table/u });
     expect(screen.queryByText("Saving shared checks…")).toBeNull();
     fireEvent.click(checkbox);
@@ -166,14 +212,14 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     await waitFor(() => { expect(parseFirstSheet).toHaveBeenCalledOnce(); });
 
     fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
-    await screen.findByRole("heading", { level: 1, name: "Second dinner" });
+    await screen.findByText("Second dinner", { exact: true, selector: "p" });
     await act(async () => {
       delayedJson.resolve({ data: sheet(CONFIG_A, "First dinner") });
       await delayedJson.promise;
     });
 
-    expect(screen.getByRole("heading", { level: 1, name: "Second dinner" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { level: 1, name: "First dinner" })).toBeNull();
+    expect(screen.getByText("Second dinner", { exact: true, selector: "p" })).toBeTruthy();
+    expect(screen.queryByText("First dinner", { exact: true, selector: "p" })).toBeNull();
   });
 
   it("does not replace the current sheet's checks with a previous sheet's delayed progress", async () => {
@@ -194,14 +240,14 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     await waitFor(() => { expect(firstProgressRequested).toHaveBeenCalledOnce(); });
 
     fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
-    await screen.findByRole("heading", { level: 1, name: "Second dinner" });
+    await screen.findByText("Second dinner", { exact: true, selector: "p" });
     await screen.findByRole("checkbox", { name: /Round table/u, checked: false });
     await act(async () => {
       delayedProgress.resolve(jsonResponse({ checked: { [ROW_KEY]: checkedAt } }));
       await delayedProgress.promise;
     });
 
-    expect(screen.getByRole("heading", { level: 1, name: "Second dinner" })).toBeTruthy();
+    expect(screen.getByText("Second dinner", { exact: true, selector: "p" })).toBeTruthy();
     expect(screen.getByRole("checkbox", { name: /Round table/u }).getAttribute("aria-checked")).toBe("false");
   });
 
@@ -228,7 +274,7 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     mount();
-    await screen.findByRole("heading", { level: 1, name: "First dinner" });
+    await screen.findByText("First dinner", { exact: true, selector: "p" });
     await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY); });
 
     expect(ackProgress).not.toHaveBeenCalledWith(CONFIG_B, otherRowKey);
@@ -273,11 +319,11 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     }));
 
     mount();
-    await screen.findByRole("heading", { level: 1, name: "First dinner" });
+    await screen.findByText("First dinner", { exact: true, selector: "p" });
     await waitFor(() => { expect(replayStarted).toHaveBeenCalledWith(CONFIG_A); });
     fireEvent.click(screen.getByRole("link", { name: "Open second sheet" }));
 
-    await screen.findByRole("heading", { level: 1, name: "Second dinner" });
+    await screen.findByText("Second dinner", { exact: true, selector: "p" });
     await screen.findByRole("status", { name: "1 offline edit pending sync" });
     await waitFor(() => { expect(replayStarted).toHaveBeenCalledWith(CONFIG_B); });
     expect(screen.getByText("Syncing saved checks…")).toBeTruthy();
@@ -301,7 +347,7 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     });
     await waitFor(() => { expect(ackProgress).toHaveBeenCalledWith(CONFIG_A, ROW_KEY); });
     expect(queued).toEqual([]);
-    expect(screen.getByRole("heading", { level: 1, name: "Second dinner" })).toBeTruthy();
+    expect(screen.getByText("Second dinner", { exact: true, selector: "p" })).toBeTruthy();
     expect(screen.queryByRole("status", { name: "1 offline edit pending sync" })).toBeNull();
   });
 });

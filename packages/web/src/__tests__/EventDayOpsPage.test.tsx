@@ -345,7 +345,7 @@ describe("EventDayOpsPage", () => {
     expect(screen.getByText("Issue report")).toBeTruthy();
     expect(screen.getByText("Supplier arrivals")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Open current setup sheet" }).getAttribute("href"))
-      .toBe("/hallkeeper/00000000-0000-4000-8000-000000003007");
+      .toBe("/hallkeeper/00000000-0000-4000-8000-000000003007?eventId=00000000-0000-4000-8000-000000003001");
     expect(screen.getByRole("link", { name: "Open version 1 handoff" }).getAttribute("href"))
       .toBe(`/ops/handoff/${PACK_ID}`);
   });

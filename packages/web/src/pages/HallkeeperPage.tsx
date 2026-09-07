@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import {
   ackProgress,
@@ -18,6 +19,7 @@ import type {
 import {
   BRAND,
   EventInstructionsSchema,
+  HallkeeperSheetV2Schema,
   PHASE_METADATA,
   SEVERITY_PALETTE,
   buildAccessibilityCallouts,
@@ -30,6 +32,7 @@ import { getAuthToken } from "../api/client.js";
 import { InstructionsBanner } from "../components/hallkeeper/InstructionsBanner.js";
 import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorPlan.js";
 import { HallkeeperStatusBanner } from "../components/hallkeeper/HallkeeperStatusBanner.js";
+import { HallkeeperWorkspace } from "../components/hallkeeper/HallkeeperWorkspace.js";
 import { ActivityStatus } from "../components/shared/Activity.js";
 import "./hallkeeper-sheet.css";
 
@@ -86,7 +89,6 @@ export function HallkeeperPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [checks, setChecks] = useState<CheckMap>({});
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [highlightedRowKey, setHighlightedRowKey] = useState<string | null>(null);
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState<DownloadNotice | null>(null);
@@ -117,7 +119,6 @@ export function HallkeeperPage(): React.ReactElement {
       });
     };
   }, []);
-  const diagramRef = useRef<HTMLDivElement>(null);
   const fetchCountRef = useRef(0);
   const activeConfigRef = useRef(configId);
   activeConfigRef.current = configId;
@@ -137,7 +138,6 @@ export function HallkeeperPage(): React.ReactElement {
     setProgressUnavailable(false);
     setProgressNotice(null);
     setHighlightedRowKey(null);
-    setCollapsed(new Set());
     setPendingCount(0);
     fetchCountRef.current += 1;
     const thisFetch = fetchCountRef.current;
@@ -156,14 +156,15 @@ export function HallkeeperPage(): React.ReactElement {
         if (sheetRes.status === 404) { setError("Configuration not found."); return; }
         if (!sheetRes.ok) throw new Error(`Failed to load (${String(sheetRes.status)})`);
 
-        const sheetJson = (await sheetRes.json()) as { data: HallkeeperSheetV2 };
+        const sheetJson = z.object({ data: HallkeeperSheetV2Schema }).parse(await sheetRes.json());
         if (thisFetch !== fetchCountRef.current || activeConfigRef.current !== configId) return;
+        if (sheetJson.data.config.id !== configId) throw new Error("The returned sheet does not match this layout. Reload the current handoff link.");
         setData(sheetJson.data);
 
         try {
           const progressRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
           if (progressRes.ok) {
-            const progressJson = (await progressRes.json()) as { data: { checked: Record<string, string> } };
+            const progressJson = z.object({ data: z.object({ checked: z.record(z.string()) }) }).parse(await progressRes.json());
             if (thisFetch !== fetchCountRef.current || activeConfigRef.current !== configId) return;
             const loaded: Record<string, boolean> = {};
             for (const key of Object.keys(progressJson.data.checked)) {
@@ -361,39 +362,6 @@ export function HallkeeperPage(): React.ReactElement {
     };
   }, [configId]);
 
-  // --- Phase collapse ---
-  const toggleCollapse = useCallback((phase: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(phase)) next.delete(phase); else next.add(phase);
-      return next;
-    });
-  }, []);
-
-  // --- Highlight handoff: row click → floor plan, marker click → row ---
-  //
-  // Clicking a manifest row toggles its highlight state; the floor plan
-  // pulses that row's markers and dims the rest. Clicking a marker sets
-  // the same state AND scrolls the manifest row into view so a
-  // hallkeeper asking "what's that one?" can tap a marker and see the
-  // checklist jump straight to it.
-  const handleHighlightRow = useCallback((rowKey: string) => {
-    setHighlightedRowKey((prev) => prev === rowKey ? null : rowKey);
-    if (diagramRef.current !== null) {
-      diagramRef.current.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "nearest" });
-    }
-  }, []);
-
-  const handleMarkerClick = useCallback((rowKey: string) => {
-    setHighlightedRowKey(rowKey);
-    const phase = data?.phases.find((entry) => entry.zones.some((zone) => zone.rows.some((row) => row.key === rowKey)));
-    if (phase !== undefined) setCollapsed((prev) => { const next = new Set(prev); next.delete(phase.phase); return next; });
-    requestAnimationFrame(() => {
-      const el = document.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(rowKey)}"]`);
-      el?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
-    });
-  }, [data]);
-
   const handleDownload = useCallback(() => {
     if (configId === undefined || downloadBusy) return;
     void (async () => {
@@ -468,100 +436,40 @@ export function HallkeeperPage(): React.ReactElement {
   const approval = payload.approval ?? null;
   const doorSummary = instructions === null ? null : buildDoorScheduleSummary(instructions.doorSchedule);
 
-  return (
-    <main className="hk-page" aria-label={`Hallkeeper sheet for ${data.config.name} at ${data.venue.name}`}>
-      <a className="hk-skip-link" href="#hk-manifest">Skip to setup manifest</a>
-      <SheetNavigation />
-      <div className="hk-sheet-shell">
-        <header className="hk-sheet-heading">
-          <div className="hk-heading-copy">
-            <div className="hk-eyebrow">{data.venue.name} <span aria-hidden="true">/</span> Hallkeeper sheet</div>
-            <h1>{data.config.name}</h1>
-            <p className="hk-room-name">{data.space.name} <span>· {formatLayoutStyle(data.config.layoutStyle)}</span></p>
-            <p className="hk-room-dimensions">{formatDims(data.space)} · {data.totals.totalItems} items in the setup manifest</p>
-          </div>
-          <div className="hk-guest-count"><strong>{data.config.guestCount}</strong><span>guests</span></div>
-          <div className="hk-time-pair">
-            <div><span>Indicative setup time</span><strong>{data.timing === null ? "Not provided" : formatLocalTime(data.timing.setupBy, data.venue.timezone)}</strong></div>
-            <div><span>Indicative event time</span><strong>{data.timing === null ? "Not provided" : formatLocalTime(data.timing.eventStart, data.venue.timezone)}</strong></div>
-            <p>This sheet may use estimated times. Confirm the event schedule with the venue team · {data.venue.timezone}.</p>
-          </div>
-        </header>
-
-        <div className="hk-provenance">
-          <HallkeeperStatusBanner configId={data.config.id} />
-          {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
-          {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
-          {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
-          {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
-          {progressUnavailable && <div className="hk-notice" role="alert">Shared checks could not be loaded. The layout is available; reload before changing checks. <button className="hk-text-button" onClick={loadData}>Reload checks</button></div>}
-          {progressNotice !== null && <div className="hk-notice" role="alert">{progressNotice}</div>}
-        </div>
-
-        <nav className="hk-phase-strip" aria-label="Setup categories">
-          {data.phases.map((phase) => {
-            const meta = PHASE_METADATA[phase.phase];
-            const rows = phase.zones.flatMap((zone) => zone.rows);
-            const done = rows.filter((row) => checks[row.key] === true).length;
-            return <a key={phase.phase} className={`hk-phase-step hk-tone-${phase.phase}`} href={`#hk-phase-${phase.phase}`}
-              onClick={() => { setCollapsed((prev) => { const next = new Set(prev); next.delete(phase.phase); return next; }); }}>
-              <span className="hk-step-number">{meta.order.toString().padStart(2, "0")}</span>
-              <strong>{meta.label}</strong>
-              <span>{progressUnavailable ? "Checks unavailable" : `${String(done)}/${String(rows.length)} rows checked`}</span>
-            </a>;
-          })}
-        </nav>
-
-        <div className="hk-workspace">
-          <section id="hk-manifest" className="hk-manifest" aria-label="Setup manifest">
-            <div className="hk-section-heading"><div><span className="hk-eyebrow">One thing at a time</span><h2>Room setup</h2></div>
-              <span className="hk-count-label">{progressUnavailable ? "Checks unavailable" : `${String(counts.checkedRows)} of ${String(counts.totalRows)} rows checked`}</span>
-            </div>
-            <p className="hk-section-intro">Work through the setup categories. Tap a row to record its check; use ◎ to find its position.</p>
-            {data.phases.length === 0 && <div className="hk-empty"><h3>No items placed yet</h3><p>The planner hasn't added furniture to this layout. Once they save a layout, the setup manifest will appear here automatically.</p></div>}
-            {data.phases.map((phase) => <PhaseBlock key={phase.phase} phase={phase} checks={checks}
-              onToggle={handleToggle} highlightedRowKey={highlightedRowKey} onHighlightRow={handleHighlightRow}
-              isCollapsed={collapsed.has(phase.phase)} onToggleCollapse={() => { toggleCollapse(phase.phase); }} disabled={progressUnavailable} />)}
-            {counts.allDone && <div className="hk-checklist-complete" role="status"><strong>✓ Every setup row is checked</strong><p>This records the setup checklist. It does not approve the layout or release the room for guests.</p></div>}
-          </section>
-
-          <aside className="hk-room-reference" aria-label="Layout and event details">
-            <section ref={diagramRef} className="hk-plan-card">
-              <div className="hk-section-heading"><div><span className="hk-eyebrow">Your room at a glance</span><h2>The layout</h2></div><span className="hk-plan-label">{data.space.name}</span></div>
-              <p className="hk-section-intro">Select a linked item on the plan to find its checklist row.</p>
-              <InteractiveFloorPlan floorPlan={data.floorPlan} room={data.space} phases={data.phases}
-                highlightedRowKey={highlightedRowKey} onMarkerClick={handleMarkerClick} />
-              {highlightedRowKey !== null && <button type="button" className="hk-text-button" onClick={() => { setHighlightedRowKey(null); }}>Clear highlight</button>}
-            </section>
-            <section className="hk-care-card" aria-label="People and practical details">
-              <div className="hk-section-heading"><div><span className="hk-eyebrow">The details that matter</span><h2>People & practicalities</h2></div></div>
-              {instructions !== null ? <InstructionsBanner instructions={instructions} timezone={data.venue.timezone} /> : <p className="hk-section-intro">No planner instructions or day-of contact supplied on this sheet.</p>}
-              {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility)} />}
-              {instructions !== null && instructions.dietary !== null && hasDietaryContent(instructions.dietary) && <DietarySummaryBlock dietary={instructions.dietary} />}
-              {doorSummary !== null && <DoorScheduleBlock summary={doorSummary} timezone={data.venue.timezone} />}
-            </section>
-          </aside>
-        </div>
-
-        <div className="hk-sheet-bottom">
-          <div><strong>Keep a copy to hand</strong><p>The PDF preserves the sheet's approval provenance.</p></div>
-          <div className="hk-actions">
-            <button type="button" className="hk-button hk-button-primary" onClick={handleDownload} disabled={downloadBusy}>
-              {downloadBusy ? <ActivityStatus>Preparing PDF…</ActivityStatus> : "Download PDF"}
-            </button>
-            <button type="button" className="hk-button" onClick={handlePrint}>Print</button>
-          </div>
-        </div>
+  return <main className="hk-page hk-focused-page" aria-label={`Hallkeeper sheet for ${data.config.name} at ${data.venue.name}`}>
+    <HallkeeperWorkspace key={data.config.id} data={data} checks={checks} onToggle={handleToggle}
+      highlightedRowKey={highlightedRowKey} onHighlight={setHighlightedRowKey} disabled={progressUnavailable}
+      downloadBusy={downloadBusy} onDownload={handleDownload} onPrint={handlePrint}
+      notices={<>
+        {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility).filter((callout) => callout.severity === "critical")} />}
+        {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
+        {configId !== undefined && (progressWrites.get(configId) ?? 0) > 0 && <ActivityStatus>Saving shared checks…</ActivityStatus>}
+        {configId !== undefined && syncingConfigs.has(configId) && <ActivityStatus>Syncing saved checks…</ActivityStatus>}
+        {progressUnavailable && <div className="hk-notice" role="alert">Shared checks could not be loaded. The layout is available; reload before changing checks. <button className="hk-text-button" onClick={loadData}>Reload checks</button></div>}
+        {progressNotice !== null && <div className="hk-notice" role="alert">{progressNotice}</div>}
         {downloadNotice !== null && <div className={`hk-notice hk-notice-${downloadNotice.kind}`} role={downloadNotice.kind === "error" ? "alert" : "status"}>{downloadNotice.message}</div>}
-        <footer className="hk-sheet-footer"><span>{data.space.name} · {formatDims(data.space)}</span><span>Generated by VenViewer · {new Date(data.generatedAt).toLocaleString("en-GB", { timeZone: data.venue.timezone })}</span></footer>
-      </div>
-      {counts.totalRows > 0 && <div className="hk-summary-sticky" aria-label="Setup checklist progress">
-        <span><strong>{progressUnavailable ? "—" : counts.checkedRows}</strong> / {counts.totalRows} rows checked</span>
-        <div className="hk-progress-track"><div style={{ width: `${String(progressUnavailable ? 0 : counts.checkedRows / counts.totalRows * 100)}%` }} /></div>
-        <a href="#hk-manifest">Back to checklist ↑</a>
-      </div>}
-    </main>
-  );
+      </>}
+      details={<>
+        {instructions !== null ? <InstructionsBanner instructions={instructions} timezone={data.venue.timezone} /> : <p>No planner instructions or day-of contact supplied on this sheet.</p>}
+        {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility)} />}
+        {instructions !== null && instructions.dietary !== null && hasDietaryContent(instructions.dietary) && <DietarySummaryBlock dietary={instructions.dietary} />}
+        {doorSummary !== null && <DoorScheduleBlock summary={doorSummary} timezone={data.venue.timezone} />}
+      </>} />
+    <div className="hk-print-only" aria-hidden="true">
+      <h1>{data.space.name}</h1><h2>{data.config.name}</h2><p>{data.venue.name} · {formatDims(data.space)} · {data.config.guestCount} guests · {formatLayoutStyle(data.config.layoutStyle)}</p>
+      <HallkeeperStatusBanner key={data.config.id} configId={data.config.id} />
+      {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
+      <p>{progressUnavailable ? "Shared checks unavailable" : `${String(counts.checkedRows)} of ${String(counts.totalRows)} setup rows checked`}</p>
+      <InteractiveFloorPlan floorPlan={data.floorPlan} room={data.space} phases={data.phases} highlightedRowKey={null} onMarkerClick={() => undefined} />
+      {data.phases.map((phase) => <PhaseBlock key={phase.phase} phase={phase} checks={checks} onToggle={handleToggle}
+        highlightedRowKey={null} onHighlightRow={() => undefined} isCollapsed={false} onToggleCollapse={() => undefined} disabled={progressUnavailable} />)}
+      {instructions !== null && <InstructionsBanner instructions={instructions} timezone={data.venue.timezone} />}
+      {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility)} />}
+      {instructions !== null && instructions.dietary !== null && hasDietaryContent(instructions.dietary) && <DietarySummaryBlock dietary={instructions.dietary} />}
+      {doorSummary !== null && <DoorScheduleBlock summary={doorSummary} timezone={data.venue.timezone} />}
+      <p>Generated {new Date(data.generatedAt).toLocaleString("en-GB", { timeZone: data.venue.timezone })} · {data.venue.timezone}</p>
+    </div>
+  </main>;
 }
 
 function SheetNavigation(): React.ReactElement {
@@ -650,12 +558,6 @@ function computeCounts(
 
 function formatDims(space: { widthM: number; lengthM: number; heightM: number }): string {
   return `${String(space.widthM)}m × ${String(space.lengthM)}m × ${String(space.heightM)}m`;
-}
-
-function formatLocalTime(iso: string, timezone: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: timezone });
 }
 
 function formatLayoutStyle(style: string): string {

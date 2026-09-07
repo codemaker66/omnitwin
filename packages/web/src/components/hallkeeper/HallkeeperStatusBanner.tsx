@@ -129,10 +129,11 @@ function describeStatus(
 
 interface HallkeeperStatusBannerProps {
   readonly configId: string;
+  readonly compact?: boolean;
 }
 
 export function HallkeeperStatusBanner(
-  { configId }: HallkeeperStatusBannerProps,
+  { configId, compact = false }: HallkeeperStatusBannerProps,
 ): React.ReactElement | null {
   const [status, setStatus] = useState<ConfigurationReviewStatus | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotEnvelope | null>(null);
@@ -173,18 +174,22 @@ export function HallkeeperStatusBanner(
       role={meta.critical ? "alert" : "status"}
       aria-live={meta.critical ? "assertive" : "polite"}
       style={{
-        margin: "0 0 12px",
-        padding: "10px 14px",
+        margin: compact ? 0 : "0 0 12px",
+        display: compact ? "flex" : "block",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: compact ? 8 : 0,
+        padding: compact ? "6px 10px" : "10px 14px",
         borderLeft: `4px solid ${meta.borderColor}`,
         background: meta.background,
         color: meta.color,
         borderRadius: "0 6px 6px 0",
         fontFamily: "inherit",
-        fontSize: 13,
+        fontSize: compact ? 10 : 13,
         lineHeight: 1.4,
       }}
     >
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", opacity: 0.85 }}>
+      <div style={{ fontSize: compact ? 9 : 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", opacity: 0.85 }}>
         {meta.label}
       </div>
       <div style={{ marginTop: 2 }}>{meta.detail}</div>
