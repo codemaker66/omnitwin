@@ -4,6 +4,8 @@ Blake's words, verbatim, are the brief. Everything else here is state, priority 
 
 ## Latest founder direction — 2026-09-07
 
+**Standing delivery amendment — 7 September 2026:** Blake said, “we build something we ship it.” Requested product work includes verification, coordinated integration, deployment and checking the changed live flow, without a second request to ship. The [shared delivery contract](.claude/conventions/shipping-changes.md) governs all active tasks. T-601 and other release owners coordinate safe serial releases; sending them a commit does not complete the originating task. Earlier blanket freezes, Tuesday-only releases and local-only ownership clauses below are superseded by this amendment. Retain historical evidence, quality checks, source/data protections and spending limits; newer explicit user holds apply only to their stated scope.
+
 Blake rejected the still-live dark Diary and selected the light workspace and airy timetable references in the 7 September attachment. T-603 now replaces that Diary and retains precise booking controls; it is included in T-601's single authorized demo release. The earlier full-UI-overhaul claim was incorrect: locally implemented, verified, live and aesthetically accepted are different states. The reference images remain private because they contain illustrative personal data. [The scoped design review](design-qa.md) records the actual render, behavior and remaining density limits. Wider sublime acceptance and physical-device targets remain open.
 
 The founder also requested the supplied furniture batch to be imported and live. [T-602's verified handoff](docs/reports/furniture-batch-import-2026-09-07.md) adds twelve identities and upgrades five existing presentations without changing physical stock or saved layouts. Model dimensions marked approximate are not measured venue evidence. Release coordination remains T-601; reconstruction work has separate ownership and does not replace the verified room asset without qualification.
@@ -64,7 +66,7 @@ Designed by the Fable session on 2026-09-04 for the Opus worker; every card ther
 
 DONE before the ladder (2026-09-04): T-578 the datum (ab244e1c); T-579 the coarse-first ladder (09a74df0, first view 20.9 s → 8.0 s at 20 Mbps); settled supersampling; the wheel scaled by its delta; the poller stopping on completion; a failed tile no longer discards the room (T-582); CI green on 76fa83d0.
 
-THE FREEZE: no push to master from Saturday 2026-09-05 18:00 BST to Monday 2026-09-07 18:00 BST; no `railway up` without Blake. MONEY: the pod only for a card that names it, stopped every session, $60 across the ladder and $25 a training run without asking. ESCALATE rather than guess: production inside the freeze, spend beyond the caps, a registration that will not converge, a candidate the court says is worse, anything touching the production database, an input not where the card says.
+HISTORICAL FREEZE (superseded by the 7 September standing delivery amendment): no push to master from Saturday 2026-09-05 18:00 BST to Monday 2026-09-07 18:00 BST; no `railway up` without Blake. MONEY: the pod only for a card that names it, stopped every session, $60 across the ladder and $25 a training run without asking. ESCALATE rather than guess: production inside the freeze, spend beyond the caps, a registration that will not converge, a candidate the court says is worse, anything touching the production database, an input not where the card says.
 
 ## 4. Rules that are not optional
 

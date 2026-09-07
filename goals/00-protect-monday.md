@@ -1,8 +1,32 @@
 # 00 · Protect Monday
 
+## Current execution — 7 September 2026
+
+Follow [GOAL.md](../GOAL.md) and the shared
+[build, ship and verify contract](../.claude/conventions/shipping-changes.md).
+Keep the demo usable, complete the applicable verification, coordinate one
+release at a time and verify each shipped change in production. The originating
+task owns delivery through that final check. Preserve source, data and spending
+boundaries and any newer explicit user hold.
+
+### Current /goal block
+
+Protect the working Trades Hall demo while completing and shipping requested
+improvements. Recheck the latest measured state, resolve relevant defects,
+verify the integrated candidate, coordinate release execution and inspect the
+changed live flow. Record deployment identity and any genuine unresolved gate.
+Do not stop at a local branch, wait for Tuesday, or require Blake to ask for
+deployment again.
+
+## Historical card — 4 September 2026
+
+The remainder records the earlier freeze and measurements. Its no-push,
+Tuesday-only and owner-approval instructions are superseded by the current
+execution block above; it is not the active goal prompt.
+
 **Execution amendment, 2026-09-04:** the later V0 revision in [GOAL.md](../GOAL.md) supersedes this card's earlier Saturday deployment plan. There is **no Saturday planner push**. T-581 implementation and verification may proceed on its isolated branch; production qualification and deployment remain separate later work. See [EXECUTION.md](EXECUTION.md) for current ownership and evidence. The earlier W0 history below is retained as history, not deployment authorisation.
 
-## The /goal block
+### Historical /goal block (superseded)
 
 Protect Monday 7 September's demo for Elaine. Complete and measure the T-581 planner coarse-first ladder on its isolated branch with exactly one renderer host; do not push the planner on Saturday. Run packages/web/scripts/demo-smoke.mjs against production Saturday, Sunday and Monday at 08:00 BST and notify Blake only on failure. Support Blake's signed-in rehearsal per docs/plan/12 §4, logging every break as a task row and following the latest GOAL.md V0 constraints. Observe the production freeze: no push to master from Saturday 18:00 until Monday 18:00, no railway up, no Diary or production-data change, no deployment of a rebuilt surface.
 

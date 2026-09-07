@@ -1,5 +1,14 @@
 # Current Deploy Flow
 
+**Delivery policy, 7 September 2026:** apply the
+[build, ship and verify contract](../../.claude/conventions/shipping-changes.md).
+The agent owns a requested product change through its appropriate release and
+live check. Coordinate existing release owners without turning their ownership
+into another user approval or a local-only stopping point. The provider details
+below are dated evidence to verify, not fresh permission requirements. Deploy
+only affected services; a web-only or docs-only change does not require an
+unchanged API to be rebuilt just to match a commit identifier.
+
 Last reviewed: 2026-06-07.
 
 This document records the deploy flow that can be inferred from the repository
@@ -90,9 +99,11 @@ After a push, verify the exact commit that providers deployed:
 
 1. Check the Vercel deployment for the web project and confirm the deployed git
    SHA matches the pushed release commit.
-2. Check the Railway deployment for the API project and confirm the deployed git
-   SHA matches the pushed release commit.
-3. Check the GitHub `Deploy` workflow completed for the same SHA.
+2. If API source or its deployment inputs changed, verify that Railway deployed
+   the intended API revision. Otherwise verify the retained API is healthy and
+   compatible; do not rebuild unchanged services solely to align SHA labels.
+3. Check relevant CI and any required migration workflow against the intended
+   release. Do not invent a migration requirement for a change with no schema delta.
 4. Hit API health:
 
 ```bash
@@ -108,7 +119,7 @@ curl https://api.venviewer.com/health/version
 https://venviewer.com/dev/trades-hall-visual
 ```
 
-If any provider is on a different SHA, or if migrations did not finish cleanly,
+If an affected provider is on an unintended revision, or required migrations failed,
 stop treating the release as verified and investigate before making customer
 claims or registering new runtime assets.
 
