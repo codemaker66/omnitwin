@@ -151,6 +151,34 @@ describe("DayBoardPage", () => {
     if (settlement === "reject") expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
+  it("shows one shared status while retrying a failed background refresh and keeps the board visible", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    let rejectRefresh: ((reason: Error) => void) | undefined;
+    let resolveRetry: ((value: CalendarResponse) => void) | undefined;
+    const refresh = new Promise<CalendarResponse>((_resolve, reject) => { rejectRefresh = reject; });
+    const retry = new Promise<CalendarResponse>((resolve) => { resolveRetry = resolve; });
+    getCalendarMock.mockReturnValueOnce(refresh).mockReturnValueOnce(retry);
+
+    act(() => { liveUpdate.current?.(); });
+    await screen.findByText("Refreshing the day’s bookings…");
+    await act(async () => { rejectRefresh?.(new Error("Offline")); await refresh.catch(() => undefined); });
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await waitFor(() => { expect(getCalendarMock).toHaveBeenCalledTimes(3); });
+
+    const sharedStatuses = screen.getAllByRole("status").filter((status) => status.querySelector("[data-activity-indicator]") !== null);
+    expect(sharedStatuses).toHaveLength(1);
+    expect(sharedStatuses[0]?.textContent).toBe("Refreshing the day’s bookings…");
+    expect(screen.queryByText("Loading the day’s bookings…")).toBeNull();
+    expect(screen.getByText("Chamber dinner")).toBeTruthy();
+
+    await act(async () => { resolveRetry?.(calendarFixture([liveBooking()])); await retry; });
+    expect(screen.queryByText("Refreshing the day’s bookings…")).toBeNull();
+    expect(screen.queryByText("Loading the day’s bookings…")).toBeNull();
+    expect(screen.getByText("Chamber dinner")).toBeTruthy();
+  });
+
   it("does not let a superseded refresh retire the current request's activity", async () => {
     getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
     renderBoard();

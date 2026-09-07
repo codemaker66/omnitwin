@@ -131,7 +131,7 @@ export function DayBoardPage(): ReactElement {
           <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/walkthrough">Workflow walkthrough</Link>
         </div>
         {venueId === null && <p className="dayboard-notice">No venue is linked to this account. Ask your venue administrator to connect your workspace.</p>}
-        {venueId !== null && status === "loading" && <ActivityStatus variant="panel">Loading the day’s bookings…</ActivityStatus>}
+        {venueId !== null && data === null && status === "loading" && <ActivityStatus variant="panel">Loading the day’s bookings…</ActivityStatus>}
         {venueId !== null && isRefreshing && <ActivityStatus>Refreshing the day’s bookings…</ActivityStatus>}
 
         {status === "error" ? (
