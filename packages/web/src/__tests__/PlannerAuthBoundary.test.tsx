@@ -51,7 +51,7 @@ describe("PlannerAuthBoundary", () => {
   it("keeps Clerk mounted while a hydrated session verifies workspace access", async () => {
     useAuthStore.setState({ isAuthenticated: true, isLoading: true });
     renderBoundary();
-    await waitFor(() => expect(screen.getByTestId("clerk-provider")).toBeTruthy());
+    await waitFor(() => { expect(screen.getByTestId("clerk-provider")).toBeTruthy(); });
     act(() => { useAuthStore.getState().beginAccessCheck("presenter@example.test"); });
     expect(screen.getByTestId("clerk-provider")).toBeTruthy();
     expect(useAuthStore.getState().isLoading).toBe(true);
