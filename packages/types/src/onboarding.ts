@@ -24,7 +24,7 @@ export const ORGANISATION_STATUSES = ["prospect", "onboarding", "active", "suspe
 export const WORKSPACE_STATUSES = ["onboarding", "active", "suspended", "archived"] as const;
 export const WORKSPACE_MEMBER_ROLES = ["owner", "admin", "staff", "hallkeeper", "planner", "client"] as const;
 export const STAFF_WORKSPACE_MEMBER_ROLES = ["admin", "staff", "hallkeeper", "planner", "client"] as const;
-export const VENUE_INVITATION_ROLES = ["staff", "hallkeeper", "planner", "client"] as const;
+export const VENUE_INVITATION_ROLES = ["admin", "staff", "hallkeeper", "planner", "client"] as const;
 export const WORKSPACE_MEMBERSHIP_STATUSES = ["invited", "active", "suspended", "removed"] as const;
 export const ONBOARDING_PROJECT_STATUSES = [
   "intake",
@@ -60,6 +60,8 @@ export const ONBOARDING_AUDIT_EVENT_TYPES = [
   "entitlement_recorded",
   "provider_verification_updated",
   "operator_review_updated",
+  "member_access_accepted",
+  "invitation_revoked",
 ] as const;
 
 export const OrganisationIdSchema = z.string().uuid();
@@ -179,7 +181,7 @@ export const WorkspaceOwnerInviteInputSchema = z.object({
   email: EmailSchema,
   name: z.string().trim().min(1).max(200).nullable().optional(),
   workspaceRole: z.literal("owner").default("owner"),
-  venueRole: VenueInvitationRoleSchema.default("staff"),
+  venueRole: VenueInvitationRoleSchema.default("admin"),
 }).strict();
 export type WorkspaceOwnerInviteInput = z.infer<typeof WorkspaceOwnerInviteInputSchema>;
 
@@ -205,12 +207,16 @@ export type WorkspaceEntitlementInput = z.infer<typeof WorkspaceEntitlementInput
 export const CreateManagedOnboardingSchema = z.object({
   organisationName: z.string().trim().min(1).max(200),
   workspaceName: z.string().trim().min(1).max(200).optional(),
-  venue: ManagedVenueOnboardingInputSchema,
+  venue: ManagedVenueOnboardingInputSchema.optional(),
+  existingVenueId: VenueIdSchema.optional(),
   ownerInvite: WorkspaceOwnerInviteInputSchema,
   staffInvites: z.array(WorkspaceStaffInviteInputSchema).max(25).default([]),
   entitlement: WorkspaceEntitlementInputSchema,
   operatorReviewNote: ReviewNoteSchema.nullable().optional(),
 }).strict().superRefine((input, ctx) => {
+  if ((input.venue === undefined) === (input.existingVenueId === undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["venue"], message: "Choose an existing venue or provide a new venue, but not both" });
+  }
   const seen = new Set<string>();
   const emails = [input.ownerInvite.email, ...input.staffInvites.map((invite) => invite.email)];
   for (const [index, email] of emails.entries()) {
@@ -375,6 +381,18 @@ export const OnboardingAuditEventSchema = z.object({
 }).strict();
 export type OnboardingAuditEvent = z.infer<typeof OnboardingAuditEventSchema>;
 
+export const OnboardingInvitationSchema = z.object({
+  id: UserInvitationIdSchema,
+  email: EmailSchema.nullable(),
+  venueId: VenueIdSchema.nullable(),
+  role: VenueInvitationRoleSchema,
+  status: z.enum(["pending", "accepted", "expired", "revoked"]),
+  expiresAt: IsoDateTimeSchema.nullable(),
+  acceptedAt: IsoDateTimeSchema.nullable(),
+  acceptedBy: UserIdSchema.nullable(),
+});
+export type OnboardingInvitation = z.infer<typeof OnboardingInvitationSchema>;
+
 export const OnboardingSummarySchema = z.object({
   organisations: z.array(OrganisationSchema),
   workspaces: z.array(WorkspaceSchema),
@@ -383,6 +401,7 @@ export const OnboardingSummarySchema = z.object({
   projects: z.array(OnboardingProjectSchema),
   entitlements: z.array(WorkspaceEntitlementSchema),
   auditEvents: z.array(OnboardingAuditEventSchema),
+  invitations: z.array(OnboardingInvitationSchema).default([]),
 }).strict();
 export type OnboardingSummary = z.infer<typeof OnboardingSummarySchema>;
 

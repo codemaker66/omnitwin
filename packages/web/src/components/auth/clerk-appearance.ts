@@ -77,3 +77,19 @@ export const VENVIEWER_CLERK_APPEARANCE = {
     },
   },
 } satisfies ClerkAppearance;
+
+/** Account pages use the current ivory and forest venue-workspace palette. */
+export const VENVIEWER_ACCOUNT_APPEARANCE = {
+  variables: {
+    colorPrimary: "#24493e", colorBackground: "#fbf8f0", colorForeground: "#24493e",
+    colorMutedForeground: "#526657", colorInputForeground: "#24493e", colorInput: "#fffdf8",
+    colorDanger: "#9b3a2b", borderRadius: "10px", fontFamily: "Inter, system-ui, sans-serif",
+  },
+  elements: {
+    card: { width: "100%", background: "#fbf8f0", boxShadow: "none" },
+    formFieldInput: { minHeight: "44px", color: "#24493e", background: "#fffdf8" },
+    formButtonPrimary: { minHeight: "44px", color: "#fffdf8", background: "#24493e" },
+    socialButtonsBlockButton: { display: isClerkGoogleSignInEnabled() ? "flex" : "none", minHeight: "44px" },
+    dividerRow: { display: isClerkGoogleSignInEnabled() ? "flex" : "none" },
+  },
+} satisfies ClerkAppearance;

@@ -54,6 +54,7 @@ describe("onboarding routes", () => {
       ["GET", "/onboarding/summary"],
       ["POST", "/onboarding/managed-workspaces"],
       ["POST", `/onboarding/workspaces/${WORKSPACE_ID}/invitations`],
+      ["DELETE", `/onboarding/workspaces/${WORKSPACE_ID}/invitations/${PROJECT_ID}`],
       ["PATCH", `/onboarding/projects/${PROJECT_ID}`],
       ["PATCH", `/onboarding/entitlements/${ENTITLEMENT_ID}/provider-verification`],
     ] as const) {
@@ -170,7 +171,6 @@ describe("onboarding route source guards", () => {
     expect(source).toContain("workspaceMemberships");
     expect(source).toContain("venueRole");
     expect(source).toContain("workspaceRole");
-    expect(source).not.toContain("venueRole: \"admin\"");
     expect(source).not.toContain("platformRole: \"admin\"");
   });
 
