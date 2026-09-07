@@ -878,7 +878,17 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
       }
       const requestedPhaseId = current.get("timelinePhaseId");
       requestedInitialPhaseIdRef.current = requestedPhaseId;
-      if (requestedPhaseId !== null) previewRequestedRef.current = true;
+      previewRequestedRef.current = requestedPhaseId !== null;
+      if (requestedPhaseId === null) {
+        // Store identity can update before the router commits a new URL.
+        // A phase-free destination ends any preview started from that earlier
+        // URL; timeline-generated URL updates are handled above as self-nav.
+        cancelAnimations();
+        setPlaying(false);
+        scrubTransitionRef.current = null;
+        useLayoutTimelinePreviewStore.getState().clear();
+        restorePrePreviewPhase();
+      }
       const rangeChanged = requestedScope !== scope || validDate !== anchorDate;
       if (requestedScope !== scope) setScope(requestedScope);
       if (validDate !== anchorDate) setAnchorDate(validDate);
@@ -915,11 +925,13 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
   }, [
     activeFrame,
     anchorDate,
+    cancelAnimations,
     frames,
     linkedEventAnchorMs,
     linkedEventAutoAnchorPending,
     scope,
     searchParamSignature,
+    restorePrePreviewPhase,
     setSearchParams,
     settleFrame,
     showUnavailableFrame,
