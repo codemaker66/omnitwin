@@ -119,14 +119,47 @@ describe("CockpitPlanningCamera", () => {
     expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
   });
 
-  it("hands back from interior before an explicit Flow entry lifts the camera", () => {
+  it.each(["design", "evidence"] as const)("preserves Interior and Capture when entering Flow from %s", (mode) => {
+    useCockpitStore.getState().setMode(mode);
+    useCockpitStore.getState().setLayerMode("splat");
     useCockpitStore.getState().setWalkMode(true);
     render(<CockpitPlanningCamera />);
-    expect(useCockpitStore.getState().walkMode).toBe(true);
+    const position = { ...r3fMock.cameraPosition };
+    const target = { ...r3fMock.controlsTarget };
     act(() => { useCockpitStore.getState().setMode("flow"); });
-    expect(useCockpitStore.getState().walkMode).toBe(false);
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(useCockpitStore.getState().walkMode).toBe(true);
+    expect(useCockpitStore.getState().layerMode).toBe("splat");
+    expect(r3fMock.cameraPosition).toEqual(position);
+    expect(r3fMock.controlsTarget).toEqual(target);
+    expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
+    expect(r3fMock.invalidate).not.toHaveBeenCalled();
+  });
+
+  it("stops an unfinished Flow lift immediately when another lens is selected", () => {
+    render(<CockpitPlanningCamera />);
+    act(() => { useCockpitStore.getState().setMode("flow"); });
     act(() => { r3fMock.frameCallbacks[0]?.(); });
     expect(r3fMock.cameraPosition.y).toBeGreaterThan(2);
+    const position = { ...r3fMock.cameraPosition };
+    const target = { ...r3fMock.controlsTarget };
+    r3fMock.controlsUpdate.mockClear();
+    r3fMock.invalidate.mockClear();
+    act(() => {
+      useCockpitStore.getState().setMode("evidence");
+      // A render frame may arrive before React commits the lens effect.
+      r3fMock.frameCallbacks[0]?.();
+    });
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(r3fMock.cameraPosition).toEqual(position);
+    expect(r3fMock.controlsTarget).toEqual(target);
+    expect(r3fMock.controlsUpdate).not.toHaveBeenCalled();
+    expect(r3fMock.invalidate).not.toHaveBeenCalled();
+
+    // Cancellation does not disable a later explicit Flow choice in orbit.
+    act(() => { useCockpitStore.getState().setMode("flow"); });
+    act(() => { r3fMock.frameCallbacks[0]?.(); });
+    expect(r3fMock.cameraPosition.y).toBeGreaterThan(position.y);
     expect(r3fMock.controlsUpdate).toHaveBeenCalledTimes(1);
   });
 
