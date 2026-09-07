@@ -60,7 +60,9 @@ export function RegisterPage(): React.ReactElement {
           </div>
         </ClerkFailed>
         <ClerkLoaded>
-          <SignUp appearance={VENVIEWER_CLERK_APPEARANCE} routing="hash" signInUrl={authRouteWithReturnTo("/login", returnTo ?? "/")} fallbackRedirectUrl={returnTo ?? "/"} />
+          <SignUp appearance={VENVIEWER_CLERK_APPEARANCE} routing="hash"
+            signInUrl={returnTo === null ? "/login" : authRouteWithReturnTo("/login", returnTo)}
+            fallbackRedirectUrl={returnTo ?? "/app"} />
         </ClerkLoaded>
       </section>
     </main>

@@ -42,17 +42,17 @@ export function WorkspaceAccessGate({ children }: { readonly children: ReactNode
               ? "Your venue access is pending. Ask your Venviewer contact to add this email address to the right venue, then check access below."
               : error}</p>
             {pending && <p>Already invited? Use the same email address as your invitation and complete its email verification.</p>}
-            <div className="workspace-access__actions">
-              <button type="button" onClick={retryAccess} disabled={signingOut}>Check my access</button>
-              <button type="button" className="workspace-access__secondary" disabled={signingOut}
-                aria-busy={signingOut} onClick={() => { void handleSignOut(); }}>
-                {signingOut && <ActivityIndicator size={18} />}
-                {signingOut ? "Signing out…" : "Use another account"}
-              </button>
-            </div>
-            {signOutError !== null && signOutError !== "" && <p role="alert">{signOutError}</p>}
           </>
         )}
+        <div className="workspace-access__actions">
+          {!checking && <button type="button" onClick={retryAccess} disabled={signingOut}>Check my access</button>}
+          <button type="button" className="workspace-access__secondary" disabled={signingOut}
+            aria-busy={signingOut} onClick={() => { void handleSignOut(); }}>
+            {signingOut && <ActivityIndicator size={18} />}
+            {signingOut ? "Signing out…" : "Use another account"}
+          </button>
+        </div>
+        {signOutError !== null && signOutError !== "" && <p role="alert">{signOutError}</p>}
       </section>
     </main>
   );
