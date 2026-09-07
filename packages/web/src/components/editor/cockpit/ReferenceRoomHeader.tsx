@@ -1,14 +1,18 @@
-import { type ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
-import { Check, Save } from "lucide-react";
+import { Building2, Check, Save } from "lucide-react";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { ActivityIndicator } from "../../shared/Activity.js";
 import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-preview-lock.js";
+import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identity.js";
 
 /** Room identity and the real save state, outside the camera's sightline. */
 export function ReferenceRoomHeader(): ReactElement {
+  const venueId = useEditorStore((state) => state.venueId);
+  const venue = usePlannerVenueIdentity(venueId);
+  const [failedLogo, setFailedLogo] = useState<string | null>(null);
   const spaceName = useEditorStore((state) => state.space?.name ?? "Venue planner");
   const saving = useEditorStore((state) => state.isSaving);
   const dirty = useEditorStore((state) => state.isDirty);
@@ -20,9 +24,14 @@ export function ReferenceRoomHeader(): ReactElement {
   const saveLabel = configId === null ? "No saved layout" : saving ? "Saving layout" : saveConflict !== null ? "Reload layout" : saveError !== null ? "Retry save" : dirty ? "Save layout" : "Layout saved";
   return (
     <header className="reference-room-header" aria-label="Room and save status">
-      <Link to={authenticated ? "/diary" : "/"} className="reference-wordmark" aria-label={authenticated ? "Venviewer diary" : "Venviewer home"}>
-        <img src="/images/brand/coat-of-arms-mark-64.webp" width="25" height="30" alt="" />
-        <span>VENVIEWER<small>{spaceName}</small></span>
+      <Link to={authenticated ? "/diary" : "/"} className="reference-wordmark" aria-busy={venue.loading} aria-label={`${venue.name} ${authenticated ? "diary" : "home"}`}>
+        {venue.logoUrl !== null && venue.logoUrl !== failedLogo
+          ? <img src={venue.logoUrl} width="32" height="40" alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
+          : <Building2 className="reference-venue-icon" size={28} aria-hidden="true" />}
+        <span className="reference-venue-copy">
+          <span className="reference-venue-name">{venue.loading && <ActivityIndicator size={12} />}{venue.name}</span>
+          <small>{spaceName}</small>
+        </span>
       </Link>
       <button type="button" className="reference-save" disabled={saving || previewLocked || configId === null}
         aria-label={saveLabel} title={previewLocked ? "Return to the saved plan before saving" : saveLabel}
