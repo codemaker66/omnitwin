@@ -52,7 +52,7 @@ import { computeBoundingBox, resolveRoomGeometry } from "../../data/room-geometr
 import { useChunkArrivals } from "../../hooks/use-chunk-arrivals.js";
 import { useRoomRuntimeSplat } from "../../hooks/use-room-runtime-splat.js";
 import { shouldRenderPlannerMotionOverlays } from "../../lib/planner-render-policy.js";
-import { inkTargetOpacity, roomResolvePhase } from "../../lib/room-resolve-model.js";
+import { captureAvailability, inkTargetOpacity, roomResolvePhase } from "../../lib/room-resolve-model.js";
 import { PlannerArrival } from "./PlannerArrival.js";
 import { CockpitSplatLayer } from "./CockpitSplatLayer.js";
 import { InkArchitectureLayer } from "./InkArchitectureLayer.js";
@@ -253,7 +253,7 @@ export function PlannerScene(): ReactElement {
   // Captured interior keeps the procedural shell out of the source image.
   // Explicit Mesh/Hybrid choices and unavailable captures retain the shell.
   const layerMode = useCockpitStore((s) => s.layerMode);
-  const { splatUrls, transform, hasAsset, status: splatStatus, roomSlug, source: captureSource } = useRoomRuntimeSplat();
+  const { splatUrls, environmentUrls, transform, hasAsset, status: splatStatus, roomSlug, source: captureSource } = useRoomRuntimeSplat();
 
   // Walk mode — stand in the captured room at eye level. Available only when
   // the mounted capture carries walk data (where the scanner stood and how far
@@ -369,7 +369,10 @@ export function PlannerScene(): ReactElement {
   const totalChunks = splatUrls.length;
   const loadedChunks = Math.min(arrivals.loadedCount, totalChunks);
   const failedChunks = Math.min(arrivals.failedCount, totalChunks - loadedChunks);
-  const captureFailed = totalChunks > 0 && failedChunks === totalChunks;
+  const availability = captureAvailability({
+    urls: splatUrls, environmentUrls, loadedUrls: arrivals.loadedUrls, failedUrls: arrivals.failedUrls,
+  });
+  const captureFailed = totalChunks > 0 && availability === "unavailable";
   const [enteredRooms, setEnteredRooms] = useState<ReadonlySet<string>>(() => new Set());
   const enterRoom = useCallback(() => {
     if (arrivalKey === null) return;
@@ -397,15 +400,15 @@ export function PlannerScene(): ReactElement {
     development: import.meta.env.DEV,
     roomSlug, captureSource, layerMode, splatActive, timelinePreviewActive,
   });
-  const resolvePhase = roomResolvePhase({ splatStatus, hasAsset: hasAsset && !captureFailed, totalChunks, loadedChunks, failedChunks });
+  const resolvePhase = roomResolvePhase({ splatStatus, hasAsset: hasAsset && !captureFailed, totalChunks, loadedChunks, failedChunks, captureAvailability: availability });
   useEffect(() => {
     if (captureFailed && walkMode) useCockpitStore.getState().setWalkMode(false);
   }, [captureFailed, walkMode]);
   useEffect(() => {
     useCockpitStore.getState().setRoomResolve({ phase: resolvePhase, loadedChunks, totalChunks });
   }, [loadedChunks, resolvePhase, totalChunks]);
-  // Ink recedes only where captured chunks actually arrived — it honestly
-  // persists over any region whose chunk failed.
+  // Aggregate progress controls global ink opacity; it cannot identify the
+  // physical regions missing from failed chunks. The caption reports failure.
   const inkOpacity = inkTargetOpacity({ splatActive, loadedChunks, totalChunks });
   useEffect(() => {
     const source = {
@@ -511,9 +514,9 @@ export function PlannerScene(): ReactElement {
           )}
           {hasAsset && (
             // Keep decoded meshes and their renderer host, but hide the whole
-            // capture immediately: a layer dissolve would leak today's room
-            // behind an immutable historical plan for several frames.
-            <group name="live-room-capture" visible={!timelinePreviewActive}>
+            // capture immediately when unavailable or previewing history:
+            // a dissolve must not leave a failed background over the fallback.
+            <group name="live-room-capture" visible={!timelinePreviewActive && !captureFailed}>
               <CockpitSplatLayer
                 urls={splatUrls}
                 transform={transform}

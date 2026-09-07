@@ -9,6 +9,8 @@ import { useCallback, useState } from "react";
 export interface ChunkArrivals {
   readonly loadedCount: number;
   readonly failedCount: number;
+  readonly loadedUrls: ReadonlySet<string>;
+  readonly failedUrls: ReadonlySet<string>;
   /** Identity-stable — safe to hand to Spark load callbacks. */
   readonly markLoaded: (url: string) => void;
   /** Identity-stable — a chunk whose decode failed permanently. */
@@ -46,16 +48,18 @@ export function useChunkArrivals(resetKey: string): ChunkArrivals {
 
   const markLoaded = useCallback((url: string) => {
     setState((previous) => {
-      if (previous.loaded.has(url)) return previous;
+      if (!previous.key.split("|").includes(url) || previous.loaded.has(url)) return previous;
       const loaded = new Set(previous.loaded);
       loaded.add(url);
-      return { key: previous.key, loaded, failed: previous.failed };
+      const failed = new Set(previous.failed);
+      failed.delete(url);
+      return { key: previous.key, loaded, failed };
     });
   }, []);
 
   const markFailed = useCallback((url: string) => {
     setState((previous) => {
-      if (previous.failed.has(url) || previous.loaded.has(url)) return previous;
+      if (!previous.key.split("|").includes(url) || previous.failed.has(url) || previous.loaded.has(url)) return previous;
       const failed = new Set(previous.failed);
       failed.add(url);
       return { key: previous.key, loaded: previous.loaded, failed };
@@ -63,9 +67,13 @@ export function useChunkArrivals(resetKey: string): ChunkArrivals {
   }, []);
 
   const isCurrent = state.key === resetKey;
+  const loadedUrls = isCurrent ? state.loaded : retained(state.loaded, resetKey);
+  const failedUrls = isCurrent ? state.failed : retained(state.failed, resetKey);
   return {
-    loadedCount: isCurrent ? state.loaded.size : retained(state.loaded, resetKey).size,
-    failedCount: isCurrent ? state.failed.size : retained(state.failed, resetKey).size,
+    loadedCount: loadedUrls.size,
+    failedCount: failedUrls.size,
+    loadedUrls,
+    failedUrls,
     markLoaded,
     markFailed,
   };

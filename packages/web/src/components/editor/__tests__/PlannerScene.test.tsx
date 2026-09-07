@@ -38,7 +38,13 @@ vi.mock("../CockpitSplatLayer.js", () => ({ CockpitSplatLayer: () => null }));
 
 const splatHookMock = vi.hoisted(() => ({ useRoomRuntimeSplat: vi.fn() }));
 vi.mock("../../../hooks/use-room-runtime-splat.js", () => splatHookMock);
-const arrivals = vi.hoisted(() => ({ loadedCount: 0, failedCount: 0, markLoaded: vi.fn(), markFailed: vi.fn() }));
+const arrivals = vi.hoisted(() => ({
+  urls: [] as readonly string[], loadedCount: 0, failedCount: 0,
+  loadedOverride: null as ReadonlySet<string> | null, failedOverride: null as ReadonlySet<string> | null,
+  get loadedUrls(): ReadonlySet<string> { return this.loadedOverride ?? new Set(this.urls.slice(0, this.loadedCount)); },
+  get failedUrls(): ReadonlySet<string> { return this.failedOverride ?? new Set(this.urls.slice(this.loadedCount, this.loadedCount + this.failedCount)); },
+  markLoaded: vi.fn(), markFailed: vi.fn(),
+}));
 vi.mock("../../../hooks/use-chunk-arrivals.js", () => ({ useChunkArrivals: () => arrivals }));
 
 const IDENTITY_TRANSFORM = {
@@ -50,13 +56,16 @@ const IDENTITY_TRANSFORM = {
 
 function mockSplat(overrides: {
   splatUrls?: readonly string[];
+  environmentUrls?: readonly string[];
   hasAsset?: boolean;
   status?: "none" | "loading" | "loaded";
   roomSlug?: string;
   source?: "staged" | "package" | "none";
 } = {}): void {
+  arrivals.urls = overrides.splatUrls ?? [];
   splatHookMock.useRoomRuntimeSplat.mockReturnValue({
     splatUrls: overrides.splatUrls ?? [],
+    environmentUrls: overrides.environmentUrls ?? [],
     transform: IDENTITY_TRANSFORM,
     hasAsset: overrides.hasAsset ?? false,
     status: overrides.status ?? "none",
@@ -101,6 +110,8 @@ beforeEach(() => {
   useLayoutTimelinePreviewStore.getState().clear();
   arrivals.loadedCount = 0;
   arrivals.failedCount = 0;
+  arrivals.loadedOverride = null;
+  arrivals.failedOverride = null;
   mockSplat();
 });
 
@@ -171,6 +182,39 @@ describe("PlannerScene", () => {
     rerender(<PlannerScene />);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(sceneComponent("RoomMesh")).toBeDefined();
+  });
+
+  it.each([false, true])("falls back when every room tile fails even with an environment loaded=%s", (loaded) => {
+    chooseGrandHall();
+    const roomUrls = Array.from({ length: 11 }, (_, i) => `/room-${String(i)}.sog`);
+    mockSplat({ roomSlug: "grand-hall", status: "loaded", hasAsset: true,
+      splatUrls: [...roomUrls, "/environment.sog"], environmentUrls: ["/environment.sog"] });
+    const { rerender } = render(<PlannerScene />);
+    arrivals.loadedCount = loaded ? 1 : 0;
+    arrivals.loadedOverride = new Set(loaded ? ["/environment.sog"] : []);
+    arrivals.failedCount = 11;
+    arrivals.failedOverride = new Set(roomUrls);
+    rerender(<PlannerScene />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(sceneComponent("RoomMesh")).toBeDefined();
+    expect(namedSceneNode("live-room-capture")?.props.visible).toBe(false);
+    expect(useCockpitStore.getState().walkMode).toBe(false);
+    expect(useCockpitStore.getState().roomResolve.phase).toBe("unavailable");
+    expect(useCockpitStore.getState().sceneSource?.captureSource).toBe("none");
+  });
+
+  it("retains partial room content with a settled degraded status", () => {
+    chooseGrandHall();
+    mockSplat({ roomSlug: "grand-hall", status: "loaded", hasAsset: true,
+      splatUrls: ["/a.sog", "/b.sog", "/environment.sog"], environmentUrls: ["/environment.sog"] });
+    arrivals.loadedCount = 2;
+    arrivals.loadedOverride = new Set(["/a.sog", "/environment.sog"]);
+    arrivals.failedCount = 1;
+    arrivals.failedOverride = new Set(["/b.sog"]);
+    render(<PlannerScene />);
+    expect(namedSceneNode("live-room-capture")?.props.visible).toBe(true);
+    expect(useCockpitStore.getState().roomResolve.phase).toBe("degraded");
+    expect(useCockpitStore.getState().walkMode).toBe(true);
   });
 
   it("cannot let a late callback from an older plan admit the new plan", () => {
@@ -455,7 +499,7 @@ describe("PlannerScene interior arrival", () => {
     arrivals.failedCount = 1;
     rerender(<PlannerScene />);
     expect(useCockpitStore.getState().walkMode).toBe(false);
-    expect(useCockpitStore.getState().roomResolve.phase).toBe("fallback");
+    expect(useCockpitStore.getState().roomResolve.phase).toBe("unavailable");
   });
 
   it("hands interior ownership back before a regular bookmark starts", () => {

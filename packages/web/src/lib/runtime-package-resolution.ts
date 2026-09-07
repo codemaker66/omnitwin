@@ -5,7 +5,7 @@ import {
   type TradesHallRuntimeRoomSlug,
 } from "@omnitwin/types";
 import { parseRuntimeSplatUrl } from "./runtime-visual-asset.js";
-import { deriveRoomCamera, roomSplatBundle, roomSplatTileUrls } from "../data/room-splat-bundles.js";
+import { deriveRoomCamera, roomSplatBundle, roomSplatTileSources } from "../data/room-splat-bundles.js";
 
 // ---------------------------------------------------------------------------
 // Runtime asset decision for /dev/trades-hall-visual.
@@ -49,6 +49,9 @@ export interface RuntimeRoomTarget {
 export interface RuntimeAssetDecision {
   readonly splatUrl: string | null;
   readonly splatUrls: readonly string[];
+  /** Served sources explicitly marked as environment by the staged manifest.
+   * Registered packages currently carry no such role metadata. */
+  readonly environmentUrls: readonly string[];
   readonly source: RuntimeAssetSource;
   readonly evidenceStatus: AssetEvidenceStatus | null;
   readonly evidenceLabel: string;
@@ -326,6 +329,7 @@ export function decideRuntimeAsset(
         return {
           splatUrl: null,
           splatUrls: [],
+          environmentUrls: [],
           source: "none",
           evidenceStatus: null,
           evidenceLabel: "No real asset loaded yet",
@@ -335,6 +339,7 @@ export function decideRuntimeAsset(
       return {
         splatUrl: packageUrl,
         splatUrls: packageUrls,
+        environmentUrls: [],
         source: "package",
         evidenceStatus: published.evidenceStatus,
         evidenceLabel: evidenceStatusLabel(published.evidenceStatus),
@@ -344,14 +349,16 @@ export function decideRuntimeAsset(
   }
 
   const room = options.room ?? null;
-  const stagedUrls = room === null || options.allowStagedCapture !== true
+  const stagedSources = room === null || options.allowStagedCapture !== true
     ? []
-    : roomSplatTileUrls(room, import.meta.env.VITE_SPLAT_BASE_URL);
+    : roomSplatTileSources(room, import.meta.env.VITE_SPLAT_BASE_URL, false);
+  const stagedUrls = stagedSources.map((source) => source.url);
   if (stagedUrls.length > 0) {
     const firstUrl = stagedUrls[0] ?? null;
     return {
       splatUrl: firstUrl,
       splatUrls: stagedUrls,
+      environmentUrls: stagedSources.filter((source) => source.isEnvironment).map((source) => source.url),
       source: "staged",
       evidenceStatus: null,
       evidenceLabel: STAGED_CAPTURE_STATUS,
@@ -362,6 +369,7 @@ export function decideRuntimeAsset(
   return {
     splatUrl: null,
     splatUrls: [],
+    environmentUrls: [],
     source: "none",
     evidenceStatus: null,
     evidenceLabel: "No real asset loaded yet",
