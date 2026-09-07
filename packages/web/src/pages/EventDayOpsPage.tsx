@@ -14,6 +14,7 @@ import {
 import { EventMissionControl } from "../components/mission-control/EventMissionControl.js";
 import "./EventDayOpsPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
+import { HallkeeperEventLinks } from "../components/hallkeeper/HallkeeperEventLinks.js";
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -342,6 +343,8 @@ export function EventDayOpsPage(): ReactElement {
           </button>
         </div>
       </header>
+
+      <HallkeeperEventLinks board={readyBoard} />
 
       {notice !== null && <p className="event-day-notice">{notice}</p>}
 

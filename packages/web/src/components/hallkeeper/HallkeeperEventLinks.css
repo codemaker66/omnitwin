@@ -1,0 +1,7 @@
+.hallkeeper-event-links { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; padding: 20px; margin: 0 0 22px; border: 1px solid #d6dccd; border-radius: 12px; background: #f4f6ed; color: #314633; }
+.hallkeeper-event-links h2 { margin: 0 0 6px; font: 400 22px/1.2 Georgia, serif; }
+.hallkeeper-event-links p { margin: 0; max-width: 660px; font-size: 12px; line-height: 1.6; color: #54624e; }
+.hallkeeper-event-links nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hallkeeper-event-links a { display: inline-flex; align-items: center; padding: 10px 14px; min-height: 44px; border: 1px solid #ccd4c4; border-radius: 8px; background: #fffdf7; color: #314633; font-size: 13px; text-decoration: none; }
+.hallkeeper-event-links a:hover { background: #e4eadb; }
+@media print { .hallkeeper-event-links nav { display: none; } }

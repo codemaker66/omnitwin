@@ -77,11 +77,11 @@ describe("DashboardLayout navigation", () => {
     expect(await screen.findByText("Trades Hall")).toBeDefined();
     expect(screen.getByRole("link", { name: "Plan" }).getAttribute("href")).toBe("/plan");
     expect(screen.getByRole("link", { name: "Diary" }).getAttribute("href")).toBe("/diary");
+    expect(screen.getByRole("link", { name: "Hallkeeper" }).getAttribute("href")).toBe("/hallkeeper");
     expect(screen.getByRole("button", { name: "Inventory" }).getAttribute("aria-current")).toBe("page");
     expect(screen.queryByRole("button", { name: "Enquiries" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Messages" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getByRole("link", { name: "Day Board" }).getAttribute("href")).toBe("/hallkeeper/today");
     expect(screen.getByRole("button", { name: "No unread notifications" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Venue Settings" }));
     expect(onViewChange).toHaveBeenCalledWith("settings");

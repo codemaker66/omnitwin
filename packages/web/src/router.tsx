@@ -70,6 +70,9 @@ const HallkeeperPage = lazy(() =>
 const DayBoardPage = lazy(() =>
   import("./pages/hallkeeper/DayBoardPage.js").then((m) => ({ default: m.DayBoardPage })),
 );
+const HallkeeperWalkthroughPage = lazy(() =>
+  cockpitImport(() => import("./pages/hallkeeper/HallkeeperWalkthroughPage.js").then((m) => ({ default: m.HallkeeperWalkthroughPage }))),
+);
 const PrivacyPage = lazy(() =>
   cockpitImport(() => import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "privacy" }) }))),
 );
@@ -344,13 +347,25 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: "/hallkeeper",
+    element: <Navigate to="/hallkeeper/today" replace />,
+  },
+  {
+    path: "/hallkeeper/walkthrough",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+        <HallkeeperWalkthroughPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
     // Hallkeeper sheets expose PII (enquiry contact details, event info) and
     // the API enforces auth on both /data and /sheet endpoints. The frontend
     // route guard matches that policy — unauthenticated users redirect to
     // /login rather than hitting the page and getting a 401 from the fetch.
     path: "/hallkeeper/:configId",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner"]}>
+      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
         <HallkeeperPage />
       </ProtectedRoute>,
     ),

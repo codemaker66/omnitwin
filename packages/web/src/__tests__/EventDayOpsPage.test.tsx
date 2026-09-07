@@ -298,6 +298,18 @@ describe("EventDayOpsPage", () => {
     expect(screen.getByText("Task checklist")).toBeTruthy();
     expect(screen.getByText("Issue report")).toBeTruthy();
     expect(screen.getByText("Supplier arrivals")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open current setup sheet" }).getAttribute("href"))
+      .toBe("/hallkeeper/00000000-0000-4000-8000-000000003007");
+    expect(screen.getByRole("link", { name: "Open version 1 handoff" }).getAttribute("href"))
+      .toBe(`/ops/handoff/${PACK_ID}`);
+  });
+
+  it("does not invent a setup-sheet link when the event has no linked handoff", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), handoffPack: null, sourceStatus: "missing_handoff" });
+    renderPage();
+    await screen.findByText("Your working documents");
+    expect(screen.queryByRole("link", { name: "Open current setup sheet" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Day Board" }).getAttribute("href")).toBe("/hallkeeper/today");
   });
 
   it("acknowledges required planner or client changes", async () => {
