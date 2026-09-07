@@ -353,3 +353,109 @@ describe("CameraRig Showcase owner handoff", () => {
     expect(useCockpitStore.getState().walkMode).toBe(false);
   });
 });
+
+
+describe("CameraRig capture failure recovery", () => {
+  function portrait(): void {
+    harness.size = { width: 390, height: 844 };
+    if (harness.camera === null) throw new Error("Missing camera");
+    harness.camera.aspect = 390 / 844;
+    harness.camera.updateProjectionMatrix();
+  }
+  function assertRoomFramed(): void {
+    const camera = harness.camera;
+    if (camera === null) throw new Error("Missing camera");
+    camera.updateMatrixWorld(true);
+    for (const x of [-dimensions.width / 2, dimensions.width / 2]) {
+      for (const y of [0, dimensions.height]) for (const z of [-dimensions.length / 2, dimensions.length / 2]) {
+        const point = new Vector3(x, y, z).project(camera);
+        expect(Math.abs(point.x)).toBeLessThan(0.81);
+        expect(Math.abs(point.y)).toBeLessThan(0.81);
+      }
+    }
+  }
+  it("frames portrait after the later Walk restore and keeps real controls from clamping it back", () => {
+    portrait();
+    const view = render(<CameraRig dimensions={dimensions} />);
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    harness.camera?.position.fromArray(GRAND_HALL_ARRIVAL.position);
+    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    expect(harness.camera?.position.y).toBe(1.6);
+    // PlannerScene yields Walk in a later parent effect, after the child saw failure.
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    tick();
+    assertRoomFramed();
+    expect(harness.camera?.position.y).toBeGreaterThan(dimensions.height);
+    expect(harness.controls?.enabled).toBe(true);
+  });
+  it("recovers in orbit once, then preserves the user's camera and target across rerenders", () => {
+    portrait();
+    const view = render(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    tick();
+    assertRoomFramed();
+    const camera = harness.camera, controls = harness.controls;
+    if (camera === null || controls === null) throw new Error("Missing controls");
+    camera.position.x += 1;
+    controls.target.x += 1;
+    controls.update();
+    const position = camera.position.clone(), target = controls.target.clone();
+    view.rerender(<CameraRig dimensions={{ ...dimensions }} captureUnavailableKey="hall:failed" />);
+    tick();
+    expect(camera.position.distanceTo(position)).toBeLessThan(1e-8);
+    expect(controls.target.distanceTo(target)).toBeLessThan(1e-8);
+  });
+  it("preserves ordinary Walk restoration without a capture failure", () => {
+    render(<CameraRig dimensions={dimensions} />);
+    const camera = harness.camera, controls = harness.controls;
+    if (camera === null || controls === null) throw new Error("Missing controls");
+    const position = camera.position.clone(), target = controls.target.clone();
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    camera.position.fromArray(GRAND_HALL_ARRIVAL.position);
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    expect(camera.position.distanceTo(position)).toBeLessThan(1e-8);
+    expect(controls.target.distanceTo(target)).toBeLessThan(1e-8);
+  });
+  it("leaves an explicit Model choice alone", () => {
+    portrait();
+    useCockpitStore.setState({ layerMode: "mesh" });
+    const view = render(<CameraRig dimensions={dimensions} />);
+    const position = harness.camera?.position.clone();
+    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    expect(harness.camera?.position.equals(position ?? new Vector3())).toBe(true);
+    act(() => { useCockpitStore.setState({ layerMode: "splat" }); });
+    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    expect(harness.camera?.position.equals(position ?? new Vector3())).toBe(true);
+  });
+  it.each(["tour", "pending", "reference", "transition", "flow"])("does not steal or queue recovery behind %s ownership", (owner) => {
+    const view = render(<CameraRig dimensions={dimensions} />);
+    if (owner === "flow") useCockpitStore.setState({ activeMode: "flow" });
+    else if (owner === "tour") startCapturedTour();
+    else if (owner === "pending") useBookmarkStore.setState({ pendingNavigationId: "saved-view" });
+    else if (owner === "reference") useBookmarkStore.setState({ activeReferenceId: "saved-view" });
+    else {
+      const position = harness.camera?.position.toArray() ?? [0, 1, 4];
+      useBookmarkStore.setState({ transition: { fromPosition: position, toPosition: [0, 3, 5],
+        fromTarget: [0, 0, 0], toTarget: [0, 0, 0], elapsed: 0, duration: 1 } });
+    }
+    const position = harness.camera?.position.clone();
+    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    expect(harness.camera?.position.equals(position ?? new Vector3())).toBe(true);
+    useBookmarkStore.setState({ tour: null, pendingNavigationId: null, activeReferenceId: null, transition: null });
+    useCockpitStore.setState({ activeMode: "design" });
+    view.rerender(<CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" />);
+    expect(harness.camera?.position.equals(position ?? new Vector3())).toBe(true);
+  });
+  it("defers recovery through a frozen preview and applies after its restored Walk handoff", () => {
+    portrait();
+    const view = render(<><CameraRig dimensions={dimensions} /><FrozenLayoutPreviewCamera active={false} room={null} /></>);
+    act(() => { useCockpitStore.getState().setWalkMode(true); });
+    view.rerender(<><CameraRig dimensions={dimensions} suspended /><FrozenLayoutPreviewCamera active room={frozenRoom} /></>);
+    const frozen = harness.camera?.position.clone();
+    view.rerender(<><CameraRig dimensions={dimensions} suspended captureUnavailableKey="hall:failed" /><FrozenLayoutPreviewCamera active room={frozenRoom} /></>);
+    act(() => { useCockpitStore.getState().setWalkMode(false); });
+    expect(harness.camera?.position.equals(frozen ?? new Vector3())).toBe(true);
+    view.rerender(<><CameraRig dimensions={dimensions} captureUnavailableKey="hall:failed" /><FrozenLayoutPreviewCamera active={false} room={null} /></>);
+    tick();
+    assertRoomFramed();
+  });
+});

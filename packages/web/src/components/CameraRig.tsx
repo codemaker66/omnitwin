@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useCallback, useState } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import { Euler, Vector3 } from "three";
+import { Euler, PerspectiveCamera, Vector3 } from "three";
+import { captureFallbackCameraGoal } from "../lib/capture-fallback-camera.js";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { SpaceDimensions } from "@omnitwin/types";
 import { useBookmarkStore } from "../stores/bookmark-store.js";
@@ -108,6 +109,8 @@ export interface CameraRigProps {
   readonly smoothControls?: boolean;
   /** A frozen timeline camera owns the canvas without changing the live rig. */
   readonly suspended?: boolean;
+  /** Non-null only for terminal room-content failure, scoped to plan/source. */
+  readonly captureUnavailableKey?: string | null;
 }
 
 interface PlannerCameraPose {
@@ -139,11 +142,15 @@ interface HumanPovDragState {
  * Pan speed scales with zoom distance (closer = slower, further = faster).
  * Camera target is clamped to room bounds with a small margin.
  */
-export function CameraRig({ dimensions, smoothControls = true, suspended = false }: CameraRigProps): React.ReactElement {
+export function CameraRig({ dimensions, smoothControls = true, suspended = false, captureUnavailableKey = null }: CameraRigProps): React.ReactElement {
   const { camera, gl, invalidate, size } = useThree();
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
   const previouslySuspended = useRef(suspended);
+  const pendingCaptureRecovery = useRef<string | null>(null);
+  const recoverCapture = useRef<() => void>(() => {});
+  const [recoveryLimit, setRecoveryLimit] = useState<{ readonly key: string; readonly distance: number } | null>(null);
+  const recoveryActive = captureUnavailableKey !== null && recoveryLimit?.key === captureUnavailableKey;
   const controlsRef = useRef<OrbitControlsImpl>(null);
   const tourNeedsFirstFrame = useRef(true);
   const humanPovActiveRef = useRef(false);
@@ -169,26 +176,27 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     height: dimensions.height,
   }), [dimensions.height, dimensions.length, dimensions.width]);
 
-  const limits = computeDistanceLimits(stableDimensions);
+  const ordinaryLimits = computeDistanceLimits(stableDimensions);
+  const limits = { ...ordinaryLimits, maxDistance: recoveryActive
+    ? Math.max(ordinaryLimits.maxDistance, recoveryLimit.distance) : ordinaryLimits.maxDistance };
   const bounds = computePanBounds(stableDimensions);
 
-  // Aspect-aware camera pose: portrait phones (aspect < 1.2) get a 3/4
-  // elevated "dollhouse" hero shot outside the room; landscape/desktop
-  // keep the existing interior eye-level pose. useThree().size re-renders
-  // on resize, so this effect re-fires when the user rotates their phone.
+  // Ordinary poses remain aspect-aware: portrait uses the captured interior
+  // angle; landscape uses the elevated planning composition. Terminal capture
+  // failure has a separate one-shot overview and must not reset on resize.
   const aspect = size.width / Math.max(size.height, 1);
   const target = useMemo(
     () => computeCameraTarget(stableDimensions, aspect),
     [stableDimensions, aspect],
   );
   useEffect(() => {
-    if (suspendedRef.current || previouslySuspended.current) return;
+    if (suspendedRef.current || previouslySuspended.current || captureUnavailableKey !== null) return;
     if (humanPovActiveRef.current || walkActiveRef.current || useBookmarkStore.getState().tour !== null) return;
     const [x, y, z] = computeDefaultCameraPosition(stableDimensions, aspect);
     camera.position.set(x, y, z);
     camera.lookAt(target[0], target[1], target[2]);
     invalidate();
-  }, [camera, stableDimensions, target, aspect, invalidate]);
+  }, [camera, stableDimensions, target, aspect, invalidate, captureUnavailableKey]);
   useEffect(() => { previouslySuspended.current = suspended; }, [suspended]);
 
   // Keyboard input — single keydown handler tracks state AND wakes demand-mode frame loop.
@@ -304,6 +312,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       }
     }
     walkRestorePoseRef.current = null;
+    recoverCapture.current();
     invalidate();
   }, [camera, invalidate, leaveHumanPovMode]);
 
@@ -312,6 +321,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
     const unsubscribe = useCockpitStore.subscribe((state) => { applyWalkMode(state.walkMode); });
     return () => {
       unsubscribe();
+      pendingCaptureRecovery.current = null;
       // Unmounting mid-walk must not leave the store claiming a mode that no
       // longer has a camera behind it.
       applyWalkMode(false);
@@ -461,6 +471,50 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
 
   // Custom inertial zoom — scroll ticks add velocity, friction decays it
   const zoomVelocity = useRef(0);
+
+  // The subscription restoring Walk runs synchronously when PlannerScene's
+  // later effect yields the camera. Keep this callback current without changing
+  // applyWalkMode's identity (which would tear down its saved-pose ownership).
+  recoverCapture.current = () => {
+    const key = pendingCaptureRecovery.current;
+    if (key === null || key !== captureUnavailableKey || suspendedRef.current) return;
+    const bookmarks = useBookmarkStore.getState();
+    if (humanPovActiveRef.current || bookmarks.activeReferenceId !== null
+      || bookmarks.tour !== null || bookmarks.transition !== null || bookmarks.pendingNavigationId !== null
+      || useCockpitStore.getState().layerMode === "mesh" || useCockpitStore.getState().activeMode === "flow") {
+      pendingCaptureRecovery.current = null;
+      return;
+    }
+    if (walkActiveRef.current || useCockpitStore.getState().walkMode) return;
+    const controls = controlsRef.current;
+    if (controls === null || !(camera instanceof PerspectiveCamera)) return;
+    pendingCaptureRecovery.current = null;
+    const goal = captureFallbackCameraGoal(stableDimensions, camera.position.toArray(),
+      controls.target.toArray(), aspect, camera.getEffectiveFOV());
+    const maxDistance = Math.max(ordinaryLimits.maxDistance, goal.distance * 1.05);
+    keyboardKeys.clear();
+    zoomVelocity.current = 0;
+    dampingFrames.current = 0;
+    // Drain old OrbitControls damping before applying the new pose.
+    const damping = controls.enableDamping;
+    controls.enableDamping = false;
+    controls.update();
+    controls.maxDistance = maxDistance;
+    controls.target.fromArray(goal.target);
+    camera.position.fromArray(goal.position);
+    camera.far = Math.max(camera.far, goal.distance + Math.hypot(stableDimensions.width, stableDimensions.length, stableDimensions.height));
+    camera.updateProjectionMatrix();
+    controls.update();
+    controls.enableDamping = damping;
+    setRecoveryLimit({ key, distance: maxDistance });
+    invalidate();
+  };
+  useLayoutEffect(() => {
+    pendingCaptureRecovery.current = captureUnavailableKey;
+  }, [captureUnavailableKey]);
+  // Also covers failure in orbit and failure received during a frozen preview;
+  // preview restores its camera in layout effects before this handoff runs.
+  useEffect(() => { recoverCapture.current(); }, [captureUnavailableKey, suspended]);
 
   useLayoutEffect(() => {
     if (!suspended) return;
@@ -787,7 +841,7 @@ export function CameraRig({ dimensions, smoothControls = true, suspended = false
       maxPolarAngle={MAX_POLAR_ANGLE}
       minDistance={limits.minDistance}
       maxDistance={limits.maxDistance}
-      target={suspended ? undefined : [target[0], target[1], target[2]]}
+      target={suspended || recoveryActive ? undefined : [target[0], target[1], target[2]]}
       enableRotate
       enablePan
       mouseButtons={{

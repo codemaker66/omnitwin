@@ -543,7 +543,8 @@ export function PlannerScene(): ReactElement {
           <group name="planner-furniture-frame" position={timelinePreviewActive && frozenRoom !== null ? [...frozenRoom.furnitureOffset] : [0, 0, 0]}>
             <PlacedFurniture />
           </group>
-          <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive} />
+          <CameraRig dimensions={dimensions} smoothControls={smoothCameraControls} suspended={timelinePreviewActive}
+            captureUnavailableKey={captureFailed ? `${arrivalKey ?? "unassigned"}:${splatUrls.join("|")}` : null} />
           {walkMode && walkData !== null && !walkCameraDisabled && !captureFailed && (
             <InteriorCamera
               key={roomSlug ?? "walk"}
