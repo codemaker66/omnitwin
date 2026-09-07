@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { Matrix4, Vector3 } from "three";
 import { planTheatreLayout } from "../theatre-layout.js";
 
 describe("planTheatreLayout", () => {
@@ -10,7 +11,7 @@ describe("planTheatreLayout", () => {
     expect(plan.seatsPerRow).toBe(14);
     expect(plan.rows).toBe(11); // ceil(150 / 14)
     expect(plan.seatCount).toBe(154);
-    expect(plan.seats.every((s) => s.rotationY === -Math.PI / 2)).toBe(true);
+    expect(plan.seats.every((s) => s.rotationY === Math.PI / 2)).toBe(true);
     // Front row sits nearest the −X stage end.
     expect(Math.min(...plan.seats.map((s) => s.xM))).toBeCloseTo(-8.1, 5);
   });
@@ -19,6 +20,16 @@ describe("planTheatreLayout", () => {
     const plan = planTheatreLayout(10, 21, { targetGuests: 150 });
     expect(plan.alongLength).toBe(true);
     expect(plan.seats.every((s) => s.rotationY === 0)).toBe(true);
+  });
+
+  it.each([[21, 10], [10, 21]])("points rendered chair fronts toward the stage in a %s by %s room", (width, length) => {
+    const plan = planTheatreLayout(width, length, { targetGuests: 150 });
+    expect(plan.seats.length).toBeGreaterThan(0);
+    const stageDirection = plan.alongLength ? new Vector3(0, 0, -1) : new Vector3(-1, 0, 0);
+    for (const seat of plan.seats) {
+      const forward = new Vector3(0, 0, -1).transformDirection(new Matrix4().makeRotationY(seat.rotationY));
+      expect(forward.dot(stageDirection)).toBeCloseTo(1, 8);
+    }
   });
 
   it("fills the room when no target is given", () => {

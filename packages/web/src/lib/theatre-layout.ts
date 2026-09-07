@@ -116,8 +116,8 @@ export function planTheatreLayout(
     ...blockCentres(aisleM / 2 + blockWidthM / 2),
   ];
 
-  // rotationY 0 faces −Z; −π/2 faces −X (see table-group.ts facing convention).
-  const rotationY = alongLength ? 0 : -Math.PI / 2;
+  // rotationY 0 faces −Z; π/2 faces −X (Three.js's positive Y rotation).
+  const rotationY = alongLength ? 0 : Math.PI / 2;
   const seats: TheatreSeatPlacement[] = [];
   for (let r = 0; r < rows; r += 1) {
     const d = frontD + r * rowPitchM;

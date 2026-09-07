@@ -21,7 +21,7 @@ export function GltfFurniture({
   const onTemplateReady = useContext(GltfFurnitureTemplateContext);
   const instance = useMemo(
     () => createGltfFurnitureInstance(scene, item),
-    [scene, item.width, item.height, item.depth],
+    [scene, item.slug, item.width, item.height, item.depth],
   );
 
   useLayoutEffect(() => {

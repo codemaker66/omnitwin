@@ -10,6 +10,7 @@ export function isImportedFurnitureMaterial(material: Material): boolean {
 }
 
 interface FurnitureDimensions {
+  readonly slug?: string;
   readonly width: number;
   readonly height: number;
   readonly depth: number;
@@ -51,6 +52,14 @@ export function createGltfFurnitureInstance(
   object.name = "imported-furniture-model";
   object.scale.setScalar(uniformScale);
   object.position.set(-centre.x * uniformScale, -bounds.min.y * uniformScale, -centre.z * uniformScale);
+  // The supplied chairs are authored facing +Z (Turini provenance and mesh
+  // backrest geometry). Planner
+  // poses and the loading/error ChairMesh use -Z as the seated forward axis.
+  // Normalize only the model, retaining saved poses and the cached source.
+  if (dimensions.slug === "burgess-turini-18-3" || dimensions.slug === "checked-banquet-chair") {
+    object.rotation.y = Math.PI;
+    object.position.applyAxisAngle(new Vector3(0, 1, 0), Math.PI);
+  }
   const clone = source.clone(true);
   object.add(clone);
   const materials = new Map<Material, Material>();
