@@ -94,7 +94,7 @@
 .dashboard-layout-main--inventory { background: #7f9182; }
 .dashboard-layout-main--inventory .dashboard-layout-content { padding: 0; }
 .dashboard-layout-main--diary { background: #f6f4eb; color: #183d32; }
-.dashboard-layout-main--diary .dashboard-layout-content { padding: clamp(16px, 2vw, 32px); }
+.dashboard-layout-main--diary .dashboard-layout-content { padding: 0; }
 .dashboard-layout-skip {
   position: fixed; z-index: 200; top: 8px; left: 12px; transform: translateY(-180%);
   padding: 12px 16px; background: #f7f3e6; color: #123829; border: 1px solid #123829; text-decoration: none;
