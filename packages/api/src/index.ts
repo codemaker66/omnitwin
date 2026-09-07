@@ -153,6 +153,8 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   const allowedOrigins = env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
   await server.register(cors, {
     origin: allowedOrigins,
+    // Browser preflights must include the write verbs used by application routes.
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
     // idempotency-replay: T-538 — lets browser clients see whether a keyed
     // diary mutation was deduped (replayed) rather than freshly executed.
