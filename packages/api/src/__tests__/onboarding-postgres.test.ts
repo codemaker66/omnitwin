@@ -362,7 +362,7 @@ describe.skipIf(databaseUrl === undefined)("managed onboarding on isolated Postg
     const response = await server.inject({ method: "POST", url: `/onboarding/workspaces/${created.workspace.id}/invitations`, headers: headers(),
       payload: { staffInvites: [{ email: EMAIL, workspaceRole: "admin", venueRole: "admin" }] } });
     expect(response.statusCode, response.body).toBe(201);
-    expect((await invitationState(created.ownerMembership.invitationId))?.status).toBe("revoked");
+    expect((await invitationState(created.ownerMembership.invitationId))?.status).toBe("expired");
     const membership = await pool.query<{ invitation_id: string; role: string; status: string }>(
       "SELECT invitation_id, role, status FROM workspace_memberships WHERE id = $1", [created.ownerMembership.id]);
     expect(membership.rows[0]).toMatchObject({ role: "owner", status: "invited" });
