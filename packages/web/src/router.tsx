@@ -164,7 +164,7 @@ function withClerk(node: ReactElement): ReactElement {
 // authenticated endpoints. Detection is cookie-only — see
 // lib/clerk-session-hint.ts for the full rationale.
 export function PlannerAuthBoundary({ children }: { readonly children: ReactElement }): ReactElement {
-  const hasHydratedSession = useAuthStore((state) => state.isAuthenticated || state.user !== null);
+  const hasHydratedSession = useAuthStore((state) => state.isAuthenticated || state.user !== null || state.accessStatus !== "signed_out");
   const needsClerk = hasHydratedSession || hasLikelyClerkSession();
 
   useEffect(() => {
@@ -173,7 +173,7 @@ export function PlannerAuthBoundary({ children }: { readonly children: ReactElem
     // initial loading state. Recheck before writing: never clear a session
     // that hydrated after render, and leave membership decisions to Clerk.
     const current = useAuthStore.getState();
-    if (!hasLikelyClerkSession() && !current.isAuthenticated && current.user === null && current.isLoading) {
+    if (!hasLikelyClerkSession() && !current.isAuthenticated && current.user === null && current.accessStatus === "signed_out" && current.isLoading) {
       current.setLoading(false);
     }
   }, [needsClerk]);

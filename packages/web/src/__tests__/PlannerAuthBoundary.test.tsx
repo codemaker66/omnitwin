@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Suspense, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -21,7 +21,7 @@ function renderBoundary(): void {
 describe("PlannerAuthBoundary", () => {
   beforeEach(() => {
     sessionHint.mockReturnValue(false);
-    useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: true, error: null });
+    useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: true, error: null, accessStatus: "signed_out", accessEmail: null });
   });
   afterEach(cleanup);
 
@@ -46,5 +46,16 @@ describe("PlannerAuthBoundary", () => {
     await waitFor(() => expect(screen.getByTestId("clerk-provider")).toBeTruthy());
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
     expect(useAuthStore.getState().isLoading).toBe(true);
+  });
+
+  it("keeps Clerk mounted while a hydrated session verifies workspace access", async () => {
+    useAuthStore.setState({ isAuthenticated: true, isLoading: true });
+    renderBoundary();
+    await waitFor(() => expect(screen.getByTestId("clerk-provider")).toBeTruthy());
+    act(() => { useAuthStore.getState().beginAccessCheck("presenter@example.test"); });
+    expect(screen.getByTestId("clerk-provider")).toBeTruthy();
+    expect(useAuthStore.getState().isLoading).toBe(true);
+    act(() => { useAuthStore.getState().failAccessCheck("Invitation pending", true); });
+    expect(screen.getByTestId("clerk-provider")).toBeTruthy();
   });
 });
