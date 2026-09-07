@@ -137,9 +137,10 @@ describe("HallkeeperPage request and offline queue isolation", () => {
       { configId: CONFIG_A, rowKey: ROW_KEY, desiredChecked: true, queuedAt: checkedAt },
       { configId: CONFIG_B, rowKey: otherRowKey, desiredChecked: false, queuedAt: checkedAt },
     ];
-    vi.mocked(listPendingProgress).mockImplementation(async () => queued);
-    vi.mocked(ackProgress).mockImplementation(async (configId, rowKey) => {
+    vi.mocked(listPendingProgress).mockImplementation(() => Promise.resolve(queued));
+    vi.mocked(ackProgress).mockImplementation((configId, rowKey) => {
       queued = queued.filter((op) => op.configId !== configId || op.rowKey !== rowKey);
+      return Promise.resolve();
     });
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit): Promise<Response> => {
       const url = requestUrl(input);
@@ -162,7 +163,9 @@ describe("HallkeeperPage request and offline queue isolation", () => {
     ]);
     const writes = fetchMock.mock.calls.filter(([, init]) => init?.method === "PATCH");
     expect(writes).toHaveLength(1);
-    expect(requestUrl(writes[0]![0])).toContain(`/hallkeeper/${CONFIG_A}/progress`);
-    expect(writes[0]![1]?.body).toBe(JSON.stringify({ rowKey: ROW_KEY, checked: true }));
+    const write = writes[0];
+    if (write === undefined) throw new Error("Expected a progress write");
+    expect(requestUrl(write[0])).toContain(`/hallkeeper/${CONFIG_A}/progress`);
+    expect(write[1]?.body).toBe(JSON.stringify({ rowKey: ROW_KEY, checked: true }));
   });
 });
