@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -169,6 +169,7 @@ describe("ProtectedRoute", () => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllEnvs();
   vi.resetModules();
 });
@@ -263,6 +264,24 @@ describe("OAuthConsentPage", () => {
 });
 
 describe("Pages", () => {
+  it("uses the role-aware arrival after sign-in and a plain registration link when no destination was requested", async () => {
+    const { LoginPage } = await import("../pages/LoginPage.js");
+    render(createElement(LoginPage));
+    const props = signInMock.mock.calls.at(-1)?.[0];
+    expect(props?.fallbackRedirectUrl).toBe("/app");
+    expect(props?.signUpUrl).toBe("/register");
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("uses the role-aware arrival after account creation and a plain sign-in link when no destination was requested", async () => {
+    const { RegisterPage } = await import("../pages/RegisterPage.js");
+    render(createElement(RegisterPage));
+    const props = signUpMock.mock.calls.at(-1)?.[0];
+    expect(props?.fallbackRedirectUrl).toBe("/app");
+    expect(props?.signInUrl).toBe("/login");
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it("returns a confirmed account to its original internal destination", async () => {
     mockLocation.search = "?returnTo=%2Fdiary%3Fdate%3D2026-09-07";
     mockAuthState.isAuthenticated = true;

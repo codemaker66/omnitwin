@@ -73,6 +73,17 @@ describe("authoritative account access", () => {
     expect(useAuthStore.getState().user?.venueId).toBe("trades-hall");
   });
 
+  it("allows switching accounts while the access request remains unresolved", async () => {
+    const request = deferred<AuthSessionUser>();
+    mocks.getCurrentAuthUser.mockReturnValue(request.promise);
+    mocks.signOut.mockResolvedValueOnce(undefined);
+    render(<Flow />);
+    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    await waitFor(() => { expect(mocks.signOut).toHaveBeenCalledWith({ redirectUrl: "/login" }); });
+    expect(screen.queryByText("Venue operations")).toBeNull();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
   it("reports a service failure separately from an invitation wait and recovers", async () => {
     mocks.getCurrentAuthUser.mockRejectedValueOnce(new ApiError(503, "Unavailable", "SERVER_ERROR"));
     render(<Flow />);
