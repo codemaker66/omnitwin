@@ -18,6 +18,7 @@ import {
   Utensils,
 } from "lucide-react";
 import { getCatalogueItem, getCatalogueItemBySlug } from "../../lib/catalogue.js";
+import { DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../lib/furniture-defaults.js";
 import { buildPlannerShowcaseTour } from "../../lib/planner-showcase.js";
 import { canRedo, canUndo, redoLabel, undoLabel, type EditorHistory } from "../../lib/editor-history.js";
 import { dispatchPlannerToolbarCommand } from "../../lib/planner-toolbar-events.js";
@@ -406,7 +407,7 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
           : "Auto-fill the room with banquet tables",
         icon: <LayoutGrid size={16} aria-hidden="true" />,
         onClick: () => {
-          const table = getCatalogueItemBySlug("round-table-6ft");
+          const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
           if (table === undefined) return;
           usePlacementStore.getState().autoArrangeBanquet(table.id, forGuests, 8);
         },

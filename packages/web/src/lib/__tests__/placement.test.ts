@@ -315,11 +315,11 @@ describe("snapToWallEdge with custom room dims", () => {
     if (poseur === undefined || diningRound === undefined) return;
 
     const poseurSnap = snapToWallEdge(4, 0, poseur, 0, smallRoom);
-    const diningSnap = snapToWallEdge(4, 0, diningRound, 0, smallRoom);
+    const diningSnap = snapToWallEdge(3, 0, diningRound, 0, smallRoom);
 
     expect(poseurSnap.x).toBeCloseTo(5 - toRenderSpace(poseur.width) / 2);
     expect(diningSnap.x).toBeCloseTo(
-      5 - toRenderSpace(diningRound.width) / 2 - toRenderSpace(0.5),
+      5 - toRenderSpace(Math.hypot(diningRound.width / 2 + 0.58 + 0.05, 0.42 / 2)),
     );
   });
 });

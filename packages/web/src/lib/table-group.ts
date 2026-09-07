@@ -1,11 +1,12 @@
-import { toRenderSpace } from "../constants/scale.js";
+import { toRenderSpace, toRealWorld } from "../constants/scale.js";
 import type { CatalogueItem } from "./catalogue.js";
 import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
-import { createPlacedItem, generatePlacedId } from "./placement.js";
+import { createPlacedItem, generatePlacedId, computeRotatedFootprint } from "./placement.js";
 import type { PlacedItem } from "./placement.js";
 import { normalizeFurnitureScale } from "./furniture-scale.js";
 import { isDiningTableItem } from "./furniture-semantics.js";
 import { isSceneFurniturePlacement } from "./table-dressing.js";
+import { DEFAULT_PLANNER_CHAIR_SLUG } from "./furniture-defaults.js";
 
 // ---------------------------------------------------------------------------
 // Table group — geometry-driven seating arrangement
@@ -28,22 +29,25 @@ const CHAIR_GAP_M = 0.05;
  *  banquet chairs from overlapping. */
 const SEAT_PITCH_M = 0.6;
 
-/** Stable developer slug for the banquet chair; saved objects use the UUID catalogue ID. */
-const CHAIR_SLUG = "banquet-chair";
+type ChairFootprint = Pick<CatalogueItem, "width" | "depth">;
+
+function seatPitch(chair: ChairFootprint): number {
+  return Math.max(SEAT_PITCH_M, chair.width + CHAIR_GAP_M);
+}
 
 /** Seats that physically fit around a round table without overlap: the chair
  *  ring circumference divided by the seat pitch. */
-function roundSeatCapacity(table: CatalogueItem, chair: CatalogueItem, scale: number): number {
+function roundSeatCapacity(table: CatalogueItem, chair: ChairFootprint, scale: number): number {
   const ringRadiusM = (table.width * scale) / 2 + chair.depth / 2 + CHAIR_GAP_M;
-  return Math.max(0, Math.floor((2 * Math.PI * ringRadiusM) / SEAT_PITCH_M));
+  return Math.max(0, Math.floor((2 * Math.PI * ringRadiusM) / seatPitch(chair)));
 }
 
 /** Seats that fit around a rectangular table: both long sides plus both heads,
  *  each axis holding floor(length / pitch) covers. Width is treated as the long
  *  (side-seating) axis — true for every banquet/trestle table in the catalogue. */
-function rectSeatCapacity(table: CatalogueItem, scale: number): number {
-  const perSide = Math.max(0, Math.floor((table.width * scale) / SEAT_PITCH_M));
-  const perEnd = Math.max(0, Math.floor((table.depth * scale) / SEAT_PITCH_M));
+function rectSeatCapacity(table: CatalogueItem, chair: ChairFootprint, scale: number): number {
+  const perSide = Math.max(0, Math.floor((table.width * scale) / seatPitch(chair)));
+  const perEnd = Math.max(0, Math.floor((table.depth * scale) / seatPitch(chair)));
   return 2 * perSide + 2 * perEnd;
 }
 
@@ -51,14 +55,14 @@ function rectSeatCapacity(table: CatalogueItem, scale: number): number {
  * Maximum seats that fit around a table without chairs overlapping. Drives the
  * seating dialog's ceiling and clamps `computeChairPositions`.
  */
-export function seatCapacity(table: CatalogueItem, scale?: number): number {
+export function seatCapacity(table: CatalogueItem, scale?: number, chairFootprint?: ChairFootprint): number {
   if (!isDiningTableItem(table) || table.tableShape === null) return 0;
-  const chair = getCatalogueItemBySlug(CHAIR_SLUG);
+  const chair = chairFootprint ?? getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
   if (chair === undefined) return 0;
   const resolvedScale = normalizeFurnitureScale(scale);
   return table.tableShape === "round"
     ? roundSeatCapacity(table, chair, resolvedScale)
-    : rectSeatCapacity(table, resolvedScale);
+    : rectSeatCapacity(table, chair, resolvedScale);
 }
 
 // ---------------------------------------------------------------------------
@@ -91,15 +95,16 @@ export function computeChairPositions(
   tableRotY: number,
   chairCount: number,
   tableScale?: number,
+  chairFootprint?: ChairFootprint,
 ): readonly ChairPlacement[] {
   if (chairCount <= 0) return [];
 
-  const chairItem = getCatalogueItemBySlug(CHAIR_SLUG);
+  const chairItem = chairFootprint ?? getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
   if (chairItem === undefined) return [];
 
   // Never place more chairs than physically fit — clamp rather than overlap.
   const resolvedScale = normalizeFurnitureScale(tableScale);
-  const count = Math.min(Math.floor(chairCount), seatCapacity(tableItem, resolvedScale));
+  const count = Math.min(Math.floor(chairCount), seatCapacity(tableItem, resolvedScale, chairItem));
   if (count <= 0) return [];
 
   if (tableItem.tableShape === "round") {
@@ -128,7 +133,7 @@ function computeRoundChairPositions(
   cz: number,
   table: CatalogueItem,
   count: number,
-  chair: CatalogueItem,
+  chair: ChairFootprint,
   tableScale: number,
 ): readonly ChairPlacement[] {
   const tableRadius = (toRenderSpace(table.width) * tableScale) / 2;
@@ -157,14 +162,14 @@ function computeRectChairPositions(
   table: CatalogueItem,
   tableRotY: number,
   count: number,
-  chair: CatalogueItem,
+  chair: ChairFootprint,
   tableScale: number,
 ): readonly ChairPlacement[] {
   // Per-axis seat counts the table can hold without overlap (width = the long,
   // side-seating axis; depth = the heads). `count` is already clamped to the
   // total capacity by computeChairPositions, so the allocations below fit.
-  const perSide = Math.max(0, Math.floor((table.width * tableScale) / SEAT_PITCH_M));
-  const perEnd = Math.max(0, Math.floor((table.depth * tableScale) / SEAT_PITCH_M));
+  const perSide = Math.max(0, Math.floor((table.width * tableScale) / seatPitch(chair)));
+  const perEnd = Math.max(0, Math.floor((table.depth * tableScale) / seatPitch(chair)));
 
   // Fill the long sides first (most natural banquet seating), balanced
   // front/back, then spill onto the heads.
@@ -175,7 +180,7 @@ function computeRectChairPositions(
   const leftCount = Math.ceil(endTotal / 2);
   const rightCount = endTotal - leftCount;
 
-  const pitch = toRenderSpace(SEAT_PITCH_M);
+  const pitch = toRenderSpace(seatPitch(chair));
   const halfW = (toRenderSpace(table.width) * tableScale) / 2;
   const halfD = (toRenderSpace(table.depth) * tableScale) / 2;
   const chairHalfDepth = toRenderSpace(chair.depth) / 2;
@@ -241,7 +246,7 @@ export function createTableGroup(
     || !isDiningTableItem(tableItem)
     || tableItem.tableShape === null
   ) return [];
-  const chairItem = getCatalogueItemBySlug(CHAIR_SLUG);
+  const chairItem = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
   if (chairItem === undefined) return [];
 
   const groupId = generatePlacedId(); // Reuse ID generator for group IDs
@@ -276,13 +281,23 @@ export function rearrangeTableGroup(
     || !isDiningTableItem(tableItem)
     || tableItem.tableShape === null
   ) return [...placedItems];
-  const chairItem = getCatalogueItemBySlug(CHAIR_SLUG);
+  const chairItem = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
   if (chairItem === undefined) return [...placedItems];
 
   const groupId = table.groupId;
+  // The default applies only to new slots. Existing slots retain their exact
+  // asset identity, including groups mixing legacy, imported and scaled chairs.
+  const existingChairs = placedItems.filter((p) => (
+    p.groupId === groupId
+    && p.id !== table.id
+    && isSceneFurniturePlacement(p)
+    && getCatalogueItem(p.catalogueItemId)?.category === "chair"
+  ));
   const others = placedItems.filter(
     (p) => p.groupId !== groupId || !isSceneFurniturePlacement(p),
   );
+
+  const footprint = tableGroupChairFootprint(table, placedItems, newChairCount > existingChairs.length);
 
   // Compute new chair positions without creating a fresh groupId
   const chairPositions = computeChairPositions(
@@ -292,30 +307,67 @@ export function rearrangeTableGroup(
     table.rotationY,
     newChairCount,
     table.scale,
+    footprint,
   );
 
-  // Reuse existing chair IDs where available to avoid orphaning DB records
-  const existingChairs = placedItems.filter((p) => (
-    p.groupId === groupId
-    && p.id !== table.id
-    && isSceneFurniturePlacement(p)
-    && getCatalogueItem(p.catalogueItemId)?.category === "chair"
-  ));
-
   const newChairs: PlacedItem[] = chairPositions.map((pos, i) => ({
-    id: existingChairs[i]?.id ?? generatePlacedId(),
-    catalogueItemId: chairItem.id,
-    label: existingChairs[i]?.label ?? "",
+    ...(existingChairs[i] ?? createPlacedItem(chairItem.id, pos.x, pos.z, pos.rotationY, groupId, table.y)),
     x: pos.x,
     y: table.y,
     z: pos.z,
     rotationY: pos.rotationY,
-    ...(existingChairs[i]?.scale === undefined ? {} : { scale: existingChairs[i].scale }),
     groupId,
-    clothed: false,
-    clothStyle: null,
-    tableSetting: null,
   }));
 
   return [...others, table, ...newChairs];
+}
+
+/** Conservative dimensions of saved chairs, including the default only for new slots. */
+export function tableGroupChairFootprint(
+  table: PlacedItem,
+  placedItems: readonly PlacedItem[],
+  includeNewChairs: boolean,
+): ChairFootprint {
+  const defaultChair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  const footprint = {
+    width: includeNewChairs ? defaultChair?.width ?? 0 : 0,
+    depth: includeNewChairs ? defaultChair?.depth ?? 0 : 0,
+  };
+  for (const placed of placedItems) {
+    if (table.groupId === null || placed.groupId !== table.groupId || !isSceneFurniturePlacement(placed)) continue;
+    const catalogue = getCatalogueItem(placed.catalogueItemId);
+    if (catalogue?.category !== "chair") continue;
+    const scale = normalizeFurnitureScale(placed.scale);
+    footprint.width = Math.max(footprint.width, catalogue.width * scale);
+    footprint.depth = Math.max(footprint.depth, catalogue.depth * scale);
+  }
+  return footprint;
+}
+
+/** Editing retains existing assets; an increased count must also fit new Turini chairs. */
+export function tableGroupSeatCapacity(table: PlacedItem, placedItems: readonly PlacedItem[]): number {
+  const catalogue = getCatalogueItem(table.catalogueItemId);
+  if (catalogue === undefined) return 0;
+  const existingCount = table.groupId === null ? 0 : placedItems.filter((item) => (
+    item.groupId === table.groupId && isSceneFurniturePlacement(item)
+    && getCatalogueItem(item.catalogueItemId)?.category === "chair"
+  )).length;
+  const existingCapacity = seatCapacity(catalogue, table.scale, tableGroupChairFootprint(table, placedItems, false));
+  const expandedCapacity = seatCapacity(catalogue, table.scale, tableGroupChairFootprint(table, placedItems, true));
+  return Math.max(Math.min(existingCount, existingCapacity), expandedCapacity > existingCount ? expandedCapacity : 0);
+}
+
+/** Complete occupied envelope in metres, so layout aisles run between chair backs. */
+export function tableGroupPlanningFootprint(table: CatalogueItem, chairCount: number): ChairFootprint {
+  let halfWidth = toRenderSpace(table.width) / 2;
+  let halfDepth = toRenderSpace(table.depth) / 2;
+  const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
+  if (chair !== undefined) {
+    for (const position of computeChairPositions(0, 0, table, 0, chairCount)) {
+      const extent = computeRotatedFootprint(chair, position.rotationY);
+      halfWidth = Math.max(halfWidth, Math.abs(position.x) + extent.halfW);
+      halfDepth = Math.max(halfDepth, Math.abs(position.z) + extent.halfD);
+    }
+  }
+  return { width: toRealWorld(halfWidth * 2), depth: toRealWorld(halfDepth * 2) };
 }

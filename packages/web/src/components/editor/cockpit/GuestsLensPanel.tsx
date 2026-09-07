@@ -14,6 +14,7 @@ import {
 import { styleFitLabel, type StyleFit } from "../../../lib/room-capacity.js";
 import type { ComfortBand } from "../../../lib/layout-capacity.js";
 import { getCatalogueItemBySlug } from "../../../lib/catalogue.js";
+import { DEFAULT_PLANNER_CHAIR_SLUG, DEFAULT_PLANNER_ROUND_TABLE_SLUG } from "../../../lib/furniture-defaults.js";
 import { sceneFurniturePlacements } from "../../../lib/table-dressing.js";
 import type { LayoutStyle } from "@omnitwin/types";
 
@@ -103,10 +104,10 @@ export function GuestsLensPanel(): ReactElement {
   const buildRoom = (style: LayoutStyle): void => {
     const guests = model.guestCount ?? 0;
     if (style === "dinner-rounds") {
-      const table = getCatalogueItemBySlug("round-table-6ft");
+      const table = getCatalogueItemBySlug(DEFAULT_PLANNER_ROUND_TABLE_SLUG);
       if (table !== undefined) usePlacementStore.getState().autoArrangeBanquet(table.id, guests, 8);
     } else {
-      const chair = getCatalogueItemBySlug("banquet-chair");
+      const chair = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG);
       if (chair !== undefined) usePlacementStore.getState().autoArrangeTheatre(chair.id, guests);
     }
   };

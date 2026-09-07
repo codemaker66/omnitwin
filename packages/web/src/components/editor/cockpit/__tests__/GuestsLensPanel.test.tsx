@@ -39,6 +39,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("GuestsLensPanel", () => {
+  it.each(["dinner-rounds", "theatre"])("builds new %s layouts with supplied chair models", (style) => {
+    useCockpitStore.getState().setPlannedGuestCount(16);
+    render(<GuestsLensPanel />);
+    fireEvent.click(screen.getByTestId(`guests-build-${style}`));
+    const items = usePlacementStore.getState().placedItems;
+    const turini = find((item) => item.slug === "burgess-turini-18-3", "Turini");
+    const whiteRound = find((item) => item.slug === "round-table-6ft-white", "white round");
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.filter((item) => item.catalogueItemId === turini.id).length).toBeGreaterThan(0);
+    expect(items.every((item) => item.catalogueItemId === turini.id || (style === "dinner-rounds" && item.catalogueItemId === whiteRound.id))).toBe(true);
+  });
+
   it("renders the seat + comfort sections, prompting for a guest count when none is set", () => {
     usePlacementStore.setState({ placedItems: withChairs(80) });
     render(<GuestsLensPanel />);
