@@ -1,4 +1,5 @@
-import { lazy, Suspense, type ReactElement } from "react";
+import { lazy, Suspense, useEffect, type ReactElement } from "react";
+import { useAuthStore } from "./stores/auth-store.js";
 import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
@@ -162,8 +163,22 @@ function withClerk(node: ReactElement): ReactElement {
 // layout-timeline dock, phase-snapshot freeze, review submit) call
 // authenticated endpoints. Detection is cookie-only — see
 // lib/clerk-session-hint.ts for the full rationale.
-function PlannerAuthBoundary({ children }: { readonly children: ReactElement }): ReactElement {
-  if (!hasLikelyClerkSession()) return children;
+export function PlannerAuthBoundary({ children }: { readonly children: ReactElement }): ReactElement {
+  const hasHydratedSession = useAuthStore((state) => state.isAuthenticated || state.user !== null);
+  const needsClerk = hasHydratedSession || hasLikelyClerkSession();
+
+  useEffect(() => {
+    if (needsClerk) return;
+    // No Clerk bridge mounts for guests, so this boundary must settle their
+    // initial loading state. Recheck before writing: never clear a session
+    // that hydrated after render, and leave membership decisions to Clerk.
+    const current = useAuthStore.getState();
+    if (!hasLikelyClerkSession() && !current.isAuthenticated && current.user === null && current.isLoading) {
+      current.setLoading(false);
+    }
+  }, [needsClerk]);
+
+  if (!needsClerk) return children;
   return <ClerkRouteProvider>{children}</ClerkRouteProvider>;
 }
 
