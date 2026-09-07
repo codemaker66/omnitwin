@@ -27,7 +27,7 @@ describe("RoomsHomePage", () => {
       ["Hallkeeper", "/hallkeeper/today"],
       ["Log in", "/login"],
     ]) {
-      expect(nav.getByRole("link", { name, exact: true }).getAttribute("href")).toBe(destination);
+      expect(nav.getByRole("link", { name }).getAttribute("href")).toBe(destination);
     }
   });
 
