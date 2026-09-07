@@ -1688,7 +1688,11 @@ describe("CockpitBottom room layout timeline", () => {
     });
   });
 
-  it("preserves an explicit date reached through history while changing linked-event scope", async () => {
+  it.each(["UTC", "Europe/London"])("preserves an explicit date reached through history while changing linked-event scope (browser %s)", async (browserZone) => {
+    const browserOptions = new Intl.DateTimeFormat().resolvedOptions();
+    vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+      ...browserOptions, timeZone: browserZone,
+    });
     eventsApi.getEventPhaseGraph.mockResolvedValue(linkedEventGraph("2026-06-14T16:00:00.000Z"));
     timelineApi.getRoomLayoutTimeline.mockImplementation((query) =>
       Promise.resolve(responseForQuery(query, [arrival, dinner])),

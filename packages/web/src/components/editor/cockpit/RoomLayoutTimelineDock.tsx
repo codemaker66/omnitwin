@@ -485,18 +485,6 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
   const linkedEventAnchorKey = linkedEventId === undefined
     ? null
     : `${roomAnchorKey ?? "room-pending"}:${linkedEventId}:${scope}:${timeZone}`;
-  const linkedEventAutoAnchorPending = hasLinkedEvent
-    && !explicitTimelineDate
-    && (
-      linkedEvent.status === "none"
-      || linkedEvent.status === "loading"
-      || (
-        linkedEvent.status === "loaded"
-        && linkedEventAnchorMs !== null
-        && autoAnchoredEventZoneRef.current !== linkedEventAnchorKey
-      )
-    );
-
   const updatePlayhead = useCallback((atMs: number): void => {
     playheadMsRef.current = atMs;
     const slider = sliderRef.current;
@@ -903,6 +891,21 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
       return;
     }
 
+    // The earlier auto-anchor effect can finish by updating its ref while
+    // keeping the same civil date (for example UTC -> Europe/London). React
+    // need not render again for that same-date update, so inspect completion
+    // here rather than retaining the render's stale pending flag.
+    const linkedEventAutoAnchorPending = hasLinkedEvent
+      && !explicitTimelineDate
+      && (
+        linkedEvent.status === "none"
+        || linkedEvent.status === "loading"
+        || (
+          linkedEvent.status === "loaded"
+          && linkedEventAnchorMs !== null
+          && autoAnchoredEventZoneRef.current !== linkedEventAnchorKey
+        )
+      );
     if (linkedEventAutoAnchorPending || !timelineResponseMatchesSelection) return;
     // The layout effect hydrates a deep-linked phase before this passive URL
     // sync runs. Read the preview store at effect time so the first loaded
@@ -926,9 +929,12 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     activeFrame,
     anchorDate,
     cancelAnimations,
+    explicitTimelineDate,
     frames,
+    hasLinkedEvent,
+    linkedEvent.status,
+    linkedEventAnchorKey,
     linkedEventAnchorMs,
-    linkedEventAutoAnchorPending,
     scope,
     searchParamSignature,
     restorePrePreviewPhase,
