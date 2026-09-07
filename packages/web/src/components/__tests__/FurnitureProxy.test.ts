@@ -37,6 +37,8 @@ const EXPECTED_MESH_BY_SLUG: Readonly<Record<string, FurnitureMeshKind>> = {
   "dinner-place-setting": "applicator",
   "trestle-6ft-black": "trestle-table",
   "trestle-6ft-white": "trestle-table",
+  "trestle-4ft-black": "trestle-table",
+  "trestle-4ft-white": "trestle-table",
   "trestle-6ft-wooden": "trestle-table",
   "round-table-6ft-black": "round-table",
   "round-table-6ft-white": "round-table",
@@ -52,7 +54,7 @@ const EXPECTED_MESH_BY_SLUG: Readonly<Record<string, FurnitureMeshKind>> = {
 describe("furniture mesh dispatch", () => {
   it("uses supplied models ahead of generated or procedural fallbacks", () => {
     const imported = CATALOGUE_ITEMS.filter((item) => item.meshUrl !== null);
-    expect(imported).toHaveLength(18);
+    expect(imported).toHaveLength(20);
     for (const item of imported) {
       expect(standaloneFurnitureMeshUrl(item), item.slug).toBe(item.meshUrl);
       expect(item.thumbnailUrl, item.slug).toMatch(/^\/models\/furniture\/.+\/v1\/preview\.webp$/u);

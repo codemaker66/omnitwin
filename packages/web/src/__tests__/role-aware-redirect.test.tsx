@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, cleanup } from "@testing-library/react";
+import { render, cleanup, screen } from "@testing-library/react";
 import { useAuthStore, type AuthUser } from "../stores/auth-store.js";
 
 // react-router-dom's Navigate calls into the router context. For unit
@@ -34,8 +34,8 @@ describe("RoleAwareRedirect", () => {
   it("renders the loading fallback while auth is still resolving", () => {
     setAuth({ isAuthenticated: false, isLoading: true, user: null });
     const { container } = render(<RoleAwareRedirect />);
-    // Loading shows "Loading..." text and no Navigate stub.
-    expect(container.textContent).toContain("Loading...");
+    expect(screen.getByRole("status").textContent).toContain("Opening your workspace…");
+    expect(container.querySelector('[data-activity-indicator="particles"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Navigate->");
   });
 
@@ -55,14 +55,14 @@ describe("RoleAwareRedirect", () => {
     expect(container.textContent).toBe("Navigate->/dashboard(replace)");
   });
 
-  it("redirects a hallkeeper straight to /dashboard", () => {
+  it("redirects a hallkeeper straight to /hallkeeper/today", () => {
     setAuth({
       isAuthenticated: true,
       isLoading: false,
       user: { id: "u2", email: "h@x.com", role: "hallkeeper", platformRole: "none", venueId: "v1", name: "Halle" },
     });
     const { container } = render(<RoleAwareRedirect />);
-    expect(container.textContent).toBe("Navigate->/dashboard(replace)");
+    expect(container.textContent).toBe("Navigate->/hallkeeper/today(replace)");
   });
 
   it("redirects a planner straight to /dashboard", () => {

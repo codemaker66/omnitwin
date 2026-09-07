@@ -43,9 +43,17 @@ describe("CatalogueItem meshUrl field (#28)", () => {
 
   it("routes supplied furniture to models while retaining unsupplied procedural items", () => {
     const imported = CATALOGUE_ITEMS.filter((item) => item.meshUrl !== null);
-    expect(imported).toHaveLength(18);
+    expect(imported).toHaveLength(20);
     expect(imported.find((item) => item.slug === "burgess-turini-18-3")?.meshUrl)
       .toBe("/models/furniture/burgess-turini-18-3/v1/chair.glb");
+    for (const slug of ["trestle-4ft-black", "trestle-4ft-white"]) {
+      expect(imported.find((item) => item.slug === slug)).toMatchObject({
+        meshUrl: `/models/furniture/${slug}/v1/model.glb`,
+        thumbnailUrl: `/models/furniture/${slug}/v1/preview.webp`,
+        width: 1.22, depth: 0.76, height: 0.74,
+        dimensionStatus: "approximate", tableShape: "rectangular",
+      });
+    }
     for (const slug of ["round-table-6ft", "banquet-chair", "trestle-4ft", "poseur-table"]) {
       const item = CATALOGUE_ITEMS.find((candidate) => candidate.slug === slug);
       expect(item).toBeDefined();
