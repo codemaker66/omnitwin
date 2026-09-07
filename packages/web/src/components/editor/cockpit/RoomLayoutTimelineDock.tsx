@@ -894,7 +894,8 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
     // The earlier auto-anchor effect can finish by updating its ref while
     // keeping the same civil date (for example UTC -> Europe/London). React
     // need not render again for that same-date update, so inspect completion
-    // here rather than retaining the render's stale pending flag.
+    // here rather than retaining the render's stale pending flag. A different
+    // date still needs its queued state update before URL sync can commit it.
     const linkedEventAutoAnchorPending = hasLinkedEvent
       && !explicitTimelineDate
       && (
@@ -903,7 +904,10 @@ export function RoomLayoutTimelineDock({ initiallyCollapsed = false }: { readonl
         || (
           linkedEvent.status === "loaded"
           && linkedEventAnchorMs !== null
-          && autoAnchoredEventZoneRef.current !== linkedEventAnchorKey
+          && (
+            autoAnchoredEventZoneRef.current !== linkedEventAnchorKey
+            || anchorDate !== timelineScopeAnchorDateAt(linkedEventAnchorMs, scope, timeZone)
+          )
         )
       );
     if (linkedEventAutoAnchorPending || !timelineResponseMatchesSelection) return;
