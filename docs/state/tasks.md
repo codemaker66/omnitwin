@@ -1,5 +1,8 @@
 # Venviewer task list
 
+- 2026-09-07 T-601 showcase delivered: Blake's display-only /demo is live in 7f2a701b (Vercel receipt 6314446074), with eight responsive chapters, local arrangement switcher and matching downloadable eight-page PDF. Fresh public browser checks pass all 16 desktop/mobile views, controls and download hash. No venue-state writes. [Evidence](../reports/elaine-showcase-2026-09-07.md).
+
+
 Source of truth for active and proposed work. Each task has a T-NNN ID, title, status, impact (1-5), effort (days), dependencies (T-NNN list), source citation. Statuses: `not-started | in-progress | done | deferred | blocked | rejected`.
 
 Updated: 2026-09-07.
