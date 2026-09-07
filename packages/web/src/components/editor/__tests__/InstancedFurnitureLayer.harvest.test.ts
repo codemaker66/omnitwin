@@ -6,15 +6,19 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  Texture,
   Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 
 import { mergePartsByMaterial } from "../../../lib/furniture-instancing.js";
+import { createGltfFurnitureInstance } from "../../../lib/gltf-furniture-instance.js";
 import { createMicrophoneProxy } from "../../meshes/generated/createMicrophoneProxy.js";
 import { disposeGeneratedFurnitureObject } from "../../meshes/generated/generatedFurnitureRegistry.js";
 import {
   collectMeshInstancesForHarvest,
+  disposeVariant,
+  harvestVariant,
   type HarvestMeshInstance,
 } from "../InstancedFurnitureLayer.js";
 
@@ -190,5 +194,58 @@ describe("collectMeshInstancesForHarvest", () => {
     materialDispose.mockRestore();
     geometry.dispose();
     material.dispose();
+  });
+});
+
+describe("imported furniture harvest", () => {
+  it("keeps separate PBR material identities and every multi-material primitive", () => {
+    const geometry = new BoxGeometry(42, 88, 58);
+    const metalnessMap = new Texture();
+    const map = new Texture();
+    const first = new MeshStandardMaterial({ map, metalnessMap });
+    const second = new MeshStandardMaterial({ map, metalnessMap: new Texture() });
+    // Same colour/roughness and unnamed textures must not accidentally merge.
+    const source = new Group();
+    source.add(new Mesh(geometry, [first, second, first, second, first, second]));
+    const instance = createGltfFurnitureInstance(source, { width: 0.42, height: 0.88, depth: 0.58 });
+    const root = new Group();
+    root.add(instance.object);
+    const variant = harvestVariant(root);
+    expect(variant.groups).toHaveLength(2);
+    const materials = [...variant.materialByKey.values()];
+    expect(materials.every((material) => material instanceof MeshStandardMaterial)).toBe(true);
+    expect(materials.map((material) => (material as MeshStandardMaterial).map)).toEqual([map, map]);
+    expect(materials.map((material) => (material as MeshStandardMaterial).metalnessMap))
+      .toEqual([metalnessMap, second.metalnessMap]);
+    expect(variant.groups.reduce((sum, group) => sum + (group.geometry.index?.count ?? 0), 0)).toBe(36);
+    expect([...variant.shadowsByKey.values()]).toEqual([
+      { castShadow: true, receiveShadow: true }, { castShadow: true, receiveShadow: true },
+    ]);
+    const cachedGeometryDispose = vi.spyOn(geometry, "dispose");
+    const cachedMaterialDispose = vi.spyOn(first, "dispose");
+    const cachedMapDispose = vi.spyOn(map, "dispose");
+    const ownedGeometryDispose = vi.spyOn(variant.groups[0]!.geometry, "dispose");
+    const ownedMaterialDispose = vi.spyOn(materials[0]!, "dispose");
+    disposeVariant(variant);
+    instance.dispose();
+    expect(ownedGeometryDispose).toHaveBeenCalledOnce();
+    expect(ownedMaterialDispose).toHaveBeenCalledOnce();
+    expect(cachedGeometryDispose).not.toHaveBeenCalled();
+    expect(cachedMaterialDispose).not.toHaveBeenCalled();
+    expect(cachedMapDispose).not.toHaveBeenCalled();
+    geometry.dispose(); first.dispose(); second.dispose();
+    map.dispose(); metalnessMap.dispose(); second.metalnessMap?.dispose();
+  });
+
+  it("respects the source draw range when batching a grouped primitive", () => {
+    const geometry = new BoxGeometry(1, 1, 1);
+    geometry.setDrawRange(3, 9);
+    const material = new MeshStandardMaterial();
+    const root = new Group();
+    root.add(new Mesh(geometry, [material, material, material, material, material, material]));
+    const variant = harvestVariant(root);
+    expect(variant.groups).toHaveLength(1);
+    expect(variant.groups[0]?.geometry.index?.count).toBe(9);
+    disposeVariant(variant); geometry.dispose(); material.dispose();
   });
 });

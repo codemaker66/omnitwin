@@ -6,6 +6,7 @@ import {
   AssetDefinitionSchema,
   CreateAssetDefinitionSchema,
 } from "../furniture.js";
+import { getCanonicalAssetBySlug } from "../asset-catalogue.js";
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -398,6 +399,58 @@ describe("CreateAssetDefinitionSchema", () => {
         widthM: -1,
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("furniture asset references", () => {
+  it("accepts the delivered Turini model and preview in creation and response payloads", () => {
+    const chair = getCanonicalAssetBySlug("burgess-turini-18-3");
+    if (chair === undefined) throw new Error("Missing Turini catalogue entry");
+    const references = { meshUrl: chair.meshUrl, thumbnailUrl: chair.thumbnailUrl };
+    expect(CreateAssetDefinitionSchema.parse({ ...validCreateAssetDefinition, ...references }))
+      .toMatchObject(references);
+    expect(AssetDefinitionSchema.parse({ ...validAssetDefinition, ...references }))
+      .toMatchObject(references);
+  });
+
+  it.each([
+    "https://cdn.example.com/models/chair.glb",
+    "http://localhost:5173/models/chair.glb?v=1#preview",
+    "/models/chair.glb",
+    "/models/chair%20frame.glb?v=1#preview",
+  ])("retains a valid absolute URL or root-relative reference unchanged: %s", (reference) => {
+    for (const field of ["meshUrl", "thumbnailUrl"] as const) {
+      expect(AssetDefinitionSchema.parse({ ...validAssetDefinition, [field]: reference })[field]).toBe(reference);
+      expect(CreateAssetDefinitionSchema.parse({ ...validCreateAssetDefinition, [field]: reference })[field]).toBe(reference);
+    }
+  });
+
+  it.each([
+    "//other.example/chair.glb",
+    "///other.example/chair.glb",
+    "/%2fother.example/chair.glb",
+    "/\\other.example/chair.glb",
+    "/models\\chair.glb",
+    "/models/%5cchair.glb",
+    "/models/../chair.glb",
+    "/models/./chair.glb",
+    "/models/%2e%2E/chair.glb",
+    "/models/%2E/chair.glb",
+    "/models/chair\n.glb",
+    "/models/chair\u0000.glb",
+    "/models/chair\u007f.glb",
+    "/models/chair%0a.glb",
+    "/models/chair.glb?version=%00",
+    "/models/%broken.glb",
+    " /models/chair.glb",
+    "/models/chair.glb ",
+    "models/chair.glb",
+    "../models/chair.glb",
+  ])("rejects an unsafe or non-root relative asset reference: %s", (reference) => {
+    for (const field of ["meshUrl", "thumbnailUrl"] as const) {
+      expect(AssetDefinitionSchema.safeParse({ ...validAssetDefinition, [field]: reference }).success).toBe(false);
+      expect(CreateAssetDefinitionSchema.safeParse({ ...validCreateAssetDefinition, [field]: reference }).success).toBe(false);
+    }
   });
 });
 

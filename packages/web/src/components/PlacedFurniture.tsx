@@ -105,7 +105,7 @@ export function plannerFurnitureRenderPartition(
     // Keep a legacy applicator row in editor/save state, but exclude it from
     // every visual batch. It represents an action on a table, not furniture.
     if (!isSceneFurniturePlacement(placed)) continue;
-    if (item !== undefined && item.meshUrl === null) {
+    if (item !== undefined) {
       instancedItems.push(placed);
       instancedIds.add(placed.id);
     }
@@ -861,9 +861,8 @@ export function PlacedFurniture(): React.ReactElement {
     return counts;
   }, [placedItems]);
 
-  // Items whose model is procedural (no imported .glb) are drawn by the
-  // instanced layer; GLTF items load asynchronously and can't be harvested
-  // synchronously, so they keep their own per-item model rendering.
+  // Repeated procedural and imported models share detailed material batches.
+  // Imported templates refresh the batch when their GLB finishes loading.
   const { instancedItems, instancedIds } = useMemo(
     () => plannerFurnitureRenderPartition(placedItems, inspectedPlacedItemId),
     [inspectedPlacedItemId, placedItems],

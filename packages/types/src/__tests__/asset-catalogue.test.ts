@@ -97,6 +97,18 @@ describe("getCanonicalAssetBySlug", () => {
 });
 
 describe("deterministic UUID stability", () => {
+  it("adds the identified Turini chair without replacing the existing banquet chair", () => {
+    const item = getCanonicalAssetBySlug("burgess-turini-18-3");
+    expect(item).toMatchObject({
+      id: "7f1fb7a2-5210-57b1-9108-11255c059520", category: "chair",
+      widthM: 0.42, depthM: 0.58, heightM: 0.88, seatCount: 1,
+      collisionType: "box", maxCount: null,
+      meshUrl: "/models/furniture/burgess-turini-18-3/v1/chair.glb",
+      thumbnailUrl: "/models/furniture/burgess-turini-18-3/v1/preview.webp",
+    });
+    expect(item?.id).not.toBe(getCanonicalAssetBySlug("banquet-chair")?.id);
+  });
+
   // If anyone changes the UUIDs, this test breaks. The UUIDs are stable
   // because they're derived from uuid v5(slug, OMNITWIN_NAMESPACE) — but
   // since we hardcode them (no runtime hash), this test is the guard.

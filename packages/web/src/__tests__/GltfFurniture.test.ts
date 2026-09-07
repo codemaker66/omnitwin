@@ -41,8 +41,11 @@ describe("CatalogueItem meshUrl field (#28)", () => {
     }
   });
 
-  it("all current items have meshUrl: null (procedural fallback)", () => {
-    for (const item of CATALOGUE_ITEMS) {
+  it("routes the supplied Turini to its model while retaining existing procedural items", () => {
+    const imported = CATALOGUE_ITEMS.filter((item) => item.meshUrl !== null);
+    expect(imported.map((item) => item.slug)).toEqual(["burgess-turini-18-3"]);
+    expect(imported[0]?.meshUrl).toBe("/models/furniture/burgess-turini-18-3/v1/chair.glb");
+    for (const item of CATALOGUE_ITEMS.filter((item) => item.slug !== "burgess-turini-18-3")) {
       expect(item.meshUrl).toBeNull();
     }
   });
@@ -89,21 +92,6 @@ describe("GltfFurniture component (#28)", () => {
     expect(codeOnly).toMatch(/import[\s\S]*?useGLTF[\s\S]*?from[\s\S]*?@react-three\/drei/);
   });
 
-  it("scales the model to fit catalogue dimensions", async () => {
-    const { codeOnly } = await readSource("src/components/meshes/GltfFurniture.tsx");
-    expect(codeOnly).toContain("Box3");
-    expect(codeOnly).toContain("toRenderSpace");
-    expect(codeOnly).toContain("uniformScale");
-  });
-
-  it("clones the scene for per-instance material overrides", async () => {
-    const { codeOnly } = await readSource("src/components/meshes/GltfFurniture.tsx");
-    expect(codeOnly).toContain("gltfScene.clone(");
-  });
-
-  it("applies clipping planes to loaded materials", async () => {
-    const { codeOnly } = await readSource("src/components/meshes/GltfFurniture.tsx");
-    expect(codeOnly).toContain("noClipPlanes");
-    expect(codeOnly).toContain("clippingPlanes");
-  });
+  // Actual normalization, material isolation and disposal behavior is covered
+  // by the glTF instance tests rather than the old source-text assertions.
 });

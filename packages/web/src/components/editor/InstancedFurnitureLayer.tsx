@@ -16,6 +16,9 @@ import {
   FurnitureProxy,
   normalizedFurniturePresentationScale,
 } from "../FurnitureProxy.js";
+import { GltfFurnitureTemplateContext } from "../meshes/GltfFurnitureTemplateContext.js";
+import { isImportedFurnitureMaterial } from "../../lib/gltf-furniture-instance.js";
+import { furnitureMaterialParts } from "../../lib/gltf-furniture-parts.js";
 import {
   materialAppearanceSignature,
   mergePartsByMaterial,
@@ -42,9 +45,8 @@ import {
 // or opacity overrides) is rendered once into a hidden template, harvested into
 // merged-by-material geometries + cloned materials, and instanced. The layer
 // owns its geometries/materials and disposes them when the variant set changes
-// or the layer unmounts. GLTF/imported models are excluded by the caller (they
-// load asynchronously and can't be harvested synchronously) and keep their
-// existing per-item rendering.
+// or the layer unmounts. Imported models first batch their procedural fallback,
+// then notify the layer when the GLTF template is ready for a fresh harvest.
 // ---------------------------------------------------------------------------
 
 interface HarvestedVariant {
@@ -138,31 +140,38 @@ export function instanceCapacityFor(count: number): number {
 }
 
 /** Harvest a rendered model template into merged-by-material geometries + cloned materials. */
-function harvestVariant(root: Object3D): HarvestedVariant {
+export function harvestVariant(root: Object3D): HarvestedVariant {
   const parts: ExtractedPart[] = [];
   const sourceMaterialByKey = new Map<string, Material>();
   const materialByKey = new Map<string, Material>();
   const appearanceByKey = new Map<string, MaterialAppearance>();
   const shadowsByKey = new Map<string, MaterialShadows>();
 
-  for (const { mesh, matrix } of collectMeshInstancesForHarvest(root)) {
-    const material = mesh.material;
-    if (Array.isArray(material)) continue; // composite procedural meshes are single-material
-    const key = materialAppearanceSignature(material);
-    if (!sourceMaterialByKey.has(key)) sourceMaterialByKey.set(key, material);
-    const shadows = shadowsByKey.get(key);
-    shadowsByKey.set(key, {
-      castShadow: (shadows?.castShadow ?? false) || mesh.castShadow,
-      receiveShadow: (shadows?.receiveShadow ?? false) || mesh.receiveShadow,
-    });
-    parts.push({
-      geometry: mesh.geometry,
-      materialKey: key,
-      matrix,
-    });
+  const temporaryParts: ReturnType<typeof furnitureMaterialParts>[] = [];
+  let groups: MergedMaterialGroup[];
+  try {
+    for (const { mesh, matrix } of collectMeshInstancesForHarvest(root)) {
+      const extracted = furnitureMaterialParts(mesh);
+      temporaryParts.push(extracted);
+      for (const { geometry, material } of extracted.parts) {
+        // Imported material identity preserves all maps/extensions, even unnamed
+        // textures. Procedural factories retain their cross-mesh semantic batching.
+        const key = isImportedFurnitureMaterial(material)
+          ? `gltf:${material.uuid}`
+          : materialAppearanceSignature(material);
+        if (!sourceMaterialByKey.has(key)) sourceMaterialByKey.set(key, material);
+        const shadows = shadowsByKey.get(key);
+        shadowsByKey.set(key, {
+          castShadow: (shadows?.castShadow ?? false) || mesh.castShadow,
+          receiveShadow: (shadows?.receiveShadow ?? false) || mesh.receiveShadow,
+        });
+        parts.push({ geometry, materialKey: key, matrix });
+      }
+    }
+    groups = mergePartsByMaterial(parts);
+  } finally {
+    for (const extracted of temporaryParts) extracted.dispose();
   }
-
-  const groups = mergePartsByMaterial(parts);
   try {
     for (const [key, material] of sourceMaterialByKey) {
       materialByKey.set(key, material.clone());
@@ -180,7 +189,7 @@ function harvestVariant(root: Object3D): HarvestedVariant {
   }
 }
 
-function disposeVariant(variant: HarvestedVariant): void {
+export function disposeVariant(variant: HarvestedVariant): void {
   for (const group of variant.groups) group.geometry.dispose();
   for (const material of variant.materialByKey.values()) material.dispose();
 }
@@ -257,6 +266,7 @@ function DirectInstanceBatch({
       frustumCulled={false}
       castShadow={castShadow}
       receiveShadow={receiveShadow}
+      dispose={null}
     />
   );
 }
@@ -304,8 +314,12 @@ export function InstancedFurnitureLayer({
   const templateRef = useRef<Group>(null);
   const lastDrivenOpacity = useRef<number | null>(null);
   const [harvested, setHarvested] = useState<ReadonlyMap<string, HarvestedVariant>>(new Map());
+  const [templateRevision, setTemplateRevision] = useState(0);
+  const handleTemplateReady = useCallback(() => {
+    setTemplateRevision((revision) => revision + 1);
+  }, []);
 
-  // Re-harvest only when the SET of variants changes (not on every drag). The
+  // Re-harvest when variants change or an asynchronous GLTF resolves, never on drag. The
   // cleanup disposes the geometries/materials this run created — it runs before
   // the next harvest or on unmount, never while the current generation is still
   // on screen.
@@ -335,7 +349,7 @@ export function InstancedFurnitureLayer({
       for (const variant of next.values()) disposeVariant(variant);
     };
     // variantSignature is the derived key for the variantOrder set read inside.
-  }, [variantSignature, invalidate, onFailedVariantIdsChange]);
+  }, [variantSignature, templateRevision, invalidate, onFailedVariantIdsChange]);
 
   const setNonPickable = useCallback((mesh: InstancedMesh | null) => {
     if (mesh !== null) mesh.raycast = noRaycast;
@@ -359,6 +373,7 @@ export function InstancedFurnitureLayer({
   return (
     <group name="instanced-furniture">
       {/* Hidden templates — one model per variant at the origin, harvested once. */}
+      <GltfFurnitureTemplateContext.Provider value={handleTemplateReady}>
       <group ref={templateRef} visible={false}>
         {variantOrder.map((key) => {
           const sampleItem = sampleByVariant.get(key);
@@ -372,6 +387,7 @@ export function InstancedFurnitureLayer({
           );
         })}
       </group>
+      </GltfFurnitureTemplateContext.Provider>
 
       {/* Visible instanced models — one InstancedMesh per variant per material group. */}
       {variantOrder.map((key) => {
@@ -417,6 +433,7 @@ export function InstancedFurnitureLayer({
               material={material}
               castShadow={shadows.castShadow}
               receiveShadow={shadows.receiveShadow}
+              dispose={null}
             >
               {variantItems.map((item) => (
                 <Instance

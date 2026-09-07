@@ -1,12 +1,12 @@
 import "dotenv/config";
-import { type FloorPlanPoint, polygonBoundingBox, CANONICAL_ASSETS, ACCESSORY_RULES } from "@omnitwin/types";
+import { type FloorPlanPoint, polygonBoundingBox, ACCESSORY_RULES } from "@omnitwin/types";
 import { validateEnv } from "../env.js";
 import { createDb, isLocalDatabaseUrl } from "./client.js";
+import { seedCanonicalAssets } from "./seed-canonical-assets.js";
 import {
   venues,
   spaces,
   users,
-  assetDefinitions,
   assetAccessories,
   pricingRules,
   bookings,
@@ -104,29 +104,10 @@ async function seed(): Promise<void> {
     console.log(`  Space: ${s.name} (${s.id})`);
   }
 
-  // --- 3. Asset definitions — derived from the canonical catalogue in
-  // @omnitwin/types/asset-catalogue.ts. Each item uses a deterministic
-  // UUID v5 as its primary key (overriding defaultRandom()), so the DB
-  // rows have the same IDs that the web catalogue references. Re-running
-  // the seed with the same slugs produces the same UUIDs — idempotent.
-  //
-  // The canonical catalogue also guarantees that names, categories, and
-  // dimensions match the web's rendering metadata. The old seed used
-  // different names ("Round Table 6ft" vs "6ft Round Table") and invalid
-  // categories ("staging", "danceFloor", "misc") which broke the FK
-  // linkage and the hallkeeper accessory lookup.
-  const insertedAssets = await db.insert(assetDefinitions).values(
-    CANONICAL_ASSETS.map((a) => ({
-      id: a.id,
-      name: a.name,
-      category: a.category,
-      widthM: String(a.widthM),
-      depthM: String(a.depthM),
-      heightM: String(a.heightM),
-      seatCount: a.seatCount,
-      collisionType: a.collisionType,
-    })),
-  ).returning();
+  // --- 3. Asset definitions — reuse matching migration-registered identities
+  // and insert only missing catalogue rows. Incompatible existing metadata
+  // aborts registration; all canonical rows are returned for accessory lookup.
+  const insertedAssets = await seedCanonicalAssets(db);
 
   for (const a of insertedAssets) {
     console.log(`  Asset: ${a.name} (${a.id})`);
@@ -135,7 +116,7 @@ async function seed(): Promise<void> {
   // --- 3b. Asset accessories (hallkeeper setup rules) ---
   // Convert ACCESSORY_RULES (static lookup keyed by asset name) into DB
   // rows keyed by the parent asset's UUID. The name→UUID mapping comes
-  // from the just-inserted assets. Accessories for assets not in the
+  // from the registered assets. Accessories for assets not in the
   // seed (future admin-created items) are silently skipped.
   const assetIdByName = new Map<string, string>();
   for (const a of insertedAssets) {

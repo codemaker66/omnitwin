@@ -54,6 +54,10 @@ export interface CanonicalAsset {
   readonly subtitle: string;
   /** Colour for the placeholder mesh (hex). */
   readonly color: string;
+  /** Optional versioned presentation asset; dimensions remain catalogue facts. */
+  readonly meshUrl?: string;
+  /** Render of the supplied 3D model, not a photograph or stock evidence. */
+  readonly thumbnailUrl?: string;
   /**
    * Implicit event-sheet requirements triggered by placing this asset.
    * Drives the "Technical requirements" section on the hallkeeper
@@ -148,6 +152,21 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
     widthM: 0.45, depthM: 0.45, heightM: 0.90,
     seatCount: 1, collisionType: "box", tableShape: null,
     maxCount: null, subtitle: "Padded \u00B7 stackable", color: "#a82020",
+    equipmentTags: [],
+  },
+
+  {
+    id: "7f1fb7a2-5210-57b1-9108-11255c059520",
+    slug: "burgess-turini-18-3",
+    name: "Burgess Turini 18/3",
+    category: "chair",
+    // Manufacturer's standard 18/3 specifications, identified by Blake.
+    // The supplied Rodin model is generated presentation geometry.
+    widthM: 0.42, depthM: 0.58, heightM: 0.88,
+    seatCount: 1, collisionType: "box", tableShape: null,
+    maxCount: null, subtitle: "42 × 58cm · seat height 44.5cm", color: "#bd7769",
+    meshUrl: "/models/furniture/burgess-turini-18-3/v1/chair.glb",
+    thumbnailUrl: "/models/furniture/burgess-turini-18-3/v1/preview.webp",
     equipmentTags: [],
   },
 

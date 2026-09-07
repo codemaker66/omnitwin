@@ -196,7 +196,7 @@ describe("getCatalogueByCategory", () => {
 
   it("returns all items in the chair category", () => {
     const chairs = getCatalogueByCategory("chair");
-    expect(chairs.length).toBe(1);
+    expect(chairs.map((chair) => chair.slug)).toEqual(["banquet-chair", "burgess-turini-18-3"]);
     for (const item of chairs) {
       expect(item.category).toBe("chair");
     }

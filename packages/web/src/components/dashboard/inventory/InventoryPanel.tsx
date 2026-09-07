@@ -90,7 +90,7 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
             {loading ? <ActivityStatus>Refreshing stock…</ActivityStatus> : null}
             {selected === null ? <section className="inventory-state"><h2>Your catalogue is empty</h2>
               <p>Add furniture and equipment to your venue’s catalogue before recording stock.</p></section> : <>
-              <div className="inventory-featured-item"><InventoryPicture name={selected.catalogue.name} hero />
+              <div className="inventory-featured-item"><InventoryPicture name={selected.catalogue.name} assetId={selected.catalogue.id} hero />
                 <div className="inventory-featured-copy"><h2>{selected.catalogue.name}</h2>
                   <p className="inventory-location"><MapPin size={16} />{selected.stock?.storageLocation ?? "Storage not recorded"}</p>
                   {selected.stock?.status === "retired" ? <p className="inventory-stock-status">Retired · excluded from use</p> : null}
@@ -103,7 +103,7 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
                     {selected.stock === null ? "Record stock" : "Correct stock"}<ArrowUpRight size={16} /></button></div>
               {secondary.length > 0 ? <div className="inventory-secondary-items">{secondary.map((item) => <button type="button"
                 className="inventory-equipment-choice" key={item.catalogue.id} aria-label={`${item.stock === null ? "Record" : "Adjust"} ${item.catalogue.name}`}
-                onClick={() => { select(item); }}><InventoryPicture name={item.catalogue.name} />
+                onClick={() => { select(item); }}><InventoryPicture name={item.catalogue.name} assetId={item.catalogue.id} />
                 <span><strong>{item.catalogue.name}</strong><span>{item.stock === null ? "Not recorded" : `${item.stock.ownedQuantity.toLocaleString("en-GB")} owned`}</span></span></button>)}</div> : null}
               </div>
             </>}

@@ -55,7 +55,7 @@ function canonicalToCatalogue(a: CanonicalAsset): CatalogueItem {
     tableShape: a.tableShape,
     maxCount: a.maxCount,
     subtitle: a.subtitle,
-    meshUrl: null,
+    meshUrl: a.meshUrl ?? null,
   };
 }
 
@@ -85,6 +85,7 @@ export function catalogueIcon(item: CatalogueItem): string {
     case "poseur-table-black":
     case "poseur-table-white":
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><circle cx="20" cy="16" r="8" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="20" y1="24" x2="20" y2="36" stroke="${s}" stroke-width="1.5"/><line x1="14" y1="36" x2="26" y2="36" stroke="${s}" stroke-width="1.5"/></svg>`;
+    case "burgess-turini-18-3":
     case "banquet-chair":
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="6" width="16" height="8" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/><rect x="12" y="16" width="16" height="12" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="14" y1="28" x2="14" y2="34" stroke="${s}" stroke-width="1.5"/><line x1="26" y1="28" x2="26" y2="34" stroke="${s}" stroke-width="1.5"/></svg>`;
     case "dancefloor-panel":

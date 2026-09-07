@@ -1,0 +1,242 @@
+{
+  "asset": "Burgess Turini 18/3 chair",
+  "sourceKind": "User-supplied Hyper3D Rodin generated PBR model",
+  "source": {
+    "filename": "base_basic_pbr.glb",
+    "bytes": 23909760,
+    "sha256": "9e7aa9ad1a2d818ca034971db2cd481ec7a37d8ea2c4469057179c3b10e5c37c",
+    "triangles": 500000,
+    "vertices": 295340,
+    "bounds": {
+      "min": [
+        -0.4829300045967102,
+        0,
+        -0.6535392999649048
+      ],
+      "max": [
+        0.4842265248298645,
+        1.8999086618423462,
+        0.6522905826568604
+      ],
+      "size": [
+        0.9671565294265747,
+        1.8999086618423462,
+        1.3058298826217651
+      ]
+    },
+    "materials": 1,
+    "textures": [
+      {
+        "name": "texture_normal",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2938859
+      },
+      {
+        "name": "texture_diffuse",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 3046590
+      },
+      {
+        "name": "texture_metallic-texture_roughness",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2471688
+      }
+    ]
+  },
+  "dependencies": {
+    "gltfTransform": "4.3.0",
+    "meshoptimizer": "1.2.0",
+    "sharp": "0.35.3"
+  },
+  "heightNormalizedMaster": {
+    "filename": "height-normalized-master.glb",
+    "sha256": "7a2fc110b44c1582306c9aab30363e7220a452f5b320efede3d5b92dffcd70c7",
+    "triangles": 500000,
+    "vertices": 295340,
+    "bounds": {
+      "min": [
+        -0.22398385405540466,
+        0,
+        -0.30241724848747253
+      ],
+      "max": [
+        0.22398385405540466,
+        0.8799999952316284,
+        0.30241724848747253
+      ],
+      "size": [
+        0.4479677081108093,
+        0.8799999952316284,
+        0.6048344969749451
+      ]
+    },
+    "materials": 1,
+    "textures": [
+      {
+        "name": "texture_normal",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2938859
+      },
+      {
+        "name": "texture_diffuse",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 3046590
+      },
+      {
+        "name": "texture_metallic-texture_roughness",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2471688
+      }
+    ]
+  },
+  "normalization": {
+    "uniformScale": 0.4631801610645123,
+    "sourceCenterSubtracted": [
+      0.0006482601165771484,
+      0,
+      -0.0006243586540222168
+    ]
+  },
+  "simplification": [
+    {
+      "method": "meshoptimizer.simplifyWithAttributes",
+      "targetTriangles": 50000,
+      "targetError": 0.001,
+      "normalAndUvWeights": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "actualTriangles": 52986,
+      "actualError": 0.000977337476797402
+    }
+  ],
+  "calibration": {
+    "description": "Per-axis correction of AI-generated model to manufacturer overall envelope supplied by user; normals transformed by inverse transpose. Not a measured scan.",
+    "dimensionsMetres": {
+      "width": 0.42,
+      "height": 0.88,
+      "depth": 0.58
+    },
+    "seatHeightMetres": 0.445,
+    "seatHeightStatus": "Manufacturer nominal value; not independently calibrated on generated seat surface",
+    "axisScaleAfterSimplification": [
+      0.9376870420596661,
+      1.0003396316120923,
+      0.9590944986176305
+    ],
+    "translationBeforeScale": [
+      -0.00000838935375213623,
+      -0.00015106926730368286,
+      -0.00000502169132232666
+    ],
+    "forward": "+Z",
+    "up": "+Y",
+    "pivot": "floor, centered width and depth"
+  },
+  "runtime": {
+    "filename": "chair.glb",
+    "bytes": 7443316,
+    "sha256": "1aac4fc1affbc8f489e818634c21191b1a5fcf8fd70e0325bf041f2129cb91ec",
+    "triangles": 52986,
+    "vertices": 57896,
+    "bounds": {
+      "min": [
+        -0.20999999344348907,
+        0,
+        -0.28999999165534973
+      ],
+      "max": [
+        0.20999999344348907,
+        0.8799999952316284,
+        0.28999999165534973
+      ],
+      "size": [
+        0.41999998688697815,
+        0.8799999952316284,
+        0.5799999833106995
+      ]
+    },
+    "materials": 1,
+    "textures": [
+      {
+        "name": "texture_normal",
+        "mimeType": "image/webp",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2257614
+      },
+      {
+        "name": "texture_diffuse",
+        "mimeType": "image/webp",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 1822786
+      },
+      {
+        "name": "texture_metallic-texture_roughness",
+        "mimeType": "image/webp",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 1190420
+      }
+    ],
+    "requiredExtensions": [
+      "EXT_texture_webp"
+    ]
+  },
+  "textureVerification": [
+    {
+      "name": "texture_normal",
+      "decodedRgbaSha256": "f010189224abb006e8392e94564519f7fc506c4da3d91afde20fa32572c8a4b2",
+      "decodedPixelsEqual": true
+    },
+    {
+      "name": "texture_diffuse",
+      "decodedRgbaSha256": "65f4f42dd72f64c909f5e1202a66cadee8a288fa61848a4d8cc35adffae3a7f4",
+      "decodedPixelsEqual": true
+    },
+    {
+      "name": "texture_metallic-texture_roughness",
+      "decodedRgbaSha256": "ba63bd15ca5f6e789759af493af553e6e4ec65fc0cf89de2db94720a30dbbdb4",
+      "decodedPixelsEqual": true
+    }
+  ],
+  "limitations": [
+    "Supplied model has salmon/peach upholstery and a dark burgundy reflective frame; brochure red/gold appearance was not recreated.",
+    "Source texture maps are 2048 x 2048; no artificial upscaling.",
+    "Geometry and texture fidelity were visually compared in neutral studio renders; no furnished-hall performance or founder visual acceptance is claimed."
+  ]
+}

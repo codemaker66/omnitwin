@@ -43,6 +43,25 @@ export const FurnitureDimensionsSchema = z.object({
 
 export type FurnitureDimensions = z.infer<typeof FurnitureDimensionsSchema>;
 
+// Keep existing absolute URLs valid while supporting versioned, same-origin
+// catalogue files. Relative references must not become another host or traverse
+// directories after a browser/server decodes their path.
+const RootRelativeAssetPathSchema = z.string().refine((value) => {
+  if (!value.startsWith("/") || value.startsWith("//") || value.trim() !== value) return false;
+  try {
+    const decoded = decodeURIComponent(value);
+    const pathname = decodeURIComponent(value.split(/[?#]/u, 1)[0] ?? "");
+    if (decoded.startsWith("//")) return false;
+    if ((value + decoded).split("").some((character) =>
+      character === "\\" || character.charCodeAt(0) < 0x20 || character.charCodeAt(0) === 0x7f)) return false;
+    return !pathname.split("/").some((segment) => segment === "." || segment === "..");
+  } catch {
+    return false;
+  }
+}, "Expected a safe root-relative asset path");
+
+const AssetReferenceSchema = z.union([z.string().url(), RootRelativeAssetPathSchema]);
+
 // ---------------------------------------------------------------------------
 // Asset Definition — a global catalogue entry (matches DB: asset_definitions)
 //
@@ -55,8 +74,8 @@ export const AssetDefinitionSchema = z.object({
   id: AssetDefinitionIdSchema,
   name: z.string().trim().min(1).max(200),
   category: FurnitureCategorySchema,
-  thumbnailUrl: z.string().url().nullable(),
-  meshUrl: z.string().url().nullable(),
+  thumbnailUrl: AssetReferenceSchema.nullable(),
+  meshUrl: AssetReferenceSchema.nullable(),
   widthM: z.string(), // numeric(5,3) stored as string
   depthM: z.string(),
   heightM: z.string(),
@@ -79,8 +98,8 @@ export const CreateAssetDefinitionSchema = z.object({
   heightM: z.number().positive().max(MAX_DIM),
   seatCount: z.number().int().positive().nullable().optional(),
   collisionType: z.string().max(20).default("box"),
-  meshUrl: z.string().url().nullable().optional(),
-  thumbnailUrl: z.string().url().nullable().optional(),
+  meshUrl: AssetReferenceSchema.nullable().optional(),
+  thumbnailUrl: AssetReferenceSchema.nullable().optional(),
 });
 
 export type CreateAssetDefinition = z.infer<typeof CreateAssetDefinitionSchema>;

@@ -41,6 +41,18 @@ describe("plannerFurnitureRenderPartition", () => {
     expect([...partition.instancedIds]).toEqual(generated.map((item) => item.id));
   });
 
+  it("batches every repeated imported chair while retaining one inspected hierarchy", () => {
+    const chairs = Array.from({ length: 144 }, (_, index) => (
+      createPlacedItem(catalogueId("burgess-turini-18-3"), index % 12, Math.floor(index / 12))
+    ));
+    expect(plannerFurnitureRenderPartition(chairs, null).instancedItems).toHaveLength(144);
+    const inspected = chairs[0];
+    if (inspected === undefined) throw new Error("missing imported chair fixture");
+    const partition = plannerFurnitureRenderPartition(chairs, inspected.id);
+    expect(partition.instancedItems).toHaveLength(143);
+    expect(partition.instancedIds.has(inspected.id)).toBe(false);
+  });
+
   it("retains leaked dressing rows in state but excludes them from every model batch", () => {
     const table = createPlacedItem(catalogueId("round-table-6ft"), 0, 0);
     const leakedApplicators = [

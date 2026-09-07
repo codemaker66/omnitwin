@@ -456,6 +456,13 @@
       "when": 1788717800000,
       "tag": "0066_inventory_reservations",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1788717900000,
+      "tag": "0067_burgess_turini_chair",
+      "breakpoints": true
     }
   ]
 }

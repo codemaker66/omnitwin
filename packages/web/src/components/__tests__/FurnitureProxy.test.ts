@@ -17,6 +17,7 @@ const EXPECTED_MESH_BY_SLUG: Readonly<Record<string, FurnitureMeshKind>> = {
   "round-table-6ft": "generated",
   "trestle-6ft": "generated",
   "banquet-chair": "generated",
+  "burgess-turini-18-3": "chair",
   "platform": "generated",
   "bar-counter": "generated",
   "dancefloor-panel": "generated",
