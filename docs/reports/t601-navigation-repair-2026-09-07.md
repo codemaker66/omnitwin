@@ -172,5 +172,36 @@ startup was retained as runner evidence and is not represented as a test result.
 The additional failure and pass evidence is saved at
 `D:/claude/venviewer-navigation-timeline-anchor-error-repro-threads-20260907.log`
 and `D:/claude/venviewer-navigation-timeline-anchor-error-fixed-20260907.log`.
-The sole executor has the final qualified guard commit; its publication receipt
-is the remaining delivery item for this slice.
+The sole executor integrated the final qualified guard into production source
+`2805f78e5b94e34a95e052407180ed2ed2a9e063`; the follow-up is deployed.
+
+## Final production delivery
+
+The final web deployment succeeded at 19:39 UTC on 7 September. The executor's
+receipt is `D:/claude/venviewer-presentation-readiness-20260907/live-provider-2805f78e.json`:
+deployment `6315127880`, public entry `/assets/index-KV0_vdZi.js`, and healthy
+`https://api.venviewer.com` at the unchanged API runtime `7f2a701b`. The executor
+reports the final type, lint and build gates passed; retained full-web and worker
+retry evidence covers 453 files, with 5,964 passing and 16 skipped tests.
+
+An independent read of the existing authenticated Vercel browser session confirmed
+the project's Production Deployment was Ready, its Domains included
+`venviewer.com`, and its source commit link identified the exact `2805f78e` SHA
+above. The provider deployment is `4i2zs2sNWABobndHh5DFCKaj9oFz` at
+`omnitwin-njf2f1lqr-codemaker66s-projects.vercel.app`. This resolves the receipt's
+pending provider alias UI check without bypassing protected deployment URLs or
+changing any provider settings. Exact CUA screenshot bytes are retained as
+`navigation-live/provider-production-2805f78e.jpg` beneath the same evidence root.
+
+After reloading the final live homepage, one normal native **Plan Grand Hall**
+click reused the existing public configuration
+`322421df-164d-45bf-a746-fa693480b102`, with zero current objects. Its URL was
+`/plan/322421df-164d-45bf-a746-fa693480b102?space=grand-hall&timelineScope=day&timelineDate=2026-09-07`.
+There was no historical phase parameter or editing lock. Add furniture opened
+the real catalogue and Move could be selected. No new draft, furniture, booking,
+snapshot or approval was written. The tab returned to the homepage afterwards.
+The native result is saved as `navigation-live/homepage-planner-entry-2805f78e.jpg`;
+`navigation-live/final-screenshot-provenance.json` retains both capture call IDs
+and timestamps. This completes the navigation slice's required delivery checks.
+Broader T-601 presentation, visual acceptance and device performance remain with
+their respective owners.
