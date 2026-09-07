@@ -133,10 +133,34 @@ afterEach(() => {
 });
 
 describe("timeline preview action isolation", () => {
+  it("keeps review controls out of the closed disclosure and preserves the unchecked choice across collapse", async () => {
+    mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "draft", availableTransitions: ["submitted"], internalDemoReviewEligible: true });
+    render(<SubmitForReviewPanel />);
+    const summary = await screen.findByRole("button", { name: /^Review saved plan:/u });
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("checkbox", { name: /Notify team/u })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Submit for Approval" })).toBeNull();
+    fireEvent.click(summary);
+    const choice = screen.getByRole("checkbox", { name: /Notify team/u });
+    fireEvent.click(choice);
+    fireEvent.keyDown(choice, { key: "Escape" });
+    expect(summary).toBe(document.activeElement);
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("checkbox", { name: /Notify team/u })).toBeNull();
+    fireEvent.click(summary);
+    expect(screen.getByRole("checkbox", { name: /Notify team/u })).toHaveProperty("checked", false);
+    act(() => { enterCrossPhasePreview(); });
+    expect(screen.getByRole("checkbox", { name: /Notify team/u })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Exit preview to submit" })).toHaveProperty("disabled", true);
+    act(() => { useLayoutTimelinePreviewStore.getState().clear(); });
+    expect(screen.getByRole("checkbox", { name: /Notify team/u })).toHaveProperty("checked", false);
+  });
+
   it("submits an eligible internal demo using the explicit unchecked choice", async () => {
     mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "draft", availableTransitions: ["submitted"], internalDemoReviewEligible: true });
     mocks.submitForReview.mockResolvedValue({ reviewStatus: "submitted", notificationPolicy: "suppressed_demo" });
     render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
     const choice = await screen.findByRole("checkbox", { name: /Notify team/u });
     expect(choice).toHaveProperty("checked", true);
     fireEvent.click(choice);
@@ -148,10 +172,61 @@ describe("timeline preview action isolation", () => {
   it("does not claim suppression when the server did not confirm it", async () => {
     mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "draft", availableTransitions: ["submitted"], internalDemoReviewEligible: true });
     render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
     fireEvent.click(await screen.findByRole("checkbox", { name: /Notify team/u }));
     fireEvent.click(screen.getByRole("button", { name: "Submit for Approval" }));
     await waitFor(() => { expect(mocks.submitForReview).toHaveBeenCalled(); });
     expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
+  });
+
+  it("clears the suppressed-submit confirmation when withdrawing before a later ordinary draft submission", async () => {
+    mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "draft", availableTransitions: ["submitted"], internalDemoReviewEligible: true });
+    mocks.submitForReview.mockResolvedValueOnce({ reviewStatus: "submitted", notificationPolicy: "suppressed_demo" });
+    const withdrawal = deferred<string>();
+    mocks.withdrawReview.mockReturnValueOnce(withdrawal.promise);
+    const panel = render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Notify team/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit for Approval" }));
+    await screen.findByText(/notifications were suppressed/u);
+    fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
+    expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
+    await act(async () => { withdrawal.resolve("withdrawn"); await withdrawal.promise; });
+    expect(screen.getByRole("button", { name: "Review saved plan: Withdrawn" })).toBeTruthy();
+    expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
+    panel.unmount();
+    // The actual withdrawal route closes the review. A later draft is loaded
+    // separately; do not invent a withdrawn-to-draft API transition here.
+    mocks.submitForReview.mockResolvedValueOnce({ reviewStatus: "submitted", notificationPolicy: "team_requested" });
+    render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit for Approval" }));
+    await screen.findByRole("button", { name: "Withdraw" });
+    expect(mocks.submitForReview).toHaveBeenLastCalledWith(CONFIG_ID, undefined, true);
+    expect(screen.queryByText(/notifications were suppressed/u)).toBeNull();
+  });
+
+  it("does not apply an older withdrawal after navigating A to B to A", async () => {
+    const withdrawal = deferred<string>();
+    mocks.withdrawReview.mockReturnValueOnce(withdrawal.promise);
+    mocks.getAvailableTransitions.mockResolvedValueOnce({ currentStatus: "submitted", availableTransitions: ["withdrawn"] });
+    render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
+    act(() => {
+      useEditorStore.getState().reset();
+      useEditorStore.setState({ configId: "22222222-2222-4222-8222-222222222222", objects: [object], isPublicPreview: false });
+    });
+    await screen.findByRole("button", { name: "Review saved plan: Draft" });
+    act(() => {
+      useEditorStore.getState().reset();
+      useEditorStore.setState({ configId: CONFIG_ID, objects: [object], isPublicPreview: false });
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Review saved plan: Draft" }));
+    await act(async () => { withdrawal.resolve("withdrawn"); await withdrawal.promise; });
+    expect(screen.getByRole("button", { name: "Submit for Approval" })).toHaveProperty("disabled", false);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Review saved plan: Withdrawn" })).toBeNull();
   });
 
   it("does not submit into a replacement editing session after saving", async () => {
@@ -169,6 +244,7 @@ describe("timeline preview action isolation", () => {
     const pending = deferred<{ reviewStatus: string; notificationPolicy: string }>();
     mocks.submitForReview.mockReturnValueOnce(pending.promise);
     render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
     fireEvent.click(await screen.findByRole("button", { name: "Submit for Approval" }));
     await waitFor(() => { expect(mocks.submitForReview).toHaveBeenCalled(); });
     await act(async () => {
@@ -305,6 +381,7 @@ describe("timeline preview action isolation", () => {
 
   it("disables both submit and withdraw affordances during preview", async () => {
     const submitted = render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
     await screen.findByRole("button", { name: "Submit for Approval" });
     act(() => { enterCrossPhasePreview(); });
     expect(screen.getByRole("button", { name: "Exit preview to submit" }).hasAttribute("disabled"))
@@ -318,6 +395,7 @@ describe("timeline preview action isolation", () => {
       availableTransitions: ["withdrawn"],
     });
     render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
     await screen.findByRole("button", { name: "Withdraw" });
     act(() => { enterCrossPhasePreview(); });
     await waitFor(() => {
@@ -333,6 +411,7 @@ describe("timeline preview action isolation", () => {
       availableTransitions: [],
     });
     render(<SubmitForReviewPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Review saved plan:/u }));
     await screen.findByText("Approved");
     act(() => { enterCrossPhasePreview(); });
     expect(screen.queryByText("Approved")).toBeNull();

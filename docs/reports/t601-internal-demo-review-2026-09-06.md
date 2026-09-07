@@ -40,3 +40,25 @@ Root owns actual browser rehearsal on a separate synthetic database/API3011/
 Vite5221. Test-mode build success is not a deployable production-auth artifact.
 T601 remains the sole production release owner and must qualify the integrated
 real-account flow before claiming it live.
+
+## Browser-driven follow-up — 7 September
+
+The actual isolated browser run exposed two UI defects: the transparent fixed
+submission row overlapped the room controls, and Start Review changed the badge
+without refreshing available actions or history. The review controls now live
+in a compact backed disclosure with a viewport-constrained scrolling body.
+Closing it preserves the explicit notification choice; Escape returns focus to
+the summary and preview locks still disable mutations. After a review status
+change, the detail fetches fresh transitions and history; a failed refresh has a
+retry path instead of retaining stale actions. Request generations reject older
+StrictMode/read responses, and action ownership prevents a late decision from
+closing a different review. Withdrawal settlement is bound to its editor session.
+Each new submit/withdraw attempt clears the previous confirmation; the existing
+withdrawn result and transition policy are unchanged.
+
+The actual submitted → under_review contract was reproduced as a failing
+regression before the fix. Six additional stale-response/completion regressions
+also failed before their corrections. Final checks: 29 focused UI tests, full web/E2E
+TypeScript, changed-file lint, Vite test-mode build and diff hygiene passed.
+API behavior is unchanged. Root owns the actual browser recheck; these source
+checks do not establish responsive visual acceptance or production readiness.

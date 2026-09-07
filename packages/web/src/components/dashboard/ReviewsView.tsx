@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConfigurationReviewStatus } from "@omnitwin/types";
 import {
   approveLayout,
@@ -15,6 +15,7 @@ import {
 import { useToastStore } from "../../stores/toast-store.js";
 import { useReviewViewers } from "../../hooks/use-review-viewers.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
+import { ActivityIndicator } from "../shared/Activity.js";
 
 // ---------------------------------------------------------------------------
 // ReviewsView — staff approval dashboard for pending configuration reviews.
@@ -275,6 +276,8 @@ interface DetailViewProps {
 
 function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.ReactElement {
   const addToast = useToastStore((s) => s.addToast);
+  const contextRequest = useRef(0);
+  const actionOperation = useRef(0);
   const [demoEligible, setDemoEligible] = useState(false);
   const [notifyTeam, setNotifyTeam] = useState(true);
   const [history, setHistory] = useState<ReviewHistoryEntry[]>([]);
@@ -288,7 +291,10 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
   // drop the badge within a couple of seconds.
   const { viewers } = useReviewViewers(entry.id);
 
+  useEffect(() => () => { actionOperation.current += 1; }, [entry.id]);
+
   const loadContext = useCallback((): void => {
+    const request = ++contextRequest.current;
     setContextState({ status: "loading" });
     setDemoEligible(false);
     setNotifyTeam(true);
@@ -299,11 +305,13 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
           getReviewHistory(entry.id),
           getAvailableTransitions(entry.id),
         ]);
+        if (contextRequest.current !== request) return;
         setHistory([...hist]);
         setAvailableTransitions(trans.availableTransitions);
         setDemoEligible(trans.internalDemoReviewEligible);
         setContextState({ status: "ready" });
       } catch (error: unknown) {
+        if (contextRequest.current !== request) return;
         const message = error instanceof Error ? error.message : "Review context unavailable.";
         setHistory([]);
         setAvailableTransitions([]);
@@ -315,97 +323,113 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
 
   useEffect(() => {
     loadContext();
-  }, [loadContext]);
+    return () => { contextRequest.current += 1; };
+  }, [loadContext, entry.reviewStatus]);
 
   const can = (status: ConfigurationReviewStatus): boolean =>
     availableTransitions.includes(status);
 
   const handleStartReview = (): void => {
+    const operation = ++actionOperation.current;
     setInFlight(true);
     setActionError(null);
     void (async () => {
       try {
         const next = await startReview(entry.id);
+        if (actionOperation.current !== operation) return;
         addToast("Review started", "success");
         onStatusChange(entry.id, next);
       } catch {
+        if (actionOperation.current !== operation) return;
         setActionError("Could not start this review. Check your role and retry before making a decision.");
         addToast("Failed to start review", "error");
       } finally {
-        setInFlight(false);
+        if (actionOperation.current === operation) setInFlight(false);
       }
     })();
   };
 
   const handleApprove = (): void => {
+    const operation = ++actionOperation.current;
     setInFlight(true);
     setActionError(null);
     void (async () => {
       try {
         const { reviewStatus, notificationPolicy } = demoEligible
           ? await approveLayout(entry.id, undefined, notifyTeam) : await approveLayout(entry.id);
+        if (actionOperation.current !== operation) return;
         addToast(notificationPolicy === "suppressed_demo"
           ? "Layout approved for internal demo. Team notifications were suppressed."
           : "Layout approved — team notifications requested", "success");
         onStatusChange(entry.id, reviewStatus);
       } catch {
+        if (actionOperation.current !== operation) return;
         setActionError("Approval did not save. The layout has not been approved.");
         addToast("Failed to approve", "error");
       } finally {
-        setInFlight(false);
+        if (actionOperation.current === operation) setInFlight(false);
       }
     })();
   };
 
   const handleReject = (note: string): void => {
+    const operation = ++actionOperation.current;
     setInFlight(true);
     setActionError(null);
     void (async () => {
       try {
         const next = await rejectLayout(entry.id, note);
+        if (actionOperation.current !== operation) return;
         addToast("Rejection sent to planner", "success");
         setModal(null);
         onStatusChange(entry.id, next);
       } catch {
+        if (actionOperation.current !== operation) return;
         setActionError("Rejection did not save. The planner has not been notified.");
         addToast("Failed to reject", "error");
       } finally {
-        setInFlight(false);
+        if (actionOperation.current === operation) setInFlight(false);
       }
     })();
   };
 
   const handleRequestChanges = (note: string): void => {
+    const operation = ++actionOperation.current;
     setInFlight(true);
     setActionError(null);
     void (async () => {
       try {
         const next = await requestChanges(entry.id, note);
+        if (actionOperation.current !== operation) return;
         addToast("Change request sent to planner", "success");
         setModal(null);
         onStatusChange(entry.id, next);
       } catch {
+        if (actionOperation.current !== operation) return;
         setActionError("Change request did not save. The planner has not been notified.");
         addToast("Failed to request changes", "error");
       } finally {
-        setInFlight(false);
+        if (actionOperation.current === operation) setInFlight(false);
       }
     })();
   };
 
   const handleWithdraw = (): void => {
+    const operation = ++actionOperation.current;
     setInFlight(true);
     setActionError(null);
     void (async () => {
       try {
         const next = await withdrawReview(entry.id);
+        if (actionOperation.current !== operation) return;
         addToast("Review withdrawn", "success");
         onStatusChange(entry.id, next);
       } catch {
+        if (actionOperation.current !== operation) return;
         setActionError("Withdraw did not save. This review is still active.");
         addToast("Failed to withdraw", "error");
       } finally {
-        setInFlight(false);
+        if (actionOperation.current === operation) setInFlight(false);
       }
     })();
   };
@@ -456,7 +480,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1c978", margin: "0 0 8px" }}>Actions</h3>
           {contextState.status === "loading" && (
             <div role="status" aria-live="polite" style={{ ...alertStyle, color: "rgba(246,241,232,0.72)" }}>
-              Loading review gates, transitions, and decision history...
+              <ActivityIndicator size={16} /> Loading review gates, transitions, and decision history...
             </div>
           )}
           {contextState.status === "error" && (

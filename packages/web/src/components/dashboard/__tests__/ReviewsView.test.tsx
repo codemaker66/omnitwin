@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import type { PendingReviewEntry, ReviewHistoryEntry } from "../../../api/configuration-reviews.js";
 import { ReviewsView } from "../ReviewsView.js";
 
@@ -68,6 +69,16 @@ function historyEntry(overrides: Partial<ReviewHistoryEntry> = {}): ReviewHistor
   };
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: Error) => void } {
+  let resolvePromise: ((value: T) => void) | undefined;
+  let rejectPromise: ((error: Error) => void) | undefined;
+  return {
+    promise: new Promise<T>((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject; }),
+    resolve: value => { resolvePromise?.(value); },
+    reject: error => { rejectPromise?.(error); },
+  };
+}
+
 beforeEach(() => {
   mocks.approveLayout.mockReset();
   mocks.getAvailableTransitions.mockReset();
@@ -108,6 +119,95 @@ afterEach(() => {
 });
 
 describe("ReviewsView", () => {
+  it.each(["resolve", "reject"] as const)("keeps review B open when a pending approval for A later %s", async outcome => {
+    const approval = deferred<{ reviewStatus: string; notificationPolicy: string }>();
+    mocks.approveLayout.mockReturnValueOnce(approval.promise);
+    mocks.listPendingReviews.mockResolvedValue([
+      pendingReview(),
+      pendingReview({ id: "00000000-0000-4000-8000-000000007099", name: "Second review" }),
+    ]);
+    render(<ReviewsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open review for Reception Room review pack" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    fireEvent.click(screen.getByRole("button", { name: /Back to pending reviews/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Open review for Second review" }));
+    await screen.findByRole("button", { name: "Approve" });
+    await act(async () => {
+      if (outcome === "resolve") approval.resolve({ reviewStatus: "approved", notificationPolicy: "suppressed_demo" });
+      else approval.reject(new Error("Obsolete approval failure"));
+      await approval.promise.catch(() => undefined);
+    });
+    expect(screen.getByRole("heading", { name: "Second review" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveProperty("disabled", false);
+    expect(screen.queryByTestId("review-action-error")).toBeNull();
+    expect(mocks.addToast).not.toHaveBeenCalled();
+  });
+
+  it.each(["resolve", "reject"] as const)("ignores an older StrictMode context %s after starting review", async outcome => {
+    const olderHistory = deferred<ReviewHistoryEntry[]>();
+    mocks.getReviewHistory
+      .mockReturnValueOnce(olderHistory.promise)
+      .mockResolvedValueOnce([historyEntry()])
+      .mockResolvedValueOnce([historyEntry({ toStatus: "under_review", note: "Current staff review." })]);
+    mocks.getAvailableTransitions
+      .mockResolvedValueOnce({ currentStatus: "submitted", availableTransitions: ["under_review"], internalDemoReviewEligible: false })
+      .mockResolvedValueOnce({ currentStatus: "submitted", availableTransitions: ["under_review"], internalDemoReviewEligible: true })
+      .mockResolvedValueOnce({ currentStatus: "under_review", availableTransitions: ["approved"], internalDemoReviewEligible: true });
+    mocks.startReview.mockResolvedValue("under_review");
+    render(<StrictMode><ReviewsView /></StrictMode>);
+    fireEvent.click(await screen.findByRole("button", { name: "Open review for Reception Room review pack" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start Review" }));
+    await screen.findByRole("button", { name: "Approve" });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Notify team/u }));
+    await act(async () => {
+      if (outcome === "resolve") olderHistory.resolve([historyEntry({ note: "Obsolete submitted history." })]);
+      else olderHistory.reject(new Error("Obsolete context failure"));
+      await olderHistory.promise.catch(() => undefined);
+    });
+    expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Start Review" })).toBeNull();
+    expect(screen.getByText("Current staff review.")).toBeTruthy();
+    expect(screen.queryByText("Obsolete submitted history.")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("checkbox", { name: /Notify team/u })).toHaveProperty("checked", false);
+    expect(mocks.addToast).not.toHaveBeenCalledWith("Failed to load review context", "error");
+  });
+
+  it("refreshes actions and history after starting review without navigating back", async () => {
+    mocks.getAvailableTransitions
+      .mockResolvedValueOnce({ currentStatus: "submitted", availableTransitions: ["under_review", "withdrawn"], internalDemoReviewEligible: true })
+      .mockResolvedValueOnce({ currentStatus: "under_review", availableTransitions: ["approved", "rejected", "changes_requested"], internalDemoReviewEligible: true });
+    mocks.getReviewHistory
+      .mockResolvedValueOnce([historyEntry()])
+      .mockResolvedValueOnce([historyEntry(), historyEntry({ id: "00000000-0000-4000-8000-000000007006", fromStatus: "submitted", toStatus: "under_review", note: "Review started by staff." })]);
+    mocks.startReview.mockResolvedValue("under_review");
+    render(<ReviewsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open review for Reception Room review pack" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start Review" }));
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Start Review" })).toBeNull();
+    expect(screen.getByText("Review started by staff.")).toBeTruthy();
+    expect(mocks.getAvailableTransitions).toHaveBeenCalledTimes(2);
+    expect(mocks.getReviewHistory).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole("checkbox", { name: /Notify team/u })).toHaveProperty("checked", true);
+  });
+
+  it("shows a retryable context error if the post-start refresh fails", async () => {
+    mocks.getAvailableTransitions
+      .mockResolvedValueOnce({ currentStatus: "submitted", availableTransitions: ["under_review"] })
+      .mockRejectedValueOnce(new Error("Transition lookup unavailable"))
+      .mockResolvedValueOnce({ currentStatus: "under_review", availableTransitions: ["approved"], internalDemoReviewEligible: true });
+    mocks.startReview.mockResolvedValue("under_review");
+    render(<ReviewsView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Open review for Reception Room review pack" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start Review" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Transition lookup unavailable");
+    expect(screen.queryByRole("button", { name: "Start Review" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry review context" }));
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeTruthy();
+  });
+
   it("offers notification choice only for server-eligible demos and reports actual suppression", async () => {
     mocks.getAvailableTransitions.mockResolvedValue({ currentStatus: "under_review", availableTransitions: ["approved"], internalDemoReviewEligible: true });
     mocks.approveLayout.mockResolvedValue({ reviewStatus: "approved", notificationPolicy: "suppressed_demo" });

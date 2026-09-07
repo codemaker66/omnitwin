@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import "./SubmitForReviewPanel.css";
 import type { ConfigurationReviewStatus } from "@omnitwin/types";
 import { ActivityIndicator } from "../shared/Activity.js";
 import { captureEditorSession, isCurrentEditorSession } from "../../stores/editor-store.js";
@@ -39,12 +41,6 @@ import {
 // The diagram-thumbnail capture (existing #24 behaviour) runs right before
 // the submit so the snapshot carries the freshest top-down view.
 // ---------------------------------------------------------------------------
-
-const panelStyle: React.CSSProperties = {
-  position: "fixed", top: 16, right: 72, zIndex: 60,
-  display: "flex", flexDirection: "row", alignItems: "center", gap: 10,
-  fontFamily: "'Inter', sans-serif",
-};
 
 const pill: React.CSSProperties = {
   padding: "6px 12px", fontSize: 11, fontWeight: 600,
@@ -185,6 +181,9 @@ export async function withdrawConfigurationReview(
 // ---------------------------------------------------------------------------
 
 export function SubmitForReviewPanel(): React.ReactElement | null {
+  const disclosureId = useId();
+  const disclosureButton = useRef<HTMLButtonElement>(null);
+  const [expanded, setExpanded] = useState(false);
   const objects = useEditorStore((s) => s.objects);
   const configId = useEditorStore((s) => s.configId);
   // Public-preview configs belong to the guest-enquiry flow (SaveSendPanel).
@@ -210,6 +209,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   // the right CTA without a second request.
   useEffect(() => {
     submitOperation.current += 1;
+    setExpanded(false);
     setEligibilityConfigId(null);
     setDemoEligible(false);
     setNotifyTeam(true);
@@ -269,6 +269,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
     const operation = ++submitOperation.current;
     setInFlight(true);
     setError(null);
+    setCompletion(null);
     void (async () => {
       try {
         const result = await submitReviewWithNotifications(configId, eligibleHere ? notifyTeam : undefined);
@@ -276,7 +277,9 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
         setReviewStatus(result.reviewStatus);
         if (result.notificationPolicy === "suppressed_demo") setCompletion("Submitted for internal demo review. Team notifications were suppressed.");
       } catch (err) {
-        if (isCurrentEditorSession(session)) setError(err instanceof Error ? err.message : "Failed to submit for review");
+        if (isCurrentEditorSession(session) && submitOperation.current === operation) {
+          setError(err instanceof Error ? err.message : "Failed to submit for review");
+        }
       } finally {
         if (submitOperation.current === operation) setInFlight(false);
       }
@@ -284,16 +287,22 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   };
 
   const handleWithdraw = (): void => {
+    const session = captureEditorSession();
+    const operation = ++submitOperation.current;
     setInFlight(true);
     setError(null);
+    setCompletion(null);
     void (async () => {
       try {
         const next = await withdrawConfigurationReview(configId);
+        if (!isCurrentEditorSession(session) || submitOperation.current !== operation) return;
         setReviewStatus(next);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to withdraw");
+        if (isCurrentEditorSession(session) && submitOperation.current === operation) {
+          setError(err instanceof Error ? err.message : "Failed to withdraw");
+        }
       } finally {
-        setInFlight(false);
+        if (submitOperation.current === operation) setInFlight(false);
       }
     })();
   };
@@ -303,17 +312,32 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
   // -------------------------------------------------------------------------
 
   return (
-    <div style={panelStyle} data-testid="submit-for-review-panel" data-status={reviewStatus}>
-      <span style={pillStyle(visual)}>{timelinePreviewActive ? `Saved plan: ${visual.label}` : visual.label}</span>
+    <section className="submit-review" data-testid="submit-for-review-panel" data-status={reviewStatus}
+      onKeyDown={event => {
+        if (event.key === "Escape" && expanded) {
+          event.stopPropagation(); setExpanded(false); disclosureButton.current?.focus();
+        }
+      }}>
+      <button type="button" ref={disclosureButton} className="submit-review__summary"
+        id={`${disclosureId}-summary`} aria-controls={`${disclosureId}-body`} aria-expanded={expanded}
+        aria-label={`Review saved plan: ${visual.label}${error === null ? "" : ", action failed"}`}
+        aria-busy={inFlight} onClick={() => { setExpanded(value => !value); }}>
+        {inFlight && <ActivityIndicator size={16} />}
+        <span>Review</span>
+        <span style={pillStyle(visual)}>{timelinePreviewActive ? `Saved plan: ${visual.label}` : visual.label}</span>
+        <ChevronDown size={14} aria-hidden="true" />
+      </button>
+      <div className="submit-review__body" id={`${disclosureId}-body`} hidden={!expanded}
+        role="region" aria-labelledby={`${disclosureId}-summary`}>
 
       {isEditable && eligibleHere && (
-        <label style={{ fontSize: 12, maxWidth: 240 }}>
+        <label className="submit-review__notification-choice">
           <input type="checkbox" checked={notifyTeam} disabled={inFlight || timelinePreviewActive}
             onChange={event => { setNotifyTeam(event.target.checked); }} /> Notify team
-          <span style={{ display: "block" }}>DEMO ONLY: uncheck to record an internal review without team emails.</span>
+          <span>DEMO ONLY: uncheck to record an internal review without team emails.</span>
         </label>
       )}
-      {completion !== null && <span role="status">{completion}</span>}
+      {completion !== null && <span className="submit-review__message" role="status">{completion}</span>}
       {isEditable && (
         <button
           type="button"
@@ -349,6 +373,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
       {error !== null && (
         <div
           role="alert"
+          className="submit-review__message"
           style={{
             padding: "6px 12px",
             fontSize: 12,
@@ -361,6 +386,7 @@ export function SubmitForReviewPanel(): React.ReactElement | null {
           {error}
         </div>
       )}
-    </div>
+      </div>
+    </section>
   );
 }
