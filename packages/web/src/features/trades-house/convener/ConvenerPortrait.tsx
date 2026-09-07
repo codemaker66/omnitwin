@@ -1165,7 +1165,7 @@ export const ConvenerPortrait = forwardRef<ConvenerHandle, ConvenerPortraitProps
           tabIndex={0}
           aria-label="Skip to the end of the Convener's line"
         >
-          <p className="convener-speech-who">The Convener · who has watched them all arrive</p>
+          <p className="convener-speech-who">The Convener</p>
           <p className="convener-speech-text" aria-hidden="true">
             <span ref={typedRef} />
             {speaking ? <span className="convener-caret">▌</span> : null}

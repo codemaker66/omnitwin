@@ -97,7 +97,7 @@ describe("AIDraftPanel", () => {
     });
     expect(screen.getByText("ai generated")).toBeDefined();
     expect(screen.getByText("unverified")).toBeDefined();
-    expect(screen.getByText("Human review required")).toBeDefined();
+    expect(screen.getByText(/Human review required/)).toBeDefined();
     expect(screen.queryByRole("button", { name: /send|approve/iu })).toBeNull();
   });
 

@@ -25,7 +25,7 @@ export function ReferenceSceneSettings({ className = "" }: { readonly className?
   const [navigationOpen, setNavigationOpen] = useState(false);
 
   return <section className={`reference-scene-settings ${className}`} aria-label="Scene settings" data-testid="reference-scene-settings">
-    {previewLocked ? <p role="status">Return to the saved plan to change scene settings or inspect its recorded evidence.</p> : <>
+    {previewLocked ? <p role="status">Return to the saved plan to use scene settings.</p> : <>
       <details open={navigationOpen} onToggle={(event) => { setNavigationOpen(event.currentTarget.open); }}>
         <summary><Map size={15} aria-hidden />Plan navigation<ChevronDown size={13} aria-hidden /></summary>
         {navigationOpen && <CockpitMinimap embedded />}
@@ -40,14 +40,14 @@ export function ReferenceSceneSettings({ className = "" }: { readonly className?
             }} />
             <span>{OVERLAY_LABELS[key]}</span>
           </label>)}
-          <p className="reference-scene-settings__note">Shown in the corresponding planning lenses. Human review required.</p>
+          <p className="reference-scene-settings__note">Planning overlays require human review.</p>
         </div>
       </details>
       <details>
         <summary><ScanLine size={15} aria-hidden />Model section height<ChevronDown size={13} aria-hidden /></summary>
         <div className="reference-scene-settings__body">
           <SectionSlider embedded />
-          <p className="reference-scene-settings__note">Applies to the model layer’s walls and ceiling.</p>
+          <p className="reference-scene-settings__note">Model walls and ceiling.</p>
         </div>
       </details>
       <details open={evidenceOpen} onToggle={(event) => { setEvidenceOpen(event.currentTarget.open); }}>

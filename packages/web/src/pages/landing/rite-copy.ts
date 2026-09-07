@@ -34,13 +34,13 @@ export const RITE_META_DESC =
   "Enter the Grand Hall of Trades Hall Glasgow — four principal rooms within Robert Adam's hall, held in candlelight. Then arrange the room for your own evening.";
 
 /** Beat 0 — the threshold. One line in the dark. */
-export const THRESHOLD_LINE = `There is a hall in Glasgow that has been lit for ${String(HALL_LIT_YEARS)} years.`;
+export const THRESHOLD_LINE = `Trades Hall, Glasgow · ${String(HALL_LIT_YEARS)} years`;
 export const THRESHOLD_ENTER_LABEL = "Enter";
 
 /** Act I — darkness. Whispered lines pacing the descent. */
 export const DARKNESS_LINES: readonly string[] = [
-  "Your eyes will adjust. They always do.",
-  "What you can almost see was drawn by Robert Adam in 1791.",
+  "Let your eyes adjust.",
+  "Robert Adam, 1791.",
 ] as const;
 
 /** Act I — the edge-lit architectural fragments the carried light grazes. */
@@ -95,24 +95,24 @@ export function buildMagnitudeMeasures(): readonly MagnitudeMeasure[] {
   return [
     {
       figure: String(lengthM),
-      label: "metres, end to end",
+      label: "metres long",
       countTo: null,
     },
     {
       figure: String(ceilingM),
-      label: `metres of air above the dinner table — a ${String(domeM)}-metre dome above that`,
+      label: `metres to the ceiling · ${String(domeM)}-metre dome`,
       countTo: null,
     },
     {
       // Venue-published dinner capacity (tradeshallglasgow.co.uk/rooms/,
       // verified 2026-07-02) — not derivable from geometry.
       figure: "180",
-      label: "seats at dinner, beneath the dome",
+      label: "dinner seats",
       countTo: 180,
     },
     {
       figure: "1791",
-      label: "the year Robert Adam drew these walls",
+      label: "Robert Adam",
       countTo: null,
     },
   ] as const;
@@ -153,7 +153,7 @@ interface ChapterVoice {
 const CHAPTER_VOICES: readonly ChapterVoice[] = [
   {
     slug: "grand-hall",
-    line: "The room the city keeps its promises in.",
+    line: "Beneath the dome.",
     alt: "The Grand Hall, empty, its chandeliers lit beneath the domed ceiling",
     imagePosition: "center 48%",
     standing: 250,
@@ -161,7 +161,7 @@ const CHAPTER_VOICES: readonly ChapterVoice[] = [
   },
   {
     slug: "saloon",
-    line: "Stained glass, panelled walls, and the quiet before the toast.",
+    line: "Stained glass and panelled walls.",
     alt: "The Saloon, empty, stained-glass windows above panelled walls",
     imagePosition: "center 46%",
     standing: 80,
@@ -169,7 +169,7 @@ const CHAPTER_VOICES: readonly ChapterVoice[] = [
   },
   {
     slug: "robert-adam-room",
-    line: "The architect's own hand, at its most intimate scale.",
+    line: "An intimate ceremony room.",
     alt: "The Robert Adam Room, empty, plasterwork ceiling above",
     imagePosition: "center 36%",
     standing: 150,
@@ -177,7 +177,7 @@ const CHAPTER_VOICES: readonly ChapterVoice[] = [
   },
   {
     slug: "reception-room",
-    line: "Where every evening at Trades Hall begins.",
+    line: "Ceremonies and receptions.",
     alt: "The Reception Room, empty, afternoon light along the aisle",
     imagePosition: "center 52%",
     standing: 100,
@@ -235,8 +235,6 @@ export const NAV_SIGN_IN_LABEL = "Sign in";
 /** Footer — practical details, kept verbatim from the venue's records. */
 export const FOOTER_ADDRESS_LINES: readonly string[] = [
   "85 Glassford Street, Glasgow, G1 1UH",
-  "Event enquiries through the Trades Hall events team.",
-  "Use a planning draft as the conversation starter.",
 ] as const;
 
 /** The venue's published contact details

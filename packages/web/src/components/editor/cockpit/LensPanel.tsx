@@ -4,7 +4,7 @@ import "./LensPanel.css";
 // ---------------------------------------------------------------------------
 // LensPanel — the shared dock shell for every cockpit lens tool (Epic 0).
 //
-// One chrome for all lens panels: an eyebrow + serif title header with an
+// One chrome for all lens panels: a serif title header with an
 // optional status chip, a scrollable body of labelled sections (one dominant
 // top-to-bottom reading axis, per the inspector-dock research), and a footer
 // reserved for the SAFE / claim-safety line. Panels compose
@@ -13,7 +13,6 @@ import "./LensPanel.css";
 // ---------------------------------------------------------------------------
 
 export interface LensPanelProps {
-  readonly eyebrow: string;
   readonly title: string;
   readonly icon?: ReactNode;
   /** Small status chip (e.g. "Simulated", "Simulating…", "Unavailable"). */
@@ -24,13 +23,12 @@ export interface LensPanelProps {
   readonly testId?: string;
 }
 
-export function LensPanel({ eyebrow, title, icon, source, children, footer, testId }: LensPanelProps): ReactElement {
+export function LensPanel({ title, icon, source, children, footer, testId }: LensPanelProps): ReactElement {
   return (
     <aside className="lens-panel" data-testid={testId ?? "lens-panel"} aria-label={title}>
       <header className="lens-panel__head">
         {icon !== undefined && <span className="lens-panel__head-icon" aria-hidden="true">{icon}</span>}
         <span className="lens-panel__head-copy">
-          <span className="lens-panel__eyebrow">{eyebrow}</span>
           <span className="lens-panel__title">{title}</span>
         </span>
         {source !== undefined && <span className="lens-panel__source">{source}</span>}

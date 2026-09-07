@@ -391,7 +391,7 @@ const routeSpecs: readonly RouteSpec[] = [
   {
     routeName: "dashboard executive analytics",
     path: "/dashboard?view=analytics",
-    readyText: "Commercial planning dashboard",
+    readyText: "Executive analytics",
     seedRole: "executive",
     mockRoutes: mockDashboardRoutes,
   },

@@ -79,9 +79,7 @@ function PlannerCanvasFallback({ onRetry }: { readonly onRetry: () => void }): R
           3D view couldn&rsquo;t start
         </h2>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: "#5a5a5a", margin: "0 0 20px" }}>
-          Your browser or device couldn&rsquo;t start the 3D planner &mdash; this usually means
-          WebGL (3D graphics) is unavailable or disabled. You can plan your whole
-          layout in the 2D floor planner instead; it has the same rooms and furniture.
+          WebGL may be unavailable. Use the 2D planner or try again.
         </p>
         <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
           <a

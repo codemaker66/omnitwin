@@ -97,7 +97,7 @@ function InspectorTransforms({ primary, members, ids }: {
     <dl><NumberFact label="Surface height" value={`${item.y.toFixed(3)} m`} /></dl>
     <NumberControl label={group ? "Piece rotation (°)" : "Rotation (°)"} value={Number((item.rotationY * 180 / Math.PI).toFixed(1))} step={1} onCommit={rotate} />
     <NumberControl label={group ? "Piece scale (%)" : "Scale (%)"} value={Number((scale * 100).toFixed(1))} step={1} min={minPercent} max={maxPercent} onCommit={resize} />
-    {group && <p className="reference-muted">Position moves the whole selection. Rotation and scale adjust each piece in place.</p>}
+    {group && <p className="reference-muted">Position moves the group; rotation and scale affect each piece.</p>}
   </section>;
 }
 
@@ -124,7 +124,7 @@ function InspectorStyle({ primary }: { readonly primary: ReferenceSceneEntry }):
 
 function EmptyInspector({ entries, roomName }: { readonly entries: readonly ReferenceSceneEntry[]; readonly roomName: string }): ReactElement {
   const summary = referenceSceneSummary(entries);
-  return <div className="reference-empty-inspector"><Armchair size={28} strokeWidth={1} /><h3>{roomName}</h3><p>Select furniture in the room or the Layers panel to inspect and edit it.</p>
+  return <div className="reference-empty-inspector"><Armchair size={28} strokeWidth={1} /><h3>{roomName}</h3><p>Select furniture to edit.</p>
     <dl><NumberFact label="Tables" value={String(summary.tables)} /><NumberFact label="Placed chairs" value={String(summary.chairs)} /><NumberFact label="Objects" value={String(summary.objects)} /></dl>
     <button className="reference-action" type="button" onClick={() => { if (useLayoutTimelinePreviewStore.getState().mode === "inactive") dispatchPlannerToolbarCommand("open-furniture"); }}><Plus size={14} />Add furniture</button>
   </div>;
@@ -144,7 +144,7 @@ export function SelectedFurnitureInspector({ className = "" }: { readonly classN
       {!locked && primary !== undefined && <button type="button" className="reference-icon-button" aria-label="Clear furniture selection" onClick={() => { useSelectionStore.getState().clearSelection(); }}><X size={15} /></button>}
     </header>
     <div className="reference-panel-scroll">
-      {locked ? <div className="reference-empty-inspector"><h3>Editing is paused</h3><p>Return to the saved plan from the timeline to edit furniture.</p></div> : primary === undefined ? <EmptyInspector entries={entries} roomName={roomName} /> : <>
+      {locked ? <div className="reference-empty-inspector"><h3>Editing is paused</h3><p>Return to the saved plan to edit.</p></div> : primary === undefined ? <EmptyInspector entries={entries} roomName={roomName} /> : <>
         <InspectorOverview primary={primary} members={selection.members} />
         <InspectorTransforms key={primary.item.id} primary={primary} members={selection.members} ids={selection.ids} />
         <InspectorStyle primary={primary} />

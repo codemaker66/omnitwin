@@ -54,7 +54,6 @@ export function FlowLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="Flow lens"
       title="Guest flow"
       icon={<Waypoints size={18} />}
       source={SOURCE_BY_STATUS[status]}
@@ -75,7 +74,6 @@ export function FlowLensPanel(): ReactElement {
             onChange={onGuestCount}
             data-testid="flow-guest-count"
           />
-          <span className="lens-panel__field-hint">Drives the simulated agent count. Leave blank to assume a default.</span>
         </label>
         <label className="lens-panel__field">
           <span className="lens-panel__field-label">Arrival window (min)</span>
@@ -114,7 +112,7 @@ export function FlowLensPanel(): ReactElement {
               </div>
             ))}
             {model.conflicts.length === 0 && (
-              <p className="lens-panel__hint">No simulated route conflicts at this layout and guest count.</p>
+              <p className="lens-panel__hint">No simulated route conflicts.</p>
             )}
           </LensPanelSection>
 
@@ -144,7 +142,7 @@ export function FlowLensPanel(): ReactElement {
       )}
 
       {model === null && status === "loading" && (
-        <p className="lens-panel__hint">Simulating guest flow from the current layout…</p>
+        <p className="lens-panel__hint">Simulating guest flow…</p>
       )}
       {status === "error" && (
         <p className="lens-panel__hint">Could not simulate guest flow. Adjust the layout and try again.</p>

@@ -2,14 +2,13 @@ import { roomPosterUrl as posterUrl } from "../lib/room-posters.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Link } from "react-router-dom";
 import {
-  roomSplatServedSplats,
   roomSplatBundle,
   roomsWithSplatBundles,
   type GeneratedRoomSplatBundle,
 } from "../data/room-splat-bundles.js";
 import { TRADES_HALL_RUNTIME_ROOMS } from "../lib/runtime-package-resolution.js";
 import { isRoomWalkable } from "../data/room-walk-exposure.js";
-import { footprint, measuredLine, splatLine, stateLine } from "../lib/room-card-copy.js";
+import { footprint, stateLine } from "../lib/room-card-copy.js";
 import "./RoomsHomePage.css";
 
 // ---------------------------------------------------------------------------
@@ -68,10 +67,7 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
           ? (
             <span className="rooms__plateType" aria-hidden="true">
               <span className="rooms__plateNumber">
-                {bundle.alignmentConfidence === "confident" && walkable ? footprint(bundle) : splatLine(bundle)}
-              </span>
-              <span className="rooms__plateSplats">
-                {state ?? splatLine(bundle)}
+                {bundle.alignmentConfidence === "confident" && walkable ? footprint(bundle) : "Capture preview"}
               </span>
             </span>
           )
@@ -89,7 +85,7 @@ function RoomCard({ slug, bundle }: CardProps): ReactElement {
           )}
       </span>
       <span className="rooms__cardName">{displayName(slug)}</span>
-      <span className="rooms__measure">{measuredLine(bundle, walkable)}</span>
+      {bundle.alignmentConfidence === "confident" && walkable && <span className="rooms__measure">{footprint(bundle)}</span>}
       {state !== null && <span className="rooms__state">{state}</span>}
     </>
   );
@@ -122,11 +118,6 @@ export function RoomsHomePage(): ReactElement {
     return () => { cancelAnimationFrame(frame); };
   }, []);
 
-  const totalSplats = slugs.reduce(
-    (sum, slug) => sum + roomSplatServedSplats(slug),
-    0,
-  );
-
   return (
     <main
       ref={rootRef}
@@ -150,9 +141,8 @@ export function RoomsHomePage(): ReactElement {
           />
           <div className="rooms__heroInk" aria-hidden="true" />
           <div className="rooms__heroText">
-            <p className="rooms__eyebrow">The room everyone comes for</p>
             <h1 className="rooms__heroName" id="rooms-hero-name">{displayName(HERO_ROOM)}</h1>
-            <p className="rooms__measure rooms__measure--hero">{measuredLine(heroBundle, isRoomWalkable(HERO_ROOM))}</p>
+            {heroBundle.alignmentConfidence === "confident" && isRoomWalkable(HERO_ROOM) && <p className="rooms__measure rooms__measure--hero">{footprint(heroBundle)}</p>}
             {isRoomWalkable(HERO_ROOM)
               ? <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>Walk the room</Link>
               : <p className="rooms__state rooms__state--hero">{stateLine(heroBundle, false)}</p>}
@@ -163,11 +153,8 @@ export function RoomsHomePage(): ReactElement {
       <section className="rooms__rail" aria-labelledby="rooms-rail-title">
         <div className="rooms__railHead">
           <h2 className="rooms__railTitle" id="rooms-rail-title">
-            Every room, measured
+            More rooms
           </h2>
-          <p className="rooms__railNote">
-            {slugs.length} rooms scanned · {totalSplats.toLocaleString("en-GB")} splats
-          </p>
         </div>
         <div className="rooms__track">
           {rest.map((slug) => {
@@ -179,8 +166,7 @@ export function RoomsHomePage(): ReactElement {
 
       <footer className="rooms__foot">
         <p className="rooms__footNote">
-          Scans are working captures, not a survey. Dimensions are measured from
-          the scan and are not a substitute for the venue's own figures.
+          Scan dimensions are estimates. Confirm measurements with the venue.
         </p>
         <nav className="rooms__footLinks" aria-label="More">
           <Link to="/fresh">About the venue</Link>

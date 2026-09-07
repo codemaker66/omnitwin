@@ -402,7 +402,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
             </div>
             <h2 style={{ fontSize: 18, margin: "4px 0 0", color: "#fff" }}>Instructions for the hallkeeper</h2>
             <p style={{ fontSize: 12, color: TEXT_SEC, margin: "4px 0 0" }}>
-              Fill these in and they'll appear on the PDF and tablet sheet.
+              Included on the setup sheet.
             </p>
           </div>
           <button
@@ -437,7 +437,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
 
           {!signInRequired && state !== null && (
             <>
-              <Section title="Special instructions" hint="Fire safety, VIP notes, board arrival times, anything the hallkeeper must know.">
+              <Section title="Special instructions">
                 <textarea
                   value={state.specialInstructions}
                   onChange={(e) => { setState((s) => s === null ? s : ({ ...s, specialInstructions: e.target.value.slice(0, 4000) })); }}
@@ -447,7 +447,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
                 />
               </Section>
 
-              <Section title="Day-of contact" hint="The planner's number for the day — who the hallkeeper rings if something goes wrong.">
+              <Section title="Day-of contact">
                 {state.dayOfContact !== null ? (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <Field label="Name" error={state.dayOfContact.name.trim().length === 0 ? "Required" : null}>
@@ -494,7 +494,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
                 )}
               </Section>
 
-              <Section title="Access & load-in notes" hint="Service entrance, parking, load-in sequencing.">
+              <Section title="Access & load-in notes">
                 <textarea
                   value={state.accessNotes}
                   onChange={(e) => { setState((s) => s === null ? s : ({ ...s, accessNotes: e.target.value.slice(0, 1500) })); }}
@@ -504,7 +504,7 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
                 />
               </Section>
 
-              <Section title="Phase deadlines" hint="Optional — override the default setup-by time with per-phase milestones.">
+              <Section title="Phase deadlines" hint="Overrides the default setup deadline.">
                 {state.phaseDeadlines.map((d, i) => (
                   <div key={`${String(i)}-${d.phase}`} style={{ display: "grid", gridTemplateColumns: "120px 160px 1fr 28px", gap: 6, alignItems: "center", marginBottom: 6 }}>
                     <select value={d.phase} onChange={(e) => { updateDeadline(i, { phase: e.target.value as SetupPhase }); }} style={inputStyle}>
@@ -539,7 +539,6 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
 
               <Section
                 title="Accessibility"
-                hint="Hearing loops, wheelchair spaces, interpreters — anything the hallkeeper must have ready before guests arrive."
               >
                 {state.accessibility === null ? (
                   <button type="button" onClick={addAccessibility} style={secondaryBtnStyle}>
@@ -556,7 +555,6 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
 
               <Section
                 title="Dietary"
-                hint="Per-diet guest counts — drives the catering line on the hallkeeper sheet."
               >
                 {state.dietary === null ? (
                   <button type="button" onClick={addDietary} style={secondaryBtnStyle}>
@@ -573,7 +571,6 @@ export function EventDetailsPanel({ open, onClose }: EventDetailsPanelProps): Re
 
               <Section
                 title="Door schedule"
-                hint="When each door opens and locks — the hallkeeper can page late arrivals to the right entrance."
               >
                 {state.doorSchedule === null ? (
                   <button type="button" onClick={addDoorSchedule} style={secondaryBtnStyle}>
@@ -679,13 +676,13 @@ export function fromDateTimeLocal(local: string, fallback: string): string {
 // Section / Field wrappers
 // ---------------------------------------------------------------------------
 
-function Section({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }): React.ReactElement {
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }): React.ReactElement {
   return (
     <section>
       <div style={{ fontSize: 11, fontWeight: 700, color: "#fff", letterSpacing: "0.04em", textTransform: "uppercase" }}>
         {title}
       </div>
-      <div style={{ fontSize: 11, color: TEXT_MUT, margin: "2px 0 6px" }}>{hint}</div>
+      {hint !== undefined && <div style={{ fontSize: 11, color: TEXT_MUT, margin: "2px 0 6px" }}>{hint}</div>}
       {children}
     </section>
   );

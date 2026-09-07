@@ -242,13 +242,13 @@ describe("DiaryBoardPage", () => {
   it("shows the read-only chip for hallkeeper", async () => {
     setUser("hallkeeper");
     renderPage();
-    expect(await screen.findByText(/Read-only view/)).toBeDefined();
+    expect(await screen.findByText(/Read-only/)).toBeDefined();
   });
 
   it("does not show the read-only chip for staff", async () => {
     renderPage();
     await screen.findByText("Grand Hall");
-    expect(screen.queryByText(/Read-only view/)).toBeNull();
+    expect(screen.queryByText(/Read-only/)).toBeNull();
   });
 
   it("recovers from a load failure via retry", async () => {
@@ -309,7 +309,7 @@ describe("DiaryBoardPage", () => {
     const drawer = await screen.findByRole("dialog", { name: "Pencil in this enquiry" });
     expect(drawer).toBeDefined();
     expect(screen.getByDisplayValue("Fiona MacLeod — wedding")).toBeDefined();
-    expect(screen.getByText(/enquiry itself stays where it is/)).toBeDefined();
+    expect(screen.getByText(/enquiry stays in review/)).toBeDefined();
   });
 
   it("shows the live presence chip from the channel (T-497)", async () => {
@@ -356,16 +356,16 @@ describe("DiaryBoardPage", () => {
   it("greets a first-time coordinator once, and dismissal persists (T-520)", async () => {
     window.localStorage.removeItem(welcomeStorageKey(STAFF_USER_ID));
     const first = renderPage();
-    const panel = await screen.findByRole("dialog", { name: "The Diary, in one minute" });
+    const panel = await screen.findByRole("dialog", { name: "Using the Diary" });
     expect(panel).toBeDefined();
-    expect(screen.getByText(/option ladder/)).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Take me to the diary" }));
-    expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+    expect(screen.getByText(/Pencils may overlap/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Open Diary" }));
+    expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
     first.unmount();
 
     renderPage();
     await screen.findByText("Grand Hall");
-    expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
   });
 
   it("a dismissed welcome never reopens on auth churn, even when storage writes fail (review P2)", async () => {
@@ -376,14 +376,14 @@ describe("DiaryBoardPage", () => {
     });
     try {
       renderPage();
-      await screen.findByRole("dialog", { name: "The Diary, in one minute" });
-      fireEvent.click(screen.getByRole("button", { name: "Take me to the diary" }));
-      expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+      await screen.findByRole("dialog", { name: "Using the Diary" });
+      fireEvent.click(screen.getByRole("button", { name: "Open Diary" }));
+      expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
       // Clerk sync replaces the user OBJECT (same identity, new reference) —
       // the panel must stay closed for the rest of the session.
       setUser("staff");
       await screen.findByText("Grand Hall");
-      expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+      expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
     } finally {
       denied.mockRestore();
     }
@@ -392,11 +392,11 @@ describe("DiaryBoardPage", () => {
   it("the header reopens the welcome any time; Escape closes it (T-520)", async () => {
     renderPage();
     await screen.findByText("Grand Hall");
-    expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "How the Diary works" }));
-    const panel = screen.getByRole("dialog", { name: "The Diary, in one minute" });
+    const panel = screen.getByRole("dialog", { name: "Using the Diary" });
     fireEvent.keyDown(panel, { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "The Diary, in one minute" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Using the Diary" })).toBeNull();
   });
 
   it("tells an unassigned account that it has no venue", () => {

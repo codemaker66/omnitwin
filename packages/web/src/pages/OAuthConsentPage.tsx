@@ -50,7 +50,6 @@ function ConsentLoadingState(): ReactElement {
   return (
     <div className="oauth-consent-page__status" role="status" aria-live="polite">
       <strong>Loading secure consent.</strong>
-      <span>Keep this page open while Clerk loads the requesting application and scopes.</span>
     </div>
   );
 }
@@ -69,8 +68,7 @@ function ConsentUnavailableState(): ReactElement {
     <div className="oauth-consent-page__status" role="alert">
       <strong>Consent screen unavailable.</strong>
       <span>
-        Clerk could not load the secure consent controls. Refresh this page from the requesting application, or return to
-        Venviewer and try again.
+        Return to the requesting application and try again.
       </span>
     </div>
   );
@@ -83,10 +81,9 @@ export function OAuthConsentPage(): ReactElement {
     <main className="oauth-consent-page" aria-label="Venviewer OAuth consent">
       <section className="oauth-consent-page__context" aria-label="Consent review context">
         <div className="oauth-consent-page__brand">Venviewer</div>
-        <h1>Review external access before anything is shared.</h1>
+        <h1>Review access.</h1>
         <p>
-          Clerk displays the requesting application, requested scopes, and allow or deny controls below. Approve only
-          when the application and access level match what you intended.
+          Check the application and requested access before approving.
         </p>
       </section>
 

@@ -188,7 +188,7 @@ describe("BookingDrawer — floor plan section", () => {
 
     await waitFor(() => {
       const alert = screen.getByRole("alert").textContent ?? "";
-      expect(alert).toContain("created but could not be attached");
+      expect(alert).toContain("created but not attached");
       // "the booking is unchanged" would hide the plan that now exists.
       expect(alert).not.toContain("unchanged");
     });

@@ -69,8 +69,7 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
   return <section className="inventory-panel" aria-labelledby="inventory-title">
     {error !== null ? <section className="inventory-state" role="alert"><h1 id="inventory-title">Inventory</h1><h2>Inventory could not be loaded</h2>
       <p>{error}</p><button type="button" className="inventory-button" onClick={() => { setRetry((value) => value + 1); }}>Try again</button></section> :
-      data === null ? <div className="inventory-state"><h1 id="inventory-title">Inventory</h1><ActivityStatus variant="panel">Opening inventory</ActivityStatus>
-        <p>Reading your venue’s recorded furniture and equipment.</p></div> :
+      data === null ? <div className="inventory-state"><h1 id="inventory-title">Inventory</h1><ActivityStatus variant="panel">Opening inventory</ActivityStatus></div> :
       <InventoryDemand actorId={actorId} venueId={venueId} refreshKey={data.items.map((item) => `${item.catalogue.id}:${String(item.stock?.revision ?? "unrecorded")}`).join("|")}>
         {(demand) => <div className="inventory-workspace">
           <div className="inventory-equipment-sheet">
@@ -89,7 +88,7 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
                   <button type="button" className="inventory-button" onClick={() => { setFilter("all"); setStorage(""); setQuery(""); }}>Clear filters</button></div></details></div>
             {loading ? <ActivityStatus>Refreshing stock…</ActivityStatus> : null}
             {selected === null ? <section className="inventory-state"><h2>Your catalogue is empty</h2>
-              <p>Add furniture and equipment to your venue’s catalogue before recording stock.</p></section> : <>
+              <p>Add catalogue items to record stock.</p></section> : <>
               <div className="inventory-featured-item"><InventoryPicture name={selected.catalogue.name} assetId={selected.catalogue.id} hero />
                 <div className="inventory-featured-copy"><h2>{selected.catalogue.name}</h2>
                   <p className="inventory-location"><MapPin size={16} />{selected.stock?.storageLocation ?? "Storage not recorded"}</p>
@@ -109,7 +108,7 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
             </>}
             <div id="inventory-catalogue" className="inventory-catalogue" hidden={!showList}>
               <p className="inventory-result-count" aria-live="polite">{items.length} matching {items.length === 1 ? "item" : "items"}</p>
-              {items.length === 0 ? <p>No matching items. Try another name, category or storage location.</p> :
+              {items.length === 0 ? <p>No matching items.</p> :
                 <ul>{items.map((item) => <li key={item.catalogue.id}><button type="button" aria-pressed={item.catalogue.id === selectedId}
                   onClick={() => { select(item); }}><span><strong>{item.catalogue.name}</strong><small>{item.stock?.storageLocation ?? "Storage not recorded"}</small></span>
                   <span>{item.stock?.ownedQuantity.toLocaleString("en-GB") ?? "Not recorded"}<ArrowUpRight size={16} /></span></button></li>)}</ul>}
@@ -120,7 +119,7 @@ function InventoryWorkspace({ actorId, venueId }: { readonly actorId: string; re
             {selected !== null && editorOpen ? <InventoryEditor key={selected.catalogue.id} ref={editor} presentation="inline" actorId={actorId} venueId={venueId}
               item={selected} onClose={closeEditor} onSaved={onSaved} remedies={<InventoryRemedyShortcut demand={demand}
                 item={demand.assessment?.items.find((item) => item.assetDefinitionId === selectedId)} />} /> :
-              <div className="inventory-editor inventory-editor--rest"><h2>Everything in its place</h2><p>Select a piece of equipment to review its counts and record a correction.</p>
+              <div className="inventory-editor inventory-editor--rest"><h2>Stock correction</h2>{selected === null ? <p>Select an item to edit stock.</p> : null}
                 {selected !== null ? <button type="button" className="inventory-button inventory-button--primary" onClick={() => { setEditorOpen(true); }}>Open stock correction</button> : null}</div>}
           </aside>
         </div>}

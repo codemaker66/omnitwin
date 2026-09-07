@@ -142,10 +142,7 @@ export function NotificationCenter(): ReactElement {
         <section style={panelStyle} aria-label="Notifications">
           <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
             <div>
-              <h2 style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 20, margin: 0 }}>Change feed</h2>
-              <p style={{ color: "rgba(246,241,232,0.62)", fontSize: 12, fontWeight: 750, margin: "3px 0 0" }}>
-                Live plan, proposal, and ops notifications.
-              </p>
+              <h2 style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 20, margin: 0 }}>Notifications</h2>
             </div>
             <button type="button" style={iconButtonStyle} aria-label="Refresh notifications" onClick={load}>
               <RefreshCw aria-hidden="true" size={16} />
@@ -153,13 +150,13 @@ export function NotificationCenter(): ReactElement {
           </div>
 
           {state.kind === "loading" && (
-            <p style={{ color: "#c9d2cc", margin: "18px 0" }}>Loading the latest operational changes.</p>
+            <p style={{ color: "#c9d2cc", margin: "18px 0" }}>Loading notifications…</p>
           )}
           {state.kind === "error" && (
             <p style={{ color: "#ffbc9d", margin: "18px 0" }}>Notifications could not be loaded.</p>
           )}
           {state.kind === "ready" && notifications.length === 0 && (
-            <p style={{ color: "#c9d2cc", margin: "18px 0" }}>No unread changes for this workspace.</p>
+            <p style={{ color: "#c9d2cc", margin: "18px 0" }}>No unread notifications.</p>
           )}
           {state.kind === "ready" && notifications.length > 0 && (
             <div style={{ display: "grid", gap: 8 }}>

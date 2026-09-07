@@ -23,18 +23,17 @@ export function RouteArrival(): ReactElement {
       <div className="vv-arrival__shade" aria-hidden="true" />
       <header className="vv-arrival__header">
         <Link to="/" className="vv-arrival__brand" aria-label="Venviewer home">VENVIEWER</Link>
-        <span>{isGrandHall ? "TRADES HALL · GLASGOW" : "A PLACE FOR EVERY OCCASION"}</span>
+        {isGrandHall && <span>TRADES HALL · GLASGOW</span>}
       </header>
       <section className="vv-arrival__welcome" role="status" aria-live="polite" aria-atomic="true">
-        <p className="vv-arrival__eyebrow">{isGrandHall ? "YOUR GRAND HALL" : "YOUR WORKSPACE"}</p>
-        <h1>{isGrandHall ? <>An extraordinary<br />place to begin.</> : <>Make room for<br />what comes next.</>}</h1>
+        <h1>{isGrandHall ? "Grand Hall" : "Workspace"}</h1>
         <div className="vv-arrival__working">
           <ActivityIndicator size={42} />
-          <span>Opening {isGrandHall ? "your room" : "your workspace"}…</span>
+          <span>Opening…</span>
         </div>
       </section>
       <footer className="vv-arrival__footer">
-        <span>{showPhotograph ? "Venue photograph · event styling for inspiration" : "Your workspace will open as soon as it is ready."}</span>
+        {showPhotograph && <span>Venue photograph · styling inspiration</span>}
         <Link to="/">Back to venue <span aria-hidden="true">↗</span></Link>
       </footer>
     </main>

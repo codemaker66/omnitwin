@@ -308,7 +308,7 @@ describe("the walkthrough — wired from the front door", () => {
         .getAttribute("href"),
     ).toContain("scan_126");
     const walkLink = screen.getByRole("link", {
-      name: "Step into this room on this page",
+      name: "Step into this room",
     });
     expect(walkLink.getAttribute("href")).toBe("#walk");
   });

@@ -141,7 +141,7 @@ describe("OnboardingView", () => {
     expect(await screen.findByText("Workspace onboarding")).toBeTruthy();
     expect(screen.getAllByText("Trades Hall rollout").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Provider verification")).toBeTruthy();
-    expect(document.body.textContent ?? "").toContain("Provider-verified only");
+    expect(screen.getByText("Access enforcement requires provider verification and a customer, entitlement, or evidence reference.")).toBeTruthy();
   });
 
   it("submits a managed onboarding package with owner and staff invitations", async () => {
@@ -210,7 +210,7 @@ describe("OnboardingView", () => {
     mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
     render(<OnboardingView />);
 
-    await screen.findByText("Operator action board");
+    await screen.findByText("Deployment controls");
     fireEvent.change(screen.getByLabelText("Invite staff for Trades Hall rollout"), {
       target: { value: "planner@tradeshall.co.uk\nops@tradeshall.co.uk\nplanner@tradeshall.co.uk" },
     });
@@ -234,7 +234,7 @@ describe("OnboardingView", () => {
     mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
     render(<OnboardingView />);
 
-    await screen.findByText("Operator action board");
+    await screen.findByText("Deployment controls");
 
     fireEvent.change(screen.getByLabelText("Project status for Trades Hall rollout"), {
       target: { value: "ready" },
@@ -293,7 +293,7 @@ describe("OnboardingView", () => {
     mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
     render(<OnboardingView />);
 
-    await screen.findByText("Operator action board");
+    await screen.findByText("Deployment controls");
     fireEvent.change(screen.getByLabelText("Provider status for Trades Hall rollout"), {
       target: { value: "provider_verified" },
     });

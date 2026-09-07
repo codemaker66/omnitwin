@@ -69,9 +69,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
     if (loadState.status === "loading") {
       return (
         <section style={cardStyle} aria-live="polite">
-          <p style={labelStyle}>Executive analytics</p>
           <h2 style={{ margin: "8px 0", fontSize: 22, color: "#fff7e8" }}>Loading commercial planning data</h2>
-          <p style={{ margin: 0, color: "rgba(246,241,232,0.86)" }}>Revenue, comfort, and review signals are loading from the venue records.</p>
         </section>
       );
     }
@@ -79,7 +77,6 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
     if (loadState.status === "error") {
       return (
         <section style={cardStyle} role="alert">
-          <p style={labelStyle}>Executive analytics</p>
           <h2 style={{ margin: "8px 0", fontSize: 22, color: "#ffd2bd" }}>Analytics unavailable</h2>
           <p style={{ margin: "0 0 14px", color: "rgba(246,241,232,0.86)" }}>{loadState.message}</p>
           <button type="button" onClick={load} style={primaryButtonStyle}>Retry analytics</button>
@@ -93,10 +90,9 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
       <div style={{ display: "grid", gap: 18 }}>
         <section style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
           <div>
-            <p style={labelStyle}>Executive analytics</p>
-            <h2 style={{ margin: "6px 0", color: "#fff7e8", fontSize: 28, fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: 0 }}>Commercial planning dashboard</h2>
+            <h2 style={{ margin: "6px 0", color: "#fff7e8", fontSize: 28, fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: 0 }}>Executive analytics</h2>
             <p style={{ margin: 0, maxWidth: 760, color: "rgba(246,241,232,0.88)", lineHeight: 1.5 }}>
-              {data.disclosure}. Values are planning indicators and keep comfort floors and review gates visible.
+              {data.disclosure}.
             </p>
           </div>
           <button type="button" onClick={load} style={secondaryButtonStyle}>Refresh</button>
@@ -121,7 +117,6 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
           <div style={cardStyle}>
             <p style={labelStyle}>Review bottlenecks</p>
             <p style={metricValueStyle}>{data.reviewBottlenecks.length}</p>
-            <p style={{ margin: "8px 0 0", color: "rgba(246,241,232,0.62)", fontSize: 12 }}>Visible before recommendations are used</p>
           </div>
         </section>
 
@@ -129,7 +124,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
           <div style={cardStyle}>
             <p style={labelStyle}>Room utilisation</p>
             {data.roomUtilisation.length === 0 ? (
-              <p style={{ margin: "12px 0 0", color: "rgba(246,241,232,0.66)" }}>No room utilisation data yet. Link quotes or events to rooms to populate this view.</p>
+              <p style={{ margin: "12px 0 0", color: "rgba(246,241,232,0.66)" }}>Link quotes or events to rooms to see utilisation.</p>
             ) : (
               <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
                 {data.roomUtilisation.map((room) => (
@@ -153,7 +148,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
           <div style={cardStyle}>
             <p style={labelStyle}>Revenue scenario</p>
             {scenario === undefined ? (
-              <p style={{ margin: "12px 0 0", color: "rgba(246,241,232,0.66)" }}>No revenue scenarios yet. Create one from an event, quote, or planner layout.</p>
+              <p style={{ margin: "12px 0 0", color: "rgba(246,241,232,0.66)" }}>Create a revenue scenario from an event, quote or layout.</p>
             ) : (
               <div style={{ marginTop: 12 }}>
                 <h3 style={{ margin: "0 0 8px", color: "#fff7e8", fontSize: 18 }}>{scenario.name}</h3>
@@ -172,13 +167,13 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
           <div style={cardStyle}>
             <p style={labelStyle}>Comfort floor warnings</p>
             <div style={{ marginTop: 12 }}>
-              {warningList(data.comfortFloorWarnings, "No comfort floor warnings recorded for the current analytics set.")}
+              {warningList(data.comfortFloorWarnings, "No comfort floor warnings recorded.")}
             </div>
           </div>
           <div style={cardStyle}>
             <p style={labelStyle}>Review bottlenecks</p>
             <div style={{ marginTop: 12 }}>
-              {warningList(data.reviewBottlenecks, "No review bottlenecks recorded for the current analytics set.")}
+              {warningList(data.reviewBottlenecks, "No review bottlenecks recorded.")}
             </div>
           </div>
         </section>

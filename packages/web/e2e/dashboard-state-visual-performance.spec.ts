@@ -686,7 +686,7 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
 
     await page.goto("/dashboard");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Commercial planning dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
 
     await recordFrameAndVisualState(page, problems, "executive-analytics-success", "desktop", async () => {
       await page.mouse.move(760, 430);

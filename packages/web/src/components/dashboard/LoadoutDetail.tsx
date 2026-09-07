@@ -240,7 +240,6 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
           &larr; Back to loadouts
         </button>
         <section style={{ ...panelStyle, padding: 24 }} role="alert" data-testid="loadout-detail-error">
-          <p style={{ color: "#d7b56d", fontSize: 12, fontWeight: 850, letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>Reference loadout</p>
           <h2 style={{ margin: "8px 0", fontSize: 24, fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: 0 }}>Loadout unavailable</h2>
           <p style={{ color: "rgba(246,241,232,0.72)", lineHeight: 1.55 }}>
             {loadErrorMessage ?? "Failed to load this reference setup pack."}
@@ -326,7 +325,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
         <FileUploader context="loadout" contextId={loadoutId} onUploaded={(fileId, filename) => { void handlePhotoUploaded(fileId, filename); }} />
         {busyAction === "photo-link" && (
           <p role="status" style={{ margin: "10px 0 0", color: "rgba(246,241,232,0.66)", fontSize: 13 }}>
-            Linking uploaded photo to this reference loadout...
+            Adding photo...
           </p>
         )}
       </div>
@@ -334,7 +333,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
       {/* Photos grid */}
       {loadout.photos.length === 0 && (
         <section style={{ ...panelStyle, padding: 20, color: "rgba(246,241,232,0.72)" }}>
-          No photos have been attached yet. Add at least one setup reference before relying on this pack for hallkeeper preparation.
+          Add setup photos for hallkeeper preparation.
         </section>
       )}
 
@@ -451,7 +450,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
       {showDelete && (
         <ConfirmModal
           title="Delete Loadout"
-          message={`Are you sure you want to delete "${loadout.name}"? This cannot be undone.`}
+          message={`Delete "${loadout.name}"? This cannot be undone.`}
           confirmLabel="Delete"
           inFlight={busyAction === "delete-loadout"}
           errorMessage={actionError}

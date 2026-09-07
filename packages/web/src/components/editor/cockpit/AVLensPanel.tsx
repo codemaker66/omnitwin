@@ -58,7 +58,6 @@ export function AVLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="AV lens"
       title="AV & coverage"
       icon={<Volume2 size={18} />}
       source="Indicative"

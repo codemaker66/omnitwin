@@ -75,7 +75,7 @@ describe("TruthModeIndicator", () => {
     renderProceduralIndicator();
     fireEvent.click(screen.getByTestId("truth-mode-toggle"));
     expect(screen.getByRole("dialog", { name: /Truth Mode summary/i })).toBeTruthy();
-    expect(screen.getByText("Truth Mode L2")).toBeTruthy();
+    expect(screen.getByText("Truth Mode")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Close Truth Mode summary/i }));
     expect(screen.queryByRole("dialog", { name: /Truth Mode summary/i })).toBeNull();

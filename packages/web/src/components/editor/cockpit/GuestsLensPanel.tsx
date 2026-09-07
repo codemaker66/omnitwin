@@ -117,12 +117,11 @@ export function GuestsLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="Guests lens"
       title="Guests & seating"
       icon={<Users size={18} />}
       source="Planning"
       testId="guests-lens-panel"
-      footer="Comfort figures are planning-grade estimates — human review required; not an occupancy or fire-capacity limit. Confirm with the venue team."
+      footer="Planning estimates; human review required. Not occupancy or fire limits."
     >
       <LensPanelSection label="Headcount">
         <label className="lens-panel__field lens-panel__field--inline">
@@ -140,7 +139,6 @@ export function GuestsLensPanel(): ReactElement {
             aria-label="Expected guests"
           />
         </label>
-        <p className="lens-panel__field-hint">Shared with the Flow, Costs and Share lenses.</p>
       </LensPanelSection>
 
       <LensPanelSection label="Seats">
@@ -170,7 +168,7 @@ export function GuestsLensPanel(): ReactElement {
 
       <LensPanelSection label="Room by style">
         <p className="lens-panel__field-hint" data-testid="guests-style-summary">
-          {model.styleSummary ?? "Comfortable guests per event style. Set a guest count to see which styles fit."}
+          {model.styleSummary ?? "Set a guest count to compare styles."}
         </p>
         {model.styles.map((s) => (
           <div key={s.style} className="lens-panel__style-row" data-testid={`guests-style-${s.style}`}>
@@ -190,9 +188,6 @@ export function GuestsLensPanel(): ReactElement {
       <LensPanelSection label="Build this room">
         {canBuild ? (
           <>
-            <p className="lens-panel__field-hint">
-              Lay out the whole room in one click{model.guestCount !== null ? ` for ${String(model.guestCount)} guests` : ""} — then tune from there.
-            </p>
             <div className="lens-panel__share-buttons">
               {buildable.map((b) => (
                 <button

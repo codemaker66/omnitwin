@@ -271,7 +271,7 @@ describe("EventArchitectPage", () => {
     });
     expect(createInput.idempotencyKey).toMatch(/^event-architect:create:/u);
 
-    expect(await screen.findByRole("heading", { name: "Three frozen candidate snapshots" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Three layout options" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Comfort first" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Balanced" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Capacity first" })).toBeTruthy();
@@ -343,7 +343,7 @@ describe("EventArchitectPage", () => {
 
     const plannerLink = await screen.findByRole("link", { name: /Open in planner/i });
     expect(plannerLink.getAttribute("href")).toBe(selection.plannerPath);
-    expect(screen.getByText("Exact snapshot saved to a planner configuration.")).toBeTruthy();
+    expect(screen.getByText("Layout saved as a draft.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Balanced selected" })).toHaveProperty("disabled", true);
     expect(await screen.findByRole("heading", { name: "Ops review evidence" })).toBeTruthy();
     expect(screen.getByText("Planner access is read-only.", { exact: false })).toBeTruthy();
@@ -370,7 +370,7 @@ describe("EventArchitectPage", () => {
     mockGetEventArchitectRun.mockResolvedValue(fixture);
     renderPage(`/event-architect/runs/${fixture.run.runId}`);
 
-    expect(await screen.findByRole("heading", { name: "Three frozen candidate snapshots" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Three layout options" })).toBeTruthy();
     expect(mockGetEventArchitectRun).toHaveBeenCalledWith(
       fixture.run.runId,
       expect.any(AbortSignal),
@@ -387,7 +387,7 @@ describe("EventArchitectPage", () => {
     renderPage();
     await completeRequiredBrief();
     fireEvent.click(screen.getByRole("button", { name: "Generate three options" }));
-    await screen.findByRole("heading", { name: "Three frozen candidate snapshots" });
+    await screen.findByRole("heading", { name: "Three layout options" });
 
     const text = document.body.textContent ?? "";
     expect(text).not.toContain(planningPrompt);

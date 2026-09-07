@@ -337,11 +337,8 @@ export function PricingPage(): React.ReactElement {
             animation: "pricing-fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
-          <div style={{ fontSize: 12, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 24, fontWeight: 600 }}>
-            Pricing
-          </div>
           <h1
-            aria-label="Turn every enquiry into a yes."
+            aria-label="Pricing"
             style={{
               fontFamily: SERIF,
               fontSize: "clamp(48px, 7vw, 96px)",
@@ -351,22 +348,9 @@ export function PricingPage(): React.ReactElement {
               letterSpacing: 0,
             }}
           >
-            <span aria-hidden="true">Turn every enquiry<br />
-            <em style={{ color: GOLD, fontStyle: "italic" }}>into a yes.</em></span>
+            Pricing
           </h1>
-          <p
-            style={{
-              fontSize: 20,
-              color: CREAM_MUT,
-              maxWidth: 640,
-              margin: "32px auto 0",
-              lineHeight: 1.6,
-              fontFamily: "'Newsreader', Georgia, serif",
-              fontStyle: "italic",
-            }}
-          >
-            One monthly plan. Clients build planning drafts while your team reviews and responds from the same workspace.
-          </p>
+
         </section>
 
         {/* === Main pricing card === */}
@@ -491,18 +475,16 @@ export function PricingPage(): React.ReactElement {
             Scale with your venue
           </div>
           <h2 style={{ fontFamily: SERIF, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
-            Pay only for what you grow into.
+            Add-ons
           </h2>
-          <p style={{ fontSize: 17, color: CREAM_MUT, marginTop: 16, maxWidth: 560, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
-            No tier ladder to guess at. Start on Pro, add exactly what you need as your venue grows.
-          </p>
+
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 20 }}>
           {[
-            { name: "Extra space", price: "£12", sub: "/ month each", desc: "Add a garden, courtyard, second hall — each room scanned and fully planable." },
-            { name: "Extra staff seat", price: "£5", sub: "/ month each", desc: "Invite more planners, hallkeepers, sales staff beyond the first five." },
-            { name: "White-label", price: "£20", sub: "/ month", desc: "Remove Venviewer branding, run on your own domain (plan.yourvenue.com)." },
+            { name: "Extra space", price: "£12", sub: "/ month each", desc: "An additional planning space." },
+            { name: "Extra staff seat", price: "£5", sub: "/ month each", desc: "For teams with more than five people." },
+            { name: "White-label", price: "£20", sub: "/ month", desc: "Your branding and domain." },
           ].map((addon) => (
             <div
               key={addon.name}
@@ -537,10 +519,10 @@ export function PricingPage(): React.ReactElement {
             One-off · Professional services
           </div>
           <h2 style={{ fontFamily: SERIF, fontSize: 44, margin: 0, fontWeight: 400, letterSpacing: 0 }}>
-            Get your venue <em style={{ color: GOLD, fontStyle: "italic" }}>into the cloud.</em>
+            Venue scanning
           </h2>
           <p style={{ fontSize: 17, color: CREAM_MUT, marginTop: 16, maxWidth: 580, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
-            We come to you. Lidar + photogrammetry + custom 3D model, ready to drop into your subscription.
+            On-site capture and a 3D model for your workspace.
           </p>
         </div>
 
@@ -630,7 +612,7 @@ export function PricingPage(): React.ReactElement {
                 <em style={{ color: GOLD, fontStyle: "italic" }}>Save £575.</em>
               </h3>
               <p style={{ fontSize: 16, color: "rgba(245,237,224,0.8)", marginTop: 20, lineHeight: 1.6, maxWidth: 440 }}>
-                One payment. Your venue scanned, modelled, and live in 3D — plus a full year of Pro. Pay £1,500 today, nothing else for a year.
+                £1,500 includes your venue scan and one year of Pro.
               </p>
             </div>
 
@@ -791,10 +773,10 @@ export function PricingPage(): React.ReactElement {
       {/* === Final CTA === */}
       <section style={{ position: "relative", zIndex: 2, padding: "100px 48px 120px", textAlign: "center", maxWidth: 800, margin: "0 auto" }}>
         <h2 style={{ fontFamily: SERIF, fontSize: 56, margin: 0, fontWeight: 400, letterSpacing: 0, lineHeight: 1.05 }}>
-          Ready when you are.
+          Start your trial
         </h2>
         <p style={{ fontSize: 18, color: CREAM_MUT, marginTop: 24, lineHeight: 1.6 }}>
-          Fourteen days on the house. Every feature. No credit card.
+          14 days free · No credit card
         </p>
         <Link
           to={trialHref}

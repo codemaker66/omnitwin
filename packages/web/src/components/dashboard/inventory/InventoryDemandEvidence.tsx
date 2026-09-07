@@ -54,7 +54,7 @@ export function InventoryDemandEvidence({ assessment, disabled, onSource, onReme
       {assessment.issues.length > 0 ? <ul>{assessment.issues.map((issue, index) => <li key={`${issue.code}:${String(index)}`}>{issue.message}</li>)}</ul> : null}
       <p className="inventory-small">Assessment: <InventoryInterval window={assessment.window} timeZone={assessment.timeZone} /> · {assessment.timeZone}</p>
     </section>
-    <div className="inventory-section-heading"><h3>Reservations and source layouts</h3><p>Review the recorded equipment allocation for each event and room.</p></div>
+    <div className="inventory-section-heading"><h3>Reservations and source layouts</h3></div>
     {assessment.sources.length === 0 ? <p className="inventory-muted">No event reservation sources were found in this window.</p> :
       <div className="inventory-source-list">{assessment.sources.map((source) => <article className="inventory-source" key={`${source.eventId}:${source.spaceId}`}>
         <div><h4>{source.eventName}</h4><p>{source.spaceName}</p><p className="inventory-muted inventory-small">{sourceLabels[source.state]}</p>

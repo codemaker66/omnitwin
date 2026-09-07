@@ -154,7 +154,7 @@ describe("ProtectedRoute", () => {
       children: "Platform surface",
     }));
 
-    expect(screen.getByRole("alert").textContent).toContain("reserved for Venviewer platform admins");
+    expect(screen.getByRole("alert").textContent).toContain("Platform access needed");
     expect(screen.queryByText("Platform surface")).toBeNull();
   });
 });

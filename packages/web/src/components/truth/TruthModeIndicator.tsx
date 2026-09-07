@@ -273,7 +273,7 @@ export function TruthModeIndicator({ summary, embedded = false }: TruthModeIndic
             <header style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 12px 10px" }}>
               <Info size={17} aria-hidden="true" style={{ color: shellToken.border, flex: "0 0 auto", marginTop: 2 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={labelStyle}>Truth Mode L2</p>
+                <p style={labelStyle}>Truth Mode</p>
                 <p style={{ ...bodyTextStyle, color: "#f7efe2", fontWeight: 760 }}>{summary.truthStatusLabel}</p>
               </div>
               <button
@@ -341,7 +341,7 @@ export function TruthModeIndicator({ summary, embedded = false }: TruthModeIndic
 
             <section style={{ padding: "10px 12px 12px", borderTop: "1px solid rgba(247, 239, 226, 0.1)" }}>
               <p style={labelStyle}>Next action</p>
-              <p style={bodyTextStyle}>Open the Evidence lens for provenance records, review gates, and sign-off state.</p>
+              <p style={bodyTextStyle}>View sources and approvals in Evidence.</p>
             </section>
           </div>
         )}

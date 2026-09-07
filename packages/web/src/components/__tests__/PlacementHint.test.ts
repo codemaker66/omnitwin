@@ -75,8 +75,8 @@ describe("PlacementHint", () => {
     expect(code).toContain("getCatalogueItem");
     expect(code).toContain("selectedItem?.name");
     expect(code).toContain("snapEnabled");
-    expect(code).toContain("Grid snap is on");
-    expect(code).toContain("Free placement is on");
+    expect(code).toContain("Grid snap on");
+    expect(code).toContain("Free placement");
   });
 
   it("returns null when inactive or dismissed reason-free", () => {

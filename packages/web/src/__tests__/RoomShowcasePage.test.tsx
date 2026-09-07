@@ -93,8 +93,7 @@ describe("RoomShowcasePage", () => {
       expect(getPublicRoomRuntimeVisualMock).toHaveBeenCalledWith("trades-hall", "lady-convenors-room");
     });
     expect(screen.getAllByText(/Visual preview/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Human review is required/i)).toBeTruthy();
-    expect(screen.getByText(/Final details are confirmed by the venue team/i)).toBeTruthy();
+    expect(screen.getByText(/Venue review required before use/i)).toBeTruthy();
     expect(screen.queryByTestId("public-runtime-canvas")).toBeNull();
   });
 

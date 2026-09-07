@@ -298,7 +298,6 @@ export function EventDayOpsPage(): ReactElement {
         <div className="event-day-page event-day-centered">
         <RefreshCw aria-hidden="true" className="event-day-spin" />
         <h1>Loading event-day board</h1>
-        <p>Preparing the latest internal operations view.</p>
         </div>
 
       </DashboardLayout>
@@ -354,17 +353,16 @@ export function EventDayOpsPage(): ReactElement {
       {readyBoard.sourceStatus === "missing_handoff" && (
         <section className="event-day-empty">
           <h2>No handoff pack linked</h2>
-          <p>Compile an internal ops handoff from an approved snapshot before using the live board.</p>
+          <p>Create a handoff from an approved snapshot to use this board.</p>
         </section>
       )}
 
       <Section
         title="Required acknowledgements"
-        subtitle={`${String(requiredAcknowledgements.length)} live change(s) need hallkeeper acknowledgement.`}
         icon={<Bell aria-hidden="true" />}
       >
         {requiredAcknowledgements.length === 0 ? (
-          <p className="event-day-muted">No unacknowledged planner or client changes are open for this event.</p>
+          <p className="event-day-muted">No changes awaiting acknowledgement.</p>
         ) : (
           <div className="event-day-change-feed">
             {requiredAcknowledgements.map((change) => (
@@ -392,7 +390,6 @@ export function EventDayOpsPage(): ReactElement {
 
       <Section
         title="Phase timeline"
-        subtitle="Planning phases from the event record."
         icon={<Clock aria-hidden="true" />}
       >
         <ol className="event-day-phases">
@@ -407,7 +404,7 @@ export function EventDayOpsPage(): ReactElement {
 
       <Section
         title="Setup progress"
-        subtitle={`${String(readyBoard.setupProgress.doneTasks)} of ${String(readyBoard.setupProgress.totalTasks)} task(s) done.`}
+        subtitle={`${String(readyBoard.setupProgress.doneTasks)} of ${String(readyBoard.setupProgress.totalTasks)} tasks done.`}
         icon={<Check aria-hidden="true" />}
       >
         <div className="event-day-progress" aria-label="Setup progress">
@@ -423,12 +420,12 @@ export function EventDayOpsPage(): ReactElement {
       <Section
         title="Task checklist"
         subtitle={missionActive
-          ? "The frozen task projections are controlled by Mission Control above."
-          : "Pre-mission status for setup and room flip work."}
+          ? "Manage tasks in Mission Control."
+          : "Before mission start."}
         icon={<CircleDashed aria-hidden="true" />}
       >
         {taskList.length === 0 ? (
-          <p className="event-day-muted">No setup or room flip tasks are available from the latest handoff pack.</p>
+          <p className="event-day-muted">No setup or room flip tasks in this handoff.</p>
         ) : (
           <div className="event-day-task-list">
             {taskList.map((task) => (
@@ -439,7 +436,7 @@ export function EventDayOpsPage(): ReactElement {
                   <p>{task.detail}</p>
                 </div>
                 {missionActive ? (
-                  <p className="event-day-task-authority">Managed by the revisioned mission task above.</p>
+                  <p className="event-day-task-authority">Managed in Mission Control.</p>
                 ) : (
                   <div className="event-day-task-actions" aria-label={`${task.title} status actions`}>
                     <button type="button" onClick={() => { setTaskStatus(task, "in_progress"); }}>
@@ -524,11 +521,10 @@ export function EventDayOpsPage(): ReactElement {
 
       <Section
         title="Supplier arrivals"
-        subtitle="Existing supplier instructions only."
         icon={<Truck aria-hidden="true" />}
       >
         {readyBoard.supplierArrivals.length === 0 ? (
-          <p className="event-day-muted">No supplier arrival notes are available in this handoff pack.</p>
+          <p className="event-day-muted">No supplier arrivals recorded.</p>
         ) : (
           <div className="event-day-arrivals">
             {readyBoard.supplierArrivals.map((arrival) => (
@@ -544,7 +540,6 @@ export function EventDayOpsPage(): ReactElement {
 
       <Section
         title="Escalation notes"
-        subtitle="Open urgent notes and escalation updates."
         icon={<AlertCircle aria-hidden="true" />}
       >
         {readyBoard.escalationNotes.length === 0 ? (

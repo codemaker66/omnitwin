@@ -63,7 +63,6 @@ export function PowerLensPanel(): ReactElement {
 
   return (
     <LensPanel
-      eyebrow="Power lens"
       title="Power & distro"
       icon={<Zap size={18} />}
       source="Indicative"
@@ -71,7 +70,7 @@ export function PowerLensPanel(): ReactElement {
       footer={POWER_PLANNING_DISCLAIMER}
     >
       <LensPanelSection label="Supply">
-        <p className="lens-panel__field-hint">Load comes from the Lighting lens rig.</p>
+        <p className="lens-panel__field-hint">Load from Lighting rig.</p>
         <div className="lens-panel__share-buttons">
           <button
             type="button"
@@ -120,7 +119,7 @@ export function PowerLensPanel(): ReactElement {
 
       <LensPanelSection label="Distribution">
         {empty ? (
-          <p className="lens-panel__hint" data-testid="power-empty">Add fixtures in the Lighting lens to plan distribution.</p>
+          <p className="lens-panel__hint" data-testid="power-empty">Add fixtures in Lighting.</p>
         ) : (
           plan.phases.map((p) => {
             const pct = Math.min(100, Math.round((p.amps / breakerA) * 100));

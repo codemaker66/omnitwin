@@ -207,7 +207,7 @@ export const InventoryEditor = forwardRef<InventoryEditorHandle, EditorProps>(fu
       </form>
       {presentation === "inline" ? <div className="inventory-editor-disclosures">
         <details className="inventory-stock-details"><summary>Stock details</summary>
-          <p className="inventory-field-help">Damaged and other unavailable counts are separate parts of owned stock. Every correction records your identity and the before and after counts.</p>{stockDetails}</details>
+          <p className="inventory-field-help">Damaged and other unavailable counts are separate parts of owned stock.</p>{stockDetails}</details>
         <RecentHistory venueId={venueId} assetId={item.catalogue.id} refresh={saved?.receipt.command.commandId ?? null} />
       </div> : null}
       {remedies !== undefined && remedies !== null ? <div className="inventory-editor-remedies">{remedies}</div> : null}

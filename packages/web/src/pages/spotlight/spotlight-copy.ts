@@ -22,11 +22,11 @@ export const SPOTLIGHT_HEADLINE_ROMAN = "before it happens.";
 
 /** Bottom-left — the venue, in the dark. */
 export const SPOTLIGHT_VENUE_LINE =
-  "Beneath the dome Robert Adam drew in 1791, the Grand Hall waits in the dark — panelled walls, chandeliers, and two centuries of Glasgow's evenings.";
+  "The Grand Hall, Glasgow · Robert Adam, 1791";
 
 /** Bottom-right — the instrument, and the invitation. */
 export const SPOTLIGHT_PRODUCT_LINE =
-  "Carry the light across the room and watch it dressed for your night. Then open the planner — every table and every chair, arranged in your browser before you ever enquire.";
+  "Move the light to reveal the room.";
 
 export const SPOTLIGHT_CTA_LABEL = "Begin with the room";
 /** Same planner entry as the rite's Return CTA — one door, never two. */

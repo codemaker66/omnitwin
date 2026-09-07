@@ -43,7 +43,7 @@ describe("InteractiveFloorPlan saved geometry", () => {
     expect(container.querySelectorAll("[data-footprint-id]")).toHaveLength(162);
     expect(container.querySelectorAll("ellipse[data-footprint-shape]")).toHaveLength(18);
     expect(container.querySelectorAll("polygon[data-footprint-shape]")).toHaveLength(144);
-    expect(screen.getByText("162 furniture footprints · saved layout geometry")).toBeTruthy();
+    expect(screen.getByText("Saved layout · 162 items")).toBeTruthy();
     expect(container.querySelector("[data-room-outline]")?.tagName).toBe("polygon");
   });
 
@@ -111,7 +111,7 @@ describe("InteractiveFloorPlan saved geometry", () => {
     const { container } = render(<MemoryRouter initialEntries={[`/hallkeeper/${id(3000)}`]}><Routes>
       <Route path="/hallkeeper/:configId" element={<HallkeeperPage />} />
     </Routes></MemoryRouter>);
-    await screen.findByText("162 furniture footprints · saved layout geometry");
+    await screen.findByText("Saved layout · 162 items");
     expect(container.querySelectorAll("[data-footprint-id]")).toHaveLength(162);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

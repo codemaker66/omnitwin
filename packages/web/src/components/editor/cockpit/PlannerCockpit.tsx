@@ -77,7 +77,7 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
         >
           <span className="cockpit-preview-lock__title">Phase preview</span>
           <strong>Editing is paused</strong>
-          <p>Return to the saved plan from the timeline before changing this layout.</p>
+          <p>Return to the saved plan to edit.</p>
         </aside>
       ) : <CockpitRightDock key="right-dock" />}
       {/* The When ribbon (S2) shares the transport's clock and booking; it

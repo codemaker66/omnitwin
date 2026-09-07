@@ -199,10 +199,9 @@ export function LoadoutsView(): React.ReactElement {
   if (venueId === "") {
     return (
       <section style={{ ...panelStyle, padding: 24 }} role="status">
-        <p style={{ color: "#d7b56d", fontSize: 12, fontWeight: 850, letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>Reference loadouts</p>
         <h2 style={{ margin: "8px 0", fontSize: 24, fontFamily: "Georgia, 'Times New Roman', serif", letterSpacing: 0 }}>No venue assigned</h2>
         <p style={{ margin: 0, color: "rgba(246,241,232,0.72)", lineHeight: 1.55 }}>
-          Reference setup packs are venue-scoped. Ask an admin to attach your user to a venue before creating room setup evidence.
+          Ask an admin to assign your account to a venue.
         </p>
       </section>
     );
@@ -228,7 +227,6 @@ export function LoadoutsView(): React.ReactElement {
 
       <div style={{ ...panelStyle, padding: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
-          <p style={{ color: "#68d8d2", fontSize: 12, fontWeight: 850, letterSpacing: "0.08em", margin: 0, textTransform: "uppercase" }}>Operations evidence</p>
           <h3 style={{ fontSize: 22, fontFamily: "Georgia, 'Times New Roman', serif", fontWeight: 650, margin: "4px 0 0", letterSpacing: 0 }}>Reference Loadouts</h3>
         </div>
         <button type="button" style={{ ...btnStyle, opacity: selectedSpaceId === null ? 0.5 : 1 }}
@@ -249,7 +247,7 @@ export function LoadoutsView(): React.ReactElement {
 
       {!loading && spacesError === null && spaces.length === 0 && (
         <div style={{ ...panelStyle, padding: 24, color: "rgba(246,241,232,0.72)" }}>
-          No rooms exist for this venue yet. Add rooms in Admin before documenting reference setup packs.
+          Add rooms in Admin to create loadouts.
         </div>
       )}
 
@@ -265,7 +263,7 @@ export function LoadoutsView(): React.ReactElement {
       )}
 
       {!loading && loadoutsState === "loaded" && loadouts.length === 0 && (
-        <div style={{ ...panelStyle, padding: 24, color: "rgba(246,241,232,0.72)" }}>No reference loadouts yet. Create one to start documenting room setups with photos.</div>
+        <div style={{ ...panelStyle, padding: 24, color: "rgba(246,241,232,0.72)" }}>No reference loadouts yet.</div>
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>

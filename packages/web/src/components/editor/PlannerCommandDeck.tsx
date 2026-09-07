@@ -46,10 +46,9 @@ interface CommandAction {
 }
 
 interface CommandDeckCopy {
-  readonly kicker: string;
   readonly title: string;
   readonly detail: string;
-  readonly metric: string;
+  readonly metric: string | null;
 }
 
 function selectedCopy(
@@ -61,27 +60,24 @@ function selectedCopy(
   if (selectedCount === 1 && tableCount === 1) {
     const canDress = linenTargetCount === 1;
     return {
-      kicker: "Selection",
       title: "Table selected",
       detail: canDress
-        ? "Dress it, move it, or group it with nearby furniture without opening another panel."
-        : "Move it or group it with nearby furniture without adding a second cloth.",
-      metric: canDress ? "Table controls ready" : "Intrinsic linen",
+        ? "Dress, move or group this table."
+        : "Move or group this table. Cloth included.",
+      metric: null,
     };
   }
   if (selectedCount === 1 && chairCount === 1) {
     return {
-      kicker: "Selection",
       title: "Seat selected",
-      detail: "Drag to move, right-click to name the seat, or turn it into a saved POV.",
-      metric: "Seat planning",
+      detail: "Drag to move; right-click for seat options.",
+      metric: null,
     };
   }
   return {
-    kicker: "Selection",
     title: `${selectedCount.toLocaleString("en-GB")} items selected`,
-    detail: "Move as one, group for layout integrity, or remove the set in one command.",
-    metric: selectedCount > 1 ? "Batch edit" : "Ready",
+    detail: "Move, group or delete the selection.",
+    metric: null,
   };
 }
 
@@ -201,9 +197,8 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     if (markupActive) {
       return {
         copy: {
-          kicker: "Laser diagram",
           title: "Draw planning notes on the floor",
-          detail: "Gold strokes stay local to this layout and avoid moving furniture while you sketch.",
+          detail: "Drawings stay in this layout.",
           metric: `${markupStrokeCount.toLocaleString("en-GB")} stroke${markupStrokeCount === 1 ? "" : "s"}`,
         },
         actions: [
@@ -242,7 +237,6 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
         : "Move over the floor, then click to place.";
       return {
         copy: {
-          kicker: "Placing",
           title: selectedCatalogue.name,
           detail: `${chairHint} Rotate with R before release.`,
           metric: snapEnabled ? "Grid + smart guides on" : "Free placement",
@@ -272,9 +266,8 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     if (activeReferenceId !== null) {
       return {
         copy: {
-          kicker: "Human POV",
           title: "Looking through a saved viewpoint",
-          detail: "Right-drag turns like a person standing in the room. Press Escape to return to planning.",
+          detail: "Right-drag to look. Escape to return.",
           metric: "First-person camera",
         },
         actions: [
@@ -415,13 +408,12 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
 
     return {
       copy: {
-        kicker: "Command deck",
-        title: "Build the room from the floor",
+        title: "Arrange the room",
         detail: placedItems.length === 0
           ? (plannedGuestCount !== null && plannedGuestCount > 0
-            ? `Auto-fill a banquet layout for ${plannedGuestCount.toLocaleString("en-GB")} guests in one click, open furniture, or sketch with Laser Diagram.`
-            : "Auto-fill a comfortable banquet grid in one click, open furniture, or sketch with Laser Diagram.")
-          : "Open furniture, drag rows of chairs, right-click a seat for POV, or sketch with Laser Diagram.",
+            ? `Auto-fill for ${plannedGuestCount.toLocaleString("en-GB")} guests, or add furniture.`
+            : "Auto-fill a banquet layout, or add furniture.")
+          : "Add furniture or draw setup notes.",
         metric: placedItems.length === 0
           ? "No furniture placed"
           : `${placedItems.length.toLocaleString("en-GB")} placed item${placedItems.length === 1 ? "" : "s"}`,
@@ -459,13 +451,12 @@ export const PlannerCommandDeck = memo(function PlannerCommandDeck({ compact = f
     >
       <div className="planner-command-deck__glow" aria-hidden="true" />
       <div className="planner-command-deck__copy">
-        <p className="planner-command-deck__kicker">{state.copy.kicker}</p>
         <h2 className="planner-command-deck__title">{state.copy.title}</h2>
         <p className="planner-command-deck__detail">{state.copy.detail}</p>
       </div>
-      <div className="planner-command-deck__meta">
+      {state.copy.metric !== null && <div className="planner-command-deck__meta">
         <span>{state.copy.metric}</span>
-      </div>
+      </div>}
       <div className="planner-command-deck__actions">
         {state.actions.map(makeButton)}
       </div>

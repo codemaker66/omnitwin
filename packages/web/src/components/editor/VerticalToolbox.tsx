@@ -1064,54 +1064,8 @@ function OnboardingHint({ onDismiss, onOpenFurniture }: OnboardingHintProps): Re
           fontFamily: "'Inter', system-ui, sans-serif",
         }}
       >
-        <div style={{ display: "grid", gap: 4 }}>
-          <div style={{ fontSize: 10, fontWeight: 820, letterSpacing: "0.14em", color: GOLD, textTransform: "uppercase" }}>
-            Fastest first move
-          </div>
-          <div style={{ color: "#fff7e8", fontSize: 17, fontWeight: 680, lineHeight: 1.04, fontFamily: "'Playfair Display', Georgia, serif" }}>
-            Build floor. Check risk.
-          </div>
-          <div style={{ color: "rgba(246,239,227,0.68)", fontSize: 11.8, fontWeight: 620, lineHeight: 1.36 }}>
-            Open the catalogue, place core furniture, then run Flow and Evidence before handoff.
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
-          {[
-            ["1", "Add"],
-            ["2", "Tune"],
-            ["3", "Review"],
-          ].map(([step, label]) => (
-            <div
-              key={step}
-              style={{
-                display: "grid",
-                gap: 4,
-                justifyItems: "center",
-                color: "rgba(246,239,227,0.72)",
-                fontSize: 11,
-                fontWeight: 720,
-                minWidth: 0,
-              }}
-            >
-              <span
-                style={{
-                  display: "grid",
-                  placeItems: "center",
-                  width: 22,
-                  height: 22,
-                  borderRadius: 999,
-                  background: "rgba(201,168,76,0.14)",
-                  color: "#f4d47c",
-                  fontSize: 11,
-                  fontWeight: 840,
-                }}
-              >
-                {step}
-              </span>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{label}</span>
-            </div>
-          ))}
+        <div style={{ color: "rgba(246,239,227,0.68)", fontSize: 11.8, fontWeight: 620, lineHeight: 1.36 }}>
+          Place furniture, then review Flow and Evidence.
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1897,14 +1851,12 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
 
   const showDesktopHints = !isTouch && !isNarrow;
   const selectDescription = isTouch
-    ? "Tap furniture to select it, then drag to move it across the room."
-    : "Click any piece of furniture to grab it. Drag to slide it across the room. Shift+click to select multiple.";
-  const addDescription = isTouch
-    ? "Open the furniture catalogue, then tap an item and place it in the room."
-    : "Open the catalogue — round tables, trestle tables, poseur tables, chairs, staging, AV gear, lecterns and more.";
+    ? "Tap to select; drag to move."
+    : "Drag to move. Shift+click to select more.";
+  const addDescription = "Choose furniture to place.";
   const rotateDescription = isTouch
-    ? "Rotate the selected item with touch-friendly controls."
-    : "Twist any selected item 15° at a time. Perfect for angling tables toward the stage or lining up rows.";
+    ? "Rotate selected furniture."
+    : "Rotate selected furniture in 15° steps.";
 
   const desktopToolbarVisible = shouldRenderDesktopToolbar(mobileChrome) && (!compactDesktop || desktopMoreOpen);
 
@@ -1987,45 +1939,45 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
           <Save size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "delete"} compact={isNarrow} subLabel="Delete" label="Delete" description="Remove whatever you've selected. Tables will take their chairs with them — no orphans left behind." shortcut="Del" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("delete"); }}>
+        <ToolBtn active={activeTool === "delete"} compact={isNarrow} subLabel="Delete" label="Delete" description="Delete selected furniture and attached chairs." shortcut="Del" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("delete"); }}>
           <Trash2 size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={dividerStyle} />
 
-        <ToolBtn active={false} compact={isNarrow} subLabel="Undo" disabled={!canUndo} label="Undo" description="Made a mistake? Step back in time. Every move, place, and delete can be reversed." shortcut="Ctrl+Z" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleUndo}>
+        <ToolBtn active={false} compact={isNarrow} subLabel="Undo" disabled={!canUndo} label="Undo" description="Undo the last change." shortcut="Ctrl+Z" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleUndo}>
           <Undo2 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={false} compact={isNarrow} subLabel="Redo" disabled={!canRedo} label="Redo" description="Changed your mind about undoing? Bring it back exactly as it was." shortcut="Ctrl+Y" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleRedo}>
+        <ToolBtn active={false} compact={isNarrow} subLabel="Redo" disabled={!canRedo} label="Redo" description="Redo the last change." shortcut="Ctrl+Y" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleRedo}>
           <Redo2 size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={dividerStyle} />
 
-        <ToolBtn active={cameraOpen} compact={isNarrow} subLabel="Camera" label="Camera Views" description="Teleport to pre-set viewpoints — see the room from the entrance, the stage, or overhead." tooltipEnabled={showDesktopHints} onClick={handleCameraToggle}>
+        <ToolBtn active={cameraOpen} compact={isNarrow} subLabel="Camera" label="Camera Views" description="Choose a room viewpoint." tooltipEnabled={showDesktopHints} onClick={handleCameraToggle}>
           <Camera size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={activeTool === "markup"} compact={isNarrow} subLabel="Draw" label="Laser Diagram" description="Sketch routes, zones, and setup notes directly on the hall floor with polished luminous markup." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("markup"); }}>
+        <ToolBtn active={activeTool === "markup"} compact={isNarrow} subLabel="Draw" label="Laser Diagram" description="Draw routes, zones and setup notes." shortcut="D" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("markup"); }}>
           <PenLine size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={snapEnabled} compact={isNarrow} subLabel="Snap" label="Grid Snap" description="Furniture locks to a 1-metre grid for perfectly aligned layouts. Toggle off for freeform placement." shortcut="G" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleSnapToggle}>
+        <ToolBtn active={snapEnabled} compact={isNarrow} subLabel="Snap" label="Grid Snap" description="Snap furniture to a 1-metre grid." shortcut="G" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={handleSnapToggle}>
           <Grid3X3 size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description={isTouch ? "Toggle the room walls for a clearer touch planning view." : "Pin every wall up so you can see the full room structure. Click individual walls to toggle them."} tooltipEnabled={showDesktopHints} onClick={handleToggleAllWalls}>
+        <ToolBtn active={allWallsUp} compact={isNarrow} subLabel="Walls" label="Show All Walls" description={isTouch ? "Toggle room walls." : "Show all walls. Click a wall to toggle it."} tooltipEnabled={showDesktopHints} onClick={handleToggleAllWalls}>
           <Eye size={ICON_SIZE} />
         </ToolBtn>
 
-        <ToolBtn active={false} compact={isNarrow} subLabel="Sheet" label="Events Sheet" description="Generate a professional setup sheet the crew can print and use on event day. Tables, chairs, positions — all laid out." tooltipEnabled={showDesktopHints} onClick={handleGenerateSheet}>
+        <ToolBtn active={false} compact={isNarrow} subLabel="Sheet" label="Events Sheet" description="Print the crew setup sheet." tooltipEnabled={showDesktopHints} onClick={handleGenerateSheet}>
           <FileText size={ICON_SIZE} />
         </ToolBtn>
 
         <div style={{ flex: 1 }} />
 
-        <ToolBtn active={false} compact={isNarrow} subLabel={isAuthenticated ? "Account" : "Sign In"} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "View your saved layouts, manage your profile, and track your enquiries." : "Create a free account to save layouts, share with your team, and send to the venue."} tooltipEnabled={showDesktopHints} onClick={() => { if (isAuthenticated) { void navigate("/dashboard"); } else { setShowAuth(true); } }}>
+        <ToolBtn active={false} compact={isNarrow} subLabel={isAuthenticated ? "Account" : "Sign In"} label={isAuthenticated ? "Your Account" : "Sign In"} description={isAuthenticated ? "Saved layouts and enquiries." : "Sign in to save and share layouts."} tooltipEnabled={showDesktopHints} onClick={() => { if (isAuthenticated) { void navigate("/dashboard"); } else { setShowAuth(true); } }}>
           <User size={ICON_SIZE} />
         </ToolBtn>
         {compactDesktop && <ReferenceSceneSettings />}
@@ -2198,7 +2150,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
                   >
                     <span style={{ color: GOLD, fontWeight: 850, letterSpacing: 1.4, textTransform: "uppercase" }}>Chair brush</span>
                     <span style={{ display: "block", marginTop: 3 }}>
-                      Drag straight across the floor for a row. Drag diagonally to fill a seating block.
+                      Drag straight for a row; diagonally for a block.
                     </span>
                   </div>
                 )}

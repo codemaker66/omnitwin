@@ -170,8 +170,7 @@ export function InventoryDemand({ actorId, venueId, refreshKey, children }: {
   return <>{children?.({ assessment, assessmentCurrent: assessmentUsable, loading, canAct, windowForm,
     onRemedy: (item) => { if (canAct) setView({ kind: "prepare", item }); } })}
   <section className="inventory-demand" id="inventory-decisions" aria-labelledby="inventory-demand-title">
-    <div className="inventory-section-heading"><h2 id="inventory-demand-title">Demand & decisions</h2>
-      <p>Review event allocations, see shortages and prepare the next action.</p></div>
+    <div className="inventory-section-heading"><h2 id="inventory-demand-title">Demand & decisions</h2></div>
     {pending !== null && view?.kind !== "pending" ? <section className="inventory-notice" role="status"><h3>An earlier action is not confirmed</h3>
       <p>{pending.title}. Check its recorded result before making another reservation or request.</p>
       <button type="button" className="inventory-button" disabled={busy} onClick={() => {

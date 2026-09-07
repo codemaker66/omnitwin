@@ -370,9 +370,6 @@ export function CommercialPipelineView(): ReactElement {
           <div>
             <h2 style={{ margin: 0, fontSize: 20, color: "#fff7e8" }}>Commercial pipeline</h2>
             {busy && <ActivityStatus>Updating the commercial pipeline…</ActivityStatus>}
-            <p style={{ margin: "6px 0 0", fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>
-              Enquiries become opportunities, proposals, quotes, and client share links. Planning assumptions stay visible.
-            </p>
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 12, color: "#d7b56d", fontWeight: 700 }}>Pipeline value</div>
@@ -434,7 +431,7 @@ export function CommercialPipelineView(): ReactElement {
           <section style={card}>
             <h3 style={{ margin: "0 0 6px", fontSize: 16 }}>No opportunities yet</h3>
             <p style={{ margin: 0, fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>
-              Create one from an enquiry, then build the proposal and quote from the same record.
+              Create one from an enquiry.
             </p>
           </section>
         )}
@@ -504,9 +501,6 @@ export function CommercialPipelineView(): ReactElement {
                 {detailError}
               </div>
             )}
-            <p style={{ margin: 0, fontSize: 13, color: "rgba(246, 241, 232, 0.68)" }}>
-              The detail panel shows next action, proposal status, follow-ups, and client-safe notes.
-            </p>
           </section>
         ) : (
           <section style={card} aria-label="Opportunity detail">

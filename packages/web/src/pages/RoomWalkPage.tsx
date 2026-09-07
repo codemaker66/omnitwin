@@ -6,7 +6,6 @@ import {
 } from "../components/rooms/RoomSplatScene.js";
 import {
   roomSplatBundle,
-  roomSplatServedSplats,
   roomsWithSplatBundles,
 } from "../data/room-splat-bundles.js";
 import { isRoomWalkable } from "../data/room-walk-exposure.js";
@@ -125,17 +124,9 @@ export function RoomWalkPage(): ReactElement {
           <span aria-hidden="true">←</span> Rooms
         </Link>
         <h1 className="walk__name">{displayName(room)}</h1>
-        <p className="walk__measure">
-          {/* Dimensions only where the scan measured cleanly; the count is
-              always true, the measurement is not. */}
-          {bundle.alignmentConfidence === "confident" && measured !== null && (
-            <>
-              {measured}
-              <span className="walk__dot" aria-hidden="true">·</span>
-            </>
-          )}
-          {roomSplatServedSplats(room).toLocaleString("en-GB")} splats
-        </p>
+        {bundle.alignmentConfidence === "confident" && measured !== null && (
+          <p className="walk__measure">{measured}</p>
+        )}
       </header>}
 
       {/* The room arrives twice: a coarse view in seconds, then the full
@@ -152,8 +143,8 @@ export function RoomWalkPage(): ReactElement {
       {!bare && <footer className="walk__foot">
         <p className="walk__note">
           {bundle.alignmentConfidence === "confident"
-            ? "A working scan of the real room, not a survey. Dimensions are measured from the scan, not the venue's own figures."
-            : "A working scan of the real room, not a survey. You can move where the scanner's operator walked; beyond that the scan has no data, so the room may end before its walls do. This room's alignment is still being checked, so no dimensions are given."}
+            ? "Scan dimensions are estimates. Confirm with the venue."
+            : "Incomplete scan. Alignment is under review; dimensions unavailable."}
         </p>
         {progress.failed > 0 && (
           <p className="walk__failed">{String(progress.failed)} parts of this room did not load.</p>

@@ -574,7 +574,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
       {modal === "reject" && (
         <NoteModal
           title="Reject this layout?"
-          description="Tell the planner why you're rejecting. This note is emailed directly to them and stored in the review history."
+          description="This note is emailed to the planner and saved in review history."
           confirmLabel="Send rejection"
           confirmStyle={buttonDanger}
           onConfirm={handleReject}
@@ -586,7 +586,7 @@ function DetailView({ entry, onBack, onStatusChange }: DetailViewProps): React.R
       {modal === "changes" && (
         <NoteModal
           title="Request changes on this layout?"
-          description="Describe the revisions you need. The planner can re-open the layout, revise, and re-submit. Your note is preserved in the review history."
+          description="Describe the revisions needed. Your note is saved in review history."
           confirmLabel="Send change request"
           confirmStyle={buttonWarning}
           onConfirm={handleRequestChanges}
@@ -685,7 +685,7 @@ export function ReviewsView(): React.ReactElement {
           padding: 40, textAlign: "center", color: "rgba(246,241,232,0.66)",
           background: "rgba(255,247,232,0.05)", borderRadius: 8, border: "1px dashed rgba(215,181,109,0.24)",
         }}>
-          No pending reviews. Planners&rsquo; submissions will appear here.
+          No pending reviews.
         </div>
       )}
 

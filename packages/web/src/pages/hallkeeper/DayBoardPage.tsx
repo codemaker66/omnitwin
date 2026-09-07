@@ -123,7 +123,7 @@ export function DayBoardPage(): ReactElement {
         ) : null}
 
         {status !== "error" && board !== null && busyLanes === 0 ? (
-          <p className="dayboard-notice">Nothing in the diary today. A quiet house.</p>
+          <p className="dayboard-notice">Nothing scheduled today.</p>
         ) : null}
 
         <div className="dayboard-lanes">

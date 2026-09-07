@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
-import { BadgeCheck, Building2, CircleAlert, ClipboardCheck, RefreshCw, Save, Send, ShieldCheck, UserPlus } from "lucide-react";
+import { Building2, CircleAlert, ClipboardCheck, RefreshCw, Save, Send, ShieldCheck, UserPlus } from "lucide-react";
 import type {
   BillingProvider,
   OnboardingProject,
@@ -311,7 +311,7 @@ function statusChip(label: string, tone: "ready" | "review" | "blocked"): ReactE
   );
 }
 
-function metricPanel(icon: ReactElement, label: string, value: string, note: string): ReactElement {
+function metricPanel(icon: ReactElement, label: string, value: string): ReactElement {
   return (
     <div style={panelStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#6b542f" }}>
@@ -321,7 +321,6 @@ function metricPanel(icon: ReactElement, label: string, value: string, note: str
       <p style={{ margin: "8px 0 4px", color: "#21190f", fontSize: 28, fontWeight: 850, lineHeight: 1 }}>
         {value}
       </p>
-      <p style={mutedTextStyle}>{note}</p>
     </div>
   );
 }
@@ -550,9 +549,7 @@ export function OnboardingView(): ReactElement {
   if (loadState.status === "loading") {
     return (
       <section style={panelStyle} aria-live="polite">
-        <p style={labelStyle}>Workspace onboarding</p>
         <h2 style={{ margin: "8px 0", color: "#21190f", fontSize: 22 }}>Loading managed rollout records</h2>
-        <p style={mutedTextStyle}>Organisation, workspace, invite, and entitlement records are loading.</p>
       </section>
     );
   }
@@ -560,7 +557,6 @@ export function OnboardingView(): ReactElement {
   if (loadState.status === "error") {
     return (
       <section style={panelStyle} role="alert">
-        <p style={labelStyle}>Workspace onboarding</p>
         <h2 style={{ margin: "8px 0", color: "#991b1b", fontSize: 22 }}>Onboarding unavailable</h2>
         <p style={{ ...mutedTextStyle, marginBottom: 14 }}>{loadState.message}</p>
         <button type="button" onClick={load} style={{ ...primaryButtonStyle, width: "auto" }}>
@@ -577,15 +573,9 @@ export function OnboardingView(): ReactElement {
       <section style={heroStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 18 }}>
           <div>
-            <p style={{ margin: 0, color: "#d7b56d", fontSize: 12, fontWeight: 900, textTransform: "uppercase" }}>
-              Operator console
-            </p>
             <h2 style={{ margin: "8px 0 6px", fontSize: 30, lineHeight: 1.05, letterSpacing: 0 }}>
               Workspace onboarding
             </h2>
-            <p style={{ margin: 0, maxWidth: 760, color: "rgba(255,247,232,0.72)", lineHeight: 1.5 }}>
-              Create the organisation, workspace, venue record, owner invitation, staff invitations, and entitlement record as one reviewed rollout.
-            </p>
           </div>
           <button type="button" onClick={load} style={secondaryButtonStyle}>
             <RefreshCw size={16} aria-hidden="true" /> Refresh
@@ -594,18 +584,17 @@ export function OnboardingView(): ReactElement {
       </section>
 
       <section style={responsiveMetricGridStyle}>
-        {metricPanel(<Building2 size={18} aria-hidden="true" />, "Workspaces", String(data.workspaces.length), "Managed rollout records")}
-        {metricPanel(<UserPlus size={18} aria-hidden="true" />, "Pending invites", String(data.memberships.filter((member) => member.status === "invited").length), "Owner and staff access")}
-        {metricPanel(<ShieldCheck size={18} aria-hidden="true" />, "Access enforced", String(enforcedAccessCount), "Provider-verified only")}
-        {metricPanel(<ClipboardCheck size={18} aria-hidden="true" />, "Review queue", String(reviewQueueCount), "Operator gates not approved")}
+        {metricPanel(<Building2 size={18} aria-hidden="true" />, "Workspaces", String(data.workspaces.length))}
+        {metricPanel(<UserPlus size={18} aria-hidden="true" />, "Pending invites", String(data.memberships.filter((member) => member.status === "invited").length))}
+        {metricPanel(<ShieldCheck size={18} aria-hidden="true" />, "Access enforced", String(enforcedAccessCount))}
+        {metricPanel(<ClipboardCheck size={18} aria-hidden="true" />, "Review queue", String(reviewQueueCount))}
       </section>
 
       <section style={responsiveFormShellStyle}>
         <form style={panelStyle} onSubmit={(event) => { void handleSubmit(event); }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
             <div>
-              <p style={labelStyle}>New managed workspace</p>
-              <h3 style={{ margin: 0, color: "#21190f", fontSize: 20 }}>Sales handoff package</h3>
+              <h3 style={{ margin: 0, color: "#21190f", fontSize: 20 }}>New workspace</h3>
             </div>
             <button type="submit" style={primaryButtonStyle} disabled={submitDisabled} data-testid="create-onboarding-workspace">
               <Send size={16} aria-hidden="true" /> {submitting ? "Creating" : "Create"}
@@ -780,7 +769,6 @@ export function OnboardingView(): ReactElement {
       <section style={panelStyle}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div>
-            <p style={labelStyle}>Rollout queue</p>
             <h3 style={{ margin: 0, color: "#21190f", fontSize: 20 }}>Workspace records</h3>
           </div>
           {statusChip(`${String(data.auditEvents.length)} audit events`, "review")}
@@ -835,13 +823,9 @@ export function OnboardingView(): ReactElement {
       {data.workspaces.length > 0 ? (
         <section style={panelStyle} aria-labelledby="deployment-operator-controls">
           <div>
-            <p style={labelStyle}>Deployment controls</p>
             <h3 id="deployment-operator-controls" style={{ margin: 0, color: "#21190f", fontSize: 20 }}>
-              Operator action board
+              Deployment controls
             </h3>
-            <p style={{ ...mutedTextStyle, marginTop: 6 }}>
-              Keep rollout work explicit: staff invites, project review gates, provider verification, and access enforcement are separate auditable actions.
-            </p>
           </div>
 
           <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
@@ -1118,12 +1102,6 @@ export function OnboardingView(): ReactElement {
         </section>
       ) : null}
 
-      <section style={{ ...panelStyle, display: "flex", alignItems: "center", gap: 10 }}>
-        <BadgeCheck size={18} aria-hidden="true" />
-        <p style={{ ...mutedTextStyle, color: "#3b2c1b" }}>
-          Provider state is recorded separately from access control. The database and shared contracts reject access enforcement without verified provider evidence.
-        </p>
-      </section>
     </div>
   );
 }

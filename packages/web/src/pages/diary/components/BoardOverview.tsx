@@ -20,8 +20,8 @@ export function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, 
   const days = useMemo(() => dayColumns(range), [range]);
   const anchors = useMemo(() => new Map(entries.map((entry) => [entry.id, firstVisibleDay(entry, range)])), [entries, range]);
   return <section className="diary-overview" aria-label="Booking overview">
-    <div className="diary-overview-intro"><span><CalendarDays size={16} />{days.length === 7 ? "Your week, at a glance" : "Your rooms, day by day"}</span>
-      <p>Booking summaries · exact times shown. Open a day for the time scale.</p></div>
+    <div className="diary-overview-intro"><span><CalendarDays size={16} />{days.length === 7 ? "Week overview" : "Booking overview"}</span>
+      <p>Open a day for the timeline.</p></div>
     <div className="diary-overview-scroll" role="region" aria-label="Room and day booking summaries" tabIndex={0}>
       <div className={`diary-overview-grid${days.length > 7 ? " is-long-range" : ""}`} style={{ "--diary-days": days.length } as CSSProperties}>
         <div className="diary-overview-row diary-overview-axis">

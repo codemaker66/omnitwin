@@ -315,7 +315,6 @@ export function EditorPage(): React.ReactElement {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role={autoCreateBlocker.kind === "network" ? "alert" : "status"}>
-          <p className="vv-state-kicker">Planner start</p>
           <h1>{copy.title}</h1>
           <p>{copy.body}</p>
           {/* Wave A closure: canonical chip grammar — the workspace is absent,
@@ -349,9 +348,7 @@ export function EditorPage(): React.ReactElement {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role="status" aria-live="polite">
-          <p className="vv-state-kicker">Planner start</p>
           <h1>{openingRoomName !== null ? `Opening the ${openingRoomName} planner` : "Opening the planner"}</h1>
-          <p>Preparing a recoverable planning draft with room context and review-state controls.</p>
         </section>
       </div>
     );
@@ -362,9 +359,7 @@ export function EditorPage(): React.ReactElement {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role="status" aria-live="polite">
-          <p className="vv-state-kicker">Planner layout</p>
           <h1>Loading the saved layout</h1>
-          <p>Furniture, notes, venue context, and review controls are being restored.</p>
         </section>
       </div>
     );
@@ -375,7 +370,6 @@ export function EditorPage(): React.ReactElement {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role="alert">
-          <p className="vv-state-kicker">Planner layout</p>
           <h1>Layout could not be loaded</h1>
           <p>{error}</p>
           <div className="vv-state-actions">

@@ -204,9 +204,6 @@ export function TimeMachinePanel({
           <span className="tm__eyebrow">Time machine</span>
           <h3 className="tm__title">No recorded history yet</h3>
         </header>
-        <p className="tm__note">
-          Once edits are saved, every change becomes a point you can travel back to.
-        </p>
       </section>
     );
   }
@@ -225,8 +222,7 @@ export function TimeMachinePanel({
       {anchor?.exact === false ? (
         <p className="tm__warn" data-testid="tm-anchor-warning">
           {anchor.reason ?? "The room this trail started from cannot be recovered."}
-          {" "}Nothing is drawn for this moment — a plan the record cannot
-          support would be more misleading than no plan.
+          {" "}No plan shown for this moment.
         </p>
       ) : (
         <div className="tm__plan" data-testid="tm-plan" aria-label="Top-down plan at the selected moment">
@@ -307,9 +303,7 @@ export function TimeMachinePanel({
 
         {!trailComplete && (
           <p className="tm__warn" data-testid="tm-truncated">
-            Earlier changes are not loaded, so this reconstruction starts
-            partway through the trail. Restoring stays unavailable until the
-            whole trail is held.
+            Partial history. Load earlier changes to restore.
           </p>
         )}
 
@@ -321,7 +315,7 @@ export function TimeMachinePanel({
           ) : (
             <>
               <p className="tm__note" data-testid="tm-restore-state">
-                Restoring appends a reversible change ({restoreSummary}) — it never erases history.
+                Restoring is reversible ({restoreSummary}); history is retained.
               </p>
               {onRestore !== undefined && (
                 <button
@@ -330,7 +324,7 @@ export function TimeMachinePanel({
                   data-testid="tm-restore"
                   onClick={() => { onRestore(restore); }}
                 >
-                  Restore the room to this moment
+                  Restore this layout
                 </button>
               )}
             </>

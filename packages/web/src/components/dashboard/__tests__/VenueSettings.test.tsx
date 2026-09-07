@@ -116,7 +116,7 @@ describe("VenueSettings", () => {
         logoUrl: "https://assets.example/trades-hall.svg",
       });
     });
-    expect(await screen.findByText("Venue record in sync")).toBeTruthy();
+    expect(await screen.findByText("Saved")).toBeTruthy();
     expect(mocks.addToast).toHaveBeenCalledWith("Venue settings saved", "success");
   });
 

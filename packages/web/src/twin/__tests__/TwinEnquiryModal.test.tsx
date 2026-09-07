@@ -53,7 +53,7 @@ describe("TwinEnquiryModal", () => {
         }),
       );
     });
-    expect(await screen.findByText(/your enquiry is on its way/i)).toBeTruthy();
+    expect(await screen.findByText(/enquiry sent/i)).toBeTruthy();
   });
 
   it("blocks submit on an invalid email — no network call", () => {

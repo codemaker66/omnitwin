@@ -578,14 +578,11 @@ export function EventArchitectPage(): ReactElement {
       <header className="event-architect-hero">
         <div>
           <p className="event-architect-kicker"><Sparkles aria-hidden="true" /> Event Architect</p>
-          <h1>Three layouts. Every claim tied to a saved snapshot.</h1>
-          <p>
-            Compare deterministic room plans, price inputs, and replayable witness facts before choosing one to edit in the planner.
-          </p>
+          <h1>Compare event layouts</h1>
         </div>
         <div className="event-architect-scope-note">
           <DraftingCompass aria-hidden="true" />
-          <p><strong>Planning scope:</strong> deterministic checks cover room containment, represented seating, primary furniture gaps, and budget when complete pricing is available. A separate simulated guest-flow sidecar uses assumed doors; no door, egress/accessibility-route, or statutory determination is made.</p>
+          <p><strong>Planning scope:</strong> Room fit, seating, furniture gaps and fully priced budgets. Guest flow is simulated using assumed doors; door, egress/accessibility-route and statutory checks are not included.</p>
         </div>
       </header>
 
@@ -669,21 +666,21 @@ export function EventArchitectPage(): ReactElement {
             </div>
 
             <fieldset className="event-architect-accessibility">
-              <legend>Accessibility requirements to carry into human review</legend>
+              <legend>Accessibility requirements</legend>
               <label><input type="checkbox" checked={draft.stepFreeRoute} onChange={(event) => { setDraft((current) => ({ ...current, stepFreeRoute: event.target.checked })); }} /> Step-free route</label>
               <label><input type="checkbox" checked={draft.wheelchairSpaces} onChange={(event) => { setDraft((current) => ({ ...current, wheelchairSpaces: event.target.checked })); }} /> Wheelchair spaces</label>
               <label><input type="checkbox" checked={draft.hearingLoop} onChange={(event) => { setDraft((current) => ({ ...current, hearingLoop: event.target.checked })); }} /> Hearing loop</label>
-              <p>These requirements are recorded as scenario assumptions. This generator does not validate an accessibility route.</p>
+              <p>Recorded for venue review; accessibility routes are not validated.</p>
             </fieldset>
 
             <label className="event-architect-prompt">
-              <span>Planning emphasis <small>optional, treated as untrusted guidance</small></span>
+              <span>Planning emphasis <small>optional</small></span>
               <textarea value={draft.planningPrompt} onChange={(event) => { setDraft((current) => ({ ...current, planningPrompt: event.target.value })); }} maxLength={2000} rows={3} placeholder="Keep a generous welcome area near the entrance…" />
             </label>
 
             <button type="submit" className="event-architect-generate" disabled={submitting || workspace.spaces.length === 0}>
               {submitting ? <LoaderCircle aria-hidden="true" className="event-architect-spin" /> : <Sparkles aria-hidden="true" />}
-              {submitting ? "Generating exact snapshots" : "Generate three options"}
+              {submitting ? "Generating options…" : "Generate three options"}
             </button>
           </form>
         )}
@@ -692,8 +689,7 @@ export function EventArchitectPage(): ReactElement {
       {runLoadState === "loading" ? (
         <section className="event-architect-results-state" role="status" aria-live="polite">
           <LoaderCircle aria-hidden="true" className="event-architect-spin" />
-          <h2>Building and checking three saved candidates</h2>
-          <p>Room geometry, object footprints, and supplied price-book inputs are being frozen into replayable snapshots.</p>
+          <h2>Checking three layouts…</h2>
         </section>
       ) : runLoadState === "error" ? (
         <section className="event-architect-results-state event-architect-results-state--error" role="alert">
@@ -705,7 +701,7 @@ export function EventArchitectPage(): ReactElement {
       ) : persisted === null ? null : (
         <section className="event-architect-results" aria-labelledby="event-architect-results-title">
           <div className="event-architect-results-head">
-            <div><p>02 / Compare</p><h2 id="event-architect-results-title">Three frozen candidate snapshots</h2></div>
+            <div><p>02 / Compare</p><h2 id="event-architect-results-title">Three layout options</h2></div>
             <span>Run {persisted.run.runId.slice(0, 8)}</span>
           </div>
 
@@ -714,7 +710,7 @@ export function EventArchitectPage(): ReactElement {
           {plannerPath === null ? null : (
             <div className="event-architect-selection-success" role="status">
               <Check aria-hidden="true" />
-              <div><strong>Exact snapshot saved to a planner configuration.</strong><span>The snapshot and proof digests remain the selection record. This configuration stays draft until venue review, approval, and event binding.</span></div>
+              <div><strong>Layout saved as a draft.</strong><span>Venue review, approval and event binding are still required.</span></div>
               <Link to={plannerPath}>Open in planner <ArrowRight aria-hidden="true" /></Link>
             </div>
           )}
@@ -742,16 +738,16 @@ export function EventArchitectPage(): ReactElement {
 
           <footer className="event-architect-disclosure">
             <CircleAlert aria-hidden="true" />
-            <p>Validator facts are deterministic checks against recorded inputs; guest-flow cards are simulated planning support with explicit assumptions. They are not safety, occupancy, accessibility-route, or statutory determinations. Venue staff must resolve every review gate before downstream use.</p>
+            <p>These checks are not safety, occupancy, accessibility-route, or statutory determinations. Venue staff must resolve all review gates before use.</p>
           </footer>
         </section>
       )}
 
       <aside className="event-architect-method" aria-label="Event Architect method">
-        <div><Users aria-hidden="true" /><strong>Represented seats</strong><span>Chair objects are counted before table seat labels to avoid double-counting.</span></div>
+        <div><Users aria-hidden="true" /><strong>Represented seats</strong><span>Chairs take precedence over table seat labels.</span></div>
         <div><DraftingCompass aria-hidden="true" /><strong>Conservative footprints</strong><span>Rotated object rectangles must fit the recorded room polygon.</span></div>
-        <div><CircleDollarSign aria-hidden="true" /><strong>Exact minor units</strong><span>Budget comparisons run only with complete, referenced price-book inputs.</span></div>
-        <div><Sparkles aria-hidden="true" /><strong>Simulated flow sidecar</strong><span>Deterministic replay metrics stay visibly separate from validator-owned checks and require venue review.</span></div>
+        <div><CircleDollarSign aria-hidden="true" /><strong>Exact minor units</strong><span>Complete price-book inputs required.</span></div>
+        <div><Sparkles aria-hidden="true" /><strong>Simulated flow sidecar</strong><span>Assumed door positions; venue review required.</span></div>
       </aside>
       </div>
     </DashboardLayout>
