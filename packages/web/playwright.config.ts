@@ -54,7 +54,11 @@ export default defineConfig({
   forbidOnly: IS_CI,
   retries: process.env["CI"] !== undefined ? 2 : 0,
   workers: process.env["CI"] !== undefined ? 1 : undefined,
-  reporter: process.env["CI"] !== undefined ? "github" : "html",
+  // The GitHub reporter emits failure annotations only when the run ends.
+  // Print each case immediately, and leave time for reports and artifact upload
+  // before the 30-minute Actions job deadline even if the suite stalls.
+  reporter: process.env["CI"] !== undefined ? [["line"], ["github"]] : "html",
+  globalTimeout: process.env["CI"] !== undefined ? 26 * 60_000 : undefined,
   timeout: 30_000,
 
   use: {

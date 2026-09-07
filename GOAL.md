@@ -1,10 +1,12 @@
 # GOAL — founder direction and dated operational evidence
 
-Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportionate verification and reporting. The current user request determines the task; the ladder below guides open-ended product work. Old prompt counts, named-worker instructions, mandatory handoff templates and fixed session boundaries do not limit execution. Preserve the latest founder amendments, ownership, production freeze, source protections and spending limits. Historical measurements and commands below require current-state verification before reuse.
+Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportionate verification and reporting. The current user request determines the task; the ladder below guides open-ended product work. Old prompt counts, named-worker instructions, mandatory handoff templates and fixed session boundaries do not limit execution. Preserve the latest founder amendments, release coordination, source protections and spending limits; apply the current delivery contract to older freeze language. Historical measurements and commands below require current-state verification before reuse.
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
 ## Latest founder direction — 2026-09-07
+
+**Standing delivery amendment — 7 September 2026:** Blake said, “we build something we ship it.” Requested product work includes verification, coordinated integration, deployment and checking the changed live flow, without a second request to ship. The [shared delivery contract](.claude/conventions/shipping-changes.md) governs all active tasks. T-601 and other release owners coordinate safe serial releases; sending them a commit does not complete the originating task. Earlier blanket freezes, Tuesday-only releases and local-only ownership clauses below are superseded by this amendment. Retain historical evidence, quality checks, source/data protections and spending limits; newer explicit user holds apply only to their stated scope.
 
 Goal 12 is active under T-605: implement the integrated intelligent venue platform in an isolated worktree based on release `04ca4563`. [Its contract](goals/12-intelligent-venue-platform.md) defines the complete commercial/spatial/operations journey, measured AI/ML/GPU and two-venue gates. [Current implementation evidence](docs/engineering/intelligent-platform.md) distinguishes the first transaction/retention prerequisites from that unfinished outcome. Carry qualified increments through coordinated integration, deployment and live verification under the standing build-and-ship instruction. Preserve T-601/T-603 release/Diary, T-596/T-590 reconstruction and T-597 environment work; their compute allowances remain separately owned. Recheck current ownership before integration or spend.
 
@@ -68,7 +70,7 @@ Designed by the Fable session on 2026-09-04 for the Opus worker; every card ther
 
 DONE before the ladder (2026-09-04): T-578 the datum (ab244e1c); T-579 the coarse-first ladder (09a74df0, first view 20.9 s → 8.0 s at 20 Mbps); settled supersampling; the wheel scaled by its delta; the poller stopping on completion; a failed tile no longer discards the room (T-582); CI green on 76fa83d0.
 
-THE FREEZE: no push to master from Saturday 2026-09-05 18:00 BST to Monday 2026-09-07 18:00 BST; no `railway up` without Blake. MONEY: the pod only for a card that names it, stopped every session, $60 across the ladder and $25 a training run without asking. ESCALATE rather than guess: production inside the freeze, spend beyond the caps, a registration that will not converge, a candidate the court says is worse, anything touching the production database, an input not where the card says.
+HISTORICAL FREEZE (superseded by the 7 September standing delivery amendment): no push to master from Saturday 2026-09-05 18:00 BST to Monday 2026-09-07 18:00 BST; no `railway up` without Blake. MONEY: the pod only for a card that names it, stopped every session, $60 across the ladder and $25 a training run without asking. ESCALATE rather than guess: production inside the freeze, spend beyond the caps, a registration that will not converge, a candidate the court says is worse, anything touching the production database, an input not where the card says.
 
 ## 4. Rules that are not optional
 

@@ -6,7 +6,11 @@ Updated: 2026-09-07.
 
 ## Latest task notes
 
-- 2026-09-07 T-605 begins: activated [Goal 12](../../goals/12-intelligent-venue-platform.md), isolated at `D:/claude/venviewer-intelligent-platform-20260907` from clean release `04ca4563`. Frozen install and all 67 disposable migrations pass. Transaction, retention and commercial-permission prerequisites are under final combined verification; full decision/release, AI/ML/GPU and two-venue gates remain open. See [implementation evidence](../engineering/intelligent-platform.md). Current demo/reconstruction/environment owners and budgets remain unchanged.
+- 2026-09-07 T-605 first increment: [Goal 12](../../goals/12-intelligent-venue-platform.md) remains active. Isolated `3c5b0c9a` repairs concurrent event/booking edits, referenced snapshot retention and venue-admin commercial permissions, and adds a mandatory PostgreSQL gate. API 2,902 tests pass (113 skipped); the separate required database gate passes 60 with zero skips. API lint/typecheck/build, audit and built-server HTTP/readiness/shutdown pass. Current master is being integrated and release coordinated under the standing shipping contract. [Report](../reports/t605-platform-integrity-increment-2026-09-07.md); full decision/release, AI/ML/GPU and two-venue gates remain open. Other owners/budgets remain unchanged.
+
+- 2026-09-07 T-599 delivery-policy follow-up: Blake's standing “we build something we ship it” direction now requires requested product work to reach deployment and live verification. The shared shipping contract is routed from AGENTS/CLAUDE, GOAL, the Shepherd protocol, goal execution and release runbooks; historical freezes and owner-only stopping rules are superseded. Relevant checks, scope, source/data protection, spending and newer explicit holds remain. Independent review and new-link/diff checks pass; publication is tracked in today's session entry.
+
+- 2026-09-07 T-601 planner identity slice: selected venue replaces the fixed VENVIEWER wordmark in ReferenceRoomHeader. Trades Hall uses Blake's exact requested display name and supplied transparent crest; other venues use their own metadata with stale-request and failed-logo safeguards. Isolated `codex/planner-venue-branding-20260907` based on `04ca4563`; 17 focused tests, full web/E2E types, web lint/build and actual-browser width/second-venue checks pass. See today's session entry. Local only; T-601 retains sole publication ownership.
 
 - 2026-09-07 T-603 / T-601: the founder-selected light Diary is integrated into the single demo candidate with sourced room photos, full-week summaries and preserved precise timeline controls. 178 affected tests, web/E2E typecheck, scoped lint and actual local API/browser save, movement, confirmation, Undo and hallkeeper read-only checks passed. Final metadata contrast correction is verified. [Scoped design QA](../../design-qa.md) retains the dense-week limitation and open founder/device acceptance. Integration is complete locally; live deployment and founder rehearsal remain T-601 requirements.
 
@@ -67,7 +71,7 @@ Updated: 2026-09-07.
 
 | ID | Title | Status | I | E | Depends | Source | Notes |
 |---|---|---|---|---|---|---|---|
-| T-605 | Deliver the integrated intelligent venue platform in Goal 12. | in-progress | 5 | 20 | T-604, T-599 | USER-2026-09-07 (activated Goal 12) | Isolated codex/intelligent-venue-platform-20260907 at release04ca4563. Baseline install/migrations pass; initial mutation, retention and permission repairs under final verification. Complete event/release, AI/ML/GPU, two-venue and recovery/performance/browser gates remain open. Other release and compute owners unchanged. |
+| T-605 | Deliver the integrated intelligent venue platform in Goal 12. | in-progress | 5 | 20 | T-604, T-599 | USER-2026-09-07 (activated Goal 12) | Isolated codex/intelligent-venue-platform-20260907; first integrity increment3c5b0c9a locally qualified (API2902pass/113skip; requiredPG60pass/0skip; lint/types/build/audit/HTTP). Current master integration and coordinated release in progress. Complete event/release, AI/ML/GPU, two-venue and recovery/performance/browser gates remain open. Other owners/budgets unchanged. |
 | T-604 | Devise the intelligent venue platform transformation goal. | done | 5 | 0.25 | T-599 | USER-2026-09-07 (biggest useful codebase upgrade; AI/ML/GPU) | Source-grounded Goal12 and independent reviews define finite implementation and verification gates. Prompt preparation complete; implementation separately activated under T-605. |
 | T-603 | Rebuild Diary from selected light workspace and timetable references. | in-progress | 5 | 1 | T-601 | USER-2026-09-07 | Integrated source, 178 affected tests and actual local browser flows pass; reference comparison and limits in design-qa.md. Combined live release and founder acceptance remain pending. |
 | T-601 | Publish and rehearse the combined Trades Hall demo. | in-progress | 5 | 1 | T-596, T-600, T-602, T-603 | USER-2026-09-06/07 | Sole release coordinator. Qualified viewer, inventory, review, chair/batch and selected Diary are integrated in a clean isolated release branch. Exact build, actual-target migrations, provider deployment and founder rehearsal are tracked separately. |
@@ -728,6 +732,14 @@ Updated: 2026-09-07.
 
 Updated 2026-09-06. Keep task state useful and accurate without turning each
 implementation task into a full backlog audit. AGENTS.md owns execution policy.
+
+**Delivery amendment — 7 September 2026:** apply the [build, ship and verify contract](../../.claude/conventions/shipping-changes.md).
+A requested product change remains in progress through integration, deployment
+and verification of the changed live flow. A commit, local pass or handoff to
+another release owner is intermediate progress. Coordinate and follow through
+without requesting the same authorization again. Record the deployed source and
+evidence when marking it done; record an actual unresolved obstacle when blocked.
+Research, design and documentation tasks retain their explicitly requested scope.
 
 ### Before starting work
 

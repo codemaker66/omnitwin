@@ -41,8 +41,11 @@
   display: grid; grid-template-columns: minmax(0, 1fr) 26px; align-items: center;
   gap: 9px 5px; padding: 18px 12px 13px; border-bottom: 1px solid rgba(224, 211, 188, .09);
 }
-.reference-wordmark { display: flex; align-items: center; gap: 9px; color: #f2e8d5; text-decoration: none; font-size: 10px; letter-spacing: .15em; }
+.reference-wordmark { display: flex; align-items: center; gap: 9px; min-width: 0; color: #f2e8d5; text-decoration: none; font-size: 10px; letter-spacing: .06em; }
 .reference-wordmark img { object-fit: contain; flex-shrink: 0; }
+.reference-venue-icon { flex-shrink: 0; color: #c4b085; }
+.reference-venue-copy { min-width: 0; }
+.reference-venue-name { display: block; line-height: 1.4; overflow-wrap: anywhere; text-transform: uppercase; }
 .reference-wordmark small { display: block; color: #a6a095; font-size: 9px; letter-spacing: .02em; line-height: 1.5; margin-top: 5px; }
 .reference-save { width: 26px; height: 30px; display: grid; place-items: center; border: 0; background: transparent; color: #c4b085; cursor: pointer; border-radius: 4px; }
 .reference-save:disabled { opacity: .5; cursor: default; }

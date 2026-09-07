@@ -250,12 +250,16 @@ jobs:
         run: pnpm test
 
   e2e:
-    name: E2E
+    name: E2E (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    # The full Chromium suite now covers the cinematic planner, landing
-    # planner, private-brief guard, and mobile/tablet matrices. Fifteen minutes
-    # was cancelling healthy runs before Playwright could finish and upload
-    # artifacts; keep this above normal runtime while still bounding hangs.
+    # Run every Chromium case across isolated single-worker shards. A failed
+    # shard must not cancel the others or hide their failure evidence.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    # Playwright's shorter global timeout leaves room to flush failure details
+    # and upload screenshots/traces before Actions terminates the runner.
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -286,13 +290,13 @@ jobs:
         run: pnpm --filter @omnitwin/web exec playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: pnpm --filter @omnitwin/web e2e
+        run: pnpm --filter @omnitwin/web e2e --shard=${{ matrix.shard }}/4
 
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results-${{ github.run_id }}
+          name: playwright-results-${{ github.run_id }}-shard-${{ matrix.shard }}
           # Default outputDir is ./test-results relative to playwright.config.ts
           # (packages/web/). Contains screenshots (only-on-failure) and traces
           # (on-first-retry) as configured in playwright.config.ts.
