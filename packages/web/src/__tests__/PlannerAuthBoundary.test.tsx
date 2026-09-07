@@ -36,14 +36,14 @@ describe("PlannerAuthBoundary", () => {
   it("leaves a cookie-bearing session loading for Clerk to verify", async () => {
     sessionHint.mockReturnValue(true);
     renderBoundary();
-    await waitFor(() => expect(screen.getByTestId("clerk-provider")).toBeTruthy());
+    await waitFor(() => { expect(screen.getByTestId("clerk-provider")).toBeTruthy(); });
     expect(useAuthStore.getState().isLoading).toBe(true);
   });
 
   it("preserves an already hydrated session even without a cookie hint", async () => {
     useAuthStore.setState({ isAuthenticated: true, isLoading: true });
     renderBoundary();
-    await waitFor(() => expect(screen.getByTestId("clerk-provider")).toBeTruthy());
+    await waitFor(() => { expect(screen.getByTestId("clerk-provider")).toBeTruthy(); });
     expect(useAuthStore.getState().isAuthenticated).toBe(true);
     expect(useAuthStore.getState().isLoading).toBe(true);
   });
@@ -51,7 +51,7 @@ describe("PlannerAuthBoundary", () => {
   it("keeps Clerk mounted while a hydrated session verifies workspace access", async () => {
     useAuthStore.setState({ isAuthenticated: true, isLoading: true });
     renderBoundary();
-    await waitFor(() => expect(screen.getByTestId("clerk-provider")).toBeTruthy());
+    await waitFor(() => { expect(screen.getByTestId("clerk-provider")).toBeTruthy(); });
     act(() => { useAuthStore.getState().beginAccessCheck("presenter@example.test"); });
     expect(screen.getByTestId("clerk-provider")).toBeTruthy();
     expect(useAuthStore.getState().isLoading).toBe(true);

@@ -244,11 +244,9 @@ export function HallkeeperPage(): React.ReactElement {
     })();
   }, [configId, progressUnavailable]);
 
-  // Guards overlapping flushes. The mount drain and the `online` event
-  // can fire concurrently, and the server PATCH is a non-idempotent
-  // toggle — two in-flight flushes could double-flip the same row, so
-  // only one flush runs at a time.
-  const flushInFlightRef = useRef(false);
+  // Serialize drains for each sheet while allowing a newly opened sheet
+  // to sync even when the previous sheet still has a request in flight.
+  const flushingConfigsRef = useRef(new Set<string>());
 
   // --- Flush queued progress on reconnect ---
   //
@@ -266,13 +264,13 @@ export function HallkeeperPage(): React.ReactElement {
     if (configId === undefined) return;
 
     const flush = (): void => {
-      if (flushInFlightRef.current) return;
-      flushInFlightRef.current = true;
+      if (flushingConfigsRef.current.has(configId)) return;
+      flushingConfigsRef.current.add(configId);
       void (async () => {
         try {
           const queued = (await listPendingProgress()).filter((op) => op.configId === configId);
+          if (activeConfigRef.current === configId) setPendingCount(queued.length);
           if (queued.length === 0) {
-            if (activeConfigRef.current === configId) setPendingCount(0);
             return;
           }
 
@@ -299,7 +297,7 @@ export function HallkeeperPage(): React.ReactElement {
             await ackProgress(op.configId, op.rowKey);
           }
 
-          // Server still differs — re-issue one toggle each.
+          // Server still differs — replay each desired checked state.
           for (const op of replay) {
             let result: ReplayResult;
             try {
@@ -320,7 +318,7 @@ export function HallkeeperPage(): React.ReactElement {
         } catch {
           // Don't surface — flush failures are silent ops noise.
         } finally {
-          flushInFlightRef.current = false;
+          flushingConfigsRef.current.delete(configId);
         }
       })();
     };
@@ -478,7 +476,7 @@ export function HallkeeperPage(): React.ReactElement {
               onClick={() => { setCollapsed((prev) => { const next = new Set(prev); next.delete(phase.phase); return next; }); }}>
               <span className="hk-step-number">{meta.order.toString().padStart(2, "0")}</span>
               <strong>{meta.label}</strong>
-              <span>{progressUnavailable ? "Checks unavailable" : `${done}/${rows.length} rows checked`}</span>
+              <span>{progressUnavailable ? "Checks unavailable" : `${String(done)}/${String(rows.length)} rows checked`}</span>
             </a>;
           })}
         </nav>
@@ -486,7 +484,7 @@ export function HallkeeperPage(): React.ReactElement {
         <div className="hk-workspace">
           <section id="hk-manifest" className="hk-manifest" aria-label="Setup manifest">
             <div className="hk-section-heading"><div><span className="hk-eyebrow">One thing at a time</span><h2>Room setup</h2></div>
-              <span className="hk-count-label">{progressUnavailable ? "Checks unavailable" : `${counts.checkedRows} of ${counts.totalRows} rows checked`}</span>
+              <span className="hk-count-label">{progressUnavailable ? "Checks unavailable" : `${String(counts.checkedRows)} of ${String(counts.totalRows)} rows checked`}</span>
             </div>
             <p className="hk-section-intro">Work through the setup categories. Tap a row to record its check; use ◎ to find its position.</p>
             {data.phases.length === 0 && <div className="hk-empty"><h3>No items placed yet</h3><p>The planner hasn't added furniture to this layout. Once they save a layout, the setup manifest will appear here automatically.</p></div>}
@@ -528,7 +526,7 @@ export function HallkeeperPage(): React.ReactElement {
       </div>
       {counts.totalRows > 0 && <div className="hk-summary-sticky" aria-label="Setup checklist progress">
         <span><strong>{progressUnavailable ? "—" : counts.checkedRows}</strong> / {counts.totalRows} rows checked</span>
-        <div className="hk-progress-track"><div style={{ width: `${progressUnavailable ? 0 : counts.checkedRows / counts.totalRows * 100}%` }} /></div>
+        <div className="hk-progress-track"><div style={{ width: `${String(progressUnavailable ? 0 : counts.checkedRows / counts.totalRows * 100)}%` }} /></div>
         <a href="#hk-manifest">Back to checklist ↑</a>
       </div>}
     </main>
@@ -566,7 +564,7 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
     <button type="button" className="hk-phase-heading" onClick={onToggleCollapse} aria-expanded={!isCollapsed} aria-controls={`hk-phase-content-${phase.phase}`}>
       <span className="hk-phase-icon" aria-hidden="true">{meta.icon}</span>
       <span className="hk-phase-title">Phase {meta.order} — {meta.label}<small>{qtyTotal} items · {rows.length} checklist rows</small></span>
-      <span className="hk-phase-count">{disabled ? "—" : `${doneCount}/${rows.length}`}<span aria-hidden="true">{isCollapsed ? " +" : " −"}</span></span>
+      <span className="hk-phase-count">{disabled ? "—" : `${String(doneCount)}/${String(rows.length)}`}<span aria-hidden="true">{isCollapsed ? " +" : " −"}</span></span>
     </button>
     <div id={`hk-phase-content-${phase.phase}`} className={`hk-phase-content${isCollapsed ? " hk-collapsed" : ""}`}>
       {phase.zones.map(({ zone, rows: zoneRows }) => <div key={zone} className="hk-zone">
@@ -590,7 +588,7 @@ function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow
             </div>
             {positions.length > 0 && <button type="button" className={`hk-locate${highlighted ? " active" : ""}`}
               onClick={() => { onHighlightRow(row.key); }} aria-label={highlighted ? "Hide on floor plan" : "Locate on floor plan"}
-              title={highlighted ? "Hide on floor plan" : `Locate ×${positions.length} on floor plan`}>◎</button>}
+              title={highlighted ? "Hide on floor plan" : `Locate ×${String(positions.length)} on floor plan`}>◎</button>}
           </div>;
         })}
       </div>)}

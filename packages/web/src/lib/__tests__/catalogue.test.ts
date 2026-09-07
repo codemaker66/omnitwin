@@ -17,7 +17,10 @@ import { FURNITURE_CATEGORIES } from "@omnitwin/types";
 describe("CATALOGUE_ITEMS", () => {
   it("labels provisional batch dimensions without changing the measured chair", () => {
     const approximate = CATALOGUE_ITEMS.filter((item) => item.dimensionStatus === "approximate");
-    expect(approximate).toHaveLength(12);
+    expect(approximate).toHaveLength(14);
+    expect(approximate.map((item) => item.slug)).toEqual(expect.arrayContaining([
+      "trestle-4ft-black", "trestle-4ft-white",
+    ]));
     for (const item of approximate) expect(item.subtitle).toContain("Approx.");
     expect(getCatalogueItemBySlug("burgess-turini-18-3")).toMatchObject({
       width: 0.42, depth: 0.58, height: 0.88,
@@ -197,7 +200,10 @@ describe("getCatalogueItem", () => {
 describe("getCatalogueByCategory", () => {
   it("returns all items in the table category", () => {
     const tables = getCatalogueByCategory("table");
-    expect(tables.length).toBe(15);
+    expect(tables).toHaveLength(17);
+    expect(tables.map((item) => item.slug)).toEqual(expect.arrayContaining([
+      "trestle-4ft-black", "trestle-4ft-white",
+    ]));
     for (const item of tables) {
       expect(item.category).toBe("table");
     }

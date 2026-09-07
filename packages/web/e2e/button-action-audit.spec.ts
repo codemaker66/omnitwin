@@ -503,6 +503,7 @@ function onboardingSummaryFixture(): OnboardingSummary {
     memberships: [],
     projects: [],
     entitlements: [],
+    invitations: [],
     auditEvents: [],
   };
 }
@@ -599,6 +600,7 @@ function onboardingSummaryFromCreate(result: CreateManagedOnboardingResult): Onb
     memberships: [result.ownerMembership, ...result.staffMemberships],
     projects: [result.project],
     entitlements: [result.entitlement],
+    invitations: [],
     auditEvents: [],
   };
 }

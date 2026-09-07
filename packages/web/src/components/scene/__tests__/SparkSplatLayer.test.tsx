@@ -105,7 +105,8 @@ describe("SparkSplatLayer runtime wiring", () => {
   it("waits for a populated main-camera draw, ignores offscreen passes, and reports once", () => {
     const onFirstFrame = vi.fn();
     render(<SparkSplatLayer url={URL} onFirstFrame={onFirstFrame} />);
-    const renderer = spark.rendererInstances[0]!;
+    const renderer = spark.rendererInstances[0];
+    if (renderer === undefined) throw new Error("Renderer did not mount");
     renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera);
     expect(onFirstFrame).not.toHaveBeenCalled();
     renderer.geometry.instanceCount = 12;
@@ -120,7 +121,8 @@ describe("SparkSplatLayer runtime wiring", () => {
   it("waits for all requested sources, their dissolve and the pending sort", () => {
     const onFirstFrame = vi.fn();
     render(<SparkSplatLayer url={URL} onFirstFrame={onFirstFrame} minimumDrawnSources={2} />);
-    const renderer = spark.rendererInstances[0]!;
+    const renderer = spark.rendererInstances[0];
+    if (renderer === undefined) throw new Error("Renderer did not mount");
     renderer.geometry.instanceCount = 12;
     const draw = (): void => { renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera); };
     draw();
@@ -128,7 +130,9 @@ describe("SparkSplatLayer runtime wiring", () => {
     renderer.display.mapping.push({ count: 12, node: { opacity: 0.3, visible: true } });
     draw();
     expect(onFirstFrame).not.toHaveBeenCalled();
-    renderer.display.mapping[1]!.node.opacity = 1;
+    const secondSource = renderer.display.mapping[1];
+    if (secondSource === undefined) throw new Error("Second source missing");
+    secondSource.node.opacity = 1;
     renderer.sorting = true;
     draw();
     expect(onFirstFrame).not.toHaveBeenCalled();
@@ -145,7 +149,8 @@ describe("SparkSplatLayer runtime wiring", () => {
     const first = vi.fn();
     const next = vi.fn();
     const { rerender, unmount } = render(<SparkSplatLayer url={URL} onFirstFrame={first} />);
-    const renderer = spark.rendererInstances[0]!;
+    const renderer = spark.rendererInstances[0];
+    if (renderer === undefined) throw new Error("Renderer did not mount");
     renderer.geometry.instanceCount = 12;
     renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera);
     rerender(<SparkSplatLayer url={URL} onFirstFrame={next} />);
