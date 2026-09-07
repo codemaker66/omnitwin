@@ -37,7 +37,8 @@
 }
 
 .cockpit-shell.is-mobile .room-resolve-caption {
-  top: 64px;
+  /* Below the saved-layout header and its provenance utility row. */
+  top: calc(env(safe-area-inset-top) + 176px);
   border-radius: 12px;
 }
 
