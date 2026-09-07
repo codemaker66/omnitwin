@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { EvidenceChip } from "../components/evidence/EvidenceChip.js";
 import { ActivityIndicator } from "../components/shared/Activity.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
@@ -56,7 +55,7 @@ type PlannerBootstrapBlocker =
 
 interface PlannerBootstrapBlockerCopy {
   readonly title: string;
-  readonly body: string;
+  readonly body: string | null;
   readonly action: string;
 }
 
@@ -65,25 +64,25 @@ function plannerBootstrapBlockerCopy(blocker: PlannerBootstrapBlocker): PlannerB
     case "empty":
       return {
         title: "No venues are available",
-        body: "The planner cannot start because there are no active venues to open.",
+        body: null,
         action: "Retry",
       };
     case "not_found":
       return {
         title: "Venue not found",
-        body: `The planner link names "${blocker.requestedSlug}", but that venue is not available.`,
+        body: `"${blocker.requestedSlug}" is unavailable.`,
         action: "Open main planner",
       };
     case "forbidden":
       return {
         title: "Planner unavailable for this venue",
-        body: `Your account is not attached to ${blocker.venueName}. Open your venue planner or ask an admin to update access.`,
+        body: `Ask an administrator for access to ${blocker.venueName}.`,
         action: "Open main planner",
       };
     case "network":
       return {
         title: "Couldn\u2019t open the planner",
-        body: "The server didn\u2019t respond in time. This is usually temporary; try again in a few seconds.",
+        body: null,
         action: "Retry",
       };
   }
@@ -317,10 +316,7 @@ export function EditorPage(): React.ReactElement {
       <div className="vv-route-state">
         <section className="vv-state-panel" role={autoCreateBlocker.kind === "network" ? "alert" : "status"}>
           <h1>{copy.title}</h1>
-          <p>{copy.body}</p>
-          {/* Wave A closure: canonical chip grammar — the workspace is absent,
-              which is exactly what Missing (dashed outline) claims. */}
-          <EvidenceChip state="missing" detail="planning workspace not opened yet" />
+          {copy.body !== null && <p>{copy.body}</p>}
           <div className="vv-state-actions">
             <button
               type="button"
