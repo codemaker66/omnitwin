@@ -23,12 +23,44 @@
 
 .rooms__masthead {
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.15rem clamp(1rem, 4vw, 3rem);
-  border-bottom: 1px solid var(--hairline);
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+  background: #f4efe4;
+  color: #203c31;
+  border-bottom: 1px solid #d5d0c3;
 }
+
+.rooms__identity { display: grid; gap: 0.25rem; }
+
+.rooms__primaryNav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.84rem;
+}
+
+.rooms__primaryNav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: #203c31;
+  text-decoration: none;
+}
+
+.rooms__primaryNav a:hover { background: #e3e6db; }
+.rooms__primaryNav .rooms__navPlan { background: #203c31; color: #fff9ec; }
+.rooms__primaryNav .rooms__navPlan:hover { background: #315344; }
+.rooms__primaryNav .rooms__navLogin { border-color: #839486; }
+.rooms__primaryNav a:focus-visible { outline: 2px solid #203c31; outline-offset: 3px; }
 
 .rooms__wordmark {
   font-family: var(--fr-display, "Fraunces", Georgia, serif);
@@ -40,7 +72,7 @@
 .rooms__venue {
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
   font-size: 0.78rem;
-  color: var(--stone-dim);
+  color: #586658;
 }
 
 /* ── hero ─────────────────────────────────────────────────── */
@@ -117,8 +149,10 @@
 .rooms__dot { margin: 0 0.5em; color: var(--brass); }
 
 .rooms__enter {
-  display: inline-block;
-  margin-top: 1.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   padding: 0.62rem 1.5rem;
   border: 1px solid var(--brass);
   border-radius: 999px;
@@ -131,6 +165,21 @@
 
 .rooms__enter:hover,
 .rooms__enter:focus-visible { background: var(--brass); color: var(--ink); }
+
+.rooms__heroDescription {
+  max-width: 36rem;
+  margin: 1rem 0 0;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: clamp(0.9rem, 1.8vw, 1rem);
+  line-height: 1.6;
+  color: var(--stone);
+}
+
+.rooms__heroActions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.4rem; }
+.rooms__enter--plan { background: #f4efe4; border-color: #f4efe4; color: #203c31; font-weight: 600; }
+.rooms__enter--plan:hover,
+.rooms__enter--plan:focus-visible { background: #e1e7da; color: #203c31; }
+.rooms__enter:focus-visible { outline: 2px solid var(--stone); outline-offset: 4px; }
 
 /* ── rail ─────────────────────────────────────────────────── */
 
@@ -250,12 +299,13 @@
 
 .rooms__footLinks {
   display: flex;
-  gap: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
   font-size: 0.8rem;
 }
 
-.rooms__footLinks a { color: var(--stone-dim); text-decoration: none; }
+.rooms__footLinks a { display: inline-flex; align-items: center; min-height: 44px; color: var(--stone-dim); text-decoration: none; }
 .rooms__footLinks a:hover,
 .rooms__footLinks a:focus-visible { color: var(--brass); }
 
@@ -274,6 +324,8 @@
 }
 
 @media (max-width: 640px) {
+  .rooms__primaryNav { width: 100%; }
+  .rooms__primaryNav a { flex: 1 0 auto; }
   .rooms__hero { min-height: 62vh; }
   .rooms__track { grid-auto-columns: minmax(13rem, 76vw); }
 }

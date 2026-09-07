@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { RoomsHomePage } from "../RoomsHomePage.js";
 import {
@@ -17,6 +17,30 @@ function mount(): void {
 }
 
 describe("RoomsHomePage", () => {
+  it("exposes planning, login and each workspace from the public primary navigation", () => {
+    mount();
+    const nav = within(screen.getByRole("navigation", { name: "Primary" }));
+    for (const [name, destination] of [
+      ["Plan an event", "/plan?space=grand-hall"],
+      ["Dashboard", "/dashboard"],
+      ["Diary", "/diary"],
+      ["Hallkeeper", "/hallkeeper/today"],
+      ["Log in", "/login"],
+    ]) {
+      expect(nav.getByRole("link", { name, exact: true }).getAttribute("href")).toBe(destination);
+    }
+  });
+
+  it("offers furniture planning alongside the Grand Hall walkthrough", () => {
+    mount();
+    const hero = within(screen.getByRole("region", { name: "Grand Hall" }));
+    expect(hero.getByRole("link", { name: "Plan Grand Hall" }).getAttribute("href"))
+      .toBe("/plan?space=grand-hall");
+    expect(hero.getByRole("link", { name: "Walk the room" }).getAttribute("href"))
+      .toBe("/room/grand-hall");
+    expect(hero.getByText(/drag furniture into place/i)).toBeTruthy();
+  });
+
   it("leads from the footer to the whole-building twin and to the enquiry composer, never to a dead anchor", () => {
     mount();
     expect(screen.getByRole("link", { name: /Walk the whole building/i }).getAttribute("href"))

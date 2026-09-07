@@ -60,6 +60,48 @@
 
 .walk__dot { margin: 0 0.5em; color: var(--brass); }
 
+.walk__navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  margin-left: auto;
+  font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
+  font-size: 0.82rem;
+}
+
+.walk__navigation a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--stone);
+  text-decoration: none;
+}
+
+.walk__navigation a:hover { text-decoration: underline; }
+.walk__navigation a:focus-visible {
+  outline: 2px solid var(--stone);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.walk__navigation .walk__plan {
+  padding: 0.45rem 0.85rem;
+  border: 1px solid #c9b8a4;
+  border-radius: 6px;
+  background: #f2ecdf;
+  color: #163b32;
+  font-weight: 600;
+}
+
+@media (max-width: 700px) {
+  .walk__navigation {
+    flex-basis: 100%;
+    margin-left: 0;
+    gap: 0.25rem 0.8rem;
+  }
+}
+
 .walk__loading {
   position: absolute;
   left: 50%;

@@ -134,8 +134,17 @@ export function RoomsHomePage(): ReactElement {
       data-testid="rooms-home"
     >
       <header className="rooms__masthead">
-        <span className="rooms__wordmark">Venviewer</span>
-        <span className="rooms__venue">{VENUE}</span>
+        <div className="rooms__identity">
+          <span className="rooms__wordmark">Venviewer</span>
+          <span className="rooms__venue">{VENUE}</span>
+        </div>
+        <nav className="rooms__primaryNav" aria-label="Primary">
+          <a className="rooms__navPlan" href="/plan?space=grand-hall">Plan an event</a>
+          <Link to="/dashboard">Dashboard</Link>
+          <Link to="/diary">Diary</Link>
+          <Link to="/hallkeeper/today">Hallkeeper</Link>
+          <Link className="rooms__navLogin" to="/login">Log in</Link>
+        </nav>
       </header>
 
       {heroBundle !== null && (
@@ -153,9 +162,15 @@ export function RoomsHomePage(): ReactElement {
             <p className="rooms__eyebrow">The room everyone comes for</p>
             <h1 className="rooms__heroName" id="rooms-hero-name">{displayName(HERO_ROOM)}</h1>
             <p className="rooms__measure rooms__measure--hero">{measuredLine(heroBundle, isRoomWalkable(HERO_ROOM))}</p>
-            {isRoomWalkable(HERO_ROOM)
-              ? <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>Walk the room</Link>
-              : <p className="rooms__state rooms__state--hero">{stateLine(heroBundle, false)}</p>}
+            <p className="rooms__heroDescription">
+              Picture your event here. Add tables and chairs, then drag furniture into place in the room planner.
+            </p>
+            <div className="rooms__heroActions">
+              <a className="rooms__enter rooms__enter--plan" href="/plan?space=grand-hall">Plan Grand Hall</a>
+              {isRoomWalkable(HERO_ROOM)
+                ? <Link className="rooms__enter" to={`/room/${HERO_ROOM}`}>Walk the room</Link>
+                : <p className="rooms__state rooms__state--hero">{stateLine(heroBundle, false)}</p>}
+            </div>
           </div>
         </section>
       )}
