@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Bell, CheckCheck, ExternalLink, RefreshCw } from "lucide-react";
 import type { Notification } from "@omnitwin/types";
 import { listNotifications, markNotificationRead } from "../../api/notifications.js";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -133,7 +134,7 @@ export function NotificationCenter(): ReactElement {
         aria-haspopup="dialog"
         onClick={() => { setOpen((value) => !value); }}
       >
-        <Bell aria-hidden="true" size={16} />
+        {state.kind === "loading" ? <ActivityIndicator size={16} /> : <Bell aria-hidden="true" size={16} />}
         <span>{summary}</span>
         {unreadCount > 0 && <span style={badgeStyle}>{unreadCount}</span>}
       </button>
@@ -150,7 +151,7 @@ export function NotificationCenter(): ReactElement {
           </div>
 
           {state.kind === "loading" && (
-            <p style={{ color: "#c9d2cc", margin: "18px 0" }}>Loading notifications…</p>
+            <ActivityStatus style={{ color: "#c9d2cc", margin: "18px 0" }}>Loading notifications…</ActivityStatus>
           )}
           {state.kind === "error" && (
             <p style={{ color: "#ffbc9d", margin: "18px 0" }}>Notifications could not be loaded.</p>
@@ -195,9 +196,10 @@ export function NotificationCenter(): ReactElement {
                       style={iconButtonStyle}
                       aria-label={`Mark ${notification.title} read`}
                       disabled={busyId === notification.id}
+                      aria-busy={busyId === notification.id}
                       onClick={() => { markRead(notification); }}
                     >
-                      <CheckCheck aria-hidden="true" size={15} />
+                      {busyId === notification.id ? <ActivityIndicator size={15} /> : <CheckCheck aria-hidden="true" size={15} />}
                     </button>
                   </div>
                 </article>

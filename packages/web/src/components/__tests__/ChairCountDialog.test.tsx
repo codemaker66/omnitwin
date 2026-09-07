@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useChairDialogStore } from "../../stores/chair-dialog-store.js";
+import { usePlacementStore } from "../../stores/placement-store.js";
+import { createPlacedItem } from "../../lib/placement.js";
+import { rearrangeTableGroup } from "../../lib/table-group.js";
 import { getCatalogueItemBySlug } from "../../lib/catalogue.js";
 import {
   ChairCountDialog,
@@ -9,6 +13,8 @@ import {
 
 afterEach(() => {
   cleanup();
+  useChairDialogStore.getState().clearDialog();
+  usePlacementStore.setState({ placedItems: [] });
   vi.useRealTimers();
 });
 
@@ -71,4 +77,27 @@ describe("ChairCountDialog scaled capacity", () => {
     fireEvent.click(screen.getByTestId("chair-count-confirm"));
     expect(onConfirm).toHaveBeenCalledWith(0);
   });
+});
+
+it("offers an edit count that fits the saved scaled chairs without changing their assets", () => {
+  const tableAsset = getCatalogueItemBySlug("round-table-6ft");
+  const chairAsset = getCatalogueItemBySlug("banquet-chair");
+  if (tableAsset === undefined || chairAsset === undefined) throw new Error("Missing catalogue fixture");
+  const table = createPlacedItem(tableAsset.id, 0, 0, 0, "saved");
+  const chair = { ...createPlacedItem(chairAsset.id, 0, 0, 0, "saved"), scale: 2 };
+  const items = [table, chair];
+  usePlacementStore.setState({ placedItems: items });
+  const request: ChairCountRequest = { catalogueItemId: tableAsset.id, x: 0, z: 0, rotationY: 0, tableShape: "round" };
+  useChairDialogStore.getState().showDialog(request, table.id);
+  const onConfirm = vi.fn<(count: number) => void>();
+  render(<ChairCountDialog request={request} onConfirm={onConfirm} onCancel={vi.fn()} />);
+  const input = screen.getByLabelText<HTMLInputElement>("Chair count");
+  const maximum = Number(input.max);
+  expect(maximum).toBeLessThan(13);
+  fireEvent.change(input, { target: { value: String(maximum) } });
+  fireEvent.click(screen.getByTestId("chair-count-confirm"));
+  expect(onConfirm).toHaveBeenCalledExactlyOnceWith(maximum);
+  const result = rearrangeTableGroup(table.id, maximum, items);
+  expect(result).toHaveLength(maximum + 1);
+  expect(result.find((item) => item.id === chair.id)?.catalogueItemId).toBe(chairAsset.id);
 });

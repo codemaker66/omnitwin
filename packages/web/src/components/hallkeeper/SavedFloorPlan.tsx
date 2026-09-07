@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { Phase } from "@omnitwin/types";
-import { GOLD } from "../../constants/ui-palette.js";
+const GOLD = "#986246";
 import type { PlanPoint, ProjectedFrozenPlan } from "../../lib/hallkeeper-frozen-plan.js";
 import { collectFloorPlanMarkers, markerColourFor } from "../../lib/hallkeeper-geometry.js";
 
@@ -25,13 +25,13 @@ export function SavedFloorPlan({ plan, phases, highlightedRowKey, onMarkerClick 
   }, [phases]);
   // Choose a labelled scale length that fits even a very small saved room.
   const scaleMetres = Math.min(1, 10 ** Math.floor(Math.log10(200 / plan.pointsPerMetre)));
-  return <div style={{ background: "#141311", border: "1px solid #39352e", borderRadius: 10, overflow: "hidden" }}>
-    <p style={{ margin: "16px 20px 0", color: "#c8bfae", fontSize: 13 }}>
+  return <div style={{ background: "#f8f5ee", border: "1px solid #e4dcd0", borderRadius: 10, overflow: "hidden" }}>
+    <p style={{ margin: "16px 20px 0", color: "#686e5f", fontSize: 13 }}>
       Saved layout · {plan.objects.length} items
     </p>
     <svg viewBox="0 0 1000 648" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Interactive saved floor plan"
       style={{ display: "block", width: "100%", height: "auto" }}>
-      <polygon data-room-outline points={pointsAttribute(plan.outline)} fill="#1b1915" stroke="#8b7c65" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+      <polygon data-room-outline points={pointsAttribute(plan.outline)} fill="#fffdf7" stroke="#8a8d7c" strokeWidth={2} vectorEffect="non-scaling-stroke" />
       {plan.objects.map(({ object, center, corners, width, depth }) => {
         const rows = links.get(object.objectId) ?? [];
         const current = rows.find((row) => row.key === highlightedRowKey);
@@ -57,8 +57,8 @@ export function SavedFloorPlan({ plan, phases, highlightedRowKey, onMarkerClick 
             : <polygon {...shape} points={pointsAttribute(corners)} />}
         </g>;
       })}
-      {plan.objects.length === 0 && <text x={500} y={300} textAnchor="middle" fill="#c8bfae" fontSize={22}>No furniture in this saved layout</text>}
-      <g aria-label={`${String(scaleMetres)} metre scale`} fill="#b9b2a6" stroke="#b9b2a6">
+      {plan.objects.length === 0 && <text x={500} y={300} textAnchor="middle" fill="#686e5f" fontSize={22}>No furniture in this saved layout</text>}
+      <g aria-label={`${String(scaleMetres)} metre scale`} fill="#686e5f" stroke="#686e5f">
         <path d={`M32 616v8h${String(plan.pointsPerMetre * scaleMetres)}v-8`} fill="none" strokeWidth={1.5} />
         <text x={40 + plan.pointsPerMetre * scaleMetres} y={629} stroke="none" fontSize={16}>{scaleMetres} m</text>
       </g>

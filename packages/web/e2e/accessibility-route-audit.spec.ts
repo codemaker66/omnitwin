@@ -34,6 +34,7 @@ interface RouteSpec {
   readonly routeName: string;
   readonly path: string;
   readonly readyText: string | RegExp;
+  readonly readyRole?: "heading";
   readonly seedRole?: SeedRole;
   readonly mockRoutes: (page: Page) => Promise<void>;
 }
@@ -351,7 +352,10 @@ async function runRouteAudit(page: Page, spec: RouteSpec, viewport: Accessibilit
   }
 
   await page.goto(spec.path);
-  await expect(page.getByText(spec.readyText).first()).toBeVisible({ timeout: 15_000 });
+  const ready = spec.readyRole === "heading"
+    ? page.getByRole("heading", { name: spec.readyText, exact: true })
+    : page.getByText(spec.readyText).first();
+  await expect(ready).toBeVisible({ timeout: 15_000 });
   await page.waitForLoadState("networkidle").catch(() => undefined);
 
   const result = await collectAccessibilityAudit(page, {
@@ -392,6 +396,7 @@ const routeSpecs: readonly RouteSpec[] = [
     routeName: "dashboard executive analytics",
     path: "/dashboard?view=analytics",
     readyText: "Executive analytics",
+    readyRole: "heading",
     seedRole: "executive",
     mockRoutes: mockDashboardRoutes,
   },

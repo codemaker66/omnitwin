@@ -6,6 +6,7 @@ import { getOpsHandoffPack } from "../api/ops-handoff.js";
 import { AIDraftPanel } from "../components/ai/AIDraftPanel.js";
 import "./OpsHandoffPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -106,8 +107,8 @@ export function OpsHandoffPage(): ReactElement {
   if (state.kind === "loading") {
     return (
       <DashboardLayout mainLabel="Operations handoff loading">
-        <div className="ops-handoff-page ops-handoff-centered">
-        <RefreshCw aria-hidden="true" className="ops-handoff-spin" />
+        <div className="ops-handoff-page ops-handoff-centered" role="status">
+        <ActivityIndicator size={64} />
         <h1>Loading handoff pack</h1>
         </div>
       </DashboardLayout>

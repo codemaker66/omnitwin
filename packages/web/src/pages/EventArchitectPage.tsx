@@ -13,13 +13,13 @@ import {
   CircleAlert,
   CircleDollarSign,
   DraftingCompass,
-  LoaderCircle,
   RotateCcw,
   Ruler,
   Sparkles,
   Users,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
+import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 import type {
   EventArchitectCandidate,
   EventArchitectCandidateSelection,
@@ -394,7 +394,7 @@ function CandidateCard(props: {
         onClick={() => { props.onSelect(candidate); }}
         aria-label={isSelected ? `${STRATEGY_LABELS[candidate.strategy]} selected` : `Select ${STRATEGY_LABELS[candidate.strategy]}`}
       >
-        {isSelecting ? <LoaderCircle aria-hidden="true" className="event-architect-spin" /> : isSelected ? <Check aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
+        {isSelecting ? <ActivityIndicator /> : isSelected ? <Check aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
         {isSelecting ? "Saving exact snapshot" : isSelected ? "Selected" : "Use this layout"}
       </button>
     </article>
@@ -593,7 +593,7 @@ export function EventArchitectPage(): ReactElement {
         </div>
 
         {workspace.kind === "loading" ? (
-          <div className="event-architect-inline-state" role="status"><LoaderCircle aria-hidden="true" className="event-architect-spin" /> Loading venue rooms…</div>
+          <ActivityStatus className="event-architect-inline-state">Loading venue rooms…</ActivityStatus>
         ) : workspace.kind === "error" ? (
           <div className="event-architect-inline-state event-architect-inline-state--error" role="alert"><AlertTriangle aria-hidden="true" /> {workspace.message}</div>
         ) : (
@@ -679,7 +679,7 @@ export function EventArchitectPage(): ReactElement {
             </label>
 
             <button type="submit" className="event-architect-generate" disabled={submitting || workspace.spaces.length === 0}>
-              {submitting ? <LoaderCircle aria-hidden="true" className="event-architect-spin" /> : <Sparkles aria-hidden="true" />}
+              {submitting ? <ActivityIndicator /> : <Sparkles aria-hidden="true" />}
               {submitting ? "Generating options…" : "Generate three options"}
             </button>
           </form>
@@ -688,7 +688,7 @@ export function EventArchitectPage(): ReactElement {
 
       {runLoadState === "loading" ? (
         <section className="event-architect-results-state" role="status" aria-live="polite">
-          <LoaderCircle aria-hidden="true" className="event-architect-spin" />
+          <ActivityIndicator size={64} />
           <h2>Checking three layouts…</h2>
         </section>
       ) : runLoadState === "error" ? (

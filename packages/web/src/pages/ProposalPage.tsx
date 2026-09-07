@@ -10,6 +10,7 @@ import {
   type PublicProposal,
 } from "../api/proposals.js";
 import { ProposalLayoutVisual } from "../components/proposal/ProposalLayoutVisual.js";
+import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
 
 // ---------------------------------------------------------------------------
 // ProposalPage — the client-facing share-link surface (T-427 phase 3).
@@ -73,6 +74,7 @@ export function ProposalPage(): ReactElement {
   const [showChangesForm, setShowChangesForm] = useState(false);
   const [changesNote, setChangesNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [responseAction, setResponseAction] = useState<ProposalResponseAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [commentPosting, setCommentPosting] = useState(false);
@@ -103,6 +105,7 @@ export function ProposalPage(): ReactElement {
     (action: ProposalResponseAction, note?: string) => {
       if (state.kind !== "ready" || submitting) return;
       setSubmitting(true);
+      setResponseAction(action);
       setActionError(null);
       const actionPromise = token !== undefined && token.length > 0
         ? action === "accept"
@@ -117,7 +120,7 @@ export function ProposalPage(): ReactElement {
         setShowChangesForm(false);
       }).catch(() => {
         setActionError("Something went wrong sending your response. Please try again, or contact the venue team directly.");
-      }).finally(() => { setSubmitting(false); });
+      }).finally(() => { setSubmitting(false); setResponseAction(null); });
     },
     [shareCode, state, submitting, token],
   );
@@ -147,7 +150,7 @@ export function ProposalPage(): ReactElement {
         aria-label="Client proposal"
         style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: GRAPHITE, color: CREAM_MUT, fontFamily: SANS }}
       >
-        <div role="status" aria-live="polite">Loading proposal...</div>
+        <ActivityStatus variant="panel">Loading proposal...</ActivityStatus>
       </main>
     );
   }
@@ -312,9 +315,10 @@ export function ProposalPage(): ReactElement {
                 type="button"
                 onClick={() => { respond("accept"); }}
                 disabled={submitting}
+                aria-busy={responseAction === "accept"}
                 style={{ background: GOLD, color: GRAPHITE, border: "none", borderRadius: 8, padding: "13px 30px", fontSize: 15, fontWeight: 600, cursor: submitting ? "default" : "pointer", fontFamily: SANS, opacity: submitting ? 0.6 : 1 }}
               >
-                Approve proposal
+                {responseAction === "accept" && <ActivityIndicator size={20} />} Approve proposal
               </button>
               <button
                 type="button"
@@ -343,9 +347,10 @@ export function ProposalPage(): ReactElement {
                   type="button"
                   onClick={() => { respond("request_changes", changesNote); }}
                   disabled={submitting || changesNote.trim().length === 0}
+                  aria-busy={responseAction === "request_changes"}
                   style={{ marginTop: 10, background: "transparent", color: GOLD, border: `1px solid ${GOLD}`, borderRadius: 8, padding: "10px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: SANS, opacity: submitting || changesNote.trim().length === 0 ? 0.5 : 1 }}
                 >
-                  Send request
+                  {responseAction === "request_changes" && <ActivityIndicator size={20} />} Send request
                 </button>
               </div>
             )}
@@ -387,9 +392,10 @@ export function ProposalPage(): ReactElement {
                   data-testid="comment-submit"
                   onClick={postComment}
                   disabled={commentPosting || commentText.trim().length === 0}
+                  aria-busy={commentPosting}
                   style={{ marginTop: 10, background: "transparent", color: GOLD, border: `1px solid ${GOLD}`, borderRadius: 8, padding: "10px 24px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: SANS, opacity: commentPosting || commentText.trim().length === 0 ? 0.5 : 1 }}
                 >
-                  Send comment
+                  {commentPosting && <ActivityIndicator size={20} />} Send comment
                 </button>
                 {commentError !== null && (
                   <div role="alert" style={{ marginTop: 10, color: "#e0a8a0", fontSize: 14 }}>{commentError}</div>

@@ -31,8 +31,26 @@ describe("onboarding contracts", () => {
     });
 
     expect(parsed.ownerInvite.workspaceRole).toBe("owner");
-    expect(parsed.ownerInvite.venueRole).toBe("staff");
-    expect(VENUE_INVITATION_ROLES).not.toContain("admin");
+    expect(parsed.ownerInvite.venueRole).toBe("admin");
+    expect(VENUE_INVITATION_ROLES).toContain("admin");
+    expect(parsed.ownerInvite).not.toHaveProperty("platformRole");
+  });
+
+  it("attaches an existing venue without requiring a replacement venue record", () => {
+    const input = { organisationName: "Trades Hall", existingVenueId: "00000000-0000-4000-8000-000000000021",
+      ownerInvite: { email: "owner@example.com" }, entitlement: { planKey: "managed" } };
+    expect(CreateManagedOnboardingSchema.safeParse(input).success).toBe(true);
+    expect(CreateManagedOnboardingSchema.safeParse({ ...input, existingVenueId: undefined }).success).toBe(false);
+    expect(CreateManagedOnboardingSchema.safeParse({ ...input, venue: {
+      name: "Other venue", slug: "other-venue", address: "Address",
+    } }).success).toBe(false);
+  });
+
+  it("never accepts a platform role from customer invitation input", () => {
+    expect(CreateManagedOnboardingSchema.safeParse({ organisationName: "Trades Hall",
+      existingVenueId: "00000000-0000-4000-8000-000000000021",
+      ownerInvite: { email: "owner@example.com", platformRole: "admin" }, entitlement: { planKey: "managed" },
+    }).success).toBe(false);
   });
 
   it("rejects access enforcement until provider verification evidence exists", () => {

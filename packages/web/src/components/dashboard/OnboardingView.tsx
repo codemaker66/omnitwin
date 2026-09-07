@@ -1,1107 +1,236 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactElement } from "react";
-import { Building2, CircleAlert, ClipboardCheck, RefreshCw, Save, Send, ShieldCheck, UserPlus } from "lucide-react";
-import type {
-  BillingProvider,
-  OnboardingProject,
-  OnboardingProjectStatus,
-  OnboardingSummary,
-  OperatorReviewState,
-  ProviderVerificationStatus,
-  WorkspaceEntitlement,
-} from "@omnitwin/types";
-import {
-  createManagedOnboarding,
-  getOnboardingSummary,
-  inviteWorkspaceMembers,
-  updateOnboardingProject,
-  verifyWorkspaceEntitlement,
-} from "../../api/onboarding.js";
-import { useToastStore } from "../../stores/toast-store.js";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
+import { Building2, Check, Copy, Plus, RefreshCw, ShieldCheck, UserPlus } from "lucide-react";
+import { BILLING_PROVIDERS, VENUE_INVITATION_ROLES, type BillingProvider, type CreateManagedOnboardingResult,
+  type OnboardingSummary, type VenueInvitationRole, type Workspace, type WorkspaceMembership } from "@omnitwin/types";
+import { createManagedOnboarding, getOnboardingSummary, inviteWorkspaceMembers, revokeWorkspaceInvitation } from "../../api/onboarding.js";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
+import { OnboardingSetupControls } from "./OnboardingSetupControls.js";
+import "./OnboardingView.css";
 
-type LoadState =
-  | { readonly status: "loading" }
-  | { readonly status: "loaded"; readonly data: OnboardingSummary }
-  | { readonly status: "error"; readonly message: string };
+const ROLE_LABELS: Record<VenueInvitationRole, string> = {
+  admin: "Venue administrator", staff: "Events staff", hallkeeper: "Hallkeeper", planner: "Planner", client: "Client",
+};
+const roleHelp = "Venue administrators manage this venue's settings, inventory and operations. Venviewer platform access is separate.";
+const nullableText = (value: string): string | null => value.trim() || null;
+const errorMessage = (error: unknown): string => error instanceof Error ? error.message : "The change could not be saved. Please try again.";
+const slugify = (value: string): string => value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const parseEmails = (value: string): string[] => [...new Set(value.split(/[\n,;]+/).map((email) => email.trim().toLowerCase()).filter(Boolean))];
 
-interface FormState {
-  readonly organisationName: string;
-  readonly workspaceName: string;
-  readonly venueName: string;
-  readonly venueSlug: string;
-  readonly venueAddress: string;
-  readonly ownerEmail: string;
-  readonly staffEmails: string;
-  readonly planKey: string;
-  readonly billingProvider: BillingProvider;
-  readonly providerCustomerRef: string;
-  readonly providerEntitlementRef: string;
-  readonly providerEvidenceRef: string;
-  readonly providerVerified: boolean;
-  readonly accessEnforced: boolean;
+function RoleSelect({ value, onChange, label = "Venue role" }: {
+  readonly value: VenueInvitationRole; readonly onChange: (value: VenueInvitationRole) => void; readonly label?: string;
+}): ReactElement {
+  return <label className="onboarding-field"><span>{label}</span><select value={value} onChange={(event) => {
+    const next = VENUE_INVITATION_ROLES.find((role) => role === event.target.value); if (next !== undefined) onChange(next);
+  }}>{VENUE_INVITATION_ROLES.map((role) => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}</select></label>;
 }
 
-interface WorkspaceActionState {
-  readonly inviteEmails: string;
-  readonly inviteBusy: boolean;
-  readonly inviteError: string | null;
-  readonly projectBusy: boolean;
-  readonly projectError: string | null;
-  readonly projectStatus?: OnboardingProjectStatus;
-  readonly projectReviewState?: OperatorReviewState;
-  readonly projectCurrentStep?: string;
-  readonly projectEvidenceNote?: string;
-  readonly entitlementBusy: boolean;
-  readonly entitlementError: string | null;
-  readonly billingProvider?: BillingProvider;
-  readonly providerVerificationStatus?: ProviderVerificationStatus;
-  readonly providerCustomerRef?: string;
-  readonly providerEntitlementRef?: string;
-  readonly providerEvidenceRef?: string;
-  readonly accessEnforced?: boolean;
-}
-
-const initialForm: FormState = {
-  organisationName: "",
-  workspaceName: "",
-  venueName: "",
-  venueSlug: "",
-  venueAddress: "",
-  ownerEmail: "",
-  staffEmails: "",
-  planKey: "managed_deployment",
-  billingProvider: "none",
-  providerCustomerRef: "",
-  providerEntitlementRef: "",
-  providerEvidenceRef: "",
-  providerVerified: false,
-  accessEnforced: false,
-};
-
-const ONBOARDING_PROJECT_STATUS_OPTIONS: readonly OnboardingProjectStatus[] = [
-  "intake",
-  "venue_record",
-  "admin_invite",
-  "staff_invites",
-  "entitlement_review",
-  "ready",
-  "blocked",
-  "cancelled",
-];
-
-const OPERATOR_REVIEW_STATE_OPTIONS: readonly OperatorReviewState[] = [
-  "pending_review",
-  "approved",
-  "blocked",
-];
-
-const PROVIDER_VERIFICATION_STATUS_OPTIONS: readonly ProviderVerificationStatus[] = [
-  "not_required",
-  "pending",
-  "provider_verified",
-  "operator_review_required",
-  "rejected",
-];
-
-const BILLING_PROVIDER_OPTIONS: readonly BillingProvider[] = [
-  "none",
-  "stripe",
-  "manual_invoice",
-  "external_procurement",
-];
-
-const shellStyle: CSSProperties = {
-  display: "grid",
-  gap: 18,
-};
-
-const heroStyle: CSSProperties = {
-  border: "1px solid rgba(215,181,109,0.22)",
-  borderRadius: 8,
-  background: "linear-gradient(135deg, #120f0c 0%, #262018 70%, #15110d 100%)",
-  backgroundColor: "#120f0c",
-  color: "#fff7e8",
-  padding: 22,
-  boxShadow: "0 24px 70px rgba(35, 24, 12, 0.18)",
-};
-
-const panelStyle: CSSProperties = {
-  border: "1px solid rgba(92, 69, 38, 0.18)",
-  borderRadius: 8,
-  background: "linear-gradient(180deg, #fffdf8 0%, #f7efe1 100%)",
-  backgroundColor: "#fffdf8",
-  padding: 18,
-  boxShadow: "0 18px 42px rgba(44, 31, 16, 0.08)",
-};
-
-const labelStyle: CSSProperties = {
-  display: "block",
-  marginBottom: 6,
-  color: "#5d4a2d",
-  fontSize: 12,
-  fontWeight: 800,
-  letterSpacing: 0,
-  textTransform: "uppercase",
-};
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  minHeight: 40,
-  border: "1px solid rgba(92, 69, 38, 0.22)",
-  borderRadius: 8,
-  background: "#fffaf1",
-  color: "#21190f",
-  padding: "8px 10px",
-  fontFamily: "inherit",
-  fontSize: 14,
-  boxSizing: "border-box",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  minHeight: 40,
-  border: 0,
-  borderRadius: 8,
-  background: "#21190f",
-  color: "#fff7e8",
-  padding: "0 14px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  minHeight: 40,
-  border: "1px solid rgba(215,181,109,0.34)",
-  borderRadius: 8,
-  background: "rgba(255,250,241,0.08)",
-  color: "#fff7e8",
-  padding: "0 14px",
-  fontWeight: 800,
-  cursor: "pointer",
-};
-
-const mutedTextStyle: CSSProperties = {
-  marginTop: 0,
-  marginRight: 0,
-  marginBottom: 0,
-  marginLeft: 0,
-  color: "#75644c",
-  fontSize: 13,
-  lineHeight: 1.5,
-};
-
-const compactPanelStyle: CSSProperties = {
-  border: "1px solid rgba(92, 69, 38, 0.14)",
-  borderRadius: 8,
-  background: "#fffaf1",
-  backgroundColor: "#fffaf1",
-  padding: 14,
-};
-
-const actionErrorStyle: CSSProperties = {
-  margin: "8px 0 0",
-  color: "#991b1b",
-  fontSize: 13,
-  fontWeight: 750,
-};
-
-const responsiveMetricGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-  gap: 14,
-};
-
-const responsiveFormShellStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
-  gap: 18,
-  alignItems: "start",
-};
-
-const responsiveFieldGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
-  gap: 12,
-};
-
-const responsiveActionGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
-  gap: 12,
-  marginTop: 14,
-};
-
-function slugify(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-}
-
-function nullableText(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed.length === 0 ? null : trimmed;
-}
-
-function labelize(value: string): string {
-  return value.replace(/_/g, " ");
-}
-
-function parseStaffEmails(raw: string): readonly string[] {
-  const unique = new Set<string>();
-  raw
-    .split(/[\n,;]+/)
-    .map((item) => item.trim().toLowerCase())
-    .filter((item) => item.length > 0)
-    .forEach((item) => { unique.add(item); });
-  return [...unique];
-}
-
-function entitlementTone(entitlement: WorkspaceEntitlement): "ready" | "review" | "blocked" {
-  if (entitlement.accessEnforced && entitlement.providerVerificationStatus === "provider_verified") return "ready";
-  if (entitlement.providerVerificationStatus === "provider_verified") return "review";
-  return "blocked";
-}
-
-function actionError(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}
-
-function providerGateIsSaveable(input: {
-  readonly billingProvider: BillingProvider;
-  readonly providerVerificationStatus: ProviderVerificationStatus;
-  readonly providerCustomerRef: string;
-  readonly providerEntitlementRef: string;
-  readonly providerEvidenceRef: string;
-}): boolean {
-  if (input.providerVerificationStatus !== "provider_verified") return true;
-  if (input.billingProvider === "none") return false;
-  return [
-    input.providerCustomerRef,
-    input.providerEntitlementRef,
-    input.providerEvidenceRef,
-  ].some((value) => value.trim().length > 0);
-}
-
-function statusChip(label: string, tone: "ready" | "review" | "blocked"): ReactElement {
-  const colours: Record<typeof tone, { readonly bg: string; readonly color: string; readonly border: string }> = {
-    ready: { bg: "#e8f7ef", color: "#0f6a42", border: "rgba(15,106,66,0.18)" },
-    review: { bg: "#fff4d6", color: "#8a5a00", border: "rgba(138,90,0,0.2)" },
-    blocked: { bg: "#fee2e2", color: "#991b1b", border: "rgba(153,27,27,0.18)" },
+function RegistrationLink(): ReactElement {
+  const [state, setState] = useState<"idle" | "copying" | "copied" | "failed">("idle");
+  const link = `${window.location.origin}/register`;
+  const copy = async (): Promise<void> => {
+    setState("copying");
+    try { await navigator.clipboard.writeText(link); setState("copied"); } catch { setState("failed"); }
   };
-  const colour = colours[tone];
-  return (
-    <span style={{
-      display: "inline-flex",
-      alignItems: "center",
-      minHeight: 24,
-      borderRadius: 999,
-      border: `1px solid ${colour.border}`,
-      background: colour.bg,
-      color: colour.color,
-      padding: "0 10px",
-      fontSize: 12,
-      fontWeight: 800,
-    }}>
-      {label}
-    </span>
-  );
+  return <div className="onboarding-registration"><div><strong>Share the account link</strong><p>Use the listed email to sign in, then verify it to connect access.</p></div>
+    <div className="onboarding-link-row"><input aria-label="Account registration link" value={link} readOnly onFocus={(event) => { event.target.select(); }} />
+      <button type="button" className="onboarding-button onboarding-button--secondary" disabled={state === "copying"} aria-busy={state === "copying"} onClick={() => { void copy(); }}>
+        {state === "copying" ? <ActivityIndicator size={18} /> : state === "copied" ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+        {state === "copied" ? "Link copied" : state === "copying" ? "Copying link…" : "Copy account link"}
+      </button></div>
+    {state === "failed" && <p role="alert">Copying is unavailable. Select the link above and copy it manually.</p>}
+    <p className="onboarding-note">No email is sent automatically. Only the people with access recorded here can join this venue.</p>
+  </div>;
 }
 
-function metricPanel(icon: ReactElement, label: string, value: string): ReactElement {
-  return (
-    <div style={panelStyle}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#6b542f" }}>
-        {icon}
-        <p style={labelStyle}>{label}</p>
-      </div>
-      <p style={{ margin: "8px 0 4px", color: "#21190f", fontSize: 28, fontWeight: 850, lineHeight: 1 }}>
-        {value}
-      </p>
-    </div>
-  );
+function CreateWorkspace({ summary, onCreated, onBusy, onCancel }: {
+  readonly summary: OnboardingSummary; readonly onCreated: (result: CreateManagedOnboardingResult) => void;
+  readonly onBusy: (busy: boolean) => void; readonly onCancel: () => void;
+}): ReactElement {
+  const availableVenues = summary.venues.filter((venue) => !summary.workspaces.some((workspace) => workspace.primaryVenueId === venue.id));
+  const [mode, setMode] = useState<"existing" | "new">(availableVenues.length > 0 ? "existing" : "new");
+  const [existingVenueId, setExistingVenueId] = useState("");
+  const [form, setForm] = useState({ organisationName: "", workspaceName: "", venueName: "", venueSlug: "", venueAddress: "", timezone: "Europe/London",
+    contactEmail: "", staffEmails: "", planKey: "managed_deployment", customerRef: "", entitlementRef: "", evidenceRef: "" });
+  const [venueRole, setVenueRole] = useState<VenueInvitationRole>("admin");
+  const [billingProvider, setBillingProvider] = useState<BillingProvider>("none");
+  const [providerVerified, setProviderVerified] = useState(false);
+  const [accessEnforced, setAccessEnforced] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const lock = useRef(false);
+  const setField = (key: keyof typeof form, value: string): void => { setForm((current) => ({ ...current, [key]: value })); };
+  const selectedVenue = availableVenues.find((venue) => venue.id === existingVenueId);
+  const verifiedValid = !providerVerified || billingProvider !== "none" && [form.customerRef, form.entitlementRef, form.evidenceRef].some((value) => value.trim().length > 0);
+  const complete = form.organisationName.trim() !== "" && form.contactEmail.trim() !== "" && form.planKey.trim() !== "" && verifiedValid &&
+    (mode === "existing" ? selectedVenue !== undefined : [form.venueName, form.venueSlug, form.venueAddress, form.timezone].every((value) => value.trim() !== ""));
+  const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault(); if (!complete || lock.current) return;
+    lock.current = true; setBusy(true); onBusy(true); setError(null);
+    try {
+      const result = await createManagedOnboarding({ organisationName: form.organisationName, workspaceName: form.workspaceName.trim() || undefined,
+        ...(mode === "existing" ? { existingVenueId } : { venue: { name: form.venueName, slug: form.venueSlug, address: form.venueAddress,
+          timezone: form.timezone, logoUrl: null, brandColour: null } }),
+        ownerInvite: { email: form.contactEmail.trim().toLowerCase(), name: null, workspaceRole: "owner", venueRole },
+        staffInvites: parseEmails(form.staffEmails).map((email) => ({ email, workspaceRole: "staff", venueRole: "staff" })),
+        entitlement: { planKey: form.planKey, billingProvider, providerCustomerRef: nullableText(form.customerRef),
+          providerEntitlementRef: nullableText(form.entitlementRef), providerEvidenceRef: nullableText(form.evidenceRef), providerVerified, accessEnforced },
+        operatorReviewNote: "Review client setup before marking onboarding complete.",
+      }); onCreated(result);
+    } catch (failure) { setError(errorMessage(failure)); }
+    finally { lock.current = false; setBusy(false); onBusy(false); }
+  };
+  return <section className="onboarding-panel" aria-labelledby="new-client-title">
+    <div className="onboarding-section-heading"><div><h2 id="new-client-title">New client workspace</h2></div>
+      {summary.workspaces.length > 0 && <button type="button" className="onboarding-button onboarding-button--text" disabled={busy} onClick={onCancel}>Back to clients</button>}</div>
+    <form onSubmit={(event) => { void submit(event); }}><fieldset disabled={busy} className="onboarding-fieldset">
+      <div className="onboarding-create-grid"><div className="onboarding-form-section"><h3><span className="onboarding-step">1</span> Choose the venue</h3>
+        <div className="onboarding-mode" role="group" aria-label="Venue setup"><button type="button" aria-pressed={mode === "existing"} onClick={() => { setMode("existing"); }}>Use an existing venue</button><button type="button" aria-pressed={mode === "new"} onClick={() => { setMode("new"); }}>Create a new venue</button></div>
+        {mode === "existing" ? <><label className="onboarding-field"><span>Existing venue</span><select value={existingVenueId} required onChange={(event) => {
+          const nextVenue = availableVenues.find((venue) => venue.id === event.target.value);
+          setExistingVenueId(event.target.value);
+          setForm((current) => ({ ...current, organisationName: current.organisationName.trim() === "" || current.organisationName === selectedVenue?.name
+            ? nextVenue?.name ?? "" : current.organisationName }));
+        }}><option value="">Choose a venue</option>{availableVenues.map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}</select></label>
+          {availableVenues.length === 0 && <p className="onboarding-empty">No unassigned venues. Choose a client to manage access, or create a venue.</p>}
+          {selectedVenue !== undefined && <div className="onboarding-venue-preview"><Building2 size={22} aria-hidden="true" /><div><strong>{selectedVenue.name}</strong><p>{selectedVenue.address}</p></div></div>}
+        </> : <div className="onboarding-fields">
+          <label className="onboarding-field"><span>Venue name</span><input required value={form.venueName} data-testid="venue-name" onChange={(event) => {
+            const next = event.target.value; setForm((current) => ({ ...current, venueName: next,
+              venueSlug: current.venueSlug === "" || current.venueSlug === slugify(current.venueName) ? slugify(next) : current.venueSlug }));
+          }} /></label>
+          <label className="onboarding-field"><span>Venue address</span><input required value={form.venueAddress} data-testid="venue-address" onChange={(event) => { setField("venueAddress", event.target.value); }} /></label>
+          <label className="onboarding-field"><span>Venue web address</span><input required value={form.venueSlug} data-testid="venue-slug" onChange={(event) => { setField("venueSlug", event.target.value); }} /><small>Lowercase words separated by hyphens.</small></label>
+          <label className="onboarding-field"><span>Time zone</span><input required value={form.timezone} onChange={(event) => { setField("timezone", event.target.value); }} /></label>
+        </div>}
+        <label className="onboarding-field"><span>Client organisation</span><input required value={form.organisationName} data-testid="organisation-name" onChange={(event) => { setField("organisationName", event.target.value); }} /></label>
+      </div><div className="onboarding-form-section onboarding-form-section--contact"><h3><span className="onboarding-step">2</span> Give your contact access</h3>
+        <label className="onboarding-field"><span>First administrator email</span><input type="email" required value={form.contactEmail} autoComplete="off" data-testid="owner-email" onChange={(event) => { setField("contactEmail", event.target.value); }} /></label>
+        <RoleSelect value={venueRole} onChange={setVenueRole} label="First contact's venue role" />
+        <p className="onboarding-note"><ShieldCheck size={18} aria-hidden="true" /> {roleHelp}</p>
+        <div className="onboarding-next"><p>Share the account link after saving. Access starts after email verification.</p></div>
+      </div></div>
+      <details className="onboarding-details"><summary>Team, billing and setup options</summary><div className="onboarding-fields onboarding-fields--two">
+        <label className="onboarding-field"><span>Workspace name (optional)</span><input value={form.workspaceName} onChange={(event) => { setField("workspaceName", event.target.value); }} /></label>
+        <label className="onboarding-field"><span>Additional staff emails (optional)</span><textarea value={form.staffEmails} data-testid="staff-emails" onChange={(event) => { setField("staffEmails", event.target.value); }} /><small>Separate addresses with commas or new lines. These people receive Events staff access.</small></label>
+        <label className="onboarding-field"><span>Plan key</span><input required value={form.planKey} data-testid="plan-key" onChange={(event) => { setField("planKey", event.target.value); }} /></label>
+        <label className="onboarding-field"><span>Billing provider</span><select value={billingProvider} data-testid="billing-provider" onChange={(event) => {
+          const value = BILLING_PROVIDERS.find((provider) => provider === event.target.value); if (value !== undefined) setBillingProvider(value);
+        }}>{BILLING_PROVIDERS.map((provider) => <option key={provider} value={provider}>{provider.replace(/_/g, " ")}</option>)}</select></label>
+        <label className="onboarding-field"><span>Customer reference</span><input value={form.customerRef} onChange={(event) => { setField("customerRef", event.target.value); }} /></label>
+        <label className="onboarding-field"><span>Entitlement reference</span><input value={form.entitlementRef} onChange={(event) => { setField("entitlementRef", event.target.value); }} /></label>
+        <label className="onboarding-field"><span>Provider evidence reference</span><input value={form.evidenceRef} onChange={(event) => { setField("evidenceRef", event.target.value); }} /></label>
+        <div className="onboarding-fields"><label className="onboarding-checkbox"><input type="checkbox" checked={providerVerified} onChange={(event) => { setProviderVerified(event.target.checked); if (!event.target.checked) setAccessEnforced(false); }} />Provider verified</label>
+          <label className="onboarding-checkbox"><input type="checkbox" checked={accessEnforced} disabled={!providerVerified} onChange={(event) => { setAccessEnforced(event.target.checked); }} />Enforce managed access</label></div>
+        {!verifiedValid && <p className="onboarding-error" role="alert">Provider verification requires a billing provider and a customer, entitlement or evidence reference.</p>}
+      </div></details>
+    </fieldset>{error !== null && <p className="onboarding-error" role="alert">{error}</p>}
+    <div className="onboarding-form-footer"><p>No email will be sent. Existing venue records are preserved.</p><button type="submit" className="onboarding-button" data-testid="create-onboarding-workspace" disabled={!complete || busy} aria-busy={busy}>
+      {busy ? <ActivityIndicator size={18} /> : <Plus size={18} aria-hidden="true" />}{busy ? "Creating workspace…" : "Create client workspace"}
+    </button></div></form>
+  </section>;
+}
+
+function membershipState(member: WorkspaceMembership, summary: OnboardingSummary): { readonly label: string; readonly tone: string; readonly expiresAt: string | null } {
+  const invitation = summary.invitations.find((invite) => invite.id === member.invitationId);
+  if (member.status === "active") return { label: "Account connected", tone: "active", expiresAt: null };
+  if (member.status === "removed" || invitation?.status === "revoked") return { label: "Invitation cancelled", tone: "muted", expiresAt: null };
+  if (member.status === "suspended") return { label: "Access suspended", tone: "muted", expiresAt: null };
+  if (invitation !== undefined && (invitation.status === "expired" || invitation.expiresAt !== null && new Date(invitation.expiresAt).getTime() <= Date.now())) {
+    return { label: "Invitation expired", tone: "expired", expiresAt: invitation.expiresAt };
+  }
+  return { label: "Awaiting sign-in", tone: "pending", expiresAt: invitation?.expiresAt ?? null };
+}
+
+function WorkspaceAccess({ workspace, summary, onChanged, onBusy }: {
+  readonly workspace: Workspace; readonly summary: OnboardingSummary; readonly onChanged: () => Promise<void>; readonly onBusy: (busy: boolean) => void;
+}): ReactElement {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<VenueInvitationRole>("admin");
+  const [editing, setEditing] = useState<string | null>(null); const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null);
+  const lock = useRef(false);
+  const members = summary.memberships.filter((member) => member.workspaceId === workspace.id);
+  const venue = summary.venues.find((item) => item.id === workspace.primaryVenueId);
+  const organisation = summary.organisations.find((item) => item.id === workspace.organisationId);
+  const saveAccess = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault(); if (lock.current) return;
+    lock.current = true; setBusy("grant"); onBusy(true); setError(null); setNotice(null);
+    try {
+      const result = await inviteWorkspaceMembers(workspace.id, { staffInvites: [{ email: email.trim().toLowerCase(), name: null, workspaceRole: role, venueRole: role }] });
+      setNotice(result.memberships[0]?.status === "active" ? `Access is connected for ${email.trim()}.` : `Access recorded for ${email.trim()}. It will connect on their next verified sign-in.`);
+      setEmail(""); setEditing(null); setRole("admin"); await onChanged();
+    } catch (failure) { setError(errorMessage(failure)); } finally { lock.current = false; setBusy(null); onBusy(false); }
+  };
+  const revoke = async (member: WorkspaceMembership): Promise<void> => {
+    if (lock.current) return;
+    lock.current = true; setBusy(member.id); onBusy(true); setError(null); setNotice(null);
+    try {
+      await revokeWorkspaceInvitation(workspace.id, member.id);
+      if (editing === member.id) { setEditing(null); setEmail(""); setRole("admin"); }
+      setNotice(`Invitation cancelled for ${member.email}.`); await onChanged();
+    }
+    catch (failure) { setError(errorMessage(failure)); } finally { lock.current = false; setBusy(null); onBusy(false); }
+  };
+  return <section className="onboarding-panel" aria-labelledby="client-workspace-title">
+    <div className="onboarding-section-heading"><div><p className="onboarding-eyebrow">{organisation?.name ?? "Client workspace"}</p><h2 id="client-workspace-title">{venue?.name ?? workspace.name}</h2><p>{workspace.name}</p></div>
+      <div className="onboarding-counts"><span><strong>{members.filter((member) => member.status === "active").length}</strong> connected</span><span><strong>{members.filter((member) => membershipState(member, summary).tone === "pending").length}</strong> awaiting sign-in</span></div></div>
+    <div className="onboarding-access-grid"><div><h3>People & access</h3><p className="onboarding-note">Venue access connects on verified sign-in.</p>
+      {members.length === 0 ? <p className="onboarding-empty">Add your first venue administrator.</p> : <ul className="onboarding-members">{members.map((member) => {
+        const state = membershipState(member, summary);
+        return <li key={member.id} className="onboarding-member"><div className="onboarding-member-main"><strong>{member.email}</strong><span>{ROLE_LABELS[member.venueRole]}</span><span className={`onboarding-status onboarding-status--${state.tone}`}>{state.label}</span>
+          {state.expiresAt !== null && <small>{state.tone === "expired" ? "Expired" : "Sign in by"} {new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(new Date(state.expiresAt))}</small>}</div>
+          <div className="onboarding-member-actions"><button type="button" className="onboarding-button onboarding-button--text" disabled={busy !== null} aria-label={`Manage access for ${member.email}`} onClick={() => {
+            setEditing(member.id); setEmail(member.email); setRole(member.venueRole); setError(null); setNotice(null); document.getElementById("client-access-email")?.focus();
+          }}>Manage access</button>
+          {member.status === "invited" && <button type="button" className="onboarding-button onboarding-button--text" disabled={busy !== null} aria-busy={busy === member.id} aria-label={`Cancel invitation for ${member.email}`} onClick={() => { void revoke(member); }}>
+            {busy === member.id && <ActivityIndicator size={16} />}{busy === member.id ? "Cancelling…" : "Cancel invitation"}</button>}</div></li>;
+      })}</ul>}
+    </div><form className="onboarding-grant" onSubmit={(event) => { void saveAccess(event); }} aria-label="Grant venue access"><h3>{editing === null ? "Give someone access" : "Update venue access"}</h3>
+      <fieldset disabled={busy !== null} className="onboarding-fieldset onboarding-fields">
+        <label className="onboarding-field"><span>Email address</span><input id="client-access-email" type="email" required value={email} readOnly={editing !== null} onChange={(event) => { setEmail(event.target.value); }} /></label>
+        <RoleSelect value={role} onChange={setRole} /><p className="onboarding-note">{roleHelp}</p>
+        {editing !== null && <p className="onboarding-note">Saving renews pending or expired invitations and applies the selected role on their next verified sign-in.</p>}
+        <button type="submit" className="onboarding-button" disabled={email.trim() === ""} aria-busy={busy === "grant"}>
+          {busy === "grant" ? <ActivityIndicator size={18} /> : <UserPlus size={18} aria-hidden="true" />}{busy === "grant" ? "Saving access…" : editing === null ? "Grant venue access" : "Save venue access"}</button>
+        {editing !== null && <button type="button" className="onboarding-button onboarding-button--text" onClick={() => { setEditing(null); setEmail(""); setRole("admin"); }}>Cancel editing</button>}
+      </fieldset></form></div>
+    {error !== null && <p className="onboarding-error" role="alert">{error}</p>}{notice !== null && <p className="onboarding-success" role="status">{notice}</p>}
+    <RegistrationLink /><OnboardingSetupControls workspace={workspace} project={summary.projects.find((item) => item.workspaceId === workspace.id)}
+      entitlement={summary.entitlements.find((item) => item.workspaceId === workspace.id)} onChanged={onChanged} onBusy={onBusy} />
+  </section>;
 }
 
 export function OnboardingView(): ReactElement {
-  const addToast = useToastStore((state) => state.addToast);
-  const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
-  const [form, setForm] = useState<FormState>(initialForm);
-  const [submitting, setSubmitting] = useState(false);
-  const [workspaceActions, setWorkspaceActions] = useState<Record<string, WorkspaceActionState>>({});
-
-  const load = useCallback((): void => {
-    setLoadState({ status: "loading" });
-    void getOnboardingSummary()
-      .then((data) => { setLoadState({ status: "loaded", data }); })
-      .catch((error: unknown) => {
-        setLoadState({
-          status: "error",
-          message: error instanceof Error ? error.message : "Onboarding records are unavailable.",
-        });
-      });
+  const [summary, setSummary] = useState<OnboardingSummary | null>(null); const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null); const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false); const [busy, setBusy] = useState(false); const [createdEmail, setCreatedEmail] = useState<string | null>(null);
+  const requestId = useRef(0);
+  const load = useCallback(async (): Promise<void> => {
+    const request = ++requestId.current; setLoading(true); setError(null);
+    try { const data = await getOnboardingSummary(); if (request === requestId.current) setSummary(data); }
+    catch (failure) { if (request === requestId.current) setError(errorMessage(failure)); }
+    finally { if (request === requestId.current) setLoading(false); }
   }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const summary = loadState.status === "loaded" ? loadState.data : null;
-  const staffInviteCount = useMemo(() => parseStaffEmails(form.staffEmails).length, [form.staffEmails]);
-  const pendingProviderCount = summary?.entitlements.filter((entitlement) => entitlement.providerVerificationStatus !== "provider_verified").length ?? 0;
-  const enforcedAccessCount = summary?.entitlements.filter((entitlement) => entitlement.accessEnforced).length ?? 0;
-  const reviewQueueCount = summary?.projects.filter((project) => project.operatorReviewState !== "approved").length ?? 0;
-
-  const setField = <K extends keyof FormState>(key: K, value: FormState[K]): void => {
-    setForm((current) => ({ ...current, [key]: value }));
+  useEffect(() => { void load(); return () => { requestId.current++; }; }, [load]);
+  const workspace = summary?.workspaces.find((item) => item.id === selectedId) ?? summary?.workspaces[0];
+  const showCreate = creating || summary?.workspaces.length === 0;
+  const handleCreated = (result: CreateManagedOnboardingResult): void => {
+    // Keep the confirmed mutation visible if the subsequent read fails.
+    setSummary((current) => current === null ? current : { ...current, organisations: [...current.organisations, result.organisation], workspaces: [...current.workspaces, result.workspace],
+      venues: [...current.venues.filter((venue) => venue.id !== result.venue.id), result.venue], memberships: [...current.memberships, result.ownerMembership, ...result.staffMemberships],
+      projects: [...current.projects, result.project], entitlements: [...current.entitlements, result.entitlement] });
+    setCreatedEmail(result.ownerMembership.email); setSelectedId(result.workspace.id); setCreating(false); void load();
   };
-
-  const actionForWorkspace = (workspaceId: string): WorkspaceActionState => (
-    workspaceActions[workspaceId] ?? {
-      inviteEmails: "",
-      inviteBusy: false,
-      inviteError: null,
-      projectBusy: false,
-      projectError: null,
-      entitlementBusy: false,
-      entitlementError: null,
-    }
-  );
-
-  const setWorkspaceAction = (workspaceId: string, patch: Partial<WorkspaceActionState>): void => {
-    setWorkspaceActions((current) => ({
-      ...current,
-      [workspaceId]: {
-        ...(current[workspaceId] ?? {
-          inviteEmails: "",
-          inviteBusy: false,
-          inviteError: null,
-          projectBusy: false,
-          projectError: null,
-          entitlementBusy: false,
-          entitlementError: null,
-        }),
-        ...patch,
-      },
-    }));
-  };
-
-  const handleVenueNameChange = (value: string): void => {
-    setForm((current) => ({
-      ...current,
-      venueName: value,
-      venueSlug: current.venueSlug.length === 0 || current.venueSlug === slugify(current.venueName)
-        ? slugify(value)
-        : current.venueSlug,
-    }));
-  };
-
-  const submitDisabled = submitting ||
-    form.organisationName.trim().length === 0 ||
-    form.venueName.trim().length === 0 ||
-    form.venueSlug.trim().length === 0 ||
-    form.venueAddress.trim().length === 0 ||
-    form.ownerEmail.trim().length === 0 ||
-    form.planKey.trim().length === 0;
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
-    if (submitDisabled) return;
-
-    setSubmitting(true);
-    try {
-      await createManagedOnboarding({
-        organisationName: form.organisationName,
-        workspaceName: form.workspaceName.trim().length > 0 ? form.workspaceName : undefined,
-        venue: {
-          name: form.venueName,
-          slug: form.venueSlug,
-          address: form.venueAddress,
-          logoUrl: null,
-          brandColour: null,
-          timezone: "Europe/London",
-        },
-        ownerInvite: {
-          email: form.ownerEmail,
-          workspaceRole: "owner",
-          venueRole: "staff",
-        },
-        staffInvites: parseStaffEmails(form.staffEmails).map((email) => ({
-          email,
-          workspaceRole: "staff",
-          venueRole: "staff",
-        })),
-        entitlement: {
-          planKey: form.planKey,
-          billingProvider: form.billingProvider,
-          providerCustomerRef: nullableText(form.providerCustomerRef),
-          providerEntitlementRef: nullableText(form.providerEntitlementRef),
-          providerEvidenceRef: nullableText(form.providerEvidenceRef),
-          providerVerified: form.providerVerified,
-          accessEnforced: form.accessEnforced,
-        },
-        operatorReviewNote: "Operator review required before deployment is marked ready.",
-      });
-      addToast("Workspace onboarding created", "success");
-      setForm(initialForm);
-      load();
-    } catch (error) {
-      addToast(error instanceof Error ? error.message : "Failed to create onboarding workspace", "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleInviteStaff = async (workspaceId: string): Promise<void> => {
-    const action = actionForWorkspace(workspaceId);
-    const emails = parseStaffEmails(action.inviteEmails);
-    if (emails.length === 0 || action.inviteBusy) return;
-
-    setWorkspaceAction(workspaceId, { inviteBusy: true, inviteError: null });
-    try {
-      await inviteWorkspaceMembers(workspaceId, {
-        staffInvites: emails.map((email) => ({
-          email,
-          workspaceRole: "staff",
-          venueRole: "staff",
-        })),
-      });
-      addToast(`${String(emails.length)} staff invitation(s) recorded`, "success");
-      setWorkspaceAction(workspaceId, { inviteEmails: "", inviteBusy: false, inviteError: null });
-      load();
-    } catch (error) {
-      setWorkspaceAction(workspaceId, {
-        inviteBusy: false,
-        inviteError: actionError(error, "Failed to invite staff"),
-      });
-    }
-  };
-
-  const handleSaveProjectGate = async (workspaceId: string, project: OnboardingProject): Promise<void> => {
-    const action = actionForWorkspace(workspaceId);
-    const currentStep = action.projectCurrentStep ?? project.currentStep;
-    if (currentStep.trim().length === 0 || action.projectBusy) return;
-
-    setWorkspaceAction(workspaceId, { projectBusy: true, projectError: null });
-    try {
-      await updateOnboardingProject(project.id, {
-        status: action.projectStatus ?? project.status,
-        operatorReviewState: action.projectReviewState ?? project.operatorReviewState,
-        currentStep,
-        evidenceNote: nullableText(action.projectEvidenceNote ?? project.evidenceNote ?? ""),
-      });
-      addToast("Deployment review gate updated", "success");
-      setWorkspaceAction(workspaceId, { projectBusy: false, projectError: null });
-      load();
-    } catch (error) {
-      setWorkspaceAction(workspaceId, {
-        projectBusy: false,
-        projectError: actionError(error, "Failed to update deployment review gate"),
-      });
-    }
-  };
-
-  const handleSaveEntitlementGate = async (workspaceId: string, entitlement: WorkspaceEntitlement): Promise<void> => {
-    const action = actionForWorkspace(workspaceId);
-    const billingProvider = action.billingProvider ?? entitlement.billingProvider;
-    const providerVerificationStatus = action.providerVerificationStatus ?? entitlement.providerVerificationStatus;
-    const providerCustomerRef = action.providerCustomerRef ?? entitlement.providerCustomerRef ?? "";
-    const providerEntitlementRef = action.providerEntitlementRef ?? entitlement.providerEntitlementRef ?? "";
-    const providerEvidenceRef = action.providerEvidenceRef ?? entitlement.providerEvidenceRef ?? "";
-    const accessEnforced = providerVerificationStatus === "provider_verified"
-      ? action.accessEnforced ?? entitlement.accessEnforced
-      : false;
-    if (action.entitlementBusy) return;
-    if (!providerGateIsSaveable({
-      billingProvider,
-      providerVerificationStatus,
-      providerCustomerRef,
-      providerEntitlementRef,
-      providerEvidenceRef,
-    })) {
-      setWorkspaceAction(workspaceId, {
-        entitlementError: "Provider verification needs a billing provider and a customer, entitlement, or evidence reference.",
-      });
-      return;
-    }
-
-    setWorkspaceAction(workspaceId, { entitlementBusy: true, entitlementError: null });
-    try {
-      await verifyWorkspaceEntitlement(entitlement.id, {
-        billingProvider,
-        providerVerificationStatus,
-        providerCustomerRef: nullableText(providerCustomerRef),
-        providerEntitlementRef: nullableText(providerEntitlementRef),
-        providerEvidenceRef: nullableText(providerEvidenceRef),
-        accessEnforced,
-      });
-      addToast("Provider verification gate updated", "success");
-      setWorkspaceAction(workspaceId, { entitlementBusy: false, entitlementError: null });
-      load();
-    } catch (error) {
-      setWorkspaceAction(workspaceId, {
-        entitlementBusy: false,
-        entitlementError: actionError(error, "Failed to update provider verification gate"),
-      });
-    }
-  };
-
-  if (loadState.status === "loading") {
-    return (
-      <section style={panelStyle} aria-live="polite">
-        <h2 style={{ margin: "8px 0", color: "#21190f", fontSize: 22 }}>Loading managed rollout records</h2>
-      </section>
-    );
-  }
-
-  if (loadState.status === "error") {
-    return (
-      <section style={panelStyle} role="alert">
-        <h2 style={{ margin: "8px 0", color: "#991b1b", fontSize: 22 }}>Onboarding unavailable</h2>
-        <p style={{ ...mutedTextStyle, marginBottom: 14 }}>{loadState.message}</p>
-        <button type="button" onClick={load} style={{ ...primaryButtonStyle, width: "auto" }}>
-          <RefreshCw size={16} aria-hidden="true" /> Retry
-        </button>
-      </section>
-    );
-  }
-
-  const data = loadState.data;
-
-  return (
-    <div style={shellStyle}>
-      <section style={heroStyle}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 18 }}>
-          <div>
-            <h2 style={{ margin: "8px 0 6px", fontSize: 30, lineHeight: 1.05, letterSpacing: 0 }}>
-              Workspace onboarding
-            </h2>
-          </div>
-          <button type="button" onClick={load} style={secondaryButtonStyle}>
-            <RefreshCw size={16} aria-hidden="true" /> Refresh
-          </button>
-        </div>
-      </section>
-
-      <section style={responsiveMetricGridStyle}>
-        {metricPanel(<Building2 size={18} aria-hidden="true" />, "Workspaces", String(data.workspaces.length))}
-        {metricPanel(<UserPlus size={18} aria-hidden="true" />, "Pending invites", String(data.memberships.filter((member) => member.status === "invited").length))}
-        {metricPanel(<ShieldCheck size={18} aria-hidden="true" />, "Access enforced", String(enforcedAccessCount))}
-        {metricPanel(<ClipboardCheck size={18} aria-hidden="true" />, "Review queue", String(reviewQueueCount))}
-      </section>
-
-      <section style={responsiveFormShellStyle}>
-        <form style={panelStyle} onSubmit={(event) => { void handleSubmit(event); }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 18 }}>
-            <div>
-              <h3 style={{ margin: 0, color: "#21190f", fontSize: 20 }}>New workspace</h3>
-            </div>
-            <button type="submit" style={primaryButtonStyle} disabled={submitDisabled} data-testid="create-onboarding-workspace">
-              <Send size={16} aria-hidden="true" /> {submitting ? "Creating" : "Create"}
-            </button>
-          </div>
-
-          <div style={responsiveFieldGridStyle}>
-            <label>
-              <span style={labelStyle}>Organisation</span>
-              <input
-                value={form.organisationName}
-                onChange={(event) => { setField("organisationName", event.target.value); }}
-                style={inputStyle}
-                placeholder="Trades Hall Trust"
-                data-testid="organisation-name"
-              />
-            </label>
-            <label>
-              <span style={labelStyle}>Workspace</span>
-              <input
-                value={form.workspaceName}
-                onChange={(event) => { setField("workspaceName", event.target.value); }}
-                style={inputStyle}
-                placeholder="Trades Hall deployment"
-              />
-            </label>
-            <label>
-              <span style={labelStyle}>Venue</span>
-              <input
-                value={form.venueName}
-                onChange={(event) => { handleVenueNameChange(event.target.value); }}
-                style={inputStyle}
-                placeholder="Trades Hall Glasgow"
-                data-testid="venue-name"
-              />
-            </label>
-            <label>
-              <span style={labelStyle}>Venue slug</span>
-              <input
-                value={form.venueSlug}
-                onChange={(event) => { setField("venueSlug", event.target.value); }}
-                style={inputStyle}
-                placeholder="trades-hall-glasgow"
-                data-testid="venue-slug"
-              />
-            </label>
-            <label style={{ gridColumn: "1 / -1" }}>
-              <span style={labelStyle}>Address</span>
-              <input
-                value={form.venueAddress}
-                onChange={(event) => { setField("venueAddress", event.target.value); }}
-                style={inputStyle}
-                placeholder="85 Glassford Street, Glasgow G1 1UH"
-                data-testid="venue-address"
-              />
-            </label>
-            <label>
-              <span style={labelStyle}>Workspace owner email</span>
-              <input
-                value={form.ownerEmail}
-                onChange={(event) => { setField("ownerEmail", event.target.value); }}
-                style={inputStyle}
-                placeholder="owner@venue.example"
-                data-testid="owner-email"
-              />
-            </label>
-            <label>
-              <span style={labelStyle}>Plan key</span>
-              <input
-                value={form.planKey}
-                onChange={(event) => { setField("planKey", event.target.value); }}
-                style={inputStyle}
-                placeholder="managed_deployment"
-                data-testid="plan-key"
-              />
-            </label>
-            <label style={{ gridColumn: "1 / -1" }}>
-              <span style={labelStyle}>Staff invite emails</span>
-              <textarea
-                value={form.staffEmails}
-                onChange={(event) => { setField("staffEmails", event.target.value); }}
-                style={{ ...inputStyle, minHeight: 88, resize: "vertical" }}
-                placeholder="events@venue.example&#10;ops@venue.example"
-                data-testid="staff-emails"
-              />
-            </label>
-          </div>
-        </form>
-
-        <aside style={panelStyle}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ShieldCheck size={18} aria-hidden="true" />
-            <p style={labelStyle}>Entitlement gate</p>
-          </div>
-          <h3 style={{ margin: "8px 0", color: "#21190f", fontSize: 20 }}>Provider verification</h3>
-          <p style={mutedTextStyle}>Access enforcement requires provider verification and a customer, entitlement, or evidence reference.</p>
-
-          <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-            <label>
-              <span style={labelStyle}>Billing provider</span>
-              <select
-                value={form.billingProvider}
-                onChange={(event) => { setField("billingProvider", event.target.value as BillingProvider); }}
-                style={inputStyle}
-                data-testid="billing-provider"
-              >
-                <option value="none">None</option>
-                <option value="stripe">Stripe</option>
-                <option value="manual_invoice">Manual invoice</option>
-                <option value="external_procurement">External procurement</option>
-              </select>
-            </label>
-            <label>
-              <span style={labelStyle}>Customer ref</span>
-              <input
-                value={form.providerCustomerRef}
-                onChange={(event) => { setField("providerCustomerRef", event.target.value); }}
-                style={inputStyle}
-                placeholder="cus_..."
-              />
-            </label>
-            <label>
-              <span style={labelStyle}>Entitlement ref</span>
-              <input
-                value={form.providerEntitlementRef}
-                onChange={(event) => { setField("providerEntitlementRef", event.target.value); }}
-                style={inputStyle}
-                placeholder="subscription or invoice id"
-              />
-            </label>
-            <label>
-              <span style={labelStyle}>Evidence ref</span>
-              <input
-                value={form.providerEvidenceRef}
-                onChange={(event) => { setField("providerEvidenceRef", event.target.value); }}
-                style={inputStyle}
-                placeholder="review ticket or receipt id"
-              />
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, color: "#21190f", fontSize: 13, fontWeight: 800 }}>
-              <input
-                type="checkbox"
-                checked={form.providerVerified}
-                onChange={(event) => {
-                  setForm((current) => ({
-                    ...current,
-                    providerVerified: event.target.checked,
-                    accessEnforced: event.target.checked ? current.accessEnforced : false,
-                  }));
-                }}
-              />
-              Provider verified
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, color: "#21190f", fontSize: 13, fontWeight: 800 }}>
-              <input
-                type="checkbox"
-                checked={form.accessEnforced}
-                disabled={!form.providerVerified}
-                onChange={(event) => { setField("accessEnforced", event.target.checked); }}
-              />
-              Enforce managed access
-            </label>
-          </div>
-
-          <div style={{ marginTop: 14, padding: 12, borderRadius: 8, background: "#fff4d6", color: "#7c4a03", fontSize: 13, lineHeight: 1.45 }}>
-            <CircleAlert size={16} aria-hidden="true" style={{ verticalAlign: "text-bottom", marginRight: 6 }} />
-            {pendingProviderCount} entitlement record(s) still need provider verification. New package includes {staffInviteCount} staff invite(s).
-          </div>
-        </aside>
-      </section>
-
-      <section style={panelStyle}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <div>
-            <h3 style={{ margin: 0, color: "#21190f", fontSize: 20 }}>Workspace records</h3>
-          </div>
-          {statusChip(`${String(data.auditEvents.length)} audit events`, "review")}
-        </div>
-
-        {data.workspaces.length === 0 ? (
-          <p style={{ ...mutedTextStyle, marginTop: 14 }}>No managed workspaces have been created yet.</p>
-        ) : (
-          <div style={{ marginTop: 14, overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", color: "#21190f", fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid rgba(92,69,38,0.18)" }}>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>Workspace</th>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>Venue</th>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>Project</th>
-                  <th style={{ textAlign: "left", padding: "10px 8px" }}>Entitlement</th>
-                  <th style={{ textAlign: "right", padding: "10px 8px" }}>Members</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.workspaces.map((workspace) => {
-                  const venue = data.venues.find((item) => item.id === workspace.primaryVenueId);
-                  const project = data.projects.find((item) => item.workspaceId === workspace.id);
-                  const entitlement = data.entitlements.find((item) => item.workspaceId === workspace.id);
-                  const members = data.memberships.filter((member) => member.workspaceId === workspace.id);
-                  return (
-                    <tr key={workspace.id} style={{ borderBottom: "1px solid rgba(92,69,38,0.1)" }}>
-                      <td style={{ padding: "11px 8px", fontWeight: 800 }}>{workspace.name}</td>
-                      <td style={{ padding: "11px 8px", color: "#5d4a2d" }}>{venue?.name ?? "Venue pending"}</td>
-                      <td style={{ padding: "11px 8px" }}>
-                        {project === undefined
-                          ? statusChip("No project", "blocked")
-                          : statusChip(project.operatorReviewState.replace(/_/g, " "), project.operatorReviewState === "approved" ? "ready" : "review")}
-                      </td>
-                      <td style={{ padding: "11px 8px" }}>
-                        {entitlement === undefined
-                          ? statusChip("No entitlement", "blocked")
-                          : statusChip(entitlement.providerVerificationStatus.replace(/_/g, " "), entitlementTone(entitlement))}
-                      </td>
-                      <td style={{ padding: "11px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {members.length}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {data.workspaces.length > 0 ? (
-        <section style={panelStyle} aria-labelledby="deployment-operator-controls">
-          <div>
-            <h3 id="deployment-operator-controls" style={{ margin: 0, color: "#21190f", fontSize: 20 }}>
-              Deployment controls
-            </h3>
-          </div>
-
-          <div style={{ display: "grid", gap: 14, marginTop: 16 }}>
-            {data.workspaces.map((workspace) => {
-              const venue = data.venues.find((item) => item.id === workspace.primaryVenueId);
-              const project = data.projects.find((item) => item.workspaceId === workspace.id);
-              const entitlement = data.entitlements.find((item) => item.workspaceId === workspace.id);
-              const members = data.memberships.filter((member) => member.workspaceId === workspace.id);
-              const action = actionForWorkspace(workspace.id);
-              const inviteCount = parseStaffEmails(action.inviteEmails).length;
-
-              const projectStatus = action.projectStatus ?? project?.status ?? "intake";
-              const projectReviewState = action.projectReviewState ?? project?.operatorReviewState ?? "pending_review";
-              const projectCurrentStep = action.projectCurrentStep ?? project?.currentStep ?? "";
-              const projectEvidenceNote = action.projectEvidenceNote ?? project?.evidenceNote ?? "";
-
-              const billingProvider = action.billingProvider ?? entitlement?.billingProvider ?? "none";
-              const providerVerificationStatus = action.providerVerificationStatus ?? entitlement?.providerVerificationStatus ?? "not_required";
-              const providerCustomerRef = action.providerCustomerRef ?? entitlement?.providerCustomerRef ?? "";
-              const providerEntitlementRef = action.providerEntitlementRef ?? entitlement?.providerEntitlementRef ?? "";
-              const providerEvidenceRef = action.providerEvidenceRef ?? entitlement?.providerEvidenceRef ?? "";
-              const providerAccessEnforced = providerVerificationStatus === "provider_verified"
-                ? action.accessEnforced ?? entitlement?.accessEnforced ?? false
-                : false;
-              const providerGateSaveable = providerGateIsSaveable({
-                billingProvider,
-                providerVerificationStatus,
-                providerCustomerRef,
-                providerEntitlementRef,
-                providerEvidenceRef,
-              });
-
-              return (
-                <article
-                  key={workspace.id}
-                  style={{
-                    border: "1px solid rgba(92, 69, 38, 0.16)",
-                    borderRadius: 8,
-                    background: "linear-gradient(180deg, #fffaf1 0%, #f9f1e4 100%)",
-                    backgroundColor: "#fffaf1",
-                    padding: 16,
-                  }}
-                  aria-label={`${workspace.name} deployment actions`}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
-                    <div>
-                      <h4 style={{ margin: 0, color: "#21190f", fontSize: 18 }}>{workspace.name}</h4>
-                      <p style={{ ...mutedTextStyle, marginTop: 4 }}>
-                        {venue?.name ?? "Venue pending"} · {String(members.length)} member record(s)
-                      </p>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      {project === undefined
-                        ? statusChip("project missing", "blocked")
-                        : statusChip(labelize(project.operatorReviewState), project.operatorReviewState === "approved" ? "ready" : "review")}
-                      {entitlement === undefined
-                        ? statusChip("entitlement missing", "blocked")
-                        : statusChip(labelize(entitlement.providerVerificationStatus), entitlementTone(entitlement))}
-                    </div>
-                  </div>
-
-                  <div style={responsiveActionGridStyle}>
-                    <div style={compactPanelStyle}>
-                      <p style={labelStyle}>Staff access</p>
-                      <textarea
-                        value={action.inviteEmails}
-                        onChange={(event) => {
-                          setWorkspaceAction(workspace.id, { inviteEmails: event.target.value, inviteError: null });
-                        }}
-                        style={{ ...inputStyle, minHeight: 96, resize: "vertical" }}
-                        aria-label={`Invite staff for ${workspace.name}`}
-                        placeholder="planner@venue.example&#10;hallkeeper@venue.example"
-                        data-testid={`invite-staff-${workspace.id}`}
-                      />
-                      <button
-                        type="button"
-                        style={{ ...primaryButtonStyle, marginTop: 10, width: "100%" }}
-                        disabled={action.inviteBusy || inviteCount === 0}
-                        onClick={() => { void handleInviteStaff(workspace.id); }}
-                      >
-                        <UserPlus size={16} aria-hidden="true" />
-                        {action.inviteBusy ? "Sending invites" : `Send ${String(inviteCount)} invite(s)`}
-                      </button>
-                      {action.inviteError === null ? (
-                        <p style={{ ...mutedTextStyle, marginTop: 8 }}>Duplicates are de-duplicated before the request.</p>
-                      ) : (
-                        <p role="alert" style={actionErrorStyle}>{action.inviteError}</p>
-                      )}
-                    </div>
-
-                    <div style={compactPanelStyle}>
-                      <p style={labelStyle}>Project review gate</p>
-                      {project === undefined ? (
-                        <p role="alert" style={{ ...actionErrorStyle, marginTop: 0 }}>No onboarding project is registered for this workspace.</p>
-                      ) : (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <label>
-                            <span style={labelStyle}>Project status</span>
-                            <select
-                              value={projectStatus}
-                              onChange={(event) => {
-                                setWorkspaceAction(workspace.id, { projectStatus: event.target.value as OnboardingProjectStatus, projectError: null });
-                              }}
-                              style={inputStyle}
-                              aria-label={`Project status for ${workspace.name}`}
-                            >
-                              {ONBOARDING_PROJECT_STATUS_OPTIONS.map((status) => (
-                                <option key={status} value={status}>{labelize(status)}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span style={labelStyle}>Operator review</span>
-                            <select
-                              value={projectReviewState}
-                              onChange={(event) => {
-                                setWorkspaceAction(workspace.id, { projectReviewState: event.target.value as OperatorReviewState, projectError: null });
-                              }}
-                              style={inputStyle}
-                              aria-label={`Operator review for ${workspace.name}`}
-                            >
-                              {OPERATOR_REVIEW_STATE_OPTIONS.map((state) => (
-                                <option key={state} value={state}>{labelize(state)}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span style={labelStyle}>Current step</span>
-                            <input
-                              value={projectCurrentStep}
-                              onChange={(event) => {
-                                setWorkspaceAction(workspace.id, { projectCurrentStep: event.target.value, projectError: null });
-                              }}
-                              style={inputStyle}
-                              aria-label={`Current step for ${workspace.name}`}
-                            />
-                          </label>
-                          <label>
-                            <span style={labelStyle}>Evidence note</span>
-                            <textarea
-                              value={projectEvidenceNote}
-                              onChange={(event) => {
-                                setWorkspaceAction(workspace.id, { projectEvidenceNote: event.target.value, projectError: null });
-                              }}
-                              style={{ ...inputStyle, minHeight: 74, resize: "vertical" }}
-                              aria-label={`Evidence note for ${workspace.name}`}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            style={primaryButtonStyle}
-                            disabled={action.projectBusy || projectCurrentStep.trim().length === 0}
-                            onClick={() => { void handleSaveProjectGate(workspace.id, project); }}
-                            aria-label={`Save project gate for ${workspace.name}`}
-                          >
-                            <Save size={16} aria-hidden="true" />
-                            {action.projectBusy ? "Saving gate" : "Save project gate"}
-                          </button>
-                          {action.projectError !== null ? <p role="alert" style={actionErrorStyle}>{action.projectError}</p> : null}
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={compactPanelStyle}>
-                      <p style={labelStyle}>Provider gate</p>
-                      {entitlement === undefined ? (
-                        <p role="alert" style={{ ...actionErrorStyle, marginTop: 0 }}>No entitlement record is registered for this workspace.</p>
-                      ) : (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <label>
-                            <span style={labelStyle}>Billing provider</span>
-                            <select
-                              value={billingProvider}
-                              onChange={(event) => {
-                                setWorkspaceAction(workspace.id, { billingProvider: event.target.value as BillingProvider, entitlementError: null });
-                              }}
-                              style={inputStyle}
-                              aria-label={`Billing provider for ${workspace.name}`}
-                            >
-                              {BILLING_PROVIDER_OPTIONS.map((provider) => (
-                                <option key={provider} value={provider}>{labelize(provider)}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span style={labelStyle}>Provider status</span>
-                            <select
-                              value={providerVerificationStatus}
-                              onChange={(event) => {
-                                const nextStatus = event.target.value as ProviderVerificationStatus;
-                                setWorkspaceAction(workspace.id, {
-                                  providerVerificationStatus: nextStatus,
-                                  accessEnforced: nextStatus === "provider_verified" ? action.accessEnforced : false,
-                                  entitlementError: null,
-                                });
-                              }}
-                              style={inputStyle}
-                              aria-label={`Provider status for ${workspace.name}`}
-                            >
-                              {PROVIDER_VERIFICATION_STATUS_OPTIONS.map((status) => (
-                                <option key={status} value={status}>{labelize(status)}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label>
-                            <span style={labelStyle}>Customer ref</span>
-                            <input
-                              value={providerCustomerRef}
-                              onChange={(event) => {
-                                setWorkspaceAction(workspace.id, { providerCustomerRef: event.target.value, entitlementError: null });
-                              }}
-                              style={inputStyle}
-                              aria-label={`Customer reference for ${workspace.name}`}
-                            />
-                          </label>
-                          <label>
-                            <span style={labelStyle}>Entitlement ref</span>
-                            <input
-                              value={providerEntitlementRef}
-                              onChange={(event) => {
-                                setWorkspaceAction(workspace.id, { providerEntitlementRef: event.target.value, entitlementError: null });
-                              }}
-                              style={inputStyle}
-                              aria-label={`Entitlement reference for ${workspace.name}`}
-                            />
-                          </label>
-                          <label>
-                            <span style={labelStyle}>Evidence ref</span>
-                            <input
-                              value={providerEvidenceRef}
-                              onChange={(event) => {
-                                setWorkspaceAction(workspace.id, { providerEvidenceRef: event.target.value, entitlementError: null });
-                              }}
-                              style={inputStyle}
-                              aria-label={`Provider evidence reference for ${workspace.name}`}
-                            />
-                          </label>
-                          <label style={{ display: "flex", alignItems: "center", gap: 10, color: "#21190f", fontSize: 13, fontWeight: 800 }}>
-                            <input
-                              type="checkbox"
-                              checked={providerAccessEnforced}
-                              disabled={providerVerificationStatus !== "provider_verified"}
-                              onChange={(event) => {
-                                setWorkspaceAction(workspace.id, { accessEnforced: event.target.checked, entitlementError: null });
-                              }}
-                              aria-label={`Enforce managed access for ${workspace.name}`}
-                            />
-                            Enforce managed access
-                          </label>
-                          {!providerGateSaveable ? (
-                            <p role="status" style={{ ...mutedTextStyle, color: "#8a5a00" }}>
-                              Verified provider state requires a real provider plus at least one evidence reference.
-                            </p>
-                          ) : null}
-                          <button
-                            type="button"
-                            style={primaryButtonStyle}
-                            disabled={action.entitlementBusy || !providerGateSaveable}
-                            onClick={() => { void handleSaveEntitlementGate(workspace.id, entitlement); }}
-                            aria-label={`Save provider gate for ${workspace.name}`}
-                          >
-                            <ShieldCheck size={16} aria-hidden="true" />
-                            {action.entitlementBusy ? "Saving provider gate" : "Save provider gate"}
-                          </button>
-                          {action.entitlementError !== null ? <p role="alert" style={actionErrorStyle}>{action.entitlementError}</p> : null}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-    </div>
-  );
+  return <div className="onboarding-shell"><header className="onboarding-hero"><div><h1>Clients & access</h1></div><div className="onboarding-hero-mark" aria-hidden="true"><Building2 strokeWidth={0.8} /></div></header>
+    <div className="onboarding-toolbar"><div><p>Venviewer platform administration</p></div><div className="onboarding-toolbar-actions">
+      {summary !== null && summary.workspaces.length > 0 && <label className="onboarding-field"><span className="onboarding-sr-only">Client workspace</span><select disabled={busy} value={showCreate ? "" : workspace?.id ?? ""} onChange={(event) => { setSelectedId(event.target.value); setCreating(false); setCreatedEmail(null); }}><option value="" disabled>Choose a client</option>{summary.workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+      <button type="button" className="onboarding-button onboarding-button--secondary" disabled={loading || busy} onClick={() => { void load(); }} aria-label="Refresh clients"><RefreshCw size={17} aria-hidden="true" />Refresh</button>
+      {summary !== null && !showCreate && <button type="button" className="onboarding-button" disabled={busy} onClick={() => { setCreating(true); setCreatedEmail(null); }}><Plus size={18} aria-hidden="true" />Add client</button>}
+    </div></div>
+    {loading && <ActivityStatus variant={summary === null ? "panel" : "inline"}>{summary === null ? "Loading client workspaces…" : "Refreshing client access…"}</ActivityStatus>}
+    {error !== null && <div className="onboarding-error" role="alert"><strong>{summary === null ? "Client workspaces are unavailable." : "The latest access state could not be loaded."}</strong><p>{error}</p><button type="button" className="onboarding-button onboarding-button--secondary" disabled={loading || busy} onClick={() => { void load(); }}>Retry</button></div>}
+    {summary !== null && showCreate && <CreateWorkspace summary={summary} onCreated={handleCreated} onBusy={setBusy} onCancel={() => { setCreating(false); }} />}
+    {summary !== null && !showCreate && workspace !== undefined && <>{createdEmail !== null && <div role="status" className="onboarding-success">Client workspace created. Access is recorded for {createdEmail}; share the account link below.</div>}
+      <WorkspaceAccess key={workspace.id} workspace={workspace} summary={summary} onChanged={load} onBusy={setBusy} /></>}
+  </div>;
 }

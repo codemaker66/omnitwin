@@ -235,8 +235,8 @@ describe("EventArchitectPage", () => {
     // happened to resolve inside findByRole's first check.
     expect(await screen.findByLabelText("Venue")).toHaveProperty("disabled", true);
     expect(screen.getByLabelText("Room")).toHaveProperty("value", SPACE_ID);
-    expect(screen.getByRole("group", { name: "Accessibility requirements to carry into human review" })).toBeTruthy();
-    expect(screen.getByText(/does not validate an accessibility route/i)).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Accessibility requirements" })).toBeTruthy();
+    expect(screen.getByText(/accessibility routes are not validated/i)).toBeTruthy();
     expect(mockGetVenue).toHaveBeenCalledWith(VENUE_ID);
     expect(mockListVenues).not.toHaveBeenCalled();
   });
@@ -346,7 +346,7 @@ describe("EventArchitectPage", () => {
     expect(screen.getByText("Layout saved as a draft.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Balanced selected" })).toHaveProperty("disabled", true);
     expect(await screen.findByRole("heading", { name: "Ops review evidence" })).toBeTruthy();
-    expect(screen.getByText("Planner access is read-only.", { exact: false })).toBeTruthy();
+    expect(screen.getByText("Only venue staff, hallkeepers or administrators can record a review.")).toBeTruthy();
     expect(mockGetEventArchitectOpsReview).toHaveBeenCalledWith(
       candidate.candidateId,
       expect.any(AbortSignal),

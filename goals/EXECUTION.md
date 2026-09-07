@@ -7,6 +7,19 @@ the originating task follows its tested change through deployment and live
 verification. The dated local-only results and release restrictions below are
 historical evidence, not a current instruction to stop or request permission again.
 
+## Intelligent venue platform — T-605, 2026-09-07
+
+[Goal 12](12-intelligent-venue-platform.md) is active in isolated
+`codex/intelligent-venue-platform-20260907`, starting at clean release `04ca4563`.
+The dependency and disposable migration baseline passes. The first transaction,
+retention and permission increment `3c5b0c9a` is locally qualified: API 2,902 passed
+(113 skipped), mandatory PostgreSQL 60 passed with no skips, lint/typecheck/build,
+audit and built-server HTTP/database/shutdown. Current master integration and
+release are coordinated with T-601. [Implementation and evidence](../docs/engineering/intelligent-platform.md)
+records the open event/decision/release journey and AI/ML/GPU/two-venue gates.
+Reconstruction/environment ownership and compute budgets remain separate; no
+paid model/compute work has occurred here.
+
 Started 2026-09-04 by Codex on Blake's instruction: “where are your ./goals you will run … can you start and orchestrate yourself?”
 
 The shared [goal deck](README.md) is the programme. This file records current ownership and verified progress so concurrent sessions can work without duplicating slices. The founder's latest instructions and [mandate 16](../docs/plan/16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md) govern where generated planning documents disagree. The existing supplied visual references are authorised interim targets; a generated brief or missing image-provider key does not block independent implementation.
@@ -35,8 +48,8 @@ This execution record does not claim that the platform, T-091, PSNR 50+, physica
 
 ## Evidence so far
 
-- [Visual study and critique](../docs/design/sublime-study-2026-09-04/study.md), with prompts and image provenance. Presence is the engineering team's recommended starting composition; it has not been selected for Blake. The studies use fictional sample data and are not captured-room fidelity evidence.
-- [Planner verification report](../docs/reports/t581-planner-delivery-verification-2026-09-04.md) records source commits, checks, loading tradeoffs, GPU diagnosis, image hashes, actual interactions and qualification limits.
+- Historical visual study and critique: `C:/Users/blake/omnitwin2/docs/design/sublime-study-2026-09-04/study.md`, retained in the shared checkout but not part of this release tree. It records prompts and image provenance. Its Presence proposal was a starting composition, not founder selection; the studies use fictional sample data and do not establish captured-room fidelity.
+- Historical planner verification: `C:/Users/blake/omnitwin2/docs/reports/t581-planner-delivery-verification-2026-09-04.md`, retained in the shared checkout but not part of this release tree. It records source commits, checks, loading tradeoffs, GPU diagnosis, image hashes, actual interactions and qualification limits.
 - Inventory: 200 owned chairs, 20 damaged and 190 committed yields 180 usable and a 10-chair shortage. Recording the real stock correction succeeds. Retries cannot overwrite newer stock; equal-version contradictory receipts are rejected. Database atomicity is a required next implementation, not a guarantee of the pure functions.
 - Production planner baseline, 20 Mbps: first geometry body 22,911 ms, final body 55,641 ms, 106.9 MB, 12 requests, zero page errors. Artifact: `D:/claude/ladder-sweep/codex-prod-before-20260904.json`. Byte arrival is not decoded or presented pixels.
 - Existing production demo smoke: four checks pass, Grand Hall timing fails at 20.5 s against the 15 s first-view threshold. Artifact: `D:/claude/demo-smoke/2026-09-04T22-22-44-841Z.json`. A subsequent separate walk diagnostic reports geometry decoded at 8,754 ms, zero page errors and complete loading. This establishes variability, not a diagnosed regression or a consistently passing gate. Artifact: `D:/claude/ladder-sweep/codex-walk-diagnostic-20260904.json`.

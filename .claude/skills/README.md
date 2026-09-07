@@ -1,5 +1,15 @@
 # Project Skills
 
+## Current operating precedence — 6 September 2026
+
+Apply these skills as task-relevant guidance under the current user request and
+root `AGENTS.md` (imported by `CLAUDE.md`). Reading a skill while carrying out an existing request does not
+require a greeting-only response or another prompt. Prescribed review formats and
+general motion heuristics yield to the requested deliverable, shared Activity
+convention, accessibility and current founder brief; use judgment and rendered
+evidence. `review-animations` remains user-invoked only. Vendored skill content and
+license notices are preserved; actual discovery depends on the host's capabilities.
+
 ## Emil Kowalski design-engineering skills (vendored)
 
 Source: https://github.com/emilkowalski/skills
@@ -14,7 +24,7 @@ Vendored at commit `f76beceb` (2026-07-09). License: MIT — see `LICENSE-emilko
 
 To update: re-clone the repo and re-copy the four skill directories plus LICENSE.
 
-### Precedence note (OMNITWIN-specific)
+### Project motion feedback
 
 Where Emil's rules touch existing project feedback, **project feedback wins**:
 

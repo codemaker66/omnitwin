@@ -8,7 +8,7 @@
 #   lint       — ESLint v9 across all packages, zero errors required
 #   typecheck  — `tsc --noEmit` across all packages, zero errors required
 #   build      — production builds across all packages
-#   test       — Vitest across all packages, all tests must pass
+#   test       — required migrated PostgreSQL regressions and workspace Vitest
 #   e2e        — Playwright E2E against a Vite dev server (Chromium only)
 #
 # Each job is fully isolated and reproducible: pnpm version is pinned to
@@ -162,6 +162,19 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 20
+      platform-postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: venviewer_platform_test
+        ports:
+          - 55477:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d venviewer_platform_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -187,6 +200,23 @@ jobs:
         # "Failed to resolve entry for package @omnitwin/types". Source
         # lives in src/ but runtime consumers need the compiled bundle.
         run: pnpm --filter @omnitwin/types build
+
+      - name: Required platform PostgreSQL migrations and regressions
+        timeout-minutes: 10
+        env:
+          # The runner rejects missing/unsafe targets and skipped tests. This
+          # service is disposable; DATABASE_URL and env files are not used.
+          VENVIEWER_PLATFORM_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55477/venviewer_platform_test
+        run: pnpm --filter @omnitwin/api test:platform-db
+
+      - name: Upload platform PostgreSQL receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-postgres-results-${{ github.run_id }}
+          path: packages/api/.test-results/platform-db/
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Claim safety guard
         run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/public-claim-guard.test.ts

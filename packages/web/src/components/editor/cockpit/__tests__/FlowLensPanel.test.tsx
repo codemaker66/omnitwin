@@ -51,5 +51,14 @@ describe("FlowLensPanel", () => {
     replay.useCockpitReplay.mockReturnValue({ artifact: null, bounds: null, status: "loading" });
     render(<FlowLensPanel />);
     expect(screen.getByText(/simulating guest flow/i)).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Simulating");
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
+  });
+
+  it("keeps activity visible during a refresh with an existing simulation", () => {
+    replay.useCockpitReplay.mockReturnValue({ artifact: ARTIFACT, bounds: ARTIFACT.navmesh.roomBounds, status: "loading" });
+    render(<FlowLensPanel />);
+    expect(screen.getByText("Simulated agents")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Simulating");
   });
 });

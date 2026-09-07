@@ -40,6 +40,7 @@ import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
 import { canAccessResource, canWriteEvents, isEventWriteRole } from "../utils/query.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
+import { updateEventCore } from "../services/event-mutations.js";
 
 type EventRow = typeof events.$inferSelect;
 type EventPhaseRow = typeof eventPhases.$inferSelect;
@@ -247,17 +248,6 @@ async function requireEventWriteAccess(
   return eventRow;
 }
 
-function changedSurfacesForEventPatch(input: z.infer<typeof UpdateEventSchema>): EventPlanChangeSurface[] {
-  const surfaces = new Set<EventPlanChangeSurface>();
-  if (input.guestCount !== undefined) surfaces.add("guest_count");
-  if (input.startsAt !== undefined || input.endsAt !== undefined) surfaces.add("timings");
-  if (input.name !== undefined || input.eventType !== undefined || input.clientName !== undefined || input.notes !== undefined) {
-    surfaces.add("service_notes");
-  }
-  if (input.status !== undefined) surfaces.add("evidence");
-  return [...surfaces];
-}
-
 function requiresHallkeeperAcknowledgement(surfaces: readonly EventPlanChangeSurface[]): boolean {
   return surfaces.some((surface) => (
     surface === "guest_count" ||
@@ -377,47 +367,11 @@ export async function eventRoutes(server: FastifyInstance, opts: { db: Database 
     if (!requireEventWriteRole(request, reply)) return;
     const parsed = UpdateEventSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    const eventRow = await requireEventWriteAccess(db, request, reply, params.data.id);
-    if (eventRow === null) return;
-
-    const [updated] = await db.update(events).set({
-      name: parsed.data.name ?? eventRow.name,
-      eventType: parsed.data.eventType === undefined ? eventRow.eventType : parsed.data.eventType,
-      status: parsed.data.status ?? eventRow.status,
-      startsAt: parsed.data.startsAt === undefined ? eventRow.startsAt : dateOrNull(parsed.data.startsAt),
-      endsAt: parsed.data.endsAt === undefined ? eventRow.endsAt : dateOrNull(parsed.data.endsAt),
-      guestCount: parsed.data.guestCount ?? eventRow.guestCount,
-      clientName: parsed.data.clientName === undefined ? eventRow.clientName : parsed.data.clientName,
-      notes: parsed.data.notes === undefined ? eventRow.notes : parsed.data.notes,
-      updatedAt: new Date(),
-    }).where(eq(events.id, eventRow.id)).returning();
-
-    if (updated === undefined) {
-      return reply.status(500).send({ error: "Failed to update event", code: "EVENT_UPDATE_FAILED" });
+    const result = await updateEventCore(db, request.user, params.data.id, parsed.data);
+    if (!result.ok) {
+      return reply.status(result.status).send({ error: result.error, code: result.code, details: result.details });
     }
-    const affectedSurfaces = changedSurfacesForEventPatch(parsed.data);
-    if (affectedSurfaces.length > 0) {
-      const actorRole = EventPlanAudienceRoleSchema.parse(request.user.role);
-      await recordEventPlanChange(db, {
-        eventId: updated.id,
-        venueId: updated.venueId,
-        actorUserId: request.user.id,
-        actorRole,
-        actorLabel: request.user.email,
-        sourceKind: "event",
-        sourceId: updated.id,
-        title: "Event plan updated",
-        summary: `${updated.name} changed: ${affectedSurfaces.join(", ").replace(/_/g, " ")}.`,
-        beforeSummary: `${String(eventRow.guestCount)} guests`,
-        afterSummary: `${String(updated.guestCount)} guests`,
-        affectedSurfaces,
-        audienceRoles: ["staff", "hallkeeper"],
-        riskLevel: requiresHallkeeperAcknowledgement(affectedSurfaces) ? "attention" : "info",
-        requiresHallkeeperAcknowledgement: requiresHallkeeperAcknowledgement(affectedSurfaces),
-        actionPath: `/ops/events/${updated.id}`,
-      });
-    }
-    return { data: serializeEvent(updated) };
+    return { data: serializeEvent(result.event) };
   });
 
   server.post("/:id/phases", { preHandler: [authenticate] }, async (request, reply) => {

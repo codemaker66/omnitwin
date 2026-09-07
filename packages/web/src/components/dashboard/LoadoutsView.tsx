@@ -7,6 +7,7 @@ import { LoadoutDetail } from "./LoadoutDetail.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { useFocusTrap } from "../../lib/use-focus-trap.js";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 
 // ---------------------------------------------------------------------------
 // LoadoutsView — space selector + loadout grid + create
@@ -234,7 +235,7 @@ export function LoadoutsView(): React.ReactElement {
           onClick={() => { setCreateError(null); setShowCreate(true); }}>New Loadout</button>
       </div>
 
-      {loading && <div role="status" aria-live="polite" style={{ ...panelStyle, padding: 24, color: "rgba(246,241,232,0.72)" }}>Loading room list...</div>}
+      {loading && <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 24, color: "rgba(246,241,232,0.72)" }}>Loading room list...</ActivityStatus>}
 
       {spacesError !== null && (
         <div role="alert" data-testid="loadout-spaces-error" style={alertStyle}>
@@ -251,7 +252,7 @@ export function LoadoutsView(): React.ReactElement {
         </div>
       )}
 
-      {loadoutsState === "loading" && <div role="status" aria-live="polite" style={{ ...panelStyle, padding: 18, color: "rgba(246,241,232,0.72)" }}>Loading setup packs...</div>}
+      {loadoutsState === "loading" && <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 18, color: "rgba(246,241,232,0.72)" }}>Loading setup packs...</ActivityStatus>}
 
       {loadoutsState === "error" && (
         <div role="alert" data-testid="loadouts-list-error" style={alertStyle}>
@@ -328,7 +329,7 @@ export function LoadoutsView(): React.ReactElement {
                 style={secondaryBtnStyle}>Cancel</button>
               <button type="button" onClick={() => { void handleCreate(); }}
                 style={{ ...btnStyle, opacity: createName.trim() === "" || createBusy ? 0.5 : 1 }}
-                disabled={createName.trim() === "" || createBusy}>{createBusy ? "Creating..." : "Create"}</button>
+                disabled={createName.trim() === "" || createBusy}>{createBusy && <ActivityIndicator size={16} />} {createBusy ? "Creating..." : "Create"}</button>
             </div>
           </div>
         </div>

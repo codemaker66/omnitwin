@@ -65,13 +65,17 @@ export type DayBoardException = "turnaround-at-risk" | "overrun" | "urgent-messa
 export interface DayBoardSlot {
   readonly bookingId: string;
   readonly roomId: string;
+  readonly eventId: string | null;
+  readonly guestCount: number | null;
+  readonly clientName: string | null;
+  readonly phases: readonly CalendarPhaseEntry[];
   readonly title: string;
   readonly eventType: string | null;
   readonly kind: CalendarBookingEntry["kind"];
   readonly startsAtMs: number;
   readonly endsAtMs: number;
-  /** Earliest phase opening for this booking's event in this room — the
-   *  moment organisers appear. Falls back to doors when no phases exist. */
+  /** Earliest scheduled phase in this room, falling back to booking start.
+   * This does not establish actual arrival or physical setup readiness. */
   readonly setupStartsAtMs: number;
   readonly state: DayBoardState;
   readonly stateLabel: string;
@@ -128,49 +132,51 @@ function deriveTimedState(
   if (nowMs >= endsAtMs) {
     return {
       state: "done",
-      stateLabel: "Done",
+      stateLabel: "Scheduled end passed",
       tone: "faded",
       motion: "none",
-      countdown: `Ended · ${formatWallTime(endsAtMs)}`,
+      countdown: `Booked until ${formatWallTime(endsAtMs)}`,
     };
   }
   if (nowMs >= startsAtMs) {
     const remaining = minutesUntil(endsAtMs, nowMs);
     return {
       state: "in-progress",
-      stateLabel: "Live",
+      stateLabel: "In booked window",
       tone: "live",
       motion: "breathe-4s",
-      countdown: `Live · ${formatDuration(remaining)} left`,
+      countdown: `${formatDuration(remaining)} until booked end`,
     };
   }
   const doorsInMin = minutesUntil(startsAtMs, nowMs);
   if (doorsInMin <= IMMINENT_WINDOW_MIN) {
     return {
       state: "imminent",
-      stateLabel: "Guests imminent",
+      stateLabel: "Starting soon",
       tone: "amber-deep",
       motion: "pulse-2s",
-      countdown: `Guests · ${String(doorsInMin)}m`,
+      countdown: `Starts in ${String(doorsInMin)}m`,
     };
   }
   if (doorsInMin <= GUESTS_WINDOW_MIN) {
     return {
       state: "guests-due",
-      stateLabel: "Guests due",
+      stateLabel: "Starting shortly",
       tone: "amber",
       motion: "pulse-3s",
-      countdown: `Guests · ${String(doorsInMin)}m`,
+      countdown: `Starts in ${String(doorsInMin)}m`,
     };
   }
   const setupInMin = minutesUntil(setupStartsAtMs, nowMs);
   if (setupInMin <= ORGANISERS_WINDOW_MIN) {
     return {
       state: "organisers-due",
-      stateLabel: "Organisers due",
+      stateLabel: setupStartsAtMs < startsAtMs ? "Phase scheduled" : "Upcoming",
       tone: "green",
       motion: "pulse-4s",
-      countdown: `Organisers · ${String(setupInMin)}m`,
+      countdown: setupInMin <= 0
+        ? `First phase from ${formatWallTime(setupStartsAtMs)}`
+        : `${setupStartsAtMs < startsAtMs ? "First phase" : "Starts"} in ${String(setupInMin)}m`,
     };
   }
   return {
@@ -178,7 +184,7 @@ function deriveTimedState(
     stateLabel: "Scheduled",
     tone: "quiet",
     motion: "none",
-    countdown: `Doors · ${formatWallTime(startsAtMs)}`,
+    countdown: `Starts ${formatWallTime(startsAtMs)}`,
   };
 }
 
@@ -221,12 +227,13 @@ export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBo
         .map((entry) => {
           const startsAtMs = Date.parse(entry.startsAt);
           const endsAtMs = Date.parse(entry.endsAt);
-          const setupStartsAtMs = phases
+          const bookingPhases = phases
             .filter(
               (candidate) =>
                 candidate.eventId === entry.eventId && candidate.spaceId === entry.spaceId,
             )
-            .reduce(
+            .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+          const setupStartsAtMs = bookingPhases.reduce(
               (earliest, candidate) => Math.min(earliest, Date.parse(candidate.startsAt)),
               startsAtMs,
             );
@@ -240,6 +247,10 @@ export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBo
               ? {
                   bookingId: entry.id,
                   roomId: room.id,
+                  eventId: entry.eventId,
+                  guestCount: entry.guestCount ?? null,
+                  clientName: entry.clientName ?? null,
+                  phases: bookingPhases,
                   title: entry.title,
                   eventType: entry.eventType,
                   kind: entry.kind,
@@ -259,6 +270,10 @@ export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBo
               : {
                   bookingId: entry.id,
                   roomId: room.id,
+                  eventId: entry.eventId,
+                  guestCount: entry.guestCount ?? null,
+                  clientName: entry.clientName ?? null,
+                  phases: bookingPhases,
                   title: entry.title,
                   eventType: entry.eventType,
                   kind: entry.kind,

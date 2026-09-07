@@ -12,6 +12,7 @@ __pycache__/
 test-results/
 playwright-report/
 blob-report/
+packages/api/.test-results/platform-db/
 output/
 packages/*/output/
 

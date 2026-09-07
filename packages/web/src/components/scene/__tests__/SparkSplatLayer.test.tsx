@@ -11,6 +11,11 @@ const spark = vi.hoisted(() => {
   class SparkRenderer {
     readonly index: number;
     lodSplatScale = 1;
+    geometry = { instanceCount: 0 };
+    display = { mapping: [{ count: 12, node: { opacity: 1, visible: true } }] };
+    sorting = false;
+    sortDirty = false;
+    onAfterRender = vi.fn((_renderer: { getRenderTarget: () => unknown }, _scene: unknown, _camera: unknown) => undefined);
     constructor(options: Record<string, unknown>) {
       this.index = rendererOptions.push(options) - 1;
     }
@@ -66,7 +71,7 @@ vi.mock("@sparkjsdev/spark", () => ({
 }));
 
 const fiber = vi.hoisted(() => {
-  const state = { gl: { tag: "webgl-renderer" }, invalidate: vi.fn() };
+  const state = { gl: { tag: "webgl-renderer", getRenderTarget: () => null }, camera: {}, invalidate: vi.fn() };
   return {
     state,
     useThree: (selector: (s: typeof state) => unknown) => selector(state),
@@ -95,6 +100,68 @@ describe("SparkSplatLayer runtime wiring", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("waits for a populated main-camera draw, ignores offscreen passes, and reports once", () => {
+    const onFirstFrame = vi.fn();
+    render(<SparkSplatLayer url={URL} onFirstFrame={onFirstFrame} />);
+    const renderer = spark.rendererInstances[0];
+    if (renderer === undefined) throw new Error("Renderer did not mount");
+    renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera);
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    renderer.geometry.instanceCount = 12;
+    renderer.onAfterRender({ getRenderTarget: () => ({}) }, {}, fiber.state.camera);
+    renderer.onAfterRender(fiber.state.gl, {}, {});
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera);
+    renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera);
+    expect(onFirstFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for all requested sources, their dissolve and the pending sort", () => {
+    const onFirstFrame = vi.fn();
+    render(<SparkSplatLayer url={URL} onFirstFrame={onFirstFrame} minimumDrawnSources={2} />);
+    const renderer = spark.rendererInstances[0];
+    if (renderer === undefined) throw new Error("Renderer did not mount");
+    renderer.geometry.instanceCount = 12;
+    const draw = (): void => { renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera); };
+    draw();
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    renderer.display.mapping.push({ count: 12, node: { opacity: 0.3, visible: true } });
+    draw();
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    const secondSource = renderer.display.mapping[1];
+    if (secondSource === undefined) throw new Error("Second source missing");
+    secondSource.node.opacity = 1;
+    renderer.sorting = true;
+    draw();
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    renderer.sorting = false;
+    renderer.sortDirty = true;
+    draw();
+    expect(onFirstFrame).not.toHaveBeenCalled();
+    renderer.sortDirty = false;
+    draw();
+    expect(onFirstFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it("admits a new entry callback on the retained renderer without reloading its mesh", () => {
+    const first = vi.fn();
+    const next = vi.fn();
+    const { rerender, unmount } = render(<SparkSplatLayer url={URL} onFirstFrame={first} />);
+    const renderer = spark.rendererInstances[0];
+    if (renderer === undefined) throw new Error("Renderer did not mount");
+    renderer.geometry.instanceCount = 12;
+    renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera);
+    rerender(<SparkSplatLayer url={URL} onFirstFrame={next} />);
+    renderer.onAfterRender(fiber.state.gl, {}, fiber.state.camera);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(spark.rendererInstances).toHaveLength(1);
+    expect(spark.meshInstances).toHaveLength(1);
+    unmount();
+    expect(vi.isMockFunction(renderer.onAfterRender)).toBe(true);
+    expect(renderer.onAfterRender).toHaveBeenCalledTimes(2);
   });
 
   it("creates the renderer on the canvas's own WebGL context with Spark's defaults when no runtime is given", () => {

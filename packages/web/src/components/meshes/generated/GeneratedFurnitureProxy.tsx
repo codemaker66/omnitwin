@@ -78,6 +78,8 @@ export function createGeneratedFurnitureRenderInstance(
 ): GeneratedFurnitureRenderInstance {
   const root = createGeneratedFurnitureObject(slug, options);
   root.scale.set(RENDER_SCALE, 1, RENDER_SCALE);
+  // This factory's backrest is at -Z; align its +Z front with planner -Z.
+  if (slug === "banquet-chair") root.rotation.y = Math.PI;
   let controller: FurniturePresentationRuntime | null = null;
   let appearance: GeneratedFurnitureAppearanceController | null = null;
   try {

@@ -3,6 +3,7 @@ import * as loadoutsApi from "../../api/loadouts.js";
 import type { LoadoutDetail as LoadoutDetailData } from "../../api/loadouts.js";
 import { FileUploader } from "../shared/FileUploader.js";
 import { ConfirmModal } from "../shared/ConfirmModal.js";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useToastStore } from "../../stores/toast-store.js";
 import { R2_PUBLIC_URL } from "../../config/env.js";
 
@@ -253,7 +254,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
     );
   }
   if (loadState === "loading" || loadout === null) {
-    return <div role="status" aria-live="polite" style={{ ...panelStyle, padding: 24 }}>Loading reference loadout...</div>;
+    return <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 24 }}>Loading reference loadout...</ActivityStatus>;
   }
 
   return (
@@ -291,7 +292,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
             />
             <button type="button" onClick={() => { void saveName(); }}
               disabled={busyAction !== null || nameValue.trim() === ""}
-              style={{ ...linkButtonStyle, fontSize: 12 }}>{busyAction === "name" ? "Saving..." : "Save"}</button>
+              style={{ ...linkButtonStyle, fontSize: 12 }}>{busyAction === "name" && <ActivityIndicator size={16} />} {busyAction === "name" ? "Saving..." : "Save"}</button>
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -324,13 +325,14 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
       <div style={{ ...panelStyle, padding: 18 }}>
         <FileUploader context="loadout" contextId={loadoutId} onUploaded={(fileId, filename) => { void handlePhotoUploaded(fileId, filename); }} />
         {busyAction === "photo-link" && (
-          <p role="status" style={{ margin: "10px 0 0", color: "rgba(246,241,232,0.66)", fontSize: 13 }}>
-            Adding photo...
-          </p>
+          <ActivityStatus style={{ margin: "10px 0 0", color: "rgba(246,241,232,0.66)", fontSize: 13 }}>
+            Adding photo…
+          </ActivityStatus>
         )}
       </div>
 
       {/* Photos grid */}
+      {busyAction === "reorder" && <ActivityStatus>Saving photo order…</ActivityStatus>}
       {loadout.photos.length === 0 && (
         <section style={{ ...panelStyle, padding: 20, color: "rgba(246,241,232,0.72)" }}>
           Add setup photos for hallkeeper preparation.
@@ -393,7 +395,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
                     />
                     <button type="button" onClick={() => { void saveCaption(p.id); }}
                       disabled={busyAction !== null}
-                      style={{ ...linkButtonStyle, fontSize: 11 }}>{busyAction === `caption:${p.id}` ? "Saving..." : "Save"}</button>
+                      style={{ ...linkButtonStyle, fontSize: 11 }}>{busyAction === `caption:${p.id}` && <ActivityIndicator size={16} />} {busyAction === `caption:${p.id}` ? "Saving..." : "Save"}</button>
                   </div>
                 ) : (
                   <button

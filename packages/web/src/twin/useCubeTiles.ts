@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CubeTexture, SRGBColorSpace } from "three";
 import {
   TWIN_FACES,
@@ -27,6 +27,29 @@ export interface CubeTilesState {
   readonly texture: CubeTexture | null;
   /** 0 = nothing loaded yet; otherwise the LOD currently applied. */
   readonly lod: 0 | TwinLod;
+  readonly settled: boolean;
+}
+
+const textureRefs = new WeakMap<CubeTexture, number>();
+
+function releaseCubeTexture(texture: CubeTexture): void {
+  const remaining = (textureRefs.get(texture) ?? 1) - 1;
+  if (remaining > 0) textureRefs.set(texture, remaining);
+  else {
+    textureRefs.delete(texture);
+    texture.dispose();
+  }
+}
+
+/** The rendered tier survives until its replacement uploads successfully. */
+export function retainCubeTexture(texture: CubeTexture): () => void {
+  textureRefs.set(texture, (textureRefs.get(texture) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    releaseCubeTexture(texture);
+  };
 }
 
 /** WebGL cube face order — [px, nx, py, ny, pz, nz]. */
@@ -41,16 +64,27 @@ const CUBE_SLOT_INDEX: Record<
  * — the hook treats that as "still loading" and the effect's cancel flag keeps
  * teardown safe, so tests without real image loading cannot throw.
  */
-function loadTileImage(url: string): Promise<HTMLImageElement | null> {
+function loadTileImage(url: string, signal: AbortSignal): Promise<HTMLImageElement | null> {
+  if (signal.aborted) return Promise.resolve(null);
   return new Promise((resolve) => {
     const image = new Image();
     image.crossOrigin = "anonymous";
-    image.onload = () => {
-      resolve(image);
+    let settled = false;
+    const finish = (value: HTMLImageElement | null): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", abort);
+      image.onload = null;
+      image.onerror = null;
+      resolve(value);
     };
-    image.onerror = () => {
-      resolve(null);
+    const abort = (): void => {
+      image.src = "";
+      finish(null);
     };
+    image.onload = () => { finish(image); };
+    image.onerror = () => { finish(null); };
+    signal.addEventListener("abort", abort, { once: true });
     image.src = url;
   });
 }
@@ -95,11 +129,17 @@ async function buildLodTexture(
   nodeId: string,
   base: string,
   lod: TwinLod,
+  signal: AbortSignal,
 ): Promise<CubeTexture | null> {
   const drawn = await Promise.all(
     TWIN_FACES.map(async (face) => {
-      const image = await loadTileImage(`${base}/${twinTilePath(nodeId, face, lod)}`);
-      return image === null ? null : { face, canvas: drawFaceCanvas(image, face, lod) };
+      const image = await loadTileImage(`${base}/${twinTilePath(nodeId, face, lod)}`, signal);
+      if (image === null || signal.aborted) return null;
+      try {
+        return { face, canvas: drawFaceCanvas(image, face, lod) };
+      } catch {
+        return null;
+      }
     }),
   );
 
@@ -120,6 +160,7 @@ async function buildLodTexture(
   }
 
   const texture = new CubeTexture(ordered);
+  textureRefs.set(texture, 1);
   texture.colorSpace = SRGBColorSpace;
   texture.needsUpdate = true;
   return texture;
@@ -130,32 +171,46 @@ async function buildLodTexture(
  * swaps in. `base` is the bundle base including the venue segment, e.g.
  * `/twin/trades-hall`.
  */
-export function useCubeTiles(nodeId: string, base: string): CubeTilesState {
-  const [state, setState] = useState<CubeTilesState>({ texture: null, lod: 0 });
+export function useCubeTiles(nodeId: string, base: string, retryKey = 0): CubeTilesState {
+  const [state, setState] = useState<CubeTilesState>({ texture: null, lod: 0, settled: false });
+  const slotRef = useRef<{ key: string; live: CubeTexture | null; lod: 0 | TwinLod }>({
+    key: "", live: null, lod: 0,
+  });
+  const requestRef = useRef("");
+  const requestKey = JSON.stringify([base, nodeId, retryKey]);
 
   useEffect(() => {
     let cancelled = false;
-    let live: CubeTexture | null = null;
-
-    setState((previous) =>
-      previous.texture === null && previous.lod === 0
-        ? previous
-        : { texture: null, lod: 0 },
-    );
+    const controller = new AbortController();
+    const key = JSON.stringify([base, nodeId]);
+    const slot = slotRef.current;
+    requestRef.current = requestKey;
+    if (slot.key !== key) {
+      if (slot.live !== null) releaseCubeTexture(slot.live);
+      slot.key = key;
+      slot.live = null;
+      slot.lod = 0;
+    }
+    setState({ texture: slot.live, lod: slot.lod, settled: false });
 
     const stream = async (): Promise<void> => {
       for (const lod of TWIN_LODS) {
-        const texture = await buildLodTexture(nodeId, base, lod);
-        if (cancelled) {
-          texture?.dispose();
+        if (lod <= slot.lod) continue;
+        const texture = await buildLodTexture(nodeId, base, lod, controller.signal).catch(() => null);
+        if (cancelled || slot.key !== key) {
+          if (texture !== null) releaseCubeTexture(texture);
           return;
         }
         if (texture === null) {
           continue;
         }
-        live?.dispose();
-        live = texture;
-        setState({ texture, lod });
+        if (slot.live !== null) releaseCubeTexture(slot.live);
+        slot.live = texture;
+        slot.lod = lod;
+        setState({ texture, lod, settled: false });
+      }
+      if (!cancelled && slot.key === key) {
+        setState({ texture: slot.live, lod: slot.lod, settled: true });
       }
     };
 
@@ -163,9 +218,22 @@ export function useCubeTiles(nodeId: string, base: string): CubeTilesState {
 
     return () => {
       cancelled = true;
-      live?.dispose();
+      controller.abort();
     };
-  }, [nodeId, base]);
+  }, [nodeId, base, retryKey, requestKey]);
 
-  return state;
+  useEffect(() => {
+    const slot = slotRef.current;
+    return () => {
+      if (slot.live !== null) releaseCubeTexture(slot.live);
+      slot.live = null;
+      slot.key = "";
+      slot.lod = 0;
+    };
+  }, []);
+
+  if (slotRef.current.key !== JSON.stringify([base, nodeId])) {
+    return { texture: null, lod: 0, settled: false };
+  }
+  return requestRef.current === requestKey ? state : { ...state, settled: false };
 }

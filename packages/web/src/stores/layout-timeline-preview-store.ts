@@ -66,6 +66,8 @@ export interface LayoutTimelinePreviewState {
    */
   readonly renderRevision: number;
   readonly mode: LayoutTimelinePreviewSessionMode;
+  /** Actual authoritative-range request activity, separate from unavailable content. */
+  readonly isLoading: boolean;
   readonly activeFrame: LayoutTimelinePreviewFrameMetadata | null;
   /** Renderer-local frozen room authority selected with the nearest endpoint. */
   readonly activeVenueRuntime: LayoutSnapshotVenueRuntimeReference | null;
@@ -81,7 +83,7 @@ export interface LayoutTimelinePreviewState {
     items: readonly PlacedItem[] | null,
   ) => void;
   readonly showUnavailable: (
-    frame: LayoutTimelinePreviewFrameMetadata,
+    frame: LayoutTimelinePreviewFrameMetadata | null,
     message: string,
   ) => void;
   /** Keeps the scene empty and mutation-locked while an authoritative range is loading. */
@@ -94,6 +96,7 @@ export interface LayoutTimelinePreviewState {
 const CLEARED_PREVIEW = {
   renderRevision: 0,
   mode: "inactive",
+  isLoading: false,
   activeFrame: null,
   activeVenueRuntime: null,
   unavailableMessage: null,
@@ -142,6 +145,7 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
       setLayoutTimelineMutationLock(true);
       set({
         mode: "unavailable",
+        isLoading: false,
         activeFrame: input.toFrame,
         activeVenueRuntime: null,
         unavailableMessage: "No trustworthy frozen layout is available for this time.",
@@ -173,6 +177,7 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
     set((state) => ({
       renderRevision: state.renderRevision + 1,
       mode: "transition",
+      isLoading: false,
       activeFrame: input.fromFrame,
       activeVenueRuntime: input.fromFrame.venueRuntime,
       unavailableMessage: null,
@@ -212,6 +217,7 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
       setLayoutTimelineMutationLock(true);
       set({
         mode: "unavailable",
+        isLoading: false,
         activeFrame: frame,
         activeVenueRuntime: null,
         unavailableMessage: "No trustworthy frozen layout is available for this time.",
@@ -225,6 +231,7 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
     set((state) => ({
       renderRevision: state.renderRevision + 1,
       mode: "keyframe",
+      isLoading: false,
       activeFrame: frame,
       activeVenueRuntime: frame.venueRuntime,
       unavailableMessage: null,
@@ -238,6 +245,7 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
     setLayoutTimelineMutationLock(true);
     set({
       mode: "unavailable",
+      isLoading: false,
       activeFrame: frame,
       activeVenueRuntime: null,
       unavailableMessage: message,
@@ -251,6 +259,7 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
     setLayoutTimelineMutationLock(true);
     set({
       mode: "unavailable",
+      isLoading: true,
       activeFrame: null,
       activeVenueRuntime: null,
       unavailableMessage: message,
@@ -264,6 +273,7 @@ export const useLayoutTimelinePreviewStore = create<LayoutTimelinePreviewState>(
     setLayoutTimelineMutationLock(true);
     set({
       mode: "schedule-gap",
+      isLoading: false,
       activeFrame: null,
       activeVenueRuntime: null,
       unavailableMessage: message,

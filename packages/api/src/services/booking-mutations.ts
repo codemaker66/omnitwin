@@ -4,6 +4,8 @@ import {
   bookingStateToColumns,
   deriveBookingState,
   isValidBookingTransition,
+  sha256Hex,
+  stableCanonicalJson,
   type Booking,
   type BookingState,
   type CreateBookingInput,
@@ -64,6 +66,20 @@ export interface BookingMutationOk {
 }
 
 export type BookingMutationResult = BookingMutationOk | BookingMutationDeny;
+
+/** Optional server-prepared decision precondition; existing clients need no
+ * additional field. The digest covers the full booking and its update marker,
+ * not only the properties a requested patch happens to replace. */
+export interface BookingUpdatePrecondition {
+  readonly expectedStateDigest: string;
+}
+
+export function bookingMutationStateDigest(row: BookingRow): string {
+  return sha256Hex(`venviewer.booking-mutation-state.v1\n${stableCanonicalJson({
+    ...serializeBooking(row),
+    deletedAt: toIsoOrNull(row.deletedAt),
+  })}`);
+}
 
 // --- shared helpers (moved from routes/bookings.ts, byte-equal semantics) ---
 
@@ -162,12 +178,14 @@ export async function loadAccessibleBooking(
   conn: BookingDbConn,
   actor: MutationActor,
   bookingId: string,
+  lockForUpdate = false,
 ): Promise<BookingRow | BookingMutationDeny> {
-  const [row] = await conn
+  const query = conn
     .select()
     .from(bookings)
     .where(and(eq(bookings.id, bookingId), isNull(bookings.deletedAt)))
     .limit(1);
+  const [row] = await (lockForUpdate ? query.for("update") : query);
   if (row === undefined) {
     return { ok: false, status: 404, code: "BOOKING_NOT_FOUND", error: "Booking not found" };
   }
@@ -282,6 +300,7 @@ export async function updateBookingCore(
   actor: MutationActor,
   bookingId: string,
   patch: UpdateBookingInput,
+  precondition?: BookingUpdatePrecondition,
 ): Promise<BookingMutationResult> {
   // Role gate before any data access — hallkeeper reads the diary but
   // never edits it (venue scope is verified against the row below).
@@ -289,7 +308,28 @@ export async function updateBookingCore(
     return { ok: false, status: 403, code: "FORBIDDEN", error: "Forbidden" };
   }
 
-  const row = await loadAccessibleBooking(conn, actor, bookingId);
+  try {
+    // The lock lives through merge, validation and write. Nesting creates a
+    // savepoint so a constraint denial cannot poison an owning decision/Diary
+    // transaction. Only this target booking is locked; ladder exits retain
+    // their existing ordered multi-row lock acquisition.
+    return await conn.transaction((tx) => updateBookingLocked(tx, actor, bookingId, patch, precondition));
+  } catch (error) {
+    const code = pgErrorCode(error);
+    if (code === PG_EXCLUSION_VIOLATION) return INK_SLOT_TAKEN;
+    if (code === PG_CHECK_VIOLATION) return INTEGRITY_VIOLATION;
+    throw error;
+  }
+}
+
+async function updateBookingLocked(
+  conn: BookingDbConn,
+  actor: MutationActor,
+  bookingId: string,
+  patch: UpdateBookingInput,
+  precondition: BookingUpdatePrecondition | undefined,
+): Promise<BookingMutationResult> {
+  const row = await loadAccessibleBooking(conn, actor, bookingId, true);
   if ("ok" in row) return row;
 
   // Exited bookings are history, and history does not get rewritten —
@@ -300,6 +340,15 @@ export async function updateBookingCore(
       status: 409,
       code: "BOOKING_NOT_ACTIVE",
       error: `This booking has exited the diary (${row.status}) — exited bookings are records, not editable plans.`,
+    };
+  }
+
+  if (precondition !== undefined && precondition.expectedStateDigest !== bookingMutationStateDigest(row)) {
+    return {
+      ok: false,
+      status: 409,
+      code: "BOOKING_STATE_CHANGED",
+      error: "This booking changed after the decision was prepared — review its current state before applying it.",
     };
   }
 
@@ -375,27 +424,20 @@ export async function updateBookingCore(
     };
   }
 
-  try {
-    const [updated] = await conn
-      .update(bookings)
-      .set({ ...next, updatedAt: new Date() })
-      .where(eq(bookings.id, row.id))
-      .returning();
-    if (updated === undefined) {
-      return {
-        ok: false,
-        status: 500,
-        code: "BOOKING_UPDATE_FAILED",
-        error: "Failed to update booking",
-      };
-    }
-    return { ok: true, status: 200, booking: updated, changeKind: "booking.updated" };
-  } catch (error) {
-    const code = pgErrorCode(error);
-    if (code === PG_EXCLUSION_VIOLATION) return INK_SLOT_TAKEN;
-    if (code === PG_CHECK_VIOLATION) return INTEGRITY_VIOLATION;
-    throw error;
+  const [updated] = await conn
+    .update(bookings)
+    .set({ ...next, updatedAt: new Date() })
+    .where(and(eq(bookings.id, row.id), eq(bookings.status, "active"), isNull(bookings.deletedAt)))
+    .returning();
+  if (updated === undefined) {
+    return {
+      ok: false,
+      status: 500,
+      code: "BOOKING_UPDATE_FAILED",
+      error: "Failed to update booking",
+    };
   }
+  return { ok: true, status: 200, booking: updated, changeKind: "booking.updated" };
 }
 
 export async function transitionBookingCore(
@@ -456,6 +498,22 @@ export async function transitionBookingCore(
           )
           .orderBy(asc(bookings.id))
           .for("update");
+        // A move/exit/delete can remove the target while the ordered query
+        // waits. Do not follow it into another ladder and acquire an unordered
+        // extra lock after already locking this space's survivors.
+        if (!ladderRows.some((candidate) => candidate.id === row.id)) return "stale" as const;
+      }
+
+      // A partial edit can commit while this transition waits for its ladder.
+      // Lock the target only AFTER the ordered ladder locks, then check the
+      // promise the transition was based on. A rank changed by a preceding
+      // exit is legitimate: preserve that current rank rather than restoring
+      // our earlier observation. No ladder/history writes precede this check.
+      const current = await loadAccessibleBooking(tx, actor, row.id, true);
+      if ("ok" in current || current.kind !== row.kind || current.status !== row.status
+        || current.venueId !== row.venueId || current.spaceId !== row.spaceId || current.eventId !== row.eventId
+        || current.startsAt.getTime() !== row.startsAt.getTime() || current.endsAt.getTime() !== row.endsAt.getTime()) {
+        return "stale" as const;
       }
 
       // Compare-and-set on the columns the transition was derived from:
@@ -469,7 +527,7 @@ export async function transitionBookingCore(
           status: columns.status,
           // Promotion to ink resolves the ladder; the rank is cleared
           // (bookings_rank_hold_only backs this at the DB).
-          rank: toState === "ink" ? null : row.rank,
+          rank: toState === "ink" ? null : current.rank,
           updatedAt: new Date(),
         })
         .where(

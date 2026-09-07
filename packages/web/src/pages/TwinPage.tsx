@@ -1,5 +1,6 @@
 import { useEffect, type ReactElement } from "react";
 import { useParams } from "react-router-dom";
+import { ActivityStatus } from "../components/shared/Activity.js";
 import {
   TWIN_ERROR_LINE,
   TWIN_LOADING_LINE,
@@ -71,8 +72,8 @@ export function TwinPage(): ReactElement {
         <h1 className="vv-sr-only">{TWIN_TITLE}</h1>
 
         {manifest.state === "loading" && (
-          <section className="vv-twin-state" role="status" aria-live="polite">
-            <p className="vv-twin-line">{TWIN_LOADING_LINE}</p>
+          <section className="vv-twin-state">
+            <ActivityStatus variant="panel" className="vv-twin-line">{TWIN_LOADING_LINE}</ActivityStatus>
           </section>
         )}
 

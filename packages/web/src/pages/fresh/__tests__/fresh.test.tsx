@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 // The walk chunk carries three + Spark — far beyond jsdom. The page contract
 // under test is the poster-first wiring, so the lazy module becomes a stub.
@@ -28,6 +28,21 @@ afterEach(() => {
 });
 
 describe("the hero", () => {
+  it("links directly to planning, login and the venue workspaces without an auth or router provider", () => {
+    render(<FreshPage />);
+    const nav = within(screen.getByRole("navigation", { name: "Primary" }));
+    for (const [name, destination] of [
+      ["Plan an event", "/plan?space=grand-hall"],
+      ["Dashboard", "/dashboard"],
+      ["Diary", "/diary"],
+      ["Hallkeeper", "/hallkeeper/today"],
+      ["Log in", "/login"],
+    ]) {
+      expect(nav.getByRole("link", { name }).getAttribute("href")).toBe(destination);
+    }
+    expect(document.querySelector('.fr-header-cta')?.getAttribute("href")).toBe("#enquire");
+  });
+
   it("derives its years from the calendar, never a fixture", () => {
     render(<FreshPage />);
     const h1 = screen.getByRole("heading", { level: 1 });

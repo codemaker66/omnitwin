@@ -1,5 +1,6 @@
 import { useMemo, useState, type ChangeEvent, type ReactElement } from "react";
 import { Share2 } from "lucide-react";
+import { ActivityIndicator } from "../../shared/Activity.js";
 import { ProposalVersionPayloadSchema } from "@omnitwin/types";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -192,6 +193,7 @@ export function ShareLensPanel(): ReactElement {
               disabled={creating}
               data-testid="share-create"
             >
+              {creating && <ActivityIndicator size={18} />}
               {creating ? "Creating link…" : lastShareUrl !== null ? "Create another link" : "Create client share link"}
             </button>
           </div>

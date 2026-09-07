@@ -18,8 +18,9 @@ Rules:
 
 - Every stage that uses a top-level `ARG` re-declares it right after `FROM`.
 - `NODE_VERSION` was never affected because it is used only in `FROM`.
-- Docker Desktop is rarely running on this machine, so the Railway build is
-  the gate for a Dockerfile change: watch `railway logs --build <id>` for the
-  `[deps 13/13] RUN pnpm install` line and confirm the pnpm version it prints.
+- Check current container tooling before choosing verification. Build locally when
+  available; inspect an already-authorized Railway build when that is the selected
+  path. A Dockerfile edit does not itself authorize deployment during a freeze.
+  Confirm the expected pnpm version and successful frozen-lockfile install.
 - The deploy checklist (`docs/operations/diary-deploy-checklist.md` §5) is the
   procedure; the D: worktree recipe in its §2 spares the nearly full C: drive.

@@ -13,6 +13,7 @@
 }
 
 .auth-modal__panel {
+  color: #fff7e8;
   width: min(440px, 100%);
   border: 1px solid rgba(219, 166, 75, 0.28);
   border-radius: 8px;
@@ -29,6 +30,22 @@
   font-size: 18px;
   font-weight: 800;
   letter-spacing: 0;
+}
+
+.auth-modal__claim-error {
+  color: #fff7e8;
+  line-height: 1.5;
+}
+
+.auth-modal__claim-error button {
+  min-height: 44px;
+  margin: 4px 8px 0 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(219, 166, 75, 0.5);
+  border-radius: 8px;
+  background: #142522;
+  color: #fff7e8;
+  cursor: pointer;
 }
 
 .auth-modal .cl-rootBox,

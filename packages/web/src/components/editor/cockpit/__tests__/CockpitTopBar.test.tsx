@@ -29,6 +29,21 @@ beforeEach(() => {
 afterEach(() => { cleanup(); });
 
 describe("CockpitTopBar", () => {
+  it("shows the shared activity only while a save is running", () => {
+    useEditorStore.setState({ isSaving: true });
+    renderTopBar();
+    const save = screen.getByTestId("cockpit-topbar").querySelector('[data-save-status="saving"]');
+    expect(save?.querySelector("[data-activity-indicator]")).not.toBeNull();
+  });
+
+  it("does not animate a failed save", () => {
+    useEditorStore.setState({ isSaving: false, saveError: "Connection lost" });
+    renderTopBar();
+    const save = screen.getByTestId("cockpit-topbar").querySelector('[data-save-status="failed"]');
+    expect(save).not.toBeNull();
+    expect(save?.querySelector("[data-activity-indicator]")).toBeNull();
+  });
+
   it("renders brand, SAFE review badge, idle save status, user initials and 'No event linked'", () => {
     renderTopBar();
     expect(screen.getByText("Venviewer")).toBeTruthy();

@@ -9,6 +9,7 @@ import {
   type ReactElement,
 } from "react";
 import { Link, useParams } from "react-router-dom";
+import { ActivityStatus } from "../components/shared/Activity.js";
 import { ArrowRight, CalendarDays, LayoutTemplate, Mail, ShieldQuestion, Sparkles, Users } from "lucide-react";
 import type { PublicRoomRuntimeVisual } from "@omnitwin/types";
 import { getPublicRoomRuntimeVisual } from "../api/public-room-visual.js";
@@ -47,6 +48,7 @@ function safeFallbackVisual(roomSlug: RoomShowcaseProfile["slug"]): PublicRoomRu
 interface HeroVisualProps {
   readonly profile: RoomShowcaseProfile;
   readonly runtimeVisual: PublicRoomRuntimeVisual;
+  readonly metadataLoading: boolean;
   readonly visualFailed: boolean;
   readonly onRuntimeLoaded: () => void;
   readonly onRuntimeFailed: () => void;
@@ -55,6 +57,7 @@ interface HeroVisualProps {
 function HeroVisual({
   profile,
   runtimeVisual,
+  metadataLoading,
   visualFailed,
   onRuntimeLoaded,
   onRuntimeFailed,
@@ -70,8 +73,8 @@ function HeroVisual({
         {canShowRuntime ? (
           <Suspense
             fallback={(
-              <div className="room-showcase-loading" role="status">
-                Preparing visual preview
+              <div className="room-showcase-loading">
+                <ActivityStatus variant="panel">Preparing visual preview</ActivityStatus>
               </div>
             )}
           >
@@ -89,7 +92,8 @@ function HeroVisual({
           />
         )}
 
-        <div className="room-showcase-visual-label" aria-live="polite">
+        <div className="room-showcase-visual-label">
+          {metadataLoading && <ActivityStatus>Checking room preview…</ActivityStatus>}
           <span>{runtimeVisual.visualLabel}</span>
           <strong>{canShowRuntime ? "Runtime visual available" : "Visual preview"}</strong>
         </div>
@@ -296,6 +300,7 @@ export function RoomShowcasePage(): ReactElement {
         <HeroVisual
           profile={profile}
           runtimeVisual={loadedVisual}
+          metadataLoading={runtimeVisual === null}
           visualFailed={visualFailed}
           onRuntimeLoaded={handleRuntimeLoaded}
           onRuntimeFailed={handleRuntimeFailed}

@@ -104,6 +104,13 @@ async function completeLod(lod: 256 | 1024): Promise<void> {
   });
 }
 
+async function failLod(lod: 256 | 1024): Promise<void> {
+  await act(async () => {
+    for (const image of imagesFor(lod)) image.onerror?.();
+    await Promise.resolve();
+  });
+}
+
 function canvasThatDrew(src: string): HTMLCanvasElement {
   const recorded = contexts.find((context) => context.drawnSrcs.includes(src));
   if (recorded === undefined) {
@@ -245,6 +252,47 @@ describe("useCubeTiles", () => {
 
     unmount();
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles a failed base and retries while preserving its preview", async () => {
+    const { result, rerender } = renderHook(({ retryKey }) => useCubeTiles("scan_retry", BASE, retryKey),
+      { initialProps: { retryKey: 0 } });
+    await completeLod(256);
+    const preview = result.current.texture;
+    await failLod(1024);
+    expect(result.current).toMatchObject({ texture: preview, lod: 256, settled: true });
+    rerender({ retryKey: 1 });
+    expect(result.current).toMatchObject({ texture: preview, lod: 256, settled: false });
+    await completeLod(1024);
+    expect(result.current.lod).toBe(1024);
+    expect(result.current.settled).toBe(true);
+  });
+
+  it("settles all-failed cube faces and can recover from a failed preview", async () => {
+    const { result, rerender } = renderHook(({ retryKey }) => useCubeTiles("scan_fail", BASE, retryKey),
+      { initialProps: { retryKey: 0 } });
+    await failLod(256);
+    await failLod(1024);
+    expect(result.current).toEqual({ texture: null, lod: 0, settled: true });
+    rerender({ retryKey: 1 });
+    await failLod(256);
+    await completeLod(1024);
+    expect(result.current.lod).toBe(1024);
+    expect(result.current.settled).toBe(true);
+  });
+
+  it("aborts abandoned images and ignores their late callbacks", async () => {
+    const { result, rerender, unmount } = renderHook(({ nodeId }) => useCubeTiles(nodeId, BASE),
+      { initialProps: { nodeId: "scan_old" } });
+    const oldImages = [...MockImage.instances];
+    const lateFailures = oldImages.map((image) => image.onerror);
+    rerender({ nodeId: "scan_new" });
+    expect(oldImages.every((image) => image.src === "" && image.onload === null && image.onerror === null)).toBe(true);
+    await act(async () => { for (const fail of lateFailures) fail?.(); await Promise.resolve(); });
+    expect(result.current).toEqual({ texture: null, lod: 0, settled: false });
+    const newImages = MockImage.instances.slice(oldImages.length);
+    unmount();
+    expect(newImages.every((image) => image.src === "" && image.onload === null && image.onerror === null)).toBe(true);
   });
 
   it("stays inert when image callbacks never fire (happy-dom guard)", () => {

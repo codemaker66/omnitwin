@@ -17,11 +17,12 @@ import {
   type TwinImagery,
 } from "@omnitwin/types";
 import { EQUIRECT_U_FLIP, EQUIRECT_U_OFFSET } from "./twin-basis.js";
-import { useCubeTiles } from "./useCubeTiles.js";
+import { retainCubeTexture, useCubeTiles } from "./useCubeTiles.js";
 import {
   EQUIRECT_ZOOM_FOV_DEG,
   isEquirectBaseWarm,
   resolveEquirectMaxLod,
+  retainEquirectTexture,
   useEquirectTexture,
 } from "./useEquirectTexture.js";
 
@@ -258,6 +259,9 @@ export interface PanoStageProps {
    * never influences streaming itself.
    */
   readonly onTier?: (nodeId: string, tier: "preview" | "base") => void;
+  /** A requested base failed; any successfully displayed preview is retained. */
+  readonly onFailure?: (nodeId: string, hasPreview: boolean) => void;
+  readonly retryKey?: number;
 }
 
 function CubePanoStage({
@@ -268,11 +272,18 @@ function CubePanoStage({
   opacity,
   renderOrder = 0,
   onTier,
+  onFailure,
+  retryKey = 0,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
-  const { texture, lod } = useCubeTiles(nodeId, assetBase);
+  const gl = useThree((state) => state.gl);
+  const { texture, lod, settled } = useCubeTiles(nodeId, assetBase, retryKey);
   const onTierRef = useRef(onTier);
   onTierRef.current = onTier;
+  const onFailureRef = useRef(onFailure);
+  onFailureRef.current = onFailure;
+  const appliedRef = useRef<{ lod: number; release: () => void } | null>(null);
+  useEffect(() => () => { appliedRef.current?.release(); }, []);
 
   const material = useMemo(() => {
     const uniforms: CubePanoUniforms = {
@@ -303,12 +314,34 @@ function CubePanoStage({
   // plain uniform writes — no material rebuild — followed by an invalidate so
   // the demand-mode canvas actually repaints.
   useEffect(() => {
-    (material.uniforms as CubePanoUniforms).uCube.value = texture;
-    invalidate();
-    if (texture !== null && lod !== 0) {
-      onTierRef.current?.(nodeId, lod >= TWIN_LODS[1] ? "base" : "preview");
+    if (texture === null || lod === 0) {
+      (material.uniforms as CubePanoUniforms).uCube.value = null;
+      appliedRef.current?.release();
+      appliedRef.current = null;
+      invalidate();
+      return;
     }
-  }, [texture, lod, nodeId, material, invalidate]);
+    const release = retainCubeTexture(texture);
+    try {
+      gl.initTexture(texture);
+      (material.uniforms as CubePanoUniforms).uCube.value = texture;
+      appliedRef.current?.release();
+      appliedRef.current = { lod, release };
+      invalidate();
+      onTierRef.current?.(nodeId, lod >= TWIN_LODS[1] ? "base" : "preview");
+    } catch {
+      release();
+      if (lod >= TWIN_LODS[1] && (appliedRef.current?.lod ?? 0) < TWIN_LODS[1]) {
+        onFailureRef.current?.(nodeId, appliedRef.current !== null);
+      }
+    }
+  }, [texture, lod, nodeId, material, invalidate, gl, retryKey]);
+
+  useEffect(() => {
+    if (settled && lod < TWIN_LODS[1]) {
+      onFailureRef.current?.(nodeId, appliedRef.current !== null);
+    }
+  }, [settled, lod, nodeId]);
 
   useEffect(() => {
     (material.uniforms as CubePanoUniforms).uOpacity.value = opacity;
@@ -340,12 +373,18 @@ function EquirectPanoStage({
   hopping = false,
   exposure,
   onTier,
+  onFailure,
+  retryKey = 0,
 }: PanoStageProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
   const onTierRef = useRef(onTier);
   onTierRef.current = onTier;
+  const onFailureRef = useRef(onFailure);
+  onFailureRef.current = onFailure;
+  const appliedRef = useRef<{ lod: number; release: () => void } | null>(null);
+  useEffect(() => () => { appliedRef.current?.release(); }, []);
 
   // Zoom intent, YawProbe-style: the per-frame fov read stays in a ref and
   // React sees at most ONE setState per node (TwinViewer keys PanoStage by
@@ -390,7 +429,7 @@ function EquirectPanoStage({
     hopping && !isEquirectBaseWarm(nodeId, assetBase)
       ? TWIN_EQUIRECT_LODS[0]
       : streamCeiling;
-  const { texture, lod } = useEquirectTexture(nodeId, assetBase, maxLod);
+  const { texture, lod, settled } = useEquirectTexture(nodeId, assetBase, maxLod, retryKey);
 
   const material = useMemo(() => {
     const uniforms: EquirectPanoUniforms = {
@@ -422,9 +461,32 @@ function EquirectPanoStage({
 
   useEffect(() => {
     const uniforms = material.uniforms as EquirectPanoUniforms;
-    const apply = (): void => {
-      uniforms.uMap.value = texture;
+    if (texture === null || lod === 0) {
+      uniforms.uMap.value = null;
+      appliedRef.current?.release();
+      appliedRef.current = null;
       invalidate();
+      return;
+    }
+    let release = retainEquirectTexture(nodeId, assetBase, lod);
+    let cancelled = false;
+    const apply = (): void => {
+      if (cancelled) return;
+      try {
+        gl.initTexture(texture);
+        uniforms.uMap.value = texture;
+        appliedRef.current?.release();
+        appliedRef.current = { lod, release: release ?? (() => undefined) };
+        release = null;
+        invalidate();
+        onTierRef.current?.(nodeId, lod >= TWIN_EQUIRECT_LODS[1] ? "base" : "preview");
+      } catch {
+        release?.();
+        release = null;
+        if (lod >= TWIN_EQUIRECT_LODS[1] && (appliedRef.current?.lod ?? 0) < TWIN_EQUIRECT_LODS[1]) {
+          onFailureRef.current?.(nodeId, appliedRef.current !== null);
+        }
+      }
     };
     // The 4096 base (~34 MB) and 8192 zoom (~134 MB) tiers are large RGBA
     // uploads that three does lazily on the first paint after `needsUpdate`.
@@ -436,24 +498,20 @@ function EquirectPanoStage({
     // applies immediately — it paints the arriving node at once while the base
     // warms behind it, so a hop is smooth even before it sharpens.
     let cancel: (() => void) | null = null;
-    if (texture !== null && lod >= TWIN_EQUIRECT_LODS[1]) {
-      const warmThenApply = (): void => {
-        gl.initTexture(texture);
-        apply();
-      };
+    if (lod >= TWIN_EQUIRECT_LODS[1]) {
       if (typeof requestIdleCallback === "function") {
         // No timeout: the base is only ever REQUESTED once the walk has settled
         // (TwinViewer defers it via `hopping`/inMotion), so a genuine idle is
         // already at hand — never force the ~50 ms upload into an animating
         // frame-sliver, which is what re-introduced the stutter.
-        const handle = requestIdleCallback(warmThenApply);
+        const handle = requestIdleCallback(apply);
         cancel = () => {
           if (typeof cancelIdleCallback === "function") {
             cancelIdleCallback(handle);
           }
         };
       } else {
-        const handle = window.setTimeout(warmThenApply, 0);
+        const handle = window.setTimeout(apply, 0);
         cancel = () => {
           window.clearTimeout(handle);
         };
@@ -461,13 +519,18 @@ function EquirectPanoStage({
     } else {
       apply();
     }
-    if (texture !== null && lod !== 0) {
-      onTierRef.current?.(nodeId, lod >= TWIN_EQUIRECT_LODS[1] ? "base" : "preview");
-    }
     return () => {
+      cancelled = true;
       cancel?.();
+      release?.();
     };
-  }, [texture, lod, nodeId, material, invalidate, gl]);
+  }, [texture, lod, nodeId, assetBase, material, invalidate, gl, retryKey]);
+
+  useEffect(() => {
+    if (settled && maxLod >= TWIN_EQUIRECT_LODS[1] && lod < TWIN_EQUIRECT_LODS[1]) {
+      onFailureRef.current?.(nodeId, appliedRef.current !== null);
+    }
+  }, [settled, maxLod, lod, nodeId]);
 
   useEffect(() => {
     (material.uniforms as EquirectPanoUniforms).uOpacity.value = opacity;

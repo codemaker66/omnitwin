@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { EvidenceChip } from "../components/evidence/EvidenceChip.js";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
@@ -348,6 +349,7 @@ export function EditorPage(): React.ReactElement {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role="status" aria-live="polite">
+          <ActivityIndicator size={64} />
           <h1>{openingRoomName !== null ? `Opening the ${openingRoomName} planner` : "Opening the planner"}</h1>
         </section>
       </div>
@@ -359,6 +361,7 @@ export function EditorPage(): React.ReactElement {
     return (
       <div className="vv-route-state">
         <section className="vv-state-panel" role="status" aria-live="polite">
+          <ActivityIndicator size={64} />
           <h1>Loading the saved layout</h1>
         </section>
       </div>

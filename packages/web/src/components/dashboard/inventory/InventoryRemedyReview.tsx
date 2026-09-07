@@ -27,7 +27,7 @@ export function InventoryRemedyForm({ item, assessment, busy, onAction, onClose 
   }}>
     <p className="inventory-review-context">{item.name}</p>
     <p><InventoryInterval window={assessment.window} timeZone={assessment.timeZone} /> · {assessment.timeZone}</p>
-    <p className="inventory-muted">Prepare an internal request for the venue team. This does not contact suppliers, confirm equipment or change the stock record.</p>
+    <p className="inventory-muted">Internal request only. No supplier contact, equipment confirmation or stock change.</p>
     <label className="inventory-field"><span>Request type</span><select value={kind} disabled={busy}
       onChange={(event) => { setKind(event.target.value === "stock_inspection" ? "stock_inspection" : "hire_request"); }}>
       <option value="hire_request">Hire request</option><option value="stock_inspection">Stock inspection</option></select></label>
@@ -57,8 +57,8 @@ export function InventoryRemedyReview({ remedy, timeZone, actorId, busy, canAct,
     </div>
     <p>{remedy.reason}</p>
     <h3>Evidence at preparation</h3>
-    <p className="inventory-small inventory-muted">{remedy.evidence.stockRevision === null ? "Stock has not been recorded." : `Stock record revision ${String(remedy.evidence.stockRevision)}.`}</p>
-    {remedy.evidence.shortageSegments.length === 0 ? <p>No confirmed shortage intervals in the preparation evidence.</p> :
+    <p className="inventory-small inventory-muted">{remedy.evidence.stockRevision === null ? "Stock not recorded" : `Stock revision ${String(remedy.evidence.stockRevision)}`}</p>
+    {remedy.evidence.shortageSegments.length === 0 ? <p>No confirmed shortages at preparation.</p> :
       remedy.evidence.shortageSegments.map((segment) => <div className="inventory-demand-segment" key={`${segment.startsAt}:${segment.endsAt}`}>
         <InventoryInterval window={segment} timeZone={timeZone} />
         <p><strong className="inventory-shortage">{segment.shortageQuantity.toLocaleString("en-GB")} short</strong> · {segment.remainingQuantity.toLocaleString("en-GB")} remaining · {segment.reservedQuantity.toLocaleString("en-GB")} reserved</p>

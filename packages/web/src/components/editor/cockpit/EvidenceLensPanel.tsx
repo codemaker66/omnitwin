@@ -1,5 +1,6 @@
 import { useMemo, type ReactElement } from "react";
 import { ShieldCheck } from "lucide-react";
+import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { LensPanel, LensPanelSection } from "./LensPanel.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
 import { useRoomDimensionsStore } from "../../../stores/room-dimensions-store.js";
@@ -141,7 +142,7 @@ function ChangeHistorySection(): ReactElement {
           </div>
         )}
         {!isPublicPreview && history.loading && rows.length === 0 && (
-          <div className="lens-panel__row-meta">Loading the recorded trail…</div>
+          <ActivityStatus className="lens-panel__row-meta">Loading the recorded trail…</ActivityStatus>
         )}
         {/* The time machine reads the SAME entries the list below renders,
             so the scrubbed plan and the written history can never disagree
@@ -181,6 +182,7 @@ function ChangeHistorySection(): ReactElement {
             onClick={history.loadMore}
             disabled={history.loading}
           >
+            {history.loading && <ActivityIndicator size={18} />}
             {history.loading ? "Loading…" : "Load more"}
           </button>
         )}

@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from "react";
 import type { CalendarConflict, ConflictReport, ConflictSeverity } from "@omnitwin/types";
 import { BOARD_COPY } from "../board-copy.js";
+import { ActivityStatus } from "../../../components/shared/Activity.js";
 import type { NeedsActionItem } from "../lib/board-layout.js";
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,9 @@ export interface HoldingTrayProps {
   readonly items: readonly NeedsActionItem[];
   readonly onFocusEntry: (entryId: string) => void;
   readonly enquiries: readonly TrayEnquiry[];
+  readonly enquiriesLoading?: boolean;
+  readonly enquiryError?: string | null;
+  readonly onRetryEnquiries?: () => void;
   readonly canConvert: boolean;
   readonly onConvertEnquiry: (enquiryId: string) => void;
   /** Pointer drag from a slip onto a board lane (C1). The Pencil-in button
@@ -99,6 +103,9 @@ export function HoldingTray({
   items,
   onFocusEntry,
   enquiries,
+  enquiriesLoading = false,
+  enquiryError = null,
+  onRetryEnquiries,
   canConvert,
   onConvertEnquiry,
   onBeginEnquiryDrag,
@@ -135,10 +142,14 @@ export function HoldingTray({
       )}
 
       <h3 className="diary-checks-title">{BOARD_COPY.trayEnquiries.title}</h3>
+      {enquiriesLoading ? <ActivityStatus>Loading open enquiries…</ActivityStatus> : null}
+      {enquiryError !== null ? <div role="alert"><p>{enquiryError}</p>
+        <button type="button" className="diary-button" onClick={onRetryEnquiries} disabled={enquiriesLoading}>Retry enquiries</button>
+      </div> : null}
       {canConvert && onBeginEnquiryDrag !== undefined && enquiries.length > 0 ? (
         <p className="diary-tray-drag-hint">{BOARD_COPY.trayEnquiries.dragHint}</p>
       ) : null}
-      {enquiries.length === 0 ? (
+      {enquiries.length === 0 && !enquiriesLoading && enquiryError === null ? (
         <p className="diary-panel-empty">{BOARD_COPY.trayEnquiries.empty}</p>
       ) : (
         <ul className="diary-tray-list">

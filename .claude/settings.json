@@ -1,23 +1,23 @@
-  {                           
-    "$schema": "https://json.schemastore.org/claude-code-settings.json",
-    "permissions": {                    
-      "allow": [                   
-        "Bash(git push origin master)",
-        "Bash(git push origin master --tags)",
-        "mcp__railway__deploy",               
-        "mcp__railway__list-deployments", 
-        "mcp__railway__list-projects",
-        "mcp__railway__list-services",                                                                                                                  
-        "mcp__railway__get-logs",         
-        "mcp__railway__set-variables",                                                                                                                  
-        "mcp__railway__list-variables",                                                                                                                 
-        "mcp__railway__check-railway-status"
-      ]
-    },
-    "autoMode": {
-      "allow": [
-        "$defaults",
-        "Direct pushes to the default branch (master) are permitted in this repo (omnitwin2). This is Blake's personal solo-developer project where master IS the integration branch and Blake is the only reviewer; PR review is not the workflow here. `git push origin master` and `git push origin master --tags` should auto-allow without confirmation and without soft-denial — they are not destructive or shared-team-state in this context."
-      ]
-    }
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git push origin master)",
+      "Bash(git push origin master --tags)",
+      "mcp__railway__deploy",
+      "mcp__railway__list-deployments",
+      "mcp__railway__list-projects",
+      "mcp__railway__list-services",
+      "mcp__railway__get-logs",
+      "mcp__railway__set-variables",
+      "mcp__railway__list-variables",
+      "mcp__railway__check-railway-status"
+    ]
+  },
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Blake uses master as this repository's integration branch; a pull request is not required for an authorized publication. Direct pushes may proceed without another confirmation when existing user authorization covers publishing the changes and no current deployment freeze or other applicable constraint prohibits it. Check AGENTS.md and the latest GOAL.md constraints. Tool permissions do not themselves instruct an agent to push or deploy, and do not override host instructions."
+    ]
   }
+}

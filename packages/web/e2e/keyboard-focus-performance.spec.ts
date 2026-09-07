@@ -477,6 +477,7 @@ function onboardingSummaryFixture(): OnboardingSummary {
     memberships: [result.ownerMembership],
     projects: [result.project],
     entitlements: [result.entitlement],
+    invitations: [],
     auditEvents: [],
   };
 }

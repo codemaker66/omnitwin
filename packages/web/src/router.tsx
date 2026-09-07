@@ -1,4 +1,5 @@
-import { lazy, Suspense, type ReactElement } from "react";
+import { lazy, Suspense, useEffect, type ReactElement } from "react";
+import { useAuthStore } from "./stores/auth-store.js";
 import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
@@ -61,6 +62,7 @@ const SpotlightLandingPage = lazy(() =>
 const LandingPage = lazy(() =>
   cockpitImport(() => import("./pages/LandingPage.js").then((m) => ({ default: m.LandingPage }))),
 );
+const DemoShowcasePage = lazy(() => import("./pages/demo/DemoShowcasePage.js").then(m => ({ default: m.DemoShowcasePage })));
 const DashboardPage = lazy(() =>
   cockpitImport(() => import("./pages/DashboardPage.js").then((m) => ({ default: m.DashboardPage }))),
 );
@@ -69,6 +71,9 @@ const HallkeeperPage = lazy(() =>
 );
 const DayBoardPage = lazy(() =>
   import("./pages/hallkeeper/DayBoardPage.js").then((m) => ({ default: m.DayBoardPage })),
+);
+const HallkeeperWalkthroughPage = lazy(() =>
+  cockpitImport(() => import("./pages/hallkeeper/HallkeeperWalkthroughPage.js").then((m) => ({ default: m.HallkeeperWalkthroughPage }))),
 );
 const PrivacyPage = lazy(() =>
   cockpitImport(() => import("./pages/LegalPage.js").then((m) => ({ default: () => m.LegalPage({ type: "privacy" }) }))),
@@ -159,8 +164,22 @@ function withClerk(node: ReactElement): ReactElement {
 // layout-timeline dock, phase-snapshot freeze, review submit) call
 // authenticated endpoints. Detection is cookie-only — see
 // lib/clerk-session-hint.ts for the full rationale.
-function PlannerAuthBoundary({ children }: { readonly children: ReactElement }): ReactElement {
-  if (!hasLikelyClerkSession()) return children;
+export function PlannerAuthBoundary({ children }: { readonly children: ReactElement }): ReactElement {
+  const hasHydratedSession = useAuthStore((state) => state.isAuthenticated || state.user !== null || state.accessStatus !== "signed_out");
+  const needsClerk = hasHydratedSession || hasLikelyClerkSession();
+
+  useEffect(() => {
+    if (needsClerk) return;
+    // No Clerk bridge mounts for guests, so this boundary must settle their
+    // initial loading state. Recheck before writing: never clear a session
+    // that hydrated after render, and leave membership decisions to Clerk.
+    const current = useAuthStore.getState();
+    if (!hasLikelyClerkSession() && !current.isAuthenticated && current.user === null && current.accessStatus === "signed_out" && current.isLoading) {
+      current.setLoading(false);
+    }
+  }, [needsClerk]);
+
+  if (!needsClerk) return children;
   return <ClerkRouteProvider>{children}</ClerkRouteProvider>;
 }
 
@@ -239,6 +258,10 @@ export const router = createBrowserRouter([
     // spotlight-reveal hero (see the bottom of this route list).
     path: "/landing",
     element: withSuspense(<LandingPage />),
+  },
+  {
+    path: "/demo",
+    element: withSuspense(<DemoShowcasePage />),
   },
   {
     // Alias of `/` from the spotlight page's first review round — links
@@ -344,13 +367,25 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: "/hallkeeper",
+    element: <Navigate to="/hallkeeper/today" replace />,
+  },
+  {
+    path: "/hallkeeper/walkthrough",
+    element: withClerk(
+      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
+        <HallkeeperWalkthroughPage />
+      </ProtectedRoute>,
+    ),
+  },
+  {
     // Hallkeeper sheets expose PII (enquiry contact details, event info) and
     // the API enforces auth on both /data and /sheet endpoints. The frontend
     // route guard matches that policy — unauthenticated users redirect to
     // /login rather than hitting the page and getting a 401 from the fetch.
     path: "/hallkeeper/:configId",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner"]}>
+      <ProtectedRoute allowedRoles={["admin", "staff", "hallkeeper", "planner"]}>
         <HallkeeperPage />
       </ProtectedRoute>,
     ),

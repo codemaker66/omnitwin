@@ -16,6 +16,7 @@ import type { CaptureIntakeCaveat, CaptureIntakeOperatorStatus } from "@omnitwin
 import { getCaptureIntakeOperatorStatus } from "../api/capture-intake.js";
 import "./CaptureIntakePage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 
 type LoadState =
   | { readonly kind: "loading" }
@@ -84,7 +85,7 @@ export function CaptureIntakePage(): ReactElement {
       </header>
 
       {state.kind === "loading" && (
-        <section className="capture-intake-state" role="status"><RefreshCw className="capture-intake-spin" aria-hidden="true" /><div><h2>Reading sealed ledgers</h2></div></section>
+        <section className="capture-intake-state" role="status"><ActivityIndicator size={48} /><div><h2>Reading sealed ledgers</h2></div></section>
       )}
       {state.kind === "error" && (
         <section className="capture-intake-state capture-intake-state--error" role="alert"><AlertTriangle aria-hidden="true" /><div><h2>Operator status unavailable</h2><p>{state.message}</p></div><button type="button" onClick={reload}>Retry</button></section>

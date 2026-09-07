@@ -1,9 +1,9 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { PlatformRoleSchema, type PlatformRole } from "@omnitwin/types";
-import { userInvitations, users } from "../db/schema.js";
+import { onboardingAuditEvents, userInvitations, users, venues, workspaceMemberships, workspaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 
 // ---------------------------------------------------------------------------
@@ -123,6 +123,7 @@ export function getApprovedDomainGrant(
 }
 
 type InvitationRow = typeof userInvitations.$inferSelect;
+type AuthTransaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 function invitationIsActive(invitation: InvitationRow, now: Date): boolean {
   return invitation.status === "pending" &&
@@ -130,16 +131,18 @@ function invitationIsActive(invitation: InvitationRow, now: Date): boolean {
     invitation.acceptedAt === null;
 }
 
-async function findPendingInvitation(db: Database, email: string, now: Date): Promise<InvitationRow | null> {
+async function findPendingInvitation(db: AuthTransaction, email: string, now: Date): Promise<InvitationRow | null> {
   const [emailInvitation] = await db
     .select()
     .from(userInvitations)
     .where(and(
       eq(userInvitations.status, "pending"),
       eq(userInvitations.email, email),
+      isNull(userInvitations.acceptedAt),
       or(isNull(userInvitations.expiresAt), gt(userInvitations.expiresAt, now)),
     ))
-    .limit(1);
+    .orderBy(asc(userInvitations.createdAt), asc(userInvitations.id))
+    .limit(1).for("update");
 
   if (emailInvitation !== undefined && invitationIsActive(emailInvitation, now)) {
     return emailInvitation;
@@ -154,9 +157,11 @@ async function findPendingInvitation(db: Database, email: string, now: Date): Pr
     .where(and(
       eq(userInvitations.status, "pending"),
       eq(userInvitations.domain, domain),
+      isNull(userInvitations.acceptedAt),
       or(isNull(userInvitations.expiresAt), gt(userInvitations.expiresAt, now)),
     ))
-    .limit(1);
+    .orderBy(asc(userInvitations.createdAt), asc(userInvitations.id))
+    .limit(1).for("update");
 
   if (domainInvitation !== undefined && invitationIsActive(domainInvitation, now)) {
     return domainInvitation;
@@ -185,110 +190,89 @@ export async function getUserByClerkId(
   const normalizedEmail = normalizeAuthEmail(email);
   if (normalizedEmail === null) return null;
 
-  // Look up existing user by clerkId
-  const [existing] = await db.select().from(users).where(eq(users.clerkId, clerkId)).limit(1);
-  if (existing !== undefined) {
-    return {
-      id: existing.id,
-      email: existing.email,
-      name: existing.name,
-      role: existing.role,
-      platformRole: sanitizePlatformRole(existing.platformRole),
-      venueId: existing.venueId,
-    };
-  }
+  return db.transaction(async (tx) => {
+    // HTTP, WebSocket, webhook and administrator writes share this lock.
+    // A second first-login request observes the committed account instead of
+    // losing an invitation race or creating a duplicate local identity.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${normalizedEmail}))`);
+    const [byClerk] = await tx.select().from(users).where(eq(users.clerkId, clerkId)).limit(1).for("update");
+    const [byEmail] = byClerk === undefined
+      ? await tx.select().from(users).where(eq(users.email, normalizedEmail)).limit(1).for("update")
+      : [];
+    let user = byClerk ?? byEmail;
+    if (user !== undefined && user.clerkId !== null && user.clerkId !== clerkId) return null;
 
-  // Also check by email (for users created before Clerk migration, or seed users)
-  const [byEmail] = await db.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
-  if (byEmail !== undefined) {
-    if (byEmail.clerkId !== null && byEmail.clerkId !== clerkId) {
-      return null;
+    const now = new Date();
+    let invitation = await findPendingInvitation(tx, normalizedEmail, now);
+    const hadPendingInvitation = invitation !== null;
+    if (invitation !== null) {
+      const memberships = await tx.select().from(workspaceMemberships)
+        .where(eq(workspaceMemberships.invitationId, invitation.id));
+      if (memberships.length > 0) {
+        const membership = memberships[0];
+        const [workspace] = membership === undefined ? [] : await tx.select().from(workspaces)
+          .where(and(eq(workspaces.id, membership.workspaceId), isNull(workspaces.deletedAt))).limit(1);
+        // Managed invitations cannot outlive a removed/suspended membership
+        // or move authority across a workspace/venue mismatch.
+        if (memberships.length !== 1 || membership?.status !== "invited" ||
+            membership.email !== normalizedEmail || workspace === undefined ||
+            (workspace.status !== "active" && workspace.status !== "onboarding") ||
+            workspace.primaryVenueId !== invitation.venueId || membership.venueRole !== invitation.role) invitation = null;
+      }
+      if (invitation?.venueId !== null && invitation !== null) {
+        const [venue] = await tx.select({ id: venues.id }).from(venues)
+          .where(and(eq(venues.id, invitation.venueId), isNull(venues.deletedAt))).limit(1);
+        if (venue === undefined) invitation = null;
+      }
     }
-    // Link Clerk ID to existing user
-    await db.update(users).set({ clerkId, updatedAt: new Date() }).where(eq(users.id, byEmail.id));
-    return {
-      id: byEmail.id,
-      email: byEmail.email,
-      name: byEmail.name,
-      role: byEmail.role,
-      platformRole: sanitizePlatformRole(byEmail.platformRole),
-      venueId: byEmail.venueId,
-    };
-  }
 
-  const now = new Date();
-  const invitation = await findPendingInvitation(db, normalizedEmail, now);
-  const grant: AccessGrant | null = invitation === null
-    ? getApprovedDomainGrant(normalizedEmail)
-    : { role: sanitizeRole(invitation.role), venueId: invitation.venueId };
+    // Existing users never change tenant through an invitation, and an
+    // existing administrator cannot lose rights by accepting a lesser grant.
+    if (invitation !== null && user !== undefined && user.venueId !== null &&
+        (user.venueId !== invitation.venueId ||
+          (user.role !== invitation.role && invitation.role !== "admin" && user.role !== "admin"))) invitation = null;
+    const grant = invitation === null
+      ? (user === undefined && !hadPendingInvitation ? getApprovedDomainGrant(normalizedEmail) : null)
+      : { role: sanitizeRole(invitation.role), venueId: invitation.venueId };
 
-  if (grant === null) return null;
-
-  if (invitation !== null) {
-    const created = await db.transaction(async (tx) => {
-      const [claimedInvitation] = await tx.update(userInvitations).set({
-        status: "accepted",
-        acceptedAt: now,
-        updatedAt: now,
-      }).where(and(
-        eq(userInvitations.id, invitation.id),
-        eq(userInvitations.status, "pending"),
-        isNull(userInvitations.acceptedAt),
-        or(isNull(userInvitations.expiresAt), gt(userInvitations.expiresAt, now)),
-      )).returning({ id: userInvitations.id });
-
-      if (claimedInvitation === undefined) return null;
-
-      const [inserted] = await tx.insert(users).values({
-        clerkId,
-        email: normalizedEmail,
-        name: defaultNameFromEmail(normalizedEmail),
-        role: grant.role,
-        platformRole: "none",
-        venueId: grant.venueId,
+    if (user === undefined) {
+      if (grant === null) return null;
+      [user] = await tx.insert(users).values({
+        clerkId, email: normalizedEmail, name: defaultNameFromEmail(normalizedEmail),
+        role: grant.role, platformRole: "none", venueId: grant.venueId,
       }).returning();
+      if (user === undefined) throw new Error("User insert returned no row");
+    } else if (user.clerkId === null || invitation !== null) {
+      const role = user.role === "admin" ? "admin" : grant?.role ?? user.role;
+      [user] = await tx.update(users).set({
+        clerkId, role, venueId: grant?.venueId ?? user.venueId, updatedAt: now,
+      }).where(and(eq(users.id, user.id), or(isNull(users.clerkId), eq(users.clerkId, clerkId)))).returning();
+      if (user === undefined) throw new Error("Identity changed during account linking");
+    }
 
-      if (inserted === undefined) return null;
-
-      await tx.update(userInvitations).set({
-        acceptedBy: inserted.id,
-        updatedAt: now,
-      }).where(eq(userInvitations.id, invitation.id));
-
-      return inserted;
-    });
-
-    if (created === null) return null;
-
-    return {
-      id: created.id,
-      email: created.email,
-      name: created.name,
-      role: created.role,
-      platformRole: sanitizePlatformRole(created.platformRole),
-      venueId: created.venueId,
-    };
-  }
-
-  const [created] = await db.insert(users).values({
-    clerkId,
-    email: normalizedEmail,
-    name: defaultNameFromEmail(normalizedEmail),
-    role: grant.role,
-    platformRole: "none",
-    venueId: grant.venueId,
-  }).returning();
-
-  if (created === undefined) return null;
-
-  return {
-    id: created.id,
-    email: created.email,
-    name: created.name,
-    role: created.role,
-    platformRole: sanitizePlatformRole(created.platformRole),
-    venueId: created.venueId,
-  };
+    if (invitation !== null) {
+      // The accepted marker is one write: the database CHECK requires both
+      // acceptedAt and acceptedBy whenever status is accepted.
+      const [accepted] = await tx.update(userInvitations).set({
+        status: "accepted", acceptedAt: now, acceptedBy: user.id, updatedAt: now,
+      }).where(and(eq(userInvitations.id, invitation.id), eq(userInvitations.status, "pending"),
+        isNull(userInvitations.acceptedAt), or(isNull(userInvitations.expiresAt), gt(userInvitations.expiresAt, now))))
+        .returning({ id: userInvitations.id });
+      if (accepted === undefined) throw new Error("Invitation changed during account linking");
+      const activated = await tx.update(workspaceMemberships).set({
+        userId: user.id, status: "active", venueRole: user.role, acceptedAt: now, updatedAt: now,
+      }).where(and(eq(workspaceMemberships.invitationId, invitation.id), eq(workspaceMemberships.status, "invited")))
+        .returning();
+      for (const membership of activated) {
+        await tx.insert(onboardingAuditEvents).values({
+          workspaceId: membership.workspaceId, eventType: "member_access_accepted",
+          summary: `Verified account connected for ${normalizedEmail} with ${user.role} venue access`, actorUserId: user.id,
+        });
+      }
+    }
+    return { id: user.id, email: user.email, name: user.name, role: user.role,
+      platformRole: sanitizePlatformRole(user.platformRole), venueId: user.venueId };
+  });
 }
 
 // ---------------------------------------------------------------------------

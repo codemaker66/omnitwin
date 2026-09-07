@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
-import { Check, CircleAlert, FileCheck2, LoaderCircle, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Check, CircleAlert, FileCheck2, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import type {
   EventArchitectCandidate,
   EventArchitectOpsEvidenceKind,
@@ -169,7 +170,7 @@ export function EventArchitectOpsReviewPanel(props: {
         <code>artifact {digestLabel}</code>
       </div>
 
-      {loading ? <p className="event-architect-ops-loading"><LoaderCircle aria-hidden="true" /> Loading review history…</p> : null}
+      {loading ? <ActivityStatus className="event-architect-ops-loading">Loading review history…</ActivityStatus> : null}
       {error === null ? null : <p className="event-architect-ops-error" role="alert"><CircleAlert aria-hidden="true" /> {error}</p>}
 
       {latest === null ? null : (
@@ -201,7 +202,7 @@ export function EventArchitectOpsReviewPanel(props: {
           </div>
 
           <label className="event-architect-ops-note"><span>Review note</span><textarea value={draft.note} onChange={(event) => { setDraft((current) => ({ ...current, note: event.target.value })); }} minLength={10} maxLength={2000} rows={3} required /></label>
-          <button type="submit" disabled={submitting}>{submitting ? <LoaderCircle aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}{submitting ? "Recording review" : "Record review"}</button>
+          <button type="submit" disabled={submitting}>{submitting ? <ActivityIndicator size={20} /> : <ShieldCheck aria-hidden="true" />}{submitting ? "Recording review" : "Record review"}</button>
           <p className="event-architect-ops-immutability"><LockKeyhole aria-hidden="true" /> Reviews cannot be changed or deleted. New decisions replace earlier approvals; expired approvals block Ops.</p>
         </form>
       ) : (

@@ -16,7 +16,7 @@ export interface LensPanelProps {
   readonly title: string;
   readonly icon?: ReactNode;
   /** Small status chip (e.g. "Simulated", "Simulating…", "Unavailable"). */
-  readonly source?: string;
+  readonly source?: ReactNode;
   readonly children: ReactNode;
   /** Claim-safety line pinned to the bottom of the dock. */
   readonly footer?: ReactNode;

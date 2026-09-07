@@ -80,22 +80,6 @@
   cursor: default;
 }
 
-.ai-draft-panel__spin {
-  animation: ai-draft-spin 1s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ai-draft-panel__spin {
-    animation: none;
-  }
-}
-
-@keyframes ai-draft-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .ai-draft-panel__error {
   color: #9f2d2d !important;
   font-size: 0.88rem;

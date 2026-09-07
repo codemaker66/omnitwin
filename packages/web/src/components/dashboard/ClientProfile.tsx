@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import * as clientsApi from "../../api/clients.js";
 import type { ClientProfile as ClientProfileData, LeadProfile as LeadProfileData } from "../../api/clients.js";
 import { StatusBadge } from "../shared/StatusBadge.js";
+import { ActivityStatus } from "../shared/Activity.js";
 import { useToastStore } from "../../stores/toast-store.js";
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,7 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
     return () => { cancel.current = true; };
   }, [userId, leadId, addToast]);
 
-  if (loading) return <p style={{ color: "#999" }}>Loading profile...</p>;
+  if (loading) return <ActivityStatus style={{ color: "#999" }}>Loading profile...</ActivityStatus>;
 
   if (error !== null) {
     return (

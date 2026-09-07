@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { Matrix4, Vector3 } from "three";
 import {
   computeChairPositions,
   createTableGroup,
@@ -22,7 +23,7 @@ beforeEach(() => {
 const ROUND_TABLE_ID = "round-table-6ft";
 const TRESTLE_TABLE_ID = "trestle-6ft";
 const POSEUR_TABLE_ID = "poseur-table";
-const CHAIR_ID = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
+const CHAIR_ID = getCatalogueItemBySlug("burgess-turini-18-3")?.id ?? "missing-chair-id";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function getItem(id: string) {
@@ -58,12 +59,20 @@ describe("computeChairPositions (round)", () => {
     }
   });
 
-  it("chairs face inward (rotation points toward center)", () => {
-    const positions = computeChairPositions(5, 5, getItem(ROUND_TABLE_ID), 0, 4);
-    for (const p of positions) {
-      expect(p.rotationY).toBeDefined();
+  it.each([0, Math.PI / 2, Math.PI / 4])("keeps chair fronts toward the centre and backs outside at table rotation %s", (rotationY) => {
+    const table = getItem(ROUND_TABLE_ID);
+    const centre = new Vector3(5, 0, -3);
+    const positions = computeChairPositions(centre.x, centre.z, table, rotationY, seatCapacity(table));
+    expect(positions).toHaveLength(seatCapacity(table));
+    for (const position of positions) {
+      const seat = new Vector3(position.x, 0, position.z);
+      const rotation = new Matrix4().makeRotationY(position.rotationY);
+      const forward = new Vector3(0, 0, -1).transformDirection(rotation);
+      const toTable = centre.clone().sub(seat).normalize();
+      expect(forward.dot(toTable)).toBeCloseTo(1, 8);
+      const back = new Vector3(0, 0, 0.2).applyMatrix4(rotation).add(seat);
+      expect(back.distanceTo(centre)).toBeGreaterThan(seat.distanceTo(centre));
     }
-    expect(positions).toHaveLength(4);
   });
 
   it("chairs are placed outside the table radius", () => {
@@ -95,6 +104,34 @@ describe("computeChairPositions (rectangular)", () => {
   it("handles odd number of chairs", () => {
     const positions = computeChairPositions(0, 0, getItem(TRESTLE_TABLE_ID), 0, 5);
     expect(positions).toHaveLength(5);
+  });
+
+  it.each([0, Math.PI / 2, Math.PI / 4])("keeps every side and head chair facing its table edge at rotation %s", (rotationY) => {
+    const table = getItem(TRESTLE_TABLE_ID);
+    const centre = new Vector3(5, 0, -3);
+    const tableRotation = new Matrix4().makeRotationY(rotationY);
+    const inverseRotation = tableRotation.clone().invert();
+    const positions = computeChairPositions(centre.x, centre.z, table, rotationY, seatCapacity(table));
+    const unrotated = computeChairPositions(0, 0, table, 0, seatCapacity(table));
+    expect(positions).toHaveLength(seatCapacity(table));
+    for (const [index, position] of positions.entries()) {
+      const original = unrotated[index];
+      if (original === undefined) throw new Error("Missing unrotated seat");
+      const seat = new Vector3(position.x, 0, position.z);
+      const expectedSeat = new Vector3(original.x, 0, original.z).applyMatrix4(tableRotation).add(centre);
+      expect(seat.distanceTo(expectedSeat)).toBeCloseTo(0, 8);
+
+      const localSeat = seat.clone().sub(centre).applyMatrix4(inverseRotation);
+      const atHead = Math.abs(localSeat.x) > toRenderSpace(table.width) / 2;
+      const inward = atHead
+        ? new Vector3(-Math.sign(localSeat.x), 0, 0)
+        : new Vector3(0, 0, -Math.sign(localSeat.z));
+      const chairRotation = new Matrix4().makeRotationY(position.rotationY);
+      const forward = new Vector3(0, 0, -1).transformDirection(chairRotation).transformDirection(inverseRotation);
+      expect(forward.dot(inward)).toBeCloseTo(1, 8);
+      const back = new Vector3(0, 0, 0.2).applyMatrix4(chairRotation).add(seat);
+      expect(back.distanceTo(centre)).toBeGreaterThan(seat.distanceTo(centre));
+    }
   });
 });
 
@@ -312,9 +349,12 @@ describe("rearrangeTableGroup", () => {
 // ---------------------------------------------------------------------------
 
 describe("seatCapacity", () => {
+  it("retains the legacy chair geometry when explicitly calculating an existing group's capacity", () => {
+    expect(seatCapacity(getItem(ROUND_TABLE_ID), 1, getItem("banquet-chair"))).toBe(12);
+  });
   it("derives a round table's capacity from the chair-ring circumference", () => {
-    // ring radius = 1.83/2 + 0.45/2 + 0.05 = 1.19 m → 2π·1.19 / 0.6 = 12.46 → 12
-    expect(seatCapacity(getItem(ROUND_TABLE_ID))).toBe(12);
+    // Turini depth .58 m makes the ring radius 1.255 m; the .6 m pitch allows 13.
+    expect(seatCapacity(getItem(ROUND_TABLE_ID))).toBe(13);
   });
 
   it("derives a rectangular table's capacity from sides + heads", () => {
@@ -357,7 +397,7 @@ function minPairwiseDistance(positions: readonly ChairPlacement[]): number {
 
 describe("computeChairPositions — no overlap", () => {
   // Two banquet chairs overlap if their centres are closer than the chair width.
-  const chairWidthRender = toRenderSpace(0.45);
+  const chairWidthRender = toRenderSpace(0.42);
 
   it("never overlaps chairs around a round table, even when over-requested", () => {
     for (const count of [4, 8, 12, 20]) {
@@ -381,7 +421,7 @@ describe("computeChairPositions — no overlap", () => {
 
 describe("computeChairPositions — clamping & heads", () => {
   it("clamps a round request to the geometric capacity", () => {
-    expect(computeChairPositions(0, 0, getItem(ROUND_TABLE_ID), 0, 100)).toHaveLength(12);
+    expect(computeChairPositions(0, 0, getItem(ROUND_TABLE_ID), 0, 100)).toHaveLength(13);
   });
 
   it("clamps a rectangular request to the geometric capacity", () => {

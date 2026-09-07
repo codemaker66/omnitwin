@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AIDraft, AIAssistantStatus } from "@omnitwin/types";
 
 const { getAIAssistantStatusMock, createAIDraftMock } = vi.hoisted(() => ({
@@ -56,6 +56,34 @@ function draft(): AIDraft {
 }
 
 describe("AIDraftPanel", () => {
+  it.each(["success", "failure"] as const)("retires generation activity on %s and prevents duplicate requests", async (outcome) => {
+    getAIAssistantStatusMock.mockResolvedValue(configuredStatus());
+    let finish: ((value: AIDraft) => void) | undefined;
+    let fail: ((error: Error) => void) | undefined;
+    createAIDraftMock.mockReturnValue(new Promise<AIDraft>((resolve, reject) => {
+      finish = resolve;
+      fail = reject;
+    }));
+    render(<AIDraftPanel title="Draft" useCase="truth_mode_explanation" context={{ targetId: "room" }} />);
+    const generate = screen.getByRole<HTMLButtonElement>("button", { name: "Generate draft" });
+    await waitFor(() => { expect(generate.disabled).toBe(false); });
+    fireEvent.click(generate);
+    const busy = screen.getByRole<HTMLButtonElement>("button", { name: "Generating draft" });
+    expect(busy.disabled).toBe(true);
+    expect(busy.querySelector("[data-activity-indicator]")).not.toBeNull();
+    fireEvent.click(busy);
+    expect(createAIDraftMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      if (outcome === "success") finish?.(draft());
+      else fail?.(new Error("Provider unavailable"));
+      await Promise.resolve();
+    });
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Generate draft" }).disabled).toBe(false);
+    expect(document.querySelector("[data-activity-indicator]")).toBeNull();
+    if (outcome === "failure") expect(screen.getByRole("alert")).toBeDefined();
+    else expect(screen.getByDisplayValue(draft().body)).toBeDefined();
+  });
+
   it("shows disabled state and does not call draft generation", async () => {
     getAIAssistantStatusMock.mockResolvedValue(disabledStatus());
     render(

@@ -53,6 +53,7 @@ import { useChunkArrivals } from "../../hooks/use-chunk-arrivals.js";
 import { useRoomRuntimeSplat } from "../../hooks/use-room-runtime-splat.js";
 import { shouldRenderPlannerMotionOverlays } from "../../lib/planner-render-policy.js";
 import { inkTargetOpacity, roomResolvePhase } from "../../lib/room-resolve-model.js";
+import { PlannerArrival } from "./PlannerArrival.js";
 import { CockpitSplatLayer } from "./CockpitSplatLayer.js";
 import { InkArchitectureLayer } from "./InkArchitectureLayer.js";
 import { CockpitSceneOverlays } from "./CockpitSceneOverlays.js";
@@ -369,6 +370,18 @@ export function PlannerScene(): ReactElement {
   const loadedChunks = Math.min(arrivals.loadedCount, totalChunks);
   const failedChunks = Math.min(arrivals.failedCount, totalChunks - loadedChunks);
   const captureFailed = totalChunks > 0 && failedChunks === totalChunks;
+  const [enteredRooms, setEnteredRooms] = useState<ReadonlySet<string>>(() => new Set());
+  const enterRoom = useCallback(() => {
+    if (arrivalKey === null) return;
+    setEnteredRooms((previous) => previous.has(arrivalKey)
+      ? previous : new Set([...previous, arrivalKey]));
+  }, [arrivalKey]);
+  // Initial arrival only. A byte-decoded chunk is not yet a visible room.
+  // Once entered (or bypassed), later refinements never cover the workspace.
+  const showArrival = arrivalKey !== null && roomSlug === "grand-hall" && !timelinePreviewActive
+    && layerMode !== "mesh"
+    && !enteredRooms.has(arrivalKey) && !captureFailed
+    && (splatStatus === "loading" || hasAsset);
   const meshVisible = !timelinePreviewActive && (!hasAsset || captureFailed || layerMode !== "splat");
   const splatActive = !timelinePreviewActive && hasAsset && !captureFailed && layerMode !== "mesh";
   const furnitureLighting = resolveFurnitureLightingExperiment({
@@ -505,6 +518,8 @@ export function PlannerScene(): ReactElement {
                 urls={splatUrls}
                 transform={transform}
                 active={splatActive}
+                onFirstFrame={loadedChunks + failedChunks === totalChunks && loadedChunks > 0 ? enterRoom : undefined}
+                minimumDrawnSources={loadedChunks}
                 onChunkLoaded={arrivals.markLoaded}
                 onChunkFailed={arrivals.markFailed}
               />
@@ -546,6 +561,7 @@ export function PlannerScene(): ReactElement {
           {import.meta.env.DEV && <PerfMonitor />}
         </Canvas>
       </div>
+      {showArrival && <PlannerArrival onEnter={enterRoom} />}
     </PlannerCanvasBoundary>
   );
 }

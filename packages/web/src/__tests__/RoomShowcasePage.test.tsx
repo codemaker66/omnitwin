@@ -109,7 +109,7 @@ describe("RoomShowcasePage", () => {
     mount("/venues/trades-hall/rooms/grand-hall");
 
     expect(await screen.findByRole("heading", { level: 1, name: "Grand Hall" })).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 2, name: /Eight room experiences/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "More rooms" })).toBeTruthy();
 
     for (const room of publicRoomSelectionCards) {
       expect(document.body.textContent).toContain(room.name);

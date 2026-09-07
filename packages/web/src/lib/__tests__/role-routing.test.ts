@@ -15,8 +15,13 @@ describe("getDefaultRoute", () => {
     expect(getDefaultRoute("admin")).toBe("/dashboard");
   });
 
-  it("routes hallkeeper to /dashboard", () => {
-    expect(getDefaultRoute("hallkeeper")).toBe("/dashboard");
+  it("takes hallkeepers directly to their working day", () => {
+    expect(getDefaultRoute("hallkeeper")).toBe("/hallkeeper/today");
+  });
+
+  it("keeps platform administration ahead of the venue-role destination", () => {
+    expect(getDefaultRoute("hallkeeper", "admin")).toBe("/dashboard?view=onboarding");
+    expect(getDefaultRoute("admin", "admin")).toBe("/dashboard?view=onboarding");
   });
 
   it("routes planner to /dashboard", () => {

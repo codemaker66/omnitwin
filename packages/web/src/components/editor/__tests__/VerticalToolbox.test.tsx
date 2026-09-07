@@ -57,8 +57,10 @@ describe("VerticalToolbox undo buttons", () => {
     expect(screen.getByRole("button", { name: "Unsaved changes" })).toBeTruthy();
     act(() => { useEditorStore.setState({ isSaving: true }); });
     expect(screen.getByRole("button", { name: "Saving…" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Saving…" }).querySelector("[data-activity-indicator]")).not.toBeNull();
     act(() => { useEditorStore.setState({ isSaving: false, saveError: "Network failed" }); });
     expect(screen.getByRole("button", { name: "Save failed - retry" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save failed - retry" }).querySelector("[data-activity-indicator]")).toBeNull();
     act(() => { useEditorStore.setState({ saveConflict: { expectedRevision: 2, currentRevision: 3, message: "Changed" } }); });
     expect(screen.getByRole("button", { name: "Reload layout" })).toBeTruthy();
   });

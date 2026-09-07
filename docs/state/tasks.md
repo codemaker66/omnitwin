@@ -6,6 +6,10 @@ Updated: 2026-09-07.
 
 ## Latest task notes
 
+- 2026-09-07 T-605 first increment: [Goal 12](../../goals/12-intelligent-venue-platform.md) remains active. Isolated `3c5b0c9a` repairs concurrent event/booking edits, referenced snapshot retention and venue-admin commercial permissions, and adds a mandatory PostgreSQL gate. API 2,902 tests pass (113 skipped); the separate required database gate passes 60 with zero skips. API lint/typecheck/build, audit and built-server HTTP/readiness/shutdown pass. Current master is being integrated and release coordinated under the standing shipping contract. [Report](../reports/t605-platform-integrity-increment-2026-09-07.md); full decision/release, AI/ML/GPU and two-venue gates remain open. Other owners/budgets remain unchanged.
+- 2026-09-07 T-606: founder explicitly requested Hallkeeper live on venviewer.com for presentation. Production integration in progress; not yet deployed.
+- 2026-09-07 T-608 begins: reusable Venviewer client onboarding, including Elaine Gilchrist's own verified account and founder-granted Trades Hall venue administration. Isolated `codex/client-onboarding-20260907` from `b5511c2b`; existing-venue attachment, true venue-admin invitations, atomic membership activation and clear account-access states in progress. Disposable PostgreSQL verification and T-601 serial release required. No Elaine identity, messages or production grants created.
+
 - 2026-09-07 T-599 delivery-policy follow-up: Blake's standing “we build something we ship it” direction now requires requested product work to reach deployment and live verification. The shared shipping contract is routed from AGENTS/CLAUDE, GOAL, the Shepherd protocol, goal execution and release runbooks; historical freezes and owner-only stopping rules are superseded. Relevant checks, scope, source/data protection, spending and newer explicit holds remain. Independent review and new-link/diff checks pass; publication is tracked in today's session entry.
 
 - 2026-09-07 T-601 planner identity slice: selected venue replaces the fixed VENVIEWER wordmark in ReferenceRoomHeader. Trades Hall uses Blake's exact requested display name and supplied transparent crest; other venues use their own metadata with stale-request and failed-logo safeguards. Isolated `codex/planner-venue-branding-20260907` based on `04ca4563`; 17 focused tests, full web/E2E types, web lint/build and actual-browser width/second-venue checks pass. See today's session entry. Local only; T-601 retains sole publication ownership.
@@ -70,9 +74,13 @@ Updated: 2026-09-07.
 | ID | Title | Status | I | E | Depends | Source | Notes |
 |---|---|---|---|---|---|---|---|
 | T-609 | Remove unnecessary text throughout the product. | in-progress | 4 | 1 | T-601 | USER-2026-09-07 | Isolated codex/copy-cleanup-20260907. Remove repeated headings, explanatory clutter and technical narration while retaining actionable labels, errors, access and evidence distinctions. Review, rendered checks and coordinated live delivery remain pending. |
+| T-605 | Deliver the integrated intelligent venue platform in Goal 12. | in-progress | 5 | 20 | T-604, T-599 | USER-2026-09-07 (activated Goal 12) | Isolated codex/intelligent-venue-platform-20260907; first integrity increment3c5b0c9a locally qualified (API2902pass/113skip; requiredPG60pass/0skip; lint/types/build/audit/HTTP). Current master integration and coordinated release in progress. Complete event/release, AI/ML/GPU, two-venue and recovery/performance/browser gates remain open. Other owners/budgets unchanged. |
+| T-604 | Devise the intelligent venue platform transformation goal. | done | 5 | 0.25 | T-599 | USER-2026-09-07 (biggest useful codebase upgrade; AI/ML/GPU) | Source-grounded Goal12 and independent reviews define finite implementation and verification gates. Prompt preparation complete; implementation separately activated under T-605. |
+| T-606 | Ship the selected hallkeeper experience and presentation walkthrough. | in-progress | 5 | 1 | T-601, T-603, T-107 | USER-2026-09-07 | Latest founder request explicitly extends the prior design task to live publication. Isolated implementation of Day Board, real shared setup sheets, direct Hallkeeper entry and separately labelled fictional care/handover walkthrough. Root coordinates one release with T-601 and remains responsible for live verification; research, simulation, saved operational work and aesthetic acceptance remain distinct. |
+| T-608 | Deliver client onboarding and Trades Hall administrator access. | in-progress | 5 | 1 | T-601 | USER-2026-09-07 | Isolated implementation, actual-PG and browser verification, then coordinated production delivery. Existing/new venue setup, verified account invitation, correct venue admin authority and explicit access status. No automatic messages or identity impersonation. |
 | T-603 | Rebuild Diary from selected light workspace and timetable references. | in-progress | 5 | 1 | T-601 | USER-2026-09-07 | Integrated source, 178 affected tests and actual local browser flows pass; reference comparison and limits in design-qa.md. Combined live release and founder acceptance remain pending. |
 | T-601 | Publish and rehearse the combined Trades Hall demo. | in-progress | 5 | 1 | T-596, T-600, T-602, T-603 | USER-2026-09-06/07 | Sole release coordinator. Qualified viewer, inventory, review, chair/batch and selected Diary are integrated in a clean isolated release branch. Exact build, actual-target migrations, provider deployment and founder rehearsal are tracked separately. |
-| T-602 | Import supplied furniture into inventory and room planner. | done | 4 | 1 | T-600, T-601 | USER-2026-09-06/07 (supplied Rodin exports and live demo direction) | Turini integrated in 44df06a3. Bulk import verified on codex/furniture-batch-import-20260907 based 74348f9b: 17 new models plus reused Turini, 33 canonical entries, 0068 guarded registration, approximate new dimensions, 592 web/51 API cases and full-batch browser save/reload pass. Report: docs/reports/furniture-batch-import-2026-09-07.md. T-601 owns combined integration and live publication; no separate deployment here. |
+| T-602 | Import supplied furniture into inventory and room planner. | in-progress | 4 | 1 | T-600, T-601 | USER-2026-09-06/07 (supplied Rodin exports, live demo and extra-furniture follow-up) | Earlier 18-model import is live at 11ad2dbf. Follow-up adds two 4ft cloth tables and makes new planner groups use imported furniture, preserving saved identities and snapshots. Qualified locally: 271 web/model, 60 API and 17 shared tests, types/builds/lint, actual placement/save/reopen browser flows. Integration and live verification pending; separate 10-table/80-chair DEMO ONLY draft prepared. Report: docs/reports/furniture-planner-followup-2026-09-07.md. T-601 retains sole release ownership. |
 | T-586 | Incorporate the sublime redesign, editable inventory, quality parity and decision-intelligence mandate. | done | 5 | 0.5 | T-584 | USER-2026-09-04 follow-up | Delivered programme 16; amended programme 15, GOAL, House, authority map and goal graph; primary-source research, code-seam review and independent consistency check; local links/diff verified. Planning only, no UI/inventory/approval implementation claimed. Renumbered from provisional T-585 to avoid the concurrent quiz task collision. |
 | T-588 | Venue inventory domain foundation: scoped adjustments, audit receipts and truthful availability. | done | 5 | 1 | T-586 | USER-2026-09-04; goals/05–06 | Delivered on codex/venue-inventory-foundation at 9cfba200154c9ff42ce3cd3cfd8172453e3f0975, D:/claude/venviewer-inventory-20260904: 28 new regressions; full types 96 files / 2,185 tests, lint, typecheck and build pass; independent review fixes included. Pure domain only; persistence, API and admin UI remain. Not merged or pushed. See goals/EXECUTION.md. |
 | T-589 | Three concrete sublime design directions for planner, admin and hallkeeper. | done | 5 | 1 | T-586 | USER-2026-09-04; goals/01 | Delivered docs/design/sublime-study-2026-09-04/study.md, prompts and provenance; Measure, Continuum and Presence PNGs at D:/claude/sublime-study-20260904. Agent and root visually reviewed; dimensions, hashes and links checked. Founder selection pending. Concepts only; no implemented UI or captured-room fidelity evidence. |
@@ -727,6 +735,9 @@ Updated: 2026-09-07.
 
 ## Shepherd protocol
 
+Updated 2026-09-06. Keep task state useful and accurate without turning each
+implementation task into a full backlog audit. AGENTS.md owns execution policy.
+
 **Delivery amendment — 7 September 2026:** apply the [build, ship and verify contract](../../.claude/conventions/shipping-changes.md).
 A requested product change remains in progress through integration, deployment
 and verification of the changed live flow. A commit, local pass or handoff to
@@ -735,41 +746,45 @@ without requesting the same authorization again. Record the deployed source and
 evidence when marking it done; record an actual unresolved obstacle when blocked.
 Research, design and documentation tasks retain their explicitly requested scope.
 
-This task list is a living document. Every Claude Code session must follow this protocol.
-
 ### Before starting work
 
-- Read this file in full.
-- Identify the T-NNN that the current request maps to. If no T-NNN matches, propose a new T-NNN in the appropriate tier and add it to the table before starting work.
-- Update the matched task's status to `in-progress`.
+- Read the latest task notes, relevant rows and their dependencies. Search the
+  rest of the ledger when needed; a full read is appropriate for a backlog review,
+  not a prerequisite for every change.
+- Map substantive work to an existing T-NNN. If none fits, check current IDs and
+  add a clearly scoped row with the user request/source; mark it `in-progress`.
+  A question or trivial correction does not need a new project task.
+- Check concurrent ownership before changing another task's status or files.
+  Current user instructions take precedence over a stale queue.
 
 ### During work
 
-If the work becomes blocked:
-
-- Set status to `blocked`.
-- Add to Notes: what blocks the task and what would unblock it.
-- Surface the block in the session log at `docs/sessions/YYYY-MM-DD.md`.
-
-If the work reveals new tasks (subtasks, prerequisite work, follow-on work):
-
-- Add them to the appropriate tier with explicit `Depends` linkage.
-- Do not merge new work into the in-progress task scope without Blake's explicit confirmation.
+- Carry necessary prerequisites, integration and review fixes through under the
+  authorized objective. Track separate deliverables with dependency links when
+  useful; do not ask for approval merely because another file or subtask is needed.
+- Record newly discovered unrelated work separately instead of silently expanding
+  the project. Ask only for a material product decision or authorization missing
+  from the request, as described in AGENTS.md.
+- If externally blocked, mark the relevant task `blocked` with the precise blocker
+  and what would unblock it, keep independently actionable work moving, and capture
+  a useful resumption note. Uncertainty that can be investigated is work to do,
+  not a user blocker.
 
 ### After completing work
 
-- Set the task's status to `done`.
-- Update the Notes field with the actual delivered artifact paths (e.g. "Implementation at `infra/runpod/run_training.sh`, runbook at `infra/runpod/RUNBOOK.md`").
-- Update any tasks that were `Depends`-on-this-task to surface that they're now unblocked.
-- Regenerate `docs/diagrams/task-graph.md` to reflect the new state.
-- Add a session log entry to `docs/sessions/YYYY-MM-DD.md` noting the completed task and any newly-unblocked tasks.
+- Mark the agreed scope `done` only with applicable verification. Link delivered
+  artifacts and evidence; distinguish local, merged, deployed and accepted status.
+  If the row represents a larger programme, record the completed slice without
+  declaring the entire programme done.
+- Update directly affected dependents when their readiness changes. Update
+  `docs/diagrams/task-graph.md` only when the view it depicts is affected.
+- Add a concise entry for meaningful work, decisions and blockers to
+  `docs/sessions/YYYY-MM-DD.md`. Preserve other sessions' entries.
+- Do not repeat already-passing checks solely to update a task record.
 
-### Per-session surveillance
+### Backlog reviews
 
-Each session also checks:
-
-- Any task that's been `in-progress` for >7 days: probably stuck. Surface to Blake.
-- Any task whose `Depends` are now all `done`: should be flagged as ready to start.
-- Any task whose `Depends` include a task that's been `rejected`: may need re-thinking; surface to Blake.
-
-The shepherd protocol is non-negotiable. Skipping it produces the exact failure mode this protocol was designed to prevent: tasks that quietly stay open forever because nobody updated them after the work shipped.
+When asked to review priorities, or when a relevant dependency looks stale, inspect
+old `in-progress` rows, newly satisfied dependencies and rejected prerequisites.
+Report evidence-backed issues; age alone does not prove a task is stuck. A global
+surveillance pass is not required in every session.

@@ -1,54 +1,45 @@
-import { Pool, neonConfig } from "@neondatabase/serverless";
-import { drizzle, type NeonDatabase } from "drizzle-orm/neon-serverless";
+import { Pool as NeonPool } from "@neondatabase/serverless";
+import { Pool as PgPool } from "pg";
+import { drizzle as neonDrizzle, type NeonDatabase } from "drizzle-orm/neon-serverless";
+import { drizzle as pgDrizzle } from "drizzle-orm/node-postgres";
 import * as schema from "./schema.js";
 
 // ---------------------------------------------------------------------------
-// Database client — Neon serverless (WebSocket) + Drizzle ORM
+// Database client — local PostgreSQL TCP or production Neon WebSocket.
 //
-// Uses the WebSocket-based Pool driver instead of HTTP. This enables
-// db.transaction() for atomic multi-statement operations (batch save).
-//
-// Local development: the serverless driver cannot speak plain Postgres TCP,
-// so a localhost DATABASE_URL is routed through the Neon proxy container in
-// infra/dev-db/docker-compose.yml. This branch is inert for every non-local
-// URL — production Neon connections are untouched.
+// Both pool drivers support real multi-statement transactions. Local URLs use
+// their own port directly; neither branch changes the Neon driver's globals.
 // ---------------------------------------------------------------------------
 
-/** Host port of the neon-proxy service in infra/dev-db/docker-compose.yml. */
-const LOCAL_WS_PROXY_PORT = 54331;
-
-/** Type alias for the database instance. */
+/** Shared structural query/transaction contract supported by both drivers. */
 export type Database = NeonDatabase<typeof schema>;
+
+export interface DatabaseConnection {
+  readonly db: Database;
+  /** Drain owned pooled connections. Repeated calls share the same completion. */
+  readonly close: () => Promise<void>;
+}
 
 /** A URL is local when it targets the developer's own machine. */
 export function isLocalDatabaseUrl(databaseUrl: string): boolean {
   try {
-    const host = new URL(databaseUrl).hostname;
-    return host === "localhost" || host === "127.0.0.1";
+    const url = new URL(databaseUrl);
+    return (url.protocol === "postgres:" || url.protocol === "postgresql:")
+      && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]");
   } catch {
     return false;
   }
 }
 
 /**
- * Creates a Drizzle ORM instance connected to Neon via WebSocket Pool.
- * Supports db.transaction() for atomic operations.
+ * Owns the pool alongside the database, for API shutdown hooks and short-lived
+ * scripts. Construction is lazy: queries establish the connection.
  */
-export function createDb(databaseUrl: string): Database {
-  if (isLocalDatabaseUrl(databaseUrl)) {
-    neonConfig.wsProxy = (host) => `${host}:${String(LOCAL_WS_PROXY_PORT)}/v1`;
-    neonConfig.useSecureWebSocket = false;
-    neonConfig.pipelineTLS = false;
-    neonConfig.pipelineConnect = false;
-  } else {
-    // neonConfig is a module singleton — restore the driver defaults so a
-    // process that mixed localities (tests, tools) is deterministic per call.
-    neonConfig.wsProxy = undefined;
-    neonConfig.useSecureWebSocket = true;
-    neonConfig.pipelineTLS = true;
-    neonConfig.pipelineConnect = "password";
-  }
-  const pool = new Pool({ connectionString: databaseUrl });
+export function createDbConnection(databaseUrl: string): DatabaseConnection {
+  const local = isLocalDatabaseUrl(databaseUrl);
+  const pool = local
+    ? new PgPool({ connectionString: databaseUrl })
+    : new NeonPool({ connectionString: databaseUrl });
   // An idle pooled client can error at any time (dropped socket, server
   // restart). Without a listener that is an unhandled 'error' event — it
   // kills the whole process (observed live in Slice 4). Log and let the
@@ -57,5 +48,20 @@ export function createDb(databaseUrl: string): Database {
     // eslint-disable-next-line no-console -- no request logger exists at pool scope; this replaces a process crash
     console.error("[db] idle client error:", error.message);
   });
-  return drizzle(pool, { schema });
+  const db: Database = pool instanceof PgPool
+    ? pgDrizzle(pool, { schema })
+    : neonDrizzle(pool, { schema });
+  let closing: Promise<void> | undefined;
+  return {
+    db,
+    close: () => {
+      closing ??= pool.end();
+      return closing;
+    },
+  };
+}
+
+/** Existing callers can keep the database-only interface. New owners close it. */
+export function createDb(databaseUrl: string): Database {
+  return createDbConnection(databaseUrl).db;
 }

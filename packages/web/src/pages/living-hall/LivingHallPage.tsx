@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { ActivityStatus } from "../../components/shared/Activity.js";
 import { useReducedMotion } from "../landing/useReducedMotion.js";
 import {
   buildDressingProgram,
@@ -134,6 +135,7 @@ export function LivingHallPage(): ReactElement {
   const [sandboxActive, setSandboxActive] = useState(false);
   const sandboxButtonRef = useRef<HTMLButtonElement | null>(null);
   const [sceneFailed, setSceneFailed] = useState(false);
+  const [sceneLoaded, setSceneLoaded] = useState(false);
 
   // The adaptive threshold: a visitor who has placed their table gets the
   // planner as the primary door; a skimmer gets the events team. Engagement
@@ -165,6 +167,7 @@ export function LivingHallPage(): ReactElement {
     setSandboxActive(false);
     setSceneFailed(true);
   }, []);
+  const handleSceneLoaded = useCallback(() => { setSceneLoaded(true); }, []);
 
   useEffect(() => {
     document.title = LH_META_TITLE;
@@ -180,8 +183,15 @@ export function LivingHallPage(): ReactElement {
             sandboxActive={sandboxActive}
             onSandboxExit={exitSandbox}
             onSceneFailed={handleSceneFailed}
+            onSceneLoaded={handleSceneLoaded}
           />
         </Suspense>
+      )}
+      {sceneActive && !sceneLoaded && (
+        <ActivityStatus style={{
+          position: "fixed", right: 20, bottom: 20, zIndex: 80, padding: "8px 16px",
+          borderRadius: 24, background: "rgba(20, 19, 17, 0.9)", color: "#f2ede3", pointerEvents: "none",
+        }}>Streaming the hall</ActivityStatus>
       )}
       <a className="lh-skip" href="#rooms-and-rates">
         {LH_SKIP_LABEL}

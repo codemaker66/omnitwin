@@ -107,6 +107,62 @@ afterEach(() => {
 });
 
 describe("EnquiriesView async ownership", () => {
+  it("announces active loading and removes the activity when the request settles", async () => {
+    const request = deferred<Enquiry[]>();
+    mocks.listEnquiries.mockReturnValue(request.promise);
+    render(<EnquiriesView />);
+
+    expect(screen.getByRole("status").textContent).toContain("Loading...");
+    expect(screen.getByRole("status").querySelector("svg[aria-hidden='true']")).not.toBeNull();
+
+    await act(async () => { request.resolve([]); await request.promise; });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByText("No enquiries found.")).toBeDefined();
+  });
+
+  it("keeps preselection and its timeline visibly active until their own requests settle", async () => {
+    const enquiry = deferred<Enquiry>();
+    const timeline = deferred<StatusHistoryEntry[]>();
+    mocks.getEnquiry.mockReturnValue(enquiry.promise);
+    mocks.getEnquiryHistory.mockReturnValue(timeline.promise);
+    render(<EnquiriesView initialSelectedId="alice" />);
+
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("Opening enquiry…")).toBeDefined();
+    await act(async () => { enquiry.resolve(enquiryFixture("alice", "Alice")); await enquiry.promise; });
+    expect(screen.queryByText("Opening enquiry…")).toBeNull();
+    expect(screen.getByText("Loading enquiry history…")).toBeDefined();
+    await act(async () => { timeline.resolve([]); await timeline.promise; });
+    expect(screen.queryByText("Loading enquiry history…")).toBeNull();
+  });
+
+  it("animates the confirmation only while the enquiry transition is saving", async () => {
+    const transition = deferred<Enquiry>();
+    mocks.listEnquiries.mockResolvedValue([enquiryFixture("alice", "Alice")]);
+    mocks.transitionEnquiry.mockReturnValue(transition.promise);
+    render(<EnquiriesView />);
+    fireEvent.click(await screen.findByRole("button", { name: /Alice/u }));
+    fireEvent.click(screen.getByRole("button", { name: "Start Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Under Review" }));
+
+    const working = screen.getByRole("button", { name: "Working..." });
+    expect(working.hasAttribute("disabled")).toBe(true);
+    expect(working.querySelector("svg[data-activity-indicator]")).not.toBeNull();
+    await act(async () => { transition.resolve(enquiryFixture("alice", "Alice", "under_review")); await transition.promise; });
+    expect(screen.queryByRole("button", { name: "Working..." })).toBeNull();
+    expect(mocks.transitionEnquiry).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles failed preselection and history without leaving activity behind", async () => {
+    mocks.getEnquiry.mockRejectedValue(new Error("Unavailable"));
+    mocks.getEnquiryHistory.mockRejectedValue(new Error("Unavailable"));
+    render(<EnquiriesView initialSelectedId="missing" />);
+
+    await waitFor(() => { expect(mocks.addToast).toHaveBeenCalledWith("Failed to load enquiry", "error"); });
+    expect(screen.queryByText("Opening enquiry…")).toBeNull();
+    expect(screen.queryByText("Loading enquiry history…")).toBeNull();
+  });
+
   it("aborts and ignores a slower previous filter response", async () => {
     const all = deferred<Enquiry[]>();
     const submitted = deferred<Enquiry[]>();
@@ -158,6 +214,15 @@ describe("EnquiriesView async ownership", () => {
 });
 
 describe("dashboard result controls", () => {
+  it("stops announcing profile activity when the request fails", async () => {
+    mocks.getClientProfile.mockRejectedValue(new Error("Unavailable"));
+    render(<ClientProfile userId="user-1" onBack={vi.fn()} onViewEnquiry={vi.fn()} />);
+
+    expect(screen.getByRole("status").textContent).toContain("Loading profile...");
+    expect(await screen.findByText("Failed to load profile")).toBeDefined();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("renders client search results as native buttons", async () => {
     vi.useFakeTimers();
     mocks.searchClients.mockResolvedValue({

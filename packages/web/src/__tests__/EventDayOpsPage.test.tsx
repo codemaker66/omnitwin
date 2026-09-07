@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ChangeFeedItem, EventDayOpsBoard, OpsTask } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
@@ -288,6 +288,52 @@ afterEach(() => {
 });
 
 describe("EventDayOpsPage", () => {
+  it("keeps task activity visible until an offline write is persisted, then settles", async () => {
+    let resolveQueue: (() => void) | undefined;
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockUpdateOpsTaskStatus.mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+    mockEnqueueEventDayTaskStatus.mockReturnValue(new Promise<void>((resolve) => { resolveQueue = resolve; }));
+    renderPage();
+    await screen.findByText("Set 12 x Round Table");
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() => { expect(mockEnqueueEventDayTaskStatus).toHaveBeenCalled(); });
+    expect(screen.getByText("Saving event-day changes…").closest('[role="status"]')?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    await act(() => { resolveQueue?.(); return Promise.resolve(); });
+    expect(screen.queryByText("Saving event-day changes…")).toBeNull();
+    expect(screen.getByText("Task saved on this device and will sync when the connection returns.")).toBeTruthy();
+  });
+
+  it("settles task activity and exposes a failed offline persistence attempt", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockUpdateOpsTaskStatus.mockRejectedValue(new ApiError(0, "Network error", "NETWORK_ERROR"));
+    mockEnqueueEventDayTaskStatus.mockRejectedValue(new Error("storage unavailable"));
+    renderPage();
+    await screen.findByText("Set 12 x Round Table");
+    fireEvent.click(screen.getByText("Done"));
+    expect(await screen.findByText("Task could not be saved on this device. Please try again.")).toBeTruthy();
+    expect(screen.queryByText("Saving event-day changes…")).toBeNull();
+    expect(screen.getByText("To do")).toBeTruthy();
+  });
+
+  it("shows issue activity only during a real request and clears it after rejection", async () => {
+    let rejectIssue: ((reason: ApiError) => void) | undefined;
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockCreateEventDayIssue.mockReturnValue(new Promise<never>((_resolve, reject) => { rejectIssue = reject; }));
+    renderPage();
+    await screen.findByText("Issue report");
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Supplier late" } });
+    fireEvent.change(screen.getByLabelText("Detail"), { target: { value: "Ten minutes behind the planning window." } });
+    const submit = screen.getByRole("button", { name: "Log issue" });
+    expect(submit.querySelector("[data-activity-indicator]")).toBeNull();
+    fireEvent.click(submit);
+    expect(submit.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(submit.getAttribute("aria-busy")).toBe("true");
+    await act(() => { rejectIssue?.(new ApiError(400, "Invalid issue", "VALIDATION_ERROR")); return Promise.resolve(); });
+    expect(submit.querySelector("[data-activity-indicator]")).toBeNull();
+    expect(submit.getAttribute("aria-busy")).toBe("false");
+    expect(screen.getByText("Issue could not be logged. Check the wording and try again.")).toBeTruthy();
+  });
+
   it("renders the mobile event-day board sections", async () => {
     mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
     renderPage();
@@ -298,6 +344,18 @@ describe("EventDayOpsPage", () => {
     expect(screen.getByText("Task checklist")).toBeTruthy();
     expect(screen.getByText("Issue report")).toBeTruthy();
     expect(screen.getByText("Supplier arrivals")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open current setup sheet" }).getAttribute("href"))
+      .toBe("/hallkeeper/00000000-0000-4000-8000-000000003007");
+    expect(screen.getByRole("link", { name: "Open version 1 handoff" }).getAttribute("href"))
+      .toBe(`/ops/handoff/${PACK_ID}`);
+  });
+
+  it("does not invent a setup-sheet link when the event has no linked handoff", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), handoffPack: null, sourceStatus: "missing_handoff" });
+    renderPage();
+    await screen.findByText("Working documents");
+    expect(screen.queryByRole("link", { name: "Open current setup sheet" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Day Board" }).getAttribute("href")).toBe("/hallkeeper/today");
   });
 
   it("acknowledges required planner or client changes", async () => {

@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
-import { seatCapacity } from "../lib/table-group.js";
+import { seatCapacity, tableGroupSeatCapacity } from "../lib/table-group.js";
 import { getCatalogueItem } from "../lib/catalogue.js";
+import { useChairDialogStore } from "../stores/chair-dialog-store.js";
+import { usePlacementStore } from "../stores/placement-store.js";
 
 // ---------------------------------------------------------------------------
 // ChairCountDialog — luxury modal for seating arrangement
@@ -150,7 +152,12 @@ export function ChairCountDialog({
   // Cap the stepper at what physically fits around this specific table, so the
   // count the planner picks is exactly what gets placed (no silent clamping).
   const tableItem = request === null ? undefined : getCatalogueItem(request.catalogueItemId);
-  const maxChairs = tableItem !== undefined
+  const editTableId = useChairDialogStore((state) => state.editTableId);
+  const placedItems = usePlacementStore((state) => state.placedItems);
+  const existingTable = placedItems.find((item) => item.id === editTableId && item.catalogueItemId === request?.catalogueItemId);
+  const maxChairs = existingTable !== undefined
+    ? tableGroupSeatCapacity(existingTable, placedItems)
+    : tableItem !== undefined
     ? seatCapacity(tableItem, request?.scale)
     : request?.tableShape === "rectangular" ? 8 : 12;
   const minChairs = maxChairs > 0 ? 1 : 0;

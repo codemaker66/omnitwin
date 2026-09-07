@@ -966,6 +966,7 @@ export {
   WorkspaceEntitlementSchema,
   OnboardingAuditEventSchema,
   OnboardingSummarySchema,
+  OnboardingInvitationSchema,
   CreateManagedOnboardingResultSchema,
   InviteWorkspaceMembersResultSchema,
   type OrganisationId,
@@ -1003,6 +1004,7 @@ export {
   type WorkspaceEntitlement,
   type OnboardingAuditEvent,
   type OnboardingSummary,
+  type OnboardingInvitation,
   type CreateManagedOnboardingResult,
   type InviteWorkspaceMembersResult,
 } from "./onboarding.js";

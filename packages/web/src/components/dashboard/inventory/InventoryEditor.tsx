@@ -71,7 +71,6 @@ export const InventoryEditor = forwardRef<InventoryEditorHandle, EditorProps>(fu
   const trap = useFocusTrap<HTMLDivElement>(presentation === "dialog");
   const formId = useId();
   const headingId = useId();
-  const reasonHelpId = useId();
   const pendingKey = inventoryPendingKey(actorId, venueId, item.catalogue.id);
   const [resumed] = useState(() => readInventoryPending(pendingKey));
   const [base, setBase] = useState(resumed === null ? item.stock : resumed.baseStock);
@@ -190,8 +189,7 @@ export const InventoryEditor = forwardRef<InventoryEditorHandle, EditorProps>(fu
           disabled={locked} onChange={(event) => { change("storageLocation", event.target.value); }} /></label>
         {presentation === "dialog" ? stockDetails : null}
         <label className="inventory-field"><span>Reason</span><textarea rows={presentation === "inline" ? 2 : 3} value={draft.reason} maxLength={1000}
-          disabled={locked} onChange={(event) => { change("reason", event.target.value); }} aria-describedby={reasonHelpId} /></label>
-        <p id={reasonHelpId} className={presentation === "inline" ? "inventory-sr-only" : "inventory-field-help"}>Saved with your identity and the exact before and after counts.</p>
+          disabled={locked} onChange={(event) => { change("reason", event.target.value); }} /></label>
         {conflict !== null ? <section className="inventory-notice" role="alert"><h3>This stock record changed</h3>
           <p>Your edits are still here. Review the latest counts before saving again.</p>
           <p>{conflict.currentStock === null ? "There is no current stock record." :

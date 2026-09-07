@@ -45,7 +45,7 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: bool
   { view: "loadouts", label: "Reference Loadouts" },
   { view: "settings", label: "Venue Settings" },
   { view: "inventory", label: "Inventory", venueAdminOnly: true },
-  { view: "onboarding", label: "Onboarding", adminOnly: true },
+  { view: "onboarding", label: "Clients & access", adminOnly: true },
   { view: "admin", label: "Admin", adminOnly: true },
 ];
 
@@ -174,10 +174,10 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
   const canArchitect = platformRole === "admin" || ["admin", "staff", "hallkeeper", "planner"].includes(user?.role ?? "");
   const moreItems = NAV_ITEMS.filter((item) => item.view !== "inventory" && canShowNavItem(item, user?.role, platformRole));
   const moreActive = moreItems.some((item) => item.view === activeView) ||
-    isRouteActive("/hallkeeper/today") || isRouteActive("/event-architect") || isRouteActive("/dev/capture-intake");
+    isRouteActive("/event-architect") || isRouteActive("/dev/capture-intake");
   const nameInitials = user?.name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("") ?? "";
   const initials = (nameInitials.length > 0 ? nameInitials : "V").toLocaleUpperCase("en-GB");
-  const roleLabel = user?.role === "admin" ? "Venue admin" : platformRole === "admin" ? "Platform admin" :
+  const roleLabel = platformRole === "admin" ? "Platform admin" : user?.role === "admin" ? "Venue admin" :
     user?.role === "hallkeeper" ? "Hallkeeper" : user?.role === "staff" ? "Venue team" :
       user?.role === "executive" ? "Executive" : user?.role === "planner" ? "Planner" : "Workspace member";
 
@@ -197,6 +197,8 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
             aria-current={isRouteActive("/plan") ? "page" : undefined}>Plan</Link>}
           {canSchedule && <Link className={routeLinkClass("/diary")} to="/diary"
             aria-current={isRouteActive("/diary") ? "page" : undefined}>Diary</Link>}
+          {canSchedule && <Link className={routeLinkClass("/hallkeeper")} to="/hallkeeper"
+            aria-current={isRouteActive("/hallkeeper") ? "page" : undefined}>Hallkeeper</Link>}
           {user?.role === "admin" && <button type="button"
             className={`dashboard-layout-nav-item${activeView === "inventory" ? " dashboard-layout-nav-item--active" : ""}`}
             aria-current={activeView === "inventory" ? "page" : undefined}
@@ -213,8 +215,6 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
                   className={`dashboard-layout-menu-link${activeView === item.view ? " dashboard-layout-menu-link--active" : ""}`}
                   aria-current={activeView === item.view ? "page" : undefined}
                   onClick={() => { selectView(item.view); }}>{item.label}</button>)}
-                {canSchedule && <Link className="dashboard-layout-menu-link" to="/hallkeeper/today"
-                  aria-current={isRouteActive("/hallkeeper/today") ? "page" : undefined}>Day Board</Link>}
                 {canArchitect && <Link className="dashboard-layout-menu-link" to="/event-architect"
                   aria-current={isRouteActive("/event-architect") ? "page" : undefined}>Event Architect</Link>}
                 {platformRole === "admin" && <Link className="dashboard-layout-menu-link" to="/dev/capture-intake"

@@ -1,10 +1,14 @@
 # GOAL — founder direction and dated operational evidence
 
+Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportionate verification and reporting. The current user request determines the task; the ladder below guides open-ended product work. Old prompt counts, named-worker instructions, mandatory handoff templates and fixed session boundaries do not limit execution. Preserve the latest founder amendments, release coordination, source protections and spending limits; apply the current delivery contract to older freeze language. Historical measurements and commands below require current-state verification before reuse.
+
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
 ## Latest founder direction — 2026-09-07
 
 **Standing delivery amendment — 7 September 2026:** Blake said, “we build something we ship it.” Requested product work includes verification, coordinated integration, deployment and checking the changed live flow, without a second request to ship. The [shared delivery contract](.claude/conventions/shipping-changes.md) governs all active tasks. T-601 and other release owners coordinate safe serial releases; sending them a commit does not complete the originating task. Earlier blanket freezes, Tuesday-only releases and local-only ownership clauses below are superseded by this amendment. Retain historical evidence, quality checks, source/data protections and spending limits; newer explicit user holds apply only to their stated scope.
+
+Goal 12 is active under T-605: implement the integrated intelligent venue platform in an isolated worktree based on release `04ca4563`. [Its contract](goals/12-intelligent-venue-platform.md) defines the complete commercial/spatial/operations journey, measured AI/ML/GPU and two-venue gates. [Current implementation evidence](docs/engineering/intelligent-platform.md) distinguishes the first transaction/retention prerequisites from that unfinished outcome. Carry qualified increments through coordinated integration, deployment and live verification under the standing build-and-ship instruction. Preserve T-601/T-603 release/Diary, T-596/T-590 reconstruction and T-597 environment work; their compute allowances remain separately owned. Recheck current ownership before integration or spend.
 
 Blake rejected the still-live dark Diary and selected the light workspace and airy timetable references in the 7 September attachment. T-603 now replaces that Diary and retains precise booking controls; it is included in T-601's single authorized demo release. The earlier full-UI-overhaul claim was incorrect: locally implemented, verified, live and aesthetically accepted are different states. The reference images remain private because they contain illustrative personal data. [The scoped design review](design-qa.md) records the actual render, behavior and remaining density limits. Wider sublime acceptance and physical-device targets remain open.
 
@@ -70,13 +74,13 @@ HISTORICAL FREEZE (superseded by the 7 September standing delivery amendment): n
 
 ## 4. Rules that are not optional
 
-- Read CLAUDE.md and .claude/AI_INTEGRITY_RULES.md; the S+ bar; the Handoff Protocol; the Blake Clause.
-- Test first (a failing test, then the code); typecheck + tests + lint before any commit; commit with an explicit pathspec always; never stage everything.
-- Measure before claiming: the harness and Playwright from packages/web (a script outside the package cannot resolve @playwright/test; import it by absolute file URL). The embedded Browser pane cannot stream splats (.claude/gotchas/browser-pane-splat-streaming.md).
-- Never edit packages/web source while an e2e or harness run is in progress. Windows-green is not Linux-green. CI's audit job is red and gates nothing. CI's E2E job also never finishes: it is killed by its own 30-minute timeout, verified 2026-09-04 on several commits including a docs-only one (T-583), so it looks like pushes cancelling each other but is not. What must pass is Lint, Typecheck, Build and Test — check those four by name rather than the run's overall conclusion, which the audit job makes red regardless.
+- Read AGENTS.md for the ambitious quality bar, evidence requirements, judgment and reporting. Flag material contradictions; resolve routine choices and follow an already-authorized override without requesting it again.
+- Use existing tests and add regression coverage for changed behavior; reproduce bugs before fixing where practical. Run applicable checks per CLAUDE.md, including documentation-only verification where appropriate. Commit with an explicit pathspec always; never stage everything.
+- Measure before claiming: run repository harnesses and Playwright from packages/web; scratch scripts elsewhere need an explicit package import. Diagnose the current browser and capture rather than assuming tool limitations from historical failures; see [browser instrumentation](.claude/gotchas/browser-pane-splat-streaming.md).
+- Never edit packages/web source while an e2e or harness run is in progress. Windows-green is not Linux-green. Inspect the applicable CI jobs and their actual failures, including audit and E2E; do not ignore a failed gate. Audit failures and repeated E2E 30-minute timeouts were observed on 2026-09-04 (T-583), not permanent exemptions. Current commands and prerequisites are in [the engineering map](docs/engineering/README.md).
 - Secrets only in C:\Users\blake\deploy-secrets and packages/api/.env; never print them. Rotate the R2 token after the Trades Hall trip.
-- Generated/bulk files go under D:\claude\<task>\, never C: (37 GB free).
-- Spark, not drei's Splat; Three >= 0.180; Fastify; Drizzle; Zustand; Vitest; Zod; pnpm. PATH needs C:\Users\blake\AppData\Roaming\npm for pnpm.
-- Windows: Python wants C:/ paths; tsc needs NODE_OPTIONS=--max-old-space-size=8192; many repo files are CRLF (patch with line-ending-safe anchors).
-- Write less to Blake: lead with the answer, plain prose, no heavy formatting, long only when earned. Every session appends docs/sessions/YYYY-MM-DD.md and updates docs/state/tasks.md (T-577 is the latest row; T-576 is the Monday demo).
+- Generated/bulk files go under D:\claude\<task>\; check available capacity before large work.
+- Spark renders splats; preserve its supported Three.js compatibility. Read manifests and the lockfile for the React/R3F, Fastify, Drizzle, Zustand, Vitest, Zod and pnpm versions. If pnpm is missing from PATH, check C:\Users\blake\AppData\Roaming\npm.
+- On Windows, use Python-compatible paths and line-ending-safe edits. Use the package scripts and measured [V8 memory guidance](.claude/gotchas/windows-v8-heap.md) when checks need a larger heap.
+- Write less to Blake: lead with the answer, plain prose, no heavy formatting, long only when earned. Record meaningful work and decisions in docs/sessions/YYYY-MM-DD.md and maintain relevant rows per the shepherd protocol in docs/state/tasks.md; find current task IDs there rather than relying on a frozen latest number here.
 - Memory: C:\Users\blake\.claude\projects\C--Users-blake-omnitwin2\memory\ (MEMORY.md is the index; project_completion_programme.md, project_beauty_asset_map.md, project_xgrids_splat_ingest.md, project_xbag_colmap_bridge.md carry the Foundry and asset facts).

@@ -1,9 +1,10 @@
 // ---------------------------------------------------------------------------
-// Neon serverless-driver bridge for the LOCAL dev database (Slice 4, T-518).
+// Legacy Neon serverless-driver bridge for the LOCAL dev database.
 //
 // The @neondatabase/serverless driver speaks Postgres wire protocol over a
-// WebSocket — it cannot open plain TCP. In db/client.ts the local branch
-// disables TLS and pipelining, at which point the "proxy" is a pure byte
+// WebSocket — it cannot open plain TCP. Explicit legacy clients must disable
+// TLS and pipelining; the current API uses TCP and does not need this bridge.
+// With that legacy configuration the "proxy" is a pure byte
 // shovel: every ws frame is raw Postgres bytes for the server, and every TCP
 // chunk goes back as one binary frame. This is exactly what Neon's own
 // wsproxy does; this file is the no-Docker stand-in for the neon-proxy
@@ -11,7 +12,7 @@
 //
 //   node infra/dev-db/neon-ws-bridge.mjs
 //
-// Listens on ws://localhost:54331 (LOCAL_WS_PROXY_PORT in db/client.ts) and
+// Listens on ws://localhost:54331 for explicitly configured legacy clients and
 // forwards to Postgres on 127.0.0.1:54329. Dev tool only — never deployed.
 // ---------------------------------------------------------------------------
 
@@ -27,7 +28,7 @@ const requireFromApi = createRequire(apiDir);
 const fastifyWebsocketEntry = requireFromApi.resolve("@fastify/websocket");
 const { WebSocketServer } = createRequire(fastifyWebsocketEntry)("ws");
 
-const WS_PORT = 54331; // must match LOCAL_WS_PROXY_PORT in packages/api/src/db/client.ts
+const WS_PORT = 54331; // legacy clients opt into this endpoint
 const PG_HOST = "127.0.0.1";
 const PG_PORT = 54329; // must match infra/dev-db/docker-compose.yml
 

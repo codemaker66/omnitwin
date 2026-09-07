@@ -6,6 +6,7 @@ import { getAdminAssetRooms } from "../api/asset-status.js";
 import { containsUnsafePublicClaim } from "../lib/safe-public-copy.js";
 import "./TradesHallAssetStatusPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
+import { ActivityStatus } from "../components/shared/Activity.js";
 
 type LoadState = "loading" | "loaded" | "error";
 
@@ -263,8 +264,8 @@ export function TradesHallAssetStatusPage(): ReactElement {
       )}
 
       {loadState === "loading" && (
-        <section className="asset-status-panel" aria-live="polite">
-          Loading room runtime status.
+        <section className="asset-status-panel">
+          <ActivityStatus variant="panel">Loading room runtime status.</ActivityStatus>
         </section>
       )}
 

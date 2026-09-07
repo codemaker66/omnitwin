@@ -17,10 +17,10 @@ import {
   MapPinned,
   Play,
   Radio,
-  RefreshCw,
   Rewind,
   Users,
 } from "lucide-react";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import type {
   EventMissionBoard,
   EventMissionEvent,
@@ -232,17 +232,17 @@ const MissionTaskGrid = memo(function MissionTaskGrid(props: {
             <div className="mission-task-actions">
               {task.status !== "in_progress" && task.status !== "done" && task.status !== "waived" && (
                 <button type="button" disabled={props.busyId === task.id} onClick={() => { props.onTransition(task, "in_progress"); }}>
-                  Start
+                  {props.busyId === task.id && <ActivityIndicator size={18} />} Start
                 </button>
               )}
               {task.status !== "done" && task.status !== "waived" && (
                 <button type="button" disabled={props.busyId === task.id} onClick={() => { props.onTransition(task, "done"); }}>
-                  Done
+                  {props.busyId === task.id && <ActivityIndicator size={18} />} Done
                 </button>
               )}
               {task.status !== "blocked" && task.status !== "done" && task.status !== "waived" && (
                 <button type="button" disabled={props.busyId === task.id} onClick={() => { props.onTransition(task, "blocked"); }}>
-                  Block
+                  {props.busyId === task.id && <ActivityIndicator size={18} />} Block
                 </button>
               )}
             </div>
@@ -471,7 +471,7 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
   );
 
   if (loadState === "loading") {
-    return <section className="mission-shell mission-state" aria-live="polite"><RefreshCw className="mission-spin" aria-hidden="true" /> Loading Mission Control…</section>;
+    return <section className="mission-shell mission-state"><ActivityStatus>Loading Mission Control…</ActivityStatus></section>;
   }
   if (loadState === "error") {
     return (
@@ -491,7 +491,7 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
           <small>Internal execution only. This does not approve the layout or certify operational fitness.</small>
         </div>
         <button type="button" disabled={props.handoffPackId === null || busyId !== null} onClick={startMission}>
-          <Play aria-hidden="true" /> {props.handoffPackId === null ? "Handoff required" : "Start live mission"}
+          {busyId === "start" ? <ActivityIndicator size={20} /> : <Play aria-hidden="true" />} {props.handoffPackId === null ? "Handoff required" : "Start live mission"}
         </button>
       </section>
     );
@@ -527,7 +527,7 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
         <section className="mission-complete-confirm" role="alert">
           <div><strong>Complete this live mission?</strong><p>Phase, task, incident, and acknowledgement history will become read-only and remain replayable.</p></div>
           <button type="button" onClick={() => { setEndConfirm(false); }}>Keep live</button>
-          <button type="button" disabled={busyId !== null} onClick={completeMission}>Complete mission</button>
+          <button type="button" disabled={busyId !== null} onClick={completeMission}>{busyId === "mission-complete" && <ActivityIndicator size={18} />} Complete mission</button>
         </section>
       )}
 
@@ -544,8 +544,8 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
           {displayedPhases.map((phase) => (
             <li key={phase.id} data-status={phase.status}>
               <div><span>{phase.status}</span><strong>{phase.name}</strong></div>
-              {isLiveEdge && phase.status === "pending" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "active"); }}>Go live</button>}
-              {isLiveEdge && phase.status === "active" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "completed"); }}>Complete</button>}
+              {isLiveEdge && phase.status === "pending" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "active"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Go live</button>}
+              {isLiveEdge && phase.status === "active" && <button type="button" disabled={busyId !== null} onClick={() => { transitionPhase(phase, "completed"); }}>{busyId === phase.id && <ActivityIndicator size={18} />} Complete</button>}
             </li>
           ))}
         </ol>
@@ -573,7 +573,7 @@ export function EventMissionControl(props: EventMissionControlProps): ReactEleme
               <select aria-label="Incident severity" value={incidentDraft.severity} onChange={(event) => { setIncidentDraft((current) => ({ ...current, severity: event.target.value as EventMissionIncidentSeverity })); }}>
                 <option value="info">Information</option><option value="attention">Attention</option><option value="urgent">Urgent</option>
               </select>
-              <button type="submit" disabled={busyId !== null}>Log incident</button>
+              <button type="submit" disabled={busyId !== null}>{busyId === "incident" && <ActivityIndicator size={18} />} Log incident</button>
             </form>
           )}
           <ul className="mission-incident-list">{displayedIncidents.slice(0, 6).map((incident) => <li key={incident.id} data-severity={incident.severity}><span>{incident.severity}</span><div><strong>{incident.title}</strong><p>{incident.detail}</p></div><small>{incident.status}</small></li>)}</ul>

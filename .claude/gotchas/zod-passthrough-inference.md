@@ -1,29 +1,22 @@
-# Zod generic-inference trap
+**Read this when:** debugging a Zod input/output mismatch at an API boundary, especially
+with defaults, transforms or passthrough metadata.
 
-**Read this when:** writing or modifying a Zod schema that combines `.passthrough()` with `.default()` or `.nullable()` members, passing a schema as the generic argument to a `ZodType<T>`-typed client helper (e.g. `api.get<T>(path, schema)`), or debugging cascading `objectInputType vs objectOutputType is not assignable` errors at the api client boundary.
+# Zod input and output are different types
 
----
+A default or transform can make a schema's input type differ from its parsed
+output. Check both sides before weakening a schema or adding an assertion.
 
-Schemas that combine `.passthrough()` with `.default()` / `.nullable()` members
-make `input` ≠ `output` in Zod's inferred type. When you then pass that schema
-as the argument to a helper typed `ZodType<T>` (e.g. `api.get<T>(path, schema)`),
-TypeScript blows up with cascading `objectInputType vs objectOutputType is not
-assignable` errors deep in the inference chain — the error points at the
-assignment site, not at the schema.
+The current [API client](../../packages/web/src/api/client.ts) declares
+`ResponseSchema<T> = ZodType<T, ZodTypeDef, unknown>`: it accepts untrusted input
+and returns validated `T`. This fixes the older helper assumption that input and
+output must be identical. Prefer a precise boundary schema with the correct generic
+input type; do not replace validation with `unknown` just to silence inference.
 
-**Escape hatch (use this — do not re-type the response field as the rich schema):**
+Some metadata is intentionally transported as an opaque optional JSON value and
+validated by the consuming domain schema. The configuration metadata path is one
+such existing design. Use that pattern only when the contract intentionally owns
+validation at the consumer, and test invalid/unknown data there.
 
-1. Boundary schema: declare the field as `z.unknown().optional()` (or
-   `.nullable().optional()`) so the transport layer preserves JSONB without
-   stripping keys.
-2. Consumer-side narrowing:
-   `RichSchema.nullable().safeParse(value ?? null)` and read `parsed.data`.
-
-Canonical example: `packages/web/src/api/configurations.ts` declares
-`metadata: z.unknown().optional()`; `packages/web/src/components/editor/EventDetailsPanel.tsx:72`
-narrows with `ConfigurationMetadataSchema.nullable().safeParse(config.metadata ?? null)`.
-
-**Corollary:** when a Zod schema has `.default(...)` on a field, the parsed
-output is never `undefined`. `parsed.phaseDeadlines ?? []` and
-`parsed.dayOfContact ?? null` are unnecessary-condition lints under
-`strictTypeChecked` — spread the parsed blob verbatim.
+After parsing, defaults are present according to the output type. Do not add
+fallbacks that contradict that validated contract. Verify the installed Zod version
+and existing client tests when changing generic helpers; no `any` or double casts.

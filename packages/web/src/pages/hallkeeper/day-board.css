@@ -284,3 +284,31 @@
   padding-top: 14px;
   border-top: 1px solid var(--db-line);
 }
+
+/* Selected Hallkeeper workspace: ivory, forest, pastel event phases. */
+.dayboard { --db-ink:#faf8f2; --db-ink-raised:#fffefa; --db-paper:#302e26; --db-paper-dim:#716b5e; --db-line:#e3ded2; --db-gilt:#856548; --db-live:#48664b; --db-red:#a9352c; padding:30px; }
+.dayboard-title { font:400 36px/1.15 Georgia,serif; }
+.dayboard-subtitle { margin-top:8px; }
+.dayboard-controls { display:flex; align-items:end; flex-wrap:wrap; gap:12px; margin:24px 0; }
+.dayboard-controls label { display:grid; gap:5px; color:#666452; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+.dayboard-controls input,.dayboard-controls select,.dayboard-controls button,.dayboard-controls a { min-height:44px; border:1px solid #dcd5c6; border-radius:8px; padding:10px 14px; color:#3d523b; background:#fffefa; font:14px/1.4 Inter,sans-serif; text-decoration:none; }
+.dayboard-controls button { cursor:pointer; }
+.dayboard-lanes { grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:20px; }
+.dayboard-lane { padding:20px; box-shadow:0 5px 22px #50422906; }
+.dayboard-lane-title { font:400 25px/1.2 Georgia,serif; margin-bottom:18px; }
+.dayboard-slot { background:#fffdf7; border:1px solid #e2ddcf; border-left:4px solid #becaad; padding:17px; }
+.dayboard-slot-title { font-size:17px; line-height:1.5; overflow-wrap:anywhere; }
+.dayboard-tone-red { border-left-color:#b83f33; background:#fff4ee; }
+.dayboard-tone-live { border-left-color:#7f9978; background:#f1f5eb; }
+.dayboard-phases { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:0; margin:16px 0; gap:7px; list-style:none; }
+.dayboard-phases li { padding:12px; border-radius:8px; display:grid; gap:5px; color:#504e40; background:#eee5d5; }
+.dayboard-phases li[data-colour="1"] { background:#f5dccb; }
+.dayboard-phases li[data-colour="2"] { background:#f8e8bd; }
+.dayboard-phases li[data-colour="3"] { background:#dfe8d8; }
+.dayboard-phases li[data-colour="4"] { background:#dfe9ec; }
+.dayboard-phases li[data-colour="5"] { background:#e9e2ee; }
+.dayboard-phases strong { font-size:13px; font-weight:500; }
+.dayboard-phases span { font-size:12px; }
+.dayboard-open-event { display:inline-flex; min-height:44px; align-items:center; color:#3d5c3c; font-size:13px; text-underline-offset:4px; }
+.dayboard-legend { margin-top:25px; }
+@media(max-width:600px) { .dayboard { padding:22px 14px; }.dayboard-header{align-items:flex-start;flex-wrap:wrap}.dayboard-title{font-size:30px}.dayboard-controls{gap:8px}.dayboard-controls label{max-width:100%}.dayboard-controls select{max-width:100%}.dayboard-lane{padding:16px}.dayboard-slot{padding:13px}.dayboard-slot-head{flex-wrap:wrap} }

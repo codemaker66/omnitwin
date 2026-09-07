@@ -1,4 +1,10 @@
-# The goals deck — read this first, then take the first goal not marked done
+# The goals deck
+
+Follow the current user request and [AGENTS.md](../AGENTS.md); use the execution
+board to check ownership. Historical ordering and prompt counts do not override
+an activated goal. [Goal 12](12-intelligent-venue-platform.md) is active under
+T-605 for the integrated intelligent venue platform; its implementation and
+verification gates remain open.
 
 **Current delivery policy — 7 September 2026:** follow the
 [build, ship and verify contract](../.claude/conventions/shipping-changes.md).
@@ -49,12 +55,12 @@ Take goals in the order below unless a goal says it runs in parallel. Never take
 
 - Build, verify, integrate, deploy and check the changed live flow under the current delivery contract. The former weekend freeze and Tuesday-only merge rule are superseded. Respect any newer explicit hold without manufacturing another deployment approval.
 - The Sublime gates every surface. Blake has authorised the supplied reference images as interim targets, so work against them and concrete design studies can proceed. Present new directions as reviewable visuals before asking him to select one. Every rebuilt surface passes the sublime test (01 §4) line by line in its handoff.
-- The spine stays. "Rebuilt from scratch" means every surface a person sees and touches. It does not mean @omnitwin/types, the API, the Diary law (times only through bookings), the command envelopes (T-537), the coordinate space (T-473), the action log (T-522), the undo core, the spring core (packages/web/src/lib/springs.ts) or the splat runtime (one Spark host). Those are correct and invisible; rebuilding them would be silent widening of the ask.
-- Test first. Typecheck, tests and lint before any commit. `git commit -- <explicit paths>`; never stage everything.
-- Measure before claiming. Frame rates from the harness (packages/web/scripts/splat-drag-budget.mjs), loads from `window.__roomWalk`, beauty from the court (02), devices from the matrix (02). The embedded Browser pane cannot stream splats. Never edit packages/web source during a harness or e2e run.
-- Money: GOAL.md §3 caps ($60 across the ladder, $25 a training run, the pod stopped every session). Beyond them, ask.
+- Preserve domain guarantees while changing implementations when evidence justifies it. Shared types, API commands, booking authority, coordinate provenance, history/Undo and the supported renderer lifecycle are important boundaries, not proof that their current code is correct. Goal 12 explicitly includes application modernization; use its outcome and current AGENTS.md to determine scope.
+- Run checks appropriate to the changed behavior and dependencies before committing. Documentation-only work needs consistency/link/diff checks; application work needs applicable tests, types, lint, builds and rendered-flow evidence. Stage coherent work with explicit pathspecs and inspect the staged diff.
+- Measure before claiming. Use the applicable current harness, declared scene/workload and device matrix; byte arrival, displayed pixels, frame rate and visual acceptance are different evidence. Inspect actual browser capabilities instead of inheriting old tool-failure assumptions. Never edit source during its verification run.
+- Money: read the latest GOAL amendments and the active programme's named budget, owner and stop conditions before spending. Other tasks' allowances do not transfer automatically.
 - Secrets only in C:\Users\blake\deploy-secrets and packages/api/.env, never printed. Bulk output under D:\claude\<goal>\, never C:.
-- The S+ bar, the Handoff Protocol, the Blake Clause, CLAUDE.md and .claude/AI_INTEGRITY_RULES.md.
+- [AGENTS.md](../AGENTS.md) is the canonical instruction file; CLAUDE.md imports it. Use its evidence, autonomy and quality rules together with the current shipping contract. Removed personas, integrity rulebooks and handoff rituals are historical material.
 - Write to Blake short and plain: the answer first, detail only when it changes what he does next.
 
 ## Blake Clause flags, recorded and decided
@@ -62,7 +68,7 @@ Take goals in the order below unless a goal says it runs in parallel. Never take
 These are contradictions between Blake's message and the written record. Blake's message is the later, explicit instruction, so each is treated as decided unless he says otherwise.
 
 1. "all of our current UI's and Design need to be rebuilt from scratch" supersedes House v1.0 (docs/plan/02-DESIGN-LANGUAGE.md), the visual rulings of the Diary canon in docs/strategy/authority-map.md, and plan 15 §3's "reuse approved a-board, b-daysheet, c-mobile concepts". Plan 16 has already stamped both House and the authority map with this notice. Those documents become history and evidence; the supplied reference images (docs/design/concepts/, docs/plan/reference/day-board/) are acceptable interim targets, to be improved on. Their rules that are correctness rather than taste (claim-safe language, the one-second Hallkeeper Test, 44 px touch targets, colour never carrying meaning alone, reduced motion losing no function, audio off losing nothing, 4.5:1 contrast) are carried into goal 01 as laws.
-2. The rebuild cannot land before Monday. Goal 00 protects Monday with the current interface; the rebuild begins Tuesday on a branch. This is sequencing, not a softening.
+2. Historical Monday/Tuesday sequencing was superseded by the 7 September shipping amendment. Keep the demo working while qualified improvements ship through coordinated releases.
 3. "psnr 50+" is carried as written and measured under the court's protocol (fixed photographed viewpoints, regional scores). Every report says which number it is reporting: fixed-pose reproduction, held-out reconstruction, or delivery loss against a master. The best published held-out indoor results are far below 50 dB; that fact is stated in reports, never used to drop the target.
 4. "60fps ... across ipads and computers and phones", read with plan 16 §4, means one quality bar: the same accepted appearance on current iPhones and iPads including the entry models, and on ordinary office computers, at 60 fps. Engineering chooses the qualification fixtures (goal 02 D1); Blake is not asked to pick hardware. The existing coarse-first ladder and the medium and low profiles in packages/web/src/lib/splat-runtime-profile.ts (labelled extrapolated) are diagnostic baselines and interim delivery, never completion. A visibly reduced mobile mode cannot close the goal, and a lower threshold needs a new founder decision. Nothing has been measured on a physical iPhone or iPad; until HUMAN.md item 3 is met every mobile number says "emulated".
 5. "venue admin staff ... communicate freely with clients ... and with hallkeeper staff via a ... direct message feature" supersedes the Diary canon's "we do not build radio/chat" restriction and widens the Day Board's internal-only messaging plan. Recorded in plan 15 §1 and plan 16; goal 04 builds it with exact audiences.

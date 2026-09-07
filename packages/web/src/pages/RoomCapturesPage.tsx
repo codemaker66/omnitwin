@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { ActivityStatus } from "../components/shared/Activity.js";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useNavigate, useParams } from "react-router-dom";
@@ -229,11 +230,13 @@ export function RoomCapturesPage(): ReactElement {
           </div>
 
           <footer className="captures__status" data-testid="captures-status">
-            <span>
-              {complete
-                ? `${formatCount(progress.splats)} splats across ${String(total)} tiles`
-                : `Loading ${String(settled)}/${String(total)} tiles`}
-            </span>
+            {complete ? (
+              <span>{`${formatCount(progress.splats)} splats across ${String(total)} tiles`}</span>
+            ) : total > 0 ? (
+              <ActivityStatus progress={Math.round((settled / total) * 100)}>
+                {`Loading ${String(settled)}/${String(total)} tiles`}
+              </ActivityStatus>
+            ) : <span>No capture staged for this room.</span>}
             {progress.failed > 0 && (
               <span className="captures__failed">{String(progress.failed)} tiles failed</span>
             )}

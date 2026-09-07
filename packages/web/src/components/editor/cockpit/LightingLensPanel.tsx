@@ -9,6 +9,7 @@ import { parseMvrScene, resolveMvrRig, MVR_IMPORT_DISCLAIMER, type ResolvedMvrRi
 import { selectFixtureModel, type SelectedFixtureModel } from "../../../lib/gdtf-model.js";
 import { patchSheetCsv, PATCH_SHEET_FILENAME } from "../../../lib/patch-sheet.js";
 import { FixtureModelPreview } from "./FixtureModelPreview.js";
+import { ActivityStatus } from "../../shared/Activity.js";
 import {
   buildDmxPatch,
   estimateRigPower,
@@ -67,6 +68,7 @@ function GdtfImportSection(): ReactElement {
   const [modeIndex, setModeIndex] = useState(0);
   const [familyOverride, setFamilyOverride] = useState<LightingFixtureFamily | "">("");
   const [fileError, setFileError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
   const [mvrRig, setMvrRig] = useState<ResolvedMvrRig | null>(null);
   const [fixtureModel, setFixtureModel] = useState<SelectedFixtureModel | null>(null);
   const [fileName, setFileName] = useState<string | null>(null); // set when loaded from a file (hide the raw-XML editor)
@@ -90,6 +92,8 @@ function GdtfImportSection(): ReactElement {
   };
 
   const handleFile = async (file: File): Promise<void> => {
+    if (importing) return;
+    setImporting(true);
     setFileError(null);
     setMvrRig(null);
     setFixtureModel(null);
@@ -118,6 +122,8 @@ function GdtfImportSection(): ReactElement {
       }
     } catch {
       setFileError("Could not read the file.");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -169,9 +175,10 @@ function GdtfImportSection(): ReactElement {
       <div className="lens-panel__file-row">
         <label className="lens-panel__chip-link" data-testid="gdtf-file-label">
           Choose .gdtf / .mvr file
-          <input type="file" accept=".gdtf,.mvr,application/zip" onChange={onFile} data-testid="gdtf-file" aria-label="Choose a GDTF or MVR file" hidden />
+          <input type="file" accept=".gdtf,.mvr,application/zip" onChange={onFile} data-testid="gdtf-file" aria-label="Choose a GDTF or MVR file" disabled={importing} hidden />
         </label>
       </div>
+      {importing && <ActivityStatus>Importing fixture file…</ActivityStatus>}
       {fileError !== null && (
         <p className="lens-panel__error" data-testid="gdtf-file-error">{fileError}</p>
       )}

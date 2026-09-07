@@ -47,9 +47,9 @@ import { canRenderPersistedLayout } from "../services/layout-coordinate-space.js
 // ---------------------------------------------------------------------------
 // Proposal routes — T-427 phase 2.
 //
-// Venue scoping: proposals are authored by venue staff. Creation and
-// mutation require admin (any venue) or staff (own venue only); reads use
-// the house canAccessResource rule (admin / venue staff / creator).
+// Venue scoping: proposals are authored by venue staff and venue admins.
+// Creation and mutation require the actor's own venue unless they hold the
+// platform-admin role; reads use the house canAccessResource rule.
 // Status changes run through the proposal state machine with role policy;
 // every transition writes a proposal_status_history row.
 //
@@ -146,10 +146,10 @@ interface ProposalEventContext {
   readonly handoffPackId: string | null;
 }
 
-/** Create/mutate policy: admin anywhere, staff within their own venue. */
+/** Create/mutate policy: venue staff/admin in their own venue, or platform admin. */
 function canManageVenueProposals(user: AuthedUser, venueId: string): boolean {
   if (isPlatformAdmin(user)) return true;
-  return user.role === "staff" && user.venueId === venueId;
+  return (user.role === "staff" || user.role === "admin") && user.venueId === venueId;
 }
 
 async function loadProposalEventContext(db: Database, proposal: ProposalRow): Promise<ProposalEventContext | null> {
@@ -280,7 +280,7 @@ export async function proposalRoutes(
 
     if (isPlatformAdmin(user)) {
       // Admin sees all venues
-    } else if ((user.role === "staff" || user.role === "hallkeeper") && user.venueId !== null) {
+    } else if ((user.role === "staff" || user.role === "admin" || user.role === "hallkeeper") && user.venueId !== null) {
       whereConditions.push(eq(proposals.venueId, user.venueId));
     } else {
       whereConditions.push(eq(proposals.createdBy, user.id));
@@ -303,7 +303,7 @@ export async function proposalRoutes(
     return paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
   });
 
-  // POST /proposals — staff (own venue) or admin creates a draft
+  // POST /proposals — venue staff/admin or platform admin creates a draft
   server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = CreateProposalBody.safeParse(request.body);
     if (!parsed.success) {
@@ -461,7 +461,7 @@ export async function proposalRoutes(
     return { data: updated };
   });
 
-  // DELETE /proposals/:id — soft delete; accepted proposals are locked (admin may override)
+  // DELETE /proposals/:id — soft delete; accepted proposals are locked (platform admin may override)
   server.delete("/:id", { preHandler: [authenticate] }, async (request, reply) => {
     const params = IdParam.safeParse(request.params);
     if (!params.success) {

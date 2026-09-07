@@ -3,7 +3,11 @@
 or reading a COLMAP `database.db`, or writing a `sparse/0` model that COLMAP
 must load next to a database (the `tools/xgrids-xbag/xbag_colmap.py` bridge).
 
-# pycolmap 4.2.0 on Windows: five traps met while building the XBAG bridge (2026-09-02)
+# pycolmap 4.2.0 on Windows: observed XBAG bridge traps (2026-09-02)
+
+These observations are version, input and machine specific. Recheck current
+capabilities and resource limits before reusing a recipe. Preserve source masters;
+perform database repairs and experiments on explicit disposable copies.
 
 1. **pycolmap's CPU SIFT dies at start-up, nondeterministically, in roughly
    half of all launches** (exit 3221225477 = 0xC0000005 or 3221226505 =
@@ -29,8 +33,9 @@ must load next to a database (the `tools/xgrids-xbag/xbag_colmap.py` bridge).
 2. **Deleting `database.db` is not a fresh database.** COLMAP's SQLite runs in
    WAL mode and leaves `database.db-wal` / `database.db-shm` beside it; a new
    `database.db` opened next to a stale WAL inherits the old rows (a "fresh"
-   run started skipping images and processing camera #3). Remove
-   `database.db*`.
+   run started skipping images and processing camera #3). Prefer a new working
+   directory. If resetting a disposable database, stop its writers and identify
+   the exact database, WAL and SHM paths; never wildcard-delete a source database.
 
 3. **`triangulate_points` loads the database alongside the model and insists
    a model camera and the database camera with the same id share a lens

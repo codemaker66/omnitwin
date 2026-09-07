@@ -1,22 +1,21 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   CreateManagedOnboardingSchema,
   InviteWorkspaceMembersSchema,
   UpdateOnboardingProjectSchema,
   VerifyWorkspaceEntitlementSchema,
   type ProviderVerificationStatus,
-  type VenueInvitationRole,
   type WorkspaceEntitlementInput,
   type WorkspaceEntitlementStatus,
-  type WorkspaceMemberRole,
 } from "@omnitwin/types";
 import {
   onboardingAuditEvents,
   onboardingProjects,
   organisations,
   userInvitations,
+  users,
   venues,
   workspaceEntitlements,
   workspaceMemberships,
@@ -24,28 +23,14 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
+import { OnboardingConflict, prepareWorkspaceInvitation } from "../services/workspace-invitations.js";
 
 const WorkspaceIdParam = z.object({ workspaceId: z.string().uuid() });
 const ProjectIdParam = z.object({ projectId: z.string().uuid() });
 const EntitlementIdParam = z.object({ entitlementId: z.string().uuid() });
 
 type WorkspaceMembershipRow = typeof workspaceMemberships.$inferSelect;
-
-interface MembershipDraft {
-  readonly email: string;
-  readonly workspaceRole: WorkspaceMemberRole;
-  readonly venueRole: VenueInvitationRole;
-}
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
-
-function addDays(from: Date, days: number): Date {
-  const expires = new Date(from);
-  expires.setUTCDate(expires.getUTCDate() + days);
-  return expires;
-}
+const InvitationParam = WorkspaceIdParam.extend({ membershipId: z.string().uuid() });
 
 function providerVerificationStatusFor(input: WorkspaceEntitlementInput): ProviderVerificationStatus {
   if (input.providerVerified) return "provider_verified";
@@ -80,20 +65,21 @@ export async function onboardingRoutes(
       .where(isNull(workspaces.deletedAt))
       .limit(200);
 
-    const venueIds = workspaceRows.map((workspace) => workspace.primaryVenueId);
-    const venueRows = venueIds.length === 0
-      ? []
-      : await db.select()
-        .from(venues)
-        .where(inArray(venues.id, venueIds))
-        .limit(200);
+    const workspaceIds = workspaceRows.map((workspace) => workspace.id);
+    const venueRows = await db.select().from(venues).where(isNull(venues.deletedAt)).limit(200);
 
     const [membershipRows, projectRows, entitlementRows, auditRows] = await Promise.all([
-      db.select().from(workspaceMemberships).limit(500),
-      db.select().from(onboardingProjects).limit(200),
-      db.select().from(workspaceEntitlements).limit(200),
-      db.select().from(onboardingAuditEvents).limit(500),
+      workspaceIds.length === 0 ? [] : db.select().from(workspaceMemberships).where(inArray(workspaceMemberships.workspaceId, workspaceIds)).limit(500),
+      workspaceIds.length === 0 ? [] : db.select().from(onboardingProjects).where(inArray(onboardingProjects.workspaceId, workspaceIds)).limit(200),
+      workspaceIds.length === 0 ? [] : db.select().from(workspaceEntitlements).where(inArray(workspaceEntitlements.workspaceId, workspaceIds)).limit(200),
+      workspaceIds.length === 0 ? [] : db.select().from(onboardingAuditEvents).where(inArray(onboardingAuditEvents.workspaceId, workspaceIds)).limit(500),
     ]);
+    const invitationIds = membershipRows.flatMap((member) => member.invitationId === null ? [] : [member.invitationId]);
+    const invitationRows = invitationIds.length === 0 ? [] : await db.select({
+      id: userInvitations.id, email: userInvitations.email, role: userInvitations.role,
+      venueId: userInvitations.venueId, status: userInvitations.status, expiresAt: userInvitations.expiresAt,
+      acceptedAt: userInvitations.acceptedAt, acceptedBy: userInvitations.acceptedBy,
+    }).from(userInvitations).where(inArray(userInvitations.id, invitationIds));
 
     return {
       data: {
@@ -104,6 +90,7 @@ export async function onboardingRoutes(
         projects: projectRows,
         entitlements: entitlementRows,
         auditEvents: auditRows,
+        invitations: invitationRows,
       },
     };
   });
@@ -114,18 +101,29 @@ export async function onboardingRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
 
-    const existing = await db.select({ id: venues.id })
-      .from(venues)
-      .where(and(eq(venues.slug, parsed.data.venue.slug), isNull(venues.deletedAt)))
-      .limit(1);
-
-    if (existing.length > 0) {
-      return reply.status(409).send({ error: "Venue slug already exists", code: "SLUG_EXISTS" });
-    }
-
+    try {
     const created = await db.transaction(async (tx) => {
       const now = new Date();
-      const invitationExpiresAt = addDays(now, 30);
+
+      let venue: typeof venues.$inferSelect | undefined;
+      if (parsed.data.existingVenueId !== undefined) {
+        [venue] = await tx.select().from(venues).where(and(eq(venues.id, parsed.data.existingVenueId), isNull(venues.deletedAt)))
+          .limit(1).for("no key update");
+        if (venue === undefined) throw new OnboardingConflict("Venue not found", "NOT_FOUND", 404);
+        const [attached] = await tx.select({ id: workspaces.id }).from(workspaces)
+          .where(and(eq(workspaces.primaryVenueId, venue.id), isNull(workspaces.deletedAt))).limit(1);
+        if (attached !== undefined) throw new OnboardingConflict("This venue already has a workspace. Select it to manage access.", "VENUE_ALREADY_LINKED");
+      } else if (parsed.data.venue !== undefined) {
+        const input = parsed.data.venue;
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`venue-slug:${input.slug}`}))`);
+        const [existing] = await tx.select({ id: venues.id }).from(venues).where(eq(venues.slug, input.slug)).limit(1);
+        if (existing !== undefined) throw new OnboardingConflict("Venue slug already exists", "SLUG_EXISTS");
+        [venue] = await tx.insert(venues).values({
+          name: input.name, slug: input.slug, address: input.address, logoUrl: input.logoUrl ?? null,
+          brandColour: input.brandColour ?? null, timezone: input.timezone,
+        }).returning();
+      }
+      if (venue === undefined) throw new Error("Venue insert returned no row");
 
       const [organisation] = await tx.insert(organisations).values({
         name: parsed.data.organisationName,
@@ -133,16 +131,6 @@ export async function onboardingRoutes(
         createdBy: request.user.id,
       }).returning();
       if (organisation === undefined) throw new Error("organisation insert returned no row");
-
-      const [venue] = await tx.insert(venues).values({
-        name: parsed.data.venue.name,
-        slug: parsed.data.venue.slug,
-        address: parsed.data.venue.address,
-        logoUrl: parsed.data.venue.logoUrl ?? null,
-        brandColour: parsed.data.venue.brandColour ?? null,
-        timezone: parsed.data.venue.timezone,
-      }).returning();
-      if (venue === undefined) throw new Error("venue insert returned no row");
 
       const [workspace] = await tx.insert(workspaces).values({
         organisationId: organisation.id,
@@ -153,47 +141,12 @@ export async function onboardingRoutes(
       }).returning();
       if (workspace === undefined) throw new Error("workspace insert returned no row");
 
-      const createMembership = async (draft: MembershipDraft): Promise<WorkspaceMembershipRow> => {
-        const email = normalizeEmail(draft.email);
+      for (const email of [parsed.data.ownerInvite.email, ...parsed.data.staffInvites.map((invite) => invite.email)]
+        .map((email) => email.trim().toLowerCase()).sort()) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${email}))`);
+      }
 
-        const [existingMembership] = await tx.select()
-          .from(workspaceMemberships)
-          .where(and(eq(workspaceMemberships.workspaceId, workspace.id), eq(workspaceMemberships.email, email)))
-          .limit(1);
-        if (existingMembership !== undefined) return existingMembership;
-
-        const [existingInvitation] = await tx.select()
-          .from(userInvitations)
-          .where(and(
-            eq(userInvitations.email, email),
-            eq(userInvitations.venueId, venue.id),
-            eq(userInvitations.status, "pending"),
-          ))
-          .limit(1);
-
-        const invitation = existingInvitation ?? (await tx.insert(userInvitations).values({
-          email,
-          role: draft.venueRole,
-          venueId: venue.id,
-          status: "pending",
-          expiresAt: invitationExpiresAt,
-        }).returning())[0];
-        if (invitation === undefined) throw new Error("invitation insert returned no row");
-
-        const [membership] = await tx.insert(workspaceMemberships).values({
-          workspaceId: workspace.id,
-          invitationId: invitation.id,
-          email,
-          role: draft.workspaceRole,
-          venueRole: draft.venueRole,
-          status: "invited",
-          invitedBy: request.user.id,
-        }).returning();
-        if (membership === undefined) throw new Error("workspace membership insert returned no row");
-        return membership;
-      };
-
-      const ownerMembership = await createMembership({
+      const ownerMembership = await prepareWorkspaceInvitation(tx, workspace.id, venue.id, request.user.id, {
         email: parsed.data.ownerInvite.email,
         workspaceRole: parsed.data.ownerInvite.workspaceRole,
         venueRole: parsed.data.ownerInvite.venueRole,
@@ -201,7 +154,7 @@ export async function onboardingRoutes(
 
       const staffMemberships: WorkspaceMembershipRow[] = [];
       for (const invite of parsed.data.staffInvites) {
-        staffMemberships.push(await createMembership({
+        staffMemberships.push(await prepareWorkspaceInvitation(tx, workspace.id, venue.id, request.user.id, {
           email: invite.email,
           workspaceRole: invite.workspaceRole,
           venueRole: invite.venueRole,
@@ -284,6 +237,10 @@ export async function onboardingRoutes(
     });
 
     return reply.status(201).send({ data: created });
+    } catch (error) {
+      if (error instanceof OnboardingConflict) return reply.status(error.statusCode).send({ error: error.message, code: error.code });
+      throw error;
+    }
   });
 
   server.post("/workspaces/:workspaceId/invitations", { preHandler: platformAdminPreHandler }, async (request, reply) => {
@@ -305,42 +262,16 @@ export async function onboardingRoutes(
       return reply.status(404).send({ error: "Workspace not found", code: "NOT_FOUND" });
     }
 
+    try {
     const memberships = await db.transaction(async (tx) => {
-      const now = new Date();
-      const invitationExpiresAt = addDays(now, 30);
+      const [currentWorkspace] = await tx.select().from(workspaces)
+        .where(and(eq(workspaces.id, workspace.id), isNull(workspaces.deletedAt))).limit(1).for("no key update");
+      if (currentWorkspace === undefined || (currentWorkspace.status !== "active" && currentWorkspace.status !== "onboarding")) {
+        throw new OnboardingConflict("This workspace is not accepting new access grants", "WORKSPACE_UNAVAILABLE");
+      }
       const rows: WorkspaceMembershipRow[] = [];
-
-      for (const invite of parsed.data.staffInvites) {
-        const email = normalizeEmail(invite.email);
-        const [existingMembership] = await tx.select()
-          .from(workspaceMemberships)
-          .where(and(eq(workspaceMemberships.workspaceId, workspace.id), eq(workspaceMemberships.email, email)))
-          .limit(1);
-        if (existingMembership !== undefined) {
-          rows.push(existingMembership);
-          continue;
-        }
-
-        const [invitation] = await tx.insert(userInvitations).values({
-          email,
-          role: invite.venueRole,
-          venueId: workspace.primaryVenueId,
-          status: "pending",
-          expiresAt: invitationExpiresAt,
-        }).returning();
-        if (invitation === undefined) throw new Error("invitation insert returned no row");
-
-        const [membership] = await tx.insert(workspaceMemberships).values({
-          workspaceId: workspace.id,
-          invitationId: invitation.id,
-          email,
-          role: invite.workspaceRole,
-          venueRole: invite.venueRole,
-          status: "invited",
-          invitedBy: request.user.id,
-        }).returning();
-        if (membership === undefined) throw new Error("workspace membership insert returned no row");
-        rows.push(membership);
+      for (const invite of [...parsed.data.staffInvites].sort((a, b) => a.email.toLowerCase().localeCompare(b.email.toLowerCase()))) {
+        rows.push(await prepareWorkspaceInvitation(tx, workspace.id, workspace.primaryVenueId, request.user.id, invite));
       }
 
       await tx.insert(onboardingAuditEvents).values({
@@ -355,6 +286,53 @@ export async function onboardingRoutes(
     });
 
     return reply.status(201).send({ data: { memberships } });
+    } catch (error) {
+      if (error instanceof OnboardingConflict) return reply.status(error.statusCode).send({ error: error.message, code: error.code });
+      throw error;
+    }
+  });
+
+  server.delete("/workspaces/:workspaceId/invitations/:membershipId", { preHandler: platformAdminPreHandler }, async (request, reply) => {
+    const parsed = InvitationParam.safeParse(request.params);
+    if (!parsed.success) return reply.status(400).send({ error: "Invalid invitation", code: "VALIDATION_ERROR" });
+    try {
+      const membership = await db.transaction(async (tx) => {
+        const [workspace] = await tx.select().from(workspaces)
+          .where(and(eq(workspaces.id, parsed.data.workspaceId), isNull(workspaces.deletedAt))).limit(1).for("no key update");
+        if (workspace === undefined) throw new OnboardingConflict("Workspace not found", "NOT_FOUND", 404);
+        const [found] = await tx.select().from(workspaceMemberships)
+          .where(and(eq(workspaceMemberships.id, parsed.data.membershipId), eq(workspaceMemberships.workspaceId, workspace.id))).limit(1);
+        if (found === undefined) throw new OnboardingConflict("Invitation not found", "NOT_FOUND", 404);
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${found.email}))`);
+        const [current] = await tx.select().from(workspaceMemberships).where(eq(workspaceMemberships.id, found.id)).limit(1).for("update");
+        if (current?.status !== "invited" || current.invitationId === null) {
+          throw new OnboardingConflict("This invitation has already been accepted or cancelled. Existing account access has not changed.", "INVITATION_NOT_PENDING");
+        }
+        const now = new Date();
+        const [revoked] = await tx.update(userInvitations).set({ status: "revoked", updatedAt: now })
+          .where(and(eq(userInvitations.id, current.invitationId), eq(userInvitations.status, "pending"), isNull(userInvitations.acceptedAt))).returning();
+        if (revoked === undefined) throw new OnboardingConflict("Invitation is no longer pending", "INVITATION_NOT_PENDING");
+        // Cancelling an unaccepted upgrade must preserve a connected account's
+        // existing grant. New, unconnected invitations become removed.
+        const [user] = current.userId === null ? [] : await tx.select().from(users)
+          .where(eq(users.id, current.userId)).limit(1);
+        const [updated] = await tx.update(workspaceMemberships).set({
+          status: user === undefined ? "removed" : "active",
+          ...(user === undefined ? {} : { venueRole: user.role, role: current.role === "owner" ? "owner" : user.role }),
+          updatedAt: now,
+        }).where(eq(workspaceMemberships.id, current.id)).returning();
+        if (updated === undefined) throw new Error("Membership disappeared during cancellation");
+        await tx.insert(onboardingAuditEvents).values({
+          workspaceId: workspace.id, eventType: "invitation_revoked", actorUserId: request.user.id,
+          summary: `Pending invitation cancelled for ${current.email}; existing account access preserved`,
+        });
+        return updated;
+      });
+      return { data: { membership } };
+    } catch (error) {
+      if (error instanceof OnboardingConflict) return reply.status(error.statusCode).send({ error: error.message, code: error.code });
+      throw error;
+    }
   });
 
   server.patch("/projects/:projectId", { preHandler: platformAdminPreHandler }, async (request, reply) => {

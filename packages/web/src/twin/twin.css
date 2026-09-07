@@ -227,41 +227,52 @@
   animation: vv-twin-text-in 200ms var(--settle) both;
 }
 
-/* — initial-load shimmer: a 2 px hairline under the label, first node only — */
+/* Initial view activity; legacy class/test id retained for lifecycle checks. */
 
 .vv-twin-load-shimmer {
   position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: -7px;
-  height: 2px;
-  border-radius: 1px;
-  overflow: hidden;
-  background: rgba(215, 166, 75, 0.22);
+  left: 0;
+  top: calc(100% + 8px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--black-2);
+  font-size: 12px;
+  white-space: nowrap;
   pointer-events: none;
   transition: opacity 400ms var(--settle);
 }
 
-.vv-twin-load-shimmer::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(240, 198, 107, 0.9),
-    transparent
-  );
-  transform: translateX(-100%);
-  animation: vv-twin-shimmer 1.4s linear infinite;
-}
-
-@keyframes vv-twin-shimmer {
-  to { transform: translateX(100%); }
-}
-
 .vv-twin-load-shimmer--out {
   opacity: 0;
+}
+
+.vv-twin-load-error {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(300px, calc(100vw - 64px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--black-2);
+  color: var(--ink-2);
+  letter-spacing: normal;
+}
+
+.vv-twin-load-error button {
+  justify-self: start;
+  padding: 8px 12px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
 }
 
 /* — view-mode segmented control (Phase 2, Task 5) — */
@@ -1014,12 +1025,6 @@
   .vv-twin-coach,
   .vv-twin-coach--out {
     animation: none;
-  }
-
-  /* The hairline stays as a static presence; only the sweep stops. */
-  .vv-twin-load-shimmer::after {
-    animation: none;
-    opacity: 0;
   }
 
   .vv-twin .twin-minimap {

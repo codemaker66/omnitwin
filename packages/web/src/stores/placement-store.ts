@@ -12,7 +12,7 @@ import {
   getPlacementViolations,
 } from "../lib/placement.js";
 import { getCatalogueItem, isAtMaxCount } from "../lib/catalogue.js";
-import { createTableGroup, rearrangeTableGroup } from "../lib/table-group.js";
+import { createTableGroup, rearrangeTableGroup, seatCapacity, tableGroupChairFootprint, tableGroupPlanningFootprint } from "../lib/table-group.js";
 import { planBanquetLayout } from "../lib/auto-layout.js";
 import { planTheatreLayout } from "../lib/theatre-layout.js";
 import { toRealWorld, toRenderSpace } from "../constants/scale.js";
@@ -260,6 +260,7 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
           movingItem.rotationY,
           roomDims,
           movingItem.scale,
+          movingItem.groupId === null ? undefined : tableGroupChairFootprint(movingItem, state.placedItems, false),
         );
         finalX = wallSnap.x;
         finalZ = wallSnap.z;
@@ -536,14 +537,16 @@ export const usePlacementStore = create<PlacementState>()((set, get) => ({
     if (tableItem === undefined || !isDiningTableItem(tableItem)) return;
     const state = get();
 
-    const seats = Math.max(0, Math.floor(chairsPerTable));
+    const seats = Math.min(seatCapacity(tableItem), Math.max(0, Math.floor(chairsPerTable)));
+    const occupied = tableGroupPlanningFootprint(tableItem, seats);
     const dims = useRoomDimensionsStore.getState().dimensions;
     const plan = planBanquetLayout({
       // Room dimensions are render-space; the engine works in metres.
       roomWidthM: toRealWorld(dims.width),
       roomLengthM: toRealWorld(dims.length),
-      tableWidthM: tableItem.width,
-      tableDepthM: tableItem.depth,
+      // Keep the configured aisle clear beyond the complete chair group.
+      tableWidthM: occupied.width,
+      tableDepthM: occupied.depth,
       seatsPerTable: seats,
       targetGuests: targetGuests > 0 ? targetGuests : undefined,
     });

@@ -162,7 +162,12 @@ describe("LightingLensPanel", () => {
     const file = new File([new TextEncoder().encode("not a zip")], "bad.gdtf", { type: "application/zip" });
     render(<LightingLensPanel />);
     fireEvent.change(screen.getByTestId("gdtf-file"), { target: { files: [file] } });
+    expect(screen.getByRole("status").textContent).toContain("Importing fixture file");
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(screen.getByTestId<HTMLInputElement>("gdtf-file").disabled).toBe(true);
     expect(await screen.findByTestId("gdtf-file-error")).toBeTruthy();
+    expect(screen.queryByText("Importing fixture file…")).toBeNull();
+    expect(screen.getByTestId<HTMLInputElement>("gdtf-file").disabled).toBe(false);
   });
 
   it("imports a whole rig from a chosen .mvr file", async () => {

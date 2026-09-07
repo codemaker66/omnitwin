@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactElement } from "react";
 import { BriefcaseBusiness } from "lucide-react";
+import { ActivityIndicator } from "../../shared/Activity.js";
 import type { OpsHandoffPackBundle } from "@omnitwin/types";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
 import { usePlacementStore } from "../../../stores/placement-store.js";
@@ -124,6 +125,7 @@ export function OpsLensPanel(): ReactElement {
               disabled={compiling}
               data-testid="ops-compile"
             >
+              {compiling && <ActivityIndicator size={18} />}
               {compiling ? "Compiling…" : pack !== null ? "Recompile handoff pack" : "Compile ops handoff pack"}
             </button>
           </div>

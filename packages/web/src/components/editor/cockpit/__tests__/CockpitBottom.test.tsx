@@ -353,7 +353,9 @@ function LocationSearch(): ReactElement {
 }
 
 function renderBottom(
-  url = "/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18",
+  // Most cases exercise a historical preview session. Ordinary planner entry
+  // is tested separately with no phase request below.
+  url = `/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${ARRIVAL_ID}`,
   history?: readonly string[],
 ) {
   const entries = history ?? [url];
@@ -389,6 +391,71 @@ afterEach(() => {
 });
 
 describe("CockpitBottom room layout timeline", () => {
+  it("keeps an ordinary room planner editable when frozen history loads", async () => {
+    useCockpitStore.getState().selectPhase("saved-plan-phase");
+    const savedObjects = useEditorStore.getState().objects;
+    const savedConfigId = useEditorStore.getState().configId;
+    timelineApi.getRoomLayoutTimeline.mockImplementation((query) =>
+      Promise.resolve(responseForQuery(query, [arrival, roomFlip, dinner])),
+    );
+    renderBottom("/plan/cfg-1?space=grand-hall");
+
+    await screen.findByRole("slider", { name: /scrub room layout/i });
+    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("inactive");
+    expect(isLayoutTimelineMutationLocked()).toBe(false);
+    expect(useEditorStore.getState().objects).toBe(savedObjects);
+    expect(useEditorStore.getState().configId).toBe(savedConfigId);
+    expect(useCockpitStore.getState().selectedPhaseId).toBe("saved-plan-phase");
+    expect(screen.queryByRole("button", { name: "Exit preview" })).toBeNull();
+
+    // The timeline remains usable: a deliberate historical selection locks
+    // editing before displaying any frozen furniture.
+    fireEvent.click(screen.getAllByRole("button", { name: /Guest arrival.*Frozen layout/i })[0] ?? document.body);
+    expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(ARRIVAL_ID);
+    expect(isLayoutTimelineMutationLocked()).toBe(true);
+  });
+
+  it("keeps an explicitly requested historical phase locked", async () => {
+    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
+    renderBottom(`/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${DINNER_ID}`);
+
+    await screen.findByRole("slider", { name: /scrub room layout/i });
+    expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(DINNER_ID);
+    expect(isLayoutTimelineMutationLocked()).toBe(true);
+    const savedObjects = useEditorStore.getState().objects;
+    useEditorStore.getState().addObject("blocked-during-history", 0, 0, 0);
+    expect(useEditorStore.getState().objects).toBe(savedObjects);
+  });
+
+  it.each([false, true])("preserves the new configuration's phase when switching context (preview=%s)", async (historical) => {
+    timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
+    function ChangeConfiguration(): ReactElement {
+      const navigate = useNavigate();
+      return <button type="button" onClick={() => {
+        useCockpitStore.getState().selectPhase("new-context-phase");
+        useEditorStore.setState({ configId: "new-configuration" });
+        void navigate(`/plan/new-configuration?timelineScope=day&timelineDate=2026-07-18${historical ? `&timelinePhaseId=${DINNER_ID}` : ""}`);
+      }}>Open another configuration</button>;
+    }
+    render(
+      <MemoryRouter initialEntries={[`/plan/cfg-1?timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${ARRIVAL_ID}`]}>
+        <CockpitBottom />
+        <ChangeConfiguration />
+      </MemoryRouter>,
+    );
+    await screen.findByRole("button", { name: "Exit preview" });
+    fireEvent.click(screen.getByRole("button", { name: "Open another configuration" }));
+
+    if (historical) {
+      expect(useLayoutTimelinePreviewStore.getState().activeFrame?.phaseId).toBe(DINNER_ID);
+      expect(isLayoutTimelineMutationLocked()).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
+    }
+    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("inactive");
+    expect(isLayoutTimelineMutationLocked()).toBe(false);
+    expect(useCockpitStore.getState().selectedPhaseId).toBe("new-context-phase");
+  });
+
   it("compacts short phase blocks while retaining the full accessible label", async () => {
     expect(timelinePhaseDensityClass(3.99)).toBe(" is-micro");
     expect(timelinePhaseDensityClass(4)).toBe(" is-compact");
@@ -567,7 +634,7 @@ describe("CockpitBottom room layout timeline", () => {
     });
     timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, roomFlip, missing]));
     eventsApi.getEventPhaseGraph.mockResolvedValue(linkedEventGraph(START));
-    renderBottom(`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day&timelineDate=2026-07-18`);
+    renderBottom(`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${ARRIVAL_ID}`);
 
     await screen.findByRole("button", { name: "Exit preview" });
     expect(screen.queryByRole("button", { name: "Freeze current saved plan" })).toBeNull();
@@ -1271,7 +1338,7 @@ describe("CockpitBottom room layout timeline", () => {
     });
     eventsApi.getEventPhaseGraph.mockResolvedValue(linkedEventGraph(START));
     timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, charityParty]));
-    renderBottom(`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day&timelineDate=2026-07-18`);
+    renderBottom(`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${ARRIVAL_ID}`);
 
     await screen.findByRole("button", { name: "Exit preview" });
     fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
@@ -1306,7 +1373,7 @@ describe("CockpitBottom room layout timeline", () => {
       )),
     });
     timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
-    renderBottom(`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day&timelineDate=2026-07-18`);
+    renderBottom(`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${ARRIVAL_ID}`);
 
     await screen.findByRole("button", { name: "Exit preview" });
     fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
@@ -1327,7 +1394,7 @@ describe("CockpitBottom room layout timeline", () => {
     timelineApi.getRoomLayoutTimeline.mockResolvedValue(response([arrival, dinner]));
     const pendingFreeze = deferred<FreezePhaseLayoutSnapshotResponse>();
     timelineApi.freezePhaseLayoutSnapshot.mockImplementationOnce(() => pendingFreeze.promise);
-    renderBottom(`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day&timelineDate=2026-07-18`);
+    renderBottom(`/plan/cfg-1?eventId=${EVENT_ID}&timelineScope=day&timelineDate=2026-07-18&timelinePhaseId=${ARRIVAL_ID}`);
 
     await screen.findByRole("button", { name: "Exit preview" });
     fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
@@ -1354,6 +1421,7 @@ describe("CockpitBottom room layout timeline", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Week" }));
     await screen.findByText("Room timeline unavailable");
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(false);
     expect(isLayoutTimelineMutationLocked()).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
     expect(isLayoutTimelineMutationLocked()).toBe(false);
@@ -1374,10 +1442,28 @@ describe("CockpitBottom room layout timeline", () => {
       expect(useLayoutTimelinePreviewStore.getState().unavailableMessage)
         .toBe("Only one room phase is scheduled in this range.");
     });
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
     expect(isLayoutTimelineMutationLocked()).toBe(false);
     expect(useCockpitStore.getState().selectedPhaseId).toBe("phase-before-preview");
     await waitFor(() => { expect(screen.queryByTestId("cockpit-bottom")).toBeNull(); });
+  });
+
+  it("ends range activity when an active preview resolves to an empty schedule", async () => {
+    timelineApi.getRoomLayoutTimeline.mockImplementation((query) => Promise.resolve(
+      responseForQuery(query, "scope" in query && query.scope === "week" ? [] : [arrival, dinner]),
+    ));
+    renderBottom();
+    await screen.findByRole("slider", { name: /scrub room layout/i });
+    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    await waitFor(() => {
+      expect(useLayoutTimelinePreviewStore.getState().unavailableMessage)
+        .toBe("No room phases are scheduled in this range.");
+    });
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(false);
+    expect(isLayoutTimelineMutationLocked()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
+    expect(isLayoutTimelineMutationLocked()).toBe(false);
   });
 
   it("does not let Space on a focused control also toggle playback", async () => {

@@ -1,5 +1,6 @@
 import { Suspense, lazy, useState, useCallback, useRef, useEffect, useLayoutEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { ActivityIndicator, ActivityStatus } from "../shared/Activity.js";
 import { useNavigate } from "react-router-dom";
 import { useIsCoarsePointer, useIsNarrowViewport } from "../../hooks/use-media-query.js";
 import {
@@ -1936,7 +1937,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
         </ToolBtn>
 
         <ToolBtn active={saveStatus === "saved"} compact={isNarrow} subLabel={saveCopy.shortLabel} disabled={isSaving} label={saveCopy.label} description={saveCopy.description} tooltipEnabled={showDesktopHints} onClick={handleSave}>
-          <Save size={ICON_SIZE} />
+          {isSaving ? <ActivityIndicator size={ICON_SIZE} /> : <Save size={ICON_SIZE} />}
         </ToolBtn>
 
         <ToolBtn active={activeTool === "delete"} compact={isNarrow} subLabel="Delete" label="Delete" description="Delete selected furniture and attached chairs." shortcut="Del" showShortcut={showDesktopHints} tooltipEnabled={showDesktopHints} onClick={() => { handleToolClick("delete"); }}>
@@ -2287,7 +2288,7 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
         />
       )}
       {showAuth ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ActivityStatus variant="panel">Loading account…</ActivityStatus>}>
           <LazyClerkRouteProvider>
             <LazyAuthModal onClose={() => { setShowAuth(false); }} />
           </LazyClerkRouteProvider>

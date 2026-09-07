@@ -4,6 +4,7 @@ import { OrbitControls } from "@react-three/drei";
 import { GLTFLoader, type GLTF } from "three-stdlib";
 import { Box3, BufferGeometry, LoadingManager, Material, Mesh, Texture, Vector3, type Object3D } from "three";
 import { fixtureModelBasename, type SelectedFixtureModel } from "../../../lib/gdtf-model.js";
+import { ActivityStatus } from "../../shared/Activity.js";
 
 // ---------------------------------------------------------------------------
 // FixtureModelPreview — a small 3D preview of an imported GDTF fixture (slice 4).
@@ -49,7 +50,11 @@ interface LoadedState {
   readonly scale: number;
 }
 
-function ModelMesh({ model, onError }: { readonly model: SelectedFixtureModel; readonly onError: () => void }): ReactElement | null {
+function ModelMesh({ model, onError, onReady }: {
+  readonly model: SelectedFixtureModel;
+  readonly onError: () => void;
+  readonly onReady: () => void;
+}): ReactElement | null {
   const [loaded, setLoaded] = useState<LoadedState | null>(null);
   const objectRef = useRef<Object3D | null>(null);
 
@@ -74,18 +79,23 @@ function ModelMesh({ model, onError }: { readonly model: SelectedFixtureModel; r
       const center = box.getCenter(new Vector3());
       const maxDim = Math.max(size.x, size.y, size.z) || 1;
       setLoaded({ object: gltf.scene, center: [center.x, center.y, center.z], scale: 1.6 / maxDim });
+      onReady();
     };
     const fail = (): void => { if (!cancelled) onError(); };
 
-    if (model.kind === "glb") loader.parse(toArrayBuffer(model.bytes), "", onLoad, fail);
-    else loader.parse(new TextDecoder().decode(model.bytes), "", onLoad, fail);
+    try {
+      if (model.kind === "glb") loader.parse(toArrayBuffer(model.bytes), "", onLoad, fail);
+      else loader.parse(new TextDecoder().decode(model.bytes), "", onLoad, fail);
+    } catch {
+      fail();
+    }
 
     return () => {
       cancelled = true;
       if (objectRef.current !== null) { disposeObject(objectRef.current); objectRef.current = null; }
       for (const url of blobUrls) URL.revokeObjectURL(url);
     };
-  }, [model, onError]);
+  }, [model, onError, onReady]);
 
   if (loaded === null) return null;
   return (
@@ -96,10 +106,12 @@ function ModelMesh({ model, onError }: { readonly model: SelectedFixtureModel; r
 }
 
 export function FixtureModelPreview({ model }: { readonly model: SelectedFixtureModel }): ReactElement {
-  const [errored, setErrored] = useState(false);
-  const onError = useCallback(() => { setErrored(true); }, []);
+  const [erroredModel, setErroredModel] = useState<SelectedFixtureModel | null>(null);
+  const [readyModel, setReadyModel] = useState<SelectedFixtureModel | null>(null);
+  const onError = useCallback(() => { setErroredModel(model); }, [model]);
+  const onReady = useCallback(() => { setReadyModel(model); }, [model]);
 
-  if (errored) {
+  if (erroredModel === model) {
     return <p className="lens-panel__note" data-testid="fixture-model-error">3D model could not be loaded.</p>;
   }
   return (
@@ -108,10 +120,11 @@ export function FixtureModelPreview({ model }: { readonly model: SelectedFixture
         <ambientLight intensity={0.9} />
         <directionalLight position={[3, 5, 2]} intensity={1.1} />
         <Suspense fallback={null}>
-          <ModelMesh model={model} onError={onError} />
+          <ModelMesh model={model} onError={onError} onReady={onReady} />
         </Suspense>
         <OrbitControls enablePan={false} enableZoom={false} autoRotate autoRotateSpeed={2.4} />
       </Canvas>
+      {readyModel !== model && <ActivityStatus className="lens-panel__model-loading">Loading fixture model…</ActivityStatus>}
     </div>
   );
 }

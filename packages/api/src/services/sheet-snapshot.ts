@@ -10,6 +10,9 @@ import {
   configurations,
   configurationSheetSnapshots,
   configurationReviewHistory,
+  evidencePacks,
+  handoffPacks,
+  snapshotDiffs,
   placedObjects,
   assetDefinitions,
   assetAccessories,
@@ -376,9 +379,9 @@ export async function getSnapshotByVersion(
 //
 // Submit-heavy configs accumulate snapshot rows over time (each submit
 // that produces a different source hash inserts a new version). Once a
-// config is `archived`, older versions stop being operationally useful:
-// the hallkeeper has finished the event, the audit anchor is the
-// latest approved row, and the re-review case is moot.
+// config is `archived`, unreferenced old drafts can be discarded. Older
+// snapshots that support persisted handoffs or evidence remain historical
+// authority, including after a mission has completed.
 //
 // Retention policy (kept narrow on purpose so operators understand it):
 //   - KEEP the most-recent APPROVED snapshot. That is the audit
@@ -387,7 +390,10 @@ export async function getSnapshotByVersion(
 //   - KEEP the N most-recent snapshots by version. Covers the case
 //     where a staff member comparing two recent drafts wants to see
 //     what changed between them.
-//   - DELETE everything else.
+//   - KEEP snapshots referenced by handoff/evidence packs or their stored
+//     snapshot comparisons. Handoff retention also protects mission baselines,
+//     supplier instructions, BEOs, tasks and acknowledgements linked to them.
+//   - DELETE the unreferenced remainder.
 //
 // The decision logic is a pure function (`computeSnapshotsToKeep`)
 // so it can be unit-tested without a DB. The DB wrapper is thin.
@@ -450,45 +456,64 @@ export function computeSnapshotsToKeep(
 /**
  * Delete non-retained snapshots for a single configuration.
  *
- * Two-step: read the rows, compute the keep-set via the pure helper,
- * then bulk-delete the complement. We avoid a single "DELETE WHERE
- * NOT IN (latest 3)" SQL expression because the composite policy
- * (latest approved OR latest 3) doesn't translate cleanly without a
- * self-join or CTE and the row count is small per config.
+ * Lock the configuration's snapshot rows before reading their durable
+ * references. Pack inserts take an FK key-share lock on their source row:
+ * an in-flight insert must commit before this read can finish, and a later
+ * insert cannot attach to a row while we delete it. Read the references in
+ * the next statement so READ COMMITTED sees those completed inserts.
  */
 export async function pruneSnapshotsForConfig(
   db: Database,
   configId: string,
   keep: number = DEFAULT_SNAPSHOT_RETENTION,
 ): Promise<SnapshotRetentionResult> {
-  const rows = await db.select({
-    id: configurationSheetSnapshots.id,
-    version: configurationSheetSnapshots.version,
-    approvedAt: configurationSheetSnapshots.approvedAt,
-  })
-    .from(configurationSheetSnapshots)
-    .where(eq(configurationSheetSnapshots.configurationId, configId));
+  return db.transaction(async (tx) => {
+    const rows = await tx.select({
+      id: configurationSheetSnapshots.id,
+      version: configurationSheetSnapshots.version,
+      approvedAt: configurationSheetSnapshots.approvedAt,
+      sourceHash: configurationSheetSnapshots.sourceHash,
+    })
+      .from(configurationSheetSnapshots)
+      .where(eq(configurationSheetSnapshots.configurationId, configId))
+      .orderBy(desc(configurationSheetSnapshots.version))
+      .for("update");
 
-  if (rows.length === 0) return { deleted: 0, kept: 0 };
+    if (rows.length === 0) return { deleted: 0, kept: 0 };
 
-  const toKeep = computeSnapshotsToKeep(rows, keep);
-  const toDelete = rows
-    .filter((r) => !toKeep.has(r.id))
-    .map((r) => r.id);
+    const toKeep = new Set(computeSnapshotsToKeep(rows, keep));
+    const ids = rows.map(row => row.id);
+    // Preserve references by actual snapshot ID, even if a malformed pack's
+    // denormalized config ID disagrees. Pruning must not destroy that evidence.
+    const handoffs = await tx.select({ snapshotId: handoffPacks.snapshotId })
+      .from(handoffPacks).where(inArray(handoffPacks.snapshotId, ids));
+    const evidence = await tx.select({ snapshotId: evidencePacks.snapshotId })
+      .from(evidencePacks).where(inArray(evidencePacks.snapshotId, ids));
+    for (const reference of [...handoffs, ...evidence]) toKeep.add(reference.snapshotId);
 
-  if (toDelete.length === 0) return { deleted: 0, kept: toKeep.size };
+    // Comparisons refer to source hashes rather than FKs. Scope the hash match
+    // to this configuration: an identical layout elsewhere is not its history.
+    const comparisons = await tx.select({ previous: snapshotDiffs.previousSnapshotHash,
+      current: snapshotDiffs.currentSnapshotHash }).from(snapshotDiffs)
+      .innerJoin(handoffPacks, eq(handoffPacks.id, snapshotDiffs.handoffPackId))
+      .where(eq(handoffPacks.configId, configId));
+    const comparedHashes = new Set(comparisons.flatMap(comparison =>
+      comparison.previous === null ? [comparison.current] : [comparison.previous, comparison.current]));
+    for (const row of rows) if (comparedHashes.has(row.sourceHash)) toKeep.add(row.id);
 
-  await db.delete(configurationSheetSnapshots)
-    .where(inArray(configurationSheetSnapshots.id, toDelete));
-
-  return { deleted: toDelete.length, kept: toKeep.size };
+    const toDelete = rows.filter(row => !toKeep.has(row.id)).map(row => row.id);
+    if (toDelete.length === 0) return { deleted: 0, kept: toKeep.size };
+    const deleted = await tx.delete(configurationSheetSnapshots)
+      .where(inArray(configurationSheetSnapshots.id, toDelete)).returning({ id: configurationSheetSnapshots.id });
+    return { deleted: deleted.length, kept: toKeep.size };
+  });
 }
 
 /**
  * Apply retention across EVERY configuration whose `review_status` is
- * `archived`. Post-event cleanup — once the event has run, older
- * snapshots become audit-only and can be pruned to the retention
- * window. Returns aggregated counts.
+ * `archived`. Post-event cleanup keeps persisted operational/evidence history
+ * plus the recency/approval anchors, pruning only the remainder.
+ * Returns aggregated counts.
  *
  * Non-archived configs are NEVER touched by this function, so running
  * it safely co-exists with in-flight approvals and active hallkeeper

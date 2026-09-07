@@ -120,7 +120,7 @@ describe("DayBoardPage", () => {
     expect(screen.getByRole("region", { name: "Saloon" })).toBeTruthy();
     expect(screen.getByText("Chamber dinner")).toBeTruthy();
     // The chip text is the reduced-motion / colour-blind contract.
-    expect(screen.getByText(/^Live · .+left$/u)).toBeTruthy();
+    expect(screen.getByText(/until booked end$/u)).toBeTruthy();
     expect(screen.getByText("Nothing scheduled.")).toBeTruthy();
   });
 
@@ -130,7 +130,7 @@ describe("DayBoardPage", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("What the colours mean")).toBeTruthy();
     });
-    for (const label of ["Organisers due", "Guests due", "Needs attention"]) {
+    for (const label of ["First phase due", "Booking starts soon", "Needs attention"]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
   });

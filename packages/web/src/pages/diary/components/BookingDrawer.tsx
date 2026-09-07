@@ -10,6 +10,7 @@ import {
 } from "../../../api/diary.js";
 import { createEvent } from "../../../api/events.js";
 import { BOARD_COPY } from "../board-copy.js";
+import { ActivityStatus } from "../../../components/shared/Activity.js";
 
 /**
  * The planner link for an attached plan: the event the planner binds from,
@@ -283,6 +284,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
       className="diary-drawer"
       role="dialog"
       aria-label={drawerTitle(mode)}
+      aria-busy={busy}
       onKeyDown={onKeyDown}
     >
       <header className="diary-drawer-header">
@@ -291,6 +293,8 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           {BOARD_COPY.drawer.close}
         </button>
       </header>
+
+      {busy ? <ActivityStatus>Updating this booking…</ActivityStatus> : null}
 
       {mode.kind === "convert" ? (
         <p className="diary-drawer-note">{BOARD_COPY.drawer.convertNote(mode.enquiry.name)}</p>

@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/react";
 import type { ReactElement, ReactNode } from "react";
 import { ClerkAuthBridge } from "./ClerkAuthBridge.js";
+import { WorkspaceAccessGate } from "./WorkspaceAccessGate.js";
 import { isE2EAuthBypassEnabled } from "../../lib/e2e-auth-bypass.js";
 import { VENVIEWER_CLERK_APPEARANCE } from "./clerk-appearance.js";
 import { VENVIEWER_CLERK_LOCALIZATION } from "./clerk-localization.js";
@@ -41,7 +42,7 @@ export function ClerkRouteProvider({ children }: ClerkRouteProviderProps): React
       localization={VENVIEWER_CLERK_LOCALIZATION}
     >
       <ClerkAuthBridge />
-      {children}
+      <WorkspaceAccessGate>{children}</WorkspaceAccessGate>
     </ClerkProvider>
   );
 }

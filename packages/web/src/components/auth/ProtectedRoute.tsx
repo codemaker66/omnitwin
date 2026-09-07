@@ -1,7 +1,8 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "../../stores/auth-store.js";
 import type { ReactNode } from "react";
 import { ActivityIndicator } from "../shared/Activity.js";
+import { authRouteWithReturnTo } from "../../lib/auth-return.js";
 
 // ---------------------------------------------------------------------------
 // ProtectedRoute — guards routes by auth + role
@@ -15,6 +16,7 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children, allowedRoles, requiredPlatformRole }: ProtectedRouteProps): React.ReactElement {
   const { isAuthenticated, isLoading, user } = useAuthStore();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -28,7 +30,7 @@ export function ProtectedRoute({ children, allowedRoles, requiredPlatformRole }:
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={authRouteWithReturnTo("/login", location.pathname + location.search + location.hash)} replace />;
   }
 
   if (allowedRoles !== undefined && user !== null && !allowedRoles.includes(user.role)) {
