@@ -1,4 +1,10 @@
-# The goals deck — read this first, then take the first goal not marked done
+# The goals deck
+
+Follow the current user request and [AGENTS.md](../AGENTS.md); use the execution
+board to check ownership. Historical ordering and prompt counts do not override
+an activated goal. [Goal 12](12-intelligent-venue-platform.md) is active under
+T-605 for the integrated intelligent venue platform; its implementation and
+verification gates remain open.
 
 Written Friday 2026-09-04, 23:00 BST, by the Fable 5.1 session, for Blake and for every worker session that follows.
 

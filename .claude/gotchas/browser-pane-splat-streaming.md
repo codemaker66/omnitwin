@@ -1,26 +1,23 @@
-**Read this when:** verifying a Gaussian-splat route (the room walk, the captures console, the planner's splat layer) in the embedded Browser pane, or reading a black splat canvas or a "Streaming the room — 0%" pill that never moves in that pane as evidence about the site.
+**Read this when:** a splat scene appears blank or never streams in a browser tool.
 
-# The embedded Browser pane does not stream splat tiles
+# Separate browser instrumentation failures from site failures
 
-Observed 2026-09-03 (T-574/T-575 evening): the Browser pane (`mcp__Claude_Browser__*`)
-opened `/room/grand-hall` on BOTH the live site (venviewer.com) and the local dev server
-(localhost:5192). In both, the page mounted, `window.__roomCamera` was live, a WebGL2
-context reported the real RTX 4090, the console was clean, and `window.__roomWalk` went to
-`{ settled: 12, total: 12, complete: true }` on the live site; yet the canvas stayed black
-and the page's resource timing and the pane's own network log showed NO tile requests at
-all. The same minute, Playwright's own Chromium (`scripts/splat-drag-budget.mjs`) streamed
-the same local route, rendered it and dragged it at 176 fps; the live site answered a
-same-origin HEAD for a tile with 200.
+On 2026-09-03, the then-available embedded Claude Browser pane showed a blank
+Grand Hall on both local and live routes. Scene state reported completion but no
+tile requests appeared in its logs; Playwright Chromium rendered the same local
+route. This is a dated observation of that integration, not a permanent statement
+about every embedded browser or proof of a specific worker-networking cause.
 
-Spark fetches tiles inside WebWorkers (the `blob:` worker scripts are the only
-splat-related requests the pane logs). Whatever the pane does to worker networking, the
-result is a splat scene that reaches its "loaded" state (a failed tile also counts as
-settled) with nothing drawn.
+For a current failure, inspect actual tile requests/responses, scene counters,
+failed versus loaded tiles, WebGL state and console errors. A settled count includes
+failures and does not prove a drawn room. Neither an HTTP 200 nor a missing loading
+indicator establishes asset readiness.
 
-**Rule:** the pane is not an instrument for splat routes. Verify them with
-`packages/web/scripts/splat-drag-budget.mjs` (real GPU, real fetches, readback shots) or
-the visual-check harness. A black canvas in the pane is evidence about the pane, not the
-site; a black canvas in the harness is a finding.
+Use the supported browser first. If its instrumentation cannot establish the
+result, compare the same revision, route and data with an available real-browser
+harness such as `packages/web/scripts/splat-drag-budget.mjs`. Record the browser,
+device, relevant difference and any fallback. Do not dismiss a black canvas as
+"the pane" without isolating it; a tool limitation is also not proof the site fails.
 
-Related: `spark-splat-layer-callback-identity.md` (the other "loaded but blank" trap, which
-IS a site defect) and `project_visual_check_harness` in memory.
+Keep performance measurements separate from screenshot/readback work, which can
+stall the GPU and distort timings.

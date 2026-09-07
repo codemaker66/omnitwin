@@ -1,5 +1,17 @@
 # Venviewer execution board
 
+## Intelligent venue platform — T-605, 2026-09-07
+
+[Goal 12](12-intelligent-venue-platform.md) is active in isolated
+`codex/intelligent-venue-platform-20260907`, starting at clean release `04ca4563`.
+The dependency and disposable migration baseline passes. Initial transactional
+event/booking, retention and commercial-permission repairs are being qualified;
+the full event/decision/release journey and AI/ML/GPU/two-venue gates remain open.
+[Implementation and evidence](../docs/engineering/intelligent-platform.md) records
+the concrete next requirements. T-601 remains the sole combined demo release
+owner. Existing reconstruction/environment ownership and compute budgets remain
+separate; no publication or paid model/compute work has occurred here.
+
 Started 2026-09-04 by Codex on Blake's instruction: “where are your ./goals you will run … can you start and orchestrate yourself?”
 
 The shared [goal deck](README.md) is the programme. This file records current ownership and verified progress so concurrent sessions can work without duplicating slices. The founder's latest instructions and [mandate 16](../docs/plan/16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md) govern where generated planning documents disagree. The existing supplied visual references are authorised interim targets; a generated brief or missing image-provider key does not block independent implementation.

@@ -6,6 +6,13 @@ report.
 
 # XGRIDS LCC2 "LOD levels" are complete copies, not progressive detail
 
+Scope update, 2026-09-06: the counts and duplication below describe the inspected
+Grand Hall manifest. Do not infer that every vendor/legacy bundle has the same
+structure; T-580 measured the legacy Reception set separately. Inspect each manifest.
+The current `RoomSplatScene` deliberately overlaps coarse and sharp content while
+streaming, retaining the coarse room after failures. That transition is different
+from permanently rendering every complete level together.
+
 An `.lcc2` manifest describes an octree whose tile ids are also their depth:
 `0_0` is level 1, `0_7_0_0_1` is level 5. It is tempting to read that as a
 progressive structure where deeper tiles *refine* shallower ones, and the first
@@ -33,10 +40,11 @@ true finest-level total is 30,921,368.
 
 Rules that follow:
 
-- **Serve one level, never a stack.** `roomSplatTileUrls()` in
+- **Avoid permanently stacking complete copies.** `roomSplatTileUrls()` in
   `packages/web/src/data/room-splat-bundles.ts` returns the finest level plus
   the environment shell. If a lower tier is wanted for a phone, choose ONE
-  coarser level, do not add it to the finest one.
+  coarser level for an interim preview, progress toward the current device-quality
+  target. Temporary coarse/sharp overlap follows the explicit delivery state machine.
 - **Count what is served.** Use `roomSplatServedSplats()` / `finestLevelSplats`
   for any number a person sees; `totalSplats` is the all-levels sum and is only
   honest as "staged".

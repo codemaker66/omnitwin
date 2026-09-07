@@ -6,6 +6,8 @@ Updated: 2026-09-07.
 
 ## Latest task notes
 
+- 2026-09-07 T-605 begins: activated [Goal 12](../../goals/12-intelligent-venue-platform.md), isolated at `D:/claude/venviewer-intelligent-platform-20260907` from clean release `04ca4563`. Frozen install and all 67 disposable migrations pass. Transaction, retention and commercial-permission prerequisites are under final combined verification; full decision/release, AI/ML/GPU and two-venue gates remain open. See [implementation evidence](../engineering/intelligent-platform.md). Current demo/reconstruction/environment owners and budgets remain unchanged.
+
 - 2026-09-07 T-603 / T-601: the founder-selected light Diary is integrated into the single demo candidate with sourced room photos, full-week summaries and preserved precise timeline controls. 178 affected tests, web/E2E typecheck, scoped lint and actual local API/browser save, movement, confirmation, Undo and hallkeeper read-only checks passed. Final metadata contrast correction is verified. [Scoped design QA](../../design-qa.md) retains the dense-week limitation and open founder/device acceptance. Integration is complete locally; live deployment and founder rehearsal remain T-601 requirements.
 
 - 2026-09-06 T-596/T-600 release integration: the isolated `codex/trades-hall-demo-release` candidate combines the qualified reference viewer and T-599 dependency graph with real inventory corrections/reservations/remedies, selected-style navigation and Docker prerequisites. Migration 0064 remains manual-layout evidence; inventory is appended as 0065/0066 with increasing timestamps. Retained private venue source documents and detailed reconciliation are excluded from release history. [Integration decisions and required combined checks](../reports/trades-hall-demo-release-integration-2026-09-06.md). No production write, push or deployment is claimed by this integration.
@@ -65,6 +67,8 @@ Updated: 2026-09-07.
 
 | ID | Title | Status | I | E | Depends | Source | Notes |
 |---|---|---|---|---|---|---|---|
+| T-605 | Deliver the integrated intelligent venue platform in Goal 12. | in-progress | 5 | 20 | T-604, T-599 | USER-2026-09-07 (activated Goal 12) | Isolated codex/intelligent-venue-platform-20260907 at release04ca4563. Baseline install/migrations pass; initial mutation, retention and permission repairs under final verification. Complete event/release, AI/ML/GPU, two-venue and recovery/performance/browser gates remain open. Other release and compute owners unchanged. |
+| T-604 | Devise the intelligent venue platform transformation goal. | done | 5 | 0.25 | T-599 | USER-2026-09-07 (biggest useful codebase upgrade; AI/ML/GPU) | Source-grounded Goal12 and independent reviews define finite implementation and verification gates. Prompt preparation complete; implementation separately activated under T-605. |
 | T-603 | Rebuild Diary from selected light workspace and timetable references. | in-progress | 5 | 1 | T-601 | USER-2026-09-07 | Integrated source, 178 affected tests and actual local browser flows pass; reference comparison and limits in design-qa.md. Combined live release and founder acceptance remain pending. |
 | T-601 | Publish and rehearse the combined Trades Hall demo. | in-progress | 5 | 1 | T-596, T-600, T-602, T-603 | USER-2026-09-06/07 | Sole release coordinator. Qualified viewer, inventory, review, chair/batch and selected Diary are integrated in a clean isolated release branch. Exact build, actual-target migrations, provider deployment and founder rehearsal are tracked separately. |
 | T-602 | Import supplied furniture into inventory and room planner. | done | 4 | 1 | T-600, T-601 | USER-2026-09-06/07 (supplied Rodin exports and live demo direction) | Turini integrated in 44df06a3. Bulk import verified on codex/furniture-batch-import-20260907 based 74348f9b: 17 new models plus reused Turini, 33 canonical entries, 0068 guarded registration, approximate new dimensions, 592 web/51 API cases and full-batch browser save/reload pass. Report: docs/reports/furniture-batch-import-2026-09-07.md. T-601 owns combined integration and live publication; no separate deployment here. |
@@ -722,41 +726,48 @@ Updated: 2026-09-07.
 
 ## Shepherd protocol
 
-This task list is a living document. Every Claude Code session must follow this protocol.
+Updated 2026-09-06. Keep task state useful and accurate without turning each
+implementation task into a full backlog audit. AGENTS.md owns execution policy.
 
 ### Before starting work
 
-- Read this file in full.
-- Identify the T-NNN that the current request maps to. If no T-NNN matches, propose a new T-NNN in the appropriate tier and add it to the table before starting work.
-- Update the matched task's status to `in-progress`.
+- Read the latest task notes, relevant rows and their dependencies. Search the
+  rest of the ledger when needed; a full read is appropriate for a backlog review,
+  not a prerequisite for every change.
+- Map substantive work to an existing T-NNN. If none fits, check current IDs and
+  add a clearly scoped row with the user request/source; mark it `in-progress`.
+  A question or trivial correction does not need a new project task.
+- Check concurrent ownership before changing another task's status or files.
+  Current user instructions take precedence over a stale queue.
 
 ### During work
 
-If the work becomes blocked:
-
-- Set status to `blocked`.
-- Add to Notes: what blocks the task and what would unblock it.
-- Surface the block in the session log at `docs/sessions/YYYY-MM-DD.md`.
-
-If the work reveals new tasks (subtasks, prerequisite work, follow-on work):
-
-- Add them to the appropriate tier with explicit `Depends` linkage.
-- Do not merge new work into the in-progress task scope without Blake's explicit confirmation.
+- Carry necessary prerequisites, integration and review fixes through under the
+  authorized objective. Track separate deliverables with dependency links when
+  useful; do not ask for approval merely because another file or subtask is needed.
+- Record newly discovered unrelated work separately instead of silently expanding
+  the project. Ask only for a material product decision or authorization missing
+  from the request, as described in AGENTS.md.
+- If externally blocked, mark the relevant task `blocked` with the precise blocker
+  and what would unblock it, keep independently actionable work moving, and capture
+  a useful resumption note. Uncertainty that can be investigated is work to do,
+  not a user blocker.
 
 ### After completing work
 
-- Set the task's status to `done`.
-- Update the Notes field with the actual delivered artifact paths (e.g. "Implementation at `infra/runpod/run_training.sh`, runbook at `infra/runpod/RUNBOOK.md`").
-- Update any tasks that were `Depends`-on-this-task to surface that they're now unblocked.
-- Regenerate `docs/diagrams/task-graph.md` to reflect the new state.
-- Add a session log entry to `docs/sessions/YYYY-MM-DD.md` noting the completed task and any newly-unblocked tasks.
+- Mark the agreed scope `done` only with applicable verification. Link delivered
+  artifacts and evidence; distinguish local, merged, deployed and accepted status.
+  If the row represents a larger programme, record the completed slice without
+  declaring the entire programme done.
+- Update directly affected dependents when their readiness changes. Update
+  `docs/diagrams/task-graph.md` only when the view it depicts is affected.
+- Add a concise entry for meaningful work, decisions and blockers to
+  `docs/sessions/YYYY-MM-DD.md`. Preserve other sessions' entries.
+- Do not repeat already-passing checks solely to update a task record.
 
-### Per-session surveillance
+### Backlog reviews
 
-Each session also checks:
-
-- Any task that's been `in-progress` for >7 days: probably stuck. Surface to Blake.
-- Any task whose `Depends` are now all `done`: should be flagged as ready to start.
-- Any task whose `Depends` include a task that's been `rejected`: may need re-thinking; surface to Blake.
-
-The shepherd protocol is non-negotiable. Skipping it produces the exact failure mode this protocol was designed to prevent: tasks that quietly stay open forever because nobody updated them after the work shipped.
+When asked to review priorities, or when a relevant dependency looks stale, inspect
+old `in-progress` rows, newly satisfied dependencies and rejected prerequisites.
+Report evidence-backed issues; age alone does not prove a task is stuck. A global
+surveillance pass is not required in every session.

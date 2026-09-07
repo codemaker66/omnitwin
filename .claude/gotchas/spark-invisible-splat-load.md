@@ -2,6 +2,12 @@
 
 # A Spark mesh must be visible while it loads
 
+Scope: this records the 2026-09-04 integration and its working staging strategy.
+Inspect the installed Spark implementation before applying it to another version.
+A different staging approach may be investigated with a fixture proving initial
+sort, reveal, camera motion, partial failure and disposal; this note is not a ban
+on finding a better implementation.
+
 **What happened (2026-09-04, the coarse-first ladder).** The Grand Hall walk was to fetch its finest level out of sight and reveal it in one clean swap, so that two levels of the same room were never composited at once. The finest level rendered as unsorted colour blobs instead: bright smears with no geometry. A camera nudge repaired it *tile by tile*, leaving a hard vertical seam between a correct half of the room and a broken half.
 
 **Why.** Spark collects what it draws with `scene.traverseVisible` (`spark.module.js`, `compileScene` and `prepareGenerate`), and it drives each mesh's level-of-detail tree only over that visible set (`driveLod({ visibleGenerators, ... })`). A mesh that loads while invisible is never in the set, so its tree is never driven; revealing it hands the accumulator a mesh whose nodes were never selected. Camera motion drives the tree again, which is why the repair follows the view.

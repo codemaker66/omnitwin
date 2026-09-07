@@ -1,45 +1,29 @@
-**Read this when:** rendering a Gaussian splat (.ply, .spz, .splat
-file), modifying any 3D scene component that displays splats, or
-seeing drei's Splat component imported anywhere in this repo.
+**Read this when:** choosing or changing the splat renderer, loading captured assets,
+or seeing drei's `Splat` imported into a scene.
 
-# Spark, NOT drei's Splat
+# Spark integration
 
-The production Gaussian Splat renderer for Venviewer is **Spark 2.0**
-(`@sparkjsdev/spark`), NOT `<Splat />` from `@react-three/drei`.
+Venviewer uses `@sparkjsdev/spark`, with versions pinned in
+[the web manifest](../../packages/web/package.json) and lockfile. The current
+integration is Spark 2.1 / Three 0.180; check the installed versions before using
+API advice. The accepted renderer decision is [D-001](../../docs/architecture/adr/D-001.md).
+Use the existing
+[SparkSplatLayer](../../packages/web/src/components/scene/SparkSplatLayer.tsx) and
+scene renderer host rather than introducing drei's `Splat` or another independent
+host.
 
-## Why
-- Spark is actively maintained by World Labs + OSS community
-- Spark integrates natively with Three.js scene graphs (SplatMesh
-  extends THREE.Object3D), enabling hybrid splat-and-mesh rendering
-- Spark handles spherical-harmonic-correct object-space transforms
-  (drei's Splat does not)
-- Spark supports the SPZ format which is our production splat format
-- drei's Splat is a prototyping tool with no LOD, no compositing
-  support, and no SH-aware transform handling
-- GaussianSplats3D (mkkellogg) is explicitly deprecated by its own
-  author in favor of Spark
+Create/dispose GPU objects through the established lifecycle, not in a React
+render body. Preserve asynchronous cancellation, callbacks, invalidation and
+renderer ownership. Verify actual source/format/transform behavior; the package
+name alone does not establish SH, sorting, paging or compositing correctness.
 
-## The rule
-- Never import `Splat` from `@react-three/drei`
-- Always use `SplatMesh` from `@sparkjsdev/spark`
-- Splat files in production are `.spz`, never `.ply`
-- The full splat file is archival; a cropped reflective-surfaces
-  splat is what gets rendered (chandeliers, mirrors, glass only)
+Earlier notes prescribed Spark 2.0, SPZ-only delivery and reflective-only cropped
+splats. Those recipes are superseded by current source and founder direction:
+the current runtime also serves SOG, and the reconstruction programme may combine
+all useful sources. Choose delivery formats and composition from actual manifests,
+measured fidelity, loading and memory. Preserve source masters.
 
-## Reference pattern
-
-```typescript
-import { SplatMesh } from "@sparkjsdev/spark"
-
-function VenueSplat({ url }: { url: string }) {
-  // SplatMesh is a THREE.Object3D — use it directly in R3F via primitive
-  const splat = new SplatMesh({ url })
-  return <primitive object={splat} />
-}
-```
-
-Spark requires Three.js ≥ 0.180.0; Venviewer upgraded the web renderer stack
-to the 0.180 compatibility line in T-087.
-
-See also: `.claude/council/MR_GENJUTSU.md` for the strategic
-architectural reasoning behind hybrid splat-and-mesh composition.
+Read related notes on callback identity, hidden layers and render-target effects
+when changing those paths. A different rendering approach can be tested in a
+bounded experiment under the active brief; adopting it requires an evidenced
+decision and the relevant acceptance checks.
