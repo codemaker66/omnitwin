@@ -1,7 +1,10 @@
 import { useState } from "react";
 import type { EventInstructions } from "@omnitwin/types";
 import { PHASE_METADATA } from "@omnitwin/types";
-import { GOLD, BORDER, TEXT_MUT, TEXT_SEC } from "../../constants/ui-palette.js";
+const GOLD = "#986246";
+const BORDER = "#e4dcd0";
+const TEXT_MUT = "#726c61";
+const TEXT_SEC = "#575a4e";
 
 // ---------------------------------------------------------------------------
 // InstructionsBanner — the planner's human layer, shown at the top of
@@ -15,9 +18,10 @@ import { GOLD, BORDER, TEXT_MUT, TEXT_SEC } from "../../constants/ui-palette.js"
 
 export interface InstructionsBannerProps {
   readonly instructions: EventInstructions;
+  readonly timezone?: string;
 }
 
-export function InstructionsBanner({ instructions }: InstructionsBannerProps): React.ReactElement {
+export function InstructionsBanner({ instructions, timezone }: InstructionsBannerProps): React.ReactElement {
   const [expanded, setExpanded] = useState(true);
 
   const hasSpecial = instructions.specialInstructions.trim().length > 0;
@@ -51,10 +55,10 @@ export function InstructionsBanner({ instructions }: InstructionsBannerProps): R
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 14, color: GOLD }}>★</span>
           <div>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase" }}>
               From the Planner
             </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#eee", marginTop: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#2e382e", marginTop: 1 }}>
               {summariseInstructions(instructions)}
             </div>
           </div>
@@ -73,14 +77,14 @@ export function InstructionsBanner({ instructions }: InstructionsBannerProps): R
               }}
             >
               <div style={instructionLabelStyle}>Special Instructions</div>
-              <div style={{ fontSize: 13, color: "#eee", whiteSpace: "pre-wrap", lineHeight: 1.45, marginTop: 2 }}>
+              <div style={{ fontSize: 13, color: "#2e382e", whiteSpace: "pre-wrap", lineHeight: 1.45, marginTop: 2 }}>
                 {instructions.specialInstructions.trim()}
               </div>
             </div>
           )}
 
           {(hasContact || hasAccess) && (
-            <div style={{ display: "grid", gridTemplateColumns: hasContact && hasAccess ? "1fr 1fr" : "1fr", gap: 8 }}>
+            <div className="hk-contact-access" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
               {hasContact && instructions.dayOfContact !== null && (
                 <ContactCard contact={instructions.dayOfContact} />
               )}
@@ -103,11 +107,11 @@ export function InstructionsBanner({ instructions }: InstructionsBannerProps): R
                         fontSize: 11, fontWeight: 600,
                         background: "rgba(255,255,255,0.04)",
                         border: `1px solid ${BORDER}`,
-                        color: "#eee",
+                        color: "#2e382e",
                       }}
                     >
                       <span style={{ color: GOLD, marginRight: 6 }}>{PHASE_METADATA[d.phase].label}</span>
-                      {formatDeadlineTime(d.deadline)}
+                      {formatDeadlineTime(d.deadline, timezone)}
                       {d.reason.length > 0 && (
                         <span style={{ color: TEXT_MUT, marginLeft: 6 }}>· {d.reason}</span>
                       )}
@@ -126,7 +130,7 @@ function ContactCard({ contact }: { contact: { name: string; role: string; phone
   return (
     <div style={{ padding: "10px 12px", borderRadius: 6, background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
       <div style={instructionLabelStyle}>Day-of Contact</div>
-      <div style={{ fontSize: 14, fontWeight: 600, color: "#fff", marginTop: 4 }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: "#2e382e", marginTop: 4 }}>
         {contact.name}
         {contact.role.length > 0 && (
           <span style={{ color: TEXT_SEC, fontWeight: 400, fontSize: 12, marginLeft: 6 }}>· {contact.role}</span>
@@ -158,7 +162,7 @@ function AccessCard({ text }: { text: string }): React.ReactElement {
   return (
     <div style={{ padding: "10px 12px", borderRadius: 6, background: "rgba(255,255,255,0.03)", border: `1px solid ${BORDER}` }}>
       <div style={instructionLabelStyle}>Access & Load-in</div>
-      <div style={{ fontSize: 12, color: "#ddd", marginTop: 4, whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
+      <div style={{ fontSize: 12, color: "#2e382e", marginTop: 4, whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
         {text}
       </div>
     </div>
@@ -166,7 +170,7 @@ function AccessCard({ text }: { text: string }): React.ReactElement {
 }
 
 const instructionLabelStyle: React.CSSProperties = {
-  fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", color: TEXT_MUT, textTransform: "uppercase",
+  fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: TEXT_MUT, textTransform: "uppercase",
 };
 
 /**
@@ -192,8 +196,8 @@ function summariseInstructions(ins: EventInstructions): string {
   return "";
 }
 
-function formatDeadlineTime(iso: string): string {
+function formatDeadlineTime(iso: string, timezone?: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", ...(timezone === undefined ? {} : { timeZone: timezone }) });
 }

@@ -8,7 +8,7 @@ import {
   resolveReplayDisposition,
   type ReplayResult,
 } from "../lib/progress-sync-queue.js";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import type {
   HallkeeperSheetV2,
   Phase,
@@ -30,9 +30,15 @@ import { getAuthToken } from "../api/client.js";
 import { InstructionsBanner } from "../components/hallkeeper/InstructionsBanner.js";
 import { InteractiveFloorPlan } from "../components/hallkeeper/InteractiveFloorPlan.js";
 import { HallkeeperStatusBanner } from "../components/hallkeeper/HallkeeperStatusBanner.js";
-import {
-  GOLD, GREEN, DARK_BG, CARD_BG, BORDER, TEXT_MUT, TEXT_SEC,
-} from "../constants/ui-palette.js";
+import { ActivityStatus } from "../components/shared/Activity.js";
+import "./hallkeeper-sheet.css";
+
+const GOLD = "#986246";
+const GREEN = "#385542";
+const BORDER = "#e4dcd0";
+const TEXT_MUT = "#726c61";
+const TEXT_SEC = "#575a4e";
+const INK = "#2e382e";
 
 // ---------------------------------------------------------------------------
 // HallkeeperPage — S+ operations-grade events sheet
@@ -71,38 +77,6 @@ function toggleCheck(prev: CheckMap, rowKey: string, next: boolean): CheckMap {
 }
 
 // ---------------------------------------------------------------------------
-// Print styles (injected once)
-// ---------------------------------------------------------------------------
-const PRINT_STYLE_ID = "omnitwin-hallkeeper-print";
-if (typeof document !== "undefined" && document.getElementById(PRINT_STYLE_ID) === null) {
-  const style = document.createElement("style");
-  style.id = PRINT_STYLE_ID;
-  style.textContent = `
-    @media print {
-      body, .hk-page { background: #fff !important; color: #000 !important; }
-      .hk-page { max-width: 100% !important; padding: 0 12px !important; }
-      .hk-card { background: #fff !important; border: 1px solid #ccc !important; }
-      .hk-phase { page-break-inside: avoid; }
-      .hk-actions, .hk-summary-sticky, .hk-retry-btn { display: none !important; }
-      .hk-row { background: #fff !important; }
-      .hk-row:nth-child(even) { background: #f5f5f5 !important; }
-      h1, h2, h3 { color: #000 !important; }
-      .hk-checkbox { border-color: #000 !important; }
-    }
-    @keyframes hk-pulse {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 0.15; }
-    }
-    @keyframes hk-celebrate {
-      0% { transform: scale(0.8); opacity: 0; }
-      50% { transform: scale(1.05); }
-      100% { transform: scale(1); opacity: 1; }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -123,12 +97,26 @@ export function HallkeeperPage(): React.ReactElement {
   const [pendingCount, setPendingCount] = useState(0);
   const diagramRef = useRef<HTMLDivElement>(null);
   const fetchCountRef = useRef(0);
+  const activeConfigRef = useRef(configId);
+  activeConfigRef.current = configId;
+  const checksRef = useRef<CheckMap>({});
+  const operationVersions = useRef(new Map<string, number>());
+  const [progressUnavailable, setProgressUnavailable] = useState(false);
+  const [progressNotice, setProgressNotice] = useState<string | null>(null);
 
   // --- Fetch sheet data + progress in parallel ---
   const loadData = useCallback(() => {
     if (configId === undefined) return;
     setLoading(true);
     setError(null);
+    setData(null);
+    setChecks({});
+    checksRef.current = {};
+    setProgressUnavailable(false);
+    setProgressNotice(null);
+    setHighlightedRowKey(null);
+    setCollapsed(new Set());
+    setPendingCount(0);
     fetchCountRef.current += 1;
     const thisFetch = fetchCountRef.current;
     void (async () => {
@@ -147,19 +135,25 @@ export function HallkeeperPage(): React.ReactElement {
         if (!sheetRes.ok) throw new Error(`Failed to load (${String(sheetRes.status)})`);
 
         const sheetJson = (await sheetRes.json()) as { data: HallkeeperSheetV2 };
+        if (thisFetch !== fetchCountRef.current || activeConfigRef.current !== configId) return;
         setData(sheetJson.data);
 
         try {
           const progressRes = await fetch(`${API_URL}/hallkeeper/${configId}/progress`, { headers });
           if (progressRes.ok) {
             const progressJson = (await progressRes.json()) as { data: { checked: Record<string, string> } };
+            if (thisFetch !== fetchCountRef.current || activeConfigRef.current !== configId) return;
             const loaded: Record<string, boolean> = {};
             for (const key of Object.keys(progressJson.data.checked)) {
               loaded[key] = true;
             }
+            checksRef.current = loaded;
             setChecks(loaded);
+          } else if (thisFetch === fetchCountRef.current) {
+            setProgressUnavailable(true);
           }
         } catch {
+          if (thisFetch === fetchCountRef.current) setProgressUnavailable(true);
           // Progress is an enhancement over the sheet payload. A failed
           // progress fetch must not mask a valid sheet or its 403/404 status.
         }
@@ -172,7 +166,10 @@ export function HallkeeperPage(): React.ReactElement {
     })();
   }, [configId]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+    return () => { fetchCountRef.current += 1; };
+  }, [loadData]);
 
   // --- Toggle with optimistic UI + offline-resilient server PATCH ---
   //
@@ -187,11 +184,24 @@ export function HallkeeperPage(): React.ReactElement {
   //      enqueue path makes the tablet usable in the bad-network
   //      conditions where it matters most.
   const handleToggle = useCallback((rowKey: string) => {
-    if (configId === undefined) return;
-    const wasChecked = checks[rowKey] === true;
+    if (configId === undefined || progressUnavailable) return;
+    const wasChecked = checksRef.current[rowKey] === true;
+    const operationKey = `${configId}|${rowKey}`;
+    const operationVersion = (operationVersions.current.get(operationKey) ?? 0) + 1;
+    operationVersions.current.set(operationKey, operationVersion);
+    const isCurrent = (): boolean => activeConfigRef.current === configId
+      && operationVersions.current.get(operationKey) === operationVersion;
+    const rollback = (): void => {
+      if (!isCurrent()) return;
+      checksRef.current = toggleCheck(checksRef.current, rowKey, wasChecked);
+      setChecks(checksRef.current);
+      setProgressNotice("That check could not be saved. Your previous check has been restored; please try again.");
+    };
     const desiredChecked = !wasChecked;
 
-    setChecks((prev) => toggleCheck(prev, rowKey, desiredChecked));
+    checksRef.current = toggleCheck(checksRef.current, rowKey, desiredChecked);
+    setChecks(checksRef.current);
+    setProgressNotice(null);
 
     void (async () => {
       let result: ReplayResult;
@@ -215,23 +225,24 @@ export function HallkeeperPage(): React.ReactElement {
       // queue a poison op — revert the optimistic flip so the UI stays
       // honest about what the server actually holds.
       if (result.status !== null && isReplayStatusTerminal(result.status)) {
-        setChecks((prev) => toggleCheck(prev, rowKey, wasChecked));
+        rollback();
         return;
       }
 
       // Retriable failure (offline / 5xx / 408 / 429) — KEEP the
       // optimistic UI and queue the intent for replay on reconnect.
       try {
+        if (operationVersions.current.get(operationKey) !== operationVersion) return;
         await enqueueProgress(configId, rowKey, desiredChecked);
         const pending = await listPendingProgress();
-        setPendingCount(pending.length);
+        if (activeConfigRef.current === configId) setPendingCount(pending.filter((op) => op.configId === configId).length);
       } catch {
         // IDB unreachable — last-resort rollback so the UI doesn't
         // show a check that's neither on the server nor in IDB.
-        setChecks((prev) => toggleCheck(prev, rowKey, wasChecked));
+        rollback();
       }
     })();
-  }, [configId, checks]);
+  }, [configId, progressUnavailable]);
 
   // Guards overlapping flushes. The mount drain and the `online` event
   // can fire concurrently, and the server PATCH is a non-idempotent
@@ -259,9 +270,9 @@ export function HallkeeperPage(): React.ReactElement {
       flushInFlightRef.current = true;
       void (async () => {
         try {
-          const queued = await listPendingProgress();
+          const queued = (await listPendingProgress()).filter((op) => op.configId === configId);
           if (queued.length === 0) {
-            setPendingCount(0);
+            if (activeConfigRef.current === configId) setPendingCount(0);
             return;
           }
 
@@ -305,7 +316,7 @@ export function HallkeeperPage(): React.ReactElement {
           }
 
           const remaining = await listPendingProgress();
-          setPendingCount(remaining.length);
+          if (activeConfigRef.current === configId) setPendingCount(remaining.filter((op) => op.configId === configId).length);
         } catch {
           // Don't surface — flush failures are silent ops noise.
         } finally {
@@ -342,17 +353,19 @@ export function HallkeeperPage(): React.ReactElement {
   const handleHighlightRow = useCallback((rowKey: string) => {
     setHighlightedRowKey((prev) => prev === rowKey ? null : rowKey);
     if (diagramRef.current !== null) {
-      diagramRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      diagramRef.current.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "nearest" });
     }
   }, []);
 
   const handleMarkerClick = useCallback((rowKey: string) => {
     setHighlightedRowKey(rowKey);
-    const el = document.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(rowKey)}"]`);
-    if (el !== null) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, []);
+    const phase = data?.phases.find((entry) => entry.zones.some((zone) => zone.rows.some((row) => row.key === rowKey)));
+    if (phase !== undefined) setCollapsed((prev) => { const next = new Set(prev); next.delete(phase.phase); return next; });
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(rowKey)}"]`);
+      el?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
+    });
+  }, [data]);
 
   const handleDownload = useCallback(() => {
     if (configId === undefined || downloadBusy) return;
@@ -394,140 +407,31 @@ export function HallkeeperPage(): React.ReactElement {
 
   const counts = useMemo(() => computeCounts(data, checks), [data, checks]);
 
-  // =====================================================================
-  // LOADING SKELETON
-  // =====================================================================
   if (loading) {
-    return (
-      <main className="hk-page" style={pageStyle} aria-label="Hallkeeper sheet loading">
-        <div style={{ paddingTop: 20 }}>
-          {/* Skeleton header */}
-          <div style={{ ...skeletonBar, width: 120, height: 10, marginBottom: 8 }} />
-          <div style={{ ...skeletonBar, width: "70%", height: 24, marginBottom: 12 }} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <div style={{ ...skeletonBar, height: 14 }} />
-            <div style={{ ...skeletonBar, height: 14 }} />
-            <div style={{ ...skeletonBar, height: 14 }} />
-            <div style={{ ...skeletonBar, height: 14 }} />
-          </div>
-          <div style={{ ...skeletonBar, width: "100%", height: 160, marginTop: 16, borderRadius: 8 }} />
-          {/* Skeleton rows */}
-          {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} style={{ ...skeletonBar, height: 16, marginTop: 8, width: `${String(80 - i * 5)}%` }} />
-          ))}
-        </div>
-      </main>
-    );
+    return <main className="hk-page hk-sheet-state" aria-label="Hallkeeper sheet loading">
+      <SheetNavigation />
+      <div className="hk-state-card"><span className="hk-eyebrow">Your room, clearly in hand</span>
+        <h1>Hallkeeper sheet</h1>
+        <ActivityStatus variant="panel">Loading your layout and shared checks…</ActivityStatus>
+      </div>
+    </main>;
   }
 
-  // =====================================================================
-  // ERROR STATE + RETRY
-  // =====================================================================
   if (error !== null || data === null) {
     const isPermissionError = error !== null && error.includes("permission");
-    return (
-      <main className="hk-page" style={pageStyle} aria-label="Hallkeeper sheet unavailable">
-        <div style={{
-          minHeight: "100svh",
-          display: "grid",
-          placeItems: "center",
-          padding: "24px 0",
-        }}>
-          <section
-            aria-labelledby="hallkeeper-error-title"
-            style={{
-              width: "min(100%, 360px)",
-              padding: 22,
-              borderRadius: 8,
-              background: "linear-gradient(180deg, rgba(19,28,29,0.96), rgba(9,13,14,0.98))",
-              border: `1px solid ${isPermissionError ? "rgba(201,168,76,0.38)" : "rgba(239,68,68,0.36)"}`,
-              boxShadow: "0 18px 55px rgba(0,0,0,0.38)",
-              textAlign: "left",
-            }}
-          >
-            <div style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "5px 9px",
-              borderRadius: 999,
-              border: `1px solid ${isPermissionError ? "rgba(201,168,76,0.45)" : "rgba(239,68,68,0.45)"}`,
-              color: isPermissionError ? GOLD : "#fca5a5",
-              fontSize: 10,
-              fontWeight: 800,
-              letterSpacing: 1.2,
-              textTransform: "uppercase",
-              marginBottom: 14,
-            }}>
-              {isPermissionError ? "Access needed" : "Sheet unavailable"}
-            </div>
-            <h1
-              id="hallkeeper-error-title"
-              role="alert"
-              style={{
-                margin: "0 0 10px",
-                color: isPermissionError ? "#fff7e8" : "#fecaca",
-                fontSize: 24,
-                lineHeight: 1.08,
-                letterSpacing: 0,
-              }}
-            >
-              {error ?? "Configuration not found"}
-            </h1>
-            <p style={{ color: TEXT_SEC, fontSize: 14, lineHeight: 1.5, margin: "0 0 18px" }}>
-              {isPermissionError
-                ? "Ask the event manager to share this sheet or open it with a hallkeeper-approved account."
-                : "Check that the handoff link is current, then try again."}
-            </p>
-            <button
-              type="button"
-              className="hk-retry-btn"
-              onClick={loadData}
-              style={{
-                width: "100%",
-                minHeight: 44,
-                padding: "10px 18px",
-                fontSize: 14,
-                fontWeight: 800,
-                borderRadius: 8,
-                background: GOLD,
-                color: "#111",
-                border: "1px solid rgba(255,255,255,0.12)",
-                cursor: "pointer",
-              }}
-            >
-              Try Again
-            </button>
-          </section>
-        </div>
-      </main>
-    );
+    return <main className="hk-page hk-sheet-state" aria-label="Hallkeeper sheet unavailable">
+      <SheetNavigation />
+      <section className="hk-state-card" aria-labelledby="hallkeeper-error-title">
+        <span className="hk-eyebrow">{isPermissionError ? "Access needed" : "Sheet unavailable"}</span>
+        <h1 id="hallkeeper-error-title" role="alert">{error ?? "Configuration not found"}</h1>
+        <p>{isPermissionError
+          ? "Ask the event manager to share this sheet or open it with a hallkeeper-approved account."
+          : "Check that the handoff link is current, then try again."}</p>
+        <button type="button" className="hk-button hk-button-primary hk-retry-btn" onClick={loadData}>Try Again</button>
+      </section>
+    </main>;
   }
 
-  // =====================================================================
-  // EMPTY STATE (config has no phases / no placed items)
-  // =====================================================================
-  if (data.phases.length === 0) {
-    return (
-      <main className="hk-page" style={pageStyle} aria-label={`Hallkeeper sheet for ${data.config.name}`}>
-        <header style={headerStyle}>
-          <div style={labelStyle}>Hallkeeper Sheet</div>
-          <h1 style={eventNameStyle}>{data.config.name}</h1>
-        </header>
-        <div style={{ textAlign: "center", paddingTop: 60 }}>
-          <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.1 }}>▣</div>
-          <div style={{ color: TEXT_SEC, fontSize: 15, fontWeight: 500 }}>No items placed yet</div>
-          <p style={{ color: TEXT_MUT, fontSize: 13, marginTop: 8, maxWidth: 300, margin: "8px auto 0" }}>
-            The planner hasn't added furniture to this layout. Once they save a layout, the setup manifest will appear here automatically.
-          </p>
-        </div>
-      </main>
-    );
-  }
-
-  // =====================================================================
-  // MAIN RENDER
-  // =====================================================================
   const payload = data as HallkeeperSheetV2 & {
     readonly instructions?: HallkeeperSheetV2["instructions"];
     readonly approval?: SheetApproval | null;
@@ -535,244 +439,107 @@ export function HallkeeperPage(): React.ReactElement {
   const parsedInstructions = EventInstructionsSchema.nullable().safeParse(payload.instructions ?? null);
   const instructions = parsedInstructions.success ? parsedInstructions.data : null;
   const approval = payload.approval ?? null;
+  const doorSummary = instructions === null ? null : buildDoorScheduleSummary(instructions.doorSchedule);
 
   return (
-    <main
-      className="hk-page"
-      style={pageStyle}
-      aria-label={`Hallkeeper sheet for ${data.config.name} at ${data.venue.name}`}
-    >
-      {/* Skip link — first focusable element; jumps keyboard users
-          past the header straight into the manifest. Off-screen
-          until focused — standard skip-link pattern so sighted
-          users don't see it unless they tab into it. */}
-      <a
-        href="#hk-manifest"
-        style={{
-          position: "absolute",
-          top: 8,
-          left: 8,
-          padding: "8px 14px",
-          background: "#1a1a2e",
-          color: "#fff",
-          borderRadius: 6,
-          fontSize: 13,
-          textDecoration: "none",
-          zIndex: 1000,
-          transform: "translateY(-200%)",
-          transition: "transform 0.15s",
-        }}
-        onFocus={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
-        onBlur={(e) => { e.currentTarget.style.transform = "translateY(-200%)"; }}
-      >
-        Skip to setup manifest
-      </a>
-
-      {/* === REVIEW STATUS BANNER ===
-          Surfaces whether this sheet is approved (source of truth) or a
-          preview. Gracefully no-ops for configs that pre-date the review
-          workflow — rendering nothing when the status / snapshot aren't
-          accessible. */}
-      <HallkeeperStatusBanner configId={data.config.id} />
-
-      {/* === OFFLINE QUEUE BADGE — visible when toggles are queued === */}
-      {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
-
-      {/* === APPROVAL STAMP — only renders on approved sheets === */}
-      {approval !== null && (
-        <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />
-      )}
-
-      {/* === HEADER === */}
-      <header style={headerStyle}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <div style={labelStyle}>Hallkeeper Sheet</div>
-            <h1 style={eventNameStyle}>{data.config.name}</h1>
+    <main className="hk-page" aria-label={`Hallkeeper sheet for ${data.config.name} at ${data.venue.name}`}>
+      <a className="hk-skip-link" href="#hk-manifest">Skip to setup manifest</a>
+      <SheetNavigation />
+      <div className="hk-sheet-shell">
+        <header className="hk-sheet-heading">
+          <div className="hk-heading-copy">
+            <div className="hk-eyebrow">{data.venue.name} <span aria-hidden="true">/</span> Hallkeeper sheet</div>
+            <h1>{data.config.name}</h1>
+            <p className="hk-room-name">{data.space.name} <span>· {formatLayoutStyle(data.config.layoutStyle)}</span></p>
+            <p className="hk-room-dimensions">{formatDims(data.space)} · {data.totals.totalItems} items in the setup manifest</p>
           </div>
-          <div style={{ textAlign: "right", flexShrink: 0 }}>
-            <div style={{ fontSize: 32, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{data.config.guestCount}</div>
-            <div style={{ fontSize: 9, color: TEXT_MUT, textTransform: "uppercase", letterSpacing: 1.5 }}>guests</div>
+          <div className="hk-guest-count"><strong>{data.config.guestCount}</strong><span>guests</span></div>
+          <div className="hk-time-pair">
+            <div><span>Indicative setup time</span><strong>{data.timing === null ? "Not provided" : formatLocalTime(data.timing.setupBy, data.venue.timezone)}</strong></div>
+            <div><span>Indicative event time</span><strong>{data.timing === null ? "Not provided" : formatLocalTime(data.timing.eventStart, data.venue.timezone)}</strong></div>
+            <p>This sheet may use estimated times. Confirm the event schedule with the venue team · {data.venue.timezone}.</p>
           </div>
+        </header>
+
+        <div className="hk-provenance">
+          <HallkeeperStatusBanner configId={data.config.id} />
+          {approval !== null && <ApprovalStampBanner approval={approval} timezone={data.venue.timezone} />}
+          {pendingCount > 0 && <OfflinePendingBadge count={pendingCount} />}
+          {progressUnavailable && <div className="hk-notice" role="alert">Shared checks could not be loaded. The layout is available; reload before changing checks. <button className="hk-text-button" onClick={loadData}>Reload checks</button></div>}
+          {progressNotice !== null && <div className="hk-notice" role="alert">{progressNotice}</div>}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 14px", fontSize: 11, color: TEXT_SEC, marginTop: 10 }}>
-          <div><span style={{ color: TEXT_MUT }}>Venue </span>{data.venue.name}</div>
-          <div><span style={{ color: TEXT_MUT }}>Room </span>{data.space.name} · {formatDims(data.space)}</div>
-          <div><span style={{ color: TEXT_MUT }}>Layout </span>{formatLayoutStyle(data.config.layoutStyle)}</div>
-          <div><span style={{ color: TEXT_MUT }}>Items </span><strong style={{ color: "#fff" }}>{data.totals.totalItems}</strong></div>
-        </div>
-
-        {data.timing !== null && (
-          <div style={{
-            marginTop: 10, padding: "8px 12px", borderRadius: 8,
-            background: "rgba(201,168,76,0.08)", border: `1px solid rgba(201,168,76,0.2)`,
-          }}>
-            <strong style={{ color: GOLD, fontSize: 13 }}>Setup by {formatLocalTime(data.timing.setupBy)}</strong>
-            <span style={{ color: TEXT_SEC, fontSize: 12, marginLeft: 10 }}>Event {formatLocalTime(data.timing.eventStart)}</span>
-          </div>
-        )}
-      </header>
-
-      {/* === INSTRUCTIONS BANNER === */}
-      {instructions !== null && (
-        <InstructionsBanner instructions={instructions} />
-      )}
-
-      {/* === ACCESSIBILITY CALLOUTS === */}
-      {instructions !== null && (
-        <AccessibilityCallouts
-          callouts={buildAccessibilityCallouts(instructions.accessibility)}
-        />
-      )}
-
-      {/* === DIETARY SUMMARY === */}
-      {instructions !== null && instructions.dietary !== null
-        && hasDietaryContent(instructions.dietary) && (
-        <DietarySummaryBlock dietary={instructions.dietary} />
-      )}
-
-      {/* === DOOR SCHEDULE === */}
-      {instructions !== null && (() => {
-        const summary = buildDoorScheduleSummary(instructions.doorSchedule);
-        if (summary === null) return null;
-        return <DoorScheduleBlock summary={summary} />;
-      })()}
-
-      {/* === DIAGRAM — interactive floor plan with row↔marker link === */}
-      <section ref={diagramRef} style={{ margin: "14px 0" }}>
-        <InteractiveFloorPlan
-          floorPlan={data.floorPlan}
-          room={data.space}
-          phases={data.phases}
-          highlightedRowKey={highlightedRowKey}
-          onMarkerClick={handleMarkerClick}
-        />
-        {highlightedRowKey !== null && (
-          <button
-            type="button"
-            onClick={() => { setHighlightedRowKey(null); }}
-            style={{
-              marginTop: 8, padding: "6px 12px", borderRadius: 6,
-              background: "transparent", color: TEXT_SEC,
-              border: `1px solid ${BORDER}`, cursor: "pointer",
-              fontSize: 11, fontFamily: "inherit",
-            }}
-          >
-            Clear highlight
-          </button>
-        )}
-      </section>
-
-      {/* === PHASES === */}
-      <section id="hk-manifest" style={{ marginBottom: 16 }} aria-label="Setup manifest">
-        {data.phases.map((phase) => (
-          <PhaseBlock
-            key={phase.phase}
-            phase={phase}
-            checks={checks}
-            onToggle={handleToggle}
-            highlightedRowKey={highlightedRowKey}
-            onHighlightRow={handleHighlightRow}
-            isCollapsed={collapsed.has(phase.phase)}
-            onToggleCollapse={() => { toggleCollapse(phase.phase); }}
-          />
-        ))}
-      </section>
-
-      {/* === COMPLETION CELEBRATION === */}
-      {counts.allDone && (
-        <div style={{
-          textAlign: "center", padding: "24px 16px", marginBottom: 16,
-          background: "rgba(91,168,112,0.08)", borderRadius: 12,
-          border: `1px solid rgba(91,168,112,0.2)`,
-          animation: "hk-celebrate 0.5s ease forwards",
-        }}>
-          <div style={{ fontSize: 36, marginBottom: 8 }}>✓</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: GREEN }}>Setup Complete</div>
-          <div style={{ fontSize: 12, color: TEXT_SEC, marginTop: 4 }}>
-            All {counts.totalRows} items verified. Ready for the event.
-          </div>
-        </div>
-      )}
-
-      {/* === ACTION BUTTONS === */}
-      <div className="hk-actions" style={actionsRow}>
-        <button
-          type="button"
-          style={{
-            ...actionBtnPrimary,
-            opacity: downloadBusy ? 0.72 : 1,
-            cursor: downloadBusy ? "wait" : "pointer",
-          }}
-          onClick={handleDownload}
-          disabled={downloadBusy}
-        >
-          {downloadBusy ? "Preparing PDF..." : "Download PDF"}
-        </button>
-        <button type="button" style={actionBtnSecondary} onClick={handlePrint}>Print</button>
-      </div>
-      {downloadNotice !== null && (
-        <div
-          role={downloadNotice.kind === "error" ? "alert" : "status"}
-          style={{
-            margin: "-12px 0 24px",
-            padding: "10px 12px",
-            borderRadius: 8,
-            border: `1px solid ${downloadNotice.kind === "error" ? "rgba(255, 154, 87, 0.42)" : "rgba(91,168,112,0.35)"}`,
-            background: downloadNotice.kind === "error" ? "rgba(255, 154, 87, 0.1)" : "rgba(91,168,112,0.1)",
-            color: downloadNotice.kind === "error" ? "#ffb06b" : GREEN,
-            fontSize: 12,
-            fontWeight: 700,
-          }}
-        >
-          {downloadNotice.message}
-        </div>
-      )}
-
-      {/* === STICKY PROGRESS === */}
-      <div className="hk-summary-sticky" style={stickyBar}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 5 }}>
-          {data.phases.map((p) => {
-            const rows = p.zones.reduce((s, z) => s + z.rows.length, 0);
-            const done = p.zones.reduce((s, z) => s + z.rows.filter((r) => checks[r.key] === true).length, 0);
-            const complete = rows > 0 && done === rows;
-            const meta = PHASE_METADATA[p.phase];
-            return (
-              <span key={p.phase} className="hk-chip" style={{
-                padding: "1px 7px", borderRadius: 100, fontSize: 9, fontWeight: 600,
-                background: complete ? "rgba(91,168,112,0.1)" : "#1a1a1d",
-                color: complete ? GREEN : TEXT_SEC,
-                border: `1px solid ${complete ? GREEN : BORDER}`,
-              }}>
-                {meta.icon} {done}/{rows}
-              </span>
-            );
+        <nav className="hk-phase-strip" aria-label="Setup categories">
+          {data.phases.map((phase) => {
+            const meta = PHASE_METADATA[phase.phase];
+            const rows = phase.zones.flatMap((zone) => zone.rows);
+            const done = rows.filter((row) => checks[row.key] === true).length;
+            return <a key={phase.phase} className={`hk-phase-step hk-tone-${phase.phase}`} href={`#hk-phase-${phase.phase}`}
+              onClick={() => { setCollapsed((prev) => { const next = new Set(prev); next.delete(phase.phase); return next; }); }}>
+              <span className="hk-step-number">{meta.order.toString().padStart(2, "0")}</span>
+              <strong>{meta.label}</strong>
+              <span>{progressUnavailable ? "Checks unavailable" : `${done}/${rows.length} rows checked`}</span>
+            </a>;
           })}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ flex: 1, height: 4, background: BORDER, borderRadius: 2, overflow: "hidden" }}>
-            <div style={{
-              height: "100%", borderRadius: 2, width: "100%",
-              transformOrigin: "left",
-              transform: `scaleX(${String(counts.totalRows > 0 ? counts.checkedRows / counts.totalRows : 0)})`,
-              transition: "transform 0.3s ease",
-              background: counts.allDone ? GREEN : GOLD,
-            }} />
-          </div>
-          <span style={{ fontSize: 10, fontWeight: 600, color: counts.allDone ? GREEN : TEXT_SEC, whiteSpace: "nowrap" }}>
-            {counts.checkedRows}/{counts.totalRows}{counts.allDone ? " ✓" : ""}
-          </span>
-        </div>
-      </div>
+        </nav>
 
-      {/* === FOOTER === */}
-      <footer style={footerStyle}>
-        <div style={{ fontSize: 10, color: TEXT_MUT }}>{data.space.name} — {formatDims(data.space)}</div>
-        <div style={{ fontSize: 9, color: "#444", marginTop: 4 }}>Generated by VenViewer — {new Date(data.generatedAt).toLocaleString()}</div>
-      </footer>
+        <div className="hk-workspace">
+          <section id="hk-manifest" className="hk-manifest" aria-label="Setup manifest">
+            <div className="hk-section-heading"><div><span className="hk-eyebrow">One thing at a time</span><h2>Room setup</h2></div>
+              <span className="hk-count-label">{progressUnavailable ? "Checks unavailable" : `${counts.checkedRows} of ${counts.totalRows} rows checked`}</span>
+            </div>
+            <p className="hk-section-intro">Work through the setup categories. Tap a row to record its check; use ◎ to find its position.</p>
+            {data.phases.length === 0 && <div className="hk-empty"><h3>No items placed yet</h3><p>The planner hasn't added furniture to this layout. Once they save a layout, the setup manifest will appear here automatically.</p></div>}
+            {data.phases.map((phase) => <PhaseBlock key={phase.phase} phase={phase} checks={checks}
+              onToggle={handleToggle} highlightedRowKey={highlightedRowKey} onHighlightRow={handleHighlightRow}
+              isCollapsed={collapsed.has(phase.phase)} onToggleCollapse={() => { toggleCollapse(phase.phase); }} disabled={progressUnavailable} />)}
+            {counts.allDone && <div className="hk-checklist-complete" role="status"><strong>✓ Every setup row is checked</strong><p>This records the setup checklist. It does not approve the layout or release the room for guests.</p></div>}
+          </section>
+
+          <aside className="hk-room-reference" aria-label="Layout and event details">
+            <section ref={diagramRef} className="hk-plan-card">
+              <div className="hk-section-heading"><div><span className="hk-eyebrow">Your room at a glance</span><h2>The layout</h2></div><span className="hk-plan-label">{data.space.name}</span></div>
+              <p className="hk-section-intro">Select a linked item on the plan to find its checklist row.</p>
+              <InteractiveFloorPlan floorPlan={data.floorPlan} room={data.space} phases={data.phases}
+                highlightedRowKey={highlightedRowKey} onMarkerClick={handleMarkerClick} />
+              {highlightedRowKey !== null && <button type="button" className="hk-text-button" onClick={() => { setHighlightedRowKey(null); }}>Clear highlight</button>}
+            </section>
+            <section className="hk-care-card" aria-label="People and practical details">
+              <div className="hk-section-heading"><div><span className="hk-eyebrow">The details that matter</span><h2>People & practicalities</h2></div></div>
+              {instructions !== null ? <InstructionsBanner instructions={instructions} timezone={data.venue.timezone} /> : <p className="hk-section-intro">No planner instructions or day-of contact supplied on this sheet.</p>}
+              {instructions !== null && <AccessibilityCallouts callouts={buildAccessibilityCallouts(instructions.accessibility)} />}
+              {instructions !== null && instructions.dietary !== null && hasDietaryContent(instructions.dietary) && <DietarySummaryBlock dietary={instructions.dietary} />}
+              {doorSummary !== null && <DoorScheduleBlock summary={doorSummary} timezone={data.venue.timezone} />}
+            </section>
+          </aside>
+        </div>
+
+        <div className="hk-sheet-bottom">
+          <div><strong>Keep a copy to hand</strong><p>The PDF preserves the sheet's approval provenance.</p></div>
+          <div className="hk-actions">
+            <button type="button" className="hk-button hk-button-primary" onClick={handleDownload} disabled={downloadBusy}>
+              {downloadBusy ? <ActivityStatus>Preparing PDF…</ActivityStatus> : "Download PDF"}
+            </button>
+            <button type="button" className="hk-button" onClick={handlePrint}>Print</button>
+          </div>
+        </div>
+        {downloadNotice !== null && <div className={`hk-notice hk-notice-${downloadNotice.kind}`} role={downloadNotice.kind === "error" ? "alert" : "status"}>{downloadNotice.message}</div>}
+        <footer className="hk-sheet-footer"><span>{data.space.name} · {formatDims(data.space)}</span><span>Generated by VenViewer · {new Date(data.generatedAt).toLocaleString("en-GB", { timeZone: data.venue.timezone })}</span></footer>
+      </div>
+      {counts.totalRows > 0 && <div className="hk-summary-sticky" aria-label="Setup checklist progress">
+        <span><strong>{progressUnavailable ? "—" : counts.checkedRows}</strong> / {counts.totalRows} rows checked</span>
+        <div className="hk-progress-track"><div style={{ width: `${progressUnavailable ? 0 : counts.checkedRows / counts.totalRows * 100}%` }} /></div>
+        <a href="#hk-manifest">Back to checklist ↑</a>
+      </div>}
     </main>
   );
+}
+
+function SheetNavigation(): React.ReactElement {
+  return <nav className="hk-top-nav" aria-label="Hallkeeper navigation">
+    <Link to="/hallkeeper/today" className="hk-brand"><span aria-hidden="true">▥</span><span>VENVIEWER<small>Hallkeeper</small></span></Link>
+    <div><Link to="/hallkeeper/today">Today's rooms</Link><Link to="/hallkeeper/walkthrough">Workflow walkthrough <span aria-hidden="true">↗</span></Link></div>
+  </nav>;
 }
 
 // ---------------------------------------------------------------------------
@@ -787,163 +554,48 @@ interface PhaseBlockProps {
   readonly onHighlightRow: (rowKey: string) => void;
   readonly isCollapsed: boolean;
   readonly onToggleCollapse: () => void;
+  readonly disabled: boolean;
 }
 
-function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow, isCollapsed, onToggleCollapse }: PhaseBlockProps): React.ReactElement {
+function PhaseBlock({ phase, checks, onToggle, highlightedRowKey, onHighlightRow, isCollapsed, onToggleCollapse, disabled }: PhaseBlockProps): React.ReactElement {
   const meta = PHASE_METADATA[phase.phase];
-  const rowCount = phase.zones.reduce((s, z) => s + z.rows.length, 0);
-  const doneCount = phase.zones.reduce((s, z) => s + z.rows.filter((r) => checks[r.key] === true).length, 0);
-  const qtyTotal = phase.zones.reduce((s, z) => z.rows.reduce((ss, r) => ss + r.qty, s), 0);
-  const qtyDone = phase.zones.reduce((s, z) => z.rows.reduce((ss, r) => ss + (checks[r.key] === true ? r.qty : 0), s), 0);
-  const phaseDone = rowCount > 0 && doneCount === rowCount;
-
-  return (
-    <section className="hk-phase" style={{ marginBottom: 12 }}>
-      <button
-        type="button"
-        onClick={onToggleCollapse}
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          width: "100%", padding: "8px 10px", borderRadius: 8, cursor: "pointer",
-          background: phaseDone ? "rgba(91,168,112,0.06)" : CARD_BG,
-          border: `1px solid ${phaseDone ? "rgba(91,168,112,0.2)" : BORDER}`,
-          fontFamily: "inherit", textAlign: "left",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ color: GOLD, fontSize: 12 }}>{meta.icon}</span>
-          <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: phaseDone ? GREEN : "#ddd" }}>
-            Phase {meta.order} — {meta.label}
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 10, fontWeight: 600, color: phaseDone ? GREEN : TEXT_MUT }}>
-            {qtyDone}/{qtyTotal}{phaseDone ? " ✓" : ""}
-          </span>
-          <span style={{ fontSize: 10, color: TEXT_MUT }}>{isCollapsed ? "▸" : "▾"}</span>
-        </div>
-      </button>
-
-      {!isCollapsed && (
-        <div style={{ marginTop: 4 }}>
-          {phase.zones.map(({ zone, rows }) => (
-            <div key={zone}>
-              <div style={{ padding: "4px 6px 2px", fontSize: 9, fontWeight: 600, color: TEXT_MUT, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                ▹ {zone}
-              </div>
-              {rows.map((row, i) => {
-                const done = checks[row.key] === true;
-                const highlighted = highlightedRowKey === row.key;
-                const runtimeRow: {
-                  readonly positions?: readonly unknown[];
-                  readonly notes?: unknown;
-                } = row;
-                const positions = runtimeRow.positions ?? [];
-                const notes = typeof runtimeRow.notes === "string" ? runtimeRow.notes : "";
-                const locatable = positions.length > 0;
-                return (
-                  <div
-                    key={row.key}
-                    data-row-key={row.key}
-                    className={`hk-row${done ? " checked" : ""}${highlighted ? " highlighted" : ""}`}
-                    onClick={() => { onToggle(row.key); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(row.key); } }}
-                    role="checkbox"
-                    aria-checked={done}
-                    tabIndex={0}
-                    style={{
-                      display: "grid", gridTemplateColumns: locatable ? "1fr 28px 40px" : "1fr 40px",
-                      alignItems: "center",
-                      padding: "6px 6px 6px 12px", borderRadius: 4, userSelect: "none",
-                      background: done
-                        ? "rgba(91,168,112,0.08)"
-                        : highlighted
-                          ? "rgba(201,168,76,0.12)"
-                          : (i % 2 === 0 ? "transparent" : "#1a1a1d"),
-                      borderLeft: done
-                        ? `2px solid ${GREEN}`
-                        : highlighted
-                          ? `2px solid ${GOLD}`
-                          : "2px solid transparent",
-                      transition: "background 0.12s, border-color 0.12s",
-                      minHeight: 44, // touch target — whole row is tap-to-tick
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div
-                      style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 32 }}
-                    >
-                      <span className="hk-checkbox" style={{
-                        display: "inline-flex", alignItems: "center", justifyContent: "center",
-                        width: 16, height: 16, borderRadius: 3, flexShrink: 0,
-                        border: `1.5px solid ${done ? GREEN : TEXT_MUT}`,
-                        background: done ? GREEN : "transparent",
-                        fontSize: 10, color: "#fff", transition: "background 0.15s, border-color 0.15s",
-                      }}>{done ? "✓" : ""}</span>
-                      <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                          <span style={{
-                            fontSize: 13, fontWeight: 500,
-                            color: done ? TEXT_MUT : "#eee",
-                            textDecoration: done ? "line-through" : "none",
-                          }}>
-                            {row.name}
-                          </span>
-                          {row.afterDepth > 0 && (
-                            <span style={{
-                              fontSize: 8, color: "rgba(201,168,76,0.7)",
-                              background: "rgba(201,168,76,0.1)", padding: "1px 5px",
-                              borderRadius: 3, fontWeight: 600,
-                            }}>after</span>
-                          )}
-                        </div>
-                        {notes.length > 0 && (
-                          <div
-                            className="hk-row-note"
-                            style={{
-                              fontSize: 11, fontStyle: "italic",
-                              color: done ? TEXT_MUT : GOLD,
-                              marginTop: 1, lineHeight: 1.3,
-                            }}
-                          >
-                            ▸ {notes}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {locatable && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onHighlightRow(row.key); }}
-                        aria-label={highlighted ? "Hide on floor plan" : "Locate on floor plan"}
-                        style={{
-                          width: 28, height: 28, borderRadius: 4,
-                          background: highlighted ? "rgba(201,168,76,0.25)" : "transparent",
-                          border: `1px solid ${highlighted ? GOLD : BORDER}`,
-                          color: highlighted ? GOLD : TEXT_SEC,
-                          cursor: "pointer", fontSize: 13,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontFamily: "inherit",
-                        }}
-                        title={highlighted ? "Hide on floor plan" : `Locate ×${String(positions.length)} on floor plan`}
-                      >
-                        ◎
-                      </button>
-                    )}
-                    <div style={{
-                      textAlign: "right", fontWeight: 700, fontSize: 13, color: done ? TEXT_MUT : GOLD,
-                    }}>
-                      ×{row.qty}
-                    </div>
-                  </div>
-                );
-              })}
+  const rows = phase.zones.flatMap((zone) => zone.rows);
+  const doneCount = rows.filter((row) => checks[row.key] === true).length;
+  const qtyTotal = rows.reduce((total, row) => total + row.qty, 0);
+  return <section id={`hk-phase-${phase.phase}`} className={`hk-phase hk-tone-${phase.phase}`}>
+    <button type="button" className="hk-phase-heading" onClick={onToggleCollapse} aria-expanded={!isCollapsed} aria-controls={`hk-phase-content-${phase.phase}`}>
+      <span className="hk-phase-icon" aria-hidden="true">{meta.icon}</span>
+      <span className="hk-phase-title">Phase {meta.order} — {meta.label}<small>{qtyTotal} items · {rows.length} checklist rows</small></span>
+      <span className="hk-phase-count">{disabled ? "—" : `${doneCount}/${rows.length}`}<span aria-hidden="true">{isCollapsed ? " +" : " −"}</span></span>
+    </button>
+    <div id={`hk-phase-content-${phase.phase}`} className={`hk-phase-content${isCollapsed ? " hk-collapsed" : ""}`}>
+      {phase.zones.map(({ zone, rows: zoneRows }) => <div key={zone} className="hk-zone">
+        <h3 className="hk-zone-name">{zone}</h3>
+        {zoneRows.map((row) => {
+          const done = checks[row.key] === true;
+          const highlighted = highlightedRowKey === row.key;
+          const runtimeRow: { readonly positions?: readonly unknown[]; readonly notes?: unknown } = row;
+          const positions = runtimeRow.positions ?? [];
+          const notes = typeof runtimeRow.notes === "string" ? runtimeRow.notes : "";
+          return <div key={row.key} className={`hk-row-wrap${highlighted ? " highlighted" : ""}`}>
+            <div data-row-key={row.key} className={`hk-row${done ? " checked" : ""}${highlighted ? " highlighted" : ""}`}
+              onClick={() => { if (!disabled) onToggle(row.key); }}
+              onKeyDown={(event) => { if (!disabled && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onToggle(row.key); } }}
+              role="checkbox" aria-checked={done} aria-disabled={disabled} tabIndex={disabled ? -1 : 0}>
+              <span className="hk-checkbox" aria-hidden="true">{done ? "✓" : ""}</span>
+              <span className="hk-row-copy"><span className="hk-row-name">{row.name}{row.afterDepth > 0 && <span className="hk-after">after</span>}</span>
+                {notes.length > 0 && <span className="hk-row-note">{notes}</span>}
+              </span>
+              <strong className="hk-row-qty">×{row.qty}</strong>
             </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
+            {positions.length > 0 && <button type="button" className={`hk-locate${highlighted ? " active" : ""}`}
+              onClick={() => { onHighlightRow(row.key); }} aria-label={highlighted ? "Hide on floor plan" : "Locate on floor plan"}
+              title={highlighted ? "Hide on floor plan" : `Locate ×${positions.length} on floor plan`}>◎</button>}
+          </div>;
+        })}
+      </div>)}
+    </div>
+  </section>;
 }
 
 // ---------------------------------------------------------------------------
@@ -971,65 +623,15 @@ function formatDims(space: { widthM: number; lengthM: number; heightM: number })
   return `${String(space.widthM)}m × ${String(space.lengthM)}m × ${String(space.heightM)}m`;
 }
 
-function formatLocalTime(iso: string): string {
+function formatLocalTime(iso: string, timezone: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: timezone });
 }
 
 function formatLayoutStyle(style: string): string {
   return style.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
-const skeletonBar: React.CSSProperties = {
-  background: "#252320", borderRadius: 4,
-  animation: "hk-pulse 1.5s ease-in-out infinite",
-};
-
-const pageStyle: React.CSSProperties = {
-  minHeight: "100vh", background: DARK_BG, color: "#ddd",
-  fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
-  maxWidth: 640, margin: "0 auto", padding: "0 16px 32px",
-};
-
-const headerStyle: React.CSSProperties = {
-  paddingTop: 20, paddingBottom: 14, borderBottom: `2px solid ${GOLD}`,
-};
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase", marginBottom: 3,
-};
-
-const eventNameStyle: React.CSSProperties = {
-  fontSize: 22, fontWeight: 800, color: "#fff", margin: "4px 0 2px",
-  fontFamily: "'Playfair Display', serif", lineHeight: 1.2,
-};
-
-const actionsRow: React.CSSProperties = { display: "flex", gap: 12, marginBottom: 24 };
-
-const actionBtnPrimary: React.CSSProperties = {
-  flex: 1, padding: "14px 0", borderRadius: 10, border: "none",
-  background: `linear-gradient(135deg, #a8872e, ${GOLD}, #dfc06a)`,
-  color: "#111", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-};
-
-const actionBtnSecondary: React.CSSProperties = {
-  flex: 1, padding: "14px 0", borderRadius: 10, border: "1px solid #333",
-  background: "transparent", color: "#aaa", fontSize: 15, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
-};
-
-const stickyBar: React.CSSProperties = {
-  position: "sticky", bottom: 0, background: CARD_BG,
-  borderTop: `1px solid ${BORDER}`, padding: "7px 14px 10px", margin: "0 -16px",
-};
-
-const footerStyle: React.CSSProperties = {
-  textAlign: "center", paddingTop: 16, borderTop: "1px solid #222",
-};
 
 // ---------------------------------------------------------------------------
 // AccessibilityCallouts — critical / warning / info bands.
@@ -1069,7 +671,7 @@ function AccessibilityCallouts(
             Critical — action required before guests arrive
           </div>
           {critical.map((c, i) => (
-            <div key={`${c.label}-${String(i)}`} style={{ fontSize: 12, color: "#fff", padding: "3px 0" }}>
+            <div key={`${c.label}-${String(i)}`} style={{ fontSize: 12, color: INK, padding: "3px 0" }}>
               <strong style={{ color: SEVERITY_PALETTE.critical.border }}>{c.label}:</strong>{" "}
               <span style={{ color: TEXT_SEC }}>{c.detail}</span>
             </div>
@@ -1096,7 +698,7 @@ function AccessibilityCallouts(
           </div>
           {other.map((c, i) => (
             <div key={`${c.label}-${String(i)}`} style={{ fontSize: 12, color: TEXT_SEC, padding: "2px 0" }}>
-              <strong style={{ color: "#fff" }}>{c.label}:</strong> {c.detail}
+              <strong style={{ color: INK }}>{c.label}:</strong> {c.detail}
             </div>
           ))}
         </div>
@@ -1152,7 +754,7 @@ function DietarySummaryBlock(
         Dietary — <span style={{ color: GOLD }}>{String(total)}</span> special meals
       </div>
       {entries.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 12, color: "#fff" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 12, color: INK }}>
           {entries.map((d) => (
             <span key={d.key}>
               <strong style={{ color: GOLD, fontVariantNumeric: "tabular-nums" }}>{String(d.count)}</strong>
@@ -1163,7 +765,7 @@ function DietarySummaryBlock(
       )}
       {dietary.otherAllergies.trim().length > 0 && (
         <div style={{
-          fontSize: 12, color: "#fff", marginTop: 6,
+          fontSize: 12, color: INK, marginTop: 6,
           padding: "6px 10px",
           background: "rgba(239, 68, 68, 0.12)",
           borderLeft: `3px solid ${SEVERITY_PALETTE.critical.border}`,
@@ -1186,13 +788,13 @@ function DietarySummaryBlock(
 // ---------------------------------------------------------------------------
 
 function DoorScheduleBlock(
-  { summary }: { summary: DoorScheduleSummary },
+  { summary, timezone }: { summary: DoorScheduleSummary; timezone: string },
 ): React.ReactElement {
   const fmtTime = (iso: string): string => {
     try {
       const d = new Date(iso);
       if (Number.isNaN(d.getTime())) return iso;
-      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: timezone });
     } catch {
       return iso;
     }
@@ -1217,7 +819,7 @@ function DoorScheduleBlock(
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {summary.entries.map((door, doorIdx) => (
           <div key={`${door.label}-${String(doorIdx)}`}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#fff", marginBottom: 4 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: INK, marginBottom: 4 }}>
               {door.label}
             </div>
             {door.events.length === 0 ? (
@@ -1248,7 +850,7 @@ function DoorScheduleBlock(
                         background: ev.kind === "open" ? GREEN : TEXT_MUT,
                       }}
                     />
-                    <span style={{ color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+                    <span style={{ color: INK, fontVariantNumeric: "tabular-nums" }}>
                       {fmtTime(ev.at)}
                     </span>
                     <span style={{ textTransform: "uppercase", letterSpacing: 0.3, fontSize: 10, fontWeight: 700, color: ev.kind === "open" ? GREEN : TEXT_MUT }}>
@@ -1306,6 +908,7 @@ function ApprovalStampBanner({
         marginBottom: 10,
         background: BRAND.greenDeep,
         color: "#fff",
+        flexWrap: "wrap",
         borderRadius: 8,
         fontWeight: 600,
         fontSize: 13,

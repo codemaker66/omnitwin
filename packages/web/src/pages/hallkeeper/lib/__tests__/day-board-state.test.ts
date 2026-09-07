@@ -123,7 +123,7 @@ describe("deriveDayBoard — the countdown ramp", () => {
     expect(slot.state).toBe("organisers-due");
     expect(slot.tone).toBe("green");
     expect(slot.motion).toBe("pulse-4s");
-    expect(slot.countdown).toBe("Organisers · 45m");
+    expect(slot.countdown).toBe("First phase in 45m");
   });
 
   it("without phases, setup falls back to doors — 59m out is organisers-due, 61m is not", () => {
@@ -143,7 +143,7 @@ describe("deriveDayBoard — the countdown ramp", () => {
     expect(slot.state).toBe("guests-due");
     expect(slot.tone).toBe("amber");
     expect(slot.motion).toBe("pulse-3s");
-    expect(slot.countdown).toBe("Guests · 28m");
+    expect(slot.countdown).toBe("Starts in 28m");
   });
 
   it("imminent: inside 10m of doors the amber deepens and quickens", () => {
@@ -153,7 +153,7 @@ describe("deriveDayBoard — the countdown ramp", () => {
     expect(slot.state).toBe("imminent");
     expect(slot.tone).toBe("amber-deep");
     expect(slot.motion).toBe("pulse-2s");
-    expect(slot.countdown).toBe("Guests · 9m");
+    expect(slot.countdown).toBe("Starts in 9m");
   });
 
   it("in progress: a calm LIVE breathe — never a red pulse — with time remaining", () => {
@@ -163,7 +163,7 @@ describe("deriveDayBoard — the countdown ramp", () => {
     expect(slot.state).toBe("in-progress");
     expect(slot.tone).toBe("live");
     expect(slot.motion).toBe("breathe-4s");
-    expect(slot.countdown).toBe("Live · 1h 30m left");
+    expect(slot.countdown).toBe("1h 30m until booked end");
   });
 
   it("ended: faded, still, and labelled done", () => {

@@ -1,0 +1,10 @@
+.hk-walkthrough { color: #302c24; background: #faf8f3; min-height: 100%; padding: 18px 24px 0; }
+.hk-walkthrough-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 12px 18px; }
+.hk-walkthrough-eyebrow { color: #53654b; text-transform: uppercase; letter-spacing: .16em; font-size: 10px; margin: 0 0 5px; }
+.hk-walkthrough h1 { font: 400 30px/1.2 Georgia, serif; margin: 0 0 7px; }
+.hk-walkthrough-header p:last-child { color: #665f54; font-size: 12px; margin: 0; max-width: 580px; line-height: 1.5; }
+.hk-walkthrough nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.hk-walkthrough nav a, .hk-walkthrough nav button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 13px; border: 1px solid #d8d4c8; background: #fffdf8; color: #40573f; border-radius: 9px; font: 500 12px/1.4 Inter, sans-serif; min-height: 44px; cursor: pointer; text-decoration: none; }
+.hk-walkthrough nav a:hover, .hk-walkthrough nav button:hover { background: #e9eddf; }
+.hk-walkthrough iframe { display: block; width: 100%; height: max(780px, calc(100dvh - 210px)); border: 0; border-radius: 16px; }
+@media (max-width: 760px) { .hk-walkthrough { padding: 16px 8px 0; } .hk-walkthrough-header { align-items: flex-start; flex-direction: column; gap: 12px; padding: 0 8px 16px; } .hk-walkthrough h1 { font-size: 26px; } .hk-walkthrough iframe { min-height: 850px; border-radius: 12px; } }

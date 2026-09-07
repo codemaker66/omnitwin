@@ -6,6 +6,8 @@ Updated: 2026-09-07.
 
 ## Latest task notes
 
+- 2026-09-07 T-606: founder explicitly requested Hallkeeper live on venviewer.com for presentation. Production integration in progress; not yet deployed.
+
 - 2026-09-07 T-599 delivery-policy follow-up: Blake's standing “we build something we ship it” direction now requires requested product work to reach deployment and live verification. The shared shipping contract is routed from AGENTS/CLAUDE, GOAL, the Shepherd protocol, goal execution and release runbooks; historical freezes and owner-only stopping rules are superseded. Relevant checks, scope, source/data protection, spending and newer explicit holds remain. Independent review and new-link/diff checks pass; publication is tracked in today's session entry.
 
 - 2026-09-07 T-601 planner identity slice: selected venue replaces the fixed VENVIEWER wordmark in ReferenceRoomHeader. Trades Hall uses Blake's exact requested display name and supplied transparent crest; other venues use their own metadata with stale-request and failed-logo safeguards. Isolated `codex/planner-venue-branding-20260907` based on `04ca4563`; 17 focused tests, full web/E2E types, web lint/build and actual-browser width/second-venue checks pass. See today's session entry. Local only; T-601 retains sole publication ownership.
@@ -69,6 +71,7 @@ Updated: 2026-09-07.
 
 | ID | Title | Status | I | E | Depends | Source | Notes |
 |---|---|---|---|---|---|---|---|
+| T-606 | Ship the selected hallkeeper experience and presentation walkthrough. | in-progress | 5 | 1 | T-601, T-603, T-107 | USER-2026-09-07 | Latest founder request explicitly extends the prior design task to live publication. Isolated implementation of Day Board, real shared setup sheets, direct Hallkeeper entry and separately labelled fictional care/handover walkthrough. Root coordinates one release with T-601 and remains responsible for live verification; research, simulation, saved operational work and aesthetic acceptance remain distinct. |
 | T-603 | Rebuild Diary from selected light workspace and timetable references. | in-progress | 5 | 1 | T-601 | USER-2026-09-07 | Integrated source, 178 affected tests and actual local browser flows pass; reference comparison and limits in design-qa.md. Combined live release and founder acceptance remain pending. |
 | T-601 | Publish and rehearse the combined Trades Hall demo. | in-progress | 5 | 1 | T-596, T-600, T-602, T-603 | USER-2026-09-06/07 | Sole release coordinator. Qualified viewer, inventory, review, chair/batch and selected Diary are integrated in a clean isolated release branch. Exact build, actual-target migrations, provider deployment and founder rehearsal are tracked separately. |
 | T-602 | Import supplied furniture into inventory and room planner. | done | 4 | 1 | T-600, T-601 | USER-2026-09-06/07 (supplied Rodin exports and live demo direction) | Turini integrated in 44df06a3. Bulk import verified on codex/furniture-batch-import-20260907 based 74348f9b: 17 new models plus reused Turini, 33 canonical entries, 0068 guarded registration, approximate new dimensions, 592 web/51 API cases and full-batch browser save/reload pass. Report: docs/reports/furniture-batch-import-2026-09-07.md. T-601 owns combined integration and live publication; no separate deployment here. |

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/auth-store.js";
-import { boardRange, formatWallDay } from "../diary/lib/board-time.js";
+import { boardRange, formatWallDay, formatWallTime, msToWallInput, wallInputToMs } from "../diary/lib/board-time.js";
+import { ActivityStatus } from "../../components/shared/Activity.js";
 import { useCalendar } from "../diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../diary/hooks/useDiaryLive.js";
 import { DashboardLayout } from "../../components/dashboard/DashboardLayout.js";
@@ -51,6 +53,13 @@ function SlotCard({ slot }: { readonly slot: DayBoardSlot }): ReactElement {
         <span className="dayboard-slot-state">{slot.stateLabel}</span>
         {slot.eventType !== null ? <span> · {slot.eventType}</span> : null}
       </p>
+      <p className="dayboard-slot-meta">{slot.kind === "hold" ? "Pencilled hold" : "Confirmed booking"}{slot.guestCount !== null ? ` · ${String(slot.guestCount)} guests` : ""}</p>
+      {slot.phases.length > 0 && <ol className="dayboard-phases" aria-label="Planned event phases">
+        {slot.phases.map((phase, index) => <li key={phase.id} data-colour={index % 6}>
+          <strong>{phase.name}</strong><span>{formatWallTime(Date.parse(phase.startsAt))} – {formatWallTime(Date.parse(phase.endsAt))}</span>
+        </li>)}
+      </ol>}
+      {slot.eventId !== null && <Link className="dayboard-open-event" to={`/ops/events/${slot.eventId}`}>Open event &amp; working documents →</Link>}
       {slot.exceptionDetail !== null ? (
         <p className="dayboard-slot-alert" role="alert">
           {slot.exceptionDetail}
@@ -68,6 +77,8 @@ export function DayBoardPage(): ReactElement {
   const venueId = user?.venueId ?? null;
 
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [roomId, setRoomId] = useState("");
   useEffect(() => {
     const timer = window.setInterval(() => {
       setNowMs(Date.now());
@@ -79,7 +90,8 @@ export function DayBoardPage(): ReactElement {
 
   // Today, venue-local; the range re-derives when the clock crosses
   // midnight, so an always-on wall tablet rolls to the new day by itself.
-  const range = useMemo(() => boardRange(nowMs, "day"), [nowMs]);
+  const selectedMs = selectedDate === null ? nowMs : wallInputToMs(`${selectedDate}T12:00`) ?? nowMs;
+  const range = useMemo(() => boardRange(selectedMs, "day"), [selectedMs]);
   const { data, status, error, refetch } = useCalendar(venueId, range);
   const live = useDiaryLive(venueId !== null, refetch);
 
@@ -102,16 +114,24 @@ export function DayBoardPage(): ReactElement {
         <header className="dayboard-header">
           <div>
             <h1 className="dayboard-title">The Day Board</h1>
-            <p className="dayboard-subtitle">{formatWallDay(nowMs)}</p>
+            <p className="dayboard-subtitle">{formatWallDay(selectedMs)} · Europe/London</p>
           </div>
           <div className="dayboard-status">
             <span
               className={`dayboard-live-dot${live.connected ? " is-connected" : ""}`}
               aria-hidden="true"
             />
-            <span>{live.connected ? "Live" : "Reconnecting…"}</span>
+            <span>{live.connected ? "Live updates" : "Live updates disconnected"}</span>
           </div>
         </header>
+        <div className="dayboard-controls">
+          <label>Day<input type="date" value={msToWallInput(selectedMs).slice(0, 10)} onChange={(event) => { if (event.target.value !== "") setSelectedDate(event.target.value); }} /></label>
+          <button type="button" onClick={() => { setSelectedDate(null); }}>Today</button>
+          <label>Room<select value={roomId} onChange={(event) => { setRoomId(event.target.value); }}><option value="">All rooms</option>{(board?.lanes ?? []).map((lane) => <option key={lane.room.id} value={lane.room.id}>{lane.room.name}</option>)}</select></label>
+          <Link to="/diary">Open Diary</Link><Link to="/hallkeeper/walkthrough">Workflow walkthrough</Link>
+        </div>
+        {venueId === null && <p className="dayboard-notice">No venue is linked to this account. Ask your venue administrator to connect your workspace.</p>}
+        {status === "loading" && <ActivityStatus variant="panel">Loading the day’s bookings…</ActivityStatus>}
 
         {status === "error" ? (
           <div className="dayboard-notice" role="alert">
@@ -123,11 +143,11 @@ export function DayBoardPage(): ReactElement {
         ) : null}
 
         {status !== "error" && board !== null && busyLanes === 0 ? (
-          <p className="dayboard-notice">Nothing in the diary today. A quiet house.</p>
+          <p className="dayboard-notice">{selectedDate === null ? "Nothing in the diary today. A quiet house." : "Nothing in the diary on this day."}</p>
         ) : null}
 
         <div className="dayboard-lanes">
-          {(board?.lanes ?? []).map((lane) => (
+          {(board?.lanes ?? []).filter((lane) => roomId === "" || roomId === lane.room.id).map((lane) => (
             <section key={lane.room.id} className="dayboard-lane" aria-label={lane.room.name}>
               <h2 className="dayboard-lane-title">{lane.room.name}</h2>
               {lane.slots.length === 0 ? (
@@ -142,15 +162,15 @@ export function DayBoardPage(): ReactElement {
         <footer className="dayboard-legend" aria-label="What the colours mean">
           <span className="dayboard-chip dayboard-chip-green">
             <span className="dayboard-chip-dot" aria-hidden="true" />
-            Organisers due
+            First phase due
           </span>
           <span className="dayboard-chip dayboard-chip-amber">
             <span className="dayboard-chip-dot" aria-hidden="true" />
-            Guests due
+            Booking starts soon
           </span>
           <span className="dayboard-chip dayboard-chip-live">
             <span className="dayboard-chip-dot" aria-hidden="true" />
-            Live
+            Scheduled event
           </span>
           <span className="dayboard-chip dayboard-chip-red">
             <span className="dayboard-chip-dot" aria-hidden="true" />
