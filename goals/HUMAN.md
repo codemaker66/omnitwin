@@ -18,7 +18,7 @@ Each item says what to hand over, where to put it, and which goals wait on it. T
 | 12 | Recapture access | Only if the court shows a gap no existing source covers: close hero passes of the chandelier and the gilded names, controlled exposure. I bring a shot list. | When asked | 08 F6 |
 | 13 | Three hard briefs | Three difficult real event briefs and the venue's rules: what is not allowed where, heritage exclusions, noise and access limits. | D:\claude\venue-facts\briefs\ | 09 |
 | 14 | A second venue | One unrelated venue willing to run the same workflow, after the founding event proves value. | When ready | 10 P6 |
-| 15 | Console actions | Railway watch patterns and auto-deploy, Vercel, Clerk claims, the Neon rule row, when a goal names one. I write the exact clicks. | When asked | 10 P1, 06 |
+| 15 | Console actions requiring human access | Use existing authorized tooling for release operations. Ask Blake only for a concrete access or decision gap that cannot be completed by the agent; do not require a human simply because a step is marked OWNER. | Only when needed | 10 P1, 06 |
 | 16 | Delegation limits, later | When goal 09 reaches bounded delegation: which action classes, time, resource and money limits the venue admin grants the system, and the exception triggers. Not before shadow runs exist. | When asked | 09 M9 |
 
 Two things you asked about that need no action from you: the data authority is recorded (owner-stated, project-specific, covering Matterport and XGRIDS material, reconstruction and derivatives) and the Diary's old no-chat rule is superseded by your message; goal 04 builds messaging without asking again.

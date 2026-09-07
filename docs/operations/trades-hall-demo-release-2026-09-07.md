@@ -1,6 +1,6 @@
 # Trades Hall combined demo release — 7 September 2026
 
-T-601 is the single release owner. The founder authorized this reviewed demo release to go live. Other tasks provide exact tested commits; they do not publish concurrently. Use the clean isolated release checkout, not the multi-owner development tree.
+The [build, ship and verify contract](../../.claude/conventions/shipping-changes.md) is the current standing delivery instruction. T-601 coordinates the combined demo release so deployments do not race. Each originating task provides its exact tested commit and remains responsible for integration, deployment and checking its changed live flow. Arrange release execution with the coordinator; if no competing release is active and the coordinator is unavailable, use the existing authorized path and notify the other task. Do not leave completed product code waiting for another user request to ship. Use a clean isolated release checkout and preserve the shared development tree.
 
 ## Gates and source
 

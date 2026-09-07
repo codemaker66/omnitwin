@@ -1,5 +1,12 @@
 # Venviewer execution board
 
+**Current delivery policy — 7 September 2026:** the
+[build, ship and verify contract](../.claude/conventions/shipping-changes.md)
+applies to every active product lane. Owners coordinate release execution, and
+the originating task follows its tested change through deployment and live
+verification. The dated local-only results and release restrictions below are
+historical evidence, not a current instruction to stop or request permission again.
+
 Started 2026-09-04 by Codex on Blake's instruction: “where are your ./goals you will run … can you start and orchestrate yourself?”
 
 The shared [goal deck](README.md) is the programme. This file records current ownership and verified progress so concurrent sessions can work without duplicating slices. The founder's latest instructions and [mandate 16](../docs/plan/16-SUBLIME-EXPERIENCE-AND-AUTONOMY-MANDATE-2026-09-04.md) govern where generated planning documents disagree. The existing supplied visual references are authorised interim targets; a generated brief or missing image-provider key does not block independent implementation.

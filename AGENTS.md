@@ -1,5 +1,13 @@
 # AGENTS.md — Codex Instructions for Venviewer
 
+## Current delivery instruction — 7 September 2026
+
+Read and follow the shared [build, ship and verify contract](.claude/conventions/shipping-changes.md).
+Requested product changes include deployment and live verification. This newer
+founder instruction supersedes older local-only handoffs, blanket freezes and
+owner-only deployment restrictions in the documents below. Ownership coordinates
+safe releases; the originating task remains responsible for delivery.
+
 The company/product is Venviewer.
 The repository/package codename may still use omnitwin / @omnitwin/*.
 

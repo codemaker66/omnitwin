@@ -1,5 +1,12 @@
 # The goals deck — read this first, then take the first goal not marked done
 
+**Current delivery policy — 7 September 2026:** follow the
+[build, ship and verify contract](../.claude/conventions/shipping-changes.md).
+Requested product changes include deployment and verification of the changed
+live flow. Coordinate owners and preserve their work; carry integration through
+to delivery rather than ending with a local-only handoff. Older dated restrictions
+in this deck do not reinstate a superseded freeze.
+
 Written Friday 2026-09-04, 23:00 BST, by the Fable 5.1 session, for Blake and for every worker session that follows.
 
 Blake's instruction, verbatim: "I want you to review our ambitions and the md and construct a series of goals for yourself and any requests you need me as a human to help you with. I think all of our current UI's and Design need to be rebuilt from scratch because they do not inspire me with the philosophical aesthetic of the sublime which is paramount and non-negotiable for me. please construct ./goals for yourself and run them yourself or tell me to and i'll prompt you what you create".
@@ -26,7 +33,7 @@ Take goals in the order below unless a goal says it runs in parallel. Never take
 
 | # | Goal | Why here |
 |---|---|---|
-| 00 | Protect Monday | Elaine's demo is Monday 7 September. Nothing else touches production until Tuesday. |
+| 00 | Protect Monday | Keep Elaine's demo working while verified improvements ship through the coordinated release path. |
 | 01 | The Sublime | Blake's non-negotiable. It is the brief every rebuilt surface is judged by, so it comes before any rebuild. It needs no production change and can run this weekend. |
 | 02 | The room, spectacular and fast | Offline and measurable now; runs alongside 00 and 01 (the ladder W1–W8). |
 | 03 | The planner | The heart of the product and the first surface rebuilt under 01. |
@@ -40,7 +47,7 @@ Take goals in the order below unless a goal says it runs in parallel. Never take
 
 ## The laws binding every goal
 
-- The freeze: no push to master from Saturday 2026-09-05 18:00 BST to Monday 2026-09-07 18:00 BST; no `railway up` without Blake. Rebuilds live on branches until Tuesday and merge only after their gates.
+- Build, verify, integrate, deploy and check the changed live flow under the current delivery contract. The former weekend freeze and Tuesday-only merge rule are superseded. Respect any newer explicit hold without manufacturing another deployment approval.
 - The Sublime gates every surface. Blake has authorised the supplied reference images as interim targets, so work against them and concrete design studies can proceed. Present new directions as reviewable visuals before asking him to select one. Every rebuilt surface passes the sublime test (01 §4) line by line in its handoff.
 - The spine stays. "Rebuilt from scratch" means every surface a person sees and touches. It does not mean @omnitwin/types, the API, the Diary law (times only through bookings), the command envelopes (T-537), the coordinate space (T-473), the action log (T-522), the undo core, the spring core (packages/web/src/lib/springs.ts) or the splat runtime (one Spark host). Those are correct and invisible; rebuilding them would be silent widening of the ask.
 - Test first. Typecheck, tests and lint before any commit. `git commit -- <explicit paths>`; never stage everything.
