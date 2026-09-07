@@ -8,6 +8,7 @@ Blake requested removal of unnecessary text throughout Venviewer. The change rem
 - Planner recovery follow-up: `b9fef22b5c82f0cdfc1c149ab244a9d959d13dd6`.
 - Separate inherited test repairs: `1343687f2496937cfb7a004f04d7c5d64f2f296a`, already integrated by the release owner as `4e4a40c3`; do not duplicate this import.
 - Published release `2805f78e` is merged without conflicts. New founder-requested Hallkeeper redesign work supersedes obsolete overlapping copy changes. The count label retains "manifest items" to distinguish setup-manifest units from floor-plan furniture footprints.
+- Subsequent release `3b1d3389` is preserved, including email verification, account-settings recovery, fresh-token retry and authoritative API access. Conflicts were resolved semantically; the shorter account headings do not change those controls or conditions.
 - The shared working tree was preserved. Work is isolated in `D:/claude/venviewer-copy-cleanup-20260907`.
 
 ## Verification
@@ -21,6 +22,8 @@ A subsequent two-worker full rerun repeatedly stalled in worker startup and was 
 Local evidence is retained under `D:/claude/venviewer-copy-cleanup-20260907/output/playwright/`, including original failures, corrected focused runs, final full-run log, pre-rerun cache, isolated laptop result, terminated two-worker log and responsive browser results.
 
 Final integration checks against the merged live release pass: all 16 Hallkeeper/Day Board tests, whole web source/E2E typecheck, lint and production-mode build. Source was frozen during these checks. The existing full CI E2E suite is not green on the incoming release; the nine affected responsive checks above do not claim to resolve that broader suite.
+
+After the `3b1d3389` auth merge, isolated original-config runs pass all 11 workspace-access tests and all 24 auth-component tests. A prior thread run hit a dashboard-module import timeout and worker-response timeout; its failed evidence is retained. The isolated dashboard import then passed in 3.3 seconds with the unchanged 20-second timeout. Final source/E2E typecheck, affected lint and production-mode build pass again. The inherited runtime and dependency targets match; measured host paging/startup delays support an execution slowdown rather than a reproduced auth defect.
 
 ## Delivery
 

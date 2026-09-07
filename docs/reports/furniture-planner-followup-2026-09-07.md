@@ -1,8 +1,10 @@
 # Supplied furniture in the planner — 7 September 2026 follow-up
 
 Blake added two 4ft cloth-covered trestles and reported that the venue planner
-still appeared to use the old furniture. This extends T-602. T-601 retains sole
-production release ownership.
+still appeared to use the old furniture. This extends T-602. T-601 coordinated
+the release, then explicitly handed execution to the founder's dedicated
+`Deploy Venviewer to live site` task on 7 September. This task continues to own
+the furniture's changed live-flow verification.
 
 ## Reproduced live behavior
 
@@ -85,7 +87,93 @@ IDs. No persistence assertion was weakened to hide data loss.
 
 Source checks completed in the isolated
 `codex/furniture-planner-followup-20260907` worktree.
-This follow-up has not yet been deployed.
+This follow-up shipped in web/API release
+`7f2a701b4dade7d9d6048a82511ffa83cf4ff821`. Vercel production deployment
+6314446074 succeeded; the inspected web module is `index-MYrlSuOu.js`.
+All 20 GLBs and 20 previews match their prepared bytes. All 20 provenance files
+match the release Git blobs; the initial 18 metadata mismatches were the Windows
+checkout's CRLF versus the deployed LF bytes, retained in the original comparison
+receipt rather than discarded. The live inventory lists both new 4ft trestles.
+
+Subsequent visual investigation found a separate orientation defect: the Turini
+GLB faces +Z, while table seating assumes -Z. An independent projection of the
+original and runtime vertices confirms the backrest is at negative Z. The
+orientation task's candidate `ead48f86af307a3545585d8c823e415b4dd303d2` normalizes
+the renderer's chair basis and corrects rectangular seating rotation signs.
+It is qualified and included in the deployed release. The prepared round layout
+keeps exactly the same poses and footprint qualification. Live visual inspection
+shows the Turini seats facing the table centres. The earlier local functional
+checks alone did not establish correct facing.
+
+The new private DEMO ONLY configuration is
+`c6b0c1af-ff93-4fde-9b15-2789c3ec4cbb`, revision 2, with exactly 10 imported
+white-cloth rounds and 80 Turini chairs. Its draft event variant is
+`3cfcc8dd-8e3c-45af-b530-38705f76f653`. Guarded production creation, save and
+GET readback passed; the original configuration and historical artifacts passed
+preservation checks at 19:02:54 UTC. No approval, phase freeze or Ops compilation
+was performed. The original 162 object rows were not edited.
+
+The actual live planner opened this exact configuration with 90 current rendered
+objects, inactive historical preview and enabled Add furniture controls. Read-only
+R3F inspection found two visible instanced batches: 10 tables at 50,000 triangles
+and 80 chairs at 52,986 triangles, both with base-colour, normal and metallic maps.
+The native canvas was 3814 × 1720 at DPR 2. The furniture task inspected its CUA
+screenshot inline. The navigation task additionally saved its independently
+captured 19:16:49 UTC image at
+`D:/claude/venviewer-presentation-readiness-20260907/navigation-live/planner-design-7f2a701.jpg`,
+which the furniture task then inspected from disk. This also qualifies the explicit-route fix
+against the previously restored 162-object locked historical preview.
+
+A separate private QA configuration, `ccb80d7c-2bb7-4c7f-a8c3-bb4804eaeb76`,
+passed the actual live UI sequence: Guests 16 → Banquet rounds generated two
+imported rounds and 16 Turini chairs, saved/read back at revision 3. Catalogue
+placement then added the black 4ft trestle with two Turini chairs and the white
+4ft trestle alone. The white table was rotated 90 degrees in its single-object
+inspector. Revision 6 saved and reopened with all 22 objects unchanged, including
+server IDs, transforms, group membership and dressing. The complete sorted raw
+object SHA256 before and after reload is
+`4cfe3201c239cf3e19025ff7c42c95d9dc65cb0772c0c19886ae4c34655544bc`.
+The reopened renderer contains four visible full-PBR batches (2 rounds, 18 Turinis,
+1 black trestle and 1 white trestle), with inactive historical preview. The white
+table's rotation read back as 1.57080 radians. Both trestles retain their intrinsic
+cloth with no authored linen overlay. This QA draft has no event link.
+
+The final read-only API comparison exceeded initial 3-second and 25-second tool
+timeouts before completing successfully; this delay is retained as evidence,
+not hidden or presented as a save failure. No write was retried. An intermediate
+CUA stale-element error after switching 2D views and a locator miss were resolved
+with a fresh accessibility tree before continuing.
+A later return to the demonstration hit a transient network load error and venue
+access check. One normal reload recovered the saved 90-object layout; the tab was
+left in selection mode and marked as the deliverable. No fresh draft was created
+from the error screen. The load error remains a recorded reliability limitation.
+
+The independent navigation task also inspected the exact 90-object live route:
+editable catalogue, Flow → More → Scene overlays → Guest flow on/off, return to
+Design and Interior; no furniture writes. A brief 2D check found that unknown
+imported table capacity was incorrectly labelled “0 cap.”; the actual placed-chair
+count was correct. Isolated correction
+`957e3e4c00d4161fab72998f301acf61332c4074` preserves unknown versus known zero,
+shows a neutral Round/dimensions label, and passes 190 blueprint tests, full
+web/E2E typecheck and scoped lint. It shipped in web release
+`2805f78e5b94e34a95e052407180ed2ed2a9e063`, Vercel deployment 6315127880,
+module `index-KV0_vdZi.js`. API remains the unchanged 7f2 release. The furniture
+model files, shared catalogue, defaults and seating geometry are unchanged from
+7f2, so the exact published model-byte receipt remains applicable.
+
+The actual live 2805 QA view passed: two Round labels, zero “0 cap.” labels,
+round-table dimensions in Layers and the selected inspector, no invented capacity
+row, and the correct 18 placed chairs across four tables. The initial signed-in
+venue-access check exceeded the navigation tool's 10-second timeout but completed
+without retry or auth bypass. The live screenshot was inspected inline; these
+checks made no production writes. The planner was returned to the 90-object 3D
+demonstration afterward.
+
+The independent performance task's final moving-camera qualification is
+inconclusive: unsolicited trusted pointer input/capture loss interrupted all
+bounded samples. It retained the raw traces and unchanged native-buffer evidence.
+Neither a 60fps pass nor an idle demand-render sample's low frame rate is a valid
+moving-camera GPU result. No furniture performance guarantee is made here.
 
 A separate demo geometry experiment uses the actual 21 × 10m room outline and
 application-generated Turini seating, with positions quantized to millimetres.
@@ -102,3 +190,23 @@ The original approved 162-object plan remains unchanged.
 Detailed evidence and the supported generated-draft API plan are under
 `D:/claude/furniture-followup-20260907`. Wider device-performance targets and
 founder aesthetic acceptance remain separate.
+
+An independent closeout review found a separate scaled-chair capacity edge case:
+nine legacy chairs at scale 2 overlap around a 1.83m round even though the current
+circumference formula permits nine. Seven fit in the independent footprint check.
+The unscaled Turini default and this eight-chair-per-table demonstration are
+unaffected. A bounded regression fix, `997d980b1837d48454e692624b67a65b90111780`,
+is qualified for the next release: five reproduced failures become passing
+independent SAT geometry cases; 60 affected tests, full web/E2E typecheck and scoped
+lint pass. The conservative chair-corner limit preserves the unscaled Turini
+ceiling and exact showcase poses. This fix is not yet deployed, and this report
+does not establish non-overlap for every scaled arrangement in the current release.
+
+The release owner's final read-only production inventory at 19:21:07 UTC records
+16 configurations and 281 objects. These include the furniture task's 90/22-object
+drafts plus two separately created configurations with 2 and 5 objects; timestamps
+establish that both configurations predate this task's writes. Their concurrent
+work was preserved. The protected original 162 objects, configuration, snapshots
+and bookings retain their baseline hashes; there remain four events, 15 bookings,
+zero sent-email rows, zero stock rows, 40 assets and 69 migrations. Receipt:
+`D:/claude/venviewer-presentation-readiness-20260907/preservation-after-live-qa-inventory-20260907.json`.
