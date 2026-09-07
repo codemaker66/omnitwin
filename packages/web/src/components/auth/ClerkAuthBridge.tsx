@@ -20,8 +20,12 @@ export function ClerkAuthBridge(): null {
     } else if (isSignedIn) {
       setTokenGetter(getToken);
       useAuthStore.getState().beginAccessCheck(email);
-      void getCurrentAuthUser().then((dbUser) => {
-        if (!cancelled) useAuthStore.getState().setUser(dbUser);
+      // An explicit retry after email verification must not reuse older JWT claims.
+      const request = retry > 0
+        ? getToken({ skipCache: true }).then(() => cancelled ? null : getCurrentAuthUser())
+        : getCurrentAuthUser();
+      void request.then((dbUser) => {
+        if (!cancelled && dbUser !== null) useAuthStore.getState().setUser(dbUser);
       }).catch((error: unknown) => {
         if (cancelled) return;
         const pending = error instanceof ApiError && error.code === "INVITATION_REQUIRED";
