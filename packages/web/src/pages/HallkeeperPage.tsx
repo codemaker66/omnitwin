@@ -244,11 +244,9 @@ export function HallkeeperPage(): React.ReactElement {
     })();
   }, [configId, progressUnavailable]);
 
-  // Guards overlapping flushes. The mount drain and the `online` event
-  // can fire concurrently, and the server PATCH is a non-idempotent
-  // toggle — two in-flight flushes could double-flip the same row, so
-  // only one flush runs at a time.
-  const flushInFlightRef = useRef(false);
+  // Serialize drains for each sheet while allowing a newly opened sheet
+  // to sync even when the previous sheet still has a request in flight.
+  const flushingConfigsRef = useRef(new Set<string>());
 
   // --- Flush queued progress on reconnect ---
   //
@@ -266,13 +264,13 @@ export function HallkeeperPage(): React.ReactElement {
     if (configId === undefined) return;
 
     const flush = (): void => {
-      if (flushInFlightRef.current) return;
-      flushInFlightRef.current = true;
+      if (flushingConfigsRef.current.has(configId)) return;
+      flushingConfigsRef.current.add(configId);
       void (async () => {
         try {
           const queued = (await listPendingProgress()).filter((op) => op.configId === configId);
+          if (activeConfigRef.current === configId) setPendingCount(queued.length);
           if (queued.length === 0) {
-            if (activeConfigRef.current === configId) setPendingCount(0);
             return;
           }
 
@@ -299,7 +297,7 @@ export function HallkeeperPage(): React.ReactElement {
             await ackProgress(op.configId, op.rowKey);
           }
 
-          // Server still differs — re-issue one toggle each.
+          // Server still differs — replay each desired checked state.
           for (const op of replay) {
             let result: ReplayResult;
             try {
@@ -320,7 +318,7 @@ export function HallkeeperPage(): React.ReactElement {
         } catch {
           // Don't surface — flush failures are silent ops noise.
         } finally {
-          flushInFlightRef.current = false;
+          flushingConfigsRef.current.delete(configId);
         }
       })();
     };
