@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { readFile } from "node:fs/promises";
 import { CANONICAL_LAYOUT_SNAPSHOT_V0_FIXTURE, SpaceSchema } from "@omnitwin/types";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
@@ -92,6 +92,9 @@ function namedSceneNode(name: string): ReactElement<Record<string, unknown>> | u
 }
 
 beforeEach(() => {
+  // happy-dom does not implement native modal top-layer behavior.
+  vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
+  vi.spyOn(HTMLDialogElement.prototype, "close").mockImplementation(function (this: HTMLDialogElement) { this.open = false; });
   useCockpitStore.getState().reset();
   useEditorStore.setState({ space: null, configId: null });
   useBookmarkStore.setState({ pendingNavigationId: null, activeReferenceId: null, transition: null, tour: null });
@@ -104,9 +107,93 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("PlannerScene", () => {
+  function firstFrame(): () => void {
+    const callback = sceneComponent("CockpitSplatLayer")?.props.onFirstFrame;
+    if (typeof callback !== "function") throw new Error("Missing first-frame callback");
+    return callback as () => void;
+  }
+
+  it("keeps arrival over decoded bytes until the captured room draws, without remounting Canvas", () => {
+    chooseGrandHall(); readyGrandHall();
+    const { rerender, getByTestId } = render(<PlannerScene />);
+    const canvas = getByTestId("r3f-canvas");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    arrivals.loadedCount = 1;
+    rerender(<PlannerScene />);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    act(() => { firstFrame()(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(getByTestId("r3f-canvas")).toBe(canvas);
+    act(() => { useCockpitStore.getState().setLayerMode("mesh"); });
+    act(() => { useCockpitStore.getState().setLayerMode("splat"); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it.each(["button", "escape"])("lets people enter immediately via %s while capture loading continues", (method) => {
+    chooseGrandHall(); readyGrandHall();
+    render(<PlannerScene />);
+    if (method === "button") fireEvent.click(screen.getByRole("button", { name: /Open planner now/ }));
+    else fireEvent(screen.getByRole("dialog"), new Event("cancel", { bubbles: true, cancelable: true }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(sceneComponent("CockpitSplatLayer")).toBeDefined();
+    expect(arrivals.loadedCount).toBe(0);
+  });
+
+  it("isolates dialog keyboard events from window-level furniture shortcuts", () => {
+    chooseGrandHall(); readyGrandHall();
+    render(<PlannerScene />);
+    const windowKey = vi.fn();
+    window.addEventListener("keydown", windowKey);
+    window.addEventListener("keyup", windowKey);
+    try {
+      const button = screen.getByRole("button", { name: /Open planner now/ });
+      for (const key of ["Delete", "Backspace", "r", "f", "Escape", "z"]) {
+        fireEvent.keyDown(button, { key, ctrlKey: key === "z" });
+        fireEvent.keyUp(button, { key });
+      }
+      expect(windowKey).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog")).toBeTruthy();
+    } finally {
+      window.removeEventListener("keydown", windowKey);
+      window.removeEventListener("keyup", windowKey);
+    }
+  });
+
+  it("reveals the existing fallback when every capture chunk fails", () => {
+    chooseGrandHall(); readyGrandHall();
+    const { rerender } = render(<PlannerScene />);
+    arrivals.failedCount = 1;
+    rerender(<PlannerScene />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(sceneComponent("RoomMesh")).toBeDefined();
+  });
+
+  it("cannot let a late callback from an older plan admit the new plan", () => {
+    chooseGrandHall(); readyGrandHall();
+    render(<PlannerScene />);
+    const stale = firstFrame();
+    act(() => { useEditorStore.setState({ configId: "next-plan" }); });
+    act(() => { stale(); });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    act(() => { firstFrame()(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("does not cover mesh mode or a historical preview with a capture welcome", () => {
+    chooseGrandHall(); readyGrandHall();
+    render(<PlannerScene />);
+    act(() => { useCockpitStore.getState().setLayerMode("mesh"); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => { useCockpitStore.getState().setLayerMode("splat"); });
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    act(() => { useLayoutTimelinePreviewStore.getState().showScheduleGap("Room flip"); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("starts at native device resolution on a compact viewport", () => {
     const oldDpr = window.devicePixelRatio;
     const oldWidth = window.innerWidth;

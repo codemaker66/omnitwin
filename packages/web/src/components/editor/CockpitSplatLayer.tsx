@@ -8,6 +8,7 @@ export interface CockpitSplatLayerProps {
   readonly transform: RuntimeAssetViewTransform;
   /** Whether the splat should be shown for the current layer mode. */
   readonly active: boolean;
+  readonly onFirstFrame?: () => void;
   /** Fires once per chunk when its captured bytes finish decoding (CARD A2). */
   readonly onChunkLoaded?: (url: string) => void;
   /** Fires once per chunk whose decode fails permanently, so the resolve
@@ -67,6 +68,7 @@ interface RevealingSplatChunkProps {
   /** Polled per frame by SparkSplatLayer; identity-stable per url. */
   readonly opacityFn: () => number;
   readonly includeRendererHost: boolean;
+  readonly onFirstFrame?: () => void;
   readonly onLoaded: (url: string) => void;
   readonly onFailed: (url: string) => void;
 }
@@ -84,6 +86,7 @@ function RevealingSplatChunk({
   transform,
   opacityFn,
   includeRendererHost,
+  onFirstFrame,
   onLoaded,
   onFailed,
 }: RevealingSplatChunkProps): ReactElement {
@@ -109,6 +112,7 @@ function RevealingSplatChunk({
       rotation={transform.rotation}
       scale={transform.scale}
       includeRendererHost={includeRendererHost}
+      onFirstFrame={onFirstFrame}
       onLoad={handleLoad}
       onError={handleError}
     />
@@ -123,7 +127,7 @@ function RevealingSplatChunk({
  * under `frameloop="demand"`. Honours `prefers-reduced-motion` by snapping
  * instead of animating.
  */
-export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onChunkFailed }: CockpitSplatLayerProps): ReactElement | null {
+export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onChunkFailed, onFirstFrame }: CockpitSplatLayerProps): ReactElement | null {
   const invalidate = useThree((state) => state.invalidate);
   const onChunkLoadedRef = useRef(onChunkLoaded);
   const onChunkFailedRef = useRef(onChunkFailed);
@@ -197,6 +201,7 @@ export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onCh
           transform={transform}
           opacityFn={opacityFnFor(url)}
           includeRendererHost={index === 0}
+          onFirstFrame={onFirstFrame}
           onLoaded={handleChunkLoaded}
           onFailed={handleChunkFailed}
         />

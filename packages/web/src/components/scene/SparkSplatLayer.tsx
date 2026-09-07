@@ -78,6 +78,8 @@ export interface SparkSplatLayerProps {
    * which would rebuild in a worker the tree the file already carries.
    */
   readonly paged?: boolean;
+  /** First populated draw on this Canvas camera and default framebuffer. */
+  readonly onFirstFrame?: () => void;
   readonly onLoad?: (event: SparkSplatLoadEvent) => void;
   readonly onError?: (event: SparkSplatErrorEvent) => void;
 }
@@ -127,12 +129,17 @@ function applyLayerProps(
 export function SparkRendererMount({
   runtime,
   lodScaleFn,
+  onFirstFrame,
 }: {
   readonly runtime?: SparkSplatRuntime;
   readonly lodScaleFn?: () => number;
+  readonly onFirstFrame?: () => void;
 }): ReactElement {
   const gl = useThree((state) => state.gl);
+  const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
+  const firstFrameRef = useRef(onFirstFrame);
+  useEffect(() => { firstFrameRef.current = onFirstFrame; invalidate(); }, [invalidate, onFirstFrame]);
   const lodScaleFnRef = useRef<(() => number) | undefined>(lodScaleFn);
   useEffect(() => { lodScaleFnRef.current = lodScaleFn; }, [lodScaleFn]);
   // Primitive dependencies, deliberately: an equal profile arriving as a new
@@ -152,6 +159,30 @@ export function SparkRendererMount({
     }),
     [gl, invalidate, minSortIntervalMs, maxStdDev, lodSplatCount],
   );
+
+  useEffect(() => {
+    const previous = sparkRenderer.onAfterRender;
+    let reportedTo: (() => void) | undefined;
+    const afterRender: typeof previous = (...args) => {
+      previous.apply(sparkRenderer, args);
+      const [renderer, , drawCamera] = args;
+      // Decode completion precedes sorting/upload. Spark sets instanceCount
+      // from the sorted display in onBeforeRender. Reflection/precompile passes
+      // must not uncover the planner before the main camera has drawn it.
+      const callback = firstFrameRef.current;
+      const geometry = sparkRenderer.geometry;
+      const count = "instanceCount" in geometry ? geometry.instanceCount : 0;
+      if (callback === undefined || reportedTo === callback
+        || renderer.getRenderTarget() !== null || drawCamera !== camera
+        || typeof count !== "number" || !Number.isFinite(count) || count <= 0) return;
+      reportedTo = callback;
+      callback();
+    };
+    sparkRenderer.onAfterRender = afterRender;
+    return () => {
+      if (sparkRenderer.onAfterRender === afterRender) sparkRenderer.onAfterRender = previous;
+    };
+  }, [camera, sparkRenderer]);
 
   // The motion budget, applied as a scale on the resting budget. The tree
   // re-traverses on the next update, so the write is only made on a change.
@@ -176,6 +207,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
     url,
     onLoad,
     onError,
+    onFirstFrame,
     visible = true,
     opacity = 1,
     position = DEFAULT_POSITION,
@@ -289,7 +321,7 @@ export function SparkSplatLayer(props: SparkSplatLayerProps): ReactElement | nul
 
   return (
     <>
-      {includeRendererHost && <SparkRendererMount runtime={runtime} lodScaleFn={lodScaleFn} />}
+      {includeRendererHost && <SparkRendererMount runtime={runtime} lodScaleFn={lodScaleFn} onFirstFrame={onFirstFrame} />}
       {mesh !== null && <primitive object={mesh} />}
     </>
   );
