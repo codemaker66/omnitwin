@@ -1373,6 +1373,9 @@
   max-width: 60ch;
 }
 .fr-enq-privacy a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   color: var(--fr-ink);
   text-decoration: underline;
   text-decoration-color: var(--fr-rule);

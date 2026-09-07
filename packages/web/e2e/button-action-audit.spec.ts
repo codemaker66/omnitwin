@@ -1978,8 +1978,17 @@ test.describe("SS++ button and action inventory", () => {
     readonly waitFor: (page: Page) => Promise<void>;
   }[] = [
     {
-      name: "landing (fresh)",
+      name: "public rooms homepage",
       path: "/",
+      waitFor: async (page) => {
+        await expect(page.getByTestId("rooms-home")).toBeVisible();
+        await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
+        await expect(page.getByRole("link", { name: "Walk the room" })).toHaveAttribute("href", "/room/grand-hall");
+      },
+    },
+    {
+      name: "landing (fresh)",
+      path: "/fresh",
       waitFor: async (page) => {
         await expect(page.getByRole("heading", { level: 1, name: /The hall has been/i })).toBeVisible();
       },
@@ -2076,18 +2085,41 @@ test.describe("SS++ representative button behavior", () => {
     await page.goto(`/plan/${CONFIG_ID}`);
     await page.waitForSelector("[data-testid='cockpit-shell']", { timeout: 20_000 });
 
-    const visualLayer = page.getByRole("group", { name: "Visual layer" });
-    await visualLayer.getByRole("button", { name: "Splat" }).click();
-    await expect(visualLayer.getByRole("button", { name: "Splat" })).toHaveAttribute("aria-pressed", "true");
+    const roomView = page.getByRole("group", { name: "Room view" });
+    const modelLayer = roomView.getByRole("button", { name: "Model", exact: true });
+    const captureLayer = roomView.getByRole("button", { name: "Capture", exact: true });
+    await modelLayer.click();
+    await expect(modelLayer).toHaveAttribute("aria-pressed", "true");
+    await expect(captureLayer).toHaveAttribute("aria-pressed", "false");
+    await captureLayer.click();
+    await expect(captureLayer).toHaveAttribute("aria-pressed", "true");
+    await expect(modelLayer).toHaveAttribute("aria-pressed", "false");
 
     await page.locator("[data-testid='cockpit-rail']").getByRole("button", { name: "Flow" }).click();
     await expect(page.locator(".cockpit-stage")).toHaveAttribute("data-cockpit-mode", "flow");
+    const flowPanel = page.getByRole("complementary", { name: "Guest flow", exact: true });
+    await expect(flowPanel).toBeVisible();
+    const flowBounds = await flowPanel.boundingBox();
+    expect(flowBounds).not.toBeNull();
+    const viewport = page.viewportSize();
+    expect(viewport).not.toBeNull();
+    if (flowBounds === null || viewport === null) throw new Error("Flow panel geometry is unavailable");
+    expect(flowBounds.x).toBeGreaterThanOrEqual(0);
+    expect(flowBounds.y).toBeGreaterThanOrEqual(0);
+    expect(flowBounds.x + flowBounds.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(flowBounds.y + flowBounds.height).toBeLessThanOrEqual(viewport.height + 1);
+    await expect.poll(() => page.evaluate(() => ({
+      x: document.documentElement.scrollWidth <= window.innerWidth + 1,
+      y: document.documentElement.scrollHeight <= window.innerHeight + 1,
+    }))).toEqual({ x: true, y: true });
 
-    await page.getByRole("button", { name: "Layers" }).click();
-    const guestFlowToggle = page.getByRole("menuitemcheckbox", { name: "Guest flow" });
-    await expect(guestFlowToggle).toHaveAttribute("aria-checked", "true");
+    await page.getByRole("button", { name: "More planner tools" }).click();
+    const sceneSettings = page.getByRole("region", { name: "Scene settings" });
+    await sceneSettings.getByText("Scene overlays", { exact: true }).click();
+    const guestFlowToggle = sceneSettings.getByRole("checkbox", { name: "Guest flow", exact: true });
+    await expect(guestFlowToggle).toBeChecked();
     await guestFlowToggle.click();
-    await expect(guestFlowToggle).toHaveAttribute("aria-checked", "false");
+    await expect(guestFlowToggle).not.toBeChecked();
   });
 
   test("internal visual controls switch layer, phase, and command mode", async ({ page }) => {
@@ -2341,7 +2373,9 @@ test.describe("SS++ deep modal, drawer, role, disabled, and error states", () =>
     await expect(page.getByRole("button", { name: "Pipeline" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Proposals" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Onboarding" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Admin" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Staff dashboard" })
+      .locator(".dashboard-layout-more-links")
+      .getByRole("button", { name: "Admin", exact: true })).toBeVisible();
   });
 
   test("admin registry view wires venue, space, and pricing actions", async ({ page }) => {

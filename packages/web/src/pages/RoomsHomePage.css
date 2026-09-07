@@ -250,12 +250,20 @@
 
 .rooms__footLinks {
   display: flex;
+  flex-wrap: wrap;
   gap: 1.25rem;
   font-family: var(--fr-ui, "Geist", system-ui, sans-serif);
   font-size: 0.8rem;
 }
 
-.rooms__footLinks a { color: var(--stone-dim); text-decoration: none; }
+.rooms__footLinks a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+  color: var(--stone-dim);
+  text-decoration: none;
+}
 .rooms__footLinks a:hover,
 .rooms__footLinks a:focus-visible { color: var(--brass); }
 

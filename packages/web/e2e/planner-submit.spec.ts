@@ -195,21 +195,23 @@ async function mockSubmitFlow(
   return state;
 }
 
-// Editor cold-start under 8-worker parallelism can comfortably take longer
-// than the original 10s budget — the dev server has to serve the R3F + drei
-// + Three.js bundle to every worker concurrently. The error contexts from
-// previous failures consistently show the panel mounting just *after* the
-// 10s timeout fires (the page snapshot at failure time shows the button
-// rendered). Bumping to 20s removes the flake without changing what the
-// test asserts; in serial / lightly-loaded runs the assertion still
-// resolves in well under 10s.
+// Wait for the actual saved-plan review control, then disclose its actions.
+// Keeping this real interaction proves hidden approval controls are reachable.
 const PANEL_VISIBLE_TIMEOUT = 20_000;
+
+async function openReviewActions(page: Page): Promise<void> {
+  const review = page.getByRole("button", { name: /^Review saved plan:/ });
+  await expect(review).toBeVisible({ timeout: PANEL_VISIBLE_TIMEOUT });
+  await review.click();
+  await expect(review).toHaveAttribute("aria-expanded", "true");
+}
 
 test.describe("Planner submit for review", () => {
   test("draft config surfaces the 'Submit for Approval' button", async ({ page }) => {
     await seedAuthenticatedPlanner(page);
     await mockSubmitFlow(page, { initialStatus: "draft" });
     await page.goto(`/plan/${CONFIG_ID}`);
+    await openReviewActions(page);
 
     const button = page.getByTestId("submit-for-review-button");
     await expect(button).toBeVisible({ timeout: PANEL_VISIBLE_TIMEOUT });
@@ -220,6 +222,7 @@ test.describe("Planner submit for review", () => {
     await seedAuthenticatedPlanner(page);
     const state = await mockSubmitFlow(page, { initialStatus: "draft" });
     await page.goto(`/plan/${CONFIG_ID}`);
+    await openReviewActions(page);
 
     const button = page.getByTestId("submit-for-review-button");
     await expect(button).toBeVisible({ timeout: PANEL_VISIBLE_TIMEOUT });
@@ -237,6 +240,7 @@ test.describe("Planner submit for review", () => {
     await seedAuthenticatedPlanner(page);
     await mockSubmitFlow(page, { initialStatus: "changes_requested" });
     await page.goto(`/plan/${CONFIG_ID}`);
+    await openReviewActions(page);
 
     const button = page.getByTestId("submit-for-review-button");
     await expect(button).toBeVisible({ timeout: PANEL_VISIBLE_TIMEOUT });
