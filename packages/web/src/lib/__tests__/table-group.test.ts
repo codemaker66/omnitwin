@@ -22,7 +22,7 @@ beforeEach(() => {
 const ROUND_TABLE_ID = "round-table-6ft";
 const TRESTLE_TABLE_ID = "trestle-6ft";
 const POSEUR_TABLE_ID = "poseur-table";
-const CHAIR_ID = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
+const CHAIR_ID = getCatalogueItemBySlug("burgess-turini-18-3")?.id ?? "missing-chair-id";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function getItem(id: string) {
@@ -312,9 +312,12 @@ describe("rearrangeTableGroup", () => {
 // ---------------------------------------------------------------------------
 
 describe("seatCapacity", () => {
+  it("retains the legacy chair geometry when explicitly calculating an existing group's capacity", () => {
+    expect(seatCapacity(getItem(ROUND_TABLE_ID), 1, getItem("banquet-chair"))).toBe(12);
+  });
   it("derives a round table's capacity from the chair-ring circumference", () => {
-    // ring radius = 1.83/2 + 0.45/2 + 0.05 = 1.19 m → 2π·1.19 / 0.6 = 12.46 → 12
-    expect(seatCapacity(getItem(ROUND_TABLE_ID))).toBe(12);
+    // Turini depth .58 m makes the ring radius 1.255 m; the .6 m pitch allows 13.
+    expect(seatCapacity(getItem(ROUND_TABLE_ID))).toBe(13);
   });
 
   it("derives a rectangular table's capacity from sides + heads", () => {
@@ -357,7 +360,7 @@ function minPairwiseDistance(positions: readonly ChairPlacement[]): number {
 
 describe("computeChairPositions — no overlap", () => {
   // Two banquet chairs overlap if their centres are closer than the chair width.
-  const chairWidthRender = toRenderSpace(0.45);
+  const chairWidthRender = toRenderSpace(0.42);
 
   it("never overlaps chairs around a round table, even when over-requested", () => {
     for (const count of [4, 8, 12, 20]) {
@@ -381,7 +384,7 @@ describe("computeChairPositions — no overlap", () => {
 
 describe("computeChairPositions — clamping & heads", () => {
   it("clamps a round request to the geometric capacity", () => {
-    expect(computeChairPositions(0, 0, getItem(ROUND_TABLE_ID), 0, 100)).toHaveLength(12);
+    expect(computeChairPositions(0, 0, getItem(ROUND_TABLE_ID), 0, 100)).toHaveLength(13);
   });
 
   it("clamps a rectangular request to the geometric capacity", () => {

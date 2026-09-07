@@ -16,6 +16,7 @@ afterEach(() => { usePlacementStore.setState({ placedItems: [] }); });
 describe("imported table semantics", () => {
   it.each([
     ["trestle-6ft-black", "black"], ["trestle-6ft-white", "white"],
+    ["trestle-4ft-black", "black"], ["trestle-4ft-white", "white"],
     ["round-table-6ft-black", "black"], ["round-table-6ft-white", "white"],
     ["round-cafe-table-white", "white"], ["square-cafe-table-white", "white"],
     ["ceremony-table", "white"], ["cake-cutting-table", "included"],
@@ -45,7 +46,7 @@ describe("imported table semantics", () => {
     expect(canApplyTableLinenToItem(catalogue(slug))).toBe(true);
   });
 
-  it.each(["round-cafe-table-white", "square-cafe-table-white", "trestle-6ft-black", "round-table-6ft-white"])("retains dining support for %s", (slug) => {
+  it.each(["round-cafe-table-white", "square-cafe-table-white", "trestle-6ft-black", "trestle-4ft-black", "trestle-4ft-white", "round-table-6ft-white"])("retains dining support for %s", (slug) => {
     expect(isDiningTableItem(catalogue(slug))).toBe(true);
     expect(seatCapacity(catalogue(slug))).toBeGreaterThan(0);
   });

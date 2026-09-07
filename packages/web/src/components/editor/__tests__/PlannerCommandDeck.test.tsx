@@ -156,7 +156,7 @@ describe("PlannerCommandDeck", () => {
   );
 
   it("auto-fills the room with a banquet grid from the blank state", () => {
-    const table = getCatalogueItemBySlug("round-table-6ft");
+    const table = getCatalogueItemBySlug("round-table-6ft-white");
     expect(table).toBeDefined();
     if (table === undefined) return;
     useRoomDimensionsStore.setState({ dimensions: { width: 40, length: 20, height: 7 } });
@@ -172,7 +172,7 @@ describe("PlannerCommandDeck", () => {
   });
 
   it("auto-fills FOR the planner's guest count, not the whole room", () => {
-    const table = getCatalogueItemBySlug("round-table-6ft");
+    const table = getCatalogueItemBySlug("round-table-6ft-white");
     if (table === undefined) return;
     useRoomDimensionsStore.setState({ dimensions: { width: 60, length: 30, height: 7 } }); // large room
     useCockpitStore.getState().setPlannedGuestCount(24);
@@ -187,6 +187,7 @@ describe("PlannerCommandDeck", () => {
     // 24 guests ÷ 8 per table ≈ 3 tables — a small layout, not a packed 60×30 room.
     expect(tables.length).toBeLessThanOrEqual(6);
     expect(chairs.length).toBeGreaterThanOrEqual(24);
+    expect(chairs.every((item) => item.catalogueItemId === getCatalogueItemBySlug("burgess-turini-18-3")?.id)).toBe(true);
   });
 
   it("hides auto-fill once the floor has furniture", () => {

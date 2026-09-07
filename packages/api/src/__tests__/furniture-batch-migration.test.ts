@@ -26,9 +26,12 @@ const legacy = z.array(z.object({
   widthM: z.number(), depthM: z.number(), heightM: z.number(), seatCount: z.number().nullable(),
   collisionType: z.string(), meshUrl: z.string().nullable(), thumbnailUrl: z.string().nullable(),
 }).strict()).parse(JSON.parse(readFileSync(new URL("./fixtures/furniture-catalogue-pre-batch.json", import.meta.url), "utf8")));
-const LEGACY_SLUGS = legacy.map((asset) => asset.slug);
 const UPGRADE_SLUGS = ["trestle-6ft", "poseur-table-black", "poseur-table-white", "platform", "bar-counter"];
-const additions = CANONICAL_ASSETS.filter((asset) => !LEGACY_SLUGS.includes(asset.slug));
+// This suite qualifies migration 0068, not subsequent catalogue additions.
+const BATCH_SLUGS = ["trestle-6ft-black", "trestle-6ft-white", "trestle-6ft-wooden", "round-table-6ft-black",
+  "round-table-6ft-white", "cake-cutting-table", "ceremony-table", "checked-banquet-chair", "room-divider",
+  "round-cafe-table-white", "square-cafe-table-white", "servery-unit"];
+const additions = CANONICAL_ASSETS.filter((asset) => BATCH_SLUGS.includes(asset.slug));
 const upgrades = CANONICAL_ASSETS.filter((asset) => UPGRADE_SLUGS.includes(asset.slug));
 const venueId = "c1111111-1111-4111-8111-111111111111";
 const userId = "c2222222-2222-4222-8222-222222222222";
@@ -119,7 +122,7 @@ describe.skipIf(databaseUrl === undefined)("furniture batch on isolated PostgreS
     const after = await snapshot();
     expect(after.stock).toEqual(before.stock);
     expect(after.placements).toEqual(before.placements);
-    expect(after.assets).toHaveLength(CANONICAL_ASSETS.length);
+    expect(after.assets).toHaveLength(legacy.length + additions.length);
     for (const original of before.assets as { row: { id: string; [key: string]: unknown } }[]) {
       const upgrade = upgrades.find((asset) => asset.id === original.row.id);
       expect(after.assets).toContainEqual({ row: {
@@ -171,7 +174,7 @@ describe.skipIf(databaseUrl === undefined)("furniture batch on isolated PostgreS
     const before = await snapshot();
     await Promise.all([pool.query(migration), pool.query(migration)]);
     const after = await snapshot();
-    expect(after.assets).toHaveLength(CANONICAL_ASSETS.length);
+    expect(after.assets).toHaveLength(legacy.length + additions.length);
     expect(after.stock).toEqual(before.stock);
     expect(after.placements).toEqual(before.placements);
     await pool.query(migration);

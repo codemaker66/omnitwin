@@ -1,0 +1,28 @@
+[
+  {
+    "folder": "4ft_tressel_black_cloth",
+    "sourceFilename": "base_basic_pbr.glb",
+    "sourceSha256": "0deb816fee5c6c1ac8cf1c302082160b5b7715efe0b52b175b912834e1290992",
+    "slug": "trestle-4ft-black",
+    "name": "4ft Trestle Table (Black Cloth)",
+    "widthM": 1.22,
+    "heightM": 0.74,
+    "depthM": 0.76,
+    "rotationYDegrees": 0,
+    "dimensionBasis": "Approximate nominal 4ft width rounded to existing catalogue precision; depth and height follow comparable catalogue trestle envelope, not supplied measurements.",
+    "simplificationError": 0.003
+  },
+  {
+    "folder": "4ft_tressel_white_cloth",
+    "sourceFilename": "base_basic_pbr.glb",
+    "sourceSha256": "2050ee1049f937a8a23de88b3000b9c3beaf980cbb19529f6ba8f59c5a7eb0ac",
+    "slug": "trestle-4ft-white",
+    "name": "4ft Trestle Table (White Cloth)",
+    "widthM": 1.22,
+    "heightM": 0.74,
+    "depthM": 0.76,
+    "rotationYDegrees": 0,
+    "dimensionBasis": "Approximate nominal 4ft width rounded to existing catalogue precision; depth and height follow comparable catalogue trestle envelope, not supplied measurements.",
+    "simplificationError": 0.003
+  }
+]

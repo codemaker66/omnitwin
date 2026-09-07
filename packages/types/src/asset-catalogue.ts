@@ -348,6 +348,32 @@ export const CANONICAL_ASSETS: readonly CanonicalAsset[] = [
   // New item envelopes are provisional planning sizes, not measured venue facts.
   // Supplied source geometry/materials and calibration are recorded beside each GLB.
   {
+    id: "b55671ff-925d-573f-bf11-359e15736557",
+    slug: "trestle-4ft-black",
+    name: "4ft Trestle Table (Black Cloth)",
+    category: "table",
+    widthM: 1.22, depthM: 0.76, heightM: 0.74,
+    dimensionStatus: "approximate",
+    seatCount: null, collisionType: "box", tableShape: "rectangular",
+    maxCount: null, subtitle: "Approx. 1.22 × 0.76m · black cloth included", color: "#242424",
+    meshUrl: "/models/furniture/trestle-4ft-black/v1/model.glb",
+    thumbnailUrl: "/models/furniture/trestle-4ft-black/v1/preview.webp",
+    equipmentTags: [],
+  },
+  {
+    id: "166ead7c-6eba-5462-8380-519e9ba8e4bd",
+    slug: "trestle-4ft-white",
+    name: "4ft Trestle Table (White Cloth)",
+    category: "table",
+    widthM: 1.22, depthM: 0.76, heightM: 0.74,
+    dimensionStatus: "approximate",
+    seatCount: null, collisionType: "box", tableShape: "rectangular",
+    maxCount: null, subtitle: "Approx. 1.22 × 0.76m · white cloth included", color: "#eeeae3",
+    meshUrl: "/models/furniture/trestle-4ft-white/v1/model.glb",
+    thumbnailUrl: "/models/furniture/trestle-4ft-white/v1/preview.webp",
+    equipmentTags: [],
+  },
+  {
     id: "0275b4b9-1dc9-5af1-bd28-387d314abdf2",
     slug: "trestle-6ft-black",
     name: "Trestle Table (Black Cloth)",

@@ -57,6 +57,8 @@ const INTRINSIC_TABLE_LINEN: Readonly<Record<string, IntrinsicTableLinenStyle>> 
   "poseur-table-white": "white",
   "trestle-6ft-black": "black",
   "trestle-6ft-white": "white",
+  "trestle-4ft-black": "black",
+  "trestle-4ft-white": "white",
   "round-table-6ft-black": "black",
   "round-table-6ft-white": "white",
   "round-cafe-table-white": "white",

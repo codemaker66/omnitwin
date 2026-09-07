@@ -1,0 +1,216 @@
+{
+  "asset": "4ft Trestle Table (White Cloth)",
+  "slug": "trestle-4ft-white",
+  "sourceKind": "User-supplied Hyper3D Rodin generated model",
+  "source": {
+    "filename": "base_basic_pbr.glb",
+    "sha256": "2050ee1049f937a8a23de88b3000b9c3beaf980cbb19529f6ba8f59c5a7eb0ac",
+    "bytes": 35700588,
+    "triangles": 1000000,
+    "vertices": 514243,
+    "bounds": {
+      "min": [
+        -0.9509059190750122,
+        0,
+        -0.5401340126991272
+      ],
+      "max": [
+        0.9489551782608032,
+        0.6993690133094788,
+        0.540065348148346
+      ],
+      "size": [
+        1.8998610973358154,
+        0.6993690133094788,
+        1.0801993608474731
+      ]
+    },
+    "materials": 1,
+    "textures": [
+      {
+        "name": "texture_normal",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2831427
+      },
+      {
+        "name": "texture_diffuse",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 1975324
+      },
+      {
+        "name": "texture_metallic-texture_roughness",
+        "mimeType": "image/png",
+        "size": [
+          2048,
+          2048
+        ],
+        "bytes": 2436315
+      }
+    ]
+  },
+  "runtime": {
+    "filename": "model.glb",
+    "sha256": "2f4a7c9f8a3edf1bcf3466ac9accea6bb386da86eaabb0edac04835c62143918",
+    "bytes": 2331148,
+    "triangles": 50000,
+    "vertices": 30407,
+    "bounds": {
+      "min": [
+        -0.6100000143051147,
+        0,
+        -0.3799999952316284
+      ],
+      "max": [
+        0.6100000143051147,
+        0.7400000095367432,
+        0.3799999952316284
+      ],
+      "size": [
+        1.2200000286102295,
+        0.7400000095367432,
+        0.7599999904632568
+      ]
+    },
+    "materials": 1,
+    "textures": [
+      {
+        "name": "texture_normal",
+        "mimeType": "image/webp",
+        "size": [
+          1024,
+          1024
+        ],
+        "bytes": 383358
+      },
+      {
+        "name": "texture_diffuse",
+        "mimeType": "image/webp",
+        "size": [
+          1024,
+          1024
+        ],
+        "bytes": 361160
+      },
+      {
+        "name": "texture_metallic-texture_roughness",
+        "mimeType": "image/webp",
+        "size": [
+          1024,
+          1024
+        ],
+        "bytes": 311714
+      }
+    ],
+    "requiredExtensions": [
+      "EXT_texture_webp"
+    ]
+  },
+  "simplification": [
+    {
+      "targetTriangles": 50000,
+      "errorLimit": 0.003,
+      "actualError": 0.0008279093890450895,
+      "actualTriangles": 50000,
+      "attributeWeights": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  ],
+  "textureVerification": [
+    {
+      "name": "texture_normal",
+      "sourceSize": [
+        2048,
+        2048
+      ],
+      "runtimeSize": [
+        1024,
+        1024
+      ],
+      "sourcePixelsPreserved": false,
+      "resizeKernel": "Lanczos3",
+      "resizedPixelsPreserved": true,
+      "resizedRgbaSha256": "1d63630eb50621acbbf5e8fdb1bfb8b26bccb5a663e6dbc9c3fd91e86c49d6cb"
+    },
+    {
+      "name": "texture_diffuse",
+      "sourceSize": [
+        2048,
+        2048
+      ],
+      "runtimeSize": [
+        1024,
+        1024
+      ],
+      "sourcePixelsPreserved": false,
+      "resizeKernel": "Lanczos3",
+      "resizedPixelsPreserved": true,
+      "resizedRgbaSha256": "5243bec556c008c3afa9b9f1531aed396c6008c7926dffa70a3fbd2650e7365b"
+    },
+    {
+      "name": "texture_metallic-texture_roughness",
+      "sourceSize": [
+        2048,
+        2048
+      ],
+      "runtimeSize": [
+        1024,
+        1024
+      ],
+      "sourcePixelsPreserved": false,
+      "resizeKernel": "Lanczos3",
+      "resizedPixelsPreserved": true,
+      "resizedRgbaSha256": "17ac31b36cd755f24b8278c5be16fcebc06644bc74a7c5b4550ecea8e1d67306"
+    }
+  ],
+  "normalization": {
+    "description": "Generated mesh calibrated to catalogue planning envelope; not a measured scan.",
+    "dimensionsMetres": {
+      "width": 1.22,
+      "height": 0.74,
+      "depth": 0.76
+    },
+    "dimensionBasis": "Approximate nominal 4ft width rounded to existing catalogue precision; depth and height follow comparable catalogue trestle envelope, not supplied measurements.",
+    "rotationYRadians": 0,
+    "axisScale": [
+      0.6421938338082387,
+      1.0582720602274898,
+      0.7036352126964078
+    ],
+    "translationBeforeScale": [
+      0.0010369420051574707,
+      -0.0000362396240234375,
+      -0.000012785196304321289
+    ],
+    "pivot": "centered X/Z, floor Y=0",
+    "up": "+Y"
+  },
+  "limitations": [
+    "1K maps intentionally reduce source texture detail; source pixels are not identical after downsampling."
+  ],
+  "dependencies": {
+    "gltfTransform": "4.3.0",
+    "meshoptimizer": "1.2.0",
+    "sharp": "0.35.3"
+  },
+  "preview": {
+    "filename": "preview.webp",
+    "width": 600,
+    "height": 600,
+    "bytes": 3336,
+    "sha256": "aefcc2e61377c02a37e77c024ec3b53c0c749fb581d29aea5f0174a0d5c8eb3d",
+    "source": "Neutral Blender5.2.1 studio render of final calibrated runtime GLB;12samples,denoised,AgX."
+  }
+}

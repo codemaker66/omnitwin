@@ -1,6 +1,7 @@
 import { toRenderSpace, toRealWorld, GRAND_HALL_RENDER_DIMENSIONS } from "../constants/scale.js";
 import type { LayoutSnapshotAssetDefinition, SpaceDimensions } from "@omnitwin/types";
-import { getCatalogueItem } from "./catalogue.js";
+import { getCatalogueItem, getCatalogueItemBySlug } from "./catalogue.js";
+import { DEFAULT_PLANNER_CHAIR_SLUG } from "./furniture-defaults.js";
 import type { CatalogueItem } from "./catalogue.js";
 import { normalizeFurnitureScale } from "./furniture-scale.js";
 import {
@@ -234,19 +235,19 @@ export function snapToWallEdge(
   rotationY: number,
   roomDims: SpaceDimensions = GRAND_HALL_RENDER_DIMENSIONS,
   scale?: number,
+  chairFootprint: Pick<CatalogueItem, "width" | "depth"> | undefined = getCatalogueItemBySlug(DEFAULT_PLANNER_CHAIR_SLUG),
 ): { readonly x: number; readonly z: number } {
   const halfRoomW = roomDims.width / 2;
   const halfRoomL = roomDims.length / 2;
 
-  // For round tables with chairs, use the full chair-ring radius as the
-  // extent so the outermost chair back sits flush against the wall.
-  // Chair depth ~0.45m (render 0.9), gap 0.05m (render 0.1).
-  const chairExtent = isDiningTableItem(item) && item.tableShape === "round"
-    ? toRenderSpace(0.45 + 0.05) // chair depth + gap beyond table edge
-    : 0;
+  // Include rotated chair corners, not just the centre of each outer back.
+  // Existing groups pass their largest scaled chair width and depth.
+  const reserveChairs = isDiningTableItem(item) && item.tableShape === "round";
+  const chairExtent = reserveChairs ? toRenderSpace((chairFootprint?.depth ?? 0) + 0.05) : 0;
+  const chairHalfWidth = reserveChairs ? toRenderSpace(chairFootprint?.width ?? 0) / 2 : 0;
   const { halfW: rawHalfW, halfD: rawHalfD } = computeRotatedFootprint(item, rotationY, scale);
-  const halfW = rawHalfW + chairExtent;
-  const halfD = rawHalfD + chairExtent;
+  const halfW = Math.hypot(rawHalfW + chairExtent, chairHalfWidth);
+  const halfD = Math.hypot(rawHalfD + chairExtent, chairHalfWidth);
 
   let snappedX = x;
   let snappedZ = z;

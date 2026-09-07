@@ -11,6 +11,7 @@ import { useRoomDimensionsStore } from "../room-dimensions-store.js";
 
 const tableId = "round-table-6ft";
 const chairId = getCatalogueItemBySlug("banquet-chair")?.id ?? "missing-chair-id";
+const automaticChairId = getCatalogueItemBySlug("burgess-turini-18-3")?.id ?? "missing-turini-id";
 const platformId = "platform";
 const projectorId = "projector";
 const micStandId = "mic-stand";
@@ -485,7 +486,7 @@ describe("placeTableGroup on platforms", () => {
     seedPlatform(0, 0);
     usePlacementStore.getState().placeTableGroup(tableId, 0, 0, 0, 8);
     const items = usePlacementStore.getState().placedItems;
-    const chairs = items.filter((i) => i.catalogueItemId === chairId);
+    const chairs = items.filter((i) => i.catalogueItemId === automaticChairId);
     // At least some chairs should be off the platform
     const onPlatform = chairs.filter((c) => c.y > 0);
     const onFloor = chairs.filter((c) => c.y === 0);
@@ -655,7 +656,7 @@ describe("table group integrity", () => {
     const store = usePlacementStore.getState();
     store.placeTableGroup(tableId, 0, 0, 0, 6);
     const initialItems = usePlacementStore.getState().placedItems;
-    const firstChair = initialItems.find((item) => item.catalogueItemId === chairId);
+    const firstChair = initialItems.find((item) => item.catalogueItemId === automaticChairId);
     expect(firstChair).toBeDefined();
     if (firstChair === undefined) throw new Error("Expected table group to include chairs");
 
@@ -716,9 +717,9 @@ describe("autoArrangeBanquet", () => {
     usePlacementStore.getState().autoArrangeBanquet(tableId, 40, 8); // 40 / 8 = 5 tables
     const items = usePlacementStore.getState().placedItems;
     const tables = items.filter((i) => i.catalogueItemId === tableId);
-    const chairs = items.filter((i) => i.catalogueItemId === chairId);
+    const chairs = items.filter((i) => i.catalogueItemId === automaticChairId);
     expect(tables).toHaveLength(5);
-    expect(chairs.length).toBeGreaterThan(0);
+    expect(chairs).toHaveLength(40);
     // Each table sits in its own group.
     expect(new Set(tables.map((t) => t.groupId)).size).toBe(5);
   });
