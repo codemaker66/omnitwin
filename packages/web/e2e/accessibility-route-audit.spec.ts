@@ -25,8 +25,6 @@ const NOTIFICATION_ID = "00000000-0000-4000-8000-000000004009";
 const PROPOSAL_TOKEN = "t469-accessibility-proposal";
 const SUPPLIER_TOKEN = "t469-accessibility-supplier";
 const HASH = "b".repeat(64);
-const ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-accessibility-route-audit-2026-06-20";
-const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
 
 test.describe.configure({ mode: "serial" });
 
@@ -451,9 +449,10 @@ for (const viewport of accessibilityViewports) {
 }
 
 test.afterAll(async () => {
-  await mkdir(dirname(REPORT_PATH), { recursive: true });
+  const reportPath = test.info().outputPath("accessibility-route-audit.json");
+  await mkdir(dirname(reportPath), { recursive: true });
   await writeFile(
-    REPORT_PATH,
+    reportPath,
     `${JSON.stringify({
       generatedAt: new Date().toISOString(),
       routeStateCount: routeSpecs.length,
@@ -463,4 +462,8 @@ test.afterAll(async () => {
     }, null, 2)}\n`,
     "utf8",
   );
+  await test.info().attach("accessibility-route-audit", {
+    path: reportPath,
+    contentType: "application/json",
+  });
 });
