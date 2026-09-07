@@ -5,6 +5,30 @@ import { createGltfFurnitureInstance } from "../gltf-furniture-instance.js";
 const dimensions = { width: 0.42, height: 0.88, depth: 0.58 };
 
 describe("imported furniture instances", () => {
+  it.each(["burgess-turini-18-3", "checked-banquet-chair"])("aligns supplied +Z %s to planner -Z without moving its footprint or changing the cache", (slug) => {
+    const source = new Group();
+    source.position.set(10, -4, 7);
+    const material = new MeshStandardMaterial();
+    const geometry = new BoxGeometry(0.42, 0.88, 0.58);
+    source.add(new Mesh(geometry, material));
+    const back = new Group();
+    back.name = "backrest-marker";
+    back.position.set(0, 0.3, -0.25);
+    source.add(back);
+    const instance = createGltfFurnitureInstance(source, { ...dimensions, slug });
+    const bounds = new Box3().setFromObject(instance.object);
+    expect(bounds.getCenter(new Vector3()).toArray()).toEqual([
+      expect.closeTo(0, 6), expect.closeTo(0.44, 6), expect.closeTo(0, 6),
+    ]);
+    expect(bounds.min.y).toBeCloseTo(0, 6);
+    const renderedBack = instance.object.getObjectByName("backrest-marker");
+    expect(renderedBack?.getWorldPosition(new Vector3()).z).toBeGreaterThan(0);
+    expect(source.rotation.y).toBe(0);
+    expect(source.position.toArray()).toEqual([10, -4, 7]);
+    expect(back.position.z).toBe(-0.25);
+    instance.dispose(); geometry.dispose(); material.dispose();
+  });
+
   it("fits the full hierarchy uniformly and centres the XZ footprint with its base on the floor", () => {
     const source = new Group();
     source.position.set(10, -4, 7);

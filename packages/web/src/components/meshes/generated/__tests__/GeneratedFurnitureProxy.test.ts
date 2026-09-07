@@ -1,4 +1,4 @@
-import { Mesh, Vector3, type Material } from "three";
+import { Box3, Mesh, Vector3, type Material } from "three";
 import { describe, expect, it, vi } from "vitest";
 import { RENDER_SCALE } from "../../../../constants/scale.js";
 
@@ -6,6 +6,17 @@ import { createGeneratedFurnitureRenderInstance } from "../GeneratedFurniturePro
 import { GENERATED_FURNITURE_SLUGS } from "../generatedFurnitureRegistry.js";
 
 describe("GeneratedFurnitureProxy render instance", () => {
+  it("places the actual generated chair backrest behind the planner's -Z front", () => {
+    const instance = createGeneratedFurnitureRenderInstance(
+      "banquet-chair", {}, 0.35, 0, { opacity: 1, selectedPartId: null },
+    );
+    const back = instance.controller.inspectionParts.find((part) => part.id === "backrest-pad");
+    if (back === undefined) throw new Error("chair factory did not expose backrest-pad");
+    instance.root.updateWorldMatrix(true, true);
+    expect(new Box3().setFromObject(back.node).getCenter(new Vector3()).z).toBeGreaterThan(0);
+    instance.dispose();
+  });
+
   it.each(GENERATED_FURNITURE_SLUGS)(
     "maps the %s catalogue slug to a presentation-only render instance",
     (slug) => {

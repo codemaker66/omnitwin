@@ -193,7 +193,7 @@ function computeRectChairPositions(
   const chairs: ChairPlacement[] = [];
 
   // Local-frame facings (a chair at rotationY 0 faces −Z): +Z = π, −Z = 0,
-  // +X = π/2, −X = −π/2. Each row is centred so seats are pitch-spaced and
+  // +X = −π/2, −X = π/2. Each row is centred so seats are pitch-spaced and
   // symmetric about the table centre — guaranteeing no overlap.
   const pushRow = (
     k: number,
@@ -206,8 +206,8 @@ function computeRectChairPositions(
       const localX = axis === "x" ? slot : fixedOffset;
       const localZ = axis === "x" ? fixedOffset : slot;
       chairs.push({
-        x: cx + localX * cos - localZ * sin,
-        z: cz + localX * sin + localZ * cos,
+        x: cx + localX * cos + localZ * sin,
+        z: cz - localX * sin + localZ * cos,
         rotationY: tableRotY + facing,
       });
     }
@@ -215,8 +215,8 @@ function computeRectChairPositions(
 
   pushRow(frontCount, "x", -sideOffset, Math.PI); // front long side (−Z), faces +Z
   pushRow(backCount, "x", sideOffset, 0); // back long side (+Z), faces −Z
-  pushRow(leftCount, "z", -endOffset, Math.PI / 2); // left head (−X), faces +X
-  pushRow(rightCount, "z", endOffset, -Math.PI / 2); // right head (+X), faces −X
+  pushRow(leftCount, "z", -endOffset, -Math.PI / 2); // left head (−X), faces +X
+  pushRow(rightCount, "z", endOffset, Math.PI / 2); // right head (+X), faces −X
 
   return chairs;
 }
