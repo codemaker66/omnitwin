@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { DiaryBoardPage } from "../DiaryBoardPage.js";
@@ -210,6 +210,80 @@ afterEach(() => {
 });
 
 describe("DiaryBoardPage", () => {
+  it("keeps move activity until all overlapping writes settle, including failure", async () => {
+    let resolveFirst: (() => void) | undefined;
+    let rejectSecond: ((reason: Error) => void) | undefined;
+    const first = new Promise<void>((resolve) => { resolveFirst = resolve; });
+    const second = new Promise<void>((_resolve, reject) => { rejectSecond = reject; });
+    moveBookingMock.mockReset().mockReturnValueOnce(first).mockReturnValueOnce(second);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    const move = (): void => {
+      fireEvent.keyDown(block, { key: " " });
+      fireEvent.keyDown(block, { key: "ArrowRight" });
+      fireEvent.keyDown(block, { key: " " });
+    };
+    move();
+    move();
+    expect(moveBookingMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Saving booking moves…").closest("[role='status']")?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    await act(async () => { resolveFirst?.(); await first; });
+    expect(screen.getByText("Saving booking moves…")).toBeTruthy();
+    await act(async () => { rejectSecond?.(new Error("Offline")); await second.catch(() => undefined); });
+    expect(screen.queryByText("Saving booking moves…")).toBeNull();
+    expect(screen.getByText(/could not be saved/)).toBeTruthy();
+  });
+
+  it("shows activity for Undo until its write finishes", async () => {
+    let resolveUndo: (() => void) | undefined;
+    const response = new Promise<void>((resolve) => { resolveUndo = resolve; });
+    moveBookingMock.mockReset().mockResolvedValueOnce({}).mockReturnValueOnce(response);
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
+    fireEvent.keyDown(block, { key: " " });
+    fireEvent.keyDown(block, { key: "ArrowRight" });
+    fireEvent.keyDown(block, { key: " " });
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    expect(screen.getByText("Saving booking moves…")).toBeTruthy();
+    await act(async () => { resolveUndo?.(); await response; });
+    expect(screen.queryByText("Saving booking moves…")).toBeNull();
+  });
+
+  it("distinguishes pending and failed enquiry loads from an empty result and retries", async () => {
+    let rejectRequest: ((reason: Error) => void) | undefined;
+    const response = new Promise<never>((_resolve, reject) => { rejectRequest = reject; });
+    listEnquiriesMock.mockReturnValue(response);
+    renderPage();
+    await screen.findByText("Loading open enquiries…");
+    expect(screen.queryByText("No open enquiries right now.")).toBeNull();
+    await act(async () => { rejectRequest?.(new Error("Offline")); await response.catch(() => undefined); });
+    expect(screen.queryByText("Loading open enquiries…")).toBeNull();
+    expect(screen.queryByText("No open enquiries right now.")).toBeNull();
+    expect(screen.getByText(/Enquiries could not be refreshed/)).toBeTruthy();
+    listEnquiriesMock.mockResolvedValue([]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry enquiries" }));
+    expect(await screen.findByText("No open enquiries right now.")).toBeTruthy();
+    expect(screen.queryByText(/Enquiries could not be refreshed/)).toBeNull();
+  });
+
+  it("preserves loaded enquiries during refresh and after its failure", async () => {
+    getCalendarMock.mockImplementation(() => Promise.resolve(fixture()));
+    renderPage();
+    await screen.findByText("Fiona MacLeod");
+    await waitFor(() => { expect(screen.queryByText("Loading open enquiries…")).toBeNull(); });
+    let rejectRequest: ((reason: Error) => void) | undefined;
+    const response = new Promise<never>((_resolve, reject) => { rejectRequest = reject; });
+    listEnquiriesMock.mockReturnValue(response);
+    fireEvent.click(screen.getByRole("button", { name: "Later" }));
+    await screen.findByText("Loading open enquiries…");
+    expect(screen.getByText("Fiona MacLeod")).toBeTruthy();
+    await act(async () => { rejectRequest?.(new Error("Offline")); await response.catch(() => undefined); });
+    expect(screen.queryByText("Loading open enquiries…")).toBeNull();
+    expect(screen.getByText("Fiona MacLeod")).toBeTruthy();
+    expect(screen.getByText(/Enquiries could not be refreshed/)).toBeTruthy();
+  });
   it("renders lanes, blocks, and the legend from the calendar response", async () => {
     renderPage();
     expect(await screen.findByText("Grand Hall")).toBeDefined();

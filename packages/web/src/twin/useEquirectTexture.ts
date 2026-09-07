@@ -34,6 +34,8 @@ export interface EquirectTextureState {
   readonly texture: Texture | null;
   /** 0 = nothing loaded yet; otherwise the LOD currently applied. */
   readonly lod: 0 | TwinEquirectLod;
+  /** All tiers requested by this stream have actually completed or failed. */
+  readonly settled: boolean;
 }
 
 /** Ceiling of the stream: the 4096 base always; 8192 only on zoom intent. */
@@ -279,6 +281,23 @@ function releaseTexture(nodeId: string, base: string, lod: TwinEquirectLod): voi
   }
 }
 
+/** Keep the displayed tier alive until a replacement has reached the GPU. */
+export function retainEquirectTexture(
+  nodeId: string,
+  base: string,
+  lod: TwinEquirectLod,
+): (() => void) | null {
+  const held = registry.get(registryKey(base, nodeId, lod));
+  if (held === undefined) return null;
+  held.refs += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    releaseTexture(nodeId, base, lod);
+  };
+}
+
 /** TEST-ONLY: drop every cached texture so each test starts from a cold
  *  registry (textures are shared module state by design). */
 export function __resetEquirectRegistryForTests(): void {
@@ -379,15 +398,19 @@ export function useEquirectTexture(
   nodeId: string,
   base: string,
   maxLod: TwinEquirectLod = 4096,
+  retryKey = 0,
 ): EquirectTextureState {
-  const [state, setState] = useState<EquirectTextureState>({ texture: null, lod: 0 });
+  const [state, setState] = useState<EquirectTextureState>({ texture: null, lod: 0, settled: false });
   const slotRef = useRef<StreamSlot>({ key: "", applied: 0, live: null, release: null });
+  const requestRef = useRef("");
+  const requestKey = JSON.stringify([base, nodeId, maxLod, retryKey]);
 
   useEffect(() => {
     const key = JSON.stringify([base, nodeId]);
     const slot = slotRef.current;
     let cancelled = false;
     const controller = new AbortController();
+    requestRef.current = requestKey;
 
     if (slot.key !== key) {
       // Node (or bundle) change: release the previous pano and restart the
@@ -398,19 +421,15 @@ export function useEquirectTexture(
       slot.applied = 0;
       slot.live = null;
       slot.release = null;
-      setState((previous) =>
-        previous.texture === null && previous.lod === 0
-          ? previous
-          : { texture: null, lod: 0 },
-      );
     }
+    setState({ texture: slot.live, lod: slot.applied, settled: false });
 
     const stream = async (): Promise<void> => {
       for (const lod of TWIN_EQUIRECT_LODS) {
         if (lod > maxLod || lod <= slot.applied) {
           continue;
         }
-        const texture = await acquireTexture(nodeId, base, lod, controller.signal);
+        const texture = await acquireTexture(nodeId, base, lod, controller.signal).catch(() => null);
         if (cancelled || slotRef.current.key !== key) {
           if (texture !== null) {
             releaseTexture(nodeId, base, lod);
@@ -426,7 +445,10 @@ export function useEquirectTexture(
           releaseTexture(nodeId, base, lod);
         };
         slot.applied = lod;
-        setState({ texture, lod });
+        setState({ texture, lod, settled: false });
+      }
+      if (!cancelled && slotRef.current.key === key) {
+        setState({ texture: slot.live, lod: slot.applied, settled: true });
       }
     };
 
@@ -436,7 +458,7 @@ export function useEquirectTexture(
       cancelled = true;
       controller.abort();
     };
-  }, [nodeId, base, maxLod]);
+  }, [nodeId, base, maxLod, retryKey, requestKey]);
 
   // The live texture is owned by the slot (it must survive maxLod re-runs),
   // so its final release belongs to unmount, not the stream effect above.
@@ -451,5 +473,7 @@ export function useEquirectTexture(
     };
   }, []);
 
-  return state;
+  return slotRef.current.key === JSON.stringify([base, nodeId])
+    ? requestRef.current === requestKey ? state : { ...state, settled: false }
+    : { texture: null, lod: 0, settled: false };
 }

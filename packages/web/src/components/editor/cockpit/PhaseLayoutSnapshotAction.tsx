@@ -1,5 +1,6 @@
 import { useState, type ReactElement } from "react";
-import { Check, LoaderCircle, Link2 } from "lucide-react";
+import { Check, Link2 } from "lucide-react";
+import { ActivityIndicator } from "../../shared/Activity.js";
 import type { FreezePhaseLayoutSnapshotResponse } from "../../../api/room-layout-timeline.js";
 import type { AuthUser } from "../../../stores/auth-store.js";
 import { useFreezePhaseLayoutSnapshot } from "../../../hooks/use-freeze-phase-layout-snapshot.js";
@@ -64,7 +65,7 @@ export function PhaseLayoutSnapshotAction({
         onClick={() => { void freezeSavedPlan(); }}
       >
         {freeze.status === "saving"
-          ? <LoaderCircle className="is-spinning" size={13} aria-hidden="true" />
+          ? <ActivityIndicator size={18} />
           : freeze.status === "success"
             ? <Check size={13} aria-hidden="true" />
             : <Link2 size={13} aria-hidden="true" />}

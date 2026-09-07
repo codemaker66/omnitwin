@@ -1421,6 +1421,7 @@ describe("CockpitBottom room layout timeline", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Week" }));
     await screen.findByText("Room timeline unavailable");
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(false);
     expect(isLayoutTimelineMutationLocked()).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
     expect(isLayoutTimelineMutationLocked()).toBe(false);
@@ -1441,10 +1442,28 @@ describe("CockpitBottom room layout timeline", () => {
       expect(useLayoutTimelinePreviewStore.getState().unavailableMessage)
         .toBe("Only one room phase is scheduled in this range.");
     });
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
     expect(isLayoutTimelineMutationLocked()).toBe(false);
     expect(useCockpitStore.getState().selectedPhaseId).toBe("phase-before-preview");
     await waitFor(() => { expect(screen.queryByTestId("cockpit-bottom")).toBeNull(); });
+  });
+
+  it("ends range activity when an active preview resolves to an empty schedule", async () => {
+    timelineApi.getRoomLayoutTimeline.mockImplementation((query) => Promise.resolve(
+      responseForQuery(query, "scope" in query && query.scope === "week" ? [] : [arrival, dinner]),
+    ));
+    renderBottom();
+    await screen.findByRole("slider", { name: /scrub room layout/i });
+    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    await waitFor(() => {
+      expect(useLayoutTimelinePreviewStore.getState().unavailableMessage)
+        .toBe("No room phases are scheduled in this range.");
+    });
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(false);
+    expect(isLayoutTimelineMutationLocked()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Exit preview" }));
+    expect(isLayoutTimelineMutationLocked()).toBe(false);
   });
 
   it("does not let Space on a focused control also toggle playback", async () => {

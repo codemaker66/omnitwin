@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ActivityIndicator } from "../shared/Activity.js";
 import { captureEditorSession, isCurrentEditorSession, useEditorStore } from "../../stores/editor-store.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import {
@@ -116,6 +117,10 @@ const segmentStyle: React.CSSProperties = {
 };
 
 const sendStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 5,
   minHeight: 44,
   minWidth: 58,
   padding: "0 14px",
@@ -240,6 +245,7 @@ export function MobilePlannerTopBar({
             </button>
           ) : (
             <div role="status" aria-live="polite" style={saveStyle}>
+              {status === "saving" && <ActivityIndicator size={16} />}
               {saveCopy.label}
             </div>
           )}
@@ -280,6 +286,7 @@ export function MobilePlannerTopBar({
               ? "Exit the room timeline preview before sending this saved plan."
               : undefined}
           >
+            {sending && <ActivityIndicator size={18} />}
             {sending ? "Sending" : timelinePreviewActive ? "Exit preview" : "Send"}
           </button>
         ) : null}

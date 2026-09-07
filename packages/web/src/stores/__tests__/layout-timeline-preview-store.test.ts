@@ -249,6 +249,22 @@ describe("layout timeline preview store", () => {
     expect(useLayoutTimelinePreviewStore.getState().renderRevision).toBe(trustworthyRevision);
   });
 
+  it("reports activity only until pending preview loading settles, fails, or is cancelled", () => {
+    const preview = useLayoutTimelinePreviewStore.getState();
+    preview.showPending("Loading room timeline…");
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(true);
+    preview.settle(frame("arrival"), [item("chair", 0)]);
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(false);
+    preview.showPending("Loading another day…");
+    preview.showUnavailable(null, "Timeline request failed.");
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(false);
+    expect(useLayoutTimelinePreviewStore.getState().unavailableMessage).toBe("Timeline request failed.");
+    preview.showPending("Loading another room…");
+    preview.clear();
+    expect(useLayoutTimelinePreviewStore.getState().isLoading).toBe(false);
+    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("inactive");
+  });
+
   it("switches frozen room authority at the same midpoint as identity and capture items", () => {
     const fromFrame = frame("setup");
     const toRuntime = {

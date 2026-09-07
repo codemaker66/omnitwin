@@ -1,5 +1,6 @@
 import { type ChangeEvent, type ReactElement } from "react";
 import { Waypoints } from "lucide-react";
+import { ActivityStatus } from "../../shared/Activity.js";
 import { LensPanel, LensPanelSection, LensPanelMetric } from "./LensPanel.js";
 import { useCockpitReplay } from "../../../hooks/use-cockpit-replay.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
@@ -57,7 +58,7 @@ export function FlowLensPanel(): ReactElement {
       eyebrow="Flow lens"
       title="Guest flow"
       icon={<Waypoints size={18} />}
-      source={SOURCE_BY_STATUS[status]}
+      source={status === "loading" ? <ActivityStatus>{SOURCE_BY_STATUS[status]}</ActivityStatus> : SOURCE_BY_STATUS[status]}
       testId="flow-lens-panel"
       footer="Simulated planning support · human review required before operational reliance."
     >

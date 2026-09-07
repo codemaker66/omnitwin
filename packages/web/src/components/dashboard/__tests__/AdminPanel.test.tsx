@@ -136,6 +136,26 @@ afterEach(() => {
 });
 
 describe("AdminPanel", () => {
+  it.each(["resolve", "reject"] as const)("shows detail refresh after a room save until the request %ss", async (settlement) => {
+    let resolveRefresh: ((value: VenueDetail) => void) | undefined;
+    let rejectRefresh: ((reason: Error) => void) | undefined;
+    const response = new Promise<VenueDetail>((resolve, reject) => { resolveRefresh = resolve; rejectRefresh = reject; });
+    mocks.getVenue.mockResolvedValueOnce(venueDetailFixture()).mockReturnValueOnce(response);
+    await renderOpenedVenue();
+    fireEvent.click(screen.getByRole("button", { name: "Edit space Grand Hall" }));
+    fireEvent.change(screen.getByLabelText("Height (m)"), { target: { value: "7.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    const activity = await screen.findByText("Refreshing venue details…");
+    expect(activity.closest("[role='status']")?.querySelector("[data-activity-indicator]")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "Trades Hall Glasgow" })).toBeTruthy();
+    await act(async () => {
+      if (settlement === "resolve") resolveRefresh?.(venueDetailFixture());
+      else rejectRefresh?.(new Error("Refresh unavailable"));
+      await response.catch(() => undefined);
+    });
+    expect(screen.queryByText("Refreshing venue details…")).toBeNull();
+    if (settlement === "reject") expect(mocks.addToast).toHaveBeenCalledWith("Refresh unavailable", "error");
+  });
   it.each(["resolve", "reject"] as const)("does not reopen a deleted venue or report stale errors when its earlier refresh %ss", async (settlement) => {
     let resolveRefresh: ((value: VenueDetail) => void) | undefined;
     let rejectRefresh: ((reason: Error) => void) | undefined;

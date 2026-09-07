@@ -5,6 +5,7 @@ import { createPlacedItem } from "../../../../lib/placement.js";
 import { usePlacementStore } from "../../../../stores/placement-store.js";
 import { useSelectionStore } from "../../../../stores/selection-store.js";
 import { useFurnitureInspectionStore } from "../../../../stores/furniture-inspection-store.js";
+import { useLayoutTimelinePreviewStore } from "../../../../stores/layout-timeline-preview-store.js";
 
 // Stand in for the real panels so this stays a routing test, not a render test.
 vi.mock("../FlowLensPanel.js", () => ({ FlowLensPanel: () => <div data-testid="flow-panel-mock" /> }));
@@ -30,6 +31,7 @@ function catalogueId(slug: string): string {
 
 afterEach(() => {
   cleanup();
+  useLayoutTimelinePreviewStore.getState().clear();
   useCockpitStore.getState().reset();
   usePlacementStore.setState({ placedItems: [] });
   useSelectionStore.getState().clearSelection();
@@ -53,6 +55,16 @@ describe("panelForMode (registry)", () => {
 });
 
 describe("CockpitRightDock", () => {
+  it("stops showing work when a room timeline request fails", () => {
+    useLayoutTimelinePreviewStore.getState().showPending("Loading authoritative timeline…");
+    render(<CockpitRightDock />);
+    expect(screen.getByRole("status").textContent).toBe("Loading room timeline");
+    expect(screen.getByRole("status").querySelector("[data-activity-indicator]")).not.toBeNull();
+    act(() => { useLayoutTimelinePreviewStore.getState().showUnavailable(null, "The requested timeline could not be loaded."); });
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByText("Room timeline unavailable")).toBeTruthy();
+  });
+
   it("shows the real furniture inspector in the Design lens", () => {
     useCockpitStore.getState().setMode("design");
     render(<CockpitRightDock />);

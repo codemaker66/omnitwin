@@ -502,6 +502,8 @@ export function AdminPanel(): ReactElement {
           </button>
         </header>
 
+        {loadingVenueId === selectedVenue.id && <ActivityStatus>Refreshing venue details…</ActivityStatus>}
+
         <div className="admin-panel-metrics" aria-label="Venue registry summary">
           <article>
             <span>{selectedVenue.spaces.length.toLocaleString("en-GB")}</span>
