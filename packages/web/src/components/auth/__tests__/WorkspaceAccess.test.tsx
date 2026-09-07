@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ClerkAuthBridge } from "../ClerkAuthBridge.js";
 import { WorkspaceAccessGate } from "../WorkspaceAccessGate.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
@@ -38,11 +38,14 @@ function Flow(): React.ReactElement {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.getCurrentAuthUser.mockReset();
   mocks.identity.isSignedIn = true;
   mocks.identity.user.id = "clerk_elaine";
   useAuthStore.getState().logout();
   mocks.getToken.mockResolvedValue("test-token");
 });
+
+afterEach(cleanup);
 
 describe("authoritative account access", () => {
   it("waits for API confirmation instead of trusting Clerk role metadata", async () => {

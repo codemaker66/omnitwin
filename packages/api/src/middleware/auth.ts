@@ -204,6 +204,7 @@ export async function getUserByClerkId(
 
     const now = new Date();
     let invitation = await findPendingInvitation(tx, normalizedEmail, now);
+    const hadPendingInvitation = invitation !== null;
     if (invitation !== null) {
       const memberships = await tx.select().from(workspaceMemberships)
         .where(eq(workspaceMemberships.invitationId, invitation.id));
@@ -231,7 +232,7 @@ export async function getUserByClerkId(
         (user.venueId !== invitation.venueId ||
           (user.role !== invitation.role && invitation.role !== "admin" && user.role !== "admin"))) invitation = null;
     const grant = invitation === null
-      ? (user === undefined ? getApprovedDomainGrant(normalizedEmail) : null)
+      ? (user === undefined && !hadPendingInvitation ? getApprovedDomainGrant(normalizedEmail) : null)
       : { role: sanitizeRole(invitation.role), venueId: invitation.venueId };
 
     if (user === undefined) {

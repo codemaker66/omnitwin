@@ -108,7 +108,7 @@ export async function onboardingRoutes(
       let venue: typeof venues.$inferSelect | undefined;
       if (parsed.data.existingVenueId !== undefined) {
         [venue] = await tx.select().from(venues).where(and(eq(venues.id, parsed.data.existingVenueId), isNull(venues.deletedAt)))
-          .limit(1).for("update");
+          .limit(1).for("no key update");
         if (venue === undefined) throw new OnboardingConflict("Venue not found", "NOT_FOUND", 404);
         const [attached] = await tx.select({ id: workspaces.id }).from(workspaces)
           .where(and(eq(workspaces.primaryVenueId, venue.id), isNull(workspaces.deletedAt))).limit(1);
@@ -265,7 +265,7 @@ export async function onboardingRoutes(
     try {
     const memberships = await db.transaction(async (tx) => {
       const [currentWorkspace] = await tx.select().from(workspaces)
-        .where(and(eq(workspaces.id, workspace.id), isNull(workspaces.deletedAt))).limit(1).for("update");
+        .where(and(eq(workspaces.id, workspace.id), isNull(workspaces.deletedAt))).limit(1).for("no key update");
       if (currentWorkspace === undefined || (currentWorkspace.status !== "active" && currentWorkspace.status !== "onboarding")) {
         throw new OnboardingConflict("This workspace is not accepting new access grants", "WORKSPACE_UNAVAILABLE");
       }
@@ -298,7 +298,7 @@ export async function onboardingRoutes(
     try {
       const membership = await db.transaction(async (tx) => {
         const [workspace] = await tx.select().from(workspaces)
-          .where(and(eq(workspaces.id, parsed.data.workspaceId), isNull(workspaces.deletedAt))).limit(1).for("update");
+          .where(and(eq(workspaces.id, parsed.data.workspaceId), isNull(workspaces.deletedAt))).limit(1).for("no key update");
         if (workspace === undefined) throw new OnboardingConflict("Workspace not found", "NOT_FOUND", 404);
         const [found] = await tx.select().from(workspaceMemberships)
           .where(and(eq(workspaceMemberships.id, parsed.data.membershipId), eq(workspaceMemberships.workspaceId, workspace.id))).limit(1);
