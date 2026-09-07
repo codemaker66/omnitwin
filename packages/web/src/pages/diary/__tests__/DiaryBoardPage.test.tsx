@@ -223,10 +223,14 @@ describe("DiaryBoardPage", () => {
 
   it("surfaces conflict explanations and the honest turnaround status", async () => {
     renderPage();
+    const warning = await screen.findByText("Warning");
+    fireEvent.click(warning);
+    expect(warning.closest("details")?.open).toBe(true);
     expect(
       await screen.findByText(/pencils a slot already inked by "Chamber dinner"/),
     ).toBeDefined();
-    expect(screen.getByText("Turnaround gaps: not checked")).toBeDefined();
+    fireEvent.click(screen.getByText("What was checked"));
+    expect(screen.getByText("Turnaround gaps: not checked").closest("details")?.open).toBe(true);
   });
 
   it("lists overdue pencils in the needs-attention tray", async () => {
@@ -259,6 +263,7 @@ describe("DiaryBoardPage", () => {
   it("keyboard-moves a pencil with Space and PATCHes the snapped window (review P2 coverage)", async () => {
     moveBookingMock.mockResolvedValue({});
     renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
     const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
     fireEvent.keyDown(block, { key: " " }); // lift (Space; Enter opens the drawer)
     fireEvent.keyDown(block, { key: "ArrowRight" }); // +15 minutes
@@ -277,6 +282,7 @@ describe("DiaryBoardPage", () => {
   it("restores the board and says so when a move fails to save", async () => {
     moveBookingMock.mockRejectedValue(new Error("boom"));
     renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
     const block = await screen.findByRole("button", { name: /MacLeod wedding — Pencil/ });
     fireEvent.keyDown(block, { key: " " });
     fireEvent.keyDown(block, { key: "ArrowRight" });

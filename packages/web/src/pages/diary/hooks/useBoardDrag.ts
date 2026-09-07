@@ -44,6 +44,7 @@ export interface BoardDragArgs {
 }
 
 export interface BlockDragHandlers {
+  readonly onClick: () => void;
   readonly onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
   readonly onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -88,6 +89,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   const stateRef = useRef<DragState>(state);
   stateRef.current = state;
   const pointerRef = useRef<PointerSession | null>(null);
+  const suppressClickRef = useRef(false);
 
   const envFor = useCallback(
     (isInk: boolean, fine: boolean): DragEnv => ({
@@ -111,7 +113,12 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
 
   const handlersFor = useCallback(
     (block: DragBlockDescriptor): BlockDragHandlers => ({
+      onClick: () => {
+        if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+        if (stateRef.current.phase === "idle") args.onOpenBlock?.(block.id);
+      },
       onPointerDown: (event) => {
+        suppressClickRef.current = false;
         if (!args.writable || event.button !== 0) return;
         if (stateRef.current.phase !== "idle" || pointerRef.current !== null) return;
         pointerRef.current = {
@@ -131,6 +138,7 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
         if (!session.lifted) {
           if (Math.hypot(dx, dy) < ACTIVATION_PX) return;
           session.lifted = true;
+          suppressClickRef.current = true;
           setState(
             beginDrag({
               blockId: session.block.id,
@@ -229,6 +237,8 @@ export function useBoardDrag(args: BoardDragArgs): BoardDrag {
   }, [envFor, settle]);
 
   const cancel = useCallback(() => {
+    pointerRef.current = null;
+    suppressClickRef.current = false;
     setState(cancelDrag(stateRef.current));
   }, []);
 

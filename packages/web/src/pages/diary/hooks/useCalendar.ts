@@ -24,8 +24,11 @@ export function useCalendar(venueId: string | null, range: BoardRange): UseCalen
   const [data, setData] = useState<CalendarResponse | null>(null);
   const [status, setStatus] = useState<CalendarStatus>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [errorKey, setErrorKey] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [fetching, setFetching] = useState(false);
+  const [resolvedKey, setResolvedKey] = useState<string | null>(null);
+  const requestKey = `${venueId ?? "none"}:${String(range.fromMs)}:${String(range.toMs)}`;
 
   useEffect(() => {
     if (venueId === null) return;
@@ -43,12 +46,15 @@ export function useCalendar(venueId: string | null, range: BoardRange): UseCalen
       .then((response) => {
         if (cancelled) return;
         setData(response);
+        setResolvedKey(requestKey);
         setError(null);
+        setErrorKey(null);
         setStatus("ready");
       })
       .catch((caught: unknown) => {
         if (cancelled || controller.signal.aborted) return;
         setError(caught instanceof ApiError ? caught.message : "Unexpected error");
+        setErrorKey(requestKey);
         setStatus("error");
       })
       .finally(() => {
@@ -59,11 +65,14 @@ export function useCalendar(venueId: string | null, range: BoardRange): UseCalen
       cancelled = true;
       controller.abort();
     };
-  }, [venueId, range.fromMs, range.toMs, revision]);
+  }, [venueId, range.fromMs, range.toMs, revision, requestKey]);
 
   const refetch = useCallback(() => {
     setRevision((value) => value + 1);
   }, []);
 
-  return { data, status, error, refetch, isRefreshing: fetching && data !== null && venueId !== null };
+  const currentData = resolvedKey === requestKey && venueId !== null ? data : null;
+  const currentError = errorKey === requestKey ? error : null;
+  return { data: currentData, status: currentData === null ? currentError === null ? "loading" : "error" : status,
+    error: currentError, refetch, isRefreshing: fetching && currentData !== null };
 }

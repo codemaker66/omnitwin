@@ -230,6 +230,11 @@ describe("BookingDrawer — floor plan section", () => {
     );
     expect(screen.queryByText("Floor plan")).toBeNull();
     expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Title" }).closest("fieldset")?.disabled).toBe(true);
+    fireEvent.submit(document.querySelector("form") as HTMLFormElement);
+    expect(updateBookingMock).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
   });
 
   it("shows no plan section while creating a booking that does not exist yet", () => {

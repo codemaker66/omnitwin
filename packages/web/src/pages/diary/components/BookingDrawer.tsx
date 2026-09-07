@@ -66,13 +66,15 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const titleRef = useRef<HTMLInputElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
   /** An event created by startPlan whose link has not landed yet — so a
    *  retry finishes the job instead of orphaning another plan. */
   const startedEventRef = useRef<string | null>(null);
 
   useEffect(() => {
-    titleRef.current?.focus();
-  }, []);
+    if (role === "admin" || role === "staff") titleRef.current?.focus();
+    else closeRef.current?.focus();
+  }, [role]);
 
   const transitions = useMemo(
     () => (mode.kind === "edit" ? allowedTransitionTargets(mode.booking.state, role) : []),
@@ -115,6 +117,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
   }
 
   function submit(): void {
+    if (!canWriteDiary) return;
     setSubmitError(null);
     if (mode.kind === "create") {
       const result = formToCreatePayload(form, venueId);
@@ -284,7 +287,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
     >
       <header className="diary-drawer-header">
         <h2 className="diary-drawer-title">{drawerTitle(mode)}</h2>
-        <button type="button" className="diary-button" onClick={onClose} disabled={busy}>
+        <button ref={closeRef} type="button" className="diary-button" onClick={onClose} disabled={busy}>
           {BOARD_COPY.drawer.close}
         </button>
       </header>
@@ -293,6 +296,13 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         <p className="diary-drawer-note">{BOARD_COPY.drawer.convertNote(mode.enquiry.name)}</p>
       ) : null}
 
+      {mode.kind === "edit" ? <section className="diary-booking-detail" aria-label="Booking details">
+        <h3>{mode.booking.title}</h3>
+        {mode.booking.clientName !== undefined && mode.booking.clientName !== null && mode.booking.clientName.length > 0 ? <p>{mode.booking.clientName}</p> : null}
+        {mode.booking.guestCount === null || mode.booking.guestCount === undefined ? null : <p>{mode.booking.guestCount} guests</p>}
+      </section> : null}
+      {!canWriteDiary ? <p className="diary-drawer-note">Read-only booking details. A venue coordinator can make changes.</p> : null}
+
       <form
         className="diary-drawer-form"
         onSubmit={(event) => {
@@ -300,6 +310,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           submit();
         }}
       >
+        <fieldset className="diary-form-fields" disabled={!canWriteDiary}>
         {mode.kind === "create" ? (
           <label className="diary-field">
             {BOARD_COPY.drawer.fields.kind}
@@ -436,6 +447,7 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
           </label>
         ) : null}
 
+        </fieldset>
         {submitError !== null ? (
           <p className="diary-drawer-error" role="alert">
             {submitError}
@@ -443,9 +455,9 @@ export function BookingDrawer(props: BookingDrawerProps): ReactElement {
         ) : null}
 
         <div className="diary-drawer-actions">
-          <button type="submit" className="diary-button is-primary" disabled={busy}>
+          {canWriteDiary ? <button type="submit" className="diary-button is-primary" disabled={busy}>
             {BOARD_COPY.drawer.submit[mode.kind]}
-          </button>
+          </button> : null}
           <button type="button" className="diary-button" onClick={onClose} disabled={busy}>
             {BOARD_COPY.drawer.cancel}
           </button>

@@ -36,11 +36,12 @@ export function ConflictRail({ report, onFocusEntry }: ConflictRailProps): React
           const bucket = grouped.get(severity);
           if (bucket === undefined || bucket.length === 0) return null;
           return (
-            <div key={severity} className={`diary-conflict-group is-${severity}`}>
-              <h3 className="diary-conflict-heading">
+            <details key={severity} className={`diary-conflict-group is-${severity}`} open={severity === "blocking"}>
+              <summary className="diary-conflict-heading">
                 {BOARD_COPY.conflicts.severity[severity]}
                 <span className="diary-conflict-count">{bucket.length}</span>
-              </h3>
+                <span>Review</span>
+              </summary>
               <ul className="diary-conflict-list">
                 {bucket.map((conflict) => (
                   <li key={conflict.id}>
@@ -56,11 +57,11 @@ export function ConflictRail({ report, onFocusEntry }: ConflictRailProps): React
                   </li>
                 ))}
               </ul>
-            </div>
+            </details>
           );
         })
       )}
-      <h3 className="diary-checks-title">{BOARD_COPY.conflicts.checksTitle}</h3>
+      <details className="diary-check-details"><summary className="diary-checks-title">{BOARD_COPY.conflicts.checksTitle}</summary>
       <ul className="diary-checks">
         <li className={`diary-check is-${report.checks.turnaround.status}`}>
           {BOARD_COPY.conflicts.turnaround[report.checks.turnaround.status]}
@@ -68,6 +69,7 @@ export function ConflictRail({ report, onFocusEntry }: ConflictRailProps): React
         </li>
       </ul>
       <p className="diary-disclosure">{BOARD_COPY.disclosure}</p>
+      </details>
     </section>
   );
 }

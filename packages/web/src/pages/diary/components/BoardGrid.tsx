@@ -7,7 +7,7 @@ import type {
   ConflictSeverity,
 } from "@omnitwin/types";
 import { BOARD_COPY } from "../board-copy.js";
-import { roomScanPosterUrl } from "../../../lib/room-posters.js";
+import { diaryRoomPhoto, DIARY_ROOM_PHOTO_SIZES } from "../../../lib/diary-room-photos.js";
 import {
   TRADES_HALL_ROOM_CAPACITIES,
   VENUE_TRUTH_PROVENANCE,
@@ -31,10 +31,10 @@ import type { BoardDrag, DragBlockDescriptor } from "../hooks/useBoardDrag.js";
 // colour survives everything, then title, then times (Canon §8 priority).
 // ---------------------------------------------------------------------------
 
-const SUB_ROW_HEIGHT = 58;
-const BLOCK_HEIGHT = 52;
-const LANE_PADDING = 6;
-const MIN_BLOCK_WIDTH = 12;
+const SUB_ROW_HEIGHT = 80;
+const BLOCK_HEIGHT = 68;
+const LANE_PADDING = 14;
+const MIN_BLOCK_WIDTH = 1;
 const TITLE_MIN_WIDTH = 42;
 const TIME_MIN_WIDTH = 88;
 const FACE_MIN_WIDTH = 150;
@@ -52,6 +52,7 @@ export interface BoardGridProps {
   readonly drag: BoardDrag;
   readonly writable: boolean;
   readonly nowMs: number;
+  readonly onOpenBlock?: (blockId: string) => void;
   /** The venue's turnaround rules (optional on the wire) — gap dimensions
    *  degrade to plain durations when an older server omits them. */
   readonly turnaroundRules?: readonly CalendarTurnaroundRule[];
@@ -92,18 +93,6 @@ function railCapacity(slug: string): number | null {
 }
 
 
-/** Deterministic paper tilt for hold cards: a pencilled slip lies at a
- *  slight, stable angle (same booking, same angle, every render). The tilt
- *  lives on the INNER card, never the positioned button — the drag
- *  hit-rect must stay rectangular. */
-function tiltFor(id: string, kind: string, active: boolean): 0 | 1 | 2 {
-  if (kind !== "hold" || !active) return 0;
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  return ((Math.abs(hash) % 2) + 1) as 1 | 2;
-}
-
-
 /** Which band of the day a phase segment belongs to, judged by its midpoint
  *  against the booking window — the same partition a hallkeeper makes:
  *  before doors is setup, after the end is teardown, the rest is live. */
@@ -127,7 +116,7 @@ function countdownLabel(ms: number): string {
 }
 
 export function BoardGrid(props: BoardGridProps): ReactElement {
-  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules } = props;
+  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock } = props;
   const canvasWidth = widthPx(range.fromMs, range.toMs, pxPerHour);
   const columns = dayColumns(range);
   const ticks = range.view === "day" ? hourTicks(range) : [];
@@ -175,8 +164,9 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
 
         <div className="diary-lanes">
           {rooms.map((room) => {
+            const photo = diaryRoomPhoto(room.slug);
             const lane = lanes.get(room.id) ?? layoutLane([], room.id);
-            const laneHeight = lane.subRowCount * SUB_ROW_HEIGHT + LANE_PADDING * 2;
+            const laneHeight = Math.max(118, lane.subRowCount * SUB_ROW_HEIGHT + LANE_PADDING * 2);
             const activeBookings = lane.blocks.filter((block) => block.entry.status === "active");
             const inkCount = activeBookings.filter((block) => block.entry.kind === "ink").length;
             const holdCount = activeBookings.filter((block) => block.entry.kind === "hold").length;
@@ -186,16 +176,19 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                 <div className="diary-rail" role="rowheader">
                   {/* The room's own scan poster (lightweight tier) — a broken
                       or missing file collapses to the typographic rail. */}
-                  <img
+                  {photo === null ? null : <img
                     className="diary-rail-photo"
-                    src={roomScanPosterUrl(room.slug)}
+                    src={photo.src}
+                    srcSet={photo.srcSet}
+                    sizes={DIARY_ROOM_PHOTO_SIZES}
+                    style={{ objectPosition: photo.objectPosition }}
                     alt=""
                     loading="lazy"
                     decoding="async"
-                    width={64}
-                    height={44}
+                    width={photo.width}
+                    height={photo.height}
                     onError={(event) => { event.currentTarget.classList.add("is-missing"); }}
-                  />
+                  />}
                   <span className="diary-rail-id">
                     <span className="diary-rail-name">{room.name}</span>
                     {railCapacity(room.slug) !== null ? (
@@ -221,13 +214,6 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                           className="diary-rail-utilisation"
                           title={BOARD_COPY.rail.utilisationNote}
                         >
-                          <span
-                            className="diary-rail-dial"
-                            style={{
-                              background: `conic-gradient(var(--diary-brass) ${String(pct)}%, rgba(246, 241, 232, 0.12) ${String(pct)}% 100%)`,
-                            }}
-                            aria-hidden="true"
-                          />
                           {pct}%
                         </span>
                       );
@@ -321,7 +307,7 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                       endMs: block.endMs,
                       isInk: block.entry.kind === "ink",
                     };
-                    const handlers = isActive ? drag.handlersFor(descriptor) : {};
+                    const handlers = isActive ? drag.handlersFor(descriptor) : { onClick: () => { onOpenBlock?.(block.entry.id); } };
                     const timeLabel = `${formatWallTime(block.startMs)}–${formatWallTime(block.endMs)}`;
                     const startsInMs = block.startMs - nowMs;
                     const countdown =
@@ -364,7 +350,6 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                       >
                         <span
                           className="diary-block-card"
-                          data-tilt={tiltFor(block.entry.id, block.entry.kind, isActive)}
                         >
                         <span className="diary-block-main">
                           {width >= TITLE_MIN_WIDTH ? (

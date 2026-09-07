@@ -16,6 +16,7 @@ import {
   boardRange,
   rangeTitle,
   shiftRange,
+  msToWallInput,
   type BoardView,
 } from "./lib/board-time.js";
 import { filterBoardEntries, needsAction } from "./lib/board-layout.js";
@@ -34,6 +35,8 @@ import { useBoardDrag } from "./hooks/useBoardDrag.js";
 import { useDiaryLive } from "./hooks/useDiaryLive.js";
 import { listEnquiries, type Enquiry } from "../../api/enquiries.js";
 import { BoardGrid } from "./components/BoardGrid.js";
+import { BoardOverview } from "./components/BoardOverview.js";
+import { ActivityStatus } from "../../components/shared/Activity.js";
 import { BookingDrawer } from "./components/BookingDrawer.js";
 import { WelcomePanel } from "./components/WelcomePanel.js";
 import {
@@ -90,7 +93,9 @@ export function DiaryBoardPage(): ReactElement {
   const anchorMs = anchorFromParam(searchParams.get("date"));
   const range = useMemo(() => boardRange(anchorMs, view), [anchorMs, view]);
 
-  const { data, status, error, refetch } = useCalendar(venueId, range);
+  const { data, status, error, refetch, isRefreshing } = useCalendar(venueId, range);
+  const [timeline, setTimeline] = useState(false);
+  const showingOverview = view !== "day" && !timeline;
 
   const [showExited, setShowExited] = useState(false);
   const [overrides, setOverrides] = useState<ReadonlyMap<string, MoveSnapshot>>(new Map());
@@ -179,7 +184,7 @@ export function DiaryBoardPage(): ReactElement {
 
   const setRange = useCallback(
     (nextView: BoardView, nextAnchorMs: number) => {
-      const date = new Date(nextAnchorMs).toISOString().slice(0, 10);
+      const date = msToWallInput(nextAnchorMs).slice(0, 10);
       setSearchParams({ view: nextView, date }, { replace: true });
     },
     [setSearchParams],
@@ -422,6 +427,14 @@ export function DiaryBoardPage(): ReactElement {
   );
 
   const enquiryDragActive = enquiryDrag !== null;
+  const presentationKey = `${String(range.fromMs)}:${String(range.toMs)}:${showingOverview ? "overview" : "timeline"}`;
+  const dragPresentationRef = useRef(presentationKey);
+  useEffect(() => {
+    if (dragPresentationRef.current === presentationKey) return;
+    dragPresentationRef.current = presentationKey;
+    drag.cancel();
+    setEnquiryDrag(null);
+  }, [presentationKey, drag.cancel]);
   useEffect(() => {
     if (!enquiryDragActive) return;
     const HOUR = 3_600_000;
@@ -544,7 +557,7 @@ export function DiaryBoardPage(): ReactElement {
       }
       if (result.kind === "room") {
         document
-          .querySelector(`[data-diary-lane="${result.id}"]`)
+          .querySelector(`[data-diary-room="${result.id}"], [data-diary-lane="${result.id}"]`)
           ?.scrollIntoView({ block: "center", inline: "nearest" });
         return;
       }
@@ -623,6 +636,12 @@ export function DiaryBoardPage(): ReactElement {
             </button>
           </div>
           <span className="diary-range-title">{rangeTitle(range)}</span>
+          {view !== "day" ? <div className="diary-view-switch" role="group" aria-label="Board presentation">
+            <button type="button" className={`diary-button${!timeline ? " is-active" : ""}`} aria-pressed={!timeline}
+              onClick={() => { drag.cancel(); setEnquiryDrag(null); setTimeline(false); }}>Overview</button>
+            <button type="button" className={`diary-button${timeline ? " is-active" : ""}`} aria-pressed={timeline}
+              onClick={() => { drag.cancel(); setEnquiryDrag(null); setTimeline(true); }}>Timeline</button>
+          </div> : null}
           <label className="diary-toggle">
             <input
               type="checkbox"
@@ -670,16 +689,9 @@ export function DiaryBoardPage(): ReactElement {
           <li className="diary-legend-item is-internal_block">{BOARD_COPY.legend.internal_block}</li>
           <li className="diary-legend-item is-phase">{BOARD_COPY.legend.phase}</li>
         </ul>
-      <footer className="diary-title-block" aria-label="Sheet details">
-        <span className="diary-title-block-name">{BOARD_COPY.titleBlock.sheet}</span>
-        <span className="diary-title-block-field">
-          {BOARD_COPY.titleBlock.drawnBy}: {BOARD_COPY.titleBlock.drawnByValue}
-        </span>
-        <span className="diary-title-block-field">
-          {BOARD_COPY.titleBlock.rangeLabel}: {rangeTitle(range)}
-        </span>
-      </footer>
       </header>
+
+      {isRefreshing ? <ActivityStatus>Refreshing the Diary…</ActivityStatus> : null}
 
       {status === "error" ? (
         <div className="diary-notice is-error" role="alert">
@@ -690,12 +702,12 @@ export function DiaryBoardPage(): ReactElement {
           </button>
         </div>
       ) : data === null ? (
-        <div className="diary-notice" role="status">
-          {BOARD_COPY.loading}
-        </div>
+        <div className="diary-notice"><ActivityStatus variant="panel">{BOARD_COPY.loading}</ActivityStatus></div>
       ) : (
         <div className="diary-layout">
-          <BoardGrid
+          {showingOverview ? <BoardOverview rooms={rooms} entries={entries} range={range} nowMs={nowMs}
+            conflictSeverity={conflictSeverity} onOpenBooking={(entry) => { openDrawer({ kind: "edit", booking: entry }); }}
+            onOpenDay={(startMs) => { drag.cancel(); setEnquiryDrag(null); setRange("day", startMs); }} /> : <BoardGrid
             rooms={rooms}
             entries={entries}
             range={range}
@@ -704,8 +716,9 @@ export function DiaryBoardPage(): ReactElement {
             drag={drag}
             writable={writable}
             nowMs={nowMs}
+            onOpenBlock={openBlock}
             turnaroundRules={data.turnaroundRules}
-          />
+          />}
           <aside className="diary-side">
             <HoldingTray
               items={trayItems}
@@ -718,7 +731,7 @@ export function DiaryBoardPage(): ReactElement {
               }))}
               canConvert={writable}
               onConvertEnquiry={openConvertDrawer}
-              onBeginEnquiryDrag={writable ? beginEnquiryDrag : undefined}
+              onBeginEnquiryDrag={writable && !showingOverview ? beginEnquiryDrag : undefined}
             />
             <ConflictRail report={data.conflicts} onFocusEntry={focusEntry} />
             {entries.length === 0 ? (
@@ -738,7 +751,9 @@ export function DiaryBoardPage(): ReactElement {
           venueId={venueId}
           role={user?.role ?? ""}
           onClose={() => {
+            const bookingId = drawer.mode.kind === "edit" ? drawer.mode.booking.id : null;
             setDrawer(null);
+            if (bookingId !== null) requestAnimationFrame(() => { focusEntry(bookingId); });
           }}
           onSaved={onDrawerSaved}
         />
