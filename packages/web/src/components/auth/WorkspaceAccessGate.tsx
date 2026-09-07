@@ -35,7 +35,7 @@ export function WorkspaceAccessGate({ children }: { readonly children: ReactNode
         <a className="workspace-access__brand" href="/plan">Venviewer</a>
         <p className="workspace-access__eyebrow">Your venue workspace</p>
         <h1>{checking ? "Finding your place." : pending ? "Your account is ready." : "Let’s reconnect."}</h1>
-        {accessEmail && <p className="workspace-access__email">Signed in as <strong>{accessEmail}</strong></p>}
+        {accessEmail !== null && accessEmail !== "" && <p className="workspace-access__email">Signed in as <strong>{accessEmail}</strong></p>}
         {checking ? <ActivityStatus variant="panel">Confirming your venue access…</ActivityStatus> : (
           <>
             <p role={pending ? "status" : "alert"}>{pending
@@ -50,7 +50,7 @@ export function WorkspaceAccessGate({ children }: { readonly children: ReactNode
                 {signingOut ? "Signing out…" : "Use another account"}
               </button>
             </div>
-            {signOutError && <p role="alert">{signOutError}</p>}
+            {signOutError !== null && signOutError !== "" && <p role="alert">{signOutError}</p>}
           </>
         )}
       </section>

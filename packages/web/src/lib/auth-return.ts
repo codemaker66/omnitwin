@@ -24,7 +24,7 @@ export function getSafeReturnTo(value: string | null | undefined): string | null
     // Keep the original URL for navigation so encoded query/fragment values
     // retain their exact meaning. Encoded slashes cannot introduce another host.
     let path = value.split(/[?#]/u, 1)[0] ?? "/";
-    while (true) {
+    for (;;) {
       if (/%(?:2f|5c)/iu.test(path) || hasForbiddenCharacters(path)) return null;
       const normalized = new URL(path, AUTH_RETURN_ORIGIN);
       if (normalized.origin !== AUTH_RETURN_ORIGIN || AUTH_ROUTE_PREFIX.test(normalized.pathname)) return null;

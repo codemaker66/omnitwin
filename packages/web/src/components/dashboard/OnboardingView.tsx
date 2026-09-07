@@ -60,7 +60,7 @@ function CreateWorkspace({ summary, onCreated, onBusy, onCancel }: {
   const lock = useRef(false);
   const setField = (key: keyof typeof form, value: string): void => { setForm((current) => ({ ...current, [key]: value })); };
   const selectedVenue = availableVenues.find((venue) => venue.id === existingVenueId);
-  const verifiedValid = !providerVerified || billingProvider !== "none" && [form.customerRef, form.entitlementRef, form.evidenceRef].some((value) => value.trim());
+  const verifiedValid = !providerVerified || billingProvider !== "none" && [form.customerRef, form.entitlementRef, form.evidenceRef].some((value) => value.trim().length > 0);
   const complete = form.organisationName.trim() !== "" && form.contactEmail.trim() !== "" && form.planKey.trim() !== "" && verifiedValid &&
     (mode === "existing" ? selectedVenue !== undefined : [form.venueName, form.venueSlug, form.venueAddress, form.timezone].every((value) => value.trim() !== ""));
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -136,7 +136,9 @@ function membershipState(member: WorkspaceMembership, summary: OnboardingSummary
   if (member.status === "active") return { label: "Account connected", tone: "active", expiresAt: null };
   if (member.status === "removed" || invitation?.status === "revoked") return { label: "Invitation cancelled", tone: "muted", expiresAt: null };
   if (member.status === "suspended") return { label: "Access suspended", tone: "muted", expiresAt: null };
-  if (invitation?.status === "expired" || invitation?.expiresAt != null && new Date(invitation.expiresAt).getTime() <= Date.now()) return { label: "Invitation expired", tone: "expired", expiresAt: invitation?.expiresAt ?? null };
+  if (invitation !== undefined && (invitation.status === "expired" || invitation.expiresAt !== null && new Date(invitation.expiresAt).getTime() <= Date.now())) {
+    return { label: "Invitation expired", tone: "expired", expiresAt: invitation.expiresAt };
+  }
   return { label: "Awaiting sign-in", tone: "pending", expiresAt: invitation?.expiresAt ?? null };
 }
 

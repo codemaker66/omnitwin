@@ -5,7 +5,10 @@ import { updateOnboardingProject, verifyWorkspaceEntitlement } from "../../api/o
 import { ActivityIndicator } from "../shared/Activity.js";
 
 const labelize = (value: string): string => value.replace(/_/g, " ");
-const nullableText = (value: string | null): string | null => value?.trim() || null;
+const nullableText = (value: string | null): string | null => {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : null;
+};
 
 export function OnboardingSetupControls({ workspace, project, entitlement, onChanged, onBusy }: {
   readonly workspace: Workspace; readonly project?: OnboardingProject; readonly entitlement?: WorkspaceEntitlement;
@@ -15,7 +18,7 @@ export function OnboardingSetupControls({ workspace, project, entitlement, onCha
   const [busy, setBusy] = useState<"project" | "billing" | null>(null);
   const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const lock = useRef(false);
   const providerValid = billingDraft === undefined || billingDraft.providerVerificationStatus !== "provider_verified" ||
-    billingDraft.billingProvider !== "none" && [billingDraft.providerCustomerRef, billingDraft.providerEntitlementRef, billingDraft.providerEvidenceRef].some((value) => value?.trim());
+    billingDraft.billingProvider !== "none" && [billingDraft.providerCustomerRef, billingDraft.providerEntitlementRef, billingDraft.providerEvidenceRef].some((value) => (value?.trim() ?? "").length > 0);
   const save = async (kind: "project" | "billing"): Promise<void> => {
     if (lock.current) return;
     lock.current = true; setBusy(kind); onBusy(true); setError(null); setNotice(null);

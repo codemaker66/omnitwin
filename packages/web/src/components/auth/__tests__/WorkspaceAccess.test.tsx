@@ -55,7 +55,7 @@ describe("authoritative account access", () => {
     expect(screen.queryByText("Venue operations")).toBeNull();
     expect(screen.getByRole("status").textContent).toContain("Confirming your venue access");
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
-    await act(async () => { request.resolve(venueAdmin); });
+    await act(async () => { request.resolve(venueAdmin); await request.promise; });
     expect(screen.getByText("Venue operations")).toBeDefined();
     expect(useAuthStore.getState().user?.platformRole).toBe("none");
     expect(useAuthStore.getState().user?.id).toBe("db-user");
@@ -89,7 +89,7 @@ describe("authoritative account access", () => {
     const view = render(<Flow />);
     mocks.identity.isSignedIn = false;
     view.rerender(<Flow />);
-    await act(async () => { request.resolve(venueAdmin); });
+    await act(async () => { request.resolve(venueAdmin); await request.promise; });
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
@@ -101,19 +101,19 @@ describe("authoritative account access", () => {
     mocks.identity.user.id = "clerk_different";
     view.rerender(<Flow />);
     await screen.findByText("Venue operations");
-    await act(async () => { old.reject(new ApiError(403, "No access", "INVITATION_REQUIRED")); });
+    await act(async () => { old.reject(new ApiError(403, "No access", "INVITATION_REQUIRED")); await old.promise.catch(() => undefined); });
     expect(useAuthStore.getState().user?.id).toBe("db-user");
   });
 
   it("keeps sign-out errors actionable without leaving a working indicator", async () => {
     mocks.getCurrentAuthUser.mockRejectedValue(new ApiError(403, "Invite", "INVITATION_REQUIRED"));
-    const signout = deferred<void>();
+    const signout = deferred<undefined>();
     mocks.signOut.mockReturnValueOnce(signout.promise);
     render(<Flow />);
     fireEvent.click(await screen.findByRole("button", { name: "Use another account" }));
     expect(screen.getByRole("button", { name: "Signing out…" }).getAttribute("aria-busy")).toBe("true");
-    await act(async () => { signout.reject(new Error("offline")); });
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Sign out did not finish"));
+    await act(async () => { signout.reject(new Error("offline")); await signout.promise.catch(() => undefined); });
+    await waitFor(() => { expect(screen.getByRole("alert").textContent).toContain("Sign out did not finish"); });
     expect(screen.getByRole("button", { name: "Use another account" }).getAttribute("aria-busy")).toBe("false");
   });
 });

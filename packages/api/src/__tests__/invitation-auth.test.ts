@@ -154,7 +154,7 @@ function makeMockDb(options: {
       }),
     }),
     transaction: async <T>(callback: (tx: unknown) => Promise<T>): Promise<T> => callback(db),
-    execute: async () => [],
+    execute: () => Promise.resolve([]),
   };
 
   return { db: db as never as Database, state };
