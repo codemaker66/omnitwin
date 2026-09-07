@@ -26,6 +26,9 @@ bookings, snapshots or account privileges.
 - `5cb8ff62`: a phase-free external URL clears a preview established before
   React Router committed the new destination. Timeline-generated URL changes
   retain their separate handling.
+- `288fa67a`: corrected two test queries to use React Testing Library's supported
+  role options after the combined TypeScript gate caught `exact: true`. The
+  two affected page suites subsequently passed all 40 cases.
 
 ## Verification and delivery
 
@@ -51,8 +54,23 @@ SHA-256 `12F58A8F9A2D762ADDC5F831ECEE15914F875C406E7A2D5E2B26B66962F4EAC8`.
 The latter's web/types dependencies are reused for execution only, with transform
 caches directed to this checkout; no installation runs through those links.
 
-The exclusive release executor owns combined web types/lint/build and final
-integration. Integrated auth/anonymous planner and production checks remain open.
+The exclusive release executor owns combined types/lint/build/tests and final
+integration. Production workspace navigation and planner checks remain open.
+
+On the actual Vercel combined preview, clicking Hallkeeper and Dashboard from
+the homepage reached real Clerk forms at `/login?returnTo=...`; their Sign up
+links retained the intended workspace. No credentials or registration were
+submitted. The preview planner could not connect: browser network evidence
+showed `http://localhost:3001/venues` failing with `ERR_CONNECTION_REFUSED`,
+because this preview did not receive `VITE_API_URL`. This is a preview
+configuration limit; full planner verification must use the intended API.
+
+Independent source review also identified the no-destination login/signup
+fallback and recovery during an unresolved access check. T-608 supplied tested
+follow-up `e645d726`; it was initially queued after the first frozen candidate
+and then integrated as `d920f6c2` into final candidate `7f2a701b`. Explicit
+workspace destinations were preserved through the preview
+sign-in and sign-up links; post-authentication return remains unverified.
 
 T-601's exclusive release executor received the exact navigation and timeline
 commits with that pending qualification stated. This report is an in-progress
