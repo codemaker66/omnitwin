@@ -62,6 +62,7 @@ const SpotlightLandingPage = lazy(() =>
 const LandingPage = lazy(() =>
   cockpitImport(() => import("./pages/LandingPage.js").then((m) => ({ default: m.LandingPage }))),
 );
+const DemoShowcasePage = lazy(() => import("./pages/demo/DemoShowcasePage.js").then(m => ({ default: m.DemoShowcasePage })));
 const DashboardPage = lazy(() =>
   cockpitImport(() => import("./pages/DashboardPage.js").then((m) => ({ default: m.DashboardPage }))),
 );
@@ -257,6 +258,10 @@ export const router = createBrowserRouter([
     // spotlight-reveal hero (see the bottom of this route list).
     path: "/landing",
     element: withSuspense(<LandingPage />),
+  },
+  {
+    path: "/demo",
+    element: withSuspense(<DemoShowcasePage />),
   },
   {
     // Alias of `/` from the spotlight page's first review round — links
