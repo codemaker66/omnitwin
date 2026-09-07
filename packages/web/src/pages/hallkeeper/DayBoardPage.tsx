@@ -53,7 +53,7 @@ function SlotCard({ slot }: { readonly slot: DayBoardSlot }): ReactElement {
         <span className="dayboard-slot-state">{slot.stateLabel}</span>
         {slot.eventType !== null ? <span> · {slot.eventType}</span> : null}
       </p>
-      <p className="dayboard-slot-meta">{slot.kind === "hold" ? "Pencilled hold" : "Confirmed booking"}{slot.guestCount !== null ? ` · ${String(slot.guestCount)} guests` : ""}</p>
+      <p className="dayboard-slot-meta">{slot.kind === "hold" ? "Pencilled hold" : slot.kind === "internal_block" ? "House block" : "Confirmed booking"}{slot.guestCount !== null ? ` · ${String(slot.guestCount)} guests` : ""}</p>
       {slot.phases.length > 0 && <ol className="dayboard-phases" aria-label="Planned event phases">
         {slot.phases.map((phase, index) => <li key={phase.id} data-colour={index % 6}>
           <strong>{phase.name}</strong><span>{formatWallTime(Date.parse(phase.startsAt))} – {formatWallTime(Date.parse(phase.endsAt))}</span>
