@@ -205,6 +205,6 @@ export const api = {
   ): Promise<T> =>
     request<T>({ method: "PATCH", path, body, ...options }, schema),
 
-  delete: <T = void>(path: string): Promise<T> =>
-    request<T>({ method: "DELETE", path }),
+  delete: <T = void>(path: string, schema?: ResponseSchema<T>): Promise<T> =>
+    request<T>({ method: "DELETE", path }, schema),
 } as const;

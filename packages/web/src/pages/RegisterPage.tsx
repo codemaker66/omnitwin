@@ -1,13 +1,17 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ClerkFailed, ClerkLoaded, ClerkLoading, SignUp } from "@clerk/react";
-import { isClerkGoogleSignInEnabled, VENVIEWER_CLERK_APPEARANCE } from "../components/auth/clerk-appearance.js";
+import { isClerkGoogleSignInEnabled, VENVIEWER_ACCOUNT_APPEARANCE as VENVIEWER_CLERK_APPEARANCE } from "../components/auth/clerk-appearance.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { getDefaultRoute } from "../lib/role-routing.js";
+import { ActivityStatus } from "../components/shared/Activity.js";
+import { authRouteWithReturnTo, getAuthReturnTo } from "../lib/auth-return.js";
 import "./AuthPage.css";
 
 export function RegisterPage(): React.ReactElement {
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = getAuthReturnTo(location.search);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
   const authPageClassName = isClerkGoogleSignInEnabled()
@@ -20,9 +24,9 @@ export function RegisterPage(): React.ReactElement {
 
   useEffect(() => {
     if (isAuthenticated && user !== null) {
-      void navigate(getDefaultRoute(user.role), { replace: true });
+      void navigate(returnTo ?? getDefaultRoute(user.role, user.platformRole), { replace: true });
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [isAuthenticated, user, navigate, returnTo]);
 
   return (
     <main className={authPageClassName} aria-label="Account access">
@@ -31,32 +35,32 @@ export function RegisterPage(): React.ReactElement {
           Venviewer
         </div>
         <h1 className="auth-page__title">
-          Create your planning workspace.
+          Your venue team starts here.
         </h1>
         <p className="auth-page__copy">
-          Start with a draft, invite your venue team, and keep client layouts in one place.
+          Create your Venviewer account using the email address your venue invited. Verify your email, then open your venue workspace.
         </p>
         <div className="auth-page__proof-grid" aria-label="Workspace capabilities">
-          <span>Venue records</span>
-          <span>Staff roles</span>
-          <span>Planning evidence</span>
+          <span>Your own account</span>
+          <span>Your venue team</span>
+          <span>One shared plan</span>
         </div>
       </section>
       <section className="auth-page__form-shell" aria-label="Secure account creation form">
         <ClerkLoading>
-          <div className="auth-page__loading" role="status">
-            <div>Loading secure account creation.</div>
+          <div className="auth-page__loading">
+            <ActivityStatus>Loading secure account creation.</ActivityStatus>
             <p>Keep this page open while the account form connects.</p>
           </div>
         </ClerkLoading>
         <ClerkFailed>
           <div className="auth-page__loading auth-page__loading--failed" role="alert">
             <div>Secure account creation is unavailable.</div>
-            <p>Refresh this page. If it still fails, the Clerk production domain needs attention.</p>
+            <p>Refresh this page and try again. If it still fails, contact your Venviewer contact.</p>
           </div>
         </ClerkFailed>
         <ClerkLoaded>
-          <SignUp appearance={VENVIEWER_CLERK_APPEARANCE} routing="hash" signInUrl="/login" />
+          <SignUp appearance={VENVIEWER_CLERK_APPEARANCE} routing="hash" signInUrl={authRouteWithReturnTo("/login", returnTo ?? "/")} fallbackRedirectUrl={returnTo ?? "/"} />
         </ClerkLoaded>
       </section>
     </main>

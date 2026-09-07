@@ -51,6 +51,9 @@ const clerkProviderMock = vi.hoisted(() =>
 interface CapturedClerkFormProps {
   readonly appearance?: CapturedClerkProviderProps["appearance"];
   readonly routing?: string;
+  readonly signUpUrl?: string;
+  readonly signInUrl?: string;
+  readonly fallbackRedirectUrl?: string;
 }
 
 const signInMock = vi.hoisted(() =>
@@ -63,8 +66,10 @@ const signUpMock = vi.hoisted(() =>
 
 // Mock react-router-dom
 const mockNavigate = vi.fn();
+const mockLocation = { pathname: "/dashboard", search: "", hash: "" };
 vi.mock("react-router-dom", () => ({
   useNavigate: () => mockNavigate,
+  useLocation: () => mockLocation,
   Navigate: ({ to }: { to: string }) => `Redirect to ${to}`,
   RouterProvider: ({ router }: { router: unknown }) => `Router: ${String(router)}`,
   createBrowserRouter: (routes: unknown) => routes,
@@ -86,6 +91,7 @@ vi.mock("@clerk/react", () => ({
   SignedOut: () => null,
   useUser: () => ({ isLoaded: true, isSignedIn: false, user: null }),
   useAuth: () => ({ getToken: vi.fn() }),
+  useClerk: () => ({ signOut: vi.fn() }),
 }));
 
 // Mock auth store
@@ -117,6 +123,9 @@ vi.mock("../stores/auth-store.js", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockLocation.pathname = "/dashboard";
+  mockLocation.search = "";
+  mockLocation.hash = "";
   mockAuthState.user = null;
   mockAuthState.isAuthenticated = false;
   mockAuthState.isLoading = false;
@@ -254,6 +263,32 @@ describe("OAuthConsentPage", () => {
 });
 
 describe("Pages", () => {
+  it("returns a confirmed account to its original internal destination", async () => {
+    mockLocation.search = "?returnTo=%2Fdiary%3Fdate%3D2026-09-07";
+    mockAuthState.isAuthenticated = true;
+    mockAuthState.user = { id: "db-user", email: "team@example.test", name: "Team", role: "admin", platformRole: "none", venueId: "venue" };
+    const { LoginPage } = await import("../pages/LoginPage.js");
+    render(createElement(LoginPage));
+    expect(mockNavigate).toHaveBeenCalledWith("/diary?date=2026-09-07", { replace: true });
+  });
+
+  it("preserves a safe destination when moving from sign-in to account creation", async () => {
+    mockLocation.search = "?returnTo=%2Fhallkeeper%2Ftoday";
+    const { LoginPage } = await import("../pages/LoginPage.js");
+    render(createElement(LoginPage));
+    expect(signInMock.mock.calls.at(-1)?.[0].signUpUrl).toBe("/register?returnTo=%2Fhallkeeper%2Ftoday");
+    expect(signInMock.mock.calls.at(-1)?.[0].fallbackRedirectUrl).toBe("/hallkeeper/today");
+  });
+
+  it("ignores an external return destination and uses platform owner routing", async () => {
+    mockLocation.search = "?returnTo=https%3A%2F%2Fexample.test";
+    mockAuthState.isAuthenticated = true;
+    mockAuthState.user = { id: "db-owner", email: "owner@example.test", name: "Owner", role: "client", platformRole: "admin", venueId: null };
+    const { RegisterPage } = await import("../pages/RegisterPage.js");
+    render(createElement(RegisterPage));
+    expect(mockNavigate).toHaveBeenCalledWith("/dashboard?view=onboarding", { replace: true });
+  });
+
   it("LoginPage exports", async () => {
     const { LoginPage } = await import("../pages/LoginPage.js");
     expect(typeof LoginPage).toBe("function");

@@ -8,6 +8,7 @@ import {
   UpdateOnboardingProjectSchema,
   VerifyWorkspaceEntitlementSchema,
   WorkspaceEntitlementSchema,
+  WorkspaceMembershipSchema,
   type CreateManagedOnboarding,
   type CreateManagedOnboardingResult,
   type InviteWorkspaceMembers,
@@ -17,7 +18,9 @@ import {
   type UpdateOnboardingProject,
   type VerifyWorkspaceEntitlement,
   type WorkspaceEntitlement,
+  type WorkspaceMembership,
 } from "@omnitwin/types";
+import { z } from "zod";
 import { api } from "./client.js";
 
 export async function getOnboardingSummary(): Promise<OnboardingSummary> {
@@ -42,6 +45,12 @@ export async function updateOnboardingProject(
 ): Promise<OnboardingProject> {
   const body = UpdateOnboardingProjectSchema.parse(input);
   return api.patch(`/onboarding/projects/${projectId}`, body, OnboardingProjectSchema);
+}
+
+export async function revokeWorkspaceInvitation(workspaceId: string, membershipId: string): Promise<WorkspaceMembership> {
+  const result = await api.delete(`/onboarding/workspaces/${workspaceId}/invitations/${membershipId}`,
+    z.object({ membership: WorkspaceMembershipSchema }).strict());
+  return result.membership;
 }
 
 export async function verifyWorkspaceEntitlement(

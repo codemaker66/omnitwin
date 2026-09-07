@@ -45,7 +45,7 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: bool
   { view: "loadouts", label: "Reference Loadouts" },
   { view: "settings", label: "Venue Settings" },
   { view: "inventory", label: "Inventory", venueAdminOnly: true },
-  { view: "onboarding", label: "Onboarding", adminOnly: true },
+  { view: "onboarding", label: "Clients & access", adminOnly: true },
   { view: "admin", label: "Admin", adminOnly: true },
 ];
 
@@ -177,7 +177,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
     isRouteActive("/event-architect") || isRouteActive("/dev/capture-intake");
   const nameInitials = user?.name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("") ?? "";
   const initials = (nameInitials.length > 0 ? nameInitials : "V").toLocaleUpperCase("en-GB");
-  const roleLabel = user?.role === "admin" ? "Venue admin" : platformRole === "admin" ? "Platform admin" :
+  const roleLabel = platformRole === "admin" ? "Platform admin" : user?.role === "admin" ? "Venue admin" :
     user?.role === "hallkeeper" ? "Hallkeeper" : user?.role === "staff" ? "Venue team" :
       user?.role === "executive" ? "Executive" : user?.role === "planner" ? "Planner" : "Workspace member";
 

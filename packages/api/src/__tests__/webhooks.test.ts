@@ -81,7 +81,7 @@ describe("Clerk webhook runtime contract", () => {
     })).toMatchObject({ kind: "supported" });
   });
 
-  it("processes repeated user.updated delivery idempotently", async () => {
+  it("resolves a newly verified user.updated account and syncs its full profile idempotently", async () => {
     const { parseClerkWebhookPayload, processClerkWebhookEvent } = await import("../routes/webhooks.js");
     const parsed = parseClerkWebhookPayload({
       type: "user.updated",
@@ -104,13 +104,18 @@ describe("Clerk webhook runtime contract", () => {
     if (parsed.kind !== "supported") return;
 
     const applied: Record<string, unknown> = {};
+    const resolved: string[] = [];
     const persistence = {
-      resolveCreatedUser: (): Promise<{ readonly id: string } | null> => Promise.resolve(null),
-      updateUserById: (): Promise<void> => Promise.resolve(),
-      updateUserByClerkId: (_clerkId: string, values: ClerkUserUpdate): Promise<void> => {
+      resolveCreatedUser: (clerkId: string, email: string): Promise<{ readonly id: string } | null> => {
+        resolved.push(`${clerkId}:${email}`);
+        return Promise.resolve({ id: "local-verified-user" });
+      },
+      updateUserById: (userId: string, values: ClerkUserUpdate): Promise<void> => {
+        expect(userId).toBe("local-verified-user");
         Object.assign(applied, values);
         return Promise.resolve();
       },
+      updateUserByClerkId: (): Promise<void> => { throw new Error("Profile sync must resolve local account first"); },
       unlinkUser: (): Promise<void> => Promise.resolve(),
     } satisfies ClerkWebhookPersistence;
     const now = new Date("2026-07-10T00:00:00.000Z");
@@ -119,6 +124,7 @@ describe("Clerk webhook runtime contract", () => {
     const first = { ...applied };
     await processClerkWebhookEvent(parsed.event, persistence, now);
     expect(applied).toEqual(first);
+    expect(resolved).toEqual(["clerk_user_123:person@example.com", "clerk_user_123:person@example.com"]);
     expect(applied).toMatchObject({
       email: "person@example.com",
       name: "Ada Lovelace",

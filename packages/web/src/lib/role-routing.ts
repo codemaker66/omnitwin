@@ -4,7 +4,8 @@
 // landing page; clients should never land there from the auth flow.)
 // ---------------------------------------------------------------------------
 
-export function getDefaultRoute(role: string): string {
+export function getDefaultRoute(role: string, platformRole?: string): string {
+  if (platformRole === "admin") return "/dashboard?view=onboarding";
   if (role === "hallkeeper") return "/hallkeeper/today";
   if (role === "admin" || role === "planner" || role === "staff" || role === "executive") return "/dashboard";
   return "/plan";

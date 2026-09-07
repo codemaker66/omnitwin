@@ -146,16 +146,14 @@ export async function processClerkWebhookEvent(
     return { status: "ignored", clerkId: event.data.id, reason: "verified_email_required" };
   }
 
-  if (event.type === "user.created") {
-    const localUser = await persistence.resolveCreatedUser(event.data.id, email);
-    if (localUser === null) {
-      return { status: "ignored", clerkId: event.data.id, email, reason: "invitation_required" };
-    }
-    await persistence.updateUserById(localUser.id, profileUpdate(event.data, updatedAt));
-    return { status: "processed", clerkId: event.data.id };
+  // Email verification can complete after user.created. Resolve both event
+  // types so that a newly verified invitation creates its local account and
+  // receives the supplied name rather than waiting for another profile edit.
+  const localUser = await persistence.resolveCreatedUser(event.data.id, email);
+  if (localUser === null) {
+    return { status: "ignored", clerkId: event.data.id, email, reason: "invitation_required" };
   }
-
-  await persistence.updateUserByClerkId(event.data.id, profileUpdate(event.data, updatedAt, email));
+  await persistence.updateUserById(localUser.id, profileUpdate(event.data, updatedAt, email));
   return { status: "processed", clerkId: event.data.id };
 }
 

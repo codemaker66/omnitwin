@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { OnboardingView } from "../OnboardingView.js";
+import type { OnboardingSummary } from "@omnitwin/types";
 
 const mocks = vi.hoisted(() => ({
   createManagedOnboarding: vi.fn(),
   getOnboardingSummary: vi.fn(),
   inviteWorkspaceMembers: vi.fn(),
+  revokeWorkspaceInvitation: vi.fn(),
   updateOnboardingProject: vi.fn(),
   verifyWorkspaceEntitlement: vi.fn(),
   addToast: vi.fn(),
@@ -15,6 +17,7 @@ vi.mock("../../../api/onboarding.js", () => ({
   createManagedOnboarding: mocks.createManagedOnboarding,
   getOnboardingSummary: mocks.getOnboardingSummary,
   inviteWorkspaceMembers: mocks.inviteWorkspaceMembers,
+  revokeWorkspaceInvitation: mocks.revokeWorkspaceInvitation,
   updateOnboardingProject: mocks.updateOnboardingProject,
   verifyWorkspaceEntitlement: mocks.verifyWorkspaceEntitlement,
 }));
@@ -26,7 +29,7 @@ vi.mock("../../../stores/toast-store.js", () => ({
 
 const NOW = "2026-06-15T12:00:00.000Z";
 
-function emptySummary(): Record<string, unknown> {
+function emptySummary(): OnboardingSummary {
   return {
     organisations: [],
     workspaces: [],
@@ -35,10 +38,11 @@ function emptySummary(): Record<string, unknown> {
     projects: [],
     entitlements: [],
     auditEvents: [],
+    invitations: [],
   };
 }
 
-function populatedSummary(): Record<string, unknown> {
+function populatedSummary(): OnboardingSummary {
   const organisationId = "00000000-0000-4000-8000-000000000001";
   const workspaceId = "00000000-0000-4000-8000-000000000002";
   const venueId = "00000000-0000-4000-8000-000000000003";
@@ -118,13 +122,17 @@ function populatedSummary(): Record<string, unknown> {
       updatedAt: NOW,
     }],
     auditEvents: [],
+    invitations: [{ id: "00000000-0000-4000-8000-000000000005", email: "owner@tradeshall.co.uk", venueId,
+      role: "staff", status: "pending", expiresAt: "2099-01-01T00:00:00.000Z", acceptedAt: null, acceptedBy: null }],
   };
 }
 
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   mocks.getOnboardingSummary.mockResolvedValue(emptySummary());
-  mocks.createManagedOnboarding.mockResolvedValue({});
+  const data = populatedSummary();
+  mocks.createManagedOnboarding.mockResolvedValue({ organisation: data.organisations[0], workspace: data.workspaces[0], venue: data.venues[0],
+    ownerMembership: data.memberships[0], staffMemberships: [], project: data.projects[0], entitlement: data.entitlements[0] });
   mocks.inviteWorkspaceMembers.mockResolvedValue({ memberships: [] });
   mocks.updateOnboardingProject.mockResolvedValue({});
   mocks.verifyWorkspaceEntitlement.mockResolvedValue({});
@@ -138,16 +146,17 @@ describe("OnboardingView", () => {
     mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
     render(<OnboardingView />);
 
-    expect(await screen.findByText("Workspace onboarding")).toBeTruthy();
+    expect(await screen.findByText("Clients & access")).toBeTruthy();
+    await screen.findByText("People & access");
     expect(screen.getAllByText("Trades Hall rollout").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Provider verification")).toBeTruthy();
-    expect(document.body.textContent ?? "").toContain("Provider-verified only");
+    expect(document.body.textContent ?? "").toContain("No email is sent automatically");
   });
 
   it("submits a managed onboarding package with owner and staff invitations", async () => {
     render(<OnboardingView />);
 
-    await screen.findByText("No managed workspaces have been created yet.");
+    await screen.findByText("A venue and its first administrator.");
     fireEvent.change(screen.getByTestId("organisation-name"), { target: { value: "Trades Hall Trust" } });
     fireEvent.change(screen.getByTestId("venue-name"), { target: { value: "Trades Hall Glasgow" } });
     fireEvent.change(screen.getByTestId("venue-address"), { target: { value: "85 Glassford Street, Glasgow G1 1UH" } });
@@ -170,8 +179,9 @@ describe("OnboardingView", () => {
         },
         ownerInvite: {
           email: "owner@tradeshall.co.uk",
+          name: null,
           workspaceRole: "owner",
-          venueRole: "staff",
+          venueRole: "admin",
         },
         staffInvites: [
           { email: "events@tradeshall.co.uk", workspaceRole: "staff", venueRole: "staff" },
@@ -186,7 +196,7 @@ describe("OnboardingView", () => {
           providerVerified: false,
           accessEnforced: false,
         },
-        operatorReviewNote: "Operator review required before deployment is marked ready.",
+        operatorReviewNote: "Review client setup before marking onboarding complete.",
       });
     });
   });
@@ -198,43 +208,42 @@ describe("OnboardingView", () => {
 
     render(<OnboardingView />);
 
-    expect(await screen.findByText("Onboarding unavailable")).toBeTruthy();
+    expect(await screen.findByText("Client workspaces are unavailable.")).toBeTruthy();
     expect(screen.getByText("Onboarding API offline")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
 
-    expect(await screen.findByText("No managed workspaces have been created yet.")).toBeTruthy();
+    expect(await screen.findByText("A venue and its first administrator.")).toBeTruthy();
   });
 
   it("invites additional staff from an existing workspace action card", async () => {
     mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
     render(<OnboardingView />);
 
-    await screen.findByText("Operator action board");
-    fireEvent.change(screen.getByLabelText("Invite staff for Trades Hall rollout"), {
-      target: { value: "planner@tradeshall.co.uk\nops@tradeshall.co.uk\nplanner@tradeshall.co.uk" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send 2 invite(s)" }));
+    await screen.findByText("People & access");
+    fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "planner@tradeshall.co.uk" } });
+    fireEvent.change(screen.getByLabelText("Venue role"), { target: { value: "planner" } });
+    fireEvent.click(screen.getByRole("button", { name: "Grant venue access" }));
 
     await waitFor(() => {
       expect(mocks.inviteWorkspaceMembers).toHaveBeenCalledWith(
         "00000000-0000-4000-8000-000000000002",
         {
           staffInvites: [
-            { email: "planner@tradeshall.co.uk", workspaceRole: "staff", venueRole: "staff" },
-            { email: "ops@tradeshall.co.uk", workspaceRole: "staff", venueRole: "staff" },
+            { email: "planner@tradeshall.co.uk", name: null, workspaceRole: "planner", venueRole: "planner" },
           ],
         },
       );
     });
-    expect(mocks.addToast).toHaveBeenCalledWith("2 staff invitation(s) recorded", "success");
+    expect(await screen.findByText(/Access recorded for planner@tradeshall.co.uk/)).toBeTruthy();
   });
 
   it("updates deployment review and provider gates through real onboarding APIs", async () => {
     mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
     render(<OnboardingView />);
 
-    await screen.findByText("Operator action board");
+    await screen.findByText("People & access");
+    fireEvent.click(screen.getByText("Setup review and billing"));
 
     fireEvent.change(screen.getByLabelText("Project status for Trades Hall rollout"), {
       target: { value: "ready" },
@@ -293,12 +302,68 @@ describe("OnboardingView", () => {
     mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
     render(<OnboardingView />);
 
-    await screen.findByText("Operator action board");
+    await screen.findByText("People & access");
+    fireEvent.click(screen.getByText("Setup review and billing"));
     fireEvent.change(screen.getByLabelText("Provider status for Trades Hall rollout"), {
       target: { value: "provider_verified" },
     });
 
     expect(screen.getByText("Verified provider state requires a real provider plus at least one evidence reference.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Save provider gate for Trades Hall rollout" })).toHaveProperty("disabled", true);
+  });
+
+  it("links an existing venue and grants its first administrator without creating another venue", async () => {
+    const data = populatedSummary();
+    mocks.getOnboardingSummary.mockResolvedValue({ ...emptySummary(), venues: data.venues });
+    render(<OnboardingView />);
+    await screen.findByLabelText("Existing venue");
+    fireEvent.change(screen.getByLabelText("Existing venue"), { target: { value: data.venues[0]?.id } });
+    fireEvent.change(screen.getByLabelText("First administrator email"), { target: { value: "manager@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create client workspace" }));
+    await waitFor(() => { expect(mocks.createManagedOnboarding).toHaveBeenCalledWith(expect.objectContaining({
+      existingVenueId: data.venues[0]?.id, ownerInvite: { email: "manager@example.test", name: null, workspaceRole: "owner", venueRole: "admin" },
+    })); });
+    expect(mocks.createManagedOnboarding.mock.calls[0]?.[0]).not.toHaveProperty("venue");
+  });
+
+  it("distinguishes an expired invitation from a pending invitation with no expiry", async () => {
+    const data = populatedSummary();
+    const member = data.memberships[0]; const invitation = data.invitations[0];
+    if (member === undefined || invitation === undefined) throw new Error("Missing invitation fixture");
+    mocks.getOnboardingSummary.mockResolvedValue({ ...data, memberships: [member, { ...member, id: "second", email: "expired@example.test", invitationId: "expired" }],
+      invitations: [{ ...invitation, expiresAt: null }, { ...invitation, id: "expired", status: "expired", expiresAt: "2020-01-01T00:00:00.000Z" }] });
+    render(<OnboardingView />);
+    expect(await screen.findByText("Invitation expired")).toBeTruthy();
+    expect(screen.getByText("Awaiting sign-in")).toBeTruthy();
+  });
+
+  it("renews a saved invitation with an explicitly selected venue administrator role", async () => {
+    mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
+    render(<OnboardingView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Manage access for owner@tradeshall.co.uk" }));
+    fireEvent.change(screen.getByLabelText("Venue role"), { target: { value: "admin" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save venue access" }));
+    await waitFor(() => { expect(mocks.inviteWorkspaceMembers).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000002", {
+      staffInvites: [{ email: "owner@tradeshall.co.uk", name: null, workspaceRole: "admin", venueRole: "admin" }],
+    }); });
+  });
+
+  it("keeps a failed cancellation visible and does not remove the member locally", async () => {
+    mocks.getOnboardingSummary.mockResolvedValue(populatedSummary());
+    mocks.revokeWorkspaceInvitation.mockRejectedValue(new Error("Invitation changed. Refresh before cancelling."));
+    render(<OnboardingView />);
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel invitation for owner@tradeshall.co.uk" }));
+    expect(await screen.findByText("Invitation changed. Refresh before cancelling.")).toBeTruthy();
+    expect(screen.getByText("Awaiting sign-in")).toBeTruthy();
+    expect(mocks.revokeWorkspaceInvitation).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000002", "00000000-0000-4000-8000-000000000004");
+  });
+
+  it("keeps existing members visible during refresh and reports refresh failure", async () => {
+    mocks.getOnboardingSummary.mockResolvedValueOnce(populatedSummary()).mockRejectedValueOnce(new Error("Refresh unavailable"));
+    render(<OnboardingView />);
+    await screen.findByText("People & access");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh clients" }));
+    expect(await screen.findByText("The latest access state could not be loaded.")).toBeTruthy();
+    expect(screen.getByText("owner@tradeshall.co.uk")).toBeTruthy();
   });
 });

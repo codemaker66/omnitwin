@@ -477,6 +477,13 @@
       "when": 1788718100000,
       "tag": "0069_four_foot_trestle_models",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1788787200000,
+      "tag": "0070_client_onboarding_access",
+      "breakpoints": true
     }
   ]
 }
