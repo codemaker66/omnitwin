@@ -713,11 +713,6 @@
   outline-offset: 2px;
 }
 
-.mission-spin {
-  animation: mission-spin 1s linear infinite;
-}
-
-@keyframes mission-spin { to { transform: rotate(360deg); } }
 @keyframes mission-pulse { 50% { opacity: 0.48; transform: scale(0.78); } }
 
 @media (max-width: 719px) {
@@ -769,7 +764,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mission-spin,
   .mission-live-state[data-live="true"] span {
     animation: none;
   }

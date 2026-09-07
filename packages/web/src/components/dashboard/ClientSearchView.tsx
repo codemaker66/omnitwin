@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import * as clientsApi from "../../api/clients.js";
 import type { SearchResults } from "../../api/clients.js";
 import { useToastStore } from "../../stores/toast-store.js";
+import { ActivityStatus } from "../shared/Activity.js";
 
 // ---------------------------------------------------------------------------
 // ClientSearchView — search clients, guest leads, configurations
@@ -68,7 +69,7 @@ export function ClientSearchView({ onViewProfile, onViewLeadProfile }: ClientSea
         data-testid="search-input"
       />
 
-      {loading && <p style={{ color: "#999", fontSize: 13 }}>Searching...</p>}
+      {loading && <ActivityStatus style={{ color: "#999", fontSize: 13 }}>Searching...</ActivityStatus>}
 
       {!loading && query.length < 2 && results === null && (
         <p style={{ color: "#999", fontSize: 14 }}>Search for clients by name, email, or organisation</p>

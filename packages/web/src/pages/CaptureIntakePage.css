@@ -75,8 +75,6 @@
 .capture-intake-state h2 { margin: 0; }
 .capture-intake-state p { color: #9fb1ae; margin: 5px 0 0; }
 .capture-intake-state--error > svg { color: #ff9b82; }
-.capture-intake-spin { animation: capture-intake-spin 1s linear infinite; }
-@keyframes capture-intake-spin { to { transform: rotate(360deg); } }
 
 @media (min-width: 780px) {
   .capture-intake-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -92,5 +90,3 @@
   .capture-intake-state { grid-template-columns: auto 1fr; }
   .capture-intake-state button { grid-column: 1 / -1; width: 100%; }
 }
-
-@media (prefers-reduced-motion: reduce) { .capture-intake-spin { animation: none; } }

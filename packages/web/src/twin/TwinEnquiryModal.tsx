@@ -8,6 +8,7 @@ import {
   type ReactElement,
 } from "react";
 import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 import { submitGuestEnquiry } from "../api/configurations.js";
 import { useFocusTrap } from "../lib/use-focus-trap.js";
 import { isValidEmail } from "../lib/email-validation.js";
@@ -319,7 +320,8 @@ export function TwinEnquiryModal({
             placeholder="Tell us about your event"
           />
 
-          <button type="submit" className="vv-twin-enq-submit" disabled={isSubmitting}>
+          <button type="submit" className="vv-twin-enq-submit" disabled={isSubmitting} aria-busy={isSubmitting}>
+            {isSubmitting && <ActivityIndicator size={18} />}
             {isSubmitting ? TWIN_ENQUIRE_SENDING : TWIN_ENQUIRE_CTA}
           </button>
           <p className="vv-twin-enq-trust">{TWIN_ENQUIRE_TRUST}</p>

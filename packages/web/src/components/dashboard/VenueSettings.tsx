@@ -4,6 +4,7 @@ import * as spacesApi from "../../api/spaces.js";
 import type { VenueDetail } from "../../api/spaces.js";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { useToastStore } from "../../stores/toast-store.js";
+import { ActivityIndicator } from "../shared/Activity.js";
 import "./VenueSettings.css";
 
 type LoadState = "loading" | "loaded" | "error";
@@ -158,7 +159,7 @@ export function VenueSettings(): ReactElement {
       <section className="venue-settings-shell" aria-labelledby="venue-settings-title">
         <div className="venue-settings-state" role="status" aria-live="polite">
           <p className="venue-settings-kicker">Venue record</p>
-          <h2 id="venue-settings-title">Loading venue settings</h2>
+          <h2 id="venue-settings-title"><ActivityIndicator size={28} /> Loading venue settings</h2>
           <p>Opening the current venue record and room manifest.</p>
         </div>
       </section>
@@ -294,7 +295,7 @@ export function VenueSettings(): ReactElement {
               Reset
             </button>
             <button type="submit" className="venue-settings-button" disabled={!canSave}>
-              <Save size={16} aria-hidden="true" />
+              {saving ? <ActivityIndicator size={16} /> : <Save size={16} aria-hidden="true" />}
               {saving ? "Saving venue" : "Save Changes"}
             </button>
           </div>

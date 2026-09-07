@@ -10,6 +10,7 @@ import {
   type ReactElement,
 } from "react";
 import { TRADES_HALL_ENQUIRY_VENUE_SLUG } from "@omnitwin/types";
+import { ActivityIndicator, ActivityStatus } from "../../components/shared/Activity.js";
 import { submitGuestEnquiry } from "../../api/configurations.js";
 import { isValidEmail } from "../../lib/email-validation.js";
 import {
@@ -571,7 +572,9 @@ function FreshEnquiry(): ReactElement {
                   type="submit"
                   className="fr-cta"
                   disabled={sendState === "sending"}
+                  aria-busy={sendState === "sending"}
                 >
+                  {sendState === "sending" && <ActivityIndicator size={20} />}
                   {sendState === "sending" ? FRESH_ENQUIRY_SENDING : FRESH_ENQUIRY_SUBMIT}
                 </button>
                 <a className="fr-enq-quiet" href={composed.mailtoHref}>
@@ -861,7 +864,7 @@ export function FreshPage(): ReactElement {
             {walkState === "loading" && (
               <div className="fr-walk-veil" aria-live="polite">
                 <p className="fr-walk-chip">
-                  {FRESH_WALK_LOADING} — {String(walkPercent)}%
+                  <ActivityStatus>{FRESH_WALK_LOADING} — {String(walkPercent)}%</ActivityStatus>
                 </p>
                 <div
                   className="fr-walk-bar"

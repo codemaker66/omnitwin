@@ -10,6 +10,7 @@ import {
   type ReactElement,
 } from "react";
 import { useSearchParams } from "react-router-dom";
+import { ActivityIndicator } from "../components/shared/Activity.js";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import {
@@ -1796,14 +1797,14 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         </span>
         {shimmerPhase !== "done" && (
           <span
-            aria-hidden
+            role="status"
             data-testid="twin-load-shimmer"
             className={
               shimmerPhase === "fading"
                 ? "vv-twin-load-shimmer vv-twin-load-shimmer--out"
                 : "vv-twin-load-shimmer"
             }
-          />
+          ><ActivityIndicator size={24} /> Opening view…</span>
         )}
       </div>
       {hasMesh && (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatMinorUnitMoney, type VenueDashboardAnalytics } from "@omnitwin/types";
 import { getVenueDashboardAnalytics } from "../../api/revenue-analytics.js";
+import { ActivityIndicator } from "../shared/Activity.js";
 
 type LoadState =
   | { readonly status: "loading" }
@@ -70,7 +71,7 @@ export function ExecutiveAnalyticsView(): React.ReactElement {
       return (
         <section style={cardStyle} aria-live="polite">
           <p style={labelStyle}>Executive analytics</p>
-          <h2 style={{ margin: "8px 0", fontSize: 22, color: "#fff7e8" }}>Loading commercial planning data</h2>
+          <h2 style={{ margin: "8px 0", fontSize: 22, color: "#fff7e8" }}><ActivityIndicator size={28} /> Loading commercial planning data</h2>
           <p style={{ margin: 0, color: "rgba(246,241,232,0.86)" }}>Revenue, comfort, and review signals are loading from the venue records.</p>
         </section>
       );

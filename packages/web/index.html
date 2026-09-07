@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/components/shared/Activity.css" />
     <title>Trades Hall of Glasgow — weddings and events</title>
     <!-- Static social/meta card: link scrapers (WhatsApp, iMessage, Instagram,
          Facebook) do not execute JavaScript, so the shared-link first
@@ -148,7 +149,41 @@
     </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="root">
+      <!-- First-paint adaptation of Activity.tsx; React removes it on mount. -->
+      <div id="vv-bootstrap" class="vv-activity-boot">
+        <span class="vv-activity-status vv-activity-status--panel" role="status">
+          <svg class="vv-activity-indicator" data-activity-indicator="bootstrap" width="56" height="56" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><g transform="translate(32 32)">
+            <circle r="1" class="vv-activity-particle vv-activity-particle--accent" style="--vv-sphere-a:translate(6.9px,23.0px);--vv-sphere-b:translate(-4.0px,23.0px);--vv-sphere-c:translate(-2.1px,23.0px);--vv-ring:translate(25.0px,0.0px);--vv-helix:translate(-3.1px,24.0px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-8.6px,21.0px);--vv-sphere-b:translate(-1.3px,21.0px);--vv-sphere-c:translate(10.1px,21.0px);--vv-ring:translate(24.1px,2.6px);--vv-helix:translate(-8.5px,21.9px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(1.3px,19.0px);--vv-sphere-b:translate(11.1px,19.0px);--vv-sphere-c:translate(-14.3px,19.0px);--vv-ring:translate(21.7px,5.0px);--vv-helix:translate(-11.6px,19.8px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(10.3px,17.0px);--vv-sphere-b:translate(-16.9px,17.0px);--vv-sphere-c:translate(9.6px,17.0px);--vv-ring:translate(17.7px,7.1px);--vv-helix:translate(-11.6px,17.7px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-18.4px,15.0px);--vv-sphere-b:translate(13.5px,15.0px);--vv-sphere-c:translate(2.6px,15.0px);--vv-ring:translate(12.5px,8.7px);--vv-helix:translate(-8.5px,15.6px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(17.0px,13.0px);--vv-sphere-b:translate(-1.3px,13.0px);--vv-sphere-c:translate(-15.5px,13.0px);--vv-ring:translate(6.5px,9.7px);--vv-helix:translate(-3.1px,13.5px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-5.5px,11.0px);--vv-sphere-b:translate(-13.4px,11.0px);--vv-sphere-c:translate(21.3px,11.0px);--vv-ring:translate(0.0px,10.0px);--vv-helix:translate(3.1px,11.5px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle vv-activity-particle--accent" style="--vv-sphere-a:translate(-10.3px,9.0px);--vv-sphere-b:translate(22.0px,9.0px);--vv-sphere-c:translate(-15.6px,9.0px);--vv-ring:translate(-6.5px,9.7px);--vv-helix:translate(8.5px,9.4px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(21.6px,7.0px);--vv-sphere-b:translate(-19.1px,7.0px);--vv-sphere-c:translate(0.9px,7.0px);--vv-ring:translate(-12.5px,8.7px);--vv-helix:translate(11.6px,7.3px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-21.7px,5.0px);--vv-sphere-b:translate(5.5px,5.0px);--vv-sphere-c:translate(15.2px,5.0px);--vv-ring:translate(-17.7px,7.1px);--vv-helix:translate(11.6px,5.2px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(10.1px,3.0px);--vv-sphere-b:translate(11.5px,3.0px);--vv-sphere-c:translate(-23.6px,3.0px);--vv-ring:translate(-21.7px,5.0px);--vv-helix:translate(8.5px,3.1px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(7.2px,1.0px);--vv-sphere-b:translate(-22.7px,1.0px);--vv-sphere-c:translate(19.6px,1.0px);--vv-ring:translate(-24.1px,2.6px);--vv-helix:translate(3.1px,1.0px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-20.7px,-1.0px);--vv-sphere-b:translate(21.9px,-1.0px);--vv-sphere-c:translate(-5.1px,-1.0px);--vv-ring:translate(-25.0px,0.0px);--vv-helix:translate(-3.1px,-1.0px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(23.3px,-3.0px);--vv-sphere-b:translate(-9.6px,-3.0px);--vv-sphere-c:translate(-12.0px,-3.0px);--vv-ring:translate(-24.1px,-2.6px);--vv-helix:translate(-8.5px,-3.1px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle vv-activity-particle--accent" style="--vv-sphere-a:translate(-13.5px,-5.0px);--vv-sphere-b:translate(-7.6px,-5.0px);--vv-sphere-c:translate(22.4px,-5.0px);--vv-ring:translate(-21.7px,-5.0px);--vv-helix:translate(-11.6px,-5.2px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-3.0px,-7.0px);--vv-sphere-b:translate(20.1px,-7.0px);--vv-sphere-c:translate(-20.8px,-7.0px);--vv-ring:translate(-17.7px,-7.1px);--vv-helix:translate(-11.6px,-7.3px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(17.0px,-9.0px);--vv-sphere-b:translate(-21.6px,-9.0px);--vv-sphere-c:translate(8.4px,-9.0px);--vv-ring:translate(-12.5px,-8.7px);--vv-helix:translate(-8.5px,-9.4px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-21.3px,-11.0px);--vv-sphere-b:translate(11.8px,-11.0px);--vv-sphere-c:translate(7.4px,-11.0px);--vv-ring:translate(-6.5px,-9.7px);--vv-helix:translate(-3.1px,-11.5px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(14.3px,-13.0px);--vv-sphere-b:translate(3.1px,-13.0px);--vv-sphere-c:translate(-17.9px,-13.0px);--vv-ring:translate(-0.0px,-10.0px);--vv-helix:translate(3.1px,-13.5px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-0.9px,-15.0px);--vv-sphere-b:translate(-14.6px,-15.0px);--vv-sphere-c:translate(18.1px,-15.0px);--vv-ring:translate(6.5px,-9.7px);--vv-helix:translate(8.5px,-15.6px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-10.9px,-17.0px);--vv-sphere-b:translate(16.9px,-17.0px);--vv-sphere-c:translate(-9.0px,-17.0px);--vv-ring:translate(12.5px,-8.7px);--vv-helix:translate(11.6px,-17.7px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle vv-activity-particle--accent" style="--vv-sphere-a:translate(14.5px,-19.0px);--vv-sphere-b:translate(-10.1px,-19.0px);--vv-sphere-c:translate(-2.6px,-19.0px);--vv-ring:translate(17.7px,-7.1px);--vv-helix:translate(11.6px,-19.8px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(-9.5px,-21.0px);--vv-sphere-b:translate(0.2px,-21.0px);--vv-sphere-c:translate(9.2px,-21.0px);--vv-ring:translate(21.7px,-5.0px);--vv-helix:translate(8.5px,-21.9px);--vv-depth:.7"/>
+            <circle r="1" class="vv-activity-particle" style="--vv-sphere-a:translate(1.5px,-23.0px);--vv-sphere-b:translate(4.5px,-23.0px);--vv-sphere-c:translate(-6.8px,-23.0px);--vv-ring:translate(24.1px,-2.6px);--vv-helix:translate(3.1px,-24.0px);--vv-depth:.7"/>
+          </g></svg>
+          <span>Opening Venviewer…</span>
+        </span>
+      </div>
+      <noscript><style>#vv-bootstrap { display: none; }</style><p class="vv-activity-boot">Enable JavaScript to open Venviewer.</p></noscript>
+    </div>
+    <script type="module" src="/src/main.tsx" onerror="document.getElementById('vv-bootstrap').textContent='Venviewer could not start. Reload this page to try again.'"></script>
   </body>
 </html>

@@ -21,6 +21,7 @@ import { Link } from "react-router-dom";
 import { fetchReconstructionVisualEvidence } from "../../../api/reconstruction-foundry.js";
 import type { FoundryAction } from "./FoundryActionDialog.js";
 import { FoundrySigningControls } from "./FoundrySigningControls.js";
+import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 
 export type FoundryTab = "summary" | "qa" | "history";
 
@@ -310,7 +311,7 @@ type VisualBoardState =
   | { readonly kind: "ready"; readonly previews: readonly { readonly path: string; readonly url: string }[] }
   | { readonly kind: "error"; readonly message: string };
 
-function VisualEvidenceBoard(props: {
+export function VisualEvidenceBoard(props: {
   readonly releaseId: string;
   readonly files: readonly ReconstructionReleaseFile[];
   readonly selectedPaths: readonly string[];
@@ -333,6 +334,7 @@ function VisualEvidenceBoard(props: {
     objectUrls.current = [];
     const nextController = new AbortController();
     controller.current = nextController;
+    setDecodedPaths(new Set());
     setState({ kind: "loading", completed: 0 });
     void (async () => {
       const previews = new Array<{ readonly path: string; readonly url: string } | undefined>(
@@ -347,6 +349,7 @@ function VisualEvidenceBoard(props: {
           const file = props.files[current];
           if (file === undefined) continue;
           const blob = await fetchReconstructionVisualEvidence(releaseId, file.path, nextController.signal);
+          if (nextController.signal.aborted) return;
           const url = URL.createObjectURL(blob);
           objectUrls.current.push(url);
           previews[current] = { path: file.path, url };
@@ -361,6 +364,7 @@ function VisualEvidenceBoard(props: {
       setState({ kind: "ready", previews: complete });
     })().catch((error: unknown) => {
       if (nextController.signal.aborted) return;
+      nextController.abort();
       setState({ kind: "error", message: error instanceof Error ? error.message : "The visual review board could not be loaded." });
     });
   };
@@ -370,20 +374,25 @@ function VisualEvidenceBoard(props: {
     <div className="runtime-foundry__visual-board">
       <div className="runtime-foundry__action-group">
         <button type="button" className="runtime-foundry__button" onClick={load} disabled={state.kind === "loading" || props.files.length === 0}>
-          {state.kind === "loading" ? `Opening exact previews ${String(state.completed)}/${String(props.files.length)}…` : "Open complete visual review board"}
+          {state.kind === "loading" && <ActivityIndicator size={18} />} {state.kind === "loading" ? `Opening exact previews ${String(state.completed)}/${String(props.files.length)}…` : "Open complete visual review board"}
         </button>
         <button type="button" className="runtime-foundry__button runtime-foundry__button--primary" disabled={!allDecoded || allSelected} onClick={() => { props.onSelectAll(props.files.map((file) => file.path)); }}>
           {allSelected ? "Complete board bound" : allDecoded ? "Bind every displayed preview to this review" : `Waiting for image decode ${String(decodedPaths.size)}/${String(props.files.length)}`}
         </button>
       </div>
       {state.kind === "error" ? <p className="runtime-foundry__notice" data-kind="error" role="alert">{state.message}</p> : null}
+      {state.kind === "ready" && !allDecoded && (
+        <ActivityStatus progress={state.previews.length === 0 ? undefined : decodedPaths.size / state.previews.length * 100}>
+          Decoding preview images {String(decodedPaths.size)}/{String(state.previews.length)}…
+        </ActivityStatus>
+      )}
       {state.kind === "ready" ? (
         <div className="runtime-foundry__visual-board-grid" aria-label="Exact private visual review board">
           {state.previews.map((preview) => (
             <a key={preview.path} href={preview.url} target="_blank" rel="noreferrer" title={`Open ${preview.path} full size`}>
               <img src={preview.url} alt={preview.path} loading="eager" onLoad={() => {
                 setDecodedPaths((current) => new Set([...current, preview.path]));
-              }} />
+              }} onError={() => { setState({ kind: "error", message: `Preview image could not be decoded: ${preview.path}. Reopen the visual review board to retry.` }); }} />
               <span>{preview.path}</span>
             </a>
           ))}
@@ -527,6 +536,7 @@ function ActionBar(props: {
     <>
       {visibleBlockers.length > 0 ? <ul className="runtime-foundry__blockers" aria-label="Release action blockers">{visibleBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul> : null}
       <footer className="runtime-foundry__action-bar">
+        {props.busy && <ActivityStatus>Working on the release…</ActivityStatus>}
         <div className="runtime-foundry__action-group">
           <button type="button" className="runtime-foundry__button" disabled={props.busy || blockers.reject.length > 0} onClick={() => { props.onAction("reject"); }}><CircleAlert aria-hidden="true" /> Reject</button>
           <button type="button" className="runtime-foundry__button" disabled={props.busy || blockers.approve.length > 0} onClick={() => { props.onAction("approve"); }}><ShieldCheck aria-hidden="true" /> Approve public evidence</button>

@@ -823,9 +823,6 @@
   line-height: 1.45;
 }
 
-.event-architect-spin {
-  animation: event-architect-spin 1s linear infinite;
-}
 
 .event-architect-ops-review {
   background: linear-gradient(145deg, rgba(15, 31, 28, 0.98), rgba(8, 18, 17, 0.98));
@@ -950,9 +947,6 @@
 .event-architect-ops-form > button:disabled { opacity: 0.55; }
 .event-architect-ops-immutability { margin: 12px 0 0; }
 
-@keyframes event-architect-spin {
-  to { transform: rotate(360deg); }
-}
 
 @media (max-width: 1180px) {
   .event-architect-method {
@@ -1074,9 +1068,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .event-architect-spin {
-    animation: none;
-  }
 
   .event-architect-candidate {
     transition: none;
