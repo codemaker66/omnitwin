@@ -8,17 +8,18 @@ and transitions, with the Craft quiz and a contact route for event enquiries.
 The same day, Blake requested equal-sized Craft badges and entertaining information
 in the space marked on his screenshot. **Published v3** adds that interactive
 Craft explorer. A later instruction on 9 September temporarily places event
-planning under construction; **published v4** implements that hold.
+planning under construction; **published v4** implements that hold. **Published
+v5** fixes the reported page jitter when switching between Craft stories.
 
 ## Published identity and implementation
 
 - CMS page **10**, content block **78**, title **Find your place**.
 - [Native CMS source](cms-external-embed.html): a construction notice, quiz/contact links and a deferred
   external script inside `#th-open-hall-mount`.
-- Native file-library item **91**:
-  [trades-hall-option-b-v4.js](https://www.tradeshallglasgow.co.uk/file-download/91/trades-hall-option-b-v4.js).
-- Published bundle: **928,835 bytes**, SHA-256
-  `5cdbf5645f8eb146a404fa183ee77e93c4dda9ed106ada4dfa5617eed9d906eb`.
+- Native file-library item **92**:
+  [trades-hall-option-b-v5.js](https://www.tradeshallglasgow.co.uk/file-download/92/trades-hall-option-b-v5.js).
+- Published bundle: **940,531 bytes**, SHA-256
+  `67c33a28fd3e42959ff2e2063b7947aada7a78157f6188c4caa75c378fc47e25`.
 - [Generator](prepare-cms-embed.py) deterministically builds from the preserved
   [standalone draft](cms-draft.html), the [Craft explorer adapter](craft_explorer.py),
   [styles](craft-explorer.css), [interaction](craft-explorer.js) and
@@ -47,6 +48,35 @@ construction notice and quiz/contact anchors remain available. Published-source
 inspection found that the CMS adds `target="_blank"` to external fallback anchors; shadow links
 are unaffected. This is source-level fallback qualification, not a claim that a
 browser session with JavaScript disabled was exercised.
+
+## Stable Craft layout: published v5, 9 September 2026
+
+Reproduced the report at 872×911: opening Bonnetmakers & Dyers changed page
+height from 911 to 959 pixels, introduced a scrollbar, reduced content width by
+15 pixels and moved the badge gallery down by about 24 pixels. Different stories
+also changed the centered grid row height.
+
+Fourteen overlapping, invisible and inert size reserves now keep the story card
+large enough for every complete story at the current font size and width. The
+reserves have no IDs or interactive controls and are excluded from accessibility.
+Only the live story body fades; the card no longer translates. Phone scrolling
+reveals the first story once and does not repeat when switching Crafts.
+
+Fifteen runtime/fallback regression groups and syntax checks pass. Real Chromium
+checks exercised all fourteen stories on the local candidate and exact live URL
+at 1440×900, 872×936, 651×844, 650×844, 390×844 and 320×740. Page height, page width,
+card rectangle, badge gallery rectangle, footer rectangle and scroll position
+were identical across all selections at each size. All text and history links
+fit, with no horizontal overflow or console warnings/errors. These automated
+geometry checks used reduced motion; a separate normal-motion in-app browser
+check at 1280×720 confirmed all fourteen selections held page height at 961 pixels,
+content width at 1265 pixels and gallery top at 213.2734375 pixels. Desktop and
+phone screenshots were inspected. Physical phones and non-Chromium browsers were
+not exercised. Browser plugin was not available; local Playwright provided the
+viewport checks and CUA controlled the in-app browser and CMS.
+
+Anonymous GET of file 92 is byte-identical to the immutable local v5 bundle.
+The CMS confirmed block 78 saved and the public page loads file 92.
 
 ## Temporary event planning hold: published v4, 9 September 2026
 
@@ -149,11 +179,12 @@ needs to change. Keep the published bundle immutable. For a runtime update, gene
 and upload a new version, verify its public hash and rendered behavior, then replace
 the embed's script `src` with that confirmed upload URL.
 
-During the temporary planning hold, restore the current v4 embed from this
-directory if needed. Earlier bundles expose the event planner or tour and must
-not be restored while the hold applies. To withdraw the landing, change page 10's
+During the temporary planning hold, restore the current v5 embed from this
+directory if needed. V1–v3 expose the event planner or tour and must not be
+restored while the hold applies; v4 retains the reported Craft layout shift.
+To withdraw the landing, change page 10's
 status to **Draft**, save, and verify the anonymous QR URL no longer serves it.
-V1–v3 remain immutable historical versions; v1 also retains early typography issues.
+V1–v4 remain immutable historical versions; v1 also retains early typography issues.
 
 ## Preserved design sources
 
@@ -170,5 +201,6 @@ separately rechecked A and B. All eighteen embedded assets
 are retained: two photographs, fourteen Craft emblems and two font files. v1 remains
 local and in native file-library item **88** as an earlier tested bundle. v2 remains
 local and in item **89** as the initial published page. V3 is preserved in item
-**90**. The page now references **v4 only**, in item **91**. The original prototypes and
+**90**; v4 is preserved in item **91**. The page now references **v5 only**, in item
+**92**. The original prototypes and
 standalone draft remain unchanged. Credentials are not retained in these artifacts.

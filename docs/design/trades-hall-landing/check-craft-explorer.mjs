@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(resolve(here, '../../../packages/web/package.json'));
 const { Window } = require('happy-dom');
-const bundlePath = process.argv[2] ? resolve(process.argv[2]) : resolve(here, 'trades-hall-option-b-v4.js');
+const bundlePath = process.argv[2] ? resolve(process.argv[2]) : resolve(here, 'trades-hall-option-b-v5.js');
 const copyPath = process.argv[3] ? resolve(process.argv[3]) : resolve(here, 'craft-stories.json');
 const fallbackPath = process.argv[4] ? resolve(process.argv[4]) : resolve(here, 'cms-external-embed.html');
 const script = await readFile(bundlePath, 'utf8');
@@ -30,7 +30,7 @@ const results = [];
 const normalize = (text) => text.replace(/\s+/g, ' ').trim();
 const tick = () => new Promise((done) => setImmediate(done));
 
-function fixture({ reduced = false, bodyClass = 'pf-landing' } = {}) {
+function fixture({ reduced = false, mobile = false, bodyClass = 'pf-landing' } = {}) {
   const window = new Window({
     url: 'https://www.tradeshallglasgow.co.uk/landing',
     settings: {
@@ -55,7 +55,7 @@ function fixture({ reduced = false, bodyClass = 'pf-landing' } = {}) {
   window.matchMedia = (query) => {
     if (query.includes('prefers-reduced-motion')) return media;
     const other = new window.EventTarget();
-    other.matches = false;
+    other.matches = mobile && query === '(max-width: 650px)';
     other.media = query;
     return other;
   };
@@ -164,6 +164,69 @@ await check('Rapid selection retains the latest story', async (app) => {
   await tick();
   assertSelected(app, 3);
 });
+
+await check('All story size reserves are complete, inaccessible and free of duplicate IDs', (app) => {
+  app.click('[data-intent="craft"]');
+  const panel = app.query('.oh-craft-story');
+  const reserves = [...panel.querySelectorAll('.oh-story-reserve')];
+  assert.equal(reserves.length, crafts.length, 'Each Craft contributes its complete natural text size');
+  assert.equal(panel.querySelectorAll('.oh-story-body').length, 1, 'Only one live story body exists');
+  const ids = [...app.shadow.querySelectorAll('[id]')].map((element) => element.id);
+  assert.equal(new Set(ids).size, ids.length, 'Sizing copies cannot duplicate live region or heading IDs');
+  for (const [index, reserve] of reserves.entries()) {
+    assert.equal(reserve.getAttribute('aria-hidden'), 'true', 'Sizing content is excluded from assistive technology');
+    assert.equal(reserve.hasAttribute('inert'), true, 'Sizing content cannot receive interaction');
+    assert.equal(reserve.querySelector('[id]'), null, 'Sizing descendants have no IDs');
+    assert.equal(reserve.querySelector('a[href], button, input, select, textarea, summary, iframe, [tabindex], [contenteditable]'), null, 'Sizing content adds no focusable controls');
+    assert.equal(normalize(reserve.querySelector('h2').textContent), 'The ' + crafts[index].name);
+    assert.equal(normalize(reserve.querySelector('.oh-story-text').textContent), normalize(crafts[index].text));
+    assert.ok(normalize(reserve.querySelector('.oh-story-rule').textContent).endsWith(crafts[index].eyebrow));
+    assert.equal(normalize(reserve.querySelector('.oh-story-source').textContent), 'Explore this Craft’s history ↗');
+  }
+  const reservedCopy = reserves.map((reserve) => reserve.textContent);
+  for (const index of [13, 1, 6, 0]) {
+    app.click(`.oh-crest[data-craft-index="${index}"]`);
+    assertSelected(app, index);
+  }
+  assert.deepEqual(reserves.map((reserve) => reserve.textContent), reservedCopy, 'Selecting a Craft must not alter any size reserve');
+});
+
+await check('Craft switching fades only the story body and cancels earlier transitions', (app) => {
+  app.click('[data-intent="craft"]');
+  const beforeSelection = app.animations.length;
+  for (const index of [1, 13, 6, 9]) app.click(`.oh-crest[data-craft-index="${index}"]`);
+  const transitions = app.animations.slice(beforeSelection);
+  assert.equal(transitions.length, 4);
+  for (const [index, animation] of transitions.entries()) {
+    assert.equal(animation.element, app.query('.oh-story-body'), 'The outer card must not animate');
+    assert.deepEqual(JSON.parse(JSON.stringify(animation.keyframes)), [{ opacity: 0 }, { opacity: 1 }], 'Story transitions change opacity without translation or size');
+    assert.equal(animation.cancelled, index < transitions.length - 1, 'Only the latest story transition remains active');
+  }
+  assert.equal(app.scrolls.length, 0, 'Desktop selection never requests programmatic scrolling');
+  assertSelected(app, 9);
+});
+
+for (const reduced of [false, true]) {
+  await check(`Phone scrolls to the first story once, then preserves the visitor’s position${reduced ? ' with reduced motion' : ''}`, (app) => {
+    app.click('[data-intent="craft"]');
+    app.click('.oh-crest[data-craft-index="13"]');
+    assert.equal(app.scrolls.length, 1, 'The initial phone story can be revealed');
+    assert.equal(app.scrolls[0].element, app.query('.oh-craft-story'));
+    assert.equal(app.scrolls[0].options.block, 'nearest');
+    assert.equal(app.scrolls[0].options.behavior, reduced ? 'instant' : 'smooth');
+    for (const index of [1, 6, 9, 0, 13]) app.click(`.oh-crest[data-craft-index="${index}"]`);
+    const badge = app.query('.oh-crest[data-craft-index="13"]');
+    badge.dispatchEvent(new app.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    assertSelected(app, 0);
+    assert.equal(app.scrolls.length, 1, 'Switching by touch or keyboard must not scroll the page again');
+    app.click('.oh-story-close');
+    app.click('.oh-crest[data-craft-index="5"]');
+    assert.equal(app.scrolls.length, 2, 'Opening a story again after closing may reveal it once');
+    app.click('.oh-crest[data-craft-index="2"]');
+    assert.equal(app.scrolls.length, 2);
+    if (reduced) assert.equal(app.animations.length, 0, 'Reduced motion suppresses all animated transitions');
+  }, { mobile: true, reduced });
+}
 
 await check('Arrow, Home and End keys navigate badge stories and restore focus', (app) => {
   app.click('[data-intent="craft"]');

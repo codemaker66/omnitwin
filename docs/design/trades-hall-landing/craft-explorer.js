@@ -1,6 +1,7 @@
       const craftStories = __CRAFT_STORIES__;
       const craftButtons = [...root.querySelectorAll('.oh-crest')];
       const craftPanel = root.querySelector('.oh-craft-story');
+      const craftBody = root.querySelector('.oh-story-body');
       const craftTitle = root.querySelector('#oh-craft-story-title');
       const craftText = root.querySelector('.oh-story-text');
       const craftSource = root.querySelector('.oh-story-source');
@@ -20,6 +21,7 @@
       }
       function selectCraft(index) {
         if (state.scene !== 'craft' || !craftStories[index]) return;
+        const firstSelection = selectedCraft === null;
         const story = craftStories[index];
         selectedCraft = index;
         root.dataset.craft = story.id;
@@ -32,12 +34,12 @@
         craftSource.setAttribute('aria-label', 'Explore the history of the ' + story.name);
         craftPanel.hidden = false;
         craftAnimation?.cancel();
-        if (!reduced.matches) craftAnimation = craftPanel.animate(
-          [{opacity:0, transform:'translateY(12px)'}, {opacity:1, transform:'translateY(0)'}],
-          {duration:340, easing:'cubic-bezier(.2,.7,.2,1)'}
+        if (!reduced.matches) craftAnimation = craftBody.animate(
+          [{opacity:0}, {opacity:1}],
+          {duration:180, easing:'ease-out'}
         );
         live.textContent = 'The ' + story.name + '. ' + story.text;
-        if (window.matchMedia('(max-width: 650px)').matches) {
+        if (firstSelection && window.matchMedia('(max-width: 650px)').matches) {
           craftPanel.scrollIntoView({block:'nearest', behavior:reduced.matches ? 'instant' : 'smooth'});
         }
       }
