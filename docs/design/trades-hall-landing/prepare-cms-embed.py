@@ -19,9 +19,9 @@ SOURCE = ROOT / "cms-draft.html"
 CONTACT = "mailto:info@tradeshallglasgow.co.uk"
 TOUR = "https://venviewer.com/tour"
 QUIZ = "https://venviewer.com/quiz"
-VERSION = "v4"
+VERSION = "v5"
 # Fill this only after the selected version has a confirmed native upload URL.
-CMS_BUNDLE_URL: str | None = "https://www.tradeshallglasgow.co.uk/file-download/91/trades-hall-option-b-v4.js"
+CMS_BUNDLE_URL: str | None = "https://www.tradeshallglasgow.co.uk/file-download/92/trades-hall-option-b-v5.js"
 
 
 def replace_once(value: str, before: str, after: str) -> str:
