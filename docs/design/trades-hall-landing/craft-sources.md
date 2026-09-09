@@ -1,0 +1,26 @@
+# Craft story provenance
+
+Prepared 9 September 2026 for the user-requested interactive badges on Option B. The 14 entries in [craft-stories.json](craft-stories.json) are original short historical vignettes with warm, whimsical narration. No text is quoted from Terry Pratchett. The comic observations are invented narration, not historical incidents or statements attributed to a Craft.
+
+The factual portions draw on the official Trades House and Craft sources below, inspected on this date. Each JSON record provides a direct official profile link for the visitor. Historical titles, practices and work are distinguished from modern activities; the panels promise no membership eligibility, benefits or outcome. Founding dates, competing antiquity claims and uncertain medieval charter stories are deliberately not used.
+
+| Craft | Verified factual basis and source |
+| --- | --- |
+| Hammermen | Associated metal trades include blacksmiths, goldsmiths and clockmakers; modern engineering remains part of the Craft's remit. [Official profile](https://www.tradeshouse.org.uk/crafts-hammermen/). |
+| Tailors | Historical entrants made garments in a locked room; the Craft upheld garment standards and continues charitable and educational work. [Official profile](https://www.tradeshouse.org.uk/crafts-tailors/). The observation about a deadline is original humour, not an additional historical rule. |
+| Cordiners | The leather trades supplied boots, jerkins and other leather goods; the name refers to Córdoba and fine Spanish shoe leather. [Official profile](https://www.tradeshouse.org.uk/crafts-cordiners/). |
+| Maltmen | Brewing, kilns, vats, apprentice supervision and quality control; the leader's title remains Visitor. [Official profile](https://www.tradeshouse.org.uk/crafts-maltmen/). |
+| Weavers | Standards in the weaving trade and an Industry and Educational Awards scheme supporting textile talent. [Official profile](https://www.tradeshouse.org.uk/crafts-weavers/). |
+| Bakers | Bread supply, operation of flour mills on the Kelvin, charitable support and prizes for baking students. [Official profile](https://www.tradeshouse.org.uk/crafts-bakers/). |
+| Skinners & Glovers | Historical workmanship standards, apprentices and support for members and families. [Official profile](https://www.tradeshouse.org.uk/crafts-skinners-glovers/). The trade in skins is corroborated by Glasgow's municipal records appointing a searcher of sheep, lamb and calf skins: [Burgh records, 1796–1808, part A](https://www.tradeshouselibrary.org/uploads/4/7/7/2/47723681/burgh_records_1796-1808_part_a.pdf). Glovemaking as a skilled leather trade is documented by [Glasgow Museums: seventeenth-century gloves](https://collections.glasgowmuseums.com/mwebcgi/mweb?request=record%3Bid%3D534402%3Btype%3D801). The panel does not confuse this Craft with the Cordiners' shoe and leather-goods trades. |
+| Wrights | Skilled carpentry; awards recognising practical skill, academic distinction and timely completion. [Official profile](https://www.tradeshouse.org.uk/crafts-wrights/). |
+| Coopers | Historical standards and long apprenticeships; modern apprentice support. [Official profile](https://www.tradeshouse.org.uk/crafts-coopers/). The cask and drink connection is documented in the Craft's educational remit: [Coopers: aims and awards](https://www.incorporationofcoopersofglasgow.org.uk/about.php). The wooden-barrel image is an ordinary description of coopering, not a claim about a particular historical commission. |
+| Fleshers | Meat provision, inspection and rules against discarding offal in the High Street; continuing industry ties and charitable work. [Official profile](https://www.tradeshouse.org.uk/crafts-fleshers/). |
+| Masons | Building and architectural connections, apprentice support and the Pear Eating evening. [Official profile](https://www.tradeshouse.org.uk/crafts-masons/). Stoneworking is also identified in the account of the Crafts' separation in the [Wrights profile](https://www.tradeshouse.org.uk/crafts-wrights/). No association with speculative Freemasonry is implied. |
+| Gardeners | Support for horticultural education; Let Glasgow Flourish awards include simple window-box displays. [Official profile](https://www.tradeshouse.org.uk/crafts-gardeners/). |
+| Barbers | Shared history with surgery, including wound treatment and tooth extraction; modern medical and care connections. [Official profile](https://www.tradeshouse.org.uk/crafts-barbers/). Historical practices are descriptive, not medical advice. |
+| Bonnetmakers & Dyers | Bonnets, woollen socks and other garments; dye-quality regulation; current prizes and trade education. [Official profile](https://www.tradeshouse.org.uk/crafts-bonnetmakers-dyers/). |
+
+The names and order follow the official [Crafts directory](https://www.tradeshouse.org.uk/crafts/). The profile URLs are intended as reference links, not membership applications or submission actions. Their present officeholders, fees and event dates are not copied into these stories.
+
+Validation: JSON parses; 14 unique IDs in the required badge order; all mandatory string fields present; each panel text is 35–55 words; every source URL uses HTTPS. Browser rendering, badge sizing and CMS delivery are verified by the parent implementation task.
