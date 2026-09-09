@@ -1,0 +1,47 @@
+[
+  {
+    "path": "/",
+    "text_unchanged": true,
+    "hidden_hook": true
+  },
+  {
+    "path": "/weddings/",
+    "text_unchanged": true,
+    "hidden_hook": true
+  },
+  {
+    "path": "/corporate-hire/",
+    "text_unchanged": true,
+    "hidden_hook": true
+  },
+  {
+    "path": "/packages/",
+    "text_unchanged": true,
+    "hidden_hook": true
+  },
+  {
+    "path": "/rooms/",
+    "text_unchanged": true,
+    "hidden_hook": true
+  },
+  {
+    "path": "/accommodation/",
+    "text_unchanged": true,
+    "hidden_hook": true
+  },
+  {
+    "path": "/contact/",
+    "text_unchanged": true,
+    "hidden_hook": true
+  },
+  {
+    "path": "/terms-and-conditions/",
+    "text_unchanged": true,
+    "hidden_hook": true
+  },
+  {
+    "path": "/privacy-policy-2/",
+    "text_unchanged": true,
+    "hidden_hook": true
+  }
+]

@@ -11,4 +11,6 @@
 # Review the maintained generator, CSS, interaction and copy; verify payload hashes.
 cms-draft.html binary
 trades-hall-option-b-v*.js binary
+site-icon/trades-hall-site-icon-v*.js binary
+site-icon/cms-before/*.html binary
 *.png binary
