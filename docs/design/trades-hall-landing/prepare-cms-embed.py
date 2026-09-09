@@ -22,7 +22,6 @@ QUIZ = "https://venviewer.com/quiz"
 VERSION = "v5"
 # Fill this only after the selected version has a confirmed native upload URL.
 CMS_BUNDLE_URL: str | None = "https://www.tradeshallglasgow.co.uk/file-download/92/trades-hall-option-b-v5.js"
-CMS_ICON_URL = "https://www.tradeshallglasgow.co.uk/file-download/93/trades-hall-site-icon-v1.js"
 
 
 def replace_once(value: str, before: str, after: str) -> str:
@@ -178,7 +177,7 @@ __INTERACTION__
     # The editor wraps external scripts in a paragraph. Keep that light-DOM
     # paragraph inside the shadow host so it cannot add a strip below the scene.
     external_embed = None if CMS_BUNDLE_URL is None else replace_once(
-        fallback, "</div>", f'  <script defer src="{CMS_BUNDLE_URL}"></script>\n  <script defer src="{CMS_ICON_URL}"></script>\n</div>'
+        fallback, "</div>", f'  <script defer src="{CMS_BUNDLE_URL}"></script>\n</div>'
     ) + "\n"
     assert embed.lower().count("</script>") == 1
     assert '<img' not in embed and '<style' not in embed

@@ -14,9 +14,9 @@ v5** fixes the reported page jitter when switching between Craft stories.
 ## Published identity and implementation
 
 - CMS page **10**, content block **78**, title **Find your place**.
-- Browser-tab crest: shared CMS file **93**, described in
-  [the site icon record](site-icon/README.md). This reference is separate from
-  the immutable landing runtime.
+- Browser-tab icon: the native golden building line drawing. Blake's later
+  selection supersedes the crest; all shared file93 overrides have been removed.
+  See [the site icon record](site-icon/README.md).
 - [Native CMS source](cms-external-embed.html): a construction notice, quiz/contact links and a deferred
   external script inside `#th-open-hall-mount`.
 - Native file-library item **92**:

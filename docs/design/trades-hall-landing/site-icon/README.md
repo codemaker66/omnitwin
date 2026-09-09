@@ -1,10 +1,30 @@
-# Trades Hall browser-tab crest
+# Trades Hall browser-tab icon — golden building
 
-Published 9 September 2026 at Blake's request. The full-colour Trades House crest
-replaces the building silhouette as the browser-tab icon on all ten current
-Trades Hall content pages.
+**Current selection, 9 September 2026:** Blake replaced his earlier crest choice
+with the golden line drawing of the Trades Hall building. The crest override
+has been removed from all ten content pages and from the landing generator.
+The website now uses its original native template icons, including with
+JavaScript disabled. Future pages inherit those native icons automatically.
 
-## Artwork and delivery
+The three native assets return HTTP200. Both the PNG and the transparent SVG's
+embedded bitmap were visually confirmed as the detailed golden building:
+
+| Native asset | Size | SHA-256 |
+|---|---|---|
+| `/favicon/favicon-96x96.png` | 96×96, 11,284 bytes | `5a7bf68c15cbed2940f32efaae9ffdb5f2b0d97cfe0aa1fb4f6fe46c9d7a5233` |
+| `/favicon/favicon.svg` | 256×256, 40,998 bytes | `4c4ed90d1064ac4767abccfe6ea2abf893ac80abc7393b3dc077f27f78911f0c` |
+| `/favicon/favicon.ico` | 48/32/16px, 15,086 bytes | `da60280b68220f63221061bad6df21a8aa400671c665aa06fc98b4887977644d` |
+
+All ten CMS removals were saved and live browser navigation verified the native
+PNG/SVG/ICO references with no crest script, injected icon or hidden hook.
+Public text in the nine ordinary blocks matches the original exactly; the
+landing retains its immutable v5 runtime. No browser warnings/errors. Evidence:
+`building-live-verification.json` and `building-content-verification.json`.
+
+The crest files and earlier receipts below are historical. Do not re-add file93
+while the golden building remains the selected icon.
+
+## Historical crest artwork and delivery
 
 The official [header artwork](https://www.tradeshouse.org.uk/gfx/trades-house@2x.png)
 is preserved in `trades-house-original.png`, SHA-256
@@ -24,9 +44,9 @@ Apple home-screen icons and the manifest retain their existing configuration.
 
 The CMS account exposes content scripts but no favicon/template editor. The
 existing hard-coded `/favicon/` files therefore remain intact. A shared deferred
-script is included in existing content blocks through the supported CMS source
-editor; this applies the crest when JavaScript runs. For new pages, include the
-same hook or migrate the icon to the shared template with hosting access.
+script was included in existing content blocks through the supported CMS source
+editor. That earlier approach applied the crest when JavaScript ran. All those
+references have now been removed.
 
 | Page | CMS page | Content block |
 |---|---:|---:|
@@ -41,7 +61,7 @@ same hook or migrate the icon to the shared template with hosting access.
 | `/privacy-policy-2/` | 9 | 8 |
 | `/landing` | 10 | 78 |
 
-All non-landing pages use this invisible hook, appended to existing nonempty text:
+The non-landing pages previously used this invisible hook, now removed:
 
 ```html
 <div id="th-site-icon-hook" hidden="hidden">
@@ -49,12 +69,13 @@ All non-landing pages use this invisible hook, appended to existing nonempty tex
 </div>
 ```
 
-The landing includes the script inside its existing shadow host. Its generator
-now preserves that reference. The immutable v5 landing bundle is unchanged.
+The landing previously included the script inside its existing shadow host.
+That reference has been removed from both the CMS and its generator. The
+immutable v5 landing bundle is unchanged.
 
-## Verification and recovery
+## Historical crest verification and backups
 
-All ten saves were confirmed by the CMS. Anonymous GET of file93 matches the
+The earlier ten crest saves were confirmed by the CMS. Anonymous GET of file93 matched the
 local bundle byte for byte, and JavaScript syntax passes. Actual in-app Chromium
 navigation across all ten pages confirmed exactly one browser icon, `256x256`,
 whose decoded PNG hash matches the crest export. All nine ordinary hooks compute
