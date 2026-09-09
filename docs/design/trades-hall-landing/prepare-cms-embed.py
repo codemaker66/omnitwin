@@ -16,12 +16,12 @@ from craft_explorer import add_craft_explorer
 
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "cms-draft.html"
-PLANNER = "https://venviewer.com/plan?space=grand-hall"
+CONTACT = "mailto:info@tradeshallglasgow.co.uk"
 TOUR = "https://venviewer.com/tour"
 QUIZ = "https://venviewer.com/quiz"
-VERSION = "v3"
+VERSION = "v4"
 # Fill this only after the selected version has a confirmed native upload URL.
-CMS_BUNDLE_URL: str | None = "https://www.tradeshallglasgow.co.uk/file-download/90/trades-hall-option-b-v3.js"
+CMS_BUNDLE_URL: str | None = "https://www.tradeshallglasgow.co.uk/file-download/91/trades-hall-option-b-v4.js"
 
 
 def replace_once(value: str, before: str, after: str) -> str:
@@ -61,19 +61,17 @@ def build(*, external_only: bool = False, preview: bool = False) -> None:
     fragment = fragment.replace("'Cormorant Garamond'", repr(font_name))
     font_css = "\n".join(font_faces).replace("'Cormorant Garamond'", repr(font_name))
 
-    fragment = replace_once(
-        fragment,
-        f'<a class="oh-choice" href="{TOUR}" data-intent="event">',
-        f'<a class="oh-choice" href="{PLANNER}" data-intent="event">',
-    )
+    event_choice = re.search(r'<a class="oh-choice" href="' + re.escape(TOUR) + r'" data-intent="event">(.*?)</a>', fragment, re.S)
+    assert event_choice is not None
+    fragment = replace_once(fragment, event_choice.group(0), '<button class="oh-choice" type="button" data-intent="event">' + event_choice.group(1).replace('Explore the venue. Make it yours.', 'Under construction for now.') + '</button>')
     fragment = replace_once(fragment, ' target="_blank"', "")
     fragment = replace_once(
         fragment,
         'Walk through the rooms.<br>Picture what you could create here.',
-        'Shape your event in the Grand Hall.<br>Or take a look around first.',
+        'Our team can help with your plans<br>while we prepare the online experience.',
     )
     original_enter = f'<a class="oh-enter" href="{TOUR}" rel="noopener noreferrer"><span>Explore the venue</span><span aria-hidden="true">↗</span></a>'
-    detail_actions = f'''<div class="oh-detail-actions"><a class="oh-enter" href="{PLANNER}"><span>Start planning</span><span aria-hidden="true">↗</span></a><a class="oh-explore" href="{TOUR}">Explore the venue <span aria-hidden="true">↗</span></a></div>'''
+    detail_actions = f'''<div class="oh-detail-actions"><a class="oh-enter" href="{CONTACT}"><span>Contact our team</span><span aria-hidden="true">↗</span></a></div>'''
     fragment = replace_once(fragment, original_enter, detail_actions)
 
     adapter_css = """
@@ -82,17 +80,15 @@ def build(*, external_only: bool = False, preview: bool = False) -> None:
 #th-open-hall .oh-main { flex:1; }
 #th-open-hall a:focus-visible, #th-open-hall button:focus-visible { outline:3px solid #edc78f; outline-offset:5px; }
 #th-open-hall .oh-detail-actions { flex-shrink:0; text-align:right; }
-#th-open-hall .oh-explore { display:none; color:#f6ecdc; font-size:12px; line-height:1.5; min-height:44px; align-items:center; justify-content:flex-end; gap:14px; text-decoration:underline; text-underline-offset:4px; }
-#th-open-hall[data-scene='event'] .oh-explore { display:flex; }
 @media(max-width:650px) {
   #th-open-hall .oh-detail-actions { width:100%; }
-  #th-open-hall .oh-explore { justify-content:center; }
 }
 """.strip()
     fragment = replace_once(fragment, "  <style>", "  <style>\n" + adapter_css)
     # These measured desktop adjustments must follow the selected design's
     # original media rules, including its >=1050px minimum room-panel height.
     compact_css = """
+#th-open-hall[data-scene='event'] h1 { font-size:clamp(48px,7vw,84px); }
 @media(min-width:651px) and (max-height:800px) {
   #th-open-hall .oh-header { padding:20px 42px; }
   #th-open-hall .oh-main { min-height:0; padding:24px 42px 28px; }
@@ -109,8 +105,8 @@ def build(*, external_only: bool = False, preview: bool = False) -> None:
     )
     interaction = replace_once(
         interaction,
-        "description:['Walk through the rooms.','Picture what you could create here.'],action:'Explore the venue',url:'https://venviewer.com/tour'",
-        "description:['Shape your event in the Grand Hall.','Or take a look around first.'],action:'Start planning',url:'" + PLANNER + "'",
+        "event:{first:'Imagine it.',second:'Here.',eyebrow:'Your next occasion',subtitle:['A remarkable setting.','Entirely your story.'],label:'THE VENUE EXPERIENCE',description:['Walk through the rooms.','Picture what you could create here.'],action:'Explore the venue',url:'https://venviewer.com/tour'}",
+        "event:{first:'Under',second:'construction.',eyebrow:'Your next occasion',subtitle:['Online event planning is being prepared.','Please contact our team for event enquiries.'],label:'UNDER CONSTRUCTION',description:['Our team can help with your plans','while we prepare the online experience.'],action:'Contact our team',url:'" + CONTACT + "'}",
     )
     fragment, interaction = add_craft_explorer(fragment, interaction)
 
@@ -145,7 +141,7 @@ body.pf-landing #th-open-hall-mount { display:block; width:100%; min-width:0; ma
     if (!document.querySelector('meta[name="description"]')) {
       const description = document.createElement('meta');
       description.name = 'description';
-      description.content = 'Plan your event at Trades Hall of Glasgow, explore the venue, or discover your connection to the fourteen Incorporated Crafts.';
+      description.content = 'Discover your connection to the fourteen Incorporated Crafts or contact Trades Hall of Glasgow to plan an event.';
       document.head.appendChild(description);
     }
 __INTERACTION__
@@ -172,7 +168,8 @@ __INTERACTION__
     fallback = f'''<div id="th-open-hall-mount">
   <h1>Find your place at Trades Hall</h1>
   <p>Host here. Belong here.</p>
-  <p><a href="{PLANNER}">Plan an event</a></p>
+  <h2>Plan an event — under construction</h2>
+  <p>Online event planning is being prepared. Please contact our team for event enquiries.</p>
   <p><a href="{QUIZ}">Find your Craft</a></p>
   <p><a href="mailto:info@tradeshallglasgow.co.uk">Talk to our team</a></p>
 </div>'''

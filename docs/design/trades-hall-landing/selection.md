@@ -4,20 +4,21 @@ Blake selected **Option B, The Open Hall**, on 7 September 2026. It was publishe
 through the venue's existing fuzzylime CMS on **9 September 2026** at the printed
 QR destination, [tradeshallglasgow.co.uk/landing](https://www.tradeshallglasgow.co.uk/landing).
 Option A remains preserved. The landing uses the selected photographic composition
-and transitions; its links open the separate live planner, tour and Craft quiz.
+and transitions, with the Craft quiz and a contact route for event enquiries.
 The same day, Blake requested equal-sized Craft badges and entertaining information
 in the space marked on his screenshot. **Published v3** adds that interactive
-Craft explorer while preserving the established visitor destinations.
+Craft explorer. A later instruction on 9 September temporarily places event
+planning under construction; **published v4** implements that hold.
 
 ## Published identity and implementation
 
 - CMS page **10**, content block **78**, title **Find your place**.
-- [Native CMS source](cms-external-embed.html): three fallback links and a deferred
+- [Native CMS source](cms-external-embed.html): a construction notice, quiz/contact links and a deferred
   external script inside `#th-open-hall-mount`.
-- Native file-library item **90**:
-  [trades-hall-option-b-v3.js](https://www.tradeshallglasgow.co.uk/file-download/90/trades-hall-option-b-v3.js).
-- Published bundle: **929,243 bytes**, SHA-256
-  `ba7708e0580e853750d9a72cdc950ffc7e206a7a53442badd906d9b187b8fe44`.
+- Native file-library item **91**:
+  [trades-hall-option-b-v4.js](https://www.tradeshallglasgow.co.uk/file-download/91/trades-hall-option-b-v4.js).
+- Published bundle: **928,835 bytes**, SHA-256
+  `5cdbf5645f8eb146a404fa183ee77e93c4dda9ed106ada4dfa5617eed9d906eb`.
 - [Generator](prepare-cms-embed.py) deterministically builds from the preserved
   [standalone draft](cms-draft.html), the [Craft explorer adapter](craft_explorer.py),
   [styles](craft-explorer.css), [interaction](craft-explorer.js) and
@@ -35,18 +36,33 @@ which otherwise adds a strip below the design.
 
 ## Visitor destinations
 
-- **Plan an event → Start planning:**
-  [Grand Hall planner](https://venviewer.com/plan?space=grand-hall).
-- The event branch also offers **Explore the venue:**
-  [public tour](https://venviewer.com/tour), which redirects to the Trades Hall twin.
+- **Plan an event → Under construction:** stays on the landing page; **Contact
+  our team** opens `mailto:info@tradeshallglasgow.co.uk`. Planner/tour links are
+  temporarily removed from both the widget and native fallback.
 - **Find your Craft → Discover my Craft:** [Craft quiz](https://venviewer.com/quiz).
 - **Talk to our team:** `mailto:info@tradeshallglasgow.co.uk`.
 
-Enhanced destination links use the same tab. Without the script, the native planner,
-quiz and contact anchors remain available. Published-source inspection found that
-the CMS adds `target="_blank"` to the two external fallback anchors; shadow links
+Enhanced destination links use the same tab. Without the script, the native
+construction notice and quiz/contact anchors remain available. Published-source
+inspection found that the CMS adds `target="_blank"` to external fallback anchors; shadow links
 are unaffected. This is source-level fallback qualification, not a claim that a
 browser session with JavaScript disabled was exercised.
+
+## Temporary event planning hold: published v4, 9 September 2026
+
+The event tile says **Under construction for now**. Its native button opens a
+matching construction screen with event enquiry contact, Back and Escape return.
+No planner or tour link remains in either the shadow widget or the native fallback.
+This holds the landing entry only; it does not alter the separate Venviewer apps.
+The complete fourteen-Craft explorer remains intact.
+
+JavaScript syntax and eleven runtime/fallback regression groups pass. An anonymous
+GET of file 91 returns 200 JavaScript matching the local bundle byte for byte.
+The published event button and contact destination were inspected on desktop and
+at a 390×844 phone viewport with no horizontal overflow. Escape returned to the
+choices, a Craft story opened and its quiz link remained correct; browser logs
+contained no errors or warnings. [Desktop evidence](evidence/event-hold-v4-desktop.png)
+and [phone evidence](evidence/event-hold-v4-phone.png).
 
 ## Craft explorer: published v3, 9 September 2026
 
@@ -133,13 +149,11 @@ needs to change. Keep the published bundle immutable. For a runtime update, gene
 and upload a new version, verify its public hash and rendered behavior, then replace
 the embed's script `src` with that confirmed upload URL.
 
-To restore the complete previous published page, switch only that script `src` to
-[file 89, v2](https://www.tradeshallglasgow.co.uk/file-download/89/trades-hall-option-b-v2.js),
-save, then verify the anonymous QR flow. v2 is retained unchanged as the rollback
-bundle. To withdraw the landing, change page 10's status to **Draft**, save, and
-verify the anonymous QR URL no longer serves the published page. v1 is retained as
-historical evidence, not a recommended rollback: it retains earlier
-heading/typography issues and is not visually equivalent.
+During the temporary planning hold, restore the current v4 embed from this
+directory if needed. Earlier bundles expose the event planner or tour and must
+not be restored while the hold applies. To withdraw the landing, change page 10's
+status to **Draft**, save, and verify the anonymous QR URL no longer serves it.
+V1–v3 remain immutable historical versions; v1 also retains early typography issues.
 
 ## Preserved design sources
 
@@ -155,6 +169,6 @@ their current hashes were rechecked on 9 September, and the publishing agent
 separately rechecked A and B. All eighteen embedded assets
 are retained: two photographs, fourteen Craft emblems and two font files. v1 remains
 local and in native file-library item **88** as an earlier tested bundle. v2 remains
-local and in item **89** as the complete previous published page. The published
-page now references **v3 only**, in item **90**. The original prototypes and
+local and in item **89** as the initial published page. V3 is preserved in item
+**90**. The page now references **v4 only**, in item **91**. The original prototypes and
 standalone draft remain unchanged. Credentials are not retained in these artifacts.

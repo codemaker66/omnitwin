@@ -2,7 +2,7 @@
  * Local behavioural checks for the actual CMS landing bundle.
  *
  * Run from any directory:
- *   node docs/design/trades-hall-landing/check-craft-explorer.mjs [bundle.js] [copy.json]
+ *   node docs/design/trades-hall-landing/check-craft-explorer.mjs [bundle.js] [copy.json] [fallback.html]
  *
  * Uses the repository's existing Happy DOM, makes no network requests and does
  * not load the CMS. Browser checks still own layout, imagery and real focus UX.
@@ -16,8 +16,9 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(resolve(here, '../../../packages/web/package.json'));
 const { Window } = require('happy-dom');
-const bundlePath = process.argv[2] ? resolve(process.argv[2]) : resolve(here, 'trades-hall-option-b-v3.js');
+const bundlePath = process.argv[2] ? resolve(process.argv[2]) : resolve(here, 'trades-hall-option-b-v4.js');
 const copyPath = process.argv[3] ? resolve(process.argv[3]) : resolve(here, 'craft-stories.json');
+const fallbackPath = process.argv[4] ? resolve(process.argv[4]) : resolve(here, 'cms-external-embed.html');
 const script = await readFile(bundlePath, 'utf8');
 const copyDocument = JSON.parse(await readFile(copyPath, 'utf8'));
 const crafts = Array.isArray(copyDocument) ? copyDocument : copyDocument.crafts;
@@ -211,24 +212,72 @@ await check('Back clears an open story and re-entry starts unselected', (app) =>
   assertClosed(app);
 });
 
-await check('Planner, tour and quiz handoffs remain native same-tab links', (app) => {
-  const expected = {
-    '[data-intent="event"]': 'https://venviewer.com/plan?space=grand-hall',
-    '[data-intent="craft"]': 'https://venviewer.com/quiz',
-  };
-  for (const [selector, href] of Object.entries(expected)) {
-    assert.equal(app.query(selector).href, href);
-    assert.equal(app.query(selector).target, '');
-  }
+function assertNoEventHandoffs(container) {
+  const heldLinks = [...container.querySelectorAll('a[href]')].filter((anchor) => {
+    const url = new URL(anchor.getAttribute('href'), 'https://www.tradeshallglasgow.co.uk/landing');
+    return url.hostname === 'venviewer.com' && (url.pathname === '/tour' || /(^|\/)plan(\/|$)/.test(url.pathname));
+  });
+  assert.deepEqual(heldLinks.map((anchor) => anchor.href), [], 'No hidden or visible link bypasses the event planning hold');
+}
+
+await check('Event choice stays on the landing page and explains the construction hold', (app) => {
+  const initialUrl = app.window.location.href;
+  const choice = app.query('[data-intent="event"]');
+  assert.equal(choice.tagName, 'BUTTON', 'The held event experience is an in-page action');
+  assert.equal(choice.type, 'button');
+  assert.equal(choice.disabled, false, 'Visitors can open the explanation');
+  assert.equal(choice.hasAttribute('href'), false, 'Event choice cannot bypass the hold');
+  assert.match(normalize(choice.textContent), /Under construction for now\./);
+  assertNoEventHandoffs(app.shadow);
   app.click('[data-intent="event"]');
-  assert.equal(app.query('.oh-enter').href, expected['[data-intent="event"]']);
+  assert.equal(app.window.location.href, initialUrl, 'Selecting an event must not navigate');
+  assert.equal(app.root.dataset.scene, 'event');
+  assert.equal(normalize(app.query('h1 span').textContent), 'Under');
+  assert.equal(normalize(app.query('h1 em').textContent), 'construction.');
+  assert.match(app.query('.oh-subtitle').textContent, /Online event planning is being prepared\./);
+  assert.match(app.query('.oh-subtitle').textContent, /Please contact our team for event enquiries\./);
+  assert.equal(normalize(app.query('.oh-detail-title').textContent), 'UNDER CONSTRUCTION');
+  assert.equal(app.query('.oh-detail').hidden, false);
+  assert.equal(app.query('.oh-enter').href, 'mailto:info@tradeshallglasgow.co.uk');
+  assert.equal(normalize(app.query('.oh-enter span').textContent), 'Contact our team');
   assert.equal(app.query('.oh-enter').target, '');
-  assert.equal(app.query('.oh-explore').href, 'https://venviewer.com/tour');
+  assert.equal(app.shadow.querySelector('.oh-explore'), null);
+  assert.match(app.query('.oh-live').textContent, /UNDER CONSTRUCTION/);
+  assert.equal(app.shadow.activeElement, app.query('.oh-back'));
+  assertNoEventHandoffs(app.shadow);
+});
+
+await check('Back and Escape leave the event hold with focus restored; the quiz remains available', (app) => {
+  const choice = app.query('[data-intent="event"]');
+  app.click('[data-intent="event"]');
   app.click('.oh-back');
+  assert.equal(app.root.dataset.scene, 'welcome');
+  assert.equal(app.shadow.activeElement, choice);
+  app.click('[data-intent="event"]');
+  app.escape();
+  assert.equal(app.root.dataset.scene, 'welcome');
+  assert.equal(app.shadow.activeElement, choice);
+  assert.equal(app.query('[data-intent="craft"]').href, 'https://venviewer.com/quiz');
+  assert.equal(app.query('[data-intent="craft"]').target, '');
   app.click('[data-intent="craft"]');
   app.click('.oh-crest[data-craft-index="0"]');
-  assert.equal(app.query('.oh-enter').href, expected['[data-intent="craft"]']);
+  assert.equal(app.query('.oh-enter').href, 'https://venviewer.com/quiz');
   assert.equal(app.query('.oh-enter').target, '');
+  assert.equal(normalize(app.query('.oh-enter span').textContent), 'Discover my Craft');
+  assertNoEventHandoffs(app.shadow);
+});
+
+await check('Native CMS fallback explains the hold while preserving quiz and contact links', async (app) => {
+  const fallback = app.window.document.createElement('template');
+  fallback.innerHTML = await readFile(fallbackPath, 'utf8');
+  const mount = fallback.content.querySelector('#th-open-hall-mount');
+  assert.ok(mount, 'Native CMS fallback retains the expected mount');
+  assert.match(normalize(mount.textContent), /Plan an event/i);
+  assert.match(normalize(mount.textContent), /under construction/i);
+  assertNoEventHandoffs(fallback.content);
+  const links = [...fallback.content.querySelectorAll('a[href]')];
+  assert.ok(links.some((anchor) => anchor.href === 'https://venviewer.com/quiz'), 'Quiz remains reachable without JavaScript');
+  assert.ok(links.some((anchor) => anchor.href === 'mailto:info@tradeshallglasgow.co.uk'), 'Event enquiries remain reachable without JavaScript');
 });
 
 await check('Reduced motion performs every interaction without animation', (app) => {
@@ -263,4 +312,4 @@ await check('A non-landing body is left untouched', (app) => {
   assert.equal(app.mount.textContent, 'Find your Craft');
 }, { bodyClass: 'pf-front' });
 
-console.log(JSON.stringify({ bundle: bundlePath, copy: copyPath, checks: results.length, results }, null, 2));
+console.log(JSON.stringify({ bundle: bundlePath, copy: copyPath, fallback: fallbackPath, checks: results.length, results }, null, 2));
