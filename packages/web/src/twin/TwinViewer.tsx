@@ -97,6 +97,7 @@ import { TwinCoachHint } from "./TwinCoachHint.js";
 import { TwinViewerControls } from "./TwinViewerControls.js";
 import { useDive, type DiveDirection } from "./useDive.js";
 import { useTwinMode, type TwinMode } from "./useTwinMode.js";
+import { useIsFullscreen } from "./useFullscreen.js";
 import { warmEquirectBase } from "./useEquirectTexture.js";
 import { useTwinPrefetch } from "./useTwinPrefetch.js";
 import { useTwinGlide } from "./useTwinGlide.js";
@@ -1066,6 +1067,11 @@ export interface TwinViewerProps {
 
 export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactElement | null {
   const walk = useTwinGlide(manifest);
+  // Immersive: fullscreen is a promise that the room gets the whole screen.
+  // twin.css clears the DOM chrome; this clears the overlays three.js draws
+  // INSIDE the canvas, which no stylesheet can reach. Without it the pills go
+  // and gold nav lines stay printed across the parquet.
+  const immersive = useIsFullscreen();
   const hasMesh = manifest.mesh !== undefined;
   const { mode, setMode } = useTwinMode(hasMesh);
   // The element the fullscreen button takes fullscreen — the viewer root, so
@@ -1609,6 +1615,11 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
         {twinViewpointAnnouncement(walk.restId, manifest.nodes.length)}
       </p>
       <Canvas
+        // Named so the immersive rule in twin.css can keep the stage and hide
+        // every sibling: in fullscreen the photograph is the whole product, so
+        // the chrome goes as a class rather than being enumerated here — a
+        // control added later is hidden by default instead of being forgotten.
+        className="vv-twin-stage"
         frameloop="demand"
         dpr={[1, 2]}
         gl={{ powerPreference: "high-performance" }}
@@ -1686,14 +1697,19 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                 and the map must never be the brighter of the two. Hidden during
                 a hop, like the rings — a graph sliding under a moving camera
                 reads as an artefact rather than as ground. */}
-            {!hopping && (
+            {/* Both are hidden in immersive mode: they are the map and the
+                affordance, and neither belongs on a photograph the visitor
+                asked to see raw. Travel still works — a click anywhere picks
+                the destination through the same cone, and WASD is unchanged —
+                so nothing is lost but the ink. */}
+            {!hopping && !immersive && (
               <FloorConstellation
                 nodes={manifest.nodes}
                 edges={manifest.edges}
                 currentId={walk.currentId}
               />
             )}
-            {!hopping && (
+            {!hopping && !immersive && (
               <NavMarkers
                 neighbors={walk.neighbors}
                 nodesById={nodesById}

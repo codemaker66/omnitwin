@@ -946,6 +946,53 @@
   }
 }
 
+/* — IMMERSIVE: fullscreen shows the photograph and nothing else —
+ *
+ * The expand control is a promise that the room gets the whole screen, and a
+ * rail of pills floating over a Grand Hall photograph is the thing standing
+ * between the visitor and that promise. So entering fullscreen removes EVERY
+ * overlay: label, mode switcher, Surface, the utility rail, the room dossier,
+ * quick actions, the coach hint, the disclosure line, the measure tool, the
+ * plan HUD and its annotations. What remains is the stage.
+ *
+ * Written as "hide every sibling of the stage" rather than as a list of the
+ * chrome to hide, which is the whole point: a control added to this viewer
+ * next month is immersive-correct on the day it lands, instead of being a
+ * pill someone forgot to add to a list. Only four things are spared, and each
+ * for a stated reason:
+ *
+ *   .vv-twin-stage        the R3F canvas — the photograph itself.
+ *   .vv-sr-only           invisible already; carries the polite arrival
+ *                         announcements, so a screen-reader user is not
+ *                         silenced by a purely visual preference.
+ *   .vv-twin-vignette     a grade applied TO the photograph, not chrome over
+ *   .vv-twin-first-light  it; likewise the opening reveal, which would tear if
+ *                         it were cut off mid-crane by an expand click.
+ *
+ * The exit control goes too, deliberately: Escape leaves fullscreen, and every
+ * browser says so in its own overlay on the way in. Nothing here is needed to
+ * get out.
+ *
+ * Specificity note: :not() takes its most specific argument, so this rule
+ * carries four classes plus the pseudo-class and comfortably outranks the
+ * display rules it overrides. No !important is required, and none is used. */
+
+.vv-twin-viewer:fullscreen
+  > :not(.vv-twin-stage):not(.vv-sr-only):not(.vv-twin-vignette):not(
+    .vv-twin-first-light
+  ) {
+  display: none;
+}
+
+/* The stage is sized by its parent, which fullscreen has just made the whole
+ * screen — but say so, because a percentage height against a newly-promoted
+ * fullscreen box is exactly where browsers disagree. */
+
+.vv-twin-viewer:fullscreen > .vv-twin-stage {
+  width: 100%;
+  height: 100%;
+}
+
 /* — forced-colors / Windows High Contrast: box-shadow halos and rgba fills are
  *   dropped, so restore real system-coloured focus rings, pill outlines, and
  *   selection/toggle cues (finding [16]). — */
