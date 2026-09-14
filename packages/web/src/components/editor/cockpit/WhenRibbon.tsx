@@ -5,6 +5,7 @@ import { ActivityStatus } from "../../shared/Activity.js";
 import { ApiError } from "../../../api/client.js";
 import { moveBooking } from "../../../api/diary.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
+import { canReadInternalEventData } from "../../../lib/event-access.js";
 import { useLinkedEvent } from "../../../hooks/use-linked-event.js";
 import { useCalendar } from "../../../pages/diary/hooks/useCalendar.js";
 import { useDiaryLive } from "../../../pages/diary/hooks/useDiaryLive.js";
@@ -83,6 +84,11 @@ function rangeLabel(startMs: number, endMs: number): string {
 }
 
 export function WhenRibbon(): ReactElement | null {
+  const auth = useAuthStore();
+  return canReadInternalEventData(auth) ? <VenueWhenRibbon /> : null;
+}
+
+function VenueWhenRibbon(): ReactElement | null {
   const [searchParams] = useSearchParams();
   const eventId = searchParams.get("eventId");
   const linked = useLinkedEvent();

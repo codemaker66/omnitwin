@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  canAccessInternalEvent,
   canAccessResource,
   canManageVenue,
   canReadVenuePlanningData,
@@ -174,9 +175,31 @@ describe("event write policy", () => {
   });
 });
 
+describe("internal event authority", () => {
+  it("retains current venue operations and explicit platform administration", () => {
+    for (const role of ["staff", "hallkeeper", "admin"] as const) {
+      expect(canAccessInternalEvent(makeUser({ role, venueId: VENUE_A }), VENUE_A)).toBe(true);
+    }
+    expect(canAccessInternalEvent(makeUser({ role: "admin", platformRole: "admin" }), VENUE_A)).toBe(true);
+  });
+
+  it("does not preserve event access after the creator loses role or venue authority", () => {
+    for (const user of [
+      makeUser({ id: USER_PLANNER_1, role: "client", venueId: VENUE_A }),
+      makeUser({ id: USER_PLANNER_1, role: "planner", venueId: VENUE_A }),
+      makeUser({ id: USER_PLANNER_1, role: "staff", venueId: VENUE_B }),
+      makeUser({ id: USER_PLANNER_1, role: "admin", venueId: null }),
+    ]) {
+      expect(canAccessInternalEvent(user, VENUE_A)).toBe(false);
+      // Personal configuration ownership remains an independent grant.
+      expect(canAccessResource(user, USER_PLANNER_1, VENUE_A)).toBe(true);
+    }
+  });
+});
+
 describe("venue planning-data read policy", () => {
-  it("admits each same-venue planning role", () => {
-    for (const role of ["planner", "staff", "hallkeeper", "admin"] as const) {
+  it("admits each same-venue operational role", () => {
+    for (const role of ["staff", "hallkeeper", "admin"] as const) {
       expect(canReadVenuePlanningData(makeUser({ role, venueId: VENUE_A }), VENUE_A))
         .toBe(true);
     }
@@ -194,6 +217,8 @@ describe("venue planning-data read policy", () => {
   });
 
   it("fails closed for clients, unknown roles, null venues, and cross-venue actors", () => {
+    expect(canReadVenuePlanningData(makeUser({ role: "planner", venueId: VENUE_A }), VENUE_A))
+      .toBe(false);
     expect(canReadVenuePlanningData(makeUser({ role: "client", venueId: VENUE_A }), VENUE_A))
       .toBe(false);
     expect(canReadVenuePlanningData(makeUser({ role: "future_role", venueId: VENUE_A }), VENUE_A))

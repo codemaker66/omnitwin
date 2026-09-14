@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useCockpitStore } from "../../../../stores/cockpit-store.js";
+import { useAuthStore } from "../../../../stores/auth-store.js";
 
 // The cockpit hosts the full editor (App) in its stage; mock it to a stand-in
 // so the test stays a structural shell test (no WebGL). The top bar reads
@@ -15,9 +16,45 @@ vi.mock("../WhenRibbon.js", () => ({ WhenRibbon: () => <aside data-testid="when-
 
 const { PlannerCockpit } = await import("../PlannerCockpit.js");
 
-afterEach(() => { cleanup(); useCockpitStore.getState().reset(); });
+function seedUser(role: string, platformRole: "none" | "admin" = "none"): void {
+  useAuthStore.getState().setUser({ id: "operator", role, platformRole, venueId: "venue", name: "Operator", email: "operator@example.test" });
+}
+
+beforeEach(() => { seedUser("staff"); });
+afterEach(() => { cleanup(); useCockpitStore.getState().reset(); useAuthStore.getState().logout(); });
 
 describe("PlannerCockpit", () => {
+  it.each(["client", "planner", "unknown"])("does not render an empty booking disclosure for %s", (role) => {
+    seedUser(role);
+    const { container } = render(<PlannerCockpit hasLinkedEvent />);
+    expect(screen.queryByText("Booking time")).toBeNull();
+    expect(screen.queryByTestId("when-ribbon-mock")).toBeNull();
+    expect(container.querySelector(".reference-when-ribbon")).toBeNull();
+  });
+
+  it.each(["staff", "admin", "hallkeeper"])("keeps the booking disclosure for an authenticated %s", (role) => {
+    seedUser(role);
+    render(<PlannerCockpit hasLinkedEvent />);
+    expect(screen.getByText("Booking time")).toBeTruthy();
+    expect(screen.getByTestId("when-ribbon-mock")).toBeTruthy();
+  });
+
+  it("keeps the booking disclosure for a platform admin with a customer base role", () => {
+    seedUser("planner", "admin");
+    render(<PlannerCockpit hasLinkedEvent />);
+    expect(screen.getByText("Booking time")).toBeTruthy();
+  });
+
+  it.each(["checking", "signed out"])("removes the booking disclosure while %s", (state) => {
+    render(<PlannerCockpit hasLinkedEvent />);
+    act(() => {
+      if (state === "checking") useAuthStore.getState().setLoading(true);
+      else useAuthStore.getState().logout();
+    });
+    expect(screen.queryByText("Booking time")).toBeNull();
+    expect(screen.queryByTestId("when-ribbon-mock")).toBeNull();
+  });
+
   it("keeps booking controls reachable independently of the layout timeline's expansion", () => {
     const { container, rerender } = render(<PlannerCockpit hasLinkedEvent />);
     const disclosure = screen.getByText("Booking time").closest("details");

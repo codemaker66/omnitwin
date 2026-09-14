@@ -32,6 +32,7 @@ import { configurationReviewRoutes } from "./routes/configuration-reviews.js";
 import { adminAssetRoutes, assetRoutes } from "./routes/assets.js";
 import { runtimePackagePreviewRoutes } from "./routes/runtime-package-previews.js";
 import { eventPhaseRoutes, eventRoutes } from "./routes/events.js";
+import { clientEventScheduleRoutes } from "./routes/client-event-schedule.js";
 import { eventPlanLifecycleRoutes, notificationRoutes } from "./routes/event-plan-lifecycle.js";
 import { evidenceItemRoutes, evidencePackRoutes, reviewGateRoutes, truthModeRoutes } from "./routes/evidence-runtime.js";
 import { eventDayEventRoutes, eventDayOpsTaskRoutes } from "./routes/event-day-ops.js";
@@ -394,6 +395,7 @@ export async function buildServer(env: Env = validateEnv()): Promise<ReturnType<
   await server.register(calendarRoutes, { db, prefix: "/calendar" });
   await server.register(roomLayoutTimelineRoutes, { db, prefix: "/calendar" });
   await server.register(eventRoutes, { db, prefix: "/events" });
+  await server.register(clientEventScheduleRoutes, { db, prefix: "/events" });
   await server.register(phaseLayoutSnapshotRoutes, { db, prefix: "/events" });
   await server.register(eventPlanLifecycleRoutes, { db, prefix: "/events" });
   await server.register(notificationRoutes, { db, prefix: "/notifications" });

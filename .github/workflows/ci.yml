@@ -221,6 +221,31 @@ jobs:
       - name: Claim safety guard
         run: pnpm --filter @omnitwin/web exec vitest run src/__tests__/public-claim-guard.test.ts
 
+      - name: Create dedicated event access test database
+        env:
+          PGPASSWORD: postgres
+        run: >-
+          psql --host=127.0.0.1 --port=55477 --username=postgres --dbname=postgres
+          --no-psqlrc --set=ON_ERROR_STOP=1
+          --command="CREATE DATABASE venviewer_event_access_test"
+
+      - name: Required event access PostgreSQL migrations and regressions
+        timeout-minutes: 10
+        env:
+          # Separate database; never reuse the platform or production fixture.
+          # The gate rejects missing/unsafe targets and skipped SQL tests.
+          VENVIEWER_EVENT_ACCESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55477/venviewer_event_access_test
+        run: pnpm --filter @omnitwin/api test:event-access-db
+
+      - name: Upload event access PostgreSQL receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-access-postgres-results-${{ github.run_id }}
+          path: packages/api/.test-results/event-access-db/
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Setup Python for twin-forge E57 guards
         # tools/twin-forge's e57-script-guards.test.ts shells out to the
         # Python unittest suite under e57-scripts/tests. Those modules (and

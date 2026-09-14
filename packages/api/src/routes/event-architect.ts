@@ -11,6 +11,7 @@ import {
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
+import { canAccessInternalEvent } from "../utils/query.js";
 import {
   EventArchitectCandidateNotFoundError,
   EventArchitectCatalogueNotReadyError,
@@ -42,7 +43,9 @@ function validationError(reply: FastifyReply, details: unknown): FastifyReply {
 function roleCanArchitect(request: FastifyRequest, venueId: string): "ok" | "wrong_venue" | "wrong_role" {
   if (isPlatformAdmin(request.user)) return "ok";
   if (request.user.venueId !== venueId) return "wrong_venue";
-  return ["admin", "staff", "hallkeeper", "planner"].includes(request.user.role)
+  // UserRoleSchema defines planner as the default customer role and client
+  // as its legacy alias. Neither grants internal venue planning authority.
+  return canAccessInternalEvent(request.user, venueId)
     ? "ok"
     : "wrong_role";
 }

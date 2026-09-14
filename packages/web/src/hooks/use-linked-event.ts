@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { EventPhaseGraph } from "@omnitwin/types";
 import { getEventPhaseGraph } from "../api/events.js";
 import { useAuthStore } from "../stores/auth-store.js";
+import { canReadInternalEventData } from "../lib/event-access.js";
 
 // The planner is opened on a configuration; events are a separate concept with
 // no config→event lookup endpoint. So the cockpit binds event context from an
@@ -31,13 +32,13 @@ function authorizationContextKey(user: ReturnType<typeof useAuthStore.getState>[
 export function useLinkedEvent(expectedVenueId?: string | null): LinkedEvent {
   const [searchParams] = useSearchParams();
   const requestedEventId = searchParams.get("eventId")?.trim() ?? "";
-  const user = useAuthStore((state) => state.user);
-  const authorizationKey = authorizationContextKey(user);
+  const auth = useAuthStore();
+  const authorizationKey = JSON.stringify([auth.isLoading, auth.isAuthenticated, authorizationContextKey(auth.user)]);
   const venuePending = expectedVenueId === null;
   const venueKey = expectedVenueId === null
     ? "pending"
     : expectedVenueId ?? "unconstrained";
-  const requestKey = requestedEventId.length === 0
+  const requestKey = requestedEventId.length === 0 || !canReadInternalEventData(auth)
     ? null
     : JSON.stringify([authorizationKey, requestedEventId, venueKey]);
   const requestGenerationRef = useRef(0);

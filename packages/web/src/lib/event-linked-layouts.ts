@@ -3,6 +3,7 @@ import { ApiError } from "../api/client.js";
 import { getConfig } from "../api/configurations.js";
 import { getEventPhaseGraph } from "../api/events.js";
 import { getVenue } from "../api/spaces.js";
+import { getClientEventSchedule } from "../api/client-event-schedule.js";
 
 export interface LinkedLayoutChoice {
   readonly configurationId: string;
@@ -76,10 +77,30 @@ export async function resolveEventLinkedLayouts(input: {
   readonly venueSlug?: string;
   readonly spaceSlug: string | null;
   readonly isCurrent: () => boolean;
+  readonly customer?: boolean;
 }): Promise<EventLinkedLayouts> {
   const assertCurrent = (): void => { if (!input.isCurrent()) throw new Error("Layout request superseded."); };
   if (!EventIdSchema.safeParse(input.eventId).success) throw new Error("Invalid event link.");
   assertCurrent();
+  if (input.customer === true) {
+    const schedule = await getClientEventSchedule(input.eventId);
+    assertCurrent();
+    if (schedule.event.id !== input.eventId || schedule.venue.id !== schedule.event.venueId) throw new Error("The requested event could not be verified.");
+    const venue = await getVenue(schedule.venue.id);
+    assertCurrent();
+    if (venue.id !== schedule.venue.id || (input.venueSlug !== undefined && venue.slug !== input.venueSlug)) throw new Error("The event does not belong to the requested venue.");
+    const rooms = venue.spaces.filter((space) => space.venueId === venue.id);
+    const requestedRoom = input.spaceSlug === null ? undefined : rooms.find((space) => space.slug === input.spaceSlug);
+    if (input.spaceSlug !== null && requestedRoom === undefined) throw new Error("The requested room is not in this event's venue.");
+    const roomIds = new Set(rooms.map((room) => room.id));
+    return {
+      eventName: schedule.event.name,
+      roomName: requestedRoom?.name ?? null,
+      layouts: schedule.layouts.filter((layout) => roomIds.has(layout.space.id) && (requestedRoom === undefined || layout.space.id === requestedRoom.id))
+        .map((layout) => ({ configurationId: layout.id, name: layout.name, spaceName: layout.space.name })),
+      unavailableCount: 0,
+    };
+  }
   const graph = await getEventPhaseGraph(input.eventId);
   assertCurrent();
   if (graph.event.id !== input.eventId) throw new Error("The requested event could not be verified.");

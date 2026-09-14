@@ -20,22 +20,23 @@ export function canManageVenue(
   return false;
 }
 
-// Planning-data reads are deliberately broader than venue management. A
-// planner assigned to the venue needs the room timeline to prepare an event,
-// but that grant must not leak into mutation-capable management helpers.
-const VENUE_PLANNING_READ_ROLES: ReadonlySet<string> = new Set([
-  "planner",
-  "staff",
-  "hallkeeper",
-  "admin",
-]);
+// Internal events contain staff notes, operating tasks and commercial data.
+// Current venue authority is required; historical createdBy provenance is
+// not an enduring grant after a role or venue change.
+export function canAccessInternalEvent(
+  user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
+  venueId: string,
+): boolean {
+  return canManageVenue(user, venueId);
+}
 
+// A room-wide timeline spans other customers' events. Both customer role
+// names (client and legacy planner) use their scoped event projection instead.
 export function canReadVenuePlanningData(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
 ): boolean {
-  if (isPlatformAdmin(user)) return true;
-  return user.venueId === venueId && VENUE_PLANNING_READ_ROLES.has(user.role);
+  return canManageVenue(user, venueId);
 }
 
 /**

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { RuntimePackage } from "@omnitwin/types";
 import { useEditorStore } from "../stores/editor-store.js";
 import { useCockpitStore } from "../stores/cockpit-store.js";
+import { useAuthStore } from "../stores/auth-store.js";
 import { getLatestRuntimePackage } from "../api/runtime-packages.js";
 import {
   decideRuntimeAsset,
@@ -48,11 +49,16 @@ function runtimeRoomSlug(slug: string | null): TradesHallRuntimeRoomSlug | null 
 export function useRoomRuntimeSplat(): RoomRuntimeSplat {
   const spaceSlug = useEditorStore((s) => s.space?.slug ?? null);
   const roomSlug = runtimeRoomSlug(spaceSlug);
+  const user = useAuthStore((state) => state.user);
+  const canReadRegistry = user?.platformRole === "admin";
+  const requestKey = JSON.stringify([roomSlug, user?.id, user?.role, user?.venueId, user?.platformRole]);
+  const [packageKey, setPackageKey] = useState<string | null>(null);
   const [pkg, setPkg] = useState<RuntimePackage | null>(null);
   const [status, setStatus] = useState<RoomRuntimeSplatStatus>("none");
 
   useEffect(() => {
-    if (roomSlug === null) {
+    setPackageKey(requestKey);
+    if (roomSlug === null || !canReadRegistry) {
       setPkg(null);
       setStatus("none");
       return;
@@ -72,18 +78,19 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
         setStatus("none");
       });
     return () => { cancelled = true; };
-  }, [roomSlug]);
+  }, [canReadRegistry, requestKey, roomSlug]);
 
   // Memoised because PlannerScene re-renders on every chunk arrival: the
   // staged branches build fresh objects per call, and churning them through
   // the scene during the develop window is pure waste.
-  const decision = useMemo(() => decideRuntimeAsset(null, pkg, {
+  const currentPackage = canReadRegistry && packageKey === requestKey ? pkg : null;
+  const decision = useMemo(() => decideRuntimeAsset(null, currentPackage, {
     room: roomSlug,
     // The planner is a working surface for people planning real events in
     // these rooms; seeing the staged capture is the point. The label carries
     // the honesty: STAGED_CAPTURE_STATUS flows into the cockpit chip below.
     allowStagedCapture: true,
-  }), [pkg, roomSlug]);
+  }), [currentPackage, roomSlug]);
   const hasAsset = decision.source !== "none" && decision.splatUrls.length > 0;
   const transform = useMemo(() => (roomSlug !== null
     ? runtimeAssetViewTransformForRoom(roomSlug, decision.source)
@@ -94,5 +101,6 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
     useCockpitStore.getState().setRuntimeAssetStatus(runtimeLabel);
   }, [runtimeLabel]);
 
-  return { splatUrls: decision.splatUrls, transform, hasAsset, status, roomSlug, source: decision.source };
+  const currentStatus = !canReadRegistry || roomSlug === null ? "none" : packageKey === requestKey ? status : "loading";
+  return { splatUrls: decision.splatUrls, transform, hasAsset, status: currentStatus, roomSlug, source: decision.source };
 }

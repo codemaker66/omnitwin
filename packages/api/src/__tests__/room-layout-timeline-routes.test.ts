@@ -109,6 +109,18 @@ describe("room layout timeline — auth and validation boundary", () => {
     expect(response.statusCode, response.body).toBe(403);
   });
 
+  it.each(["client", "planner"])("refuses a venue-assigned %s the room-wide internal schedule", async (role) => {
+    const response = await server.inject({
+      method: "GET",
+      url: timelineUrl(validQuery),
+      headers: { authorization: `Bearer ${JSON.stringify({
+        id: "00000000-0000-4000-8000-000000000099",
+        email: "customer@test.invalid", role, venueId: VENUE_ID, platformRole: "none",
+      })}` },
+    });
+    expect(response.statusCode, response.body).toBe(403);
+  });
+
 });
 
 describe("room layout timeline — source contract", () => {

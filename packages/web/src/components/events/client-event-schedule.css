@@ -1,0 +1,79 @@
+.client-event-page,
+.client-event-dock {
+  --event-ink: #173e33;
+  --event-muted: #52645b;
+  --event-paper: #f7f5ee;
+  --event-line: #d7ded4;
+  color: var(--event-ink);
+  color-scheme: light;
+  font-family: "Inter", system-ui, sans-serif;
+}
+.client-event-page { min-height: 100dvh; background: #e9ede5; padding: clamp(20px, 5vw, 72px); box-sizing: border-box; }
+.client-event-page > section { max-width: 940px; margin: 0 auto; padding: clamp(22px, 5vw, 56px); background: var(--event-paper); border: 1px solid #d7dfd3; border-radius: 22px; box-shadow: 0 28px 70px #163d3112; }
+.client-event-back { color: var(--event-muted); font-size: 13px; display: inline-flex; min-height: 44px; align-items: center; margin-bottom: 16px; text-underline-offset: 4px; }
+.client-event-heading { padding-bottom: 24px; border-bottom: 1px solid var(--event-line); }
+.client-event-kicker { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #647b65; }
+.client-event-heading h1 { font: 400 clamp(30px, 5vw, 48px)/1.15 Georgia, serif; letter-spacing: -.035em; margin: 12px 0; overflow-wrap: anywhere; }
+.client-event-heading > p:last-child { color: var(--event-muted); font-size: 14px; margin-bottom: 0; }
+.client-event-disclosure { font-size: 12px; line-height: 1.6; color: var(--event-muted); margin: 20px 0 14px; }
+.client-event-phases { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
+.client-event-phases > li { display: flex; align-items: flex-start; gap: 17px; padding: 20px 0; border-bottom: 1px solid var(--event-line); }
+.client-event-phase-number { flex: none; display: grid; place-items: center; width: 34px; height: 34px; background: #e5ece1; border-radius: 50%; color: #5b745f; font-size: 11px; font-weight: 600; }
+.client-event-phase-copy { min-width: 0; }
+.client-event-phase-copy h3 { font: 400 21px/1.25 Georgia, serif; margin: 3px 0 9px; overflow-wrap: anywhere; }
+.client-event-phase-copy p { display: flex; align-items: flex-start; gap: 7px; margin: 5px 0; color: var(--event-muted); font-size: 12px; line-height: 1.5; }
+.client-event-phase-copy p svg { flex: none; margin-top: 2px; }
+.client-event-empty,
+.client-event-state p { color: var(--event-muted); font-size: 14px; line-height: 1.65; }
+.client-event-state { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.client-event-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 16px; color: var(--event-ink); background: #e5ece1; border: 1px solid #c7d2c4; border-radius: 10px; font: 600 12px/1.4 "Inter", system-ui, sans-serif; text-decoration: none; cursor: pointer; }
+.client-event-button:hover { background: #d9e3d4; }
+.client-event-button:focus-visible,
+.client-event-back:focus-visible { outline: 3px solid #a9663e; outline-offset: 3px; }
+.client-event-layouts { margin-top: 30px; }
+.client-event-layouts h2 { font: 400 26px/1.3 Georgia, serif; margin: 0 0 15px; }
+.client-event-layouts ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); list-style: none; padding: 0; gap: 12px; }
+.client-event-layouts a { display: grid; justify-content: start; gap: 6px; min-height: 68px; }
+.client-event-layouts small { color: var(--event-muted); font-weight: 400; }
+.cockpit-shell:has(> .cockpit-bottom.client-event-dock:not(.is-collapsed)) { --cockpit-bottom-height: 260px; }
+.cockpit-shell > .cockpit-bottom.client-event-dock { display: flex; flex-direction: column; gap: 0; padding: 12px 22px 18px; box-sizing: border-box; color: var(--event-ink); border: 1px solid #c7d3c2; background: var(--event-paper); box-shadow: 0 -10px 30px #173e3310; }
+.client-event-dock.is-collapsed { padding-block: 7px; }
+.client-event-dock__header { display: flex; align-items: center; justify-content: space-between; flex: none; gap: 16px; min-height: 40px; }
+.client-event-dock__identity { min-width: 0; display: flex; align-items: center; gap: 12px; }
+.client-event-dock__identity > svg { color: #927058; flex: none; }
+.client-event-dock__identity div { min-width: 0; }
+.client-event-dock__identity strong { display: block; font: 400 19px/1.2 Georgia, serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.client-event-dock__identity small { display: block; color: var(--event-muted); font-size: 10px; line-height: 1.5; }
+.client-event-dock__actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.client-event-dock__actions a { color: var(--event-ink); font-size: 12px; padding: 12px; text-underline-offset: 3px; }
+.client-event-dock__body { min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: #9ba994 var(--event-paper); }
+.client-event-dock .client-event-disclosure { margin: 9px 0; }
+.client-event-dock .client-event-phases { display: flex; gap: 18px; padding-bottom: 8px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: #9ba994 var(--event-paper); }
+.client-event-dock .client-event-phases > li { flex: 0 0 260px; padding: 12px 14px; border: 1px solid var(--event-line); border-radius: 12px; background: #fffdf8; }
+.client-event-dock .client-event-phase-copy h3 { font-size: 18px; }
+/* This schedule is an ivory sheet in both planner shells. Its mobile bounds
+   replace the room timeline's full-viewport width plus floating margins. */
+.cockpit-shell.is-mobile:has(> .cockpit-bottom.client-event-dock:not(.is-collapsed)) { --cockpit-bottom-height: min(302px, 48dvh); }
+.cockpit-shell.is-mobile:has(> .cockpit-bottom.client-event-dock.is-collapsed) { --cockpit-bottom-height: 70px; }
+.cockpit-shell.is-mobile > .cockpit-bottom.client-event-dock {
+  inset-inline-start: max(10px, env(safe-area-inset-left));
+  inset-inline-end: max(10px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  width: auto;
+  margin: 0;
+  padding: 10px 14px 12px;
+}
+.cockpit-shell.is-mobile > .cockpit-bottom.client-event-dock:not(.is-collapsed),
+.cockpit-shell.is-mobile > .cockpit-bottom.client-event-dock.is-collapsed { height: var(--cockpit-bottom-height); }
+@media (max-width: 640px) {
+  .client-event-page { padding: 14px; }
+  .client-event-page > section { border-radius: 16px; padding: 22px 18px; }
+  .client-event-state { align-items: flex-start; flex-direction: column; gap: 0; }
+  .cockpit-shell > .cockpit-bottom.client-event-dock { padding-inline: 14px; }
+  .client-event-dock__actions { gap: 2px; }
+  .client-event-dock__actions a { padding: 8px; font-size: 11px; }
+  .client-event-dock__actions button { padding-inline: 10px; }
+  .client-event-dock__identity strong { font-size: 16px; }
+  .client-event-dock__identity > svg { display: none; }
+  .client-event-dock .client-event-phases > li { flex-basis: 230px; }
+}

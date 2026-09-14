@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { RuntimePackage } from "@omnitwin/types";
 import type { Space } from "../../api/spaces.js";
 
@@ -9,6 +9,7 @@ const runtimeApi = vi.mocked(await import("../../api/runtime-packages.js"));
 const { useRoomRuntimeSplat } = await import("../use-room-runtime-splat.js");
 const { useEditorStore } = await import("../../stores/editor-store.js");
 const { useCockpitStore } = await import("../../stores/cockpit-store.js");
+const { useAuthStore } = await import("../../stores/auth-store.js");
 
 function spaceWith(slug: string): Space {
   return {
@@ -71,10 +72,19 @@ function receptionRoomPackage(): RuntimePackage {
   };
 }
 
-beforeEach(() => { useEditorStore.setState({ space: null }); useCockpitStore.getState().reset(); });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+beforeEach(() => { useEditorStore.setState({ space: null }); useCockpitStore.getState().reset();
+  useAuthStore.getState().setUser({ id: "platform-admin", name: "Platform admin", email: "admin@example.test", role: "admin", platformRole: "admin", venueId: null }); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); useAuthStore.getState().logout(); });
 
 describe("useRoomRuntimeSplat", () => {
+  it.each(["client", "planner", "staff", "hallkeeper", "admin"])("keeps staged capture without privileged discovery for venue role %s", (role) => {
+    useAuthStore.getState().setUser({ id: "venue-account", role, platformRole: "none", name: "Venue account", email: "venue@example.test", venueId: "v1" });
+    useEditorStore.setState({ space: spaceWith("grand-hall") });
+    const { result } = renderHook(() => useRoomRuntimeSplat());
+    expect(result.current.source).toBe("staged");
+    expect(result.current.hasAsset).toBe(true);
+    expect(runtimeApi.getLatestRuntimePackage).not.toHaveBeenCalled();
+  });
   it("stays 'none' with no space and never fetches", () => {
     const { result } = renderHook(() => useRoomRuntimeSplat());
     expect(result.current.status).toBe("none");
@@ -149,5 +159,16 @@ describe("useRoomRuntimeSplat", () => {
     expect(useCockpitStore.getState().runtimeAssetStatus).toBe(
       "Runtime asset loaded, not yet verified/signed.",
     );
+  });
+
+  it("removes a privileged registry result immediately when the account loses platform access", async () => {
+    runtimeApi.getLatestRuntimePackage.mockResolvedValue(receptionRoomPackage());
+    useEditorStore.setState({ space: spaceWith("reception-room") });
+    const { result } = renderHook(() => useRoomRuntimeSplat());
+    await waitFor(() => { expect(result.current.source).toBe("package"); });
+    act(() => { useAuthStore.getState().setUser({ id: "platform-admin", role: "planner", platformRole: "none", name: "Customer", email: "customer@example.test", venueId: null }); });
+    expect(result.current.source).toBe("staged");
+    expect(result.current.splatUrls).not.toContain(RECEPTION_SPLAT_URL);
+    expect(runtimeApi.getLatestRuntimePackage).toHaveBeenCalledTimes(1);
   });
 });

@@ -38,7 +38,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAccessResource, canWriteEvents, isEventWriteRole } from "../utils/query.js";
+import { canAccessInternalEvent, canAccessResource, canWriteEvents, isEventWriteRole } from "../utils/query.js";
 import { recordEventPlanChange } from "../services/event-plan-lifecycle.js";
 import { updateEventCore } from "../services/event-mutations.js";
 
@@ -216,7 +216,7 @@ async function requireEventAccess(
     void reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
     return null;
   }
-  if (!canAccessResource(request.user, eventRow.createdBy, eventRow.venueId)) {
+  if (!canAccessInternalEvent(request.user, eventRow.venueId)) {
     void forbidden(reply);
     return null;
   }

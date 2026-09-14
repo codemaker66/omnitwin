@@ -24,8 +24,8 @@ import {
   revenueScenarios,
   spaces,
 } from "../db/schema.js";
-import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
-import { canAccessResource } from "../utils/query.js";
+import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
+import { canAccessInternalEvent, canWriteEvents } from "../utils/query.js";
 import {
   buildPipelineSummary,
   buildRoomUtilisationRows,
@@ -39,7 +39,6 @@ const AnalyticsQuery = z.object({ venueId: z.string().uuid().optional() });
 type RevenueScenarioRow = typeof revenueScenarios.$inferSelect;
 type PricingAssumptionRow = typeof pricingAssumptions.$inferSelect;
 type ComfortConstraintRow = typeof comfortConstraints.$inferSelect;
-type AuthedUser = Pick<JwtUser, "id" | "role" | "platformRole" | "venueId">;
 
 function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });
@@ -47,11 +46,6 @@ function validationError(reply: FastifyReply, details: unknown): FastifyReply {
 
 function toIso(value: Date): string {
   return value.toISOString();
-}
-
-function canManageVenueRevenue(user: AuthedUser, venueId: string): boolean {
-  if (isPlatformAdmin(user)) return true;
-  return (user.role === "staff" || user.role === "planner") && user.venueId === venueId;
 }
 
 function resolveVenueScope(
@@ -72,6 +66,12 @@ function resolveVenueScope(
   }
   if (user.venueId === null) {
     void reply.status(403).send({ error: "User has no venue scope", code: "FORBIDDEN" });
+    return null;
+  }
+  // Preserve existing hallkeeper commercial reads (quotes/event summaries),
+  // but neither customer role name grants venue-wide analytics authority.
+  if (!canAccessInternalEvent(user, user.venueId)) {
+    void reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     return null;
   }
   if (requestedVenueId !== undefined && requestedVenueId !== user.venueId) {
@@ -179,7 +179,7 @@ export async function revenueScenarioRoutes(server: FastifyInstance, opts: { db:
   server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = CreateRevenueScenarioSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    if (!canManageVenueRevenue(request.user, parsed.data.venueId)) {
+    if (!canWriteEvents(request.user, parsed.data.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
@@ -263,7 +263,7 @@ export async function eventRevenueRoutes(server: FastifyInstance, opts: { db: Da
     if (eventRow === undefined) {
       return reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
     }
-    if (!canAccessResource(request.user, eventRow.createdBy, eventRow.venueId)) {
+    if (!canAccessInternalEvent(request.user, eventRow.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 

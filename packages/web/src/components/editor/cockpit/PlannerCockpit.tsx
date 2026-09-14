@@ -8,6 +8,8 @@ import { CanvasLayerControls } from "./CanvasLayerControls.js";
 import { ToolPill } from "./ToolPill.js";
 import { RoomResolveCaption } from "./RoomResolveCaption.js";
 import { useCockpitStore } from "../../../stores/cockpit-store.js";
+import { useAuthStore } from "../../../stores/auth-store.js";
+import { canReadInternalEventData } from "../../../lib/event-access.js";
 import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-preview-store.js";
 import { SceneOutliner } from "./SceneOutliner.js";
 import { ReferenceRoomHeader } from "./ReferenceRoomHeader.js";
@@ -27,6 +29,8 @@ import "./ReferenceViewer.css";
  * the Design lens only.
  */
 export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { readonly mobile?: boolean; readonly hasLinkedEvent?: boolean }): ReactElement {
+  const auth = useAuthStore();
+  const canViewBookingTime = canReadInternalEventData(auth);
   const activeMode = useCockpitStore((s) => s.activeMode);
   const resolvePhase = useCockpitStore((s) => s.roomResolve.phase);
   const timelinePreviewActive = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
@@ -82,7 +86,7 @@ export function PlannerCockpit({ mobile = false, hasLinkedEvent = false }: { rea
       ) : <CockpitRightDock key="right-dock" />}
       {/* The When ribbon (S2) shares the transport's clock and booking; it
           rests while a phase preview holds the stage. */}
-      {mobile || timelinePreviewActive || !hasLinkedEvent ? null : <details className="reference-when-ribbon"><summary>Booking time</summary><WhenRibbon /></details>}
+      {mobile || timelinePreviewActive || !hasLinkedEvent || !canViewBookingTime ? null : <details className="reference-when-ribbon"><summary>Booking time</summary><WhenRibbon /></details>}
       <CockpitBottom key="room-layout-timeline" initiallyCollapsed={!mobile} />
     </div>
   );

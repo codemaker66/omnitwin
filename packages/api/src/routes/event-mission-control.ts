@@ -47,7 +47,7 @@ import {
   updateEventMissionIncident,
   type EventMissionActor,
 } from "../services/event-mission-control.js";
-import { canAccessResource, canManageVenue } from "../utils/query.js";
+import { canAccessInternalEvent, canManageVenue } from "../utils/query.js";
 
 const EventParamSchema = z.object({ eventId: z.string().uuid() }).strict();
 const MissionParamSchema = z.object({ missionId: z.string().uuid() }).strict();
@@ -87,7 +87,7 @@ async function requireEventRead(
     void reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
     return null;
   }
-  if (!canAccessResource(request.user, event.createdBy, event.venueId)) {
+  if (!canAccessInternalEvent(request.user, event.venueId)) {
     void reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
     return null;
   }
@@ -127,7 +127,7 @@ async function requireMissionRead(
     void reply.status(404).send({ error: "Mission not found", code: "NOT_FOUND" });
     return null;
   }
-  if (!canAccessResource(request.user, scope.event.createdBy, scope.mission.venueId)) {
+  if (!canAccessInternalEvent(request.user, scope.mission.venueId)) {
     void reply.status(404).send({ error: "Mission not found", code: "NOT_FOUND" });
     return null;
   }

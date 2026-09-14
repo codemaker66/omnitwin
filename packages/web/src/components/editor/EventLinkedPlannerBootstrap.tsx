@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/auth-store.js";
 import { resolveEventLinkedLayouts, type EventLinkedLayouts } from "../../lib/event-linked-layouts.js";
 import { ActivityStatus } from "../shared/Activity.js";
+import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../../lib/event-access.js";
+import { authRouteWithReturnTo } from "../../lib/auth-return.js";
 
 interface Props {
   readonly eventId: string;
@@ -24,6 +26,8 @@ function authKey(state: ReturnType<typeof useAuthStore.getState>): string {
 export function EventLinkedPlannerBootstrap({ eventId, venueSlug, spaceSlug, carriedSearch }: Props): ReactElement {
   const auth = useAuthStore();
   const authorizationKey = authKey(auth);
+  const operational = canReadInternalEventData(auth);
+  const customer = !operational && isCustomerRole(auth.user?.role);
   const navigate = useNavigate();
   const [retry, setRetry] = useState(0);
   const [result, setResult] = useState<Result | null>(null);
@@ -34,11 +38,15 @@ export function EventLinkedPlannerBootstrap({ eventId, venueSlug, spaceSlug, car
 
   useEffect(() => {
     if (auth.isLoading || !auth.isAuthenticated || auth.user === null) return;
+    if (!operational && !customer) {
+      setResult({ key: requestKey, data: null, failed: true });
+      return;
+    }
     let cancelled = false;
     const isCurrent = (): boolean => !cancelled && latestKey.current === requestKey
       && authKey(useAuthStore.getState()) === authorizationKey;
     setResult(null);
-    void resolveEventLinkedLayouts({ eventId, venueSlug, spaceSlug, isCurrent })
+    void resolveEventLinkedLayouts({ eventId, venueSlug, spaceSlug, isCurrent, ...(customer ? { customer: true } : {}) })
       .then((data) => {
         if (!isCurrent()) return;
         setResult({ key: requestKey, data, failed: false });
@@ -49,7 +57,7 @@ export function EventLinkedPlannerBootstrap({ eventId, venueSlug, spaceSlug, car
         if (isCurrent()) setResult({ key: requestKey, data: null, failed: true });
       });
     return () => { cancelled = true; };
-  }, [auth.isAuthenticated, auth.isLoading, auth.user, authorizationKey, eventId, navigate, requestKey, search, spaceSlug, venueSlug]);
+  }, [auth.isAuthenticated, auth.isLoading, auth.user, authorizationKey, customer, eventId, navigate, operational, requestKey, search, spaceSlug, venueSlug]);
 
   const current = result?.key === requestKey ? result : null;
   const data = current?.data ?? null;
@@ -58,7 +66,7 @@ export function EventLinkedPlannerBootstrap({ eventId, venueSlug, spaceSlug, car
       || current.data === null || !current.data.layouts.some((layout) => layout.configurationId === configurationId)) return;
     void navigate({ pathname: `/plan/${configurationId}`, search }, { replace: true });
   };
-  const opsPath = `/ops/events/${encodeURIComponent(eventId)}`;
+  const opsPath = customer ? customerEventPath(eventId) : `/ops/events/${encodeURIComponent(eventId)}`;
 
   return <main className="vv-route-state" aria-label="Event layout selection">
     <section className="vv-state-panel" aria-labelledby="event-layout-heading">
@@ -69,18 +77,18 @@ export function EventLinkedPlannerBootstrap({ eventId, venueSlug, spaceSlug, car
       </> : !auth.isAuthenticated || auth.user === null ? <>
         <h1 id="event-layout-heading">Sign in to open this event's layouts</h1>
         <p>This link opens saved venue plans. Sign in, then return to the event link.</p>
-        <Link className="vv-button primary" to="/login">Sign in</Link>
+        <Link className="vv-button primary" to={authRouteWithReturnTo("/login", `${venueSlug === undefined ? "/plan" : `/v/${encodeURIComponent(venueSlug)}/plan`}${search}`)}>Sign in</Link>
       </> : current?.failed === true ? <>
         <h1 id="event-layout-heading">Could not open this event's layouts</h1>
         <p role="alert">We could not verify this event's saved layouts, room and access. Retry or return to your workspace.</p>
-        <div className="vv-state-actions"><button className="vv-button primary" type="button" onClick={() => { setRetry((value) => value + 1); }}>Retry</button><Link className="vv-button" to="/dashboard">Return to workspace</Link></div>
+        <div className="vv-state-actions"><button className="vv-button primary" type="button" onClick={() => { setRetry((value) => value + 1); }}>Retry</button><Link className="vv-button" to={operational ? "/dashboard" : "/"}>{operational ? "Return to workspace" : "Venviewer home"}</Link></div>
       </> : data === null || data.layouts.length === 1 ? <>
         <h1 id="event-layout-heading">Opening the event's layouts</h1>
         <ActivityStatus>Checking linked saved layouts…</ActivityStatus>
       </> : <>
         <h1 id="event-layout-heading">{data.layouts.length === 0 ? "No linked layout for this room" : "Choose a saved layout"}</h1>
         <p>{data.eventName}{data.roomName === null ? "" : ` · ${data.roomName}`}</p>
-        {data.layouts.length === 0 ? <p>No accessible saved layout is linked to this event{data.roomName === null ? "" : " in this room"}. Review the event operations or ask a venue planner to link a saved layout.</p> : <>
+        {data.layouts.length === 0 ? <p>No accessible saved layout is linked to this event{data.roomName === null ? "" : " in this room"}. {customer ? "You can view your event schedule or ask your venue team to connect a saved layout." : "Review the event operations or ask a venue planner to link a saved layout."}</p> : <>
           <p>This event has several saved layouts. Choose the one you want to open.</p>
           <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 12 }}>
             {data.layouts.map((layout) => <li key={layout.configurationId}>
@@ -92,7 +100,7 @@ export function EventLinkedPlannerBootstrap({ eventId, venueSlug, spaceSlug, car
           </ul>
         </>}
         {data.unavailableCount > 0 && <p>Some linked layouts are unavailable to this account.</p>}
-        <div className="vv-state-actions"><Link className="vv-button" to={opsPath}>Open event operations</Link><button className="vv-button" type="button" onClick={() => { setRetry((value) => value + 1); }}>Check again</button></div>
+        <div className="vv-state-actions"><Link className="vv-button" to={opsPath}>{customer ? "View event schedule" : "Open event operations"}</Link><button className="vv-button" type="button" onClick={() => { setRetry((value) => value + 1); }}>Check again</button></div>
       </>}
     </section>
   </main>;

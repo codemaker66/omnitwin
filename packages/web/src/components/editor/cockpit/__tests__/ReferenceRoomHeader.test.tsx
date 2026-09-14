@@ -56,7 +56,7 @@ beforeEach(() => {
   reload.mockClear();
   venueRequest.mockReset();
   useEditorStore.setState({ configId: "cfg-demo", venueId: null, space: null, isSaving: false, isDirty: true, saveError: null, saveConflict: null, saveToServer: save, reloadAfterConflict: reload });
-  useAuthStore.setState({ isAuthenticated: true });
+  useAuthStore.getState().setUser({ id: "staff-user", role: "staff", platformRole: "none", venueId: cityRooms.id, name: "Staff", email: "staff@example.test" });
   useLayoutTimelinePreviewStore.getState().clear();
 });
 afterEach(() => {
@@ -70,6 +70,11 @@ function showHeader(): void {
 }
 
 describe("ReferenceRoomHeader", () => {
+  it.each(["client", "planner"])("takes a linked %s to their event instead of the venue diary", (role) => {
+    useAuthStore.getState().setUser({ id: "customer", role, platformRole: "none", venueId: null, name: "Customer", email: "customer@example.test" });
+    render(<MemoryRouter initialEntries={["/plan/layout?eventId=11111111-1111-4111-8111-111111111111"]}><ReferenceRoomHeader /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "Venue planner event details" }).getAttribute("href")).toBe("/events/11111111-1111-4111-8111-111111111111");
+  });
   it("uses the selected Trades Hall venue and supplied crest while retaining its room subtitle", async () => {
     venueRequest.mockResolvedValue(tradesHall);
     useEditorStore.setState({
@@ -78,7 +83,7 @@ describe("ReferenceRoomHeader", () => {
     });
     useAuthStore.setState({ user: { id: "user-city", email: "planner@example.com", name: "City Planner", role: "planner", platformRole: "none", venueId: cityRooms.id } });
     showHeader();
-    const identity = await screen.findByRole("link", { name: "Trade's Hall of Glasgow diary" });
+    const identity = await screen.findByRole("link", { name: "Trade's Hall of Glasgow home" });
     expect(venueRequest).toHaveBeenCalledWith(tradesHall.id);
     expect(venueRequest).not.toHaveBeenCalledWith(cityRooms.id);
     expect(identity.textContent).toContain("Grand Hall");

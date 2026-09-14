@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Building2, Check, Save } from "lucide-react";
 import { useEditorStore } from "../../../stores/editor-store.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
@@ -7,6 +7,7 @@ import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-p
 import { ActivityIndicator } from "../../shared/Activity.js";
 import { isLayoutTimelineMutationLocked } from "../../../lib/layout-timeline-preview-lock.js";
 import { usePlannerVenueIdentity } from "../../../hooks/use-planner-venue-identity.js";
+import { canReadInternalEventData, customerEventPath, isCustomerRole } from "../../../lib/event-access.js";
 
 /** Room identity and the real save state, outside the camera's sightline. */
 export function ReferenceRoomHeader(): ReactElement {
@@ -19,12 +20,19 @@ export function ReferenceRoomHeader(): ReactElement {
   const saveError = useEditorStore((state) => state.saveError);
   const saveConflict = useEditorStore((state) => state.saveConflict);
   const configId = useEditorStore((state) => state.configId);
-  const authenticated = useAuthStore((state) => state.isAuthenticated);
+  const auth = useAuthStore();
+  const authenticated = !auth.isLoading && auth.isAuthenticated;
+  const [searchParams] = useSearchParams();
+  const eventId = searchParams.get("eventId");
+  const operational = canReadInternalEventData(auth);
+  const customer = !operational && isCustomerRole(auth.user?.role);
+  const homePath = operational ? "/diary" : authenticated && customer && eventId !== null ? customerEventPath(eventId) : "/";
+  const homeLabel = operational ? "diary" : authenticated && customer && eventId !== null ? "event details" : "home";
   const previewLocked = useLayoutTimelinePreviewStore((state) => state.mode !== "inactive");
   const saveLabel = configId === null ? "No saved layout" : saving ? "Saving layout" : saveConflict !== null ? "Reload layout" : saveError !== null ? "Retry save" : dirty ? "Save layout" : "Layout saved";
   return (
     <header className="reference-room-header" aria-label="Room and save status">
-      <Link to={authenticated ? "/diary" : "/"} className="reference-wordmark" aria-busy={venue.loading} aria-label={`${venue.name} ${authenticated ? "diary" : "home"}`}>
+      <Link to={homePath} className="reference-wordmark" aria-busy={venue.loading} aria-label={`${venue.name} ${homeLabel}`}>
         {venue.logoUrl !== null && venue.logoUrl !== failedLogo
           ? <img src={venue.logoUrl} width="32" height="40" alt="" onError={() => { setFailedLogo(venue.logoUrl); }} />
           : <Building2 className="reference-venue-icon" size={28} aria-hidden="true" />}

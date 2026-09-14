@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { configurations, events } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessInternalEvent, canAccessResource } from "../utils/query.js";
 import {
   OpsHandoffApprovedSnapshotRequiredError,
   OpsHandoffBlockingReviewGateError,
@@ -48,7 +48,6 @@ async function eventAccessResponse(
   eventId: string,
 ): Promise<"missing" | "forbidden" | "ok"> {
   const [event] = await db.select({
-    createdBy: events.createdBy,
     venueId: events.venueId,
   })
     .from(events)
@@ -56,7 +55,7 @@ async function eventAccessResponse(
     .limit(1);
 
   if (event === undefined) return "missing";
-  return canAccessResource(user, event.createdBy, event.venueId) ? "ok" : "forbidden";
+  return canAccessInternalEvent(user, event.venueId) ? "ok" : "forbidden";
 }
 
 export async function opsHandoffRoutes(server: FastifyInstance, opts: { db: Database }): Promise<void> {
@@ -153,6 +152,16 @@ export async function opsHandoffRoutes(server: FastifyInstance, opts: { db: Data
     }
     if (access === "forbidden") {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+    }
+
+    if (bundle.pack.eventId !== null) {
+      const eventAccess = await eventAccessResponse(db, request.user, bundle.pack.eventId);
+      if (eventAccess === "missing") {
+        return reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
+      }
+      if (eventAccess === "forbidden") {
+        return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
+      }
     }
 
     return { data: bundle };

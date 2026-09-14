@@ -1,4 +1,5 @@
 import { type ReactElement } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ShieldQuestion, Layers3, Eye, EyeOff } from "lucide-react";
 import { ActivityIndicator, ActivityStatus } from "../../shared/Activity.js";
 import { useEditorStore } from "../../../stores/editor-store.js";
@@ -8,6 +9,8 @@ import { useLayoutTimelinePreviewStore } from "../../../stores/layout-timeline-p
 import { buildTopBarModel } from "../../../lib/cockpit-topbar-model.js";
 import { COCKPIT_OVERLAY_KEYS, type CockpitOverlayKey } from "../../../lib/cockpit-modes.js";
 import { useLinkedEvent, type LinkedEvent } from "../../../hooks/use-linked-event.js";
+import { useClientEventSchedule } from "../../../hooks/use-client-event-schedule.js";
+import { isCustomerRole } from "../../../lib/event-access.js";
 import "./CockpitTopBar.css";
 
 const OVERLAY_LABELS: Readonly<Record<CockpitOverlayKey, string>> = {
@@ -62,6 +65,9 @@ export function CockpitTopBar(): ReactElement {
   const previewMessage = useLayoutTimelinePreviewStore((state) => state.unavailableMessage);
   const previewObjectCount = useLayoutTimelinePreviewStore((state) => state.currentItems.length);
   const linked = useLinkedEvent(venueId);
+  const [searchParams] = useSearchParams();
+  const customer = user?.platformRole !== "admin" && isCustomerRole(user?.role);
+  const customerSchedule = useClientEventSchedule(searchParams.get("eventId"), { configurationId: configId, expectedVenueId: venueId, enabled: customer });
   const previewActive = previewMode !== "inactive";
   const objectCount = previewActive ? previewObjectCount : savedObjectCount;
 
@@ -77,8 +83,10 @@ export function CockpitTopBar(): ReactElement {
   const activePhase = linked.graph !== null
     ? (linked.graph.phases.find((phase) => phase.id === selectedPhaseId) ?? linked.graph.phases[0] ?? null)
     : null;
+  const customerEvent: EventCell = { kicker: "Your event", value: customerSchedule.data?.event.name
+    ?? (customerSchedule.status === "loading" ? "Loading event…" : customerSchedule.status === "none" ? "No event linked" : "Event unavailable") };
   const event = !previewActive
-    ? eventCell(linked, activePhase?.name ?? null)
+    ? customer ? customerEvent : eventCell(linked, activePhase?.name ?? null)
     : previewMode === "schedule-gap" ? {
         kicker: "Schedule gap",
         value: "No scheduled phase",
@@ -124,7 +132,7 @@ export function CockpitTopBar(): ReactElement {
       <div className="cockpit-topbar__cell">
         <span className="cockpit-topbar__kicker">{event.kicker}</span>
         <strong className="cockpit-topbar__value cockpit-topbar__event">
-          {previewLoading || (!previewActive && linked.status === "loading")
+          {previewLoading || (!previewActive && (customer ? customerSchedule.status === "loading" : linked.status === "loading"))
             ? <ActivityStatus>{event.value}</ActivityStatus>
             : event.value}
         </strong>

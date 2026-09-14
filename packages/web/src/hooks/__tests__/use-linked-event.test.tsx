@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -9,6 +9,10 @@ vi.mock("../../api/events.js", () => ({ getEventPhaseGraph: vi.fn() }));
 const eventsApi = vi.mocked(await import("../../api/events.js"));
 const { useLinkedEvent } = await import("../use-linked-event.js");
 const { useAuthStore } = await import("../../stores/auth-store.js");
+
+beforeEach(() => {
+  useAuthStore.getState().setUser({ id: "initial-staff", role: "staff", platformRole: "none", venueId: fakeGraph.event.venueId, name: "Staff", email: "staff@example.test" });
+});
 
 afterEach(() => {
   cleanup();
@@ -55,6 +59,29 @@ function deferred<T>(): { readonly promise: Promise<T>; readonly resolve: (value
 }
 
 describe("useLinkedEvent", () => {
+  it.each(["checking", "signed out", "unknown role"])("does not request internal data while %s", (state) => {
+    if (state === "checking") useAuthStore.getState().setLoading(true);
+    else if (state === "signed out") useAuthStore.getState().logout();
+    else useAuthStore.getState().setUser({ id: "unknown", role: "caterer", platformRole: "none", venueId: fakeGraph.event.venueId, name: "Unknown", email: "unknown@example.test" });
+    const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`) });
+    expect(result.current.status).toBe("none");
+    expect(eventsApi.getEventPhaseGraph).not.toHaveBeenCalled();
+  });
+
+  it("allows a current platform admin with a customer base role", async () => {
+    useAuthStore.getState().setUser({ id: "platform-admin", role: "planner", platformRole: "admin", venueId: null, name: "Platform", email: "platform@example.test" });
+    eventsApi.getEventPhaseGraph.mockResolvedValue(fakeGraph);
+    const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`) });
+    await waitFor(() => { expect(result.current.status).toBe("loaded"); });
+    expect(eventsApi.getEventPhaseGraph).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["client", "planner"])("does not fetch the internal phase graph for a %s", (role) => {
+    useAuthStore.getState().setUser({ id: "customer", role, platformRole: "none", venueId: null, name: "Customer", email: "customer@example.test" });
+    const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`) });
+    expect(result.current.status).toBe("none");
+    expect(eventsApi.getEventPhaseGraph).not.toHaveBeenCalled();
+  });
   it("reports 'none' with no eventId param and never calls the API", () => {
     const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor("/plan/cfg-1") });
     expect(result.current.status).toBe("none");
@@ -139,13 +166,11 @@ describe("useLinkedEvent", () => {
   });
 
   it("masks stale graph data and ignores late responses across auth changes and logout", async () => {
-    const anonymous = deferred<EventPhaseGraph>();
+    const priorStaff = deferred<EventPhaseGraph>();
     const staff = deferred<EventPhaseGraph>();
-    const loggedOut = deferred<EventPhaseGraph>();
     eventsApi.getEventPhaseGraph
-      .mockImplementationOnce(() => anonymous.promise)
-      .mockImplementationOnce(() => staff.promise)
-      .mockImplementationOnce(() => loggedOut.promise);
+      .mockImplementationOnce(() => priorStaff.promise)
+      .mockImplementationOnce(() => staff.promise);
     const { result } = renderHook(() => useLinkedEvent(), {
       wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`),
     });
@@ -163,18 +188,27 @@ describe("useLinkedEvent", () => {
     });
     expect(result.current.status).toBe("loading");
     expect(result.current.graph).toBeNull();
-    act(() => { anonymous.resolve(fakeGraph); });
+    act(() => { priorStaff.resolve(fakeGraph); });
     expect(result.current.status).toBe("loading");
     act(() => { staff.resolve(fakeGraph); });
     await waitFor(() => { expect(result.current.status).toBe("loaded"); });
 
     act(() => { useAuthStore.getState().logout(); });
-    expect(result.current.status).toBe("loading");
+    expect(result.current.status).toBe("none");
     expect(result.current.graph).toBeNull();
     expect(result.current.eventName).toBeNull();
-    act(() => { loggedOut.resolve(fakeGraph); });
-    await waitFor(() => { expect(result.current.status).toBe("loaded"); });
-    expect(eventsApi.getEventPhaseGraph).toHaveBeenCalledTimes(3);
+    expect(eventsApi.getEventPhaseGraph).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores an in-flight internal response after logout", async () => {
+    const pending = deferred<EventPhaseGraph>();
+    eventsApi.getEventPhaseGraph.mockImplementationOnce(() => pending.promise);
+    const { result } = renderHook(() => useLinkedEvent(), { wrapper: wrapperFor(`/plan/cfg-1?eventId=${fakeGraph.event.id}`) });
+    act(() => { useAuthStore.getState().logout(); });
+    await act(async () => { pending.resolve(fakeGraph); await pending.promise; });
+    expect(result.current.status).toBe("none");
+    expect(result.current.graph).toBeNull();
+    expect(eventsApi.getEventPhaseGraph).toHaveBeenCalledTimes(1);
   });
 
   it("masks stale data and ignores a late response when the live URL eventId changes", async () => {

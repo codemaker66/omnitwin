@@ -9,7 +9,7 @@ import { useAuthStore } from "../../../../stores/auth-store.js";
 
 // ---------------------------------------------------------------------------
 // The When ribbon's render contract (Day Board S2): gating (staff/admin
-// write, everyone else read-only), the honest "not in the Diary" state,
+// write, hallkeeper read-only, customers use their event projection), the honest "not in the Diary" state,
 // ghosts + hatched buffers on the strip, and the commit path — keyboard
 // driven (the pointer physics live in the pure model's own tests), with
 // the ink-resists confirm step and the raced-slot rollback.
@@ -106,12 +106,12 @@ function calendarFixture(entries: CalendarResponse["entries"]): CalendarResponse
   };
 }
 
-function seedUser(role: "staff" | "planner"): void {
+function seedUser(role: string, platformRole: "none" | "admin" = "none"): void {
   useAuthStore.getState().setUser({
     id: "00000000-0000-4000-8000-0000000000ff",
     email: "user@tradeshall.co.uk",
     role,
-    platformRole: "none",
+    platformRole,
     venueId: VENUE,
     name: "Test User",
   });
@@ -136,6 +136,29 @@ afterEach(() => {
 });
 
 describe("WhenRibbon", () => {
+  it.each(["checking", "signed out", "unknown role"])("does not mount the venue calendar while %s", (state) => {
+    if (state === "checking") useAuthStore.getState().setLoading(true);
+    else if (state === "signed out") useAuthStore.getState().logout();
+    else seedUser("caterer");
+    renderRibbon();
+    expect(getCalendarMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("when-ribbon-ingot")).toBeNull();
+  });
+
+  it("retains the venue calendar for a platform admin with a customer base role", async () => {
+    seedUser("planner", "admin");
+    getCalendarMock.mockResolvedValue(calendarFixture([booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT })]));
+    renderRibbon();
+    expect(await screen.findByTestId("when-ribbon-ingot")).toBeTruthy();
+    expect(getCalendarMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["client", "planner"] as const)("does not request the venue calendar for a %s", (role) => {
+    seedUser(role);
+    renderRibbon();
+    expect(getCalendarMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("when-ribbon-ingot")).toBeNull();
+  });
   it("shows activity during the calendar request", () => {
     getCalendarMock.mockReturnValue(new Promise(() => {}));
     renderRibbon();
@@ -271,7 +294,7 @@ describe("WhenRibbon", () => {
 
   it("a non-staff viewer gets a read-only strip: no handles, no drag affordance", async () => {
     useAuthStore.getState().logout();
-    seedUser("planner");
+    seedUser("hallkeeper");
     getCalendarMock.mockResolvedValue(
       calendarFixture([booking(SELF, NOON, NOON + 120 * MIN, { eventId: EVENT })]),
     );

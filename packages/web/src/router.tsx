@@ -3,6 +3,7 @@ import { useAuthStore } from "./stores/auth-store.js";
 import { createBrowserRouter, Navigate, useLocation, type RouteObject } from "react-router-dom";
 import { hasLikelyClerkSession } from "./lib/clerk-session-hint.js";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute.js";
+import { InternalEventRoute } from "./components/auth/InternalEventRoute.js";
 import { RoleAwareRedirect } from "./components/auth/RoleAwareRedirect.js";
 import { RouteArrival } from "./components/shared/RouteArrival.js";
 
@@ -50,6 +51,9 @@ const ClerkRouteProvider = lazy(() =>
 );
 const EditorPage = lazy(() =>
   cockpitImport(() => import("./pages/EditorPage.js").then((m) => ({ default: m.EditorPage }))),
+);
+const ClientEventPage = lazy(() =>
+  cockpitImport(() => import("./pages/ClientEventPage.js").then((m) => ({ default: m.ClientEventPage }))),
 );
 const BlueprintPage = lazy(() =>
   cockpitImport(() => import("./pages/BlueprintPage.js").then((m) => ({ default: m.BlueprintPage }))),
@@ -430,25 +434,33 @@ export const router = createBrowserRouter([
   {
     path: "/ops/events/:eventId",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+      <InternalEventRoute>
         <EventDayOpsPage />
+      </InternalEventRoute>,
+    ),
+  },
+  {
+    path: "/events/:eventId",
+    element: withClerk(
+      <ProtectedRoute>
+        <ClientEventPage />
       </ProtectedRoute>,
     ),
   },
   {
     path: "/event-architect",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+      <InternalEventRoute>
         <EventArchitectPage />
-      </ProtectedRoute>,
+      </InternalEventRoute>,
     ),
   },
   {
     path: "/event-architect/runs/:runId",
     element: withClerk(
-      <ProtectedRoute allowedRoles={["admin", "hallkeeper", "planner", "staff"]}>
+      <InternalEventRoute>
         <EventArchitectPage />
-      </ProtectedRoute>,
+      </InternalEventRoute>,
     ),
   },
   {

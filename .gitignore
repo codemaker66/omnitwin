@@ -35,6 +35,9 @@ packages/api/src/scripts/customers.json
 # Production-smoke saved auth session (playwright storage state; never commit).
 .smoke/
 
+# Disposable database gate receipts are retained locally or in CI artifacts.
+packages/api/.test-results/
+
 # One-off `tree` scratchpads — regenerate locally as needed.
 web-structure.txt
 

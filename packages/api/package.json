@@ -12,6 +12,7 @@
     "test": "vitest run --exclude src/__tests__/integration.test.ts",
     "test:integration": "vitest run src/__tests__/integration.test.ts",
     "test:platform-db": "tsx src/scripts/run-platform-postgres-tests.ts",
+    "test:event-access-db": "tsx src/scripts/run-event-access-postgres-tests.ts",
     "test:watch": "vitest watch --exclude src/__tests__/integration.test.ts",
     "lint": "eslint src/",
     "clean": "rm -rf dist",

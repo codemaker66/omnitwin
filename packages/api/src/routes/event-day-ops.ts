@@ -14,7 +14,7 @@ import {
 import type { Database } from "../db/client.js";
 import { eventPhases, events, handoffPacks, opsTasks } from "../db/schema.js";
 import { authenticate } from "../middleware/auth.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessInternalEvent } from "../utils/query.js";
 import {
   EventDayIssueNotFoundError,
   EventDayTaskNotFoundError,
@@ -30,7 +30,7 @@ const EventIdParam = z.object({ id: z.string().uuid() });
 const IssueParam = z.object({ id: z.string().uuid(), issueId: z.string().uuid() });
 const OpsTaskIdParam = z.object({ id: z.string().uuid() });
 
-type FastifyRequestUser = Parameters<typeof canAccessResource>[0];
+type FastifyRequestUser = Parameters<typeof canAccessInternalEvent>[0];
 type EventRow = typeof events.$inferSelect;
 
 function boundedLifecycleSummary(summary: string): string {
@@ -54,7 +54,7 @@ async function requireEventAccess(
     void reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
     return null;
   }
-  if (!canAccessResource(request.user, eventRow.createdBy, eventRow.venueId)) {
+  if (!canAccessInternalEvent(request.user, eventRow.venueId)) {
     void reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     return null;
   }
@@ -67,7 +67,6 @@ async function opsTaskAccessResponse(
   opsTaskId: string,
 ): Promise<"missing" | "forbidden" | "ok"> {
   const [joined] = await db.select({
-    createdBy: events.createdBy,
     venueId: events.venueId,
   })
     .from(opsTasks)
@@ -77,7 +76,7 @@ async function opsTaskAccessResponse(
     .limit(1);
 
   if (joined === undefined) return "missing";
-  return canAccessResource(user, joined.createdBy, joined.venueId) ? "ok" : "forbidden";
+  return canAccessInternalEvent(user, joined.venueId) ? "ok" : "forbidden";
 }
 
 async function validateIssueReferences(

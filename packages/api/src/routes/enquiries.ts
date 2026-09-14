@@ -5,7 +5,7 @@ import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, 
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
-import { canAccessResource } from "../utils/query.js";
+import { canAccessResource, canManageVenue } from "../utils/query.js";
 import { canTransition, ENQUIRY_STATES } from "../state-machines/enquiry.js";
 import { calculatePrice, type PricingRuleInput } from "../services/price-calculator.js";
 import { sendEmailAsync } from "../services/email.js";
@@ -75,7 +75,7 @@ export async function enquiryRoutes(
 
     if (isPlatformAdmin(user)) {
       // Admin sees all
-    } else if ((user.role === "staff" || user.role === "hallkeeper") && user.venueId !== null) {
+    } else if (user.venueId !== null && canManageVenue(user, user.venueId)) {
       whereConditions.push(eq(enquiries.venueId, user.venueId));
     } else {
       whereConditions.push(eq(enquiries.userId, user.id));

@@ -377,7 +377,7 @@ beforeEach(() => {
     isDirty: false,
     isPublicPreview: false,
   });
-  useAuthStore.getState().logout();
+  useAuthStore.getState().setUser({ id: "initial-staff", email: "staff@example.test", role: "staff", platformRole: "none", venueId: VENUE_ID, name: "Staff" });
 });
 
 afterEach(() => {
@@ -391,6 +391,16 @@ afterEach(() => {
 });
 
 describe("CockpitBottom room layout timeline", () => {
+  it.each(["checking", "signed out", "unknown role"])("does not request the internal timeline while %s", (state) => {
+    if (state === "checking") useAuthStore.getState().setLoading(true);
+    else if (state === "signed out") useAuthStore.getState().logout();
+    else useAuthStore.getState().setUser({ id: "unknown", role: "caterer", platformRole: "none", venueId: VENUE_ID, name: "Unknown", email: "unknown@example.test" });
+    renderBottom();
+    expect(timelineApi.getRoomLayoutTimeline).not.toHaveBeenCalled();
+    expect(eventsApi.getEventPhaseGraph).not.toHaveBeenCalled();
+    expect(screen.queryByText("Loading room timeline")).toBeNull();
+  });
+
   it("keeps an ordinary room planner editable when frozen history loads", async () => {
     useCockpitStore.getState().selectPhase("saved-plan-phase");
     const savedObjects = useEditorStore.getState().objects;
@@ -1284,9 +1294,7 @@ describe("CockpitBottom room layout timeline", () => {
       venueId: VENUE_ID,
       name: "Venue Admin",
     });
-    timelineApi.getRoomLayoutTimeline
-      .mockResolvedValueOnce(response([arrival, dinner]))
-      .mockImplementationOnce(() => new Promise<RoomLayoutTimelineResponse>(() => undefined));
+    timelineApi.getRoomLayoutTimeline.mockResolvedValueOnce(response([arrival, dinner]));
     renderBottom();
     await screen.findByLabelText("Revenue: £28,750");
     expect(screen.getAllByText("Elaine & James").length).toBeGreaterThan(0);
@@ -1296,16 +1304,17 @@ describe("CockpitBottom room layout timeline", () => {
     });
     expect(screen.queryByLabelText("Revenue: £28,750")).toBeNull();
     expect(screen.queryByText("Elaine & James")).toBeNull();
-    expect(screen.getByText("Loading room timeline")).toBeTruthy();
-    await waitFor(() => { expect(timelineApi.getRoomLayoutTimeline).toHaveBeenCalledTimes(2); });
+    expect(screen.getByText("No event is linked to this layout yet. You can keep working on your room plan.")).toBeTruthy();
+    expect(timelineApi.getRoomLayoutTimeline).toHaveBeenCalledTimes(1);
+    expect(useLayoutTimelinePreviewStore.getState().mode).toBe("inactive");
   });
 
-  it("retries a previously unauthorized read when an anonymous user signs in", async () => {
-    timelineApi.getRoomLayoutTimeline
-      .mockRejectedValueOnce(new Error("Unauthorized"))
-      .mockResolvedValueOnce(response([arrival, dinner]));
+  it("starts the internal read only after an anonymous user signs in with authority", async () => {
+    useAuthStore.getState().logout();
+    timelineApi.getRoomLayoutTimeline.mockResolvedValueOnce(response([arrival, dinner]));
     renderBottom();
-    await screen.findByText("Room timeline unavailable");
+    expect(timelineApi.getRoomLayoutTimeline).not.toHaveBeenCalled();
+    expect(screen.queryByText("Room timeline unavailable")).toBeNull();
 
     act(() => {
       useAuthStore.getState().setUser({
@@ -1319,7 +1328,7 @@ describe("CockpitBottom room layout timeline", () => {
     });
 
     expect(await screen.findByLabelText("Revenue: £28,750")).toBeTruthy();
-    expect(timelineApi.getRoomLayoutTimeline).toHaveBeenCalledTimes(2);
+    expect(timelineApi.getRoomLayoutTimeline).toHaveBeenCalledTimes(1);
   });
 
   it("hides freeze when the active frame belongs to another event", async () => {
