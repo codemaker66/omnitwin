@@ -396,6 +396,12 @@ export interface DollhouseStageProps {
   /** Render only this storey's dots (the plan's active level). Undefined
    *  renders every dot, as the dollhouse always has. */
   readonly dotFloor?: number;
+  /** Immersive (fullscreen): drop the viewpoint dots entirely. They are an
+   *  affordance drawn over the model, and fullscreen is a promise that the
+   *  building gets the screen to itself. Diving still works — it is the dot's
+   *  own click that starts a dive, so the way in is to leave fullscreen, which
+   *  is one Escape away. */
+  readonly immersive?: boolean;
 }
 
 export function DollhouseStage({
@@ -406,6 +412,7 @@ export function DollhouseStage({
   cutaway,
   planSection,
   dotFloor,
+  immersive = false,
 }: DollhouseStageProps): ReactElement {
   const cutawayPlane = useMemo(() => {
     const plane = new Plane();
@@ -459,19 +466,24 @@ export function DollhouseStage({
           {...(planSection === undefined ? {} : { sectionCutY: planSection.cutY })}
         />
       )}
-      <group>
-        {nodes
-          .filter((node) => dotFloor === undefined || node.floor === dotFloor)
-          .map((node) => (
-            <DollhouseDot
-              key={node.id}
-              node={node}
-              isCurrent={node.id === currentId}
-              onDive={onDive}
-              clippingPlanes={clippingPlanes}
-            />
-          ))}
-      </group>
+      {/* Not `visible={false}`: an invisible dot still owns its hit disc, so
+          the model would keep answering clicks with a dive the visitor has no
+          way to see coming. Unmounting takes the affordance away honestly. */}
+      {!immersive && (
+        <group>
+          {nodes
+            .filter((node) => dotFloor === undefined || node.floor === dotFloor)
+            .map((node) => (
+              <DollhouseDot
+                key={node.id}
+                node={node}
+                isCurrent={node.id === currentId}
+                onDive={onDive}
+                clippingPlanes={clippingPlanes}
+              />
+            ))}
+        </group>
+      )}
     </group>
   );
 }

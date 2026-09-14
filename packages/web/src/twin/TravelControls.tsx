@@ -55,6 +55,11 @@ export interface TravelControlsProps {
   /** Hands the glide the camera-relative travel cone so a held ride can keep
    *  growing its route; returns the unregister. */
   readonly registerNextPicker: (picker: GlideNextPicker) => () => void;
+  /** Immersive (fullscreen): no floor reticle. Travel is untouched — the cone
+   *  still picks a destination from wherever the visitor clicks, and WASD is
+   *  unchanged. What goes is the gold ring drawn on the photograph to promise
+   *  where a click would land. */
+  readonly immersive?: boolean;
 }
 
 const scratchDir = new Vector3();
@@ -81,6 +86,7 @@ export function TravelControls({
   onTravel,
   onHoldChange,
   registerNextPicker,
+  immersive = false,
 }: TravelControlsProps): React.JSX.Element | null {
   const camera = useThree((state) => state.camera);
   const gl = useThree((state) => state.gl);
@@ -341,7 +347,10 @@ export function TravelControls({
     }
   }, [enabled, hopping, currentNode, neighbors]);
 
-  if (!enabled) {
+  // Immersive unmounts the reticle rather than hiding it. The pointer effect
+  // above already no-ops when `reticleRef.current` is null, so aiming simply
+  // stops drawing while click-travel keeps working.
+  if (!enabled || immersive) {
     return null;
   }
   return (

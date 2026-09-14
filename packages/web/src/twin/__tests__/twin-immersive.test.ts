@@ -126,6 +126,48 @@ describe("fullscreen is immersive", () => {
     );
   });
 
+  it("also silences the overlays three.js draws, which no stylesheet can reach", () => {
+    // The half a CSS rule cannot do. Each of these is painted into the canvas,
+    // so the only way to remove it is to stop mounting it — and the first pass
+    // of this feature shipped without them, hiding every pill while leaving
+    // gold nav lines printed across the parquet.
+    const gated = ["FloorConstellation", "NavMarkers"];
+    for (const name of gated) {
+      const mount = VIEWER_SOURCE.indexOf(`<${name}`);
+      expect(mount, `${name} is not mounted`).toBeGreaterThan(-1);
+      // The guard sits immediately before the mount, inside the same branch.
+      const preceding = VIEWER_SOURCE.slice(Math.max(0, mount - 200), mount);
+      expect(preceding, `${name} renders in immersive mode`).toContain("!immersive");
+    }
+    // The reticle and the dollhouse dots are gated inside their own
+    // components, so the viewer's job is only to pass the flag down.
+    expect(VIEWER_SOURCE).toContain("immersive={immersive}");
+    expect(source("src/twin/TravelControls.tsx")).toContain("!enabled || immersive");
+    expect(source("src/twin/DollhouseStage.tsx")).toContain("{!immersive && (");
+  });
+
+  it("unmounts those overlays rather than hiding them", () => {
+    // An invisible dot still owns its hit disc: the model would keep answering
+    // clicks with a dive the visitor cannot see coming. Same for the reticle.
+    const dollhouse = source("src/twin/DollhouseStage.tsx");
+    expect(dollhouse).not.toMatch(/immersive[^\n]*visible=\{false\}/);
+    expect(dollhouse).toContain("{!immersive && (");
+  });
+
+  it("leaves travel itself alone — only the ink goes", () => {
+    // Removing the affordance must not remove the ability. Click-travel and
+    // WASD live in effects that are not gated on immersive.
+    const travel = source("src/twin/TravelControls.tsx");
+    const guard = travel.indexOf("!enabled || immersive");
+    const keyEffect = travel.indexOf('window.addEventListener("keydown"');
+    const clickEffect = travel.indexOf('element.addEventListener("click"');
+    expect(keyEffect, "keyboard travel missing").toBeGreaterThan(-1);
+    expect(clickEffect, "click travel missing").toBeGreaterThan(-1);
+    // Both are wired above the early return, so neither is skipped by it.
+    expect(keyEffect).toBeLessThan(guard);
+    expect(clickEffect).toBeLessThan(guard);
+  });
+
   it("needs no !important to win, and uses none", () => {
     const start = TWIN_CSS.indexOf(".vv-twin-viewer:fullscreen");
     const block = TWIN_CSS.slice(start, start + 600);

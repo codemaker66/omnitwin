@@ -1649,6 +1649,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
               onTravel={walk.hopTo}
               onHoldChange={walk.setHeld}
               registerNextPicker={walk.registerNextPicker}
+              immersive={immersive}
             />
             {stages.map(({ node, opacity, renderOrder, opacityRef }) => (
               <PanoStage
@@ -1744,6 +1745,7 @@ export function TwinViewer({ manifest, assetBase }: TwinViewerProps): ReactEleme
                         dotFloor: activePlanStorey.floor,
                       }
                     : {})}
+                  immersive={immersive}
                   onDive={(id) => {
                     // A dot press while measuring would fly the visitor into
                     // the walk mid-measurement, taking the geometry the picks
