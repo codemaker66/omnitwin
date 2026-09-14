@@ -1,0 +1,16 @@
+.scene-annotations { position: absolute; inset: 0; visibility: hidden; pointer-events: none; font: 500 13px/1.45 Inter, system-ui, sans-serif; color: #fdf6e7; }
+.scene-annotations__leaders { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.scene-annotations__leaders line { stroke-width: 1.25; opacity: .7; }
+.scene-annotations__viewport { position: absolute; inset: 0; pointer-events: none; }
+.scene-annotations__cards { position: relative; }
+.scene-annotations__card { position: absolute; box-sizing: border-box; width: 244px; border: 1px solid var(--annotation-color); border-radius: 12px; background: rgba(20, 18, 14, .96); box-shadow: 0 5px 18px #0005; pointer-events: auto; overflow-wrap: anywhere; }
+.scene-annotations__button { display: block; min-height: 44px; width: 100%; padding: 11px 13px; border: 0; border-radius: 11px; background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: left; white-space: normal; cursor: pointer; }
+.scene-annotations__button:hover { background: #ffffff0b; }
+.scene-annotations__button:focus-visible, .scene-annotations__dismiss:focus-visible, .scene-annotations__viewport:focus-visible { outline: 2px solid #ffe0a5; outline-offset: 3px; }
+.scene-annotations__location:not([hidden]) { display: block; color: #c8bea9; font-size: 12px; font-weight: 400; }
+.scene-annotations__detail { margin: 0; padding: 0 13px 4px; }
+.scene-annotations__dismiss { min-height: 44px; margin: 2px 8px 8px; padding: 8px; border: 1px solid #a9906555; border-radius: 8px; background: #ffffff08; color: inherit; font: inherit; cursor: pointer; }
+.scene-annotations__list-label { display: none; }
+.scene-annotations[data-layout="list"] .scene-annotations__viewport { inset: auto; overflow: auto; pointer-events: auto; border: 1px solid #a9906555; border-radius: 12px; background: rgba(20, 18, 14, .94); overscroll-behavior: contain; scrollbar-width: thin; scrollbar-gutter: stable; scroll-padding-block: 60px 12px; }
+.scene-annotations[data-layout="list"] .scene-annotations__list-label { display: block; margin: 0; padding: 12px; min-height: 44px; box-sizing: border-box; background: #18150f; font-size: 12px; }
+.scene-annotations[data-layout="list"] .scene-annotations__card { border-radius: 8px; }
