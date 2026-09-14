@@ -52,7 +52,7 @@ export function useClientEventSchedule(eventId: string | null, options: Options 
       if (controller.signal.aborted || generation.current !== currentGeneration) return;
       if (data.event.id !== eventId || data.venue.id !== data.event.venueId
         || (expectedVenueId !== undefined && data.event.venueId !== expectedVenueId)
-        || (configurationId !== null && configurationId !== undefined && !data.layouts.some((layout) => layout.id === configurationId))) {
+        || (configurationId !== undefined && !data.layouts.some((layout) => layout.id === configurationId))) {
         setResult({ key, status: "error", data: null });
         return;
       }
