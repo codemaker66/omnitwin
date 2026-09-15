@@ -19,6 +19,8 @@ Blake's instruction, verbatim: "I want you to review our ambitions and the md an
 
 ## What this is
 
+Latest addition, 15 September (afternoon): [Goal 18 — Ship Friday](18-ship-friday.md) is the runnable form of plan 18 for Opus worker sessions: one captain on the T-601 release lane, twelve lanes on a `release/r1` integration branch with one Friday merge, the thirty-line gate, two checkpoints and the kill order. Paste its `/goal` block; workers claim lanes under a "Ship Friday" heading in [EXECUTION.md](EXECUTION.md).
+
 Latest addition, 15 September: [plan 18 — Ship Friday](../docs/plan/18-SHIP-FRIDAY-ULTRA-PLAN-2026-09-14.md) is the release train for Blake's Friday 18 September public-ready instruction: Release 1's Definition of Shippable and thirteen lanes, then R2–R5 carrying goals 03–07 and 09–10 as the veteran panel's fifty-nine clusters. It sequences this deck; it does not replace it.
 
 Execution has started on Blake's instruction. See [EXECUTION.md](EXECUTION.md) for active owners, isolated branches, acceptance gates and verified results. Workers coordinate there before taking a slice.
@@ -52,6 +54,7 @@ Take goals in the order below unless a goal says it runs in parallel. Never take
 | 08 | The Foundry | Own reconstruction and the research frontier; a parallel lane, money-capped. |
 | 09 | The venue's mind | Intelligence, once 06 gives it dependable facts. |
 | 10 | The platform | Repeatable for a second venue; CI made truthful; the frontier register. |
+| 18 | [Ship Friday — Release 1 by Opus worker sessions](18-ship-friday.md) | The runnable form of plan 18: one captain, twelve lanes on `release/r1`, the thirty-line gate, checkpoints and the kill order; paste its `/goal` block into an Opus session. |
 
 ## The laws binding every goal
 
