@@ -16,7 +16,7 @@ hosted verification, coordinated integration and the changed live journey.
 
 The creation baseline is web/master54ebfc61 and API04dbd8bb, following the
 planner release recorded in the Goal17 working report.
-Current CI34919476716 has four failed E2E shards. The prior bounded comparison
+Creation-time CI34919476716 had four failed E2E shards. The prior bounded comparison
 covered only shards1/4 and4/4, whose33 failed names also failed on28209abc.
 This is a diagnostic lead, not proof that the other tests pass or all failures
 are harmless. Preserve initial logs, traces and failed images.
@@ -93,9 +93,38 @@ button-action cases, eight capture/tool cases across retained runs, and all 22
 Linux state-visual cases pass. The original walk-exit skip remains explicit.
 Web build, configuration/composer units, affected types and lint pass.
 
-Repairs and their evidence are committed locally. Complete Linux qualification
-is running as four sequential single-worker shards, with zero retries and no
-snapshot updates. Hosted qualification and production delivery remain open.
+The first candidate is pushed as draft PR16 at `957f2b00563ab40113e52152601e5ac1dfc03cc2`.
+Hosted CI34960484926 has closed: seven jobs passed and three failed. Every one of
+the 353 browser cases is accounted for: 298 ordinary passes, four executed expected
+failures, seven unexpected failures, two flaky passes and 42 original skips.
+No scheduled case was silently lost. The failed jobs are workspace tests and
+browser shards three/four; the audit, lint, types, build, native-image and first
+two browser shards passed.
+
+The complete independent Linux run closed with 290 ordinary passes, four executed
+expected failures, 17 failures and 42 original skips; all 353 names reconcile
+without omissions or retries. Follow-up corrections include the two schedule copy
+assertions (58 units pass), current Reviews/quiz controls, request boundaries and
+the two documented scenario deadlines. All 18 focused Linux cases now pass with
+zero retries and no snapshot updates; whole-E2E types and scoped lint pass.
+
+The passive registered-capture baseline still failed on default SwiftShader:
+53 returned render calls showed prolonged opacity development, and the final page
+screenshot exhausted the existing test budget. That evidence does not establish
+font-network causation or GPU presentation timing. A three-file dissolve candidate
+passes 45 focused units plus 54 planner/lighting/SS++ regressions, app/E2E types
+and scoped lint; the build also passes. The fix is committed locally as `ea07e8b2`.
+The corrected SwiftShader capture reaches exact full opacity but still times out
+at its viewport screenshot; the same workload passes on the explicitly selected
+RTX graphics backend. The software OpenGL comparison also passes in 40.2s; the
+three capture specs now select that verified backend in `f78e190f`. Types/lint pass,
+and all seven active capture cases pass with one original skip, zero retries and
+real cold downloads. The same diagnostic passes with Xvfb. The unchanged Twin
+suite under clean Xvfb still has two passes and three timing failures: 244ms
+longest hop task, and 66.7ms/50ms pano/dollhouse RAF p95. Actual Mesa rendering
+and matching source hashes are retained. Hosted capture qualification and the
+required GPU timing path remain open. PR16 is unmerged and
+no Goal17 product change is deployed. The working report retains exact receipts.
 
 The strengthened Twin benchmark records actual render submissions and camera
 movement during sustained native input. The same five cases, source, pixels and
