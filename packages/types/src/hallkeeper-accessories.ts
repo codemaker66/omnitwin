@@ -108,57 +108,73 @@ export type ImpliedAccessory = z.infer<typeof ImpliedAccessorySchema>;
 // truth for asset naming). Items not in the canonical catalogue can also
 // have rules here for future admin-created assets — `accessoriesFor`
 // returns [] for unknown names, so missing rules are safe.
+//
+// THE RULE FOR ADDING AN ACCESSORY: the hallkeeper sheet instructs staff to
+// physically lay an item out, so every `name` below must be dressing the
+// venue is evidenced to own. The earlier rules named "Gold Organza Runner",
+// "Ivory Tablecloth", "Floral Centrepiece (low)", "Acrylic Table Number",
+// "LED Pillar Candle", "Gold Chair Sash" and "Black Stage Skirt" — none of
+// which appears in Trades Hall's own equipment document of 2026-09-05. They
+// sent staff looking for stock that does not exist, so they are gone.
+//
+// What that document does record is linen: 16 black round table linens, 10
+// black and 10 white poseur linens, 60 black and 44 white chair covers, and
+// green/white main linen with a blank count. Only the two rules below are
+// backed by a stated quantity. Chair covers are deliberately NOT implied per
+// chair — 104 covers cannot dress 200 Chiavari chairs, so covering is an
+// event decision, not an automatic consequence of placing a chair. Main
+// (rectangular) linen has no stated quantity, so trestles imply nothing.
+//
+// Accessories are also not the place for technical consequences. A lectern's
+// water and a projector's cabling already travel as `equipmentTags`
+// ("water-supply", "av-cable-path") on the catalogue entry, which the event
+// sheet extractor renders as technical requirements; duplicating them here
+// produced a second, unsourced instruction for the same thing.
 export const ACCESSORY_RULES: Readonly<Record<string, readonly ImpliedAccessory[]>> = {
-  // --- Tables → cloth, runner, centrepiece, candles, number card ---
+  // --- Tables → the venue's own linen ---
   "6ft Round Table": [
-    { name: "Ivory Tablecloth", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
-    { name: "Gold Organza Runner", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 1 },
-    { name: "Floral Centrepiece (low)", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 2 },
-    { name: "Acrylic Table Number", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 2 },
-    { name: "LED Pillar Candle", category: "decor", quantityPerParent: 3, phase: "final", afterDepth: 0 },
+    { name: "Black Round Table Linen", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
   ],
-  "6ft Trestle Table": [
-    { name: "Rectangular Ivory Tablecloth", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
-    { name: "Gold Organza Runner", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 1 },
-  ],
-  "4ft Trestle Table": [
-    { name: "Rectangular Ivory Tablecloth", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
-    { name: "Gold Organza Runner", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 1 },
+  "Poseur Table": [
+    { name: "Black Poseur Table Linen", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
   ],
 
-  // --- Chairs → sash (one per chair, dressing phase) ---
-  "Banquet Chair": [
-    { name: "Gold Chair Sash", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
-  ],
-
-  // --- Stage → skirt to hide structure ---
-  "Platform": [
-    { name: "Black Stage Skirt", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
-  ],
-  "Narrow Platform": [
-    { name: "Black Stage Skirt", category: "decor", quantityPerParent: 1, phase: "dress", afterDepth: 0 },
-  ],
-
-  // --- AV → cables, associated kit ---
-  "Laser Projector": [
-    { name: "HDMI Cable (5m)", category: "av", quantityPerParent: 1, phase: "technical", afterDepth: 1 },
-  ],
-  "Projector Screen": [], // explicit — no accessories
+  // --- Explicitly nothing implied ---
+  // The cloth variants carry their dressing in the catalogue entry itself, so
+  // a second linen instruction would lay two cloths on one table.
+  "Poseur Table (Black)": [],
+  "Poseur Table (White)": [],
+  // No rectangular linen quantity is stated in the source document.
+  "6ft Trestle Table": [],
+  "4ft Trestle Table": [],
+  // Covers are an event decision (see the note above), not an implied item.
+  "Banquet Chair": [],
+  "Chiavari Wedding Chair": [],
+  // No stage skirt appears in the venue's equipment document.
+  "Platform": [],
+  "Narrow Platform": [],
+  // AV consequences travel as equipmentTags, not as accessories.
+  "Laser Projector": [],
+  "Projector Screen": [],
   "Table Microphone": [],
+  "Handheld Microphone": [],
+  "Lapel Microphone": [],
   "Mic Stand": [],
   "Laptop": [],
-  "Lectern": [
-    { name: "Bottled Water (500ml)", category: "decor", quantityPerParent: 1, phase: "final", afterDepth: 0 },
-  ],
+  "Lectern": [],
 
   // --- Decor ---
   "Black Table Cloth": [], // placed explicitly — no secondary dressings
+  "White Table Cloth": [],
 };
+
+/** Shared empty result so an unknown name also returns a stable reference. */
+const NO_ACCESSORIES: readonly ImpliedAccessory[] = Object.freeze([]);
 
 /**
  * Lookup accessories for an asset by name. Unknown names return [] so
  * every asset is safe to feed in without a cascade of missing-data errors.
  */
 export function accessoriesFor(assetName: string): readonly ImpliedAccessory[] {
-  return ACCESSORY_RULES[assetName] ?? [];
+  return ACCESSORY_RULES[assetName] ?? NO_ACCESSORIES;
 }
