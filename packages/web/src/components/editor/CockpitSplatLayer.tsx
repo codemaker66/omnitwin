@@ -2,6 +2,12 @@ import { Suspense, lazy, useCallback, useEffect, useRef, type ReactElement } fro
 import { useFrame, useThree } from "@react-three/fiber";
 import type { RuntimeAssetViewTransform } from "../../lib/runtime-package-resolution.js";
 import { prefersReducedMotion } from "../../lib/reduced-motion.js";
+import {
+  createDissolveChannel,
+  setDissolveTarget,
+  stepDissolveChannel,
+  type DissolveChannel,
+} from "../../lib/dissolve-channel.js";
 
 export interface CockpitSplatLayerProps {
   readonly urls: readonly string[];
@@ -18,7 +24,6 @@ export interface CockpitSplatLayerProps {
 }
 
 const DISSOLVE_EASE = 0.16;
-const DISSOLVE_SNAP = 0.012;
 // Per-chunk develop is slightly softer than the mode dissolve so arrivals
 // read as the room developing coarse-to-fine rather than popping (02 §6).
 const REVEAL_EASE = 0.12;
@@ -31,38 +36,10 @@ const LazySparkSplatLayer = lazy(async () => {
 /**
  * Ref-driven dissolve engine: every eased value lives in refs and is stepped
  * inside ONE useFrame, with SplatMesh opacity applied by SparkSplatLayer's
- * polled opacityFn — no React state anywhere in the loop.
- *
- * The previous implementation called setState per animation frame per chunk,
- * which reconciled all nine chunk components every frame of every dissolve.
- * With the stage full-bleed that render storm rode on top of frames already
- * heavy with gaussian sorting, and on a slow GPU the main thread saturated so
- * completely that pointer stability checks starved for minutes (found by the
- * walk e2e, confirmed by a CPU profile: 5,436 of 5,442 samples in native
- * paint).
- *
- * The step uses the frame-rate-independent form (1 - (1-ease)^(dt*60)), so the
- * dissolve settles in the same wall-clock time at any frame rate, and values
- * snap exactly onto their targets at the end — a demand loop must never be
- * left holding a sub-snap error it will not redraw.
+ * polled opacityFn. Per-channel timestamps preserve a fresh fade after demand
+ * idle while allowing genuinely slow active frames to catch up. No React
+ * state or per-frame reconciliation is introduced by this animation.
  */
-interface EasedChannel {
-  value: number;
-  target: number;
-}
-
-function stepChannel(channel: EasedChannel, ease: number, dtSeconds: number, reduced: boolean): boolean {
-  const delta = channel.target - channel.value;
-  if (delta === 0) return false;
-  if (reduced || Math.abs(delta) <= DISSOLVE_SNAP) {
-    channel.value = channel.target;
-    return true;
-  }
-  const clamped = Math.min(Math.max(dtSeconds, 0), 0.1);
-  channel.value += delta * (1 - Math.pow(1 - ease, clamped * 60));
-  return true;
-}
-
 interface RevealingSplatChunkProps {
   readonly url: string;
   readonly transform: RuntimeAssetViewTransform;
@@ -140,8 +117,8 @@ export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onCh
 
   // Every eased value lives here; nothing in the dissolve touches React state.
   // Initial shared value equals its target so a fresh mount does not fade.
-  const sharedRef = useRef<EasedChannel>({ value: active ? 1 : 0, target: active ? 1 : 0 });
-  const chunksRef = useRef<Map<string, EasedChannel>>(new Map());
+  const sharedRef = useRef<DissolveChannel>(createDissolveChannel(active ? 1 : 0, performance.now()));
+  const chunksRef = useRef<Map<string, DissolveChannel>>(new Map());
   const opacityFnsRef = useRef<Map<string, () => number>>(new Map());
 
   const opacityFnFor = useCallback((url: string): (() => number) => {
@@ -157,14 +134,15 @@ export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onCh
   // sustains it. (The two halves of invalidation — see the splat camera
   // gotcha; building only the second half reads as a frozen dissolve.)
   useEffect(() => {
-    sharedRef.current.target = active ? 1 : 0;
+    setDissolveTarget(sharedRef.current, active ? 1 : 0, DISSOLVE_EASE, performance.now());
     invalidate();
   }, [active, invalidate]);
 
   useEffect(() => {
     const known = new Set(urls);
+    const nowMs = performance.now();
     for (const url of urls) {
-      if (!chunksRef.current.has(url)) chunksRef.current.set(url, { value: 0, target: 0 });
+      if (!chunksRef.current.has(url)) chunksRef.current.set(url, createDissolveChannel(0, nowMs));
     }
     for (const url of [...chunksRef.current.keys()]) {
       if (!known.has(url)) {
@@ -177,7 +155,7 @@ export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onCh
 
   const handleChunkLoaded = useCallback((url: string) => {
     const channel = chunksRef.current.get(url);
-    if (channel !== undefined) channel.target = 1;
+    if (channel !== undefined) setDissolveTarget(channel, 1, REVEAL_EASE, performance.now());
     invalidate();
     onChunkLoadedRef.current?.(url);
   }, [invalidate]);
@@ -186,13 +164,14 @@ export function CockpitSplatLayer({ urls, transform, active, onChunkLoaded, onCh
     onChunkFailedRef.current?.(url);
   }, []);
 
-  useFrame((_state, delta) => {
+  useFrame(() => {
+    const nowMs = performance.now();
     const reduced = prefersReducedMotion();
-    let moving = stepChannel(sharedRef.current, DISSOLVE_EASE, delta, reduced);
+    let needsRedraw = stepDissolveChannel(sharedRef.current, DISSOLVE_EASE, nowMs, reduced);
     for (const channel of chunksRef.current.values()) {
-      if (stepChannel(channel, REVEAL_EASE, delta, reduced)) moving = true;
+      if (stepDissolveChannel(channel, REVEAL_EASE, nowMs, reduced)) needsRedraw = true;
     }
-    if (moving) invalidate();
+    if (needsRedraw) invalidate();
   });
 
   if (urls.length === 0) return null;
