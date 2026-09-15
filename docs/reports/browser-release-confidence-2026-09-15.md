@@ -303,11 +303,54 @@ longest task is 244ms against 150ms; pano and dollhouse RAF p95 are 66.7ms and
 the required performance gate. Retained receipt: native
 `output/qualification/t613-twin-native-gl-xvfb-linux-20260915/run-1/`.
 
-Resolve capture instability and the required GPU timing path without waiving
-coverage, validate follow-ups, then run the complete hosted gate on the next exact
-candidate. Integrate through T-601, verify production source/provider identity and
-exercise the changed authorized live flows. The successful Vercel PR preview is
-not production delivery. PR16 remains draft and unmerged.
+### Second hosted candidate
+
+PR16 now contains head `61ccc5a601f6fa69d71aadae40f3d797a08740ff`. Hosted
+run35008947128 uses merge `037fcc83c4244936b7d94914966b682b0525e362`; both trees
+are `a8fe4125a4392e24e2ee8e2a0bc2982a050addad`. The complete run has closed with
+nine passing jobs and one failure, browser shard four. Audit, lint, types, build,
+workspace Test, native-image and browser shards one/two/three passed.
+Platform PostgreSQL passed 60/60 and
+event access 53/53 with zero skips and 69 migrations/replay entries each.
+Native-image passed 12/12, digest
+`sha256:32fba1ec2e9d6d3a75453d21d0b23c8f6d8c57c469907a3dbdda06f7894f36ba`.
+
+The closed browser results contain 304 ordinary passes, four executed expected
+failures, three failures and 42 original skips, with no flaky outcomes. The skip
+identities match the prior run exactly; the capture worker group moved one
+quarantine between shards. All seven active capture cases pass on their first
+attempt, including real staged streaming and the full registered-capture viewport.
+Actual throttled diagnostics report first paint at 7028ms and five chunks resolved
+at 16979ms with 50Mbps configured; these are this fixture's hosted observations,
+not physical-device or general loading guarantees.
+
+Only the three unchanged Twin timing cases fail: the hop's longest tasks are
+224/202/191ms over its three attempts, pano RAF p95 is 50.1/66.8/66.6ms and
+dollhouse RAF p95 is 33.4/50.1/33.4ms. The actual observed renderer is Mesa
+llvmpipe. Their 150ms/20ms limits remain unchanged. Final source-bound inventory
+reconciliation accounts for all 353 unique cases: 311 executed, zero missing,
+extra, duplicate, unrun or interrupted cases. Six retry attempts belong only to
+the three timing failures. The original 42 skip identities and four executed
+expected-failure identities match the previous run exactly. The reconciler's
+exit1 denotes complete accounting with real failures, not a qualified release.
+
+Retained candidate artifacts and inspected capture screenshots:
+`output/qualification/hosted-pr16-35008947128/`. The screenshots establish the
+stated rendering/evidence-label behavior. The legacy capture's blurred appearance
+and alignment are not accepted, corrected or reclassified as fidelity evidence.
+
+Vercel Preview deployment6465933837 reports success at this exact head. Its
+homepage opens in the existing authenticated provider session, but following Plan
+Grand Hall fails because the preview requests `http://localhost:3001/venues`
+and receives `ERR_CONNECTION_REFUSED`. Ordinary Retry reproduces it. This is the
+preview's observed effective API target; stored provider settings were not
+inspected or changed. The successful preview build is not venue-flow qualification.
+See `preview-observation.md` in the retained candidate directory.
+
+Resolve the required GPU timing path without waiving coverage, then integrate
+through T-601, verify production source/provider identity
+and exercise the changed authorized live flows. PR16 remains draft and unmerged;
+no Goal17 change has been deployed to production.
 
 Physical iPhone/iPad/standard-office-PC 60fps, photographic PSNR50+, the complete
 platform and founder aesthetic acceptance remain open.

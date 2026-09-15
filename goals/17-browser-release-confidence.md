@@ -134,3 +134,13 @@ not waive the failing hosted software timing gate. A concrete GPU-check proposal
 is prepared, with a founder choice pending on local worker availability versus
 separately capped rental. No worker, paid infrastructure or relaxed gate has
 been introduced. Physical-device and aesthetic acceptance remain open.
+
+The next candidate is pushed at `61ccc5a601f6fa69d71aadae40f3d797a08740ff`.
+Hosted run35008947128 has closed all four browser shards: 304 ordinary passes,
+four executed expected failures, three Twin timing failures and the same 42
+original skips, no flaky outcomes. All seven active capture cases pass first try.
+The complete run has closed: nine jobs passed, only browser shard four failed.
+All 353 cases reconcile, with no missing, duplicate, unrun or interrupted case;
+six retries belong only to the three timing failures. Required GPU qualification,
+integration and delivery remain open. The Vercel preview builds but its planner targets localhost:3001,
+so it does not provide venue-flow qualification. Exact receipts are in the report.
