@@ -1,29 +1,28 @@
-import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Page, type TestInfo } from "@playwright/test";
 import {
   API,
-  RECEPTION_SOG_CHUNKS,
-  receptionRuntimePackage,
   settleCockpit,
   stubPlannerBootstrap,
 } from "./support/plan-bootstrap.js";
+import { test } from "./support/staged-reception.js";
 
 // ---------------------------------------------------------------------------
 // E2E: CARD A2 (G1b) — Resolve-over-blueprint load ("the room resolves")
 //
 // First paint is the architecture linework/proxy (procedural, no network);
 // the captured splat streams in over it coarse-to-fine with a quiet caption.
-// No spinner anywhere. Camera and chrome stay interactive during the stream.
-// Network is throttled to 50 Mbps via CDP per the card's verification, so
-// the 63 MB chunk set genuinely streams (~10 s) instead of arriving at once.
+// Shared Activity feedback stays honest; chrome remains usable during streaming.
+// Network is throttled to 50 Mbps via CDP. The staged fixture serves real
+// descriptor-verified Reception bytes over HTTP rather than bypassing transfer.
 //
 // The stage exposes `data-resolve-phase` (ink | developing | resolved |
 // fallback) as the choreography's honesty surface — assertions key off it.
 // ---------------------------------------------------------------------------
 
-// Streaming + decoding the full 63 MB chunk set is GPU/CPU-heavy; running
+// Streaming + decoding the approximately 40 MB staged set is GPU/CPU-heavy; running
 // these cases concurrently with other WebGL specs starves the renderers
 // (same policy as public-config-flow.spec.ts).
-test.describe.configure({ mode: "serial" });
+test.describe.configure({ mode: "default" });
 
 declare global {
   interface Window {
@@ -135,26 +134,38 @@ async function readCaptionVisible(page: Page): Promise<string> {
   });
 }
 
+async function assertCaptureStillLoading(page: Page, totalChunks: number): Promise<void> {
+  const progress = await page.evaluate(() => {
+    const stage = document.querySelector(".cockpit-stage");
+    const caption = document.querySelector('[data-testid="room-resolve-caption"]');
+    const counts = caption?.textContent?.match(/(\d+) of (\d+) chunks/);
+    return {
+      phase: stage?.getAttribute("data-resolve-phase"),
+      loaded: counts === undefined || counts === null ? null : Number(counts[1]),
+      total: counts === undefined || counts === null ? null : Number(counts[2]),
+    };
+  });
+  expect(progress.phase).toBe("developing");
+  expect(progress.total).toBe(totalChunks);
+  expect(progress.loaded).not.toBeNull();
+  expect(progress.loaded).toBeLessThan(totalChunks);
+}
+
 test.describe("CARD A2: the room resolves over the blueprint", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("linework first, chunks develop with the quiet caption, no spinner, interactive throughout", async ({ page, baseURL }, testInfo) => {
+  test("linework first, accessible progress and controls work while capture chunks are pending", async ({ page, stagedReception }, testInfo) => {
     test.setTimeout(240_000);
-    const origin = baseURL ?? "http://localhost:5173";
 
     await stubPlannerBootstrap(page);
-    await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
-      void route.fulfill({ json: { data: receptionRuntimePackage(origin) } });
-    });
     await throttleTo50Mbps(page);
 
     const startedAt = Date.now();
     await page.goto("/plan?capture=1");
 
-    // First paint: the canvas (blueprint ink + clay proxy — both procedural,
-    // zero network) must be up long before any splat byte lands. The 300 ms
-    // warm / 1.5 s cold budget belongs to the reference laptop; the local
-    // figure is logged as DoD evidence and loosely gated.
+    // The canvas and pending resolve state must appear inside the existing
+    // 15 s local limit. This does not claim that no capture bytes have arrived
+    // or qualify the separate reference-device first-paint target.
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
     await expect
       .poll(() => readPhase(page), { timeout: 15_000, message: "waiting for first resolve attribute" })
@@ -171,27 +182,29 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     const caption = page.getByTestId("room-resolve-caption").last();
     await expect(caption).toBeVisible();
     await expect(caption).toContainText("Loading captured room · Reception Room ·");
-    await attachStageScreenshot(page, testInfo, "card-a2-resolve-early.png");
 
-    // No spinner anywhere — the card's law. The room materializing is the
-    // progress indicator.
-    await expect(page.locator('[role="progressbar"]')).toHaveCount(0);
-    await expect(page.locator(".spinner, [class*='spinner']")).toHaveCount(0);
+    // Shared Activity motion accompanies the honest capture progress.
+    await expect(caption).toHaveAttribute("role", "status");
+    await expect(caption).toHaveAttribute("aria-live", "polite");
 
     // Interactive during the stream: chrome answers input while chunks land.
-    const layersButton = page.getByRole("button", { name: "Layers", exact: true });
-    await layersButton.click();
-    await expect(page.getByRole("menu", { name: "Layers" })).toBeVisible();
-    await layersButton.click();
-    await expect(page.getByRole("menu", { name: "Layers" })).toHaveCount(0);
+    // Check both sides of the input before any costly GPU screenshot readback.
+    await assertCaptureStillLoading(page, stagedReception.files.length);
+    const more = page.getByRole("button", { name: "More planner tools" });
+    await more.click();
+    await page.getByText("Scene overlays", { exact: true }).click();
+    await expect(page.getByRole("checkbox", { name: "Guest flow" })).toBeVisible();
+    await assertCaptureStillLoading(page, stagedReception.files.length);
+    await more.click();
+    await expect(page.getByTestId("planner-toolbar")).not.toBeVisible();
 
-    // Mid-stream evidence (~2 s into the develop window).
-    const sinceStart = Date.now() - startedAt;
-    if (sinceStart < 2_000) await page.waitForTimeout(2_000 - sinceStart);
-    await attachStageScreenshot(page, testInfo, "card-a2-resolve-2s.png");
+    // Retain a visual receipt after interaction. Readback can be slow, so this
+    // screenshot is not used to establish a particular streaming milestone.
+    await attachStageScreenshot(page, testInfo, "card-a2-after-controls.png");
 
     // The room resolves: every chunk arrives, the caption exits, the phase
-    // settles. 63 MB at 50 Mbps ≈ 10 s + decode. A recovery remount may
+    // settles. The CDP transfer limit is configured, not independently measured.
+    // A recovery remount may
     // honestly re-develop once from cache — poll to the SETTLED state where
     // the phase is resolved AND the caption has exited.
     await expect
@@ -201,14 +214,16 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
       })
       .toBe("resolved|false");
     // eslint-disable-next-line no-console -- deliberate: CARD-A2 timing evidence in the runner output
-    console.log(`[CARD-A2] resolved ${String(RECEPTION_SOG_CHUNKS.length)} chunks in ${String(Date.now() - startedAt)}ms at 50 Mbps`);
+    console.log(`[CARD-A2] resolved ${String(stagedReception.files.length)} chunks in ${String(Date.now() - startedAt)}ms; 50 Mbps configured`);
+
+    expect([...stagedReception.requestedFiles].sort()).toEqual([...stagedReception.files].sort());
 
     // Settle window for Spark's demand-driven paint, then final evidence.
     await page.waitForTimeout(6_000);
     await attachStageScreenshot(page, testInfo, "card-a2-resolve-complete.png");
   });
 
-  test("staged: no package → the room STILL resolves, from the staged capture, under its label", async ({ page }, testInfo) => {
+  test("staged: no package → the room STILL resolves, from the staged capture, under its label", async ({ page, stagedReception }, testInfo) => {
     // Stage S1 rewrote what a missing registry row means. Before, no package
     // was the fallback path (blueprint stays, nothing streams); that atelier
     // state is still unit-pinned for rooms with no capture at all
@@ -217,11 +232,14 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     // must see is the chip: staged, never reviewed.
     test.setTimeout(240_000);
     await stubPlannerBootstrap(page);
+    // Give the pending-state assertion an explicit streaming workload. Waiting
+    // for the full page load on unthrottled local files can miss that state.
+    await throttleTo50Mbps(page);
     await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
       void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
     });
 
-    await page.goto("/plan?capture=1");
+    await page.goto("/plan?capture=1", { waitUntil: "domcontentloaded" });
 
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 60_000});
     await expect
@@ -233,10 +251,11 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     await expect(
       page.getByText("Captured layer staged from source — not yet registered or alignment-reviewed"),
     ).toBeVisible();
+    expect([...stagedReception.requestedFiles].sort()).toEqual([...stagedReception.files].sort());
     await attachStageScreenshot(page, testInfo, "stage-s1-staged-resolve.png");
   });
 
-  test("walk: stand in the captured room at eye level; Escape returns to plan view", async ({ page }) => {
+  test("walk: stand in the captured room at eye level", async ({ page, stagedReception }) => {
     test.setTimeout(240_000);
     await stubPlannerBootstrap(page);
     await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
@@ -256,8 +275,8 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     // GL thread for minutes (native hang, empty JS stack, starved evaluates),
     // non-deterministically. That is a driver-interaction investigation (see
     // docs/state/tasks.md T-560), not a behaviour this case can assert
-    // through. Everything after entry is the real product path, and the exit
-    // is real keyboard input end to end.
+    // through. The assertions below cover the resulting containment and eye
+    // height; native entry and Escape exit remain separately unqualified.
     await page.evaluate(() => { window.__setWalkMode?.(true); });
     const walkToggle = page.getByTestId("planner-walk-toggle");
     await expect(walkToggle).toHaveAttribute("aria-pressed", "true", { timeout: 15_000 });
@@ -277,6 +296,7 @@ test.describe("CARD A2: the room resolves over the blueprint", () => {
     const eyeY = await page.evaluate(() => window.__roomCamera?.position[1] ?? 0);
     expect(eyeY).toBeGreaterThan(1);
     expect(eyeY).toBeLessThan(2.6);
+    expect([...stagedReception.requestedFiles].sort()).toEqual([...stagedReception.files].sort());
 
   });
 

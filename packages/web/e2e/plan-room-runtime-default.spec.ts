@@ -6,28 +6,18 @@ import {
   RECEPTION_SOG_CHUNKS,
   receptionRuntimePackage,
   settleCockpit,
+  seedRegistryAdmin,
   stubPlannerBootstrap,
 } from "./support/plan-bootstrap.js";
 
 // ---------------------------------------------------------------------------
-// E2E: CARD A1 (G1a) — Reception Room runtime default-on
-//
-// /plan with no config id must bootstrap an anonymous draft into the
-// Reception Room (the one room with a built runtime package) and surface an
-// honest runtime chip in the cockpit top bar:
-//   - package resolves  → evidence-state label + Spark splat layer mounting
-//     the REAL captured chunks served from public/splats/reception/
-//   - package endpoint 404s → atelier fallback (procedural clay + ink room)
-//     with the designed fallback copy. Never a blank canvas.
-//
-// The API is fully stubbed (e2e/support/plan-bootstrap.ts) so this spec needs
-// no live backend; the splat bytes are the real captured SOG chunks.
-// ---------------------------------------------------------------------------
-
-// The loaded case streams + decodes the full 63 MB chunk set; keep this file
-// serial so concurrent WebGL workers don't starve the renderer (same policy
-// as public-config-flow.spec.ts).
-test.describe.configure({ mode: "serial" });
+// The planner keeps a usable procedural model for rooms without a capture.
+// Anonymous users cannot query the internal runtime registry. The separate
+// registered-asset case uses the supported platform-admin fixture and streams
+// the real seven captured SOG files tracked under public/splats/reception/.
+// Staged anonymous capture resolution is covered by plan-room-resolve.spec.ts.
+// Cases share no mutable state; one worker avoids simultaneous WebGL contexts.
+test.describe.configure({ mode: "default" });
 
 async function attachCardScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   await settleCockpit(page);
@@ -60,20 +50,20 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
   // not merely present in the DOM (it truncates, never hides — CARD A1).
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("atelier fallback: package endpoint 404 → honest chip over the procedural room", async ({ page }, testInfo) => {
-    await stubPlannerBootstrap(page);
-    // The card's verification asks for the package URL stubbed to a hard 404,
-    // not the API's graceful `{ data: null }` empty result.
+  test("uncaptured room: honest fallback over the procedural room", async ({ page }, testInfo) => {
+    await stubPlannerBootstrap(page, true);
+    let registryRequests = 0;
     await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
+      registryRequests += 1;
       void route.fulfill({ status: 404, json: { error: "runtime package not found" } });
     });
 
     const startedAt = Date.now();
     await page.goto("/plan");
 
-    const topbar = page.getByTestId("cockpit-topbar");
+    const topbar = page.getByRole("banner", { name: "Room and save status" });
     await expect(topbar).toBeVisible({ timeout: 15_000 });
-    const runtimeChip = page.getByTestId("cockpit-runtime-chip");
+    const runtimeChip = page.getByTestId("reference-scene-outliner").locator(".reference-capture-label");
     await expect(runtimeChip).toBeVisible();
     await expect(runtimeChip).toContainText(ATELIER_FALLBACK_COPY);
     await expect(page.locator("canvas").first()).toBeVisible();
@@ -87,13 +77,36 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
     // eslint-disable-next-line no-console -- deliberate: CARD-A1 timing evidence in the runner output
     console.log(`[CARD-A1] fallback: chip + interactive canvas in ${String(interactiveMs)}ms`);
 
-    // The bootstrap must have landed in the Reception Room, and the chip
-    // must never claim a captured layer that is not there.
-    await expect(topbar).toContainText("Reception Room");
+    // Anonymous planning never reads the internal asset registry. A room
+    // without a capture retains the usable model and honest evidence label.
+    await expect(topbar).toContainText("Uncaptured room");
     await expect(topbar).not.toContainText(LOADED_EVIDENCE_COPY);
+    expect(registryRequests).toBe(0);
 
     await attachCardScreenshot(page, testInfo, "card-a1-atelier-fallback.png");
     await attachCanvasScreenshot(page, testInfo, "card-a1-atelier-fallback-canvas.png");
+  });
+
+  test("failed staged capture retains its notice and leaves Model view usable", async ({ page }) => {
+    await stubPlannerBootstrap(page);
+    let registryRequests = 0;
+    await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
+      registryRequests += 1;
+      return route.fulfill({ status: 403, json: { error: "internal registry is not public" } });
+    });
+    await page.route("**/splats/trades-hall/reception-room/*", (route) => route.fulfill({
+      status: 503, contentType: "text/plain", body: "Capture temporarily unavailable",
+    }));
+    await page.goto("/plan", { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".cockpit-stage")).toHaveAttribute("data-resolve-phase", "unavailable");
+    const caption = page.getByTestId("room-resolve-caption");
+    await expect(caption).toHaveAttribute("data-visible", "true");
+    await expect(caption).toContainText("Room capture could not load.");
+    const model = page.getByRole("group", { name: "Room view" }).getByRole("button", { name: "Model", exact: true });
+    await model.click();
+    await expect(model).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("canvas")).toBeVisible();
+    expect(registryRequests).toBe(0);
   });
 
   test("loaded: runtime package resolves → real captured chunks stream with the evidence chip", async ({ page, baseURL }, testInfo) => {
@@ -110,6 +123,7 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
       }
     });
 
+    await seedRegistryAdmin(page);
     await stubPlannerBootstrap(page);
     await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
       void route.fulfill({ json: { data: receptionRuntimePackage(origin) } });
@@ -117,12 +131,12 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
 
     await page.goto("/plan");
 
-    const topbar = page.getByTestId("cockpit-topbar");
+    const topbar = page.getByRole("banner", { name: "Room and save status" });
     await expect(topbar).toBeVisible({ timeout: 15_000 });
     await expect(topbar).toContainText("Reception Room");
     // Chip flips to the evidence-state label as soon as the package resolves —
     // and it must be visible, not merely present in the DOM.
-    const runtimeChip = page.getByTestId("cockpit-runtime-chip");
+    const runtimeChip = page.getByTestId("reference-scene-outliner").locator(".reference-capture-label");
     await expect(runtimeChip).toBeVisible();
     await expect(runtimeChip).toContainText(LOADED_EVIDENCE_COPY, { timeout: 10_000 });
 
@@ -131,6 +145,7 @@ test.describe("CARD A1: /plan Reception Room runtime default", () => {
     await expect
       .poll(() => sogResponses.size, { timeout: 120_000, message: "waiting for all Reception Room SOG chunks" })
       .toBeGreaterThanOrEqual(RECEPTION_SOG_CHUNKS.length);
+    await expect(page.locator(".cockpit-stage")).toHaveAttribute("data-resolve-phase", "resolved", { timeout: 120_000 });
 
     // Give Spark a settle window to decode + paint the streamed gaussians
     // before capturing evidence (frameloop is demand-driven).
