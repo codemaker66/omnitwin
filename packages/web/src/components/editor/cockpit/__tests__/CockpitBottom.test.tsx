@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, type ReactElement } from "react";
 import {
@@ -1304,7 +1304,10 @@ describe("CockpitBottom room layout timeline", () => {
     });
     expect(screen.queryByLabelText("Revenue: £28,750")).toBeNull();
     expect(screen.queryByText("Elaine & James")).toBeNull();
-    expect(screen.getByText("No event is linked to this layout yet. You can keep working on your room plan.")).toBeTruthy();
+    const clientSchedule = screen.getByLabelText("Your event schedule");
+    expect(clientSchedule.getAttribute("data-schedule-state")).toBe("none");
+    expect(within(clientSchedule).getByText("No event linked to this layout")).toBeTruthy();
+    expect(within(clientSchedule).getByText("You can keep working on your room plan.")).toBeTruthy();
     expect(timelineApi.getRoomLayoutTimeline).toHaveBeenCalledTimes(1);
     expect(useLayoutTimelinePreviewStore.getState().mode).toBe("inactive");
   });
