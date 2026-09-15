@@ -1,6 +1,40 @@
 import { readFile } from "node:fs/promises";
 import sharp from "sharp";
+import { z } from "zod";
 import { FoundryIntegrityError } from "./errors.js";
+
+/** Runtime-only decoder provenance; deliberately excludes environment and stacks. */
+export function getImageDecoderRuntime() {
+  let rawReport: unknown;
+  // Supported Node 22 exposes excludeNetwork; older @types/node omits it.
+  const runtimeReport = process.report as (NonNullable<typeof process.report> & { excludeNetwork?: boolean }) | undefined;
+  if (runtimeReport) {
+    const originalExcludeNetwork = runtimeReport.excludeNetwork;
+    try {
+      runtimeReport.excludeNetwork = true;
+      rawReport = runtimeReport.getReport();
+    } catch {
+      // Diagnostics must not stop an otherwise healthy API from serving.
+      rawReport = undefined;
+    } finally {
+      if (originalExcludeNetwork === undefined) delete runtimeReport.excludeNetwork;
+      else runtimeReport.excludeNetwork = originalExcludeNetwork;
+    }
+  }
+  const report = z.object({
+    header: z.object({ glibcVersionRuntime: z.string().optional() }),
+    sharedObjects: z.array(z.string()),
+  }).safeParse(rawReport);
+  const nativeObjects = report.success
+    ? report.data.sharedObjects.filter(path => /sharp|vips|heif|webp|ld-musl|libc\.so/i.test(path)) : [];
+  return {
+    node: process.version, platform: process.platform, architecture: process.arch, reportAvailable: report.success,
+    versions: { ...sharp.versions }, nativeObjects,
+    libc: report.success && report.data.header.glibcVersionRuntime
+      ? { family: "glibc", version: report.data.header.glibcVersionRuntime }
+      : { family: nativeObjects.some(path => path.includes("ld-musl-")) ? "musl" : "unknown" },
+  };
+}
 
 export const FOUNDRY_WEBP_MAX_BYTES = 32 * 1024 * 1024;
 const RIFF_HEADER_BYTES = 12;

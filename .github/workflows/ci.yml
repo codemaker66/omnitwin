@@ -1,13 +1,14 @@
 # =============================================================================
 # OMNITWIN — Continuous Integration
 # =============================================================================
-# Six jobs run in parallel against every push to master and every pull
+# Seven jobs run in parallel against every push to master and every pull
 # request targeting master:
 #
 #   audit      - pnpm audit at moderate severity and above
 #   lint       — ESLint v9 across all packages, zero errors required
 #   typecheck  — `tsc --noEmit` across all packages, zero errors required
 #   build      — production builds across all packages
+#   native-image — actual Linux API image and native decoder boundary checks
 #   test       — required migrated PostgreSQL regressions and workspace Vitest
 #   e2e        — Playwright E2E against a Vite dev server (Chromium only)
 #
@@ -144,6 +145,50 @@ jobs:
         env:
           VITE_CLERK_PUBLISHABLE_KEY: pk_live_localbuildcheck
         run: pnpm build
+
+  native-image:
+    name: API Native Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build the production Linux API image
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mkdir -p native-image-results
+          git rev-parse HEAD HEAD^{tree} > native-image-results/checkout-identity.txt
+          printf 'event=%s\ncheckout=%s\npr_head=%s\npr_base=%s\n' \
+            "$GITHUB_EVENT_NAME" "$GITHUB_SHA" "$PR_HEAD_SHA" "$PR_BASE_SHA" \
+            > native-image-results/event-identity.txt
+          docker build --platform linux/amd64 --iidfile native-image-results/image-id.txt \
+            --build-arg BUILD_GIT_SHA="$GITHUB_SHA" \
+            --build-arg BUILD_APP_VERSION=0.0.4 \
+            --build-arg BUILD_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)" .
+          docker image inspect "$(cat native-image-results/image-id.txt)" \
+            > native-image-results/image-inspect.json
+
+      - name: Verify the shipped native decoder and image boundaries
+        shell: bash
+        run: |
+          set -o pipefail
+          docker run --rm --network none --read-only --memory 2g --cpus 2 --pids-limit 128 \
+            --mount "type=bind,source=$GITHUB_WORKSPACE/.github/scripts/verify-api-native-image.mjs,target=/tmp/native-image-check.mjs,readonly" \
+            "$(cat native-image-results/image-id.txt)" \
+            node --conditions=omnitwin-dist /tmp/native-image-check.mjs \
+            | tee native-image-results/runtime-and-fixtures.jsonl
+
+      - name: Upload native image receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-image-results-${{ github.run_id }}
+          path: native-image-results/
+          if-no-files-found: error
+          retention-days: 14
 
   test:
     name: Test

@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import rawBody from "fastify-raw-body";
+import { getImageDecoderRuntime } from "@omnitwin/reconstruction-foundry";
 import { validateEnv, type Env } from "./env.js";
 import { createDbConnection } from "./db/client.js";
 import { setAuthDb } from "./middleware/auth.js";
@@ -452,6 +453,8 @@ if (isDirectRun) {
 
   try {
     await server.listen({ port: env.PORT, host: "0.0.0.0" });
+    server.log.info({ event: "native-image-runtime", source: process.env["RAILWAY_GIT_COMMIT_SHA"] ?? process.env["GIT_SHA"] ?? "dev",
+      runtime: getImageDecoderRuntime() }, "Loaded image decoder runtime");
     server.log.info(`VenViewer API listening on port ${String(env.PORT)}`);
   } catch (err) {
     server.log.error(err);

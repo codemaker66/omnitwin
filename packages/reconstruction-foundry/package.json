@@ -28,12 +28,12 @@
     "@omnitwin/types": "workspace:*",
     "gltf-validator": "2.0.0-dev.3.10",
     "meshoptimizer": "1.2.0",
-    "sharp": "0.35.3",
+    "sharp": "0.35.4",
     "zod": "3.24.2"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
     "typescript": "5.7.3",
-    "vitest": "4.1.8"
+    "vitest": "4.1.11"
   }
 }
