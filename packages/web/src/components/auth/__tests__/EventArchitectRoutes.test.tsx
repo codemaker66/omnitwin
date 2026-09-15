@@ -11,6 +11,9 @@ const { mountTool, getProjection } = vi.hoisted(() => ({ mountTool: vi.fn(), get
 vi.mock("../ClerkRouteProvider.js", () => ({
   ClerkRouteProvider: ({ children }: { readonly children: ReactNode }) => children,
 }));
+// The provider is stubbed above, so the denial screen's "Use another account"
+// needs Clerk's hook stubbed with it.
+vi.mock("@clerk/react", () => ({ useClerk: () => ({ signOut: vi.fn() }) }));
 vi.mock("../../../pages/EventArchitectPage.js", () => ({
   EventArchitectPage: () => { mountTool(); return <div>Event Architect engine</div>; },
 }));

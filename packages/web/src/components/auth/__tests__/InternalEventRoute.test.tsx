@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { InternalEventRoute } from "../InternalEventRoute.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
+
+// In the app this guard always renders inside ClerkRouteProvider, which is
+// what lets the denial screen offer "Use another account".
+vi.mock("@clerk/react", () => ({ useClerk: () => ({ signOut: vi.fn() }) }));
 
 function seedUser(role: string, platformRole: "none" | "admin" = "none"): void {
   useAuthStore.getState().setUser({ id: "operator", role, platformRole, venueId: "venue", name: "Operator", email: "operator@example.test" });
