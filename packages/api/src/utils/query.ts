@@ -10,14 +10,23 @@ import { isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
  * manage only their assigned venue. Accepts the structural subset it reads
  * (the isPlatformAdmin precedent) so non-HTTP actors — the /ws/diary command
  * channel's MutationActor — can be checked without fabricating a JwtUser.
+ *
+ * This is the base "works this venue's floor" capability: internal events,
+ * planning data, room state, uploads, the action log. Manager belongs here
+ * because it is senior to both staff and hallkeeper — without it a manager
+ * could edit the venue record (canAdministerVenue) while being unable to read
+ * an internal event a hallkeeper can see. Sales and caterer are deliberately
+ * absent: sales works the pipeline through canManageCommercial, and a caterer
+ * is event-scoped and reaches a venue only through a share.
  */
+const VENUE_FLOOR_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "hallkeeper"]);
+
 export function canManageVenue(
   user: Pick<JwtUser, "role" | "venueId" | "platformRole">,
   venueId: string,
 ): boolean {
   if (isPlatformAdmin(user)) return true;
-  if ((user.role === "admin" || user.role === "staff" || user.role === "hallkeeper") && user.venueId === venueId) return true;
-  return false;
+  return VENUE_FLOOR_ROLES.has(user.role) && user.venueId === venueId;
 }
 
 // Internal events contain staff notes, operating tasks and commercial data.
@@ -54,7 +63,11 @@ export function canAccessResource(
 
 // Event mutations intentionally exclude owner-only and hallkeeper access.
 // A loaded row's venue is always the authority for the scope decision.
-const EVENT_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin"]);
+// Manager is here for the same reason it is on the venue floor: a role that
+// may administer the venue and own its pipeline but not create an event in it
+// is senior on paper and junior in practice. Sales is absent — it sells the
+// room, the venue team runs the day.
+const EVENT_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "manager"]);
 
 export function isEventWriteRole(
   user: Pick<JwtUser, "role" | "platformRole">,

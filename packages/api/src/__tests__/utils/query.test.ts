@@ -159,12 +159,16 @@ describe("canAccessResource", () => {
 });
 
 describe("event write policy", () => {
-  it("admits staff/admin roles and refuses read-only roles", () => {
+  it("admits the venue team that runs the day and refuses everyone else", () => {
     expect(isEventWriteRole(makeUser({ role: "staff", venueId: VENUE_A }))).toBe(true);
     expect(isEventWriteRole(makeUser({ role: "admin", venueId: VENUE_A }))).toBe(true);
+    expect(isEventWriteRole(makeUser({ role: "manager", venueId: VENUE_A }))).toBe(true);
     expect(isEventWriteRole(makeUser({ role: "hallkeeper", venueId: VENUE_A }))).toBe(false);
     expect(isEventWriteRole(makeUser({ role: "planner", venueId: VENUE_A }))).toBe(false);
     expect(isEventWriteRole(makeUser({ role: "client", venueId: VENUE_A }))).toBe(false);
+    // Sales sells the room; the venue team runs the day.
+    expect(isEventWriteRole(makeUser({ role: "sales", venueId: VENUE_A }))).toBe(false);
+    expect(isEventWriteRole(makeUser({ role: "caterer", venueId: VENUE_A }))).toBe(false);
   });
 
   it("requires the persisted venue for staff/admin and preserves platform admin scope", () => {
@@ -314,6 +318,25 @@ describe("capability helpers as a set", () => {
     const venueStaff = makeUser({ role: "staff", venueId: VENUE_A });
     expect(canManageCommercial(venueStaff, VENUE_A)).toBe(true);
     expect(canManageCommercial(venueAdmin, VENUE_A)).toBe(true);
+  });
+
+  // A manager that could edit the venue record but not read an internal event
+  // a hallkeeper can see would be senior on paper and junior in practice.
+  // canAdministerVenue must be a subset of the venue floor, not beside it.
+  it("puts every administering role on the venue floor as well", () => {
+    for (const role of ["admin", "manager", "staff"]) {
+      const user = makeUser({ role, venueId: VENUE_A });
+      expect(canAdministerVenue(user, VENUE_A), `${role} administers`).toBe(true);
+      expect(canManageVenue(user, VENUE_A), `${role} works the floor`).toBe(true);
+      expect(canAccessInternalEvent(user, VENUE_A), `${role} reads internal events`).toBe(true);
+    }
+  });
+
+  it("keeps sales on the pipeline and off the venue floor", () => {
+    const sales = makeUser({ role: "sales", venueId: VENUE_A });
+    expect(canManageCommercial(sales, VENUE_A)).toBe(true);
+    expect(canManageVenue(sales, VENUE_A)).toBe(false);
+    expect(canAccessInternalEvent(sales, VENUE_A)).toBe(false);
   });
 
   it("keeps caterers out of every venue-wide capability", () => {
