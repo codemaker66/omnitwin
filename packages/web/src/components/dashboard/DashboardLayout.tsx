@@ -49,17 +49,40 @@ const NAV_ITEMS: readonly { view: DashboardView; label: string; adminOnly?: bool
   { view: "admin", label: "Admin", adminOnly: true },
 ];
 
+// The commercial surface the API grants to admin, manager, staff and sales.
+// A tab that would only ever 403 is worse than no tab, so the nav mirrors
+// packages/api/src/utils/query.ts canManageCommercial exactly.
+const COMMERCIAL_NAV_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "staff", "sales"]);
+
+// Venue administration: the venue record, its spaces, its pricing and its
+// stock. Hallkeepers lost this edit (goal 18 §6 decision 6b).
+const VENUE_ADMIN_NAV_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
+
+// What the account menu calls the signed-in person. A role with no entry is a
+// workspace member, which is also what an unknown future role reads as.
+const ROLE_LABELS: Readonly<Record<string, string>> = {
+  admin: "Venue admin",
+  manager: "Venue manager",
+  staff: "Venue team",
+  sales: "Sales",
+  hallkeeper: "Hallkeeper",
+  planner: "Planner",
+  caterer: "Caterer",
+};
+
 function canShowNavItem(
   item: (typeof NAV_ITEMS)[number],
   role: string | null | undefined,
   platformRole: "none" | "operator" | "admin",
 ): boolean {
-  if (role === "supplier") return false;
-  if (role === "executive") return item.view === "analytics";
-  if (item.venueAdminOnly === true) return role === "admin";
+  if (role === null || role === undefined) return false;
+  // Caterers are event-scoped and reach the venue through a share, never the
+  // venue dashboard.
+  if (role === "caterer") return false;
+  if (item.venueAdminOnly === true) return VENUE_ADMIN_NAV_ROLES.has(role);
   if (item.adminOnly === true) return platformRole === "admin";
-  if (item.staffOnly === true) return platformRole === "admin" || role === "admin" || role === "staff";
-  return role !== null && role !== undefined;
+  if (item.staffOnly === true) return platformRole === "admin" || COMMERCIAL_NAV_ROLES.has(role);
+  return true;
 }
 
 function ClerkSignOutButton(props: { readonly onLocalSignOut: () => void }): React.ReactElement {
@@ -169,17 +192,18 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
   };
 
   const platformRole = user?.platformRole ?? "none";
-  const canPlan = platformRole === "admin" || ["admin", "staff", "planner"].includes(user?.role ?? "");
-  const canSchedule = platformRole === "admin" || ["admin", "staff", "hallkeeper"].includes(user?.role ?? "");
-  const canArchitect = platformRole === "admin" || ["admin", "staff", "hallkeeper", "planner"].includes(user?.role ?? "");
+  const canPlan = platformRole === "admin" || ["admin", "manager", "staff", "planner"].includes(user?.role ?? "");
+  const canSchedule = platformRole === "admin" || ["admin", "manager", "staff", "hallkeeper", "sales"].includes(user?.role ?? "");
+  const canArchitect = platformRole === "admin" || ["admin", "manager", "staff", "hallkeeper", "planner"].includes(user?.role ?? "");
+  // Venue stock is written by venue administration only, and the platform
+  // admin's own tools never grant it (pinned by DashboardLayout.test.tsx).
+  const canManageStock = VENUE_ADMIN_NAV_ROLES.has(user?.role ?? "");
   const moreItems = NAV_ITEMS.filter((item) => item.view !== "inventory" && canShowNavItem(item, user?.role, platformRole));
   const moreActive = moreItems.some((item) => item.view === activeView) ||
     isRouteActive("/event-architect") || isRouteActive("/dev/capture-intake");
   const nameInitials = user?.name.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join("") ?? "";
   const initials = (nameInitials.length > 0 ? nameInitials : "V").toLocaleUpperCase("en-GB");
-  const roleLabel = platformRole === "admin" ? "Platform admin" : user?.role === "admin" ? "Venue admin" :
-    user?.role === "hallkeeper" ? "Hallkeeper" : user?.role === "staff" ? "Venue team" :
-      user?.role === "executive" ? "Executive" : user?.role === "planner" ? "Planner" : "Workspace member";
+  const roleLabel = platformRole === "admin" ? "Platform admin" : ROLE_LABELS[user?.role ?? ""] ?? "Workspace member";
 
   return (
     <>
@@ -199,7 +223,7 @@ function DashboardLayoutShell({ activeView, onViewChange, mainLabel, children }:
             aria-current={isRouteActive("/diary") ? "page" : undefined}>Diary</Link>}
           {canSchedule && <Link className={routeLinkClass("/hallkeeper")} to="/hallkeeper"
             aria-current={isRouteActive("/hallkeeper") ? "page" : undefined}>Hallkeeper</Link>}
-          {user?.role === "admin" && <button type="button"
+          {canManageStock && <button type="button"
             className={`dashboard-layout-nav-item${activeView === "inventory" ? " dashboard-layout-nav-item--active" : ""}`}
             aria-current={activeView === "inventory" ? "page" : undefined}
             onClick={() => { selectView("inventory"); }}>Inventory</button>}

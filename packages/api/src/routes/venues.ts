@@ -5,7 +5,7 @@ import { venues, spaces } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, authorizePlatformAdmin } from "../middleware/auth.js";
 import { PaginationQuerySchema, paginate } from "../utils/pagination.js";
-import { canManageVenue } from "../utils/query.js";
+import { canAdministerVenue } from "../utils/query.js";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -123,7 +123,7 @@ export async function venueRoutes(
       return reply.status(404).send({ error: "Venue not found", code: "NOT_FOUND" });
     }
 
-    if (!canManageVenue(request.user, venue.id)) {
+    if (!canAdministerVenue(request.user, venue.id)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 

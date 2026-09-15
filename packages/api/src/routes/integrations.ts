@@ -19,7 +19,8 @@ import {
   venues,
   websiteEmbedConfigs,
 } from "../db/schema.js";
-import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
+import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
+import { canAdministerVenue } from "../utils/query.js";
 import {
   createWebhookSignatureStub,
   publicIntegrationConnection,
@@ -29,7 +30,7 @@ import {
 const IdParam = z.object({ id: z.string().uuid() });
 const VenueQuery = z.object({ venueId: z.string().uuid().optional() });
 
-type AuthedUser = Pick<JwtUser, "id" | "role" | "platformRole" | "venueId">;
+
 type IntegrationConnectionUpdate = Partial<Pick<
   typeof integrationConnections.$inferInsert,
   "label" | "status" | "credentialMode" | "credentialRef" | "config" | "updatedAt"
@@ -39,10 +40,7 @@ function validationError(reply: FastifyReply, details: unknown): FastifyReply {
   return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details });
 }
 
-function canManageVenue(user: AuthedUser, venueId: string): boolean {
-  if (isPlatformAdmin(user)) return true;
-  return (user.role === "staff" || user.role === "planner") && user.venueId === venueId;
-}
+
 
 function resolveVenueScope(
   request: FastifyRequest,
@@ -139,7 +137,7 @@ export async function integrationRoutes(server: FastifyInstance, opts: { readonl
   server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = CreateIntegrationConnectionSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    if (!canManageVenue(request.user, parsed.data.venueId)) {
+    if (!canAdministerVenue(request.user, parsed.data.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     const [inserted] = await db.insert(integrationConnections).values({
@@ -169,7 +167,7 @@ export async function integrationRoutes(server: FastifyInstance, opts: { readonl
     if (existing === undefined) {
       return reply.status(404).send({ error: "Integration connection not found", code: "NOT_FOUND" });
     }
-    if (!canManageVenue(request.user, existing.venueId)) {
+    if (!canAdministerVenue(request.user, existing.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     const updates: IntegrationConnectionUpdate = { updatedAt: new Date() };
@@ -196,7 +194,7 @@ export async function webhookOutboundRoutes(server: FastifyInstance, opts: { rea
   server.post("/outbound/test", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = WebhookOutboundTestInputSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    if (!canManageVenue(request.user, parsed.data.venueId)) {
+    if (!canAdministerVenue(request.user, parsed.data.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     const result = createWebhookSignatureStub({
@@ -233,7 +231,7 @@ export async function embedConfigRoutes(server: FastifyInstance, opts: { readonl
   server.post("/", { preHandler: [authenticate] }, async (request, reply) => {
     const parsed = CreateWebsiteEmbedConfigSchema.safeParse(request.body);
     if (!parsed.success) return validationError(reply, parsed.error.issues);
-    if (!canManageVenue(request.user, parsed.data.venueId)) {
+    if (!canAdministerVenue(request.user, parsed.data.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
     const [venue] = await db.select().from(venues)

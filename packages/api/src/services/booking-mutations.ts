@@ -114,7 +114,10 @@ export const PG_UNIQUE_VIOLATION = "23505";
 
 // Diary writes are staff/admin only — hallkeeper is a read-facing ops role
 // here, matching the state machine's role policy.
-const DIARY_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin"]);
+// Who may ink the diary. Sales books the room they sold; a manager is senior
+// venue authority. Hallkeepers read the day but do not move it, and caterers
+// are event-scoped (goal 18 §6 decisions 6a and 6b).
+const DIARY_WRITE_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "manager", "sales"]);
 
 export function canWriteBookings(actor: MutationActor, venueId: string): boolean {
   return DIARY_WRITE_ROLES.has(actor.role) && actor.venueId === venueId;

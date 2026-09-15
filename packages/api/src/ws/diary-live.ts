@@ -46,7 +46,9 @@ const STALE_AFTER_MS = 65_000; // three missed beats and the connection is gone
 
 /** Read roles: the whole ops floor may watch the diary; only staff/admin
  *  write (enforced by the REST surface, not here). */
-const DIARY_READ_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "hallkeeper"]);
+// Who may watch the live diary. Everyone who works the venue's day or its
+// pipeline; caterers are event-scoped and never see the venue-wide diary.
+const DIARY_READ_ROLES: ReadonlySet<string> = new Set(["staff", "admin", "hallkeeper", "manager", "sales"]);
 
 export interface DiaryLiveSocket {
   send(text: string): void;

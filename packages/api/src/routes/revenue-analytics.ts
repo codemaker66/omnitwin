@@ -25,7 +25,7 @@ import {
   spaces,
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
-import { canAccessInternalEvent, canWriteEvents } from "../utils/query.js";
+import { canManageCommercial, canWriteEvents } from "../utils/query.js";
 import {
   buildPipelineSummary,
   buildRoomUtilisationRows,
@@ -68,9 +68,10 @@ function resolveVenueScope(
     void reply.status(403).send({ error: "User has no venue scope", code: "FORBIDDEN" });
     return null;
   }
-  // Preserve existing hallkeeper commercial reads (quotes/event summaries),
-  // but neither customer role name grants venue-wide analytics authority.
-  if (!canAccessInternalEvent(user, user.venueId)) {
+  // Revenue is a price surface, so it follows the commercial capability:
+  // hallkeepers never see prices (goal 18 §6 decision 6b) and neither customer
+  // role name grants venue-wide analytics authority.
+  if (!canManageCommercial(user, user.venueId)) {
     void reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     return null;
   }
@@ -263,7 +264,7 @@ export async function eventRevenueRoutes(server: FastifyInstance, opts: { db: Da
     if (eventRow === undefined) {
       return reply.status(404).send({ error: "Event not found", code: "NOT_FOUND" });
     }
-    if (!canAccessInternalEvent(request.user, eventRow.venueId)) {
+    if (!canManageCommercial(request.user, eventRow.venueId)) {
       return reply.status(403).send({ error: "Insufficient permissions", code: "FORBIDDEN" });
     }
 
