@@ -144,3 +144,15 @@ All 353 cases reconcile, with no missing, duplicate, unrun or interrupted case;
 six retries belong only to the three timing failures. Required GPU qualification,
 integration and delivery remain open. The Vercel preview builds but its planner targets localhost:3001,
 so it does not provide venue-flow qualification. Exact receipts are in the report.
+
+The exact PR commit now also passes all five unchanged Twin performance cases on
+the existing RTX 4090: one worker, zero retries/skips, 22.8s. All 3,191 committed
+files match before installation and before/after execution. Actual render p95 is
+16.9ms/17.0ms for pano/dollhouse; RAF p95 is 16.8ms/16.7ms and the hop records no
+long tasks. This is a local diagnostic, not an enforced hosted check or physical
+device acceptance. The proposed source/job preparation is reviewed and tested;
+worker isolation, publication and the pending hardware arrangement remain open.
+
+The preview audit confirms its API setting is absent from Preview and its origin
+is not permitted by the production API preflight. Those settings remain unchanged;
+the current preview cannot establish a successful venue flow.

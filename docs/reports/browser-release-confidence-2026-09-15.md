@@ -354,3 +354,58 @@ no Goal17 change has been deployed to production.
 
 Physical iPhone/iPad/standard-office-PC 60fps, photographic PSNR50+, the complete
 platform and founder aesthetic acceptance remain open.
+
+### Exact-commit GPU diagnostic and job preparation
+
+An ordinary bounded local diagnostic now exercises the same PR head `61ccc5a6`,
+tree `a8fe4125`, in fresh native Linux source. The independently derived Git manifest
+covers all 3,191 tracked files. The first Windows archive inherited line-ending
+conversion and failed 2,664 file hashes before any install/test; that failed
+receipt is retained. A command-level `core.autocrlf=false` archive matches every
+committed blob. Offline frozen installation passes in 27.6s, with no downloads;
+all 3,191 tracked hashes still match before and after browser execution.
+
+All five existing Twin cases pass in 22.8s with one worker, no retries/skips or
+snapshot updates. The explicit `env -i` wrapper supplies only the recorded WSL
+graphics/display settings and ordinary test paths; no `TWIN_*` budget override
+is supplied. The actual in-test renderer is ANGLE D3D12 NVIDIA GeForce RTX 4090,
+at 1440x900/DPR1. Pano/dollhouse render-submission p95 is 16.9ms/17.0ms and RAF p95
+is 16.8ms/16.7ms against the unchanged 20ms limit. Both samples sustain native
+input, actual draws and changing rendered camera transforms through all four
+quarters. The hop has zero observed long tasks. Isolated late submissions remain
+57.7ms/97.6ms; the original maximum-one-consecutive-late-frame rule is unchanged.
+
+This is source-bound local evidence on the existing shared machine. It does not
+authenticate an isolated CI worker or publish an enforced check. Retained wall
+timestamps and monotonic report duration disagree by about 110ms at closure;
+do not manufacture a compatible authenticated receipt or relax the verifier's
+clock checks. Raw receipts remain unchanged. Synthetic full-size imagery and
+the empty GLB do not qualify real venue geometry, physical devices or aesthetics.
+Evidence: `output/qualification/gpu-ci-contingency/exact-pr61ccc5a6/`,
+including raw samples, runtime/source checks and root/independent review.
+
+The output-only controller proposal now derives its complete source map from
+independently chosen Git objects, pins the unchanged benchmark/verifier, and
+prepares fresh nonce/expiry-bound jobs without launching or publishing anything.
+The source builder passed 20 baseline tests and two focused transport regressions;
+the job preparer passed nine boundary tests. Independent review corrected
+non-ASCII version acceptance. Source identity and prepared jobs are distinct from
+authenticated worker execution; expiry/replay enforcement, isolated hardware,
+transport and publishing remain unimplemented. Receipts and limitations are in
+`output/qualification/gpu-ci-contingency/controller-proposal/`.
+
+Hosted CI35008947128 remains failed. No worker enrollment, new compute purchase,
+branch-rule change, merge or production deployment occurred. The founder's
+hardware arrangement choice remains pending, and Goal17 remains active.
+
+A subsequent authenticated dashboard audit confirms the failed preview belongs
+to the existing `omnitwin-web` project at PR head `61ccc5a6`. `VITE_API_URL` exists
+only in Production; no matching Preview or shared Preview setting is present.
+Its stored Production value is `https://api.venviewer.com`; the active production
+bundle was not inspected by this audit. One Python preflight failed before an
+HTTP response with an unretained nested transport cause. A subsequent Node
+preflight to that API returned 204 but no `Access-Control-Allow-Origin` for this
+exact preview origin. Thus the missing variable alone is not a sufficient repair.
+Provider settings, production access rules and deployments remain unchanged.
+Sanitized receipts and the separate root addendum are under
+`output/qualification/hosted-pr16-35008947128/preview-configuration-audit/`.
