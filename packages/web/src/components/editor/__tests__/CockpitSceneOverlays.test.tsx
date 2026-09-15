@@ -119,7 +119,15 @@ describe("CockpitSceneOverlays", () => {
     expect(marker).toBeDefined();
     if (marker === undefined) throw new Error("Missing simulated marker");
     fireEvent.click(marker);
-    expect(useCockpitStore.getState().beam).not.toBeNull();
+    const beam = useCockpitStore.getState().beam;
+    expect(beam).not.toBeNull();
+    expect(beam?.showLabel).toBe(false);
+    expect(beam?.label).toBe(marker.getAttribute("aria-label"));
+    const detailId = marker.getAttribute("aria-controls");
+    if (detailId === null) throw new Error("Missing accessible annotation detail");
+    const detail = document.getElementById(detailId);
+    expect(detail?.textContent).toBeTruthy();
+    expect(beam?.label).toContain(detail?.textContent);
     expect(useCockpitStore.getState().walkMode).toBe(true);
     expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
   });

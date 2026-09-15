@@ -104,7 +104,8 @@ export function CockpitEvidenceBeam(): ReactElement | null {
           side={DoubleSide}
         />
       </mesh>
-      <group position={[0, height + 0.4, 0]}>
+      {/* The retained beam also owns caption visibility throughout its fade-out. */}
+      {active.showLabel !== false && <group position={[0, height + 0.4, 0]}>
         <Html center>
           <span
             style={{
@@ -125,7 +126,7 @@ export function CockpitEvidenceBeam(): ReactElement | null {
             {active.label}
           </span>
         </Html>
-      </group>
+      </group>}
     </group>
   );
 }

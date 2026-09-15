@@ -28,6 +28,8 @@ const DEFAULT_RUNTIME_ASSET_STATUS = CAPTURED_LAYER_FALLBACK_STATUS;
 export interface CockpitBeam {
   readonly anchor: readonly [number, number, number];
   readonly label: string;
+  /** False when another surface owns the accessible disclosure; defaults to true. */
+  readonly showLabel?: boolean;
   readonly tone: "review" | "info";
 }
 

@@ -418,7 +418,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     ownedBeam.current = null;
   }, []);
   const raiseBeam = (annotation: SceneAnnotation): void => {
-    const beam: CockpitBeam = { anchor: annotation.beamAnchor, label: `${annotation.caption}. ${annotation.detail}`, tone: annotation.tone };
+    const beam: CockpitBeam = { anchor: annotation.beamAnchor, label: `${annotation.caption}. ${annotation.detail}`, tone: annotation.tone, showLabel: false };
     ownedBeam.current = beam;
     useCockpitStore.getState().setBeam(beam);
   };
