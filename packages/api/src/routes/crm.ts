@@ -16,6 +16,7 @@ import {
 } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
+import { canManageCommercial } from "../utils/query.js";
 import { PIPELINE_VALUE_CURRENCY, loadPipelineValueMinor } from "../services/commercial-pipeline.js";
 
 const IdParam = {
@@ -28,14 +29,17 @@ const IdParam = {
   },
 } as const;
 
-function canManageCommercial(user: JwtUser, venueId: string): boolean {
-  if (isPlatformAdmin(user)) return true;
-  return user.role === "staff" && user.venueId === venueId;
-}
-
-function staffVenueOrAdmin(user: JwtUser): { ok: true; venueId: string | null } | { ok: false } {
+/**
+ * Resolve the venue this actor may read the commercial board for: null means
+ * platform-wide. The local predicate this replaces admitted `staff` only, so
+ * a venue's own ADMIN was 403'd on their own pipeline. Authority now comes
+ * from the shared capability helper, which is the one place a role is added.
+ */
+function commercialScope(user: JwtUser): { ok: true; venueId: string | null } | { ok: false } {
   if (isPlatformAdmin(user)) return { ok: true, venueId: null };
-  if (user.role === "staff" && user.venueId !== null) return { ok: true, venueId: user.venueId };
+  if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
+    return { ok: true, venueId: user.venueId };
+  }
   return { ok: false };
 }
 
@@ -82,7 +86,7 @@ export async function crmRoutes(
       return reply.status(404).send({ error: "Enquiry not found", code: "NOT_FOUND" });
     }
     if (!canManageCommercial(request.user, enquiry.venueId)) {
-      return reply.status(403).send({ error: "Only venue staff or admin can create opportunities from enquiries", code: "FORBIDDEN" });
+      return reply.status(403).send({ error: "Only the venue commercial team can create opportunities from enquiries", code: "FORBIDDEN" });
     }
 
     const [existing] = await db.select()
@@ -189,9 +193,9 @@ export async function crmRoutes(
   });
 
   server.get("/pipeline", { preHandler: [authenticate] }, async (request, reply) => {
-    const scope = staffVenueOrAdmin(request.user);
+    const scope = commercialScope(request.user);
     if (!scope.ok) {
-      return reply.status(403).send({ error: "Only venue staff or admin can view the CRM pipeline", code: "FORBIDDEN" });
+      return reply.status(403).send({ error: "Only the venue commercial team can view the CRM pipeline", code: "FORBIDDEN" });
     }
     const query = PipelineQuery.safeParse(request.query);
     if (!query.success) {
@@ -262,9 +266,9 @@ export async function crmRoutes(
   });
 
   server.get("/pipeline/value", { preHandler: [authenticate] }, async (request, reply) => {
-    const scope = staffVenueOrAdmin(request.user);
+    const scope = commercialScope(request.user);
     if (!scope.ok) {
-      return reply.status(403).send({ error: "Only venue staff or admin can view pipeline value", code: "FORBIDDEN" });
+      return reply.status(403).send({ error: "Only the venue commercial team can view pipeline value", code: "FORBIDDEN" });
     }
     return {
       data: {

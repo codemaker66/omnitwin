@@ -24,6 +24,7 @@ import {
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin, type JwtUser } from "../middleware/auth.js";
 import { paginate } from "../utils/pagination.js";
+import { canManageCommercial } from "../utils/query.js";
 
 const IdParam = z.object({ id: z.string().uuid() });
 const TaskParam = z.object({ id: z.string().uuid(), taskId: z.string().uuid() });
@@ -33,14 +34,17 @@ const ListQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
-function canManageCommercial(user: JwtUser, venueId: string): boolean {
-  if (isPlatformAdmin(user)) return true;
-  return user.role === "staff" && user.venueId === venueId;
-}
-
+/**
+ * Resolve the venue this actor may list opportunities for: null means
+ * platform-wide. The local predicate this replaces admitted `staff` only, so
+ * a venue's own ADMIN was 403'd on their own opportunities. Authority now
+ * comes from the shared capability helper in utils/query.ts.
+ */
 function commercialScope(user: JwtUser): { ok: true; venueId: string | null } | { ok: false } {
   if (isPlatformAdmin(user)) return { ok: true, venueId: null };
-  if (user.role === "staff" && user.venueId !== null) return { ok: true, venueId: user.venueId };
+  if (user.venueId !== null && canManageCommercial(user, user.venueId)) {
+    return { ok: true, venueId: user.venueId };
+  }
   return { ok: false };
 }
 
@@ -117,7 +121,7 @@ export async function opportunityRoutes(
   server.get("/", { preHandler: [authenticate] }, async (request, reply) => {
     const scope = commercialScope(request.user);
     if (!scope.ok) {
-      return reply.status(403).send({ error: "Only venue staff or admin can view opportunities", code: "FORBIDDEN" });
+      return reply.status(403).send({ error: "Only the venue commercial team can view opportunities", code: "FORBIDDEN" });
     }
     const parsed = ListQuery.safeParse(request.query);
     if (!parsed.success) {
@@ -148,7 +152,7 @@ export async function opportunityRoutes(
       return reply.status(400).send({ error: "Validation failed", code: "VALIDATION_ERROR", details: parsed.error.issues });
     }
     if (!canManageCommercial(request.user, parsed.data.venueId)) {
-      return reply.status(403).send({ error: "Only venue staff or admin can create opportunities for this venue", code: "FORBIDDEN" });
+      return reply.status(403).send({ error: "Only the venue commercial team can create opportunities for this venue", code: "FORBIDDEN" });
     }
 
     for (const [kind, value] of [

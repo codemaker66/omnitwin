@@ -181,8 +181,17 @@ describe.skipIf(testUrl === undefined)("opportunities on isolated PostgreSQL", (
     ]);
   });
 
+  it("serves a venue's own admin, who used to be 403'd on their own opportunities", async () => {
+    const res = await server.inject({ method: "GET", url: "/opportunities", headers: headers("admin") });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body) as ListBody;
+    expect(body.meta.total).toBe(4);
+  });
+
   it("rejects a role the commercial API does not serve", async () => {
     const res = await server.inject({ method: "GET", url: "/opportunities", headers: headers("planner", null) });
     expect(res.statusCode).toBe(403);
+    const hallkeeper = await server.inject({ method: "GET", url: "/opportunities", headers: headers("hallkeeper") });
+    expect(hallkeeper.statusCode).toBe(403);
   });
 });

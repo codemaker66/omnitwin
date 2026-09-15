@@ -222,9 +222,26 @@ describe.skipIf(testUrl === undefined)("CRM pipeline on isolated PostgreSQL", ()
     ]);
   });
 
+  it("serves a venue's own admin, who used to be 403'd on their own pipeline", async () => {
+    const board = await server.inject({ method: "GET", url: "/crm/pipeline", headers: headers("admin") });
+    expect(board.statusCode).toBe(200);
+    const value = await server.inject({ method: "GET", url: "/crm/pipeline/value", headers: headers("admin") });
+    expect(value.statusCode).toBe(200);
+  });
+
+  it("serves the manager and sales roles the commercial capability now covers", async () => {
+    for (const role of ["manager", "sales"]) {
+      const res = await server.inject({ method: "GET", url: "/crm/pipeline", headers: headers(role) });
+      expect(res.statusCode, `role ${role}`).toBe(200);
+    }
+  });
+
   it("rejects a role the commercial API does not serve", async () => {
     const res = await server.inject({ method: "GET", url: "/crm/pipeline", headers: headers("planner", null) });
     expect(res.statusCode).toBe(403);
+    // A hallkeeper runs the room; the commercial board is not theirs.
+    const hallkeeper = await server.inject({ method: "GET", url: "/crm/pipeline", headers: headers("hallkeeper") });
+    expect(hallkeeper.statusCode).toBe(403);
   });
 
   it("validates pagination input before touching the database", async () => {
