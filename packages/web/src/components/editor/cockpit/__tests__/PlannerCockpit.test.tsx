@@ -55,6 +55,30 @@ describe("PlannerCockpit", () => {
     expect(screen.queryByTestId("when-ribbon-mock")).toBeNull();
   });
 
+  it.each([
+    { role: "client", mobile: true }, { role: "client", mobile: false },
+    { role: "planner", mobile: true }, { role: "planner", mobile: false },
+  ])("keeps capture failure visible without staff booking controls for $role on mobile=$mobile", ({ role, mobile }) => {
+    seedUser(role);
+    useCockpitStore.getState().setRoomResolve({ phase: "unavailable", loadedChunks: 1, totalChunks: 12 });
+    render(<PlannerCockpit mobile={mobile} hasLinkedEvent />);
+    expect(screen.getByTestId("room-resolve-caption").textContent).toContain("Room capture could not load");
+    expect(screen.queryByText("Booking time")).toBeNull();
+    expect(screen.queryByTestId("when-ribbon-mock")).toBeNull();
+  });
+
+  it.each([true, false])("keeps settled capture failure visible without working motion on mobile=%s", (mobile) => {
+    useCockpitStore.getState().setRoomResolve({ phase: "unavailable", loadedChunks: 1, totalChunks: 12 });
+    const { rerender } = render(<PlannerCockpit mobile={mobile} />);
+    const caption = screen.getByTestId("room-resolve-caption");
+    expect(caption.getAttribute("data-visible")).toBe("true");
+    expect(caption.textContent).toContain("Room capture could not load");
+    expect(caption.querySelector("svg")).toBeNull();
+    useCockpitStore.getState().setRoomResolve({ phase: "degraded", loadedChunks: 11, totalChunks: 12 });
+    rerender(<PlannerCockpit mobile={mobile} />);
+    expect(screen.getByTestId("room-resolve-caption").textContent).toContain("Part of the room capture");
+    expect(screen.getByTestId("room-resolve-caption").querySelector("svg")).toBeNull();
+  });
   it("keeps booking controls reachable independently of the layout timeline's expansion", () => {
     const { container, rerender } = render(<PlannerCockpit hasLinkedEvent />);
     const disclosure = screen.getByText("Booking time").closest("details");

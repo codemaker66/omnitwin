@@ -33,6 +33,8 @@ export type RoomRuntimeSplatStatus = "idle" | "loading" | "loaded" | "none";
 
 export interface RoomRuntimeSplat {
   readonly splatUrls: readonly string[];
+  /** Explicit environment roles from the selected source, not URL names. */
+  readonly environmentUrls: readonly string[];
   readonly transform: RuntimeAssetViewTransform;
   readonly hasAsset: boolean;
   readonly status: RoomRuntimeSplatStatus;
@@ -102,5 +104,5 @@ export function useRoomRuntimeSplat(): RoomRuntimeSplat {
   }, [runtimeLabel]);
 
   const currentStatus = !canReadRegistry || roomSlug === null ? "none" : packageKey === requestKey ? status : "loading";
-  return { splatUrls: decision.splatUrls, transform, hasAsset, status: currentStatus, roomSlug, source: decision.source };
+  return { splatUrls: decision.splatUrls, environmentUrls: decision.environmentUrls, transform, hasAsset, status: currentStatus, roomSlug, source: decision.source };
 }

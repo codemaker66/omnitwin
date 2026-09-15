@@ -6,11 +6,9 @@ import { roomResolveCaption } from "../../../lib/room-resolve-model.js";
 import "./RoomResolveCaption.css";
 
 /**
- * The quiet caption of "the room resolves" (CARD A2, 01 §13): visible only
- * while captured chunks are developing, reporting honest arrival progress.
- * No spinner — the room materializing is the progress indicator. The element
- * stays mounted so the exit can fade (Emil: exits are choreography too);
- * the last caption text is retained for the fade-out frame.
+ * Reports real capture progress and preserves terminal failure notices.
+ * Working motion ends when downloads settle. Retained text lets a successful
+ * caption fade out without its content disappearing during the transition.
  */
 export function RoomResolveCaption(): ReactElement {
   const resolve = useCockpitStore((s) => s.roomResolve);
@@ -29,7 +27,7 @@ export function RoomResolveCaption(): ReactElement {
       role="status"
       aria-live="polite"
     >
-      {visible && <ActivityIndicator size={24} />}
+      {resolve.phase === "developing" && <ActivityIndicator size={24} />}
       {visible ? caption : lastCaptionRef.current}
     </p>
   );

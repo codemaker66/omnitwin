@@ -7,7 +7,7 @@ import { useChunkArrivals } from "../use-chunk-arrivals.js";
 
 describe("useChunkArrivals", () => {
   it("counts distinct chunk arrivals and ignores duplicates", () => {
-    const { result } = renderHook(() => useChunkArrivals("a|b"));
+    const { result } = renderHook(() => useChunkArrivals("/a.sog|/b.sog"));
     expect(result.current.loadedCount).toBe(0);
 
     act(() => { result.current.markLoaded("/a.sog"); });
@@ -61,10 +61,32 @@ describe("useChunkArrivals", () => {
   });
 
   it("keeps markLoaded identity stable across arrivals", () => {
-    const { result, rerender } = renderHook(() => useChunkArrivals("a|b"));
+    const { result, rerender } = renderHook(() => useChunkArrivals("/a.sog|/b.sog"));
     const first = result.current.markLoaded;
     act(() => { result.current.markLoaded("/a.sog"); });
+    expect(result.current.loadedCount).toBe(1);
     rerender();
     expect(result.current.markLoaded).toBe(first);
+  });
+
+  it("ignores late outcomes for URLs removed by a room switch", () => {
+    const { result, rerender } = renderHook(({ urls }) => useChunkArrivals(urls), {
+      initialProps: { urls: "/a.sog" },
+    });
+    const oldLoaded = result.current.markLoaded;
+    const oldFailed = result.current.markFailed;
+    rerender({ urls: "/b.sog" });
+    act(() => { oldLoaded("/a.sog"); oldFailed("/other.sog"); });
+    expect(result.current.loadedCount).toBe(0);
+    expect(result.current.failedCount).toBe(0);
+  });
+
+  it("replaces a failed outcome with a successful retry without double counting", () => {
+    const { result } = renderHook(() => useChunkArrivals("/a.sog"));
+    act(() => { result.current.markFailed("/a.sog"); result.current.markLoaded("/a.sog"); });
+    expect(result.current.loadedCount).toBe(1);
+    expect(result.current.failedCount).toBe(0);
+    act(() => { result.current.markFailed("/a.sog"); });
+    expect(result.current.failedCount).toBe(0);
   });
 });

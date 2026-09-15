@@ -12,6 +12,7 @@
 }
 
 .lens-panel {
+  container: lens-panel / inline-size;
   grid-area: panel;
   display: flex;
   flex-direction: column;
@@ -114,6 +115,25 @@
   font-weight: 700;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.lens-panel__metric-label,
+.lens-panel__metric-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The reference dock can be only 205–248px wide. Give long values and their
+   qualifiers the full row instead of squeezing the label beneath the value. */
+@container lens-panel (max-width: 300px) {
+  .lens-panel__metric {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .lens-panel__metric-value {
+    justify-self: start;
+    text-align: left;
+  }
 }
 
 /* Room-by-style rows — event style, comfortable capacity (+ tight), fit chip. */

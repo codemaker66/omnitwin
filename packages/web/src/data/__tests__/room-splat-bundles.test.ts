@@ -303,6 +303,21 @@ describe("splatSourcesForBundle", () => {
     ],
   };
 
+  it.each([false, true])("preserves manifest roles through served URLs (trees: %s), independent of filenames", (preferTrees) => {
+    const renamed: GeneratedRoomSplatBundle = {
+      ...bundle,
+      tiles: bundle.tiles.map((tile) => tile.isEnvironment
+        ? { ...tile, file: "sky-shell.sog", lod: { file: "lod/sky.rad", bytes: 1, sha256: "a", splats: 1, chunks: [] } }
+        : tile.file === "0_1_1.sog" ? { ...tile, file: "env.sog" } : tile),
+    };
+    const sources = splatSourcesForBundle(renamed, base, preferTrees);
+    expect(sources.filter((source) => source.isEnvironment).map((source) => source.url)).toEqual([
+      `${base}/${preferTrees ? "lod/sky.rad" : "sky-shell.sog"}`,
+    ]);
+    expect(sources.find((source) => source.url === `${base}/env.sog`)?.isEnvironment).toBe(false);
+    expect(sources.map((source) => source.file)).toEqual(["0_1_0.sog", "env.sog", "sky-shell.sog"]);
+  });
+
   it("serves the tiles themselves when trees are not wanted", () => {
     const sources = splatSourcesForBundle(bundle, base, false);
     expect(sources.map((source) => source.url)).toEqual([

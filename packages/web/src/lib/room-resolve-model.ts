@@ -4,7 +4,27 @@
 // reports honest chunk progress. No spinner anywhere; the scene itself is
 // the state. Kept pure so the phase machine and copy are unit-testable.
 
-export type RoomResolvePhase = "ink" | "developing" | "resolved" | "fallback";
+export type RoomResolvePhase = "ink" | "developing" | "resolved" | "fallback" | "degraded" | "unavailable";
+
+export type CaptureAvailability = "pending" | "available" | "degraded" | "unavailable";
+
+/** Only explicitly identified environment sources are excluded. Registered
+ * packages without role metadata keep every source as possible room content. */
+export function captureAvailability(input: {
+  readonly urls: readonly string[];
+  readonly environmentUrls: readonly string[];
+  readonly loadedUrls: ReadonlySet<string>;
+  readonly failedUrls: ReadonlySet<string>;
+}): CaptureAvailability {
+  const environment = new Set(input.environmentUrls);
+  const content = [...new Set(input.urls)].filter((url) => !environment.has(url));
+  if (content.length === 0) return "unavailable";
+  const loaded = content.filter((url) => input.loadedUrls.has(url)).length;
+  const failed = content.filter((url) => !input.loadedUrls.has(url) && input.failedUrls.has(url)).length;
+  if (failed === content.length) return "unavailable";
+  if (loaded + failed < content.length) return "pending";
+  return failed > 0 ? "degraded" : "available";
+}
 
 export interface RoomResolveInput {
   /** Registry resolution status from useRoomRuntimeSplat. "idle" is a
@@ -15,25 +35,26 @@ export interface RoomResolveInput {
   readonly hasAsset: boolean;
   readonly totalChunks: number;
   readonly loadedChunks: number;
-  /** Chunks whose decode failed permanently. They count toward settling the
-   *  phase (a dead chunk must never wedge the caption open) while the ink
-   *  layer honestly persists over the region they would have covered. */
+  /** Permanently failed chunks count toward settling the pending phase.
+   * Global ink opacity does not describe which physical regions are absent. */
   readonly failedChunks?: number;
+  readonly captureAvailability?: CaptureAvailability;
 }
 
 export function roomResolvePhase(input: RoomResolveInput): RoomResolvePhase {
+  if (input.captureAvailability === "unavailable" && input.totalChunks > 0) return "unavailable";
   if (input.splatStatus === "loading") return "ink";
   if (input.hasAsset && input.totalChunks > 0) {
     const settledChunks = input.loadedChunks + (input.failedChunks ?? 0);
-    return settledChunks >= input.totalChunks ? "resolved" : "developing";
+    if (settledChunks < input.totalChunks) return "developing";
+    return input.captureAvailability === "degraded" ? "degraded" : "resolved";
   }
   return "fallback";
 }
 
 /**
- * Quiet caption for the developing phase only. Progress is real chunk
- * arrivals — the runtime-package schema carries no per-chunk byte sizes, so
- * any MB total would be fabricated and is deliberately absent.
+ * Pending captions report real chunk arrivals. Terminal failure captions
+ * persist without working motion. No per-chunk byte sizes are available.
  */
 export function roomResolveCaption(
   phase: RoomResolvePhase,
@@ -41,6 +62,8 @@ export function roomResolveCaption(
   loadedChunks: number,
   totalChunks: number,
 ): string | null {
+  if (phase === "unavailable") return "Room capture could not load. You can continue planning in Model view.";
+  if (phase === "degraded") return "Part of the room capture could not load. Model view remains available for planning.";
   if (phase !== "developing") return null;
   const progress = `${String(loadedChunks)} of ${String(totalChunks)} chunks`;
   return roomName !== null && roomName.length > 0

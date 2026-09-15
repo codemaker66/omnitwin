@@ -113,6 +113,8 @@ export interface RoomSplatSource {
   readonly url: string;
   /** True when `url` is a paged Spark level-of-detail tree rather than the tile. */
   readonly tree: boolean;
+  /** Explicit capture-manifest role; never inferred from the filename. */
+  readonly isEnvironment: boolean;
   /** The tile this source stands for, for counting load progress per tile. */
   readonly file: string;
 }
@@ -132,8 +134,8 @@ function sourceForTile(
 ): RoomSplatSource {
   const tree = preferTrees ? tile.lod : undefined;
   return tree === undefined
-    ? { url: `${roomBaseUrl}/${tile.file}`, tree: false, file: tile.file }
-    : { url: `${roomBaseUrl}/${tree.file}`, tree: true, file: tile.file };
+    ? { url: `${roomBaseUrl}/${tile.file}`, tree: false, file: tile.file, isEnvironment: tile.isEnvironment }
+    : { url: `${roomBaseUrl}/${tree.file}`, tree: true, file: tile.file, isEnvironment: tile.isEnvironment };
 }
 
 export function splatSourcesForBundle(

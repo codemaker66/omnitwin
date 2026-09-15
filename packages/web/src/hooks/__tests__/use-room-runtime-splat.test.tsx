@@ -83,12 +83,36 @@ describe("useRoomRuntimeSplat", () => {
     const { result } = renderHook(() => useRoomRuntimeSplat());
     expect(result.current.source).toBe("staged");
     expect(result.current.hasAsset).toBe(true);
+    expect(result.current.status).toBe("none");
+    expect(result.current.environmentUrls).toEqual(["/splats/trades-hall/grand-hall/env.sog"]);
+    expect(result.current.splatUrls).toContain(result.current.environmentUrls[0]);
     expect(runtimeApi.getLatestRuntimePackage).not.toHaveBeenCalled();
   });
+  it("removes staged environment roles when a registered env.sog package resolves", async () => {
+    const url = "https://assets.example/reception-room/env.sog";
+    const base = receptionRoomPackage();
+    if (base.primaryVisualAssetVersion === null) throw new Error("Missing fixture asset version");
+    runtimeApi.getLatestRuntimePackage.mockResolvedValue({
+      ...base,
+      primaryVisualAssetUrl: url,
+      visualAssetUrls: [url],
+      primaryVisualAssetVersion: { ...base.primaryVisualAssetVersion, fileName: "env.sog", fileExt: ".sog" },
+    });
+    useEditorStore.setState({ space: spaceWith("reception-room") });
+    const { result } = renderHook(() => useRoomRuntimeSplat());
+    expect(result.current.source).toBe("staged");
+    expect(result.current.environmentUrls.length).toBeGreaterThan(0);
+    await waitFor(() => { expect(result.current.status).toBe("loaded"); });
+    expect(result.current.source).toBe("package");
+    expect(result.current.splatUrls).toEqual([url]);
+    expect(result.current.environmentUrls).toEqual([]);
+  });
+
   it("stays 'none' with no space and never fetches", () => {
     const { result } = renderHook(() => useRoomRuntimeSplat());
     expect(result.current.status).toBe("none");
     expect(result.current.hasAsset).toBe(false);
+    expect(result.current.environmentUrls).toEqual([]);
     expect(runtimeApi.getLatestRuntimePackage).not.toHaveBeenCalled();
   });
 
@@ -104,6 +128,8 @@ describe("useRoomRuntimeSplat", () => {
     expect(result.current.hasAsset).toBe(true);
     expect(result.current.splatUrls.length).toBeGreaterThan(0);
     expect(result.current.splatUrls[0]).toContain("/splats/trades-hall/grand-hall/");
+    expect(result.current.environmentUrls).toEqual(["/splats/trades-hall/grand-hall/env.sog"]);
+    expect(result.current.splatUrls).toContain(result.current.environmentUrls[0]);
     // The staged transform is the derived room-local one, never a fudge.
     expect(result.current.transform.scale).toBe(1);
     expect(result.current.transform.rotation[0]).toBeCloseTo(-Math.PI / 2);
@@ -169,6 +195,11 @@ describe("useRoomRuntimeSplat", () => {
     act(() => { useAuthStore.getState().setUser({ id: "platform-admin", role: "planner", platformRole: "none", name: "Customer", email: "customer@example.test", venueId: null }); });
     expect(result.current.source).toBe("staged");
     expect(result.current.splatUrls).not.toContain(RECEPTION_SPLAT_URL);
+    expect(result.current.status).toBe("none");
+    expect(result.current.environmentUrls.length).toBeGreaterThan(0);
+    for (const environmentUrl of result.current.environmentUrls) {
+      expect(result.current.splatUrls).toContain(environmentUrl);
+    }
     expect(runtimeApi.getLatestRuntimePackage).toHaveBeenCalledTimes(1);
   });
 });
