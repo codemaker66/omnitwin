@@ -30,7 +30,7 @@ export function getImageDecoderRuntime() {
   return {
     node: process.version, platform: process.platform, architecture: process.arch, reportAvailable: report.success,
     versions: { ...sharp.versions }, nativeObjects,
-    libc: report.success && report.data.header.glibcVersionRuntime
+    libc: report.success && report.data.header.glibcVersionRuntime !== undefined
       ? { family: "glibc", version: report.data.header.glibcVersionRuntime }
       : { family: nativeObjects.some(path => path.includes("ld-musl-")) ? "musl" : "unknown" },
   };

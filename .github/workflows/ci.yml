@@ -176,6 +176,7 @@ jobs:
         run: |
           set -o pipefail
           docker run --rm --network none --read-only --memory 2g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=1g,mode=1777 \
             --mount "type=bind,source=$GITHUB_WORKSPACE/.github/scripts/verify-api-native-image.mjs,target=/tmp/native-image-check.mjs,readonly" \
             "$(cat native-image-results/image-id.txt)" \
             node --conditions=omnitwin-dist /tmp/native-image-check.mjs \
