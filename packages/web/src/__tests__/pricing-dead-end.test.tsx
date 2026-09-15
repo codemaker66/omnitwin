@@ -50,7 +50,7 @@ describe("PricingPage", () => {
     fireEvent.change(screen.getByLabelText("Your email"), { target: { value: "venue@example.test" } });
     fireEvent.change(screen.getByLabelText("Which rooms do you let? (optional)"),
       { target: { value: "We let the Grand Hall and the Saloon." } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send enquiry" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send enquiry" })); await Promise.resolve(); });
 
     expect(submitGuestEnquiry).toHaveBeenCalledWith({
       venueSlug: "trades-hall-glasgow",
@@ -65,7 +65,7 @@ describe("PricingPage", () => {
     submitGuestEnquiry.mockRejectedValueOnce(new Error("network"));
     show();
     fireEvent.change(screen.getByLabelText("Your email"), { target: { value: "venue@example.test" } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send enquiry" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send enquiry" })); await Promise.resolve(); });
 
     expect((await screen.findByText(/did not send/)).textContent).toContain("Please try again");
     expect(screen.getByRole("button", { name: "Send enquiry" })).toBeDefined();

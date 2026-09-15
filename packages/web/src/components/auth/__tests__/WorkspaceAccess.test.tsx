@@ -93,7 +93,7 @@ describe("authoritative account access", () => {
     fireEvent.click(screen.getByRole("button", { name: "Request access" }));
     fireEvent.change(screen.getByLabelText("Anything the venue should know? (optional)"),
       { target: { value: "I run the Saturday ceilidh." } });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send request" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send request" })); await Promise.resolve(); });
 
     expect(mocks.submitGuestEnquiry).toHaveBeenCalledWith({
       venueSlug: "trades-hall-glasgow",
@@ -113,7 +113,7 @@ describe("authoritative account access", () => {
     render(<Flow />);
     await screen.findByRole("heading", { name: "Venue access pending" });
     fireEvent.click(screen.getByRole("button", { name: "Request access" }));
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send request" })); });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Send request" })); await Promise.resolve(); });
     expect((await screen.findByText(/did not send/)).textContent).toContain("Please try again");
     expect(screen.getByRole("button", { name: "Send request" })).toBeDefined();
   });
