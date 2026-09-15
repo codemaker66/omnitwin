@@ -40,7 +40,7 @@ import {
   shouldLoadReplay,
 } from "../../lib/cockpit-scene-overlay-model.js";
 
-import { annotationSafeArea, placeSceneAnnotations, type AnnotationMeasure, type AnnotationRect } from "../../lib/cockpit-scene-annotation-layout.js";
+import { annotationSafeArea, placeSceneAnnotations, rectanglesOverlap, type AnnotationMeasure, type AnnotationRect } from "../../lib/cockpit-scene-annotation-layout.js";
 import "./CockpitSceneAnnotations.css";
 
 // ---------------------------------------------------------------------------
@@ -370,6 +370,7 @@ const BLOCKING_UI = [
   ".planner-tool-pill", ".reference-more-tools", ".reference-extra-tools", ".planner-command-deck",
   "[data-testid='mobile-planner-topbar']", ".mobile-planner-dock", ".planner-status-header",
   "[data-floating-widget-id]", "[aria-label='Room view']", "[aria-label='View mode']",
+  ".mobile-planner-utilities > *", "[data-testid='truth-mode-popover']",
   "[aria-label='Room layout timeline']", "[data-testid='cockpit-bottom']", ".client-event-dock", ".room-resolve-caption",
 ].join(", ");
 const MODAL_UI = "[role='dialog'][aria-modal='true'], dialog[open]";
@@ -380,6 +381,15 @@ function hasVisibleBounds(element: Element): boolean {
   const box = element.getBoundingClientRect();
   const style = getComputedStyle(element);
   return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+}
+
+// Mobile chrome is a sibling of the cockpit; floating View controls portal to
+// the body. Use the same explicit, canvas-intersecting set for layout and resize
+// observation so neither owner can silently fall outside the measured shell.
+function visibleCanvasBlockers(canvas: HTMLCanvasElement): HTMLElement[] {
+  const canvasBox = canvas.getBoundingClientRect();
+  return [...canvas.ownerDocument.querySelectorAll<HTMLElement>(BLOCKING_UI)]
+    .filter((element) => hasVisibleBounds(element) && rectanglesOverlap(canvasBox, element.getBoundingClientRect()));
 }
 
 function SceneAnnotations({ annotations }: { readonly annotations: readonly SceneAnnotation[] }): ReactElement {
@@ -437,8 +447,8 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     const observeBounds = (): void => {
       observer?.disconnect();
       if (shell !== null) observer?.observe(shell);
-      shell?.querySelectorAll(BLOCKING_UI).forEach((element) => { observer?.observe(element); });
-      document.querySelectorAll(MODAL_UI).forEach((element) => { observer?.observe(element); });
+      visibleCanvasBlockers(canvas).forEach((element) => { observer?.observe(element); });
+      canvas.ownerDocument.querySelectorAll(MODAL_UI).forEach((element) => { observer?.observe(element); });
       cards.current.forEach((element) => { observer?.observe(element); });
       markDirty();
     };
@@ -455,7 +465,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
       });
       if (relevant) observeBounds();
     });
-    membership.observe(document.body, {
+    membership.observe(canvas.ownerDocument.body, {
       childList: true, subtree: true, attributes: true,
       attributeFilter: ["style", "class", "hidden", "open", "aria-hidden", "data-visible"],
     });
@@ -478,15 +488,11 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     dirty.current = false;
     lastCamera.current = signature;
     const canvasBox = canvas.getBoundingClientRect();
-    const shell = canvas.closest(".reference-viewer, .cockpit-shell") ?? canvas.parentElement;
-    const obstacles: AnnotationRect[] = [];
-    shell?.querySelectorAll<HTMLElement>(BLOCKING_UI).forEach((element) => {
+    const obstacles: AnnotationRect[] = visibleCanvasBlockers(canvas).map((element) => {
       const box = element.getBoundingClientRect();
-      if (hasVisibleBounds(element)) {
-        obstacles.push({ x: box.x - canvasBox.x, y: box.y - canvasBox.y, width: box.width, height: box.height });
-      }
+      return { x: box.x - canvasBox.x, y: box.y - canvasBox.y, width: box.width, height: box.height };
     });
-    const modalOpen = [...document.querySelectorAll(MODAL_UI)].some(hasVisibleBounds);
+    const modalOpen = [...canvas.ownerDocument.querySelectorAll(MODAL_UI)].some(hasVisibleBounds);
     const area = modalOpen ? null : annotationSafeArea({ x: 0, y: 0, width: size.width, height: size.height }, obstacles);
     // A covering surface owns the screen/focus until it closes. The records
     // remain mounted and the observer restores their spatial display afterwards.

@@ -246,21 +246,93 @@ describe("CockpitSceneOverlays", () => {
     expect(screen.getByRole("button", { name: "Dismiss annotation details" })).toBeTruthy();
   });
 
-  it("measures the mobile shell's actual top bar outside the canvas parent", () => {
+  it("measures and observes a sibling mobile header while excluding off-canvas widgets", () => {
     const canvas = frameState.canvas;
     if (canvas === null) throw new Error("Missing canvas");
+    const observers: TestResizeObserver[] = [];
+    class TestResizeObserver implements ResizeObserver {
+      readonly elements = new Set<Element>();
+      constructor(readonly callback: ResizeObserverCallback) { observers.push(this); }
+      observe(element: Element): void { this.elements.add(element); }
+      unobserve(element: Element): void { this.elements.delete(element); }
+      disconnect(): void { this.elements.clear(); }
+    }
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
     const shell = document.createElement("div"); shell.className = "cockpit-shell is-mobile";
-    const canvasParent = document.createElement("div"); canvasParent.append(canvas);
+    shell.append(canvas);
     const topbar = document.createElement("div"); topbar.setAttribute("data-testid", "mobile-planner-topbar");
-    shell.append(canvasParent, topbar); document.body.append(shell);
+    const elsewhere = document.createElement("div"); elsewhere.setAttribute("data-floating-widget-id", "elsewhere");
+    document.body.append(shell, topbar, elsewhere);
     const canvasBox = vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
-    vi.spyOn(topbar, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    const topbarBox = vi.spyOn(topbar, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    vi.spyOn(elsewhere, "getBoundingClientRect").mockReturnValue(new DOMRect(2000, 0, 400, 1000));
+    try {
+      useCockpitStore.getState().setMode("flow");
+      const { container, unmount } = render(<CockpitSceneOverlays renderGeometry={false} />);
+      const runFrame = (): void => {
+        const callback = frameState.callbacks.at(-1);
+        if (callback === undefined) throw new Error("Missing annotation frame");
+        callback();
+      };
+      act(runFrame);
+      expect(shell.contains(topbar)).toBe(false);
+      expect(container.querySelector(".scene-annotations")?.getAttribute("aria-hidden")).toBe("true");
+      expect(observers.some((observer) => observer.elements.has(topbar))).toBe(true);
+      expect(observers.some((observer) => observer.elements.has(elsewhere))).toBe(false);
+      // A ResizeObserver delivery, without a window resize, must release the
+      // canvas and still keep every packed warning below the resized header.
+      topbarBox.mockReturnValue(new DOMRect(10, 8, 1346, 70));
+      act(() => {
+        observers.filter((observer) => observer.elements.has(topbar)).forEach((observer) => { observer.callback([], observer); });
+        runFrame();
+      });
+      expect(container.querySelector(".scene-annotations")?.getAttribute("aria-hidden")).toBe("false");
+      const cards = [...container.querySelectorAll<HTMLElement>(".scene-annotations__card")];
+      expect(cards.length).toBeGreaterThan(0);
+      for (const card of cards) {
+        const match = /translate\([^,]+, ([^)]+)px\)/.exec(card.style.transform);
+        if (match?.[1] === undefined) throw new Error("Missing annotation placement");
+        expect(Number.parseFloat(match[1])).toBeGreaterThanOrEqual(86);
+      }
+      unmount();
+    } finally {
+      cleanup(); shell.remove(); topbar.remove(); elsewhere.remove(); canvasBox.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reflows around a body-portalled View panel and restores selected details on close", async () => {
+    const canvas = frameState.canvas;
+    if (canvas === null) throw new Error("Missing canvas");
+    const shell = document.createElement("div"); shell.className = "cockpit-shell";
+    shell.append(canvas); document.body.append(shell);
+    const canvasBox = vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
+    const view = document.createElement("section"); view.setAttribute("data-floating-widget-id", "planner-camera-views");
+    vi.spyOn(view, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1366, 1000));
     useCockpitStore.getState().setMode("flow");
-    const { container, unmount } = render(<CockpitSceneOverlays />);
-    const callback = frameState.callbacks.at(-1);
-    if (callback === undefined) throw new Error("Missing annotation frame");
-    act(callback);
-    expect(container.querySelector(".scene-annotations")?.getAttribute("aria-hidden")).toBe("true");
+    const { container, unmount } = render(<CockpitSceneOverlays renderGeometry={false} />);
+    const marker = screen.getAllByRole("button", { name: /Simulated/ })[0];
+    if (marker === undefined) throw new Error("Missing marker");
+    fireEvent.click(marker);
+    const runFrame = (): void => {
+      const callback = frameState.callbacks.at(-1);
+      if (callback === undefined) throw new Error("Missing annotation frame");
+      callback();
+    };
+    act(runFrame);
+    const layer = container.querySelector(".scene-annotations");
+    expect(layer?.getAttribute("aria-hidden")).toBe("false");
+    await act(async () => { document.body.append(view); await Promise.resolve(); });
+    act(runFrame);
+    expect(shell.contains(view)).toBe(false);
+    expect(layer?.getAttribute("aria-hidden")).toBe("true");
+    expect(marker.getAttribute("aria-expanded")).toBe("true");
+    expect(useCockpitStore.getState().beam).toBeNull();
+    await act(async () => { view.remove(); await Promise.resolve(); });
+    act(runFrame);
+    expect(layer?.getAttribute("aria-hidden")).toBe("false");
+    expect(marker.getAttribute("aria-expanded")).toBe("true");
+    expect(useCockpitStore.getState().beam).not.toBeNull();
     unmount(); shell.remove(); canvasBox.mockRestore();
   });
 
