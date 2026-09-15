@@ -406,6 +406,7 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Verify receipt, authenticated bridge and inventory boundaries
         run: node --test .github/gpu/*.test.mjs
@@ -439,6 +440,7 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          package-manager-cache: false
 
       - name: Prepare exact-source GPU request
         env:
