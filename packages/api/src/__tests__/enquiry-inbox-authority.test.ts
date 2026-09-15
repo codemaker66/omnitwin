@@ -68,4 +68,37 @@ describe("enquiry inbox count and row authority", () => {
   it("retains explicit platform administrator scope", async () => {
     expect(await inbox("admin", null, "admin")).toBeNull();
   });
+
+  // The Diary's tray asks one question — "every OPEN enquiry" — instead of
+  // reading a default page of twenty and filtering in the browser (T-619).
+  it("accepts a comma-separated set of states and keeps the venue scope", async () => {
+    const predicate = await inbox("staff", VENUE_ID, "none", "?status=submitted,under_review&limit=100");
+    expect(predicate?.sql).toContain('"enquiries"."state" in');
+    expect(predicate?.params).toEqual(["submitted", "under_review", VENUE_ID]);
+  });
+
+  it("accepts repeated status params, as Fastify delivers them", async () => {
+    const predicate = await inbox("staff", VENUE_ID, "none", "?status=submitted&status=under_review");
+    expect(predicate?.params).toEqual(["submitted", "under_review", VENUE_ID]);
+  });
+
+  it("still emits simple equality for a single state", async () => {
+    const predicate = await inbox("staff", VENUE_ID, "none", "?status=submitted");
+    expect(predicate?.sql).not.toContain(" in ");
+    expect(predicate?.params).toEqual(["submitted", VENUE_ID]);
+  });
+
+  it.each([
+    ["a state the machine does not have", "?status=submitted,not_a_state"],
+    ["an order it does not know", "?order=sideways"],
+  ])("refuses %s", async (_label, query) => {
+    const response = await server.inject({
+      method: "GET",
+      url: `/enquiries${query}`,
+      headers: {
+        authorization: `Bearer ${JSON.stringify({ id: ACTOR_ID, email: "inbox@test.invalid", role: "staff", venueId: VENUE_ID, platformRole: "none" })}`,
+      },
+    });
+    expect(response.statusCode).toBe(400);
+  });
 });

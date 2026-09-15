@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useBoardDrag } from "../useBoardDrag.js";
 
 const block = { id: "booking", title: "Briefing", spaceId: "room", startMs: Date.parse("2026-09-07T08:00Z"), endMs: Date.parse("2026-09-07T08:15Z"), isInk: false };
@@ -10,7 +10,15 @@ function Harness({ writable = true, onOpen = vi.fn(), onCommit = vi.fn() }) {
 beforeEach(() => {
   class TestPointerEvent extends MouseEvent {
     readonly pointerId: number;
-    constructor(type: string, init: PointerEventInit = {}) { super(type, init); this.pointerId = init.pointerId ?? 1; }
+    // pointerType is what tells a finger from a mouse, and the whole T-619
+    // touch rule turns on it — the stub has to carry it, or every case here
+    // silently exercises the mouse path.
+    readonly pointerType: string;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 1;
+      this.pointerType = init.pointerType ?? "";
+    }
   }
   vi.stubGlobal("PointerEvent", TestPointerEvent);
   Object.defineProperty(HTMLElement.prototype, "setPointerCapture", { configurable: true, value: vi.fn() });
@@ -47,5 +55,68 @@ describe("precise timeline pointer activation", () => {
     fireEvent.pointerMove(button, { pointerId: 2, clientX: 44, clientY: 20 });
     fireEvent.pointerUp(button, { pointerId: 2 });
     expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Touch (T-619, §2 line 18: "a finger scrolls; a long-press lifts"). A block
+// used to lift after 5px of travel regardless of pointer type, which is the
+// same 5px a finger covers starting a scroll — so the lane could not be
+// panned on a phone. A finger must now rest before it lifts.
+// ---------------------------------------------------------------------------
+describe("touch: a finger scrolls, a long press lifts", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("does not lift a block from a finger that moves straight away", () => {
+    const onCommit = vi.fn(); const onOpen = vi.fn();
+    render(<Harness onCommit={onCommit} onOpen={onOpen} />);
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
+    // A scroll: the finger travels well past the old 5px activation.
+    fireEvent.pointerMove(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 60 });
+    fireEvent.pointerUp(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 60 });
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("lifts a block once the finger has rested, then commits the move", () => {
+    const onCommit = vi.fn();
+    render(<Harness onCommit={onCommit} />);
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
+    act(() => { vi.advanceTimersByTime(400); });
+    fireEvent.pointerMove(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 20 });
+    fireEvent.pointerUp(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 20 });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit.mock.calls[0]?.[0]).toMatchObject({
+      patch: { startsAt: "2026-09-07T08:15:00.000Z", endsAt: "2026-09-07T08:30:00.000Z" },
+    });
+  });
+
+  it("abandons a ripening press the finger walks away from, and never lifts late", () => {
+    const onCommit = vi.fn();
+    render(<Harness onCommit={onCommit} />);
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
+    act(() => { vi.advanceTimersByTime(150); });
+    fireEvent.pointerMove(button, { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 70 });
+    // The press must be dead, not merely deferred: letting the timer run on
+    // would tear a block out of the lane mid-scroll.
+    act(() => { vi.advanceTimersByTime(600); });
+    fireEvent.pointerMove(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 70 });
+    fireEvent.pointerUp(button, { pointerId: 1, pointerType: "touch", clientX: 44, clientY: 70 });
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("still opens the block from a plain tap", () => {
+    const onOpen = vi.fn(); const onCommit = vi.fn();
+    render(<Harness onOpen={onOpen} onCommit={onCommit} />);
+    const button = screen.getByRole("button", { name: "Booking" });
+    fireEvent.pointerDown(button, { pointerId: 1, button: 0, pointerType: "touch", clientX: 20, clientY: 20 });
+    act(() => { vi.advanceTimersByTime(120); });
+    fireEvent.pointerUp(button, { pointerId: 1, pointerType: "touch", clientX: 20, clientY: 20 });
+    fireEvent.click(button);
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith("booking");
+    expect(onCommit).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
 import { DiaryBoardPage } from "../DiaryBoardPage.js";
@@ -19,7 +19,7 @@ const {
   updateBookingMock,
   transitionBookingMock,
   convertEnquiryMock,
-  listEnquiriesMock,
+  listOpenEnquiriesMock,
 } = vi.hoisted(() => ({
   getCalendarMock: vi.fn(),
   moveBookingMock: vi.fn(),
@@ -27,7 +27,7 @@ const {
   updateBookingMock: vi.fn(),
   transitionBookingMock: vi.fn(),
   convertEnquiryMock: vi.fn(),
-  listEnquiriesMock: vi.fn(),
+  listOpenEnquiriesMock: vi.fn(),
 }));
 
 vi.mock("../../../api/diary.js", () => ({
@@ -40,7 +40,7 @@ vi.mock("../../../api/diary.js", () => ({
 }));
 
 vi.mock("../../../api/enquiries.js", () => ({
-  listEnquiries: listEnquiriesMock,
+  listOpenEnquiries: listOpenEnquiriesMock,
 }));
 
 // The board now wears the app shell (DashboardLayout), which renders a Clerk
@@ -59,10 +59,20 @@ vi.mock("../../../components/dashboard/NotificationCenter.js", () => ({
   NotificationCenter: () => null,
 }));
 
+// Presence is mutable so a test can put THIS user in the roster and check
+// the count still speaks about other people (T-619).
+const { presenceState } = vi.hoisted(() => ({
+  presenceState: {
+    rows: [{ userId: "presence-1", name: "Elaine", role: "hallkeeper" }] as readonly {
+      userId: string; name: string; role: string;
+    }[],
+  },
+}));
+
 vi.mock("../hooks/useDiaryLive.js", () => ({
   useDiaryLive: () => ({
     connected: true,
-    presence: [{ userId: "presence-1", name: "Elaine", role: "hallkeeper" }],
+    presence: presenceState.rows,
   }),
 }));
 
@@ -175,7 +185,7 @@ function renderPage(): ReturnType<typeof render> {
 
 beforeEach(() => {
   getCalendarMock.mockResolvedValue(fixture());
-  listEnquiriesMock.mockResolvedValue([
+  listOpenEnquiriesMock.mockResolvedValue([
     {
       id: "00000000-0000-4000-8000-0000000000e1",
       venueId: VENUE,
@@ -197,6 +207,7 @@ beforeEach(() => {
     },
   ]);
   setUser("staff");
+  presenceState.rows = [{ userId: "presence-1", name: "Elaine", role: "hallkeeper" }];
   // Most tests exercise a returning coordinator — the first-run welcome has
   // its own dedicated tests below.
   window.localStorage.setItem(welcomeStorageKey(STAFF_USER_ID), "1");
@@ -254,7 +265,7 @@ describe("DiaryBoardPage", () => {
   it("distinguishes pending and failed enquiry loads from an empty result and retries", async () => {
     let rejectRequest: ((reason: Error) => void) | undefined;
     const response = new Promise<never>((_resolve, reject) => { rejectRequest = reject; });
-    listEnquiriesMock.mockReturnValue(response);
+    listOpenEnquiriesMock.mockReturnValue(response);
     renderPage();
     await screen.findByText("Loading open enquiries…");
     expect(screen.queryByText("No open enquiries right now.")).toBeNull();
@@ -262,7 +273,7 @@ describe("DiaryBoardPage", () => {
     expect(screen.queryByText("Loading open enquiries…")).toBeNull();
     expect(screen.queryByText("No open enquiries right now.")).toBeNull();
     expect(screen.getByText(/Enquiries could not be refreshed/)).toBeTruthy();
-    listEnquiriesMock.mockResolvedValue([]);
+    listOpenEnquiriesMock.mockResolvedValue([]);
     fireEvent.click(screen.getByRole("button", { name: "Retry enquiries" }));
     expect(await screen.findByText("No open enquiries right now.")).toBeTruthy();
     expect(screen.queryByText(/Enquiries could not be refreshed/)).toBeNull();
@@ -275,14 +286,32 @@ describe("DiaryBoardPage", () => {
     await waitFor(() => { expect(screen.queryByText("Loading open enquiries…")).toBeNull(); });
     let rejectRequest: ((reason: Error) => void) | undefined;
     const response = new Promise<never>((_resolve, reject) => { rejectRequest = reject; });
-    listEnquiriesMock.mockReturnValue(response);
-    fireEvent.click(screen.getByRole("button", { name: "Later" }));
+    listOpenEnquiriesMock.mockReturnValue(response);
+    // The reload is now an explicit act — Refresh — rather than a side
+    // effect of moving the board (T-619).
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await screen.findByText("Loading open enquiries…");
     expect(screen.getByText("Fiona MacLeod")).toBeTruthy();
     await act(async () => { rejectRequest?.(new Error("Offline")); await response.catch(() => undefined); });
     expect(screen.queryByText("Loading open enquiries…")).toBeNull();
     expect(screen.getByText("Fiona MacLeod")).toBeTruthy();
     expect(screen.getByText(/Enquiries could not be refreshed/)).toBeTruthy();
+  });
+
+  // Gate line 17 (T-619): the tray reads every OPEN enquiry once, and a
+  // board move is not a reason to read it again. Before this, panning a week
+  // re-fetched the whole enquiry list — a round trip per interaction, for
+  // data that cannot have changed.
+  it("reads open enquiries once and does not re-read them when the board moves", async () => {
+    getCalendarMock.mockImplementation(() => Promise.resolve(fixture()));
+    renderPage();
+    await screen.findByText("Fiona MacLeod");
+    expect(listOpenEnquiriesMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Later" }));
+    await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBeGreaterThan(1); });
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
+    await waitFor(() => { expect(getCalendarMock.mock.calls.length).toBeGreaterThan(2); });
+    expect(listOpenEnquiriesMock).toHaveBeenCalledTimes(1);
   });
   it("renders lanes, blocks, and the legend from the calendar response", async () => {
     renderPage();
@@ -490,5 +519,114 @@ describe("DiaryBoardPage", () => {
     renderPage();
     expect(screen.getByText(/no venue assigned/)).toBeDefined();
     expect(getCalendarMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-619 — the timetable slice. Create-in-context, shortcuts that stay off a
+// surface the coordinator is typing into, a presence count that means other
+// people, and the retired month board's deep links.
+// ---------------------------------------------------------------------------
+
+describe("DiaryBoardPage — create in context (T-619)", () => {
+  it("seeds New booking with the day being looked at, not the range's first instant", async () => {
+    // The board is anchored on the week of 16 Sep; "now" sits inside it, so
+    // the drawer should open on 16 Sep, NOT on the Monday the range starts.
+    vi.setSystemTime(Date.parse("2026-09-16T10:00:00.000Z"));
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.click(screen.getByRole("button", { name: "New booking" }));
+    const drawer = screen.getByRole("dialog", { name: "New booking" });
+    // Queried by the value the coordinator actually sees, which keeps these
+    // assertions free of DOM casts the lint rules (rightly) dislike.
+    expect(within(drawer).getByDisplayValue("2026-09-16T17:00")).toBeTruthy();
+    expect(within(drawer).getByDisplayValue("Grand Hall")).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it("opens the drawer prefilled from an empty overview cell's room and day", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    // Every room/day square carries its own create control, named for what
+    // it will make — that name IS the contract with the coordinator. One per
+    // day of the week, so the first is the Monday the range opens on.
+    const cells = screen.getAllByRole("button", { name: /^New booking — Saloon, / });
+    expect(cells).toHaveLength(7);
+    fireEvent.click(cells[0] as HTMLElement);
+    const drawer = screen.getByRole("dialog", { name: "New booking" });
+    // The clicked ROOM, and the clicked DAY at the house's default evening
+    // hour — not the room the venue happens to sort first, and not "now".
+    expect(within(drawer).getByDisplayValue("Saloon")).toBeTruthy();
+    expect(within(drawer).getByDisplayValue("2026-09-14T17:00")).toBeTruthy();
+  });
+
+  it("offers no create affordance to a read-only role", async () => {
+    setUser("hallkeeper");
+    renderPage();
+    await screen.findByText("Grand Hall");
+    expect(screen.queryByRole("button", { name: /^New booking — / })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New booking" })).toBeNull();
+  });
+});
+
+describe("DiaryBoardPage — shortcuts, presence and retired views (T-619)", () => {
+  it("does not re-range the board from a letter typed into the drawer's Room select", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.click(screen.getByRole("button", { name: "New booking" }));
+    const drawer = screen.getByRole("dialog", { name: "New booking" });
+    const room = within(drawer).getByLabelText("Room");
+    room.focus();
+    // "d" is the board's Day shortcut and a <select>'s type-ahead. The
+    // select wins: the drawer must not have the ground moved under it.
+    fireEvent.keyDown(room, { key: "d" });
+    expect(screen.getByRole("dialog", { name: "New booking" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("holds board shortcuts while the drawer is open, even from the page body", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.click(screen.getByRole("button", { name: "New booking" }));
+    fireEvent.keyDown(window, { key: "d" });
+    expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("still re-ranges from a board shortcut once no drawer is open", async () => {
+    renderPage();
+    await screen.findByText("Grand Hall");
+    fireEvent.keyDown(window, { key: "d" });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Day" }).getAttribute("aria-pressed")).toBe("true");
+    });
+  });
+
+  it("counts other people in the presence chip, never yourself", async () => {
+    presenceState.rows = [
+      { userId: STAFF_USER_ID, name: "Test Staff", role: "staff" },
+      { userId: "presence-1", name: "Elaine", role: "hallkeeper" },
+    ];
+    renderPage();
+    await screen.findByText("Grand Hall");
+    expect(screen.getByText("Live · 1")).toBeTruthy();
+  });
+
+  it("says only Live when you are the only person on the board", async () => {
+    presenceState.rows = [{ userId: STAFF_USER_ID, name: "Test Staff", role: "staff" }];
+    renderPage();
+    await screen.findByText("Grand Hall");
+    expect(screen.getByText("Live")).toBeTruthy();
+    expect(screen.queryByText(/Live · /)).toBeNull();
+  });
+
+  it("lands an old ?view=month deep link on the week that anchor falls in", async () => {
+    render(
+      <MemoryRouter initialEntries={["/diary?view=month&date=2026-09-16"]}>
+        <DiaryBoardPage />
+      </MemoryRouter>,
+    );
+    await screen.findByText("Grand Hall");
+    expect(screen.getByRole("button", { name: "Week" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByRole("button", { name: "Month" })).toBeNull();
   });
 });

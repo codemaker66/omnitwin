@@ -18,6 +18,8 @@ import {
   formatWallTime,
   hourTicks,
   msToX,
+  rangeTitle,
+  snapMs,
   widthPx,
   type BoardRange,
 } from "../lib/board-time.js";
@@ -53,6 +55,10 @@ export interface BoardGridProps {
   readonly writable: boolean;
   readonly nowMs: number;
   readonly onOpenBlock?: (blockId: string) => void;
+  /** Create-in-context (T-619): a click on empty lane space opens the
+   *  drawer already holding this room and the instant that was clicked.
+   *  Undefined for a read-only role — there is then no control to offer. */
+  readonly onCreateAt?: (spaceId: string, startMs: number) => void;
   /** The venue's turnaround rules (optional on the wire) — gap dimensions
    *  degrade to plain durations when an older server omits them. */
   readonly turnaroundRules?: readonly CalendarTurnaroundRule[];
@@ -116,7 +122,7 @@ function countdownLabel(ms: number): string {
 }
 
 export function BoardGrid(props: BoardGridProps): ReactElement {
-  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock } = props;
+  const { rooms, entries, range, pxPerHour, conflictSeverity, drag, writable, nowMs, turnaroundRules, onOpenBlock, onCreateAt } = props;
   const canvasWidth = widthPx(range.fromMs, range.toMs, pxPerHour);
   const columns = dayColumns(range);
   const ticks = range.view === "day" ? hourTicks(range) : [];
@@ -225,6 +231,31 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                   data-diary-lane={room.id}
                   style={{ width: canvasWidth, height: laneHeight }}
                 >
+                  {/* Create-in-context (T-619). Empty lane space is the most
+                      natural place to say "put something here", and it was
+                      inert: the only way to make a booking was the toolbar
+                      button, which then guessed the room and the day. The
+                      surface sits UNDER the blocks (z-index 1 against their
+                      2), so it can only ever be reached where the lane is
+                      genuinely empty, and it is a <button> so the keyboard
+                      and a screen reader reach the same affordance. */}
+                  {onCreateAt === undefined ? null : (
+                    <button
+                      type="button"
+                      className="diary-lane-new"
+                      aria-label={BOARD_COPY.create.laneLabel(room.name, rangeTitle(range))}
+                      onClick={(event) => {
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        const offsetMs =
+                          ((event.clientX - bounds.left) / pxPerHour) * 3_600_000;
+                        const clicked = snapMs(range.fromMs + offsetMs, 15);
+                        onCreateAt(
+                          room.id,
+                          Math.min(Math.max(clicked, range.fromMs), range.toMs - 15 * 60_000),
+                        );
+                      }}
+                    />
+                  )}
                   {columns.map((column) => (
                     <div
                       key={column.startMs}
@@ -334,6 +365,9 @@ export function BoardGrid(props: BoardGridProps): ReactElement {
                           stateClass,
                           severity !== undefined ? `has-conflict-${severity}` : "",
                           beingDragged ? "is-dragging" : "",
+                          // Only the block a finger is actually carrying
+                          // stops the page scrolling (T-619).
+                          drag.liftedBlockId === block.entry.id ? "is-lifted" : "",
                           block.startMs < range.fromMs ? "is-clipped-start" : "",
                           block.endMs > range.toMs ? "is-clipped-end" : "",
                         ]

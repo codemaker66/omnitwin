@@ -87,6 +87,12 @@ const EnvSchema = z.object({
   // this + configure the scraper's Authorization header. Minimum 16
   // chars so a weak token that slips through review is caught here.
   METRICS_TOKEN: z.string().min(16).optional(),
+  // Service token for the unattended hold-reminder cron (T-619). When unset,
+  // POST /admin/diary/hold-reminders accepts ONLY a signed-in platform
+  // administrator — the scheduled path is simply unavailable, never open.
+  // 32 chars minimum: this token triggers a real delivery pass, so a weak
+  // value that slips through review is caught here at startup.
+  DIARY_CRON_TOKEN: z.string().min(32).optional(),
 }).superRefine((env, ctx) => {
   // Punch list #5: in production, CLERK_WEBHOOK_SECRET MUST be set so
   // the webhook route can verify signatures. The route itself also fails

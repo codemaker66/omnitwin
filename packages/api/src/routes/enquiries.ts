@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { eq, and, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull, sql } from "drizzle-orm";
 import { enquiries, enquiryStatusHistory, configurations, pricingRules, spaces, venues } from "../db/schema.js";
 import type { Database } from "../db/client.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
@@ -43,8 +43,29 @@ const TransitionBody = z.object({
   note: z.string().max(1000).nullable().optional(),
 });
 
+/** `status` accepts one state or a comma-separated set, so a caller that
+ *  wants "every OPEN enquiry" (the Diary's tray: submitted + under_review)
+ *  makes ONE request instead of one per state — and instead of paging the
+ *  whole table and filtering in the browser, which silently truncated the
+ *  tray at the default page of 20 rows (T-619). Repeated `?status=` params
+ *  arrive as an array from Fastify and are accepted in the same shape. */
 const StatusFilterQuery = z.object({
-  status: z.enum(ENQUIRY_STATES).optional(),
+  status: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .transform((raw): string[] | undefined => {
+      if (raw === undefined) return undefined;
+      const parts = (Array.isArray(raw) ? raw : [raw])
+        .flatMap((value) => value.split(","))
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      return parts.length === 0 ? undefined : parts;
+    })
+    .pipe(z.array(z.enum(ENQUIRY_STATES)).min(1).max(ENQUIRY_STATES.length).optional()),
+  // "oldest" keeps the historic updatedAt-ascending order every existing
+  // caller relies on; "newest" is the tray's order (most recently raised
+  // enquiry first), which is what a coordinator actually needs to see.
+  order: z.enum(["oldest", "newest"]).default("oldest"),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -69,8 +90,13 @@ export async function enquiryRoutes(
     const user = request.user;
     const whereConditions = [];
 
-    if (query.data.status !== undefined) {
-      whereConditions.push(eq(enquiries.state, query.data.status));
+    const states = query.data.status;
+    if (states !== undefined) {
+      whereConditions.push(
+        states.length === 1 && states[0] !== undefined
+          ? eq(enquiries.state, states[0])
+          : inArray(enquiries.state, [...states]),
+      );
     }
 
     if (isPlatformAdmin(user)) {
@@ -94,7 +120,13 @@ export async function enquiryRoutes(
       .where(where)
       .limit(query.data.limit)
       .offset(query.data.offset)
-      .orderBy(enquiries.updatedAt);
+      // Tie-break on id so paging a "newest first" list cannot repeat or
+      // skip a row when two enquiries share a createdAt to the millisecond.
+      .orderBy(
+        ...(query.data.order === "newest"
+          ? [desc(enquiries.createdAt), desc(enquiries.id)]
+          : [enquiries.updatedAt]),
+      );
 
     return paginate(rows, total, { limit: query.data.limit, offset: query.data.offset });
   });

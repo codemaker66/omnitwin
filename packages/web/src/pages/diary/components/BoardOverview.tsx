@@ -1,5 +1,6 @@
 import { useMemo, type CSSProperties, type ReactElement } from "react";
-import { AlertTriangle, ArrowRight, CalendarDays } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, Plus } from "lucide-react";
+import { BOARD_COPY } from "../board-copy.js";
 import type { CalendarBookingEntry, CalendarEntry, CalendarRoom, ConflictSeverity } from "@omnitwin/types";
 import { diaryRoomPhoto, DIARY_ROOM_PHOTO_SIZES } from "../../../lib/diary-room-photos.js";
 import { TRADES_HALL_ROOM_CAPACITIES, type PublishedRoomSlug } from "../../../lib/trades-hall-venue-truth.js";
@@ -14,9 +15,14 @@ export interface BoardOverviewProps {
   readonly conflictSeverity: ReadonlyMap<string, ConflictSeverity>;
   readonly onOpenBooking: (entry: CalendarBookingEntry) => void;
   readonly onOpenDay: (startMs: number) => void;
+  /** Create-in-context (T-619): open the drawer already holding this room
+   *  and this DAY — a square of the overview is a day, not an instant, so
+   *  the drawer applies the house's default hours to it. Undefined for a
+   *  read-only role. */
+  readonly onCreateOnDay?: (spaceId: string, dayStartMs: number) => void;
 }
 
-export function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, onOpenBooking, onOpenDay }: BoardOverviewProps): ReactElement {
+export function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, onOpenBooking, onOpenDay, onCreateOnDay }: BoardOverviewProps): ReactElement {
   const days = useMemo(() => dayColumns(range), [range]);
   const anchors = useMemo(() => new Map(entries.map((entry) => [entry.id, firstVisibleDay(entry, range)])), [entries, range]);
   return <section className="diary-overview" aria-label="Booking overview">
@@ -66,6 +72,16 @@ export function BoardOverview({ rooms, entries, range, nowMs, conflictSeverity, 
                     {severity !== undefined ? <span className={`diary-overview-warning is-${severity}`}><AlertTriangle size={12} />{severity === "blocking" ? "Conflict" : "Review"}</span> : null}</span>
                 </button>;
               })}
+              {/* Create-in-context (T-619). The obvious gesture on an empty
+                  square of a calendar grid is to click it — and it did
+                  nothing. A real <button>, not a click handler on the cell,
+                  so the keyboard and a screen reader reach the same
+                  affordance; it sits after the day's bookings and takes
+                  whatever room they leave. */}
+              {onCreateOnDay === undefined ? null : <button type="button" className="diary-overview-new"
+                aria-label={BOARD_COPY.create.cellLabel(room.name, day.label)}
+                onClick={() => { onCreateOnDay(room.id, day.startMs); }}>
+                <Plus size={13} aria-hidden="true" /><span>{BOARD_COPY.create.cellHint}</span></button>}
             </div>)}
           </div>;
         })}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CalendarBookingEntry, CalendarRoom } from "@omnitwin/types";
 import { BookingDrawer } from "../BookingDrawer.js";
 
@@ -44,8 +44,12 @@ const GRAND_HALL = "00000000-0000-4000-8000-0000000000a1";
 const BOOKING_ID = "00000000-0000-4000-8000-0000000000c1";
 const EVENT_ID = "00000000-0000-4000-8000-0000000000e1";
 
+const SALOON = "00000000-0000-4000-8000-0000000000a2";
+
 const ROOMS: readonly CalendarRoom[] = [
   { id: GRAND_HALL, name: "Grand Hall", slug: "grand-hall", sortOrder: 0 },
+  // A second room, so "allows room change" has somewhere to change TO.
+  { id: SALOON, name: "Saloon", slug: "saloon", sortOrder: 1 },
 ];
 
 function booking(overrides: Partial<CalendarBookingEntry> = {}): CalendarBookingEntry {
@@ -274,5 +278,82 @@ describe("BookingDrawer — floor plan section", () => {
     );
     expect(screen.queryByText("Floor plan")).toBeNull();
     expect(screen.queryByRole("button", { name: "Start a floor plan" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edit-drawer completeness (T-619, §2 line 17). Opening an existing booking
+// used to show a title, times, and a room select that was DISABLED. The note
+// written at creation was rendered nowhere and silently dropped on save; the
+// owner was a uuid the drawer never printed; the client was one unlabelled
+// line. Each of these is a fact a coordinator needs before they answer a
+// phone call about the booking.
+// ---------------------------------------------------------------------------
+describe("BookingDrawer — edit completeness (T-619)", () => {
+  it("names the owner and the linked client instead of leaving them implicit", () => {
+    renderEdit(booking({
+      ownerName: "Elaine Gray",
+      clientName: "Mackenzie & Ross",
+      eventName: "Mackenzie–Ross wedding",
+      guestCount: 120,
+    }));
+    const detail = screen.getByLabelText("Booking summary");
+    expect(within(detail).getByText("Elaine Gray")).toBeTruthy();
+    expect(within(detail).getByText("Mackenzie & Ross")).toBeTruthy();
+    expect(within(detail).getByText("Mackenzie–Ross wedding")).toBeTruthy();
+    expect(within(detail).getByText("120 guests")).toBeTruthy();
+  });
+
+  it("says the absence out loud when there is no owner and no client", () => {
+    renderEdit(booking());
+    const detail = screen.getByLabelText("Booking summary");
+    // A blank line reads as "loading" or "broken"; these read as answers.
+    expect(within(detail).getByText("Nobody yet")).toBeTruthy();
+    expect(within(detail).getByText("No client linked")).toBeTruthy();
+  });
+
+  it("shows the existing note and saves an edit to it", async () => {
+    updateBookingMock.mockResolvedValue({});
+    const { onSaved } = renderEdit(booking({ notes: "Cake table by the north door." }));
+    const notes = screen.getByLabelText("Notes");
+    // Queried by what the coordinator sees in the box, which needs no DOM cast.
+    expect(screen.getByDisplayValue("Cake table by the north door.")).toBe(notes);
+    fireEvent.change(notes, { target: { value: "Cake table by the south door." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalled(); });
+    expect(updateBookingMock).toHaveBeenCalledWith(
+      BOOKING_ID,
+      expect.objectContaining({ notes: "Cake table by the south door." }),
+    );
+  });
+
+  it("clears a note to null rather than leaving the old text on the server", async () => {
+    updateBookingMock.mockResolvedValue({});
+    const { onSaved } = renderEdit(booking({ notes: "Cake table by the north door." }));
+    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalled(); });
+    expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, expect.objectContaining({ notes: null }));
+  });
+
+  it("allows a room change from the drawer, not only by dragging the block", async () => {
+    updateBookingMock.mockResolvedValue({});
+    const { onSaved } = renderEdit(booking());
+    const room = screen.getByLabelText("Room");
+    // It used to carry `disabled` on edit: the room was simply unreachable.
+    expect(room.hasAttribute("disabled")).toBe(false);
+    fireEvent.change(room, { target: { value: SALOON } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => { expect(onSaved).toHaveBeenCalled(); });
+    expect(updateBookingMock).toHaveBeenCalledWith(BOOKING_ID, expect.objectContaining({ spaceId: SALOON }));
+  });
+
+  it("sends nothing when nothing changed — a reopened note is not an edit", async () => {
+    renderEdit(booking({ notes: "Unchanged." }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    // Seeding the note into the form must not make the form look dirty; a
+    // no-op PATCH would bump updatedAt and race a colleague for nothing.
+    await waitFor(() => { expect(screen.queryByRole("status")).toBeNull(); });
+    expect(updateBookingMock).not.toHaveBeenCalled();
   });
 });

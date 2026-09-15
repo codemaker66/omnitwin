@@ -72,10 +72,16 @@ describe("boardRange", () => {
     expect(fall.toMs - fall.fromMs).toBe(337 * HOUR);
   });
 
-  it("month view spans the 1st to the 1st", () => {
-    const range = boardRange(Date.parse("2026-09-16T09:00:00.000Z"), "month");
-    expect(new Date(range.fromMs).toISOString()).toBe("2026-08-31T23:00:00.000Z");
-    expect(new Date(range.toMs).toISOString()).toBe("2026-09-30T23:00:00.000Z");
+  // The month board was retired in T-619. Its two cases ("month view spans
+  // the 1st to the 1st" and "moves months across the year boundary") tested
+  // behaviour that no longer exists. The coverage they actually carried — a
+  // window crossing a month boundary, and one crossing a year boundary,
+  // without drifting — is kept here and below on the fortnight, now the
+  // widest zoom the board offers.
+  it("crosses a month boundary on the fortnight without drifting", () => {
+    const range = boardRange(Date.parse("2026-10-01T12:00:00.000Z"), "2w");
+    expect(new Date(range.fromMs).toISOString()).toBe("2026-09-27T23:00:00.000Z");
+    expect(range.toMs - range.fromMs).toBe(336 * HOUR);
   });
 });
 
@@ -104,10 +110,12 @@ describe("shiftRange", () => {
     expect(rangeTitle(range)).toMatch(/^Fortnight of /u);
   });
 
-  it("moves months across the year boundary", () => {
-    const december = boardRange(Date.parse("2026-12-10T12:00:00.000Z"), "month");
+  it("pages a fortnight across the year boundary", () => {
+    const december = boardRange(Date.parse("2026-12-24T12:00:00.000Z"), "2w");
     const january = shiftRange(december, 1);
-    expect(new Date(january.fromMs).toISOString()).toBe("2027-01-01T00:00:00.000Z");
+    expect(january.fromMs).toBe(december.toMs);
+    expect(new Date(january.fromMs).toISOString()).toBe("2027-01-04T00:00:00.000Z");
+    expect(january.toMs - january.fromMs).toBe(336 * HOUR);
   });
 });
 
