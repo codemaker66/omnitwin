@@ -537,7 +537,13 @@ CREATE CONSTRAINT TRIGGER deferred_inventory AFTER INSERT ON "Inventory--stock" 
       "ops_tasks_handoff_id_unique",
     ]) expect(schema).toContain(relationalBoundary);
     expect(packageJson).toContain('"db:verify-tail": "tsx src/scripts/verify-migration-tail-readiness.ts"');
-    expect(deployWorkflow).toContain("db:verify-tail -- --deploy-gate");
+    const preflightCommand = deployWorkflow.match(/run:\s+pnpm --filter @omnitwin\/api db:verify-tail([^\r\n]*)/u);
+    expect(preflightCommand).not.toBeNull();
+    // pnpm forwards script arguments directly, including a literal `--` separator.
+    expect(parseCliOptions((preflightCommand?.[1] ?? "").trim().split(/\s+/u))).toEqual({
+      deployGate: true,
+      outPath: null,
+    });
     expect(deployWorkflow).toContain("vars.APPROVED_MIGRATION_0044_SHA256");
   });
 });

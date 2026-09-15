@@ -4,6 +4,44 @@ Status: **in progress**, 15 September 2026. This is working evidence, not a
 completed release or acceptance claim. The [goal contract](../../goals/17-browser-release-confidence.md)
 requires complete browser qualification, coordinated integration and the changed live journey.
 
+## Delivered candidate and deployment follow-up — 15 September
+
+PR16 merged as `26184f42172c74d667a5ba4a38f47789a90d1503` after all13
+pre-merge jobs passed (CI35019954434). Its tree
+`99299c37b3f34afadde0ec65650b859768f1bf47` is identical to the qualified
+merge candidate. All13 post-merge jobs also passed (CI35021791429), including
+a fresh isolated GPU run and authenticated publication. Both complete browser
+gates reconcile353 cases:307 ordinary passes, four executed expected failures,
+42 unchanged original skips; zero failed, flaky, retried, missing or unrun cases.
+Native12/12 and PostgreSQL113/113 pass against all69 exact-source migrations.
+
+Vercel production `6FBWjHpiHTR9Mr3HANPUFy4zS5no` is Ready and the authenticated
+provider overview binds venviewer.com to26184f42. API641f2667 remains healthy;
+there is no API/schema production delta. All15 read-only public smoke checks
+pass. The signed-in saved planner retains162 objects; camera reference composition
+opens above the inspector and cancels without saving. Its first cold attempt hit
+a Clerk UI asset timeout and recovered on reload. Grand Hall capture remained at
+zero decoded chunks in the current live observation; that investigation and the
+remaining responsive/hallkeeper live checks are still open.
+
+The successful main CI exposed a pre-existing Deploy workflow argument error:
+`pnpm ... db:verify-tail -- --deploy-gate` forwards a literal separator that the
+parser rejects before accessing the database. Deploy35023087839 therefore failed
+before migrations; no migration ran. The correction removes only that separator.
+The regression test now parses the actual workflow arguments;17/17 focused tests
+pass. Safe real-pnpm reproduction confirms the original error and that the fixed
+command reaches the expected missing-DATABASE_URL guard without a DB connection.
+The corrected workflow still requires hosted qualification and delivery.
+
+Private receipts are under
+`D:/claude/venviewer-browser-release-20260915/output/qualification/production-26184f42/`:
+`current-required-gates-review.json`, `main-ci-and-deploy-review.json`,
+`web-provider-ui.json`, `public-smoke-checkpoint.json` and
+`deploy-workflow-local-verification.json`. The prior failed runs remain retained.
+The final scheduled smoke config is held until the last qualified release;
+its existing scheduler is unchanged. Goal17 remains active. Wider sublime,
+physical-device60fps and reconstructionPSNR50+ acceptance remain open.
+
 ## Current continuation — isolated GPU evidence path
 
 The previous hardware-choice hold was an overly broad interpretation of approval.
