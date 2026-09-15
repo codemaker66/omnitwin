@@ -1,5 +1,10 @@
 # The goals deck
 
+**Active, 15 September:** Blake's “create a ./goal and run it” activates
+[Goal17 — browser release confidence](17-browser-release-confidence.md), T-613,
+in Build next-gen venue platform. The scoped contract includes full browser
+qualification and delivery; current failures and pending gates remain explicit.
+
 Follow the current user request and [AGENTS.md](../AGENTS.md); use the execution
 board to check ownership. Historical ordering and prompt counts do not override
 an activated goal. [Goal 12](12-intelligent-venue-platform.md) is active under

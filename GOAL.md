@@ -4,7 +4,18 @@ Operating-policy update, 2026-09-06: follow `AGENTS.md` for autonomy, proportion
 
 Blake's words, verbatim, are the brief. Everything else here is state, priority and traps so you do not re-derive them.
 
-## Latest founder direction — 2026-09-07
+## Current execution — 15 September 2026
+
+Blake said “create a ./goal and run it”. [Goal17](goals/17-browser-release-confidence.md),
+T-613, is active in **Build next-gen venue platform**. Restore the complete browser
+release gate, repair reproduced product defects and preserve coverage, visual
+quality and current authority boundaries. The isolated candidate now includes the
+shipped `641f2667` dependency release; T-601 coordinates its following serial delivery.
+The [working report](docs/reports/browser-release-confidence-2026-09-15.md) records
+targeted passes and the still-open complete-suite, performance and live gates.
+This bounded goal does not close broader design or physical-device requirements.
+
+## Previous founder direction — 2026-09-07
 
 **Standing delivery amendment — 7 September 2026:** Blake said, “we build something we ship it.” Requested product work includes verification, coordinated integration, deployment and checking the changed live flow, without a second request to ship. The [shared delivery contract](.claude/conventions/shipping-changes.md) governs all active tasks. T-601 and other release owners coordinate safe serial releases; sending them a commit does not complete the originating task. Earlier blanket freezes, Tuesday-only releases and local-only ownership clauses below are superseded by this amendment. Retain historical evidence, quality checks, source/data protections and spending limits; newer explicit user holds apply only to their stated scope.
 

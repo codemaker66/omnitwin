@@ -1,4 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
+import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES } from "../src/twin/shell/twin-rooms.js";
 import {
   TWIN_FIXTURE_MANIFEST,
   TWIN_FIXTURE_MANIFEST_EQUIRECT,
@@ -25,9 +27,12 @@ import {
 // test re-routes the cube-faces manifest to keep the legacy bundle path
 // rendering.
 //
-// Keyboard reachability is asserted on the minimap listbox (arrows + Enter):
-// the gold nav rings live inside the WebGL canvas and are not DOM-reachable,
-// so the minimap options are the twin's accessible navigation path.
+// Keyboard reachability follows the native Rooms dialog (Tab, Enter, Space,
+// Escape). The minimap was retired; validated room names are now the accessible
+// navigation path. Only navigation tests use a synthetic graph joining those
+// validated IDs. Neither graph poses nor fixture pixels claim capture fidelity.
+// Google Fonts stylesheets are fulfilled empty: this offline functional suite
+// uses fallback fonts and does not qualify production webfont loading.
 //
 // Console collection only fails on type "error" — headless Chromium logs its
 // software-WebGL fallback notices as type "warning", which is expected here.
@@ -43,6 +48,35 @@ const TILE_ROUTE = "**/twin/trades-hall/tiles/**";
 const MESH_ROUTE = "**/twin/trades-hall/mesh/dollhouse.glb";
 
 const VENUE_NAME = TWIN_FIXTURE_MANIFEST_EQUIRECT.name;
+
+// One viewpoint per validated room, joined from the same oracle as the UI.
+// The straight-line graph is synthetic and deliberately contains no roomSlug.
+const NAVIGATION_IDS = Object.keys(VERIFIED_ROOM_NODES).sort().filter(
+  (id, index, ids) => ids.findIndex(
+    (candidate) => VERIFIED_ROOM_NODES[candidate] === VERIFIED_ROOM_NODES[id],
+  ) === index,
+);
+function navigationId(slug: string): string {
+  const id = NAVIGATION_IDS.find((candidate) => VERIFIED_ROOM_NODES[candidate] === slug);
+  if (id === undefined) throw new Error(`No validated fixture viewpoint for ${slug}`);
+  return id;
+}
+const ENTRY_ID = navigationId("grand-hall");
+const SALOON_ID = navigationId("saloon");
+const ROBERT_ADAM_ID = navigationId("robert-adam-room");
+const NAVIGATION_MANIFEST: TwinManifest = TwinManifestSchema.parse({
+  ...TWIN_FIXTURE_MANIFEST_EQUIRECT,
+  entryNodeId: ENTRY_ID,
+  nodes: NAVIGATION_IDS.map((id, index) => ({
+    id, index, floor: 0,
+    pose: { q: [1, 0, 0, 0], t: [index * 2.5, 0, 1.5] },
+    roomSlug: null,
+  })),
+  edges: NAVIGATION_IDS.slice(1).map((id, index) => ({
+    a: NAVIGATION_IDS[index] ?? id, b: id, distanceM: 2.5,
+  })),
+});
+
 
 const TILE_BYTES = Buffer.from(
   TWIN_FIXTURE_TILE_DATA_URI.slice(TWIN_FIXTURE_TILE_DATA_URI.indexOf(",") + 1),
@@ -110,7 +144,30 @@ async function openTwin(page: Page): Promise<void> {
   await expect(page.getByTestId("twin-node-label")).toBeVisible({ timeout: 15_000 });
 }
 
+async function openNavigationTwin(page: Page): Promise<void> {
+  await page.route(MANIFEST_ROUTE, (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify(NAVIGATION_MANIFEST),
+  }));
+  await page.goto(`${TWIN_PATH}?node=${ENTRY_ID}`);
+  await expect(page.getByTestId("twin-node-label")).toHaveText(
+    twinNodeLabel(ENTRY_ID, VENUE_NAME), { timeout: 15_000 },
+  );
+  await expect(page.getByTestId("twin-load-shimmer")).toHaveCount(0);
+}
+
+function saloonButton(page: Page) {
+  return page.getByRole("button", { name: new RegExp(`^Walk to ${ROOM_DISPLAY_NAMES.saloon}`) });
+}
+
+async function walkToSaloon(page: Page): Promise<void> {
+  await page.getByTestId("twin-rooms-trigger").click();
+  await saloonButton(page).click();
+}
+
 test.beforeEach(async ({ page }) => {
+  await page.route("https://fonts.googleapis.com/**", (route) =>
+    route.fulfill({ status: 200, contentType: "text/css", body: "/* Offline functional fixture. */" }),
+  );
   await page.route(MANIFEST_ROUTE, (route) =>
     route.fulfill({
       status: 200,
@@ -144,76 +201,72 @@ test("the twin renders scan_000 with its named landmark, one disclosure, and no 
   expect(errors).toEqual([]);
 });
 
-test("a minimap hop lands on scan_001 and records it in the URL", async ({ page }) => {
-  await openTwin(page);
+test("a named-room hop lands at its validated viewpoint and records it in the URL", async ({ page }) => {
+  await openNavigationTwin(page);
+  await walkToSaloon(page);
 
-  await page.getByRole("option", { name: "Go to scan 1" }).click();
-
-  // Ceiling allows a full hop spring to settle, with slack to spare.
-  await expect(page).toHaveURL(/[?&]node=scan_001/, { timeout: 4_000 });
-  await expect(page.getByTestId("twin-node-label")).toHaveText(
-    twinNodeLabel("scan_001", VENUE_NAME),
-  );
+  await expect(page).toHaveURL(new RegExp(`[?&]node=${SALOON_ID}`), { timeout: 4_000 });
+  await expect(page.getByTestId("twin-node-label")).toHaveText(twinNodeLabel(SALOON_ID, VENUE_NAME));
+  await expect(page.getByTestId("twin-rooms-panel")).toHaveCount(0);
 });
 
-test("reduced motion swaps nodes instantly instead of springing", async ({ page }) => {
+test("reduced motion swaps named rooms instantly instead of springing", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await openTwin(page);
+  await openNavigationTwin(page);
+  await walkToSaloon(page);
 
-  await page.getByRole("option", { name: "Go to scan 1" }).click();
-
-  // Instant swap: no spring window — URL and HUD must change immediately.
-  await expect(page).toHaveURL(/[?&]node=scan_001/, { timeout: 1_000 });
+  // Keep the original instant-swap ceiling; native room travel must not spring.
+  await expect(page).toHaveURL(new RegExp(`[?&]node=${SALOON_ID}`), { timeout: 1_000 });
   await expect(page.getByTestId("twin-node-label")).toHaveText(
-    twinNodeLabel("scan_001", VENUE_NAME),
-    { timeout: 1_000 },
+    twinNodeLabel(SALOON_ID, VENUE_NAME), { timeout: 1_000 },
   );
 });
 
-test("the browser back button walks backward to scan_000", async ({ page }) => {
-  await openTwin(page);
-  // The walk canonicalises the bare URL to the node underfoot on load.
-  await expect(page).toHaveURL(/[?&]node=scan_000/);
-
-  await page.getByRole("option", { name: "Go to scan 1" }).click();
-  await expect(page).toHaveURL(/[?&]node=scan_001/, { timeout: 4_000 });
+test("the browser back button returns to the previous validated room", async ({ page }) => {
+  await openNavigationTwin(page);
+  await expect(page).toHaveURL(new RegExp(`[?&]node=${ENTRY_ID}`));
+  await walkToSaloon(page);
+  await expect(page).toHaveURL(new RegExp(`[?&]node=${SALOON_ID}`), { timeout: 4_000 });
 
   await page.goBack();
-  await expect(page).toHaveURL(/[?&]node=scan_000/);
-  await expect(page.getByTestId("twin-node-label")).toHaveText(
-    twinNodeLabel("scan_000", VENUE_NAME),
-  );
+  await expect(page).toHaveURL(new RegExp(`[?&]node=${ENTRY_ID}`));
+  await expect(page.getByTestId("twin-node-label")).toHaveText(twinNodeLabel(ENTRY_ID, VENUE_NAME));
 });
 
-test("the minimap listbox walks by keyboard: arrows move, Enter travels", async ({ page }) => {
-  await openTwin(page);
-
-  const listbox = page.getByRole("listbox", { name: "Scan positions" });
-  await listbox.focus();
-
-  // ArrowRight from scan_000 selects its nearest rightward node, scan_001.
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("option", { name: "Go to scan 1" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+test("the native Rooms dialog supports Tab, Space, Enter, Escape and return focus", async ({ page }) => {
+  await openNavigationTwin(page);
+  const trigger = page.getByTestId("twin-rooms-trigger");
+  const heading = page.getByRole("heading", { name: "Rooms", exact: true });
+  await trigger.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/[?&]node=scan_001/);
-  await expect(page.getByTestId("twin-node-label")).toHaveText(
-    twinNodeLabel("scan_001", VENUE_NAME),
-  );
+  await expect(heading).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByTestId("twin-rooms-close")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(saloonButton(page)).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(page).toHaveURL(new RegExp(`[?&]node=${SALOON_ID}`), { timeout: 4_000 });
+  await expect(page.getByTestId("twin-node-label")).toHaveText(twinNodeLabel(SALOON_ID, VENUE_NAME));
+  await expect(trigger).toBeFocused();
 
-  // ArrowDown from the junction selects the branch node, scan_003.
-  await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("option", { name: "Go to scan 3" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/[?&]node=scan_003/);
-  await expect(page.getByTestId("twin-node-label")).toHaveText(
-    twinNodeLabel("scan_003", VENUE_NAME),
-  );
+  await expect(heading).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("twin-rooms-panel")).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page).toHaveURL(new RegExp(`[?&]node=${SALOON_ID}`));
+
+  await page.keyboard.press("Space");
+  await expect(heading).toBeFocused();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(page.getByTestId("twin-rooms-row-grand-hall")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByTestId("twin-rooms-row-robert-adam-room")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`[?&]node=${ROBERT_ADAM_ID}`), { timeout: 4_000 });
+  await expect(page.getByTestId("twin-node-label")).toHaveText(twinNodeLabel(ROBERT_ADAM_ID, VENUE_NAME));
+  await expect(trigger).toBeFocused();
 });
 
 for (const viewport of VIEWPORTS) {

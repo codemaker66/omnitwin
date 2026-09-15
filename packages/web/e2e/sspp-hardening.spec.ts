@@ -1,14 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
-import type {
-  EventDayOpsBoard,
-  OpsTask,
-  VenueDashboardAnalytics,
+import {
+  HallkeeperSheetV2Schema,
+  type EventDayOpsBoard,
+  type OpsTask,
+  type VenueDashboardAnalytics,
 } from "@omnitwin/types";
 import type { PublicProposal } from "../src/api/proposals.js";
 
 const API = "http://localhost:3001";
 const NOW = "2026-06-12T09:00:00.000Z";
-const CONFIG_ID = "e2e-hardening-plan";
+const CONFIG_ID = "00000000-0000-4000-8000-000000004013";
 const VENUE_ID = "00000000-0000-4000-8000-000000004001";
 const SPACE_ID = "00000000-0000-4000-8000-000000004002";
 const EVENT_ID = "00000000-0000-4000-8000-000000004003";
@@ -377,6 +378,9 @@ async function mockDashboardRoutes(page: Page): Promise<void> {
   await page.route(`${API}/enquiries*`, (route) => {
     void route.fulfill({ json: { data: [] } });
   });
+  await page.route(`${API}/notifications*`, (route) => {
+    void route.fulfill({ json: { data: [] } });
+  });
   await page.route(`${API}/analytics/venue-dashboard*`, (route) => {
     void route.fulfill({ json: { data: revenueAnalyticsFixture() } });
   });
@@ -399,7 +403,7 @@ async function mockHallkeeperRoutes(page: Page): Promise<void> {
   await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
     void route.fulfill({
       json: {
-        data: {
+        data: HallkeeperSheetV2Schema.parse({
           venue: {
             name: "Trades Hall Glasgow",
             address: "85 Glassford Street, Glasgow G1 1UH",
@@ -459,17 +463,26 @@ async function mockHallkeeperRoutes(page: Page): Promise<void> {
             totalItems: 11,
           },
           diagramUrl: null,
-          webViewUrl: "http://localhost:5173/hallkeeper/e2e-hardening-plan",
+          webViewUrl: `http://localhost:5173/hallkeeper/${CONFIG_ID}`,
           generatedAt: NOW,
           approval: {
             version: 2,
             approvedAt: NOW,
             approverName: "Venue Operations",
           },
-        },
+        }),
       },
     });
   });
+  // This standalone sheet has no separate event context or review snapshot.
+  await page.route(`${API}/configurations/${CONFIG_ID}`, (route) => {
+    void route.fulfill({ status: 403, json: { error: "No linked context in fixture", code: "FORBIDDEN" } });
+  });
+  for (const endpoint of ["review/available-transitions", "snapshot/latest"]) {
+    await page.route(`${API}/configurations/${CONFIG_ID}/${endpoint}`, (route) => {
+      void route.fulfill({ status: 404, json: { error: "No review record in fixture", code: "NOT_FOUND" } });
+    });
+  }
   await page.route(`${API}/hallkeeper/${CONFIG_ID}/progress`, (route) => {
     if (route.request().method() === "GET") {
       void route.fulfill({ json: { data: { configId: CONFIG_ID, checked: {} } } });
@@ -507,10 +520,11 @@ test.describe("SS++ hardening visual regression", () => {
   test("captures deterministic room showcase screenshot", async ({ page }) => {
     const pageErrors = collectPageErrors(page);
     await page.goto("/landing");
-    await expect(page.getByRole("heading", { level: 1, name: /There is a hall in Glasgow/i })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: /^Trades Hall, Glasgow · \d+ years$/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /Eight rooms, each keeping its own hours/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Explore The Robert Adam Room/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Enquire about Deacon Convener's Room/i })).toBeVisible();
+    await page.getByRole("heading", { name: /Eight rooms, each keeping its own hours/i }).scrollIntoViewIfNeeded();
     await attachScreenshotSmoke(page, "sspp-room-showcase.png");
     expect(pageErrors).toEqual([]);
   });
@@ -521,9 +535,9 @@ test.describe("SS++ hardening visual regression", () => {
 
     await page.goto("/venues/trades-hall/rooms/grand-hall");
     await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Eight room experiences/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "More rooms", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: /Open The South Gallery room preview/i })).toBeVisible();
-    await expect(page.getByText(/Human review is required/i)).toBeVisible();
+    await expect(page.getByText("Planning estimates. Venue review required before use.", { exact: true })).toBeVisible();
     await attachScreenshotSmoke(page, "sspp-public-room-route.png");
     expect(pageErrors).toEqual([]);
   });
@@ -532,7 +546,7 @@ test.describe("SS++ hardening visual regression", () => {
     const pageErrors = collectPageErrors(page);
 
     await page.goto("/pricing");
-    await expect(page.getByRole("heading", { level: 1, name: /Turn every enquiry/i })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Pricing", exact: true })).toBeVisible();
     await expect(page.getByRole("group", { name: "Billing cycle" })).toBeVisible();
     await attachScreenshotSmoke(page, "sspp-pricing.png");
     expect(pageErrors).toEqual([]);
@@ -556,7 +570,8 @@ test.describe("SS++ hardening visual regression", () => {
     await seedAuthenticatedOpsUser(page);
     await mockDashboardRoutes(page);
 
-    await page.goto("/dashboard");
+    // Readiness is the rendered dashboard, independent of external font load.
+    await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("button", { name: "Executive Analytics" }).click();
     await expect(page.getByRole("heading", { name: "Executive analytics" })).toBeVisible();
@@ -571,7 +586,8 @@ test.describe("SS++ hardening visual regression", () => {
     await mockHallkeeperRoutes(page);
 
     await page.goto(`/hallkeeper/${CONFIG_ID}`);
-    await expect(page.getByRole("heading", { level: 1, name: "SS++ hardening gala" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Grand Hall" })).toBeVisible();
+    await expect(page.locator("header").getByText("SS++ hardening gala", { exact: true })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: /Stage Platform/i })).toBeVisible();
     await attachScreenshotSmoke(page, "sspp-hallkeeper.png");
     expect(pageErrors).toEqual([]);
@@ -581,7 +597,7 @@ test.describe("SS++ hardening visual regression", () => {
 test.describe("SS++ hardening keyboard and mobile operations", () => {
   test("landing CTA is reachable by keyboard", async ({ page }) => {
     await page.goto("/landing");
-    await expect(page.getByRole("heading", { name: /There is a hall in Glasgow/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Trades Hall, Glasgow · \d+ years$/ })).toBeVisible();
     // The Rite's nav is visually withheld until Act II but stays in the tab
     // order (it reveals on :focus-within), so keyboard users reach the
     // planner CTA within the first few tabs.
@@ -603,7 +619,7 @@ test.describe("SS++ hardening keyboard and mobile operations", () => {
     await mockPublicRoomVisualRoutes(page);
 
     await page.goto("/venues/trades-hall/rooms/grand-hall");
-    await expect(page.getByRole("heading", { name: /Eight room experiences/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "More rooms", exact: true })).toBeVisible();
     await expect(
       page.getByLabel("Grand Hall visual preview").getByText(/Final details are confirmed by the venue team/i),
     ).toBeVisible();

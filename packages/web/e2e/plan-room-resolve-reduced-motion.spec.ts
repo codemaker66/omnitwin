@@ -1,9 +1,11 @@
-import { test, expect, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { captureLaunchOptions } from "./support/capture-launch.js";
 import {
-  API,
-  receptionRuntimePackage,
   stubPlannerBootstrap,
 } from "./support/plan-bootstrap.js";
+import { test } from "./support/staged-reception.js";
+
+test.use({ launchOptions: captureLaunchOptions });
 
 // ---------------------------------------------------------------------------
 // Reduced-motion resolve, in its own file deliberately: fifth-in-sequence on a
@@ -11,7 +13,7 @@ import {
 // AND per-file invocations). In isolation it passes in ~40s.
 // ---------------------------------------------------------------------------
 
-test.describe.configure({ mode: "serial" });
+test.describe.configure({ mode: "default" });
 
 async function readPhase(page: Page): Promise<string> {
   return page.evaluate(() =>
@@ -30,7 +32,7 @@ async function readCaptionVisible(page: Page): Promise<string> {
 test.describe("CARD A2 reduced motion", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, baseURL }) => {
+  test("reduced motion: the resolve still completes as a crossfade, no develop choreography required", async ({ page, stagedReception }) => {
     test.setTimeout(240_000);
     // eslint-disable-next-line no-console -- deliberate: CARD-A2 failure evidence in the runner output
     page.on("pageerror", (error) => { console.log(`[rm-pageerror] ${error.message.slice(0, 300)}`); });
@@ -38,13 +40,9 @@ test.describe("CARD A2 reduced motion", () => {
       // eslint-disable-next-line no-console -- deliberate: CARD-A2 failure evidence in the runner output
       if (message.type() === "error") console.log(`[rm-console] ${message.text().slice(0, 200)}`);
     });
-    const origin = baseURL ?? "http://localhost:5173";
     await page.emulateMedia({ reducedMotion: "reduce" });
 
     await stubPlannerBootstrap(page);
-    await page.route(`${API}/assets/runtime-packages/latest*`, (route) => {
-      void route.fulfill({ json: { data: receptionRuntimePackage(origin) } });
-    });
 
     await page.goto("/plan?capture=1");
 
@@ -55,5 +53,6 @@ test.describe("CARD A2 reduced motion", () => {
     await expect
       .poll(async () => `${await readPhase(page)}|${await readCaptionVisible(page)}`, { timeout: 180_000 })
       .toBe("resolved|false");
+    expect([...stagedReception.requestedFiles].sort()).toEqual([...stagedReception.files].sort());
   });
 });

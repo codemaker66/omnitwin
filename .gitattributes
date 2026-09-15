@@ -17,3 +17,5 @@ packages/web/public/trades-house-media/voice/*.mp3 -text
 # pnpm's lockfile records dependency patch hashes; keep the same patch bytes
 # on Windows and Linux checkouts.
 patches/**/*.patch text eol=lf
+# GPU source receipts bind raw Git bytes on both Windows and Linux.
+.github/gpu/** text eol=lf

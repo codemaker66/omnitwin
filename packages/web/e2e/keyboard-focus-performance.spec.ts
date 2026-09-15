@@ -59,8 +59,6 @@ const SAMPLE_MS = Number.parseInt(process.env.FRAME_BUDGET_SAMPLE_MS ?? "900", 1
 const TARGET_FRAME_MS = 16.7;
 const PASS_P95_MS = Number.parseFloat(process.env.FRAME_BUDGET_PASS_P95_MS ?? "18.5");
 const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_SUSTAINED ?? "1", 10);
-const ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-keyboard-focus-frame-accessibility-2026-06-19";
-const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
 
 type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
 type FocusViewportName = "desktop" | "mobile";
@@ -1280,12 +1278,14 @@ async function openDashboardView(page: Page, role: SeedRole, view: string): Prom
   return problems;
 }
 
-test.describe.configure({ mode: "serial" });
+// Single-worker timing runs remain sequential without cascading skips.
+test.describe.configure({ mode: "default" });
 
 test.afterAll(async () => {
-  await mkdir(dirname(REPORT_PATH), { recursive: true });
+  const reportPath = test.info().outputPath("keyboard-focus-performance.json");
+  await mkdir(dirname(reportPath), { recursive: true });
   await writeFile(
-    REPORT_PATH,
+    reportPath,
     `${JSON.stringify({
       generatedAt: new Date().toISOString(),
       sampleMs: SAMPLE_MS,
@@ -1296,6 +1296,10 @@ test.afterAll(async () => {
     }, null, 2)}\n`,
     "utf8",
   );
+  await test.info().attach("keyboard-focus-performance", {
+    path: reportPath,
+    contentType: "application/json",
+  });
 });
 
 test("admin create-venue dialog traps keyboard focus and stays within frame budget", async ({ page }) => {
@@ -1465,14 +1469,19 @@ test("proposal drawer and composer controls remain keyboard reachable within fra
 test("onboarding admin action forms keep focus visible across seeded operator controls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const problems = await openDashboardView(page, "platform-admin", "onboarding");
-  await expect(page.getByLabel("Trades Hall deployment deployment actions")).toBeVisible();
-  await page.getByLabel("Invite staff for Trades Hall deployment").fill("planner@venue.example\nhallkeeper@venue.example");
+  await expect(page.getByRole("heading", { name: "Clients & access", exact: true })).toBeVisible();
+  const access = page.getByRole("form", { name: "Grant venue access" });
+  await expect(access).toBeVisible();
+  await access.getByRole("textbox", { name: "Email address", exact: true }).fill("planner@venue.example");
+  await page.getByText("Setup review and billing", { exact: true }).click();
+  await expect(page.getByLabel("Current step for Trades Hall deployment")).toBeVisible();
   await recordAccessibilityState(page, problems, "onboarding operator action forms", "/dashboard?view=onboarding", "desktop", 14);
 
   await recordKeyboardBudget(page, problems, "onboarding-operator-form-keyboard-traversal", "desktop", async () => {
     await pressTabsAcrossPage(page, "onboarding operator", 12);
     await page.getByLabel("Current step for Trades Hall deployment").fill("Coordinate production readiness review.");
     await page.getByLabel("Save project gate for Trades Hall deployment").click();
+    await expect(page.getByText("Setup review saved.", { exact: true })).toBeVisible();
   });
 });
 

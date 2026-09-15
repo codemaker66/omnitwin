@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 // ---------------------------------------------------------------------------
-// E2E: Staff review flow — dashboard Reviews tab → approve
+// E2E: Staff review flow — dashboard More → Pending Reviews → approve
 //
 // Covers the staff-side happy path that complements hallkeeper.spec.ts
 // (hallkeeper view) and the planner's SubmitForReviewPanel (editor).
@@ -142,6 +142,19 @@ async function mockReviewsAPIs(page: Page): Promise<void> {
   });
 }
 
+async function openPendingReviews(page: Page): Promise<void> {
+  await page.goto("/dashboard");
+  const navigation = page.getByRole("navigation", { name: "Staff dashboard" });
+  const more = navigation.getByRole("button", { name: "More", exact: true });
+  await more.click({ timeout: 8_000 });
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+  await navigation.getByRole("button", { name: "Pending Reviews", exact: true }).click({ timeout: 8_000 });
+  await expect(page).toHaveURL(/\/dashboard\?view=reviews$/u);
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("heading", { name: "Pending Reviews (1)", exact: true }))
+    .toBeVisible({ timeout: 8_000 });
+}
+
 test.describe("Staff review — pending list", () => {
   test.beforeEach(async ({ page }) => {
     await seedAuthenticatedStaff(page);
@@ -149,26 +162,26 @@ test.describe("Staff review — pending list", () => {
   });
 
   test("dashboard Reviews tab shows the submitted config in the pending list", async ({ page }) => {
-    await page.goto("/dashboard");
-    // The dashboard should surface a "Reviews" tab or link; click it.
-    // Multiple candidate selectors to tolerate layout changes.
-    const reviewsTab = page.getByRole("button", { name: /Reviews/i })
-      .or(page.getByRole("link", { name: /Reviews/i }))
-      .first();
-    await reviewsTab.click({ timeout: 8_000 });
-    await expect(page.getByText("Anderson Wedding Reception").first())
-      .toBeVisible({ timeout: 8_000 });
+    await openPendingReviews(page);
+    const review = page.getByRole("button", { name: "Open review for Anderson Wedding Reception", exact: true });
+    await expect(review).toBeVisible({ timeout: 8_000 });
+    await expect(review).toContainText("Submitted");
+    await expect(review).toContainText("Guests: 120");
   });
 
   test("opening a pending review shows its detail + available actions", async ({ page }) => {
-    await page.goto("/dashboard");
-    const reviewsTab = page.getByRole("button", { name: /Reviews/i })
-      .or(page.getByRole("link", { name: /Reviews/i }))
-      .first();
-    await reviewsTab.click({ timeout: 8_000 });
-    await page.getByText("Anderson Wedding Reception").first().click();
-    await expect(page.getByRole("button", { name: /Approve/i }).first())
-      .toBeVisible({ timeout: 8_000 });
+    await openPendingReviews(page);
+    await page.getByRole("button", { name: "Open review for Anderson Wedding Reception", exact: true }).click();
+    await expect(page.getByRole("heading", { name: MOCK_PENDING.name, exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open Layout", exact: true })).toHaveAttribute("href", `/plan/${CONFIG_ID}`);
+    await expect(page.getByRole("link", { name: "Preview Sheet", exact: true })).toHaveAttribute("href", `/hallkeeper/${CONFIG_ID}`);
+    for (const action of ["Start Review", "Approve", "Request Changes", "Reject"]) {
+      const button = page.getByRole("button", { name: action, exact: true });
+      await expect(button).toBeVisible({ timeout: 8_000 });
+      await expect(button).toBeEnabled();
+    }
+    // The fixture grants staff these transitions, but not withdrawal.
+    await expect(page.getByRole("button", { name: "Withdraw", exact: true })).toHaveCount(0);
   });
 });
 
@@ -179,21 +192,23 @@ test.describe("Staff review — approve action", () => {
   });
 
   test("clicking Approve hits the approve endpoint", async ({ page }) => {
-    let approveCalled = false;
+    const approveRequests: { readonly method: string; readonly body: unknown }[] = [];
     await page.route(`${API}/configurations/${CONFIG_ID}/review/approve`, (route) => {
-      approveCalled = true;
+      const request = route.request();
+      const body: unknown = request.postDataJSON();
+      approveRequests.push({ method: request.method(), body });
       void route.fulfill({ json: { data: { reviewStatus: "approved", snapshot: MOCK_APPROVED_SNAPSHOT } } });
     });
 
-    await page.goto("/dashboard");
-    const reviewsTab = page.getByRole("button", { name: /Reviews/i })
-      .or(page.getByRole("link", { name: /Reviews/i }))
-      .first();
-    await reviewsTab.click({ timeout: 8_000 });
-    await page.getByText("Anderson Wedding Reception").first().click();
-    await page.getByRole("button", { name: /Approve/i }).first().click();
+    await openPendingReviews(page);
+    await page.getByRole("button", { name: "Open review for Anderson Wedding Reception", exact: true }).click();
+    await page.getByRole("button", { name: "Approve", exact: true }).click();
 
-    await page.waitForTimeout(500);
-    expect(approveCalled).toBe(true);
+    // A native action sends one ordinary approval, without silently choosing
+    // demo-only notification suppression or a different configuration.
+    await expect.poll(() => approveRequests).toEqual([{ method: "POST", body: {} }]);
+    await expect(page.getByText("No pending reviews.", { exact: true })).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByRole("button", { name: "Open review for Anderson Wedding Reception", exact: true }))
+      .toHaveCount(0);
   });
 });

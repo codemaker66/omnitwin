@@ -50,6 +50,42 @@ describe("customer planning schedule", () => {
     expect(screen.queryByRole("slider")).toBeNull();
   });
 
+  it("tracks the expanded dock height through resizing and restores its scoped offset on unmount", () => {
+    useAuthStore.getState().setUser({ id: "owner", role: "client", platformRole: "none", venueId: null, name: "Owner", email: "owner@example.test" });
+    let height = 95.5;
+    let notifyResize = (): void => undefined;
+    const disconnect = vi.fn();
+    class DockResizeObserver implements ResizeObserver {
+      constructor(callback: ResizeObserverCallback) { notifyResize = (): void => { callback([], this); }; }
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = disconnect;
+    }
+    vi.stubGlobal("ResizeObserver", DockResizeObserver);
+    const rectangle = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(() => new DOMRect(0, 0, 320, height));
+    const shell = document.createElement("div");
+    shell.className = "cockpit-shell is-mobile";
+    shell.style.setProperty("--client-event-dock-height", "7px");
+    document.body.append(shell);
+    try {
+      const result = render(<MemoryRouter initialEntries={[`/plan/${CONFIG}`]}><CockpitBottom /></MemoryRouter>, { container: shell });
+      expect(shell.style.getPropertyValue("--client-event-dock-height")).toBe("95.5px");
+      expect(screen.getByRole("button", { name: "Hide event schedule" }).getAttribute("aria-expanded")).toBe("true");
+      expect(screen.getByText("You can keep working on your room plan.")).toBeTruthy();
+      act(() => { height = 70; fireEvent.click(screen.getByRole("button", { name: "Hide event schedule" })); notifyResize(); });
+      expect(shell.style.getPropertyValue("--client-event-dock-height")).toBe("70px");
+      expect(screen.getByRole("button", { name: "Show event schedule" }).getAttribute("aria-expanded")).toBe("false");
+      expect(request).not.toHaveBeenCalled();
+      result.unmount();
+      expect(disconnect).toHaveBeenCalledOnce();
+      expect(shell.style.getPropertyValue("--client-event-dock-height")).toBe("7px");
+    } finally {
+      rectangle.mockRestore();
+      vi.unstubAllGlobals();
+      shell.remove();
+    }
+  });
+
   it("shows shared activity, clears it on failure, and retries into a populated schedule", async () => {
     useAuthStore.getState().setUser({ id: "owner", role: "client", platformRole: "none", venueId: null, name: "Owner", email: "owner@example.test" });
     let reject: (error: Error) => void = () => undefined;
