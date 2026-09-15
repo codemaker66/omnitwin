@@ -12,6 +12,9 @@ import {
   getAvailableBookingTransitions,
 } from "../../state-machines/booking.js";
 import { canWriteBookings } from "../../services/booking-mutations.js";
+import { canTransitionProposal, canTransitionQuote } from "../../state-machines/proposal.js";
+import { canTransition } from "../../state-machines/enquiry.js";
+import { canManageCommercial } from "../../utils/query.js";
 
 const VENUE = "00000000-0000-0000-0000-0000000000a0";
 
@@ -71,6 +74,30 @@ describe("canTransitionBooking", () => {
       const gate = canWriteBookings({ id: "u1", role, venueId: VENUE, platformRole: "none" }, VENUE);
       const machine = canTransitionBooking("prospect", "hold", role);
       expect(machine, `${role}: REST gate ${String(gate)}, state machine ${String(machine)}`).toBe(gate);
+    }
+  });
+
+  // The same seam exists on the commercial artefacts: routes/proposals.ts and
+  // routes/quotes.ts gate on canManageCommercial, and a role that may create a
+  // proposal but not send it has been granted nothing useful.
+  it("admits exactly the roles the commercial REST gate admits, for proposals and quotes", () => {
+    for (const role of USER_ROLES) {
+      const gate = canManageCommercial({ role, venueId: VENUE, platformRole: "none" }, VENUE);
+      expect(canTransitionProposal("draft", "sent", role),
+        `${role}: proposal draft→sent should follow the REST gate ${String(gate)}`).toBe(gate);
+      expect(canTransitionQuote("draft", "issued", role),
+        `${role}: quote draft→issued should follow the REST gate ${String(gate)}`).toBe(gate);
+    }
+  });
+
+  // The enquiry inbox reads and its triage moves must agree too: a role that
+  // can see an enquiry in the venue inbox can move it through triage.
+  it("lets every venue-inbox role triage an enquiry, and no customer role", () => {
+    for (const role of ["staff", "hallkeeper", "manager", "sales", "admin"] as const) {
+      expect(canTransition("submitted", "under_review", role), `${role} triage`).toBe(true);
+    }
+    for (const role of ["client", "planner", "caterer"] as const) {
+      expect(canTransition("submitted", "under_review", role), `${role} triage`).toBe(false);
     }
   });
 
