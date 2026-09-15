@@ -1,0 +1,77 @@
+/* ---------------------------------------------------------------------------
+   The Hallkeeper register — one place for the four colours.
+
+   Ivory, forest green, copper, sage. T-606's focused sheet and room library
+   already lean this way; this file is where the register is DECLARED, so the
+   six hallkeeper surfaces stop re-inventing it. Before this, the event-day
+   board, the handoff and the mission record ran on a cyan-and-gold palette
+   that appears nowhere else in the product — a second visual language inside
+   one person's working day.
+
+   Two arrangements, one register:
+
+     PAPER   (sheet, room library) — ivory ground, forest ink, copper accent.
+             What a hallkeeper prints and carries.
+     TABLET  (Day Board, event-day board, handoff, mission record) — forest
+             ink ground, ivory text, copper accent, sage signal. What a wall
+             tablet shows in a room with the lights down.
+
+   Both use the same four colours; only which one is the ground changes.
+   The full one-system re-skin is Release 2 (plan 18, Lane 6 Tier B); this
+   file is the token pass that makes it a rename rather than a redesign.
+
+   Scoped to the six page roots on purpose. These are not :root globals —
+   index.html's <style> block belongs to another owner, and a hallkeeper
+   register has no business colouring the planner or the public site.
+
+   Colour discipline carried over from the Day Board: text is never tinted by
+   state. Tone lives in a dot, a border or a ring, and the words carry the
+   meaning on their own, which is also what keeps every state legible for a
+   colour-blind hallkeeper. --hk-alert is the ONE red and it means "look now".
+--------------------------------------------------------------------------- */
+
+.dayboard,
+.hk-page,
+.hkf-app,
+.hk-room-plans,
+.event-day-page,
+.ops-handoff-page,
+.mission-shell {
+  /* The four. */
+  --hk-ivory: #f4f1e9;
+  --hk-forest: #385542;
+  --hk-copper: #986246;
+  --hk-sage: #a9c3a4;
+
+  /* Paper arrangement. */
+  --hk-ivory-raised: #fffdf8;
+  --hk-ivory-sunk: #eeeee2;
+  --hk-line: #e4dcd0;
+  --hk-ink: #2e382e;
+  --hk-ink-dim: #575a4e;
+  --hk-ink-faint: #726c61;
+
+  /* Tablet arrangement. */
+  --hk-forest-ink: #1e2721;
+  --hk-forest-raised: #263028;
+  --hk-forest-soft: #5b7a63;
+  --hk-paper: #f3efe4;
+  --hk-paper-dim: rgba(243, 239, 228, 0.7);
+  --hk-paper-faint: rgba(243, 239, 228, 0.52);
+  --hk-line-dark: rgba(243, 239, 228, 0.12);
+
+  /* Accents. */
+  --hk-copper-light: #c98a5e;
+  --hk-copper-bright: #d8a179;
+  --hk-sage-deep: #6b8963;
+
+  /* Signal. One red; one amber. Both readable on either ground. */
+  --hk-alert: #c2503e;
+  --hk-alert-light: #e0917a;
+  --hk-warn: #b07a1f;
+
+  /* Type. The sheet's serif for headings, the app's sans for everything
+     else — the same pairing on all six surfaces. */
+  --hk-serif: "Playfair Display", Georgia, "Times New Roman", serif;
+  --hk-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}

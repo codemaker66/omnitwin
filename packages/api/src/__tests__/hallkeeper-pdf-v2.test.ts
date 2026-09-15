@@ -567,3 +567,57 @@ describe("generateSheetPdfV2 — metrics emission", () => {
     expect(counterLine).toMatch(/\s3\s*$/);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// Venue-pinned clock faces (Ship Friday gate line 20)
+//
+// The PDF renders on a server whose zone is an accident of deployment. Before
+// this, `toLocaleTimeString` with no `timeZone` printed UTC on the API host
+// and Europe/London on a developer laptop — the same sheet, two different
+// "Setup by" times, and no way to tell from the paper which one you held.
+//
+// The instant below is deliberately chosen to differ by clock face across the
+// three zones under test, so a regression cannot pass by coincidence:
+//   17:30Z  =  18:30 Europe/London (BST)  =  13:30 America/New_York
+// ---------------------------------------------------------------------------
+
+describe("PDF times are pinned to the venue's timezone", () => {
+  const timed: HallkeeperSheetV2 = {
+    ...BASE_SHEET,
+    timing: {
+      eventStart: "2026-06-15T17:30:00.000Z",
+      setupBy: "2026-06-15T16:00:00.000Z",
+      bufferMinutes: 90,
+    },
+  };
+
+  async function facesFor(timezone: string): Promise<string> {
+    const sheet: HallkeeperSheetV2 = { ...timed, venue: { ...timed.venue, timezone } };
+    return pdfPages(await generateSheetPdfV2(sheet)).flat().map((line) => line.text).join(" | ");
+  }
+
+  it("prints the venue's wall clock for the event start and the setup deadline", async () => {
+    const text = await facesFor("Europe/London");
+    expect(text).toContain("Setup by 17:00");
+    expect(text).toContain("Event starts 18:30");
+  });
+
+  it("prints a different venue's wall clock for the same instant", async () => {
+    const text = await facesFor("America/New_York");
+    expect(text).toContain("Setup by 12:00");
+    expect(text).toContain("Event starts 13:30");
+  });
+
+  it("names the zone on the page so a printed sheet is unambiguous", async () => {
+    const text = await facesFor("America/New_York");
+    expect(text).toContain("America/New_York");
+  });
+
+  it("says the times are not set rather than leaving a silent gap", async () => {
+    const text = pdfPages(await generateSheetPdfV2({ ...BASE_SHEET, timing: null }))
+      .flat().map((line) => line.text).join(" | ");
+    expect(text).toContain("Times not set");
+    expect(text).toMatch(/No booking in the Diary holds this room yet/u);
+  });
+});

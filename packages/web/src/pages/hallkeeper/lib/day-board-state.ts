@@ -4,7 +4,7 @@ import type {
   CalendarResponse,
   CalendarRoom,
 } from "@omnitwin/types";
-import { formatWallTime } from "../../diary/lib/board-time.js";
+import { VENUE_TIME_ZONE, formatWallTime } from "../../diary/lib/board-time.js";
 
 // ---------------------------------------------------------------------------
 // The Day Board state machine (Day Board S1; plan:
@@ -125,6 +125,7 @@ function deriveTimedState(
   booking: CalendarBookingEntry,
   setupStartsAtMs: number,
   nowMs: number,
+  timeZone: string,
 ): TimedState {
   const startsAtMs = Date.parse(booking.startsAt);
   const endsAtMs = Date.parse(booking.endsAt);
@@ -135,7 +136,7 @@ function deriveTimedState(
       stateLabel: "Scheduled end passed",
       tone: "faded",
       motion: "none",
-      countdown: `Booked until ${formatWallTime(endsAtMs)}`,
+      countdown: `Booked until ${formatWallTime(endsAtMs, timeZone)}`,
     };
   }
   if (nowMs >= startsAtMs) {
@@ -175,7 +176,7 @@ function deriveTimedState(
       tone: "green",
       motion: "pulse-4s",
       countdown: setupInMin <= 0
-        ? `First phase from ${formatWallTime(setupStartsAtMs)}`
+        ? `First phase from ${formatWallTime(setupStartsAtMs, timeZone)}`
         : `${setupStartsAtMs < startsAtMs ? "First phase" : "Starts"} in ${String(setupInMin)}m`,
     };
   }
@@ -184,7 +185,7 @@ function deriveTimedState(
     stateLabel: "Scheduled",
     tone: "quiet",
     motion: "none",
-    countdown: `Starts ${formatWallTime(startsAtMs)}`,
+    countdown: `Starts ${formatWallTime(startsAtMs, timeZone)}`,
   };
 }
 
@@ -195,7 +196,11 @@ function isBoardWorthy(entry: CalendarBookingEntry): boolean {
   return entry.status === "active" && entry.kind !== "prospect";
 }
 
-export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBoard {
+export function deriveDayBoard(
+  response: CalendarResponse,
+  nowMs: number,
+  timeZone: string = VENUE_TIME_ZONE,
+): DayBoard {
   const bookings: CalendarBookingEntry[] = [];
   const phases: CalendarPhaseEntry[] = [];
   for (const entry of response.entries) {
@@ -238,9 +243,9 @@ export function deriveDayBoard(response: CalendarResponse, nowMs: number): DayBo
               startsAtMs,
             );
 
-          const timed = deriveTimedState(entry, setupStartsAtMs, nowMs);
+          const timed = deriveTimedState(entry, setupStartsAtMs, nowMs, timeZone);
           const blocking = blockingByBooking.get(entry.id);
-          const timeRange = `${formatWallTime(startsAtMs)} – ${formatWallTime(endsAtMs)}`;
+          const timeRange = `${formatWallTime(startsAtMs, timeZone)} – ${formatWallTime(endsAtMs, timeZone)}`;
 
           const slot: DayBoardSlot =
             blocking !== undefined

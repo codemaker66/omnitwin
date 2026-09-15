@@ -10,6 +10,7 @@ import { ActivityStatus } from "../shared/Activity.js";
 import { InteractiveFloorPlan } from "./InteractiveFloorPlan.js";
 import { HallkeeperStatusBanner } from "./HallkeeperStatusBanner.js";
 import { useHallkeeperContext, type HallkeeperVerifiedContext, type HallkeeperContextResult } from "./useHallkeeperContext.js";
+import "../../styles/hallkeeper-register.css";
 import "./hallkeeper-workspace.css";
 
 const STAGES = [
@@ -120,7 +121,7 @@ export function HallkeeperWorkspace({ data, checks, onToggle, highlightedRowKey,
           </section>
         </div>
         <div className="hkf-attention-strip"><div><span className="hkf-overline">Keep in view</span><strong>{issues.length > 0 ? `${String(issues.length)} event-wide issue${issues.length === 1 ? "" : "s"} open` : board === null || board === undefined ? "Event context" : "No open event-wide issues"}</strong></div><div className="hkf-attention-copy">{result.status === "loading" ? <ActivityStatus>Loading room context…</ActivityStatus> : result.error !== null || context?.opsError !== null && context?.opsError !== undefined ? <><span>{result.error ?? context?.opsError}</span><button type="button" onClick={result.retry}>Retry context</button></> : issues.length > 0 ? <><span>{issues[0]?.title}</span>{context?.graph !== null && context?.graph !== undefined && <Link to={`/ops/events/${context.graph.event.id}`}>Review issues ↗</Link>}</> : <span>{context?.graph === null || context === null ? "Open this sheet from its event to include the running order and operations updates." : "Operations updates are available in the event board."}</span>}</div></div>
-        <footer className="hkf-footer"><span>{disabled ? "Checks unavailable" : `${String(done)} of ${String(allRows.length)} setup rows checked`}</span><span>Full checklist included in Print & PDF</span><Link to="/hallkeeper/walkthrough">Workflow walkthrough ↗</Link></footer>
+        <footer className="hkf-footer"><span>{disabled ? "Checks unavailable" : `${String(done)} of ${String(allRows.length)} setup rows checked`}</span><span>Full checklist included in Print & PDF</span><Link to="/hallkeeper/today">Today’s rooms ↗</Link></footer>
       </div>
     </div>
     {showDetails && <div className="hkf-detail-backdrop" onClick={() => { setShowDetails(false); }}><section ref={briefRef} className="hkf-detail-panel" role="dialog" aria-modal="true" aria-labelledby="hkf-brief-title" onClick={(event) => { event.stopPropagation(); }} onKeyDown={(event) => { if (event.key === "Escape") setShowDetails(false); }}><div className="hkf-panel-heading"><div><span className="hkf-overline">{data.space.name}</span><h2 id="hkf-brief-title">Brief & contacts</h2></div><button type="button" aria-label="Close brief" onClick={() => { setShowDetails(false); }}><X size={20} /></button></div><div className="hkf-detail-body">{details}{data.approval !== null && <p>Sheet v{data.approval.version} approved by {data.approval.approverName} on {new Date(data.approval.approvedAt).toLocaleString("en-GB", { timeZone: data.venue.timezone })}.</p>}<p className="hkf-footnote">Generated {new Date(data.generatedAt).toLocaleString("en-GB", { timeZone: data.venue.timezone })} · {data.venue.timezone}</p></div></section></div>}

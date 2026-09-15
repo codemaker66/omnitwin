@@ -1,12 +1,88 @@
 .event-day-page {
   min-height: 100vh;
-  background:
-    linear-gradient(180deg, rgba(15, 31, 34, 0.94), rgba(23, 24, 24, 0.98)),
-    #111818;
-  color: #f5f1e8;
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: radial-gradient(ellipse at 8% 0, #ece9dc 0, transparent 38%), var(--hk-ivory);
+  color: var(--hk-ink);
+  font-family: var(--hk-sans);
   padding: 18px;
 }
+
+.event-day-page h1,
+.event-day-page h2 { font-family: var(--hk-serif); font-weight: 500; }
+
+/* Live poll stamp and issue lifecycle (Ship Friday line 21). */
+.event-day-live { color: var(--hk-ink-faint); font-size: 0.72rem; }
+
+.event-day-issue-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.event-day-issue-list li {
+  align-items: start;
+  background: var(--hk-ivory-raised);
+  border: 1px solid var(--hk-line);
+  border-left: 4px solid var(--hk-sage-deep);
+  border-radius: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.event-day-issue-list li[data-severity="urgent"] { border-left-color: var(--hk-alert); }
+.event-day-issue-list li[data-severity="attention"] { border-left-color: var(--hk-copper); }
+.event-day-issue-list li > div:first-child { min-width: 0; }
+.event-day-issue-list span {
+  color: var(--hk-copper);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.event-day-issue-list h3 { font-size: 0.95rem; margin: 6px 0 4px; }
+.event-day-issue-list p { color: var(--hk-ink-dim); font-size: 0.82rem; margin: 0; }
+.event-day-issue-list small { color: var(--hk-ink-faint); display: block; font-size: 0.7rem; margin-top: 6px; }
+
+.event-day-issue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.event-day-issue-actions button {
+  background: var(--hk-ivory-sunk);
+  border: 1px solid var(--hk-line);
+  border-radius: 8px;
+  color: var(--hk-forest);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  min-height: 44px;
+  padding: 8px 14px;
+}
+.event-day-issue-actions button:disabled { cursor: default; opacity: 0.55; }
+
+.event-day-handoff-notes {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.event-day-handoff-notes li {
+  background: var(--hk-ivory-raised);
+  border: 1px dashed var(--hk-line);
+  border-radius: 12px;
+  padding: 14px;
+}
+.event-day-handoff-notes span {
+  color: var(--hk-ink-faint);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.event-day-handoff-notes h3 { font-size: 0.92rem; margin: 6px 0 4px; }
+.event-day-handoff-notes p { color: var(--hk-ink-dim); font-size: 0.82rem; margin: 0; }
 
 .event-day-centered {
   display: grid;
@@ -17,7 +93,7 @@
 
 .event-day-centered svg {
   margin: 0 auto;
-  color: #8fd8d2;
+  color: #6b8963;
 }
 
 .event-day-hero {
@@ -30,7 +106,7 @@
 
 .event-day-kicker {
   margin: 0 0 8px;
-  color: #8fd8d2;
+  color: #6b8963;
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -51,7 +127,7 @@
 
 .event-day-hero p {
   margin: 8px 0 0;
-  color: #c9d2cc;
+  color: #4d564b;
 }
 
 .event-day-sync {
@@ -62,9 +138,9 @@
 }
 
 .event-day-sync span {
-  border: 1px solid rgba(143, 216, 210, 0.35);
+  border: 1px solid rgba(107, 137, 99, 0.35);
   border-radius: 999px;
-  color: #dfe9df;
+  color: #39443b;
   font-size: 0.76rem;
   font-weight: 800;
   padding: 8px 10px;
@@ -72,8 +148,8 @@
 }
 
 .event-day-sync span[data-pending="true"] {
-  border-color: rgba(232, 184, 95, 0.55);
-  color: #f2cf83;
+  border-color: rgba(152, 98, 70, 0.55);
+  color: #4c554a;
 }
 
 .event-day-icon-button,
@@ -94,9 +170,9 @@
 }
 
 .event-day-icon-button {
-  background: #8fd8d2;
+  background: #6b8963;
   border-radius: 50%;
-  color: #10201f;
+  color: #e4e1d9;
   height: 42px;
   width: 42px;
 }
@@ -108,30 +184,30 @@
 }
 
 .event-day-button.primary {
-  background: #e8b85f;
-  color: #1d1710;
+  background: #986246;
+  color: #e8e4dc;
 }
 
 .event-day-button.secondary {
-  background: #263638;
-  color: #f5f1e8;
+  background: #d3d0c9;
+  color: #323c33;
 }
 
 .event-day-notice,
 .event-day-empty,
 .event-day-section {
-  border-top: 1px solid rgba(255, 255, 255, 0.11);
+  border-top: 1px solid rgba(46, 56, 46, 0.11);
   padding: 18px 0;
 }
 
 .event-day-notice {
-  color: #dcead4;
+  color: #3a453b;
   font-weight: 800;
   margin: 0;
 }
 
 .event-day-empty {
-  color: #d5ddd8;
+  color: #454d43;
 }
 
 .event-day-section-head {
@@ -142,9 +218,9 @@
 }
 
 .event-day-section-head > svg {
-  background: rgba(143, 216, 210, 0.12);
+  background: rgba(107, 137, 99, 0.12);
   border-radius: 8px;
-  color: #8fd8d2;
+  color: #6b8963;
   flex: 0 0 auto;
   padding: 8px;
   width: 38px;
@@ -157,7 +233,7 @@
 
 .event-day-section p,
 .event-day-muted {
-  color: #b7c2bd;
+  color: #5c6659;
   margin: 4px 0 0;
 }
 
@@ -172,8 +248,8 @@
 }
 
 .event-day-phases li {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(46, 56, 46, 0.08);
+  border: 1px solid rgba(46, 56, 46, 0.11);
   border-radius: 8px;
   display: grid;
   flex: 0 0 132px;
@@ -186,7 +262,7 @@
 .event-day-phases span,
 .event-day-task span,
 .event-day-arrivals span {
-  color: #8fd8d2;
+  color: #6b8963;
   font-size: 0.72rem;
   font-weight: 900;
   text-transform: uppercase;
@@ -194,24 +270,24 @@
 
 .event-day-phases strong {
   align-self: end;
-  color: #f2cf83;
+  color: #4c554a;
 }
 
 .event-day-progress {
-  background: rgba(255, 255, 255, 0.11);
+  background: rgba(46, 56, 46, 0.11);
   border-radius: 999px;
   height: 12px;
   overflow: hidden;
 }
 
 .event-day-progress span {
-  background: linear-gradient(90deg, #8fd8d2, #e8b85f);
+  background: linear-gradient(90deg, #6b8963, #986246);
   display: block;
   height: 100%;
 }
 
 .event-day-progress-stats {
-  color: #c9d2cc;
+  color: #4d564b;
   display: flex;
   flex-wrap: wrap;
   font-size: 0.85rem;
@@ -221,7 +297,7 @@
 }
 
 .event-day-progress-stats span {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(46, 56, 46, 0.08);
   border-radius: 999px;
   padding: 6px 9px;
 }
@@ -237,8 +313,8 @@
 .event-day-task,
 .event-day-change-feed article,
 .event-day-arrivals article {
-  background: rgba(255, 255, 255, 0.075);
-  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(46, 56, 46, 0.075);
+  border: 1px solid rgba(46, 56, 46, 0.11);
   border-radius: 8px;
   padding: 14px;
 }
@@ -249,11 +325,11 @@
 }
 
 .event-day-change-feed article[data-risk="attention"] {
-  border-color: rgba(232, 184, 95, 0.45);
+  border-color: rgba(152, 98, 70, 0.45);
 }
 
 .event-day-change-feed article[data-risk="blocker"] {
-  border-color: rgba(255, 105, 82, 0.5);
+  border-color: rgba(194, 80, 62, 0.5);
 }
 
 .event-day-task h3,
@@ -270,18 +346,18 @@
 }
 
 .event-day-change-feed span {
-  color: #f2cf83;
+  color: #4c554a;
   font-size: 0.72rem;
   font-weight: 900;
   text-transform: uppercase;
 }
 
 .event-day-change-feed article[data-risk="blocker"] span {
-  color: #ff9b82;
+  color: #677364;
 }
 
 .event-day-change-feed small {
-  color: #8fd8d2;
+  color: #6b8963;
   display: block;
   font-size: 0.78rem;
   font-weight: 800;
@@ -296,10 +372,10 @@
 }
 
 .event-day-task-actions button {
-  background: #223032;
-  border: 1px solid rgba(143, 216, 210, 0.28);
+  background: #d8d5cd;
+  border: 1px solid rgba(107, 137, 99, 0.28);
   border-radius: 8px;
-  color: #f5f1e8;
+  color: #323c33;
   cursor: pointer;
   font-weight: 850;
   min-height: 42px;
@@ -312,7 +388,7 @@
 .event-day-issue-form input:focus-visible,
 .event-day-issue-form textarea:focus-visible,
 .event-day-issue-form select:focus-visible {
-  outline: 3px solid #f2cf83;
+  outline: 3px solid #4c554a;
   outline-offset: 2px;
 }
 
@@ -322,7 +398,7 @@
 }
 
 .event-day-issue-form label {
-  color: #dce4df;
+  color: #3c473d;
   display: grid;
   font-size: 0.82rem;
   font-weight: 850;
@@ -332,10 +408,10 @@
 .event-day-issue-form input,
 .event-day-issue-form textarea,
 .event-day-issue-form select {
-  background: #f7f4ec;
+  background: #303a32;
   border: 1px solid transparent;
   border-radius: 8px;
-  color: #162021;
+  color: #e3e0d8;
   font: inherit;
   min-height: 44px;
   padding: 10px 12px;
@@ -348,21 +424,21 @@
 }
 
 .event-day-change-grid div {
-  background: rgba(255, 255, 255, 0.075);
+  background: rgba(46, 56, 46, 0.075);
   border-radius: 8px;
   padding: 12px;
   text-align: center;
 }
 
 .event-day-change-grid h3 {
-  color: #b7c2bd;
+  color: #5c6659;
   font-size: 0.72rem;
   margin: 0;
   text-transform: uppercase;
 }
 
 .event-day-change-grid p {
-  color: #f2cf83;
+  color: #4c554a;
   font-size: 1.8rem;
   font-weight: 900;
   margin: 6px 0 0;
@@ -374,7 +450,7 @@
 }
 
 .event-day-escalations li {
-  color: #ffe0b2;
+  color: #3b473d;
 }
 
 
@@ -411,8 +487,8 @@
 }
 
 .event-day-task-authority {
-  border-left: 2px solid #8fd8d2;
-  color: #a9bbb6;
+  border-left: 2px solid #6b8963;
+  color: #616c5e;
   font-size: 0.78rem;
   font-weight: 750;
   margin: 12px 0 0;

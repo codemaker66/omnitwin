@@ -1,29 +1,36 @@
+/* Every colour on this page now derives from the Hallkeeper register
+   (src/styles/hallkeeper-register.css). The old local names are kept so the
+   rest of the file needs no rename; only their VALUES moved. `--ops-cyan`
+   is sage now — the name is a fossil of the palette this page used to
+   invent, and renaming it is Release 2's re-skin, not this token pass. */
 .ops-handoff-page {
-  --ops-bg: #050708;
-  --ops-panel: rgba(13, 20, 22, 0.94);
-  --ops-panel-strong: rgba(17, 27, 30, 0.98);
-  --ops-line: rgba(212, 169, 86, 0.28);
-  --ops-line-cyan: rgba(82, 221, 224, 0.22);
-  --ops-gold: #d4a956;
-  --ops-gold-bright: #f3c56b;
-  --ops-cyan: #52dde0;
-  --ops-text: #f7f0e4;
-  --ops-muted: rgba(247, 240, 228, 0.7);
-  --ops-soft: rgba(247, 240, 228, 0.52);
+  --ops-bg: var(--hk-ivory);
+  --ops-panel: var(--hk-ivory-raised);
+  --ops-panel-strong: var(--hk-ivory-sunk);
+  --ops-line: var(--hk-line);
+  --ops-line-cyan: rgba(107, 137, 99, 0.22);
+  --ops-gold: var(--hk-copper);
+  --ops-gold-bright: #a06a46;
+  --ops-cyan: var(--hk-sage-deep);
+  --ops-text: var(--hk-ink);
+  --ops-muted: var(--hk-ink-dim);
+  --ops-soft: var(--hk-ink-faint);
   background:
-    linear-gradient(135deg, rgba(212, 169, 86, 0.08), transparent 38%),
-    linear-gradient(215deg, rgba(82, 221, 224, 0.08), transparent 42%),
+    radial-gradient(ellipse at 8% 0, #ece9dc 0, transparent 38%),
     var(--ops-bg);
   color: var(--ops-text);
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--hk-sans);
   min-height: 100vh;
   padding: 28px;
 }
 
+.ops-handoff-page h1,
+.ops-handoff-page h2 { font-family: var(--hk-serif); font-weight: 500; }
+
 .ops-handoff-page::before {
   background:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    linear-gradient(rgba(46, 56, 46, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(46, 56, 46, 0.025) 1px, transparent 1px);
   background-size: 56px 56px;
   content: "";
   inset: 0;
@@ -107,8 +114,8 @@
 
 .ops-handoff-primary {
   background: var(--ops-gold);
-  border: 1px solid rgba(243, 197, 107, 0.85);
-  color: #090807;
+  border: 1px solid rgba(152, 98, 70, 0.85);
+  color: #f4f0e8;
 }
 
 .ops-handoff-primary:hover {
@@ -126,13 +133,13 @@
 }
 
 .ops-handoff-secondary {
-  background: rgba(82, 221, 224, 0.11);
-  border: 1px solid rgba(82, 221, 224, 0.42);
+  background: rgba(107, 137, 99, 0.11);
+  border: 1px solid rgba(107, 137, 99, 0.42);
   color: var(--ops-text);
 }
 
 .ops-handoff-secondary:hover {
-  background: rgba(82, 221, 224, 0.18);
+  background: rgba(107, 137, 99, 0.18);
 }
 
 .ops-handoff-primary svg,
@@ -151,7 +158,7 @@
 }
 
 .ops-handoff-metric {
-  background: linear-gradient(180deg, rgba(20, 31, 34, 0.98), rgba(10, 16, 18, 0.98));
+  background: linear-gradient(180deg, rgba(228, 225, 217, 0.98), rgba(239, 235, 227, 0.98));
   border: 1px solid var(--ops-line);
   min-height: 86px;
   padding: 16px;
@@ -227,7 +234,7 @@
 }
 
 .ops-handoff-row + .ops-handoff-row {
-  border-top: 1px solid rgba(247, 240, 228, 0.12);
+  border-top: 1px solid rgba(49, 59, 50, 0.12);
 }
 
 .ops-handoff-row span {
@@ -238,7 +245,7 @@
 }
 
 .ops-handoff-row-head {
-  background: rgba(82, 221, 224, 0.11);
+  background: rgba(107, 137, 99, 0.11);
   color: var(--ops-cyan);
   font-size: 0.78rem;
   font-weight: 800;
@@ -258,7 +265,7 @@
 
 .ops-handoff-task-list li,
 .ops-handoff-sequences li {
-  border-top: 1px solid rgba(247, 240, 228, 0.12);
+  border-top: 1px solid rgba(49, 59, 50, 0.12);
   display: grid;
   gap: 8px;
   grid-template-columns: minmax(180px, 0.45fr) minmax(0, 1fr);
@@ -333,15 +340,15 @@
 }
 
 .ops-handoff-empty {
-  background: rgba(82, 221, 224, 0.08);
-  border: 1px dashed rgba(82, 221, 224, 0.32);
+  background: rgba(107, 137, 99, 0.08);
+  border: 1px dashed rgba(107, 137, 99, 0.32);
   color: var(--ops-muted) !important;
   padding: 14px;
 }
 
 .ops-handoff-beo {
-  background: #050708;
-  border: 1px solid rgba(82, 221, 224, 0.2);
+  background: #f5f1e8;
+  border: 1px solid rgba(107, 137, 99, 0.2);
   color: var(--ops-text);
   font: 0.92rem/1.6 "SFMono-Regular", Consolas, monospace;
   margin: 0;
@@ -362,7 +369,7 @@
 
 .ops-handoff-page .ai-draft-panel__icon,
 .ops-handoff-page .ai-draft-panel__meta span {
-  background: rgba(82, 221, 224, 0.12);
+  background: rgba(107, 137, 99, 0.12);
   color: var(--ops-cyan);
 }
 
@@ -378,13 +385,13 @@
 
 .ops-handoff-page .ai-draft-panel__button {
   background: var(--ops-gold);
-  border-color: rgba(243, 197, 107, 0.85);
-  color: #090807;
+  border-color: rgba(152, 98, 70, 0.85);
+  color: #f4f0e8;
 }
 
 .ops-handoff-page .ai-draft-panel__button:disabled {
-  background: rgba(247, 240, 228, 0.12);
-  border-color: rgba(247, 240, 228, 0.16);
+  background: rgba(49, 59, 50, 0.12);
+  border-color: rgba(49, 59, 50, 0.16);
   color: var(--ops-soft);
 }
 

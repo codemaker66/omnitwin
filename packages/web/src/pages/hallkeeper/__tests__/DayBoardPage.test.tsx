@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { CalendarResponse } from "@omnitwin/types";
-import { DayBoardPage } from "../DayBoardPage.js";
+import type { ReactElement } from "react";
+import { DayBoardPage, DayBoardSlotRequestsContext } from "../DayBoardPage.js";
 import { useAuthStore } from "../../../stores/auth-store.js";
 
 // ---------------------------------------------------------------------------
@@ -12,12 +13,19 @@ import { useAuthStore } from "../../../stores/auth-store.js";
 // the error/retry path — against a mocked calendar API.
 // ---------------------------------------------------------------------------
 
-const { getCalendarMock, liveUpdate } = vi.hoisted(() => ({
+const { getCalendarMock, liveUpdate, resolveLayoutsMock } = vi.hoisted(() => ({
   getCalendarMock: vi.fn(), liveUpdate: { current: null as (() => void) | null },
+  resolveLayoutsMock: vi.fn(),
 }));
 
 vi.mock("../../../api/diary.js", () => ({
   getCalendar: getCalendarMock,
+}));
+
+// The setup-sheet corridor resolves event-owned references over the network;
+// the page contract under test is which STATE it paints, not the resolution.
+vi.mock("../../../lib/event-linked-layouts.js", () => ({
+  resolveEventLinkedLayouts: resolveLayoutsMock,
 }));
 
 vi.mock("../../diary/hooks/useDiaryLive.js", () => ({
@@ -40,6 +48,8 @@ vi.mock("../../../components/dashboard/NotificationCenter.js", () => ({
 }));
 
 const VENUE = "00000000-0000-4000-8000-000000000001";
+const EVENT_ID = "00000000-0000-4000-8000-0000000000e1";
+const CONFIG_ID = "00000000-0000-4000-8000-0000000000c1";
 const GRAND_HALL = "00000000-0000-4000-8000-0000000000a1";
 const SALOON = "00000000-0000-4000-8000-0000000000a2";
 
@@ -89,6 +99,10 @@ function liveBooking(): CalendarResponse["entries"][number] {
   } as CalendarResponse["entries"][number];
 }
 
+function bookingWithEvent(): CalendarResponse["entries"][number] {
+  return { ...liveBooking(), eventId: EVENT_ID } as CalendarResponse["entries"][number];
+}
+
 function renderBoard(): void {
   render(
     <MemoryRouter initialEntries={["/hallkeeper/today"]}>
@@ -99,6 +113,8 @@ function renderBoard(): void {
 
 beforeEach(() => {
   getCalendarMock.mockReset();
+  resolveLayoutsMock.mockReset();
+  resolveLayoutsMock.mockResolvedValue({ eventName: "Chamber dinner", roomName: "Grand Hall", layouts: [], unavailableCount: 0 });
   liveUpdate.current = null;
   useAuthStore.getState().setUser({
     id: "00000000-0000-4000-8000-0000000000ff",
@@ -229,6 +245,76 @@ describe("DayBoardPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Nothing scheduled today.")).toBeTruthy();
     });
+  });
+
+  // --- The setup-sheet corridor (Ship Friday gate line 20) -----------------
+  // The board must reach the room's sheet WITHOUT a compiled handoff pack,
+  // and must say plainly when it cannot, with the next action attached.
+
+  it("reaches the room's setup sheet from the slot, carrying the event", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
+    resolveLayoutsMock.mockResolvedValue({
+      eventName: "Chamber dinner", roomName: "Grand Hall", unavailableCount: 0,
+      layouts: [{ configurationId: CONFIG_ID, name: "Banquet 120", spaceName: "Grand Hall" }],
+    });
+    renderBoard();
+
+    const link = await screen.findByRole("link", { name: /Open setup sheet/u });
+    expect(link.getAttribute("href")).toBe(`/hallkeeper/${CONFIG_ID}?eventId=${EVENT_ID}`);
+    expect(resolveLayoutsMock).toHaveBeenCalledWith(expect.objectContaining({ eventId: EVENT_ID, spaceSlug: "grand-hall" }));
+  });
+
+  it("says why there is no sheet yet and what to do instead of rendering nothing", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
+    renderBoard();
+
+    expect(await screen.findByText(/No setup sheet yet for Grand Hall/u)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open the event and link the room's layout." }).getAttribute("href"))
+      .toBe(`/ops/events/${EVENT_ID}`);
+  });
+
+  it("points an unlinked booking at the Diary rather than a dead sheet link", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+
+    expect(await screen.findByText(/this booking is not linked to an event/u)).toBeTruthy();
+    expect(resolveLayoutsMock).not.toHaveBeenCalled();
+  });
+
+  // --- Lane 9's mount point ------------------------------------------------
+
+  it("reserves a request region per slot and renders nothing there by default", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    const region = document.querySelector("[data-slot-requests]");
+    expect(region).not.toBeNull();
+    expect(region?.textContent).toBe("");
+  });
+
+  it("mounts the request surface with the slot's identity when one is supplied", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([bookingWithEvent()]));
+    const seen: string[] = [];
+    function SlotRequests(props: { readonly bookingId: string; readonly roomName: string }): ReactElement {
+      seen.push(`${props.roomName}:${props.bookingId}`);
+      return <span>2 requests</span>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/hallkeeper/today"]}>
+        <DayBoardSlotRequestsContext.Provider value={SlotRequests}>
+          <DayBoardPage />
+        </DayBoardSlotRequestsContext.Provider>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("2 requests")).toBeTruthy();
+    expect(seen[0]).toBe("Grand Hall:00000000-0000-4000-8000-0000000000b1");
+  });
+
+  it("names the venue's own timezone rather than a hard-coded one", async () => {
+    getCalendarMock.mockResolvedValue(calendarFixture([liveBooking()]));
+    renderBoard();
+    await screen.findByText("Chamber dinner");
+    expect(screen.getByText(/Europe\/London/u)).toBeTruthy();
   });
 
   it("a failed load shows the error and a retry that refetches", async () => {

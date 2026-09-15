@@ -20,6 +20,12 @@ const VenueSchema = z.object({
   address: z.string(),
   logoUrl: z.string().nullable(),
   brandColour: z.string().nullable(),
+  // The venue's IANA wall clock (venues.timezone, migration 0015). GET
+  // /venues/:id has always returned it; the schema used to strip it, which is
+  // why hallkeeper surfaces fell back to a hard-coded "Europe/London".
+  // Optional so recorded fixtures and older servers stay valid — consumers
+  // fall back rather than render an empty zone.
+  timezone: z.string().min(1).optional(),
 });
 
 export type Venue = z.infer<typeof VenueSchema>;

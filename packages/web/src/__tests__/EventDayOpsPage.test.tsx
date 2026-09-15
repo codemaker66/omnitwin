@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import type { ChangeFeedItem, EventDayOpsBoard, OpsTask } from "@omnitwin/types";
+import type { ChangeFeedItem, EventDayIssue, EventDayOpsBoard, OpsTask } from "@omnitwin/types";
 import { ApiError } from "../api/client.js";
 import { EventDayOpsPage } from "../pages/EventDayOpsPage.js";
 
@@ -26,6 +26,7 @@ const {
   mockGetEventDayOpsBoard,
   mockUpdateOpsTaskStatus,
   mockCreateEventDayIssue,
+  mockUpdateEventDayIssue,
   mockGetEventChangeFeed,
   mockAcknowledgeEventPlanChange,
   mockAckEventDayOp,
@@ -36,6 +37,7 @@ const {
   mockGetEventDayOpsBoard: vi.fn(),
   mockUpdateOpsTaskStatus: vi.fn(),
   mockCreateEventDayIssue: vi.fn(),
+  mockUpdateEventDayIssue: vi.fn(),
   mockGetEventChangeFeed: vi.fn(),
   mockAcknowledgeEventPlanChange: vi.fn(),
   mockAckEventDayOp: vi.fn(),
@@ -48,6 +50,7 @@ vi.mock("../api/event-day-ops.js", () => ({
   getEventDayOpsBoard: mockGetEventDayOpsBoard,
   updateOpsTaskStatus: mockUpdateOpsTaskStatus,
   createEventDayIssue: mockCreateEventDayIssue,
+  updateEventDayIssue: mockUpdateEventDayIssue,
 }));
 
 vi.mock("../api/notifications.js", () => ({
@@ -62,8 +65,14 @@ vi.mock("../lib/event-day-offline-queue.js", () => ({
   listPendingEventDayOps: mockListPendingEventDayOps,
 }));
 
+// Decision 7: the board is the hallkeeper's surface. The stub records the
+// authority prop so the spec can prove the board claims it.
+const missionProps: { current: Record<string, unknown> | null } = { current: null };
 vi.mock("../components/mission-control/EventMissionControl.js", () => ({
-  EventMissionControl: () => <section data-testid="mission-control">Mission Control</section>,
+  EventMissionControl: (props: Record<string, unknown>) => {
+    missionProps.current = props;
+    return <section data-testid="mission-control">Mission Control</section>;
+  },
 }));
 
 const NOW = "2026-06-12T09:00:00.000Z";
@@ -221,6 +230,26 @@ function boardFixture(): EventDayOpsBoard {
   };
 }
 
+function openIssueFixture(): EventDayIssue {
+  return {
+    id: "00000000-0000-4000-8000-000000003050",
+    eventId: EVENT_ID,
+    phaseId: null,
+    opsTaskId: null,
+    title: "Chair delivery short",
+    detail: "Eight chairs missing from the delivery.",
+    status: "open",
+    severity: "attention",
+    source: "hallkeeper",
+    reportedBy: null,
+    assignedTo: null,
+    escalationNote: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    resolvedAt: null,
+  };
+}
+
 function requiredChangeFixture(): ChangeFeedItem {
   return {
     id: "00000000-0000-4000-8000-000000003030",
@@ -260,6 +289,7 @@ beforeEach(() => {
   mockGetEventDayOpsBoard.mockReset();
   mockUpdateOpsTaskStatus.mockReset();
   mockCreateEventDayIssue.mockReset();
+  mockUpdateEventDayIssue.mockReset();
   mockGetEventChangeFeed.mockReset();
   mockAcknowledgeEventPlanChange.mockReset();
   mockAckEventDayOp.mockReset();
@@ -439,6 +469,72 @@ describe("EventDayOpsPage", () => {
         expect.objectContaining({ title: "Supplier late" }),
       );
     });
+  });
+
+  // --- Ship Friday, gate line 21 and decision 7 ---------------------------
+
+  it("claims task and issue authority so Mission Control hides its own controls", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    renderPage();
+    await screen.findByText("Blake event day");
+    expect(missionProps.current?.["ownsExecutionControls"]).toBe(false);
+    // The board's own task actions stay available regardless of mission state.
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+  });
+
+  it("resolves an open issue and refetches the board", async () => {
+    const issue = openIssueFixture();
+    mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), issues: [issue] });
+    mockUpdateEventDayIssue.mockResolvedValue({ ...issue, status: "resolved", resolvedAt: NOW });
+    renderPage();
+
+    await screen.findByText("Chair delivery short");
+    fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
+
+    await waitFor(() => {
+      expect(mockUpdateEventDayIssue).toHaveBeenCalledWith(EVENT_ID, issue.id, { status: "resolved" });
+    });
+    expect(await screen.findByText("Issue resolved.")).toBeTruthy();
+    // Every mutation pulls fresh server truth rather than trusting the patch.
+    await waitFor(() => { expect(mockGetEventDayOpsBoard).toHaveBeenCalledTimes(2); });
+  });
+
+  it("closes an open issue", async () => {
+    const issue = openIssueFixture();
+    mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), issues: [issue] });
+    mockUpdateEventDayIssue.mockResolvedValue({ ...issue, status: "closed" });
+    renderPage();
+
+    await screen.findByText("Chair delivery short");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => {
+      expect(mockUpdateEventDayIssue).toHaveBeenCalledWith(EVENT_ID, issue.id, { status: "closed" });
+    });
+  });
+
+  it("says plainly when no supplier arrival has been captured", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue({ ...boardFixture(), supplierArrivals: [] });
+    renderPage();
+    await screen.findByText("Supplier arrivals");
+    expect(screen.getByText("No supplier arrival has been captured for this event.")).toBeTruthy();
+  });
+
+  it("labels compiled supplier prompts as notes, not as arrivals", async () => {
+    const base = boardFixture();
+    const pack = base.handoffPack;
+    if (pack === null) throw new Error("fixture has a handoff pack");
+    const note = { ...pack.supplierInstructions[0], id: "00000000-0000-4000-8000-000000003040", title: "Supplier coordination check", arrivalWindow: null, supplierId: null };
+    mockGetEventDayOpsBoard.mockResolvedValue({
+      ...base,
+      supplierArrivals: [],
+      handoffPack: { ...pack, supplierInstructions: [note] },
+    });
+    renderPage();
+
+    expect(await screen.findByText("Handoff notes")).toBeTruthy();
+    expect(screen.getByText(/Notes to check — not booked arrivals\./u)).toBeTruthy();
+    expect(screen.getByText("Supplier coordination check")).toBeTruthy();
   });
 
   it("keeps UI language claim-safe", async () => {

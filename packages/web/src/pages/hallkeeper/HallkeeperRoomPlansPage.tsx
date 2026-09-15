@@ -8,6 +8,7 @@ import { ActivityStatus } from "../../components/shared/Activity.js";
 import { HALLKEEPER_PLAN_VENUE_SLUG, HALLKEEPER_ROOM_PLANS, getHallkeeperRoomPlan, type HallkeeperRoomPlan } from "../../data/hallkeeper-room-plans.js";
 import { roomPosterUrl } from "../../lib/room-posters.js";
 import { useAuthStore } from "../../stores/auth-store.js";
+import "../../styles/hallkeeper-register.css";
 import "./hallkeeper-room-plans.css";
 
 interface VenueResult {

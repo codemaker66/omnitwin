@@ -1,9 +1,8 @@
+/* Colours come from src/styles/hallkeeper-register.css; only --hk-muted is
+   local, and it is an alias of the register's faint ink. Same values T-606
+   published — this is a token pass, not a re-skin. */
 .hk-page {
-  --hk-ink: #2e382e;
-  --hk-muted: #726c61;
-  --hk-forest: #385542;
-  --hk-copper: #986246;
-  --hk-line: #e4dcd0;
+  --hk-muted: var(--hk-ink-faint);
   min-height: 100svh;
   padding: 0 34px 30px;
   color: var(--hk-ink);
