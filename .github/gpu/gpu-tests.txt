@@ -1,0 +1,2 @@
+# The complete unchanged Twin performance file executes on the required GPU worker.
+[chromium] > twin-performance.spec.ts

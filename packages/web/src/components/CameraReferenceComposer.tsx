@@ -5,6 +5,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { Camera, Check, X } from "lucide-react";
 import {
   DEFAULT_CUSTOM_EYE_HEIGHT_M,
@@ -322,7 +323,9 @@ export function CameraReferenceComposer(): React.ReactElement | null {
     event.stopPropagation();
   }
 
-  return (
+  // The stage is transformed and creates a stacking context. Keep this draggable
+  // viewport dialog above the sibling inspector wherever the user moves it.
+  return createPortal(
     <form
       ref={panelRef}
       className="camera-reference-composer"
@@ -548,7 +551,8 @@ export function CameraReferenceComposer(): React.ReactElement | null {
             ? "Save label + view"
             : "Save label"}
       </button>
-    </form>
+    </form>,
+    document.body,
   );
 }
 

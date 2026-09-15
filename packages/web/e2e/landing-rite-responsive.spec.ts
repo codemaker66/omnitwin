@@ -51,14 +51,14 @@ for (const viewport of VIEWPORTS) {
 
     await page.goto("/landing");
     await expect(
-      page.getByRole("heading", { name: /There is a hall in Glasgow/i }),
+      page.getByRole("heading", { name: /^Trades Hall, Glasgow · \d+ years$/ }),
     ).toBeVisible();
     await expect(page.locator(".vv-rite")).toHaveClass(/is-static/);
     await expectNoHorizontalOverflow(page);
 
     // The four chapters and the eight-room index are reachable.
     await page.getByRole("heading", { name: "The Grand Hall", exact: true }).scrollIntoViewIfNeeded();
-    await expect(page.getByText("The room the city keeps its promises in.")).toBeVisible();
+    await expect(page.getByText("Beneath the dome.")).toBeVisible();
     await page.getByRole("heading", { name: /Eight rooms, each keeping its own hours/i }).scrollIntoViewIfNeeded();
     await expect(page.getByRole("link", { name: "Explore The Saloon" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
@@ -78,7 +78,7 @@ for (const viewport of VIEWPORTS) {
 test("the enter control descends into the dark", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/landing");
-  await expect(page.getByRole("heading", { name: /There is a hall in Glasgow/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Trades Hall, Glasgow · \d+ years$/ })).toBeVisible();
 
   await page.getByRole("button", { name: /Enter/i }).click();
   await page.waitForFunction(() => window.scrollY > 10);

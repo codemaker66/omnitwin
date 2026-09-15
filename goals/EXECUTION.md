@@ -1,5 +1,15 @@
 # Venviewer execution board
 
+## Browser release confidence — T-613, 15 September 2026
+
+[Goal17](17-browser-release-confidence.md) is active in **Build next-gen venue
+platform**, checkout `D:/claude/venviewer-browser-release-20260915`, branch
+`codex/browser-release-20260915`. Creation baseline `54ebfc61`; shipped dependency
+release `641f2667` is integrated with its pins preserved. Goal16's owner returned
+the serial T-601 release lane. Targeted product/fixture repairs are qualified in
+the [working report](../docs/reports/browser-release-confidence-2026-09-15.md);
+complete browser, performance, hosted and live gates remain open.
+
 **Current delivery policy — 7 September 2026:** the
 [build, ship and verify contract](../.claude/conventions/shipping-changes.md)
 applies to every active product lane. Owners coordinate release execution, and

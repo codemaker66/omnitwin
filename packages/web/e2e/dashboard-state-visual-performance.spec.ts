@@ -30,8 +30,7 @@ const SAMPLE_MS = Number.parseInt(process.env.FRAME_BUDGET_SAMPLE_MS ?? "1200", 
 const TARGET_FRAME_MS = 16.7;
 const PASS_P95_MS = Number.parseFloat(process.env.FRAME_BUDGET_PASS_P95_MS ?? "18.5");
 const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_SUSTAINED ?? "1", 10);
-const ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-dashboard-drawer-frame-visual-2026-06-19";
-const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
+const artifactDir = (): string => test.info().outputPath("dashboard-state");
 
 type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
 type DashboardViewportName = "desktop" | "mobile";
@@ -444,9 +443,10 @@ async function mockDashboardRoutes(page: Page, options: DashboardMockOptions = {
   });
 }
 
-async function mockHallkeeperDeniedRoutes(page: Page): Promise<void> {
-  await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, (route) => {
-    void route.fulfill({ status: 403, json: { error: "t469 hallkeeper denied" } });
+async function mockHallkeeperDeniedRoutes(page: Page, responseGate: Promise<void>): Promise<void> {
+  await page.route(`${API}/hallkeeper/${CONFIG_ID}/v2`, async (route) => {
+    await responseGate;
+    await route.fulfill({ status: 403, json: { error: "t469 hallkeeper denied" } });
   });
   await page.route(`${API}/hallkeeper/${CONFIG_ID}/progress`, (route) => {
     void route.fulfill({ json: { data: { configId: CONFIG_ID, checked: {} } } });
@@ -541,7 +541,7 @@ async function recordFrameAndVisualState(
   viewport: DashboardViewportName,
   interaction: () => Promise<void>,
 ): Promise<void> {
-  const screenshotPath = `${ARTIFACT_DIR}/${viewport}-${name}.png`;
+  const screenshotPath = `${artifactDir()}/${viewport}-${name}.png`;
   await page.waitForTimeout(250);
   await assertNoRuntimeBreakage(page, problems);
   const screenshotBytes = await takeSmokeScreenshot(page, screenshotPath);
@@ -615,11 +615,12 @@ async function recordAccessibilityState(
   expectAccessibilityAuditClean(result);
 }
 
-test.describe.configure({ mode: "serial" });
+// Cases own their pages and mocks; keep file order without failure cascades.
+test.describe.configure({ mode: "default" });
 
 test.afterAll(async () => {
-  await mkdir(dirname(REPORT_PATH), { recursive: true });
-  await writeFile(REPORT_PATH, `${JSON.stringify({
+  await mkdir(dirname(`${artifactDir()}/report.json`), { recursive: true });
+  await writeFile(`${artifactDir()}/report.json`, `${JSON.stringify({
     generatedAt: new Date().toISOString(),
     targetFrameMs: TARGET_FRAME_MS,
     passP95Ms: PASS_P95_MS,
@@ -721,7 +722,10 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
     await seedAuthenticatedUser(page, "supplier");
 
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { level: 1, name: "This workspace is not available to your role" })).toBeVisible();
+    const denied = page.getByRole("main", { name: "Workspace access denied" });
+    await expect(denied.getByRole("heading", { level: 1, name: "Access needed", exact: true })).toBeVisible();
+    await expect(denied.getByRole("alert")).toContainText("Ask your venue admin to grant access.");
+    await expect(page.locator("#dashboard-main")).toHaveCount(0);
 
     await recordFrameAndVisualState(page, problems, "supplier-denied", "desktop", async () => {
       await page.mouse.move(720, 420);
@@ -771,10 +775,36 @@ test.describe("T-469 dashboard drawer visual and frame-budget pass", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     const problems = watchPageProblems(page);
     await seedAuthenticatedUser(page, "planner");
-    await mockHallkeeperDeniedRoutes(page);
-
-    await page.goto(`/hallkeeper/${CONFIG_ID}`);
+    let releaseResponse: () => void = () => undefined;
+    const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
+    await mockHallkeeperDeniedRoutes(page, responseGate);
+    const targetBounds: { state: string; name: string; width: number; height: number }[] = [];
+    const assertHeaderTargets = async (state: string): Promise<void> => {
+      const navigation = page.getByRole("navigation", { name: "Hallkeeper navigation" });
+      for (const [name, href] of [["Today's rooms", "/hallkeeper/today"], ["Workflow walkthrough", "/hallkeeper/walkthrough"]] as const) {
+        const link = navigation.getByRole("link", { name, exact: true });
+        await expect(link).toBeInViewport();
+        await expect(link).toHaveAttribute("href", href);
+        const bounds = await link.boundingBox();
+        expect(bounds, `${state}: ${name} has rendered bounds`).not.toBeNull();
+        if (bounds === null) throw new Error(`${state}: ${name} has no rendered bounds`);
+        expect(bounds.width, `${state}: ${name} target width`).toBeGreaterThanOrEqual(44);
+        expect(bounds.height, `${state}: ${name} target height`).toBeGreaterThanOrEqual(44);
+        targetBounds.push({ state, name, width: bounds.width, height: bounds.height });
+      }
+    };
+    try {
+      await page.goto(`/hallkeeper/${CONFIG_ID}`, { waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("main", { name: "Hallkeeper sheet loading" })).toBeVisible();
+      await assertHeaderTargets("loading");
+    } finally {
+      releaseResponse();
+    }
     await expect(page.getByText("You don't have permission to view this events sheet.")).toBeVisible();
+    await assertHeaderTargets("denied");
+    await test.info().attach("hallkeeper-loading-and-denied-targets", {
+      body: JSON.stringify(targetBounds, null, 2), contentType: "application/json",
+    });
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, "hallkeeper denied mobile state should not horizontally overflow").toBeLessThanOrEqual(1);

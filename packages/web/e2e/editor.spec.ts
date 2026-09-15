@@ -1,7 +1,33 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
+
+import type { Space, VenueDetail } from "../src/api/spaces.js";
 
 const API = "http://localhost:3001";
 const CONFIG_ID = "e2e-config-001";
+
+function addFurniture(page: Page): Locator {
+  return page.getByTestId("reference-scene-outliner").getByRole("button", { name: "Add furniture", exact: true });
+}
+
+async function openMoreTools(page: Page): Promise<void> {
+  const trigger = page.getByRole("button", { name: "More planner tools" });
+  await expect(trigger).toBeVisible();
+  if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+  await expect(page.getByTestId("planner-toolbar")).toBeVisible();
+}
+
+async function expectSeparate(first: Locator, second: Locator): Promise<void> {
+  await expect.poll(async () => {
+  const a = await first.boundingBox();
+  const b = await second.boundingBox();
+  expect(a).not.toBeNull();
+  expect(b).not.toBeNull();
+  if (a === null || b === null) return false;
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return width <= 1 || height <= 1;
+  }, { message: "planner controls must settle clear of room identity" }).toBe(true);
+}
 
 const TRUTH_MODE_SUMMARY_FIXTURE = {
   targetType: "configuration",
@@ -36,6 +62,16 @@ const TRUTH_MODE_SUMMARY_FIXTURE = {
 
 test.describe("Public Editor", () => {
   test.beforeEach(async ({ page }) => {
+    const space: Space = {
+      id: "e2e-space-001", venueId: "e2e-venue-001", name: "Test room", slug: "test-room",
+      widthM: "20", lengthM: "15", heightM: "6", floorPlanOutline: [],
+    };
+    const venue: VenueDetail = {
+      id: "e2e-venue-001", name: "Test venue", slug: "test-venue", address: "Test address",
+      logoUrl: null, brandColour: null, spaces: [space],
+    };
+    await page.route(`${API}/venues/e2e-venue-001`, (route) => route.fulfill({ json: { data: venue } }));
+    await page.route(`${API}/venues/e2e-venue-001/spaces/e2e-space-001`, (route) => route.fulfill({ json: { data: space } }));
     // Navigate directly to /editor/:configId (bypasses SpacePicker, which
     // requires a live API for venue/space data). Mock the config-load call
     // so the 3D editor mounts without a real backend.
@@ -74,53 +110,32 @@ test.describe("Public Editor", () => {
     await expect(page.locator("canvas")).toBeVisible();
   });
 
-  test("desktop planner shows a premium status command surface", async ({ page }) => {
-    const statusHeader = page.getByTestId("cockpit-topbar");
+  test("desktop planner exposes room identity, save state and recorded evidence", async ({ page }) => {
+    const statusHeader = page.getByRole("banner", { name: "Room and save status" });
     await expect(statusHeader).toBeVisible({ timeout: 5_000 });
-    await expect(statusHeader).toContainText("Opening layout");
-    await expect(statusHeader).toContainText("Guest draft");
-    await expect(statusHeader).toContainText("Planning evidence / human review required");
-    await expect(statusHeader).toContainText(/Save Layout|Saved just now|Unsaved changes|Saving/);
-    await expect.poll(async () =>
-      statusHeader.evaluate((node) => getComputedStyle(node).userSelect),
-    ).toBe("none");
-
+    await expect(statusHeader).toContainText("Test venue");
+    await expect(statusHeader).toContainText("Test room");
+    await expect(statusHeader.getByRole("status")).toHaveText("Layout saved");
+    await openMoreTools(page);
+    await page.getByText("Recorded evidence", { exact: true }).click();
+    await expect(page.getByTestId("cockpit-truth-rail")).toContainText(/human review required/i);
+    await page.getByRole("button", { name: "More planner tools" }).click();
     const commandDeck = page.getByTestId("planner-command-deck");
     await expect(commandDeck).toBeVisible({ timeout: 5_000 });
-    await expect(commandDeck).toContainText("Arrange the room");
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await expect(commandDeck.getByRole("button", { name: "Open furniture command" })).toBeVisible();
+    await addFurniture(page).click();
     const furniturePanel = page.getByTestId("furniture-panel");
     await expect(furniturePanel).toBeVisible({ timeout: 5_000 });
-
-    const headerBox = await statusHeader.boundingBox();
-    const panelBox = await furniturePanel.boundingBox();
-    expect(headerBox).not.toBeNull();
-    expect(panelBox).not.toBeNull();
-    if (headerBox !== null && panelBox !== null) {
-      expect(panelBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 1);
-    }
+    await expectSeparate(statusHeader, furniturePanel);
   });
 
-  test("desktop toolbar starts below the command header", async ({ page }) => {
-    const statusHeader = page.getByTestId("cockpit-topbar");
+  test("desktop tool disclosure clears the room header and main tool pill", async ({ page }) => {
+    const statusHeader = page.getByRole("banner", { name: "Room and save status" });
+    await openMoreTools(page);
     const toolbar = page.getByTestId("planner-toolbar");
-    await expect(statusHeader).toBeVisible({ timeout: 5_000 });
-    await expect(toolbar).toBeVisible({ timeout: 5_000 });
-
-    const boxes = await Promise.all([
-      statusHeader.boundingBox(),
-      toolbar.boundingBox(),
-      page.getByRole("button", { name: "Select & Move" }).boundingBox(),
-    ]);
-    const [headerBox, toolbarBox, selectButtonBox] = boxes;
-    expect(headerBox).not.toBeNull();
-    expect(toolbarBox).not.toBeNull();
-    expect(selectButtonBox).not.toBeNull();
-    if (headerBox === null || toolbarBox === null || selectButtonBox === null) return;
-
-    const headerBottom = headerBox.y + headerBox.height;
-    expect(toolbarBox.y).toBeGreaterThanOrEqual(headerBottom - 1);
-    expect(selectButtonBox.y).toBeGreaterThanOrEqual(headerBottom + 6);
+    await expectSeparate(statusHeader, toolbar);
+    await expectSeparate(page.getByTestId("planner-tool-pill"), toolbar);
+    await expect(toolbar.getByRole("button", { name: "Select & Move" })).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
@@ -128,6 +143,7 @@ test.describe("Public Editor", () => {
   // ---------------------------------------------------------------------------
 
   test("all core toolbar buttons are present", async ({ page }) => {
+    await openMoreTools(page);
     // Each ToolBtn renders a <button aria-label={label} …>. Verifying these
     // labels exist ensures the toolbox mounted and aria attributes are wired.
     // Scoped to the toolbar: the command deck also exposes Undo/Redo, so a
@@ -145,10 +161,10 @@ test.describe("Public Editor", () => {
         "Laser Diagram",
         "Grid Snap",
         "Show All Walls",
-        "Save Layout",
         "Events Sheet",
       ].map((name) => expect(toolbar.getByRole("button", { name })).toBeVisible()),
     );
+    await expect(toolbar.getByRole("button", { name: "Layout saved", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Toggle wall visibility panel" })).toHaveCount(0);
   });
 
@@ -157,12 +173,12 @@ test.describe("Public Editor", () => {
   // ---------------------------------------------------------------------------
 
   test("clicking Add Furniture opens the catalogue panel", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await addFurniture(page).click();
     await expect(page.getByTestId("furniture-panel")).toBeVisible({ timeout: 5_000 });
   });
 
   test("laser diagram tool draws persisted floor markup", async ({ page }) => {
-    await page.getByRole("button", { name: "Laser Diagram" }).click();
+    await page.getByRole("button", { name: "Start floor drawing" }).click();
     const panel = page.getByTestId("markup-panel");
     await expect(panel).toBeVisible({ timeout: 5_000 });
     await expect(panel).toContainText("Routes, staging notes, and camera marks.");
@@ -200,14 +216,14 @@ test.describe("Public Editor", () => {
   });
 
   test("furniture catalogue lists Round Table", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await addFurniture(page).click();
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
-    await expect(panel.getByText("Round Table")).toBeVisible({ timeout: 5_000 });
+    await expect(panel.getByTestId("catalogue-item-round-table-6ft")).toBeVisible({ timeout: 5_000 });
   });
 
   test("furniture catalogue exposes section jumps without deep scrolling", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await addFurniture(page).click();
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
 
@@ -220,14 +236,14 @@ test.describe("Public Editor", () => {
 
     await panel.getByTestId("catalogue-section-jump-chair").click();
     await expect(panel.getByTestId("chair-brush-hint")).toBeVisible();
-    await expect(panel.getByText("Drag straight across the floor for a row.")).toBeVisible();
+    await expect(panel.getByText("Drag straight for a row; diagonally for a block.")).toBeVisible();
 
     await panel.getByTestId("catalogue-section-jump-stage").click();
     await expect(panel.getByTestId("category-header-stage")).toBeVisible({ timeout: 5_000 });
   });
 
   test("dragging catalogue furniture lifts a polished placement token", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await addFurniture(page).click();
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
 
@@ -258,7 +274,7 @@ test.describe("Public Editor", () => {
   });
 
   test("planner chrome text cannot be drag-highlighted", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await addFurniture(page).click();
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
     const panelBox = await panel.boundingBox();
@@ -276,14 +292,15 @@ test.describe("Public Editor", () => {
     ).toBe("none");
     await expect.poll(async () =>
       page.getByRole("textbox", { name: "Search furniture" }).evaluate((node) => getComputedStyle(node).userSelect),
-    ).toBe("none");
+    ).toBe("text");
     const search = page.getByRole("textbox", { name: "Search furniture" });
     await search.fill("chair");
     await expect(search).toHaveValue("chair");
   });
 
   test("active furniture toolbar caption fits inside its button", async ({ page }) => {
-    const addFurnitureButton = page.getByRole("button", { name: "Add Furniture" });
+    await openMoreTools(page);
+    const addFurnitureButton = page.getByTestId("planner-toolbar").getByRole("button", { name: "Add Furniture", exact: true });
     await addFurnitureButton.click();
     const caption = page.getByTestId("tool-caption-add-furniture");
     await expect(caption).toBeVisible();
@@ -302,7 +319,8 @@ test.describe("Public Editor", () => {
   });
 
   test("clicking Add Furniture again closes the catalogue panel", async ({ page }) => {
-    const btn = page.getByRole("button", { name: "Add Furniture" });
+    await openMoreTools(page);
+    const btn = page.getByTestId("planner-toolbar").getByRole("button", { name: "Add Furniture", exact: true });
     await btn.click();
     await page.getByTestId("furniture-panel").waitFor({ state: "visible" });
     // Wait for the panel's open animation (450ms) to complete before toggling
@@ -325,8 +343,11 @@ test.describe("Public Editor", () => {
   });
 
   test("right-clicking the planner creates a camera POV reference", async ({ page }) => {
+    // This complete create/drag/view/exit/reopen journey also includes planner
+    // startup. Keep each 5s state gate while allowing the composed sequence.
+    test.setTimeout(45_000);
     const canvas = page.locator("canvas");
-    await page.getByRole("button", { name: "Camera Views" }).waitFor({ state: "visible" });
+    await expect(page.getByTestId("planner-tool-pill")).toBeVisible();
     await page.waitForTimeout(250);
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
@@ -391,13 +412,14 @@ test.describe("Public Editor", () => {
     await expect(page.getByRole("dialog", { name: "Add camera POV" })).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(page.getByLabel("POV height")).toHaveCount(0);
+    await openMoreTools(page);
     await page.getByRole("button", { name: "Camera Views" }).click();
     await expect(page.getByRole("button", { name: /Floor POV Standing POV - Floor grid/ })).toBeVisible({ timeout: 5_000 });
   });
 
   test("right-drag orbit does not open the camera POV composer", async ({ page }) => {
     const canvas = page.locator("canvas");
-    await page.getByRole("button", { name: "Camera Views" }).waitFor({ state: "visible" });
+    await expect(page.getByTestId("planner-tool-pill")).toBeVisible();
     await page.waitForTimeout(250);
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();

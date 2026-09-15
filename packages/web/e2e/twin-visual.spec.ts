@@ -26,8 +26,8 @@ import {
 // HUD is masked — the dossier, the mode control, the quick actions, the rooms
 // panel, the plan, the disclosure line and every level heading are all in the
 // compared pixels. The live WebGL canvas is NOT: it is hidden with
-// `visibility: hidden` (which keeps its layout box, so every HUD element sits
-// exactly where it really sits) rather than covered.
+// `display: none` on the absolutely positioned canvas (its containing layout
+// remains intact), so the HUD remains visible without the live GL layer.
 //
 // Playwright's `mask:` option is the wrong tool here, and that was measured,
 // not assumed: the twin's canvas fills the viewport, so masking it paints one
@@ -43,6 +43,11 @@ import {
 // every URL here carries ?node= (an arrival with intent), and CSS animations
 // are fast-forwarded to their end state by `animations: "disabled"` — which is
 // precisely the setting that catches a keyframe whose END state is wrong.
+//
+// PLATFORM BASELINES. Linux and Windows have separate checked-in PNGs because
+// their fallback fonts rasterise differently. Compare with updates disabled;
+// missing images require inspection before an explicit baseline update. These
+// layout references do not constitute founder aesthetic acceptance.
 //
 // FIXTURE, NOT CAPTURE. packages/web/public/twin/ is gitignored: the real
 // 149-scan bundle does not exist on a CI checkout, so every request the viewer
