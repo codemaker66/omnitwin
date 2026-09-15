@@ -322,6 +322,11 @@ function ToolWidgetPortal({ children }: { readonly children: ReactNode }): React
   return portalRoot === null ? null : createPortal(children, portalRoot);
 }
 
+/** A mobile catalogue must escape the stage stacking context above the schedule. */
+function CatalogueLayer({ mobile, children }: { readonly mobile: boolean; readonly children: ReactNode }): React.ReactElement {
+  return mobile ? <ToolWidgetPortal>{children}</ToolWidgetPortal> : <>{children}</>;
+}
+
 const markupPanelEyebrowStyle: React.CSSProperties = {
   fontSize: 10,
   fontWeight: 850,
@@ -1167,7 +1172,7 @@ const mobileDockWrapperStyle: React.CSSProperties = {
   position: "fixed",
   left: "max(12px, env(safe-area-inset-left))",
   right: "max(12px, env(safe-area-inset-right))",
-  bottom: "calc(var(--cockpit-bottom-height, 0px) + env(safe-area-inset-bottom) + 10px)",
+  bottom: "calc(var(--client-event-dock-height, var(--cockpit-bottom-height, 0px)) + env(safe-area-inset-bottom) + 10px)",
   zIndex: 64,
   display: "flex",
   flexDirection: "column",
@@ -1438,6 +1443,19 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
 
   const [activeTool, setActiveTool] = useState<ActiveTool>("select");
   const [panelOpen, setPanelOpen] = useState(false);
+  const cataloguePanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!mobileChrome || !panelOpen) return;
+    const opener = document.activeElement;
+    return () => {
+      if (opener instanceof HTMLElement && document.contains(opener)
+        && cataloguePanelRef.current?.contains(document.activeElement) === true) opener.focus();
+    };
+  }, [mobileChrome, panelOpen]);
+  const closeCatalogue = (): void => {
+    setPanelOpen(false);
+    setActiveTool("select");
+  };
   const [cameraOpen, setCameraOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -2027,7 +2045,17 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
 
       {/* === Slide-out asset panel === */}
       {panelMounted && (
+        <CatalogueLayer mobile={mobileChrome}>
         <div
+          ref={cataloguePanelRef}
+          role="region"
+          aria-label="Furniture catalogue"
+          onKeyDown={(event) => {
+            if (!mobileChrome || event.key !== "Escape") return;
+            event.preventDefault();
+            event.stopPropagation();
+            closeCatalogue();
+          }}
           data-testid="furniture-panel"
           style={{
             ...panelStyle,
@@ -2035,9 +2063,14 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
               left: 10,
               right: 10,
               top: "auto",
-              bottom: "calc(var(--toolbox-bottom, 64px) + 10px)",
+              bottom: "max(10px, env(safe-area-inset-bottom))",
               width: "auto",
-              maxHeight: "min(58dvh, 430px)",
+              maxHeight: "min(70dvh, calc(100dvh - 108px))",
+              overflowY: "hidden",
+              padding: 0,
+              zIndex: 100,
+              backdropFilter: "none",
+              WebkitBackdropFilter: "none",
               borderRadius: 18,
               boxSizing: "border-box" as const,
               boxShadow: "0 -18px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(201,168,76,0.12)",
@@ -2047,7 +2080,14 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
               : "omni-panel-slide-out 0.3s cubic-bezier(0.55, 0, 1, 0.45) forwards",
           }}
         >
-          <div style={catalogueHeroStyle}>
+          {mobileChrome && <button type="button" aria-label="Close furniture catalogue"
+            onClick={closeCatalogue} style={{ position: "absolute", top: 10, right: 10, zIndex: 1,
+              width: 44, height: 44, display: "grid", placeItems: "center", borderRadius: 12,
+              color: "#f4e5c7", background: "#27221b", border: "1px solid #756346", cursor: "pointer" }}>
+            <X size={20} aria-hidden />
+          </button>}
+          <div style={mobileChrome ? { maxHeight: "inherit", overflowY: "auto", padding: "24px 18px", boxSizing: "border-box" } : { display: "contents" }}>
+          <div style={{ ...catalogueHeroStyle, ...(mobileChrome ? { paddingRight: 44 } : {}) }}>
             <div style={{ width: 40, height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.12))`, marginBottom: 12 }} />
             <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: 2.4, color: GOLD, marginBottom: 4 }}>
               Event kit
@@ -2247,7 +2287,9 @@ export function VerticalToolbox({ compactDesktop = false }: { readonly compactDe
               No items match &ldquo;{searchQuery.trim()}&rdquo;
             </div>
           )}
+          </div>
         </div>
+        </CatalogueLayer>
       )}
 
       {catalogueDragPreview !== null && (

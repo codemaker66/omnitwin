@@ -43,7 +43,7 @@
 
 .mobile-planner-dock > [data-testid="mobile-object-sheet"],
 .mobile-planner-dock > [data-testid="mobile-more-sheet"] {
-  max-height: max(100px, calc(100dvh - var(--cockpit-bottom-height, 0px) - 290px));
+  max-height: max(100px, calc(100dvh - var(--client-event-dock-height, var(--cockpit-bottom-height, 0px)) - 290px));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -166,3 +166,10 @@
   outline-offset: 3px;
 }
 .mobile-planner-lenses__button svg { flex-shrink: 0; }
+
+@media (max-height: 680px) {
+  .mobile-planner-dock > [data-testid="mobile-planner-sheet"] {
+    padding: 8px 12px !important;
+    border-radius: 16px !important;
+  }
+}

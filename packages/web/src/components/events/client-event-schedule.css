@@ -65,6 +65,10 @@
 }
 .cockpit-shell.is-mobile > .cockpit-bottom.client-event-dock:not(.is-collapsed),
 .cockpit-shell.is-mobile > .cockpit-bottom.client-event-dock.is-collapsed { height: var(--cockpit-bottom-height); }
+/* An unlinked plan has no phases to reserve half a phone for. Its real
+   content determines the height; the mobile tools follow the measured dock. */
+.cockpit-shell.is-mobile > .cockpit-bottom.client-event-dock[data-schedule-state="none"]:not(.is-collapsed) { height: auto; max-height: min(302px, 48dvh); }
+.cockpit-shell.is-mobile .client-event-dock[data-schedule-state="none"] .client-event-empty { margin: 8px 0 0; font-size: 13px; line-height: 1.5; }
 @media (max-width: 640px) {
   .client-event-page { padding: 14px; }
   .client-event-page > section { border-radius: 16px; padding: 22px 18px; }
