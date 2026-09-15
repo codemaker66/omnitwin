@@ -16,7 +16,7 @@
 .reference-scene-settings__overlay { display: flex; align-items: center; gap: 9px; min-height: 32px; cursor: pointer; }
 .reference-scene-settings__overlay input { accent-color: #c8a464; width: 15px; height: 15px; margin: 0; }
 .reference-scene-settings__note { color: #a49c8f; font-size: 10px; margin: 10px 0 0; line-height: 1.5; }
-.reference-scene-settings summary:focus-visible, .reference-scene-settings button:focus-visible, .reference-scene-settings input:focus-visible { outline: 2px solid #d4b574; outline-offset: 3px; }
+.reference-scene-settings summary:focus-visible, .reference-scene-settings button:focus-visible, .reference-scene-settings input:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 .reference-scene-settings .cockpit-truth { position: static; inset: auto; grid-area: auto; width: auto; max-width: none; height: auto; padding: 8px 0 12px; margin: 0; border: 0; background: transparent; overflow: visible; box-shadow: none; animation: none; }
 .reference-scene-settings .cockpit-truth__head { grid-template-columns: minmax(0, 1fr); gap: 7px; padding-bottom: 9px; }
 .reference-scene-settings .cockpit-truth__head-icon { display: none; }

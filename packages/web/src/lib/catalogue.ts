@@ -73,8 +73,8 @@ export const CATALOGUE_ITEMS: readonly CatalogueItem[] =
 // SVG icon silhouettes for catalogue panel (gold stroke on transparent)
 // ---------------------------------------------------------------------------
 
-const ICON_STROKE = "rgba(201,168,76,0.7)";
-const ICON_FILL = "rgba(201,168,76,0.08)";
+const ICON_STROKE = "rgba(201, 138, 91,0.7)";
+const ICON_FILL = "rgba(201, 138, 91,0.08)";
 
 /** Returns an inline SVG string for the catalogue thumbnail. */
 export function catalogueIcon(item: CatalogueItem): string {
@@ -114,7 +114,7 @@ export function catalogueIcon(item: CatalogueItem): string {
     case "lectern":
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><rect x="12" y="4" width="16" height="24" rx="2" fill="${f}" stroke="${s}" stroke-width="1.5"/><line x1="14" y1="28" x2="14" y2="36" stroke="${s}" stroke-width="1.5"/><line x1="26" y1="28" x2="26" y2="36" stroke="${s}" stroke-width="1.5"/></svg>`;
     case "black-table-cloth":
-      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><path d="M8 13c3-4 21-4 24 0v15c-5 3-19 3-24 0V13Z" fill="rgba(10,10,10,0.82)" stroke="${s}" stroke-width="1.5"/><path d="M10 14c4 3 16 3 20 0" fill="none" stroke="${s}" stroke-width="1" opacity="0.6"/><path d="M13 18v10M20 17v12M27 18v10" stroke="rgba(201,168,76,0.38)" stroke-width="1"/></svg>`;
+      return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><path d="M8 13c3-4 21-4 24 0v15c-5 3-19 3-24 0V13Z" fill="rgba(10,10,10,0.82)" stroke="${s}" stroke-width="1.5"/><path d="M10 14c4 3 16 3 20 0" fill="none" stroke="${s}" stroke-width="1" opacity="0.6"/><path d="M13 18v10M20 17v12M27 18v10" stroke="rgba(201, 138, 91,0.38)" stroke-width="1"/></svg>`;
     case "white-table-cloth":
       return `<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><path d="M8 13c3-4 21-4 24 0v15c-5 3-19 3-24 0V13Z" fill="rgba(245,241,232,0.9)" stroke="${s}" stroke-width="1.5"/><path d="M10 14c4 3 16 3 20 0" fill="none" stroke="${s}" stroke-width="1" opacity="0.6"/><path d="M13 18v10M20 17v12M27 18v10" stroke="rgba(110,88,50,0.32)" stroke-width="1"/></svg>`;
     case "dinner-place-setting":

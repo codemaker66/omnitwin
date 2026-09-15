@@ -846,8 +846,8 @@ function ApprovalStampBanner({
       }}
     >
       <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span aria-hidden="true" style={{ fontSize: 16, fontWeight: 800 }}>✓</span>
-        <span style={{ textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 800 }}>
+        <span aria-hidden="true" style={{ fontSize: 16, fontWeight: 700 }}>✓</span>
+        <span style={{ textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 700 }}>
           Approved
         </span>
         <span style={{ opacity: 0.8 }}>·</span>

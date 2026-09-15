@@ -18,8 +18,8 @@ import { Link } from "react-router-dom";
 
 const BG_DARK = "#0a0806";
 const BG_PANEL = "#15110d";
-const GOLD = "#c9a84c";
-const GOLD_DIM = "#8a6e1e";
+const GOLD = "#c98a5b";
+const GOLD_DIM = "#7e4620";
 const OXBLOOD = "#7a1f2a";
 const CREAM = "#f5ede0";
 const CREAM_MUT = "rgba(245,237,224,0.7)";
@@ -33,8 +33,8 @@ if (typeof document !== "undefined" && document.getElementById(KEYFRAMES_ID) ===
   style.id = KEYFRAMES_ID;
   style.textContent = `
     @keyframes pricing-glow {
-      0%, 100% { box-shadow: 0 0 0 1px rgba(201,168,76,0.3), 0 20px 60px rgba(0,0,0,0.6), 0 0 0 rgba(201,168,76,0); }
-      50%      { box-shadow: 0 0 0 1px rgba(201,168,76,0.5), 0 28px 80px rgba(0,0,0,0.7), 0 0 80px rgba(201,168,76,0.12); }
+      0%, 100% { box-shadow: 0 0 0 1px rgba(201, 138, 91,0.3), 0 20px 60px rgba(0,0,0,0.6), 0 0 0 rgba(201, 138, 91,0); }
+      50%      { box-shadow: 0 0 0 1px rgba(201, 138, 91,0.5), 0 28px 80px rgba(0,0,0,0.7), 0 0 80px rgba(201, 138, 91,0.12); }
     }
     @keyframes pricing-drift {
       0%, 100% { transform: translate(0, 0) scale(1); }
@@ -48,14 +48,14 @@ if (typeof document !== "undefined" && document.getElementById(KEYFRAMES_ID) ===
     @media (hover: hover) and (pointer: fine) {
       .pricing-cta-primary:hover {
         transform: translateY(-2px);
-        box-shadow: 0 12px 32px rgba(201,168,76,0.4);
+        box-shadow: 0 12px 32px rgba(201, 138, 91,0.4);
       }
       .pricing-addon-card:hover {
-        border-color: rgba(201,168,76,0.4);
+        border-color: rgba(201, 138, 91,0.4);
         transform: translateY(-4px);
       }
       .pricing-scan-card:hover {
-        border-color: rgba(201,168,76,0.4);
+        border-color: rgba(201, 138, 91,0.4);
         transform: translateY(-4px);
         box-shadow: 0 20px 60px rgba(0,0,0,0.5);
       }
@@ -173,7 +173,7 @@ function BillingCycleToggle({ cycle, onChange }: BillingCycleToggleProps): React
       style={{
         display: "inline-flex",
         background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(201,168,76,0.15)",
+        border: "1px solid rgba(201, 138, 91,0.15)",
         borderRadius: 999,
         padding: 4,
         gap: 2,
@@ -209,7 +209,7 @@ function BillingCycleToggle({ cycle, onChange }: BillingCycleToggleProps): React
                 style={{
                   marginLeft: 8,
                   padding: "2px 8px",
-                  background: active ? "rgba(10,8,6,0.15)" : "rgba(201,168,76,0.15)",
+                  background: active ? "rgba(10,8,6,0.15)" : "rgba(201, 138, 91,0.15)",
                   color: active ? BG_DARK : GOLD,
                   borderRadius: 999,
                   fontSize: 11,
@@ -261,7 +261,7 @@ export function PricingPage(): React.ReactElement {
           width: 900,
           height: 900,
           marginLeft: -450,
-          background: "radial-gradient(ellipse at center, rgba(201,168,76,0.08) 0%, rgba(122,31,42,0.04) 30%, transparent 70%)",
+          background: "radial-gradient(ellipse at center, rgba(201, 138, 91,0.08) 0%, rgba(122,31,42,0.04) 30%, transparent 70%)",
           animation: "pricing-drift 18s ease-in-out infinite",
           pointerEvents: "none",
           filter: "blur(40px)",
@@ -362,7 +362,7 @@ export function PricingPage(): React.ReactElement {
         <div
           style={{
             background: `linear-gradient(145deg, ${BG_PANEL} 0%, #1a1510 100%)`,
-            border: `1px solid rgba(201,168,76,0.2)`,
+            border: `1px solid rgba(201, 138, 91,0.2)`,
             borderRadius: 24,
             padding: "56px 48px",
             position: "relative",
@@ -388,7 +388,7 @@ export function PricingPage(): React.ReactElement {
             <div
               style={{
                 padding: "3px 12px",
-                background: `rgba(201,168,76,0.12)`,
+                background: `rgba(201, 138, 91,0.12)`,
                 color: GOLD,
                 borderRadius: 999,
                 fontSize: 10,
@@ -414,7 +414,7 @@ export function PricingPage(): React.ReactElement {
             {billingLabel}
           </div>
 
-          <div style={{ height: 1, background: "rgba(201,168,76,0.12)", margin: "0 -48px 40px" }} />
+          <div style={{ height: 1, background: "rgba(201, 138, 91,0.12)", margin: "0 -48px 40px" }} />
 
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 16, fontSize: 15, color: CREAM_MUT }}>
             {[
@@ -429,7 +429,7 @@ export function PricingPage(): React.ReactElement {
             ].map((feature) => (
               <li key={feature} style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" style={{ flexShrink: 0, marginTop: 2 }}>
-                  <circle cx="10" cy="10" r="10" fill={`rgba(201,168,76,0.15)`} />
+                  <circle cx="10" cy="10" r="10" fill={`rgba(201, 138, 91,0.15)`} />
                   <path d="M6 10.5 L9 13 L14.5 7" stroke={GOLD} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <span>{feature}</span>
@@ -455,7 +455,7 @@ export function PricingPage(): React.ReactElement {
               cursor: "pointer",
               fontFamily: BODY,
               transition: "transform 0.2s ease, box-shadow 0.2s ease",
-              boxShadow: "0 8px 24px rgba(201,168,76,0.25)",
+              boxShadow: "0 8px 24px rgba(201, 138, 91,0.25)",
               textAlign: "center",
               textDecoration: "none",
             }}
@@ -540,7 +540,7 @@ export function PricingPage(): React.ReactElement {
                   ? `linear-gradient(145deg, ${BG_PANEL}, #1e1814)`
                   : BG_PANEL,
                 border: scan.highlight
-                  ? `1px solid rgba(201,168,76,0.3)`
+                  ? `1px solid rgba(201, 138, 91,0.3)`
                   : "1px solid rgba(255,255,255,0.06)",
                 borderRadius: 20,
                 padding: "36px 32px 40px",
@@ -555,7 +555,7 @@ export function PricingPage(): React.ReactElement {
                     top: 20,
                     right: 20,
                     padding: "4px 10px",
-                    background: "rgba(201,168,76,0.15)",
+                    background: "rgba(201, 138, 91,0.15)",
                     color: GOLD,
                     borderRadius: 999,
                     fontSize: 10,
@@ -597,7 +597,7 @@ export function PricingPage(): React.ReactElement {
             style={{
               position: "absolute",
               inset: 0,
-              background: "radial-gradient(ellipse at top right, rgba(201,168,76,0.2) 0%, transparent 60%)",
+              background: "radial-gradient(ellipse at top right, rgba(201, 138, 91,0.2) 0%, transparent 60%)",
               pointerEvents: "none",
             }}
           />
@@ -691,8 +691,8 @@ export function PricingPage(): React.ReactElement {
               display: "grid",
               gridTemplateColumns: "1fr auto",
               padding: "26px 32px",
-              background: `linear-gradient(90deg, rgba(201,168,76,0.08), rgba(201,168,76,0.02))`,
-              borderTop: "1px solid rgba(201,168,76,0.2)",
+              background: `linear-gradient(90deg, rgba(201, 138, 91,0.08), rgba(201, 138, 91,0.02))`,
+              borderTop: "1px solid rgba(201, 138, 91,0.2)",
               gap: 24,
               alignItems: "center",
             }}
@@ -795,7 +795,7 @@ export function PricingPage(): React.ReactElement {
             cursor: "pointer",
             fontFamily: BODY,
             transition: "transform 0.2s ease, box-shadow 0.2s ease",
-            boxShadow: "0 12px 32px rgba(201,168,76,0.3)",
+            boxShadow: "0 12px 32px rgba(201, 138, 91,0.3)",
             textAlign: "center",
             textDecoration: "none",
           }}

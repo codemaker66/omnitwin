@@ -27,6 +27,7 @@ import {
   relativeTimeShort,
 } from "../lib/blueprint/geometry.js";
 import type { LayerRow } from "../lib/blueprint/geometry.js";
+import { useEscapeToClose, useFocusTrap } from "../lib/use-focus-trap.js";
 import type {
   BlueprintItem,
   BlueprintScene,
@@ -337,8 +338,13 @@ function BlueprintDemo(): ReactElement {
 
   return (
     <div className="bp-root" style={shell}>
+      {/* T-615: the landmark and skip link go on the standalone /blueprint
+          route only. BlueprintFromStore (below) renders inside EditorPage's
+          own <main>, and a second <main> — or a second #main-content — would
+          make the skip link ambiguous on the planner's 2D mode. */}
+      <a className="vv-skip-link" href="#main-content">Skip to the plan</a>
       <Chrome scene={state.scene} savedLabel={savedLabel} dirty={state.dirty} />
-      <div className="bp-body" style={body}>
+      <main id="main-content" className="bp-body" style={body}>
         <LeftSidebar
           scene={state.scene}
           onEventType={(t) => { dispatch({ type: "set-event-type", eventType: t }); }}
@@ -401,7 +407,7 @@ function BlueprintDemo(): ReactElement {
           onToggleLayerLock={(id) => { dispatch({ type: "toggle-lock", id }); }}
           onReorderLayers={(ids) => { dispatch({ type: "set-items-order", ids }); }}
         />
-      </div>
+      </main>
       <StatusBar metrics={metrics} onSendForQuote={handleSendForQuote} onExportPng={handleExportPng} />
       {toast !== null ? <Toast message={toast} /> : null}
       {helpOpen ? <KeyboardHelpOverlay onClose={() => { setHelpOpen(false); }} onDuplicate={handleDuplicate} /> : null}
@@ -410,9 +416,16 @@ function BlueprintDemo(): ReactElement {
 }
 
 function KeyboardHelpOverlay({ onClose, onDuplicate }: { onClose: () => void; onDuplicate: () => void }): ReactElement {
+  // T-615: this overlay declared aria-modal with no trap and no Escape, so on
+  // the one surface whose whole subject is the keyboard, the keyboard could
+  // not leave it. Escape is captured at the document ahead of the page's own
+  // "Esc deselects" handler, so closing the sheet does not also clear the
+  // user's selection; the trap returns focus to the opener on unmount.
+  const dialogRef = useFocusTrap<HTMLDivElement>();
+  useEscapeToClose(onClose);
   return (
     <div role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" style={overlayStyle} onClick={onClose}>
-      <div style={overlayCardStyle} onClick={(e) => { e.stopPropagation(); }}>
+      <div ref={dialogRef} style={overlayCardStyle} onClick={(e) => { e.stopPropagation(); }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 500, fontFamily: FONT_SANS }}>Keyboard shortcuts</h2>
           <button type="button" onClick={onClose} style={{ background: "transparent", border: "none", color: INK_FAINT, fontSize: 16, cursor: "pointer" }} aria-label="Close">✕</button>

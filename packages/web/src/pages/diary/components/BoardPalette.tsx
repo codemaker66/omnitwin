@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ReactElement } from "react";
 import { BOARD_COPY } from "../board-copy.js";
+import { useEscapeToClose, useFocusTrap } from "../../../lib/use-focus-trap.js";
 
 // ---------------------------------------------------------------------------
 // The board's finding palette (C1) — Ctrl/Cmd-K. Searches what the board
@@ -32,6 +33,14 @@ export function BoardPalette({
   onClose,
 }: BoardPaletteProps): ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // T-615: the palette announced aria-modal but neither trapped Tab nor
+  // answered Escape unless the caret happened to be in the input — Tab walked
+  // straight out onto the board behind it. The trap also returns focus to
+  // whatever opened the palette when it unmounts. The explicit input focus
+  // below still wins: useFocusTrap only moves focus if the container does not
+  // already hold it.
+  const dialogRef = useFocusTrap<HTMLDivElement>();
+  useEscapeToClose(onClose);
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -44,6 +53,7 @@ export function BoardPalette({
       }}
     >
       <div
+        ref={dialogRef}
         className="diary-palette"
         role="dialog"
         aria-modal="true"

@@ -44,7 +44,7 @@ export const VENVIEWER_CLERK_APPEARANCE = {
       minHeight: "44px",
       background: "linear-gradient(135deg, #e5c66b, #bd8430)",
       color: "#120e08",
-      fontWeight: "800",
+      fontWeight: "700",
       boxShadow: "0 12px 28px rgba(189, 132, 48, 0.22)",
     },
     footer: {
@@ -53,7 +53,7 @@ export const VENVIEWER_CLERK_APPEARANCE = {
     },
     footerActionLink: {
       color: "#f4d17b",
-      fontWeight: "800",
+      fontWeight: "700",
     },
     dividerText: {
       color: "rgba(246, 239, 224, 0.6)",
@@ -66,11 +66,11 @@ export const VENVIEWER_CLERK_APPEARANCE = {
       background: "linear-gradient(180deg, rgba(7, 19, 19, 0.96), rgba(4, 11, 11, 0.98))",
       color: "#fff7e8",
       boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.05)",
-      fontWeight: "800",
+      fontWeight: "700",
     },
     socialButtonsBlockButtonText: {
       color: "#fff7e8",
-      fontWeight: "800",
+      fontWeight: "700",
     },
     dividerRow: {
       display: isClerkGoogleSignInEnabled() ? "flex" : "none",

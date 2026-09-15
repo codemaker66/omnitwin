@@ -53,7 +53,7 @@
 .reference-empty-inspector h3 { font-size: 16px; font-weight: 450; color: #e7ddce; margin: 0; }
 .reference-empty-inspector p { margin: 0; line-height: 1.7; }
 .reference-panel button:disabled { opacity: .45; cursor: default; }
-.reference-panel button:focus-visible, .reference-panel summary:focus-visible, .reference-panel input:focus-visible, .reference-panel select:focus-visible { outline: 2px solid #e6bd6c; outline-offset: 2px; }
+.reference-panel button:focus-visible, .reference-panel summary:focus-visible, .reference-panel input:focus-visible, .reference-panel select:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 @media (hover: hover) { .reference-panel button:not(:disabled):hover { background: #373024; color: #f5e2bb; } }
 @media (pointer: coarse), (max-width: 640px) {
   .reference-tree-item, .reference-tree-category summary, .reference-action { min-height: 44px; }

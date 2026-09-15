@@ -55,7 +55,7 @@
 .vv-arrival__footer a span { font-size: 22px; }
 @media (max-width: 600px) {
   .vv-arrival__header { align-items: flex-start; }
-  .vv-arrival__header > span { max-width: 130px; text-align: right; line-height: 1.6; font-size: 9px; }
+  .vv-arrival__header > span { max-width: 130px; text-align: right; line-height: 1.6; font-size: 11px; }
   .vv-arrival__welcome { margin: 100px 0 72px; }
   .vv-arrival__photograph { object-position: 57% 35%; }
   .vv-arrival__footer { align-items: flex-end; gap: 16px; }
@@ -92,4 +92,4 @@
   cursor: pointer;
 }
 .vv-arrival__enter:hover { background: #fff6e5; }
-.vv-arrival :focus-visible { outline: 2px solid #fff6e5; outline-offset: 5px; }
+.vv-arrival :focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }

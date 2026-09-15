@@ -80,8 +80,8 @@
 
 .walk__navigation a:hover { text-decoration: underline; }
 .walk__navigation a:focus-visible {
-  outline: 2px solid var(--stone);
-  outline-offset: 4px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
   border-radius: 4px;
 }
 

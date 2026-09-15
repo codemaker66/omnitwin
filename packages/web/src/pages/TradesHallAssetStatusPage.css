@@ -21,7 +21,7 @@
   margin: 0 0 8px;
   color: #71d3df;
   font-size: 12px;
-  font-weight: 780;
+  font-weight: 600;
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -55,7 +55,7 @@
   background: rgba(69, 48, 19, 0.38);
   color: #f0c86b;
   font-size: 13px;
-  font-weight: 760;
+  font-weight: 600;
 }
 
 .asset-status-warning,
@@ -94,15 +94,15 @@
   color: #ffe0a3;
   font: inherit;
   font-size: 13px;
-  font-weight: 780;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .asset-status-panel.error button:hover,
 .asset-status-panel.error button:focus-visible {
   background: #493113;
-  outline: 2px solid rgba(215, 170, 73, 0.44);
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 .asset-status-list {
@@ -176,7 +176,7 @@
   background: rgba(234, 220, 190, 0.06);
   color: #d6c9b1;
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -199,7 +199,7 @@
   margin: 0 0 7px;
   color: #8f9aa0;
   font-size: 11px;
-  font-weight: 780;
+  font-weight: 600;
   line-height: 1.2;
   text-transform: uppercase;
 }
@@ -229,7 +229,7 @@
   border-radius: 8px;
   color: #f0c86b;
   font-size: 11px;
-  font-weight: 780;
+  font-weight: 600;
 }
 
 .asset-status-qa-status[data-status="approved_public"],
@@ -266,7 +266,7 @@
   border-radius: 8px;
   color: #a7edf4;
   font-size: 11px;
-  font-weight: 780;
+  font-weight: 600;
 }
 
 .asset-status-capture-control-status[data-status="missing"] {
@@ -304,7 +304,7 @@
   margin-top: 6px;
   color: #a7edf4;
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 600;
   line-height: 1.35;
 }
 
@@ -348,7 +348,7 @@
   border-radius: 8px;
   color: #f0c86b;
   font-size: 11px;
-  font-weight: 780;
+  font-weight: 600;
 }
 
 .asset-status-runtime-control-status[data-status="not_recorded"] {
@@ -414,7 +414,7 @@
   border-radius: 8px;
   color: #a7edf4;
   font-size: 13px;
-  font-weight: 740;
+  font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
 }
@@ -422,8 +422,8 @@
 .asset-status-action a:hover,
 .asset-status-action a:focus-visible {
   background: rgba(113, 211, 223, 0.12);
-  outline: 2px solid rgba(113, 211, 223, 0.36);
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 @media (max-width: 940px) {

@@ -105,7 +105,7 @@
   overflow: hidden;
   color: var(--text);
   font-size: 14px;
-  font-weight: 720;
+  font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -123,7 +123,7 @@
   background: rgba(96, 57, 16, 0.38);
   color: #f3c86a;
   font-size: 13px;
-  font-weight: 780;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -206,7 +206,7 @@
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 50%;
   color: #f1e2c5;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-stage {
@@ -243,7 +243,7 @@
   color: #c9c0b3;
   font: inherit;
   font-size: 13px;
-  font-weight: 720;
+  font-weight: 600;
 }
 
 .visual-layer-controls button,
@@ -517,7 +517,7 @@
   margin: 0 0 2px;
   color: #eaf9fb;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-replay-metrics span {
@@ -547,7 +547,7 @@
   background: rgba(18, 28, 31, 0.9);
   color: #dffbff;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -581,7 +581,7 @@
 
 .visual-replay-strip span:first-child {
   color: #8fe7f1;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-view-tool {
@@ -651,7 +651,7 @@
   border-radius: 50%;
   color: #f4c66e;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-truth-targets {
@@ -668,7 +668,7 @@
   background: rgba(255, 255, 255, 0.06);
   color: #d9d1c4;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   text-align: center;
 }
 
@@ -727,7 +727,7 @@
   margin: 0;
   color: #f4ead9;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -741,7 +741,7 @@
 .visual-state-chip {
   color: #f4c66e;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-state-chip.current {
@@ -805,7 +805,7 @@
   color: #16130c;
   padding: 0 14px;
   font: inherit;
-  font-weight: 820;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -845,7 +845,7 @@
 .visual-runtime-details span {
   color: #9f927f;
   font-size: 12px;
-  font-weight: 740;
+  font-weight: 600;
   line-height: 1.25;
 }
 
@@ -954,7 +954,7 @@
   background: #111416;
   color: #f2e3c7;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .visual-phase-card.is-selected .visual-phase-node {
@@ -967,7 +967,7 @@
   margin: 0;
   color: #f4ead9;
   font-size: 13px;
-  font-weight: 820;
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -1036,7 +1036,7 @@
   margin: 0;
   color: #fff1d8;
   font-size: 24px;
-  font-weight: 760;
+  font-weight: 600;
   line-height: 1.08;
 }
 

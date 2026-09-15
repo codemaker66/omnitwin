@@ -128,7 +128,7 @@ const gradeHeadlineStyle: React.CSSProperties = {
   overflowWrap: "anywhere",
   color: "rgba(246, 239, 227, 0.84)",
   fontSize: 12,
-  fontWeight: 720,
+  fontWeight: 600,
   letterSpacing: 0,
   lineHeight: 1.24,
   WebkitBoxOrient: "vertical",
@@ -146,7 +146,7 @@ function gradeBadgeStyle(color: string): React.CSSProperties {
     background: "rgba(255, 255, 255, 0.04)",
     color,
     fontSize: 20,
-    fontWeight: 820,
+    fontWeight: 700,
     letterSpacing: 0,
     lineHeight: 1,
   };
@@ -156,7 +156,7 @@ function gradeScoreStyle(color: string): React.CSSProperties {
   return {
     color,
     fontSize: 20,
-    fontWeight: 820,
+    fontWeight: 700,
     letterSpacing: 0,
     lineHeight: 1,
   };
@@ -169,7 +169,7 @@ function gradeRecommendationStyle(color: string): React.CSSProperties {
     overflowWrap: "anywhere",
     color,
     fontSize: 12,
-    fontWeight: 720,
+    fontWeight: 600,
     letterSpacing: 0,
     lineHeight: 1.3,
     WebkitBoxOrient: "vertical",

@@ -216,7 +216,7 @@ export function PolygonEditor({ value, onChange, disabled = false }: PolygonEdit
         onKeyDown={handleKeyDown}
         style={{
           background: "#071112",
-          border: "1px solid rgba(215,181,109,0.32)",
+          border: "1px solid rgba(201, 138, 91,0.32)",
           borderRadius: 8,
           cursor: disabled ? "not-allowed" : draggingIndex !== null ? "grabbing" : "crosshair",
           userSelect: "none",
@@ -265,7 +265,7 @@ export function PolygonEditor({ value, onChange, disabled = false }: PolygonEdit
               cx={cx}
               cy={cy}
               r={VERTEX_DRAW_RADIUS_PX}
-              fill={draggingIndex === i ? "#d7b56d" : "#68d8d2"}
+              fill={draggingIndex === i ? "#c98a5b" : "#68d8d2"}
               stroke="#071112"
               strokeWidth={2}
             />
@@ -335,7 +335,7 @@ const smallBtnStyle: CSSProperties = {
   padding: "4px 10px",
   fontSize: 12,
   borderRadius: 6,
-  border: "1px solid rgba(215,181,109,0.42)",
+  border: "1px solid rgba(201, 138, 91,0.42)",
   background: "rgba(255,247,232,0.07)",
   color: "#fff7e8",
   cursor: "pointer",

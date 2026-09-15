@@ -59,7 +59,7 @@ export function ClientProfile({ userId, leadId, onBack, onViewEnquiry }: ClientP
     return () => { cancel.current = true; };
   }, [userId, leadId, addToast]);
 
-  if (loading) return <ActivityStatus style={{ color: "#999" }}>Loading profile...</ActivityStatus>;
+  if (loading) return <ActivityStatus style={{ color: "#999" }}>Loading profile…</ActivityStatus>;
 
   if (error !== null) {
     return (

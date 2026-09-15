@@ -450,7 +450,16 @@ function PlannerCommsLayer(): React.ReactElement {
   return (
     <>
       <EditorBridge />
-      <div
+      {/* T-615: the planner had no <main>. A screen-reader user landing here
+          had no landmark to jump to and no way past the toolbox, so the skip
+          link and the landmark arrive together. The shell element itself
+          becomes the landmark rather than gaining a wrapper — a wrapper would
+          break the 100dvh fixed-inset layout the canvas depends on. Every
+          selector for it, in src tests and e2e alike, is by data-testid. */}
+      <a className="vv-skip-link" href="#main-content">Skip to the room</a>
+      <main
+        id="main-content"
+        aria-label="Room planner"
         data-testid="planner-3d-shell"
         data-planner-config-id={configId ?? undefined}
         data-layout-timeline-preview={timelinePreviewMode}
@@ -476,7 +485,7 @@ function PlannerCommsLayer(): React.ReactElement {
         ) : (
           <BlueprintPage source="editor-store" />
         )}
-      </div>
+      </main>
       {mobile ? (
         <MobilePlannerTopBar mode={viewMode} onModeChange={changeViewMode} />
       ) : (
@@ -502,8 +511,8 @@ function PlannerCommsLayer(): React.ReactElement {
             padding: "8px 14px", borderRadius: 8,
             background: "rgba(20,19,17,0.85)",
             backdropFilter: "blur(8px)",
-            border: "1px solid rgba(201,168,76,0.35)",
-            color: "#c9a84c", fontSize: 12, fontWeight: 600,
+            border: "1px solid rgba(201, 138, 91,0.35)",
+            color: "#c98a5b", fontSize: 12, fontWeight: 600,
             cursor: "pointer", fontFamily: "'Inter', system-ui, sans-serif",
             letterSpacing: "0.04em",
           }}
@@ -561,7 +570,7 @@ export function SaveErrorToast({
         bottom: "calc(var(--toolbox-bottom, 0px) + 16px)",
         zIndex: 40,
         background: "rgba(20,19,17,0.95)",
-        border: "1px solid rgba(201,168,76,0.5)",
+        border: "1px solid rgba(201, 138, 91,0.5)",
         borderRadius: 8,
         padding: "12px 16px",
         display: "flex", alignItems: "center", gap: 12,
@@ -581,7 +590,7 @@ export function SaveErrorToast({
           title={timelinePreviewActive ? "Exit the room timeline preview before retrying this save." : undefined}
           style={{
             padding: "4px 12px", fontSize: 12, fontWeight: 600,
-            background: "#c9a84c", color: "#141311", border: "none",
+            background: "#c98a5b", color: "#141311", border: "none",
             borderRadius: 4, cursor: timelinePreviewActive ? "default" : "pointer",
             opacity: timelinePreviewActive ? 0.6 : 1,
           }}
@@ -596,7 +605,7 @@ export function SaveErrorToast({
           title={timelinePreviewActive ? "Exit the room timeline preview before reloading this layout." : undefined}
           style={{
             padding: "4px 12px", fontSize: 12, fontWeight: 600,
-            background: "#c9a84c", color: "#141311", border: "none",
+            background: "#c98a5b", color: "#141311", border: "none",
             borderRadius: 4, cursor: timelinePreviewActive ? "default" : "pointer",
             opacity: timelinePreviewActive ? 0.6 : 1,
           }}
@@ -657,8 +666,8 @@ function ViewModeToggle({
           borderRadius: 6,
           cursor: disabled ? "default" : "pointer",
           opacity: disabled ? 0.52 : 1,
-          background: active ? "#c9a84c" : "transparent",
-          color: active ? "#141311" : "#c9a84c",
+          background: active ? "#c98a5b" : "transparent",
+          color: active ? "#141311" : "#c98a5b",
           fontFamily: "'Inter', system-ui, sans-serif",
         }}
       >

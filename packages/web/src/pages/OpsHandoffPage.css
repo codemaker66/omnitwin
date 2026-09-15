@@ -85,7 +85,7 @@
 .ops-handoff-kicker {
   color: var(--ops-gold-bright) !important;
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.16em;
   margin-bottom: 10px !important;
   text-transform: uppercase;
@@ -98,7 +98,7 @@
   cursor: pointer;
   display: inline-flex;
   font: inherit;
-  font-weight: 800;
+  font-weight: 700;
   gap: 8px;
   min-height: 44px;
   padding: 0 16px;
@@ -161,7 +161,7 @@
   color: var(--ops-cyan);
   display: block;
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   margin-bottom: 8px;
   text-transform: uppercase;
 }
@@ -241,7 +241,7 @@
   background: rgba(82, 221, 224, 0.11);
   color: var(--ops-cyan);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -299,7 +299,7 @@
   color: var(--ops-cyan);
   display: block;
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 700;
   margin-bottom: 8px;
   text-transform: uppercase;
 }

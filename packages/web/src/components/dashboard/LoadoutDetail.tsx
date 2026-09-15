@@ -24,7 +24,7 @@ type DetailLoadState = "loading" | "loaded" | "error";
 const panelStyle: React.CSSProperties = {
   background:
     "linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)), rgba(9,14,16,0.94)",
-  border: "1px solid rgba(215, 181, 109, 0.24)",
+  border: "1px solid rgba(201, 138, 91, 0.24)",
   borderRadius: 12,
   boxShadow: "0 22px 70px rgba(0,0,0,0.28)",
   color: "#fff7e8",
@@ -45,12 +45,12 @@ const primaryButtonStyle: React.CSSProperties = {
   padding: "8px 16px",
   borderRadius: 8,
   border: "1px solid rgba(255,224,154,0.52)",
-  background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
-  backgroundColor: "#d7b56d",
+  background: "linear-gradient(135deg, #c98a5b, #f0cf84)",
+  backgroundColor: "#c98a5b",
   color: "#0a0b0b",
   cursor: "pointer",
   fontSize: 13,
-  fontWeight: 800,
+  fontWeight: 700,
   fontFamily: "inherit",
 };
 
@@ -254,7 +254,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
     );
   }
   if (loadState === "loading" || loadout === null) {
-    return <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 24 }}>Loading reference loadout...</ActivityStatus>;
+    return <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 24 }}>Loading reference loadout…</ActivityStatus>;
   }
 
   return (
@@ -282,7 +282,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
               style={{
                 fontSize: 20,
                 fontWeight: 700,
-                border: "1px solid rgba(215,181,109,0.28)",
+                border: "1px solid rgba(201, 138, 91,0.28)",
                 borderRadius: 8,
                 padding: "6px 10px",
                 color: "#fff7e8",
@@ -292,7 +292,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
             />
             <button type="button" onClick={() => { void saveName(); }}
               disabled={busyAction !== null || nameValue.trim() === ""}
-              style={{ ...linkButtonStyle, fontSize: 12 }}>{busyAction === "name" && <ActivityIndicator size={16} />} {busyAction === "name" ? "Saving..." : "Save"}</button>
+              style={{ ...linkButtonStyle, fontSize: 12 }}>{busyAction === "name" && <ActivityIndicator size={16} />} {busyAction === "name" ? "Saving…" : "Save"}</button>
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -351,7 +351,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
               onDrop={(e) => { e.preventDefault(); handleDrop(p.id); }}
               style={{
                 background: "rgba(255,247,232,0.05)", borderRadius: 8, overflow: "hidden", cursor: "grab",
-                border: "1px solid rgba(215,181,109,0.22)",
+                border: "1px solid rgba(201, 138, 91,0.22)",
                 outline: dragOverId === p.id && dragId !== p.id ? "2px solid #68d8d2" : "none",
                 outlineOffset: "-2px",
                 opacity: dragId === p.id ? 0.5 : 1,
@@ -390,12 +390,12 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
                       aria-label={`Caption for ${p.filename}`}
                       value={captionValue}
                       onChange={(e) => { setCaptionValue(e.target.value); }}
-                      style={{ flex: 1, fontSize: 12, padding: 6, border: "1px solid rgba(215,181,109,0.28)", borderRadius: 6, color: "#fff7e8", background: "rgba(255,247,232,0.08)" }}
+                      style={{ flex: 1, fontSize: 12, padding: 6, border: "1px solid rgba(201, 138, 91,0.28)", borderRadius: 6, color: "#fff7e8", background: "rgba(255,247,232,0.08)" }}
                       onKeyDown={(e) => { if (e.key === "Enter") void saveCaption(p.id); if (e.key === "Escape") setEditingCaption(null); }}
                     />
                     <button type="button" onClick={() => { void saveCaption(p.id); }}
                       disabled={busyAction !== null}
-                      style={{ ...linkButtonStyle, fontSize: 11 }}>{busyAction === `caption:${p.id}` && <ActivityIndicator size={16} />} {busyAction === `caption:${p.id}` ? "Saving..." : "Save"}</button>
+                      style={{ ...linkButtonStyle, fontSize: 11 }}>{busyAction === `caption:${p.id}` && <ActivityIndicator size={16} />} {busyAction === `caption:${p.id}` ? "Saving…" : "Save"}</button>
                   </div>
                 ) : (
                   <button
@@ -412,7 +412,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
                     }}
                     onClick={() => { setEditingCaption(p.id); setCaptionValue(p.caption ?? ""); }}
                   >
-                    {p.caption ?? "Add caption..."}
+                    {p.caption ?? "Add caption…"}
                   </button>
                 )}
                 {/* Punch list #37: move up/down buttons for reordering */}
@@ -444,7 +444,7 @@ export function LoadoutDetail({ venueId, spaceId, loadoutId, onBack, onDeleted }
       <div style={{ ...panelStyle, padding: 18 }}>
         <button type="button" onClick={() => { setShowDelete(true); }}
           disabled={busyAction !== null}
-          style={{ padding: "8px 16px", minHeight: 40, fontSize: 13, fontWeight: 800, background: "rgba(255,91,71,0.14)", color: "#ffd2bd", border: "1px solid rgba(255,125,91,0.42)", borderRadius: 8, cursor: "pointer" }}>
+          style={{ padding: "8px 16px", minHeight: 40, fontSize: 13, fontWeight: 700, background: "rgba(255,91,71,0.14)", color: "#ffd2bd", border: "1px solid rgba(255,125,91,0.42)", borderRadius: 8, cursor: "pointer" }}>
           Delete Loadout
         </button>
       </div>

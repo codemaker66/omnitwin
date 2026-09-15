@@ -46,7 +46,7 @@ describe("shared operation feedback", () => {
   it("marks confirmation work busy and clears the indicator after settling", () => {
     const props = { title: "Confirm change", message: "Apply this change?", onConfirm: vi.fn(), onCancel: vi.fn() };
     const { rerender } = render(<ConfirmModal {...props} inFlight />);
-    const working = screen.getByRole("button", { name: "Working..." });
+    const working = screen.getByRole("button", { name: "Working…" });
     expect(working.getAttribute("aria-busy")).toBe("true");
     expect(working.querySelector("[data-activity-indicator]")).not.toBeNull();
     rerender(<ConfirmModal {...props} />);

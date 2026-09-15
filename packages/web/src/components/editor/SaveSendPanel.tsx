@@ -51,14 +51,14 @@ const sendBtn: React.CSSProperties = {
   width: "100%",
   padding: "9px 20px",
   fontSize: 13,
-  fontWeight: 760,
+  fontWeight: 600,
   letterSpacing: 0,
-  border: "1px solid rgba(201,168,76,0.3)",
+  border: "1px solid rgba(201, 138, 91,0.3)",
   borderRadius: 6,
   cursor: "pointer",
-  background: "linear-gradient(135deg, #c9a84c 0%, #a8893e 100%)",
+  background: "linear-gradient(135deg, #c98a5b 0%, #a8893e 100%)",
   color: "#1a1a1a",
-  boxShadow: "0 2px 12px rgba(201,168,76,0.2)",
+  boxShadow: "0 2px 12px rgba(201, 138, 91,0.2)",
 };
 
 export function SaveSendPanel({

@@ -327,7 +327,7 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
         ))}
       </div>
 
-      {loading && <ActivityStatus style={{ color: "#999", fontSize: 14 }}>Loading...</ActivityStatus>}
+      {loading && <ActivityStatus style={{ color: "#999", fontSize: 14 }}>Loading…</ActivityStatus>}
       {preselectionLoading && <ActivityStatus>Opening enquiry…</ActivityStatus>}
 
       {!loading && !preselectionLoading && enquiries.length === 0 && (

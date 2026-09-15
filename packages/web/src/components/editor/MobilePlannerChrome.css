@@ -162,8 +162,8 @@
   color: #fffaf0;
 }
 .mobile-planner-lenses__button:focus-visible {
-  outline: 2px solid #284f41;
-  outline-offset: 3px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 .mobile-planner-lenses__button svg { flex-shrink: 0; }
 

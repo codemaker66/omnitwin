@@ -498,8 +498,8 @@
   color: var(--lh-bg);
 }
 .lh-sandbox button:focus-visible {
-  outline: 2px solid var(--lh-cyan);
-  outline-offset: 3px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 .lh-sandbox-hint {
   margin: 0;

@@ -150,7 +150,7 @@ export function ProposalPage(): ReactElement {
         aria-label="Client proposal"
         style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: GRAPHITE, color: CREAM_MUT, fontFamily: SANS }}
       >
-        <ActivityStatus variant="panel">Loading proposal...</ActivityStatus>
+        <ActivityStatus variant="panel">Loading proposal…</ActivityStatus>
       </main>
     );
   }

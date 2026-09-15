@@ -131,3 +131,31 @@ export function useFocusTrap<T extends HTMLElement>(
 
   return containerRef;
 }
+
+// ---------------------------------------------------------------------------
+// useEscapeToClose — the other half of the modal contract
+//
+// T-615: five aria-modal dialogs shipped without either a focus trap or an
+// Escape key, and several more handled Escape with a React onKeyDown on the
+// overlay — which only fires while focus is already inside, so Escape did
+// nothing whenever the opener still held focus. This listens on the document
+// in the capture phase, alongside the trap, so the two always agree.
+//
+// Pass `active: false` (not "omit the hook") while an irreversible write is in
+// flight: the dialog keeps its trap and simply refuses to dismiss.
+// ---------------------------------------------------------------------------
+export function useEscapeToClose(onClose: () => void, active = true): void {
+  const handlerRef = useRef(onClose);
+  handlerRef.current = onClose;
+
+  useEffect(() => {
+    if (!active) return;
+    function handleKeyDown(e: KeyboardEvent): void {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      handlerRef.current();
+    }
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => { document.removeEventListener("keydown", handleKeyDown, true); };
+  }, [active]);
+}

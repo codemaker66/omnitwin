@@ -17,7 +17,7 @@
   --ink: #fbf2df;
   --ink-2: #e7d8bb;
   --ink-3: #b9aa8b;
-  --gold: #d7a64b;
+  --gold: #c98a5b;
   --gold-2: #f0c66b;
   --stone: #9fb4b6;
   --rule: rgba(216, 174, 91, 0.28);
@@ -87,7 +87,7 @@ html:has(.vv-rite)::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, var(--gold-2), var(--gold));
   border-radius: 2px;
 }
-html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #d7a64b #030707; }
+html:has(.vv-rite) { scrollbar-width: thin; scrollbar-color: #c98a5b #030707; }
 
 /* ————————————————————————— the carried light ————————————————————————— */
 /* One fixed layer of warm light at the (spring-lagged) cursor. Visible only

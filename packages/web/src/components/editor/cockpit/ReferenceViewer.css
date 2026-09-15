@@ -46,11 +46,11 @@
 .reference-venue-icon { flex-shrink: 0; color: #c4b085; }
 .reference-venue-copy { min-width: 0; }
 .reference-venue-name { display: block; line-height: 1.4; overflow-wrap: anywhere; text-transform: uppercase; }
-.reference-wordmark small { display: block; color: #a6a095; font-size: 9px; letter-spacing: .02em; line-height: 1.5; margin-top: 5px; }
+.reference-wordmark small { display: block; color: #a6a095; font-size: 11px; letter-spacing: .02em; line-height: 1.5; margin-top: 5px; }
 .reference-save { width: 26px; height: 30px; display: grid; place-items: center; border: 0; background: transparent; color: #c4b085; cursor: pointer; border-radius: 4px; }
 .reference-save:disabled { opacity: .5; cursor: default; }
-.reference-save-status { grid-column: 1 / -1; font-size: 9px; color: #929087; letter-spacing: .03em; }
-.reference-left-content .generated-furniture-proxy-badge { position: static; width: auto; max-width: none; border: 0; border-top: 1px solid rgba(224, 211, 188, .1); border-radius: 0; padding: 9px 12px; background: transparent; font-size: 9px; font-weight: 400; line-height: 1.5; text-align: left; text-transform: none; letter-spacing: 0; }
+.reference-save-status { grid-column: 1 / -1; font-size: 11px; color: #929087; letter-spacing: .03em; }
+.reference-left-content .generated-furniture-proxy-badge { position: static; width: auto; max-width: none; border: 0; border-top: 1px solid rgba(224, 211, 188, .1); border-radius: 0; padding: 9px 12px; background: transparent; font-size: 11px; font-weight: 400; line-height: 1.5; text-align: left; text-transform: none; letter-spacing: 0; }
 .reference-inspector-dock,
 .reference-viewer > .cockpit-panel,
 .reference-viewer > .lens-panel,
@@ -111,7 +111,7 @@
 }
 .reference-viewer > .cockpit-bottom.is-collapsed { height: 74px; padding: 12px 15px; }
 .reference-viewer .layout-timeline__title { font-family: "Inter", system-ui, sans-serif; font-size: 10px; font-weight: 500; letter-spacing: .1em; }
-.reference-viewer .layout-timeline__truth { font-family: "Inter", system-ui, sans-serif; font-size: 9px; font-style: normal; }
+.reference-viewer .layout-timeline__truth { font-family: "Inter", system-ui, sans-serif; font-size: 11px; font-style: normal; }
 .reference-viewer > .cockpit-bottom.is-collapsed .layout-timeline__header { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-rows: auto; }
 .reference-viewer > .cockpit-bottom.is-collapsed .layout-compact-state { grid-column: auto; grid-row: auto; }
 .reference-viewer .reference-when-ribbon { position: absolute; z-index: 26; left: calc(var(--reference-left) + 26px); bottom: 102px; max-width: calc(100% - 580px); border: 1px solid var(--cockpit-hairline); border-radius: 6px; background: #171612; font-size: 11px; }
@@ -140,7 +140,7 @@ body:has(.reference-viewer > .cockpit-bottom:not(.is-collapsed)) .reference-view
 body:has(.reference-viewer > .cockpit-bottom:not(.is-collapsed)) .reference-handoff-action { bottom: 316px; }
 body:has(.reference-viewer > .cockpit-bottom:not(.is-collapsed)) .reference-event-details { bottom: 352px !important; }
 .reference-viewer input, .reference-viewer textarea { user-select: text; }
-.reference-viewer button:focus-visible, .reference-viewer a:focus-visible, .reference-viewer summary:focus-visible { outline: 2px solid #d4b574; outline-offset: 3px; }
+.reference-viewer button:focus-visible, .reference-viewer a:focus-visible, .reference-viewer summary:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 @media (max-width: 1200px) {
   .cockpit-shell.reference-viewer { --reference-left: 226px; --reference-right: 230px; }
   .reference-left-dock { grid-template-columns: 45px minmax(0, 1fr); }

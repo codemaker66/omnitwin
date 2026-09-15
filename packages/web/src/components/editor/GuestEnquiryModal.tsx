@@ -16,8 +16,8 @@ import { sceneFurniturePlacements } from "../../lib/table-dressing.js";
 // GuestEnquiryModal — premium conversion moment
 // ---------------------------------------------------------------------------
 
-const GOLD = "#c9a84c";
-const GOLD_LIGHT = "#dfc06a";
+const GOLD = "#c98a5b";
+const GOLD_LIGHT = "#dca475";
 const CHARCOAL = "#111113";
 const GLASS = "rgba(16,16,16,0.97)";
 
@@ -42,8 +42,8 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
       100% { stroke-dashoffset: 0; }
     }
     @keyframes omni-enq-glow {
-      0%, 100% { box-shadow: 0 0 40px rgba(201,168,76,0.08), 0 24px 80px rgba(0,0,0,0.5); }
-      50%      { box-shadow: 0 0 60px rgba(201,168,76,0.15), 0 28px 90px rgba(0,0,0,0.6); }
+      0%, 100% { box-shadow: 0 0 40px rgba(201, 138, 91,0.08), 0 24px 80px rgba(0,0,0,0.5); }
+      50%      { box-shadow: 0 0 60px rgba(201, 138, 91,0.15), 0 28px 90px rgba(0,0,0,0.6); }
     }
     @media (prefers-reduced-motion: reduce) {
       @keyframes omni-enq-in {
@@ -63,12 +63,12 @@ if (typeof document !== "undefined" && document.getElementById(STYLE_ID) === nul
     }
     .omni-enq-input::placeholder { color: rgba(255,255,255,0.25); }
     .omni-enq-input:focus {
-      border-color: rgba(201,168,76,0.4); background: rgba(255,255,255,0.06);
-      box-shadow: 0 0 0 3px rgba(201,168,76,0.08);
+      border-color: rgba(201, 138, 91,0.4); background: rgba(255,255,255,0.06);
+      box-shadow: 0 0 0 3px rgba(201, 138, 91,0.08);
     }
     .omni-enq-input:hover:not(:focus) { border-color: rgba(255,255,255,0.18); }
     .omni-enq-select { cursor: pointer; appearance: none;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23c9a84c' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23c98a5b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
       background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
     }
     .omni-enq-select option { background: #1a1a1a; color: #f0f0f0; }
@@ -219,7 +219,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
             background: `linear-gradient(145deg, ${GLASS}, rgba(22,22,22,0.98))`,
             backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
             borderRadius: 24, padding: "44px 40px 36px", width: 460, maxWidth: "90vw",
-            border: "1px solid rgba(201,168,76,0.15)",
+            border: "1px solid rgba(201, 138, 91,0.15)",
             animation: "omni-enq-success 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards",
             textAlign: "center",
           }}
@@ -262,7 +262,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           {/* Layout summary chip */}
           <div style={{
             display: "inline-block", padding: "6px 16px", borderRadius: 20,
-            background: "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.12)",
+            background: "rgba(201, 138, 91,0.08)", border: "1px solid rgba(201, 138, 91,0.12)",
             fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: 28,
             maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}>
@@ -300,12 +300,12 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               background: `linear-gradient(135deg, ${GOLD}, #a8893e)`,
               border: "none", borderRadius: 12, cursor: "pointer",
               color: CHARCOAL, letterSpacing: 0.3,
-              boxShadow: `0 4px 20px rgba(201,168,76,0.25)`,
+              boxShadow: `0 4px 20px rgba(201, 138, 91,0.25)`,
               transition: "transform 0.2s ease, box-shadow 0.2s ease",
             }}
             onClick={onClose}
-            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 6px 28px rgba(201,168,76,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 20px rgba(201,168,76,0.25)`; e.currentTarget.style.transform = ""; }}
+            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 6px 28px rgba(201, 138, 91,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 20px rgba(201, 138, 91,0.25)`; e.currentTarget.style.transform = ""; }}
           >
             Back to layout
           </button>
@@ -339,8 +339,8 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
           backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
           borderRadius: 24, padding: "36px 36px 32px", width: 480, maxWidth: "90vw",
           maxHeight: "90vh", overflowY: "auto",
-          border: "1px solid rgba(201,168,76,0.15)",
-          boxShadow: "0 0 40px rgba(201,168,76,0.08), 0 24px 80px rgba(0,0,0,0.5)",
+          border: "1px solid rgba(201, 138, 91,0.15)",
+          boxShadow: "0 0 40px rgba(201, 138, 91,0.08), 0 24px 80px rgba(0,0,0,0.5)",
           animation: "omni-enq-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         }}
         onClick={(e) => { e.stopPropagation(); }}
@@ -349,7 +349,7 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         {/* Gold accent bar */}
         <div style={{
           width: 40, height: 3, borderRadius: 2,
-          background: `linear-gradient(90deg, ${GOLD}, rgba(201,168,76,0.3))`,
+          background: `linear-gradient(90deg, ${GOLD}, rgba(201, 138, 91,0.3))`,
           marginBottom: 20,
         }} />
 
@@ -378,12 +378,12 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
         {/* Layout summary */}
         <div style={{
           padding: "10px 14px", borderRadius: 10, marginBottom: 24,
-          background: "rgba(201,168,76,0.05)", border: "1px solid rgba(201,168,76,0.1)",
+          background: "rgba(201, 138, 91,0.05)", border: "1px solid rgba(201, 138, 91,0.1)",
           fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.5,
           overflow: "hidden", textOverflow: "ellipsis",
           display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const,
         }}>
-          <span style={{ color: "rgba(201,168,76,0.6)", fontWeight: 600, marginRight: 6 }}>Your layout:</span>
+          <span style={{ color: "rgba(201, 138, 91,0.6)", fontWeight: 600, marginRight: 6 }}>Your layout:</span>
           {layoutSummary}
         </div>
 
@@ -509,11 +509,11 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               data-testid="enquiry-capacity-guidance"
               style={{
                 padding: "10px 14px", borderRadius: 10, marginBottom: 16,
-                background: "rgba(201,168,76,0.05)", border: "1px solid rgba(201,168,76,0.1)",
+                background: "rgba(201, 138, 91,0.05)", border: "1px solid rgba(201, 138, 91,0.1)",
                 fontSize: 12, color: "rgba(255,255,255,0.5)", lineHeight: 1.5,
               }}
             >
-              <span style={{ color: "rgba(201,168,76,0.7)", fontWeight: 600 }}>
+              <span style={{ color: "rgba(201, 138, 91,0.7)", fontWeight: 600 }}>
                 For {guestCountNum} guests:
               </span>{" "}
               {capacityGuidance.fit} — this room is comfortable for {capacityGuidance.summary}.
@@ -574,15 +574,15 @@ export function GuestEnquiryModal({ configId, onClose }: GuestEnquiryModalProps)
               display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
               fontFamily: "'Inter', system-ui, sans-serif",
               background: isSubmitting
-                ? "rgba(201,168,76,0.5)"
+                ? "rgba(201, 138, 91,0.5)"
                 : `linear-gradient(135deg, ${GOLD}, #a8893e)`,
               border: "none", borderRadius: 12, cursor: isSubmitting ? "wait" : "pointer",
               color: CHARCOAL, letterSpacing: 0.3,
-              boxShadow: `0 4px 24px rgba(201,168,76,0.25)`,
+              boxShadow: `0 4px 24px rgba(201, 138, 91,0.25)`,
               transition: "transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
             }}
-            onMouseEnter={(e) => { if (!isSubmitting) { e.currentTarget.style.boxShadow = `0 6px 32px rgba(201,168,76,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 24px rgba(201,168,76,0.25)`; e.currentTarget.style.transform = ""; }}
+            onMouseEnter={(e) => { if (!isSubmitting) { e.currentTarget.style.boxShadow = `0 6px 32px rgba(201, 138, 91,0.4)`; e.currentTarget.style.transform = "translateY(-1px)"; } }}
+            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 4px 24px rgba(201, 138, 91,0.25)`; e.currentTarget.style.transform = ""; }}
           >
             {isSubmitting && <ActivityIndicator size={20} />}
             {isSubmitting ? "Sending your layout\u2026" : "Send to Events Team"}

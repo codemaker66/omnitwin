@@ -149,7 +149,7 @@
 .vv-twin-tour-eyebrow {
   margin: 0;
   font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3, #b9aa8b);
@@ -178,7 +178,7 @@
 .vv-twin-tour-note {
   margin: 8px 0 0;
   font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace);
-  font-size: 9.5px;
+  font-size: 11px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--gold-2, #f0c66b);
@@ -277,8 +277,8 @@
 }
 
 .vv-twin-tour-btn:focus-visible {
-  outline: 2px solid var(--gold, #d7a64b);
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 /* Play/pause is the one filled control on this surface — the single-primary rule
@@ -286,8 +286,8 @@
 .vv-twin-tour-btn--primary {
   width: 36px;
   height: 36px;
-  background: var(--gold, #d7a64b);
-  border-color: var(--gold, #d7a64b);
+  background: var(--gold, #c98a5b);
+  border-color: var(--gold, #c98a5b);
   color: var(--black-2, #07100f);
 }
 
@@ -358,8 +358,8 @@
 }
 
 .vv-twin-tour-tick:focus-visible {
-  outline: 2px solid var(--gold, #d7a64b);
-  outline-offset: 1px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 .vv-twin-tour-icon {

@@ -31,7 +31,7 @@ const MAX_CENTERPIECE = 80;
 
 const segmentStyle = (active: boolean): React.CSSProperties => ({
   padding: "5px 10px", fontSize: 11, fontWeight: active ? 700 : 500,
-  background: active ? "rgba(201,168,76,0.16)" : "transparent",
+  background: active ? "rgba(201, 138, 91,0.16)" : "transparent",
   color: active ? GOLD : TEXT_SEC,
   border: `1px solid ${active ? GOLD : BORDER}`, borderRadius: 6,
   cursor: "pointer", fontFamily: "inherit",
@@ -277,7 +277,7 @@ export function ObjectNotePanel({ embedded = false, mobile = false, viewMode = "
         </div>
         {hasNote && (
           <span
-            style={{ fontSize: 9, color: GOLD, fontWeight: 700, background: "rgba(201,168,76,0.12)", padding: "2px 6px", borderRadius: 4 }}
+            style={{ fontSize: 9, color: GOLD, fontWeight: 700, background: "rgba(201, 138, 91,0.12)", padding: "2px 6px", borderRadius: 4 }}
             aria-label="This object has a saved note"
           >
             SAVED

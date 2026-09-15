@@ -101,7 +101,7 @@
   border-radius: 999px;
   color: #2d5960;
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 700;
   padding: 4px 8px;
   text-transform: uppercase;
 }
@@ -114,7 +114,7 @@
 .ai-draft-panel label span {
   color: #1f2b36;
   font-size: 0.84rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .ai-draft-panel textarea {

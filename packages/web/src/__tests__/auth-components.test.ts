@@ -215,9 +215,13 @@ describe("ClerkRouteProvider", () => {
     expect(socialButton.border).toContain("82, 230, 224");
     expect(socialButton.background).toContain("linear-gradient");
     expect(socialButton.color).toBe("#fff7e8");
-    expect(socialButton.fontWeight).toBe("800");
+    // T-615: 700, not 800. Inter is loaded at 200–600 (router.tsx), so 800 was
+    // never a real face — the browser synthesised it from 600. The register
+    // pass normalised every weight above 700 onto the axis the app actually
+    // ships; the control is still the heaviest thing on the sign-in card.
+    expect(socialButton.fontWeight).toBe("700");
     expect(socialButtonText.color).toBe("#fff7e8");
-    expect(socialButtonText.fontWeight).toBe("800");
+    expect(socialButtonText.fontWeight).toBe("700");
   });
 });
 

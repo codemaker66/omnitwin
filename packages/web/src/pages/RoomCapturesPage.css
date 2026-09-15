@@ -78,8 +78,8 @@
 .captures__room:hover { background: #16191e; }
 
 .captures__room:focus-visible {
-  outline: 2px solid #d8ad4a;
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 .captures__room--active {

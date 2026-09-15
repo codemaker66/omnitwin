@@ -88,8 +88,8 @@
   filter: none;
 }
 .fr-root :focus-visible {
-  outline: 2px solid var(--fr-green);
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
   border-radius: 2px;
 }
 
@@ -1009,8 +1009,8 @@
   cursor: grabbing;
 }
 .fr-walk-canvas:focus-visible {
-  outline: 2px solid var(--fr-green);
-  outline-offset: -2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 .fr-walk-poster {
   position: absolute;

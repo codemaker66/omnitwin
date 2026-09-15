@@ -67,7 +67,7 @@
 
 .vv-twin-quick-chip:hover {
   color: var(--gold-2, #f0c66b);
-  border-color: var(--gold, #d7a64b);
+  border-color: var(--gold, #c98a5b);
 }
 
 .vv-twin-quick-chip:active {
@@ -77,8 +77,8 @@
 /* Enquire is the one filled chip, matching the utility rail's single gold
  * element. Two golds on one screen would be two primaries — there is one. */
 .vv-twin-quick-chip--gold {
-  background: var(--gold, #d7a64b);
-  border-color: var(--gold, #d7a64b);
+  background: var(--gold, #c98a5b);
+  border-color: var(--gold, #c98a5b);
   color: var(--black-2, #07100f);
   text-shadow: none;
 }

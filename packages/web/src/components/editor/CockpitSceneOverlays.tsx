@@ -79,7 +79,7 @@ const DENSITY_PATCH_SCALE = 2.2; // enlarge soft blobs so they pool into a field
 const MOTE_SIZE = 0.9; // sprite scale for the firefly glow
 
 const MOTE_COLOR = "#d7f0ff";
-const HERITAGE_COLOR = "#c9a84c";
+const HERITAGE_COLOR = "#c98a5b";
 const PROBE_COLOR = "#c9b06b";
 
 function prefersReducedMotion(): boolean {

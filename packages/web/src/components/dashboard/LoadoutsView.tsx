@@ -24,7 +24,7 @@ const shellStyle: React.CSSProperties = {
 const panelStyle: React.CSSProperties = {
   background:
     "linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)), rgba(9,14,16,0.94)",
-  border: "1px solid rgba(215, 181, 109, 0.24)",
+  border: "1px solid rgba(201, 138, 91, 0.24)",
   borderRadius: 12,
   boxShadow: "0 22px 70px rgba(0,0,0,0.28)",
 };
@@ -44,9 +44,9 @@ const btnStyle: React.CSSProperties = {
   minHeight: 40,
   padding: "8px 16px",
   fontSize: 13,
-  fontWeight: 800,
-  background: "linear-gradient(135deg, #d7b56d, #f0cf84)",
-  backgroundColor: "#d7b56d",
+  fontWeight: 700,
+  background: "linear-gradient(135deg, #c98a5b, #f0cf84)",
+  backgroundColor: "#c98a5b",
   color: "#0a0b0b",
   border: "1px solid rgba(255,224,154,0.52)",
   borderRadius: 8,
@@ -58,14 +58,14 @@ const secondaryBtnStyle: React.CSSProperties = {
   background: "rgba(255,247,232,0.07)",
   backgroundColor: "rgba(255,247,232,0.07)",
   color: "#fff7e8",
-  border: "1px solid rgba(215,181,109,0.25)",
+  border: "1px solid rgba(201, 138, 91,0.25)",
 };
 
 const fieldStyle: React.CSSProperties = {
   width: "100%",
   padding: 10,
   fontSize: 14,
-  border: "1px solid rgba(215,181,109,0.28)",
+  border: "1px solid rgba(201, 138, 91,0.28)",
   borderRadius: 8,
   boxSizing: "border-box",
   background: "rgba(255,247,232,0.08)",
@@ -215,8 +215,8 @@ export function LoadoutsView(): React.ReactElement {
         {spaces.map((s) => (
           <button key={s.id} type="button"
             style={{
-              padding: "8px 16px", fontSize: 13, borderRadius: 8, border: "1px solid rgba(215,181,109,0.25)",
-              background: s.id === selectedSpaceId ? "rgba(215,181,109,0.2)" : "rgba(255,247,232,0.07)",
+              padding: "8px 16px", fontSize: 13, borderRadius: 8, border: "1px solid rgba(201, 138, 91,0.25)",
+              background: s.id === selectedSpaceId ? "rgba(201, 138, 91,0.2)" : "rgba(255,247,232,0.07)",
               color: s.id === selectedSpaceId ? "#fff7e8" : "rgba(246,241,232,0.72)",
               cursor: "pointer",
             }}
@@ -235,7 +235,7 @@ export function LoadoutsView(): React.ReactElement {
           onClick={() => { setCreateError(null); setShowCreate(true); }}>New Loadout</button>
       </div>
 
-      {loading && <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 24, color: "rgba(246,241,232,0.72)" }}>Loading room list...</ActivityStatus>}
+      {loading && <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 24, color: "rgba(246,241,232,0.72)" }}>Loading room list…</ActivityStatus>}
 
       {spacesError !== null && (
         <div role="alert" data-testid="loadout-spaces-error" style={alertStyle}>
@@ -252,7 +252,7 @@ export function LoadoutsView(): React.ReactElement {
         </div>
       )}
 
-      {loadoutsState === "loading" && <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 18, color: "rgba(246,241,232,0.72)" }}>Loading setup packs...</ActivityStatus>}
+      {loadoutsState === "loading" && <ActivityStatus variant="panel" style={{ ...panelStyle, padding: 18, color: "rgba(246,241,232,0.72)" }}>Loading setup packs…</ActivityStatus>}
 
       {loadoutsState === "error" && (
         <div role="alert" data-testid="loadouts-list-error" style={alertStyle}>
@@ -290,7 +290,7 @@ export function LoadoutsView(): React.ReactElement {
           position: "fixed",
           inset: 0,
           background:
-            "radial-gradient(circle at 50% 40%, rgba(104,216,210,0.08), transparent 34%), radial-gradient(circle at 78% 18%, rgba(215,181,109,0.1), transparent 28%), rgba(0,0,0,0.82)",
+            "radial-gradient(circle at 50% 40%, rgba(104,216,210,0.08), transparent 34%), radial-gradient(circle at 78% 18%, rgba(201, 138, 91,0.1), transparent 28%), rgba(0,0,0,0.82)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -312,16 +312,16 @@ export function LoadoutsView(): React.ReactElement {
               </div>
             )}
             <div style={{ marginBottom: 12 }}>
-              <label htmlFor="loadout-create-name" style={{ fontSize: 12, fontWeight: 800, color: "#f1c978", display: "block", marginBottom: 4 }}>Name *</label>
+              <label htmlFor="loadout-create-name" style={{ fontSize: 12, fontWeight: 700, color: "#f1c978", display: "block", marginBottom: 4 }}>Name *</label>
               <input id="loadout-create-name" type="text" value={createName} onChange={(e) => { setCreateName(e.target.value); }}
                 style={fieldStyle}
                 placeholder="e.g. Masonic Lodge Setup" />
             </div>
             <div style={{ marginBottom: 16 }}>
-              <label htmlFor="loadout-create-description" style={{ fontSize: 12, fontWeight: 800, color: "#f1c978", display: "block", marginBottom: 4 }}>Description</label>
+              <label htmlFor="loadout-create-description" style={{ fontSize: 12, fontWeight: 700, color: "#f1c978", display: "block", marginBottom: 4 }}>Description</label>
               <textarea id="loadout-create-description" value={createDesc} onChange={(e) => { setCreateDesc(e.target.value); }}
                 style={{ ...fieldStyle, minHeight: 70, resize: "vertical" }}
-                placeholder="Full ceremonial layout with altar table..." />
+                placeholder="Full ceremonial layout with altar table…" />
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button type="button" onClick={() => { setShowCreate(false); }}
@@ -329,7 +329,7 @@ export function LoadoutsView(): React.ReactElement {
                 style={secondaryBtnStyle}>Cancel</button>
               <button type="button" onClick={() => { void handleCreate(); }}
                 style={{ ...btnStyle, opacity: createName.trim() === "" || createBusy ? 0.5 : 1 }}
-                disabled={createName.trim() === "" || createBusy}>{createBusy && <ActivityIndicator size={16} />} {createBusy ? "Creating..." : "Create"}</button>
+                disabled={createName.trim() === "" || createBusy}>{createBusy && <ActivityIndicator size={16} />} {createBusy ? "Creating…" : "Create"}</button>
             </div>
           </div>
         </div>

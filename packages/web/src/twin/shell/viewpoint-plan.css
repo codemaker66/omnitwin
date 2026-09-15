@@ -107,7 +107,7 @@
  * outside Chromium, and a failure there is an INVALID value — a black cone —
  * not a fallback to the gold. In a real CSS declaration it works everywhere. */
 .vv-twin-plan-cone-stop {
-  stop-color: var(--gold, #d7a64b);
+  stop-color: var(--gold, #c98a5b);
 }
 
 .vv-twin-plan-mark {
@@ -120,7 +120,7 @@
 }
 
 .vv-twin-plan-mark--current .vv-twin-plan-dot {
-  fill: var(--gold, #d7a64b);
+  fill: var(--gold, #c98a5b);
 }
 
 .vv-twin-plan-mark:hover .vv-twin-plan-dot {

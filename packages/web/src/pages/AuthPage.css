@@ -8,7 +8,7 @@
 }
 .auth-page::after { content: ""; position: absolute; inset: 24px; border: 1px solid #c4a98466; border-radius: 16px; pointer-events: none; }
 .auth-page__context, .auth-page__form-shell { position: relative; z-index: 1; }
-.auth-page__brand { display: inline-flex; padding-bottom: 12px; border-bottom: 1px solid #caa98b; color: #ead3b8; font-size: 18px; font-weight: 750; }
+.auth-page__brand { display: inline-flex; padding-bottom: 12px; border-bottom: 1px solid #caa98b; color: #ead3b8; font-size: 18px; font-weight: 600; }
 .auth-page__title { max-width: 600px; margin: 32px 0 22px; color: #fff9ee; font: 400 clamp(42px, 4.5vw, 66px)/1.05 Georgia, serif; }
 .auth-page__copy { max-width: 460px; color: #e3e9dd; font-size: 17px; line-height: 1.7; }
 .auth-page__proof-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 32px; }
@@ -34,11 +34,11 @@
   color: #24493e !important; background: #fffdf8 !important; box-shadow: none !important; }
 .auth-page .cl-formFieldInput::placeholder { color: #768173 !important; }
 .auth-page .cl-formButtonPrimary { min-height: 44px; border: 0 !important; border-radius: 8px !important;
-  color: #fffdf8 !important; background: #24493e !important; box-shadow: 0 8px 22px #24493e20 !important; font-weight: 750 !important; }
-.auth-page .cl-footerActionLink { color: #72533c !important; font-weight: 750; }
+  color: #fffdf8 !important; background: #24493e !important; box-shadow: 0 8px 22px #24493e20 !important; font-weight: 600 !important; }
+.auth-page .cl-footerActionLink { color: #72533c !important; font-weight: 600; }
 .auth-page .cl-footerActionLink, .auth-page a { display: inline-flex; align-items: center; min-height: 32px; }
 .auth-page button[aria-label="Show password"] { min-width: 44px; min-height: 44px; color: #24493e; }
-.auth-page button:focus-visible, .auth-page a:focus-visible, .auth-page input:focus-visible { outline: 3px solid #b4805d; outline-offset: 3px; }
+.auth-page button:focus-visible, .auth-page a:focus-visible, .auth-page input:focus-visible { outline: var(--vv-focus-ring); outline-offset: var(--vv-focus-ring-offset); }
 @media (max-width: 860px) {
   .auth-page { grid-template-columns: minmax(0, 520px); gap: 30px; padding: 38px 24px; }
   .auth-page::after { inset: 10px; }

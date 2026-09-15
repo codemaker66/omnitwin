@@ -11,7 +11,7 @@
 
 .when-ribbon {
   grid-area: ribbon;
-  border-top: 1px solid rgba(201, 168, 76, 0.2);
+  border-top: 1px solid rgba(201, 138, 91, 0.2);
   background: linear-gradient(180deg, rgba(20, 17, 13, 0.98), rgba(11, 10, 9, 0.99));
   color: var(--house-text-1, #f4efe6);
   font-family: "Inter", system-ui, sans-serif;
@@ -35,7 +35,7 @@
   font-size: 0.68rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--house-accent-brass, #c6a15b);
+  color: var(--house-accent-copper, #c98a5b);
 }
 
 .when-ribbon__day {
@@ -52,7 +52,7 @@
 }
 
 .when-ribbon__link {
-  color: var(--house-accent-brass, #c6a15b);
+  color: var(--house-accent-copper, #c98a5b);
   background: none;
   border: none;
   padding: 0;
@@ -101,7 +101,7 @@
   border-radius: 4px;
   background: repeating-linear-gradient(
     -45deg,
-    rgba(201, 168, 76, 0.16) 0 5px,
+    rgba(201, 138, 91, 0.16) 0 5px,
     transparent 5px 10px
   );
   pointer-events: none;
@@ -126,7 +126,7 @@
 
 .when-ribbon__ghost--ink {
   background: rgba(34, 28, 20, 0.95);
-  border: 1px solid rgba(201, 168, 76, 0.45);
+  border: 1px solid rgba(201, 138, 91, 0.45);
 }
 
 .when-ribbon__ghost--hold {
@@ -148,8 +148,8 @@
   top: 6px;
   bottom: 6px;
   border-radius: 6px;
-  border: 1px dashed rgba(201, 168, 76, 0.75);
-  background: rgba(201, 168, 76, 0.08);
+  border: 1px dashed rgba(201, 138, 91, 0.75);
+  background: rgba(201, 138, 91, 0.08);
   pointer-events: none;
 }
 
@@ -161,7 +161,7 @@
   bottom: 5px;
   min-width: 34px;
   border-radius: 6px;
-  background: linear-gradient(180deg, #d9b96b, #b9924a 55%, #a37f3c);
+  background: linear-gradient(180deg, #dca475, #b9924a 55%, #7e4620);
   border: 1px solid rgba(255, 235, 190, 0.55);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
   color: #241c10;
@@ -185,8 +185,8 @@
 }
 
 .when-ribbon__ingot:focus-visible {
-  outline: 2px solid rgba(226, 193, 93, 0.72);
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 .when-ribbon__ingot-title {
@@ -271,13 +271,13 @@
 }
 
 .when-ribbon__button--primary {
-  background: rgba(201, 168, 76, 0.22);
-  border-color: rgba(201, 168, 76, 0.6);
+  background: rgba(201, 138, 91, 0.22);
+  border-color: rgba(201, 138, 91, 0.6);
 }
 
 .when-ribbon__button:focus-visible {
-  outline: 2px solid rgba(226, 193, 93, 0.72);
-  outline-offset: 2px;
+  outline: var(--vv-focus-ring);
+  outline-offset: var(--vv-focus-ring-offset);
 }
 
 .when-ribbon__sr {
