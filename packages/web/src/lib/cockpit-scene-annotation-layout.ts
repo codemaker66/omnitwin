@@ -4,6 +4,8 @@ export interface AnnotationMeasure { readonly id: string; readonly priority: num
 export interface AnnotationPlacement extends AnnotationRect { readonly id: string }
 export interface AnnotationLayout { readonly mode: "packed" | "list"; readonly placements: readonly AnnotationPlacement[]; readonly contentHeight: number }
 export const ANNOTATION_GAP = 8;
+// Reserve native scrollbar/border space around at least one 44px target.
+const MIN_USABLE_AREA = 64;
 
 export function rectanglesOverlap(a: AnnotationRect, b: AnnotationRect, gap = 0): boolean {
   return a.x < b.x + b.width + gap && a.x + a.width + gap > b.x
@@ -22,10 +24,10 @@ export function annotationSafeArea(viewport: AnnotationRect, obstacles: readonly
         { x: b.x + b.width, y: r.y, width: r.x + r.width - b.x - b.width, height: r.height },
         { x: r.x, y: r.y, width: r.width, height: b.y - r.y },
         { x: r.x, y: b.y + b.height, width: r.width, height: r.y + r.height - b.y - b.height },
-      ].filter((part) => part.width >= 44 && part.height >= 44);
+      ].filter((part) => part.width >= MIN_USABLE_AREA && part.height >= MIN_USABLE_AREA);
     }).sort((a, b) => b.width * b.height - a.width * a.height).slice(0, 64);
   }
-  return free.filter((r) => r.width >= 44 && r.height >= 44).sort((a, b) => b.width * b.height - a.width * a.height)[0] ?? null;
+  return free.filter((r) => r.width >= MIN_USABLE_AREA && r.height >= MIN_USABLE_AREA).sort((a, b) => b.width * b.height - a.width * a.height)[0] ?? null;
 }
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(v, Math.max(lo, hi)));

@@ -40,7 +40,7 @@ import {
   shouldLoadReplay,
 } from "../../lib/cockpit-scene-overlay-model.js";
 
-import { annotationSafeArea, placeSceneAnnotations, type AnnotationRect } from "../../lib/cockpit-scene-annotation-layout.js";
+import { annotationSafeArea, placeSceneAnnotations, type AnnotationMeasure, type AnnotationRect } from "../../lib/cockpit-scene-annotation-layout.js";
 import "./CockpitSceneAnnotations.css";
 
 // ---------------------------------------------------------------------------
@@ -368,7 +368,7 @@ const KEEP_SCREEN_LAYER_VISIBLE = (): undefined => undefined;
 const BLOCKING_UI = [
   ".reference-left-dock", ".reference-inspector-dock", ".lens-panel", ".cockpit-truth",
   ".planner-tool-pill", ".reference-more-tools", ".reference-extra-tools", ".planner-command-deck",
-  ".mobile-planner-topbar", ".mobile-planner-dock", ".planner-status-header",
+  "[data-testid='mobile-planner-topbar']", ".mobile-planner-dock", ".planner-status-header",
   "[data-floating-widget-id]", "[aria-label='Room view']", "[aria-label='View mode']",
   "[aria-label='Room layout timeline']", "[data-testid='cockpit-bottom']",
 ].join(", ");
@@ -429,7 +429,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
   }, [annotations, clearOwnedBeam, invalidate]);
 
   useEffect(() => {
-    const shell = canvas.closest(".reference-viewer") ?? canvas.parentElement;
+    const shell = canvas.closest(".reference-viewer, .cockpit-shell") ?? canvas.parentElement;
     const markDirty = (): void => { dirty.current = true; invalidate(); };
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(markDirty);
     const observeBounds = (): void => {
@@ -476,7 +476,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     dirty.current = false;
     lastCamera.current = signature;
     const canvasBox = canvas.getBoundingClientRect();
-    const shell = canvas.closest(".reference-viewer") ?? canvas.parentElement;
+    const shell = canvas.closest(".reference-viewer, .cockpit-shell") ?? canvas.parentElement;
     const obstacles: AnnotationRect[] = [];
     shell?.querySelectorAll<HTMLElement>(BLOCKING_UI).forEach((element) => {
       const box = element.getBoundingClientRect();
@@ -500,7 +500,7 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
     const width = Math.min(244, area.width);
     const anchors = new Map<string, { x: number; y: number; visible: boolean }>();
     cards.current.forEach((element) => { element.style.width = `${String(width)}px`; });
-    const measured = annotations.map((annotation) => {
+    const measure = (cardWidth: number): AnnotationMeasure[] => annotations.map((annotation) => {
       projected.set(...annotation.anchor).project(camera);
       cameraPoint.set(...annotation.anchor).applyMatrix4(camera.matrixWorldInverse);
       const visible = cameraPoint.z < 0 && projected.z >= -1 && projected.z <= 1 && Math.abs(projected.x) <= 1 && Math.abs(projected.y) <= 1;
@@ -509,12 +509,22 @@ function SceneAnnotations({ annotations }: { readonly annotations: readonly Scen
       const card = cards.current.get(annotation.id);
       const location = card?.querySelector<HTMLElement>(".scene-annotations__location");
       if (location !== null && location !== undefined) location.hidden = visible;
-      return { id: annotation.id, priority: annotation.priority, x: visible ? x : area.x + area.width / 2, y: visible ? y : area.y + area.height / 2, width, height: Math.max(44, card?.getBoundingClientRect().height ?? 44) };
+      return { id: annotation.id, priority: annotation.priority, x: visible ? x : area.x + area.width / 2, y: visible ? y : area.y + area.height / 2, width: cardWidth, height: Math.max(44, card?.getBoundingClientRect().height ?? 44) };
     });
-    const layout = placeSceneAnnotations(measured, area);
+    let layout = placeSceneAnnotations(measure(width), area);
     root.dataset["layout"] = layout.mode;
     if (layout.mode === "list") {
       Object.assign(viewport.style, { left: `${String(area.x)}px`, top: `${String(area.y)}px`, width: `${String(width)}px`, height: `${String(area.height)}px` });
+      // The native scrollbar consumes real inline space on Windows. Re-measure
+      // wrapped cards after the list has its actual inner width, not the shell width.
+      const innerWidth = viewport.clientWidth;
+      if (innerWidth > 0) {
+        cards.current.forEach((element) => { element.style.width = `${String(innerWidth)}px`; });
+        const headingHeight = viewport.querySelector(".scene-annotations__list-label")?.getBoundingClientRect().height ?? 0;
+        layout = placeSceneAnnotations(measure(innerWidth), {
+          ...area, width: innerWidth, height: Math.max(1, area.height - headingHeight),
+        });
+      }
       content.style.height = `${String(layout.contentHeight)}px`;
     } else {
       Object.assign(viewport.style, { left: "0px", top: "0px", width: `${String(size.width)}px`, height: `${String(size.height)}px` });
