@@ -26,7 +26,8 @@ const PROPOSAL_TOKEN = "t469-accessibility-proposal";
 const SUPPLIER_TOKEN = "t469-accessibility-supplier";
 const HASH = "b".repeat(64);
 
-test.describe.configure({ mode: "serial" });
+// Fresh fixtures per case; a failure must not skip other routes or viewports.
+test.describe.configure({ mode: "default" });
 
 type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
 
@@ -373,9 +374,10 @@ async function runRouteAudit(page: Page, spec: RouteSpec, viewport: Accessibilit
 
 const routeSpecs: readonly RouteSpec[] = [
   {
-    routeName: "public landing (fresh)",
+    routeName: "public rooms home",
     path: "/",
-    readyText: "Six rooms, one house",
+    readyText: "Grand Hall",
+    readyRole: "heading",
     mockRoutes: mockNoRoutes,
   },
   {
@@ -383,7 +385,8 @@ const routeSpecs: readonly RouteSpec[] = [
     path: "/landing",
     // Derived the same way as THRESHOLD_LINE in rite-copy.ts — the count
     // ages with the calendar instead of rotting in a fixture.
-    readyText: `There is a hall in Glasgow that has been lit for ${String(new Date().getFullYear() - 1791)} years.`,
+    readyText: `Trades Hall, Glasgow · ${String(new Date().getFullYear() - 1791)} years`,
+    readyRole: "heading",
     mockRoutes: mockNoRoutes,
   },
   {

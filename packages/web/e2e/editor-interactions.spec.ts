@@ -1,4 +1,21 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { API, CONFIG_ID, GRAND_HALL_SPACE, PLAN_CONFIG, VENUE, stubPlannerBootstrap } from "./support/plan-bootstrap.js";
+
+async function openExtraTools(page: Page): Promise<void> {
+  const more = page.getByRole("button", { name: "More planner tools", exact: true });
+  await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+}
+
+async function openFurniture(page: Page): Promise<void> {
+  await openExtraTools(page);
+  await page.getByTestId("planner-toolbar").getByRole("button", { name: "Add Furniture", exact: true }).click();
+}
+
+async function openSectionHeight(page: Page): Promise<void> {
+  await openExtraTools(page);
+  await page.getByTestId("reference-scene-settings").getByText("Model section height", { exact: true }).click();
+}
 
 // ---------------------------------------------------------------------------
 // E2E: Editor interactions — keyboard shortcuts, catalogue UX, section slider
@@ -14,29 +31,22 @@ import { test, expect } from "@playwright/test";
 // ---------------------------------------------------------------------------
 
 test.describe("Editor Interactions", () => {
-  test.describe.configure({ mode: "serial" });
+  // Fresh fixtures per case; a failure must not skip independent interactions.
+  test.describe.configure({ mode: "default" });
 
   test.beforeEach(async ({ page }) => {
-    // Navigate directly to /editor/:configId — SpacePicker requires a live
-    // API for venue data and has no canvas. Mock the config load so the 3D
-    // editor mounts without a running backend.
-    await page.route("http://localhost:3001/public/configurations/e2e-config-001", (route) => {
-      void route.fulfill({
-        json: {
-          data: {
-            id: "e2e-config-001",
-            spaceId: "e2e-space-001",
-            venueId: "e2e-venue-001",
-            userId: null,
-            name: "Test Layout",
-            isPublicPreview: true,
-            revision: 1,
-            objects: [],
-          },
-        },
-      });
+    await stubPlannerBootstrap(page);
+    await page.route(`${API}/public/configurations/${CONFIG_ID}`, (route) => {
+      void route.fulfill({ json: { data: { ...PLAN_CONFIG, spaceId: GRAND_HALL_SPACE.id } } });
     });
-    await page.goto("/plan/e2e-config-001");
+    await page.route(`${API}/venues/${VENUE.id}/spaces/${GRAND_HALL_SPACE.id}`, (route) => {
+      void route.fulfill({ json: { data: GRAND_HALL_SPACE } });
+    });
+    await page.route(`${API}/venues/${VENUE.id}`, (route) => {
+      void route.fulfill({ json: { data: { ...VENUE, spaces: [GRAND_HALL_SPACE] } } });
+    });
+    await page.goto(`/plan/${CONFIG_ID}`);
+    await expect(page.getByTestId("cockpit-shell")).toBeVisible();
     await page.waitForSelector("canvas", { timeout: 15_000 });
     // Ensure canvas has focus so keyboard events reach window listeners
     await page.locator("canvas").click();
@@ -84,24 +94,24 @@ test.describe("Editor Interactions", () => {
   // ---------------------------------------------------------------------------
 
   test("furniture panel has a search text input", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await openFurniture(page);
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
     await expect(panel.getByRole("textbox")).toBeVisible({ timeout: 3_000 });
   });
 
   test("catalogue search filters to items matching the query", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await openFurniture(page);
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
     await panel.getByRole("textbox").fill("round");
     await expect(panel.getByText("6ft Round Table")).toBeVisible({ timeout: 3_000 });
     // "Banquet Chair" does not contain "round" — should be hidden
-    await expect(panel.getByText("Banquet Chair")).not.toBeVisible();
+    await expect(panel.getByText("Banquet Chair", { exact: true })).not.toBeVisible();
   });
 
   test("catalogue search shows empty state for a no-match query", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await openFurniture(page);
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
     await panel.getByRole("textbox").fill("xyzxyzxyz");
@@ -109,18 +119,18 @@ test.describe("Editor Interactions", () => {
   });
 
   test("clearing search restores all catalogue items", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await openFurniture(page);
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
     const input = panel.getByRole("textbox");
     await input.fill("round");
-    await expect(panel.getByText("Banquet Chair")).not.toBeVisible();
+    await expect(panel.getByText("Banquet Chair", { exact: true })).not.toBeVisible();
     await input.fill("");
-    await expect(panel.getByText("Banquet Chair")).toBeVisible({ timeout: 3_000 });
+    await expect(panel.getByText("Banquet Chair", { exact: true })).toBeVisible({ timeout: 3_000 });
   });
 
   test("clicking a category header collapses its item list", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await openFurniture(page);
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
     // Tables category is expanded by default — collapse it
@@ -129,7 +139,7 @@ test.describe("Editor Interactions", () => {
   });
 
   test("clicking a collapsed category header expands it again", async ({ page }) => {
-    await page.getByRole("button", { name: "Add Furniture" }).click();
+    await openFurniture(page);
     const panel = page.getByTestId("furniture-panel");
     await panel.waitFor({ state: "visible" });
     // Collapse
@@ -145,15 +155,18 @@ test.describe("Editor Interactions", () => {
   // ---------------------------------------------------------------------------
 
   test("section slider is visible with correct accessible name", async ({ page }) => {
+    await openSectionHeight(page);
     await expect(
       page.getByRole("slider", { name: "Section plane height" }),
     ).toBeVisible({ timeout: 5_000 });
   });
 
   test("section slider can be repositioned without crashing", async ({ page }) => {
+    await openSectionHeight(page);
     const slider = page.getByRole("slider", { name: "Section plane height" });
     await slider.waitFor({ state: "visible" });
     await slider.fill("50");
+    await expect(slider).toHaveValue("50");
     await expect(page.locator("canvas")).toBeVisible();
   });
 
@@ -162,14 +175,16 @@ test.describe("Editor Interactions", () => {
   // ---------------------------------------------------------------------------
 
   test("Sign In button opens the auth modal", async ({ page }) => {
-    await page.getByRole("button", { name: "Sign In" }).click();
+    await openExtraTools(page);
+    await page.getByTestId("planner-toolbar").getByRole("button", { name: "Sign In", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Sign In to Save" });
     await expect(dialog).toBeVisible({ timeout: 3_000 });
     await expect(dialog.getByRole("heading", { name: "Sign In to Save" })).toBeVisible();
   });
 
   test("auth modal closes when Escape is pressed", async ({ page }) => {
-    await page.getByRole("button", { name: "Sign In" }).click();
+    await openExtraTools(page);
+    await page.getByTestId("planner-toolbar").getByRole("button", { name: "Sign In", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Sign In to Save" });
     await dialog.waitFor({ state: "visible" });
     // Click the modal heading to move focus from the Clerk SignIn iframe
@@ -180,7 +195,8 @@ test.describe("Editor Interactions", () => {
   });
 
   test("auth modal closes when the backdrop is clicked", async ({ page }) => {
-    await page.getByRole("button", { name: "Sign In" }).click();
+    await openExtraTools(page);
+    await page.getByTestId("planner-toolbar").getByRole("button", { name: "Sign In", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Sign In to Save" });
     await dialog.waitFor({ state: "visible" });
     // Click the top-left of the viewport — outside the centered modal card,

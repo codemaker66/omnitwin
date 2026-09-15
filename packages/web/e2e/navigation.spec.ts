@@ -155,6 +155,9 @@ test.describe("Navigation", () => {
     await page.route(`${API}/venues`, (route) => {
       void route.fulfill({ json: { data: [TRADES_VENUE, CITY_VENUE] } });
     });
+    await page.route(`${API}/venues/${CITY_VENUE_ID}`, (route) => {
+      void route.fulfill({ json: { data: { ...CITY_VENUE, spaces: [BALLROOM_SPACE] } } });
+    });
     await page.route(`${API}/venues/${CITY_VENUE_ID}/spaces`, (route) => {
       void route.fulfill({ json: { data: [BALLROOM_SPACE] } });
     });
@@ -185,8 +188,10 @@ test.describe("Navigation", () => {
 
     await page.goto("/v/city-rooms/plan?space=ballroom");
 
-    await page.waitForURL("**/plan/e2e-city-config");
+    await expect(page).toHaveURL((url) => url.pathname === "/plan/e2e-city-config"
+      && url.searchParams.get("space") === "ballroom");
     expect(createdSpaceId).toBe(BALLROOM_SPACE_ID);
+    await expect(page.getByRole("banner", { name: "Room and save status" })).toContainText("Ballroom");
   });
 
   test("venue-scoped planner shows not-found instead of falling back", async ({ page }) => {
