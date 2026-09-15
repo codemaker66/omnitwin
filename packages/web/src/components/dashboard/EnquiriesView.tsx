@@ -49,9 +49,19 @@ const cardStyle: React.CSSProperties = {
 interface EnquiriesViewProps {
   readonly initialSelectedId?: string | null;
   readonly onDetailClose?: () => void;
+  /** Whether this actor may turn an enquiry into an opportunity. The API
+   *  grants that to the venue's commercial team only, so offering the button
+   *  to anyone else was an invitation to a 403. Passed down from the dashboard
+   *  rather than re-derived here, so the client keeps ONE definition of who
+   *  may reach the commercial surface. */
+  readonly canCreateOpportunity?: boolean;
 }
 
-export function EnquiriesView({ initialSelectedId = null, onDetailClose }: EnquiriesViewProps = {}): React.ReactElement {
+export function EnquiriesView({
+  initialSelectedId = null,
+  onDetailClose,
+  canCreateOpportunity = true,
+}: EnquiriesViewProps = {}): React.ReactElement {
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId);
@@ -246,16 +256,18 @@ export function EnquiriesView({ initialSelectedId = null, onDetailClose }: Enqui
           </div>
 
           <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-            <button
-              type="button"
-              data-testid="create-opportunity-from-enquiry"
-              onClick={() => { void handleCreateOpportunity(selected); }}
-              disabled={creatingOpportunity}
-              aria-busy={creatingOpportunity}
-              style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#1a1a2e", color: "#fff", border: "none", borderRadius: 6, cursor: creatingOpportunity ? "default" : "pointer", opacity: creatingOpportunity ? 0.6 : 1 }}
-            >
-              {creatingOpportunity && <ActivityIndicator size={16} />} Create Opportunity
-            </button>
+            {canCreateOpportunity && (
+              <button
+                type="button"
+                data-testid="create-opportunity-from-enquiry"
+                onClick={() => { void handleCreateOpportunity(selected); }}
+                disabled={creatingOpportunity}
+                aria-busy={creatingOpportunity}
+                style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#1a1a2e", color: "#fff", border: "none", borderRadius: 6, cursor: creatingOpportunity ? "default" : "pointer", opacity: creatingOpportunity ? 0.6 : 1 }}
+              >
+                {creatingOpportunity && <ActivityIndicator size={16} />} Create Opportunity
+              </button>
+            )}
             {selected.state === "submitted" && (
               <button type="button" onClick={() => { setTransition({ id: selected.id, status: "under_review" }); }}
                 style={{ padding: "8px 16px", fontSize: 13, fontWeight: 600, background: "#f59e0b", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>

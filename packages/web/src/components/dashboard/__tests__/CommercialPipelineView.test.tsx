@@ -122,6 +122,10 @@ beforeEach(() => {
     opportunities: [opportunity()],
     todayTasks: [task()],
     stageCounts: { new: 1 },
+    // Deliberately NOT the sum of the rows above: the board shows one page,
+    // and the pipeline total has to come from the server, not from the page.
+    pipelineValueMinor: 4_000_000,
+    currency: "GBP",
   });
   mocks.getOpportunity.mockResolvedValue({
     opportunity: opportunity(),
@@ -157,7 +161,7 @@ describe("CommercialPipelineView", () => {
     let resolveOld: ((value: unknown) => void) | undefined;
     let rejectOld: ((reason: Error) => void) | undefined;
     const oldResponse = new Promise<unknown>((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
-    mocks.getPipeline.mockResolvedValue({ opportunities: [opportunity(), opportunity({ id: "opp2", title: "Winter dinner" })], todayTasks: [] });
+    mocks.getPipeline.mockResolvedValue({ opportunities: [opportunity(), opportunity({ id: "opp2", title: "Winter dinner" })], todayTasks: [], stageCounts: { new: 2 }, pipelineValueMinor: 4_000_000, currency: "GBP" });
     mocks.getOpportunity.mockImplementation((id: string) => id === "opp1" ? oldResponse : Promise.resolve({ opportunity: opportunity({ id: "opp2", title: "Winter dinner" }), activities: [], tasks: [], proposals: [] }));
     render(<CommercialPipelineView />);
     fireEvent.click(await screen.findByTestId("opportunity-opp1"));
@@ -177,7 +181,7 @@ describe("CommercialPipelineView", () => {
   it("removes the prior opportunity's editable detail while another selection loads", async () => {
     let resolveNext: ((value: unknown) => void) | undefined;
     const nextResponse = new Promise<unknown>((resolve) => { resolveNext = resolve; });
-    mocks.getPipeline.mockResolvedValue({ opportunities: [opportunity(), opportunity({ id: "opp2", title: "Winter dinner" })], todayTasks: [] });
+    mocks.getPipeline.mockResolvedValue({ opportunities: [opportunity(), opportunity({ id: "opp2", title: "Winter dinner" })], todayTasks: [], stageCounts: { new: 2 }, pipelineValueMinor: 4_000_000, currency: "GBP" });
     mocks.getOpportunity.mockResolvedValueOnce({ opportunity: opportunity(), activities: [], tasks: [], proposals: [] }).mockReturnValueOnce(nextResponse);
     render(<CommercialPipelineView />);
     fireEvent.click(await screen.findByTestId("opportunity-opp1"));
@@ -211,7 +215,7 @@ describe("CommercialPipelineView", () => {
     render(<CommercialPipelineView />);
 
     expect(await screen.findByText("Commercial pipeline")).toBeTruthy();
-    expect(screen.getByTestId("pipeline-value").textContent).toContain("£12,500.00");
+    expect(screen.getByTestId("pipeline-value").textContent).toContain("£40,000.00");
     expect(screen.getByText("Grand Hall gala")).toBeTruthy();
     expect(screen.getByText("Confirm event basics")).toBeTruthy();
     expect(screen.getByText("Follow up with Elaine")).toBeTruthy();
@@ -265,7 +269,7 @@ describe("CommercialPipelineView", () => {
   it("shows a retryable pipeline load failure", async () => {
     mocks.getPipeline
       .mockRejectedValueOnce(new Error("network"))
-      .mockResolvedValueOnce({ opportunities: [opportunity()], todayTasks: [], stageCounts: { new: 1 } });
+      .mockResolvedValueOnce({ opportunities: [opportunity()], todayTasks: [], stageCounts: { new: 1 }, pipelineValueMinor: 4_000_000, currency: "GBP" });
     render(<CommercialPipelineView />);
 
     expect(await screen.findByText(/Could not load the commercial pipeline/)).toBeTruthy();

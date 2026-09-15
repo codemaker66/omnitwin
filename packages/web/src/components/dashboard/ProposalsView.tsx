@@ -427,9 +427,13 @@ export function ProposalsView(): ReactElement {
       .finally(() => { setBusy(false); });
   };
 
-  const shareUrl = latestShareUrl ?? (selected?.shareCode !== null && selected?.shareCode !== undefined
-    ? `${window.location.origin}/proposal/${selected.shareCode}`
-    : null);
+  // Token links only. The legacy `/proposal/:shareCode` URL is being retired
+  // (the API serves it with Deprecation/Sunset headers and stops after the
+  // retirement date), so the dashboard must never hand a client a fresh one:
+  // a share code never expires and cannot be revoked per recipient, while a
+  // share token can. If no token has been minted in this session, the staff
+  // member mints one with Send.
+  const shareUrl = latestShareUrl;
   const canSend = selected !== null && SENDABLE_STATUSES.includes(selected.status) && selected.currentVersion >= 1;
   const canCompose = selected !== null && SENDABLE_STATUSES.includes(selected.status);
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 import {
   addFollowUpTask,
   addOpportunityActivity,
@@ -142,6 +142,8 @@ export function CommercialPipelineView(): ReactElement {
   const addToast = useToastStore((state) => state.addToast);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [tasks, setTasks] = useState<FollowUpTask[]>([]);
+  const [pipelineValue, setPipelineValue] = useState<number | null>(null);
+  const [pipelineCurrency, setPipelineCurrency] = useState("GBP");
   const [selected, setSelected] = useState<DetailState | null>(null);
   const [detailRequests, setDetailRequests] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -171,6 +173,8 @@ export function CommercialPipelineView(): ReactElement {
         if (!ownsRequest()) return;
         setOpportunities(summary.opportunities);
         setTasks(summary.todayTasks);
+        setPipelineValue(summary.pipelineValueMinor ?? null);
+        setPipelineCurrency(summary.currency ?? "GBP");
         setError(null);
       })
       .catch(() => { if (ownsRequest()) setError("Could not load the commercial pipeline. Refresh or try again later."); })
@@ -201,10 +205,11 @@ export function CommercialPipelineView(): ReactElement {
       .finally(() => { if (ownsRequest()) setDetailRequests(0); });
   }, [addToast, detailRequest]);
 
-  const pipelineValue = useMemo(
-    () => opportunities.reduce((sum, opportunity) => sum + opportunity.estimatedValueMinor, 0),
-    [opportunities],
-  );
+  // `pipelineValue` is SERVED, not summed here. `opportunities` is one page of
+  // the board, so adding it up produced a "pipeline value" that shrank as you
+  // paged and disagreed with Executive Analytics. Both surfaces now read the
+  // same server figure (services/commercial-pipeline.ts), which counts open
+  // stages only — a won or lost deal is not pipeline.
 
   const handleFromEnquiry = (): void => {
     if (enquiryId.trim().length === 0 || busy) return;
@@ -374,8 +379,9 @@ export function CommercialPipelineView(): ReactElement {
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 12, color: "#d7b56d", fontWeight: 700 }}>Pipeline value</div>
             <div data-testid="pipeline-value" style={{ fontSize: 22, fontWeight: 800, color: "#fff7e8" }}>
-              {formatMoney(pipelineValue, "GBP")}
+              {pipelineValue === null ? "—" : formatMoney(pipelineValue, pipelineCurrency)}
             </div>
+            <div style={{ fontSize: 11, color: "rgba(246,241,232,0.62)" }}>Open opportunities only</div>
           </div>
         </section>
 

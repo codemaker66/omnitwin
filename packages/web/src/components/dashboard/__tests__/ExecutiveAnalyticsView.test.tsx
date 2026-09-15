@@ -1,20 +1,51 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { VenueDashboardAnalytics } from "@omnitwin/types";
 
-const { getVenueDashboardAnalyticsMock } = vi.hoisted(() => ({
+const { getVenueDashboardAnalyticsMock, listVenuesMock, authState } = vi.hoisted(() => ({
   getVenueDashboardAnalyticsMock: vi.fn(),
+  listVenuesMock: vi.fn(),
+  authState: {
+    user: {
+      id: "00000000-0000-4000-8000-000000004010",
+      role: "admin",
+      platformRole: "none" as "none" | "operator" | "admin",
+      venueId: "00000000-0000-4000-8000-000000004003" as string | null,
+      email: "venue-admin@example.test",
+      name: "Venue admin",
+    },
+  },
 }));
 
 vi.mock("../../../api/revenue-analytics.js", () => ({
   getVenueDashboardAnalytics: getVenueDashboardAnalyticsMock,
 }));
 
+vi.mock("../../../api/spaces.js", () => ({
+  listVenues: listVenuesMock,
+}));
+
+type MockUser = typeof authState.user;
+
+vi.mock("../../../stores/auth-store.js", () => ({
+  useAuthStore: (selector: (state: { user: MockUser }) => unknown): unknown =>
+    selector({ user: authState.user }),
+}));
+
 import { ExecutiveAnalyticsView } from "../ExecutiveAnalyticsView.js";
+
+beforeEach(() => {
+  authState.user = { ...authState.user, platformRole: "none" };
+  listVenuesMock.mockResolvedValue([
+    { id: "00000000-0000-4000-8000-000000004003", name: "Trades Hall Glasgow" },
+    { id: "00000000-0000-4000-8000-000000004004", name: "Second venue" },
+  ]);
+});
 
 afterEach(() => {
   cleanup();
   getVenueDashboardAnalyticsMock.mockReset();
+  listVenuesMock.mockReset();
 });
 
 function dashboardData(): VenueDashboardAnalytics {
@@ -94,6 +125,69 @@ describe("ExecutiveAnalyticsView", () => {
     expect(bodyText).not.toMatch(/legally compliant/i);
     expect(bodyText).not.toMatch(/approved for occupancy/i);
     expect(bodyText).not.toMatch(/guaranteed accessible/i);
+  });
+
+  it("asks a platform admin which venue before reporting anyone's numbers", async () => {
+    authState.user = { ...authState.user, platformRole: "admin", venueId: null };
+    getVenueDashboardAnalyticsMock.mockResolvedValue(dashboardData());
+    render(<ExecutiveAnalyticsView />);
+
+    // Nothing is requested until a venue is named: the API requires one, and
+    // the old behaviour was to ask anyway and render the 400 as an error.
+    expect(await screen.findByText("Choose a venue")).toBeDefined();
+    expect(getVenueDashboardAnalyticsMock).not.toHaveBeenCalled();
+
+    const picker = await screen.findByTestId("analytics-venue-picker");
+    await waitFor(() => { expect(screen.getByText("Trades Hall Glasgow")).toBeDefined(); });
+    fireEvent.change(picker, { target: { value: "00000000-0000-4000-8000-000000004004" } });
+
+    await waitFor(() => {
+      expect(getVenueDashboardAnalyticsMock)
+        .toHaveBeenCalledWith("00000000-0000-4000-8000-000000004004");
+    });
+    expect(await screen.findByText("Executive analytics")).toBeDefined();
+  });
+
+  it("asks a venue user for nothing — their own venue is their scope", async () => {
+    getVenueDashboardAnalyticsMock.mockResolvedValue(dashboardData());
+    render(<ExecutiveAnalyticsView />);
+
+    await waitFor(() => { expect(screen.getByText("Executive analytics")).toBeDefined(); });
+    expect(getVenueDashboardAnalyticsMock).toHaveBeenCalledWith(undefined);
+    expect(screen.queryByTestId("analytics-venue-picker")).toBeNull();
+  });
+
+  it("shows no card at all where there is no data, rather than an empty one", async () => {
+    getVenueDashboardAnalyticsMock.mockResolvedValue({
+      ...dashboardData(),
+      revenueScenarios: [],
+      comfortFloorWarnings: [],
+      reviewBottlenecks: [],
+    });
+    render(<ExecutiveAnalyticsView />);
+
+    await waitFor(() => { expect(screen.getByText("Executive analytics")).toBeDefined(); });
+    // The three cards that no venue can ever fill today are simply absent.
+    expect(screen.queryByText("Revenue scenario")).toBeNull();
+    expect(screen.queryByText("Comfort floor warnings")).toBeNull();
+    expect(screen.queryByText("Review bottlenecks")).toBeNull();
+    // And none of the "nothing recorded" reassurance the data cannot support.
+    const bodyText = document.body.textContent ?? "";
+    expect(bodyText).not.toContain("No comfort floor warnings recorded.");
+    expect(bodyText).not.toContain("No review bottlenecks recorded.");
+    expect(bodyText).not.toContain("Create a revenue scenario");
+    // The figures that ARE real stay.
+    expect(screen.getByText("GBP 12,500.00")).toBeDefined();
+    expect(screen.getByText("Grand Hall")).toBeDefined();
+  });
+
+  it("labels the pipeline figure with the definition it actually uses", async () => {
+    getVenueDashboardAnalyticsMock.mockResolvedValue(dashboardData());
+    render(<ExecutiveAnalyticsView />);
+
+    await waitFor(() => { expect(screen.getByText("Executive analytics")).toBeDefined(); });
+    expect(screen.getByText("Pipeline value")).toBeDefined();
+    expect(screen.getByText("Open opportunities only")).toBeDefined();
   });
 
   it("surfaces analytics failures with a retry path", async () => {

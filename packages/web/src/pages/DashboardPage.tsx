@@ -62,6 +62,17 @@ export function dashboardViewFromSearchValue(value: string | null): DashboardVie
   return DASHBOARD_VIEW_VALUES.find((candidate) => candidate === value) ?? null;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/** The `config` deep-link parameter, validated. A view that pre-selects a
+ *  record from a URL must not accept arbitrary text: an id the list cannot
+ *  match is simply no selection, not an error state for the reviewer. */
+export function configIdFromSearchValue(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return UUID_PATTERN.test(trimmed) ? trimmed : null;
+}
+
 export function canOpenDashboardView(view: DashboardView, role: string | null, platformRole: PlatformRole = "none"): boolean {
   if (role === "supplier") return false;
   if (role === "executive") return view === "analytics";
@@ -116,6 +127,13 @@ export function DashboardPage(): React.ReactElement {
   const userPlatformRole = useAuthStore((state) => state.user?.platformRole ?? "none");
   const requestedView = useMemo(
     () => dashboardViewFromSearchValue(searchParams.get("view")),
+    [searchParams],
+  );
+  // The reviewer email's "Open Review" button deep-links here as
+  // /dashboard?view=reviews&config=:id. Anything that is not a uuid is
+  // ignored rather than handed to the reviews list as a selection.
+  const requestedConfigId = useMemo(
+    () => configIdFromSearchValue(searchParams.get("config")),
     [searchParams],
   );
   const [view, setView] = useState<DashboardView>(() => initialDashboardViewForRole(requestedView, userRole, userPlatformRole));
@@ -215,12 +233,16 @@ export function DashboardPage(): React.ReactElement {
           <EnquiriesView
             initialSelectedId={enquiryReturnContext?.enquiryId ?? null}
             onDetailClose={enquiryReturnContext !== null ? handleEnquiryDetailClose : undefined}
+            // The commercial API refuses anyone outside the venue's commercial
+            // team, and "pipeline" is the view that capability already gates,
+            // so the button and the tab agree by construction.
+            canCreateOpportunity={canOpenDashboardView("pipeline", userRole, userPlatformRole)}
           />
         );
       case "pipeline":
         return <CommercialPipelineView />;
       case "reviews":
-        return <ReviewsView />;
+        return <ReviewsView initialSelectedId={requestedConfigId} />;
       case "analytics":
         return <ExecutiveAnalyticsView />;
       case "proposals":

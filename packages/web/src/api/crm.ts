@@ -95,6 +95,17 @@ const PipelineSchema = z.object({
   opportunities: z.array(OpportunitySchema),
   todayTasks: z.array(FollowUpTaskSchema),
   stageCounts: z.record(z.number().int()),
+  // Served by the API, never summed from `opportunities` here: that array is
+  // one PAGE of the board, and a page total is not a pipeline total. It is
+  // the same figure Executive Analytics shows, so the two agree by
+  // construction (packages/api/src/services/commercial-pipeline.ts).
+  //
+  // Optional so a web build that is briefly ahead of the deployed API does
+  // not fail the whole board on a missing field. The view shows no figure at
+  // all in that case rather than a confident zero — hiding an unknown beats
+  // printing a wrong one.
+  pipelineValueMinor: z.number().int().optional(),
+  currency: z.string().optional(),
 });
 
 export type PipelineSummary = z.infer<typeof PipelineSchema>;
