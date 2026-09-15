@@ -28,6 +28,7 @@ const {
   mockCreateEventDayIssue,
   mockUpdateEventDayIssue,
   mockGetEventChangeFeed,
+  mockGetCalendar,
   mockAcknowledgeEventPlanChange,
   mockAckEventDayOp,
   mockEnqueueEventDayIssueCreate,
@@ -39,6 +40,7 @@ const {
   mockCreateEventDayIssue: vi.fn(),
   mockUpdateEventDayIssue: vi.fn(),
   mockGetEventChangeFeed: vi.fn(),
+  mockGetCalendar: vi.fn(),
   mockAcknowledgeEventPlanChange: vi.fn(),
   mockAckEventDayOp: vi.fn(),
   mockEnqueueEventDayIssueCreate: vi.fn(),
@@ -51,6 +53,11 @@ vi.mock("../api/event-day-ops.js", () => ({
   updateOpsTaskStatus: mockUpdateOpsTaskStatus,
   createEventDayIssue: mockCreateEventDayIssue,
   updateEventDayIssue: mockUpdateEventDayIssue,
+}));
+
+// The hero reads the Diary for the booked hour; the spec supplies it.
+vi.mock("../api/diary.js", () => ({
+  getCalendar: mockGetCalendar,
 }));
 
 vi.mock("../api/notifications.js", () => ({
@@ -291,6 +298,16 @@ beforeEach(() => {
   mockCreateEventDayIssue.mockReset();
   mockUpdateEventDayIssue.mockReset();
   mockGetEventChangeFeed.mockReset();
+  mockGetCalendar.mockReset();
+  mockGetCalendar.mockResolvedValue({
+    venueId: "00000000-0000-4000-8000-000000003004",
+    range: { from: NOW, to: NOW },
+    rooms: [], entries: [],
+    conflicts: { conflicts: [], checks: {
+      inkDoubleBook: { status: "checked" }, holdOverlap: { status: "checked" },
+      turnaround: { status: "checked", uncoveredPairCount: 0, detail: "All gaps covered." },
+    } },
+  });
   mockAcknowledgeEventPlanChange.mockReset();
   mockAckEventDayOp.mockReset();
   mockEnqueueEventDayIssueCreate.mockReset();
@@ -535,6 +552,40 @@ describe("EventDayOpsPage", () => {
     expect(await screen.findByText("Handoff notes")).toBeTruthy();
     expect(screen.getByText(/Notes to check — not booked arrivals\./u)).toBeTruthy();
     expect(screen.getByText("Supplier coordination check")).toBeTruthy();
+  });
+
+  it("shows the Diary's booked hour, not the event record's planned one", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    // The event record says 09:00Z; the booking that holds the room says 07:00Z.
+    mockGetCalendar.mockResolvedValue({
+      venueId: "00000000-0000-4000-8000-000000003004",
+      range: { from: NOW, to: NOW },
+      rooms: [],
+      entries: [{
+        entryType: "booking", id: "00000000-0000-4000-8000-000000003060",
+        spaceId: "00000000-0000-4000-8000-000000003061", kind: "ink", status: "active", state: "ink",
+        title: "Blake event day", eventType: "wedding",
+        startsAt: "2026-06-12T07:00:00.000Z", endsAt: "2026-06-12T20:00:00.000Z",
+        rank: null, jointFlag: false, decisionAt: null, ownerUserId: null,
+        nextAction: null, nextActionDueAt: null, eventId: EVENT_ID, seriesId: null,
+      }],
+      conflicts: { conflicts: [], checks: {
+        inkDoubleBook: { status: "checked" }, holdOverlap: { status: "checked" },
+        turnaround: { status: "checked", uncoveredPairCount: 0, detail: "All gaps covered." },
+      } },
+    });
+    renderPage();
+    await screen.findByText("Blake event day");
+    await waitFor(() => { expect(screen.getByText(/08:00/u)).toBeTruthy(); });
+    expect(screen.queryByText(/10:00/u)).toBeNull();
+  });
+
+  it("marks the time as planned when the Diary cannot be read", async () => {
+    mockGetEventDayOpsBoard.mockResolvedValue(boardFixture());
+    mockGetCalendar.mockRejectedValue(new Error("offline"));
+    renderPage();
+    await screen.findByText("Blake event day");
+    await waitFor(() => { expect(screen.getByText(/\(planned\)/u)).toBeTruthy(); });
   });
 
   it("keeps UI language claim-safe", async () => {

@@ -326,7 +326,10 @@
   font-size: 13px; font-weight: 600; text-decoration: none; width: fit-content;
 }
 .dayboard-open-sheet:hover { border-color: var(--hk-sage-deep, #6b8963); }
-.dayboard-slot-sheet-layout { font-weight: 400; opacity: .75; }
+/* The layout's name sits under the action, not beside it: at lane width the
+   inline form broke "Open setup sheet" across two lines mid-phrase. */
+.dayboard-open-sheet { flex-direction: column; align-items: flex-start; gap: 2px; line-height: 1.35; }
+.dayboard-slot-sheet-layout { font-weight: 400; opacity: .75; font-size: 12px; }
 .dayboard-slot-sheet-note { color: var(--hk-ink-faint, #726c61); font-size: 12.5px; line-height: 1.5; }
 .dayboard-sheet-choices { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
 /* Lane 9 owns what goes in here; the board only reserves the place. An

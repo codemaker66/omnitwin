@@ -151,7 +151,7 @@ function SlotSheetLink({ eventId, roomSlug, roomName }: {
     <div className="dayboard-slot-sheet">
       {state.kind === "one" && (
         <Link className="dayboard-open-sheet" to={state.href}>
-          {state.label}<span className="dayboard-slot-sheet-layout"> · {state.layoutName}</span>
+          {state.label}<span className="dayboard-slot-sheet-layout">{state.layoutName}</span>
         </Link>
       )}
       {state.kind === "many" && (

@@ -405,13 +405,16 @@
   gap: 6px;
 }
 
+/* Fields are paper on paper. The ground inverted with the rest of the page;
+   the field backgrounds have to come with it or a hallkeeper types white into
+   a black box on an ivory sheet. */
 .event-day-issue-form input,
 .event-day-issue-form textarea,
 .event-day-issue-form select {
-  background: #303a32;
-  border: 1px solid transparent;
+  background: var(--hk-ivory-raised);
+  border: 1px solid var(--hk-line);
   border-radius: 8px;
-  color: #e3e0d8;
+  color: var(--hk-ink);
   font: inherit;
   min-height: 44px;
   padding: 10px 12px;

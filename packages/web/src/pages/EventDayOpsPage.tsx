@@ -20,6 +20,7 @@ import "./EventDayOpsPage.css";
 import { DashboardLayout } from "../components/dashboard/DashboardLayout.js";
 import { HallkeeperEventLinks } from "../components/hallkeeper/HallkeeperEventLinks.js";
 import { ActivityIndicator, ActivityStatus } from "../components/shared/Activity.js";
+import { getCalendar } from "../api/diary.js";
 import { useAuthStore } from "../stores/auth-store.js";
 import { useVenueTimezone } from "./hallkeeper/lib/use-venue-timezone.js";
 
@@ -199,6 +200,11 @@ export function EventDayOpsPage(): ReactElement {
   const [ackBusyId, setAckBusyId] = useState<string | null>(null);
   const [issueBusyId, setIssueBusyId] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  // The hour this room is actually booked for. `events.starts_at` is planning
+  // metadata that drifts from the Diary — on the seeded wedding the event row
+  // says 13:00 while the booking says 09:00 — and a board that disagrees with
+  // the sheet printed from it is worse than a board with no time at all.
+  const [bookedStartsAt, setBookedStartsAt] = useState<string | null>(null);
   const currentUserId = useAuthStore((store) => store.user?.id ?? null);
   // One request at a time. Without this guard a slow API turns a 10s tick
   // into a queue of overlapping reads that each overwrite the last.
@@ -311,6 +317,34 @@ export function EventDayOpsPage(): ReactElement {
 
   const board = state.kind === "ready" ? state.board : null;
   const timeZone = useVenueTimezone(board?.event.venueId ?? null);
+
+  // One read of the Diary for the event's own day, so the hero shows the
+  // booked hour rather than the event record's planned one.
+  const eventVenueId = board?.event.venueId ?? null;
+  const eventPlannedStart = board?.event.startsAt ?? null;
+  const boardEventId = board?.event.id ?? null;
+  useEffect(() => {
+    if (eventVenueId === null || eventPlannedStart === null || boardEventId === null) return;
+    const anchor = Date.parse(eventPlannedStart);
+    if (!Number.isFinite(anchor)) return;
+    let current = true;
+    const from = new Date(anchor - 36 * 3_600_000).toISOString();
+    const to = new Date(anchor + 36 * 3_600_000).toISOString();
+    void getCalendar(eventVenueId, from, to)
+      .then((calendar) => {
+        if (!current) return;
+        const booked = calendar.entries
+          .filter((entry) => entry.entryType === "booking" && entry.eventId === boardEventId && entry.status === "active")
+          .map((entry) => entry.startsAt)
+          .sort()[0] ?? null;
+        setBookedStartsAt(booked);
+      })
+      .catch(() => {
+        // No Diary read: the hero falls back to the event record and says so.
+        if (current) setBookedStartsAt(null);
+      });
+    return () => { current = false; };
+  }, [boardEventId, eventPlannedStart, eventVenueId]);
   const tasks = board?.handoffPack?.opsTasks ?? [];
   const setupTasks = useMemo(() => tasks.filter((task) => task.kind === "setup"), [tasks]);
   const roomFlipTasks = useMemo(() => tasks.filter((task) => task.kind === "room_flip"), [tasks]);
@@ -470,7 +504,12 @@ export function EventDayOpsPage(): ReactElement {
         <div>
           <p className="event-day-kicker">Today&apos;s event</p>
           <h1>{readyBoard.event.name}</h1>
-          <p>{formatEventDate(readyBoard.event.startsAt, timeZone)} · {formatTime(readyBoard.event.startsAt, timeZone)} · {timeZone} · {readyBoard.event.guestCount} guests</p>
+          <p>
+            {formatEventDate(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}
+            {" · "}{formatTime(bookedStartsAt ?? readyBoard.event.startsAt, timeZone)}
+            {bookedStartsAt === null ? " (planned)" : ""}
+            {" · "}{timeZone}{" · "}{readyBoard.event.guestCount} guests
+          </p>
         </div>
         <div className="event-day-sync">
           <span data-pending={pendingCount > 0}>{syncLabel}</span>
