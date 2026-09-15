@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
 import { deflateSync } from "node:zlib";
 import { TwinManifestSchema, type TwinManifest } from "@omnitwin/types";
+import type { WebGLRenderer } from "three";
 import { TWIN_FIXTURE_MANIFEST_EQUIRECT } from "../src/twin/__fixtures__/twin-fixture.js";
 import { ROOM_DISPLAY_NAMES, VERIFIED_ROOM_NODES } from "../src/twin/shell/twin-rooms.js";
 import { twinNodeLabel } from "../src/twin/twin-copy.js";
@@ -62,7 +63,32 @@ declare global {
   interface Window {
     /** Long-task durations (ms), collected from first paint by an init script. */
     __twinLongTasks?: number[];
+    __twinLongTaskObserverReady?: boolean;
+    __twinRenderProbe?: {
+      arm: () => void;
+      finish: () => RenderSample;
+    };
   }
+}
+
+interface RenderFrame {
+  readonly atMs: number;
+  readonly frameAdvance: number;
+  readonly drawCalls: number;
+  readonly cameraWorldMatrix: readonly number[];
+}
+
+interface RenderSample {
+  readonly startedAtMs: number;
+  readonly endedAtMs: number;
+  readonly rafTimesMs: readonly number[];
+  readonly renders: readonly RenderFrame[];
+  readonly trustedPointerMoveTimesMs: readonly number[];
+  readonly renderer: string;
+  readonly pixelRatio: number;
+  readonly drawingBuffer: readonly [number, number];
+  readonly contextLost: boolean;
+  readonly canvasReplaced: boolean;
 }
 
 const MANIFEST_ROUTE = "**/twin/trades-hall/manifest.json";
@@ -271,7 +297,10 @@ const HOP_PANO_REQUEST_BUDGET = envNumber("TWIN_HOP_PANO_REQUESTS", 18);
 const HOP_LONG_TASK_BUDGET_MS = envNumber("TWIN_HOP_LONG_TASK_MS", 150);
 
 /**
- * 95th-percentile frame interval while dragging.
+ * 95th-percentile interval while dragging. Retained for both RAF cadence and
+ * returned renderer submissions; the latter is not GPU completion. Historical
+ * measurements below used the old 24-event burst/RAF-only harness and are not
+ * a baseline for the sustained-input measurement introduced here.
  * MEASURED: 16.7–16.8 ms across three runs of both drag tests, max 16.8, zero
  * dropped frames — the loop is sitting exactly on 60 Hz vsync.
  * BUDGET 20 ms — 19% headroom over vsync, which still fails the moment the
@@ -367,33 +396,139 @@ function longestRun(values: readonly number[], thresholdMs: number): number {
   return longest;
 }
 
-async function sampleFrames(page: Page, durationMs: number): Promise<readonly number[]> {
-  return page.evaluate(
-    (sampleDuration) =>
-      new Promise<number[]>((resolve) => {
-        const frames: number[] = [];
-        let last = performance.now();
-        const end = last + sampleDuration;
-        const tick = (now: number): void => {
-          frames.push(now - last);
-          last = now;
-          if (now >= end) {
-            // The first interval spans the gap since the previous paint, not a
-            // frame this measurement caused; it is dropped.
-            resolve(frames.slice(1));
-            return;
-          }
-          requestAnimationFrame(tick);
+/**
+ * Three 0.180's existing devtools event exposes each constructed renderer.
+ * Observe real render submissions without changing R3F's demand loop, camera,
+ * effects or pixels. A returned render call is NOT GPU completion/presentation.
+ * RAF cadence is recorded independently and both clocks retain their budgets.
+ */
+async function installRenderProbe(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const existing: unknown = Reflect.get(window, "__THREE_DEVTOOLS__");
+    if (existing !== undefined && !(existing instanceof EventTarget)) {
+      throw new Error("Cannot observe Three renderer without replacing an existing devtools owner");
+    }
+    const devtools = existing instanceof EventTarget ? existing : new EventTarget();
+    if (existing === undefined) Object.defineProperty(window, "__THREE_DEVTOOLS__", { value: devtools });
+    const renderers = new Set<WebGLRenderer>();
+    type Recording = {
+      canvas: HTMLCanvasElement;
+      renderer: WebGLRenderer;
+      startedAtMs: number | null;
+      endedAtMs: number | null;
+      rafTimesMs: number[];
+      renders: RenderFrame[];
+      trustedPointerMoveTimesMs: number[];
+      rafId: number;
+      rendererName: string;
+      pixelRatio: number;
+      drawingBuffer: [number, number];
+    };
+    let recording: Recording | null = null;
+
+    // The runtime marker is supplied by Three's renderer constructor. Its
+    // @types interface omits that marker, so narrow through a checked predicate.
+    const isRenderer = (value: unknown): value is WebGLRenderer => value !== null
+      && typeof value === "object" && "isWebGLRenderer" in value && value.isWebGLRenderer === true;
+    devtools.addEventListener("observe", (event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const candidate: unknown = event.detail;
+      if (!isRenderer(candidate)) return;
+      const renderer = candidate;
+      if (renderers.has(renderer)) return;
+      renderers.add(renderer);
+      const originalRender = renderer.render.bind(renderer);
+      renderer.render = function (this: WebGLRenderer, scene, camera): void {
+        const before = this.info.render.frame;
+        originalRender(scene, camera);
+        const active = recording;
+        if (active === null || active.renderer !== this || active.startedAtMs === null
+          || active.endedAtMs !== null) return;
+        active.renders.push({
+          atMs: performance.now(),
+          frameAdvance: this.info.render.frame - before,
+          drawCalls: this.info.render.calls,
+          cameraWorldMatrix: camera.matrixWorld.elements.slice(),
+        });
+      };
+    });
+
+    const tick = (now: number): void => {
+      const active = recording;
+      if (active === null || active.startedAtMs === null || active.endedAtMs !== null) return;
+      active.rafTimesMs.push(now);
+      active.rafId = requestAnimationFrame(tick);
+    };
+    window.addEventListener("pointerdown", (event) => {
+      const active = recording;
+      if (active === null || active.startedAtMs !== null || !event.isTrusted
+        || event.button !== 0 || event.target !== active.canvas) return;
+      active.startedAtMs = performance.now();
+      active.rafId = requestAnimationFrame(tick);
+    }, true);
+    window.addEventListener("pointermove", (event) => {
+      const active = recording;
+      if (active === null || active.startedAtMs === null || active.endedAtMs !== null
+        || !event.isTrusted || (event.buttons & 1) === 0 || event.target !== active.canvas) return;
+      active.trustedPointerMoveTimesMs.push(performance.now());
+    }, true);
+    window.addEventListener("pointerup", (event) => {
+      const active = recording;
+      if (active === null || active.startedAtMs === null || active.endedAtMs !== null
+        || !event.isTrusted || event.button !== 0) return;
+      active.endedAtMs = performance.now();
+      cancelAnimationFrame(active.rafId);
+    }, true);
+
+    window.__twinRenderProbe = {
+      arm: () => {
+        if (recording !== null) throw new Error("Render probe is already armed");
+        const canvas = document.querySelector<HTMLCanvasElement>(".vv-twin-viewer canvas");
+        const matches = [...renderers].filter((renderer) => renderer.domElement === canvas);
+        const renderer = matches[0];
+        if (canvas === null || matches.length !== 1 || renderer === undefined) {
+          throw new Error("Exactly one observed Twin WebGLRenderer is required");
+        }
+        if (!renderer.info.autoReset) {
+          throw new Error("Render probe requires per-render draw counters, not cumulative multipass counters");
+        }
+        const gl = renderer.getContext();
+        const debug = gl.getExtension("WEBGL_debug_renderer_info");
+        recording = {
+          canvas, renderer, startedAtMs: null, endedAtMs: null,
+          rafTimesMs: [], renders: [], trustedPointerMoveTimesMs: [], rafId: 0,
+          rendererName: String(gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER)),
+          pixelRatio: renderer.getPixelRatio(),
+          drawingBuffer: [gl.drawingBufferWidth, gl.drawingBufferHeight],
         };
-        requestAnimationFrame(tick);
-      }),
-    durationMs,
-  );
+      },
+      finish: () => {
+        const active = recording;
+        if (active === null || active.startedAtMs === null || active.endedAtMs === null) {
+          throw new Error("Native canvas pointerdown/pointerup did not delimit the render sample");
+        }
+        recording = null;
+        cancelAnimationFrame(active.rafId);
+        return {
+          startedAtMs: active.startedAtMs, endedAtMs: active.endedAtMs,
+          rafTimesMs: active.rafTimesMs, renders: active.renders,
+          trustedPointerMoveTimesMs: active.trustedPointerMoveTimesMs,
+          renderer: active.rendererName, pixelRatio: active.pixelRatio,
+          drawingBuffer: active.drawingBuffer,
+          contextLost: active.renderer.getContext().isContextLost(),
+          canvasReplaced: document.querySelector(".vv-twin-viewer canvas") !== active.canvas,
+        };
+      },
+    };
+  });
 }
 
 async function takeLongTasks(page: Page): Promise<readonly number[]> {
   return page.evaluate(() => {
-    const tasks = window.__twinLongTasks ?? [];
+    if (window.__twinLongTaskObserverReady !== true || window.__twinLongTasks === undefined) {
+      throw new Error("Long Tasks API observer is absent; hop blocking cannot be measured");
+    }
+    const tasks = window.__twinLongTasks;
     const copy = [...tasks];
     tasks.length = 0;
     return copy;
@@ -401,6 +536,7 @@ async function takeLongTasks(page: Page): Promise<readonly number[]> {
 }
 
 test.beforeEach(async ({ page }) => {
+  await installRenderProbe(page);
   await page.route(MANIFEST_ROUTE, (route) =>
     route.fulfill({
       status: 200,
@@ -430,9 +566,9 @@ test.beforeEach(async ({ page }) => {
       new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) tasks.push(entry.duration);
       }).observe({ type: "longtask", buffered: true });
+      window.__twinLongTaskObserverReady = PerformanceObserver.supportedEntryTypes.includes("longtask");
     } catch {
-      // No long-task observer here means no measurement; the assertion reads
-      // an empty list rather than passing on absent evidence.
+      window.__twinLongTaskObserverReady = false;
     }
   });
 });
@@ -530,33 +666,128 @@ test("a hop between rooms neither floods the network nor blocks the main thread"
  * which is the point; a single number labelled "orbit" would have implied
  * geometry cost that this fixture does not carry.
  */
-async function measureDragFrames(page: Page): Promise<{
+interface DragMeasurement {
   readonly frameCount: number;
   readonly p95Ms: number;
   readonly maxMs: number;
   readonly droppedFrames: number;
   readonly longestSustainedStall: number;
-}> {
-  const view = page.viewportSize() ?? { width: 1440, height: 900 };
-  const centreX = view.width / 2;
-  const centreY = view.height / 2;
+  readonly rafFrameCount: number;
+  readonly rafP95Ms: number;
+  readonly rafLongestSustainedStall: number;
+  readonly activeDurationMs: number;
+  readonly submittedRenderCount: number;
+  readonly cameraChangeCount: number;
+  readonly inputMovesPerQuarter: readonly number[];
+  readonly drawsPerQuarter: readonly number[];
+  readonly cameraChangesPerQuarter: readonly number[];
+  readonly renderIntervalsMs: readonly number[];
+  readonly rafIntervalsMs: readonly number[];
+  readonly sample: RenderSample;
+}
+
+function intervals(times: readonly number[]): number[] {
+  // The first timestamp starts a clock; it is not itself a frame interval.
+  return times.slice(1).map((time, index) => time - (times[index] ?? time));
+}
+
+function quarters(times: readonly number[], start: number, duration: number): number[] {
+  const counts = [0, 0, 0, 0];
+  if (duration <= 0) return counts;
+  for (const time of times) {
+    if (time < start || time > start + duration) continue;
+    const index = Math.min(3, Math.floor(((time - start) / duration) * 4));
+    counts[index] = (counts[index] ?? 0) + 1;
+  }
+  return counts;
+}
+
+async function measureDragFrames(page: Page): Promise<DragMeasurement> {
+  const canvas = page.locator(".vv-twin-viewer canvas");
+  const box = await canvas.boundingBox();
+  if (box === null) throw new Error("The Twin canvas is not visible");
+  const centreX = box.x + box.width / 2;
+  const centreY = box.y + box.height / 2;
 
   await page.mouse.move(centreX, centreY);
-  await page.mouse.down();
-  const framesPromise = sampleFrames(page, ORBIT_SAMPLE_MS);
-  for (let step = 1; step <= 24; step += 1) {
-    await page.mouse.move(centreX + step * 6, centreY + Math.sin(step / 3) * 20);
+  // Await arming before the native pointerdown. The browser's trusted events
+  // delimit both clocks, so a slow command cannot outrun or precede the sample.
+  await page.evaluate(() => {
+    if (window.__twinRenderProbe === undefined) throw new Error("Three render probe is absent");
+    window.__twinRenderProbe.arm();
+  });
+  try {
+    await page.mouse.down();
+    const deadline = performance.now() + ORBIT_SAMPLE_MS;
+    let step = 0;
+    do {
+      step += 1;
+      // Repeat the original 144 px, +/-20 px drag path, reversing at its end.
+      // Keep issuing native input for the FULL window, not a 24-event burst
+      // followed by idle RAF callbacks. No synthetic events or forced renders.
+      const cycle = step % 48;
+      const offset = cycle <= 24 ? cycle : 48 - cycle;
+      await page.mouse.move(centreX + offset * 6, centreY + Math.sin(offset / 3) * 20);
+    } while (performance.now() < deadline);
+  } finally {
+    await page.mouse.up();
   }
-  const frames = await framesPromise;
-  await page.mouse.up();
-
+  const sample = await page.evaluate(() => {
+    if (window.__twinRenderProbe === undefined) throw new Error("Three render probe disappeared");
+    return window.__twinRenderProbe.finish();
+  });
+  const rendered = sample.renders.filter((frame) => frame.frameAdvance > 0 && frame.drawCalls > 0);
+  const renderTimes = rendered.map((frame) => frame.atMs);
+  const cameraChangeTimes = rendered.flatMap((frame, index) => {
+    const previous = rendered[index - 1];
+    return previous !== undefined && frame.cameraWorldMatrix.some(
+      (value, component) => Math.abs(value - (previous.cameraWorldMatrix[component] ?? value)) > 1e-7,
+    ) ? [frame.atMs] : [];
+  });
+  const frames = intervals(renderTimes);
+  const rafFrames = intervals(sample.rafTimesMs);
+  const duration = sample.endedAtMs - sample.startedAtMs;
   return {
     frameCount: frames.length,
     p95Ms: percentile(frames, 95),
     maxMs: frames.length === 0 ? 0 : Math.max(...frames),
     droppedFrames: frames.filter((frame) => frame > DROPPED_FRAME_MS).length,
     longestSustainedStall: longestRun(frames, DROPPED_FRAME_MS),
+    rafFrameCount: rafFrames.length,
+    rafP95Ms: percentile(rafFrames, 95),
+    rafLongestSustainedStall: longestRun(rafFrames, DROPPED_FRAME_MS),
+    activeDurationMs: duration,
+    submittedRenderCount: rendered.length,
+    cameraChangeCount: cameraChangeTimes.length,
+    inputMovesPerQuarter: quarters(sample.trustedPointerMoveTimesMs, sample.startedAtMs, duration),
+    drawsPerQuarter: quarters(renderTimes, sample.startedAtMs, duration),
+    cameraChangesPerQuarter: quarters(cameraChangeTimes, sample.startedAtMs, duration),
+    renderIntervalsMs: frames, rafIntervalsMs: rafFrames, sample,
   };
+}
+
+function assertActiveRenderSample(measured: DragMeasurement): void {
+  expect(measured.sample.contextLost, "the renderer must remain live").toBe(false);
+  expect(measured.sample.canvasReplaced, "one canvas must own the entire sample").toBe(false);
+  expect(measured.activeDurationMs, "native dragging must span the complete sample window")
+    .toBeGreaterThanOrEqual(ORBIT_SAMPLE_MS);
+  expect(measured.sample.renders.every((frame) => frame.frameAdvance === 1 && frame.drawCalls > 0),
+    "each observed renderer submission must advance one frame and issue actual draw calls").toBe(true);
+  expect(measured.cameraChangeCount, "actual rendered camera transforms must change, not just the input target")
+    .toBeGreaterThan(20);
+  for (const [name, counts] of [
+    ["trusted native pointer input", measured.inputMovesPerQuarter],
+    ["actual draw submissions", measured.drawsPerQuarter],
+    ["rendered camera changes", measured.cameraChangesPerQuarter],
+  ] as const) {
+    expect(counts.every((count) => count > 0), `${name} must cover all four quarters of the sample`).toBe(true);
+  }
+  // Preserve the original RAF gate as well as the actual-submission gate below.
+  // Neither clock measures GPU completion or promises physical-device 60 fps.
+  expect(measured.rafFrameCount, "RAF instrumentation must also remain active").toBeGreaterThan(20);
+  expect(measured.rafP95Ms, "RAF p95 during sustained native input").toBeLessThanOrEqual(ORBIT_P95_FRAME_BUDGET_MS);
+  expect(measured.rafLongestSustainedStall, "RAF sustained-stall limit remains unchanged")
+    .toBeLessThanOrEqual(ORBIT_MAX_SUSTAINED_STALL);
 }
 
 test("looking around the pano holds its frame pacing", async ({ page }, testInfo) => {
@@ -569,12 +800,13 @@ test("looking around the pano holds its frame pacing", async ({ page }, testInfo
     contentType: "application/json",
   });
 
+  assertActiveRenderSample(measured);
   expect(measured.frameCount, "the drag must actually produce frames to measure").toBeGreaterThan(
     20,
   );
   expect(
     measured.p95Ms,
-    "95th-percentile frame interval while looking around the full-size pano",
+    "p95 interval between real draw submissions while looking around the full-size pano",
   ).toBeLessThanOrEqual(ORBIT_P95_FRAME_BUDGET_MS);
   expect(
     measured.longestSustainedStall,
@@ -592,10 +824,11 @@ test("orbiting the dollhouse holds its frame pacing", async ({ page }, testInfo)
     contentType: "application/json",
   });
 
+  assertActiveRenderSample(measured);
   expect(measured.frameCount, "the orbit must actually produce frames to measure").toBeGreaterThan(
     20,
   );
-  expect(measured.p95Ms, "95th-percentile frame interval while orbiting").toBeLessThanOrEqual(
+  expect(measured.p95Ms, "p95 interval between real draw submissions while orbiting").toBeLessThanOrEqual(
     ORBIT_P95_FRAME_BUDGET_MS,
   );
   expect(
