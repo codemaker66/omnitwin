@@ -32,17 +32,34 @@ describe("venue inventory HTTP authority and validation", () => {
     }
   });
 
-  it.each(["staff", "hallkeeper", "planner", "client"])("denies %s on every surface", async (role) => {
-    expect((await server.inject({ method: "GET", url: base, headers: headers(role) })).statusCode).toBe(403);
+  // Reading the counts and changing them are different authorities: staff,
+  // hallkeepers and planners read (venue-inventory-read-access.test.ts pins
+  // that), and only the venue's administrator adjusts.
+  it.each(["staff", "hallkeeper", "planner", "client"])("denies %s the adjustment surface", async (role) => {
     expect((await server.inject({ method: "POST", url: `${base}/${assetId}/adjustments`, headers: headers(role), payload: input })).statusCode).toBe(403);
-    expect((await server.inject({ method: "GET", url: `${base}/${assetId}/history`, headers: headers(role) })).statusCode).toBe(403);
   });
 
-  it("denies cross-venue admins and platform-only authority before querying data", async () => {
-    for (const auth of [headers("admin", assetId), headers("admin", null, "admin"), headers("client", venueId, "admin")]) {
+  it("denies a customer role every surface, read included", async () => {
+    expect((await server.inject({ method: "GET", url: base, headers: headers("client") })).statusCode).toBe(403);
+    expect((await server.inject({ method: "GET", url: `${base}/${assetId}/history`, headers: headers("client") })).statusCode).toBe(403);
+  });
+
+  it("denies cross-venue and unscoped authority before querying data", async () => {
+    for (const auth of [headers("admin", assetId), headers("admin", null, "admin"),
+      headers("hallkeeper", assetId), headers("staff", null)]) {
       expect((await server.inject({ method: "GET", url: base, headers: auth })).statusCode).toBe(403);
+      expect((await server.inject({ method: "GET", url: `${base}/${assetId}/history`, headers: auth })).statusCode).toBe(403);
       expect((await server.inject({ method: "POST", url: `${base}/${assetId}/adjustments`, headers: auth, payload: input })).statusCode).toBe(403);
     }
+  });
+
+  // A Venviewer platform administrator assigned to this venue passes every
+  // venue gate (utils/query's isPlatformAdmin precedent), so they now read the
+  // counts. Adjusting them is still the venue administrator's alone, which is
+  // what this asserts — the read case would need a database to reach.
+  it("lets platform authority read but never adjust another party's stock", async () => {
+    const auth = headers("client", venueId, "admin");
+    expect((await server.inject({ method: "POST", url: `${base}/${assetId}/adjustments`, headers: auth, payload: input })).statusCode).toBe(403);
   });
 
   it.each([{ ownedQuantity: -1 }, { ownedQuantity: 1.5 }, { ownedQuantity: Number.MAX_SAFE_INTEGER + 1 },
