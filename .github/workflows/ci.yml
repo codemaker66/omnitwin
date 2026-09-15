@@ -366,7 +366,10 @@ jobs:
           pnpm --filter @omnitwin/web exec playwright test --list --shard=${{ matrix.shard }}/4 --reporter=json > packages/web/playwright-report/inventory.json
 
       - name: Run E2E tests
-        run: pnpm --filter @omnitwin/web e2e --shard=${{ matrix.shard }}/4
+        # Native ANGLE/OpenGL capture tests need an X display. Playwright's
+        # installed Ubuntu dependencies already include Xvfb; Chromium remains
+        # headless, with the same scene detail, assertions and timing budgets.
+        run: xvfb-run --auto-servernum pnpm --filter @omnitwin/web e2e --shard=${{ matrix.shard }}/4
 
       - name: Upload Playwright results and evidence
         if: always()
