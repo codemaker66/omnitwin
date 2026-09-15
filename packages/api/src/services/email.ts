@@ -74,6 +74,40 @@ export interface SendOptions {
 
 const RETRY_DELAYS_MS: readonly number[] = [250, 500, 1000, 2000];
 
+// ---------------------------------------------------------------------------
+// Sender identity — EMAIL_FROM / EMAIL_REPLY_TO
+//
+// EMAIL_FROM is set per deployment (a Railway variable) to the VENUE's name
+// and sending address, e.g. `Trades Hall Glasgow <events@example.test>`, so a
+// client acknowledgement arrives from the venue rather than from the platform.
+// EMAIL_REPLY_TO is the monitored inbox a reply must land in; when it is unset,
+// replies fall back to the From address.
+//
+// The fallback below is the platform identity and is deliberately reported in
+// logs: if a production send is going out as VenViewer, the variable is not
+// set, and that is a configuration fault to fix — not a silent default.
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_EMAIL_FROM = "VenViewer <notifications@venviewer.com>";
+
+/** The From header this process will actually send with. */
+export function resolveEmailFrom(): string {
+  const configured = (process.env["EMAIL_FROM"] ?? "").trim();
+  return configured === "" ? DEFAULT_EMAIL_FROM : configured;
+}
+
+/** The monitored Reply-To, or null to let replies go to the From address. */
+export function resolveEmailReplyTo(): string | null {
+  const configured = (process.env["EMAIL_REPLY_TO"] ?? "").trim();
+  return configured === "" ? null : configured;
+}
+
+/** True when EMAIL_FROM is still the platform fallback — i.e. nobody has set
+ *  the venue's sending identity for this deployment. */
+export function isDefaultEmailFrom(): boolean {
+  return resolveEmailFrom() === DEFAULT_EMAIL_FROM;
+}
+
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
@@ -198,7 +232,17 @@ export async function sendEmail(
   // status so a reviewer can distinguish "no provider" from "provider
   // succeeded".
   const client = getResendClient();
-  const emailFrom = process.env["EMAIL_FROM"] ?? "VenViewer <notifications@venviewer.com>";
+  const emailFrom = resolveEmailFrom();
+  const replyTo = resolveEmailReplyTo();
+  if (client !== null && isDefaultEmailFrom()) {
+    // Not fatal, but a client acknowledgement signed by the venue and sent
+    // from the platform's address is a configuration fault worth seeing.
+    logger.warn({
+      event: "email.default_sender",
+      idempotencyKey,
+      from: emailFrom,
+    }, "email.default_sender");
+  }
   if (client === null) {
     logger.warn({
       event: "email.dev_mode_skip",
@@ -221,6 +265,9 @@ export async function sendEmail(
         to: payload.to,
         subject: payload.subject,
         html: payload.html,
+        // Omitted entirely when unset so Resend keeps its own default
+        // (replies go to From) rather than receiving an empty header.
+        ...(replyTo === null ? {} : { replyTo }),
       });
 
       // Resend's SDK returns `{ data, error }` — inspect error first.

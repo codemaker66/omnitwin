@@ -303,6 +303,148 @@ export async function newEnquiryNotification(
 }
 
 // ---------------------------------------------------------------------------
+// enquiryAcknowledgement — sent to the ORGANISER, the moment they enquire
+//
+// Until this template existed, a guest who sent an enquiry through the public
+// site got a 201 and silence: the only mail raised went to the venue's
+// hallkeepers. This is the venue's own reply, in the venue's voice — the
+// wordmark, the sign-off and the From address are the venue's, not the
+// platform's (EMAIL_FROM carries the venue's name; EMAIL_REPLY_TO carries the
+// monitored inbox the organiser's reply should land in).
+//
+// Deliberately no unsubscribe link: this is a one-off transactional reply to
+// a message the organiser has just sent, not marketing they can be enrolled in.
+// ---------------------------------------------------------------------------
+
+/** An en-GB long date: "Friday 2 October 2026". The input is the stored
+ *  calendar date (YYYY-MM-DD) with no time zone, so it is read and formatted
+ *  in UTC — a British organiser must never be shown the day before the date
+ *  they typed. An unparseable value passes through verbatim rather than
+ *  rendering as "Invalid Date". */
+export function formatEnGbDate(isoDate: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(isoDate)) return isoDate;
+  const parsed = new Date(`${isoDate}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return isoDate;
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+/** The venue's own letterhead. Same tested primitives as `Layout`, but the
+ *  venue's name leads and the footer is the venue's sign-off — a client
+ *  reading this should see their venue writing to them. */
+function VenueLayout({
+  venueName,
+  label,
+  preview,
+  children,
+}: {
+  readonly venueName: string;
+  readonly label: string;
+  readonly preview: string;
+  readonly children: ReactNode;
+}): ReactElement {
+  return (
+    <Html lang="en-GB">
+      <Head />
+      <Preview>{preview}</Preview>
+      <Body style={bodyStyle}>
+        <Container style={cardStyle}>
+          <Section style={headerBarStyle}>
+            <Text style={brandWordmarkStyle}>{venueName}</Text>
+            <Text style={brandCaptionStyle}>{label}</Text>
+          </Section>
+          <Section style={mainSectionStyle}>{children}</Section>
+          <Section style={footerStyle}>
+            Sent by the events team at {venueName}.
+          </Section>
+        </Container>
+      </Body>
+    </Html>
+  );
+}
+
+export interface EnquiryAcknowledgementData {
+  readonly venueName: string;
+  readonly spaceName: string;
+  /** The organiser's own name, as they gave it. */
+  readonly organiserName: string;
+  readonly eventType: string | null;
+  /** Stored calendar date, YYYY-MM-DD. */
+  readonly eventDate: string | null;
+  readonly guestCount: number | null;
+  /** The monitored address a reply reaches. Rendered as well as set as the
+   *  Reply-To header, so the organiser can see where their reply goes. */
+  readonly replyToEmail: string | null;
+}
+
+export function EnquiryAcknowledgementEmail(props: EnquiryAcknowledgementData): ReactElement {
+  const formattedDate = props.eventDate === null ? null : formatEnGbDate(props.eventDate);
+  const replyTo = props.replyToEmail;
+  return (
+    <VenueLayout
+      venueName={props.venueName}
+      label="Your enquiry"
+      preview={`${props.venueName} has your enquiry`}
+    >
+      <Heading style={h2Style()}>Thank you — we have your enquiry</Heading>
+      <Text style={paragraphStyle}>Dear {props.organiserName},</Text>
+      <Text style={paragraphStyle}>
+        Thank you for thinking of {props.venueName}. Your enquiry about{" "}
+        <strong>{props.spaceName}</strong> is with our events team, and one of us
+        will come back to you personally — normally within one working day.
+      </Text>
+      <Text style={paragraphStyle}>Here is what you told us:</Text>
+      <Section>
+        <table cellPadding={0} cellSpacing={0} style={metaTableStyle}>
+          <tbody>
+            <MetaRow label="Room" value={props.spaceName} />
+            <MetaRow label="Occasion" value={props.eventType} />
+            <MetaRow label="Date" value={formattedDate} />
+            <MetaRow
+              label="Guests"
+              value={props.guestCount === null ? null : String(props.guestCount)}
+            />
+          </tbody>
+        </table>
+      </Section>
+      <Text style={paragraphStyle}>
+        If anything above is wrong, or you would like to add to it, simply reply
+        to this message
+        {replyTo !== null && replyTo !== "" ? (
+          <>
+            {" — it reaches us at "}
+            <Link href={`mailto:${replyTo}`}>{replyTo}</Link>
+          </>
+        ) : null}
+        .
+      </Text>
+      <Text style={paragraphStyle}>
+        Nothing is held or confirmed yet; we will talk you through dates, rooms
+        and costs before anything is agreed.
+      </Text>
+      <Text style={{ ...paragraphStyle, marginTop: 20 }}>
+        With best wishes,
+        <br />
+        The events team, {props.venueName}
+      </Text>
+    </VenueLayout>
+  );
+}
+
+export async function enquiryAcknowledgement(
+  data: EnquiryAcknowledgementData,
+): Promise<{ subject: string; html: string }> {
+  const subject = `We have your enquiry — ${data.venueName}`;
+  const html = await render(<EnquiryAcknowledgementEmail {...data} />);
+  return { subject, html };
+}
+
+// ---------------------------------------------------------------------------
 // enquiryApproved — sent to planner/guest
 // ---------------------------------------------------------------------------
 

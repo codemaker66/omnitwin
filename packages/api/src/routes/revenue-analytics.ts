@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import {
   ComfortConstraintSchema,
@@ -14,6 +14,7 @@ import {
 } from "@omnitwin/types";
 import type { Database } from "../db/client.js";
 import {
+  bookings,
   comfortConstraints,
   configurations,
   enquiries,
@@ -26,7 +27,9 @@ import {
 } from "../db/schema.js";
 import { authenticate, isPlatformAdmin } from "../middleware/auth.js";
 import { canAccessInternalEvent, canWriteEvents } from "../utils/query.js";
+import { loadPipelineValueMinor } from "../services/commercial-pipeline.js";
 import {
+  ROOM_UTILISATION_WINDOW_DAYS,
   buildPipelineSummary,
   buildRoomUtilisationRows,
   buildVenueDashboardAnalytics,
@@ -325,22 +328,47 @@ export async function analyticsRoutes(server: FastifyInstance, opts: { db: Datab
 }
 
 async function loadPipelineSummary(db: Database, venueId: string) {
-  const [quoteRows, proposalRows, enquiryRows] = await Promise.all([
-    db.select({ totalMinor: quotes.totalMinor }).from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))),
+  // Pipeline value comes from the SHARED definition, not from quote totals.
+  // The Pipeline tab and this dashboard used to answer the same question with
+  // different tables; they now call services/commercial-pipeline.ts.
+  const [pipelineValueMinor, proposalRows, enquiryRows] = await Promise.all([
+    loadPipelineValueMinor(db, venueId),
     db.select({ status: proposals.status }).from(proposals).where(and(eq(proposals.venueId, venueId), isNull(proposals.deletedAt))),
     db.select({ id: enquiries.id }).from(enquiries).where(eq(enquiries.venueId, venueId)),
   ]);
   return buildPipelineSummary({
-    quoteTotalsMinor: quoteRows.map((row) => row.totalMinor),
+    pipelineValueMinor,
     enquiryCount: enquiryRows.length,
     proposalStatuses: proposalRows.map((row) => row.status),
   });
 }
 
 async function loadRoomUtilisation(db: Database, venueId: string): Promise<readonly z.infer<typeof RoomUtilisationRowSchema>[]> {
-  const [roomRows, quoteRows, scenarioRows] = await Promise.all([
+  // The window the utilisation figure is measured over. Anchored to UTC
+  // midnight so the same request made twice in one day returns the same
+  // denominator.
+  const windowStart = new Date(Date.UTC(
+    new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate(),
+  ));
+  const windowEnd = new Date(windowStart.getTime() + ROOM_UTILISATION_WINDOW_DAYS * 86_400_000);
+
+  const [roomRows, bookingRows, scenarioRows] = await Promise.all([
     db.select({ spaceId: spaces.id, roomName: spaces.name }).from(spaces).where(and(eq(spaces.venueId, venueId), isNull(spaces.deletedAt))),
-    db.select({ spaceId: quotes.spaceId, status: quotes.status }).from(quotes).where(and(eq(quotes.venueId, venueId), isNull(quotes.deletedAt))),
+    // Only ACTIVE bookings overlapping the window. A released hold or a
+    // cancelled booking is not demand, and a booking that ended last year is
+    // not this quarter's utilisation.
+    db.select({
+      spaceId: bookings.spaceId,
+      kind: bookings.kind,
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+    }).from(bookings).where(and(
+      eq(bookings.venueId, venueId),
+      eq(bookings.status, "active"),
+      isNull(bookings.deletedAt),
+      lt(bookings.startsAt, windowEnd),
+      gte(bookings.endsAt, windowStart),
+    )),
     db.select({ configurationId: revenueScenarios.configurationId, reviewGateCount: revenueScenarios.reviewGateCount })
       .from(revenueScenarios)
       .where(eq(revenueScenarios.venueId, venueId)),
@@ -365,8 +393,9 @@ async function loadRoomUtilisation(db: Database, venueId: string): Promise<reado
 
   return buildRoomUtilisationRows({
     rooms: roomRows.length > 0 ? roomRows : [{ spaceId: null, roomName: "Unassigned room" }],
-    quoteSpaceIds: quoteRows.map((row) => row.spaceId),
-    acceptedQuoteSpaceIds: quoteRows.filter((row) => row.status === "accepted").map((row) => row.spaceId),
+    bookings: bookingRows,
+    windowStart,
+    windowEnd,
     reviewBottlenecksBySpaceId,
   });
 }

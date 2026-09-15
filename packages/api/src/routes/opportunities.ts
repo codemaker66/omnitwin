@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   CreateActivitySchema,
   CreateFollowUpTaskSchema,
@@ -130,12 +130,14 @@ export async function opportunityRoutes(
     const where = and(...conditions);
 
     const [countRow] = await db.select({ count: sql<number>`count(*)::int` }).from(opportunities).where(where);
+    // Newest first with a total order (see enquiries.ts): `createdAt` ties are
+    // broken by id so limit/offset paging cannot repeat or drop a row.
     const rows = await db.select()
       .from(opportunities)
       .where(where)
       .limit(parsed.data.limit)
       .offset(parsed.data.offset)
-      .orderBy(opportunities.updatedAt);
+      .orderBy(desc(opportunities.createdAt), desc(opportunities.id));
 
     return paginate(rows, countRow?.count ?? 0, { limit: parsed.data.limit, offset: parsed.data.offset });
   });
@@ -222,15 +224,18 @@ export async function opportunityRoutes(
       .where(eq(activities.opportunityId, opportunity.id))
       .orderBy(activities.createdAt)
       .limit(100);
+    // Follow-ups and linked proposals are newest-first under a total order,
+    // matching the list endpoints so a staff member never sees one surface
+    // ordered oldest-first and another newest-first for the same records.
     const tasks = await db.select()
       .from(followUpTasks)
       .where(eq(followUpTasks.opportunityId, opportunity.id))
-      .orderBy(followUpTasks.createdAt)
+      .orderBy(desc(followUpTasks.createdAt), desc(followUpTasks.id))
       .limit(100);
     const linkedProposals = await db.select()
       .from(proposals)
       .where(and(eq(proposals.opportunityId, opportunity.id), isNull(proposals.deletedAt)))
-      .orderBy(proposals.updatedAt)
+      .orderBy(desc(proposals.createdAt), desc(proposals.id))
       .limit(50);
 
     return { data: { opportunity, activities: opportunityActivities, tasks, proposals: linkedProposals } };
