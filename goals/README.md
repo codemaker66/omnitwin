@@ -19,6 +19,8 @@ Blake's instruction, verbatim: "I want you to review our ambitions and the md an
 
 ## What this is
 
+Latest addition, 15 September: [plan 18 — Ship Friday](../docs/plan/18-SHIP-FRIDAY-ULTRA-PLAN-2026-09-14.md) is the release train for Blake's Friday 18 September public-ready instruction: Release 1's Definition of Shippable and thirteen lanes, then R2–R5 carrying goals 03–07 and 09–10 as the veteran panel's fifty-nine clusters. It sequences this deck; it does not replace it.
+
 Execution has started on Blake's instruction. See [EXECUTION.md](EXECUTION.md) for active owners, isolated branches, acceptance gates and verified results. Workers coordinate there before taking a slice.
 
 One file per goal. Each is self-contained: the outcome in Blake's words, where we are (measured, with the file that proves it), the decisions already taken so no session re-derives them, the work in slices, done-when, the commands that verify, what is forbidden, and the human inputs it waits on. Each starts with a `/goal` block to paste. `HUMAN.md` holds Blake's asks, ordered by leverage.
