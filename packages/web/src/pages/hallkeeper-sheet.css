@@ -148,7 +148,7 @@
   .hk-page { padding: 0 10px 16px; }
   .hk-top-nav { align-items: flex-start; padding: 14px 4px; gap: 8px; }
   .hk-top-nav > div { flex-direction: column; align-items: flex-end; gap: 0; }
-  .hk-top-nav > div a { min-height: 32px; font-size: 10px; }
+  .hk-top-nav > div a { font-size: 10px; }
   .hk-top-nav .hk-brand { font-size: 10px; gap: 7px; letter-spacing: .08em; }
   .hk-brand > span:first-child { width: 34px; height: 34px; font-size: 22px; }
   .hk-brand small { font-size: 10px; }

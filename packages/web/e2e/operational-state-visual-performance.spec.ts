@@ -43,8 +43,7 @@ const SAMPLE_MS = Number.parseInt(process.env.FRAME_BUDGET_SAMPLE_MS ?? "1200", 
 const TARGET_FRAME_MS = 16.7;
 const PASS_P95_MS = Number.parseFloat(process.env.FRAME_BUDGET_PASS_P95_MS ?? "18.5");
 const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_SUSTAINED ?? "1", 10);
-const ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-operational-state-frame-visual-2026-06-19";
-const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
+const artifactDir = (): string => test.info().outputPath("operational-state");
 
 type SeedRole = "staff" | "planner" | "hallkeeper" | "admin" | "platform-admin" | "executive" | "supplier";
 type OperationalViewportName = "desktop" | "tablet" | "mobile";
@@ -1189,7 +1188,7 @@ async function recordFrameAndVisualState(
   viewport: OperationalViewportName,
   interaction: () => Promise<void>,
 ): Promise<void> {
-  const screenshotPath = `${ARTIFACT_DIR}/${viewport}-${name}.png`;
+  const screenshotPath = `${artifactDir()}/${viewport}-${name}.png`;
   await page.waitForTimeout(250);
   await assertNoRuntimeBreakage(page, problems);
   const screenshotBytes = await takeSmokeScreenshot(page, screenshotPath);
@@ -1267,11 +1266,12 @@ async function recordAccessibilityState(
   });
 }
 
-test.describe.configure({ mode: "serial" });
+// Cases own their pages and mocks; keep file order without failure cascades.
+test.describe.configure({ mode: "default" });
 
 test.afterAll(async () => {
-  await mkdir(dirname(REPORT_PATH), { recursive: true });
-  await writeFile(REPORT_PATH, `${JSON.stringify({
+  await mkdir(dirname(`${artifactDir()}/report.json`), { recursive: true });
+  await writeFile(`${artifactDir()}/report.json`, `${JSON.stringify({
     generatedAt: new Date().toISOString(),
     targetFrameMs: TARGET_FRAME_MS,
     passP95Ms: PASS_P95_MS,
@@ -1344,7 +1344,12 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await expect(page.getByRole("heading", { name: "Wilson wedding" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Start Mission Control" })).toBeVisible();
     await page.getByRole("button", { name: "Acknowledge change" }).click();
-    await expect(page.getByText("Change acknowledgement could not be saved.")).toBeVisible();
+    const acknowledgementError = page.getByText("Change acknowledgement could not be saved.");
+    await expect(acknowledgementError).toBeVisible();
+    // Clicking the lower acknowledgement action can scroll the failure out of view.
+    // Frame the actual error, including the current dashboard shell, for this state.
+    await acknowledgementError.evaluate((element) => { element.scrollIntoView({ block: "center", behavior: "instant" }); });
+    await expect(acknowledgementError).toBeInViewport();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, "event-day mobile acknowledgement error should not horizontally overflow").toBeLessThanOrEqual(1);
@@ -1466,8 +1471,10 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
     await seedAuthenticatedUser(page, "planner");
 
     await page.goto("/dev/assets/rooms");
-    await expect(page.getByRole("heading", { name: "This workspace is not available to your role" })).toBeVisible();
-    await expect(page.getByText("You are signed in as planner.")).toBeVisible();
+    const denied = page.getByRole("main", { name: "Workspace access denied" });
+    await expect(denied.getByRole("heading", { level: 1, name: "Access needed", exact: true })).toBeVisible();
+    await expect(denied.getByRole("alert")).toContainText("Ask your venue admin to grant access.");
+    await expect(page.getByRole("heading", { name: "Trades Hall runtime rooms" })).toHaveCount(0);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, "asset registry mobile denied state should not horizontally overflow").toBeLessThanOrEqual(1);
@@ -1488,9 +1495,14 @@ test.describe("T-469 operational route visual and CDP frame-budget pass", () => 
 
     await page.goto("/dashboard?view=onboarding");
     await page.waitForSelector("#dashboard-main", { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Deployment controls" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Clients & access", exact: true })).toBeVisible();
+    await page.locator("summary").filter({ hasText: /^Setup review and billing$/u }).click();
+    await expect(page.getByRole("heading", { name: "Setup review", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Save project gate for Trades Hall deployment" }).click();
-    await expect(page.getByRole("alert")).toContainText("t469 project gate failure");
+    const projectError = page.getByRole("alert");
+    await expect(projectError).toContainText("t469 project gate failure");
+    await projectError.evaluate((element) => { element.scrollIntoView({ block: "center", behavior: "instant" }); });
+    await expect(projectError).toBeInViewport();
 
     await recordFrameAndVisualState(page, problems, "onboarding-project-gate-error", "tablet", async () => {
       await page.mouse.move(690, 920);

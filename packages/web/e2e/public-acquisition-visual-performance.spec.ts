@@ -11,14 +11,13 @@ import {
 
 // Derived the same way as THRESHOLD_LINE in rite-copy.ts — ages with the
 // calendar instead of rotting in a fixture.
-const LANDING_THRESHOLD_LINE = `There is a hall in Glasgow that has been lit for ${String(new Date().getFullYear() - 1791)} years.`;
+const LANDING_THRESHOLD_LINE = `Trades Hall, Glasgow · ${String(new Date().getFullYear() - 1791)} years`;
 
 const SAMPLE_MS = Number.parseInt(process.env.FRAME_BUDGET_SAMPLE_MS ?? "1200", 10);
 const TARGET_FRAME_MS = 16.7;
 const PASS_P95_MS = Number.parseFloat(process.env.FRAME_BUDGET_PASS_P95_MS ?? "18.5");
 const MAX_SUSTAINED_OVER_BUDGET = Number.parseInt(process.env.FRAME_BUDGET_MAX_SUSTAINED ?? "1", 10);
-const ARTIFACT_DIR = "C:/Users/blake/omnitwin2/artifacts/t469-public-acquisition-frame-visual-2026-06-21";
-const REPORT_PATH = `${ARTIFACT_DIR}/report.json`;
+const artifactDir = (): string => test.info().outputPath("public-acquisition");
 
 type PublicViewportName = "desktop" | "mobile";
 
@@ -170,7 +169,7 @@ async function recordFrameAndVisualState(
   viewport: PublicViewportName,
   interaction: () => Promise<void>,
 ): Promise<void> {
-  const screenshotPath = `${ARTIFACT_DIR}/${viewport}-${name}.png`;
+  const screenshotPath = `${artifactDir()}/${viewport}-${name}.png`;
   await page.waitForLoadState("networkidle").catch(() => undefined);
   await assertNoRuntimeBreakage(page);
   const screenshotBytes = await takeSmokeScreenshot(page, screenshotPath);
@@ -255,11 +254,11 @@ async function expectRitePrimaryActionsInsideViewport(page: Page): Promise<void>
   expect(escaped, "rite primary layout elements should stay inside the mobile viewport").toEqual([]);
 }
 
-test.describe.configure({ mode: "serial" });
+test.describe.configure({ mode: "default" });
 
 test.afterAll(async () => {
-  await mkdir(dirname(REPORT_PATH), { recursive: true });
-  await writeFile(REPORT_PATH, `${JSON.stringify({
+  await mkdir(dirname(`${artifactDir()}/report.json`), { recursive: true });
+  await writeFile(`${artifactDir()}/report.json`, `${JSON.stringify({
     generatedAt: new Date().toISOString(),
     targetFrameMs: TARGET_FRAME_MS,
     passP95Ms: PASS_P95_MS,
@@ -284,7 +283,7 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
 
     await recordFrameAndVisualState(page, "landing-updated-photos", "desktop", async () => {
       await page.getByRole("heading", { name: "The Grand Hall", exact: true }).scrollIntoViewIfNeeded();
-      await expect(page.getByText("The room the city keeps its promises in.")).toBeVisible();
+      await expect(page.getByText("Beneath the dome.")).toBeVisible();
       await page.mouse.wheel(0, 540);
       await page.mouse.wheel(0, -220);
     });
@@ -319,7 +318,7 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     const problems = watchPageProblems(page);
 
     await page.goto("/pricing");
-    await expect(page.getByRole("heading", { name: "Turn every enquiry into a yes." })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Pricing", exact: true })).toBeVisible();
     await expect(page.locator("a[href='/register?tier=pro&cycle=annual']")).toHaveCount(2);
 
     await recordFrameAndVisualState(page, "pricing-desktop", "desktop", async () => {
@@ -338,7 +337,7 @@ test.describe("T-469 public acquisition visual and CDP frame-budget pass", () =>
     const problems = watchPageProblems(page);
 
     await page.goto("/pricing");
-    await expect(page.getByRole("heading", { name: "Turn every enquiry into a yes." })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Pricing", exact: true })).toBeVisible();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, "pricing mobile should not horizontally overflow").toBeLessThanOrEqual(1);
